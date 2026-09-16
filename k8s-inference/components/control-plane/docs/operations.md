@@ -784,28 +784,37 @@ manual Helm uninstall and workload credentials therefore cannot remove the last
 selected allow or the policy protecting it. Every permanent object has
 Terraform `prevent_destroy` and an ownership label. Kubernetes deliberately
 does not invoke API-based admission for its own policy and binding resources,
-so this design does not claim self-protection. The admission policy and binding
-are applied with the separate security-owner kubeconfig, while a mandatory
-preflight binds both kubeconfigs to the same API server and exact `kube-system`
-UID, then proves the ordinary foundation/workload identity cannot get, patch,
-update, delete, or collection-delete either exact admission resource, mint the
-retired transition-ServiceAccount token, or impersonate the security owner.
+so this design does not claim self-protection. Foundation applies the admission
+policy and binding with a separate security-owner kubeconfig, while a mandatory
+preflight binds both foundation kubeconfigs to the same API server and exact
+`kube-system` UID. It proves the ordinary identity cannot patch, update, delete,
+or collection-delete either admission resource, any permanent guard/deny,
+transition/parameter ConfigMap, or Lease; it also cannot mint the retained
+transition-ServiceAccount token or impersonate the security owner. The security
+identity can patch/update the exact governed objects but cannot delete them or
+collection-delete their resource types.
 Before foundation apply, provision the mode-0600
 `<run_root>/network-policy-security-owner-kubeconfig` for the exact configured
 external username. Its identity must be distinct from the ordinary run
 kubeconfig and independently authorized for the protected resources. The apply
 fails closed unless both exact named owner permissions and negative ordinary
-permissions are proven. Every transition repeats the cluster-identity,
-admission-owner, token-minting, and impersonation checks, then uses the separate
-security-owner kubeconfig directly for protected mutations. The retained
+permissions are proven. The security-owner kubeconfig path is never emitted to
+workloads. Protected topology instead pins a Unix handoff socket, an Ed25519
+public key and the SHA-256 of the selected API server plus exact `kube-system`
+UID. Every transition repeats ordinary negative authorization checks and accepts
+protected patches only through candidate-bound, short-lived responses signed by
+that key. The handoff accepts exact patch or admission-recovery actions only;
+there is no generic kubectl or delete action. The retained
 transition ServiceAccount remains at its stable Terraform address solely to
 avoid deleting an existing object; token automount is disabled, no protected
 RoleBinding names it, and the ordinary rollout identity must not be able to
 mint its token. No rollout-mintable privileged token exists.
-Deletion is limited to the exact external security-owner identity after the
-specific object has a reviewed 64-hex decommission-receipt annotation. The
-security owner is the only admitted update identity; workload credentials have
-no protected-object mutation path.
+Permanent boundary deletion is never admitted. The external security owner is
+the only update identity; workload credentials have no protected-object
+mutation path. Incident recovery is reversible: signed automation may change
+the binding and its parameter ConfigMap from `Deny` to `Audit`+`Warn`, and may
+restore `Deny`; both transitions acquire the same Lease fence and remain signed,
+same-cluster, exact-object, receipt-bound and deletion-disabled.
 
 Before each existing public release, `stage` acquires and renews the 60-second
 namespaced Lease fence, reads the protected live-topology ConfigMap, renders the
@@ -838,7 +847,8 @@ components/control-plane/scripts/network-policy-transition.sh stage \
   --release-namespace fs2-system \
   --chart charts/control-plane/fs2-serve-control-plane \
   --kubeconfig RUN_OWNED_KUBECONFIG \
-  --security-owner-kubeconfig RUN_OWNED_SECURITY_OWNER_KUBECONFIG \
+  --security-handoff-socket /run/fs2/network-policy-security.sock \
+  --security-handoff-public-key PINNED_ED25519_PUBLIC_KEY \
   --values EXACT_BASE_VALUES \
   --values EXACT_CANDIDATE_VALUES
 
@@ -849,10 +859,30 @@ components/control-plane/scripts/network-policy-transition.sh rollback \
   --release-namespace fs2-system \
   --chart charts/control-plane/fs2-serve-control-plane \
   --kubeconfig RUN_OWNED_KUBECONFIG \
-  --security-owner-kubeconfig RUN_OWNED_SECURITY_OWNER_KUBECONFIG \
+  --security-handoff-socket /run/fs2/network-policy-security.sock \
+  --security-handoff-public-key PINNED_ED25519_PUBLIC_KEY \
   --revision CAPTURED_PRE_ROLLOUT_REVISION \
   --values EXACT_BASE_VALUES \
   --values EXACT_CANDIDATE_VALUES
+
+# Security-owner incident recovery is signed, reversible, and never deletion.
+components/control-plane/scripts/network-policy-transition.sh recover-audit-warn \
+  --release fs2-serve-control-plane \
+  --release-namespace fs2-system \
+  --chart charts/control-plane/fs2-serve-control-plane \
+  --kubeconfig RUN_OWNED_KUBECONFIG \
+  --security-handoff-socket /run/fs2/network-policy-security.sock \
+  --security-handoff-public-key PINNED_ED25519_PUBLIC_KEY \
+  --recovery-reference REVIEWED_INCIDENT_REFERENCE
+
+components/control-plane/scripts/network-policy-transition.sh recover-deny \
+  --release fs2-serve-control-plane \
+  --release-namespace fs2-system \
+  --chart charts/control-plane/fs2-serve-control-plane \
+  --kubeconfig RUN_OWNED_KUBECONFIG \
+  --security-handoff-socket /run/fs2/network-policy-security.sock \
+  --security-handoff-public-key PINNED_ED25519_PUBLIC_KEY \
+  --recovery-reference REVIEWED_INCIDENT_REFERENCE
 ```
 
 `rollback` discovers the exact namespaces from protected live topology,
@@ -863,7 +893,9 @@ UID/resourceVersion/status are exactly receipt-bound, and `helm get values --all
 `config.requestDebugEnabled=false`. It then relaxes the deny with a
 resourceVersion precondition, proves the relaxed selector selects zero Pods,
 and runs Helm while renewing the fence every 15 seconds. A retry revalidates the
-same target and, if already reached, rebinds both permanent allows to the exact
+same target and accepts Helm's exact successful `Rollback to <revision>` history
+description (never a failed or pending entry). If the target was already
+reached, it rebinds both permanent allows to the exact
 verified rollback specs before reactivating the deny. Only an API response
 proven to be HTTP 404 is absence; authorization, timeout and transport failures
 fail closed.
@@ -876,8 +908,9 @@ it cannot remove foundation admission protection, state, namespaces or
 boundaries. Foundation destruction and targeted replacement are refused by
 `prevent_destroy`; direct mutation, binding removal and namespace deletion are
 denied. Deliberate decommission is a separate security-owner procedure that
-must annotate and remove the deny before either allow, using the exact configured
-namespaces and an externally reviewed receipt.
+is not implemented by this boundary: security automation has no delete verb and
+the permanent resources remain retained. Any future retirement requires a
+separate reviewed successor design; it cannot reuse the rollout handoff.
 
 The chart intentionally has invalid empty defaults for the immutable image and
 public/authorization URLs. Rendering requires exact non-placeholder values.

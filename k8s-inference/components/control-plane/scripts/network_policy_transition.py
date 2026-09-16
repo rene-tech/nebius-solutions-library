@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import contextlib
 import datetime as dt
 import hashlib
@@ -11,7 +13,7 @@ import json
 import os
 import re
 import shutil
-import stat
+import socket
 import subprocess
 import sys
 import tempfile
@@ -21,6 +23,9 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
+
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 SCHEMA = "fs2-serve.nebius.ai/network-policy-transition-receipt/v3"
 BOUNDARY_LABEL = "fs2.nebius.ai/network-policy-boundary"
@@ -37,6 +42,8 @@ LOCK_SECONDS = 60
 LOCK_RENEW_SECONDS = 15
 POD_PAGE_SIZE = 100
 MAX_POD_PAGES = 10
+MAX_HANDOFF_RESPONSE_BYTES = 1024 * 1024
+HANDOFF_SECONDS = 30
 RELAXED_SELECTOR = {"fs2.nebius.ai/network-policy-deny-relaxed": "true"}
 IN_FLIGHT_PHASES = {
     "bootstrap-relaxing",
@@ -103,6 +110,235 @@ class Command:
         return outcome
 
 
+def decode_base64url(value: Any, *, expected_bytes: int) -> bytes:
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", value):
+        raise TransitionError("signed handoff contains invalid base64url data")
+    try:
+        decoded = base64.b64decode(value + "=" * (-len(value) % 4), altchars=b"-_", validate=True)
+    except (binascii.Error, ValueError) as error:
+        raise TransitionError("signed handoff contains invalid base64url data") from error
+    if len(decoded) != expected_bytes:
+        raise TransitionError("signed handoff has an invalid cryptographic length")
+    return decoded
+
+
+class SecurityHandoff:
+    """Verify a narrow response from separately credentialed security automation."""
+
+    def __init__(
+        self,
+        socket_path: Path,
+        public_key_value: str,
+        *,
+        cluster: dict[str, str],
+        release: dict[str, str],
+    ) -> None:
+        if not socket_path.is_absolute():
+            raise TransitionError("security handoff socket path must be absolute")
+        public_key_bytes = decode_base64url(public_key_value, expected_bytes=32)
+        self.socket_path = socket_path
+        self.public_key_value = public_key_value
+        self.public_key = Ed25519PublicKey.from_public_bytes(public_key_bytes)
+        self.key_id = sha256_text(public_key_value)
+        self.cluster = cluster
+        self.release = release
+
+    def _exchange(self, request: dict[str, Any]) -> dict[str, Any]:
+        encoded = (canonical(request) + "\n").encode()
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+                connection.settimeout(HANDOFF_SECONDS)
+                connection.connect(str(self.socket_path))
+                connection.sendall(encoded)
+                connection.shutdown(socket.SHUT_WR)
+                chunks: list[bytes] = []
+                size = 0
+                while True:
+                    chunk = connection.recv(65536)
+                    if not chunk:
+                        break
+                    size += len(chunk)
+                    if size > MAX_HANDOFF_RESPONSE_BYTES:
+                        raise TransitionError("security handoff response exceeded its byte bound")
+                    chunks.append(chunk)
+        except OSError as error:
+            raise TransitionError("security handoff transport failed closed") from error
+        try:
+            response = json.loads(b"".join(chunks))
+        except json.JSONDecodeError as error:
+            raise TransitionError("security handoff response is not valid JSON") from error
+        if not isinstance(response, dict):
+            raise TransitionError("security handoff response is not an object")
+        return cast(dict[str, Any], response)
+
+    @staticmethod
+    def _instant(value: Any, *, field: str) -> dt.datetime:
+        if not isinstance(value, str):
+            raise TransitionError(f"security handoff {field} is not an RFC3339 instant")
+        try:
+            parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as error:
+            raise TransitionError(f"security handoff {field} is not an RFC3339 instant") from error
+        if parsed.tzinfo is None:
+            raise TransitionError(f"security handoff {field} has no timezone")
+        return parsed.astimezone(dt.UTC)
+
+    def request(self, action: str, body: dict[str, Any]) -> dict[str, Any]:
+        if action not in {"attest", "patch-exact-kubernetes-object", "set-admission-recovery"}:
+            raise TransitionError("security handoff action is outside the narrow contract")
+        issued = dt.datetime.now(dt.UTC)
+        operation_id = str(uuid.uuid4())
+        request = {
+            "schema": "fs2-serve.nebius.ai/network-policy-security-handoff-request/v1",
+            "operation_id": operation_id,
+            "action": action,
+            "cluster": self.cluster,
+            "release": self.release,
+            "issued_at": issued.isoformat(timespec="microseconds").replace("+00:00", "Z"),
+            "expires_at": (issued + dt.timedelta(seconds=HANDOFF_SECONDS))
+            .isoformat(timespec="microseconds")
+            .replace("+00:00", "Z"),
+            "body": body,
+        }
+        response = self._exchange(request)
+        if set(response) != {"signed", "signature"} or not isinstance(response.get("signed"), dict):
+            raise TransitionError("security handoff response envelope is not exact")
+        signed = cast(dict[str, Any], response["signed"])
+        expected_fields = {
+            "schema",
+            "operation_id",
+            "request_sha256",
+            "cluster",
+            "issued_at",
+            "expires_at",
+            "status",
+            "signer_key_id",
+            "result",
+        }
+        if set(signed) != expected_fields:
+            raise TransitionError("security handoff signed payload fields are not exact")
+        try:
+            self.public_key.verify(
+                decode_base64url(response["signature"], expected_bytes=64),
+                canonical(signed).encode(),
+            )
+        except InvalidSignature as error:
+            raise TransitionError("security handoff signature is invalid") from error
+        now = dt.datetime.now(dt.UTC)
+        response_issued = self._instant(signed["issued_at"], field="issued_at")
+        response_expires = self._instant(signed["expires_at"], field="expires_at")
+        if (
+            signed["schema"] != "fs2-serve.nebius.ai/network-policy-security-handoff-response/v1"
+            or signed["operation_id"] != operation_id
+            or signed["request_sha256"] != sha256_json(request)
+            or signed["cluster"] != self.cluster
+            or signed["signer_key_id"] != self.key_id
+            or signed["status"] != "approved"
+            or response_issued < issued - dt.timedelta(seconds=5)
+            or response_issued > now + dt.timedelta(seconds=5)
+            or response_expires < now
+            or response_expires > response_issued + dt.timedelta(seconds=HANDOFF_SECONDS)
+        ):
+            raise TransitionError("security handoff response is stale or bound to a different request")
+        result = signed["result"]
+        if not isinstance(result, dict):
+            raise TransitionError("security handoff result is not an object")
+        return cast(dict[str, Any], result)
+
+
+class ProtectedCommand:
+    """Read through ordinary RBAC; route exact patches through signed handoff."""
+
+    def __init__(
+        self,
+        ordinary: Command,
+        handoff: SecurityHandoff,
+        *,
+        allowed_patch_targets: set[tuple[str, str, str]],
+    ) -> None:
+        self.ordinary = ordinary
+        self.handoff = handoff
+        self.allowed_patch_targets = allowed_patch_targets
+
+    def run(
+        self,
+        *arguments: str,
+        input_text: str | None = None,
+        check: bool = True,
+    ) -> CommandResult:
+        if not arguments:
+            raise TransitionError("empty protected Kubernetes command")
+        if arguments[0] == "get":
+            return self.ordinary.run(*arguments, input_text=input_text, check=check)
+        if arguments[0] != "patch" or input_text is not None:
+            raise TransitionError("protected mutations require an exact signed patch handoff")
+        if len(arguments) < 3:
+            raise TransitionError("protected patch identity is incomplete")
+        resource, name = arguments[1:3]
+        namespace = ""
+        patch_type = ""
+        patch = ""
+        dry_run = False
+        index = 3
+        while index < len(arguments):
+            item = arguments[index]
+            if item == "--namespace" and index + 1 < len(arguments):
+                namespace = arguments[index + 1]
+                index += 2
+            elif item.startswith("--type="):
+                patch_type = item.removeprefix("--type=")
+                index += 1
+            elif item == "--patch" and index + 1 < len(arguments):
+                patch = arguments[index + 1]
+                index += 2
+            elif item == "--dry-run=server":
+                dry_run = True
+                index += 1
+            elif item == "-o" and index + 1 < len(arguments) and arguments[index + 1] == "json":
+                index += 2
+            else:
+                raise TransitionError("protected patch contains an unsupported kubectl argument")
+        if not namespace or patch_type not in {"json", "merge"} or not patch:
+            raise TransitionError("protected patch is missing an exact namespace, type, or payload")
+        if (resource, name, namespace) not in self.allowed_patch_targets:
+            raise TransitionError("protected patch target is outside the signed handoff allowlist")
+        try:
+            parsed_patch = json.loads(patch)
+        except json.JSONDecodeError as error:
+            raise TransitionError("protected patch payload is not valid JSON") from error
+        result = self.handoff.request(
+            "patch-exact-kubernetes-object",
+            {
+                "resource": resource,
+                "name": name,
+                "namespace": namespace,
+                "patch_type": patch_type,
+                "patch": parsed_patch,
+                "dry_run": dry_run,
+            },
+        )
+        resource_object = result.get("object")
+        if not isinstance(resource_object, dict):
+            raise TransitionError("signed patch handoff returned no Kubernetes object")
+        expected_type = {
+            "configmap": ("v1", "ConfigMap"),
+            "lease": ("coordination.k8s.io/v1", "Lease"),
+            "networkpolicy": ("networking.k8s.io/v1", "NetworkPolicy"),
+        }.get(resource)
+        metadata = resource_object.get("metadata", {})
+        if (
+            expected_type is None
+            or (resource_object.get("apiVersion"), resource_object.get("kind")) != expected_type
+            or metadata.get("name") != name
+            or metadata.get("namespace") != namespace
+            or not metadata.get("uid")
+            or not metadata.get("resourceVersion")
+            or metadata.get("labels", {}).get(BOUNDARY_LABEL) != BOUNDARY_VALUE
+        ):
+            raise TransitionError("signed patch handoff returned a different protected object")
+        return CommandResult(returncode=0, stdout=canonical(resource_object), stderr="")
+
+
 @dataclass
 class Candidate:
     candidate_sha256: str
@@ -140,21 +376,19 @@ class Transition:
         self.release_namespace = arguments.release_namespace
         self.chart = Path(arguments.chart).resolve()
         self.kubeconfig = Path(arguments.kubeconfig).resolve()
-        self.security_owner_kubeconfig = Path(arguments.security_owner_kubeconfig).resolve()
+        self.security_handoff_socket = Path(arguments.security_handoff_socket)
+        self.security_handoff_public_key = arguments.security_handoff_public_key
         self.tempdir = Path(tempfile.mkdtemp(prefix="fs2-network-policy-transition."))
         self.holder = f"{os.uname().nodename}-{os.getpid()}-{uuid.uuid4()}"
         self.bootstrap_kubectl = Command(self._kubectl_prefix(self.kubeconfig), name="kubectl")
-        self.security_owner_kubectl = Command(
-            self._kubectl_prefix(self.security_owner_kubeconfig),
-            name="security-owner kubectl",
-        )
         helm_prefix = ["helm", "--kubeconfig", str(self.kubeconfig)]
         if arguments.context:
             helm_prefix.extend(["--kube-context", arguments.context])
         self.helm = Command(helm_prefix, name="helm")
         self.value_sources: list[dict[str, str]] = []
         self.helm_values = self._helm_values()
-        self.guarded_kubectl: Command | None = None
+        self.security_handoff: SecurityHandoff | None = None
+        self.guarded_kubectl: Command | ProtectedCommand | None = None
         self.fence_transitions: int | None = None
 
     def close(self) -> None:
@@ -193,8 +427,55 @@ class Transition:
         return result
 
     def configure_guarded_client(self) -> None:
-        self.verify_external_iam_boundary()
-        self.guarded_kubectl = self.security_owner_kubectl
+        topology = self._protected_topology(self.bootstrap_kubectl)
+        cluster_server, kube_system_uid = self._cluster_identity(self.bootstrap_kubectl)
+        contract = topology["contract"]
+        handoff_contract = contract.get("security_handoff", {})
+        cluster = {
+            "api_server_sha256": sha256_text(cluster_server),
+            "kube_system_uid": kube_system_uid,
+        }
+        if (
+            handoff_contract.get("schema") != "fs2-serve.nebius.ai/network-policy-security-handoff/v1"
+            or handoff_contract.get("socket_path") != str(self.security_handoff_socket)
+            or handoff_contract.get("public_key") != self.security_handoff_public_key
+            or handoff_contract.get("public_key_sha256") != sha256_text(self.security_handoff_public_key)
+            or handoff_contract.get("cluster") != cluster
+            or handoff_contract.get("allowed_actions")
+            != ["patch-exact-kubernetes-object", "set-admission-recovery"]
+            or handoff_contract.get("delete_allowed") is not False
+            or handoff_contract.get("recovery_modes") != ["Audit", "Warn", "Deny"]
+        ):
+            raise TransitionError("signed handoff does not match protected same-cluster topology")
+        self.verify_external_iam_boundary(contract)
+        handoff = SecurityHandoff(
+            self.security_handoff_socket,
+            self.security_handoff_public_key,
+            cluster=cluster,
+            release={"name": self.release, "namespace": self.release_namespace},
+        )
+        attestation = handoff.request("attest", {})
+        if attestation != {
+            "schema": "fs2-serve.nebius.ai/network-policy-security-automation-attestation/v1",
+            "security_owner_username": contract.get("security_owner_username"),
+            "allowed_actions": ["patch-exact-kubernetes-object", "set-admission-recovery"],
+            "recovery_modes": ["Audit", "Warn", "Deny"],
+            "delete_allowed": False,
+        }:
+            raise TransitionError("security automation attestation is not the exact narrow contract")
+        self.security_handoff = handoff
+        policy_names = contract["policy_names"]
+        self.guarded_kubectl = ProtectedCommand(
+            self.bootstrap_kubectl,
+            handoff,
+            allowed_patch_targets={
+                ("lease", LEASE_NAME, self.release_namespace),
+                ("configmap", RECEIPT_NAME, self.release_namespace),
+                ("networkpolicy", policy_names["proxy_guard"], contract["gateway_namespace"]),
+                ("networkpolicy", policy_names["default_deny"], contract["gateway_namespace"]),
+                ("networkpolicy", policy_names["controller_guard"], contract["controller_namespace"]),
+            },
+        )
 
     @staticmethod
     def _cluster_identity(command: Command) -> tuple[str, str]:
@@ -217,43 +498,60 @@ class Transition:
         if result.returncode != 0 or result.stdout.strip() != expected:
             raise TransitionError("Kubernetes authorization does not match the external security boundary")
 
-    def verify_external_iam_boundary(self) -> None:
-        """Fail closed unless the rollout identity is outside security ownership."""
-        if self.kubeconfig == self.security_owner_kubeconfig:
-            raise TransitionError("ordinary and security-owner kubeconfigs must be distinct")
-        if stat.S_IMODE(self.security_owner_kubeconfig.stat().st_mode) != 0o600:
-            raise TransitionError("security-owner kubeconfig must have mode 0600")
-        if self._cluster_identity(self.bootstrap_kubectl) != self._cluster_identity(self.security_owner_kubectl):
-            raise TransitionError("ordinary and security-owner kubeconfigs select different clusters")
-        topology_result = self.bootstrap_kubectl.run(
-            "get", "configmap", TOPOLOGY_NAME, "--namespace", self.release_namespace, "-o", "json"
-        )
-        topology_resource = cast(dict[str, Any], json.loads(topology_result.stdout))
+    @staticmethod
+    def _protected_topology(command: Command) -> dict[str, Any]:
+        result = command.run("get", "configmap", TOPOLOGY_NAME, "--namespace", "fs2-system", "-o", "json")
+        resource = cast(dict[str, Any], json.loads(result.stdout))
         try:
-            topology = json.loads(topology_resource["data"]["topology.json"])
-            security_owner = topology["security_owner_username"]
+            contract = json.loads(resource["data"]["topology.json"])
         except (KeyError, TypeError, json.JSONDecodeError) as error:
-            raise TransitionError("protected topology has no external security-owner identity") from error
+            raise TransitionError("protected topology has no security boundary contract") from error
+        return {"resource": resource, "contract": contract}
+
+    def verify_external_iam_boundary(self, topology: dict[str, Any]) -> None:
+        """Fail closed unless the rollout identity is outside security ownership."""
+        security_owner = topology.get("security_owner_username")
         if not isinstance(security_owner, str) or not re.fullmatch(r"[A-Za-z0-9:@._/-]{3,253}", security_owner):
             raise TransitionError("protected topology has an invalid external security-owner identity")
-        owner_result = self.security_owner_kubectl.run("auth", "whoami", "-o", "json")
-        try:
-            owner_username = json.loads(owner_result.stdout)["status"]["userInfo"]["username"]
-        except (KeyError, TypeError, json.JSONDecodeError) as error:
-            raise TransitionError("security-owner kubeconfig has no exact authenticated identity") from error
-        if owner_username != security_owner:
-            raise TransitionError("security-owner kubeconfig identity differs from protected topology")
         protected = (
             "validatingadmissionpolicies.admissionregistration.k8s.io",
             "validatingadmissionpolicybindings.admissionregistration.k8s.io",
         )
         for resource in protected:
-            for verb in ("get", "patch", "update", "delete"):
-                exact = (verb, f"{resource}/fs2-network-policy-boundary")
-                self._require_can_i(self.bootstrap_kubectl, "no", *exact)
-                self._require_can_i(self.security_owner_kubectl, "yes", *exact)
+            for verb in ("patch", "update", "delete"):
+                self._require_can_i(
+                    self.bootstrap_kubectl,
+                    "no",
+                    verb,
+                    f"{resource}/fs2-network-policy-boundary",
+                )
             self._require_can_i(self.bootstrap_kubectl, "no", "deletecollection", resource)
-            self._require_can_i(self.security_owner_kubectl, "no", "deletecollection", resource)
+        policy_names = topology.get("policy_names", {})
+        exact_namespaced = (
+            ("networkpolicies.networking.k8s.io", policy_names.get("proxy_guard"), topology.get("gateway_namespace")),
+            ("networkpolicies.networking.k8s.io", policy_names.get("default_deny"), topology.get("gateway_namespace")),
+            (
+                "networkpolicies.networking.k8s.io",
+                policy_names.get("controller_guard"),
+                topology.get("controller_namespace"),
+            ),
+            ("configmaps", RECEIPT_NAME, self.release_namespace),
+            ("configmaps", TOPOLOGY_NAME, self.release_namespace),
+            ("configmaps", "fs2-network-policy-boundary-parameters", self.release_namespace),
+            ("leases.coordination.k8s.io", LEASE_NAME, self.release_namespace),
+        )
+        for resource, name, namespace in exact_namespaced:
+            if not isinstance(name, str) or not name or not isinstance(namespace, str) or not namespace:
+                raise TransitionError("protected topology has an incomplete exact object identity")
+            for verb in ("patch", "update", "delete"):
+                self._require_can_i(
+                    self.bootstrap_kubectl,
+                    "no",
+                    verb,
+                    f"{resource}/{name}",
+                    "--namespace",
+                    namespace,
+                )
         self._require_can_i(
             self.bootstrap_kubectl,
             "no",
@@ -271,10 +569,16 @@ class Transition:
         )
 
     @property
-    def guarded(self) -> Command:
+    def guarded(self) -> Command | ProtectedCommand:
         if self.guarded_kubectl is None:
             raise TransitionError("guarded Kubernetes client is not configured")
         return self.guarded_kubectl
+
+    @property
+    def handoff(self) -> SecurityHandoff:
+        if self.security_handoff is None:
+            raise TransitionError("signed security handoff is not configured")
+        return self.security_handoff
 
     @contextlib.contextmanager
     def lock(self) -> Iterator[None]:
@@ -476,9 +780,12 @@ class Transition:
     @staticmethod
     def _successful_history_entry(entry: dict[str, Any]) -> bool:
         description = str(entry.get("description", "")).lower()
+        successful_description = "complete" in description or re.fullmatch(
+            r"rollback to [1-9][0-9]*", description
+        ) is not None
         return (
             str(entry.get("status", "")).lower() in {"deployed", "superseded"}
-            and "complete" in description
+            and successful_description
             and not any(word in description for word in ("fail", "pending"))
         )
 
@@ -1658,37 +1965,102 @@ class Transition:
             )
         print("network-policy-transition=destroy-prepared deny=relaxed boundaries=retained")
 
+    def recover_admission(self, mode: str) -> None:
+        if mode not in {"audit-warn", "deny"}:
+            raise TransitionError("admission recovery mode is not reversible")
+        with self.lock():
+            topology = self.live_topology()
+            receipt_resource, receipt = self.receipt()
+            metadata = receipt_resource.get("metadata", {})
+            lease = self._lease()
+            lease_metadata = lease.get("metadata", {})
+            result = self.handoff.request(
+                "set-admission-recovery",
+                {
+                    "mode": mode,
+                    "recovery_reference": self.arguments.recovery_reference,
+                    "topology_uid": topology["uid"],
+                    "topology_sha256": topology["sha256"],
+                    "receipt": {
+                        "namespace": metadata.get("namespace"),
+                        "name": metadata.get("name"),
+                        "uid": metadata.get("uid"),
+                        "resource_version": metadata.get("resourceVersion"),
+                        "sha256": sha256_json(receipt),
+                    },
+                    "lease": {
+                        "namespace": lease_metadata.get("namespace"),
+                        "name": lease_metadata.get("name"),
+                        "uid": lease_metadata.get("uid"),
+                        "resource_version": lease_metadata.get("resourceVersion"),
+                        "holder_identity": lease.get("spec", {}).get("holderIdentity"),
+                        "lease_transitions": lease.get("spec", {}).get("leaseTransitions"),
+                    },
+                    "binding": "fs2-network-policy-boundary",
+                    "parameter": {
+                        "namespace": self.release_namespace,
+                        "name": "fs2-network-policy-boundary-parameters",
+                    },
+                    "delete_allowed": False,
+                },
+            )
+        binding = result.get("binding")
+        parameter = result.get("parameter")
+        expected_actions = ["Audit", "Warn"] if mode == "audit-warn" else ["Deny"]
+        if not isinstance(binding, dict) or not isinstance(parameter, dict):
+            raise TransitionError("signed recovery handoff returned incomplete objects")
+        if (
+            binding.get("metadata", {}).get("name") != "fs2-network-policy-boundary"
+            or binding.get("metadata", {}).get("labels", {}).get(BOUNDARY_LABEL) != BOUNDARY_VALUE
+            or binding.get("spec", {}).get("policyName") != "fs2-network-policy-boundary"
+            or binding.get("spec", {}).get("validationActions") != expected_actions
+            or parameter.get("metadata", {}).get("namespace") != self.release_namespace
+            or parameter.get("metadata", {}).get("name") != "fs2-network-policy-boundary-parameters"
+            or parameter.get("metadata", {}).get("labels", {}).get(BOUNDARY_LABEL) != BOUNDARY_VALUE
+            or parameter.get("data", {}).get("mode") != mode
+            or parameter.get("data", {}).get("delete_allowed") != "false"
+        ):
+            raise TransitionError("signed recovery handoff did not reach the exact reversible mode")
+        print(f"network-policy-admission-recovery={mode} reference={self.arguments.recovery_reference}")
+
 
 def parse_arguments(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("prepare", "stage", "complete", "rollback", "destroy"))
+    parser.add_argument(
+        "action",
+        choices=("prepare", "stage", "complete", "rollback", "destroy", "recover-audit-warn", "recover-deny"),
+    )
     parser.add_argument("--release", required=True)
     parser.add_argument("--release-namespace", required=True)
     parser.add_argument("--chart", required=True)
     parser.add_argument("--kubeconfig", required=True)
-    parser.add_argument("--security-owner-kubeconfig", required=True)
+    parser.add_argument("--security-handoff-socket", required=True)
+    parser.add_argument("--security-handoff-public-key", required=True)
     parser.add_argument("--context", default="")
     parser.add_argument("--values", action="append", default=[])
     parser.add_argument("--values-env", action="append", default=[])
     parser.add_argument("--revision", default="")
+    parser.add_argument("--recovery-reference", default="")
     parser.add_argument("--timeout", default="10m")
     parser.add_argument("helm_value_args", nargs=argparse.REMAINDER)
     arguments = parser.parse_args(argv)
     if arguments.action == "rollback" and not re.fullmatch(r"[1-9][0-9]*", arguments.revision):
         parser.error("rollback requires a positive --revision")
+    if arguments.action.startswith("recover-") and not re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9._:/-]{2,127}", arguments.recovery_reference
+    ):
+        parser.error("admission recovery requires a bounded --recovery-reference")
     for executable in ("helm", "kubectl", "yq"):
         if shutil.which(executable) is None:
             parser.error(f"required executable is unavailable: {executable}")
-    if (
-        not Path(arguments.chart).is_dir()
-        or not Path(arguments.kubeconfig).is_file()
-        or not Path(arguments.security_owner_kubeconfig).is_file()
-    ):
-        parser.error("chart and both kubeconfigs must exist")
-    if Path(arguments.kubeconfig).resolve() == Path(arguments.security_owner_kubeconfig).resolve():
-        parser.error("ordinary and security-owner kubeconfigs must be distinct")
-    if stat.S_IMODE(Path(arguments.security_owner_kubeconfig).stat().st_mode) != 0o600:
-        parser.error("security-owner kubeconfig must have mode 0600")
+    if not Path(arguments.chart).is_dir() or not Path(arguments.kubeconfig).is_file():
+        parser.error("chart and ordinary kubeconfig must exist")
+    if not Path(arguments.security_handoff_socket).is_absolute():
+        parser.error("security handoff socket path must be absolute")
+    try:
+        decode_base64url(arguments.security_handoff_public_key, expected_bytes=32)
+    except TransitionError as error:
+        parser.error(str(error))
     return arguments
 
 
@@ -1697,7 +2069,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     transition = Transition(arguments)
     try:
         transition.configure_guarded_client()
-        getattr(transition, arguments.action)()
+        if arguments.action == "recover-audit-warn":
+            transition.recover_admission("audit-warn")
+        elif arguments.action == "recover-deny":
+            transition.recover_admission("deny")
+        else:
+            getattr(transition, arguments.action)()
     except (TransitionError, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
         print(f"network policy transition failed closed: {error}", file=sys.stderr)
         return 1

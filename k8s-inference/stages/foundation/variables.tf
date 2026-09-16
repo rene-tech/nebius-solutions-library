@@ -82,6 +82,8 @@ variable "network_policy_boundary" {
     controller_namespace           = optional(string, "envoy-gateway-system")
     security_owner_kubeconfig_path = optional(string)
     security_owner_username        = optional(string, "fs2-network-policy-security-owner")
+    security_handoff_socket_path   = optional(string, "/run/fs2/network-policy-security.sock")
+    security_handoff_public_key    = optional(string)
   })
   default = {}
 
@@ -108,6 +110,22 @@ variable "network_policy_boundary" {
       )
     )
     error_message = "The external security-owner kubeconfig path must be absolute, traversal-free, and distinct from the ordinary deployment kubeconfig."
+  }
+
+  validation {
+    condition = (
+      startswith(var.network_policy_boundary.security_handoff_socket_path, "/") &&
+      !strcontains(var.network_policy_boundary.security_handoff_socket_path, "..")
+    )
+    error_message = "The security handoff socket path must be absolute and traversal-free."
+  }
+
+  validation {
+    condition = (
+      var.network_policy_boundary.security_handoff_public_key == null ||
+      can(regex("^[A-Za-z0-9_-]{43}$", var.network_policy_boundary.security_handoff_public_key))
+    )
+    error_message = "The security handoff public key must be one unpadded base64url Ed25519 public key."
   }
 
   validation {

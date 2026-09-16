@@ -130,33 +130,52 @@ resource "terraform_data" "cluster_contract" {
     }
     precondition {
       condition = try(
-        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract == {
-          schema                         = "fs2-serve.nebius.ai/network-policy-boundary/v1"
-          owner_stage                    = "foundation"
-          deletion_protected             = true
-          external_security_owner        = true
-          mode                           = local.public_edge_enabled ? "public" : "internal-only"
-          gateway_namespace              = local.control_plane_network_policy_gateway_namespace
-          controller_namespace           = local.control_plane_network_policy_controller_namespace
-          service_account                = "fs2-network-policy-transition"
-          security_owner                 = "fs2-network-policy-security-owner"
-          security_owner_kubeconfig_path = "${local.normalized_run_root}/network-policy-security-owner-kubeconfig"
-          lease_name                     = "fs2-network-policy-transition"
-          receipt_name                   = "fs2-network-policy-transition"
-          topology_name                  = "fs2-network-policy-boundary-topology"
-          policy_names = {
-            proxy_normal      = "fs2-serve-control-plane-public-envoy"
-            proxy_guard       = "fs2-serve-control-plane-public-envoy-transition-guard"
-            controller_normal = "fs2-serve-control-plane-envoy-controller-xds"
-            controller_guard  = "fs2-serve-control-plane-envoy-controller-xds-transition-guard"
-            default_deny      = "fs2-serve-control-plane-envoy-default-deny"
-          }
-          admission_policy  = "fs2-network-policy-boundary"
-          admission_binding = "fs2-network-policy-boundary"
-        },
+        setequals(
+          toset(keys(data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract)),
+          toset([
+            "schema", "owner_stage", "deletion_protected", "external_security_owner", "mode",
+            "gateway_namespace", "controller_namespace", "service_account", "security_owner",
+            "security_handoff", "lease_name", "receipt_name", "topology_name", "parameter_name",
+            "policy_names", "admission_policy", "admission_binding",
+          ]),
+        ) &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.schema == "fs2-serve.nebius.ai/network-policy-boundary/v1" &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.owner_stage == "foundation" &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.deletion_protected &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.external_security_owner &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.mode == (local.public_edge_enabled ? "public" : "internal-only") &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.gateway_namespace == local.control_plane_network_policy_gateway_namespace &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.controller_namespace == local.control_plane_network_policy_controller_namespace &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.service_account == "fs2-network-policy-transition" &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_owner == "fs2-network-policy-security-owner" &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.lease_name == "fs2-network-policy-transition" &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.receipt_name == "fs2-network-policy-transition" &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.topology_name == "fs2-network-policy-boundary-topology" &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.parameter_name == "fs2-network-policy-boundary-parameters" &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.policy_names == {
+          proxy_normal      = "fs2-serve-control-plane-public-envoy"
+          proxy_guard       = "fs2-serve-control-plane-public-envoy-transition-guard"
+          controller_normal = "fs2-serve-control-plane-envoy-controller-xds"
+          controller_guard  = "fs2-serve-control-plane-envoy-controller-xds-transition-guard"
+          default_deny      = "fs2-serve-control-plane-envoy-default-deny"
+        } &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.admission_policy == "fs2-network-policy-boundary" &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.admission_binding == "fs2-network-policy-boundary" &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.schema == "fs2-serve.nebius.ai/network-policy-security-handoff/v1" &&
+        startswith(data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.socket_path, "/") &&
+        !strcontains(data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.socket_path, "..") &&
+        can(regex("^[A-Za-z0-9_-]{43}$", data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.public_key)) &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.public_key_sha256 == sha256(data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.public_key) &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.cluster == {
+          api_server_sha256 = sha256(local.selected_api_server)
+          kube_system_uid   = var.kube_system_uid
+        } &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.allowed_actions == ["patch-exact-kubernetes-object", "set-admission-recovery"] &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.recovery_modes == ["Audit", "Warn", "Deny"] &&
+        !data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.delete_allowed,
         false,
       )
-      error_message = "Workloads require the exact deletion-protected foundation NetworkPolicy boundary in the rendered gateway/controller namespaces."
+      error_message = "Workloads require the exact deletion-protected foundation NetworkPolicy boundary and same-cluster signed security handoff."
     }
     precondition {
       condition     = abspath(var.kubeconfig_path) == local.expected_kubeconfig_path

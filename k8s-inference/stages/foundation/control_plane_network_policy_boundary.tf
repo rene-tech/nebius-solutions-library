@@ -8,6 +8,7 @@ locals {
   control_plane_network_policy_security_owner       = var.network_policy_boundary.security_owner_username
   control_plane_network_policy_state_name           = "fs2-network-policy-transition"
   control_plane_network_policy_topology_name        = "fs2-network-policy-boundary-topology"
+  control_plane_network_policy_parameter_name       = "fs2-network-policy-boundary-parameters"
   control_plane_network_policy_gateway_namespace    = var.network_policy_boundary.gateway_namespace
   control_plane_network_policy_controller_namespace = var.network_policy_boundary.controller_namespace
   control_plane_network_policy_security_owner_kubeconfig_path = coalesce(
@@ -26,6 +27,19 @@ locals {
     "app.kubernetes.io/managed-by"          = "terraform"
     "app.kubernetes.io/part-of"             = "fs2-serve"
     "fs2.nebius.ai/network-policy-boundary" = "permanent"
+  }
+  control_plane_network_policy_security_handoff = {
+    schema            = "fs2-serve.nebius.ai/network-policy-security-handoff/v1"
+    socket_path       = var.network_policy_boundary.security_handoff_socket_path
+    public_key        = var.network_policy_boundary.security_handoff_public_key
+    public_key_sha256 = var.network_policy_boundary.security_handoff_public_key == null ? null : sha256(var.network_policy_boundary.security_handoff_public_key)
+    cluster = {
+      api_server_sha256 = sha256(coalesce(local.selected_api_server, ""))
+      kube_system_uid   = var.kube_system_uid
+    }
+    allowed_actions = ["patch-exact-kubernetes-object", "set-admission-recovery"]
+    recovery_modes  = ["Audit", "Warn", "Deny"]
+    delete_allowed  = false
   }
 }
 
@@ -60,13 +74,36 @@ resource "terraform_data" "control_plane_network_policy_security_owner_preflight
         kubectl --kubeconfig "$FS2_SECURITY_KUBECONFIG" --context "$FS2_KUBE_CONTEXT" auth can-i "$@"
       }
       for resource in validatingadmissionpolicies.admissionregistration.k8s.io validatingadmissionpolicybindings.admissionregistration.k8s.io; do
-        for verb in get patch update delete; do
+        test "$(ordinary_can get "$resource/fs2-network-policy-boundary")" = "no"
+        for verb in patch update; do
           test "$(ordinary_can "$verb" "$resource/fs2-network-policy-boundary")" = "no"
           test "$(security_can "$verb" "$resource/fs2-network-policy-boundary")" = "yes"
         done
+        test "$(ordinary_can delete "$resource/fs2-network-policy-boundary")" = "no"
+        test "$(security_can delete "$resource/fs2-network-policy-boundary")" = "no"
         test "$(ordinary_can deletecollection "$resource")" = "no"
         test "$(security_can deletecollection "$resource")" = "no"
       done
+      while IFS='|' read -r namespace resource name; do
+        test "$(ordinary_can get "$resource/$name" --namespace "$namespace")" = "yes"
+        test "$(security_can get "$resource/$name" --namespace "$namespace")" = "yes"
+        for verb in patch update; do
+          test "$(ordinary_can "$verb" "$resource/$name" --namespace "$namespace")" = "no"
+          test "$(security_can "$verb" "$resource/$name" --namespace "$namespace")" = "yes"
+        done
+        test "$(ordinary_can delete "$resource/$name" --namespace "$namespace")" = "no"
+        test "$(security_can delete "$resource/$name" --namespace "$namespace")" = "no"
+        test "$(ordinary_can deletecollection "$resource" --namespace "$namespace")" = "no"
+        test "$(security_can deletecollection "$resource" --namespace "$namespace")" = "no"
+      done <<EOF
+$FS2_GATEWAY_NAMESPACE|networkpolicies.networking.k8s.io|fs2-serve-control-plane-public-envoy-transition-guard
+$FS2_GATEWAY_NAMESPACE|networkpolicies.networking.k8s.io|fs2-serve-control-plane-envoy-default-deny
+$FS2_CONTROLLER_NAMESPACE|networkpolicies.networking.k8s.io|fs2-serve-control-plane-envoy-controller-xds-transition-guard
+fs2-system|configmaps|fs2-network-policy-transition
+fs2-system|configmaps|fs2-network-policy-boundary-topology
+fs2-system|configmaps|fs2-network-policy-boundary-parameters
+fs2-system|leases.coordination.k8s.io|fs2-network-policy-transition
+EOF
       test "$(ordinary_can impersonate "users/$FS2_SECURITY_OWNER_USERNAME")" = "no"
       test "$(ordinary_can create serviceaccounts/fs2-network-policy-transition --subresource=token --namespace fs2-system)" = "no"
       test "$(security_can create validatingadmissionpolicies.admissionregistration.k8s.io)" = "yes"
@@ -78,6 +115,8 @@ resource "terraform_data" "control_plane_network_policy_security_owner_preflight
       FS2_KUBE_CONTEXT            = self.input.kube_context
       FS2_KUBE_SYSTEM_UID         = self.input.kube_system_uid
       FS2_SECURITY_OWNER_USERNAME = local.control_plane_network_policy_security_owner
+      FS2_GATEWAY_NAMESPACE       = local.control_plane_network_policy_gateway_namespace
+      FS2_CONTROLLER_NAMESPACE    = local.control_plane_network_policy_controller_namespace
     }
   }
 
@@ -119,13 +158,49 @@ resource "kubernetes_config_map_v1" "control_plane_network_policy_topology" {
       schema                  = "fs2-serve.nebius.ai/network-policy-boundary-topology/v1"
       mode                    = var.network_policy_boundary.mode
       security_owner_username = local.control_plane_network_policy_security_owner
+      security_handoff        = local.control_plane_network_policy_security_handoff
       gateway_namespace       = local.control_plane_network_policy_gateway_namespace
       controller_namespace    = local.control_plane_network_policy_controller_namespace
       policy_names            = local.control_plane_network_policy_names
     })
   }
 
-  lifecycle { prevent_destroy = true }
+  lifecycle {
+    prevent_destroy = true
+    precondition {
+      condition = (
+        var.network_policy_boundary.mode != "public" ||
+        var.network_policy_boundary.security_handoff_public_key != null
+      )
+      error_message = "Public NetworkPolicy boundaries require the pinned Ed25519 security-handoff public key."
+    }
+  }
+
+  depends_on = [
+    kubernetes_namespace_v1.platform,
+    terraform_data.control_plane_network_policy_security_owner_preflight,
+  ]
+}
+
+resource "kubernetes_config_map_v1" "control_plane_network_policy_boundary_parameters" {
+  provider = kubernetes.network_policy_security_owner
+
+  metadata {
+    name      = local.control_plane_network_policy_parameter_name
+    namespace = "fs2-system"
+    labels    = local.control_plane_network_policy_boundary_labels
+  }
+  data = {
+    schema         = "fs2-serve.nebius.ai/network-policy-boundary-parameters/v1"
+    mode           = "deny"
+    delete_allowed = "false"
+    signer_key_id  = coalesce(local.control_plane_network_policy_security_handoff.public_key_sha256, "unconfigured")
+  }
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = [data]
+  }
 
   depends_on = [
     kubernetes_namespace_v1.platform,
@@ -266,9 +341,8 @@ resource "kubernetes_network_policy_v1" "control_plane_envoy_default_deny" {
     ignore_changes  = [metadata[0].annotations, spec]
   }
 
-  # Creation is allows-first; Terraform reverses this edge on destroy so the
-  # deny is always removed before either permanent allow, even after a partial
-  # apply where the completion destroy provisioner was never created.
+  # Creation is allows-first. All three objects are permanently retained and
+  # every identity in this boundary is denied delete/deletecollection.
   depends_on = [
     kubernetes_network_policy_v1.control_plane_public_envoy_boundary,
     kubernetes_network_policy_v1.control_plane_envoy_controller_boundary,
@@ -295,14 +369,18 @@ resource "kubernetes_role_v1" "control_plane_network_policy_transition_state" {
     resource_names = [
       local.control_plane_network_policy_state_name,
       local.control_plane_network_policy_topology_name,
+      local.control_plane_network_policy_parameter_name,
     ]
     verbs = ["get"]
   }
   rule {
-    api_groups     = [""]
-    resources      = ["configmaps"]
-    resource_names = [local.control_plane_network_policy_state_name]
-    verbs          = ["get", "patch", "update"]
+    api_groups = [""]
+    resources  = ["configmaps"]
+    resource_names = [
+      local.control_plane_network_policy_state_name,
+      local.control_plane_network_policy_parameter_name,
+    ]
+    verbs = ["get", "patch", "update"]
   }
 
   lifecycle { prevent_destroy = true }
@@ -318,16 +396,10 @@ resource "kubernetes_cluster_role_v1" "control_plane_network_policy_security_own
     labels = local.control_plane_network_policy_boundary_labels
   }
   rule {
-    api_groups     = ["networking.k8s.io"]
-    resources      = ["networkpolicies"]
-    resource_names = values(local.control_plane_network_policy_names)
-    verbs          = ["get", "patch", "update", "delete"]
-  }
-  rule {
     api_groups     = ["admissionregistration.k8s.io"]
     resources      = ["validatingadmissionpolicies", "validatingadmissionpolicybindings"]
     resource_names = ["fs2-network-policy-boundary"]
-    verbs          = ["get", "patch", "update", "delete"]
+    verbs          = ["get", "patch", "update"]
   }
   rule {
     api_groups = [""]
@@ -338,33 +410,7 @@ resource "kubernetes_cluster_role_v1" "control_plane_network_policy_security_own
       local.control_plane_network_policy_gateway_namespace,
       local.control_plane_network_policy_controller_namespace,
     ])
-    verbs = ["get", "patch", "update", "delete"]
-  }
-  rule {
-    api_groups = [""]
-    resources  = ["configmaps"]
-    resource_names = [
-      local.control_plane_network_policy_state_name,
-      local.control_plane_network_policy_topology_name,
-    ]
-    verbs = ["get", "patch", "update", "delete"]
-  }
-  rule {
-    api_groups     = ["coordination.k8s.io"]
-    resources      = ["leases"]
-    resource_names = [local.control_plane_network_policy_state_name]
-    verbs          = ["get", "patch", "update", "delete"]
-  }
-  rule {
-    api_groups = ["rbac.authorization.k8s.io"]
-    resources  = ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
-    resource_names = [
-      local.control_plane_network_policy_state_name,
-      "${local.control_plane_network_policy_state_name}-gateway",
-      "${local.control_plane_network_policy_state_name}-controller",
-      local.control_plane_network_policy_security_owner,
-    ]
-    verbs = ["get", "patch", "update", "delete"]
+    verbs = ["get"]
   }
 
   lifecycle { prevent_destroy = true }
@@ -543,6 +589,10 @@ resource "kubernetes_manifest" "control_plane_network_policy_boundary_admission"
     }
     spec = {
       failurePolicy = "Fail"
+      paramKind = {
+        apiVersion = "v1"
+        kind       = "ConfigMap"
+      }
       matchConstraints = {
         resourceRules = [{
           apiGroups   = ["*"]
@@ -559,14 +609,17 @@ resource "kubernetes_manifest" "control_plane_network_policy_boundary_admission"
       validations = [
         {
           expression = <<-CEL
-            request.operation != 'DELETE' || (
-              request.userInfo.username == '${local.control_plane_network_policy_security_owner}' &&
-              has(oldObject.metadata.annotations) &&
-              'fs2.nebius.ai/decommission-receipt-sha256' in oldObject.metadata.annotations &&
-              oldObject.metadata.annotations['fs2.nebius.ai/decommission-receipt-sha256'].matches('^[0-9a-f]{64}$')
-            )
+            has(params) &&
+            params.data['schema'] == 'fs2-serve.nebius.ai/network-policy-boundary-parameters/v1' &&
+            params.data['delete_allowed'] == 'false' &&
+            params.data['mode'] in ['deny', 'audit-warn']
           CEL
-          message    = "permanent boundary deletion requires the external security owner and a bound decommission receipt"
+          message    = "permanent boundary parameters must remain signed-handoff governed and deletion-disabled"
+          reason     = "Forbidden"
+        },
+        {
+          expression = "request.operation != 'DELETE'"
+          message    = "permanent boundary objects are never deleted"
           reason     = "Forbidden"
         },
         {
@@ -607,12 +660,20 @@ resource "kubernetes_manifest" "control_plane_network_policy_boundary_admission_
       labels = local.control_plane_network_policy_boundary_labels
     }
     spec = {
-      policyName        = "fs2-network-policy-boundary"
+      policyName = "fs2-network-policy-boundary"
+      paramRef = {
+        name                    = local.control_plane_network_policy_parameter_name
+        namespace               = "fs2-system"
+        parameterNotFoundAction = "Deny"
+      }
       validationActions = ["Deny"]
     }
   }
 
-  lifecycle { prevent_destroy = true }
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = [manifest.spec.validationActions]
+  }
 
   depends_on = [
     kubernetes_manifest.control_plane_network_policy_boundary_admission,
@@ -622,6 +683,7 @@ resource "kubernetes_manifest" "control_plane_network_policy_boundary_admission_
     kubernetes_config_map_v1.control_plane_network_policy_transition_receipt,
     kubernetes_manifest.control_plane_network_policy_transition_lease,
     kubernetes_config_map_v1.control_plane_network_policy_topology,
+    kubernetes_config_map_v1.control_plane_network_policy_boundary_parameters,
     kubernetes_cluster_role_binding_v1.control_plane_network_policy_security_owner,
   ]
 }
