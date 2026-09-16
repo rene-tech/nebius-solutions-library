@@ -296,8 +296,9 @@ resource "kubernetes_manifest" "kueue_admission_acceptance" {
       name      = "fs2-terraform-kueue-acceptance"
       namespace = "fs2-models"
       labels = merge(local.common_labels, {
-        "app.kubernetes.io/component" = "acceptance"
-        "kueue.x-k8s.io/queue-name"   = local.selected_accelerator_pool_profile.queue.local_queue_name
+        "app.kubernetes.io/component"               = "acceptance"
+        (local.model_runtime_network_profile_label) = "acceptance-zero-egress-v1"
+        "kueue.x-k8s.io/queue-name"                 = local.selected_accelerator_pool_profile.queue.local_queue_name
       })
     }
     spec = {
@@ -309,7 +310,10 @@ resource "kubernetes_manifest" "kueue_admission_acceptance" {
       completionMode        = "NonIndexed"
       template = {
         metadata = {
-          labels = merge(local.common_labels, { "app.kubernetes.io/component" = "acceptance" })
+          labels = merge(local.common_labels, {
+            "app.kubernetes.io/component"               = "acceptance"
+            (local.model_runtime_network_profile_label) = "acceptance-zero-egress-v1"
+          })
         }
         spec = {
           restartPolicy                = "Never"

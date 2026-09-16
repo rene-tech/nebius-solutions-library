@@ -35,9 +35,10 @@ locals {
   # alone makes every in-cluster placement load fail before it can read the
   # mounted override.
   tools_files = {
-    "placement-contract.json" = file("${path.module}/../placement-contract.json")
-    "reference_data.py"       = file("${path.module}/../reference_data.py")
-    "verify_csi_readiness.py" = file("${path.module}/../verify_csi_readiness.py")
+    "placement-contract.json"         = file("${path.module}/../placement-contract.json")
+    "reference_data.py"               = file("${path.module}/../reference_data.py")
+    "verify_checkpoint_durability.py" = file("${path.module}/../verify_checkpoint_durability.py")
+    "verify_csi_readiness.py"         = file("${path.module}/../verify_csi_readiness.py")
   }
   tools_sha256     = sha256(jsonencode(local.tools_files))
   tools_config_map = "fs2-reference-data-tools-${substr(local.tools_sha256, 0, 12)}"
@@ -50,8 +51,8 @@ locals {
   source_catalog        = jsondecode(file("${path.module}/../source-catalog.json"))
   source_catalog_sha256 = filesha256("${path.module}/../source-catalog.json")
   selected_bundle       = local.source_catalog.bundles[var.pipeline.bundle_id]
-  read_probe_name = var.expected_tree_sha256 == null ? "fs2-reference-data-read-probe-disabled" : (
-    "fs2-reference-data-read-probe-${substr(var.expected_tree_sha256, 0, 12)}"
+  read_probe_name = var.expected_tree_sha256 == null || var.proof_challenge == null ? "fs2-reference-data-read-probe-disabled" : (
+    "fs2-reference-data-read-probe-${substr(var.expected_tree_sha256, 0, 12)}-${substr(sha256(var.proof_challenge), 0, 12)}"
   )
   read_probe_receipt = "receipts/${var.pipeline.bundle_id}/${local.selected_bundle.revision}.json"
   pipeline_command = [
@@ -425,9 +426,10 @@ resource "terraform_data" "region_contract" {
     precondition {
       condition = !local.csi_storage_enabled || (
         can(regex("^[a-f0-9]{64}$", var.expected_tree_sha256)) &&
+        can(regex("^[a-z0-9][a-z0-9._-]{15,127}$", var.proof_challenge)) &&
         can(regex("^[^@[:space:]]+@sha256:[a-f0-9]{64}$", var.status.image))
       )
-      error_message = "Every CSI migration phase requires an exact expected tree and digest-pinned read-probe image."
+      error_message = "Every CSI migration phase requires an exact expected tree, one-use signed proof challenge, and digest-pinned read-probe image."
     }
     precondition {
       condition = (
@@ -552,8 +554,12 @@ resource "kubernetes_job_v1" "csi_read_probe" {
       "app.kubernetes.io/component" = "reference-data-csi-read-probe"
     })
     annotations = {
-      "reference-data.fs2.nebius.ai/tree-sha256" = var.expected_tree_sha256
-      "reference-data.fs2.nebius.ai/receipt"     = local.read_probe_receipt
+      "reference-data.fs2.nebius.ai/tree-sha256"          = var.expected_tree_sha256
+      "reference-data.fs2.nebius.ai/receipt"              = local.read_probe_receipt
+      "reference-data.fs2.nebius.ai/pvc-uid"              = kubernetes_persistent_volume_claim_v1.reference_data.metadata[0].uid
+      "reference-data.fs2.nebius.ai/pvc-resource-version" = kubernetes_persistent_volume_claim_v1.reference_data.metadata[0].resource_version
+      "reference-data.fs2.nebius.ai/volume-name"          = kubernetes_persistent_volume_claim_v1.reference_data.spec[0].volume_name
+      "reference-data.fs2.nebius.ai/proof-challenge"      = var.proof_challenge
     }
   }
 
@@ -598,7 +604,14 @@ resource "kubernetes_job_v1" "csi_read_probe" {
             "--bundle", var.pipeline.bundle_id,
             "--revision", local.selected_bundle.revision,
             "--tree-sha256", var.expected_tree_sha256,
+            "--pvc-uid", kubernetes_persistent_volume_claim_v1.reference_data.metadata[0].uid,
+            "--pvc-resource-version", kubernetes_persistent_volume_claim_v1.reference_data.metadata[0].resource_version,
+            "--volume-name", kubernetes_persistent_volume_claim_v1.reference_data.spec[0].volume_name,
+            "--challenge", var.proof_challenge,
+            "--proof-output", "/dev/termination-log",
           ]
+          termination_message_path   = "/dev/termination-log"
+          termination_message_policy = "File"
           resources {
             requests = { cpu = "50m", memory = "64Mi", "ephemeral-storage" = "64Mi" }
             limits   = { cpu = "250m", memory = "256Mi", "ephemeral-storage" = "256Mi" }

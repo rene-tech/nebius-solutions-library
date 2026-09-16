@@ -285,7 +285,6 @@ class ResourceEndpoint:
 
 
 RESOURCE_ENDPOINTS = {
-    ("v1", "PersistentVolumeClaim"): ResourceEndpoint("v1", "PersistentVolumeClaim", "persistentvolumeclaims"),
     ("v1", "Service"): ResourceEndpoint("v1", "Service", "services"),
     ("apps/v1", "Deployment"): ResourceEndpoint("apps/v1", "Deployment", "deployments"),
     ("keda.sh/v1alpha1", "ScaledObject"): ResourceEndpoint("keda.sh/v1alpha1", "ScaledObject", "scaledobjects"),

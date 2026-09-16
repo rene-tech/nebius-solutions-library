@@ -8,6 +8,9 @@ locals {
     reference_host_paths            = 0
     baseline_incompatible_objects   = 0
     restricted_incompatible_objects = 0
+    collections                     = []
+    objects                         = []
+    legacy_controller_objects       = []
   }
   pod_security_legacy_cleanup_names = {
     networkpolicies = sort([
@@ -35,10 +38,12 @@ locals {
     data.kubernetes_config_map_v1.reference_data_retained_context[0].data["context.json"]
     ) : {
     pvc = {
-      namespace     = "fs2-reference-data"
-      name          = "fs2-reference-data-rwx"
-      uid           = "prepare"
-      storage_class = "fs2-reference-data-retained-sc"
+      namespace        = "fs2-reference-data"
+      name             = "fs2-reference-data-rwx"
+      uid              = "prepare"
+      resource_version = "prepare"
+      volume_name      = "prepare"
+      storage_class    = "fs2-reference-data-retained-sc"
     }
     storage = {
       filesystem_id   = "prepare"
@@ -46,6 +51,13 @@ locals {
       claim_size_gib  = 0
       forbid_deletion = false
       retention_mode  = "prepare"
+    }
+    evidence = {
+      read_proof_schema       = "fs2-serve.nebius.ai/reference-data-csi-readiness/v2"
+      checkpoint_proof_schema = "fs2-serve.nebius.ai/checkpoint-durability-proof/v1"
+      probe_image             = "prepare.invalid@sha256:${strrep("0", 64)}"
+      tools_config_map        = "fs2-reference-data-tools-prepare"
+      tools_data_sha256       = strrep("0", 64)
     }
   }
   pod_security_receipt_context = {
@@ -104,13 +116,22 @@ locals {
       },
     ]
     pvc = {
-      namespace     = local.pod_security_retained_context.pvc.namespace
-      name          = local.pod_security_retained_context.pvc.name
-      uid           = local.pod_security_retained_context.pvc.uid
-      storage_class = local.pod_security_retained_context.pvc.storage_class
+      namespace        = local.pod_security_retained_context.pvc.namespace
+      name             = local.pod_security_retained_context.pvc.name
+      uid              = local.pod_security_retained_context.pvc.uid
+      resource_version = local.pod_security_retained_context.pvc.resource_version
+      volume_name      = local.pod_security_retained_context.pvc.volume_name
+      storage_class    = local.pod_security_retained_context.pvc.storage_class
     }
     dataset = var.pod_security_dataset
     storage = local.pod_security_retained_context.storage
+    storage_evidence = {
+      read_proof_schema       = local.pod_security_retained_context.evidence.read_proof_schema
+      checkpoint_proof_schema = local.pod_security_retained_context.evidence.checkpoint_proof_schema
+      probe_image             = local.pod_security_retained_context.evidence.probe_image
+      tools_config_map        = local.pod_security_retained_context.evidence.tools_config_map
+      tools_data_sha256       = local.pod_security_retained_context.evidence.tools_data_sha256
+    }
     baseline = {
       schema                          = local.pod_security_baseline_artifact.schema
       artifact_sha256                 = local.pod_security_receipt_required ? filesha256(var.pod_security_rollout_receipt.baseline_artifact_path) : ""
@@ -202,6 +223,8 @@ resource "terraform_data" "pod_security_rollout_contract" {
     precondition {
       condition = !local.pod_security_receipt_required || (
         local.pod_security_retained_context.pvc.uid == data.kubernetes_persistent_volume_claim_v1.reference_data[0].metadata[0].uid &&
+        local.pod_security_retained_context.pvc.resource_version == data.kubernetes_persistent_volume_claim_v1.reference_data[0].metadata[0].resource_version &&
+        local.pod_security_retained_context.pvc.volume_name == data.kubernetes_persistent_volume_claim_v1.reference_data[0].spec[0].volume_name &&
         local.pod_security_retained_context.pvc.storage_class == data.kubernetes_persistent_volume_claim_v1.reference_data[0].spec[0].storage_class_name &&
         local.pod_security_retained_context.storage.retention_mode == "retain" &&
         local.pod_security_retained_context.storage.forbid_deletion

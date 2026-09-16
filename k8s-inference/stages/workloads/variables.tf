@@ -1351,6 +1351,90 @@ variable "model_runtime_overrides" {
   }
 }
 
+variable "model_runtime_network_policy" {
+  description = "Phased fs2-models isolation contract. Enforcement requires an apply-time-verified workload, Pod, admission and live-controller receipt; Helm rollback requires a later receipt proving default-deny was removed first."
+  type = object({
+    phase = optional(string, "prepare")
+    inventory_receipt = optional(object({
+      schema          = string
+      cluster_id      = string
+      namespace       = string
+      captured_at     = string
+      profiles_sha256 = string
+      resource_apis   = map(bool)
+      workloads = map(object({
+        uid        = string
+        generation = number
+        profile    = string
+        rollout    = map(number)
+      }))
+      pods = map(object({
+        uid        = string
+        profile    = string
+        owner_kind = string
+        owner_uid  = string
+        phase      = string
+        ready      = bool
+      }))
+      live_controller = object({
+        deployment_name     = string
+        deployment_uid      = string
+        generation          = number
+        observed_generation = number
+        image               = string
+        rollout             = map(number)
+        pods = map(object({
+          uid      = string
+          image_id = string
+          ready    = bool
+        }))
+      })
+      admission_bindings = map(string)
+      payload_sha256     = string
+    }), null)
+    deny_absent_receipt = optional(object({
+      schema                     = string
+      cluster_id                 = string
+      namespace                  = string
+      captured_at                = string
+      enforcement_payload_sha256 = string
+      profiles_sha256            = string
+      allow_policy_names         = list(string)
+      default_deny_absent        = bool
+      payload_sha256             = string
+    }), null)
+  })
+  default  = {}
+  nullable = false
+
+  validation {
+    condition = contains([
+      "prepare",
+      "inventory",
+      "enforce",
+      "rollback-remove-deny",
+      "rollback-helm",
+    ], var.model_runtime_network_policy.phase)
+    error_message = "model_runtime_network_policy.phase must be prepare, inventory, enforce, rollback-remove-deny, or rollback-helm."
+  }
+
+  validation {
+    condition = (
+      contains(["prepare", "inventory"], var.model_runtime_network_policy.phase) ? (
+        var.model_runtime_network_policy.inventory_receipt == null &&
+        var.model_runtime_network_policy.deny_absent_receipt == null
+        ) : var.model_runtime_network_policy.phase == "rollback-helm" ? (
+        var.model_runtime_network_policy.inventory_receipt != null &&
+        var.model_runtime_network_policy.deny_absent_receipt != null
+        ) : (
+        var.model_runtime_network_policy.inventory_receipt != null &&
+        var.model_runtime_network_policy.deny_absent_receipt == null
+      )
+    )
+    error_message = "prepare and inventory accept no receipts; enforce and rollback-remove-deny require only the inventory receipt; rollback-helm requires both receipts."
+  }
+}
+
 variable "model_scaling_mode" {
   description = "Replica owner for routed GPU Deployments. static preserves manifest replicas; keda scales from durable PostgreSQL operation demand."
   type        = string

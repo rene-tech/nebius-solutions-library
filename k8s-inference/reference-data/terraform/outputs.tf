@@ -20,12 +20,14 @@ output "storage_contract" {
 output "retained_claim_context" {
   description = "Non-secret immutable identity of the retained RWX claim used by signed PSA rollout receipts."
   value = {
-    namespace     = kubernetes_persistent_volume_claim_v1.reference_data.metadata[0].namespace
-    name          = kubernetes_persistent_volume_claim_v1.reference_data.metadata[0].name
-    uid           = kubernetes_persistent_volume_claim_v1.reference_data.metadata[0].uid
-    storage_class = kubernetes_persistent_volume_claim_v1.reference_data.spec[0].storage_class_name
-    requested_gib = var.filesystem_claim.size_gib
-    capacity_gib  = var.filesystem_claim.capacity_gib
+    namespace        = kubernetes_persistent_volume_claim_v1.reference_data.metadata[0].namespace
+    name             = kubernetes_persistent_volume_claim_v1.reference_data.metadata[0].name
+    uid              = kubernetes_persistent_volume_claim_v1.reference_data.metadata[0].uid
+    resource_version = kubernetes_persistent_volume_claim_v1.reference_data.metadata[0].resource_version
+    volume_name      = kubernetes_persistent_volume_claim_v1.reference_data.spec[0].volume_name
+    storage_class    = kubernetes_persistent_volume_claim_v1.reference_data.spec[0].storage_class_name
+    requested_gib    = var.filesystem_claim.size_gib
+    capacity_gib     = var.filesystem_claim.capacity_gib
   }
 }
 
@@ -37,6 +39,17 @@ output "csi_read_probe" {
     expected_tree_sha256 = var.expected_tree_sha256
     receipt_sub_path     = local.read_probe_receipt
   } : null
+}
+
+output "proof_contract" {
+  description = "Content-addressed immutable tools and digest-pinned runtime required by storage execution proofs."
+  value = {
+    read_proof_schema       = "fs2-serve.nebius.ai/reference-data-csi-readiness/v2"
+    checkpoint_proof_schema = "fs2-serve.nebius.ai/checkpoint-durability-proof/v1"
+    probe_image             = var.status.image
+    tools_config_map        = local.tools_config_map
+    tools_data_sha256       = local.tools_sha256
+  }
 }
 
 output "object_storage_secret_name" {

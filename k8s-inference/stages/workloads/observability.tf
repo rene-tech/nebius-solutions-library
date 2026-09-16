@@ -52,14 +52,16 @@ locals {
 # versioned, immutable, and retained. Helm only mounts these Terraform-owned
 # objects; it never creates a mutable fixed-name telemetry ConfigMap.
 resource "kubernetes_config_map_v1" "dcgm_metrics" {
-  for_each = merge(
-    var.deployment_profile == "full_catalog" && local.legacy_host_agents_enabled ? { "fs2-observability" = true } : {},
-    var.deployment_profile == "full_catalog" && local.exception_host_agents_enabled ? { "fs2-node-observability" = true } : {},
-  )
+  # Retain both immutable generations across every rollout and rollback phase.
+  # Only the Helm consumers are phase-conditioned.
+  for_each = var.deployment_profile == "full_catalog" ? toset([
+    "fs2-observability",
+    "fs2-node-observability",
+  ]) : toset([])
 
   metadata {
     name      = local.dcgm_metrics_config_name
-    namespace = each.key
+    namespace = each.value
     labels = merge(local.common_labels, {
       "app.kubernetes.io/component" = "dcgm-metrics-config"
     })
@@ -77,14 +79,14 @@ resource "kubernetes_config_map_v1" "dcgm_metrics" {
 }
 
 resource "kubernetes_config_map_v1" "dcgm_cold_config" {
-  for_each = merge(
-    var.deployment_profile == "full_catalog" && local.legacy_host_agents_enabled ? { "fs2-observability" = true } : {},
-    var.deployment_profile == "full_catalog" && local.exception_host_agents_enabled ? { "fs2-node-observability" = true } : {},
-  )
+  for_each = var.deployment_profile == "full_catalog" ? toset([
+    "fs2-observability",
+    "fs2-node-observability",
+  ]) : toset([])
 
   metadata {
     name      = local.dcgm_cold_config_map_name
-    namespace = each.key
+    namespace = each.value
     labels = merge(local.common_labels, {
       "app.kubernetes.io/component" = "dcgm-cold-config"
     })

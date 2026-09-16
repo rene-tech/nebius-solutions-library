@@ -181,6 +181,18 @@ variable "expected_tree_sha256" {
   }
 }
 
+variable "proof_challenge" {
+  description = "One-use signed rollout nonce bound into the retained-PVC execution proof."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.proof_challenge == null || can(regex("^[a-z0-9][a-z0-9._-]{15,127}$", var.proof_challenge))
+    error_message = "proof_challenge must be null during prepare or a bounded canonical rollout nonce."
+  }
+}
+
 variable "pod_security_rollout_verification" {
   description = "Output of the canonical signed rollout-gate module in the owning workloads stage."
   type = object({

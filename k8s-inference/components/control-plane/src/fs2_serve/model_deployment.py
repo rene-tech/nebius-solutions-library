@@ -2505,6 +2505,12 @@ class LegacyManifestRenderer:
             }
             if forbidden_metadata.intersection(metadata):
                 raise ValueError("legacy template contains controller-owned metadata")
+            # PVCs in qualified legacy bundles are references to pre-provisioned
+            # Terraform-owned storage. They remain valid template dependencies,
+            # but are never adopted, labelled, owner-referenced, discovered, or
+            # mutated by the model controller.
+            if kind == "PersistentVolumeClaim":
+                continue
             metadata["labels"] = {**metadata.get("labels", {}), **labels}
             metadata["annotations"] = {**metadata.get("annotations", {}), **annotations}
             if owner_references:

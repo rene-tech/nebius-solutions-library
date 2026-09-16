@@ -103,6 +103,8 @@ def context() -> dict[str, object]:
             "namespace": "fs2-reference-data",
             "name": "fs2-reference-data-rwx",
             "uid": "pvc-test-uid",
+            "resource_version": "1001",
+            "volume_name": "pv-reference-data-test",
             "storage_class": "fs2-reference-data-retained-sc",
         },
         "dataset": {
@@ -116,6 +118,13 @@ def context() -> dict[str, object]:
             "claim_size_gib": 1611,
             "forbid_deletion": True,
             "retention_mode": "retain",
+        },
+        "storage_evidence": {
+            "read_proof_schema": "fs2-serve.nebius.ai/reference-data-csi-readiness/v2",
+            "checkpoint_proof_schema": "fs2-serve.nebius.ai/checkpoint-durability-proof/v1",
+            "probe_image": "registry.invalid/fs2/reference-data@sha256:" + "f" * 64,
+            "tools_config_map": "fs2-reference-data-tools-test",
+            "tools_data_sha256": hashlib.sha256(canonical({"verify": "content"})).hexdigest(),
         },
     }
 
@@ -172,6 +181,261 @@ def observation(value: dict[str, object]) -> dict[str, object]:
         "resource_version": metadata["resourceVersion"],
         "object_sha256": hashlib.sha256(canonical(verifier._live_projection(value))).hexdigest(),
     }
+
+
+def read_probe_objects(
+    context: dict[str, object],
+    claim: dict[str, object],
+    namespace: str,
+    claim_name: str,
+    prefix: str,
+    ordinal: int,
+) -> list[dict[str, object]]:
+    dataset = context["dataset"]
+    evidence = context["storage_evidence"]
+    assert isinstance(dataset, dict) and isinstance(evidence, dict)
+    claim_metadata = claim["metadata"]
+    claim_spec = claim["spec"]
+    assert isinstance(claim_metadata, dict) and isinstance(claim_spec, dict)
+    receipt = f"receipts/{dataset['id']}/{dataset['revision']}.json"
+    annotations = {
+        "reference-data.fs2.nebius.ai/tree-sha256": dataset["tree_sha256"],
+        "reference-data.fs2.nebius.ai/receipt": receipt,
+        "reference-data.fs2.nebius.ai/pvc-uid": claim_metadata["uid"],
+        "reference-data.fs2.nebius.ai/pvc-resource-version": claim_metadata["resourceVersion"],
+        "reference-data.fs2.nebius.ai/volume-name": claim_spec["volumeName"],
+        "reference-data.fs2.nebius.ai/proof-challenge": context["deployment_nonce"],
+        "security.fs2.nebius.ai/verified-tree-sha256": dataset["tree_sha256"],
+    }
+    command = [
+        "python",
+        "/opt/fs2/reference-data/verify_csi_readiness.py",
+        "--root",
+        "/reference-data",
+        "--receipt",
+        receipt,
+        "--bundle",
+        dataset["id"],
+        "--revision",
+        dataset["revision"],
+        "--tree-sha256",
+        dataset["tree_sha256"],
+        "--pvc-uid",
+        claim_metadata["uid"],
+        "--pvc-resource-version",
+        claim_metadata["resourceVersion"],
+        "--volume-name",
+        claim_spec["volumeName"],
+        "--challenge",
+        context["deployment_nonce"],
+        "--proof-output",
+        "/dev/termination-log",
+    ]
+    container = {
+        "name": "read-probe",
+        "image": evidence["probe_image"],
+        "command": command,
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File",
+    }
+    pod_spec = {
+        "serviceAccountName": "fs2-reference-data",
+        "automountServiceAccountToken": False,
+        "containers": [container],
+        "volumes": [
+            {
+                "name": "reference-data",
+                "persistentVolumeClaim": {"claimName": claim_name, "readOnly": True},
+            },
+            {
+                "name": "tools",
+                "configMap": {"name": evidence["tools_config_map"]},
+            },
+        ],
+    }
+    job = live_object("batch/v1", "Job", namespace, verifier._probe_name(prefix, context), ordinal)
+    job_metadata = job["metadata"]
+    assert isinstance(job_metadata, dict)
+    job_metadata["annotations"] = annotations
+    job["spec"] = {"template": {"spec": pod_spec}}
+    job["status"] = {"succeeded": 1, "conditions": [{"type": "Complete", "status": "True"}]}
+    proof: dict[str, object] = {
+        "schema": evidence["read_proof_schema"],
+        "bundle_id": dataset["id"],
+        "revision": dataset["revision"],
+        "tree_sha256": dataset["tree_sha256"],
+        "receipt_sha256": "a" * 64,
+        "manifest_sha256": "b" * 64,
+        "read_probe_passed": True,
+        "pvc": {
+            "uid": claim_metadata["uid"],
+            "resource_version": claim_metadata["resourceVersion"],
+            "volume_name": claim_spec["volumeName"],
+        },
+        "challenge": context["deployment_nonce"],
+    }
+    proof["proof_sha256"] = hashlib.sha256(canonical(proof)).hexdigest()
+    pod = live_object("v1", "Pod", namespace, f"{verifier._probe_name(prefix, context)}-pod", ordinal + 1)
+    pod_metadata = pod["metadata"]
+    assert isinstance(pod_metadata, dict)
+    pod_metadata["ownerReferences"] = [
+        {
+            "apiVersion": "batch/v1",
+            "kind": "Job",
+            "name": job_metadata["name"],
+            "uid": job_metadata["uid"],
+            "controller": True,
+        }
+    ]
+    pod["spec"] = pod_spec
+    pod["status"] = {
+        "containerStatuses": [
+            {
+                "name": "read-probe",
+                "image": evidence["probe_image"],
+                "imageID": "docker-pullable://" + str(evidence["probe_image"]),
+                "state": {
+                    "terminated": {
+                        "exitCode": 0,
+                        "message": json.dumps(proof, sort_keys=True, separators=(",", ":")),
+                    }
+                },
+            }
+        ]
+    }
+    return [job, pod]
+
+
+def storage_tools(context: dict[str, object], namespace: str, ordinal: int) -> dict[str, object]:
+    evidence = context["storage_evidence"]
+    assert isinstance(evidence, dict)
+    config = live_object("v1", "ConfigMap", namespace, str(evidence["tools_config_map"]), ordinal)
+    config["immutable"] = True
+    config["data"] = {"verify": "content"}
+    return config
+
+
+def checkpoint_probe_objects(
+    context: dict[str, object],
+    claim: dict[str, object],
+    mode: str,
+    ordinal: int,
+) -> list[dict[str, object]]:
+    evidence = context["storage_evidence"]
+    claim_metadata = claim["metadata"]
+    claim_spec = claim["spec"]
+    assert isinstance(evidence, dict) and isinstance(claim_metadata, dict) and isinstance(claim_spec, dict)
+    identity = {
+        "uid": claim_metadata["uid"],
+        "resource_version": claim_metadata["resourceVersion"],
+        "volume_name": claim_spec["volumeName"],
+    }
+    command = [
+        "python",
+        "/opt/fs2/reference-data/verify_checkpoint_durability.py",
+        mode,
+        "--root",
+        "/checkpoints",
+        "--pvc-uid",
+        identity["uid"],
+        "--pvc-resource-version",
+        identity["resource_version"],
+        "--volume-name",
+        identity["volume_name"],
+        "--challenge",
+        context["deployment_nonce"],
+        "--proof-output",
+        "/dev/termination-log",
+    ]
+    container = {
+        "name": "durability-proof",
+        "image": evidence["probe_image"],
+        "command": command,
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File",
+    }
+    pod_spec = {
+        "automountServiceAccountToken": False,
+        "containers": [container],
+        "volumes": [
+            {
+                "name": "checkpoints",
+                "persistentVolumeClaim": {
+                    "claimName": verifier.SNAPSHOT_CHECKPOINT_CLAIM[1],
+                    "readOnly": mode == "read",
+                },
+            },
+            {"name": "tools", "configMap": {"name": evidence["tools_config_map"]}},
+        ],
+    }
+    job = live_object(
+        "batch/v1",
+        "Job",
+        verifier.SNAPSHOT_CHECKPOINT_CLAIM[0],
+        verifier._checkpoint_probe_name(mode, context),
+        ordinal,
+    )
+    job_metadata = job["metadata"]
+    assert isinstance(job_metadata, dict)
+    job_metadata["annotations"] = {
+        "security.fs2.nebius.ai/pvc-uid": identity["uid"],
+        "security.fs2.nebius.ai/pvc-resource-version": identity["resource_version"],
+        "security.fs2.nebius.ai/volume-name": identity["volume_name"],
+        "security.fs2.nebius.ai/proof-challenge": context["deployment_nonce"],
+        "security.fs2.nebius.ai/proof-mode": mode,
+    }
+    job["spec"] = {"template": {"spec": pod_spec}}
+    job["status"] = {"succeeded": 1, "conditions": [{"type": "Complete", "status": "True"}]}
+    marker = {
+        "schema": "fs2-serve.nebius.ai/checkpoint-durability-marker/v1",
+        "pvc": identity,
+        "challenge": context["deployment_nonce"],
+    }
+    proof: dict[str, object] = {
+        "schema": evidence["checkpoint_proof_schema"],
+        "mode": mode,
+        "pvc": identity,
+        "challenge": context["deployment_nonce"],
+        "marker_sha256": hashlib.sha256(canonical(marker) + b"\n").hexdigest(),
+    }
+    proof["proof_sha256"] = hashlib.sha256(canonical(proof)).hexdigest()
+    pod = live_object(
+        "v1",
+        "Pod",
+        verifier.SNAPSHOT_CHECKPOINT_CLAIM[0],
+        f"{verifier._checkpoint_probe_name(mode, context)}-pod",
+        ordinal + 1,
+    )
+    pod_metadata = pod["metadata"]
+    assert isinstance(pod_metadata, dict)
+    pod_metadata["ownerReferences"] = [
+        {
+            "apiVersion": "batch/v1",
+            "kind": "Job",
+            "name": job_metadata["name"],
+            "uid": job_metadata["uid"],
+            "controller": True,
+        }
+    ]
+    pod["spec"] = pod_spec
+    finished_at = NOW + dt.timedelta(seconds=1 if mode == "write" else 2)
+    pod["status"] = {
+        "containerStatuses": [
+            {
+                "name": "durability-proof",
+                "image": evidence["probe_image"],
+                "imageID": "docker-pullable://" + str(evidence["probe_image"]),
+                "state": {
+                    "terminated": {
+                        "exitCode": 0,
+                        "finishedAt": finished_at.isoformat().replace("+00:00", "Z"),
+                        "message": json.dumps(proof, sort_keys=True, separators=(",", ":")),
+                    }
+                },
+            }
+        ]
+    }
+    return [job, pod]
 
 
 def exception_objects() -> list[dict[str, object]]:
@@ -266,42 +530,6 @@ def exception_objects() -> list[dict[str, object]]:
             config = configs[value["metadata"]["name"]]  # type: ignore[index]
             value["immutable"] = True
             value["data"] = config_data[config["component"]]
-    ordinal = len(objects) + 1
-    pvc = live_object("v1", "PersistentVolumeClaim", "fs2-reference-data", "fs2-reference-data-rwx", ordinal)
-    pvc["metadata"]["uid"] = "pvc-test-uid"  # type: ignore[index]
-    pvc["spec"] = {
-        "accessModes": ["ReadWriteMany"],
-        "storageClassName": "fs2-reference-data-retained-sc",
-        "resources": {"requests": {"storage": "1611Gi"}},
-    }
-    pvc["status"] = {"phase": "Bound"}
-    storage_class = live_object(
-        "storage.k8s.io/v1",
-        "StorageClass",
-        "",
-        "fs2-reference-data-retained-sc",
-        ordinal + 1,
-    )
-    storage_class["reclaimPolicy"] = "Retain"
-    probe = live_object(
-        "batch/v1",
-        "Job",
-        "fs2-reference-data",
-        "fs2-reference-data-read-probe-bbbbbbbbbbbb",
-        ordinal + 2,
-    )
-    probe["status"] = {
-        "succeeded": 1,
-        "conditions": [{"type": "Complete", "status": "True"}],
-    }
-    objects.extend(
-        [
-            pvc,
-            storage_class,
-            probe,
-            *successor_storage_objects({"dataset": {"tree_sha256": "b" * 64}}, ordinal + 3),
-        ]
-    )
     return objects
 
 
@@ -319,47 +547,27 @@ def successor_storage_objects(context: dict[str, object], start: int = 20) -> li
     values.append(checkpoint_class)
     ordinal = start + 1
     for namespace, name in verifier.REFERENCE_SUCCESSOR_CLAIMS:
-        claim = live_object("v1", "PersistentVolumeClaim", namespace, name, ordinal)
+        tools = storage_tools(context, namespace, ordinal)
+        claim = live_object("v1", "PersistentVolumeClaim", namespace, name, ordinal + 1)
         claim["metadata"]["annotations"] = {  # type: ignore[index]
             "security.fs2.nebius.ai/content-tree-sha256": tree,
         }
         claim["spec"] = {
             "accessModes": ["ReadOnlyMany"],
             "storageClassName": verifier.REFERENCE_SUCCESSOR_STORAGE_CLASS,
+            "volumeName": f"pv-{namespace}",
             "resources": {"requests": {"storage": "1611Gi"}},
         }
         claim["status"] = {"phase": "Bound"}
-        probe = live_object(
-            "batch/v1",
-            "Job",
-            namespace,
-            f"{name}-read-probe-{str(tree)[:12]}",
-            ordinal + 1,
+        values.extend(
+            [
+                tools,
+                claim,
+                *read_probe_objects(context, claim, namespace, name, f"{name}-read-probe", ordinal + 2),
+            ]
         )
-        probe["metadata"]["annotations"] = {  # type: ignore[index]
-            "security.fs2.nebius.ai/verified-tree-sha256": tree,
-        }
-        probe["spec"] = {
-            "template": {
-                "spec": {
-                    "automountServiceAccountToken": False,
-                    "volumes": [
-                        {
-                            "name": "reference-data",
-                            "persistentVolumeClaim": {"claimName": name, "readOnly": True},
-                        }
-                    ],
-                }
-            }
-        }
-        probe["status"] = {
-            "succeeded": 1,
-            "conditions": [{"type": "Complete", "status": "True"}],
-        }
-        values.extend([claim, probe])
-        ordinal += 2
+        ordinal += 4
 
-    durability = "e" * 64
     checkpoint_namespace, checkpoint_name = verifier.SNAPSHOT_CHECKPOINT_CLAIM
     checkpoint = live_object(
         "v1",
@@ -368,43 +576,20 @@ def successor_storage_objects(context: dict[str, object], start: int = 20) -> li
         checkpoint_name,
         ordinal,
     )
-    checkpoint["metadata"]["annotations"] = {  # type: ignore[index]
-        "security.fs2.nebius.ai/durability-receipt-sha256": durability,
-    }
     checkpoint["spec"] = {
         "accessModes": ["ReadWriteMany"],
         "storageClassName": verifier.SNAPSHOT_CHECKPOINT_STORAGE_CLASS,
+        "volumeName": "pv-snapshot-checkpoints",
         "resources": {"requests": {"storage": "256Gi"}},
     }
     checkpoint["status"] = {"phase": "Bound"}
-    durability_probe = live_object(
-        "batch/v1",
-        "Job",
-        checkpoint_namespace,
-        f"fs2-snapshot-checkpoints-durability-{durability[:12]}",
-        ordinal + 1,
+    values.extend(
+        [
+            checkpoint,
+            *checkpoint_probe_objects(context, checkpoint, "write", ordinal + 1),
+            *checkpoint_probe_objects(context, checkpoint, "read", ordinal + 3),
+        ]
     )
-    durability_probe["metadata"]["annotations"] = {  # type: ignore[index]
-        "security.fs2.nebius.ai/durability-receipt-sha256": durability,
-    }
-    durability_probe["spec"] = {
-        "template": {
-            "spec": {
-                "automountServiceAccountToken": False,
-                "volumes": [
-                    {
-                        "name": "checkpoints",
-                        "persistentVolumeClaim": {"claimName": checkpoint_name, "readOnly": False},
-                    }
-                ],
-            }
-        }
-    }
-    durability_probe["status"] = {
-        "succeeded": 1,
-        "conditions": [{"type": "Complete", "status": "True"}],
-    }
-    values.extend([checkpoint, durability_probe])
     return values
 
 
@@ -483,20 +668,26 @@ class FakeClient:
         value = self.objects.get((api_version, kind, namespace, name))
         return deepcopy(value) if value is not None else None
 
-    def list_objects(
+    def list_collection(
         self,
         api_version: str,
         kind: str,
         namespace: str,
         label_selector: str,
         field_selector: str,
-    ) -> list[dict[str, object]]:
+    ) -> dict[str, object]:
         assert not label_selector and not field_selector
-        return [
+        items = [
             deepcopy(value)
             for (item_api, item_kind, item_namespace, _), value in self.objects.items()
             if (item_api, item_kind, item_namespace) == (api_version, kind, namespace)
         ]
+        return {
+            "apiVersion": "v1",
+            "kind": "List",
+            "metadata": {"resourceVersion": "collection-rv"},
+            "items": items,
+        }
 
     def replace_config_map(self, value: dict[str, object]) -> dict[str, object]:
         if self.conflict:
@@ -677,6 +868,60 @@ def setup_case(
     return query_value, FakeClient(objects, ledger), path, objects
 
 
+def test_bootstrap_rejects_same_count_object_or_collection_drift(context: dict[str, object]) -> None:
+    signed_context = deepcopy(context)
+    signed_context["baseline"] = {
+        "reference_host_paths": 80,
+        "baseline_incompatible_objects": 91,
+        "restricted_incompatible_objects": 151,
+    }
+    baseline = {
+        "objects": [
+            {
+                "api_version": "apps/v1",
+                "kind": "Deployment",
+                "namespace": "fs2-models",
+                "name": "runtime-a",
+                "uid": "uid-a",
+                "resource_version": "10",
+                "object_sha256": "a" * 64,
+            }
+        ],
+        "collections": [
+            {
+                "api_version": "apps/v1",
+                "kind": "Deployment",
+                "namespace": "fs2-models",
+                "resource_version": "11",
+                "item_count": 1,
+            }
+        ],
+        "legacy_controller_objects": [],
+    }
+    live = {
+        "live_inventory_objects": [
+            {
+                **baseline["objects"][0],
+                "uid": "uid-b",
+                "resource_version": "12",
+                "object_sha256": "b" * 64,
+            }
+        ],
+        "live_inventory_collections": [
+            {
+                **baseline["collections"][0],
+                "resource_version": "13",
+            }
+        ],
+        "live_reference_host_paths": 80,
+        "live_baseline_incompatible_objects": 91,
+        "live_restricted_incompatible_objects": 151,
+        "live_legacy_controller_objects": [],
+    }
+    with pytest.raises(verifier.ReceiptError, match="immediate live inventory differs"):
+        verifier._validate_baseline_live_inventory(baseline, live, signed_context)
+
+
 def test_whole_bundle_live_verification_and_two_consumers_are_one_time(
     tmp_path: Path, authority: tuple[Path, Path], context: dict[str, object]
 ) -> None:
@@ -842,40 +1087,26 @@ def test_reference_data_transition_requires_bound_retained_rwx_and_completed_rea
     tree = context["dataset"]["tree_sha256"]  # type: ignore[index]
     pvc = live_object("v1", "PersistentVolumeClaim", "fs2-reference-data", "fs2-reference-data-rwx", 1)
     pvc["metadata"]["uid"] = context["pvc"]["uid"]  # type: ignore[index]
+    pvc["metadata"]["resourceVersion"] = context["pvc"]["resource_version"]  # type: ignore[index]
     pvc["spec"] = {
         "accessModes": ["ReadWriteMany"],
         "storageClassName": "fs2-reference-data-retained-sc",
+        "volumeName": context["pvc"]["volume_name"],  # type: ignore[index]
         "resources": {"requests": {"storage": "1611Gi"}},
     }
     pvc["status"] = {"phase": "Bound"}
     storage_class = live_object("storage.k8s.io/v1", "StorageClass", "", "fs2-reference-data-retained-sc", 2)
     storage_class["reclaimPolicy"] = "Retain"
-    probe = live_object(
-        "batch/v1",
-        "Job",
+    probe, probe_pod = read_probe_objects(
+        context,
+        pvc,
         "fs2-reference-data",
-        f"fs2-reference-data-read-probe-{tree[:12]}",
+        "fs2-reference-data-rwx",
+        "fs2-reference-data-read-probe",
         3,
     )
-    probe["spec"] = {
-        "template": {
-            "spec": {
-                "serviceAccountName": "fs2-reference-data",
-                "automountServiceAccountToken": False,
-                "volumes": [
-                    {
-                        "name": "reference-data",
-                        "persistentVolumeClaim": {
-                            "claimName": "fs2-reference-data-rwx",
-                            "readOnly": True,
-                        },
-                    }
-                ],
-            }
-        }
-    }
-    probe["status"] = {"succeeded": 1, "conditions": [{"type": "Complete", "status": "True"}]}
-    objects = [pvc, storage_class, probe, *successor_storage_objects(context)]
+    tools = storage_tools(context, "fs2-reference-data", 5)
+    objects = [pvc, storage_class, tools, probe, probe_pod, *successor_storage_objects(context)]
     client = FakeClient(objects, {})
     verifier._validate_live_observations(
         client,
@@ -887,14 +1118,16 @@ def test_reference_data_transition_requires_bound_retained_rwx_and_completed_rea
 
     probe["status"] = {"failed": 1, "conditions": [{"type": "Failed", "status": "True"}]}
     successor_objects = successor_storage_objects(context)
-    client = FakeClient([pvc, storage_class, probe, *successor_objects], {})
+    client = FakeClient([pvc, storage_class, tools, probe, probe_pod, *successor_objects], {})
     with pytest.raises(verifier.ReceiptError, match="read probe is not exactly completed"):
         verifier._validate_live_observations(
             client,
             [
                 observation(pvc),
                 observation(storage_class),
+                observation(tools),
                 observation(probe),
+                observation(probe_pod),
                 *(observation(value) for value in successor_objects),
             ],
             [],
@@ -909,31 +1142,26 @@ def test_reference_data_transition_rejects_missing_bioir_and_snapshot_successors
     tree = context["dataset"]["tree_sha256"]  # type: ignore[index]
     pvc = live_object("v1", "PersistentVolumeClaim", "fs2-reference-data", "fs2-reference-data-rwx", 1)
     pvc["metadata"]["uid"] = context["pvc"]["uid"]  # type: ignore[index]
+    pvc["metadata"]["resourceVersion"] = context["pvc"]["resource_version"]  # type: ignore[index]
     pvc["spec"] = {
         "accessModes": ["ReadWriteMany"],
         "storageClassName": "fs2-reference-data-retained-sc",
+        "volumeName": context["pvc"]["volume_name"],  # type: ignore[index]
         "resources": {"requests": {"storage": "1611Gi"}},
     }
     pvc["status"] = {"phase": "Bound"}
     storage_class = live_object("storage.k8s.io/v1", "StorageClass", "", "fs2-reference-data-retained-sc", 2)
     storage_class["reclaimPolicy"] = "Retain"
-    probe = live_object("batch/v1", "Job", "fs2-reference-data", f"fs2-reference-data-read-probe-{str(tree)[:12]}", 3)
-    probe["spec"] = {
-        "template": {
-            "spec": {
-                "serviceAccountName": "fs2-reference-data",
-                "automountServiceAccountToken": False,
-                "volumes": [
-                    {
-                        "name": "reference-data",
-                        "persistentVolumeClaim": {"claimName": "fs2-reference-data-rwx", "readOnly": True},
-                    }
-                ],
-            }
-        }
-    }
-    probe["status"] = {"succeeded": 1, "conditions": [{"type": "Complete", "status": "True"}]}
-    objects = [pvc, storage_class, probe]
+    probe, probe_pod = read_probe_objects(
+        context,
+        pvc,
+        "fs2-reference-data",
+        "fs2-reference-data-rwx",
+        "fs2-reference-data-read-probe",
+        3,
+    )
+    tools = storage_tools(context, "fs2-reference-data", 5)
+    objects = [pvc, storage_class, tools, probe, probe_pod]
     with pytest.raises(verifier.ReceiptError, match="successor storage classes are absent"):
         verifier._validate_live_observations(
             FakeClient(objects, {}),

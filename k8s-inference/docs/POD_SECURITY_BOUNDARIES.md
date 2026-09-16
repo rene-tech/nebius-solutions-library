@@ -98,11 +98,13 @@ still uses it:
 2. `rollback-restore-host-agents` consumes `enforcement-removed`, recreates the
    old-namespace agents while the exception copies continue running, and signs
    `host-agents-restored` only after all restored agents are Ready.
-3. `rollback-remove-exception` consumes `host-agents-restored`, first refuses
-   active snapshot Pods or unexported checkpoints, then removes the exception
-   agents, admission bindings, and both exception namespaces and verifies
-   absence. The retained reference-data CSI claim is not destroyed by this
-   rollback.
+3. `rollback-remove-exception` consumes `host-agents-restored` and first refuses
+   active snapshot Pods or unexported checkpoints. It disables the exception
+   agents only after their legacy copies are Ready. The exception namespaces,
+   admission boundaries, and content-addressed immutable telemetry/tooling
+   ConfigMaps remain as a retained generation; they are not phase-conditioned
+   away and every one is protected by `prevent_destroy`. The retained
+   reference-data CSI claim is likewise not destroyed by rollback.
 
 Use plans and the stable Helm revision captured at the serialized rollout slot,
 and reject any rollback candidate with request debugging enabled. Never use a
@@ -118,11 +120,23 @@ The StorageClass is post-rendered to `Retain`; the chart release and PVC use
 `prevent_destroy`; the storage handoff must prove deletion is forbidden and
 capacity is at least the 1611 GiB request.
 
+A completed Job or mutable annotation is not storage evidence. Each reference
+claim proof has a challenge-derived name and must bind the live PVC UID,
+resourceVersion and volumeName, exact dataset tree, digest-pinned runtime, and
+content-addressed immutable tooling. The verifier re-reads the single Job-owned
+Pod and checks its exact command, runtime image ID, exit status, and self-hashed
+termination proof. Snapshot checkpoint durability requires two distinct Pods:
+an exact writer followed by an exact read-only remount reader for the same
+challenge-bound marker. Missing namespace-local claims, immutable tooling,
+writer/reader Jobs, or their owned Pods keeps the rollout SOURCE/LIVE NO-GO;
+annotations alone never satisfy the gate.
+
 Every post-prepare phase requires one short-lived v4 Ed25519 receipt whose single
 signature covers the complete canonical bundle: reviewed signer identity and
 key digest, cluster/run/kube-system UID, deployment nonce, exact prior and next
 state, phase, one-time nonce, expiry, pinned PSA minor, six-namespace
-inventory, PVC UID/class, dataset/revision/tree, retained filesystem, and live
+inventory, PVC UID/resourceVersion/volume/class, dataset/revision/tree,
+retained filesystem, digest-pinned proof image, immutable tooling digest, and live
 observations. Each present observation carries the exact Kubernetes UID,
 resourceVersion, and canonical object hash; absence observations carry no
 substitutable identity. Baseline gates additionally bind complete live list
@@ -145,16 +159,17 @@ without successful live reconciliation and ledger consumption has no authority.
 ## Model-controller ownership
 
 The dynamic model controller does not own ConfigMaps, NetworkPolicies,
-ServiceAccounts, or DaemonSets.
+PersistentVolumeClaims, ServiceAccounts, or DaemonSets.
 Dynamic Deployments use the dedicated, non-token-mounted `fs2-model-runtime`
 ServiceAccount provisioned by Terraform. Host-memory-residency declarations
 remain published: Terraform owns one finite holder per canonical model/pool,
 and arbitrary App UUIDs only consume its signed receipt. The controller never
 creates or mutates those DaemonSets.
 
-The controller has no ConfigMap or NetworkPolicy API endpoint and its Role has
-no `configmaps` or `networkpolicies` rule. It therefore cannot get, list, watch,
-create, patch, or delete either resource kind. Runtime isolation is supplied by
+The controller has no ConfigMap, PersistentVolumeClaim, or NetworkPolicy API
+endpoint and its Role has no `configmaps`, `persistentvolumeclaims`, or
+`networkpolicies` rule. It therefore cannot get, list, watch, create, patch, or
+delete those resource kinds. Runtime isolation is supplied by
 a finite set of Terraform-owned profiles selected by immutable
 `fs2-serve.nebius.ai/network-profile` Pod labels. Standard profiles are bound
 to exact service ports; ModelExpress profiles are bound to an exact reviewed

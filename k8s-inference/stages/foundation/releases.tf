@@ -637,14 +637,13 @@ resource "helm_release" "otel_node_exception" {
 # every admitted generation makes rollback additive and prevents a mutable
 # name-only ConfigMap from redirecting telemetry.
 resource "kubernetes_config_map_v1" "otel_node_relay" {
-  for_each = merge(
-    local.legacy_host_agents_enabled ? { "fs2-observability" = true } : {},
-    local.exception_host_agents_enabled ? { "fs2-node-observability" = true } : {},
-  )
+  # Retain both namespace copies for the lifetime of the rollout state. Agent
+  # enablement is phase-dependent; immutable configuration custody is not.
+  for_each = toset(["fs2-observability", "fs2-node-observability"])
 
   metadata {
     name      = local.otel_node_config_map_name
-    namespace = each.key
+    namespace = each.value
     labels = merge(local.common_labels, {
       "app.kubernetes.io/component" = "otel-node-config"
     })

@@ -12,6 +12,12 @@ resource "kubernetes_namespace_v1" "platform" {
     annotations = lookup(local.pod_security_annotations, each.value, {})
   }
 
+  lifecycle {
+    # Platform and exception namespaces are durable ownership boundaries.
+    # Rollout phases disable consumers but never destroy a namespace.
+    prevent_destroy = true
+  }
+
   depends_on = [
     terraform_data.cluster_contract,
   ]

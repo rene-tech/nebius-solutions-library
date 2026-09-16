@@ -37,7 +37,18 @@ def read_regular(path: Path, *, limit: int = 1024 * 1024) -> bytes:
         os.close(descriptor)
 
 
-def validate(root: Path, receipt_relative: Path, bundle: str, revision: str, tree: str) -> dict[str, object]:
+def validate(
+    root: Path,
+    receipt_relative: Path,
+    bundle: str,
+    revision: str,
+    tree: str,
+    *,
+    pvc_uid: str | None = None,
+    pvc_resource_version: str | None = None,
+    volume_name: str | None = None,
+    challenge: str | None = None,
+) -> dict[str, object]:
     if not SHA256.fullmatch(tree):
         raise ReadinessError("expected tree digest is malformed")
     root = root.resolve(strict=True)
@@ -84,8 +95,8 @@ def validate(root: Path, receipt_relative: Path, bundle: str, revision: str, tre
     marker_stat = marker_path.stat(follow_symlinks=False)
     if marker_stat.st_size == 0:
         raise ReadinessError("dataset marker is empty")
-    return {
-        "schema": "fs2-serve.nebius.ai/reference-data-csi-readiness/v1",
+    result: dict[str, object] = {
+        "schema": "fs2-serve.nebius.ai/reference-data-csi-readiness/v2",
         "bundle_id": bundle,
         "revision": revision,
         "tree_sha256": tree,
@@ -93,6 +104,20 @@ def validate(root: Path, receipt_relative: Path, bundle: str, revision: str, tre
         "manifest_sha256": marker,
         "read_probe_passed": True,
     }
+    proof_fields = (pvc_uid, pvc_resource_version, volume_name, challenge)
+    if any(value is not None for value in proof_fields):
+        if not all(isinstance(value, str) and value for value in proof_fields):
+            raise ReadinessError("PVC proof identity must be complete")
+        result["pvc"] = {
+            "uid": pvc_uid,
+            "resource_version": pvc_resource_version,
+            "volume_name": volume_name,
+        }
+        result["challenge"] = challenge
+        result["proof_sha256"] = hashlib.sha256(
+            json.dumps(result, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+    return result
 
 
 def parser() -> argparse.ArgumentParser:
@@ -102,18 +127,37 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--bundle", required=True)
     result.add_argument("--revision", required=True)
     result.add_argument("--tree-sha256", required=True)
+    result.add_argument("--pvc-uid")
+    result.add_argument("--pvc-resource-version")
+    result.add_argument("--volume-name")
+    result.add_argument("--challenge")
+    result.add_argument("--proof-output", type=Path)
     return result
 
 
 def main() -> int:
     try:
         args = parser().parse_args()
-        result = validate(args.root, args.receipt, args.bundle, args.revision, args.tree_sha256)
+        result = validate(
+            args.root,
+            args.receipt,
+            args.bundle,
+            args.revision,
+            args.tree_sha256,
+            pvc_uid=args.pvc_uid,
+            pvc_resource_version=args.pvc_resource_version,
+            volume_name=args.volume_name,
+            challenge=args.challenge,
+        )
+        payload = json.dumps(result, sort_keys=True, separators=(",", ":"))
+        if args.proof_output is not None:
+            if args.proof_output != Path("/dev/termination-log"):
+                raise ReadinessError("proof output must be the Kubernetes termination log")
+            args.proof_output.write_text(payload + "\n", encoding="utf-8")
     except (OSError, ReadinessError) as error:
         print(f"reference-data CSI readiness refused: {error}", file=sys.stderr)
         return 1
-    json.dump(result, sys.stdout, sort_keys=True)
-    sys.stdout.write("\n")
+    sys.stdout.write(payload + "\n")
     return 0
 
 

@@ -184,6 +184,11 @@ def test_reference_data_uses_only_dedicated_retained_rwx_csi() -> None:
     assert "prevent_destroy = true" in reference
     assert "var.filesystem_claim.size_gib <= var.filesystem_claim.capacity_gib" in reference
     assert 'resource "kubernetes_job_v1" "csi_read_probe"' in reference
+    assert '"--pvc-resource-version"' in reference
+    assert '"--volume-name"' in reference
+    assert '"--challenge"' in reference
+    assert '"--proof-output", "/dev/termination-log"' in reference
+    assert "verify_checkpoint_durability.py" in reference
     assert "read_only  = true" in reference
     assert "automount_service_account_token = false" in reference
     assert "csi_migration_receipt" not in variables
@@ -210,7 +215,7 @@ def test_scientific_inventory_is_exact_nonempty_and_scanned_before_enforcement()
     )
 
 
-def test_dynamic_controller_has_zero_configmap_networkpolicy_serviceaccount_or_daemonset_authority() -> None:
+def test_dynamic_controller_has_zero_configmap_networkpolicy_pvc_serviceaccount_or_daemonset_authority() -> None:
     renderer = _source("components/control-plane/src/fs2_serve/model_deployment.py")
     controller = _source("components/control-plane/src/fs2_serve/model_deployment_controller.py")
     workloads = _source("stages/workloads/model_controller.tf")
@@ -219,15 +224,40 @@ def test_dynamic_controller_has_zero_configmap_networkpolicy_serviceaccount_or_d
     allowed_gvks = renderer.split("_ALLOWED_TEMPLATE_GVKS = frozenset(", 1)[1].split(")\n", 1)[0]
     endpoints = controller.split("RESOURCE_ENDPOINTS = {", 1)[1].split("}\n", 1)[0]
     supported = workloads.split("model_controller_supported_template_gvks = toset([", 1)[1].split("])", 1)[0]
-    for source in (allowed_gvks, endpoints, supported):
+    for source in (endpoints, supported):
         assert "ConfigMap" not in source
+        assert "PersistentVolumeClaim" not in source
         assert "ServiceAccount" not in source
         assert "DaemonSet" not in source
         assert "NetworkPolicy" not in source
-    for resource in ("configmaps", "networkpolicies", "serviceaccounts", "daemonsets"):
+    # Qualified legacy templates may still describe a Terraform-owned PVC as
+    # a mount dependency, but the renderer must discard that manifest before
+    # discovery/adoption and the controller must have no corresponding API.
+    assert 'if kind == "PersistentVolumeClaim":\n                continue' in renderer
+    for resource in ("configmaps", "persistentvolumeclaims", "networkpolicies", "serviceaccounts", "daemonsets"):
         assert resource not in rbac
     assert "model_controller_network_policy_resource_names" not in workloads
     assert "networkPolicyResourceNames" not in _source("stages/workloads/control_plane.tf")
+
+
+def test_immutable_telemetry_generations_are_retained_across_every_phase() -> None:
+    foundation_locals = _source("stages/foundation/locals.tf")
+    foundation_releases = _source("stages/foundation/releases.tf")
+    workloads_observability = _source("stages/workloads/observability.tf")
+    receipts = _source("scripts/verify_pod_security_receipts.py")
+
+    assert "node_observability_exception_enabled = true" in foundation_locals
+    assert 'toset(["fs2-observability", "fs2-node-observability"])' in foundation_releases
+    for resource_name in ("dcgm_metrics", "dcgm_cold_config"):
+        block = workloads_observability.split(
+            f'resource "kubernetes_config_map_v1" "{resource_name}"', 1
+        )[1].split("\n}\n", 1)[0]
+        assert '"fs2-observability"' in block
+        assert '"fs2-node-observability"' in block
+        assert "node_agents_use_exception_namespace" not in block
+    assert "prevent_destroy = true" in foundation_releases
+    assert workloads_observability.count("prevent_destroy = true") >= 2
+    assert "retained host-agent config is absent or mutable after rollback" in receipts
 
 
 def test_functional_replacements_are_finite_tokenless_and_exactly_admitted() -> None:

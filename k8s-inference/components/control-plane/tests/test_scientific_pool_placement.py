@@ -152,6 +152,36 @@ def test_actual_renderer_companions_match_admission_request(tmp_path: Path, monk
     assert actual == planned
 
 
+@pytest.mark.asyncio
+async def test_fs2_models_scientific_job_selects_the_finite_internal_network_profile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    renderer, resource = _production_renderer(tmp_path, monkeypatch)
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda _: httpx.Response(500)),
+        base_url="https://kubernetes.test",
+    )
+    cluster = HttpScientificBatchCluster(
+        base_url="https://kubernetes.test",
+        token_file=tmp_path / "unused",
+        ca_file=tmp_path / "unused-ca",
+        controller_id="network-profile-test",
+        fence=Fence(),
+        renderer=renderer,
+        writes_enabled=False,
+        client=client,
+    )
+    try:
+        manifest = cluster._prepare(resource, controller_fence=1)
+    finally:
+        await client.aclose()
+    labels = manifest["metadata"]["labels"]
+    pod_labels = manifest["spec"]["template"]["metadata"]["labels"]
+    assert labels["fs2-serve.nebius.ai/network-profile"] == "job-internal-v1"
+    assert pod_labels["fs2-serve.nebius.ai/network-profile"] == "job-internal-v1"
+    assert labels["app.kubernetes.io/part-of"] == "fs2-serve"
+
+
 @pytest.mark.parametrize("mutation", ["collector", "init", "native-sidecar", "overhead"])
 def test_rendered_whole_pod_rechecks_regular_init_sidecars_and_overhead(mutation: str) -> None:
     manifest = {"spec": _workload_spec(WorkloadKind.JOB, cpu="15", memory="32Gi")}

@@ -247,6 +247,14 @@ resource "helm_release" "control_plane" {
   lifecycle {
     precondition {
       condition = (
+        var.model_runtime_network_policy.phase != "rollback-helm" ||
+        terraform_data.model_runtime_network_policy_transition.output.helm_rollback_authorized
+      )
+      error_message = "The control-plane Helm release cannot roll back until the model-runtime transition contract proves default-deny was removed in an earlier apply."
+    }
+
+    precondition {
+      condition = (
         local.observability_operator.schema == "fs2-serve.nebius.ai/observability-operator/v1" &&
         local.observability_operator.tempo.enabled &&
         local.observability_operator.tempo.service_port == 3200 &&
@@ -275,6 +283,7 @@ resource "helm_release" "control_plane" {
 
   depends_on = [
     terraform_data.pod_security_rollout_contract,
+    terraform_data.model_runtime_network_policy_transition,
     kubernetes_manifest.model_deployment_crd,
     kubernetes_manifest.control_database,
     kubernetes_secret_v1.database_consumer,

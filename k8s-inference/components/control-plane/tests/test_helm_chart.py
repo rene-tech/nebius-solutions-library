@@ -938,6 +938,7 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
     assert all("secrets" not in rule["resources"] for rule in model_role["rules"])
     assert all("configmaps" not in rule["resources"] for rule in model_role["rules"])
     assert all("networkpolicies" not in rule["resources"] for rule in model_role["rules"])
+    assert all("persistentvolumeclaims" not in rule["resources"] for rule in model_role["rules"])
     assert {
         "apiGroups": ["autoscaling"],
         "resources": ["horizontalpodautoscalers"],

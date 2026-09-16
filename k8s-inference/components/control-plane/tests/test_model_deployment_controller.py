@@ -1710,8 +1710,8 @@ async def test_http_app_lifecycle_needs_no_networkpolicy_authorization_and_prese
 ) -> None:
     """Exercise arbitrary App writes through the real HTTP Kubernetes client.
 
-    The simulated apiserver returns RBAC 403 for every NetworkPolicy or
-    ConfigMap request.
+    The simulated apiserver returns RBAC 403 for every NetworkPolicy,
+    ConfigMap, or PersistentVolumeClaim request.
     Create, update, owned stale cleanup and finalizer changes must still work,
     while an existing App with a different ownership label remains untouched.
     """
@@ -1774,7 +1774,7 @@ async def test_http_app_lifecycle_needs_no_networkpolicy_authorization_and_prese
     def handler(request: httpx.Request) -> httpx.Response:
         nonlocal revision
         path = request.url.path
-        if "/networkpolicies" in path or "/configmaps" in path:
+        if "/networkpolicies" in path or "/configmaps" in path or "/persistentvolumeclaims" in path:
             forbidden_security_requests.append(f"{request.method} {path}")
             return httpx.Response(403, json={"kind": "Status", "reason": "Forbidden"})
         if path.endswith("/leases/fs2-model-controller"):

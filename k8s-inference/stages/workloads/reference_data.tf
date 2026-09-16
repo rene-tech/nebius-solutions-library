@@ -31,6 +31,7 @@ module "reference_data" {
     capacity_gib = try(var.reference_data.storage_contract.filesystem.size_gib, 0)
   }
   expected_tree_sha256              = var.reference_data.expected_tree_sha256
+  proof_challenge                   = var.pod_security_rollout_receipt.deployment_nonce
   pod_security_rollout_verification = module.pod_security_rollout_gate.verification
   cpu_pool                          = var.reference_data.storage_contract.cpu_pool
   # The reference CPU ClusterQueue must admit every namespace to which this
@@ -80,6 +81,13 @@ resource "kubernetes_config_map_v1" "reference_data_retained_context" {
         claim_size_gib  = module.reference_data[0].retained_claim_context.requested_gib
         forbid_deletion = var.reference_data.storage_contract.filesystem.forbid_deletion
         retention_mode  = var.reference_data.storage_contract.lifecycle.retention_mode
+      }
+      evidence = {
+        read_proof_schema       = module.reference_data[0].proof_contract.read_proof_schema
+        checkpoint_proof_schema = module.reference_data[0].proof_contract.checkpoint_proof_schema
+        probe_image             = module.reference_data[0].proof_contract.probe_image
+        tools_config_map        = module.reference_data[0].proof_contract.tools_config_map
+        tools_data_sha256       = module.reference_data[0].proof_contract.tools_data_sha256
       }
     })
   }

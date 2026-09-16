@@ -177,6 +177,9 @@ variables {
   }
   model_pool_overrides = { qwen3-8b = "nebius-b300-preemptible-1x" }
   model_scaling_mode   = "keda"
+  scheduling = {
+    fair_share_precedence_acknowledged = true
+  }
   model_controller = {
     enabled             = true
     writes_enabled      = true
@@ -222,23 +225,11 @@ run "disabled_academic_config_is_projected_as_disabled" {
   }
 }
 
-run "model_namespace_is_default_denied_after_finite_runtime_profiles" {
+run "prepare_installs_finite_profiles" {
   command = plan
 
   plan_options {
-    target = [
-      kubernetes_network_policy_v1.model_runtime_base_profile,
-      kubernetes_network_policy_v1.model_namespace_default_deny,
-    ]
-  }
-
-  assert {
-    condition = (
-      kubernetes_network_policy_v1.model_namespace_default_deny.metadata[0].name == "default-deny" &&
-      kubernetes_network_policy_v1.model_namespace_default_deny.metadata[0].namespace == "fs2-models" &&
-      toset(kubernetes_network_policy_v1.model_namespace_default_deny.spec[0].policy_types) == toset(["Ingress", "Egress"])
-    )
-    error_message = "fs2-models must have one Terraform-owned ingress-and-egress default deny."
+    target = [kubernetes_network_policy_v1.model_runtime_base_profile]
   }
 
   assert {
@@ -249,6 +240,141 @@ run "model_namespace_is_default_denied_after_finite_runtime_profiles" {
       length(kubernetes_network_policy_v1.model_runtime_base_profile["gateway-zero-egress-tcp-8000-v1"].spec[0].egress) == 0
     )
     error_message = "Mounted-content runtimes need a finite Terraform profile with gateway ingress and true zero egress."
+  }
+}
+
+run "prepare_installs_five_inert_admission_policies" {
+  command = plan
+
+  plan_options {
+    target = [
+      kubernetes_manifest.model_runtime_network_profile_admission,
+      kubernetes_manifest.model_runtime_network_boundary_marker_admission,
+    ]
+  }
+
+  assert {
+    condition = (
+      length(kubernetes_manifest.model_runtime_network_profile_admission) == 4 &&
+      kubernetes_manifest.model_runtime_network_boundary_marker_admission.manifest.metadata.name == "fs2-model-network-boundary-marker"
+    )
+    error_message = "Prepare must install the four profile policies and the boundary-marker policy."
+  }
+}
+
+run "prepare_refuses_a_live_default_deny" {
+  command = plan
+
+  override_data {
+    target = data.kubernetes_resources.model_runtime_network_policies[0]
+    values = { objects = [{ metadata = { name = "default-deny" } }] }
+  }
+
+  plan_options {
+    target = [terraform_data.model_runtime_network_policy_transition]
+  }
+
+  expect_failures = [terraform_data.model_runtime_network_policy_transition]
+}
+
+run "inventory_arms_only_with_default_deny_absent" {
+  command = plan
+
+  variables {
+    model_runtime_network_policy = { phase = "inventory" }
+  }
+
+  override_data {
+    target = data.kubernetes_resources.model_runtime_network_policies[0]
+    values = { objects = [] }
+  }
+
+  plan_options {
+    target = [terraform_data.model_runtime_network_policy_transition]
+  }
+
+  assert {
+    condition     = terraform_data.model_runtime_network_policy_transition.input.phase == "inventory"
+    error_message = "Inventory must be an explicit receipt-free phase between prepare and enforce."
+  }
+}
+
+run "enforce_requires_the_v2_receipt_and_apply_fence" {
+  command = plan
+
+  variables {
+    model_express = merge(var.model_express, { enabled = false, models = {} })
+    model_runtime_network_policy = {
+      phase = "enforce"
+      inventory_receipt = {
+        schema          = "fs2-serve.nebius.ai/model-runtime-network-inventory/v2"
+        cluster_id      = "mk8scluster-modelexpresstest"
+        namespace       = "fs2-models"
+        captured_at     = "2026-09-16T18:00:00Z"
+        profiles_sha256 = "50ea54374c2b27be55c92fb50da0dfc073a508597d820d6ef05f1eb4cde53bc3"
+        resource_apis = {
+          "apps/v1/DaemonSet"               = true
+          "apps/v1/Deployment"              = true
+          "apps/v1/ReplicaSet"              = true
+          "apps/v1/StatefulSet"             = true
+          "batch/v1/Job"                    = true
+          "jobset.x-k8s.io/v1alpha2/JobSet" = false
+        }
+        workloads = {
+          "apps/v1/Deployment/qwen3-8b" = {
+            uid        = "uid-qwen3"
+            generation = 2
+            profile    = "gateway-zero-egress-tcp-8000-v1"
+            rollout    = { desired = 1, updated = 1, ready = 1, available = 1, unavailable = 0 }
+          }
+        }
+        pods = {
+          qwen3-8b-pod = {
+            uid        = "uid-qwen3-pod"
+            profile    = "gateway-zero-egress-tcp-8000-v1"
+            owner_kind = "Deployment"
+            owner_uid  = "uid-qwen3"
+            phase      = "Running"
+            ready      = true
+          }
+        }
+        live_controller = {
+          deployment_name     = "fs2-serve-control-plane-model-controller"
+          deployment_uid      = "uid-controller"
+          generation          = 4
+          observed_generation = 4
+          image               = "registry.example.invalid/k8s-inference/control-plane@sha256:da2624948771c1231b5f70d2420c87f635516b6be0ec5539d8437830d57add55"
+          rollout             = { desired = 1, updated = 1, ready = 1, available = 1, unavailable = 0 }
+          pods = {
+            controller-pod = {
+              uid      = "uid-controller-pod"
+              image_id = "docker-pullable://registry.example.invalid/k8s-inference/control-plane@sha256:da2624948771c1231b5f70d2420c87f635516b6be0ec5539d8437830d57add55"
+              ready    = true
+            }
+          }
+        }
+        admission_bindings = {
+          fs2-model-network-boundary-marker-fs2-models = "uid-5"
+          fs2-model-network-profile-apps-fs2-models    = "uid-1"
+          fs2-model-network-profile-jobs-fs2-models    = "uid-2"
+          fs2-model-network-profile-jobsets-fs2-models = "uid-3"
+          fs2-model-network-profile-pods-fs2-models    = "uid-4"
+        }
+        payload_sha256 = "728dd1ac4ef231f19533b4b9275833a863e04d3c5b69f61e1bf6f142069f83b4"
+      }
+    }
+  }
+
+  plan_options {
+    target = [terraform_data.model_runtime_network_policy_transition]
+  }
+
+  assert {
+    condition = (
+      terraform_data.model_runtime_network_policy_transition.input.default_deny_planned &&
+      terraform_data.model_runtime_network_policy_transition.input.inventory_receipt_sha256 == "728dd1ac4ef231f19533b4b9275833a863e04d3c5b69f61e1bf6f142069f83b4"
+    )
+    error_message = "Enforce must bind the exact v2 receipt before scheduling the apply-time verifier and namespace deny."
   }
 }
 
@@ -287,10 +413,14 @@ run "enabled_academic_config_reaches_the_chart" {
         general_shared_cache    = false
         deny_egress_on_validate = true
       }
-      # This test covers value projection only.  Keep the execution lane off;
-      # Kueue admission is exercised with a qualified model and capacity in
-      # scientific_scheduling_render.tftest.hcl.
-      execution                 = { enabled = false }
+      # This test covers value projection only. Keep the execution lane off;
+      # its exact queue and identity still exercise the finite-policy inputs.
+      execution = {
+        enabled         = false
+        local_queue     = "academic-scientific"
+        cluster_queue   = "inference-accelerators"
+        service_account = "fs2-academic-runner"
+      }
       assets                    = {}
       readiness_manifest_sha256 = "2b5a21f8eca6d8e465f29c508a6717915b84e73cb351d24811223a70228a3e36"
     }

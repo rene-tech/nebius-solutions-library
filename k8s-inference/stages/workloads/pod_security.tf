@@ -16,6 +16,9 @@ locals {
     reference_host_paths            = 0
     baseline_incompatible_objects   = 0
     restricted_incompatible_objects = 0
+    collections                     = []
+    objects                         = []
+    legacy_controller_objects       = []
   }
   pod_security_host_agent_images = {
     dcgm-exporter = "nvcr.io/nvidia/k8s/dcgm-exporter@sha256:b4df763de9558e5b3f1f1d79bc65b772fcf65b8a9c3664ea7173e47153112b4a"
@@ -23,7 +26,14 @@ locals {
     otel-node     = "ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-k8s@sha256:3a8f46e1ff33546d36ddd94ef8721c5807718e25825f3e3f6eb5d552fd24e422"
     gpu-observer  = "${var.control_plane_image.repository}@${var.control_plane_image.digest}"
   }
-  reference_data_source_catalog = jsondecode(file("${path.module}/../../reference-data/source-catalog.json"))
+  pod_security_reference_tools_files = {
+    "placement-contract.json"         = file("${path.module}/../../reference-data/placement-contract.json")
+    "reference_data.py"               = file("${path.module}/../../reference-data/reference_data.py")
+    "verify_checkpoint_durability.py" = file("${path.module}/../../reference-data/verify_checkpoint_durability.py")
+    "verify_csi_readiness.py"         = file("${path.module}/../../reference-data/verify_csi_readiness.py")
+  }
+  pod_security_reference_tools_sha256 = sha256(jsonencode(local.pod_security_reference_tools_files))
+  reference_data_source_catalog       = jsondecode(file("${path.module}/../../reference-data/source-catalog.json"))
   pod_security_receipt_context = {
     cluster_id       = var.cluster_id
     run_id           = var.run_id
@@ -80,10 +90,12 @@ locals {
       },
     ]
     pvc = {
-      namespace     = "fs2-reference-data"
-      name          = "fs2-reference-data-rwx"
-      uid           = local.pod_security_receipt_required ? data.kubernetes_persistent_volume_claim_v1.reference_data[0].metadata[0].uid : "prepare"
-      storage_class = "fs2-reference-data-retained-sc"
+      namespace        = "fs2-reference-data"
+      name             = "fs2-reference-data-rwx"
+      uid              = local.pod_security_receipt_required ? data.kubernetes_persistent_volume_claim_v1.reference_data[0].metadata[0].uid : "prepare"
+      resource_version = local.pod_security_receipt_required ? data.kubernetes_persistent_volume_claim_v1.reference_data[0].metadata[0].resource_version : "prepare"
+      volume_name      = local.pod_security_receipt_required ? data.kubernetes_persistent_volume_claim_v1.reference_data[0].spec[0].volume_name : "prepare"
+      storage_class    = "fs2-reference-data-retained-sc"
     }
     dataset = {
       id          = var.reference_data.pipeline.bundle_id
@@ -96,6 +108,13 @@ locals {
       claim_size_gib  = 1611
       forbid_deletion = try(var.reference_data.storage_contract.filesystem.forbid_deletion, false)
       retention_mode  = try(var.reference_data.storage_contract.lifecycle.retention_mode, "prepare")
+    }
+    storage_evidence = {
+      read_proof_schema       = "fs2-serve.nebius.ai/reference-data-csi-readiness/v2"
+      checkpoint_proof_schema = "fs2-serve.nebius.ai/checkpoint-durability-proof/v1"
+      probe_image             = coalesce(var.reference_data.status.image, "prepare.invalid@sha256:${strrep("0", 64)}")
+      tools_config_map        = var.reference_data.enabled ? "fs2-reference-data-tools-${substr(local.pod_security_reference_tools_sha256, 0, 12)}" : "fs2-reference-data-tools-prepare"
+      tools_data_sha256       = var.reference_data.enabled ? local.pod_security_reference_tools_sha256 : strrep("0", 64)
     }
     baseline = {
       schema                          = local.pod_security_baseline_artifact.schema

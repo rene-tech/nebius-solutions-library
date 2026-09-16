@@ -214,14 +214,14 @@ class ConflictError(ReceiptError):
 class KubeClient(Protocol):
     def get_object(self, api_version: str, kind: str, namespace: str, name: str) -> dict[str, Any] | None: ...
 
-    def list_objects(
+    def list_collection(
         self,
         api_version: str,
         kind: str,
         namespace: str,
         label_selector: str,
         field_selector: str,
-    ) -> list[dict[str, Any]]: ...
+    ) -> dict[str, Any]: ...
 
     def replace_config_map(self, value: dict[str, Any]) -> dict[str, Any]: ...
 
@@ -369,6 +369,7 @@ def _validate_context(context: dict[str, Any], expected: dict[str, Any]) -> None
             "pvc",
             "dataset",
             "storage",
+            "storage_evidence",
             "baseline",
             "host_agents",
             "host_agent_configs",
@@ -441,11 +442,18 @@ def _validate_context(context: dict[str, Any], expected: dict[str, Any]) -> None
         raise ReceiptError("host-agent config component inventory differs")
 
     pvc = _object(context["pvc"], "context.pvc")
-    _exact_keys(pvc, {"namespace", "name", "uid", "storage_class"}, "context.pvc")
+    _exact_keys(
+        pvc,
+        {"namespace", "name", "uid", "resource_version", "volume_name", "storage_class"},
+        "context.pvc",
+    )
     if pvc["namespace"] != "fs2-reference-data" or pvc["name"] != "fs2-reference-data-rwx":
         raise ReceiptError("receipt must bind the canonical reference-data claim")
     if not IDENTIFIER_RE.fullmatch(_string(pvc["uid"], "context.pvc.uid")):
         raise ReceiptError("context.pvc.uid is malformed")
+    for field in ("resource_version", "volume_name"):
+        if not IDENTIFIER_RE.fullmatch(_string(pvc[field], f"context.pvc.{field}")):
+            raise ReceiptError(f"context.pvc.{field} is malformed")
     if pvc["storage_class"] != "fs2-reference-data-retained-sc":
         raise ReceiptError("receipt must bind the dedicated retained StorageClass")
 
@@ -469,6 +477,32 @@ def _validate_context(context: dict[str, Any], expected: dict[str, Any]) -> None
         raise ReceiptError("claim size exceeds retained filesystem capacity")
     if storage["forbid_deletion"] is not True or storage["retention_mode"] != "retain":
         raise ReceiptError("reference-data storage is not durably retained")
+
+    storage_evidence = _object(context["storage_evidence"], "context.storage_evidence")
+    _exact_keys(
+        storage_evidence,
+        {
+            "read_proof_schema",
+            "checkpoint_proof_schema",
+            "probe_image",
+            "tools_config_map",
+            "tools_data_sha256",
+        },
+        "context.storage_evidence",
+    )
+    if storage_evidence["read_proof_schema"] != "fs2-serve.nebius.ai/reference-data-csi-readiness/v2":
+        raise ReceiptError("context.storage_evidence.read_proof_schema is unsupported")
+    if storage_evidence["checkpoint_proof_schema"] != "fs2-serve.nebius.ai/checkpoint-durability-proof/v1":
+        raise ReceiptError("context.storage_evidence.checkpoint_proof_schema is unsupported")
+    if not re.fullmatch(
+        r"[^@\s]+@sha256:[a-f0-9]{64}",
+        _string(storage_evidence["probe_image"], "context.storage_evidence.probe_image"),
+    ):
+        raise ReceiptError("context.storage_evidence.probe_image must be digest pinned")
+    if not DNS_RE.fullmatch(_string(storage_evidence["tools_config_map"], "context storage tools ConfigMap")):
+        raise ReceiptError("context.storage_evidence.tools_config_map is malformed")
+    if not SHA256_RE.fullmatch(_string(storage_evidence["tools_data_sha256"], "context storage tools digest")):
+        raise ReceiptError("context.storage_evidence.tools_data_sha256 is malformed")
 
     baseline = _object(context["baseline"], "context.baseline")
     _exact_keys(
@@ -766,6 +800,7 @@ def _validate_inventory(raw: Any, label: str) -> dict[str, Any]:
             "api_version",
             "kind",
             "namespace",
+            "resource_version",
             "label_selector",
             "field_selector",
             "item_count",
@@ -779,6 +814,8 @@ def _validate_inventory(raw: Any, label: str) -> dict[str, Any]:
     if not isinstance(namespace, str):
         raise ReceiptError(f"{label}.namespace must be a string")
     _resource_path(api_version, kind, namespace)
+    if not IDENTIFIER_RE.fullmatch(_string(value["resource_version"], f"{label}.resource_version")):
+        raise ReceiptError(f"{label}.resource_version is malformed")
     for field in ("label_selector", "field_selector"):
         if not isinstance(value[field], str) or len(value[field]) > 1024:
             raise ReceiptError(f"{label}.{field} is malformed")
@@ -929,10 +966,16 @@ def _validate_observation_contract(
         required = {
             ("v1", "PersistentVolumeClaim", "fs2-reference-data", "fs2-reference-data-rwx"),
             (
+                "v1",
+                "ConfigMap",
+                "fs2-reference-data",
+                context["storage_evidence"]["tools_config_map"],
+            ),
+            (
                 "batch/v1",
                 "Job",
                 "fs2-reference-data",
-                f"fs2-reference-data-read-probe-{tree[:12]}",
+                _probe_name("fs2-reference-data-read-probe", context),
             ),
             ("storage.k8s.io/v1", "StorageClass", "", "fs2-reference-data-retained-sc"),
             (
@@ -942,6 +985,10 @@ def _validate_observation_contract(
                 SNAPSHOT_CHECKPOINT_STORAGE_CLASS,
             ),
             *{("v1", "PersistentVolumeClaim", namespace, name) for namespace, name in REFERENCE_SUCCESSOR_CLAIMS},
+            *{
+                ("v1", "ConfigMap", namespace, context["storage_evidence"]["tools_config_map"])
+                for namespace, _name in REFERENCE_SUCCESSOR_CLAIMS
+            },
             (
                 "v1",
                 "PersistentVolumeClaim",
@@ -952,8 +999,17 @@ def _validate_observation_contract(
                 (
                     "batch/v1",
                     "Job",
+                    SNAPSHOT_CHECKPOINT_CLAIM[0],
+                    _checkpoint_probe_name(mode, context),
+                )
+                for mode in ("read", "write")
+            },
+            *{
+                (
+                    "batch/v1",
+                    "Job",
                     namespace,
-                    f"{name}-read-probe-{tree[:12]}",
+                    _probe_name(f"{name}-read-probe", context),
                 )
                 for namespace, name in REFERENCE_SUCCESSOR_CLAIMS
             },
@@ -1269,6 +1325,345 @@ def _job_completed_once(value: dict[str, Any], label: str) -> dict[str, Any]:
     return _object(template.get("spec"), f"{label} Pod spec")
 
 
+def _probe_name(prefix: str, context: dict[str, Any]) -> str:
+    tree = context["dataset"]["tree_sha256"]
+    challenge_sha256 = hashlib.sha256(context["deployment_nonce"].encode()).hexdigest()
+    return f"{prefix}-{tree[:12]}-{challenge_sha256[:12]}"
+
+
+def _checkpoint_probe_name(mode: str, context: dict[str, Any]) -> str:
+    challenge_sha256 = hashlib.sha256(context["deployment_nonce"].encode()).hexdigest()
+    return f"fs2-snapshot-checkpoints-durability-{mode}-{challenge_sha256[:12]}"
+
+
+def _validate_storage_tooling(
+    live_objects: dict[tuple[str, str, str, str], dict[str, Any]],
+    namespace: str,
+    context: dict[str, Any],
+) -> None:
+    name = context["storage_evidence"]["tools_config_map"]
+    config = live_objects.get(("v1", "ConfigMap", namespace, name))
+    if config is None or config.get("immutable") is not True:
+        raise ReceiptError(f"immutable storage proof tooling is absent from {namespace}")
+    data = _object(config.get("data"), f"storage proof tooling in {namespace}")
+    if _sha256(_canonical(data)) != context["storage_evidence"]["tools_data_sha256"]:
+        raise ReceiptError(f"storage proof tooling content differs in {namespace}")
+
+
+def _validate_read_probe_execution(
+    live_objects: dict[tuple[str, str, str, str], dict[str, Any]],
+    claim: dict[str, Any],
+    job: dict[str, Any],
+    context: dict[str, Any],
+    *,
+    label: str,
+    claim_name: str,
+) -> None:
+    job_metadata = _object(job.get("metadata"), f"{label} Job metadata")
+    job_namespace = _string(job_metadata.get("namespace"), f"{label} Job namespace")
+    _validate_storage_tooling(live_objects, job_namespace, context)
+    claim_metadata = _object(claim.get("metadata"), f"{label} claim metadata")
+    claim_spec = _object(claim.get("spec"), f"{label} claim spec")
+    claim_identity = {
+        "uid": _string(claim_metadata.get("uid"), f"{label} claim UID"),
+        "resource_version": _string(
+            claim_metadata.get("resourceVersion"), f"{label} claim resourceVersion"
+        ),
+        "volume_name": _string(claim_spec.get("volumeName"), f"{label} claim volumeName"),
+    }
+    job_uid = _string(job_metadata.get("uid"), f"{label} Job UID")
+    job_annotations = _object(job_metadata.get("annotations", {}), f"{label} Job annotations")
+    expected_annotations = {
+        "reference-data.fs2.nebius.ai/tree-sha256": context["dataset"]["tree_sha256"],
+        "reference-data.fs2.nebius.ai/receipt": (
+            f"receipts/{context['dataset']['id']}/{context['dataset']['revision']}.json"
+        ),
+        "reference-data.fs2.nebius.ai/pvc-uid": claim_identity["uid"],
+        "reference-data.fs2.nebius.ai/pvc-resource-version": claim_identity["resource_version"],
+        "reference-data.fs2.nebius.ai/volume-name": claim_identity["volume_name"],
+        "reference-data.fs2.nebius.ai/proof-challenge": context["deployment_nonce"],
+    }
+    if any(job_annotations.get(key) != value for key, value in expected_annotations.items()):
+        raise ReceiptError(f"{label} Job does not bind the signed PVC, dataset, and challenge")
+
+    pod_spec = _job_completed_once(job, label)
+    containers = pod_spec.get("containers")
+    volumes = pod_spec.get("volumes")
+    if not isinstance(containers, list) or len(containers) != 1 or not isinstance(volumes, list):
+        raise ReceiptError(f"{label} must have exactly one container and a bounded volume list")
+    container = _object(containers[0], f"{label} container")
+    expected_command = [
+        "python",
+        "/opt/fs2/reference-data/verify_csi_readiness.py",
+        "--root",
+        "/reference-data",
+        "--receipt",
+        expected_annotations["reference-data.fs2.nebius.ai/receipt"],
+        "--bundle",
+        context["dataset"]["id"],
+        "--revision",
+        context["dataset"]["revision"],
+        "--tree-sha256",
+        context["dataset"]["tree_sha256"],
+        "--pvc-uid",
+        claim_identity["uid"],
+        "--pvc-resource-version",
+        claim_identity["resource_version"],
+        "--volume-name",
+        claim_identity["volume_name"],
+        "--challenge",
+        context["deployment_nonce"],
+        "--proof-output",
+        "/dev/termination-log",
+    ]
+    if (
+        pod_spec.get("automountServiceAccountToken") is not False
+        or container.get("name") != "read-probe"
+        or container.get("image") != context["storage_evidence"]["probe_image"]
+        or container.get("command") != expected_command
+        or container.get("terminationMessagePath") != "/dev/termination-log"
+        or container.get("terminationMessagePolicy") != "File"
+        or not any(
+            isinstance(volume, dict)
+            and isinstance(volume.get("persistentVolumeClaim"), dict)
+            and volume["persistentVolumeClaim"].get("claimName") == claim_name
+            and volume["persistentVolumeClaim"].get("readOnly") is True
+            for volume in volumes
+        )
+        or not any(
+            isinstance(volume, dict)
+            and volume.get("name") == "tools"
+            and isinstance(volume.get("configMap"), dict)
+            and volume["configMap"].get("name") == context["storage_evidence"]["tools_config_map"]
+            for volume in volumes
+        )
+    ):
+        raise ReceiptError(f"{label} execution contract is not exact, tokenless, and read-only")
+
+    owned_pods = []
+    for (api_version, kind, namespace, _name), pod in live_objects.items():
+        if api_version != "v1" or kind != "Pod" or namespace != job_metadata.get("namespace"):
+            continue
+        metadata = _object(pod.get("metadata"), f"{label} Pod metadata")
+        owner_references = metadata.get("ownerReferences", [])
+        if isinstance(owner_references, list) and any(
+            isinstance(owner, dict)
+            and owner.get("apiVersion") == "batch/v1"
+            and owner.get("kind") == "Job"
+            and owner.get("uid") == job_uid
+            and owner.get("controller") is True
+            for owner in owner_references
+        ):
+            owned_pods.append(pod)
+    if len(owned_pods) != 1:
+        raise ReceiptError(f"{label} must have exactly one live Pod owned by the exact Job UID")
+    pod = owned_pods[0]
+    live_pod_spec = _object(pod.get("spec"), f"{label} live Pod spec")
+    live_containers = live_pod_spec.get("containers")
+    statuses = _object(pod.get("status"), f"{label} live Pod status").get("containerStatuses")
+    if (
+        not isinstance(live_containers, list)
+        or len(live_containers) != 1
+        or not isinstance(statuses, list)
+        or len(statuses) != 1
+    ):
+        raise ReceiptError(f"{label} live Pod execution is ambiguous")
+    live_container = _object(live_containers[0], f"{label} live container")
+    status = _object(statuses[0], f"{label} live container status")
+    terminated = _object(
+        _object(status.get("state"), f"{label} container state").get("terminated"),
+        f"{label} termination",
+    )
+    image_digest = context["storage_evidence"]["probe_image"].split("@", 1)[1]
+    if (
+        live_container.get("image") != context["storage_evidence"]["probe_image"]
+        or live_container.get("command") != expected_command
+        or not _string(status.get("imageID"), f"{label} runtime image ID").endswith(image_digest)
+        or terminated.get("exitCode") != 0
+    ):
+        raise ReceiptError(f"{label} live Pod did not run the exact digest-pinned proof command")
+    try:
+        proof = _object(json.loads(_string(terminated.get("message"), f"{label} termination proof")), f"{label} proof")
+    except json.JSONDecodeError as error:
+        raise ReceiptError(f"{label} termination proof is not canonical JSON") from error
+    _exact_keys(
+        proof,
+        {
+            "schema",
+            "bundle_id",
+            "revision",
+            "tree_sha256",
+            "receipt_sha256",
+            "manifest_sha256",
+            "read_probe_passed",
+            "pvc",
+            "challenge",
+            "proof_sha256",
+        },
+        f"{label} proof",
+    )
+    proof_sha256 = proof.pop("proof_sha256")
+    if (
+        proof.get("schema") != context["storage_evidence"]["read_proof_schema"]
+        or proof.get("bundle_id") != context["dataset"]["id"]
+        or proof.get("revision") != context["dataset"]["revision"]
+        or proof.get("tree_sha256") != context["dataset"]["tree_sha256"]
+        or proof.get("read_probe_passed") is not True
+        or proof.get("pvc") != claim_identity
+        or proof.get("challenge") != context["deployment_nonce"]
+        or not SHA256_RE.fullmatch(str(proof.get("receipt_sha256", "")))
+        or not SHA256_RE.fullmatch(str(proof.get("manifest_sha256", "")))
+        or proof_sha256 != _sha256(_canonical(proof))
+    ):
+        raise ReceiptError(f"{label} termination proof does not bind the signed live execution")
+
+
+def _validate_checkpoint_probe_execution(
+    live_objects: dict[tuple[str, str, str, str], dict[str, Any]],
+    claim: dict[str, Any],
+    job: dict[str, Any],
+    context: dict[str, Any],
+    *,
+    mode: str,
+) -> dt.datetime:
+    label = f"snapshot checkpoint {mode} proof"
+    namespace = SNAPSHOT_CHECKPOINT_CLAIM[0]
+    _validate_storage_tooling(live_objects, namespace, context)
+    claim_metadata = _object(claim.get("metadata"), f"{label} claim metadata")
+    claim_spec = _object(claim.get("spec"), f"{label} claim spec")
+    claim_identity = {
+        "uid": _string(claim_metadata.get("uid"), f"{label} PVC UID"),
+        "resource_version": _string(claim_metadata.get("resourceVersion"), f"{label} PVC resourceVersion"),
+        "volume_name": _string(claim_spec.get("volumeName"), f"{label} PVC volumeName"),
+    }
+    annotations = {
+        "security.fs2.nebius.ai/pvc-uid": claim_identity["uid"],
+        "security.fs2.nebius.ai/pvc-resource-version": claim_identity["resource_version"],
+        "security.fs2.nebius.ai/volume-name": claim_identity["volume_name"],
+        "security.fs2.nebius.ai/proof-challenge": context["deployment_nonce"],
+        "security.fs2.nebius.ai/proof-mode": mode,
+    }
+    job_metadata = _object(job.get("metadata"), f"{label} Job metadata")
+    job_annotations = _object(job_metadata.get("annotations", {}), f"{label} Job annotations")
+    if any(job_annotations.get(key) != value for key, value in annotations.items()):
+        raise ReceiptError(f"{label} Job does not bind the live PVC and signed challenge")
+    command = [
+        "python",
+        "/opt/fs2/reference-data/verify_checkpoint_durability.py",
+        mode,
+        "--root",
+        "/checkpoints",
+        "--pvc-uid",
+        claim_identity["uid"],
+        "--pvc-resource-version",
+        claim_identity["resource_version"],
+        "--volume-name",
+        claim_identity["volume_name"],
+        "--challenge",
+        context["deployment_nonce"],
+        "--proof-output",
+        "/dev/termination-log",
+    ]
+    pod_spec = _job_completed_once(job, label)
+    containers = pod_spec.get("containers")
+    volumes = pod_spec.get("volumes")
+    expected_read_only = mode == "read"
+    if not isinstance(containers, list) or len(containers) != 1 or not isinstance(volumes, list):
+        raise ReceiptError(f"{label} execution shape is ambiguous")
+    container = _object(containers[0], f"{label} container")
+    if (
+        pod_spec.get("automountServiceAccountToken") is not False
+        or container.get("name") != "durability-proof"
+        or container.get("image") != context["storage_evidence"]["probe_image"]
+        or container.get("command") != command
+        or container.get("terminationMessagePath") != "/dev/termination-log"
+        or container.get("terminationMessagePolicy") != "File"
+        or not any(
+            isinstance(volume, dict)
+            and volume.get("name") == "checkpoints"
+            and isinstance(volume.get("persistentVolumeClaim"), dict)
+            and volume["persistentVolumeClaim"].get("claimName") == SNAPSHOT_CHECKPOINT_CLAIM[1]
+            and volume["persistentVolumeClaim"].get("readOnly", False) is expected_read_only
+            for volume in volumes
+        )
+        or not any(
+            isinstance(volume, dict)
+            and volume.get("name") == "tools"
+            and isinstance(volume.get("configMap"), dict)
+            and volume["configMap"].get("name") == context["storage_evidence"]["tools_config_map"]
+            for volume in volumes
+        )
+    ):
+        raise ReceiptError(f"{label} execution contract differs")
+
+    job_uid = _string(job_metadata.get("uid"), f"{label} Job UID")
+    owned_pods = []
+    for (api_version, kind, pod_namespace, _name), pod in live_objects.items():
+        if api_version != "v1" or kind != "Pod" or pod_namespace != namespace:
+            continue
+        metadata = _object(pod.get("metadata"), f"{label} Pod metadata")
+        owners = metadata.get("ownerReferences", [])
+        if isinstance(owners, list) and any(
+            isinstance(owner, dict)
+            and owner.get("apiVersion") == "batch/v1"
+            and owner.get("kind") == "Job"
+            and owner.get("uid") == job_uid
+            and owner.get("controller") is True
+            for owner in owners
+        ):
+            owned_pods.append(pod)
+    if len(owned_pods) != 1:
+        raise ReceiptError(f"{label} must have exactly one Pod owned by the exact Job UID")
+    pod = owned_pods[0]
+    live_containers = _object(pod.get("spec"), f"{label} live Pod spec").get("containers")
+    statuses = _object(pod.get("status"), f"{label} live Pod status").get("containerStatuses")
+    if (
+        not isinstance(live_containers, list)
+        or len(live_containers) != 1
+        or not isinstance(statuses, list)
+        or len(statuses) != 1
+    ):
+        raise ReceiptError(f"{label} live Pod execution is ambiguous")
+    if _object(live_containers[0], f"{label} live container").get("command") != command:
+        raise ReceiptError(f"{label} live Pod command differs")
+    status = _object(statuses[0], f"{label} container status")
+    terminated = _object(
+        _object(status.get("state"), f"{label} state").get("terminated"),
+        f"{label} termination",
+    )
+    image_digest = context["storage_evidence"]["probe_image"].split("@", 1)[1]
+    if (
+        not _string(status.get("imageID"), f"{label} image ID").endswith(image_digest)
+        or terminated.get("exitCode") != 0
+    ):
+        raise ReceiptError(f"{label} did not use the exact runtime image successfully")
+    try:
+        proof = _object(json.loads(_string(terminated.get("message"), f"{label} output")), f"{label} output")
+    except json.JSONDecodeError as error:
+        raise ReceiptError(f"{label} output is not canonical JSON") from error
+    _exact_keys(
+        proof,
+        {"schema", "mode", "pvc", "challenge", "marker_sha256", "proof_sha256"},
+        f"{label} output",
+    )
+    proof_sha256 = proof.pop("proof_sha256")
+    marker = {
+        "schema": "fs2-serve.nebius.ai/checkpoint-durability-marker/v1",
+        "pvc": claim_identity,
+        "challenge": context["deployment_nonce"],
+    }
+    if (
+        proof.get("schema") != context["storage_evidence"]["checkpoint_proof_schema"]
+        or proof.get("mode") != mode
+        or proof.get("pvc") != claim_identity
+        or proof.get("challenge") != context["deployment_nonce"]
+        or proof.get("marker_sha256") != _sha256(_canonical(marker) + b"\n")
+        or proof_sha256 != _sha256(_canonical(proof))
+    ):
+        raise ReceiptError(f"{label} output does not bind the exact remounted content")
+    return _instant(terminated.get("finishedAt"), f"{label} finishedAt")
+
+
 def _validate_bound_retained_claim(
     value: dict[str, Any],
     *,
@@ -1308,7 +1703,7 @@ def _validate_storage_successors(
     for namespace, name in REFERENCE_SUCCESSOR_CLAIMS:
         label = f"reference successor {namespace}/{name}"
         claim = live_objects.get(("v1", "PersistentVolumeClaim", namespace, name))
-        probe_name = f"{name}-read-probe-{tree[:12]}"
+        probe_name = _probe_name(f"{name}-read-probe", context)
         probe = live_objects.get(("batch/v1", "Job", namespace, probe_name))
         if claim is None or probe is None:
             raise ReceiptError(f"{label} claim or content probe is absent")
@@ -1344,6 +1739,14 @@ def _validate_storage_successors(
         )
         if probe_annotations.get("security.fs2.nebius.ai/verified-tree-sha256") != tree:
             raise ReceiptError(f"{label} probe does not attest the exact dataset tree")
+        _validate_read_probe_execution(
+            live_objects,
+            claim,
+            probe,
+            context,
+            label=f"{label} read probe",
+            claim_name=name,
+        )
 
     checkpoint_namespace, checkpoint_name = SNAPSHOT_CHECKPOINT_CLAIM
     checkpoint = live_objects.get(("v1", "PersistentVolumeClaim", checkpoint_namespace, checkpoint_name))
@@ -1355,37 +1758,30 @@ def _validate_storage_successors(
         allowed_access_modes={("ReadWriteMany",)},
         label="snapshot checkpoint successor",
     )
-    checkpoint_annotations = _object(
-        _object(checkpoint.get("metadata"), "snapshot checkpoint metadata").get("annotations", {}),
-        "snapshot checkpoint annotations",
-    )
-    durability = checkpoint_annotations.get("security.fs2.nebius.ai/durability-receipt-sha256")
-    if not isinstance(durability, str) or not SHA256_RE.fullmatch(durability):
-        raise ReceiptError("snapshot checkpoint successor lacks an exact durability receipt")
-    probe_name = f"fs2-snapshot-checkpoints-durability-{durability[:12]}"
-    probe = live_objects.get(("batch/v1", "Job", checkpoint_namespace, probe_name))
-    if probe is None:
-        raise ReceiptError("snapshot checkpoint durability probe is absent")
-    pod_spec = _job_completed_once(probe, "snapshot checkpoint durability probe")
-    volumes = pod_spec.get("volumes")
-    if (
-        pod_spec.get("automountServiceAccountToken") is not False
-        or not isinstance(volumes, list)
-        or not any(
-            isinstance(volume, dict)
-            and isinstance(volume.get("persistentVolumeClaim"), dict)
-            and volume["persistentVolumeClaim"].get("claimName") == checkpoint_name
-            and volume["persistentVolumeClaim"].get("readOnly") in {None, False}
-            for volume in volumes
+    jobs = {
+        mode: live_objects.get(
+            ("batch/v1", "Job", checkpoint_namespace, _checkpoint_probe_name(mode, context))
         )
-    ):
-        raise ReceiptError("snapshot checkpoint durability probe is not tokenless and writable")
-    probe_annotations = _object(
-        _object(probe.get("metadata"), "snapshot durability probe metadata").get("annotations", {}),
-        "snapshot durability probe annotations",
+        for mode in ("write", "read")
+    }
+    if any(job is None for job in jobs.values()):
+        raise ReceiptError("snapshot checkpoint write/remount-read proof is incomplete")
+    write_finished = _validate_checkpoint_probe_execution(
+        live_objects,
+        checkpoint,
+        jobs["write"],
+        context,
+        mode="write",
     )
-    if probe_annotations.get("security.fs2.nebius.ai/durability-receipt-sha256") != durability:
-        raise ReceiptError("snapshot checkpoint durability probe receipt differs")
+    read_finished = _validate_checkpoint_probe_execution(
+        live_objects,
+        checkpoint,
+        jobs["read"],
+        context,
+        mode="read",
+    )
+    if read_finished <= write_finished:
+        raise ReceiptError("snapshot checkpoint remount-read proof did not finish after the writer")
 
 
 def _validate_live_observations(
@@ -1396,6 +1792,8 @@ def _validate_live_observations(
     context: dict[str, Any],
 ) -> dict[str, Any]:
     live_inventory_projections: list[dict[str, Any]] = []
+    live_inventory_objects: list[dict[str, Any]] = []
+    live_inventory_collections: list[dict[str, Any]] = []
     baseline_incompatible_objects = 0
     restricted_incompatible_objects = 0
     reference_host_paths = 0
@@ -1428,13 +1826,22 @@ def _validate_live_observations(
         live_objects[(expected["api_version"], expected["kind"], expected["namespace"], expected["name"])] = live
 
     for expected in inventories:
-        items = client.list_objects(
+        collection = client.list_collection(
             expected["api_version"],
             expected["kind"],
             expected["namespace"],
             expected["label_selector"],
             expected["field_selector"],
         )
+        collection_metadata = _object(collection.get("metadata"), "live inventory metadata")
+        items = collection.get("items")
+        if not isinstance(items, list):
+            raise ReceiptError("live inventory items are malformed")
+        if collection_metadata.get("resourceVersion") != expected["resource_version"]:
+            raise ReceiptError(
+                f"live inventory resourceVersion differs: "
+                f"{expected['api_version']}/{expected['kind']}/{expected['namespace']}"
+            )
         projections = sorted(
             (_live_projection(value) for value in items),
             key=lambda value: (
@@ -1448,11 +1855,33 @@ def _validate_live_observations(
                 f"live inventory differs: {expected['api_version']}/{expected['kind']}/{expected['namespace']}"
             )
         live_inventory_projections.extend(projections)
+        live_inventory_collections.append(
+            {
+                "api_version": expected["api_version"],
+                "kind": expected["kind"],
+                "namespace": expected["namespace"],
+                "resource_version": expected["resource_version"],
+                "item_count": len(items),
+            }
+        )
         for item in items:
             metadata = item.get("metadata", {}) if isinstance(item, dict) else {}
             labels = metadata.get("labels", {}) if isinstance(metadata, dict) else {}
             name = str(metadata.get("name", "")) if isinstance(metadata, dict) else ""
             namespace = str(metadata.get("namespace", expected["namespace"])) if isinstance(metadata, dict) else ""
+            projection = _live_projection(item)
+            live_inventory_objects.append(
+                {
+                    "api_version": str(item.get("apiVersion", expected["api_version"])),
+                    "kind": str(item.get("kind", expected["kind"])),
+                    "namespace": namespace,
+                    "name": name,
+                    "uid": str(metadata.get("uid", "")),
+                    "resource_version": str(metadata.get("resourceVersion", "")),
+                    "object_sha256": _sha256(_canonical(projection)),
+                }
+            )
+            live_objects[(expected["api_version"], expected["kind"], namespace, name)] = item
             controller_owned = (
                 namespace == "fs2-models"
                 and item.get("kind") in {"ServiceAccount", "DaemonSet"}
@@ -1487,6 +1916,12 @@ def _validate_live_observations(
             str(value.get("metadata", {}).get("name", "")),
             str(value.get("metadata", {}).get("uid", "")),
         )
+    )
+    live_inventory_objects.sort(
+        key=lambda value: (value["namespace"], value["api_version"], value["kind"], value["name"])
+    )
+    live_inventory_collections.sort(
+        key=lambda value: (value["namespace"], value["api_version"], value["kind"])
     )
     if state in {"exception-ready", "host-agents-restored"}:
         locations = ("legacy", "exception") if state == "exception-ready" else ("legacy",)
@@ -1528,7 +1963,7 @@ def _validate_live_observations(
                 "batch/v1",
                 "Job",
                 "fs2-reference-data",
-                f"fs2-reference-data-read-probe-{tree[:12]}",
+                _probe_name("fs2-reference-data-read-probe", context),
             )
         )
         if pvc is None or storage_class is None or probe is None:
@@ -1539,6 +1974,8 @@ def _validate_live_observations(
         requests = _object(_object(pvc_spec.get("resources"), "PVC resources").get("requests"), "PVC requests")
         if (
             pvc_metadata.get("uid") != context["pvc"]["uid"]
+            or pvc_metadata.get("resourceVersion") != context["pvc"]["resource_version"]
+            or pvc_spec.get("volumeName") != context["pvc"]["volume_name"]
             or pvc_spec.get("storageClassName") != context["pvc"]["storage_class"]
             or pvc_spec.get("accessModes") != ["ReadWriteMany"]
             or requests.get("storage") != f"{context['storage']['claim_size_gib']}Gi"
@@ -1577,6 +2014,14 @@ def _validate_live_observations(
             or not complete
         ):
             raise ReceiptError("reference-data CSI read probe is not exactly completed and read-only")
+        _validate_read_probe_execution(
+            live_objects,
+            pvc,
+            probe,
+            context,
+            label="reference-data CSI read probe",
+            claim_name="fs2-reference-data-rwx",
+        )
         _validate_storage_successors(live_objects, context)
 
     baseline_namespaces = {
@@ -1627,6 +2072,8 @@ def _validate_live_observations(
 
     return {
         "live_inventory_sha256": _sha256(_canonical(live_inventory_projections)),
+        "live_inventory_objects": live_inventory_objects,
+        "live_inventory_collections": live_inventory_collections,
         "live_reference_host_paths": reference_host_paths,
         "live_baseline_incompatible_objects": baseline_incompatible_objects,
         "live_restricted_incompatible_objects": restricted_incompatible_objects,
@@ -1848,6 +2295,56 @@ def _ledger_data(ledger: dict[str, Any]) -> dict[str, str]:
     }
 
 
+def _validate_baseline_live_inventory(
+    baseline: dict[str, Any],
+    live_inventory: dict[str, Any],
+    context: dict[str, Any],
+) -> None:
+    expected_objects = sorted(
+        [
+            {
+                "api_version": item["api_version"],
+                "kind": item["kind"],
+                "namespace": item["namespace"],
+                "name": item["name"],
+                "uid": item["uid"],
+                "resource_version": item["resource_version"],
+                "object_sha256": item["object_sha256"],
+            }
+            for item in baseline["objects"]
+        ],
+        key=lambda value: (value["namespace"], value["api_version"], value["kind"], value["name"]),
+    )
+    expected_collections = sorted(
+        [
+            {
+                "api_version": item["api_version"],
+                "kind": item["kind"],
+                "namespace": item["namespace"],
+                "resource_version": item["resource_version"],
+                "item_count": item["item_count"],
+            }
+            for item in baseline["collections"]
+        ],
+        key=lambda value: (value["namespace"], value["api_version"], value["kind"]),
+    )
+    expected_legacy = sorted(
+        "/".join((item["api_version"], item["kind"], item["namespace"], item["name"]))
+        for item in baseline["legacy_controller_objects"]
+    )
+    if (
+        live_inventory["live_inventory_objects"] != expected_objects
+        or live_inventory["live_inventory_collections"] != expected_collections
+        or live_inventory["live_reference_host_paths"] != context["baseline"]["reference_host_paths"]
+        or live_inventory["live_baseline_incompatible_objects"]
+        != context["baseline"]["baseline_incompatible_objects"]
+        or live_inventory["live_restricted_incompatible_objects"]
+        != context["baseline"]["restricted_incompatible_objects"]
+        or live_inventory["live_legacy_controller_objects"] != expected_legacy
+    ):
+        raise ReceiptError("immediate live inventory differs from the signed v4 baseline")
+
+
 def _replace_ledger(
     client: KubeClient,
     config_map: dict[str, Any],
@@ -1896,7 +2393,7 @@ def _validate_reference_data_postcondition(
         "batch/v1",
         "Job",
         "fs2-reference-data",
-        f"fs2-reference-data-read-probe-{tree[:12]}",
+        _probe_name("fs2-reference-data-read-probe", context),
     )
     if pvc is None or storage_class is None or probe is None:
         raise ReceiptError("reference-data acknowledgement objects are absent")
@@ -1906,6 +2403,8 @@ def _validate_reference_data_postcondition(
     requests = _object(_object(pvc_spec.get("resources"), "PVC resources").get("requests"), "PVC requests")
     if (
         pvc_metadata.get("uid") != context["pvc"]["uid"]
+        or pvc_metadata.get("resourceVersion") != context["pvc"]["resource_version"]
+        or pvc_spec.get("volumeName") != context["pvc"]["volume_name"]
         or pvc_spec.get("storageClassName") != "fs2-reference-data-retained-sc"
         or pvc_spec.get("accessModes") != ["ReadWriteMany"]
         or requests.get("storage") != f"{context['storage']['claim_size_gib']}Gi"
@@ -1919,10 +2418,39 @@ def _validate_reference_data_postcondition(
         for condition in probe_status.get("conditions", []) or []
     ):
         raise ReceiptError("reference-data postcondition lacks a completed read probe")
+
+    live_objects: dict[tuple[str, str, str, str], dict[str, Any]] = {
+        ("v1", "PersistentVolumeClaim", "fs2-reference-data", "fs2-reference-data-rwx"): pvc,
+        ("batch/v1", "Job", "fs2-reference-data", _probe_name("fs2-reference-data-read-probe", context)): probe,
+    }
+    tools_name = context["storage_evidence"]["tools_config_map"]
+    tools = client.get_object("v1", "ConfigMap", "fs2-reference-data", tools_name)
+    if tools is None:
+        raise ReceiptError("reference-data acknowledgement tooling ConfigMap is absent")
+    live_objects[("v1", "ConfigMap", "fs2-reference-data", tools_name)] = tools
+
+    def read_pods(namespace: str) -> None:
+        collection = client.list_collection("v1", "Pod", namespace)
+        items = collection.get("items")
+        if not isinstance(items, list):
+            raise ReceiptError(f"Pod collection is malformed in {namespace}")
+        for item_raw in items:
+            item = _object(item_raw, f"Pod in {namespace}")
+            metadata = _object(item.get("metadata"), f"Pod metadata in {namespace}")
+            name = _string(metadata.get("name"), f"Pod name in {namespace}")
+            live_objects[("v1", "Pod", namespace, name)] = item
+
+    read_pods("fs2-reference-data")
+    _validate_read_probe_execution(
+        live_objects,
+        pvc,
+        probe,
+        context,
+        label="reference-data acknowledgement read probe",
+        claim_name="fs2-reference-data-rwx",
+    )
     if not include_successors:
         return
-
-    live_objects: dict[tuple[str, str, str, str], dict[str, Any]] = {}
 
     def read(api_version: str, kind: str, namespace: str, name: str) -> dict[str, Any]:
         value = client.get_object(api_version, kind, namespace, name)
@@ -1935,27 +2463,19 @@ def _validate_reference_data_postcondition(
     read("storage.k8s.io/v1", "StorageClass", "", SNAPSHOT_CHECKPOINT_STORAGE_CLASS)
     for namespace, name in REFERENCE_SUCCESSOR_CLAIMS:
         read("v1", "PersistentVolumeClaim", namespace, name)
+        read("v1", "ConfigMap", namespace, tools_name)
         read(
             "batch/v1",
             "Job",
             namespace,
-            f"{name}-read-probe-{tree[:12]}",
+            _probe_name(f"{name}-read-probe", context),
         )
+        read_pods(namespace)
     checkpoint_namespace, checkpoint_name = SNAPSHOT_CHECKPOINT_CLAIM
-    checkpoint = read("v1", "PersistentVolumeClaim", checkpoint_namespace, checkpoint_name)
-    checkpoint_annotations = _object(
-        _object(checkpoint.get("metadata"), "snapshot checkpoint metadata").get("annotations", {}),
-        "snapshot checkpoint annotations",
-    )
-    durability = checkpoint_annotations.get("security.fs2.nebius.ai/durability-receipt-sha256")
-    if not isinstance(durability, str) or not SHA256_RE.fullmatch(durability):
-        raise ReceiptError("snapshot checkpoint successor lacks an exact durability receipt")
-    read(
-        "batch/v1",
-        "Job",
-        checkpoint_namespace,
-        f"fs2-snapshot-checkpoints-durability-{durability[:12]}",
-    )
+    read("v1", "PersistentVolumeClaim", checkpoint_namespace, checkpoint_name)
+    for mode in ("write", "read"):
+        read("batch/v1", "Job", checkpoint_namespace, _checkpoint_probe_name(mode, context))
+    read_pods(checkpoint_namespace)
     _validate_storage_successors(live_objects, context)
 
 
@@ -2057,8 +2577,27 @@ def _validate_phase_acknowledgement(
         return
 
     if phase == "rollback-remove-exception" and scope == "downstream":
-        if client.get_object("v1", "Namespace", "", "fs2-node-observability") is not None:
-            raise ReceiptError("exception namespace remains after rollback acknowledgement")
+        namespace = client.get_object("v1", "Namespace", "", "fs2-node-observability")
+        if namespace is None:
+            raise ReceiptError("retained exception namespace is absent after rollback acknowledgement")
+        labels = _object(
+            _object(namespace.get("metadata"), "retained exception namespace metadata").get("labels", {}),
+            "retained exception namespace labels",
+        )
+        if labels.get("security.fs2.nebius.ai/host-agent-only") != "true":
+            raise ReceiptError("retained exception namespace lost its admission selector")
+        for identity in context["host_agents"]:
+            item = identity["exception"]
+            if client.get_object("apps/v1", "DaemonSet", item["namespace"], item["name"]) is not None:
+                raise ReceiptError("exception host agent remains active after rollback acknowledgement")
+        for config in context["host_agent_configs"]:
+            live = client.get_object("v1", "ConfigMap", config["namespace"], config["name"])
+            if live is None or live.get("immutable") is not True:
+                raise ReceiptError("retained host-agent config is absent or mutable after rollback")
+            if _sha256(_canonical(_object(live.get("data"), "retained host-agent config data"))) != config[
+                "data_sha256"
+            ]:
+                raise ReceiptError("retained host-agent config content differs after rollback")
 
 
 def verify_and_consume(query: dict[str, Any], client: KubeClient, now: dt.datetime | None = None) -> dict[str, str]:
@@ -2145,30 +2684,8 @@ def verify_and_consume(query: dict[str, Any], client: KubeClient, now: dt.dateti
             observation_state,
             _object(bundle["context"], "context"),
         )
-    if (
-        observation_state == "baseline-captured"
-        and live_inventory is not None
-        and (
-            live_inventory["live_reference_host_paths"] != bundle["context"]["baseline"]["reference_host_paths"]
-            or live_inventory["live_baseline_incompatible_objects"]
-            != bundle["context"]["baseline"]["baseline_incompatible_objects"]
-            or live_inventory["live_restricted_incompatible_objects"]
-            != bundle["context"]["baseline"]["restricted_incompatible_objects"]
-            or live_inventory["live_legacy_controller_objects"]
-            != sorted(
-                "/".join(
-                    (
-                        item["api_version"],
-                        item["kind"],
-                        item["namespace"],
-                        item["name"],
-                    )
-                )
-                for item in baseline["legacy_controller_objects"]
-            )
-        )
-    ):
-        raise ReceiptError("immediate live inventory differs from the signed v4 baseline")
+    if observation_state == "baseline-captured" and live_inventory is not None:
+        _validate_baseline_live_inventory(baseline, live_inventory, _object(bundle["context"], "context"))
     if observation_state in {"cleanup-complete", "enforcement-quiesced"} and live_inventory is not None:
         expected_live = {
             "live_inventory_sha256": assertions["live_inventory_sha256"],
@@ -2177,7 +2694,7 @@ def verify_and_consume(query: dict[str, Any], client: KubeClient, now: dt.dateti
             "live_restricted_incompatible_objects": assertions["live_restricted_incompatible_objects"],
             "live_legacy_controller_objects": assertions["live_legacy_controller_objects"],
         }
-        if live_inventory != expected_live:
+        if any(live_inventory[field] != expected for field, expected in expected_live.items()):
             raise ReceiptError("immediate live workload inventory differs from signed clean assertions")
 
     authorization = ledger.get("authorization")
@@ -2306,14 +2823,14 @@ class KubectlClient:
     def get_object(self, api_version: str, kind: str, namespace: str, name: str) -> dict[str, Any] | None:
         return self._raw(_resource_path(api_version, kind, namespace, name))
 
-    def list_objects(
+    def list_collection(
         self,
         api_version: str,
         kind: str,
         namespace: str,
         label_selector: str,
         field_selector: str,
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         query = urlencode(
             {
                 key: value
@@ -2323,9 +2840,14 @@ class KubectlClient:
         )
         path = _resource_path(api_version, kind, namespace)
         value = self._raw(f"{path}?{query}" if query else path)
-        if value is None or not isinstance(value.get("items"), list):
+        if (
+            value is None
+            or not isinstance(value.get("items"), list)
+            or not isinstance(value.get("metadata"), dict)
+            or not value["metadata"].get("resourceVersion")
+        ):
             raise ReceiptError("live Kubernetes collection response is malformed")
-        return value["items"]
+        return value
 
     def replace_config_map(self, value: dict[str, Any]) -> dict[str, Any]:
         completed = subprocess.run(
