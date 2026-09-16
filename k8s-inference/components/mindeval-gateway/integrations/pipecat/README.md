@@ -92,6 +92,11 @@ pipeline/audio/STT/RTVI completion and valid scoring. Listen to both emitted
 `*-clinician-Jason.wav` and `*-patient-Sofia.wav` files to review real audio.
 No live endpoint success is claimed by the fixture tests above.
 
+A separate real public round passed on 2026-09-16; its two WAV files, RTVI events,
+strict judgment, timing and measured word-error rates are retained in
+[`evidence/20260916-live`](evidence/20260916-live/README.md). That evidence is
+explicitly separate from the synthetic four-byte contract fixtures.
+
 Use a unique run ID per invocation: registration is replay-safe, but repeating
 this reference command **does make new model calls**. It does not implement the
 workshop's durable job resumption, five-worker job scheduler, intervention UI or
