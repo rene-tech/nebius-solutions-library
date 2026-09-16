@@ -1156,14 +1156,11 @@ locals {
       contains(keys(local.model_controller_modelexpress_bindings), model_id) ? {
         modelExpress = local.model_controller_modelexpress_bindings[model_id]
       } : {},
-      # Host-memory residency needs a DaemonSet writer. The dynamic controller
-      # deliberately has no DaemonSet RBAC; an operator-owned holder must be
-      # introduced before this declaration can be published again.
-      try({
-        for mechanism, declaration in local.model_controller_fast_start_mechanism_declarations[model_id] :
-        mechanism => declaration
-        if mechanism != "hostMemoryResidency"
-      }, {}),
+      # Host-memory holders are finite Terraform-owned model/pool resources.
+      # Publishing the declaration is safe because an arbitrary App only
+      # consumes the exact holder receipt; the controller has no DaemonSet
+      # endpoint or RBAC.
+      try(local.model_controller_fast_start_mechanism_declarations[model_id], {}),
       try(local.model_controller_cpu_configuration[model_id], {}),
     )
   }

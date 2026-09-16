@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 from pathlib import Path
-import hashlib
 
 import pytest
-
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("cleanup", ROOT / "scripts" / "cleanup_sai07_legacy_resources.py")
@@ -114,7 +113,42 @@ def test_cleanup_contract_binds_resource_version_spec_and_result() -> None:
         "StatefulSet",
         "ReplicaSet",
         "ReplicationController",
+        "PodTemplate",
         "CronJob",
         "JobSet",
+        "ModelDeployment",
     ):
         assert controller in source
+
+
+def test_service_account_consumer_scan_includes_podtemplates_and_custom_controllers() -> None:
+    class FakeClient:
+        def raw(self, uri: str, *, allow_absent: bool = False) -> dict[str, object]:
+            del allow_absent
+            if uri.endswith("/podtemplates"):
+                return {
+                    "items": [{
+                        "metadata": {"name": "debug-template"},
+                        "template": {"spec": {"serviceAccountName": "legacy-runtime"}},
+                    }]
+                }
+            if uri.endswith("/modeldeployments"):
+                return {
+                    "items": [{
+                        "metadata": {"name": "app-dynamic"},
+                        "spec": {
+                            "template": {
+                                "spec": {"serviceAccountName": "legacy-runtime"},
+                            }
+                        },
+                    }]
+                }
+            return {"items": []}
+
+    assert cleanup.service_account_references(FakeClient(), "legacy-runtime") == [
+        "PodTemplate/debug-template",
+        "ModelDeployment/app-dynamic",
+    ]
+    assert cleanup.nested_service_account_names(
+        {"items": [{"serviceAccountName": "one"}, {"nested": {"serviceAccountName": "two"}}]}
+    ) == {"one", "two"}

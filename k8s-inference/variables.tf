@@ -51,6 +51,7 @@ variable "deployment" {
     pod_security = optional(object({
       rollout_phase = optional(string, "prepare")
       existing_scientific_namespaces = optional(set(string), [
+        "fs2-academic-poc",
         "fs2-bioir-boltz2",
         "fs2-bioir-coverage",
         "fs2-bioir-openfold",
@@ -743,6 +744,7 @@ variable "deployment" {
         can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", namespace))
       ]) &&
       var.deployment.pod_security.existing_scientific_namespaces == toset([
+        "fs2-academic-poc",
         "fs2-bioir-boltz2",
         "fs2-bioir-coverage",
         "fs2-bioir-openfold",
@@ -750,7 +752,7 @@ variable "deployment" {
         "fs2-bioir-snapshot",
       ])
     )
-    error_message = "pod_security requires a valid ordered phase and the exact frozen five-namespace fs2-bioir inventory."
+    error_message = "pod_security requires a valid ordered phase and the exact frozen six-namespace scientific inventory."
   }
 
   validation {

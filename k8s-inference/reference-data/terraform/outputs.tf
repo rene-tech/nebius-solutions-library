@@ -29,6 +29,16 @@ output "retained_claim_context" {
   }
 }
 
+output "csi_read_probe" {
+  description = "Exact retained-claim read probe whose completed Job is required by the signed PSA migration gate."
+  value = local.csi_storage_enabled ? {
+    namespace            = var.namespace
+    name                 = kubernetes_job_v1.csi_read_probe[0].metadata[0].name
+    expected_tree_sha256 = var.expected_tree_sha256
+    receipt_sub_path     = local.read_probe_receipt
+  } : null
+}
+
 output "object_storage_secret_name" {
   description = "Non-secret, immutable credential Secret name derived from the current access-key identity and revision."
   value       = local.credentials_secret

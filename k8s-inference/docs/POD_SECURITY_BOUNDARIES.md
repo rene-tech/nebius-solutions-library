@@ -3,7 +3,8 @@
 FS2 applies Kubernetes Pod Security Admission (PSA) at namespace boundaries.
 Application namespaces enforce the `baseline` Pod Security Standard and report
 `restricted` violations in audit records and admission warnings. Host-integrated
-node agents use one explicitly annotated exception namespace.
+node agents and the one retained CUDA checkpoint profile use two separately
+admission-constrained exception namespaces.
 
 | Namespace owner | Enforced state | Purpose |
 | --- | --- | --- |
@@ -12,14 +13,18 @@ node agents use one explicitly annotated exception namespace.
 | Workloads ModelExpress namespace | `baseline`; `warn`/`audit=restricted` | Optional ModelExpress control service |
 | Reference-data module | `baseline`; `warn`/`audit=restricted` after CSI verification | Reference-data staging and status services on the RWX claim |
 | Foundation: `fs2-node-observability` | `privileged`; `warn`/`audit=restricted` | Host-integrated, operator-owned node agents only |
+| Foundation: `fs2-snapshot-operations` | `privileged`; `warn`/`audit=restricted` | One digest-pinned ESMFold2 donor/restore profile only |
 
 The node-observability namespace is not a general workload destination. Two
 fail-closed ValidatingAdmissionPolicies admit only four exact DaemonSet/service
 account pairs and their Pods. Direct Pods and ephemeral containers are denied;
-host paths, host namespaces, and capabilities are bounded. DaemonSet
-create/update also requires an exact username from
-`deployment.pod_security.exception_manager_usernames`. This admission boundary
-still applies if an unrelated role is later widened.
+images, commands, host paths, mounts, host namespaces, and capabilities are
+bounded. The snapshot namespace has a separate fail-closed policy and a fixed,
+tokenless manager ServiceAccount/RoleBinding. It admits only the exact reviewed
+runtime and tools digests, command, GPU resources, PVCs, mounts, and isolation
+profile. Neither exception is selected by a caller-provided username or a
+general workload label. These admission boundaries still apply if an unrelated
+role is later widened.
 
 ## Ordered rollout
 
@@ -29,12 +34,14 @@ workload movement. Advance only after the checks for the current phase pass:
 1. At the serialized rollout slot, record the then-current stable Helm revision
    and image digests. Confirm `request_debug_enabled=false`. A historical Helm
    revision is never a cross-ticket rollback target.
-2. `prepare`: create the admission-protected `fs2-node-observability`
-   namespace, the dedicated retained CSI driver/class, and the unused RWX
-   claim. Dual-run the GPU observer, DCGM exporter, node telemetry collector,
-   and Prometheus node exporter in both old and exception namespaces.
-   Application namespaces remain unlabeled. Sign `exception-ready` only after
-   all eight old/new agent sets are Ready and the retained claim UID is known.
+2. `prepare`: create the admission-protected `fs2-node-observability` and
+   `fs2-snapshot-operations` namespaces, the dedicated retained CSI
+   driver/class, and the unused RWX claim. Dual-run the GPU observer, DCGM
+   exporter, node telemetry collector, and Prometheus node exporter in both old
+   and exception namespaces. Application namespaces remain unlabeled. Sign
+   `exception-ready` only after immediate reads prove the exact UID,
+   resourceVersion, spec hash, and readiness of all eight old/new agent sets,
+   the exception admission/RBAC objects, and the retained claim identity.
 3. `migrate-reference-data` consumes that signed state. Copy the retained tree
    to `fs2-reference-data-rwx`, switch the stager and status Deployment to the
    claim, and keep the temporary verification boundary. Sign
@@ -56,12 +63,18 @@ workload movement. Advance only after the checks for the current phase pass:
    tests. Sign `baseline-enforced` only after these checks pass.
 
 The existing-scientific-namespace input is exactly the frozen set
+`fs2-academic-poc` plus
 `fs2-bioir-{boltz2,coverage,openfold,protenix,snapshot}`, not a prefix selector
 or an optional empty list. The read-only inventory collector independently
-compares every live `fs2-bioir-*` namespace to that set before enforcement.
-Historical hostPath launchers are fail-closed and privileged donor/restore
-rendering is retired until a separately reviewed admission-constrained
-successor exists; non-privileged PVC storage-holder rendering remains usable.
+compares that complete live scientific inventory before enforcement.
+Historical hostPath launchers are replaced by CSI-only renderers that refuse a
+live launch until the namespace-local claim is Bound to the retained class and
+every required subpath passes a read-only probe. The privileged donor/restore
+renderer has a separately admission-constrained exact-profile successor in
+`fs2-snapshot-operations`; it cannot launch until its exact reference and
+checkpoint claims have independently passed the same retained-content and
+durability gates. These source contracts are not evidence that those claims
+exist or contain data in a live cluster.
 
 ## Ordered rollback
 
@@ -73,9 +86,11 @@ still uses it:
 2. `rollback-restore-host-agents` consumes `enforcement-removed`, recreates the
    old-namespace agents while the exception copies continue running, and signs
    `host-agents-restored` only after all restored agents are Ready.
-3. `rollback-remove-exception` consumes `host-agents-restored`, removes the
-   exception agents, admission bindings, and namespace, and verifies absence.
-   The retained reference-data CSI claim is not destroyed by this rollback.
+3. `rollback-remove-exception` consumes `host-agents-restored`, first refuses
+   active snapshot Pods or unexported checkpoints, then removes the exception
+   agents, admission bindings, and both exception namespaces and verifies
+   absence. The retained reference-data CSI claim is not destroyed by this
+   rollback.
 
 Use plans and the stable Helm revision captured at the serialized rollout slot,
 and reject any rollback candidate with request debugging enabled. Never use a
@@ -94,7 +109,7 @@ capacity is at least the 1611 GiB request.
 Every later phase requires one short-lived v3 Ed25519 receipt whose single
 signature covers the complete canonical bundle: reviewed signer identity and
 key digest, cluster/run/kube-system UID, deployment nonce, exact prior and next
-state, phase, one-time nonce, expiry, pinned PSA minor, five-namespace
+state, phase, one-time nonce, expiry, pinned PSA minor, six-namespace
 inventory, PVC UID/class, dataset/revision/tree, retained filesystem, and live
 observations. Each present observation carries the exact Kubernetes UID,
 resourceVersion, and canonical object hash; absence observations carry no
@@ -117,8 +132,10 @@ live reconciliation and ledger consumption has no authority.
 
 The dynamic model controller does not own ServiceAccounts or DaemonSets.
 Dynamic Deployments use the dedicated, non-token-mounted `fs2-model-runtime`
-ServiceAccount provisioned by Terraform, and host-memory-residency declarations
-are not published while the controller lacks DaemonSet authority.
+ServiceAccount provisioned by Terraform. Host-memory-residency declarations
+remain published: Terraform owns one finite holder per canonical model/pool,
+and arbitrary App UUIDs only consume its signed receipt. The controller never
+creates or mutates those DaemonSets.
 
 The controller has no NetworkPolicy API endpoint and its Role has no
 `networkpolicies` rule. It therefore cannot get, list, watch, create, patch, or

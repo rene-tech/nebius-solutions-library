@@ -18,7 +18,7 @@ locals {
   }
   pod_security_host_agent_images = {
     dcgm-exporter = "nvcr.io/nvidia/k8s/dcgm-exporter@sha256:b4df763de9558e5b3f1f1d79bc65b772fcf65b8a9c3664ea7173e47153112b4a"
-    node-exporter = "quay.io/prometheus/node-exporter@sha256:8c9bac11973b94b59be88d6e11fee4429aa743c8846cdc75d65b18db33f6a106"
+    node-exporter = "quay.io/prometheus/node-exporter:v1.12.1@sha256:8c9bac11973b94b59be88d6e11fee4429aa743c8846cdc75d65b18db33f6a106"
     otel-node     = "ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-k8s@sha256:3a8f46e1ff33546d36ddd94ef8721c5807718e25825f3e3f6eb5d552fd24e422"
     gpu-observer  = "${var.control_plane_image.repository}@${var.control_plane_image.digest}"
   }
@@ -29,12 +29,35 @@ locals {
     kube_system_uid  = var.kube_system_uid
     deployment_nonce = coalesce(var.pod_security_rollout_receipt.deployment_nonce, "prepare")
     exception_admission_sha256 = sha256(jsonencode({
-      policy_sha256     = filesha256("${path.module}/../foundation/pod_security_admission.tf")
-      rollout_manager   = "system:serviceaccount:fs2-system:fs2-pod-security-rollout-manager"
-      host_agent_images = local.pod_security_host_agent_images
+      host_policy_sha256     = filesha256("${path.module}/../foundation/pod_security_admission.tf")
+      snapshot_policy_sha256 = filesha256("${path.module}/../foundation/pod_security_snapshot_admission.tf")
+      rollout_manager        = "system:serviceaccount:fs2-system:fs2-pod-security-rollout-manager"
+      host_agent_images      = local.pod_security_host_agent_images
     }))
     psa_version           = var.pod_security_version
     scientific_namespaces = sort(tolist(var.pod_security_existing_scientific_namespaces))
+    host_agents = [
+      {
+        component = "dcgm-exporter"
+        legacy    = { namespace = "fs2-observability", name = "fs2-dcgm-exporter" }
+        exception = { namespace = "fs2-node-observability", name = "fs2-dcgm-exporter" }
+      },
+      {
+        component = "gpu-observer"
+        legacy    = { namespace = "fs2-system", name = "fs2-serve-control-plane-gpu-observer" }
+        exception = { namespace = "fs2-node-observability", name = "fs2-serve-control-plane-gpu-observer" }
+      },
+      {
+        component = "node-exporter"
+        legacy    = { namespace = "fs2-observability", name = "fs2-${var.run_id}-monitoring-prometheus-node-exporter" }
+        exception = { namespace = "fs2-node-observability", name = "fs2-node-exporter" }
+      },
+      {
+        component = "otel-node"
+        legacy    = { namespace = "fs2-observability", name = "fs2-otel-node-agent" }
+        exception = { namespace = "fs2-node-observability", name = "fs2-otel-node-agent" }
+      },
+    ]
     pvc = {
       namespace     = "fs2-reference-data"
       name          = "fs2-reference-data-rwx"
@@ -110,7 +133,12 @@ resource "terraform_data" "pod_security_rollout_contract" {
 # workflows outside this state. Manage only the six PSA label fields; never
 # adopt or replace the Namespace object itself.
 resource "kubernetes_labels" "existing_scientific_pod_security" {
-  for_each = var.pod_security_rollout_phase == "enforce" ? var.pod_security_existing_scientific_namespaces : []
+  # fs2-academic-poc is created and labeled by the academic-assets module in
+  # this same state. Avoid two field managers owning the six PSA label keys.
+  for_each = var.pod_security_rollout_phase == "enforce" ? setsubtract(
+    var.pod_security_existing_scientific_namespaces,
+    toset(["fs2-academic-poc"]),
+  ) : []
 
   api_version = "v1"
   kind        = "Namespace"

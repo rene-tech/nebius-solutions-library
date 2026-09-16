@@ -379,9 +379,9 @@ run "declared_mechanisms_reach_the_model_qualification" {
     condition = (
       contains(keys(local.model_controller_qualifications["qwen3-8b"]), "regionalCache") &&
       contains(keys(local.model_controller_qualifications["qwen3-8b"]), "gpuResident") &&
-      !contains(keys(local.model_controller_qualifications["qwen3-8b"]), "hostMemoryResidency")
+      contains(keys(local.model_controller_qualifications["qwen3-8b"]), "hostMemoryResidency")
     )
-    error_message = "Only mechanisms that fit the controller's namespaced RBAC boundary may reach its published qualification."
+    error_message = "The Terraform-owned finite holder preserves host-memory qualification without granting the controller DaemonSet authority."
   }
 
   assert {
@@ -395,6 +395,29 @@ run "declared_mechanisms_reach_the_model_qualification" {
       "${var.control_plane_image.repository}@${var.control_plane_image.digest}"
     )
     error_message = "The envelope must expose the digest-pinned control-plane image that packages the residency agent."
+  }
+}
+
+run "host_memory_residency_uses_one_finite_tokenless_terraform_holder" {
+  command = plan
+
+  variables {
+    model_controller = merge(var.model_controller, {
+      fast_start_mechanisms_file = abspath("tests/fixtures/fast-start-mechanisms.json")
+    })
+  }
+
+  plan_options { target = [terraform_data.fast_start_host_memory_contract] }
+
+  assert {
+    condition = (
+      length(terraform_data.fast_start_host_memory_contract.input.holders) == 1 &&
+      terraform_data.fast_start_host_memory_contract.input.holders["qwen3-8b/nebius-b300-preemptible-1x"].name == "fs2-hostmem-qwen3-8b-nebius-b300-preemptible-1x" &&
+      terraform_data.fast_start_host_memory_contract.input.holders["qwen3-8b/nebius-b300-preemptible-1x"].label_identity == "fs2-hostmem-qwen3-8b-nebius-b300-preemptible-1x" &&
+      terraform_data.fast_start_host_memory_contract.input.service_account_name == "fs2-model-runtime" &&
+      terraform_data.fast_start_host_memory_contract.input.network_profile == "mounted-content"
+    )
+    error_message = "Host-memory residency must use one finite Terraform-owned tokenless holder selected by the mounted-content profile."
   }
 }
 

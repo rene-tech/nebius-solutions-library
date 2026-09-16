@@ -128,17 +128,31 @@ locals {
       "pod-security.kubernetes.io/warn"            = "restricted"
       "pod-security.kubernetes.io/warn-version"    = var.pod_security_version
     })
+    "fs2-snapshot-operations" = tomap({
+      "pod-security.kubernetes.io/enforce"         = "privileged"
+      "pod-security.kubernetes.io/enforce-version" = var.pod_security_version
+      "pod-security.kubernetes.io/audit"           = "restricted"
+      "pod-security.kubernetes.io/audit-version"   = var.pod_security_version
+      "pod-security.kubernetes.io/warn"            = "restricted"
+      "pod-security.kubernetes.io/warn-version"    = var.pod_security_version
+    })
   } : tomap({})
 
   pod_security_annotations = local.node_observability_exception_enabled ? {
     "fs2-node-observability" = tomap({
       "security.fs2.nebius.ai/pod-security-exception" = "node-observability-host-integration"
     })
+    "fs2-snapshot-operations" = tomap({
+      "security.fs2.nebius.ai/pod-security-exception" = "exact-scientific-snapshot-profile"
+    })
   } : tomap({})
 
   pod_security_exception_labels = local.node_observability_exception_enabled ? {
     "fs2-node-observability" = tomap({
       "security.fs2.nebius.ai/host-agent-only" = "true"
+    })
+    "fs2-snapshot-operations" = tomap({
+      "security.fs2.nebius.ai/snapshot-only" = "true"
     })
   } : tomap({})
 
@@ -154,7 +168,10 @@ locals {
     "keda",
     "kueue-system",
     "jobset-system",
-  ], local.node_observability_exception_enabled ? ["fs2-node-observability"] : []))
+    ], local.node_observability_exception_enabled ? [
+    "fs2-node-observability",
+    "fs2-snapshot-operations",
+  ] : []))
 
   chart_versions = {
     cert_manager          = "v1.21.1"

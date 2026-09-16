@@ -167,6 +167,18 @@ variable "filesystem_claim" {
   }
 }
 
+variable "expected_tree_sha256" {
+  description = "Exact published reference-data tree read through the retained CSI claim before PSA enforcement."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.expected_tree_sha256 == null || can(regex("^[a-f0-9]{64}$", var.expected_tree_sha256))
+    error_message = "expected_tree_sha256 must be null during prepare or an exact lowercase SHA-256."
+  }
+}
+
 variable "pod_security_rollout_verification" {
   description = "Output of the canonical signed rollout-gate module in the owning workloads stage."
   type = object({

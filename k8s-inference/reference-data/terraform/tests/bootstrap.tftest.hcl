@@ -35,6 +35,7 @@ variables {
     }
   }
   shared_filesystem_host_path = "/mnt/fs2-reference-data/data"
+  expected_tree_sha256        = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   status = {
     enabled  = true
     image    = "registry.eu-north1.nebius.cloud/reference/status@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

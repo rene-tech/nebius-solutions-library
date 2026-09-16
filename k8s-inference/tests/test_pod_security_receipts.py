@@ -11,7 +11,6 @@ from pathlib import Path
 
 import pytest
 
-
 ROOT = Path(__file__).resolve().parents[1]
 VERIFIER_PATH = ROOT / "scripts" / "verify_pod_security_receipts.py"
 SPEC = importlib.util.spec_from_file_location("sai07_receipts", VERIFIER_PATH)
@@ -45,11 +44,40 @@ def context() -> dict[str, object]:
         "exception_admission_sha256": "d" * 64,
         "psa_version": "v1.35",
         "scientific_namespaces": [
+            "fs2-academic-poc",
             "fs2-bioir-boltz2",
             "fs2-bioir-coverage",
             "fs2-bioir-openfold",
             "fs2-bioir-protenix",
             "fs2-bioir-snapshot",
+        ],
+        "host_agents": [
+            {
+                "component": "dcgm-exporter",
+                "legacy": {"namespace": "fs2-observability", "name": "fs2-dcgm-exporter"},
+                "exception": {"namespace": "fs2-node-observability", "name": "fs2-dcgm-exporter"},
+            },
+            {
+                "component": "gpu-observer",
+                "legacy": {"namespace": "fs2-system", "name": "fs2-serve-control-plane-gpu-observer"},
+                "exception": {
+                    "namespace": "fs2-node-observability",
+                    "name": "fs2-serve-control-plane-gpu-observer",
+                },
+            },
+            {
+                "component": "node-exporter",
+                "legacy": {
+                    "namespace": "fs2-observability",
+                    "name": "fs2-sai07test-monitoring-prometheus-node-exporter",
+                },
+                "exception": {"namespace": "fs2-node-observability", "name": "fs2-node-exporter"},
+            },
+            {
+                "component": "otel-node",
+                "legacy": {"namespace": "fs2-observability", "name": "fs2-otel-node-agent"},
+                "exception": {"namespace": "fs2-node-observability", "name": "fs2-otel-node-agent"},
+            },
         ],
         "pvc": {
             "namespace": "fs2-reference-data",
@@ -95,7 +123,14 @@ def live_object(
     }
     if kind == "DaemonSet":
         value["spec"] = {"selector": {"matchLabels": {"app": name}}}
-        value["status"] = {"desiredNumberScheduled": 1, "numberReady": 1}
+        value["status"] = {
+            "observedGeneration": 1,
+            "desiredNumberScheduled": 1,
+            "updatedNumberScheduled": 1,
+            "numberReady": 1,
+            "numberAvailable": 1,
+            "numberUnavailable": 0,
+        }
     elif kind == "Namespace":
         value["spec"] = {"finalizers": ["kubernetes"]}
         value["status"] = {"phase": "Active"}
@@ -154,10 +189,44 @@ def exception_objects() -> list[dict[str, object]]:
             "",
             "fs2-node-observability-pods",
         ),
+        *sorted(verifier.SNAPSHOT_EXCEPTION_OBJECTS),
+        *[
+            ("apps/v1", "DaemonSet", identity[location]["namespace"], identity[location]["name"])
+            for identity in context_host_agents()
+            for location in ("legacy", "exception")
+        ],
     ]
+    identities = sorted(set(identities))
     return [
         live_object(api_version, kind, namespace, name, ordinal)
         for ordinal, (api_version, kind, namespace, name) in enumerate(identities, start=1)
+    ]
+
+
+def context_host_agents() -> list[dict[str, object]]:
+    return [
+        {
+            "legacy": {"namespace": "fs2-observability", "name": "fs2-dcgm-exporter"},
+            "exception": {"namespace": "fs2-node-observability", "name": "fs2-dcgm-exporter"},
+        },
+        {
+            "legacy": {"namespace": "fs2-system", "name": "fs2-serve-control-plane-gpu-observer"},
+            "exception": {
+                "namespace": "fs2-node-observability",
+                "name": "fs2-serve-control-plane-gpu-observer",
+            },
+        },
+        {
+            "legacy": {
+                "namespace": "fs2-observability",
+                "name": "fs2-sai07test-monitoring-prometheus-node-exporter",
+            },
+            "exception": {"namespace": "fs2-node-observability", "name": "fs2-node-exporter"},
+        },
+        {
+            "legacy": {"namespace": "fs2-observability", "name": "fs2-otel-node-agent"},
+            "exception": {"namespace": "fs2-node-observability", "name": "fs2-otel-node-agent"},
+        },
     ]
 
 
@@ -223,24 +292,36 @@ class FakeClient:
 
 
 def query(public_key: Path, context: dict[str, object], mode: str = "owner-transition") -> dict[str, object]:
+    inspected_namespaces = [
+        "fs2-data",
+        "fs2-models",
+        "fs2-observability",
+        "fs2-reference-data",
+        "fs2-system",
+        *context["scientific_namespaces"],  # type: ignore[misc]
+    ]
     artifact: dict[str, object] = {
-        "schema": "fs2-serve.nebius.ai/sai07-baseline-inventory/v2",
+        "schema": "fs2-serve.nebius.ai/sai07-baseline-inventory/v3",
         "captured_at": NOW.isoformat().replace("+00:00", "Z"),
         "cluster": {"kube_system_uid": context["kube_system_uid"]},
         "scientific_namespaces": context["scientific_namespaces"],
-        "inspected_namespaces": [
-            "fs2-data",
-            "fs2-models",
-            "fs2-observability",
-            "fs2-reference-data",
-            "fs2-system",
-            *context["scientific_namespaces"],  # type: ignore[misc]
+        "inspected_namespaces": inspected_namespaces,
+        "collections": [
+            {
+                "api_version": api_version,
+                "kind": kind,
+                "namespace": namespace,
+                "resource_version": "1",
+                "item_count": 0,
+            }
+            for namespace in inspected_namespaces
+            for api_version, kind in sorted(verifier.BASELINE_INVENTORY_KINDS)
         ],
-        "collections": [],
         "objects": [],
         "reference_host_paths": 103,
         "baseline_incompatible_objects": 103,
         "restricted_incompatible_objects": 716,
+        "legacy_controller_objects": [],
         "unauthorized_exception_objects": [],
     }
     artifact["inventory_sha256"] = hashlib.sha256(canonical(artifact)).hexdigest()
@@ -280,7 +361,7 @@ def initial_ledger(query_value: dict[str, object]) -> dict[str, object]:
             "uid": "ledger-uid",
             "resourceVersion": "10",
         },
-        "data": {"ledger.json": canonical(ledger).decode()},
+        "data": verifier._ledger_data(ledger),
     }
 
 
@@ -291,9 +372,7 @@ def signed_bundle(
     ledger: dict[str, object],
     objects: list[dict[str, object]],
 ) -> Path:
-    ledger_data = ledger["data"]
-    assert isinstance(ledger_data, dict)
-    ledger_value = json.loads(str(ledger_data["ledger.json"]))
+    ledger_value = verifier._ledger_from_config_map(ledger, query_value)
     unsigned: dict[str, object] = {
         "schema": verifier.BUNDLE_SCHEMA,
         "authority": {
@@ -494,3 +573,64 @@ def test_signature_uses_the_descriptor_fenced_public_key_bytes(
     reviewed_bytes = public_key.read_bytes()
     public_key.write_text("replaced after descriptor-fenced read", encoding="utf-8")
     verifier._verify_signature(bundle, reviewed_bytes, "sai07-review-authority")
+
+
+def test_reference_data_transition_requires_bound_retained_rwx_and_completed_read_probe(
+    context: dict[str, object],
+) -> None:
+    tree = context["dataset"]["tree_sha256"]  # type: ignore[index]
+    pvc = live_object("v1", "PersistentVolumeClaim", "fs2-reference-data", "fs2-reference-data-rwx", 1)
+    pvc["metadata"]["uid"] = context["pvc"]["uid"]  # type: ignore[index]
+    pvc["spec"] = {
+        "accessModes": ["ReadWriteMany"],
+        "storageClassName": "fs2-reference-data-retained-sc",
+        "resources": {"requests": {"storage": "1611Gi"}},
+    }
+    pvc["status"] = {"phase": "Bound"}
+    storage_class = live_object(
+        "storage.k8s.io/v1", "StorageClass", "", "fs2-reference-data-retained-sc", 2
+    )
+    storage_class["reclaimPolicy"] = "Retain"
+    probe = live_object(
+        "batch/v1",
+        "Job",
+        "fs2-reference-data",
+        f"fs2-reference-data-read-probe-{tree[:12]}",
+        3,
+    )
+    probe["spec"] = {
+        "template": {
+            "spec": {
+                "serviceAccountName": "fs2-reference-data",
+                "automountServiceAccountToken": False,
+                "volumes": [{
+                    "name": "reference-data",
+                    "persistentVolumeClaim": {
+                        "claimName": "fs2-reference-data-rwx",
+                        "readOnly": True,
+                    },
+                }],
+            }
+        }
+    }
+    probe["status"] = {"succeeded": 1, "conditions": [{"type": "Complete", "status": "True"}]}
+    objects = [pvc, storage_class, probe]
+    client = FakeClient(objects, {})
+    verifier._validate_live_observations(
+        client,
+        [observation(value) for value in objects],
+        [],
+        "reference-data-ready",
+        context,
+    )
+
+    probe["status"] = {"failed": 1, "conditions": [{"type": "Failed", "status": "True"}]}
+    client = FakeClient([pvc, storage_class, probe], {})
+    with pytest.raises(verifier.ReceiptError, match="read probe is not exactly completed"):
+        verifier._validate_live_observations(
+            client,
+            [observation(pvc), observation(storage_class), observation(probe)],
+            [],
+            "reference-data-ready",
+            context,
+        )

@@ -485,6 +485,22 @@ resource "helm_release" "node_exporter_exception" {
       tag        = "v1.12.1"
       digest     = "sha256:8c9bac11973b94b59be88d6e11fee4429aa743c8846cdc75d65b18db33f6a106"
     }
+    securityContext = {
+      fsGroup        = 65534
+      runAsNonRoot   = true
+      runAsUser      = 65534
+      runAsGroup     = 65534
+      seccompProfile = { type = "RuntimeDefault" }
+    }
+    containerSecurityContext = {
+      allowPrivilegeEscalation = false
+      capabilities             = { drop = ["ALL"] }
+      readOnlyRootFilesystem   = true
+      runAsNonRoot             = true
+      runAsUser                = 65534
+      runAsGroup               = 65534
+      seccompProfile           = { type = "RuntimeDefault" }
+    }
     serviceMonitor = {
       enabled          = true
       additionalLabels = { release = "fs2-${var.run_id}-monitoring" }

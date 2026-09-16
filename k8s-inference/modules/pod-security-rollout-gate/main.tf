@@ -65,7 +65,20 @@ resource "kubernetes_config_map_v1" "ledger" {
   }
 
   data = {
-    "ledger.json" = jsonencode(local.initial_ledger)
+    schema                            = local.initial_ledger.schema
+    context_sha256                    = local.initial_ledger.context_sha256
+    authority_key_id                  = local.initial_ledger.authority.key_id
+    authority_signer_identity         = local.initial_ledger.authority.signer_identity
+    authority_public_key_sha256       = local.initial_ledger.authority.public_key_sha256
+    sequence                          = tostring(local.initial_ledger.sequence)
+    state                             = local.initial_ledger.state
+    last_bundle_sha256                = ""
+    last_receipt_id                   = ""
+    last_nonce                        = ""
+    authorization_phase               = ""
+    authorization_bundle_sha256       = ""
+    authorization_nonce               = ""
+    authorization_downstream_consumed = ""
   }
 
   lifecycle {

@@ -3,9 +3,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SCIENTIFIC_NAMESPACES = (
+    "fs2-academic-poc",
     "fs2-bioir-boltz2",
     "fs2-bioir-coverage",
     "fs2-bioir-openfold",
@@ -67,8 +67,23 @@ def test_exception_namespace_has_enforceable_identity_and_content_admission() ->
     assert "exact reviewed image, command, service account" in admission
     assert "fs2-pod-security-rollout-manager" in admission
     assert 'resource "kubernetes_role_binding_v1" "pod_security_rollout_ledger"' in admission
+    assert '"podtemplates"' in admission
     assert 'resources   = ["pods/ephemeralcontainers"]' in admission
     assert "Ephemeral containers are forbidden" in admission
+    assert "v.hostPath == {'path':'/'}" in admission
+    assert "m.mountPath == '/host/root' && m.mountPropagation == 'HostToContainer' && m.readOnly == true" in admission
+    assert "object.spec.template.spec.hostIPC == false" in admission
+    assert "quay.io/prometheus/node-exporter:v1.12.1@sha256:" in _source("locals.tf")
+    assert "containerSecurityContext = {" in _source("stages/foundation/releases.tf")
+    assert "object.spec.template.spec.securityContext == {'fsGroup':65534" in admission
+    assert "object.spec.template.spec.securityContext == {'fsGroup':10001" in admission
+    assert "object.metadata.name == 'fs2-dcgm-exporter'" in admission
+    assert "c.securityContext.capabilities.add == ['SYS_ADMIN']" in admission
+    assert "v.name.startsWith('kube-api-access-')" in admission
+    assert "!has(e.valueFrom.secretKeyRef)" in admission
+    assert "v.projected == {'defaultMode':256" in admission
+    assert "object.spec.template.spec.containers[0].image == '%s'" in admission
+    assert "object.spec.template.spec.containers[0].command == ['/otelcol-k8s']" in admission
     for name in (
         "fs2-dcgm-exporter",
         "fs2-node-exporter",
@@ -110,6 +125,9 @@ def test_rollout_gate_consumes_prior_signed_state_without_phase_skips() -> None:
     assert 'data "external"' not in gate
     assert 'operations  = ["UPDATE", "DELETE"]' in admission
     assert "The monotonic pod-security rollout ledger may not be deleted" in admission
+    assert "object.data.size() == 14" in admission
+    assert "int(object.data.sequence) == int(oldObject.data.sequence) + 1" in admission
+    assert "authorization_downstream_consumed == 'false'" in admission
 
     reference = _source("reference-data/terraform/main.tf")
     for phase, terminal in expected.items():
@@ -149,6 +167,9 @@ def test_reference_data_uses_only_dedicated_retained_rwx_csi() -> None:
     assert 'access_modes       = ["ReadWriteMany"]' in reference
     assert "prevent_destroy = true" in reference
     assert "var.filesystem_claim.size_gib <= var.filesystem_claim.capacity_gib" in reference
+    assert 'resource "kubernetes_job_v1" "csi_read_probe"' in reference
+    assert "read_only  = true" in reference
+    assert "automount_service_account_token = false" in reference
     assert "csi_migration_receipt" not in variables
     assert "csi_readiness_receipt_sha256" not in variables
 
@@ -161,7 +182,7 @@ def test_scientific_inventory_is_exact_nonempty_and_scanned_before_enforcement()
         assert f'"{namespace}"' in root_variables
         assert f'"{namespace}"' in stage_variables
         assert f'"{namespace}"' in scanner
-    assert "live fs2-bioir namespace inventory differs" in scanner
+    assert "live scientific namespace inventory differs" in scanner
     assert '"reference_host_paths"' in scanner
     assert '"baseline_incompatible_objects"' in scanner
     assert '"restricted_incompatible_objects"' in scanner
@@ -190,6 +211,22 @@ def test_dynamic_controller_has_zero_networkpolicy_serviceaccount_or_daemonset_a
         assert resource not in rbac
     assert "model_controller_network_policy_resource_names" not in workloads
     assert "networkPolicyResourceNames" not in _source("stages/workloads/control_plane.tf")
+
+
+def test_functional_replacements_are_finite_tokenless_and_exactly_admitted() -> None:
+    holders = _source("stages/workloads/fast_start_claims.tf")
+    snapshot = _source("stages/foundation/pod_security_snapshot_admission.tf")
+    assert 'resource "terraform_data" "fast_start_host_memory_contract"' in holders
+    assert 'service_account_name = "fs2-model-runtime"' in holders
+    assert "automountServiceAccountToken = false" in holders
+    assert '"fs2-serve.nebius.ai/network-profile"      = "mounted-content"' in holders
+    assert 'resource "kubernetes_manifest" "snapshot_pod_policy"' in snapshot
+    assert "request.userInfo.username == '${local.snapshot_manager_username}'" in snapshot
+    assert "object.spec.automountServiceAccountToken == false" in snapshot
+    assert "object.spec.hostNetwork == false && object.spec.hostPID == false && object.spec.hostIPC == false" in snapshot
+    assert "object.spec.containers[0].image == '${local.snapshot_runtime_image}'" in snapshot
+    assert "object.spec.containers[0].command.size() in [14,18]" in snapshot
+    assert "object.spec.ephemeralContainers.size() == 0" in snapshot
 
 
 def test_legacy_cleanup_is_exactly_fenced_and_never_touches_finite_profiles() -> None:

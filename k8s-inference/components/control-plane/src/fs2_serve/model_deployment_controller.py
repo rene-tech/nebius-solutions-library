@@ -45,7 +45,6 @@ from .fast_start import (
 from .fast_start_identity import mechanism_config_digest
 from .fast_start_mechanisms import (
     DECLARED_MECHANISMS,
-    MECHANISM_ANNOTATION,
     FastStartCacheMechanismStatus,
     FastStartMechanism,
     project_cache_mechanisms,
@@ -1297,31 +1296,6 @@ def _deployment_rollout_complete(item: ResourceSnapshot) -> bool:
     )
 
 
-def _residency_holder_ready(
-    desired: RenderedResource,
-    observed: ResourceSnapshot | None,
-    owner_uid: str,
-) -> bool:
-    """Require a non-empty, current DaemonSet whose receipt-backed probe is Ready."""
-
-    if observed is None:
-        return False
-    desired_nodes = observed.desired_replicas
-    return bool(
-        desired_nodes is not None
-        and desired_nodes > 0
-        and observed.observed.controller_owner_uid == owner_uid
-        and FIELD_MANAGER in observed.observed.field_managers
-        and observed.observed.digest == desired.digest
-        and observed.observed_generation == observed.generation
-        and observed.replicas == desired_nodes
-        and observed.updated_replicas == desired_nodes
-        and observed.ready_replicas == desired_nodes
-        and observed.available_replicas == desired_nodes
-        and observed.unavailable_replicas == 0
-    )
-
-
 def _pod_phase_counts(pods: list[PodSnapshot]) -> dict[str, int]:
     active = [pod for pod in pods if not pod.deleting]
     return {
@@ -1835,7 +1809,6 @@ def build_status(
         for item in (plan.render.resources if plan.render is not None else [])
     }
     observed_by_identity = {item.observed.identity: item.observed for item in discovery.resources}
-    snapshots_by_identity = {item.observed.identity: item for item in discovery.resources}
     converged = bool(desired_resources) and all(
         identity in observed_by_identity
         and observed_by_identity[identity].controller_owner_uid == owner_uid
@@ -1928,32 +1901,24 @@ def build_status(
     )
     host_residency_pool_refs: set[str] | None = None
     host_residency_ready: bool | None = None
-    if plan.render is not None:
-        holder_resources = [
-            item
-            for item in plan.render.resources
-            if item.kind == "DaemonSet"
-            and _mapping(_mapping(item.manifest.get("metadata")).get("annotations")).get(MECHANISM_ANNOTATION)
-            == FastStartMechanism.HOST_MEMORY_RESIDENCY.value
-        ]
-        host_residency_pool_refs = {
-            pool_ref
-            for item in holder_resources
-            if isinstance(
-                pool_ref := _mapping(_mapping(item.manifest.get("metadata")).get("annotations")).get(
-                    WORKLOAD_POOL_ANNOTATION
-                ),
-                str,
-            )
-        }
-        if plan.validation.fast_start_mechanism.mechanism is FastStartMechanism.HOST_MEMORY_RESIDENCY:
+    if plan.validation.fast_start_mechanism.mechanism is FastStartMechanism.HOST_MEMORY_RESIDENCY:
+        # The controller has no DaemonSet endpoint or RBAC. Terraform owns one
+        # finite holder for each qualified model/pool and the runtime init
+        # container validates its exact, fresh receipt. A converged Deployment
+        # therefore proves the external holder contract without granting the
+        # controller infrastructure authority.
+        qualification = envelope.qualifications.get(spec.model_ref) if envelope is not None else None
+        residency = qualification.host_memory_residency if qualification is not None else None
+        if residency is not None:
+            host_residency_pool_refs = set(residency.pool_refs).intersection(spec.placement.pool_refs)
+            # A scale-to-zero Deployment has not executed the receipt verifier,
+            # so it cannot attest holder readiness merely because its desired
+            # replica count is zero. The first ready runtime proves the exact
+            # external holder receipt and makes the mechanism observable.
             host_residency_ready = (
                 host_residency_pool_refs == set(spec.placement.pool_refs)
-                and bool(holder_resources)
-                and all(
-                    _residency_holder_ready(item, snapshots_by_identity.get(_rendered_identity(item)), owner_uid)
-                    for item in holder_resources
-                )
+                and converged
+                and ready > 0
             )
     fast_start = _fast_start_status(
         spec=spec,

@@ -9,6 +9,7 @@ locals {
     restricted_incompatible_objects = 0
   }
   pod_security_scientific_namespaces = [
+    "fs2-academic-poc",
     "fs2-bioir-boltz2",
     "fs2-bioir-coverage",
     "fs2-bioir-openfold",
@@ -38,12 +39,35 @@ locals {
     kube_system_uid  = var.kube_system_uid
     deployment_nonce = coalesce(var.pod_security_rollout_receipt.deployment_nonce, "prepare")
     exception_admission_sha256 = sha256(jsonencode({
-      policy_sha256     = filesha256("${path.module}/pod_security_admission.tf")
-      rollout_manager   = "system:serviceaccount:fs2-system:fs2-pod-security-rollout-manager"
-      host_agent_images = var.pod_security_host_agent_images
+      host_policy_sha256     = filesha256("${path.module}/pod_security_admission.tf")
+      snapshot_policy_sha256 = filesha256("${path.module}/pod_security_snapshot_admission.tf")
+      rollout_manager        = "system:serviceaccount:fs2-system:fs2-pod-security-rollout-manager"
+      host_agent_images      = var.pod_security_host_agent_images
     }))
     psa_version           = var.pod_security_version
     scientific_namespaces = local.pod_security_scientific_namespaces
+    host_agents = [
+      {
+        component = "dcgm-exporter"
+        legacy    = { namespace = "fs2-observability", name = "fs2-dcgm-exporter" }
+        exception = { namespace = "fs2-node-observability", name = "fs2-dcgm-exporter" }
+      },
+      {
+        component = "gpu-observer"
+        legacy    = { namespace = "fs2-system", name = "fs2-serve-control-plane-gpu-observer" }
+        exception = { namespace = "fs2-node-observability", name = "fs2-serve-control-plane-gpu-observer" }
+      },
+      {
+        component = "node-exporter"
+        legacy    = { namespace = "fs2-observability", name = "fs2-${var.run_id}-monitoring-prometheus-node-exporter" }
+        exception = { namespace = "fs2-node-observability", name = "fs2-node-exporter" }
+      },
+      {
+        component = "otel-node"
+        legacy    = { namespace = "fs2-observability", name = "fs2-otel-node-agent" }
+        exception = { namespace = "fs2-node-observability", name = "fs2-otel-node-agent" }
+      },
+    ]
     pvc = {
       namespace     = local.pod_security_retained_context.pvc.namespace
       name          = local.pod_security_retained_context.pvc.name

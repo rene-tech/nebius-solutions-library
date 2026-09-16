@@ -1071,7 +1071,7 @@ locals {
     }
     pod_security_host_agent_images = {
       dcgm-exporter = "nvcr.io/nvidia/k8s/dcgm-exporter@sha256:b4df763de9558e5b3f1f1d79bc65b772fcf65b8a9c3664ea7173e47153112b4a"
-      node-exporter = "quay.io/prometheus/node-exporter@sha256:8c9bac11973b94b59be88d6e11fee4429aa743c8846cdc75d65b18db33f6a106"
+      node-exporter = "quay.io/prometheus/node-exporter:v1.12.1@sha256:8c9bac11973b94b59be88d6e11fee4429aa743c8846cdc75d65b18db33f6a106"
       otel-node     = "ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-k8s@sha256:3a8f46e1ff33546d36ddd94ef8721c5807718e25825f3e3f6eb5d552fd24e422"
       gpu-observer  = "${var.deployment.applications.control_plane.repository}@${var.deployment.applications.control_plane.digest}"
     }

@@ -19,7 +19,6 @@ import sys
 from pathlib import Path
 from urllib.parse import quote
 
-
 SCHEMA = "fs2-serve.nebius.ai/sai07-legacy-cleanup/v2"
 RESULT_SCHEMA = "fs2-serve.nebius.ai/sai07-legacy-cleanup-result/v2"
 NAMESPACE = "fs2-models"
@@ -195,6 +194,7 @@ def service_account_references(client: Kubectl, name: str) -> list[str]:
     references: list[str] = []
     collections = (
         ("Pod", f"/api/v1/namespaces/{NAMESPACE}/pods", ("spec",)),
+        ("PodTemplate", f"/api/v1/namespaces/{NAMESPACE}/podtemplates", ("template", "spec")),
         ("Deployment", f"/apis/apps/v1/namespaces/{NAMESPACE}/deployments", ("spec", "template", "spec")),
         ("StatefulSet", f"/apis/apps/v1/namespaces/{NAMESPACE}/statefulsets", ("spec", "template", "spec")),
         ("DaemonSet", f"/apis/apps/v1/namespaces/{NAMESPACE}/daemonsets", ("spec", "template", "spec")),
@@ -225,7 +225,31 @@ def service_account_references(client: Kubectl, name: str) -> list[str]:
                 )
                 if isinstance(pod_spec, dict) and pod_spec.get("serviceAccountName", "default") == name:
                     references.append(f"JobSet/{item['metadata']['name']}")
+    model_deployments = client.raw(
+        f"/apis/inference.fs2.nebius.ai/v1alpha1/namespaces/{NAMESPACE}/modeldeployments",
+        allow_absent=True,
+    )
+    if model_deployments is not None:
+        for item in model_deployments.get("items", []):
+            if name in nested_service_account_names(item.get("spec", {})):
+                references.append(f"ModelDeployment/{item['metadata']['name']}")
     return references
+
+
+def nested_service_account_names(value: object) -> set[str]:
+    """Find serviceAccountName in every declared custom-controller template."""
+
+    result: set[str] = set()
+    if isinstance(value, dict):
+        service_account = value.get("serviceAccountName")
+        if isinstance(service_account, str) and service_account:
+            result.add(service_account)
+        for child in value.values():
+            result.update(nested_service_account_names(child))
+    elif isinstance(value, list):
+        for child in value:
+            result.update(nested_service_account_names(child))
+    return result
 
 
 def run(args: argparse.Namespace) -> dict[str, object]:

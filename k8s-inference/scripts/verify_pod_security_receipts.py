@@ -26,9 +26,24 @@ from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import quote, urlencode
 
-
 BUNDLE_SCHEMA = "fs2-serve.nebius.ai/pod-security-rollout-receipt/v3"
 LEDGER_SCHEMA = "fs2-serve.nebius.ai/pod-security-rollout-ledger/v1"
+LEDGER_DATA_KEYS = {
+    "schema",
+    "context_sha256",
+    "authority_key_id",
+    "authority_signer_identity",
+    "authority_public_key_sha256",
+    "sequence",
+    "state",
+    "last_bundle_sha256",
+    "last_receipt_id",
+    "last_nonce",
+    "authorization_phase",
+    "authorization_bundle_sha256",
+    "authorization_nonce",
+    "authorization_downstream_consumed",
+}
 SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9](?:[-A-Za-z0-9._:@/]{0,251}[A-Za-z0-9])?$")
 DNS_RE = re.compile(r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$")
@@ -37,6 +52,9 @@ MAX_OBSERVATION_AGE = dt.timedelta(minutes=2)
 MAX_CLOCK_SKEW = dt.timedelta(seconds=30)
 MAX_OBJECTS = 2048
 MAX_INVENTORIES = 256
+EXPECTED_REFERENCE_HOST_PATHS = 103
+EXPECTED_BASELINE_INCOMPATIBLE_OBJECTS = 103
+EXPECTED_RESTRICTED_INCOMPATIBLE_OBJECTS = 716
 
 PHASE_TRANSITIONS = {
     "migrate-reference-data": ("unmanaged", "exception-ready"),
@@ -52,6 +70,7 @@ RESOURCE_PATHS = {
     ("v1", "Namespace"): "namespaces",
     ("v1", "PersistentVolumeClaim"): "persistentvolumeclaims",
     ("v1", "Pod"): "pods",
+    ("v1", "PodTemplate"): "podtemplates",
     ("v1", "ReplicationController"): "replicationcontrollers",
     ("v1", "ServiceAccount"): "serviceaccounts",
     ("apps/v1", "DaemonSet"): "daemonsets",
@@ -61,6 +80,8 @@ RESOURCE_PATHS = {
     ("batch/v1", "CronJob"): "cronjobs",
     ("batch/v1", "Job"): "jobs",
     ("networking.k8s.io/v1", "NetworkPolicy"): "networkpolicies",
+    ("rbac.authorization.k8s.io/v1", "Role"): "roles",
+    ("rbac.authorization.k8s.io/v1", "RoleBinding"): "rolebindings",
     ("storage.k8s.io/v1", "StorageClass"): "storageclasses",
     ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicy"): "validatingadmissionpolicies",
     ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicyBinding"): "validatingadmissionpolicybindings",
@@ -78,6 +99,8 @@ CLUSTER_SCOPED = {
 
 BASELINE_INVENTORY_KINDS = {
     ("v1", "Pod"),
+    ("v1", "PodTemplate"),
+    ("v1", "ServiceAccount"),
     ("v1", "ReplicationController"),
     ("apps/v1", "Deployment"),
     ("apps/v1", "ReplicaSet"),
@@ -88,6 +111,7 @@ BASELINE_INVENTORY_KINDS = {
     ("jobset.x-k8s.io/v1alpha2", "JobSet"),
     ("inference.fs2.nebius.ai/v1alpha1", "ModelDeployment"),
     ("keda.sh/v1alpha1", "ScaledObject"),
+    ("networking.k8s.io/v1", "NetworkPolicy"),
 }
 
 BASELINE_CAPABILITIES = {
@@ -117,6 +141,36 @@ EXCEPTION_SERVICE_ACCOUNTS = {
     "fs2-node-exporter",
     "fs2-otel-node",
     "fs2-serve-control-plane-gpu-observer",
+}
+SNAPSHOT_EXCEPTION_OBJECTS = {
+    ("v1", "Namespace", "", "fs2-snapshot-operations"),
+    ("v1", "ServiceAccount", "fs2-snapshot-operations", "fs2-snapshot-runtime"),
+    ("v1", "ServiceAccount", "fs2-system", "fs2-snapshot-manager"),
+    ("rbac.authorization.k8s.io/v1", "Role", "fs2-snapshot-operations", "fs2-snapshot-manager"),
+    (
+        "rbac.authorization.k8s.io/v1",
+        "RoleBinding",
+        "fs2-snapshot-operations",
+        "fs2-snapshot-manager",
+    ),
+    (
+        "admissionregistration.k8s.io/v1",
+        "ValidatingAdmissionPolicy",
+        "",
+        "fs2-snapshot-exact-profile",
+    ),
+    (
+        "admissionregistration.k8s.io/v1",
+        "ValidatingAdmissionPolicyBinding",
+        "",
+        "fs2-snapshot-exact-profile",
+    ),
+    (
+        "networking.k8s.io/v1",
+        "NetworkPolicy",
+        "fs2-snapshot-operations",
+        "fs2-snapshot-default-deny",
+    ),
 }
 
 
@@ -291,6 +345,7 @@ def _validate_context(context: dict[str, Any], expected: dict[str, Any]) -> None
             "dataset",
             "storage",
             "baseline",
+            "host_agents",
         },
         "context",
     )
@@ -313,6 +368,28 @@ def _validate_context(context: dict[str, Any], expected: dict[str, Any]) -> None
         or not all(isinstance(item, str) and DNS_RE.fullmatch(item) for item in namespaces)
     ):
         raise ReceiptError("scientific namespace inventory must be non-empty, sorted, and unique")
+
+    host_agents = context["host_agents"]
+    if not isinstance(host_agents, list) or len(host_agents) != 4:
+        raise ReceiptError("context.host_agents must describe exactly four migrations")
+    components: list[str] = []
+    for index, item_raw in enumerate(host_agents):
+        item = _object(item_raw, f"context.host_agents[{index}]")
+        _exact_keys(item, {"component", "legacy", "exception"}, f"context.host_agents[{index}]")
+        component = _string(item["component"], f"context.host_agents[{index}].component")
+        components.append(component)
+        for location in ("legacy", "exception"):
+            identity = _object(item[location], f"context.host_agents[{index}].{location}")
+            _exact_keys(identity, {"namespace", "name"}, f"context.host_agents[{index}].{location}")
+            if not all(
+                DNS_RE.fullmatch(_string(identity[field], f"context.host_agents[{index}].{location}.{field}"))
+                for field in ("namespace", "name")
+            ):
+                raise ReceiptError("host-agent identities must be DNS labels")
+        if item["exception"]["namespace"] != "fs2-node-observability":
+            raise ReceiptError("every exception host agent must use fs2-node-observability")
+    if sorted(components) != ["dcgm-exporter", "gpu-observer", "node-exporter", "otel-node"]:
+        raise ReceiptError("context.host_agents component inventory differs")
 
     pvc = _object(context["pvc"], "context.pvc")
     _exact_keys(pvc, {"namespace", "name", "uid", "storage_class"}, "context.pvc")
@@ -365,9 +442,16 @@ def _validate_context(context: dict[str, Any], expected: dict[str, Any]) -> None
         "restricted_incompatible_objects",
     ):
         _integer(baseline[field], f"context.baseline.{field}")
+    if (
+        baseline["reference_host_paths"] != EXPECTED_REFERENCE_HOST_PATHS
+        or baseline["baseline_incompatible_objects"] != EXPECTED_BASELINE_INCOMPATIBLE_OBJECTS
+        or baseline["restricted_incompatible_objects"]
+        != EXPECTED_RESTRICTED_INCOMPATIBLE_OBJECTS
+    ):
+        raise ReceiptError("signed baseline does not equal the reviewed 103/103/716 counts")
 
 
-def _validate_baseline_artifact(payload: bytes, context: dict[str, Any]) -> None:
+def _validate_baseline_artifact(payload: bytes, context: dict[str, Any]) -> dict[str, Any]:
     baseline = context["baseline"]
     if _sha256(payload) != baseline["artifact_sha256"]:
         raise ReceiptError("baseline artifact bytes differ from the signed context")
@@ -386,16 +470,60 @@ def _validate_baseline_artifact(payload: bytes, context: dict[str, Any]) -> None
         "reference_host_paths",
         "baseline_incompatible_objects",
         "restricted_incompatible_objects",
+        "legacy_controller_objects",
         "unauthorized_exception_objects",
         "inventory_sha256",
     }
     _exact_keys(artifact, expected_fields, "baseline artifact")
-    if artifact["schema"] != "fs2-serve.nebius.ai/sai07-baseline-inventory/v2":
+    if artifact["schema"] != "fs2-serve.nebius.ai/sai07-baseline-inventory/v3":
         raise ReceiptError("baseline artifact schema is unsupported")
     unsigned = dict(artifact)
     self_digest = unsigned.pop("inventory_sha256")
     if self_digest != _sha256(_canonical(unsigned)):
         raise ReceiptError("baseline artifact self-digest differs")
+    inspected_namespaces = [
+        "fs2-data",
+        "fs2-models",
+        "fs2-observability",
+        "fs2-reference-data",
+        "fs2-system",
+        *context["scientific_namespaces"],
+    ]
+    expected_collections = {
+        (namespace, api_version, kind)
+        for namespace in inspected_namespaces
+        for api_version, kind in BASELINE_INVENTORY_KINDS
+    }
+    observed_collections: dict[tuple[str, str, str], int] = {}
+    collections = artifact["collections"]
+    objects = artifact["objects"]
+    if not isinstance(collections, list) or not isinstance(objects, list):
+        raise ReceiptError("baseline artifact inventories must be lists")
+    for index, collection_raw in enumerate(collections):
+        collection = _object(collection_raw, f"baseline collection[{index}]")
+        _exact_keys(
+            collection,
+            {"api_version", "kind", "namespace", "resource_version", "item_count"},
+            f"baseline collection[{index}]",
+        )
+        key = (collection["namespace"], collection["api_version"], collection["kind"])
+        if key in observed_collections or key not in expected_collections:
+            raise ReceiptError("baseline collections are duplicated or outside the frozen inventory")
+        _string(collection["resource_version"], f"baseline collection[{index}].resource_version")
+        observed_collections[key] = _integer(
+            collection["item_count"], f"baseline collection[{index}].item_count"
+        )
+    if set(observed_collections) != expected_collections:
+        raise ReceiptError("baseline artifact omits a frozen namespace/workload collection")
+    observed_object_counts = {key: 0 for key in expected_collections}
+    for index, item_raw in enumerate(objects):
+        item = _object(item_raw, f"baseline object[{index}]")
+        key = (item.get("namespace"), item.get("api_version"), item.get("kind"))
+        if key not in observed_object_counts:
+            raise ReceiptError("baseline object is outside the frozen inventory")
+        observed_object_counts[key] += 1
+    if observed_object_counts != observed_collections:
+        raise ReceiptError("baseline object counts differ from collection snapshots")
     if (
         self_digest != baseline["inventory_sha256"]
         or artifact["reference_host_paths"] != baseline["reference_host_paths"]
@@ -403,11 +531,20 @@ def _validate_baseline_artifact(payload: bytes, context: dict[str, Any]) -> None
         or artifact["restricted_incompatible_objects"] != baseline["restricted_incompatible_objects"]
         or artifact["scientific_namespaces"] != context["scientific_namespaces"]
         or artifact.get("cluster", {}).get("kube_system_uid") != context["kube_system_uid"]
+        or artifact["inspected_namespaces"] != inspected_namespaces
+        or not isinstance(artifact["legacy_controller_objects"], list)
+        or artifact["unauthorized_exception_objects"] != []
     ):
         raise ReceiptError("baseline artifact inventory differs from the signed context")
+    return artifact
 
 
-def _validate_cleanup_result(payload: bytes, assertions: dict[str, Any], context: dict[str, Any]) -> None:
+def _validate_cleanup_result(
+    payload: bytes,
+    assertions: dict[str, Any],
+    context: dict[str, Any],
+    baseline_artifact: dict[str, Any],
+) -> None:
     if _sha256(payload) != assertions["cleanup_result_sha256"]:
         raise ReceiptError("cleanup result bytes differ from the signed assertion")
     try:
@@ -436,11 +573,13 @@ def _validate_cleanup_result(payload: bytes, assertions: dict[str, Any], context
         or result_self_digest != _sha256(_canonical(unsigned))
         or result["manifest_sha256"] != assertions["cleanup_manifest_sha256"]
         or result["baseline_artifact_sha256"] != context["baseline"]["artifact_sha256"]
+        or result["prior_inventory_sha256"] != context["baseline"]["inventory_sha256"]
         or result["cluster_id"] != context["cluster_id"]
         or result["run_id"] != context["run_id"]
         or result["kube_system_uid"] != context["kube_system_uid"]
         or result["checked_objects"] != assertions["removed_objects"]
         or result["removed_objects"] != assertions["removed_objects"]
+        or result["checked_objects"] != baseline_artifact["legacy_controller_objects"]
     ):
         raise ReceiptError("cleanup result does not bind the signed manifest, context, and removed objects")
 
@@ -489,7 +628,23 @@ def _live_projection(value: dict[str, Any]) -> dict[str, Any]:
         "kind": value.get("kind"),
         "metadata": _metadata_projection(metadata),
     }
-    for key in ("spec", "status", "data"):
+    for key in (
+        "spec",
+        "status",
+        "data",
+        "template",
+        "automountServiceAccountToken",
+        "imagePullSecrets",
+        "secrets",
+        # StorageClass fields are top-level rather than nested under spec.
+        "provisioner",
+        "parameters",
+        "reclaimPolicy",
+        "volumeBindingMode",
+        "allowVolumeExpansion",
+        "mountOptions",
+        "allowedTopologies",
+    ):
         if key in value:
             projection[key] = value[key]
     return projection
@@ -640,6 +795,12 @@ def _validate_observation_contract(
             ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicyBinding", "", "fs2-node-observability-pods"),
             ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicy", "", "fs2-node-observability-daemonsets"),
             ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicyBinding", "", "fs2-node-observability-daemonsets"),
+            *SNAPSHOT_EXCEPTION_OBJECTS,
+            *{
+                ("apps/v1", "DaemonSet", identity[location]["namespace"], identity[location]["name"])
+                for identity in context["host_agents"]
+                for location in ("legacy", "exception")
+            },
         }
         if not required.issubset(present):
             raise ReceiptError("exception-ready receipt omits a required live object")
@@ -654,11 +815,16 @@ def _validate_observation_contract(
             raise ReceiptError("reference-data-ready assertions do not bind the exact dataset")
         required = {
             ("v1", "PersistentVolumeClaim", "fs2-reference-data", "fs2-reference-data-rwx"),
-            ("apps/v1", "Deployment", "fs2-reference-data", "fs2-reference-data-status"),
+            (
+                "batch/v1",
+                "Job",
+                "fs2-reference-data",
+                f"fs2-reference-data-read-probe-{tree[:12]}",
+            ),
             ("storage.k8s.io/v1", "StorageClass", "", "fs2-reference-data-retained-sc"),
         }
         if not required.issubset(present):
-            raise ReceiptError("reference-data-ready receipt omits PVC, status, or StorageClass state")
+            raise ReceiptError("reference-data-ready receipt omits PVC, completed read probe, or StorageClass state")
     elif state == "baseline-ready":
         _exact_keys(
             assertions,
@@ -675,6 +841,7 @@ def _validate_observation_contract(
                 "live_reference_host_paths",
                 "live_baseline_incompatible_objects",
                 "live_restricted_incompatible_objects",
+                "live_legacy_controller_objects",
             },
             "baseline-ready assertions",
         )
@@ -702,6 +869,8 @@ def _validate_observation_contract(
         ):
             if assertions[field] != 0:
                 raise ReceiptError("baseline-ready live inventory is not clean")
+        if assertions["live_legacy_controller_objects"] != []:
+            raise ReceiptError("baseline-ready retains legacy controller-owned objects")
         removed = assertions["removed_objects"]
         if not isinstance(removed, list) or not all(isinstance(item, dict) for item in removed):
             raise ReceiptError("removed_objects must be a list of exact object identities")
@@ -733,6 +902,26 @@ def _validate_observation_contract(
         _exact_keys(assertions, {"host_agents_ready"}, f"{state} assertions")
         if assertions["host_agents_ready"] is not True:
             raise ReceiptError(f"{state} host-agent assertion did not pass")
+        required_namespaces = {
+            ("v1", "Namespace", "", name)
+            for name in {
+                "fs2-data",
+                "fs2-models",
+                "fs2-observability",
+                "fs2-reference-data",
+                "fs2-system",
+                *context["scientific_namespaces"],
+            }
+        }
+        if not required_namespaces.issubset(present):
+            raise ReceiptError(f"{state} omits the exact baseline namespace inventory")
+        if state == "host-agents-restored":
+            required = {
+                ("apps/v1", "DaemonSet", identity["legacy"]["namespace"], identity["legacy"]["name"])
+                for identity in context["host_agents"]
+            }
+            if not required.issubset(present):
+                raise ReceiptError("host-agents-restored omits a legacy host-agent DaemonSet")
     else:
         raise ReceiptError(f"unsupported observed state {state}")
 
@@ -772,6 +961,19 @@ def _pod_templates(value: dict[str, Any]) -> list[tuple[dict[str, Any], dict[str
 
     kind = value.get("kind")
     metadata = value.get("metadata", {})
+    if kind == "PodTemplate":
+        template = value.get("template", {})
+        if isinstance(template, dict) and isinstance(template.get("spec"), dict):
+            template_metadata = template.get("metadata", {})
+            return [
+                (
+                    template["spec"],
+                    template_metadata.get("annotations", {})
+                    if isinstance(template_metadata, dict)
+                    else {},
+                )
+            ]
+        return []
     spec = value.get("spec", {})
     if not isinstance(spec, dict):
         return []
@@ -814,7 +1016,7 @@ def _pod_security_findings(spec: dict[str, Any], annotations: dict[str, Any]) ->
     for volume in spec.get("volumes", []) or []:
         if isinstance(volume, dict) and "hostPath" in volume:
             baseline.add("hostPath")
-            host_paths += 1
+            host_paths = 1
     pod_security = spec.get("securityContext", {}) or {}
     if not isinstance(pod_security, dict):
         pod_security = {}
@@ -883,11 +1085,15 @@ def _validate_live_observations(
     client: KubeClient,
     objects: list[dict[str, Any]],
     inventories: list[dict[str, Any]],
+    state: str,
+    context: dict[str, Any],
 ) -> dict[str, Any]:
     live_inventory_projections: list[dict[str, Any]] = []
     baseline_incompatible_objects = 0
     restricted_incompatible_objects = 0
     reference_host_paths = 0
+    live_objects: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    legacy_controller_objects: list[str] = []
     for expected in objects:
         live = client.get_object(
             expected["api_version"],
@@ -912,6 +1118,7 @@ def _validate_live_observations(
             or _sha256(_canonical(_live_projection(live))) != expected["object_sha256"]
         ):
             raise ReceiptError(f"live UID/resourceVersion/object hash differs: {_object_key(expected)}")
+        live_objects[(expected["api_version"], expected["kind"], expected["namespace"], expected["name"])] = live
 
     for expected in inventories:
         items = client.list_objects(
@@ -935,6 +1142,28 @@ def _validate_live_observations(
             )
         live_inventory_projections.extend(projections)
         for item in items:
+            metadata = item.get("metadata", {}) if isinstance(item, dict) else {}
+            labels = metadata.get("labels", {}) if isinstance(metadata, dict) else {}
+            name = str(metadata.get("name", "")) if isinstance(metadata, dict) else ""
+            namespace = str(metadata.get("namespace", expected["namespace"])) if isinstance(metadata, dict) else ""
+            controller_owned = (
+                namespace == "fs2-models"
+                and item.get("kind") in {"ServiceAccount", "DaemonSet"}
+                and isinstance(labels, dict)
+                and labels.get("app.kubernetes.io/managed-by") == "fs2-model-controller"
+            )
+            legacy_policy = (
+                namespace == "fs2-models"
+                and item.get("kind") == "NetworkPolicy"
+                and isinstance(labels, dict)
+                and labels.get("app.kubernetes.io/part-of") == "fs2-serve"
+                and labels.get("app.kubernetes.io/managed-by") != "terraform"
+                and not name.startswith("fs2-network-profile-")
+            )
+            if controller_owned or legacy_policy:
+                legacy_controller_objects.append(
+                    "/".join((str(item.get("apiVersion", "")), str(item.get("kind", "")), namespace, name))
+                )
             template_findings = [_pod_security_findings(spec, annotations) for spec, annotations in _pod_templates(item)]
             if any(result[0] for result in template_findings):
                 baseline_incompatible_objects += 1
@@ -950,11 +1179,134 @@ def _validate_live_observations(
             str(value.get("metadata", {}).get("uid", "")),
         )
     )
+    if state in {"exception-ready", "host-agents-restored"}:
+        locations = ("legacy", "exception") if state == "exception-ready" else ("legacy",)
+        for identity in context["host_agents"]:
+            for location in locations:
+                item = identity[location]
+                live = live_objects.get(("apps/v1", "DaemonSet", item["namespace"], item["name"]))
+                if live is None:
+                    raise ReceiptError("host-agent readiness object is absent from the exact live reads")
+                metadata = _object(live.get("metadata"), "host-agent metadata")
+                status = _object(live.get("status"), "host-agent status")
+                desired = _integer(status.get("desiredNumberScheduled"), "host-agent desiredNumberScheduled", 1)
+                if (
+                    status.get("observedGeneration") != metadata.get("generation")
+                    or status.get("updatedNumberScheduled") != desired
+                    or status.get("numberReady") != desired
+                    or status.get("numberAvailable") != desired
+                    or int(status.get("numberUnavailable", 0) or 0) != 0
+                ):
+                    raise ReceiptError("a host-agent DaemonSet is not fully rolled out and Ready")
+
+    if state == "reference-data-ready":
+        tree = context["dataset"]["tree_sha256"]
+        pvc = live_objects.get(("v1", "PersistentVolumeClaim", "fs2-reference-data", "fs2-reference-data-rwx"))
+        storage_class = live_objects.get(
+            ("storage.k8s.io/v1", "StorageClass", "", "fs2-reference-data-retained-sc")
+        )
+        probe = live_objects.get(
+            (
+                "batch/v1",
+                "Job",
+                "fs2-reference-data",
+                f"fs2-reference-data-read-probe-{tree[:12]}",
+            )
+        )
+        if pvc is None or storage_class is None or probe is None:
+            raise ReceiptError("reference-data readiness objects are absent from the exact live reads")
+        pvc_metadata = _object(pvc.get("metadata"), "reference-data PVC metadata")
+        pvc_spec = _object(pvc.get("spec"), "reference-data PVC spec")
+        pvc_status = _object(pvc.get("status"), "reference-data PVC status")
+        requests = _object(_object(pvc_spec.get("resources"), "PVC resources").get("requests"), "PVC requests")
+        if (
+            pvc_metadata.get("uid") != context["pvc"]["uid"]
+            or pvc_spec.get("storageClassName") != context["pvc"]["storage_class"]
+            or pvc_spec.get("accessModes") != ["ReadWriteMany"]
+            or requests.get("storage") != f"{context['storage']['claim_size_gib']}Gi"
+            or pvc_status.get("phase") != "Bound"
+        ):
+            raise ReceiptError("retained reference-data PVC is not the exact bound RWX claim")
+        storage_spec = _object(storage_class, "reference-data StorageClass")
+        if storage_spec.get("reclaimPolicy") != "Retain":
+            raise ReceiptError("reference-data StorageClass is not retained")
+        probe_spec = _object(probe.get("spec"), "reference-data probe spec")
+        probe_status = _object(probe.get("status"), "reference-data probe status")
+        template_spec = _object(
+            _object(_object(probe_spec.get("template"), "probe template").get("spec"), "probe pod spec"),
+            "probe pod spec",
+        )
+        volumes = template_spec.get("volumes", [])
+        if not isinstance(volumes, list):
+            raise ReceiptError("reference-data read-probe volumes are malformed")
+        read_only_claim = any(
+            isinstance(volume, dict)
+            and volume.get("name") == "reference-data"
+            and isinstance(volume.get("persistentVolumeClaim"), dict)
+            and volume["persistentVolumeClaim"].get("claimName") == "fs2-reference-data-rwx"
+            and volume["persistentVolumeClaim"].get("readOnly") is True
+            for volume in volumes
+        )
+        complete = any(
+            isinstance(condition, dict)
+            and condition.get("type") == "Complete"
+            and condition.get("status") == "True"
+            for condition in probe_status.get("conditions", []) or []
+        )
+        if (
+            template_spec.get("serviceAccountName") != "fs2-reference-data"
+            or template_spec.get("automountServiceAccountToken") is not False
+            or not read_only_claim
+            or int(probe_status.get("succeeded", 0) or 0) != 1
+            or not complete
+        ):
+            raise ReceiptError("reference-data CSI read probe is not exactly completed and read-only")
+
+    baseline_namespaces = {
+        "fs2-data",
+        "fs2-models",
+        "fs2-observability",
+        "fs2-reference-data",
+        "fs2-system",
+        *context["scientific_namespaces"],
+    }
+    if state in {"baseline-ready", "baseline-enforced", "enforcement-removed", "host-agents-restored"}:
+        for namespace in baseline_namespaces:
+            live = live_objects.get(("v1", "Namespace", "", namespace))
+            if live is None:
+                raise ReceiptError("baseline namespace is absent from the exact live reads")
+            labels = _object(_object(live.get("metadata"), "namespace metadata").get("labels", {}), "namespace labels")
+            psa = {
+                key: labels.get(f"pod-security.kubernetes.io/{key}")
+                for key in (
+                    "enforce",
+                    "enforce-version",
+                    "audit",
+                    "audit-version",
+                    "warn",
+                    "warn-version",
+                )
+            }
+            if state == "baseline-enforced":
+                expected = {
+                    "enforce": "baseline",
+                    "enforce-version": context["psa_version"],
+                    "audit": "restricted",
+                    "audit-version": context["psa_version"],
+                    "warn": "restricted",
+                    "warn-version": context["psa_version"],
+                }
+                if psa != expected:
+                    raise ReceiptError("a baseline namespace lacks the exact pinned PSA labels")
+            elif psa["enforce"] is not None or psa["enforce-version"] is not None:
+                raise ReceiptError("baseline enforcement exists before its authorized phase or after removal")
+
     return {
         "live_inventory_sha256": _sha256(_canonical(live_inventory_projections)),
         "live_reference_host_paths": reference_host_paths,
         "live_baseline_incompatible_objects": baseline_incompatible_objects,
         "live_restricted_incompatible_objects": restricted_incompatible_objects,
+        "live_legacy_controller_objects": sorted(set(legacy_controller_objects)),
     }
 
 
@@ -1062,12 +1414,45 @@ def _ledger_from_config_map(value: dict[str, Any], query: dict[str, Any]) -> dic
     ):
         raise ReceiptError("durable ledger ConfigMap identity is invalid")
     data = _object(value.get("data"), "ledger ConfigMap data")
-    if set(data) != {"ledger.json"}:
+    if set(data) != LEDGER_DATA_KEYS or not all(isinstance(item, str) for item in data.values()):
         raise ReceiptError("durable ledger ConfigMap has unexpected keys")
     try:
-        ledger = _object(json.loads(data["ledger.json"]), "ledger")
-    except (TypeError, json.JSONDecodeError) as error:
-        raise ReceiptError("durable ledger JSON is invalid") from error
+        sequence = int(data["sequence"])
+    except ValueError as error:
+        raise ReceiptError("durable ledger sequence is invalid") from error
+    authorization = None
+    if any(
+        data[field]
+        for field in (
+            "authorization_phase",
+            "authorization_bundle_sha256",
+            "authorization_nonce",
+            "authorization_downstream_consumed",
+        )
+    ):
+        if data["authorization_downstream_consumed"] not in {"true", "false"}:
+            raise ReceiptError("durable ledger authorization consumption flag is invalid")
+        authorization = {
+            "phase": data["authorization_phase"],
+            "bundle_sha256": data["authorization_bundle_sha256"],
+            "nonce": data["authorization_nonce"],
+            "downstream_consumed": data["authorization_downstream_consumed"] == "true",
+        }
+    ledger = {
+        "schema": data["schema"],
+        "context_sha256": data["context_sha256"],
+        "authority": {
+            "key_id": data["authority_key_id"],
+            "signer_identity": data["authority_signer_identity"],
+            "public_key_sha256": data["authority_public_key_sha256"],
+        },
+        "sequence": sequence,
+        "state": data["state"],
+        "last_bundle_sha256": data["last_bundle_sha256"] or None,
+        "last_receipt_id": data["last_receipt_id"] or None,
+        "last_nonce": data["last_nonce"] or None,
+        "authorization": authorization,
+    }
     _exact_keys(
         ledger,
         {
@@ -1094,13 +1479,45 @@ def _ledger_from_config_map(value: dict[str, Any], query: dict[str, Any]) -> dic
     return ledger
 
 
+def _ledger_data(ledger: dict[str, Any]) -> dict[str, str]:
+    authorization = ledger.get("authorization")
+    if authorization is None:
+        authorization = {
+            "phase": "",
+            "bundle_sha256": "",
+            "nonce": "",
+            "downstream_consumed": "",
+        }
+    else:
+        authorization = {
+            **authorization,
+            "downstream_consumed": "true" if authorization["downstream_consumed"] else "false",
+        }
+    return {
+        "schema": ledger["schema"],
+        "context_sha256": ledger["context_sha256"],
+        "authority_key_id": ledger["authority"]["key_id"],
+        "authority_signer_identity": ledger["authority"]["signer_identity"],
+        "authority_public_key_sha256": ledger["authority"]["public_key_sha256"],
+        "sequence": str(ledger["sequence"]),
+        "state": ledger["state"],
+        "last_bundle_sha256": ledger["last_bundle_sha256"] or "",
+        "last_receipt_id": ledger["last_receipt_id"] or "",
+        "last_nonce": ledger["last_nonce"] or "",
+        "authorization_phase": authorization["phase"],
+        "authorization_bundle_sha256": authorization["bundle_sha256"],
+        "authorization_nonce": authorization["nonce"],
+        "authorization_downstream_consumed": authorization["downstream_consumed"],
+    }
+
+
 def _replace_ledger(
     client: KubeClient,
     config_map: dict[str, Any],
     ledger: dict[str, Any],
 ) -> None:
     replacement = deepcopy(config_map)
-    replacement["data"] = {"ledger.json": _canonical(ledger).decode("utf-8")}
+    replacement["data"] = _ledger_data(ledger)
     try:
         client.replace_config_map(replacement)
     except ConflictError:
@@ -1155,7 +1572,7 @@ def verify_and_consume(
         bundle, query, key_bytes, current_time
     )
     baseline_artifact = Path(_string(query["baseline_artifact_path"], "baseline_artifact_path"))
-    _validate_baseline_artifact(
+    baseline = _validate_baseline_artifact(
         _read_regular_file(baseline_artifact, "baseline artifact", 128 * 1024 * 1024),
         _object(bundle["context"], "context"),
     )
@@ -1165,6 +1582,7 @@ def verify_and_consume(
             _read_regular_file(cleanup_path, "cleanup result", 8 * 1024 * 1024),
             assertions,
             _object(bundle["context"], "context"),
+            baseline,
         )
     elif query["cleanup_result_path"] is not None:
         raise ReceiptError("cleanup_result_path is valid only for the baseline-ready transition")
@@ -1185,7 +1603,13 @@ def verify_and_consume(
             raise ReceiptError("signed transition does not extend the current durable ledger")
         if transition["receipt_id"] == ledger["last_receipt_id"] or transition["nonce"] == ledger["last_nonce"]:
             raise ReceiptError("receipt ID or nonce was already consumed")
-        live_inventory = _validate_live_observations(client, objects, inventories)
+        live_inventory = _validate_live_observations(
+            client,
+            objects,
+            inventories,
+            transition["to_state"],
+            _object(bundle["context"], "context"),
+        )
         if transition["to_state"] == "baseline-ready" and live_inventory != {
             "live_inventory_sha256": assertions["live_inventory_sha256"],
             "live_reference_host_paths": assertions["live_reference_host_paths"],
@@ -1193,6 +1617,7 @@ def verify_and_consume(
             "live_restricted_incompatible_objects": assertions[
                 "live_restricted_incompatible_objects"
             ],
+            "live_legacy_controller_objects": assertions["live_legacy_controller_objects"],
         }:
             raise ReceiptError("immediate live workload inventory differs from baseline-ready assertions")
         ledger.update(

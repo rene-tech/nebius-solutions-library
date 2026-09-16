@@ -30,6 +30,7 @@ module "reference_data" {
     size_gib     = 1611
     capacity_gib = try(var.reference_data.storage_contract.filesystem.size_gib, 0)
   }
+  expected_tree_sha256              = var.reference_data.expected_tree_sha256
   pod_security_rollout_verification = module.pod_security_rollout_gate.verification
   cpu_pool                          = var.reference_data.storage_contract.cpu_pool
   # The reference CPU ClusterQueue must admit every namespace to which this

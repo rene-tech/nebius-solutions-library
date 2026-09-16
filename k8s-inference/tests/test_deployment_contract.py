@@ -13,7 +13,6 @@ from typing import Any
 
 import yaml
 
-
 DEPLOY_ROOT = Path(__file__).resolve().parents[1]
 PROFILES_ROOT = DEPLOY_ROOT / "catalog" / "profiles"
 TEST_PROJECT_ID = "project-testinference"
@@ -2297,8 +2296,15 @@ class DeploymentContractTests(unittest.TestCase):
             models_source,
         )
         self.assertIn(
-            'if mechanism != "hostMemoryResidency"', controller_source
+            "try(local.model_controller_fast_start_mechanism_declarations[model_id], {})",
+            controller_source,
         )
+        holder_source = (DEPLOY_ROOT / "stages/workloads/fast_start_claims.tf").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('resource "kubernetes_manifest" "fast_start_host_memory_holder"', holder_source)
+        self.assertIn('for_each = local.fast_start_host_memory_holders', holder_source)
+        self.assertIn('automountServiceAccountToken = false', holder_source)
         self.assertNotIn(
             "model_controller_network_policy_resource_names", controller_source
         )

@@ -35,6 +35,7 @@ locals {
   tools_files = {
     "placement-contract.json" = file("${path.module}/../placement-contract.json")
     "reference_data.py"       = file("${path.module}/../reference_data.py")
+    "verify_csi_readiness.py" = file("${path.module}/../verify_csi_readiness.py")
   }
   tools_sha256     = sha256(jsonencode(local.tools_files))
   tools_config_map = "fs2-reference-data-tools-${substr(local.tools_sha256, 0, 12)}"
@@ -47,6 +48,10 @@ locals {
   source_catalog        = jsondecode(file("${path.module}/../source-catalog.json"))
   source_catalog_sha256 = filesha256("${path.module}/../source-catalog.json")
   selected_bundle       = local.source_catalog.bundles[var.pipeline.bundle_id]
+  read_probe_name = var.expected_tree_sha256 == null ? "fs2-reference-data-read-probe-disabled" : (
+    "fs2-reference-data-read-probe-${substr(var.expected_tree_sha256, 0, 12)}"
+  )
+  read_probe_receipt = "receipts/${var.pipeline.bundle_id}/${local.selected_bundle.revision}.json"
   pipeline_command = [
     "python", "/opt/fs2/reference-data/reference_data.py", "stage",
     "--catalog", "/etc/fs2-stage/catalog.json",
@@ -416,6 +421,13 @@ resource "terraform_data" "region_contract" {
       error_message = "Switching reference data or changing PSA state requires the exact phase output of the canonical signed rollout gate; digest-shaped strings are not authority."
     }
     precondition {
+      condition = !local.csi_storage_enabled || (
+        can(regex("^[a-f0-9]{64}$", var.expected_tree_sha256)) &&
+        can(regex("^[^@[:space:]]+@sha256:[a-f0-9]{64}$", var.status.image))
+      )
+      error_message = "Every CSI migration phase requires an exact expected tree and digest-pinned read-probe image."
+    }
+    precondition {
       condition = (
         !var.pipeline.enabled ||
         (
@@ -525,6 +537,123 @@ resource "kubernetes_service_account_v1" "reference_data" {
     labels    = local.common_labels
   }
   automount_service_account_token = false
+}
+
+resource "kubernetes_job_v1" "csi_read_probe" {
+  count               = local.csi_storage_enabled ? 1 : 0
+  wait_for_completion = true
+
+  metadata {
+    name      = local.read_probe_name
+    namespace = kubernetes_namespace_v1.reference_data.metadata[0].name
+    labels = merge(local.common_labels, {
+      "app.kubernetes.io/component" = "reference-data-csi-read-probe"
+    })
+    annotations = {
+      "reference-data.fs2.nebius.ai/tree-sha256" = var.expected_tree_sha256
+      "reference-data.fs2.nebius.ai/receipt"     = local.read_probe_receipt
+    }
+  }
+
+  spec {
+    backoff_limit           = 0
+    active_deadline_seconds = 900
+    completions             = 1
+    parallelism             = 1
+    manual_selector         = false
+    template {
+      metadata {
+        labels = merge(local.common_labels, {
+          "app.kubernetes.io/component" = "reference-data-csi-read-probe"
+        })
+      }
+      spec {
+        restart_policy                  = "Never"
+        service_account_name            = kubernetes_service_account_v1.reference_data.metadata[0].name
+        automount_service_account_token = false
+        enable_service_links            = false
+        node_selector                   = var.cpu_pool.node_labels
+        toleration {
+          key      = var.cpu_pool.taint.key
+          operator = "Equal"
+          value    = var.cpu_pool.taint.value
+          effect   = var.cpu_pool.taint.effect
+        }
+        security_context {
+          run_as_non_root = true
+          run_as_user     = 65532
+          run_as_group    = 65532
+          seccomp_profile { type = "RuntimeDefault" }
+        }
+        container {
+          name              = "read-probe"
+          image             = var.status.image
+          image_pull_policy = "IfNotPresent"
+          command = [
+            "python", "/opt/fs2/reference-data/verify_csi_readiness.py",
+            "--root", "/reference-data",
+            "--receipt", local.read_probe_receipt,
+            "--bundle", var.pipeline.bundle_id,
+            "--revision", local.selected_bundle.revision,
+            "--tree-sha256", var.expected_tree_sha256,
+          ]
+          resources {
+            requests = { cpu = "50m", memory = "64Mi", "ephemeral-storage" = "64Mi" }
+            limits   = { cpu = "250m", memory = "256Mi", "ephemeral-storage" = "256Mi" }
+          }
+          security_context {
+            allow_privilege_escalation = false
+            read_only_root_filesystem  = true
+            capabilities { drop = ["ALL"] }
+          }
+          volume_mount {
+            name       = "reference-data"
+            mount_path = "/reference-data"
+            read_only  = true
+          }
+          volume_mount {
+            name       = "tools"
+            mount_path = "/opt/fs2/reference-data"
+            read_only  = true
+          }
+          volume_mount {
+            name       = "tmp"
+            mount_path = "/tmp"
+          }
+        }
+        volume {
+          name = "reference-data"
+          persistent_volume_claim {
+            claim_name = kubernetes_persistent_volume_claim_v1.reference_data.metadata[0].name
+            read_only  = true
+          }
+        }
+        volume {
+          name = "tools"
+          config_map {
+            name         = kubernetes_config_map_v1.tools.metadata[0].name
+            default_mode = "0555"
+          }
+        }
+        volume {
+          name = "tmp"
+          empty_dir {
+            size_limit = "64Mi"
+          }
+        }
+      }
+    }
+  }
+
+  lifecycle {
+    replace_triggered_by = [kubernetes_config_map_v1.tools]
+  }
+
+  depends_on = [
+    kubernetes_persistent_volume_claim_v1.reference_data,
+    kubernetes_config_map_v1.tools,
+    kubernetes_network_policy_v1.default_deny,
+  ]
 }
 
 resource "kubernetes_secret_v1" "object_storage" {

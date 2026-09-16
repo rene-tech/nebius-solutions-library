@@ -1990,34 +1990,33 @@ def test_the_renderer_configures_the_pinned_regional_cache() -> None:
     assert any(item["name"] == "fs2-warm-page-cache" for item in pod["spec"]["initContainers"])
 
 
-def test_the_renderer_owns_the_host_memory_holder_it_depends_on() -> None:
+def test_the_renderer_consumes_the_finite_external_host_memory_holder() -> None:
     declaration = render_host_memory()
-    plan = _render(
-        "host-memory-residency",
-        host_memory_residency=declaration,
-        residency_holder_image=model_spec().runtime.image,
-    )
-    holders = [item for item in plan.resources if "hostmem" in item.name]
-    assert {item.kind for item in holders} == {"ConfigMap", "DaemonSet"}
-    daemonsets = [item.manifest for item in holders if item.kind == "DaemonSet"]
-    assert {item["metadata"]["annotations"]["fs2-serve.nebius.ai/workload-pool-ref"] for item in daemonsets} == set(
-        _pinned("host-memory-residency").placement.pool_refs
-    )
-    holder = next(item for item in holders if item.kind == "DaemonSet").manifest
-    container = holder["spec"]["template"]["spec"]["containers"][0]
-    assert container["resources"]["requests"]["memory"] == str(declaration.reserved_bytes)
-    # The holder is owned by the ModelDeployment, so deleting the model
-    # reclaims the host RAM instead of stranding it.
-    assert holder["metadata"]["ownerReferences"][0]["kind"] == "ModelDeployment"
+    plan = _render("host-memory-residency", host_memory_residency=declaration)
+    assert not any(item.kind in {"ConfigMap", "DaemonSet"} and "hostmem" in item.name for item in plan.resources)
 
     pod = _workload(plan)["spec"]["template"]["spec"]
     assert "podAffinity" not in pod.get("affinity", {})
-    assert any(item["name"] == "fs2-verify-host-memory-residency" for item in pod["initContainers"])
+    verifier = next(item for item in pod["initContainers"] if item["name"] == "fs2-verify-host-memory-residency")
+    environment = {item["name"]: item.get("value") for item in verifier["env"]}
+    assert environment["FS2_RESIDENCY_HOLDER_ID"] == "fsm-hostmem-qwen-pool-b"
+    assert environment["FS2_RESIDENCY_CONFIG_DIGEST"] == declaration.config_digest
 
 
-def test_a_host_memory_render_without_a_holder_image_is_refused() -> None:
-    with pytest.raises(ValueError, match="holder image"):
-        _render("host-memory-residency", host_memory_residency=render_host_memory())
+def test_host_memory_holder_identity_is_independent_of_the_app_uuid() -> None:
+    declaration = render_host_memory()
+    first = _render("host-memory-residency", host_memory_residency=declaration)
+    second_context = render_context().model_copy(update={"name": "app-ffffffffffffffffffffffffffffffff"})
+    second = renderer().render(_pinned("host-memory-residency"), second_context.model_copy(update={
+        "host_memory_residency": declaration,
+    }))
+
+    def holder_id(plan: RenderPlan) -> str:
+        pod = _workload(plan)["spec"]["template"]["spec"]
+        verifier = next(item for item in pod["initContainers"] if item["name"] == "fs2-verify-host-memory-residency")
+        return next(item["value"] for item in verifier["env"] if item["name"] == "FS2_RESIDENCY_HOLDER_ID")
+
+    assert holder_id(first) == holder_id(second) == "fsm-hostmem-qwen-pool-b"
 
 
 def test_host_memory_fit_accounts_for_every_gpu_limited_runtime_pod_per_node() -> None:

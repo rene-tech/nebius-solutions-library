@@ -57,7 +57,6 @@ from fs2_serve.model_deployment_controller import (
     PostgresActiveOperations,
     PrometheusActiveOperations,
     ResourceSnapshot,
-    _snapshot,
     build_status,
 )
 from fs2_serve.model_deployment_records import ModelDeploymentObservedStatus
@@ -2439,6 +2438,9 @@ def test_runtime_sleep_offload_is_rejected_by_live_validation() -> None:
 
 def test_host_residency_waits_for_every_receipt_backed_holder() -> None:
     spec, installed = _all_mechanism_envelope("host-memory-residency")
+    spec = spec.model_copy(
+        update={"availability": spec.availability.model_copy(update={"min_replicas": 1})}
+    )
     context = _mechanism_context(spec, installed)
     plan = plan_reconciliation(
         generation=1,
@@ -2452,7 +2454,7 @@ def test_host_residency_waits_for_every_receipt_backed_holder() -> None:
     )
     assert plan.render is not None
     unready = Discovery(
-        resources=[snapshot(item, ready=item.kind != "DaemonSet") for item in plan.render.resources],
+        resources=[snapshot(item, ready=True) for item in plan.render.resources if item.kind != "Deployment"],
         complete=True,
     )
     pending = build_status(
@@ -2483,9 +2485,15 @@ def test_host_residency_waits_for_every_receipt_backed_holder() -> None:
     assert configured["fastStart"]["cacheMechanisms"]["host-memory-residency"]["state"] == "Configured"
 
 
-def test_host_residency_configures_every_selected_pool_when_runtime_fits_in_one_pool() -> None:
+def test_host_residency_uses_the_terraform_owned_pool_inventory_when_runtime_fits() -> None:
     spec, installed = _all_mechanism_envelope("host-memory-residency")
-    spec = spec.model_copy(update={"availability": spec.availability.model_copy(update={"max_replicas": 4})})
+    spec = spec.model_copy(
+        update={
+            "availability": spec.availability.model_copy(
+                update={"min_replicas": 1, "max_replicas": 4}
+            )
+        }
+    )
     plan = plan_reconciliation(
         generation=1,
         deleting=False,
@@ -2498,10 +2506,7 @@ def test_host_residency_configures_every_selected_pool_when_runtime_fits_in_one_
     )
 
     assert plan.render is not None
-    holders = [item for item in plan.render.resources if item.kind == "DaemonSet"]
-    assert {
-        item.manifest["metadata"]["annotations"]["fs2-serve.nebius.ai/workload-pool-ref"] for item in holders
-    } == set(spec.placement.pool_refs)
+    assert not any(item.kind == "DaemonSet" for item in plan.render.resources)
     status = build_status(
         spec=spec,
         owner_uid="cr-uid-1",
@@ -2518,44 +2523,8 @@ def test_host_residency_configures_every_selected_pool_when_runtime_fits_in_one_
     assert status["fastStart"]["cacheMechanisms"]["host-memory-residency"]["state"] == "Configured"
 
 
-def test_production_snapshot_maps_daemonset_node_and_probe_readiness() -> None:
-    spec, installed = _all_mechanism_envelope("host-memory-residency")
-    plan = renderer().render(spec, _mechanism_context(spec, installed))
-    holder = next(item for item in plan.resources if item.kind == "DaemonSet")
-    raw = copy.deepcopy(holder.manifest)
-    raw["metadata"].update(
-        {
-            "uid": "holder-uid",
-            "resourceVersion": "9",
-            "generation": 3,
-            "managedFields": [{"manager": FIELD_MANAGER, "fieldsV1": {"f:spec": {}}}],
-        }
-    )
-    raw["status"] = {
-        "observedGeneration": 3,
-        "desiredNumberScheduled": 2,
-        "currentNumberScheduled": 2,
-        "updatedNumberScheduled": 2,
-        "numberReady": 0,
-        "numberAvailable": 0,
-        "numberUnavailable": 2,
-    }
-    observed = _snapshot(raw, holder)
-    assert observed.desired_replicas == 2
-    assert observed.replicas == 2
-    assert observed.ready_replicas == 0
-    assert observed.unavailable_replicas == 2
-
-    raw["status"].update({"numberReady": 2, "numberAvailable": 2})
-    raw["status"].pop("numberUnavailable")
-    healthy = _snapshot(raw, holder)
-    assert healthy.ready_replicas == 2
-    assert healthy.available_replicas == 2
-    assert healthy.unavailable_replicas == 0
-
-
 @pytest.mark.asyncio
-async def test_controller_passes_all_reviewed_mechanisms_and_holder_image_to_real_render() -> None:
+async def test_controller_passes_all_reviewed_mechanisms_without_mutating_holders() -> None:
     spec, installed = _all_mechanism_envelope("host-memory-residency")
     raw = model_object()
     raw["spec"] = spec.model_dump(mode="json", by_alias=True)
@@ -2591,11 +2560,7 @@ async def test_controller_passes_all_reviewed_mechanisms_and_holder_image_to_rea
     assert context.host_memory_residency == qualification.host_memory_residency
     assert context.gpu_resident == qualification.gpu_resident
     assert context.residency_holder_image == installed.residency_holder_image
-    holders = [item for item in api.resources.values() if item.observed.kind == "DaemonSet"]
-    assert len(holders) == len(spec.placement.pool_refs)
-    assert all(
-        item.raw["spec"]["selector"]["matchLabels"]["fast-start.fs2.nebius/host-memory-holder"] for item in holders
-    )
+    assert not any(item.observed.kind == "DaemonSet" for item in api.resources.values())
     statuses = api.status_writes[-1]["fastStart"]["cacheMechanisms"]
     host = statuses["host-memory-residency"]
     assert qualification.host_memory_residency is not None

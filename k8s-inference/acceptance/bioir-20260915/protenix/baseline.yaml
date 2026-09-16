@@ -21,12 +21,12 @@ metadata:
     evaluation: fs2-bioir-20260915
     lane: protenix
     app.kubernetes.io/name: bioir-protenix-baseline
-    security.fs2.nebius.ai/historical-non-recreatable: "true"
+    fs2-serve.nebius.ai/network-profile: mounted-content
 spec:
   restartPolicy: Never
   automountServiceAccountToken: false
   nodeSelector:
-    kubernetes.io/hostname: computeinstance-e00xjaw5jqexvvnpat
+    accelerator.fs2.nebius/pool-id: h100-reserved-8x
   tolerations:
     - key: dedicated
       operator: Equal
@@ -35,7 +35,9 @@ spec:
   securityContext:
     runAsUser: 10001
     runAsGroup: 10001
+    runAsNonRoot: true
     fsGroup: 10001
+    seccompProfile: {type: RuntimeDefault}
   containers:
     - name: scientific-stage
       image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2@sha256:ac8f7c2c35d2bc911281f9d4a8aa9779e2cb955cdb1c2c2d37eb31d89669980e
@@ -55,6 +57,10 @@ spec:
       env:
         - {name: HF_HUB_OFFLINE, value: "1"}
         - {name: TRANSFORMERS_OFFLINE, value: "1"}
+      securityContext:
+        allowPrivilegeEscalation: false
+        runAsNonRoot: true
+        capabilities: {drop: ["ALL"]}
       volumeMounts:
         - {name: workspace, mountPath: /mnt/fs2-scientific}
         - {name: cache, mountPath: /cache}
@@ -64,8 +70,8 @@ spec:
           subPath: scientific-localization/public/generations/protenix-v2/sha256/5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48
   volumes:
     - name: model
-      hostPath:
-        path: /mnt/fs2-reference-data/data
-        type: Directory
+      persistentVolumeClaim:
+        claimName: fs2-reference-data-rwx
+        readOnly: true
     - {name: workspace, emptyDir: {}}
     - {name: cache, emptyDir: {}}

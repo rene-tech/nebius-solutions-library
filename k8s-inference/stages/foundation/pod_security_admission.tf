@@ -39,11 +39,74 @@ locals {
       pair[1],
     )
   ])
+  # ServiceAccount admission adds one randomly named projected API token
+  # volume to the OTel/DCGM Pods after their DaemonSet templates are admitted.
+  # Accept only that exact projection shape; a misleading kube-api-access-*
+  # name must never hide a Secret or arbitrary projected source from the
+  # bounded-volume checks below.
+  pod_security_projected_api_token_expression = join(" && ", [
+    "object.spec.template.spec.volumes.filter(v, v.name.startsWith('kube-api-access-')).size() <= 1",
+    "object.spec.template.spec.volumes.filter(v, v.name.startsWith('kube-api-access-')).all(v, has(v.projected) && v.projected.defaultMode == 420 && v.projected.sources.size() == 3)",
+    "object.spec.template.spec.volumes.filter(v, v.name.startsWith('kube-api-access-')).all(v, v.projected.sources.exists(s, has(s.serviceAccountToken) && s.serviceAccountToken.path == 'token' && s.serviceAccountToken.expirationSeconds >= 600 && s.serviceAccountToken.expirationSeconds <= 7200))",
+    "object.spec.template.spec.volumes.filter(v, v.name.startsWith('kube-api-access-')).all(v, v.projected.sources.exists(s, has(s.configMap) && s.configMap.name == 'kube-root-ca.crt' && s.configMap.items == [{'key':'ca.crt','path':'ca.crt'}]))",
+    "object.spec.template.spec.volumes.filter(v, v.name.startsWith('kube-api-access-')).all(v, v.projected.sources.exists(s, has(s.downwardAPI) && s.downwardAPI.items == [{'path':'namespace','fieldRef':{'apiVersion':'v1','fieldPath':'metadata.namespace'}}]))",
+  ])
   pod_security_exception_exact_daemonset_expressions = {
-    fs2-node-exporter                    = format("object.metadata.name == 'fs2-node-exporter' && object.spec.template.spec.serviceAccountName == 'fs2-node-exporter' && object.spec.template.spec.automountServiceAccountToken == false && object.spec.template.spec.hostNetwork == true && object.spec.template.spec.hostPID == true && object.spec.template.spec.hostIPC == false && object.spec.template.spec.containers.size() == 1 && object.spec.template.spec.containers[0].name == 'node-exporter' && object.spec.template.spec.containers[0].image == '%s' && !has(object.spec.template.spec.containers[0].command) && object.spec.template.spec.containers[0].args == ['--path.procfs=/host/proc','--path.sysfs=/host/sys','--path.rootfs=/host/root','--path.udev.data=/host/root/run/udev/data','--web.listen-address=[$(HOST_IP)]:9100'] && object.spec.template.spec.volumes.filter(v, has(v.hostPath)).size() == 3 && object.spec.template.spec.volumes.exists(v, v.name == 'proc' && v.hostPath.path == '/proc') && object.spec.template.spec.volumes.exists(v, v.name == 'sys' && v.hostPath.path == '/sys') && object.spec.template.spec.volumes.exists(v, v.name == 'root' && v.hostPath.path == '/') && object.spec.template.spec.containers[0].volumeMounts.filter(m, m.name in ['proc','sys','root']).all(m, m.readOnly == true)", var.pod_security_host_agent_images["node-exporter"])
-    fs2-otel-node-agent                  = format("object.metadata.name == 'fs2-otel-node-agent' && object.spec.template.spec.serviceAccountName == 'fs2-otel-node' && object.spec.template.spec.automountServiceAccountToken == true && object.spec.template.spec.hostNetwork == false && object.spec.template.spec.hostPID == false && (!has(object.spec.template.spec.hostIPC) || object.spec.template.spec.hostIPC == false) && object.spec.template.spec.containers.size() == 1 && object.spec.template.spec.containers[0].name == 'opentelemetry-collector' && object.spec.template.spec.containers[0].image == '%s' && object.spec.template.spec.containers[0].command == ['/otelcol-k8s'] && object.spec.template.spec.containers[0].args == ['--config=/conf/relay.yaml'] && object.spec.template.spec.volumes.filter(v, has(v.hostPath)).size() == 2 && object.spec.template.spec.volumes.exists(v, v.name == 'varlogpods' && v.hostPath.path == '/var/log/pods') && object.spec.template.spec.volumes.exists(v, v.name == 'varlibdockercontainers' && v.hostPath.path == '/var/lib/docker/containers') && object.spec.template.spec.containers[0].volumeMounts.filter(m, m.name in ['varlogpods','varlibdockercontainers']).all(m, m.readOnly == true)", var.pod_security_host_agent_images["otel-node"])
-    fs2-dcgm-exporter                    = format("object.metadata.name == 'fs2-dcgm-exporter' && object.spec.template.spec.serviceAccountName == 'fs2-dcgm-exporter' && object.spec.template.spec.automountServiceAccountToken == true && object.spec.template.spec.hostPID == false && (!has(object.spec.template.spec.hostNetwork) || object.spec.template.spec.hostNetwork == false) && (!has(object.spec.template.spec.hostIPC) || object.spec.template.spec.hostIPC == false) && object.spec.template.spec.containers.size() == 1 && object.spec.template.spec.containers[0].name == 'exporter' && object.spec.template.spec.containers[0].image == '%s' && !has(object.spec.template.spec.containers[0].command) && (!has(object.spec.template.spec.containers[0].args) || object.spec.template.spec.containers[0].args == [] || object.spec.template.spec.containers[0].args == ['--collect-interval=5000']) && object.spec.template.spec.volumes.filter(v, has(v.hostPath)).size() == 1 && object.spec.template.spec.volumes.exists(v, v.name == 'pod-gpu-resources' && v.hostPath.path == '/var/lib/kubelet/pod-resources') && object.spec.template.spec.containers[0].volumeMounts.exists(m, m.name == 'pod-gpu-resources' && m.readOnly == true)", var.pod_security_host_agent_images["dcgm-exporter"])
-    fs2-serve-control-plane-gpu-observer = format("object.metadata.name == 'fs2-serve-control-plane-gpu-observer' && object.spec.template.spec.serviceAccountName == 'fs2-serve-control-plane-gpu-observer' && object.spec.template.spec.automountServiceAccountToken == false && (!has(object.spec.template.spec.hostNetwork) || object.spec.template.spec.hostNetwork == false) && (!has(object.spec.template.spec.hostPID) || object.spec.template.spec.hostPID == false) && (!has(object.spec.template.spec.hostIPC) || object.spec.template.spec.hostIPC == false) && object.spec.template.spec.containers.size() == 1 && object.spec.template.spec.containers[0].name == 'observer' && object.spec.template.spec.containers[0].image == '%s' && !has(object.spec.template.spec.containers[0].command) && object.spec.template.spec.containers[0].args == ['gpu-allocation-observer'] && object.spec.template.spec.volumes.filter(v, has(v.hostPath)).size() == 1 && object.spec.template.spec.volumes.exists(v, v.name == 'kubelet-device-plugins' && v.hostPath.path == '/var/lib/kubelet/device-plugins') && object.spec.template.spec.containers[0].volumeMounts.exists(m, m.name == 'kubelet-device-plugins' && m.readOnly == true)", var.pod_security_host_agent_images["gpu-observer"])
+    fs2-node-exporter = format(join(" && ", [
+      "object.metadata.name == 'fs2-node-exporter'",
+      "object.spec.template.spec.serviceAccountName == 'fs2-node-exporter' && object.spec.template.spec.automountServiceAccountToken == false",
+      "object.spec.template.spec.hostNetwork == true && object.spec.template.spec.hostPID == true && object.spec.template.spec.hostIPC == false",
+      "object.spec.template.spec.securityContext == {'fsGroup':65534,'runAsGroup':65534,'runAsNonRoot':true,'runAsUser':65534,'seccompProfile':{'type':'RuntimeDefault'}}",
+      "object.spec.template.spec.containers.size() == 1 && object.spec.template.spec.containers[0].name == 'node-exporter'",
+      "object.spec.template.spec.containers[0].image == '%s' && !has(object.spec.template.spec.containers[0].command)",
+      "object.spec.template.spec.containers[0].args == ['--path.procfs=/host/proc','--path.sysfs=/host/sys','--path.rootfs=/host/root','--path.udev.data=/host/root/run/udev/data','--web.listen-address=[$(HOST_IP)]:9100']",
+      "object.spec.template.spec.containers[0].env == [{'name':'HOST_IP','value':'0.0.0.0'}]",
+      "object.spec.template.spec.containers[0].securityContext == {'allowPrivilegeEscalation':false,'capabilities':{'drop':['ALL']},'readOnlyRootFilesystem':true,'runAsNonRoot':true,'runAsUser':65534,'runAsGroup':65534,'seccompProfile':{'type':'RuntimeDefault'}}",
+      "object.spec.template.spec.volumes.size() == 3 && object.spec.template.spec.volumes.all(v, has(v.hostPath))",
+      "object.spec.template.spec.volumes.exists(v, v.name == 'proc' && v.hostPath == {'path':'/proc'}) && object.spec.template.spec.volumes.exists(v, v.name == 'sys' && v.hostPath == {'path':'/sys'}) && object.spec.template.spec.volumes.exists(v, v.name == 'root' && v.hostPath == {'path':'/'})",
+      "object.spec.template.spec.containers[0].volumeMounts.size() == 3 && object.spec.template.spec.containers[0].volumeMounts.exists(m, m.name == 'proc' && m.mountPath == '/host/proc' && m.readOnly == true) && object.spec.template.spec.containers[0].volumeMounts.exists(m, m.name == 'sys' && m.mountPath == '/host/sys' && m.readOnly == true) && object.spec.template.spec.containers[0].volumeMounts.exists(m, m.name == 'root' && m.mountPath == '/host/root' && m.mountPropagation == 'HostToContainer' && m.readOnly == true)",
+    ]), var.pod_security_host_agent_images["node-exporter"])
+    fs2-otel-node-agent = format(join(" && ", [
+      "object.metadata.name == 'fs2-otel-node-agent'",
+      "object.spec.template.spec.serviceAccountName == 'fs2-otel-node' && object.spec.template.spec.automountServiceAccountToken == true",
+      "(!has(object.spec.template.spec.hostNetwork) || object.spec.template.spec.hostNetwork == false) && (!has(object.spec.template.spec.hostPID) || object.spec.template.spec.hostPID == false) && (!has(object.spec.template.spec.hostIPC) || object.spec.template.spec.hostIPC == false)",
+      "object.spec.template.spec.securityContext == {'fsGroup':10001,'runAsGroup':10001,'runAsNonRoot':true,'runAsUser':10001,'seccompProfile':{'type':'RuntimeDefault'},'supplementalGroups':[0]}",
+      "object.spec.template.spec.containers.size() == 1 && object.spec.template.spec.containers[0].name == 'opentelemetry-collector'",
+      "object.spec.template.spec.containers[0].image == '%s' && object.spec.template.spec.containers[0].command == ['/otelcol-k8s'] && object.spec.template.spec.containers[0].args == ['--config=/conf/relay.yaml']",
+      "object.spec.template.spec.containers[0].securityContext == {'allowPrivilegeEscalation':false,'capabilities':{'drop':['ALL']},'readOnlyRootFilesystem':true}",
+      "object.spec.template.spec.containers[0].env.size() == 9 && object.spec.template.spec.containers[0].env.all(e, e.name in ['MY_POD_IP','OTEL_K8S_NODE_NAME','OTEL_K8S_NODE_IP','OTEL_K8S_NAMESPACE','OTEL_K8S_POD_NAME','OTEL_K8S_POD_IP','K8S_NODE_NAME','K8S_NODE_IP','GOMEMLIMIT'] && (!has(e.valueFrom) || !has(e.valueFrom.secretKeyRef))) && (!has(object.spec.template.spec.containers[0].envFrom) || object.spec.template.spec.containers[0].envFrom.size() == 0) && !has(object.spec.template.spec.containers[0].lifecycle)",
+      "object.spec.template.spec.volumes.filter(v, !v.name.startsWith('kube-api-access-')).size() == 3 && object.spec.template.spec.volumes.filter(v, !v.name.startsWith('kube-api-access-')).all(v, v.name in ['opentelemetry-collector-configmap','varlogpods','varlibdockercontainers'])",
+      local.pod_security_projected_api_token_expression,
+      "object.spec.template.spec.volumes.exists(v, v.name == 'opentelemetry-collector-configmap' && v.configMap.name == 'fs2-otel-node-agent')",
+      "object.spec.template.spec.volumes.exists(v, v.name == 'varlogpods' && v.hostPath == {'path':'/var/log/pods'}) && object.spec.template.spec.volumes.exists(v, v.name == 'varlibdockercontainers' && v.hostPath == {'path':'/var/lib/docker/containers'})",
+      "object.spec.template.spec.containers[0].volumeMounts.filter(m, !m.name.startsWith('kube-api-access-')).size() == 3 && object.spec.template.spec.containers[0].volumeMounts.exists(m, m.name == 'opentelemetry-collector-configmap' && m.mountPath == '/conf') && object.spec.template.spec.containers[0].volumeMounts.exists(m, m.name == 'varlogpods' && m.mountPath == '/var/log/pods' && m.readOnly == true) && object.spec.template.spec.containers[0].volumeMounts.exists(m, m.name == 'varlibdockercontainers' && m.mountPath == '/var/lib/docker/containers' && m.readOnly == true)",
+    ]), var.pod_security_host_agent_images["otel-node"])
+    fs2-dcgm-exporter = format(join(" && ", [
+      "object.metadata.name == 'fs2-dcgm-exporter'",
+      "object.spec.template.spec.serviceAccountName == 'fs2-dcgm-exporter' && object.spec.template.spec.automountServiceAccountToken == true",
+      "(!has(object.spec.template.spec.hostNetwork) || object.spec.template.spec.hostNetwork == false) && object.spec.template.spec.hostPID == false && (!has(object.spec.template.spec.hostIPC) || object.spec.template.spec.hostIPC == false)",
+      "!has(object.spec.template.spec.securityContext) || object.spec.template.spec.securityContext == {}",
+      "object.spec.template.spec.containers.size() == 1 && object.spec.template.spec.containers[0].name == 'exporter'",
+      "object.spec.template.spec.containers[0].image == '%s' && !has(object.spec.template.spec.containers[0].command) && object.spec.template.spec.containers[0].args == ['--collect-interval=5000']",
+      "object.spec.template.spec.containers[0].securityContext == {'allowPrivilegeEscalation':false,'capabilities':{'add':['SYS_ADMIN'],'drop':['ALL']},'runAsNonRoot':false,'runAsUser':0}",
+      "object.spec.template.spec.containers[0].env.size() == 8 && object.spec.template.spec.containers[0].env.all(e, e.name in ['DCGM_EXPORTER_KUBERNETES','DCGM_EXPORTER_KUBERNETES_ENABLE_POD_LABELS','DCGM_EXPORTER_KUBERNETES_ENABLE_POD_UID','DCGM_EXPORTER_KUBERNETES_POD_LABEL_ALLOWLIST_REGEX','DCGM_EXPORTER_LISTEN','DCGM_EXPORTER_WEB_READ_TIMEOUT','DCGM_EXPORTER_WEB_WRITE_TIMEOUT','NODE_NAME'] && (!has(e.valueFrom) || !has(e.valueFrom.secretKeyRef))) && (!has(object.spec.template.spec.containers[0].envFrom) || object.spec.template.spec.containers[0].envFrom.size() == 0) && !has(object.spec.template.spec.containers[0].lifecycle)",
+      "object.spec.template.spec.volumes.filter(v, !v.name.startsWith('kube-api-access-')).size() == 2 && object.spec.template.spec.volumes.filter(v, !v.name.startsWith('kube-api-access-')).all(v, v.name in ['pod-gpu-resources','exporter-metrics-volume'])",
+      local.pod_security_projected_api_token_expression,
+      "object.spec.template.spec.volumes.exists(v, v.name == 'pod-gpu-resources' && v.hostPath == {'path':'/var/lib/kubelet/pod-resources'}) && object.spec.template.spec.volumes.exists(v, v.name == 'exporter-metrics-volume' && v.configMap.name == 'exporter-metrics-config-map')",
+      "object.spec.template.spec.containers[0].volumeMounts.filter(m, !m.name.startsWith('kube-api-access-')).size() == 2 && object.spec.template.spec.containers[0].volumeMounts.exists(m, m.name == 'pod-gpu-resources' && m.mountPath == '/var/lib/kubelet/pod-resources' && m.readOnly == true) && object.spec.template.spec.containers[0].volumeMounts.exists(m, m.name == 'exporter-metrics-volume' && m.mountPath == '/etc/dcgm-exporter/default-counters.csv' && m.subPath == 'default-counters.csv')",
+    ]), var.pod_security_host_agent_images["dcgm-exporter"])
+    fs2-serve-control-plane-gpu-observer = format(join(" && ", [
+      "object.metadata.name == 'fs2-serve-control-plane-gpu-observer'",
+      "object.spec.template.spec.serviceAccountName == 'fs2-serve-control-plane-gpu-observer' && object.spec.template.spec.automountServiceAccountToken == false",
+      "(!has(object.spec.template.spec.hostNetwork) || object.spec.template.spec.hostNetwork == false) && (!has(object.spec.template.spec.hostPID) || object.spec.template.spec.hostPID == false) && (!has(object.spec.template.spec.hostIPC) || object.spec.template.spec.hostIPC == false)",
+      "!has(object.spec.template.spec.securityContext) || object.spec.template.spec.securityContext == {}",
+      "object.spec.template.spec.containers.size() == 1 && object.spec.template.spec.containers[0].name == 'observer'",
+      "object.spec.template.spec.containers[0].image == '%s' && !has(object.spec.template.spec.containers[0].command) && object.spec.template.spec.containers[0].args == ['gpu-allocation-observer']",
+      "object.spec.template.spec.containers[0].securityContext == {'runAsUser':0,'runAsGroup':0,'allowPrivilegeEscalation':false,'readOnlyRootFilesystem':true,'capabilities':{'drop':['ALL']},'seccompProfile':{'type':'RuntimeDefault'}}",
+      "object.spec.template.spec.containers[0].env.size() == 7 && object.spec.template.spec.containers[0].env.all(e, e.name in ['FS2_GPU_ALLOCATION_OBSERVER_NODE_NAME','FS2_GPU_ALLOCATION_OBSERVER_NAMESPACES','FS2_GPU_ALLOCATION_OBSERVER_API_URL','FS2_GPU_ALLOCATION_OBSERVER_TOKEN_FILE','FS2_GPU_ALLOCATION_OBSERVER_CA_FILE','FS2_GPU_ALLOCATION_OBSERVER_CHECKPOINT_FILE','FS2_GPU_ALLOCATION_OBSERVER_POLL_SECONDS'] && (!has(e.valueFrom) || !has(e.valueFrom.secretKeyRef))) && object.spec.template.spec.containers[0].env.exists(e, e.name == 'FS2_GPU_ALLOCATION_OBSERVER_API_URL' && e.value == 'https://kubernetes.default.svc') && object.spec.template.spec.containers[0].env.exists(e, e.name == 'FS2_GPU_ALLOCATION_OBSERVER_TOKEN_FILE' && e.value == '/var/run/secrets/fs2-serve/gpu-observer/token') && object.spec.template.spec.containers[0].env.exists(e, e.name == 'FS2_GPU_ALLOCATION_OBSERVER_CA_FILE' && e.value == '/var/run/secrets/fs2-serve/gpu-observer/ca.crt') && object.spec.template.spec.containers[0].env.exists(e, e.name == 'FS2_GPU_ALLOCATION_OBSERVER_CHECKPOINT_FILE' && e.value == '/var/lib/kubelet/device-plugins/kubelet_internal_checkpoint') && object.spec.template.spec.containers[0].env.exists(e, e.name == 'FS2_GPU_ALLOCATION_OBSERVER_POLL_SECONDS' && e.value == '1') && (!has(object.spec.template.spec.containers[0].envFrom) || object.spec.template.spec.containers[0].envFrom.size() == 0) && !has(object.spec.template.spec.containers[0].lifecycle)",
+      "object.spec.template.spec.volumes.size() == 2 && object.spec.template.spec.volumes.exists(v, v.name == 'kubelet-device-plugins' && v.hostPath.path == '/var/lib/kubelet/device-plugins' && v.hostPath.type == 'Directory') && object.spec.template.spec.volumes.exists(v, v.name == 'kubernetes-token' && v.projected == {'defaultMode':256,'sources':[{'serviceAccountToken':{'expirationSeconds':600,'path':'token'}},{'configMap':{'name':'kube-root-ca.crt','items':[{'key':'ca.crt','path':'ca.crt'}]}}]})",
+      "object.spec.template.spec.containers[0].volumeMounts.size() == 2 && object.spec.template.spec.containers[0].volumeMounts.exists(m, m.name == 'kubelet-device-plugins' && m.mountPath == '/var/lib/kubelet/device-plugins' && m.readOnly == true) && object.spec.template.spec.containers[0].volumeMounts.exists(m, m.name == 'kubernetes-token' && m.mountPath == '/var/run/secrets/fs2-serve/gpu-observer' && m.readOnly == true)",
+    ]), var.pod_security_host_agent_images["gpu-observer"])
   }
   pod_security_exception_exact_daemonset_expression = join(
     " || ",
@@ -243,6 +306,7 @@ resource "kubernetes_cluster_role_v1" "pod_security_rollout_reader" {
       "namespaces",
       "persistentvolumeclaims",
       "pods",
+      "podtemplates",
       "replicationcontrollers",
       "serviceaccounts",
     ]
@@ -261,6 +325,11 @@ resource "kubernetes_cluster_role_v1" "pod_security_rollout_reader" {
   rule {
     api_groups = ["networking.k8s.io"]
     resources  = ["networkpolicies"]
+    verbs      = ["get", "list"]
+  }
+  rule {
+    api_groups = ["rbac.authorization.k8s.io"]
+    resources  = ["roles", "rolebindings"]
     verbs      = ["get", "list"]
   }
   rule {
@@ -375,12 +444,24 @@ resource "kubernetes_manifest" "pod_security_ledger_policy" {
           message    = "Only the Terraform-owned rollout-manager service account may advance the pod-security ledger."
         },
         {
-          expression = "object.metadata.uid == oldObject.metadata.uid && object.metadata.name == oldObject.metadata.name && object.metadata.namespace == oldObject.metadata.namespace"
+          expression = "request.operation == 'DELETE' || (object.metadata.uid == oldObject.metadata.uid && object.metadata.name == oldObject.metadata.name && object.metadata.namespace == oldObject.metadata.namespace)"
           message    = "The rollout ledger identity is immutable."
         },
         {
-          expression = "object.data.size() == 1 && 'ledger.json' in object.data"
-          message    = "The rollout ledger must contain only ledger.json."
+          expression = "request.operation == 'DELETE' || (object.data.size() == 14 && ['schema','context_sha256','authority_key_id','authority_signer_identity','authority_public_key_sha256','sequence','state','last_bundle_sha256','last_receipt_id','last_nonce','authorization_phase','authorization_bundle_sha256','authorization_nonce','authorization_downstream_consumed'].all(k, k in object.data))"
+          message    = "The rollout ledger must contain exactly the canonical admission-readable fields."
+        },
+        {
+          expression = "request.operation == 'DELETE' || (object.data.schema == oldObject.data.schema && object.data.context_sha256 == oldObject.data.context_sha256 && object.data.authority_key_id == oldObject.data.authority_key_id && object.data.authority_signer_identity == oldObject.data.authority_signer_identity && object.data.authority_public_key_sha256 == oldObject.data.authority_public_key_sha256)"
+          message    = "The rollout ledger context and signing authority are immutable."
+        },
+        {
+          expression = "request.operation == 'DELETE' || ((int(object.data.sequence) == int(oldObject.data.sequence) + 1 && ((oldObject.data.state == 'unmanaged' && object.data.state == 'exception-ready') || (oldObject.data.state == 'exception-ready' && object.data.state == 'reference-data-ready') || (oldObject.data.state == 'reference-data-ready' && object.data.state == 'baseline-ready') || (oldObject.data.state == 'baseline-ready' && object.data.state == 'baseline-enforced') || (oldObject.data.state == 'baseline-enforced' && object.data.state == 'enforcement-removed') || (oldObject.data.state == 'enforcement-removed' && object.data.state == 'host-agents-restored')) && object.data.last_bundle_sha256.matches('^[a-f0-9]{64}$') && object.data.last_receipt_id != '' && object.data.last_receipt_id != oldObject.data.last_receipt_id && object.data.last_nonce != '' && object.data.last_nonce != oldObject.data.last_nonce && object.data.authorization_phase in ['migrate-reference-data','cleanup-legacy-resources','enforce','rollback-remove-enforcement','rollback-restore-host-agents','rollback-remove-exception'] && object.data.authorization_bundle_sha256 == object.data.last_bundle_sha256 && object.data.authorization_nonce == object.data.last_nonce && object.data.authorization_downstream_consumed == 'false') || (object.data.sequence == oldObject.data.sequence && object.data.state == oldObject.data.state && object.data.last_bundle_sha256 == oldObject.data.last_bundle_sha256 && object.data.last_receipt_id == oldObject.data.last_receipt_id && object.data.last_nonce == oldObject.data.last_nonce && object.data.authorization_phase == oldObject.data.authorization_phase && object.data.authorization_bundle_sha256 == oldObject.data.authorization_bundle_sha256 && object.data.authorization_nonce == oldObject.data.authorization_nonce && oldObject.data.authorization_downstream_consumed == 'false' && object.data.authorization_downstream_consumed == 'true'))"
+          message    = "The rollout ledger may only advance one reviewed phase edge or consume its exact authorization once."
+        },
+        {
+          expression = "request.operation == 'DELETE' || ((object.data.state == 'exception-ready' && object.data.authorization_phase == 'migrate-reference-data') || (object.data.state == 'reference-data-ready' && object.data.authorization_phase == 'cleanup-legacy-resources') || (object.data.state == 'baseline-ready' && object.data.authorization_phase == 'enforce') || (object.data.state == 'baseline-enforced' && object.data.authorization_phase == 'rollback-remove-enforcement') || (object.data.state == 'enforcement-removed' && object.data.authorization_phase == 'rollback-restore-host-agents') || (object.data.state == 'host-agents-restored' && object.data.authorization_phase == 'rollback-remove-exception'))"
+          message    = "The rollout ledger state must authorize only its matching next deployment phase."
         },
       ]
     }

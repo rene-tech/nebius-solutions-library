@@ -60,7 +60,6 @@ from .fast_start_mechanisms import (
     configure_gpu_resident,
     configure_host_memory_residency,
     configure_regional_cache,
-    residency_holder_manifests,
     scheduled_pod_memory_bytes,
 )
 from .fast_start_policy import FastStartHistoryWindow
@@ -2733,7 +2732,13 @@ class LegacyManifestRenderer:
                 elif isinstance(declaration, HostMemoryResidencyQualification):
                     if declaration.holder.namespace != context.namespace:
                         raise ValueError("the residency holder must share the ModelDeployment namespace")
-                    holder_name = _derived_name("fs2-hostmem-", f"{context.name}-{segment.pool.pool_id}")
+                    # Host-memory holders are finite model/pool infrastructure
+                    # installed by Terraform.  Their identity must therefore
+                    # be independent of the unbounded App UUID.  The runtime
+                    # init container proves the exact holder receipt before it
+                    # starts; the controller never creates or mutates a
+                    # DaemonSet.
+                    holder_name = _derived_name("", f"{declaration.holder.name}-{segment.pool.pool_id}")
                     holder_identity = bounded_label_value(holder_name)
                     configure_host_memory_residency(
                         pod_spec=pod_spec,
@@ -2886,30 +2891,6 @@ class LegacyManifestRenderer:
             assert pool.allocatable_memory_bytes is not None
             if residency.reserved_bytes + runtime_memory > pool.allocatable_memory_bytes:
                 raise ValueError("host-memory holder and runtime Pods cannot fit in the pool's allocatable RAM")
-
-        primary_pod_security_context = primary_template["spec"]["template"]["spec"].get("securityContext")
-        for pool_id, (residency, pool) in sorted(residency_holders.items()):
-            if context.residency_holder_image is None:
-                raise ValueError("a host-memory residency render needs the holder image")
-            holder_name = _derived_name("fs2-hostmem-", f"{context.name}-{pool_id}")
-            holder_identity = bounded_label_value(holder_name)
-            rendered.extend(
-                residency_holder_manifests(
-                    namespace=context.namespace,
-                    name=holder_name,
-                    model_ref=bounded_label_value(spec.model_ref),
-                    holder_identity=holder_identity,
-                    qualification=residency,
-                    image=context.residency_holder_image,
-                    node_selector=pool.node_selector,
-                    tolerations=pool.tolerations,
-                    labels=labels,
-                    annotations={**annotations, WORKLOAD_POOL_ANNOTATION: pool_id},
-                    # The holder must read exactly the bytes the runtime reads.
-                    pod_security_context=primary_pod_security_context,
-                    owner_references=owner_references,
-                )
-            )
 
         if spec.lifecycle.desired_state is DesiredState.ENABLED:
             if spec.exposure.open_ai or spec.exposure.mcp:

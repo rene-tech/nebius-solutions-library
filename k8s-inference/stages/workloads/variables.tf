@@ -68,6 +68,7 @@ variable "pod_security_existing_scientific_namespaces" {
   description = "Existing externally owned scientific namespaces that receive only the three PSA labels during the enforce phase."
   type        = set(string)
   default = [
+    "fs2-academic-poc",
     "fs2-bioir-boltz2",
     "fs2-bioir-coverage",
     "fs2-bioir-openfold",
@@ -77,6 +78,7 @@ variable "pod_security_existing_scientific_namespaces" {
 
   validation {
     condition = var.pod_security_existing_scientific_namespaces == toset([
+      "fs2-academic-poc",
       "fs2-bioir-boltz2",
       "fs2-bioir-coverage",
       "fs2-bioir-openfold",
@@ -88,7 +90,7 @@ variable "pod_security_existing_scientific_namespaces" {
       length(namespace) <= 63 &&
       can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", namespace))
     ])
-    error_message = "pod_security_existing_scientific_namespaces must equal the frozen five-namespace fs2-bioir inventory."
+    error_message = "pod_security_existing_scientific_namespaces must equal the frozen six-namespace scientific inventory."
   }
 }
 

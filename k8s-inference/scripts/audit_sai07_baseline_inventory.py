@@ -23,10 +23,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
-SCHEMA = "fs2-serve.nebius.ai/sai07-baseline-inventory/v2"
+SCHEMA = "fs2-serve.nebius.ai/sai07-baseline-inventory/v3"
 VERIFICATION_SCHEMA = "fs2-serve.nebius.ai/sai07-baseline-verification/v1"
+EXPECTED_REFERENCE_HOST_PATHS = 103
+EXPECTED_BASELINE_INCOMPATIBLE_OBJECTS = 103
+EXPECTED_RESTRICTED_INCOMPATIBLE_OBJECTS = 716
 SCIENTIFIC_NAMESPACES = (
+    "fs2-academic-poc",
     "fs2-bioir-boltz2",
     "fs2-bioir-coverage",
     "fs2-bioir-openfold",
@@ -42,6 +45,7 @@ BASELINE_NAMESPACES = (
     *SCIENTIFIC_NAMESPACES,
 )
 EXCEPTION_NAMESPACE = "fs2-node-observability"
+SNAPSHOT_EXCEPTION_NAMESPACE = "fs2-snapshot-operations"
 EXCEPTION_OWNERS = {
     "fs2-dcgm-exporter": "fs2-dcgm-exporter",
     "fs2-node-exporter": "fs2-node-exporter",
@@ -50,6 +54,16 @@ EXCEPTION_OWNERS = {
 }
 COLLECTIONS = {
     "Pod": ("v1", "/api/v1/namespaces/{namespace}/pods", ("spec",)),
+    "PodTemplate": (
+        "v1",
+        "/api/v1/namespaces/{namespace}/podtemplates",
+        ("template", "spec"),
+    ),
+    "ServiceAccount": (
+        "v1",
+        "/api/v1/namespaces/{namespace}/serviceaccounts",
+        (),
+    ),
     "ReplicationController": (
         "v1",
         "/api/v1/namespaces/{namespace}/replicationcontrollers",
@@ -94,6 +108,11 @@ COLLECTIONS = {
     "ScaledObject": (
         "keda.sh/v1alpha1",
         "/apis/keda.sh/v1alpha1/namespaces/{namespace}/scaledobjects",
+        (),
+    ),
+    "NetworkPolicy": (
+        "networking.k8s.io/v1",
+        "/apis/networking.k8s.io/v1/namespaces/{namespace}/networkpolicies",
         (),
     ),
 }
@@ -145,6 +164,49 @@ def nested(value: object, path: tuple[str, ...]) -> dict[str, Any]:
     for component in path:
         current = current.get(component, {}) if isinstance(current, dict) else {}
     return current if isinstance(current, dict) else {}
+
+
+def pod_templates(value: dict[str, Any], path: tuple[str, ...]) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """Return every Pod template, including multi-template custom controllers."""
+
+    metadata = value.get("metadata", {})
+    if path:
+        spec = nested(value, path)
+        if not spec:
+            return []
+        if value.get("kind") == "Pod":
+            annotations = metadata.get("annotations", {}) if isinstance(metadata, dict) else {}
+        else:
+            template = nested(value, path[:-1])
+            template_metadata = template.get("metadata", {}) if isinstance(template, dict) else {}
+            annotations = (
+                template_metadata.get("annotations", {})
+                if isinstance(template_metadata, dict)
+                else {}
+            )
+        return [(spec, annotations)]
+
+    spec = value.get("spec", {})
+    if value.get("kind") != "JobSet" or not isinstance(spec, dict):
+        return []
+    results: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    for replicated_job in spec.get("replicatedJobs", []) or []:
+        if not isinstance(replicated_job, dict):
+            continue
+        job_template = replicated_job.get("template", {})
+        job_spec = job_template.get("spec", {}) if isinstance(job_template, dict) else {}
+        pod_template = job_spec.get("template", {}) if isinstance(job_spec, dict) else {}
+        pod_spec = pod_template.get("spec", {}) if isinstance(pod_template, dict) else {}
+        if not isinstance(pod_spec, dict) or not pod_spec:
+            continue
+        template_metadata = pod_template.get("metadata", {})
+        annotations = (
+            template_metadata.get("annotations", {})
+            if isinstance(template_metadata, dict)
+            else {}
+        )
+        results.append((pod_spec, annotations))
+    return results
 
 
 def pod_findings(spec: dict[str, Any], annotations: dict[str, Any] | None = None) -> tuple[list[str], list[str]]:
@@ -258,6 +320,7 @@ def validate_artifact(value: object) -> dict[str, Any]:
         "reference_host_paths",
         "baseline_incompatible_objects",
         "restricted_incompatible_objects",
+        "legacy_controller_objects",
         "unauthorized_exception_objects",
         "inventory_sha256",
     }
@@ -273,7 +336,89 @@ def validate_artifact(value: object) -> dict[str, Any]:
         raise InventoryError("baseline artifact inspected namespace inventory differs")
     if not isinstance(value["objects"], list) or not isinstance(value["collections"], list):
         raise InventoryError("baseline artifact inventories must be lists")
+    expected_collections = {
+        (namespace, api_version, kind)
+        for namespace in BASELINE_NAMESPACES
+        for kind, (api_version, _, _) in COLLECTIONS.items()
+    }
+    observed_collections: dict[tuple[str, str, str], int] = {}
+    for collection in value["collections"]:
+        if not isinstance(collection, dict) or set(collection) != {
+            "api_version",
+            "kind",
+            "namespace",
+            "resource_version",
+            "item_count",
+        }:
+            raise InventoryError("baseline collection fields differ from the canonical schema")
+        key = (collection["namespace"], collection["api_version"], collection["kind"])
+        if key in observed_collections or key not in expected_collections:
+            raise InventoryError("baseline collections are duplicated or outside the frozen inventory")
+        if (
+            not isinstance(collection["resource_version"], str)
+            or not collection["resource_version"]
+            or not isinstance(collection["item_count"], int)
+            or isinstance(collection["item_count"], bool)
+            or collection["item_count"] < 0
+        ):
+            raise InventoryError("baseline collection identity/count is malformed")
+        observed_collections[key] = collection["item_count"]
+    if set(observed_collections) != expected_collections:
+        raise InventoryError("baseline artifact omits a frozen namespace/workload collection")
+    observed_object_counts = {key: 0 for key in expected_collections}
+    for item in value["objects"]:
+        if not isinstance(item, dict):
+            raise InventoryError("baseline object inventory is malformed")
+        key = (item.get("namespace"), item.get("api_version"), item.get("kind"))
+        if key not in observed_object_counts:
+            raise InventoryError("baseline object is outside the frozen inventory")
+        observed_object_counts[key] += 1
+    if observed_object_counts != observed_collections:
+        raise InventoryError("baseline object counts differ from collection snapshots")
+    if (
+        value["reference_host_paths"] != EXPECTED_REFERENCE_HOST_PATHS
+        or value["baseline_incompatible_objects"] != EXPECTED_BASELINE_INCOMPATIBLE_OBJECTS
+        or value["restricted_incompatible_objects"]
+        != EXPECTED_RESTRICTED_INCOMPATIBLE_OBJECTS
+    ):
+        raise InventoryError("baseline artifact does not equal the reviewed 103/103/716 counts")
+    if not isinstance(value["legacy_controller_objects"], list):
+        raise InventoryError("baseline artifact legacy controller inventory must be a list")
+    if value["unauthorized_exception_objects"] != []:
+        raise InventoryError("baseline artifact contains unauthorized exception objects")
     return value
+
+
+def legacy_controller_identity(
+    namespace: str,
+    kind: str,
+    metadata: dict[str, Any],
+) -> dict[str, str] | None:
+    if namespace != "fs2-models" or kind not in {"NetworkPolicy", "ServiceAccount", "DaemonSet"}:
+        return None
+    labels = metadata.get("labels", {}) or {}
+    if not isinstance(labels, dict):
+        return None
+    name = str(metadata.get("name", ""))
+    controller_owned = labels.get("app.kubernetes.io/managed-by") == "fs2-model-controller"
+    legacy_policy = (
+        kind == "NetworkPolicy"
+        and labels.get("app.kubernetes.io/part-of") == "fs2-serve"
+        and labels.get("app.kubernetes.io/managed-by") != "terraform"
+        and not name.startswith("fs2-network-profile-")
+    )
+    if not (controller_owned or legacy_policy):
+        return None
+    return {
+        "api_version": "v1" if kind == "ServiceAccount" else (
+            "apps/v1" if kind == "DaemonSet" else "networking.k8s.io/v1"
+        ),
+        "kind": kind,
+        "namespace": namespace,
+        "name": name,
+        "uid": str(metadata.get("uid", "")),
+        "resource_version": str(metadata.get("resourceVersion", "")),
+    }
 
 
 def inventory(client: Kubectl) -> dict[str, Any]:
@@ -281,11 +426,12 @@ def inventory(client: Kubectl) -> dict[str, Any]:
     discovered = sorted(
         item.get("metadata", {}).get("name", "")
         for item in namespaces.get("items", [])
-        if item.get("metadata", {}).get("name", "").startswith("fs2-bioir-")
+        if item.get("metadata", {}).get("name", "") == "fs2-academic-poc"
+        or item.get("metadata", {}).get("name", "").startswith("fs2-bioir-")
     )
     if discovered != list(SCIENTIFIC_NAMESPACES):
         raise InventoryError(
-            "live fs2-bioir namespace inventory differs from the exact frozen five-name contract"
+            "live scientific namespace inventory differs from the exact frozen six-name contract"
         )
 
     objects: list[dict[str, Any]] = []
@@ -293,6 +439,7 @@ def inventory(client: Kubectl) -> dict[str, Any]:
     reference_host_paths = 0
     incompatible_objects = 0
     restricted_incompatible_objects = 0
+    legacy_controller_objects: list[dict[str, str]] = []
     for namespace in BASELINE_NAMESPACES:
         for kind, (api_version, uri, path) in COLLECTIONS.items():
             collection = client.raw(uri.format(namespace=namespace), optional=kind in {"JobSet", "ModelDeployment", "ScaledObject"})
@@ -310,16 +457,20 @@ def inventory(client: Kubectl) -> dict[str, Any]:
                 }
             )
             for item in items:
-                spec = nested(item, path)
                 metadata = item.get("metadata", {})
-                annotations = metadata.get("annotations", {}) if isinstance(metadata, dict) else {}
-                findings, restricted_findings = pod_findings(spec, annotations) if path else ([], [])
+                templates = pod_templates(item, path)
+                template_results = [pod_findings(spec, annotations) for spec, annotations in templates]
+                findings = sorted({finding for result, _ in template_results for finding in result})
+                restricted_findings = sorted(
+                    {finding for _, result in template_results for finding in result}
+                )
                 if findings:
                     incompatible_objects += 1
                 if restricted_findings:
                     restricted_incompatible_objects += 1
                 if "hostPath" in findings:
                     reference_host_paths += 1
+                specs = [spec for spec, _ in templates]
                 projection = {
                     "apiVersion": item.get("apiVersion", api_version),
                     "kind": item.get("kind", kind),
@@ -329,9 +480,15 @@ def inventory(client: Kubectl) -> dict[str, Any]:
                         "uid": metadata.get("uid"),
                         "resourceVersion": metadata.get("resourceVersion"),
                         "generation": metadata.get("generation"),
+                        "labels": metadata.get("labels", {}),
+                        "annotations": metadata.get("annotations", {}),
                         "ownerReferences": metadata.get("ownerReferences", []),
                     },
                     "spec": item.get("spec", {}),
+                    "template": item.get("template", {}),
+                    "automountServiceAccountToken": item.get("automountServiceAccountToken"),
+                    "imagePullSecrets": item.get("imagePullSecrets", []),
+                    "secrets": item.get("secrets", []),
                 }
                 objects.append(
                     {
@@ -342,34 +499,60 @@ def inventory(client: Kubectl) -> dict[str, Any]:
                         "uid": metadata.get("uid"),
                         "resource_version": metadata.get("resourceVersion"),
                         "object_sha256": hashlib.sha256(canonical(projection)).hexdigest(),
-                        "pod_spec_sha256": hashlib.sha256(canonical(spec)).hexdigest(),
+                        "pod_spec_sha256": hashlib.sha256(canonical(specs)).hexdigest(),
                         "baseline_findings": findings,
                         "restricted_findings": restricted_findings,
                     }
                 )
+                legacy = legacy_controller_identity(namespace, kind, metadata)
+                if legacy is not None:
+                    legacy["object_sha256"] = hashlib.sha256(canonical(projection)).hexdigest()
+                    legacy_controller_objects.append(legacy)
 
     unauthorized_exception: list[str] = []
-    for kind, (_, uri, path) in COLLECTIONS.items():
-        collection = client.raw(uri.format(namespace=EXCEPTION_NAMESPACE), optional=kind in {"JobSet", "ModelDeployment", "ScaledObject"})
-        for item in collection.get("items", []):
-            metadata = item.get("metadata", {})
-            name = str(metadata.get("name", ""))
-            spec = nested(item, path)
-            if kind == "DaemonSet":
-                if name not in EXCEPTION_OWNERS or spec.get("serviceAccountName") != EXCEPTION_OWNERS.get(name):
-                    unauthorized_exception.append(f"{kind}/{name}")
-            elif kind == "Pod":
-                owners = metadata.get("ownerReferences", []) or []
-                owner_names = {
-                    owner.get("name")
-                    for owner in owners
-                    if isinstance(owner, dict) and owner.get("kind") == "DaemonSet"
-                }
-                expected = next((owner for owner in owner_names if owner in EXCEPTION_OWNERS), None)
-                if expected is None or spec.get("serviceAccountName") != EXCEPTION_OWNERS[expected]:
-                    unauthorized_exception.append(f"{kind}/{name}")
-            elif collection.get("items"):
-                unauthorized_exception.append(f"{kind}/{name}")
+    for exception_namespace in (EXCEPTION_NAMESPACE, SNAPSHOT_EXCEPTION_NAMESPACE):
+        for kind, (_, uri, path) in COLLECTIONS.items():
+            collection = client.raw(
+                uri.format(namespace=exception_namespace),
+                optional=True,
+            )
+            for item in collection.get("items", []):
+                metadata = item.get("metadata", {})
+                name = str(metadata.get("name", ""))
+                templates = pod_templates(item, path)
+                spec = templates[0][0] if len(templates) == 1 else {}
+                if exception_namespace == SNAPSHOT_EXCEPTION_NAMESPACE:
+                    labels = metadata.get("labels", {}) if isinstance(metadata, dict) else {}
+                    if not (
+                        (
+                            kind == "Pod"
+                            and name.startswith("fs2-snapshot-")
+                            and spec.get("serviceAccountName") == "fs2-snapshot-runtime"
+                            and labels.get("security.fs2.nebius.ai/snapshot-profile")
+                            == "esmfold2-h100-v1"
+                        )
+                        or (kind == "ServiceAccount" and name in {"default", "fs2-snapshot-runtime"})
+                        or (kind == "NetworkPolicy" and name == "fs2-snapshot-default-deny")
+                    ):
+                        unauthorized_exception.append(f"{exception_namespace}/{kind}/{name}")
+                elif kind == "DaemonSet":
+                    if name not in EXCEPTION_OWNERS or spec.get("serviceAccountName") != EXCEPTION_OWNERS.get(name):
+                        unauthorized_exception.append(f"{exception_namespace}/{kind}/{name}")
+                elif kind == "ServiceAccount":
+                    if name != "default" and name not in set(EXCEPTION_OWNERS.values()):
+                        unauthorized_exception.append(f"{exception_namespace}/{kind}/{name}")
+                elif kind == "Pod":
+                    owners = metadata.get("ownerReferences", []) or []
+                    owner_names = {
+                        owner.get("name")
+                        for owner in owners
+                        if isinstance(owner, dict) and owner.get("kind") == "DaemonSet"
+                    }
+                    expected = next((owner for owner in owner_names if owner in EXCEPTION_OWNERS), None)
+                    if expected is None or spec.get("serviceAccountName") != EXCEPTION_OWNERS[expected]:
+                        unauthorized_exception.append(f"{exception_namespace}/{kind}/{name}")
+                else:
+                    unauthorized_exception.append(f"{exception_namespace}/{kind}/{name}")
 
     result: dict[str, Any] = {
         "schema": SCHEMA,
@@ -386,6 +569,10 @@ def inventory(client: Kubectl) -> dict[str, Any]:
         "reference_host_paths": reference_host_paths,
         "baseline_incompatible_objects": incompatible_objects,
         "restricted_incompatible_objects": restricted_incompatible_objects,
+        "legacy_controller_objects": sorted(
+            legacy_controller_objects,
+            key=lambda item: (item["api_version"], item["kind"], item["namespace"], item["name"]),
+        ),
         "unauthorized_exception_objects": sorted(unauthorized_exception),
     }
     result["inventory_sha256"] = hashlib.sha256(canonical(result)).hexdigest()
@@ -413,6 +600,7 @@ def verify_against_artifact(
             "reference_host_paths",
             "baseline_incompatible_objects",
             "restricted_incompatible_objects",
+            "legacy_controller_objects",
             "unauthorized_exception_objects",
         )
         if any(live[field] != artifact[field] for field in comparable):
@@ -422,6 +610,7 @@ def verify_against_artifact(
             live["reference_host_paths"] != 0
             or live["baseline_incompatible_objects"] != 0
             or live["restricted_incompatible_objects"] != 0
+            or live["legacy_controller_objects"]
             or live["unauthorized_exception_objects"]
         ):
             raise InventoryError("live pre-enforcement inventory is not clean")
@@ -439,6 +628,7 @@ def verify_against_artifact(
         "live_reference_host_paths": live["reference_host_paths"],
         "live_baseline_incompatible_objects": live["baseline_incompatible_objects"],
         "live_restricted_incompatible_objects": live["restricted_incompatible_objects"],
+        "live_legacy_controller_objects": live["legacy_controller_objects"],
     }
 
 
@@ -476,6 +666,7 @@ def main() -> int:
             live["reference_host_paths"] != 0
             or live["baseline_incompatible_objects"] != 0
             or live["restricted_incompatible_objects"] != 0
+            or live["legacy_controller_objects"]
             or live["unauthorized_exception_objects"]
         ):
             raise InventoryError("pre-enforcement inventory is not clean")
