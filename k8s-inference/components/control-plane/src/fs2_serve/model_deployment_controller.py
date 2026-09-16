@@ -3,7 +3,8 @@
 The controller deliberately has no cloud-provider API.  It can only reconcile
 namespaced objects selected by the Terraform-owned infrastructure envelope.  A
 Kubernetes Lease is checked before every mutation, server-side apply never
-forces conflicts, and deletion always uses UID/resourceVersion preconditions.
+forces conflicts except for one verified stale KEDA scale-field handoff, and
+deletion always uses UID/resourceVersion preconditions.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ import copy
 import json
 import logging
 import math
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -97,6 +99,15 @@ LOGGER = logging.getLogger(__name__)
 STATUS_FIELD_MANAGER = "fs2-model-controller-status"
 FENCE_ANNOTATION = "inference.fs2.nebius.ai/fence-token"
 CONTROLLER_LABEL = "app.kubernetes.io/component=model-controller"
+STALE_SCALE_FIELD_MANAGERS = frozenset({"keda", "horizontal-pod-autoscaler"})
+
+
+@dataclass(frozen=True)
+class KubernetesFieldConflict:
+    manager: str
+    subresource: str | None
+    api_version: str
+    field: str
 
 
 class ControllerError(RuntimeError):
@@ -105,6 +116,15 @@ class ControllerError(RuntimeError):
 
 class KubernetesConflictError(ControllerError):
     """The API server rejected optimistic concurrency or SSA ownership."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        field_conflicts: tuple[KubernetesFieldConflict, ...] = (),
+    ) -> None:
+        super().__init__(message)
+        self.field_conflicts = field_conflicts
 
 
 class FenceLostError(ControllerError):
@@ -241,6 +261,15 @@ class ModelControllerApi(Protocol):
         fence: LeaseFence,
     ) -> ResourceSnapshot: ...
 
+    async def apply_fixed_scale_handoff(
+        self,
+        resource: RenderedResource,
+        *,
+        current: ResourceSnapshot,
+        owner_uid: str,
+        fence: LeaseFence,
+    ) -> ResourceSnapshot: ...
+
     async def delete_resource(
         self,
         identity: str,
@@ -360,22 +389,90 @@ def _field_managers(body: Mapping[str, Any]) -> list[str]:
     )
 
 
-def _replica_field_managers(body: Mapping[str, Any]) -> list[str]:
+@dataclass(frozen=True)
+class _ReplicaFieldOwner:
+    manager: str
+    subresource: str | None
+    api_version: str
+
+
+def _replica_field_owners(body: Mapping[str, Any]) -> list[_ReplicaFieldOwner]:
     fields = _metadata(body).get("managedFields", [])
     if not isinstance(fields, list):
         return []
-    managers: set[str] = set()
+    owners: set[_ReplicaFieldOwner] = set()
     for item in fields:
         if not isinstance(item, Mapping):
             continue
         manager = item.get("manager")
+        api_version = item.get("apiVersion")
+        subresource = item.get("subresource")
         fields_v1 = item.get("fieldsV1")
-        if not isinstance(manager, str) or not isinstance(fields_v1, Mapping):
+        if (
+            not isinstance(manager, str)
+            or not manager
+            or not isinstance(api_version, str)
+            or not api_version
+            or (subresource is not None and not isinstance(subresource, str))
+            or not isinstance(fields_v1, Mapping)
+        ):
             continue
         spec_fields = fields_v1.get("f:spec")
         if isinstance(spec_fields, Mapping) and "f:replicas" in spec_fields:
-            managers.add(manager)
-    return sorted(managers)
+            owners.add(_ReplicaFieldOwner(manager=manager, subresource=subresource, api_version=api_version))
+    return sorted(owners, key=lambda item: (item.manager, item.subresource or "", item.api_version))
+
+
+def _replica_field_managers(body: Mapping[str, Any]) -> list[str]:
+    return sorted({item.manager for item in _replica_field_owners(body)})
+
+
+_FIELD_MANAGER_CONFLICT_MESSAGE = re.compile(
+    r'^conflict with "(?P<manager>[^"\r\n]{1,128})"'
+    r'(?: with subresource "(?P<subresource>[^"\r\n]{1,64})")?'
+    r" using (?P<api_version>[A-Za-z0-9.-]+(?:/[A-Za-z0-9.-]+)?): "
+    r"(?P<field>\.[^\r\n]{1,512})$"
+)
+
+
+def _field_manager_conflicts(response: httpx.Response) -> tuple[KubernetesFieldConflict, ...]:
+    """Extract only bounded structured SSA conflict metadata from a Status."""
+
+    try:
+        status = response.json()
+    except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
+        return ()
+    if (
+        not isinstance(status, Mapping)
+        or status.get("kind") != "Status"
+        or status.get("status") != "Failure"
+        or status.get("reason") != "Conflict"
+        or status.get("code") != 409
+    ):
+        return ()
+    causes = _mapping(status.get("details")).get("causes")
+    if not isinstance(causes, list) or not causes or len(causes) > 32:
+        return ()
+    conflicts: list[KubernetesFieldConflict] = []
+    for cause in causes:
+        if not isinstance(cause, Mapping) or cause.get("reason") != "FieldManagerConflict":
+            return ()
+        field = cause.get("field")
+        message = cause.get("message")
+        if not isinstance(field, str) or not isinstance(message, str):
+            return ()
+        match = _FIELD_MANAGER_CONFLICT_MESSAGE.fullmatch(message)
+        if match is None or match.group("field") != field:
+            return ()
+        conflicts.append(
+            KubernetesFieldConflict(
+                manager=match.group("manager"),
+                subresource=match.group("subresource"),
+                api_version=match.group("api_version"),
+                field=field,
+            )
+        )
+    return tuple(conflicts)
 
 
 def _nonnegative_status_int(status: Mapping[str, Any], field: str, *, zero_when_observed: bool) -> int | None:
@@ -561,7 +658,10 @@ class HttpKubernetesModelClient:
         except (OSError, httpx.HTTPError) as exc:
             raise ControllerError("Kubernetes API request failed") from exc
         if response.status_code == 409:
-            raise KubernetesConflictError("Kubernetes optimistic concurrency or field ownership conflict")
+            raise KubernetesConflictError(
+                "Kubernetes optimistic concurrency or field ownership conflict",
+                field_conflicts=_field_manager_conflicts(response),
+            )
         if response.status_code >= 400 and response.status_code != 404:
             raise ControllerError(f"Kubernetes API returned HTTP {response.status_code}")
         return response
@@ -821,6 +921,154 @@ class HttpKubernetesModelClient:
         if _controller_owner_uid(reread) != owner_uid:
             raise KubernetesConflictError("applied resource did not retain the exact controller owner")
         return _snapshot(reread, resource)
+
+    @staticmethod
+    def _validate_fixed_scale_owner(
+        body: Mapping[str, Any],
+        *,
+        resource: RenderedResource,
+        owner_uid: str,
+        expected_uid: str,
+        resource_version: str,
+    ) -> None:
+        if (
+            body.get("apiVersion") != "apps/v1"
+            or body.get("kind") != "Deployment"
+            or _required_metadata(body, "namespace") != resource.namespace
+            or _required_metadata(body, "name") != resource.name
+            or _required_metadata(body, "uid") != expected_uid
+            or _required_metadata(body, "resourceVersion") != resource_version
+            or _controller_owner_uid(body) != owner_uid
+            or _metadata(body).get("deletionTimestamp") is not None
+        ):
+            raise KubernetesConflictError("fixed scale handoff target changed before ownership transfer")
+        owners = _replica_field_owners(body)
+        stale = [item for item in owners if item.manager != FIELD_MANAGER]
+        if not stale:
+            raise KubernetesConflictError("fixed scale handoff no longer has stale scale ownership")
+        if any(
+            item.manager not in STALE_SCALE_FIELD_MANAGERS
+            or item.subresource != "scale"
+            or item.api_version != "apps/v1"
+            for item in stale
+        ):
+            raise KubernetesConflictError("Deployment replica field has a foreign manager")
+
+    async def apply_fixed_scale_handoff(
+        self,
+        resource: RenderedResource,
+        *,
+        current: ResourceSnapshot,
+        owner_uid: str,
+        fence: LeaseFence,
+    ) -> ResourceSnapshot:
+        """Take back fixed replica ownership from a deleted, observed KEDA scaler.
+
+        Generic SSA remains non-forcing. This one transition retries with force
+        only after the API server reports the complete expected conflict set,
+        and only while the exact UID/resourceVersion and Lease fence survive.
+        """
+
+        self._allow_write()
+        manifest = copy.deepcopy(resource.manifest)
+        spec = manifest.get("spec")
+        desired_replicas = spec.get("replicas") if isinstance(spec, Mapping) else None
+        if (
+            resource.api_version != "apps/v1"
+            or resource.kind != "Deployment"
+            or resource.field_manager != FIELD_MANAGER
+            or resource.force_conflicts
+            or not isinstance(desired_replicas, int)
+            or isinstance(desired_replicas, bool)
+            or desired_replicas < 0
+            or current.observed.identity != _rendered_identity(resource)
+            or current.observed.controller_owner_uid != owner_uid
+            or current.observed.deleting
+            or not current.replica_field_managers
+        ):
+            raise ControllerError("fixed scale handoff preconditions are not satisfied")
+        if _controller_owner_uid(manifest) != owner_uid:
+            raise ControllerError("fixed scale handoff manifest has a different controller owner")
+
+        endpoint = self._endpoint(resource.api_version, resource.kind)
+        live = await self._get_resource(resource.api_version, resource.kind, resource.namespace, resource.name)
+        if live is None:
+            raise KubernetesConflictError("fixed scale handoff target disappeared")
+        self._validate_fixed_scale_owner(
+            live,
+            resource=resource,
+            owner_uid=owner_uid,
+            expected_uid=current.observed.uid,
+            resource_version=current.resource_version,
+        )
+        manifest.setdefault("metadata", {})["resourceVersion"] = current.resource_version
+        path = endpoint.item(resource.namespace, resource.name)
+        params = {"fieldManager": FIELD_MANAGER, "force": "false", "fieldValidation": "Strict"}
+        await self.assert_fence(fence)
+        try:
+            response = await self._request(
+                "PATCH",
+                path,
+                params=params,
+                content_type="application/apply-patch+yaml",
+                content=json.dumps(manifest, separators=(",", ":")).encode(),
+            )
+        except KubernetesConflictError as exc:
+            expected = {
+                KubernetesFieldConflict(
+                    manager=manager,
+                    subresource="scale",
+                    api_version="apps/v1",
+                    field=".spec.replicas",
+                )
+                for manager in STALE_SCALE_FIELD_MANAGERS
+            }
+            if len(exc.field_conflicts) != 1 or exc.field_conflicts[0] not in expected:
+                raise
+        else:
+            applied = response.json()
+            reread = await self._get_resource(resource.api_version, resource.kind, resource.namespace, resource.name)
+            if reread is None or _required_metadata(reread, "uid") != _required_metadata(applied, "uid"):
+                raise ControllerError("fixed scale handoff apply failed read-after-write UID verification")
+            result = _snapshot(reread, resource)
+            if (
+                result.desired_replicas != desired_replicas
+                or FIELD_MANAGER not in result.replica_field_managers
+                or any(manager in STALE_SCALE_FIELD_MANAGERS for manager in result.replica_field_managers)
+            ):
+                raise ControllerError("fixed scale handoff did not establish exclusive replica ownership")
+            return result
+
+        unchanged = await self._get_resource(resource.api_version, resource.kind, resource.namespace, resource.name)
+        if unchanged is None:
+            raise KubernetesConflictError("fixed scale handoff target disappeared after conflict")
+        self._validate_fixed_scale_owner(
+            unchanged,
+            resource=resource,
+            owner_uid=owner_uid,
+            expected_uid=current.observed.uid,
+            resource_version=current.resource_version,
+        )
+        await self.assert_fence(fence)
+        forced = await self._request(
+            "PATCH",
+            path,
+            params={**params, "force": "true"},
+            content_type="application/apply-patch+yaml",
+            content=json.dumps(manifest, separators=(",", ":")).encode(),
+        )
+        applied = forced.json()
+        reread = await self._get_resource(resource.api_version, resource.kind, resource.namespace, resource.name)
+        if reread is None or _required_metadata(reread, "uid") != _required_metadata(applied, "uid"):
+            raise ControllerError("fixed scale handoff failed read-after-write UID verification")
+        result = _snapshot(reread, resource)
+        if (
+            result.desired_replicas != desired_replicas
+            or FIELD_MANAGER not in result.replica_field_managers
+            or any(manager in STALE_SCALE_FIELD_MANAGERS for manager in result.replica_field_managers)
+        ):
+            raise ControllerError("fixed scale handoff did not establish exclusive replica ownership")
+        return result
 
     @staticmethod
     def _parse_identity(identity: str) -> tuple[str, str, str, str]:
@@ -1266,6 +1514,63 @@ def _autoscaler_handoff_complete(
 
 def _autoscaler_resources_present(discovery: Discovery) -> bool:
     return any(item.observed.kind in {"ScaledObject", HPA_ENDPOINT.kind} for item in discovery.resources)
+
+
+def _autoscaler_targets_present(
+    discovery: Discovery,
+    targets: set[str],
+) -> bool:
+    for item in discovery.resources:
+        if item.observed.kind not in {"ScaledObject", HPA_ENDPOINT.kind}:
+            continue
+        target = _mapping(_mapping(item.raw.get("spec")).get("scaleTargetRef"))
+        api_version = target.get("apiVersion")
+        kind = target.get("kind")
+        name = target.get("name")
+        if all(isinstance(value, str) and value for value in (api_version, kind, name)):
+            identity = f"{api_version}/{kind}/{item.observed.namespace}/{name}"
+            if identity in targets:
+                return True
+    return False
+
+
+def _fixed_scale_handoff_targets(
+    render: RenderPlan | None,
+    discovery: Discovery,
+    owner_uid: str,
+) -> list[tuple[RenderedResource, ResourceSnapshot]]:
+    if render is None:
+        return []
+    targets: list[tuple[RenderedResource, ResourceSnapshot]] = []
+    for resource in render.resources:
+        spec = resource.manifest.get("spec")
+        replicas = spec.get("replicas") if isinstance(spec, Mapping) else None
+        if (
+            resource.api_version != "apps/v1"
+            or resource.kind != "Deployment"
+            or not isinstance(replicas, int)
+            or isinstance(replicas, bool)
+            or replicas < 0
+        ):
+            continue
+        current = _resource_snapshot(
+            discovery,
+            resource.api_version,
+            resource.kind,
+            resource.namespace,
+            resource.name,
+        )
+        if current is None or not current.replica_field_managers:
+            continue
+        external = set(current.replica_field_managers) - {FIELD_MANAGER}
+        if not external:
+            continue
+        if current.observed.controller_owner_uid != owner_uid or current.observed.deleting:
+            raise ControllerError("fixed Deployment scale handoff target is not exclusively controller-owned")
+        if not external.issubset(STALE_SCALE_FIELD_MANAGERS):
+            raise ControllerError("Deployment replica field has a foreign manager")
+        targets.append((resource, current))
+    return targets
 
 
 def _observed_hot_floor(discovery: Discovery) -> int:
@@ -2526,6 +2831,35 @@ class ModelDeploymentController:
                     wrote=wrote,
                     requeue=True,
                 )
+
+        fixed_scale_handoffs = _fixed_scale_handoff_targets(plan.render, discovery, uid)
+        if fixed_scale_handoffs:
+            target_identities = {_rendered_identity(resource) for resource, _ in fixed_scale_handoffs}
+            if _autoscaler_targets_present(discovery, target_identities):
+                return ReconcileResult(
+                    key=key,
+                    action="fixed-scale-handoff:autoscaler-removal-pending",
+                    generation=generation,
+                    wrote=wrote,
+                    requeue=True,
+                )
+            # All candidates are validated before the first write. A partial
+            # multi-target handoff is safe and repaired by the next reconcile.
+            for resource, current in fixed_scale_handoffs:
+                await self.api.apply_fixed_scale_handoff(
+                    resource,
+                    current=current,
+                    owner_uid=uid,
+                    fence=fence,
+                )
+                wrote = True
+            return ReconcileResult(
+                key=key,
+                action="fixed-scale-handoff",
+                generation=generation,
+                wrote=wrote,
+                requeue=True,
+            )
 
         # A drain may write replicas=0 only after the foreground ScaledObject
         # deletion and its generated HPA garbage collection are both observed.

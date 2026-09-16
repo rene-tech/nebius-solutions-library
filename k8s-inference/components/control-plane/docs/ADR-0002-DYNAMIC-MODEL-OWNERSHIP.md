@@ -56,7 +56,13 @@ decides where or when a pod runs.
    `fs2-serve.nebius.ai/model-id`, and the annotation
    `fs2-serve.nebius.ai/spec-digest`.
 2. Server-side apply uses field manager `fs2-model-controller`; force-conflicts
-   is false outside an explicitly verified adoption operation.
+   is false outside an explicitly verified adoption operation or a fixed-scale
+   handoff after the owned ScaledObject and generated HPA are both absent. That
+   handoff pins the Deployment UID and resourceVersion, accepts exactly one
+   `.spec.replicas` conflict from the stale `keda` or
+   `horizontal-pod-autoscaler` scale manager, rechecks the Lease, and verifies
+   controller ownership by read-after-write. Every other conflict remains
+   fail-closed.
 3. A reconcile reads the object again after every write. Status advances only
    from observed generation, resource UID, readiness, cache, admission, and
    route observations.

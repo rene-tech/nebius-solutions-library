@@ -42,10 +42,12 @@ from fs2_serve.model_deployment import (
 from fs2_serve.model_deployment_bridge import _normalize_keys
 from fs2_serve.model_deployment_controller import (
     BoundedKeyQueue,
+    ControllerError,
     ControllerHealth,
     Discovery,
     FenceLostError,
     HttpKubernetesModelClient,
+    KubernetesConflictError,
     LeaseFence,
     ModelControllerApi,
     ModelDeploymentController,
@@ -175,8 +177,8 @@ def model_object(*, generation: int = 1, deleting: bool = False) -> dict[str, An
 def snapshot(resource: RenderedResource, *, ready: bool = True, owner_uid: str = "cr-uid-1") -> ResourceSnapshot:
     requested_replicas = resource.manifest.get("spec", {}).get("replicas")
     replicas = (
-        0
-        if resource.kind == "Deployment" and requested_replicas == 0
+        requested_replicas
+        if resource.kind == "Deployment" and isinstance(requested_replicas, int) and ready
         else 1
         if resource.kind == "Deployment" and ready
         else 0
@@ -194,7 +196,7 @@ def snapshot(resource: RenderedResource, *, ready: bool = True, owner_uid: str =
     replica_managers: list[str] = []
     if resource.kind == "Deployment":
         raw["spec"]["replicas"] = replicas
-        replica_manager = FIELD_MANAGER if requested_replicas is not None else "horizontal-pod-autoscaler"
+        replica_manager = FIELD_MANAGER if requested_replicas is not None else "keda"
         managed_fields.append({"manager": replica_manager, "fieldsV1": {"f:spec": {"f:replicas": {}}}})
         replica_managers.append(replica_manager)
     metadata.update(
@@ -369,6 +371,16 @@ class FakeApi(ModelControllerApi):
     ) -> ResourceSnapshot:
         await self.assert_fence(fence)
         self.calls.append(("apply", resource.kind))
+        identity = f"{resource.api_version}/{resource.kind}/{resource.namespace}/{resource.name}"
+        current = self.resources.get(identity)
+        requested_replicas = resource.manifest.get("spec", {}).get("replicas")
+        if (
+            resource.kind == "Deployment"
+            and isinstance(requested_replicas, int)
+            and current is not None
+            and any(manager != FIELD_MANAGER for manager in current.replica_field_managers)
+        ):
+            raise KubernetesConflictError("Kubernetes optimistic concurrency or field ownership conflict")
         item = snapshot(resource, ready=True, owner_uid=owner_uid)
         if resource.kind == "ScaledObject":
             item.raw["status"] = {
@@ -379,6 +391,21 @@ class FakeApi(ModelControllerApi):
         if resource.kind == "ScaledObject" and self.auto_create_hpa:
             generated = hpa_snapshot(item)
             self.resources[generated.observed.identity] = generated
+        return item
+
+    async def apply_fixed_scale_handoff(
+        self,
+        resource: RenderedResource,
+        *,
+        current: ResourceSnapshot,
+        owner_uid: str,
+        fence: LeaseFence,
+    ) -> ResourceSnapshot:
+        await self.assert_fence(fence)
+        self.calls.append(("fixed-scale-handoff", resource.name))
+        assert current.observed.controller_owner_uid == owner_uid
+        item = snapshot(resource, ready=True, owner_uid=owner_uid)
+        self.resources[item.observed.identity] = item
         return item
 
     async def delete_resource(
@@ -521,6 +548,131 @@ async def test_controller_adds_finalizer_before_apply_then_observes_exact_endpoi
     }
     deployment = next(item for item in api.resources.values() if item.observed.kind == "Deployment")
     assert FIELD_MANAGER not in deployment.replica_field_managers
+
+
+@pytest.mark.asyncio
+async def test_controller_waits_for_hpa_gc_then_takes_over_stale_keda_scale_ownership() -> None:
+    elastic = model_spec().model_copy(
+        update={
+            "placement": model_spec().placement.model_copy(update={"pool_refs": ["pool-b"]}),
+            "availability": model_spec().availability.model_copy(update={"min_replicas": 1, "max_replicas": 2}),
+        }
+    )
+    raw = model_object()
+    raw["spec"] = elastic.model_dump(mode="json", by_alias=True)
+    api = FakeApi(raw)
+    subject = controller(api)
+    key = ModelKey(namespace="fs2-models", name="qwen-live")
+
+    assert (await subject.reconcile(key, fence())).action == "finalizer-added"
+    assert (await subject.reconcile(key, fence())).action == "autoscaler-bootstrap"
+    assert (await subject.reconcile(key, fence())).action == "autoscaler-handoff"
+    deployment = next(item for item in api.resources.values() if item.observed.kind == "Deployment")
+    assert deployment.replica_field_managers == ["keda"]
+
+    fixed = elastic.model_copy(
+        update={"availability": elastic.availability.model_copy(update={"min_replicas": 2, "max_replicas": 2})}
+    )
+    api.model["spec"] = fixed.model_dump(mode="json", by_alias=True)
+    api.model["metadata"].update({"generation": 2, "resourceVersion": "2"})
+    api.hold_hpa_gc = True
+    api.calls.clear()
+
+    delete_first = await subject.reconcile(key, fence())
+    assert delete_first.action == "apply:delete-first"
+    assert any(action == "delete" and "/ScaledObject/" in value for action, value in api.calls)
+    assert not any(action == "fixed-scale-handoff" for action, _ in api.calls)
+
+    api.calls.clear()
+    waiting = await subject.reconcile(key, fence())
+    assert waiting.action == "fixed-scale-handoff:autoscaler-removal-pending"
+    assert waiting.requeue and not waiting.wrote
+    assert any(item.observed.kind == "HorizontalPodAutoscaler" for item in api.resources.values())
+    assert not any(action in {"apply", "fixed-scale-handoff"} for action, _ in api.calls)
+
+    for identity, item in list(api.resources.items()):
+        if item.observed.kind == "HorizontalPodAutoscaler":
+            del api.resources[identity]
+    api.calls.clear()
+    handoff = await subject.reconcile(key, fence())
+    assert handoff.action == "fixed-scale-handoff"
+    assert handoff.requeue and handoff.wrote
+    assert [(action, value) for action, value in api.calls if action == "fixed-scale-handoff"] == [
+        ("fixed-scale-handoff", "qwen-runtime")
+    ]
+    deployment = next(item for item in api.resources.values() if item.observed.kind == "Deployment")
+    assert deployment.desired_replicas == 2
+    assert deployment.replica_field_managers == [FIELD_MANAGER]
+
+    assert (await subject.reconcile(key, fence())).action == "apply"
+    converged = await subject.reconcile(key, fence())
+    assert converged.action == "noop"
+    assert api.model["status"]["observedGeneration"] == 2
+
+
+@pytest.mark.asyncio
+async def test_fixed_scale_handoff_rejects_a_foreign_replica_manager() -> None:
+    fixed = model_spec().model_copy(
+        update={
+            "placement": model_spec().placement.model_copy(update={"pool_refs": ["pool-b"]}),
+            "availability": model_spec().availability.model_copy(update={"min_replicas": 2, "max_replicas": 2}),
+        }
+    )
+    raw = model_object()
+    raw["spec"] = fixed.model_dump(mode="json", by_alias=True)
+    raw["metadata"]["finalizers"] = [FINALIZER]
+    api = FakeApi(raw)
+    subject = controller(api)
+    key = ModelKey(namespace="fs2-models", name="qwen-live")
+    render = renderer().render(
+        fixed,
+        RenderContext(
+            name="qwen-live",
+            namespace="fs2-models",
+            uid="cr-uid-1",
+            generation=1,
+            pool=envelope().pools["pool-b"],
+            eligible_pools=[envelope().pools["pool-b"]],
+            prometheus_server_address="http://prometheus:9090",
+        ),
+    )
+    desired = next(item for item in render.resources if item.kind == "Deployment")
+    live = snapshot(desired)
+    live.raw["spec"]["replicas"] = 1
+    live = live.model_copy(update={"desired_replicas": 1, "replica_field_managers": ["terraform"]})
+    api.resources[live.observed.identity] = live
+
+    with pytest.raises(ControllerError, match="replica field has a foreign manager"):
+        await subject.reconcile(key, fence())
+    assert not any(action == "fixed-scale-handoff" for action, _ in api.calls)
+
+
+@pytest.mark.asyncio
+async def test_fixed_scale_handoff_can_return_to_keda_autoscaling() -> None:
+    fixed = model_spec().model_copy(
+        update={
+            "placement": model_spec().placement.model_copy(update={"pool_refs": ["pool-b"]}),
+            "availability": model_spec().availability.model_copy(update={"min_replicas": 2, "max_replicas": 2}),
+        }
+    )
+    raw = model_object()
+    raw["spec"] = fixed.model_dump(mode="json", by_alias=True)
+    api = FakeApi(raw)
+    subject = controller(api)
+    key = ModelKey(namespace="fs2-models", name="qwen-live")
+    assert (await subject.reconcile(key, fence())).action == "finalizer-added"
+    await subject.reconcile(key, fence())
+
+    elastic = fixed.model_copy(
+        update={"availability": fixed.availability.model_copy(update={"min_replicas": 1, "max_replicas": 2})}
+    )
+    api.model["spec"] = elastic.model_dump(mode="json", by_alias=True)
+    api.model["metadata"].update({"generation": 2, "resourceVersion": "2"})
+    assert (await subject.reconcile(key, fence())).action == "autoscaler-install-pending"
+    assert (await subject.reconcile(key, fence())).action == "autoscaler-handoff"
+    deployment = next(item for item in api.resources.values() if item.observed.kind == "Deployment")
+    assert deployment.replica_field_managers == ["keda"]
+    assert any(item.observed.kind == "ScaledObject" for item in api.resources.values())
 
 
 @pytest.mark.asyncio
@@ -1579,6 +1731,266 @@ async def test_http_writer_uses_non_forcing_ssa_resource_version_and_read_after_
     result = await client.apply_resource(desired, owner_uid="cr-uid-1", fence=fence())
     assert result.observed.uid == "service-uid"
     assert [request.method for request in requests] == ["GET", "GET", "PATCH", "GET"]
+    await http.aclose()
+
+
+def _fixed_scale_http_fixture() -> tuple[RenderedResource, dict[str, Any], dict[str, Any]]:
+    spec = model_spec().model_copy(
+        update={
+            "placement": model_spec().placement.model_copy(update={"pool_refs": ["pool-b"]}),
+            "availability": model_spec().availability.model_copy(update={"min_replicas": 2, "max_replicas": 2}),
+        }
+    )
+    desired = next(
+        item
+        for item in renderer()
+        .render(
+            spec,
+            RenderContext(
+                name="qwen-live",
+                namespace="fs2-models",
+                uid="cr-uid-1",
+                generation=2,
+                pool=envelope().pools["pool-b"],
+                eligible_pools=[envelope().pools["pool-b"]],
+                prometheus_server_address="http://prometheus:9090",
+            ),
+        )
+        .resources
+        if item.kind == "Deployment"
+    )
+    current = copy.deepcopy(desired.manifest)
+    current["spec"]["replicas"] = 1
+    current["metadata"].update(
+        {
+            "uid": "deployment-uid",
+            "resourceVersion": "11",
+            "generation": 1,
+            "managedFields": [
+                {
+                    "manager": FIELD_MANAGER,
+                    "operation": "Apply",
+                    "apiVersion": "apps/v1",
+                    "fieldsV1": {"f:spec": {"f:template": {}}},
+                },
+                {
+                    "manager": "keda",
+                    "operation": "Update",
+                    "apiVersion": "apps/v1",
+                    "subresource": "scale",
+                    "fieldsV1": {"f:spec": {"f:replicas": {}}},
+                },
+            ],
+        }
+    )
+    current["status"] = {
+        "observedGeneration": 1,
+        "replicas": 1,
+        "updatedReplicas": 1,
+        "readyReplicas": 1,
+        "availableReplicas": 1,
+    }
+    applied = copy.deepcopy(desired.manifest)
+    applied["metadata"].update(
+        {
+            "uid": "deployment-uid",
+            "resourceVersion": "12",
+            "generation": 2,
+            "managedFields": [
+                {
+                    "manager": FIELD_MANAGER,
+                    "operation": "Apply",
+                    "apiVersion": "apps/v1",
+                    "fieldsV1": {"f:spec": {"f:replicas": {}, "f:template": {}}},
+                }
+            ],
+        }
+    )
+    applied["status"] = {
+        "observedGeneration": 2,
+        "replicas": 2,
+        "updatedReplicas": 2,
+        "readyReplicas": 2,
+        "availableReplicas": 2,
+    }
+    return desired, current, applied
+
+
+def _lease_response() -> httpx.Response:
+    return httpx.Response(
+        200,
+        json={
+            "metadata": {
+                "resourceVersion": "7",
+                "annotations": {"inference.fs2.nebius.ai/fence-token": "a" * 32},
+            },
+            "spec": {
+                "holderIdentity": "fs2-system/controller:pod-uid",
+                "leaseDurationSeconds": 15,
+                "renewTime": datetime.now(UTC).isoformat(),
+            },
+        },
+    )
+
+
+def _field_conflict_status(*, manager: str = "keda", field: str = ".spec.replicas") -> dict[str, Any]:
+    return {
+        "apiVersion": "v1",
+        "kind": "Status",
+        "status": "Failure",
+        "reason": "Conflict",
+        "details": {
+            "causes": [
+                {
+                    "reason": "FieldManagerConflict",
+                    "message": f'conflict with "{manager}" with subresource "scale" using apps/v1: {field}',
+                    "field": field,
+                }
+            ]
+        },
+        "code": 409,
+    }
+
+
+@pytest.mark.parametrize("scale_manager", ["keda", "horizontal-pod-autoscaler"])
+@pytest.mark.asyncio
+async def test_http_fixed_scale_handoff_forces_only_an_exact_stale_scale_conflict(
+    tmp_path: Path, scale_manager: str
+) -> None:
+    token = tmp_path / "token"
+    token.write_text("projected-service-account-token")
+    desired, current, applied = _fixed_scale_http_fixture()
+    current["metadata"]["managedFields"][1]["manager"] = scale_manager
+    patches: list[httpx.Request] = []
+    forced = False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal forced
+        if request.url.path.endswith("/leases/fs2-model-controller"):
+            return _lease_response()
+        if request.method == "PATCH":
+            patches.append(request)
+            body = json.loads(request.content)
+            assert body["metadata"]["resourceVersion"] == "11"
+            if request.url.params["force"] == "false":
+                return httpx.Response(409, json=_field_conflict_status(manager=scale_manager))
+            forced = True
+            return httpx.Response(200, json=applied)
+        return httpx.Response(200, json=applied if forced else current)
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.invalid")
+    client = HttpKubernetesModelClient(
+        base_url="https://kubernetes.invalid",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        writes_enabled=True,
+        client=http,
+    )
+    result = await client.apply_fixed_scale_handoff(
+        desired,
+        current=_snapshot(current, desired),
+        owner_uid="cr-uid-1",
+        fence=fence(),
+    )
+    assert [request.url.params["force"] for request in patches] == ["false", "true"]
+    assert result.desired_replicas == 2
+    assert result.replica_field_managers == [FIELD_MANAGER]
+    await http.aclose()
+
+
+@pytest.mark.parametrize(
+    "conflict_status",
+    [
+        _field_conflict_status(field=".spec.template.spec.containers"),
+        _field_conflict_status(manager="terraform"),
+        {
+            **_field_conflict_status(),
+            "details": {
+                "causes": [
+                    _field_conflict_status(manager=manager)["details"]["causes"][0]
+                    for manager in ("keda", "horizontal-pod-autoscaler")
+                ]
+            },
+        },
+    ],
+    ids=["different-field", "foreign-manager", "more-than-one-conflict"],
+)
+@pytest.mark.asyncio
+async def test_http_fixed_scale_handoff_refuses_any_non_exact_conflict_set(
+    tmp_path: Path, conflict_status: dict[str, Any]
+) -> None:
+    token = tmp_path / "token"
+    token.write_text("projected-service-account-token")
+    desired, current, _ = _fixed_scale_http_fixture()
+    patches: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/leases/fs2-model-controller"):
+            return _lease_response()
+        if request.method == "PATCH":
+            patches.append(request)
+            return httpx.Response(409, json=conflict_status)
+        return httpx.Response(200, json=current)
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.invalid")
+    client = HttpKubernetesModelClient(
+        base_url="https://kubernetes.invalid",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        writes_enabled=True,
+        client=http,
+    )
+    with pytest.raises(KubernetesConflictError):
+        await client.apply_fixed_scale_handoff(
+            desired,
+            current=_snapshot(current, desired),
+            owner_uid="cr-uid-1",
+            fence=fence(),
+        )
+    assert [request.url.params["force"] for request in patches] == ["false"]
+    await http.aclose()
+
+
+@pytest.mark.parametrize("race", ["resource-version", "owner"])
+@pytest.mark.asyncio
+async def test_http_fixed_scale_handoff_refuses_owner_or_resource_version_races(tmp_path: Path, race: str) -> None:
+    token = tmp_path / "token"
+    token.write_text("projected-service-account-token")
+    desired, current, _ = _fixed_scale_http_fixture()
+    patches: list[httpx.Request] = []
+    conflicted = False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal conflicted
+        if request.url.path.endswith("/leases/fs2-model-controller"):
+            return _lease_response()
+        if request.method == "PATCH":
+            patches.append(request)
+            conflicted = True
+            return httpx.Response(409, json=_field_conflict_status())
+        body = copy.deepcopy(current)
+        if conflicted and race == "resource-version":
+            body["metadata"]["resourceVersion"] = "12"
+        if conflicted and race == "owner":
+            body["metadata"]["ownerReferences"][0]["uid"] = "other-owner"
+        return httpx.Response(200, json=body)
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.invalid")
+    client = HttpKubernetesModelClient(
+        base_url="https://kubernetes.invalid",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        writes_enabled=True,
+        client=http,
+    )
+    with pytest.raises(KubernetesConflictError, match="target changed"):
+        await client.apply_fixed_scale_handoff(
+            desired,
+            current=_snapshot(current, desired),
+            owner_uid="cr-uid-1",
+            fence=fence(),
+        )
+    assert [request.url.params["force"] for request in patches] == ["false"]
     await http.aclose()
 
 
