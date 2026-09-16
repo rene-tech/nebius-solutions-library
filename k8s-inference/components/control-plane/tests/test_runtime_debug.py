@@ -99,19 +99,23 @@ async def test_native_rejection_captures_exact_upstream_request_and_validation_r
     assert exchange.method == "POST" and exchange.endpoint == "/native/predict"
     assert exchange.http_status == status and exchange.error_type == "upstream_http_error"
     assert exchange.started_at <= exchange.completed_at
-    # Structured JSON request and error response are captured verbatim (no secret to
-    # redact); the validation error detail is retained as the debugging target.
+    # The request (debugging target) is captured verbatim. The error response is
+    # fail-closed: structural fields (loc/type) are kept, but free-text detail (msg) is
+    # replaced by a safe hash — arbitrary detail is never stored.
     assert exchange.request_body.data.encode() == request_body and exchange.request_body.complete
-    assert exchange.response_body.data.encode() == error_body and exchange.response_body.complete
+    assert exchange.response_body.complete and exchange.response_body.redacted
+    stored = exchange.response_body.data
+    assert "Field required" not in stored and "[sha256:" in stored
+    assert '"type":"missing"' in stored and "sequences" in stored  # structural fields kept
     assert exchange.request_body.observed_bytes == len(request_body)
     assert exchange.response_body.observed_bytes == len(error_body)
-    assert not exchange.request_body.redacted and not exchange.response_body.redacted
+    assert not exchange.request_body.redacted
     assert dict(exchange.request_headers)["x-request-id"] == f"{operation.id}:1"
     assert dict(exchange.response_headers)["content-type"] == "application/json"
 
 
 @pytest.mark.asyncio
-async def test_success_capture_preserves_original_bytes_and_result_semantics(registry) -> None:
+async def test_success_capture_preserves_request_and_hashes_response_content(registry) -> None:
     request_body = '{"messages":[{"content":"synthetic café fixture"}]}\n'.encode()
     response_body = b'{ "choices": [{"message": {"content": "ok"}}], "usage": {"prompt_tokens": 3} }\n'
 
@@ -126,8 +130,12 @@ async def test_success_capture_preserves_original_bytes_and_result_semantics(reg
     assert result.usage.input_tokens == 3
     exchange = sink.exchanges[0]
     assert exchange.error_type is None and exchange.http_status == 200
+    # The request (debugging target) is kept verbatim; the response content is
+    # fail-closed hashed (free-text is never stored), while numeric fields are kept.
     assert exchange.request_body.data.encode() == request_body
-    assert exchange.response_body.data.encode() == response_body and exchange.response_body.complete
+    stored = exchange.response_body.data
+    assert exchange.response_body.complete and exchange.response_body.redacted
+    assert '"content":"[sha256:' in stored and '"prompt_tokens":3' in stored and '"content": "ok"' not in stored
 
 
 @pytest.mark.asyncio
@@ -211,8 +219,9 @@ async def test_stored_error_is_retrievable_with_shared_header_and_query_credenti
     assert len(listing.items) == 1
     detail = await sink.get(listing.items[0].id, tenant_id=operation.tenant_id)
     assert detail is not None and detail.response_body.complete
-    # Legit error detail is retained; the echoed header/query/body secrets are gone.
-    assert detail.response_body.redacted and "missing input" in detail.response_body.data
+    # Response detail is fail-closed hashed (free-text never stored); echoed secrets gone.
+    assert detail.response_body.redacted and "missing input" not in detail.response_body.data
+    assert "[sha256:" in detail.response_body.data
     assert detail.request_body.redacted and "synthetic request" in detail.request_body.data
     rendered = detail.model_dump_json()
     assert header_secret not in rendered and query_secret not in rendered and body_secret not in rendered
@@ -237,12 +246,9 @@ async def test_protocol_failures_capture_body_without_reclassifying_public_excep
         with pytest.raises(PreemptedError if case == "preempted" else RuntimeProtocolError):
             await runtime(client, sink).invoke(registry.get("qwen3-8b"), claimed(registry), b"{}")
     exchange = sink.exchanges[0]
-    if case == "content_type":
-        # text/plain is not a structurally recognized response -> withheld (fail closed).
-        assert _stored(exchange.response_body) == b"[REDACTED]" and exchange.response_body.redacted
-    else:
-        # JSON content type -> structurally recognized and retained (no secret here).
-        assert exchange.response_body.data.encode() == body
+    # None of these bodies is a valid JSON document (plain text, or JSON-labeled but
+    # non-JSON), so all are withheld fail-closed regardless of content type.
+    assert _stored(exchange.response_body) == b"[REDACTED]" and exchange.response_body.redacted
     assert exchange.response_body.complete
     assert exchange.http_status == status
     assert exchange.error_type == ("PreemptedError" if case == "preempted" else "RuntimeProtocolError")
@@ -263,7 +269,9 @@ async def test_timeout_before_headers_captures_actual_request_and_incomplete_res
     assert len(calls) == len(sink.exchanges) == 1
     exchange = sink.exchanges[0]
     assert exchange.http_status is None and exchange.error_type == "ReadTimeout"
-    assert exchange.error_detail == "synthetic upstream timed out"
+    # The raw exception string is never stored (it can embed a secret); only a generic,
+    # payload-independent detail is kept, with the error_type carrying the classification.
+    assert exchange.error_detail == "runtime operation failed" and "synthetic" not in exchange.error_detail
     assert exchange.request_body.data == '{"fixture":true}'
     assert not exchange.response_body.complete and exchange.response_body.observed_bytes == 0
     assert dict(exchange.request_headers)["host"] == calls[0].headers["host"]
@@ -288,7 +296,8 @@ async def test_partial_read_preserves_prefix_and_original_failure_behavior(regis
             assert result.status_code == 422 and result.failure_code == "upstream_http_error"
     exchange = sink.exchanges[0]
     assert exchange.http_status == status and exchange.error_type == "ReadTimeout"
-    assert exchange.response_body.data == '{"partial":' and not exchange.response_body.complete
+    # An incomplete (interrupted) response is withheld fail-closed, never stored as a prefix.
+    assert _stored(exchange.response_body) == b"[REDACTED]" and not exchange.response_body.complete
     assert exchange.response_body.observed_bytes == len(b'{"partial":')
     assert stream.iterations == 1 and stream.closed
 
@@ -312,7 +321,8 @@ async def test_oversized_response_is_explicitly_incomplete_at_existing_bound(reg
             assert result.status_code == 422 and result.body == b""
     exchange = sink.exchanges[0]
     assert exchange.error_type == "ResponseBodyLimitExceeded"
-    assert exchange.response_body.data == "12345678" and not exchange.response_body.complete
+    # Over the existing response bound -> incomplete -> withheld fail-closed.
+    assert _stored(exchange.response_body) == b"[REDACTED]" and not exchange.response_body.complete
     assert exchange.response_body.observed_bytes == 12
     assert stream.iterations == 1 and stream.closed
 
@@ -404,12 +414,15 @@ async def test_federated_internal_retry_captures_each_attempt_and_redacts_actual
         rendered = "\n".join(exchange.model_dump_json() for exchange in sink.exchanges)
         assert "federation-test-value-one" not in rendered and "fake-cookie-secret" not in rendered
         if first_failure == "http_status":
-            # 503 error response: legit detail retained; the echoed auth token is gone.
+            # 503 error response: detail fail-closed hashed; the echoed auth token is gone.
             assert sink.exchanges[0].response_body.redacted
-            assert "busy" in sink.exchanges[0].response_body.data
+            assert "busy" not in sink.exchanges[0].response_body.data
+            assert "[sha256:" in sink.exchanges[0].response_body.data
         else:
+            # The timeout message embedded a credential; the raw string is never stored,
+            # only a generic detail — the token cannot leak through error_detail.
             assert sink.exchanges[0].error_type == "ReadTimeout"
-            assert "synthetic timeout" in sink.exchanges[0].error_detail
+            assert sink.exchanges[0].error_detail == "runtime operation failed"
         assert calls[0].content == calls[1].content
         assert calls[0].headers["idempotency-key"] == calls[1].headers["idempotency-key"]
     finally:

@@ -79,14 +79,16 @@ def test_malformed_authenticated_payload_is_captured_without_a_run_or_auth_secre
         assert "request_body" not in summary and "synthetic" not in listing.text
         detail = client.get(f"/admin/api/v1/requests/{summary['id']}")
         data = detail.json()["data"]
+        # The request (debugging target) is retained verbatim; the error response is
+        # fail-closed hashed (free-text detail is never stored raw).
         assert data["request_body"]["data"] == raw
-        assert data["response_body"]["data"] == response.text
+        assert data["response_body"]["data"] != response.text and "[sha256:" in data["response_body"]["data"]
         assert data["request_body"]["complete"] and data["response_body"]["complete"]
         assert token.token not in detail.text
         assert ["authorization", "[REDACTED]"] in data["request_headers"]
 
 
-def test_app_operation_filters_and_full_error_detail(registry, cipher, hasher):
+def test_app_operation_filters_and_hashes_error_detail(registry, cipher, hasher):
     runtime = _runtime(registry, cipher, hasher)
     store = InMemoryDebugStore()
     runtime.request_debug_store = store
@@ -107,7 +109,11 @@ def test_app_operation_filters_and_full_error_detail(registry, cipher, hasher):
         assert [item["id"] for item in listing["items"]] == [str(expected.id)]
         detail = client.get(f"{base}/{expected.id}")
         assert detail.status_code == 200
-        assert detail.json()["data"]["response_body"]["data"] == expected.response_body.data
+        # The stored error response is fail-closed hashed at store time, not the raw
+        # detail text (an operator reads structure + safe hashes, never arbitrary detail).
+        stored_response = detail.json()["data"]["response_body"]
+        assert stored_response["redacted"] and "synthetic upstream validation failure" not in stored_response["data"]
+        assert "[sha256:" in stored_response["data"]
         assert client.get(f"{base}/{foreign_model.id}").status_code == 404
         assert client.get(base, params={"cursor": "invalid"}).status_code == 400
         assert len(client.get("/admin/api/v1/requests").json()["data"]["items"]) == 3
@@ -160,8 +166,6 @@ def test_detail_read_emits_an_audit_event(registry, cipher, hasher):
     reads = [
         event
         for event in events
-        if event.action == "request.debug.read"
-        and event.outcome == "succeeded"
-        and event.target_id == str(row.id)
+        if event.action == "request.debug.read" and event.outcome == "succeeded" and event.target_id == str(row.id)
     ]
     assert len(reads) == 1, [(e.action, e.outcome, e.target_id) for e in events]

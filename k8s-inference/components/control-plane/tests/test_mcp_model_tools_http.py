@@ -306,6 +306,34 @@ async def test_http_native_validation_has_field_issues_no_run_and_debug_owner(
 
 
 @pytest.mark.asyncio
+async def test_http_denied_model_is_not_attributed_to_the_caller_claimed_model(registry, cipher, hasher):
+    """SAI-01: a tool call denied by token policy is never captured under the caller-
+    claimed model. Attribution is server-authoritative and happens only after catalog/
+    route authorization, so a denied request cannot be recorded against another App."""
+    runtime = build_runtime(registry, cipher, hasher)
+    runtime.settings.request_debug_enabled = True
+    # Tenant-scoped so an authenticated denied call IS observed (proving it is not
+    # then attributed to the unauthorized model the caller declared).
+    runtime.settings.request_debug_tenants = "tenant-a"
+    runtime.settings.request_debug_expires_at = datetime.now(UTC) + timedelta(hours=1)
+    debug = InMemoryDebugStore()
+    runtime.request_debug_store = debug
+    app = _app(runtime)
+    key = await _key(runtime, models=("openfold2",))  # no access to qwen3-8b
+    async with app.router.lifespan_context(app), _connection(runtime, app, key) as client:
+        with pytest.raises(MCPError):
+            await client.call_tool(
+                "invoke_model",
+                {"model_id": "qwen3-8b", "protocol": "openai-chat", "payload": {"messages": []}},
+            )
+    # Nothing is captured under the unauthorized, caller-claimed model.
+    assert (await debug.list(model_id="qwen3-8b")).items == []
+    # Any capture of the denied call carries no unauthorized-model attribution.
+    for row in (await debug.list(tenant_id="tenant-a")).items:
+        assert row.model_id != "qwen3-8b"
+
+
+@pytest.mark.asyncio
 async def test_http_shared_model_access_does_not_share_operation_history(registry, cipher, hasher):
     runtime = build_runtime(registry, cipher, hasher)
     app = _app(runtime)

@@ -236,9 +236,9 @@ async def test_send_failure_preserves_observed_chunk_and_original_exception():
     with pytest.raises(OSError, match="connection closed"):
         await capture(app, store=store, send_error=True)
     (exchange,) = store.exchanges.values()
-    # The chunk observed before the send failed is captured (structured 200 response),
-    # and the exchange is explicitly incomplete/disconnected with the original error.
-    assert exchange.response_body.data == '{"partial":"generated"}'
+    # The response never completed on the wire, so it is withheld fail-closed; the
+    # exchange is still explicitly incomplete/disconnected with the original error.
+    assert _stored_bytes(exchange.response_body) == b"[REDACTED]"
     assert exchange.disconnected and not exchange.response_body.complete and exchange.error_type == "OSError"
 
 
@@ -277,7 +277,9 @@ async def test_stable_request_id_correlates_telemetry_mcp_and_operation_without_
     (debug,) = store.exchanges.values()
     assert debug.request_id == telemetry.observations[0].request_id == identities[0]
     assert debug.request_id != untrusted_id and debug.operation_id == operation_id
-    assert debug.response_body.data == 'data: {"ok":true}\n\ndata: [DONE]\n\n'
+    # An SSE stream is not a valid JSON document, so its body is withheld fail-closed;
+    # correlation identity and server-observed tool attribution are still recorded.
+    assert debug.response_body.data == "[REDACTED]"
     assert debug.mcp_tool == "invoke_model" and debug.response_body.complete
 
 
@@ -733,8 +735,11 @@ async def test_middleware_captures_response_when_request_fits_the_buffer():
         max_body_bytes=64 * 1024,
     )
     (exchange,) = store.exchanges.values()
-    assert secret not in exchange.model_dump_json()  # echoed credential redacted
-    assert b"ok" in _stored_bytes(exchange.response_body)  # but the response body is kept
+    assert secret not in exchange.model_dump_json()  # echoed credential gone
+    # A complete valid-JSON response is stored (not withheld), but its free-text content
+    # is fail-closed hashed: the echoed secret and the "ok" detail are both hashed.
+    stored = _stored_bytes(exchange.response_body)
+    assert stored != b"[REDACTED]" and b"[sha256:" in stored and b'"ok"' not in stored
 
 
 @pytest.mark.parametrize(
@@ -788,10 +793,10 @@ async def test_arbitrary_and_binary_response_bodies_are_withheld():
         assert exchange.response_body.redacted and exchange.response_body.truncated
 
 
-async def test_success_response_content_fields_are_preserved():
-    """SAI-01: fail-closed handling must not erase the debugging target — a success
-    response's own content fields (message/content/detail) are retained."""
-    body = b'{"choices":[{"message":{"content":"the model output"}}],"detail":"ok"}'
+async def test_success_response_content_is_hashed_structure_kept():
+    """SAI-01: a structured success response is retained but its free-text content is
+    replaced by a safe hash (not stored verbatim); numeric fields and structure remain."""
+    body = b'{"choices":[{"message":{"content":"the model output"}}],"usage":{"prompt_tokens":3}}'
 
     async def app(scope, receive, send):
         await receive()
@@ -804,7 +809,10 @@ async def test_success_response_content_fields_are_preserved():
         headers=[(b"content-type", b"application/json")],
     )
     (exchange,) = store.exchanges.values()
-    assert _stored_bytes(exchange.response_body) == body and not exchange.response_body.redacted
+    stored = _stored_bytes(exchange.response_body)
+    assert exchange.response_body.complete and exchange.response_body.redacted
+    assert b"the model output" not in stored and b'"content":"[sha256:' in stored
+    assert b'"prompt_tokens":3' in stored  # numeric field kept for correlation/structure
 
 
 @pytest.mark.parametrize("state", [{}, {"model_id": "qwen3-8b"}, {"model_id": "boltz2"}])
@@ -851,7 +859,9 @@ async def test_concurrent_near_cap_captures_stay_within_a_bounded_memory_budget(
             headers=[(b"content-type", b"application/json")],
             max_body_bytes=cap,
         )
-        return next(iter(store.exchanges.values()))
+        # Under overload some captures are shed (offload_capture returns None), leaving
+        # the per-call store empty; that is expected load-shedding, not an error.
+        return next(iter(store.exchanges.values()), None)
 
     tracemalloc.start()
     start = time.perf_counter()
@@ -861,9 +871,77 @@ async def test_concurrent_near_cap_captures_stay_within_a_bounded_memory_budget(
     tracemalloc.stop()
     assert elapsed < 5.0  # no catastrophic backtracking across the concurrent set
     assert peak < 64 * 1024 * 1024  # aggregate stays far below a per-body blowup
-    # Dense-secret bodies whose redaction expands past the cap are withheld, not stored.
-    for exchange in exchanges:
+    # Every capture that survived load-shedding stored a bounded body (dense-secret
+    # bodies whose redaction expands past the cap are withheld, not stored).
+    for exchange in filter(None, exchanges):
         assert len(_stored_bytes(exchange.request_body)) <= cap
+
+
+@pytest.mark.parametrize(
+    "raw,secret",
+    [
+        (b'{"detail":"opaque OPAQUESECRET42XYZ here"}', b"OPAQUESECRET42XYZ"),  # response-only opaque in detail
+        (b'{"note":"AKIAIOSFODNN7EXAMPLE"}', b"AKIAIOSFODNN7EXAMPLE"),  # AKIA under a non-sensitive key
+        (b'{"choices":[{"content":"model said SEKRIT"}]}', b"SEKRIT"),  # success content
+    ],
+)
+def test_response_only_opaque_secret_is_hashed_not_stored(raw, secret):
+    """SAI-01: a valid-JSON response never stores arbitrary free-text; every non-allowlisted
+    string value (even an opaque, non-format secret) is replaced by a safe hash."""
+    stored = _stored_bytes(body_capture(raw, "application/json", complete=True, is_response=True))
+    assert secret not in stored and b"[sha256:" in stored
+
+
+@pytest.mark.parametrize(
+    "raw,content_type,complete",
+    [
+        (b'{"detail": "trunc', "application/json", True),  # malformed application/json
+        (b'{"detail":"ok"}', "application/json", False),  # incomplete (wire-cut) though parseable
+        (b"AKIA", "application/json", False),  # incomplete 4-byte AKIA tail
+        (b"\x00\xffbinary", "application/octet-stream", True),  # binary / unknown
+        (b"plain text detail", "text/plain", True),  # unknown text content
+        (b'data: {"x":1}\n\n', "text/event-stream", True),  # streaming (not a JSON document)
+    ],
+)
+def test_unknown_malformed_or_incomplete_response_is_withheld(raw, content_type, complete):
+    """SAI-01: only a COMPLETE, valid JSON document is retained; anything unknown,
+    malformed, incomplete, streaming or binary response body is withheld fail-closed."""
+    body = body_capture(raw, content_type, complete=complete, is_response=True)
+    assert _stored_bytes(body) == b"[REDACTED]" and body.truncated and body.redacted
+
+
+async def test_capture_sanitizer_does_not_freeze_the_event_loop():
+    """SAI-01: sanitizing a near-cap body runs off the event loop (bounded-concurrency
+    offload), so a concurrent heartbeat keeps ticking instead of stalling."""
+    cap = 256 * 1024
+    heavy_request = (b'{"a":"' + b'x"b":"' * cap)[:cap]  # near-cap, scan-heavy request body
+
+    async def app(scope, receive, send):
+        await receive()
+        await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
+        await send({"type": "http.response.body", "body": b'{"ok":true}', "more_body": False})
+
+    ticks = 0
+
+    async def heartbeat() -> None:
+        nonlocal ticks
+        while True:
+            await asyncio.sleep(0.005)
+            ticks += 1
+
+    beat = asyncio.create_task(heartbeat())
+    try:
+        await capture(
+            app,
+            chunks=[{"type": "http.request", "body": heavy_request}],
+            headers=[(b"content-type", b"application/json")],
+            max_body_bytes=cap,
+        )
+    finally:
+        beat.cancel()
+    # Had the sanitizer run inline on the loop, the heartbeat would have been frozen for
+    # the whole ~0.2s scan (~0 ticks). Offloaded, the loop stays responsive.
+    assert ticks >= 3
 
 
 async def test_middleware_redacts_credential_split_across_request_chunks():

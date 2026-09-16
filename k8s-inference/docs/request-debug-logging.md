@@ -2,12 +2,13 @@
 
 This is an opt-in operator debugging facility, separate from ordinary logs, usage
 counters and logical run history. It is **off by default** and, when enabled, is
-governed: a captured body that fits the store cap is stored whole and fully
-inspected, while one over the cap (or an arbitrary/unstructured response) is
-withheld rather than stored as a boundary-cut prefix; captures are deleted by the
-platform's central retention purge; and reading a captured exchange requires an
-ADMIN operator and is audited. Enable it deliberately for a bounded window rather
-than leaving it on as a standing state.
+governed and fail closed: the request body (the debugging target) is stored redacted
+within the cap, while a response body is stored only as allowlisted structural fields
+plus safe hashes of its free-text — an unknown, malformed, incomplete or oversize body
+is withheld entirely rather than stored as a prefix; captures are deleted by the
+platform's central retention purge; and reading a captured exchange requires an ADMIN
+operator and is audited. Enable it deliberately for a bounded window rather than
+leaving it on as a standing state.
 
 ## Enable capture
 
@@ -58,11 +59,10 @@ capture off.
 
 One more chart value bounds each retained record and is safe to leave at default:
 
-- `config.requestDebugMaxBodyBytes` (default `65536`, max `1048576`) caps the stored
-  size of each captured request/response body and the bytes the sanitizer ever
-  processes for one body. A body within the cap is stored whole; a body over the cap
-  is withheld entirely (never a boundary-cut prefix). The buffer never exceeds the
-  cap regardless of payload size.
+- `config.requestDebugMaxBodyBytes` (default `65536`, max `262144`) caps the stored
+  size of each captured body and the bytes the sanitizer ever processes for one body.
+  A body over the cap is withheld entirely (never a boundary-cut prefix). The lower
+  max also bounds sanitizer CPU/memory, which runs off the event loop.
 
 Retention/purge of captured exchanges (and of transport telemetry) is owned by the
 platform's central maintenance purge — its own retention settings, DELETE grants
@@ -169,19 +169,29 @@ HTTP 0 or success.
   public middleware does not drain it merely to fill a log. Interrupted, unread,
   failed or limit-exceeded streams remain explicitly partial/incomplete. An empty
   complete body is different from zero bytes retained from an unread body.
-- Fail-closed response handling: a response body is withheld when the matching
-  request exceeded the cap (its uninspected tail could echo a credential the capture
-  never saw) and when the response itself is arbitrary/unstructured (not JSON, SSE or
-  form — a non-format secret in opaque bytes cannot be scrubbed). A withheld body is
-  a `[REDACTED]` marker with `redacted=true, truncated=true`; `observed_bytes` still
-  reports the true length. Legitimate structured error detail is retained (it is the
-  debugging target); a truly arbitrary, non-format secret embedded in free-text
-  detail that is neither a sensitive-key value, a recognized token format, nor a
-  request-echoed value cannot be distinguished from that legitimate text and is
-  bounded instead by scope, expiry, ADMIN-gating and auditing.
+- Response bodies are fail closed by structure. A response is stored ONLY when it is a
+  **complete, valid JSON document**; anything unknown, malformed, incomplete, streaming
+  (SSE) or binary is withheld (a `[REDACTED]` marker). A stored response keeps only
+  allowlisted structural string fields (e.g. `loc`, `type`, `code`, `status`, `id`,
+  `model_id`) verbatim; **every other string value is replaced by a safe hash**
+  (`[sha256:<12 hex>]`), so an arbitrary or opaque secret in free-text detail is never
+  stored, while equal values still correlate across exchanges. Numbers, booleans and
+  null are kept. The response is also withheld outright when its matching request
+  exceeded the cap (the uninspected request tail could be echoed). The request body
+  (the debugging target — customer input) is retained redacted rather than hashed.
+- `error_detail` is a **generic, payload-independent code only** (e.g. "runtime
+  operation failed"); the raw exception string is never stored, because an SDK may have
+  embedded a prompt, URL or credential in it. The `error_type` and `http_status` carry
+  the actionable classification.
 - Capture scope (which tenant/App is recorded) is decided only from
-  server-authoritative dispatch state, never a caller-declared model/tool in the
-  request body, so a caller cannot spoof another App's scope.
+  **server-authoritative** dispatch state after catalog/route authorization — never a
+  caller-declared model or tool name from the request body — so a caller cannot spoof
+  another App's scope and a denied request is not attributed to the model/tool it
+  claimed.
+- Sanitizing a captured body (redaction/hashing) runs off the event loop in a
+  worker pool with bounded concurrency; under overload a capture is dropped
+  (best-effort) rather than delaying inference. The per-body cap
+  (`requestDebugMaxBodyBytes`, max 256 KiB) also bounds sanitizer CPU/memory.
 - `observed_bytes` is not necessarily the displayed length after redaction or
   base64 encoding. Public counts describe observed application body chunks;
   upstream response counts describe the decoded HTTP body iterator, not compressed

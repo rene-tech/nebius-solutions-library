@@ -253,13 +253,14 @@ class Settings(BaseSettings):
     # Off by default: enabling it captures complete customer payloads, so it must
     # stay a deliberate, time-bounded operator choice rather than a standing state.
     request_debug_enabled: bool = False
-    # Hard ceiling on the stored size of each captured request/response body, and
-    # the upper bound on the bytes the sanitizer ever processes for one body. It is
-    # intentionally far below max_response_bytes: a body within the cap is stored
-    # whole (fully inspected and redacted); a body over the cap is withheld entirely,
-    # never stored as a boundary-cut prefix. The ceiling is capped at 1 MiB to bound
-    # per-capture sanitizer CPU/memory (and thus the aggregate concurrent budget).
-    request_debug_max_body_bytes: int = Field(default=64 * 1024, ge=1024, le=1024 * 1024)
+    # Hard ceiling on the stored size of each captured request/response body, and the
+    # upper bound on the bytes the sanitizer ever processes for one body. It is
+    # intentionally far below max_response_bytes: a body within the cap is stored whole
+    # (fully inspected and redacted); a body over the cap is withheld entirely, never a
+    # boundary-cut prefix. The ceiling is capped at 256 KiB to bound per-capture
+    # sanitizer CPU/memory; sanitization also runs off the event loop with bounded
+    # concurrency (request_debug.offload_capture), so a burst cannot stall inference.
+    request_debug_max_body_bytes: int = Field(default=64 * 1024, ge=1024, le=256 * 1024)
     # Retention/purge of captured debug exchanges is owned by the central platform
     # maintenance purge (its own retention setting, DELETE grant and schedule), not
     # by this capture facility, so no retention knob is defined here.

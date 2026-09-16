@@ -522,8 +522,6 @@ class MCPAuthorizationMiddleware:
         try:
             principal = _principal() if ctx.method not in {"initialize", "notifications/initialized"} else None
             observe_request_metadata(principal=principal)
-            if ctx.method == "tools/call":
-                observe_request_metadata(mcp_tool=str((ctx.params or {}).get("name", "")))
             if principal is not None and self.runtime.scientific_apps is not None:
                 await self.runtime.scientific_apps.refresh()
             if ctx.method in {"tools/list", "tools/call"}:
@@ -536,8 +534,12 @@ class MCPAuthorizationMiddleware:
                 name = str((ctx.params or {}).get("name", ""))
                 if name not in CORE_TOOLS and name not in _model_tool_names(self.runtime, principal):
                     raise MCPError(code=INVALID_PARAMS, message="tool is outside token policy")
+                # Only after the tool name is authorized against the token policy is it
+                # trusted for attribution — never observe a caller-declared tool/model
+                # before authorization.
+                observe_request_metadata(mcp_tool=name)
                 # Typed validation runs before the admission handler. Attribute
-                # rejected inputs too, without relying on a caller's model_id.
+                # rejected inputs too, from the server-resolved model (never a caller's).
                 for model in self.runtime.registry.allowed_for_principal(principal, surface="mcp"):
                     if name in _protocol_tool_names(model):
                         observe_request_metadata(model_id=model.id)
@@ -592,7 +594,7 @@ async def _admit(
     traceparent: str | None,
 ) -> dict[str, Any]:
     principal = _principal()
-    observe_request_metadata(principal=principal, model_id=model_id)
+    observe_request_metadata(principal=principal)
     if not math.isfinite(wait_seconds) or wait_seconds < 0 or wait_seconds > runtime.settings.max_sync_wait_seconds:
         raise MCPError(code=INVALID_PARAMS, message="wait_seconds is outside the configured bound")
     if idempotency_key is not None and not (
@@ -619,7 +621,9 @@ async def _admit(
         if wait_seconds
         else admitted
     )
-    observe_request_metadata(operation_id=admitted.id)
+    # Attribute from the admitted operation (server-authoritative) only after
+    # admission has authorized the model — never from the caller-declared model_id.
+    observe_request_metadata(model_id=admitted.model_id, operation_id=admitted.id)
     return current.model_dump(mode="json")
 
 
@@ -789,7 +793,7 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         """
 
         principal = _principal()
-        observe_request_metadata(principal=principal, model_id=model_id)
+        observe_request_metadata(principal=principal)
         await runtime.revalidate_routes()
         try:
             model = runtime.registry.get(model_id, require_enabled=False)
@@ -799,6 +803,8 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
                 requested_model_id=model_id,
                 surface="mcp",
             )
+            # Attribute only the server-resolved model, and only after authorization.
+            observe_request_metadata(model_id=model.id)
             if protocol not in model.gateway.protocols:
                 raise ValueError("model does not implement requested protocol")
             if not model.enabled:
@@ -890,7 +896,7 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         if runtime.scientific_batches is None:
             raise MCPError(code=INVALID_PARAMS, message="scientific batch submission is unavailable")
         principal = _principal()
-        observe_request_metadata(principal=principal, model_id=model_id)
+        observe_request_metadata(principal=principal)
         if idempotency_key is not None and not (
             MIN_IDEMPOTENCY_KEY_LENGTH <= len(idempotency_key) <= MAX_IDEMPOTENCY_KEY_LENGTH
         ):
@@ -1394,21 +1400,24 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
                         changed = True
                     continue
                 model_view = _model_view(model)
-                changed = register_contract(
-                    name,
-                    contract,
-                    handler=named_handler(name),
-                    title=f"{model.gateway.display_name} ({protocol})",
-                    description=model.binding.mcp_description,
-                    meta={
-                        "fs2_model_id": model.id,
-                        "fs2_protocol": protocol,
-                        "fs2_model_revision": model.model_revision,
-                        "fs2_active_runtime": model_view["active_runtime"],
-                        "fs2_qualification": model_view["qualification"],
-                    },
-                    scientific=False,
-                ) or changed
+                changed = (
+                    register_contract(
+                        name,
+                        contract,
+                        handler=named_handler(name),
+                        title=f"{model.gateway.display_name} ({protocol})",
+                        description=model.binding.mcp_description,
+                        meta={
+                            "fs2_model_id": model.id,
+                            "fs2_protocol": protocol,
+                            "fs2_model_revision": model.model_revision,
+                            "fs2_active_runtime": model_view["active_runtime"],
+                            "fs2_qualification": model_view["qualification"],
+                        },
+                        scientific=False,
+                    )
+                    or changed
+                )
         if runtime.scientific_batches is not None:
             for profile in runtime.scientific_batches.profiles.list():
                 if len(registered_names) >= 4096:
@@ -1425,20 +1434,23 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
                         registered_contracts.pop(name)
                         changed = True
                     continue
-                changed = register_contract(
-                    name,
-                    contract,
-                    handler=scientific_handler(name),
-                    title=profile.display_name,
-                    description=profile.mcp_description,
-                    meta={
-                        "fs2_model_id": profile.model_id,
-                        "fs2_protocol": "scientific-batch-v1",
-                        "fs2_model_revision": profile.model_revision,
-                        "fs2_runtime_image_digest": profile.runtime_image_digest,
-                    },
-                    scientific=True,
-                ) or changed
+                changed = (
+                    register_contract(
+                        name,
+                        contract,
+                        handler=scientific_handler(name),
+                        title=profile.display_name,
+                        description=profile.mcp_description,
+                        meta={
+                            "fs2_model_id": profile.model_id,
+                            "fs2_protocol": "scientific-batch-v1",
+                            "fs2_model_revision": profile.model_revision,
+                            "fs2_runtime_image_digest": profile.runtime_image_digest,
+                        },
+                        scientific=True,
+                    )
+                    or changed
+                )
         return changed
 
     async def notify_tools_changed() -> None:

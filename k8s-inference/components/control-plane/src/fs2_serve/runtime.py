@@ -27,10 +27,10 @@ from .request_debug import (
     bounded_body_capture,
     capture_store_limit,
     credential_values,
+    offload_capture,
     persist_debug_exchange,
     redact_headers,
     redact_query,
-    redact_text,
     suppressed_body,
 )
 
@@ -243,9 +243,10 @@ class _UpstreamCapture:
             http_status=self.status,
             error_type=self.error_type
             or ("upstream_http_error" if self.status is not None and self.status >= 400 else None),
-            error_detail=redact_text(self.error_detail, known_credentials=self.known_credentials)
-            if self.error_detail
-            else None,
+            # Never store the raw exception string: an SDK may embed a prompt, URL or
+            # credential in it. Keep only the generic, payload-independent detail; the
+            # error_type/http_status carry the actionable classification.
+            error_detail=sanitize_error_detail(self.error_detail) or None if self.error_detail else None,
             query_string=redact_query(self.query_string, known_credentials=self.known_credentials),
             request_headers=redact_headers(self.request_headers, known_credentials=self.known_credentials),
             response_headers=redact_headers(self.response_headers, known_credentials=self.known_credentials),
@@ -372,7 +373,11 @@ class RuntimeClient:
             raise
         finally:
             try:
-                await persist_debug_exchange(self.debug_store, capture.exchange())
+                # Build the exchange (CPU-bound redaction/hashing) off the event loop;
+                # None means the capture was overload-withheld (load shed), so skip persist.
+                built = await offload_capture(capture.exchange)
+                if built is not None:
+                    await persist_debug_exchange(self.debug_store, built)
             except Exception as error:
                 # Debug serialization/storage failures must not replace an
                 # inference result. Never put payloads or exception text in logs.
