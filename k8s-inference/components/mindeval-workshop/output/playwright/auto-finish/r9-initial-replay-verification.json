@@ -1,0 +1,14 @@
+{
+  "run_id": "caa2614b-94a9-436a-8245-5050b3c31d17",
+  "image_digest": "sha256:377451e2a4296b7713aec33fb4ad6e2fd9bc49dec6291866bc4b6ca7e5a6261c",
+  "original_browser_response": {"status": 200, "content_type": "audio/wav", "content_length": 57388},
+  "independent_authenticated_get": {
+    "status": 200, "content_type": "audio/wav", "content_length": 57388,
+    "bytes": 57388, "body_type": "Uint8Array",
+    "first_12_bytes": [82, 73, 70, 70, 36, 224, 0, 0, 87, 65, 86, 69],
+    "magic": "RIFF", "format": "WAVE"
+  },
+  "browser_media": {"duration_seconds": 1.792, "ready_state": 4, "error_code": null},
+  "interpretation": "Initial binary assertion failed in the CLI BrowserResponse path. The same retained WAV is valid over authenticated HTTP and decodes in the browser. No platform replay failure or runtime change was demonstrated. The revised test records original response metadata, independently inspects durable bytes with APIResponse, and verifies decoded browser media.",
+  "cleanup_status": "aborted"
+}

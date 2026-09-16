@@ -59,10 +59,34 @@ async page => {
     const recording = page.waitForResponse(r => r.url().endsWith(human.audio_url) && r.request().method() === 'GET');
     await page.locator('#transcript .turn').filter({hasText: 'human'}).getByRole('button', {name: 'Replay recording', exact: true}).first().click();
     const response = await recording;
-    const wav = await response.body();
-    if (response.status() !== 200 || String.fromCharCode(...wav.slice(0, 4)) !== 'RIFF' || wav.length <= 44) throw new Error('Retained WAV failed replay');
+    evidence.replay_response = {
+      status: response.status(), content_type: response.headers()['content-type'],
+      content_length: response.headers()['content-length'],
+    };
+    if (response.status() !== 200 || !evidence.replay_response.content_type?.startsWith('audio/wav')) throw new Error('Retained WAV HTTP replay failed');
+    // Independently check the durable bytes through APIResponse. Keep the owner's
+    // existing authorization in memory only; never include request headers in evidence.
+    const verified = await page.request.get(response.url(), {headers: {
+      Authorization: await response.request().headerValue('authorization'),
+    }});
+    const wav = await verified.body();
+    evidence.wav_response = {
+      status: verified.status(), content_type: verified.headers()['content-type'],
+      content_length: verified.headers()['content-length'],
+      body_type: Object.prototype.toString.call(wav), first_12_bytes: [...wav.slice(0, 12)],
+    };
+    if (verified.status() !== 200 || String.fromCharCode(...wav.slice(0, 4)) !== 'RIFF' || String.fromCharCode(...wav.slice(8, 12)) !== 'WAVE' || wav.length <= 44) throw new Error('Retained WAV binary verification failed');
     evidence.wav_bytes = wav.length;
-    evidence.checks.push('owner-authenticated retained WAV replay returned RIFF');
+    await page.waitForFunction(() => {
+      const audio = document.querySelector('#transcript audio');
+      return audio && (audio.error || (audio.readyState >= 2 && Number.isFinite(audio.duration) && audio.duration > 0));
+    }, null, {timeout: 15000});
+    evidence.browser_media = await page.evaluate(() => {
+      const audio = document.querySelector('#transcript audio');
+      return {duration_seconds: audio.duration, ready_state: audio.readyState, error_code: audio.error?.code || null};
+    });
+    if (evidence.browser_media.error_code) throw new Error('Browser failed to decode retained WAV');
+    evidence.checks.push('owner-authenticated retained WAV replay returned RIFF/WAVE', 'browser decoded retained audio with positive duration and no media error');
     evidence.passed = true;
   } catch (error) {
     evidence.passed = false;

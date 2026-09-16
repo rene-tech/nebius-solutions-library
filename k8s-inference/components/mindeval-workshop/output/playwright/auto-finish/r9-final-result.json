@@ -1,0 +1,34 @@
+{
+  "kind": "browser-automatic-microphone-finish",
+  "started_at": "2026-09-16T18:09:43.943Z",
+  "checks": [
+    "browser fake microphone captured PCM",
+    "automatic input finish without manual Finish click",
+    "human transcript and WAV reference retained",
+    "owner-authenticated retained WAV replay returned RIFF/WAVE",
+    "browser decoded retained audio with positive duration and no media error"
+  ],
+  "policy_events": [
+    {"type": "voice_policy.speech_start", "source": "silero_vad", "audio_offset_seconds": 0.256, "automatic_speech": false, "probability": 0.9992492198944092},
+    {"type": "voice_policy.speech_end", "source": "silero_vad_silence", "audio_offset_seconds": 1.952, "automatic_speech": false, "model_eou": false},
+    {"type": "voice_policy.input_finish", "automatic": true}
+  ],
+  "model_events": [],
+  "finish_button_clicks": 0,
+  "run_id": "22cbfebe-b3cb-47b7-8438-da37a3f93af3",
+  "takeover_role": "clinician",
+  "transcript": "at n",
+  "audio_url": "/v1/workshop/runs/22cbfebe-b3cb-47b7-8438-da37a3f93af3/audio/1",
+  "end_source": "silero_vad_silence",
+  "replay_response": {"status": 200, "content_type": "audio/wav", "content_length": "65580"},
+  "wav_response": {
+    "status": 200, "content_type": "audio/wav", "content_length": "65580", "body_type": "[object Uint8Array]",
+    "first_12_bytes": [82, 73, 70, 70, 36, 0, 1, 0, 87, 65, 86, 69]
+  },
+  "wav_bytes": 65580,
+  "browser_media": {"duration_seconds": 2.048, "ready_state": 4, "error_code": null},
+  "passed": true,
+  "cleanup_status": "aborted",
+  "intervened": true,
+  "finished_at": "2026-09-16T18:09:54.455Z"
+}

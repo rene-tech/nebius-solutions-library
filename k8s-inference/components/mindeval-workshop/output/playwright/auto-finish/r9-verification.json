@@ -1,0 +1,25 @@
+{
+  "scope": "complete real-browser automatic microphone Finish acceptance on unchanged r9",
+  "image_digest": "sha256:377451e2a4296b7713aec33fb4ad6e2fd9bc49dec6291866bc4b6ca7e5a6261c",
+  "namespace": "fs2-system", "deployment": "fs2-mindeval-workshop",
+  "observed_updated_replicas_before_test": 2, "observed_available_replicas_before_test": 2, "observed_ready_replicas_before_test": 2,
+  "browser": "Chromium 149.0.7827.114 headless",
+  "isolated_session": "mindeval-auto-finish-mindguard",
+  "fixture_sha256": "5fc2ec9dddc07fc857990c2746adbf9bc4ce3529464d73616ebef5ffaec0de49",
+  "fixture_sample_rate_hz": 16000, "fixture_channels": 1, "fixture_seconds": 5.461375,
+  "run_id": "22cbfebe-b3cb-47b7-8438-da37a3f93af3",
+  "whole_updated_script_passed": true, "default_unchecked_verified": true, "finish_button_clicks": 0,
+  "live_finish_source": "silero_vad_silence", "model_eou_in_final_capture": false,
+  "earlier_r9_genuine_model_eou_run": "caa2614b-94a9-436a-8245-5050b3c31d17",
+  "model_eob_observed": false, "backchannel_candidate_observed": false, "automatic_backchannel_speech": false,
+  "cleanup_status": "aborted", "isolated_browser_closed": true,
+  "runtime_changes_for_retest": false,
+  "limitations": [
+    "Synthetic fake microphone, not physical/noisy-room microphone quality.",
+    "Capture can begin partway through Chromium's repeating fixture; final retained text 'at n' does not establish transcript accuracy.",
+    "Earlier r9 capture exercises actual Parakeet model EOU; final capture exercises actual CPU Silero silence fallback.",
+    "No EOB, full NeMoTurnTakingService, autonomous backchannel speech, canonical consultation or clinician-quality claim.",
+    "Initial two test-harness binary assertion failures remain preserved with independent valid WAV and browser-decode verification.",
+    "After successful test cleanup, a subsequent background run-list poll logged ERR_NETWORK_CHANGED; this did not affect retained audio or the completed pass."
+  ]
+}
