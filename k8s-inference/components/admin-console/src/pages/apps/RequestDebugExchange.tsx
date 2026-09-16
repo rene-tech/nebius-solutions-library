@@ -277,6 +277,16 @@ export function RequestDebugExchange({
               <dd>{data.error_type ?? "No error recorded"}</dd>
             </div>
             <div>
+              <dt>MCP tool result</dt>
+              <dd>
+                {data.mcp_is_error == null
+                  ? "Not applicable"
+                  : data.mcp_is_error
+                    ? "Tool error (isError)"
+                    : "Success"}
+              </dd>
+            </div>
+            <div>
               <dt>Disconnected</dt>
               <dd>{data.disconnected ? "Yes" : "No"}</dd>
             </div>

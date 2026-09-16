@@ -52,6 +52,13 @@ export interface DebugExchange extends Omit<
   | "response_redacted"
 > {
   error_detail: string | null;
+  /**
+   * Non-sensitive server-authoritative signal: whether an MCP call returned a tool error
+   * (isError) inside an HTTP 200. Distinguishes tool-error from success while the response
+   * body stays withheld. Detail-only (carried in the encrypted payload, not the list
+   * summary). Optional so exchanges captured before it existed still parse.
+   */
+  mcp_is_error?: boolean | null;
   query_string: string;
   request_headers: [string, string][];
   response_headers: [string, string][];

@@ -7,19 +7,23 @@ store cap. The RESPONSE body is NEVER stored: any part of an untrusted response 
 carry an opaque secret — a string, a numeric value, an object key, or a
 binary/streaming payload — so no content allowlist can be trusted. The response body
 is withheld (a redaction marker); the debugging workflow is served by the captured
-request plus the typed metadata (http_status, error_type, model/tool, timing).
-Response headers keep only two strictly-typed values (Content-Length digits and a
-bare Content-Type MIME); every other response header value is redacted. A request
-body over the store cap, or whose redaction expands past it, is withheld rather than
-stored as a boundary-cut prefix. ``error_detail`` is a generic, payload-independent
-code only; the raw exception string is never stored.
+request plus non-sensitive typed metadata set from server dispatch state — http_status,
+error_type, model/tool, ``mcp_is_error`` (MCP tool-error inside an HTTP 200) and timing —
+never by parsing the response bytes. Response headers keep only two structural NAMES
+(``content-type`` reduced to a bare, server-known MIME type; ``content-length`` value
+redacted); every other response header has BOTH its name and value redacted, so no
+arbitrary header name or value is stored. A request body over the store cap, or whose
+redaction expands past it, is withheld rather than stored as a boundary-cut prefix.
+``error_detail`` is a generic, payload-independent code only; the raw exception string
+is never stored.
 
 Sanitization runs off the event loop in a bounded worker pool (overload sheds the
 capture). Captures are deleted by the platform's central retention purge; detail
 reads require an ADMIN operator and emit an audit event; no body, header, query or
-exception message reaches ordinary application logs. Model/App capture scope is
-decided from server-authoritative dispatch state only, after authorization — never
-a caller-declared model or tool in the request body or URL path.
+exception message reaches ordinary application logs. Capture scope is decided from
+server-authoritative dispatch state only, after authorization — never a caller-declared
+model or tool in the request body or URL path — and a TENANT scope is mandatory so
+capture can never span tenants (the model allowlist only narrows within a tenant).
 
 Restoring response-body inspection safely — a governed on-demand audited reveal, or a
 keyed (HMAC) non-reversible correlation marker — is an OPEN owner/root scope decision
@@ -35,7 +39,7 @@ import logging
 import re
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, Protocol, TypeVar
 from urllib.parse import unquote_plus
 from uuid import UUID, uuid4
@@ -122,10 +126,12 @@ _UNTERMINATED_SCAN = _UNTERMINATED_VALUE_MAX + 512
 # text, but a numeric value (secrets encode as digits), an object KEY (a secret used as
 # a field name), or a streaming/binary payload — so no allowlist over its content can be
 # trusted. The whole response body is withheld (a redaction marker); the debugging
-# workflow is served by the fully captured (credential-redacted) REQUEST plus the typed
-# metadata (http_status, error_type, model/tool, timing). Restoring response-body
-# inspection safely — a governed on-demand audited reveal, or a keyed (HMAC)
-# non-reversible correlation marker — is an OPEN owner/root scope decision layered on
+# workflow is served by the fully captured (credential-redacted) REQUEST plus non-sensitive
+# typed metadata set from server dispatch state (http_status, error_type, model/tool,
+# mcp_is_error for an MCP tool-error inside an HTTP 200, timing), never by parsing the
+# response bytes. Restoring response-body free-text inspection safely — a governed on-demand
+# audited reveal, or a keyed (HMAC) non-reversible correlation marker — is an OPEN owner/root
+# scope decision layered on
 # this safe default; see docs/request-debug-logging.md.
 
 
@@ -172,6 +178,12 @@ class DebugExchange(DebugMetadata):
     request_body: DebugBody
     response_body: DebugBody
     error_detail: str | None = None
+    # Server-authoritative, non-sensitive structured signal: whether an MCP call returned a
+    # tool error (isError) inside an HTTP 200. Set from dispatch state (the same source
+    # request telemetry uses), never by parsing the response body, so a success vs. tool-error
+    # stays distinguishable while the body is withheld. Kept on the DETAIL exchange only (it
+    # rides in the encrypted payload) so it needs no new clear/summary column or DB migration.
+    mcp_is_error: bool | None = None
 
 
 class DebugExchangeSummary(DebugMetadata):
@@ -188,8 +200,41 @@ class DebugExchangeList(StrictModel):
     next_cursor: str | None = None
 
 
+# Owner-decided retention TTL for captured debug exchanges: a record older than this is
+# eligible for deletion by the central retention purge; a record within it is always
+# preserved. This facility NEVER deletes rows itself — the deleting purge is owned by the
+# central maintenance task and is gated on the payload-free preflight below and on explicit
+# rollout authorization. The constant states the agreed bound so the preflight can report it.
+DEBUG_RETENTION_SECONDS = 7_776_000  # 90 days
+
+
+class RetentionPreflight(StrictModel):
+    """Payload-free retention snapshot, used to authorize a purge BEFORE it runs.
+
+    Contains only aggregates over the clear ``started_at`` column — never any payload, body,
+    header, or identity beyond counts and the oldest/cutoff timestamps — so it can be produced
+    and reported without inspecting captured customer data. ``expired`` is the number of rows
+    older than the cutoff (the only rows a purge may ever delete); ``within`` are the rows that
+    must be preserved. Producing this snapshot deletes nothing.
+    """
+
+    now: AwareDatetime
+    cutoff: AwareDatetime
+    max_age_seconds: int = Field(ge=1)
+    oldest_started_at: AwareDatetime | None
+    total: int = Field(ge=0)
+    expired: int = Field(ge=0)
+    within: int = Field(ge=0)
+
+
 class DebugStore(Protocol):
     async def record(self, exchange: DebugExchange) -> None: ...
+
+    async def retention_preflight(
+        self, *, now: datetime, max_age_seconds: int = DEBUG_RETENTION_SECONDS
+    ) -> RetentionPreflight:
+        """Payload-free aggregate proof of retention state; deletes nothing."""
+        ...
 
     async def list(
         self,
@@ -267,41 +312,77 @@ def redact_headers(pairs: HeaderPairs, known_credentials: Credentials = ()) -> l
     return result
 
 
-_MIME_TYPE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,126}/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,126}$")
+# A Content-Type is untrusted: an arbitrary subtype (e.g. ``application/OPAQUESECRET``)
+# would otherwise persist a secret in the header value and in the withheld-body marker's
+# content_type. Only a fixed, server-known set of bare MIME types is retained; parameters
+# are always dropped and anything outside the set is omitted (fail closed). The set covers
+# the media types this control plane and its upstream runtimes actually produce.
+_ALLOWED_MIME = frozenset(
+    {
+        "application/json",
+        "application/problem+json",
+        "application/merge-patch+json",
+        "application/apply-patch+yaml",
+        "application/vnd.fs2.scientific-manifest+json",
+        "application/vnd.fs2.scientific-validation+json",
+        "application/octet-stream",
+        "application/gzip",
+        "application/zip",
+        "application/x-tar",
+        "application/x-nifti",
+        "application/x-www-form-urlencoded",
+        "text/plain",
+        "text/csv",
+        "text/html",
+        "text/event-stream",
+        "text/x-a3m",
+        "text/x-fasta",
+        "image/png",
+        "image/jpeg",
+        "image/webp",
+        "chemical/x-mmcif",
+        "chemical/x-pdb",
+    }
+)
 
 
 def _safe_content_type(content_type: str | None) -> str | None:
-    """Reduce a Content-Type to a bare MIME type, dropping any parameters.
+    """Reduce a Content-Type to a bare, server-known MIME type; omit anything else.
 
-    Only the ``type/subtype`` is kept (e.g. ``application/json``); parameters such as
-    ``charset=…`` or an injected ``; secret=…`` are dropped entirely. Anything that is
-    not a well-formed MIME type is omitted.
+    Parameters (``charset=…`` or an injected ``; secret=…``) are always dropped, and only a
+    bare ``type/subtype`` in the fixed ``_ALLOWED_MIME`` allowlist is kept — an arbitrary or
+    unknown subtype (which could smuggle a secret) is omitted (returns None). Matching is
+    case-insensitive; the canonical lowercase form is stored.
     """
     if content_type is None:
         return None
-    base = content_type.split(";", 1)[0].strip()
-    return base if _MIME_TYPE.match(base) else None
+    base = content_type.split(";", 1)[0].strip().lower()
+    return base if base in _ALLOWED_MIME else None
 
 
 def redact_response_headers(pairs: HeaderPairs) -> list[tuple[str, str]]:
-    """Keep only strictly-typed safe response header VALUES; redact every other value.
+    """Keep only two structural header NAMES and one typed value; redact everything else.
 
-    A response header value is untrusted and can carry an opaque secret — including
-    otherwise-"safe" headers like ETag, Content-Language or X-Request-Id. Only two values
-    are kept, and only when they match an exact type: Content-Length (digits) and
-    Content-Type (reduced to a bare MIME type, parameters dropped). Every other value is
-    redacted; header names are kept for structure.
+    A response header is untrusted in BOTH its name and its value: an arbitrary NAME (e.g.
+    ``X-OPAQUESECRET``) or an arbitrary VALUE (ETag, Content-Language, X-Request-Id, or a
+    numeric Content-Length whose digits encode data) can carry a secret. Only two header
+    names are retained, and only when the name normalizes exactly to a known structural
+    header — ``content-type`` (value reduced to a bare, server-known MIME type via
+    _safe_content_type, else redacted) and ``content-length`` (value ALWAYS redacted, since
+    a digit string can encode data and the true length is reported as observed_bytes). For
+    every other header BOTH the name and the value are redacted, so no arbitrary header name
+    or value is ever stored; the entry is kept only to preserve the header count.
     """
     result = []
     for raw_name, raw_value in pairs:
         name, value = _text(raw_name), _text(raw_value)
         normalized = _name(name)
-        if normalized == "contentlength" and value.strip().isdigit():
-            result.append((name, value.strip()))
-        elif normalized == "contenttype" and _safe_content_type(value) is not None:
+        if normalized == "contenttype":
             result.append((name, _safe_content_type(value) or REDACTED))
-        else:
+        elif normalized == "contentlength":
             result.append((name, REDACTED))
+        else:
+            result.append((REDACTED, REDACTED))
     return result
 
 
@@ -674,6 +755,22 @@ class InMemoryDebugStore:
         row = self.exchanges.get(exchange_id)
         return row.model_copy(deep=True) if row and (tenant_id is None or row.tenant_id == tenant_id) else None
 
+    async def retention_preflight(
+        self, *, now: datetime, max_age_seconds: int = DEBUG_RETENTION_SECONDS
+    ) -> RetentionPreflight:
+        cutoff = now - timedelta(seconds=max_age_seconds)
+        started = [row.started_at for row in self.exchanges.values()]
+        expired = sum(1 for timestamp in started if timestamp < cutoff)
+        return RetentionPreflight(
+            now=now,
+            cutoff=cutoff,
+            max_age_seconds=max_age_seconds,
+            oldest_started_at=min(started) if started else None,
+            total=len(started),
+            expired=expired,
+            within=len(started) - expired,
+        )
+
 
 class PostgresDebugStore:
     def __init__(self, pool: asyncpg.Pool[Any], cipher: PayloadCipher) -> None:
@@ -755,6 +852,31 @@ class PostgresDebugStore:
         )
         return DebugExchange.model_validate_json(raw)
 
+    async def retention_preflight(
+        self, *, now: datetime, max_age_seconds: int = DEBUG_RETENTION_SECONDS
+    ) -> RetentionPreflight:
+        # Payload-free: aggregates over the clear started_at column only. No ciphertext is
+        # read or decrypted, and this SELECT deletes nothing — it is the proof produced before
+        # any (separately owned, separately authorized) retention purge is allowed to run.
+        cutoff = now - timedelta(seconds=max_age_seconds)
+        async with self.pool.acquire() as connection:
+            row = await connection.fetchrow(
+                "SELECT MIN(started_at) AS oldest, COUNT(*) AS total, "
+                "COUNT(*) FILTER (WHERE started_at < $1) AS expired FROM fs2_request_debug",
+                cutoff,
+            )
+        total = int(row["total"]) if row is not None else 0
+        expired = int(row["expired"]) if row is not None else 0
+        return RetentionPreflight(
+            now=now,
+            cutoff=cutoff,
+            max_age_seconds=max_age_seconds,
+            oldest_started_at=row["oldest"] if row is not None else None,
+            total=total,
+            expired=expired,
+            within=total - expired,
+        )
+
 
 # Redaction/hashing of a near-cap body is CPU-bound and would block the asyncio event
 # loop (measured ~0.2-0.8s for a 0.25-1 MiB body). It is offloaded to a worker thread,
@@ -829,12 +951,13 @@ def _label(value: object) -> str | None:
 class DebugCapturePolicy:
     """Decides which exchanges may be captured.
 
-    There is no global capture switch. Capture requires an explicit tenant and/or
-    model (App) scope AND a bounded, future expiry; without either, nothing is
-    captured (fail closed). A tenant allowlist matches the authenticated tenant; a
-    model allowlist matches the App's model id (so pre-admission rejections for
-    that App still capture). When both are set an exchange must match both. The
-    default instance is disabled and captures nothing.
+    There is no global capture switch. Capture requires an explicit, non-empty TENANT
+    scope AND a bounded, future expiry; without a tenant scope nothing is captured (fail
+    closed). A tenant scope is MANDATORY so capture can never span tenants — a model-only
+    scope would otherwise capture every tenant sharing that model on a shared App. The
+    model allowlist is an OPTIONAL additional narrowing WITHIN the tenant scope (it matches
+    the App's model id, so pre-admission rejections for that App still capture). The default
+    instance is disabled and captures nothing.
     """
 
     enabled: bool = False
@@ -847,25 +970,27 @@ class DebugCapturePolicy:
             return False
         if self.expires_at is None or now >= self.expires_at:
             return False  # A bounded, unexpired window is mandatory.
-        if not self.tenants and not self.models:
-            return False  # An explicit tenant or App scope is mandatory.
-        tenant_ok = not self.tenants or (tenant_id is not None and tenant_id in self.tenants)
-        model_ok = not self.models or (model_id is not None and model_id in self.models)
-        return tenant_ok and model_ok
+        if not self.tenants:
+            return False  # A tenant scope is mandatory (no cross-tenant capture).
+        if tenant_id is None or tenant_id not in self.tenants:
+            return False
+        # models is an OPTIONAL additional narrowing within the tenant scope.
+        return not self.models or (model_id is not None and model_id in self.models)
 
     def path_model_admissible(self, path_model: str | None, now: datetime) -> bool:
         """Cheap pre-buffer gate: could any exchange on this path be captured?
 
         Returns False when we can already prove nothing will be captured (policy
-        disabled/expired/unscoped, or a model-scoped policy — with or without a
-        tenant scope — whose path names a model out of scope) so the caller avoids
-        buffering any bytes. A path with no named model (e.g. ``/mcp``) leaves the
-        model unknown until the body is read, so it stays admissible here and is
-        matched after the bounded body is available.
+        disabled/expired/unscoped, or a model-narrowed policy whose path names a model out
+        of scope) so the caller avoids buffering any bytes. The authenticated tenant is not
+        known here, so the mandatory tenant scope is enforced separately in
+        ``tenant_admissible``. A path with no named model (e.g. ``/mcp``) leaves the model
+        unknown until the body is read, so it stays admissible here and is matched after the
+        bounded body is available.
         """
         if not self.enabled or self.expires_at is None or now >= self.expires_at:
             return False
-        if not self.tenants and not self.models:
+        if not self.tenants:
             return False
         if self.models and path_model is not None and path_model not in self.models:
             return False
@@ -874,17 +999,15 @@ class DebugCapturePolicy:
     def tenant_admissible(self, tenant_id: str | None, now: datetime) -> bool:
         """Pre-buffer gate on the authenticated tenant.
 
-        Returns False when a tenant-scoped policy cannot admit this tenant (or the
-        policy is disabled/expired/unscoped), so the public middleware can decide
-        eligibility from resolved identity BEFORE buffering any bytes. A model-only
-        policy has no tenant constraint, so it returns True and the model is matched
-        after the bounded body is read.
+        Returns False when the policy is disabled/expired/tenant-unscoped or the resolved
+        tenant is not in the mandatory tenant scope, so the public middleware can reject an
+        out-of-scope tenant from resolved identity BEFORE buffering any bytes.
         """
         if not self.enabled or self.expires_at is None or now >= self.expires_at:
             return False
-        if not self.tenants and not self.models:
+        if not self.tenants:
             return False
-        if self.tenants and (tenant_id is None or tenant_id not in self.tenants):
+        if tenant_id is None or tenant_id not in self.tenants:
             return False
         return True
 
@@ -1039,6 +1162,11 @@ class DebugCaptureMiddleware:
                 # cheap pre-buffer gate below, not the stored attribution.)
                 model_id = _label(state.get("model_id"))
                 tool = _label(state.get("mcp_tool"))
+                # Non-sensitive structured signal set by the trusted dispatch path (the same
+                # server-authoritative source request telemetry uses), so an MCP tool error
+                # inside an HTTP 200 stays distinguishable from success while the response
+                # body is withheld. Never derived from the response bytes.
+                mcp_is_error = state.get("mcp_is_error") if isinstance(state.get("mcp_is_error"), bool) else None
                 capture_tenant = principal.tenant_id if principal else None
                 # Scoped, time-bounded gate: only record exchanges the policy
                 # admits. An unscoped/expired/disabled policy records nothing.
@@ -1098,6 +1226,7 @@ class DebugCaptureMiddleware:
                             method=str(scope.get("method", "")),
                             http_status=status,
                             error_type=error_type,
+                            mcp_is_error=mcp_is_error,
                             disconnected=disconnected,
                             query_string=redact_query(query, known),
                             request_headers=redact_headers(request_headers, known),

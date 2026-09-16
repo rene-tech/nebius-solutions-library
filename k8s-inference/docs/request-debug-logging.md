@@ -39,18 +39,21 @@ do not gain access to the admin debug API.
 **Enabling capture alone records nothing** — you must name what to capture and
 when it stops:
 
-- `request_debug_tenants` — comma-separated tenant IDs to capture. Only the named
-  tenants are recorded; unauthenticated/rejected requests (no tenant) are not.
-- `request_debug_models` — comma-separated model (App) IDs to capture. All tenants'
-  use of those Apps is recorded, including pre-admission rejections for the App.
-  When both allowlists are set, an exchange must match both.
+- `request_debug_tenants` — comma-separated tenant IDs to capture. **A non-empty tenant
+  scope is MANDATORY** so capture can never span tenants; only the named tenants are
+  recorded, and unauthenticated/rejected requests (no tenant) are not. There is no
+  model-only ("all tenants on a shared App") mode.
+- `request_debug_models` — comma-separated model (App) IDs. This is an **optional
+  narrowing WITHIN the tenant scope**: when set, a captured exchange must match both a
+  named tenant AND a named model (including pre-admission rejections for that App under a
+  named tenant). It cannot be used alone.
 - `request_debug_expires_at` — a required RFC3339 instant after which capture stops
   even while enabled. To actually capture, set it in the future and within
   `request_debug_max_window_seconds` (default 7 days). There is no unbounded or
   "capture everything" mode.
 
-The control plane validates this at startup: an enabled policy that is unscoped, has
-no expiry at all, or sets an expiry beyond the maximum window fails fast rather than
+The control plane validates this at startup: an enabled policy without a tenant scope, with
+no expiry at all, or with an expiry beyond the maximum window fails fast rather than
 capturing broadly. A **past** expiry is deliberately allowed and is service-safe: it
 is treated as capture-off (the runtime gate fails closed), so a stale expiry never
 crash-loops the control plane and never widens capture. Because capture is
@@ -65,9 +68,17 @@ One more chart value bounds each retained record and is safe to leave at default
   A body over the cap is withheld entirely (never a boundary-cut prefix). The lower
   max also bounds sanitizer CPU/memory, which runs off the event loop.
 
-Retention/purge of captured exchanges (and of transport telemetry) is owned by the
-platform's central maintenance purge — its own retention settings, DELETE grants
-and schedule — not by this capture facility.
+Retention: captured exchanges have a **90-day TTL** (7,776,000 seconds). A record older
+than 90 days is eligible for deletion by the platform's central maintenance purge (its own
+DELETE grant and schedule); a record **within 90 days is always preserved**. This capture
+facility never deletes rows. Two independent 90-day bounds apply: the capture-expiry window
+is capped at 90 days (capture can be enabled for at most 90 days going forward and then
+stops adding rows — it deletes nothing), and the retention purge removes rows older than 90
+days. Before any purge runs, a **payload-free retention preflight** (`retention_preflight`:
+oldest `started_at`, total count, and the count over the 90-day cutoff — aggregates over the
+clear timestamp column only, no payload read) proves how many rows are eligible; if any row
+within 90 days would be affected it must not run. The purge does not execute in any live
+environment without explicit rollout authorization.
 
 Capture covers observed public `/v1/` HTTP exchanges and `/mcp` traffic that the
 policy admits, including validation failures and requests rejected before an
@@ -105,9 +116,11 @@ capture flags, not an executable HTML document. Handle these exports as customer
 data: keep them in approved private storage and never paste them into stdout,
 Loki, Git, tickets, chat or other unapproved destinations.
 
-An HTTP 200 on MCP does not establish tool success: inspect the retained JSON-RPC
-response/tool result. Likewise, a public accepted response, an upstream 422, and a
-logical run's eventual failure are different observations, not conflicting rows.
+An HTTP 200 on MCP does not establish tool success: the response body is not stored,
+so read the retained **`mcp_is_error`** signal (a server-authoritative boolean set from
+the dispatch result, not from the withheld body) to distinguish a tool error from
+success. Likewise, a public accepted response, an upstream 422, and a logical run's
+eventual failure are different observations, not conflicting rows.
 
 ## Read-only admin API
 
@@ -132,10 +145,12 @@ resets cursor paging when its selected request window changes.
 List `data` is `{items: DebugExchangeSummary[], next_cursor: string | null}`.
 Summaries include identities, endpoint/method/status/error type, source, attempt
 numbers, observed byte counts and completeness/redaction flags. They intentionally
-omit bodies, headers, query strings and error-detail text.
+omit bodies, headers, query strings, error-detail text and `mcp_is_error` (a
+detail-only field — open the exchange to see the MCP tool-error signal).
 
 Detail `data` is one `DebugExchange`, adding `query_string`, header-pair lists,
-`error_detail`, `request_body` and `response_body`. Each body contains:
+`error_detail`, `mcp_is_error` (the MCP tool-error-vs-success signal), `request_body`
+and `response_body`. Each body contains:
 
 ```text
 encoding: utf-8 | base64
@@ -177,15 +192,20 @@ HTTP 0 or success.
   (a secret used as a field name), or a streaming/binary payload — so no allowlist over the
   response content can be trusted. Only the true `observed_bytes` and wire-completeness are
   kept. The debugging workflow is served by the fully captured (credential-redacted)
-  **request** plus the typed metadata (`http_status`, `error_type`, model/tool, timing).
-  The request body (the debugging target — customer input) is retained credential-redacted,
-  not withheld this way. Response headers keep only two **strictly-typed** values —
-  Content-Length (digits only) and Content-Type (reduced to a bare `type/subtype` MIME,
-  parameters dropped); **every other** response header value is redacted, including
-  otherwise-"safe" names like ETag, Content-Language or X-Request-Id, whose values are
-  opaque and could carry a secret. (Restoring response-body inspection for debugging — via
-  a governed on-demand audited reveal, or a keyed non-reversible correlation marker — is an
-  open operator/owner decision layered on this safe default.)
+  **request** plus non-sensitive typed metadata set from server dispatch state — `http_status`,
+  `error_type`, model/tool, **`mcp_is_error`** (distinguishes an MCP tool error inside an
+  HTTP 200 from success) and timing — never derived from the response bytes. The request body
+  (the debugging target — customer input) is retained credential-redacted, not withheld this
+  way. Response headers keep only two **structural header names**, and only when the name is
+  exactly that header: `Content-Type` (value reduced to a bare, server-known MIME type from a
+  fixed allowlist — an arbitrary/unknown subtype is dropped) and `Content-Length` (value
+  **always redacted**, since a digit string can encode data and the true length is reported as
+  `observed_bytes`). For **every other** response header BOTH the name and the value are
+  redacted — an arbitrary header NAME (e.g. `X-…`) is as untrusted as its value, and
+  otherwise-"safe" names like ETag, Content-Language or X-Request-Id carry opaque values.
+  (Restoring response-body free-text inspection for debugging — via a governed on-demand
+  audited reveal, or a keyed non-reversible correlation marker — is an open operator/owner
+  decision layered on this safe default.)
 - `error_detail` is a **generic, payload-independent code only** (e.g. "runtime
   operation failed"); the raw exception string is never stored, because an SDK may have
   embedded a prompt, URL or credential in it. The `error_type` and `http_status` carry
@@ -219,14 +239,18 @@ HTTP 0 or success.
   a missing row is not proof no request happened. Process failure can also leave
   missing captures. Bodies from before capture was enabled, or from failed
   persistence, cannot be reconstructed from old usage/logical-run metadata.
-- Captured exchanges have a **hard TTL** owned by the platform's central maintenance
-  purge (its own retention setting, DELETE grant and schedule; this capture facility
-  defines none of that). The purge deletes `fs2_request_debug` rows by timestamp
-  under a maintenance credential that can read no payload, header, query or
-  ciphertext column. Enabling capture still increases PostgreSQL/storage use within
-  the TTL window; disabling capture stops new rows but does not retroactively delete
-  history faster than the TTL. Reads require ADMIN and are audited, so retention is
-  bounded and access is attributable rather than open-ended.
+- Captured exchanges have a **hard 90-day TTL** (7,776,000s). The deleting purge is owned
+  by the platform's central maintenance task (its own DELETE grant and schedule; this
+  capture facility defines and executes no deletion). The purge removes `fs2_request_debug`
+  rows older than 90 days by timestamp, under a maintenance credential that can read no
+  payload, header, query or ciphertext column; **records within 90 days are always
+  preserved**. It runs only after a **payload-free preflight** (oldest `started_at` + counts,
+  no payload read — see `retention_preflight`) confirms the eligible set, and never in a live
+  environment without explicit rollout authorization. Enabling capture still increases
+  PostgreSQL/storage use within the 90-day window; disabling capture (or the ≤90-day
+  capture-expiry lapsing) stops new rows but does not retroactively delete history faster
+  than the TTL. Reads require ADMIN and are audited, so retention is bounded and access is
+  attributable rather than open-ended.
 
 ## Verification status
 
@@ -236,13 +260,15 @@ less failures, historical absence, null metadata, binary/partial/redacted captur
 plaintext rendering, duplicate headers, lazy loading and JSON export. These are
 synthetic technical fixtures, not evidence of arbitrary customer capture.
 
-On 2026-09-09, release `88520758f90a7e171abd86a4a94787a6739d6ba7` was deployed
-with capture enabled. [Bounded live API acceptance](../acceptance/request-debug-20260909/README.md)
+The following describes the **pre-remediation** deployed baseline and does NOT reflect
+the current contract: on 2026-09-09, release `88520758f90a7e171abd86a4a94787a6739d6ba7`
+was deployed with the old global capture enabled. [Bounded live API acceptance](../acceptance/request-debug-20260909/README.md)
 verified a synthetic PhenoAge success, actual Boltz2 upstream 422 and OpenFold2
 upstream 400, operationless malformed HTTP 422, MCP discovery and malformed MCP
-arguments (tool error inside HTTP 200). The exact observed public bytes, private
-upstream error bodies, caller ownership, operation/attempt correlation and
-authentication redaction passed. No key, model or capacity setting changed.
+arguments (tool error inside HTTP 200). That run observed the then-retained public bytes
+and upstream error bodies. **Under the current contract those response bodies are NOT
+retained** — the response body is always withheld and the MCP tool-error-vs-success case
+above is distinguished by the retained `mcp_is_error` signal, not a stored JSON-RPC body.
 
 The first OpenFold2 call used the verifier's stale archival operation name and
 correctly returned 403. That failed receipt remains intact; only its unexecuted

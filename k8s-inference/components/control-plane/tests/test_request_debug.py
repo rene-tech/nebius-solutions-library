@@ -35,9 +35,11 @@ from fs2_serve.settings import Settings
 
 NOW = datetime(2026, 9, 9, 8, tzinfo=UTC)
 _FUTURE = datetime(2099, 1, 1, tzinfo=UTC)
-# Default policy for middleware tests: scoped to the default boltz2 path, bounded
-# by a far-future expiry. Individual tests pass their own policy when needed.
-_TEST_POLICY = DebugCapturePolicy(enabled=True, models=frozenset({"boltz2"}), expires_at=_FUTURE)
+# Default policy for middleware tests: a tenant scope is mandatory (no cross-tenant
+# capture), so the default binds tenant-a and a far-future expiry. Model is an optional
+# narrowing, left unset here so the helper's server-set model_id is recorded as-is.
+# Individual tests pass their own policy when they need a different scope.
+_TEST_POLICY = DebugCapturePolicy(enabled=True, tenants=frozenset({"tenant-a"}), expires_at=_FUTURE)
 
 
 def owner():
@@ -85,6 +87,7 @@ async def capture(
     model="boltz2",
     store=None,
     resolver=None,
+    tenant="tenant-a",
     telemetry_store=None,
     send_error=False,
     max_body_bytes=None,
@@ -92,6 +95,26 @@ async def capture(
 ):
     store = store or InMemoryDebugStore()
     incoming, outgoing = list(chunks), []
+    # A tenant scope is mandatory (no cross-tenant capture), so capture needs a resolvable
+    # in-scope tenant. Default to an authorized tenant-a principal (matching _TEST_POLICY),
+    # resolved from a bearer token injected below; tests that simulate a denied/out-of-scope/
+    # unauthenticated caller pass their own resolver/headers or tenant=None.
+    headers = list(headers)
+    if resolver is None and tenant is not None:
+
+        async def _default_resolver(_token: str) -> Principal:
+            return Principal(
+                token_id=uuid4(),
+                token_prefix="test-prefix",
+                principal_id="customer",
+                tenant_id=tenant,
+                models=frozenset({"boltz2"}),
+                scopes=frozenset(),
+            )
+
+        resolver = _default_resolver
+    if tenant is not None and not any(key.lower() == b"authorization" for key, _ in headers):
+        headers.append((b"authorization", b"Bearer test-token"))
     # Attribution is server-authoritative from scope state (set by the real handler
     # after authorization). Default to an authorized model so scoped capture matches;
     # tests that simulate a denied/unattributed request pass their own state.
@@ -99,7 +122,7 @@ async def capture(
         "type": "http",
         "method": "POST",
         "path": path,
-        "headers": list(headers),
+        "headers": headers,
         "query_string": query,
         "state": {"model_id": model} if state is None else state,
     }
@@ -204,7 +227,11 @@ async def test_rejected_json_complete_capture_owner_fallback_and_credential_echo
     assert "ACDEFG" in exchange.request_body.data
 
 
-async def test_unread_unauthorized_body_is_explicit_and_not_drained():
+async def test_unauthorized_request_with_no_resolvable_tenant_is_not_captured():
+    """SAI-01: a tenant scope is mandatory, so a request whose tenant cannot be resolved
+    (unauthenticated or an invalid token) is passed through untouched and NEVER captured —
+    no cross-tenant or unauthenticated capture — so a bad secret never reaches the store."""
+
     async def app(scope, receive, send):
         await send({"type": "http.response.start", "status": 401})
         await send({"type": "http.response.body", "body": b"unauthorized"})
@@ -212,13 +239,12 @@ async def test_unread_unauthorized_body_is_explicit_and_not_drained():
     async def resolver(token):
         raise ValueError("invalid secret must not be logged")
 
-    store, _, _ = await capture(app, resolver=resolver, headers=[(b"authorization", b"Bearer BAD_SECRET")])
-    (exchange,) = store.exchanges.values()
-    assert not exchange.request_body.complete and exchange.request_body.observed_bytes == 0
-    assert exchange.response_body.complete and exchange.tenant_id is None
-    assert await store.get(exchange.id, "tenant-a") is None
-    assert (await store.list(tenant_id="tenant-a")).items == []
-    assert len((await store.list()).items) == 1
+    store, outgoing, _ = await capture(app, resolver=resolver, headers=[(b"authorization", b"Bearer BAD_SECRET")])
+    # The upstream 401 is still delivered to the client, but nothing is captured and the
+    # bad bearer secret never reaches the store.
+    assert outgoing[0]["status"] == 401
+    assert store.exchanges == {}
+    assert (await store.list()).items == []
 
 
 async def test_disconnected_partial_upload_has_no_invented_status():
@@ -523,12 +549,13 @@ async def test_middleware_caps_stored_body_size_but_reports_true_observed_bytes(
 
 
 def test_capture_policy_is_scoped_and_time_bounded():
-    """SAI-01: no global capture; a scope AND a bounded future expiry are mandatory."""
+    """SAI-01: no global capture; a TENANT scope AND a bounded future expiry are mandatory,
+    and capture can never span tenants (model-only is not a valid scope)."""
     now = NOW
     future = now + timedelta(hours=1)
     # Disabled: never captures.
     assert (
-        DebugCapturePolicy(enabled=False, models=frozenset({"m"}), expires_at=future).should_capture(
+        DebugCapturePolicy(enabled=False, tenants=frozenset({"t"}), expires_at=future).should_capture(
             tenant_id="t", model_id="m", now=now
         )
         is False
@@ -538,26 +565,28 @@ def test_capture_policy_is_scoped_and_time_bounded():
         DebugCapturePolicy(enabled=True, expires_at=future).should_capture(tenant_id="t", model_id="m", now=now)
         is False
     )
-    # Enabled and scoped but no expiry: fail closed (a bounded window is mandatory).
+    # Enabled and tenant-scoped but no expiry: fail closed (a bounded window is mandatory).
     assert (
-        DebugCapturePolicy(enabled=True, models=frozenset({"m"})).should_capture(tenant_id="t", model_id="m", now=now)
+        DebugCapturePolicy(enabled=True, tenants=frozenset({"t"})).should_capture(tenant_id="t", model_id="m", now=now)
         is False
     )
+    # Model-only is NOT a valid scope: a tenant scope is mandatory, so a model-only policy
+    # captures nothing (no cross-tenant capture), even for the named model or tenant None.
+    model_only = DebugCapturePolicy(enabled=True, models=frozenset({"boltz2"}), expires_at=future)
+    assert model_only.should_capture(tenant_id=None, model_id="boltz2", now=now) is False
+    assert model_only.should_capture(tenant_id="t1", model_id="boltz2", now=now) is False
     # Tenant-scoped: only the allowlisted tenant, and never an unauthenticated request.
     tenant = DebugCapturePolicy(enabled=True, tenants=frozenset({"t1"}), expires_at=future)
     assert tenant.should_capture(tenant_id="t1", model_id="m", now=now) is True
     assert tenant.should_capture(tenant_id="t2", model_id="m", now=now) is False
     assert tenant.should_capture(tenant_id=None, model_id="m", now=now) is False
-    # Model/App-scoped: all tenants for that App, including pre-admission (tenant None).
-    model = DebugCapturePolicy(enabled=True, models=frozenset({"boltz2"}), expires_at=future)
-    assert model.should_capture(tenant_id=None, model_id="boltz2", now=now) is True
-    assert model.should_capture(tenant_id="t1", model_id="qwen3-8b", now=now) is False
-    # Both set: must match both.
+    # Model is an OPTIONAL narrowing WITHIN the tenant scope: must match both.
     both = DebugCapturePolicy(enabled=True, tenants=frozenset({"t1"}), models=frozenset({"boltz2"}), expires_at=future)
     assert both.should_capture(tenant_id="t1", model_id="boltz2", now=now) is True
     assert both.should_capture(tenant_id="t1", model_id="qwen3-8b", now=now) is False
+    assert both.should_capture(tenant_id="t2", model_id="boltz2", now=now) is False  # wrong tenant
     # Time-bounded: capture stops at expiry even while enabled and scoped.
-    expiring = DebugCapturePolicy(enabled=True, models=frozenset({"m"}), expires_at=now)
+    expiring = DebugCapturePolicy(enabled=True, tenants=frozenset({"t"}), expires_at=now)
     assert expiring.should_capture(tenant_id="t", model_id="m", now=now - timedelta(seconds=1)) is True
     assert expiring.should_capture(tenant_id="t", model_id="m", now=now) is False
 
@@ -568,14 +597,18 @@ def test_capture_policy_path_model_pre_gate():
     future = now + timedelta(hours=1)
     disabled = DebugCapturePolicy()
     assert disabled.path_model_admissible("boltz2", now) is False
-    model = DebugCapturePolicy(enabled=True, models=frozenset({"boltz2"}), expires_at=future)
-    assert model.path_model_admissible("boltz2", now) is True
-    assert model.path_model_admissible("qwen3-8b", now) is False  # out-of-scope path model
-    assert model.path_model_admissible(None, now) is True  # unknown (e.g. /mcp): must buffer
-    # A tenant-scoped policy cannot pre-gate on the path model (tenant unknown yet).
+    # Model-only is not a valid scope (tenant mandatory): the pre-gate rejects it outright.
+    model_only = DebugCapturePolicy(enabled=True, models=frozenset({"boltz2"}), expires_at=future)
+    assert model_only.path_model_admissible("boltz2", now) is False
+    # Tenant + model narrowing: the pre-gate can still reject an out-of-scope path model.
+    both = DebugCapturePolicy(enabled=True, tenants=frozenset({"t1"}), models=frozenset({"boltz2"}), expires_at=future)
+    assert both.path_model_admissible("boltz2", now) is True
+    assert both.path_model_admissible("qwen3-8b", now) is False  # out-of-scope path model
+    assert both.path_model_admissible(None, now) is True  # unknown (e.g. /mcp): must buffer
+    # A tenant-only policy cannot pre-gate on the path model (any model is in scope).
     tenant = DebugCapturePolicy(enabled=True, tenants=frozenset({"t1"}), expires_at=future)
     assert tenant.path_model_admissible("qwen3-8b", now) is True
-    assert model.path_model_admissible("boltz2", future) is False  # expired
+    assert both.path_model_admissible("boltz2", future) is False  # expired
 
 
 async def _authenticated_capture(policy, *, tenant):
@@ -825,35 +858,81 @@ async def test_success_response_body_is_withheld_including_numbers_and_keys():
     assert b"the model output" not in stored and b"31337" not in stored and b"AKIAIOSFODNN7EXAMPLE" not in stored
 
 
-def test_response_headers_redact_opaque_values_and_strip_content_type_params():
-    """SAI-01: an "allowlisted-by-name" response header value is still untrusted and can
-    carry an opaque secret. Only Content-Length (digits) and a bare Content-Type MIME
-    survive; ETag/Content-Language/X-Request-Id and any Content-Type PARAMETERS (which
-    could smuggle a secret) are redacted or dropped — nothing is kept by name alone."""
+def test_response_headers_redact_names_and_values_except_two_structural_headers():
+    """SAI-01: a response header is untrusted in BOTH its name and value. Only content-type
+    (bare, server-known MIME) and content-length (name kept, value ALWAYS redacted) survive;
+    an arbitrary NAME (X-OPAQUESECRET42), an arbitrary MIME subtype (application/OPAQUESECRET42),
+    a numeric content-length whose digits encode data (313371337), and opaque "safe" headers
+    (ETag/Content-Language/X-Request-Id/Set-Cookie) are all redacted in name and/or value."""
     pairs = [
         (b"content-type", b"application/json; charset=utf-8; secret=SMUGGLED42"),
-        (b"content-length", b"128"),
+        (b"content-length", b"313371337"),  # digits can encode data -> value redacted
+        (b"x-opaquesecret42", b"1"),  # the secret is in the NAME
+        (b"content-type", b"application/OPAQUESECRET42"),  # arbitrary subtype -> dropped
         (b"etag", b'W/"OPAQUE-ETAG-SECRET"'),
         (b"content-language", b"SECRET-LOCALE-TAG"),
         (b"x-request-id", b"OPAQUE-REQ-ID-SECRET"),
         (b"set-cookie", b"session=SUPERSECRETCOOKIE; HttpOnly"),
     ]
-    result = dict(redact_response_headers(pairs))
-    assert result["content-type"] == "application/json"  # bare MIME only, params dropped
-    assert result["content-length"] == "128"
-    assert result["etag"] == "[REDACTED]"  # opaque value redacted despite a "safe" name
-    assert result["content-language"] == "[REDACTED]"
-    assert result["x-request-id"] == "[REDACTED]"
-    assert result["set-cookie"] == "[REDACTED]"
+    result = redact_response_headers(pairs)
+    assert ("content-type", "application/json") in result  # bare, allowlisted MIME; params dropped
+    assert ("content-type", "[REDACTED]") in result  # arbitrary subtype not in allowlist -> value redacted
+    assert ("content-length", "[REDACTED]") in result  # name kept, digits never stored
+    # Every non-structural header has BOTH its name and value redacted.
+    for name, value in result:
+        if name not in {"content-type", "content-length"}:
+            assert (name, value) == ("[REDACTED]", "[REDACTED]")
     rendered = repr(result)
     for secret in (
         "SMUGGLED42",
+        "313371337",
+        "opaquesecret42",
+        "OPAQUESECRET42",
         "OPAQUE-ETAG-SECRET",
         "SECRET-LOCALE-TAG",
         "OPAQUE-REQ-ID-SECRET",
         "SUPERSECRETCOOKIE",
     ):
         assert secret not in rendered
+
+
+def test_response_content_type_arbitrary_subtype_is_dropped_not_persisted():
+    """SAI-01: a MIME-shaped but arbitrary/unknown subtype is NOT in the server-known
+    allowlist, so it is dropped from both the header value and the withheld-body content_type
+    — the subtype cannot smuggle a secret. Known types (with params) survive as bare MIME."""
+    from fs2_serve.request_debug import _safe_content_type
+
+    assert _safe_content_type("application/OPAQUESECRET42") is None
+    assert _safe_content_type("application/json; secret=X") == "application/json"
+    assert _safe_content_type("TEXT/Event-Stream") == "text/event-stream"  # case-insensitive
+    # The withheld response body's content_type is reduced through the same allowlist.
+    assert suppressed_body("application/OPAQUESECRET42", 10, True).content_type is None
+    assert suppressed_body("application/json; x=y", 10, True).content_type == "application/json"
+
+
+@pytest.mark.parametrize("signal,expected", [(True, True), (False, False), (None, None)])
+async def test_mcp_tool_error_signal_is_carried_without_storing_the_response_body(signal, expected):
+    """SAI-01: an MCP tool error inside an HTTP 200 stays distinguishable from success via the
+    server-authoritative mcp_is_error signal (read from dispatch state), even though the
+    response body is withheld — restoring the debug signal with no response-content channel."""
+    body = b'{"jsonrpc":"2.0","result":{"content":[{"text":"secret tool output"}],"isError":true}}'
+
+    async def app(scope, receive, send):
+        await receive()
+        await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
+        await send({"type": "http.response.body", "body": body, "more_body": False})
+
+    state: dict[str, object] = {"model_id": "boltz2"}
+    if signal is not None:
+        state["mcp_is_error"] = signal
+    store, _, _ = await capture(
+        app, path="/mcp", chunks=[{"type": "http.request", "body": b'{"method":"tools/call"}'}], state=state
+    )
+    (exchange,) = store.exchanges.values()
+    assert exchange.mcp_is_error is expected
+    # The signal is never derived from the (withheld) response body.
+    assert _stored_bytes(exchange.response_body) == b"[REDACTED]"
+    assert "secret tool output" not in exchange.model_dump_json()
 
 
 async def test_response_content_type_parameters_do_not_reach_the_stored_exchange():
@@ -898,7 +977,10 @@ async def test_mcp_scope_uses_server_model_not_caller_declared_body(state):
         await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
         await send({"type": "http.response.body", "body": b'{"ok":true}'})
 
-    policy = DebugCapturePolicy(enabled=True, models=frozenset({"boltz2"}), expires_at=_FUTURE)
+    # Tenant scope is mandatory; model narrows within it. The helper resolves tenant-a.
+    policy = DebugCapturePolicy(
+        enabled=True, tenants=frozenset({"tenant-a"}), models=frozenset({"boltz2"}), expires_at=_FUTURE
+    )
     store, _, _ = await capture(
         app, path="/mcp", chunks=[{"type": "http.request", "body": spoof}], policy=policy, state=dict(state)
     )
@@ -1139,16 +1221,25 @@ def _future_iso(hours: float) -> str:
 
 
 def test_settings_reject_enabled_capture_without_scope_or_bounded_expiry():
-    """SAI-01: an enabled but unscoped/unbounded capture config must not start."""
+    """SAI-01: an enabled but unscoped/unbounded capture config must not start; a TENANT
+    scope is mandatory and a MODEL-only config (which would span tenants) is rejected."""
     import pytest as _pytest
     from pydantic import ValidationError
 
     # Enabled with no scope at all.
     with _pytest.raises(ValidationError, match="request_debug"):
         Settings(request_debug_enabled=True, request_debug_expires_at=_future_iso(1))
-    # Enabled and scoped but no expiry.
+    # Enabled with a MODEL scope but no TENANT scope: model-only is not a valid scope
+    # (it would capture every tenant on a shared App), so it must be rejected.
+    with _pytest.raises(ValidationError, match="request_debug_tenants"):
+        Settings(
+            request_debug_enabled=True,
+            request_debug_models="boltz2",
+            request_debug_expires_at=_future_iso(1),
+        )
+    # Enabled and tenant-scoped but no expiry.
     with _pytest.raises(ValidationError, match="expires_at"):
-        Settings(request_debug_enabled=True, request_debug_models="boltz2")
+        Settings(request_debug_enabled=True, request_debug_tenants="tenant-a")
     # Enabled, scoped, but expiry beyond the strict maximum window.
     with _pytest.raises(ValidationError, match="max_window"):
         Settings(
@@ -1164,12 +1255,13 @@ def test_settings_expired_window_is_service_safe_not_a_crash():
     to capture-off. Startup succeeds and the built policy captures nothing."""
     settings = Settings(
         request_debug_enabled=True,
-        request_debug_models="boltz2",
+        request_debug_tenants="tenant-a",
         request_debug_expires_at=(datetime.now(UTC) - timedelta(hours=1)).isoformat(),
     )  # does not raise
     policy = settings.debug_capture_policy()
     assert policy.enabled is True and policy.expires_at is not None
-    assert policy.should_capture(tenant_id="t", model_id="boltz2", now=datetime.now(UTC)) is False
+    # An in-scope tenant still captures nothing because the window has elapsed.
+    assert policy.should_capture(tenant_id="tenant-a", model_id="boltz2", now=datetime.now(UTC)) is False
 
 
 def test_settings_build_scoped_bounded_capture_policy():
@@ -1190,3 +1282,52 @@ def test_settings_build_scoped_bounded_capture_policy():
     now = datetime.now(UTC)
     assert policy.should_capture(tenant_id="tenant-a", model_id="boltz2", now=now) is True
     assert policy.should_capture(tenant_id="other", model_id="qwen3-8b", now=now) is False
+
+
+def test_settings_capture_window_defaults_to_and_caps_at_ninety_days():
+    """SAI-01/owner TTL: the capture-expiry window defaults to and is capped at exactly 90
+    days (7,776,000s), so capture can only be enabled for <=90 days going forward."""
+    from pydantic import ValidationError
+
+    from fs2_serve.request_debug import DEBUG_RETENTION_SECONDS
+
+    assert Settings().request_debug_max_window_seconds == DEBUG_RETENTION_SECONDS == 7_776_000
+    # An expiry beyond 90 days is rejected; one inside the window is accepted.
+    with pytest.raises(ValidationError, match="max_window"):
+        Settings(
+            request_debug_enabled=True,
+            request_debug_tenants="tenant-a",
+            request_debug_expires_at=_future_iso(24 * 91),
+        )
+    ok = Settings(
+        request_debug_enabled=True,
+        request_debug_tenants="tenant-a",
+        request_debug_expires_at=_future_iso(24 * 89),
+    )
+    assert ok.debug_capture_policy().enabled is True
+
+
+async def test_retention_preflight_is_payload_free_and_preserves_within_ttl():
+    """SAI-01/owner TTL: the retention preflight reports payload-free aggregates (oldest
+    started_at, total, count over the 90-day cutoff) and DELETES NOTHING — it is the proof
+    produced before any (separately owned, separately authorized) purge may run. Records
+    within 90 days are counted as preserved; only rows older than 90 days are counted expired."""
+    from fs2_serve.request_debug import DEBUG_RETENTION_SECONDS
+
+    store = InMemoryDebugStore()
+    now = datetime(2026, 9, 16, tzinfo=UTC)
+    old = now - timedelta(seconds=DEBUG_RETENTION_SECONDS + 3600)  # older than 90d
+    recent = now - timedelta(days=1)  # within 90d
+    await store.record(row(id=uuid4(), started_at=old))
+    await store.record(row(id=uuid4(), started_at=recent))
+    await store.record(row(id=uuid4(), started_at=now))
+    preflight = await store.retention_preflight(now=now)
+    assert preflight.total == 3
+    assert preflight.expired == 1  # only the >90d row is eligible for deletion
+    assert preflight.within == 2  # <=90d rows are preserved
+    assert preflight.oldest_started_at == old
+    assert preflight.max_age_seconds == DEBUG_RETENTION_SECONDS
+    assert len(store.exchanges) == 3  # producing the proof deletes nothing
+    # Payload-free: the serialized snapshot carries no body/header/payload content.
+    dumped = preflight.model_dump_json()
+    assert "sequence" not in dumped and "REDACTED" not in dumped and "response" not in dumped

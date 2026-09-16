@@ -265,14 +265,22 @@ class Settings(BaseSettings):
     # maintenance purge (its own retention setting, DELETE grant and schedule), not
     # by this capture facility, so no retention knob is defined here.
     # Scope + time-bound for capture. There is no global capture switch: enabling
-    # request_debug records nothing unless a tenant and/or model (App) scope is
-    # named AND request_debug_expires_at is a future instant within the strict
-    # maximum window below. Settings validation rejects an enabled policy that is
-    # unscoped or lacks a bounded future expiry.
+    # request_debug records nothing unless a non-empty TENANT scope is named AND
+    # request_debug_expires_at is a future instant within the strict maximum window
+    # below. A tenant scope is MANDATORY (never model-only) so capture can never span
+    # tenants; the model (App) allowlist is an OPTIONAL narrowing within that tenant
+    # scope. Settings validation rejects an enabled policy without a tenant scope or a
+    # bounded future expiry.
     request_debug_tenants: str = Field(default="", max_length=8192)
     request_debug_models: str = Field(default="", max_length=8192)
     request_debug_expires_at: AwareDatetime | None = None
-    request_debug_max_window_seconds: int = Field(default=604800, ge=300, le=2592000)
+    # Owner-decided TTL: capture is bounded to at most 90 days (7,776,000s) going forward,
+    # enforced purely via the capture-expiry window (it stops NEW capture; it deletes no
+    # rows). The default and the ceiling are both 90 days, so an activation can only choose a
+    # SHORTER window, never a longer one. Row deletion/retention purge is owned by the central
+    # maintenance purge (a separate task) and is gated on a payload-free pre-rollout proof;
+    # this facility never deletes rows.
+    request_debug_max_window_seconds: int = Field(default=7776000, ge=300, le=7776000)
     payload_ttl_seconds: int = Field(default=86400, ge=60, le=604800)
     scientific_artifacts_enabled: bool = False
     artifact_store_endpoint: str = Field(
@@ -413,9 +421,10 @@ class Settings(BaseSettings):
             # To actually capture, the expiry must be in the future (enforced at
             # runtime), which is what "new activation requires a future expiry" means.
             tenants = [item for item in self.request_debug_tenants.split(",") if item.strip()]
-            models = [item for item in self.request_debug_models.split(",") if item.strip()]
-            if not tenants and not models:
-                raise ValueError("request_debug_enabled requires request_debug_tenants and/or request_debug_models")
+            # A tenant scope is mandatory (never model-only) so capture can never span
+            # tenants; request_debug_models is an optional narrowing within that tenant.
+            if not tenants:
+                raise ValueError("request_debug_enabled requires a non-empty request_debug_tenants scope")
             if self.request_debug_expires_at is None:
                 raise ValueError("request_debug_enabled requires a bounded request_debug_expires_at")
             horizon = datetime.now(UTC) + timedelta(seconds=self.request_debug_max_window_seconds)
@@ -519,9 +528,9 @@ class Settings(BaseSettings):
     def debug_capture_policy(self) -> DebugCapturePolicy:
         """Build the scoped, time-bounded request-debug capture policy from env.
 
-        Enabling capture records nothing unless a tenant and/or model scope is
-        named and request_debug_expires_at is a bounded future instant; the
-        policy itself fail-closes on any missing piece.
+        Enabling capture records nothing unless a non-empty TENANT scope is named
+        (model is an optional narrowing within it) and request_debug_expires_at is a
+        bounded future instant; the policy itself fail-closes on any missing piece.
         """
 
         return DebugCapturePolicy(
