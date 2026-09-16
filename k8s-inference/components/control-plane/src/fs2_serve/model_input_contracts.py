@@ -851,6 +851,12 @@ def contract_for(model: OperationalModel, protocol: str) -> ModelInputContract:
     _check_adapter(model, model_ref)
     if protocol not in model.gateway.protocols:
         raise InputContractUnavailable(f"{model_ref} does not publish protocol {protocol}")
+    if protocol == "native" and model_ref in _resource("voice.json"):
+        schema = copy.deepcopy(_resource("voice.json")[model_ref])
+        schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
+        return ModelInputContract(schema, (), (
+            "k8s-inference/components/voice-runtime/src/fs2_voice/contracts.py",
+        ), model_ref, protocol)
     if protocol == "native" and model_ref in _resource("speech.json"):
         schema = copy.deepcopy(_resource("speech.json")[model_ref])
         schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"

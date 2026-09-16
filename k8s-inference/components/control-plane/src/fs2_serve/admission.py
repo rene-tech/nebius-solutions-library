@@ -231,7 +231,9 @@ class AdmissionService:
             from .model_input_contracts import contract_for
 
             source = contract_for(model, admission.protocol).model_ref
-            if (source not in {"nemotron-speech-en-0-6b", "nemotron-speech-multilingual-0-6b"}
+            if (source not in {"nemotron-speech-en-0-6b", "nemotron-speech-multilingual-0-6b",
+                               "parakeet-realtime-eou-120m-v1", "magpie-tts-multilingual-357m",
+                               "diar-streaming-sortformer-4spk-v2-1"}
                     or admission.protocol != "native" or model.binding.backend_class != "local-kubernetes"):
                 raise ValueError("model does not implement live speech")
         request_body = admission.request_body
