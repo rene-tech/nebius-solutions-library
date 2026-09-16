@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import json
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -220,7 +221,7 @@ def test_long_speech_segmentation_preserves_every_character(text):
         assert all(piece.endswith(". ") for piece in pieces)
 
 
-async def test_segmented_tts_uses_same_voice_and_one_asr_upload_without_truncation(store):
+async def test_segmented_tts_uses_same_voice_and_bounded_asr_uploads_without_truncation(store):
     text, requested, asr = "This is a meaningful sentence. " * 240, [], []
 
     async def upstream(request):
@@ -239,17 +240,20 @@ async def test_segmented_tts_uses_same_voice_and_one_asr_upload_without_truncati
         wav, recognized, metadata = await Worker(store, SETTINGS, client).speak_and_listen(
             "key", text, "clinician", {"language": "en", "clinician_voice": "Jason"}
         )
-    assert len(requested) == 2 and len(asr) == 1
+    expected_segments = len(speech_segments(text, 1024))
+    assert len(requested) == len(asr) == expected_segments
     assert "".join(body["text"] for body in requested) == text
     assert {body["voice"] for body in requested} == {"Jason"}
-    assert len(wav) == 44 + 8 and recognized == "The full recognized turn"
-    assert len(metadata["tts_segments"]) == 2
+    assert wav is None and recognized == " ".join(["The full recognized turn"] * expected_segments)
+    assert len(metadata["tts_segments"]) == expected_segments
 
 
 async def test_rate_change_between_segments_fails_explicitly(store):
     calls = []
 
     async def upstream(request):
+        if request.url.path.endswith("transcriptions"):
+            return httpx.Response(200, json={"text": "Recognized segment"})
         calls.append(request)
         events = [
             {"type": "audio.chunk", "sample_rate_hz": 16000 if len(calls) == 1 else 22050, "audio_base64": "AQACAA=="},
@@ -285,3 +289,115 @@ async def test_heartbeat_recovers_after_temporary_database_error(monkeypatch):
         await worker.heartbeat("run")
     assert len(attempts) == 2
     assert delays == [30, 5, 30]
+
+
+async def test_audio_larger_than_whole_turn_limit_is_uploaded_and_retained_in_bounded_segments(store):
+    row = await create(store, mode="spoken")
+    running = await store.claim("worker", 90, 5)
+    running["playback_stream_id"] = str(uuid4())
+    # 10 MiB total exceeds the old whole-turn limit; each upload is only 5 MiB.
+    pcm = b"\0\0" * (5 * 1024 * 1024 // 2)
+    segment_payload = "\n".join(
+        map(
+            json.dumps,
+            [
+                {"type": "audio.chunk", "sample_rate_hz": 22050, "audio_base64": base64.b64encode(pcm).decode()},
+                {"type": "audio.done"},
+            ],
+        )
+    )
+    uploads, requests = [], []
+
+    async def upstream(request):
+        if request.url.path.endswith("synthesize"):
+            requests.append(json.loads(request.content)["text"])
+            return httpx.Response(200, text=segment_payload)
+        uploads.append(len(request.content))
+        return httpx.Response(200, json={"text": f"Recognized segment {len(uploads)}"})
+
+    async def retain(index, wav, metadata):
+        return await store.retain_segment(running, 1, index, wav, metadata)
+
+    text = "Sentence about the simulated consultation. " * 35
+    assert len(speech_segments(text, 1024)) == 2
+    async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as client:
+        audio, transcript, metadata = await Worker(store, SETTINGS, client).speak_and_listen(
+            "key",
+            text,
+            "clinician",
+            {"language": "en", "clinician_voice": "Jason"},
+            retain=retain,
+        )
+    assert audio is None and transcript == "Recognized segment 1 Recognized segment 2"
+    assert "".join(requests) == text and all(len(part) <= 1024 for part in requests)
+    assert len(uploads) == 2 and max(uploads) < 8 * 1024 * 1024
+    assert len(metadata["recordings"]) == 2
+    assert await store.pool.fetchval("SELECT sum(octet_length(wav)) FROM fs2_workshop.audio_segments") > 8 * 1024 * 1024
+    await store.intervene(row["id"], IDENTITY, Intervention(action="pause"))
+    assert await store.retain_segment(running, 1, 2, b"old", {"duration_seconds": 1}) is None
+
+
+async def test_segment_replay_is_owner_scoped_and_attempt_specific(store):
+    await create(store, mode="spoken")
+    running = await store.claim("worker", 90, 5)
+    running["playback_stream_id"] = str(uuid4())
+    recording = await store.retain_segment(running, 1, 0, b"RIFF-segment", {"duration_seconds": 0.1})
+    settings = SETTINGS.model_copy(update={"auth_url": "http://platform/internal/ext-authz"})
+    async with httpx.AsyncClient(transport=httpx.MockTransport(authentication)) as upstream:
+        app = create_app(settings, store=store, client=upstream, start_workers=False)
+        async with (
+            app.router.lifespan_context(app),
+            httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client,
+        ):
+            owner = await client.get(recording["audio_url"], headers={"Authorization": "Bearer team1"})
+            assert owner.status_code == 200 and owner.content == b"RIFF-segment"
+            assert (
+                await client.get(recording["audio_url"], headers={"Authorization": "Bearer team2"})
+            ).status_code == 404
+            missing = recording["audio_url"].replace(running["playback_stream_id"], str(uuid4()))
+            assert (await client.get(missing, headers={"Authorization": "Bearer team1"})).status_code == 404
+
+
+async def test_resume_clears_pending_takeover_while_counterpart_is_running(store):
+    row = await create(store, mode="spoken")
+    await store.intervene(row["id"], IDENTITY, Intervention(action="takeover", role="patient"))
+    running = await store.claim("worker", 90, 5)
+    assert running["state"]["next_role"] == "clinician"
+    resumed = await store.intervene(row["id"], IDENTITY, Intervention(action="resume"))
+    assert resumed["status"] == "queued" and "takeover_role" not in resumed["state"]
+    assert resumed["version"] > running["version"]
+    assert not await store.finish_step(running, running["state"], "takeover", "turn.completed", {})
+    current = await store.claim("next", 90, 5)
+    assert current["state"]["next_role"] == "clinician"
+    with pytest.raises(ValueError, match="already running"):
+        await store.intervene(row["id"], IDENTITY, Intervention(action="resume"))
+
+
+async def test_complete_spoken_step_commits_one_transcript_with_ordered_segment_artifacts(store):
+    row = await create(store, mode="spoken")
+    running = await store.claim("worker", 90, 5)
+    running["state"]["registration"] = {"run_id": str(row["id"])}
+    running["state"]["profile"] = {"patient_system_prompt": "p", "clinician_system_prompt": "c"}
+    transcript_parts = []
+
+    async def upstream(request):
+        if request.url.path.endswith("completions"):
+            return httpx.Response(200, json={"content": "This is a generated sentence. " * 50})
+        if request.url.path.endswith("synthesize"):
+            events = [
+                {"type": "audio.chunk", "sample_rate_hz": 16000, "audio_base64": "AQACAA=="},
+                {"type": "audio.done"},
+            ]
+            return httpx.Response(200, text="\n".join(map(json.dumps, events)))
+        transcript_parts.append(f"Recognized part {len(transcript_parts) + 1}")
+        return httpx.Response(200, json={"text": transcript_parts[-1]})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as client:
+        await Worker(store, SETTINGS, client).step(running)
+    final = await store.get(row["id"], IDENTITY)
+    assert final["status"] == "queued" and len(final["state"]["transcript"]) == 2
+    turn = final["state"]["transcript"][-1]
+    assert turn["content"] == " ".join(transcript_parts)
+    assert [record["segment_index"] for record in turn["audio_segments"]] == [0, 1]
+    assert await store.pool.fetchval("SELECT count(*) FROM fs2_workshop.audio_segments") == 2
+    assert "audio_url" not in turn

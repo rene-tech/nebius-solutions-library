@@ -272,6 +272,48 @@ class Store:
     async def playback(self, row, event):
         await notify_playback(self.pool, row["id"], {"version": row["version"], **event})
 
+    async def retain_segment(self, row, turn_index, segment_index, wav, metadata):
+        attempt = UUID(row["playback_stream_id"])
+        record = {
+            "segment_index": segment_index,
+            "attempt_id": str(attempt),
+            "duration_seconds": metadata["duration_seconds"],
+            "bytes": len(wav),
+            "audio_url": f"/v1/workshop/runs/{row['id']}/audio/{turn_index}/segments/{attempt}/{segment_index}",
+        }
+        async with self.pool.acquire() as c, c.transaction():
+            current = await c.fetchval(
+                "SELECT id FROM fs2_workshop.runs WHERE id=$1 AND version=$2 AND lease_owner=$3 "
+                "AND status='running' AND lease_until>now() FOR UPDATE",
+                row["id"],
+                row["version"],
+                row["lease_owner"],
+            )
+            if current is None:
+                return None
+            await c.execute(
+                "INSERT INTO fs2_workshop.audio_segments(run_id,turn_index,attempt_id,segment_index,wav,metadata) "
+                "VALUES($1,$2,$3,$4,$5,$6::jsonb)",
+                row["id"],
+                turn_index,
+                attempt,
+                segment_index,
+                wav,
+                json.dumps(metadata),
+            )
+            await self.event(
+                c,
+                row["id"],
+                "audio.segment.retained",
+                {
+                    **record,
+                    "turn_index": turn_index,
+                    "step_version": row["version"],
+                    "status": "partial_turn_artifact_until_turn_completed",
+                },
+            )
+        return record
+
     async def finish_step(self, row, state: dict, status: str, kind: str, event: dict, *, audio=None):
         async with self.pool.acquire() as c, c.transaction():
             result = await c.fetchrow(
@@ -324,7 +366,7 @@ class Store:
                 state["takeover_role"] = command.role
                 status = "takeover" if state["next_role"] == command.role else "queued"
             elif command.action == "resume":
-                if status == "running":
+                if status == "running" and not state.get("takeover_role"):
                     raise ValueError("run is already running")
                 status = "queued"
                 state.pop("takeover_role", None)

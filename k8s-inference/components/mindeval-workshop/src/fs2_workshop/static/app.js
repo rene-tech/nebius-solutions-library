@@ -1,13 +1,15 @@
 import {PCMPlayback} from './playback.js';
 
 const $ = (id) => document.getElementById(id);
-let token = '', selected = null, runs = [], polling = false, mic = null, noticeSequence = 0, refreshErrorSequence = null;
+let token = '', selected = null, runs = [], polling = false, mic = null, micPending = false;
 const audioUrls = new Map();
 const terminal = new Set(['completed', 'failed', 'aborted']);
 const playback = new PCMPlayback(), recordings = new Set();
+let replayEpoch = 0;
 let playbackSocket = null, playbackRun = null, playbackVersion = 0, playbackBlocked = false, playbackRetry = null, playbackNeedsStart = false;
 const liveStreams = new Map();
 function stopPlayback(message) {
+  replayEpoch++;
   playback.stop(); recordings.forEach(player => player.pause());
   if (message) $('live-status').textContent = message;
 }
@@ -85,7 +87,7 @@ function followPlayback(run) {
     playbackRetry = setTimeout(() => { const current = runs.find(item => item.id === selected); if (token && current?.id === run.id) followPlayback(current); }, 1500);
   };
 }
-function notice(message, error = false) { $('notice').textContent = message; $('notice').classList.toggle('error', error); return ++noticeSequence; }
+function notice(message, error = false) { $('notice').textContent = message; $('notice').classList.toggle('error', error); }
 function node(tag, text, cls) { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; }
 function selectedValues(id) { return [...$(id).selectedOptions].map(o => o.value); }
 async function api(path, options = {}) {
@@ -99,6 +101,7 @@ function fillSelect(id, values, label, initial = false) {
 }
 function disconnect() {
   closePlayback(); playback.close(); recordings.clear();
+  $('connection-status').textContent = '';
   stopMic(true); token = ''; selected = null; runs = []; $('key').value = ''; $('workspace').hidden = true; $('login').hidden = false;
   audioUrls.forEach(URL.revokeObjectURL); audioUrls.clear(); notice('Disconnected. Submitted evaluations continue on the server.');
 }
@@ -152,8 +155,8 @@ function renderRuns() {
 }
 async function refresh() {
   if (polling || !token) return; polling = true;
-  try { runs = (await json('/v1/workshop/runs')).data; renderRuns(); if (selected) await showRun(); if (refreshErrorSequence === noticeSequence) notice('Connection restored. Retained runs are up to date.'); refreshErrorSequence = null; }
-  catch (error) { refreshErrorSequence = notice(`${error.message}. Existing runs are retained; retry Refresh.`, true); }
+  try { runs = (await json('/v1/workshop/runs')).data; renderRuns(); if (selected) await showRun(); $('connection-status').textContent = ''; }
+  catch (error) { $('connection-status').textContent = `${error.message}. Existing runs are retained; retry Refresh.`; }
   finally { polling = false; }
 }
 $('refresh').onclick = refresh;
@@ -164,7 +167,11 @@ async function showRun() {
   followPlayback(run);
   $('detail').hidden = false; $('run-status').textContent = `${run.status} · ${run.id}`;
   $('run-title').textContent = `${run.state.config.profile_id} · ${run.state.config.clinician_model.split('/').pop()}`;
-  const s = run.state; const fingerprint = `${id}:${run.version}`; if (fingerprint === renderedVersion) return; renderedVersion = fingerprint;
+  const s = run.state;
+  const canRecord = run.status === 'takeover' && s.takeover_role === s.next_role;
+  $('microphone').disabled = Boolean(mic) || micPending || !canRecord;
+  if (!mic && !micPending) $('mic-status').textContent = canRecord ? `Ready to record as ${s.takeover_role}.` : s.takeover_role ? `Waiting for the ${s.takeover_role} turn before microphone capture.` : 'Take over the current speaker to use the microphone.';
+  const fingerprint = `${id}:${run.version}`; if (fingerprint === renderedVersion) return; renderedVersion = fingerprint;
   $('run-labels').replaceChildren(node('span', s.config.mode === 'canonical' ? 'Text benchmark' : 'Spoken experience', 'pill'), node('span', s.intervened ? 'Human intervention · excluded from default comparison' : 'No interventions', 'pill'));
   if (s.error) $('run-labels').append(node('p', `${s.error.code}: ${s.error.message}`, 'error'));
   if (run.status === 'interrupted') $('run-labels').append(node('p', 'Execution was interrupted. Inspect the last event, then Resume. An in-flight provider call may have incurred usage.', 'error'));
@@ -175,9 +182,10 @@ async function showRun() {
     article.append(node('strong', `${turn.role} · ${turn.human ? 'human' : turn.seed ? 'initial greeting' : 'model'}`), node('p', turn.content));
     if (turn.generated_content) { const d = node('details'); d.append(node('summary', 'Original generated text'), node('p', turn.generated_content)); article.append(d); }
     if (turn.completion?.telemetry) article.append(node('small', `Queue ${Number(turn.completion.telemetry.queue_ms || 0).toFixed(0)} ms · response ${Number(turn.completion.telemetry.latency_ms || 0).toFixed(0)} ms`));
-    if (turn.audio_url) {
-      const play = node('button', 'Replay recording', 'secondary');
-      play.onclick = async () => { try { stopPlayback('Replaying retained audio; live playback is muted.'); playback.enabled = false; $('live-audio').textContent = 'Enable live audio'; let url = audioUrls.get(turn.audio_url); if (!url) { url = URL.createObjectURL(await (await api(turn.audio_url)).blob()); audioUrls.set(turn.audio_url, url); } const player = node('audio'); player.controls = true; player.src = url; recordings.add(player); play.replaceWith(player); await player.play(); } catch (error) { notice(error.message, true); } }; article.append(play);
+    const segments = turn.audio_segments || (turn.audio_url ? [{audio_url: turn.audio_url}] : []);
+    for (const [index, segment] of segments.entries()) {
+      const play = node('button', segments.length > 1 ? `Replay recording ${index + 1}/${segments.length}` : 'Replay recording', 'secondary');
+      play.onclick = async () => { try { stopPlayback('Replaying retained audio; live playback is muted.'); const epoch = replayEpoch; playback.enabled = false; $('live-audio').textContent = 'Enable live audio'; let url = audioUrls.get(segment.audio_url); if (!url) { url = URL.createObjectURL(await (await api(segment.audio_url)).blob()); audioUrls.set(segment.audio_url, url); } if (epoch !== replayEpoch || selected !== id) return; const player = node('audio'); player.controls = true; player.src = url; recordings.add(player); play.replaceWith(player); await player.play(); } catch (error) { notice(error.message, true); } }; article.append(play);
     }
     $('transcript').append(article);
   }
@@ -205,9 +213,10 @@ $('download').onclick = async () => {
 };
 async function stopMic(cancel = false) {
   if (!mic) return; const current = mic; mic = null;
+  micPending = !cancel;
   current.processor?.disconnect(); current.source?.disconnect(); current.stream?.getTracks().forEach(t => t.stop()); await current.context?.close();
   if (current.socket?.readyState === WebSocket.OPEN) current.socket.send(JSON.stringify({type: cancel ? 'session.cancel' : 'session.finish'}));
-  $('stop-microphone').hidden = true; $('microphone').disabled = false; $('mic-status').textContent = cancel ? 'Recording cancelled.' : 'Finishing transcription…';
+  $('stop-microphone').hidden = true; $('microphone').disabled = true; $('mic-status').textContent = cancel ? 'Recording cancelled.' : 'Finishing transcription…';
 }
 $('stop-microphone').onclick = () => stopMic();
 $('microphone').onclick = async () => {
@@ -229,10 +238,10 @@ $('microphone').onclick = async () => {
         processor.onaudioprocess = (e) => { const input = e.inputBuffer.getChannelData(0), buffer = new ArrayBuffer(input.length * 2), view = new DataView(buffer); for (let i = 0; i < input.length; i++) view.setInt16(i * 2, Math.max(-1, Math.min(1, input[i])) * 32767, true); if (socket.readyState === WebSocket.OPEN) socket.send(buffer); };
         $('stop-microphone').hidden = false; $('mic-status').textContent = 'Recording · finish to submit your turn.';
       } else if (event.type.startsWith('transcript.')) $('mic-status').textContent = event.text || '';
-      else if (event.type === 'workshop.message_submitted') { $('mic-status').textContent = 'Your spoken turn was submitted and retained.'; await refresh(); }
+      else if (event.type === 'workshop.message_submitted') { micPending = false; $('mic-status').textContent = 'Your spoken turn was submitted and retained.'; await refresh(); }
       else if (event.type === 'workshop.error' || event.type === 'session.error') { notice(event.message || 'Speech session failed; use typed takeover.', true); await stopMic(true); }
     };
     socket.onerror = () => notice('Microphone connection failed. No typed message was submitted.', true);
-    socket.onclose = () => { if (mic?.socket === socket) stopMic(true); };
+    socket.onclose = () => { micPending = false; if (mic?.socket === socket) stopMic(true); refresh(); };
   } catch (error) { await stopMic(true); notice(error.message, true); }
 };

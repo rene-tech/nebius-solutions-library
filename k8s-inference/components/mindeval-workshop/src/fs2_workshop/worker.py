@@ -60,7 +60,7 @@ def speech_segments(text, limit=4096):
         prefix = text[:limit]
         boundaries = list(re.finditer(r"[.!?][\"')\]]?\s+", prefix))
         cut = boundaries[-1].end() if boundaries else prefix.rfind(" ") + 1
-        if cut <= 0:
+        if cut <= 0 or not text[:cut].strip():
             cut = limit  # One overlong word still cannot exceed the provider bound.
         segments.append(text[:cut])
         text = text[cut:]
@@ -70,8 +70,9 @@ def speech_segments(text, limit=4096):
 
 
 async def synthesis_events(client, url, headers, text, role, config):
-    for index, segment in enumerate(speech_segments(text)):
-        complete, has_audio = False, False
+    # Keep each PCM/ASR upload practical, below the provider's 4096-char bound.
+    for index, segment in enumerate(speech_segments(text, 1024)):
+        complete, has_audio = None, False
         async with client.stream(
             "POST",
             url,
@@ -93,11 +94,12 @@ async def synthesis_events(client, url, headers, text, role, config):
                 if event["type"] == "audio.chunk":
                     has_audio = True
                 elif event["type"] == "audio.done":
-                    complete = True
-                    event = {**event, "segment_index": index, "input_characters": len(segment)}
+                    complete = {**event, "segment_index": index, "input_characters": len(segment)}
+                    continue
                 yield event
         if not complete or not has_audio:
             raise RemoteFailure("tts_incomplete", "Speech generation did not deliver complete audio for every segment")
+        yield complete  # Close the TTS response before uploading its bounded ASR segment.
 
 
 class Worker:
@@ -329,20 +331,31 @@ class Worker:
                     },
                 )
 
-            audio, recognized, metadata = await self.speak_and_listen(token, content, role, config, emit=emit)
+            async def retain(segment_index, wav, metadata):
+                record = await self.store.retain_segment(row, turn_index, segment_index, wav, metadata)
+                if record is None:
+                    raise RemoteFailure("step_superseded", "Run changed before the speech segment was retained")
+                return record
+
+            _, recognized, metadata = await self.speak_and_listen(
+                token, content, role, config, emit=emit, retain=retain
+            )
             turn["generated_content"], turn["content"], turn["speech"] = content, recognized, metadata
-            audio_record = (turn_index, audio, metadata)
-            turn["audio_url"] = f"/v1/workshop/runs/{row['id']}/audio/{turn_index}"
+            turn["audio_segments"] = metadata["recordings"]
+            if len(turn["audio_segments"]) == 1:
+                turn["audio_url"] = turn["audio_segments"][0]["audio_url"]
         state["transcript"].append(turn)
         state["next_role"] = "patient" if role == "clinician" else "clinician"
         state["pending_nudges"] = [n for n in state["pending_nudges"] if n["role"] != role]
         next_status = "takeover" if state.get("takeover_role") == state["next_role"] else "queued"
         await self.store.finish_step(row, state, next_status, "turn.completed", turn, audio=audio_record)
 
-    async def speak_and_listen(self, token, text, role, config, *, emit=None):
+    async def speak_and_listen(self, token, text, role, config, *, emit=None, retain=None):
         headers = {"Authorization": f"Bearer {token}", "Host": urlsplit(self.settings.public_origin).netloc}
         started, first_audio, pcm, rate, final = time.monotonic(), None, bytearray(), None, None
-        sequence, segments = 0, []
+        sequence, segments, recognized, recordings = 0, [], [], []
+        duration, pacing, playback_end, single_wav = 0.0, 0.0, 0.0, None
+        single_segment = len(speech_segments(text, 1024)) == 1
         if emit:
             await emit({"type": "audio.start", "voice": config[f"{role}_voice"], "mode": "spoken_experience"})
         async for event in synthesis_events(
@@ -369,11 +382,12 @@ class Worker:
                     raise RemoteFailure("tts_format_invalid", "PCM16 speech chunk ended within a sample")
                 pcm.extend(chunk)
                 if len(pcm) > 8 * 1024 * 1024 - 44:
-                    raise RemoteFailure("tts_too_large", "Synthesized utterance exceeded the 8 MiB speech upload limit")
+                    raise RemoteFailure("tts_too_large", "One speech segment exceeded 8 MiB; no audio was truncated")
                 if emit:
                     # 2 KiB PCM becomes 2732 base64 bytes, leaving room for the
                     # envelope below the 4 KiB notification boundary.
                     for offset in range(0, len(chunk), 2048):
+                        piece = chunk[offset : offset + 2048]
                         await emit(
                             {
                                 "type": "audio.chunk",
@@ -381,22 +395,69 @@ class Worker:
                                 "encoding": "pcm_s16le",
                                 "sample_rate_hz": rate,
                                 "channels": 1,
-                                "audio_base64": base64.b64encode(chunk[offset : offset + 2048]).decode(),
+                                "audio_base64": base64.b64encode(piece).decode(),
                             }
                         )
+                        playback_end = max(playback_end, time.monotonic()) + len(piece) / (rate * 2)
                         sequence += 1
             elif event["type"] == "audio.done":
                 final = event
-                segments.append(event)
+                if not pcm or not rate:
+                    raise RemoteFailure("tts_incomplete", "Speech segment contained no audio")
+                segment_duration = len(pcm) / (rate * 2)
+                audio = wav_bytes(bytes(pcm), rate)
+                pcm = bytearray()
+                chunk = b""
+                result = await self.transcribe(headers, audio, config["language"])
+                segment_metadata = {
+                    "tts": event,
+                    "asr": result,
+                    "voice": config[f"{role}_voice"],
+                    "duration_seconds": segment_duration,
+                    "sample_rate_hz": rate,
+                }
+                if retain:
+                    recordings.append(await retain(event["segment_index"], audio, segment_metadata))
+                if single_segment and not retain:
+                    single_wav = audio
+                del audio
+                recognized.append(result["text"].strip())
+                segments.append(segment_metadata)
+                duration += segment_duration
+                # Pace each bounded segment, not an entire long turn, so browser
+                # buffering and worker memory do not grow with turn length.
+                pause = max(0, playback_end - time.monotonic()) if emit else 0
+                if pause:
+                    pacing += pause
+                    await asyncio.sleep(pause)
             elif event["type"] in {"audio.error", "error"}:
                 raise RemoteFailure("tts_failed", "Speech generation returned an error")
-        if not pcm or not rate or final is None:
+        if not recognized or pcm or not rate or final is None:
             raise RemoteFailure("tts_incomplete", "Speech generation did not deliver complete audio")
-        duration = len(pcm) / (rate * 2)
         if emit:
             await emit({"type": "audio.end", "chunks": sequence, "duration_seconds": duration})
-        audio = wav_bytes(bytes(pcm), rate)
-        asr_model = "nemotron-speech-en-0-6b" if config["language"] == "en" else "nemotron-speech-multilingual-0-6b"
+        transcript = " ".join(recognized)
+        return (
+            single_wav,
+            transcript,
+            {
+                "tts": final,
+                "tts_segments": segments,
+                "asr": {"text": transcript, "segment_count": len(segments)},
+                "recordings": recordings,
+                "voice": config[f"{role}_voice"],
+                "first_audio_seconds": first_audio,
+                "duration_seconds": duration,
+                "playback_pacing_seconds": pacing,
+                "live_chunks": sequence,
+                "experience_mode": "spoken_not_canonical",
+                "roundtrip_seconds": time.monotonic() - started,
+                "segmentation": "lossless_sentence_then_word_1024_characters",
+            },
+        )
+
+    async def transcribe(self, headers, audio, language):
+        asr_model = "nemotron-speech-en-0-6b" if language == "en" else "nemotron-speech-multilingual-0-6b"
         response = await self.client.post(
             self.settings.platform_url.rstrip("/") + "/v1/audio/transcriptions",
             headers=headers,
@@ -426,24 +487,4 @@ class Worker:
         result = response.json()
         if not result.get("text", "").strip():
             raise RemoteFailure("asr_empty", "Speech recognition produced an empty transcript")
-        # Spoken runs progress at listening pace, so successive generated turns
-        # cannot fill an unbounded browser audio queue. Canonical runs are unchanged.
-        pacing = max(0, duration - (time.monotonic() - started - first_audio)) if emit else 0
-        if pacing:
-            await asyncio.sleep(pacing)
-        return (
-            audio,
-            result["text"],
-            {
-                "tts": final,
-                "tts_segments": segments,
-                "asr": result,
-                "voice": config[f"{role}_voice"],
-                "first_audio_seconds": first_audio,
-                "duration_seconds": duration,
-                "playback_pacing_seconds": pacing,
-                "live_chunks": sequence,
-                "experience_mode": "spoken_not_canonical",
-                "roundtrip_seconds": time.monotonic() - started,
-            },
-        )
+        return result

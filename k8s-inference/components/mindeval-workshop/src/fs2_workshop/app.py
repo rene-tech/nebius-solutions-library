@@ -223,6 +223,28 @@ def create_app(settings=None, *, store=None, client=None, start_workers=True):
             raise HTTPException(404, "No recording for this turn")
         return Response(bytes(content), media_type="audio/wav")
 
+    @app.get("/v1/workshop/runs/{run_id}/audio/{turn_index}/segments/{attempt_id}/{segment_index}")
+    async def audio_segment(
+        run_id: UUID,
+        turn_index: int,
+        attempt_id: UUID,
+        segment_index: int,
+        authorization: str | None = Header(default=None),
+    ):
+        identity, _ = await app.state.auth.verify(authorization)
+        await app.state.store.get(run_id, identity)
+        content = await app.state.store.pool.fetchval(
+            "SELECT wav FROM fs2_workshop.audio_segments "
+            "WHERE run_id=$1 AND turn_index=$2 AND attempt_id=$3 AND segment_index=$4",
+            run_id,
+            turn_index,
+            attempt_id,
+            segment_index,
+        )
+        if content is None:
+            raise HTTPException(404, "No recording for this segment")
+        return Response(bytes(content), media_type="audio/wav")
+
     @app.websocket("/v1/workshop/runs/{run_id}/playback")
     async def playback(socket: WebSocket, run_id: UUID):
         if socket.headers.get("origin") not in {None, settings.public_origin}:
@@ -248,11 +270,11 @@ def create_app(settings=None, *, store=None, client=None, start_workers=True):
                     "status": row["status"],
                     "mode": row["state"]["config"]["mode"],
                     "recordings": [
-                        {"turn_index": index, "url": turn["audio_url"]}
+                        {"turn_index": index, "url": recording["audio_url"]}
                         for index, turn in enumerate(row["state"]["transcript"])
-                        if turn.get("audio_url")
+                        for recording in turn.get("audio_segments", [turn] if turn.get("audio_url") else [])
                     ],
-                    "replay": "completed_turn_wav_only",
+                    "replay": "retained_wav_segments_or_legacy_turn",
                 }
             )
             receiving = asyncio.create_task(socket.receive())

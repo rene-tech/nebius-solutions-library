@@ -17,6 +17,9 @@ async def store():
         if not await pool.fetchval("SELECT 1 FROM pg_roles WHERE rolname=$1", role):
             await pool.execute(f"CREATE ROLE {role}")
     await pool.execute(Path(__file__).parents[1].joinpath("src/fs2_workshop/schema.sql").read_text())
-    await pool.execute("TRUNCATE fs2_workshop.audio,fs2_workshop.events,fs2_workshop.runs,fs2_workshop.batches")
+    await pool.execute(
+        "TRUNCATE fs2_workshop.audio_segments,fs2_workshop.audio,fs2_workshop.events,"
+        "fs2_workshop.runs,fs2_workshop.batches"
+    )
     yield Store(pool, Fernet.generate_key())
     await pool.close()
