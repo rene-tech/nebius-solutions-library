@@ -15,6 +15,8 @@ ADD --checksum=sha256:28c2518de3e3d5a2c7d9bca40a7ebc0644eb76c60b890970365325bdd8
     /opt/fs2-voice/weights/nanocodec.nemo
 RUN chmod -R a+rX /opt/fs2-voice/weights
 COPY src /opt/fs2-voice/src
+COPY patches/prepare_magpie_inference.py /opt/fs2-voice/prepare_magpie_inference.py
+RUN python /opt/fs2-voice/prepare_magpie_inference.py
 RUN python -m pip install --no-cache-dir --no-deps /opt/fs2-voice
 ENV HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 ARG SOURCE_REVISION
