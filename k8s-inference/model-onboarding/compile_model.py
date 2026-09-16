@@ -60,6 +60,7 @@ _CANONICAL_PROTOCOL_PATHS = {
     "openai-images": "/v1/images/generations",
 }
 _PROMOTION_GAPS = (
+    "when a public website is configured, verify deployed category/source/attribution with model-onboarding/verify_website_metadata.py before publication",
     "add the model to model-accelerator-compatibility.json with reviewed hardware evidence",
     "add artifact acquisition, provenance-lock, semantic-request, and runtime-prerequisite contracts",
     "add a two-request semantic validator and fixture, then replace the blocked projection",
