@@ -130,6 +130,14 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     semaphore = asyncio.Semaphore(args.concurrency)
     async with httpx.AsyncClient() as client:
+        identity_response = await client.get(args.endpoint.rstrip("/") + "/models", timeout=30)
+        identity_response.raise_for_status()
+        runtime_identity = next(item for item in identity_response.json()["data"] if item["id"] == args.model)
+        if runtime_identity.get("max_model_len") != lock["max_model_len"]:
+            raise ValueError("runtime context limit differs from the pinned benchmark profile")
+        if not str(runtime_identity.get("root", "")).endswith(lock["models"][args.model]["revision"]):
+            raise ValueError("runtime model root does not identify the pinned snapshot")
+
         async def measure(case: dict[str, Any], phase: str, repetition: int) -> dict[str, Any]:
             async with semaphore:
                 result = await assess_mindguard(
@@ -154,6 +162,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         elapsed = time.perf_counter() - started
     return {"schema_version": 1, "created_at": datetime.now(UTC).isoformat(), "model_id": args.model,
             "model_revision": lock["models"][args.model]["revision"], "runtime_image": lock["runtime_image"],
+            "runtime_identity": runtime_identity,
             "runtime_profile": {"dtype": lock["dtype"], "max_model_len": lock["max_model_len"],
                                 "temperature": 0, "max_output_tokens": 15, "seed": 0},
             "source": args.source, "dataset_revision": lock["testset"]["revision"] if args.source == "testset" else None,

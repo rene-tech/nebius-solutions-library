@@ -1,0 +1,86 @@
+{
+  "path": "existing_control_plane_to_internal_model_services",
+  "rows": [
+    {
+      "model_id": "mindguard-4b",
+      "endpoint": "http://fs2-mindguard-r20260916-4b.fs2-models.svc.cluster.local:8000/v1",
+      "http_status": 200,
+      "served_model": {
+        "id": "mindguard-4b",
+        "object": "model",
+        "created": 1789576863,
+        "owned_by": "vllm",
+        "root": "/models/mindguard-4b/f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2",
+        "parent": null,
+        "max_model_len": 32768,
+        "permission": [
+          {
+            "id": "modelperm-bbf459c9b990f70d",
+            "object": "model_permission",
+            "created": 1789576863,
+            "allow_create_engine": false,
+            "allow_sampling": true,
+            "allow_logprobs": true,
+            "allow_search_indices": false,
+            "allow_view": true,
+            "allow_fine_tuning": false,
+            "organization": "*",
+            "group": null,
+            "is_blocking": false
+          }
+        ]
+      },
+      "latency_ms": 275.0871469033882,
+      "raw_output": "Safety: Safe\nCategories: None",
+      "usage": {
+        "prompt_tokens": 474,
+        "total_tokens": 482,
+        "completion_tokens": 8,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "passed": true
+    },
+    {
+      "model_id": "mindguard-8b",
+      "endpoint": "http://fs2-mindguard-r20260916-8b.fs2-models.svc.cluster.local:8000/v1",
+      "http_status": 200,
+      "served_model": {
+        "id": "mindguard-8b",
+        "object": "model",
+        "created": 1789576863,
+        "owned_by": "vllm",
+        "root": "/models/mindguard-8b/a24baa872d902224b3de80e912ad1f4201b514ed",
+        "parent": null,
+        "max_model_len": 32768,
+        "permission": [
+          {
+            "id": "modelperm-85768c1aa3c5ae7c",
+            "object": "model_permission",
+            "created": 1789576863,
+            "allow_create_engine": false,
+            "allow_sampling": true,
+            "allow_logprobs": true,
+            "allow_search_indices": false,
+            "allow_view": true,
+            "allow_fine_tuning": false,
+            "organization": "*",
+            "group": null,
+            "is_blocking": false
+          }
+        ]
+      },
+      "latency_ms": 248.93303296994418,
+      "raw_output": "Safety: Safe\nCategories: None",
+      "usage": {
+        "prompt_tokens": 474,
+        "total_tokens": 482,
+        "completion_tokens": 8,
+        "prompt_tokens_details": null,
+        "completion_tokens_details": null
+      },
+      "passed": true
+    }
+  ],
+  "passed": true
+}

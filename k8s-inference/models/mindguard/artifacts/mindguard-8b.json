@@ -1,0 +1,92 @@
+{
+  "model_id": "mindguard-8b",
+  "repo_id": "swordhealth/MindGuard-8B",
+  "revision": "a24baa872d902224b3de80e912ad1f4201b514ed",
+  "files": [
+    {
+      "path": "added_tokens.json",
+      "size_bytes": 707,
+      "sha256": "c0284b582e14987fbd3d5a2cb2bd139084371ed9acbae488829a1c900833c680"
+    },
+    {
+      "path": "chat_template.jinja",
+      "size_bytes": 6647,
+      "sha256": "83f78a42aca598ef887ef07c905ea7fc9bef59187eff8d48ecb248f811480688"
+    },
+    {
+      "path": "config.json",
+      "size_bytes": 1537,
+      "sha256": "996cbe2d4a4f9096d2ebe8edbeb46a073b9409510de50431b88255b109df88dd"
+    },
+    {
+      "path": "generation_config.json",
+      "size_bytes": 168,
+      "sha256": "1a5ad2f980eb9a6a456721116fca5a27adf2a630d2068e182da657494d0715c3"
+    },
+    {
+      "path": "merges.txt",
+      "size_bytes": 1671853,
+      "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
+    },
+    {
+      "path": "model-00001-of-00007.safetensors",
+      "size_bytes": 4972454376,
+      "sha256": "8c8837f213d44da2dd5831b291879fd8ed96eee346d76e3d13ae16d8ba7c165d"
+    },
+    {
+      "path": "model-00002-of-00007.safetensors",
+      "size_bytes": 4832048608,
+      "sha256": "82cb78c70e80d79f0f2f48e25d09aaf2ee1dcacc6df9175adafd0300cb45650c"
+    },
+    {
+      "path": "model-00003-of-00007.safetensors",
+      "size_bytes": 4832048656,
+      "sha256": "72fc0299c094c6b2a560c58896a6b07e8aae7df2a0e5615a3fe5bc7a031bef19"
+    },
+    {
+      "path": "model-00004-of-00007.safetensors",
+      "size_bytes": 4999855528,
+      "sha256": "f2018fd0391d1413c199d360c424c47b70d46130eeb9af2bea7ceaae0d4cf4b0"
+    },
+    {
+      "path": "model-00005-of-00007.safetensors",
+      "size_bytes": 4832048672,
+      "sha256": "0723591e023c3d8f0cc2ce6512fb8d6326b3ce9379fdefaa0c1e709a1586916b"
+    },
+    {
+      "path": "model-00006-of-00007.safetensors",
+      "size_bytes": 4832048672,
+      "sha256": "fd8c378b6ed3d5234cb2392eefd2c3bc5c43620f64987d87f2e51e6e60bfaeb7"
+    },
+    {
+      "path": "model-00007-of-00007.safetensors",
+      "size_bytes": 3462482728,
+      "sha256": "52e07014c698430601ef19cf5e4b4ef074552055bc594b70dde55fca9065b55a"
+    },
+    {
+      "path": "model.safetensors.index.json",
+      "size_bytes": 32914,
+      "sha256": "222640211d1b3b55d5b5afede67c601ac70b25f8c1b65505619d66623d920877"
+    },
+    {
+      "path": "special_tokens_map.json",
+      "size_bytes": 613,
+      "sha256": "76862e765266b85aa9459767e33cbaf13970f327a0e88d1c65846c2ddd3a1ecd"
+    },
+    {
+      "path": "tokenizer.json",
+      "size_bytes": 11422654,
+      "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+    },
+    {
+      "path": "tokenizer_config.json",
+      "size_bytes": 5404,
+      "sha256": "443bfa629eb16387a12edbf92a76f6a6f10b2af3b53d87ba1550adfcf45f7fa0"
+    },
+    {
+      "path": "vocab.json",
+      "size_bytes": 2776833,
+      "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+    }
+  ]
+}

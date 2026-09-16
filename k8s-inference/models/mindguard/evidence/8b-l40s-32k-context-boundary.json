@@ -1,0 +1,154 @@
+{
+  "model_id": "mindguard-8b",
+  "served_model": {
+    "id": "mindguard-8b",
+    "object": "model",
+    "created": 1789576559,
+    "owned_by": "vllm",
+    "root": "/models/mindguard-8b/a24baa872d902224b3de80e912ad1f4201b514ed",
+    "parent": null,
+    "max_model_len": 32768,
+    "permission": [
+      {
+        "id": "modelperm-a7abc3dfd275e0ac",
+        "object": "model_permission",
+        "created": 1789576559,
+        "allow_create_engine": false,
+        "allow_sampling": true,
+        "allow_logprobs": true,
+        "allow_search_indices": false,
+        "allow_view": true,
+        "allow_fine_tuning": false,
+        "organization": "*",
+        "group": null,
+        "is_blocking": false
+      }
+    ]
+  },
+  "probe_kind": "synthetic_context_boundary",
+  "clinical_benchmark": false,
+  "rows": [
+    {
+      "target_tokens": 8192,
+      "actual_prompt_tokens": 8186,
+      "input_sha256": "7a570d1fc865cf64c18db0141a9c2007aac853437191128fc5a0a1a3b0b97c7d",
+      "expected_status": "completed",
+      "passed": true,
+      "assessment": {
+        "model_id": "mindguard-8b",
+        "model_revision": "a24baa872d902224b3de80e912ad1f4201b514ed",
+        "role": "safety_classifier",
+        "enforcement": "observe",
+        "status": "completed",
+        "safety": "safe",
+        "categories": [],
+        "coverage": {
+          "input_message_count": 3,
+          "context_message_count": 3,
+          "target_user_message_index": 2,
+          "evaluated_user_turns": 1,
+          "truncated": false
+        },
+        "latency_ms": 1028.6534959450364,
+        "input_tokens": 8186,
+        "output_tokens": 8,
+        "raw_output": "Safety: Safe\nCategories: None",
+        "warnings": [],
+        "error": null
+      }
+    },
+    {
+      "target_tokens": 16384,
+      "actual_prompt_tokens": 16380,
+      "input_sha256": "afcb79eca3296e98c3e27b011f1a6c2c001126f6fd9a29e7779ae300c254a351",
+      "expected_status": "completed",
+      "passed": true,
+      "assessment": {
+        "model_id": "mindguard-8b",
+        "model_revision": "a24baa872d902224b3de80e912ad1f4201b514ed",
+        "role": "safety_classifier",
+        "enforcement": "observe",
+        "status": "completed",
+        "safety": "safe",
+        "categories": [],
+        "coverage": {
+          "input_message_count": 3,
+          "context_message_count": 3,
+          "target_user_message_index": 2,
+          "evaluated_user_turns": 1,
+          "truncated": false
+        },
+        "latency_ms": 1393.762107938528,
+        "input_tokens": 16380,
+        "output_tokens": 8,
+        "raw_output": "Safety: Safe\nCategories: None",
+        "warnings": [],
+        "error": null
+      }
+    },
+    {
+      "target_tokens": 32740,
+      "actual_prompt_tokens": 32734,
+      "input_sha256": "dfdbec38b346310988725a9239507c651b4d120d81f697a15f57825579d5a8ea",
+      "expected_status": "completed",
+      "passed": true,
+      "assessment": {
+        "model_id": "mindguard-8b",
+        "model_revision": "a24baa872d902224b3de80e912ad1f4201b514ed",
+        "role": "safety_classifier",
+        "enforcement": "observe",
+        "status": "completed",
+        "safety": "safe",
+        "categories": [],
+        "coverage": {
+          "input_message_count": 3,
+          "context_message_count": 3,
+          "target_user_message_index": 2,
+          "evaluated_user_turns": 1,
+          "truncated": false
+        },
+        "latency_ms": 3153.1531801447272,
+        "input_tokens": 32734,
+        "output_tokens": 8,
+        "raw_output": "Safety: Safe\nCategories: None",
+        "warnings": [],
+        "error": null
+      }
+    },
+    {
+      "target_tokens": 34000,
+      "actual_prompt_tokens": 33992,
+      "input_sha256": "5c0fe918422cec98121d7c49625dd0ed326e6f2a568dc573ef9cf00bdcf7653c",
+      "expected_status": "error",
+      "passed": true,
+      "assessment": {
+        "model_id": "mindguard-8b",
+        "model_revision": "a24baa872d902224b3de80e912ad1f4201b514ed",
+        "role": "safety_classifier",
+        "enforcement": "observe",
+        "status": "error",
+        "safety": null,
+        "categories": [],
+        "coverage": {
+          "input_message_count": 3,
+          "context_message_count": 3,
+          "target_user_message_index": 2,
+          "evaluated_user_turns": 0,
+          "truncated": false
+        },
+        "latency_ms": 249.0692986175418,
+        "input_tokens": null,
+        "output_tokens": null,
+        "raw_output": null,
+        "warnings": [],
+        "error": {
+          "code": "classifier_http_error",
+          "message": "The safety classifier request failed.",
+          "retryable": false,
+          "http_status": 400
+        }
+      }
+    }
+  ],
+  "passed": true
+}

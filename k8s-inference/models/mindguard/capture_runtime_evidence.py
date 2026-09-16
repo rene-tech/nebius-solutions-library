@@ -13,7 +13,8 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--kubeconfig", required=True)
 parser.add_argument("--context", required=True)
 parser.add_argument("--model", choices=["mindguard-4b", "mindguard-8b"], required=True)
-parser.add_argument("--cache-state", choices=["cold-image-cold-weights", "warm-image-cold-weights", "warm-image-warm-weights"],
+parser.add_argument("--cache-state", choices=["cold-image-cold-weights", "cold-image-warm-weights",
+                                             "warm-image-cold-weights", "warm-image-warm-weights"],
                     required=True)
 parser.add_argument("--output", type=Path, required=True)
 args = parser.parse_args()
@@ -38,6 +39,8 @@ gpu = call("exec", pod_name, "-c", "vllm", "--", "nvidia-smi",
 versions = call("exec", pod_name, "-c", "vllm", "--", "python3", "-c",
                 "import json,vllm,torch,transformers;print(json.dumps({'vllm':vllm.__version__,"
                 "'torch':torch.__version__,'transformers':transformers.__version__,'cuda':torch.version.cuda}))")
+memory_log = [line for line in call("logs", pod_name, "-c", "vllm", "--tail=500").splitlines()
+              if any(marker in line for marker in ["Available KV cache memory", "GPU KV cache size", "Actual usage is"])]
 clock = lambda value: datetime.fromisoformat(value.replace("Z", "+00:00"))
 ready_at = next(c["lastTransitionTime"] for c in pod["status"]["conditions"] if c["type"] == "Ready")
 hydrate = pod["status"]["initContainerStatuses"][0]["state"]["terminated"]
@@ -53,7 +56,7 @@ record = {
     "requested_image": pod["spec"]["containers"][0]["image"],
     "image_id": pod["status"]["containerStatuses"][0]["imageID"],
     "gpu_csv_fields": "name,uuid,memory.total,memory.used,utilization.gpu,driver_version",
-    "gpu_csv": gpu.strip(), "software": json.loads(versions),
+    "gpu_csv": gpu.strip(), "software": json.loads(versions), "memory_and_kv_log": memory_log,
     "clocks": {"pod_created_at": pod["metadata"]["creationTimestamp"], "ready_at": ready_at,
                "hydrate_started_at": hydrate["startedAt"], "hydrate_finished_at": hydrate["finishedAt"],
                "runtime_started_at": runtime_start,

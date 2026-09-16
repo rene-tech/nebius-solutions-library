@@ -10,11 +10,13 @@ The public model revisions, source dataset revision and existing Scientific AI
 runtime image are pinned in `public-models.lock.json`. The files were accessed with
 the configured authorized Hugging Face identity. Tokens and weights are not stored
 in Git. The public checkpoints contain float32 weights; this candidate serves them
-as BF16 with vLLM, a 4096-token context limit from the model-card usage example,
+as BF16 with vLLM, the delivered configs' native 32768-token context limit,
 temperature zero, seed zero and at most 15 generated tokens. The delivered chat
 template is explicitly loaded from the same pinned snapshot. Oversized inputs fail
-visibly; they are never silently truncated. A longer classifier context requires a
-separate measured profile.
+visibly; they are never silently truncated. Initial comparison evidence used the
+model-card's 4096-token serving example; evidence explicitly records its profile.
+The workshop profile extends this to native 32768 tokens and has separate boundary
+and runtime qualification evidence.
 
 ## Integration contract
 

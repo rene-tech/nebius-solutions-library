@@ -1,10 +1,16 @@
 {
   "schema_version": 1,
   "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
-  "runtime_qualification": "candidate_pending_exact_model_gpu_verification",
+  "runtime_qualification": "l40s_functional_gpu_verified_clinical_benchmark_pending",
+  "observed_runtime_versions": {
+    "vllm": "0.28.0",
+    "torch": "2.13.0+cu130",
+    "transformers": "5.15.1",
+    "cuda": "13.0"
+  },
   "dtype": "bfloat16",
   "source_dtype": "float32",
-  "max_model_len": 4096,
+  "max_model_len": 32768,
   "max_output_tokens": 15,
   "temperature": 0,
   "role": "safety_classifier",

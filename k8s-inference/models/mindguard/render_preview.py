@@ -16,7 +16,8 @@ def render(model_id: str, replicas: int = 1, node: str | None = None) -> dict:
     lock = json.loads((ROOT / "public-models.lock.json").read_text())
     model = lock["models"][model_id]
     name = f"{PREFIX}-{model_id.removeprefix('mindguard-')}"
-    labels = {"app.kubernetes.io/name": name, "fs2.nebius/task": PREFIX}
+    labels = {"app.kubernetes.io/name": name, "fs2.nebius/task": PREFIX,
+              "app.kubernetes.io/component": "model-runtime", "app.kubernetes.io/part-of": "fs2-serve"}
     model_path = f"/models/{model_id}/{model['revision']}"
     image = lock["runtime_image"]
     security = {"allowPrivilegeEscalation": False, "capabilities": {"drop": ["ALL"]}}
@@ -51,7 +52,8 @@ def render(model_id: str, replicas: int = 1, node: str | None = None) -> dict:
     }
     return {"apiVersion": "v1", "kind": "List", "items": [
         {"apiVersion": "v1", "kind": "PersistentVolumeClaim",
-         "metadata": {"name": PREFIX + "-cache", "namespace": NAMESPACE, "labels": labels},
+         "metadata": {"name": PREFIX + "-cache", "namespace": NAMESPACE,
+                      "labels": {"fs2.nebius/task": PREFIX}},
          "spec": {"accessModes": ["ReadWriteMany"], "storageClassName": "csi-mounted-fs-path-sc",
                   "resources": {"requests": {"storage": "96Gi"}}}},
         {"apiVersion": "apps/v1", "kind": "Deployment",
