@@ -272,6 +272,7 @@ def build_anchor_fixture(base: Path) -> dict:
             {
                 "refs/tags/deploy/fixture": {
                     "commit": head,
+                    "tag_target": tag_target,
                     "bundle_path": str(bundle),
                     "sha256": sha,
                     "restore_tested": True,
@@ -334,8 +335,35 @@ def write_signed_receipt_fixture(
 NOOP_VERIFIER = lambda command: None  # noqa: E731 - injected in place of cosign
 
 
+def write_inventory_fixture(
+    base: Path,
+    platform_images: list[str],
+    live: list[str] | None = None,
+    helm: list[str] | None = None,
+    frozen: list[str] | None = None,
+    drained: list[dict] | None = None,
+    schema: str | None = None,
+    sign: bool = True,
+) -> Path:
+    inventory = {
+        "schema": schema or TOOL.INVENTORY_SCHEMA,
+        "sources": {
+            "live_workloads": {"refs": live if live is not None else platform_images},
+            "helm_rollback_window": {"refs": helm or []},
+            "frozen_scientific_bindings": {"refs": frozen or []},
+        },
+        "drained_removals": drained or [],
+        "platform_images": platform_images,
+    }
+    path = base / "inventory.json"
+    path.write_text(json.dumps(inventory), encoding="utf-8")
+    if sign:
+        (base / "inventory.json.sig").write_text("fixture-signature\n")
+    return path
+
+
 class VerifiedAllowlistTest(unittest.TestCase):
-    """Allow-listing requires a signed, bound release receipt plus cosign verify."""
+    """Allow-listing renders only the signed complete inventory, receipted."""
 
     REFERENCE_A = PLATFORM_PREFIX + "control-plane@" + DIGEST_A
     REFERENCE_B = PLATFORM_PREFIX + "admin-console@" + DIGEST_B
@@ -353,61 +381,115 @@ class VerifiedAllowlistTest(unittest.TestCase):
         self.fixture = build_anchor_fixture(self.run_root)
         write_signed_receipt_fixture(self.run_root, self.REFERENCE_A, self.fixture)
         write_signed_receipt_fixture(self.run_root, self.REFERENCE_B, self.fixture)
+        self.inventory = write_inventory_fixture(
+            self.run_root, [self.REFERENCE_A, self.REFERENCE_B]
+        )
 
-    def test_every_reference_is_verified_before_rendering(self) -> None:
-        verified: list[str] = []
-        manifest = TOOL.verified_allowlist(
+    def render(self, references=(), verifier=NOOP_VERIFIER, inventory=None):
+        return TOOL.verified_allowlist(
             self._tmp.name,
-            [self.REFERENCE_A, self.REFERENCE_B],
+            list(references),
             [REGISTRY_PREFIX],
             PLATFORM_PREFIX,
             self.run_root,
+            inventory or self.inventory,
             deploy_principals=["deployer"],
-            verifier=lambda command: verified.append(command[-1]),
+            verifier=verifier,
         )
-        # Each reference verifies its receipt signature, then its image signature.
-        self.assertEqual(len(verified), 4)
+
+    def test_inventory_references_are_verified_before_rendering(self) -> None:
+        verified: list[str] = []
+        manifest = self.render(
+            verifier=lambda command: verified.append(command[-1])
+        )
+        # Inventory signature, then per reference: receipt sig + image sig.
+        self.assertEqual(len(verified), 5)
         self.assertEqual(
             manifest["data"]["platform-digests"], f"{DIGEST_A}\n{DIGEST_B}"
         )
-        self.assertIn(
-            "security.fs2.nebius.ai/verified-with-key-sha256",
-            manifest["metadata"]["annotations"],
+        annotations = manifest["metadata"]["annotations"]
+        self.assertIn("security.fs2.nebius.ai/verified-with-key-sha256", annotations)
+        self.assertIn("security.fs2.nebius.ai/inventory-sha256", annotations)
+
+    def test_explicit_references_must_equal_the_inventory_exactly(self) -> None:
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "equal the signed inventory"):
+            self.render(references=[self.REFERENCE_A])
+        extra = PLATFORM_PREFIX + "website@sha256:" + "9" * 64
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "equal the signed inventory"):
+            self.render(references=[self.REFERENCE_A, self.REFERENCE_B, extra])
+        manifest = self.render(references=[self.REFERENCE_B, self.REFERENCE_A])
+        self.assertEqual(
+            manifest["data"]["platform-digests"], f"{DIGEST_A}\n{DIGEST_B}"
         )
 
-    def test_missing_release_receipt_aborts_rendering(self) -> None:
-        orphan = PLATFORM_PREFIX + "website@sha256:" + "9" * 64
-        with self.assertRaisesRegex(TOOL.ProvenanceError, "no signed release receipt"):
-            TOOL.verified_allowlist(
-                self._tmp.name,
-                [orphan],
-                [REGISTRY_PREFIX],
-                PLATFORM_PREFIX,
-                self.run_root,
-                verifier=NOOP_VERIFIER,
-            )
+    def test_unsigned_or_missing_inventory_is_refused(self) -> None:
+        (self.run_root / "inventory.json.sig").unlink()
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "signed release inventory"):
+            self.render()
 
-    def test_verification_failure_aborts_rendering(self) -> None:
+    def test_inventory_signature_failure_is_refused(self) -> None:
         import subprocess
 
         def failing_verifier(command):
             raise subprocess.CalledProcessError(1, command)
 
-        with self.assertRaisesRegex(TOOL.ProvenanceError, "not trustworthy"):
-            TOOL.verified_allowlist(
-                self._tmp.name,
-                [self.REFERENCE_A],
-                [REGISTRY_PREFIX],
-                PLATFORM_PREFIX,
-                self.run_root,
-                verifier=failing_verifier,
-            )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "inventory signature"):
+            self.render(verifier=failing_verifier)
 
-    def test_empty_reference_list_is_refused(self) -> None:
-        with self.assertRaises(TOOL.ProvenanceError):
-            TOOL.verified_allowlist(
-                self._tmp.name, [], [REGISTRY_PREFIX], PLATFORM_PREFIX, self.run_root
-            )
+    def test_inventory_set_arithmetic_is_enforced(self) -> None:
+        # platform_images must equal union(sources) minus audited drains.
+        silent_omission = write_inventory_fixture(
+            self.run_root,
+            [self.REFERENCE_A],
+            live=[self.REFERENCE_A, self.REFERENCE_B],
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "sources minus"):
+            self.render(inventory=silent_omission)
+        unlisted_drain = write_inventory_fixture(
+            self.run_root,
+            [self.REFERENCE_A],
+            live=[self.REFERENCE_A],
+            drained=[{"image": self.REFERENCE_B, "reason": "never deployed"}],
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "no source lists"):
+            self.render(inventory=unlisted_drain)
+        undocumented_drain = write_inventory_fixture(
+            self.run_root,
+            [self.REFERENCE_A],
+            live=[self.REFERENCE_A, self.REFERENCE_B],
+            drained=[{"image": self.REFERENCE_B, "reason": "  "}],
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "audited reason"):
+            self.render(inventory=undocumented_drain)
+        audited = write_inventory_fixture(
+            self.run_root,
+            [self.REFERENCE_A],
+            live=[self.REFERENCE_A, self.REFERENCE_B],
+            drained=[
+                {"image": self.REFERENCE_B, "reason": "change:CHG-42 drained"}
+            ],
+        )
+        manifest = self.render(inventory=audited)
+        self.assertEqual(manifest["data"]["platform-digests"], DIGEST_A)
+
+    def test_unreceipted_inventory_reference_aborts_rendering(self) -> None:
+        orphan = PLATFORM_PREFIX + "website@sha256:" + "9" * 64
+        inventory = write_inventory_fixture(
+            self.run_root, [self.REFERENCE_A, self.REFERENCE_B, orphan]
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "no signed release receipt"):
+            self.render(inventory=inventory)
+
+    def test_receipt_verification_failure_aborts_rendering(self) -> None:
+        import subprocess
+
+        def failing_after_inventory(command):
+            if command[-1] == str(self.inventory):
+                return None
+            raise subprocess.CalledProcessError(1, command)
+
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "not trustworthy"):
+            self.render(verifier=failing_after_inventory)
 
 
 class ReceiptBindingTest(unittest.TestCase):
@@ -427,6 +509,18 @@ class ReceiptBindingTest(unittest.TestCase):
     def load(self):
         return TOOL.load_bound_receipt(
             self.run_root, self.REFERENCE, self.PUBLIC_KEY, verifier=NOOP_VERIFIER
+        )
+
+    def create(self, capture, sbom=None):
+        return TOOL.create_release_receipt(
+            self.REFERENCE,
+            self.run_root,
+            self.fixture["repo"],
+            "deploy/fixture",
+            "release.key",
+            "release.pub",
+            sbom,
+            capture=capture,
         )
 
     def test_bound_receipt_loads(self) -> None:
@@ -519,116 +613,183 @@ class ReceiptBindingTest(unittest.TestCase):
         with self.assertRaisesRegex(TOOL.ProvenanceError, "does not carry"):
             self.load()
 
-    ATTESTATION_DIGEST = "sha256:" + "f" * 64
-    SUBJECT_DIGEST = "sha256:" + "a" * 64
-
-    def fixture_statement(self, statement_subject: str | None = None) -> dict:
-        statement_subject = statement_subject or self.SUBJECT_DIGEST
-        return {
+    def fixture_statement(
+        self, statement_subject_hex: str, subject_name: str = "pkg:docker/fixture-image"
+    ) -> dict:
+        statement = {
             "_type": "https://in-toto.io/Statement/v0.1",
             "predicateType": "https://spdx.dev/Document",
             "subject": [
-                {
-                    "name": "pkg:docker/fixture-image",
-                    "digest": {"sha256": statement_subject.split(":", 1)[1]},
-                }
+                {"name": subject_name, "digest": {"sha256": statement_subject_hex}}
             ],
             "predicate": {
                 "spdxVersion": "SPDX-2.3",
                 "SPDXID": "SPDXRef-DOCUMENT",
                 "name": "sbom",
                 "documentNamespace": "https://example.invalid/spdxdocs/fixture",
-                "packages": [{"SPDXID": "SPDXRef-Package-fixture"}],
-                "relationships": [{"relationshipType": "DESCRIBES"}],
+                "packages": [
+                    {"SPDXID": "SPDXRef-Package-fixture", "name": "fixture-root"}
+                ],
+                "relationships": [
+                    {
+                        "spdxElementId": "SPDXRef-DOCUMENT",
+                        "relationshipType": "DESCRIBES",
+                        "relatedSpdxElement": "SPDXRef-Package-fixture",
+                    }
+                ],
             },
         }
+        return statement
 
     def crane_capture(
         self,
         revision: str,
         spdx_predicate: str = "https://spdx.dev/Document",
-        statement_subject: str | None = None,
+        statement_subject_hex: str | None = None,
         tree_label: str | object = "fixture-tree",
-        statement_text: str | None = None,
+        statement_mutator=None,
+        statement_text_override: str | None = None,
         statement_layer_digest: str | None = None,
+        amd64_platforms: int = 1,
+        attestation_subject: str | None = None,
+        config_architecture: str = "amd64",
     ):
+        """Build a deterministic multi-platform image fixture, bottom-up."""
         import hashlib
+
+        def sha(text: str) -> str:
+            return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
 
         if tree_label == "fixture-tree":
             tree_label = self.fixture["tree"]
-        if statement_text is None:
-            statement_text = json.dumps(self.fixture_statement(statement_subject))
-        if statement_layer_digest is None:
-            statement_layer_digest = (
-                "sha256:" + hashlib.sha256(statement_text.encode("utf-8")).hexdigest()
+        labels = {"org.opencontainers.image.revision": revision}
+        if tree_label is not None:
+            labels["ai.nebius.fs2-serve.source-tree"] = tree_label
+        config_text = json.dumps(
+            {
+                "architecture": config_architecture,
+                "os": "linux",
+                "config": {"Labels": labels},
+            }
+        )
+        config_digest = sha(config_text)
+        amd64_manifest_text = json.dumps(
+            {"schemaVersion": 2, "config": {"digest": config_digest}, "layers": []}
+        )
+        amd64_digest = sha(amd64_manifest_text)
+        self.expected_amd64_digest = amd64_digest
+        self.expected_config_digest = config_digest
+
+        if statement_text_override is not None:
+            statement_text = statement_text_override
+        else:
+            statement = self.fixture_statement(
+                statement_subject_hex or amd64_digest.split(":", 1)[1]
             )
+            if statement_mutator is not None:
+                statement_mutator(statement)
+            statement_text = json.dumps(statement)
+        if statement_layer_digest is None:
+            statement_layer_digest = sha(statement_text)
         self.expected_spdx_layer_digest = statement_layer_digest
+        attestation_manifest_text = json.dumps(
+            {
+                "layers": [
+                    {
+                        "mediaType": "application/vnd.in-toto+json",
+                        "digest": statement_layer_digest,
+                        "annotations": {"in-toto.io/predicate-type": spdx_predicate},
+                    },
+                    {
+                        "mediaType": "application/vnd.in-toto+json",
+                        "digest": "sha256:" + "d" * 64,
+                        "annotations": {
+                            "in-toto.io/predicate-type": "https://slsa.dev/provenance/v0.2"
+                        },
+                    },
+                ]
+            }
+        )
+        attestation_digest = sha(attestation_manifest_text)
+        arm64_digest = "sha256:" + "b" * 64
+        entries = []
+        for _ in range(amd64_platforms):
+            entries.append(
+                {
+                    "digest": amd64_digest,
+                    "platform": {"architecture": "amd64", "os": "linux"},
+                }
+            )
+        entries.append(
+            {
+                "digest": arm64_digest,
+                "platform": {"architecture": "arm64", "os": "linux"},
+            }
+        )
+        entries.append(
+            {
+                "digest": attestation_digest,
+                "annotations": {
+                    "vnd.docker.reference.type": "attestation-manifest",
+                    "vnd.docker.reference.digest": attestation_subject or amd64_digest,
+                },
+            }
+        )
+        entries.append(
+            {
+                "digest": "sha256:" + "c" * 64,
+                "annotations": {
+                    "vnd.docker.reference.type": "attestation-manifest",
+                    "vnd.docker.reference.digest": arm64_digest,
+                },
+            }
+        )
+        index_text = json.dumps({"schemaVersion": 2, "manifests": entries})
 
         def capture(command):
-            if command[:2] == ["crane", "config"]:
-                labels = {"org.opencontainers.image.revision": revision}
-                if tree_label is not None:
-                    labels["ai.nebius.fs2-serve.source-tree"] = tree_label
-                return json.dumps({"config": {"Labels": labels}})
             if command[:2] == ["crane", "manifest"]:
-                if command[2].endswith("@" + self.ATTESTATION_DIGEST):
-                    return json.dumps(
-                        {
-                            "layers": [
-                                {
-                                    "mediaType": "application/vnd.in-toto+json",
-                                    "digest": statement_layer_digest,
-                                    "annotations": {
-                                        "in-toto.io/predicate-type": spdx_predicate
-                                    },
-                                },
-                                {
-                                    "mediaType": "application/vnd.in-toto+json",
-                                    "digest": "sha256:" + "d" * 64,
-                                    "annotations": {
-                                        "in-toto.io/predicate-type": "https://slsa.dev/provenance/v0.2"
-                                    },
-                                },
-                            ]
-                        }
-                    )
-                return json.dumps(
-                    {
-                        "manifests": [
-                            {"digest": self.SUBJECT_DIGEST},
-                            {
-                                "digest": self.ATTESTATION_DIGEST,
-                                "annotations": {
-                                    "vnd.docker.reference.type": "attestation-manifest",
-                                    "vnd.docker.reference.digest": self.SUBJECT_DIGEST,
-                                },
-                            },
-                        ]
-                    }
-                )
+                target = command[2]
+                if target == self.REFERENCE:
+                    return index_text
+                if target.endswith("@" + amd64_digest):
+                    return amd64_manifest_text
+                if target.endswith("@" + attestation_digest):
+                    return attestation_manifest_text
+                raise AssertionError(f"unexpected manifest fetch: {target}")
             if command[:2] == ["crane", "blob"]:
-                return statement_text
+                target = command[2]
+                if target.endswith("@" + config_digest):
+                    return config_text
+                if target.endswith("@" + statement_layer_digest):
+                    return statement_text
+                raise AssertionError(f"unexpected blob fetch: {target}")
             if command[:2] == ["cosign", "sign-blob"]:
                 self.assertIn("--tlog-upload=false", command)
                 self.assertIn("--use-signing-config=false", command)
                 Path(command[command.index("--output-file") + 1]).write_text("sig\n")
+                return ""
+            if command[:2] == ["cosign", "verify-blob"]:
+                self.assertIn("--insecure-ignore-tlog=true", command)
                 return ""
             raise AssertionError(f"unexpected command: {command}")
 
         return capture
 
     def test_create_receipt_binds_source_anchor_sbom_and_signs_it(self) -> None:
-        receipt = TOOL.create_release_receipt(
-            self.REFERENCE,
-            self.run_root,
-            self.fixture["repo"],
-            "deploy/fixture",
-            "release.key",
-            capture=self.crane_capture(self.fixture["head"]),
-        )
+        receipt = self.create(self.crane_capture(self.fixture["head"]))
         self.assertEqual(receipt["source"]["commit"], self.fixture["head"])
         self.assertEqual(receipt["source"]["tree"], self.fixture["tree"])
         self.assertEqual(receipt["anchor"]["tag_target"], self.fixture["tag_target"])
+        self.assertEqual(
+            receipt["image_manifest"]["amd64_manifest_digest"],
+            self.expected_amd64_digest,
+        )
+        self.assertEqual(
+            receipt["image_manifest"]["config_digest"], self.expected_config_digest
+        )
+        self.assertEqual(
+            receipt["sbom"]["subject_manifest_digest"], self.expected_amd64_digest
+        )
         self.assertEqual(
             receipt["sbom"]["spdx_layer_digest"], self.expected_spdx_layer_digest
         )
@@ -642,189 +803,202 @@ class ReceiptBindingTest(unittest.TestCase):
 
     def test_receipt_recreation_is_idempotent_and_preserves_bytes(self) -> None:
         capture = self.crane_capture(self.fixture["head"])
-        first = TOOL.create_release_receipt(
-            self.REFERENCE,
-            self.run_root,
-            self.fixture["repo"],
-            "deploy/fixture",
-            "release.key",
-            capture=capture,
-        )
+        first = self.create(capture)
         path = TOOL.receipt_path(self.run_root, DIGEST_A)
         signature = path.parent / (path.name + ".sig")
         receipt_bytes = path.read_bytes()
         signature_bytes = signature.read_bytes()
-        second = TOOL.create_release_receipt(
-            self.REFERENCE,
-            self.run_root,
-            self.fixture["repo"],
-            "deploy/fixture",
-            "release.key",
-            capture=capture,
-        )
+        second = self.create(capture)
         self.assertEqual(second["created_at"], first["created_at"])
         self.assertEqual(path.read_bytes(), receipt_bytes)
         self.assertEqual(signature.read_bytes(), signature_bytes)
 
+    def test_idempotent_path_reverifies_the_existing_signature(self) -> None:
+        import subprocess as sp
+
+        self.create(self.crane_capture(self.fixture["head"]))
+        base_capture = self.crane_capture(self.fixture["head"])
+
+        def tamper_aware_capture(command):
+            if command[:2] == ["cosign", "verify-blob"]:
+                raise sp.CalledProcessError(1, command)
+            return base_capture(command)
+
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "fails verification"):
+            self.create(tamper_aware_capture)
+
     def test_conflicting_receipt_recreation_is_refused_and_preserves_original(
         self,
     ) -> None:
-        TOOL.create_release_receipt(
-            self.REFERENCE,
-            self.run_root,
-            self.fixture["repo"],
-            "deploy/fixture",
-            "release.key",
-            capture=self.crane_capture(self.fixture["head"]),
-        )
+        self.create(self.crane_capture(self.fixture["head"]))
         path = TOOL.receipt_path(self.run_root, DIGEST_A)
         original_bytes = path.read_bytes()
-        changed_statement = self.fixture_statement()
-        changed_statement["subject"][0]["name"] = "pkg:docker/replayed-image"
+
+        def rename_subject(statement):
+            statement["subject"][0]["name"] = "pkg:docker/replayed-image"
+
         with self.assertRaisesRegex(TOOL.ProvenanceError, "immutable"):
-            TOOL.create_release_receipt(
-                self.REFERENCE,
-                self.run_root,
-                self.fixture["repo"],
-                "deploy/fixture",
-                "release.key",
-                capture=self.crane_capture(
-                    self.fixture["head"],
-                    statement_text=json.dumps(changed_statement),
-                ),
+            self.create(
+                self.crane_capture(
+                    self.fixture["head"], statement_mutator=rename_subject
+                )
             )
         self.assertEqual(path.read_bytes(), original_bytes)
 
     def test_partial_receipt_evidence_is_never_overwritten(self) -> None:
         capture = self.crane_capture(self.fixture["head"])
-        TOOL.create_release_receipt(
-            self.REFERENCE,
-            self.run_root,
-            self.fixture["repo"],
-            "deploy/fixture",
-            "release.key",
-            capture=capture,
-        )
+        self.create(capture)
         path = TOOL.receipt_path(self.run_root, DIGEST_A)
         (path.parent / (path.name + ".sig")).unlink()
         with self.assertRaisesRegex(TOOL.ProvenanceError, "partial receipt"):
-            TOOL.create_release_receipt(
-                self.REFERENCE,
-                self.run_root,
-                self.fixture["repo"],
-                "deploy/fixture",
-                "release.key",
-                capture=capture,
+            self.create(capture)
+
+    def test_failed_signing_leaves_no_partial_published_evidence(self) -> None:
+        import subprocess as sp
+
+        base_capture = self.crane_capture(self.fixture["head"])
+
+        def crashing_capture(command):
+            if command[:2] == ["cosign", "sign-blob"]:
+                raise sp.CalledProcessError(1, command)
+            return base_capture(command)
+
+        with self.assertRaises(sp.CalledProcessError):
+            self.create(crashing_capture)
+        final_dir = TOOL.receipt_path(self.run_root, DIGEST_A).parent
+        self.assertFalse(final_dir.exists())
+        # Publication is recoverable: the same creation succeeds afterwards.
+        receipt = self.create(self.crane_capture(self.fixture["head"]))
+        self.assertEqual(receipt["digest"], DIGEST_A)
+        self.assertTrue(final_dir.is_dir())
+
+    def test_symlinked_receipt_path_is_refused(self) -> None:
+        final_dir = TOOL.receipt_path(self.run_root, DIGEST_A).parent
+        final_dir.parent.mkdir(parents=True, exist_ok=True)
+        target = self.run_root / "elsewhere"
+        target.mkdir()
+        final_dir.symlink_to(target)
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "symlink"):
+            self.create(self.crane_capture(self.fixture["head"]))
+
+    def test_recreated_tag_object_at_same_commit_is_refused(self) -> None:
+        # Same peeled commit, different annotated tag object: never receipted.
+        git(self.fixture["repo"], "tag", "-d", "deploy/fixture")
+        git(
+            self.fixture["repo"],
+            "tag",
+            "-a",
+            "-m",
+            "recreated",
+            "deploy/fixture",
+            self.fixture["head"],
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "tag object changed"):
+            self.create(self.crane_capture(self.fixture["head"]))
+
+    def test_index_without_exactly_one_amd64_manifest_is_refused(self) -> None:
+        for count in (0, 2):
+            with self.assertRaisesRegex(
+                TOOL.ProvenanceError, "exactly one linux/amd64"
+            ):
+                self.create(
+                    self.crane_capture(self.fixture["head"], amd64_platforms=count)
+                )
+
+    def test_attestation_must_subject_the_amd64_manifest(self) -> None:
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "none whose subject"):
+            self.create(
+                self.crane_capture(
+                    self.fixture["head"],
+                    attestation_subject="sha256:" + "b" * 64,
+                )
+            )
+
+    def test_config_platform_must_be_linux_amd64(self) -> None:
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "expected linux/amd64"):
+            self.create(
+                self.crane_capture(
+                    self.fixture["head"], config_architecture="arm64"
+                )
             )
 
     def test_create_receipt_refuses_unanchored_source(self) -> None:
         with self.assertRaisesRegex(TOOL.ProvenanceError, "not reachable"):
-            TOOL.create_release_receipt(
-                self.REFERENCE,
-                self.run_root,
-                self.fixture["repo"],
-                "deploy/fixture",
-                "release.key",
-                capture=self.crane_capture("a" * 40),
-            )
+            self.create(self.crane_capture("a" * 40))
 
     def test_create_receipt_requires_exact_source_tree_label(self) -> None:
         for bad_label in (None, "46a60fb"):
             with self.assertRaisesRegex(TOOL.ProvenanceError, "source-tree"):
-                TOOL.create_release_receipt(
-                    self.REFERENCE,
-                    self.run_root,
-                    self.fixture["repo"],
-                    "deploy/fixture",
-                    "release.key",
-                    capture=self.crane_capture(
-                        self.fixture["head"], tree_label=bad_label
-                    ),
+                self.create(
+                    self.crane_capture(self.fixture["head"], tree_label=bad_label)
                 )
 
     def test_create_receipt_refuses_wrong_source_tree_label(self) -> None:
         with self.assertRaisesRegex(TOOL.ProvenanceError, "does not match"):
-            TOOL.create_release_receipt(
-                self.REFERENCE,
-                self.run_root,
-                self.fixture["repo"],
-                "deploy/fixture",
-                "release.key",
-                capture=self.crane_capture(
-                    self.fixture["head"], tree_label="9" * 40
-                ),
+            self.create(
+                self.crane_capture(self.fixture["head"], tree_label="9" * 40)
             )
 
     def test_create_receipt_refuses_attestation_without_spdx_predicate(self) -> None:
         with self.assertRaisesRegex(TOOL.ProvenanceError, "spdx.dev"):
-            TOOL.create_release_receipt(
-                self.REFERENCE,
-                self.run_root,
-                self.fixture["repo"],
-                "deploy/fixture",
-                "release.key",
-                capture=self.crane_capture(
+            self.create(
+                self.crane_capture(
                     self.fixture["head"],
                     spdx_predicate="https://example.invalid/other",
-                ),
+                )
             )
 
     def test_create_receipt_refuses_statement_subject_mismatch(self) -> None:
         with self.assertRaisesRegex(
             TOOL.ProvenanceError, "does not name the image manifest"
         ):
-            TOOL.create_release_receipt(
-                self.REFERENCE,
-                self.run_root,
-                self.fixture["repo"],
-                "deploy/fixture",
-                "release.key",
-                capture=self.crane_capture(
-                    self.fixture["head"],
-                    statement_subject="sha256:" + "9" * 64,
-                ),
+            self.create(
+                self.crane_capture(
+                    self.fixture["head"], statement_subject_hex="9" * 64
+                )
             )
 
-    def _refused_statement(self, statement, pattern: str) -> None:
+    def _refused_statement_text(self, statement_text: str, pattern: str) -> None:
         with self.assertRaisesRegex(TOOL.ProvenanceError, pattern):
-            TOOL.create_release_receipt(
-                self.REFERENCE,
-                self.run_root,
-                self.fixture["repo"],
-                "deploy/fixture",
-                "release.key",
-                capture=self.crane_capture(
-                    self.fixture["head"],
-                    statement_text=statement
-                    if isinstance(statement, str)
-                    else json.dumps(statement),
-                ),
+            self.create(
+                self.crane_capture(
+                    self.fixture["head"], statement_text_override=statement_text
+                )
+            )
+
+    def _refused_statement_mutation(self, mutator, pattern: str) -> None:
+        with self.assertRaisesRegex(TOOL.ProvenanceError, pattern):
+            self.create(
+                self.crane_capture(self.fixture["head"], statement_mutator=mutator)
             )
 
     def test_create_receipt_refuses_non_statement_blob(self) -> None:
         # Annotation-only trust is not enough: the fetched blob must be a real
         # in-toto Statement, not any JSON that merely mentions a subject.
-        self._refused_statement(
-            {"subject": [{"digest": {"sha256": "a" * 64}}]}, "in-toto"
+        self._refused_statement_text(
+            json.dumps({"subject": [{"digest": {"sha256": "a" * 64}}]}), "in-toto"
         )
 
     def test_create_receipt_refuses_malformed_statement_blob(self) -> None:
-        self._refused_statement("this is not json", "not valid JSON")
+        self._refused_statement_text("this is not json", "not valid JSON")
 
     def test_create_receipt_refuses_wrong_statement_predicate_type(self) -> None:
-        statement = self.fixture_statement()
-        statement["predicateType"] = "https://slsa.dev/provenance/v0.2"
-        self._refused_statement(statement, "predicateType")
+        def mutate(statement):
+            statement["predicateType"] = "https://slsa.dev/provenance/v0.2"
+
+        self._refused_statement_mutation(mutate, "predicateType")
 
     def test_create_receipt_refuses_empty_predicate(self) -> None:
-        statement = self.fixture_statement()
-        statement["predicate"] = {}
-        self._refused_statement(statement, "empty or non-object predicate")
+        def mutate(statement):
+            statement["predicate"] = {}
+
+        self._refused_statement_mutation(mutate, "empty or non-object predicate")
 
     def test_create_receipt_refuses_unnamed_statement_subject(self) -> None:
-        statement = self.fixture_statement()
-        statement["subject"][0].pop("name")
-        self._refused_statement(statement, "no name")
+        def mutate(statement):
+            statement["subject"][0].pop("name")
+
+        self._refused_statement_mutation(mutate, "no name")
 
     def test_create_receipt_refuses_non_spdx_shaped_predicate(self) -> None:
         for mutation, pattern in (
@@ -832,84 +1006,133 @@ class ReceiptBindingTest(unittest.TestCase):
             ({"SPDXID": "SPDXRef-Other"}, "SPDXRef-DOCUMENT"),
             ({"packages": []}, "no packages"),
             ({"relationships": []}, "DESCRIBES"),
+            (
+                {
+                    "packages": [
+                        {"SPDXID": "SPDXRef-Package-fixture", "name": "a"},
+                        {"SPDXID": "SPDXRef-Package-fixture", "name": "b"},
+                    ]
+                },
+                "duplicate package SPDXID",
+            ),
+            (
+                {"packages": [{"SPDXID": "not a valid id", "name": "a"}]},
+                "invalid SPDXID",
+            ),
+            (
+                {
+                    "relationships": [
+                        {
+                            "spdxElementId": "SPDXRef-DOCUMENT",
+                            "relationshipType": "DESCRIBES",
+                            "relatedSpdxElement": "SPDXRef-Nonexistent",
+                        }
+                    ]
+                },
+                "not a package in",
+            ),
         ):
-            statement = self.fixture_statement()
-            statement["predicate"].update(mutation)
-            self._refused_statement(statement, pattern)
+            def mutate(statement, mutation=mutation):
+                statement["predicate"].update(mutation)
+
+            self._refused_statement_mutation(mutate, pattern)
 
     def test_create_receipt_refuses_statement_hash_mismatch(self) -> None:
         # The blob must be the exact content the layer digest names.
         with self.assertRaisesRegex(TOOL.ProvenanceError, "layer digest"):
-            TOOL.create_release_receipt(
-                self.REFERENCE,
-                self.run_root,
-                self.fixture["repo"],
-                "deploy/fixture",
-                "release.key",
-                capture=self.crane_capture(
+            self.create(
+                self.crane_capture(
                     self.fixture["head"],
                     statement_layer_digest="sha256:" + "e" * 64,
-                ),
+                )
             )
 
-    def test_create_receipt_refuses_mismatched_attestation_subject(self) -> None:
-        def capture(command):
-            if command[:2] == ["crane", "config"]:
-                return self.crane_capture(self.fixture["head"])(command)
-            return json.dumps(
-                {
-                    "manifests": [
-                        {"digest": "sha256:" + "a" * 64},
-                        {
-                            "digest": "sha256:" + "f" * 64,
-                            "annotations": {
-                                "vnd.docker.reference.type": "attestation-manifest",
-                                "vnd.docker.reference.digest": "sha256:" + "9" * 64,
-                            },
-                        },
-                    ]
-                }
-            )
-
-        with self.assertRaisesRegex(TOOL.ProvenanceError, "subject"):
-            TOOL.create_release_receipt(
-                self.REFERENCE,
-                self.run_root,
-                self.fixture["repo"],
-                "deploy/fixture",
-                "release.key",
-                capture=capture,
-            )
-
-    def spdx_document(self, name: str) -> dict:
+    def spdx_document(self, digest_hex: str | None) -> dict:
+        package = {
+            "SPDXID": "SPDXRef-Package-image",
+            "name": "fixture-image",
+        }
+        if digest_hex is not None:
+            package["checksums"] = [
+                {"algorithm": "SHA256", "checksumValue": digest_hex}
+            ]
         return {
             "spdxVersion": "SPDX-2.3",
             "SPDXID": "SPDXRef-DOCUMENT",
-            "name": name,
+            "name": "fixture-sbom",
             "documentNamespace": "https://example.invalid/spdxdocs/fixture",
-            "packages": [{"SPDXID": "SPDXRef-Package-fixture"}],
-            "relationships": [{"relationshipType": "DESCRIBES"}],
+            "packages": [package],
+            "relationships": [
+                {
+                    "spdxElementId": "SPDXRef-DOCUMENT",
+                    "relationshipType": "DESCRIBES",
+                    "relatedSpdxElement": "SPDXRef-Package-image",
+                }
+            ],
         }
 
-    def test_spdx_document_fallback_is_parsed_and_subject_checked(self) -> None:
+    def test_spdx_document_binding_requires_exact_package_identity(self) -> None:
         digest_hex = DIGEST_A.split(":", 1)[1]
         good = self.run_root / "sbom.spdx.json"
-        good.write_text(
-            json.dumps(self.spdx_document(f"fixture-image@sha256:{digest_hex}")),
-            encoding="utf-8",
-        )
+        good.write_text(json.dumps(self.spdx_document(digest_hex)), encoding="utf-8")
         evidence = TOOL._validated_spdx_document(DIGEST_A, good)
         self.assertEqual(evidence["spdx_subject_digest"], DIGEST_A)
+
+        purl = self.spdx_document(None)
+        purl["packages"][0]["externalRefs"] = [
+            {
+                "referenceType": "purl",
+                "referenceLocator": f"pkg:oci/fixture-image@sha256:{digest_hex}?arch=amd64",
+            }
+        ]
+        purl_path = self.run_root / "purl.spdx.json"
+        purl_path.write_text(json.dumps(purl), encoding="utf-8")
+        self.assertEqual(
+            TOOL._validated_spdx_document(DIGEST_A, purl_path)["spdx_subject_digest"],
+            DIGEST_A,
+        )
+
         not_spdx = self.run_root / "not-sbom.json"
         not_spdx.write_text(json.dumps({"name": digest_hex}), encoding="utf-8")
         with self.assertRaisesRegex(TOOL.ProvenanceError, "not an SPDX"):
             TOOL._validated_spdx_document(DIGEST_A, not_spdx)
-        wrong_subject = self.run_root / "wrong.spdx.json"
-        document = self.spdx_document("fixture-image")
-        document["comment"] = f"mentions sha256:{digest_hex} only informally"
-        wrong_subject.write_text(json.dumps(document), encoding="utf-8")
-        with self.assertRaisesRegex(TOOL.ProvenanceError, "does not name"):
-            TOOL._validated_spdx_document(DIGEST_A, wrong_subject)
+
+        # Substring mentions anywhere — name, namespace, comments — never bind.
+        for substring_doc in (
+            {"name": f"fixture-image@sha256:{digest_hex}"},
+            {"documentNamespace": f"https://example.invalid/{digest_hex}"},
+            {"comment": f"mentions sha256:{digest_hex} only informally"},
+        ):
+            document = self.spdx_document(None)
+            document.update(substring_doc)
+            path = self.run_root / "substring.spdx.json"
+            path.write_text(json.dumps(document), encoding="utf-8")
+            with self.assertRaisesRegex(TOOL.ProvenanceError, "exact SHA256"):
+                TOOL._validated_spdx_document(DIGEST_A, path)
+
+        # The identity must sit on a DESCRIBED package, wrong algorithm or a
+        # non-described package does not bind.
+        wrong_algorithm = self.spdx_document(None)
+        wrong_algorithm["packages"][0]["checksums"] = [
+            {"algorithm": "SHA1", "checksumValue": digest_hex}
+        ]
+        path = self.run_root / "wrong-algorithm.spdx.json"
+        path.write_text(json.dumps(wrong_algorithm), encoding="utf-8")
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "exact SHA256"):
+            TOOL._validated_spdx_document(DIGEST_A, path)
+
+        undescribed = self.spdx_document(None)
+        undescribed["packages"].append(
+            {
+                "SPDXID": "SPDXRef-Package-other",
+                "name": "other",
+                "checksums": [{"algorithm": "SHA256", "checksumValue": digest_hex}],
+            }
+        )
+        path = self.run_root / "undescribed.spdx.json"
+        path.write_text(json.dumps(undescribed), encoding="utf-8")
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "exact SHA256"):
+            TOOL._validated_spdx_document(DIGEST_A, path)
 
     def test_spdx_document_fallback_requires_document_shape(self) -> None:
         digest_hex = DIGEST_A.split(":", 1)[1]
@@ -919,7 +1142,7 @@ class ReceiptBindingTest(unittest.TestCase):
             ({"SPDXID": "SPDXRef-Other"}, "SPDXRef-DOCUMENT"),
             ({"documentNamespace": ""}, "documentNamespace"),
         ):
-            document = self.spdx_document(f"fixture-image@sha256:{digest_hex}")
+            document = self.spdx_document(digest_hex)
             document.update(mutation)
             path = self.run_root / "shape.spdx.json"
             path.write_text(json.dumps(document), encoding="utf-8")

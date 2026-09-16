@@ -9,9 +9,9 @@ an unreviewed local build cannot reach the platform namespaces unnoticed.
 
 | Piece | Where | Enforces | Does NOT enforce |
 | --- | --- | --- | --- |
-| Release-source gate | `inference-stack` (`release-gate`; enforced on `apply`) | `HEAD` is a clean checkout (tracked **and untracked** drift fails) reachable from `origin/main`, `origin/release/*`, an origin-verified `release/*`/`deploy/*` tag, or a bundle-verified local tag; latest state in `release-source.json`, every evaluation — including exceptions — appended immutably to `release-source-history.jsonl`; `--allow-unreleased-source REASON` records an audited exception | Deploys made outside the wrapper; this is a source-side check only and weaker than receipt anchoring |
+| Release-source gate | `inference-stack` (`release-gate`; enforced on `apply`) | `HEAD` is a clean checkout (tracked **and untracked** drift fails) reachable from `origin/main`, `origin/release/*`, an origin-verified `release/*`/`deploy/*` tag, or a bundle-verified local tag; latest state in `release-source.json`, every evaluation — including exceptions — appended to the hash-chained `release-source-history.jsonl`. Exceptions require a sanitized reason bound to a non-secret tracking ID (`incident:`/`change:`/`ticket:`/`task:`) plus a named approver (`--exception-approver` or `FS2_RELEASE_EXCEPTION_APPROVER`) | Deploys made outside the wrapper; this is a source-side check only and weaker than receipt anchoring. The chained log is tamper-EVIDENT (verify with `verify_chained_history`), not immutable — WORM storage of the log and binding approvers to real identities are owner infrastructure/IAM items |
 | Durable anchor | `inference-stack anchor-release` | A `release/*`/`deploy/*` tag bundled into the private run root: full history, mode 0600, SHA-256 recorded, `git bundle verify` passed, and restore proven by a real clone that must resolve the tag to the expected commit. A local tag **without** a verified bundle never anchors. Anchors are **write-once**: identity-equal re-runs are idempotent; a moved tag, a changed/missing bundle, or an unrecorded file at the bundle path is refused | Public/remote publication (an owner decision) |
-| Release receipt | `provenance.py receipt` | Digest ↔ source binding via the content-addressed chain: the digest covers the OCI config whose revision **and** source-tree labels must be exact 40-hex values; ancestry and the tree equality are proven inside a fresh clone restored **from the bundle**; SBOM evidence is a fetched, hash-verified (blob = layer digest) in-toto Statement (v0.1/v1) whose `predicateType` is exactly `https://spdx.dev/Document`, whose subject names this image manifest by name+sha256, and whose predicate is a real SPDX-2.x document (SPDXRef-DOCUMENT, name, namespace, packages, DESCRIBES) — or a parsed, shape- and subject-checked standalone SPDX document; the verified attestation-manifest/layer/statement digests are recorded and the receipt itself is cosign-signed (`sign-blob`, tlog disabled). Receipts are **write-once**: identity-equal re-runs return the original bytes; any difference is refused | Images without exact revision/tree labels (refused); superseding requires explicitly archiving the old receipt+signature first |
+| Release receipt | `provenance.py receipt` | Digest ↔ source binding via the content-addressed chain: the **exactly one** linux/amd64 image manifest is resolved from the index (never "the first entry"), its config blob is fetched, hash-verified, platform-checked, and must carry exact 40-hex revision and source-tree labels; the anchor's current annotated **tag object** must equal the recorded target and be present in the verified bundle; ancestry and tree equality are proven inside a fresh clone restored **from the bundle**; SBOM evidence is the attestation selected for that exact amd64 manifest — a fetched, hash-verified (blob = layer digest) in-toto Statement (v0.1/v1) with `predicateType` exactly `https://spdx.dev/Document`, a named subject whose sha256 equals the amd64 manifest, and an SPDX-2.x predicate with valid unique SPDXIDs and a resolving SPDXRef-DOCUMENT DESCRIBES — or a standalone SPDX document that binds the digest as an exact SHA256 checksum or purl version on a described package (substring mentions never bind); the verified manifest/config/attestation/layer/statement digests are recorded and the receipt itself is cosign-signed and signature-verified before atomic publication. Receipts are **write-once**: identity-equal re-runs re-verify the signature and return the original bytes; any difference is refused | Images without exact revision/tree labels (refused); superseding requires explicitly archiving the old receipt directory first |
 | Signing / verification | `provenance.py sign` / `verify` | `sign` refuses any reference without a signed, validated receipt; key-based cosign signatures with `--use-signing-config=false --new-bundle-format=false --tlog-upload=false` (the regional registry rejects the new bundle media type, and private repo names/digests must not reach the public Rekor log) | Signature ≠ provenance by itself: a signature without a receipt is artifact presence only |
 | Admission: image rules | `policy.yaml` (`fs2-image-provenance`) | For Pods **and** Deployments/DaemonSets/StatefulSets/Jobs/CronJobs in `fs2-system`/`fs2-models`: digest pinning, registry prefix allow-list, and the platform-repository digest allow-list, so a direct `helm upgrade`/`kubectl apply` with a bad image fails at the workload write | Config-only changes that reuse allow-listed images |
 | Admission: Helm release writes | `policy.yaml` (`fs2-helm-release-governance`) | Secrets of type `helm.sh/release.v1` in `fs2-system` may only be written by the `deploy-principals` recorded in the allow-list ConfigMap | This is a **compensating control**, not closure: a deploy-principal holder can still run direct `helm upgrade`, and arbitrary config-only `kubectl` writes are not gated |
@@ -61,49 +61,75 @@ bump — in order:
    release; additionally push to `origin/main`/`release/*` when public
    publication is permitted.
 2. Build and publish the image; record the publish receipt in the run root.
-3. Create the bound release receipt (verifies source/anchor/SBOM and signs the
-   receipt): `python3 security/image-provenance/provenance.py receipt --image
+3. Create the bound release receipt (resolves the exact linux/amd64 manifest
+   and hash-verified config, proves the tag object and ancestry in a
+   bundle-restored clone, validates the in-toto SPDX statement, signs the
+   receipt, verifies the signature, and publishes atomically):
+   `python3 security/image-provenance/provenance.py receipt --image
    <repo>@sha256:<digest> --run-root <run> --repository <checkout>
-   --anchor-tag <tag> --key <cosign.key>` (add `--sbom <spdx.json>` for images
-   without BuildKit attestations, e.g. the website).
+   --anchor-tag <tag> --key <cosign.key> --public-key
+   security/image-provenance/cosign.pub` (add `--sbom <spdx.json>` for images
+   without BuildKit attestations, e.g. the website; the document must bind the
+   digest as an exact SHA256 checksum or purl version on a described package).
 4. Sign the digest (refused without the receipt): `provenance.py sign --key
    <cosign.key> --public-key security/image-provenance/cosign.pub --run-root
    <run> <repo>@sha256:<digest>`.
-5. Assemble the **complete** allow-list input set — the renderer validates
-   every reference it is given (signed receipt + cosign verification) but does
-   **not** discover completeness. Before rendering, enumerate and reconcile:
-   current live workloads in the matched namespaces, the Helm rollback window
-   (`helm history` digests), and frozen scientific-stage bindings. Every
-   platform digest in that set must have a valid receipt, signature, and SBOM;
-   if any lacks them, the rollout is blocked — this completeness reconciliation
-   is a mandatory acceptance-gate input, recorded as its own receipt. Then
-   render and apply **before** the rollout: `provenance.py render-allowlist
-   --public-key … --run-root <run> --registry-prefix …
-   --platform-repository-prefix … --image <ref> … --deploy-principal <user>`.
-   Prune only drained digests.
+5. Assemble and sign the **complete inventory**
+   (`fs2-serve.nebius.ai/release-inventory/v1`): enumerate the current live
+   workloads in the matched namespaces, the Helm rollback window
+   (`helm history` digests), and frozen scientific-stage bindings as its three
+   `sources`; record every intentional exclusion as an audited
+   `drained_removals` entry with a reason (owner scope decisions — e.g.
+   excluding a sibling program — go here, never as silent omissions);
+   `platform_images` must equal the source union minus the drains, which the
+   renderer proves. Sign it: `cosign sign-blob --key <cosign.key>
+   --use-signing-config=false --tlog-upload=false --yes --output-file
+   inventory.json.sig inventory.json`. The renderer refuses to run without it
+   and renders **only** the inventory set — extras, missing entries, and
+   unreceipted or unsigned digests all abort:
+   `provenance.py render-allowlist --public-key … --run-root <run>
+   --inventory inventory.json --registry-prefix …
+   --platform-repository-prefix … --deploy-principal <user>` (optional
+   `--image` arguments must equal the inventory exactly and exist only as a
+   cross-check). Assembly of the inventory from the live cluster remains an
+   acceptance-gate step; the renderer proves its internal consistency and
+   coverage, not the honesty of the enumeration itself.
 6. Run the gate (`release-gate`, also automatic inside `apply`), deploy, then
    `provenance.py verify --public-key security/image-provenance/cosign.pub
    <ref>`.
 
-## Evidence immutability
+## Evidence immutability and atomic publication
 
-Release evidence is write-once/append-only, so no later run can rewrite what
-an earlier release proved:
+Release evidence is write-once and published atomically, so neither a later
+run nor a crash or concurrent run can rewrite or truncate what an earlier
+release proved:
 
-- **Anchors** (`release-anchors.json` + bundles): entries are only ever added.
-  An identity-equal re-run re-verifies the recorded artifact and returns
-  `idempotent: true`; a moved tag, changed/missing bundle, or unrecorded file
-  at the bundle path is refused. Superseding a release means anchoring a new
-  tag.
-- **Receipts** (`release-receipts/<digest>.json` + `.sig`): identity-equal
-  re-creation returns the original bytes (`created_at` included); any
-  difference — source, SBOM, anchor — is refused and the original is left
-  untouched. Superseding requires explicitly moving the old receipt and
-  signature into an archive directory first (an auditable filesystem action);
-  the tool itself never overwrites.
+- **Anchors** (`release-anchors.json` + content-addressed bundles): the bundle
+  is built and fully verified (integrity, exact tag object via `list-heads`,
+  real clone restore) in a same-filesystem staging directory, fsynced, then
+  renamed to `release-anchors/<sha256>.bundle` — collision-free by
+  construction — before the index entry commits under the store lock. A
+  malformed index fails closed (it is never treated as empty). An
+  identity-equal re-run re-verifies hash, integrity, and tag object and
+  returns `idempotent: true`; a moved or recreated tag, a changed or missing
+  bundle, or a conflicting file at the content address is refused; a crash
+  remnant between rename and index commit is re-adopted only if it fully
+  verifies. Superseding a release means anchoring a new tag.
+- **Receipts** (`release-receipts/<digest>/receipt.json` + `.sig`): receipt
+  and signature are staged together, the signature is verified, both files
+  are fsynced, and one atomic directory rename publishes the pair — a failed
+  signing leaves no partial published evidence and the same creation succeeds
+  on retry. Identity-equal re-creation re-verifies the existing signature and
+  returns the original bytes (`created_at` included); any difference —
+  source, SBOM, anchor — is refused and the original is left untouched.
+  Superseding requires explicitly moving the old receipt directory into an
+  archive first (an auditable filesystem action); the tool never overwrites.
 - **Gate evaluations**: `release-source.json` holds only the latest state for
-  tooling; every evaluation, including `--allow-unreleased-source` exceptions,
-  is appended to `release-source-history.jsonl` (O_APPEND, never truncated).
+  tooling; every evaluation, including exceptions, is appended to the
+  hash-chained `release-source-history.jsonl` where each record commits to
+  its predecessor. Truncation or rewriting is detectable
+  (`verify_chained_history`); the log is tamper-evident, not immutable —
+  WORM storage is an owner infrastructure item.
 - **Registry signatures**: cosign appends signatures to a digest's `.sig`
   manifest; existing signatures are never replaced by re-signing.
 

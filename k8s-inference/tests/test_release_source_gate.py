@@ -13,6 +13,7 @@ import importlib.machinery
 import importlib.util
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -257,27 +258,108 @@ class ReleaseSourceGateTest(unittest.TestCase):
                 self.run_root, "deploy/damaged", repository_root=self.checkout
             )
 
-    def test_anchor_refuses_unrecorded_file_at_bundle_path(self) -> None:
+    def strip_index_entry(self, tag_ref: str) -> None:
+        store = STACK.release_anchor_store(self.run_root)
+        anchors = json.loads(store.read_text(encoding="utf-8"))
+        anchors.pop(tag_ref)
+        store.write_text(json.dumps(anchors), encoding="utf-8")
+
+    def test_stray_files_in_the_evidence_directory_are_inert(self) -> None:
+        # Content addressing makes the published path collision-free: a
+        # squatter cannot occupy it in advance and strays are never touched.
         commit = self.add_unpushed_commit()
-        git(self.checkout, "tag", "-a", "-m", "anchor", "deploy/squat", commit)
+        git(self.checkout, "tag", "-a", "-m", "anchor", "deploy/stray", commit)
         bundle_directory = self.run_root / "release-anchors"
         bundle_directory.mkdir(mode=0o700, exist_ok=True)
-        (bundle_directory / "deploy-squat.bundle").write_bytes(b"squatter")
-        with self.assertRaisesRegex(STACK.DeploymentError, "unrecorded file"):
+        stray = bundle_directory / "deploy-stray.bundle"
+        stray.write_bytes(b"squatter")
+        receipt = STACK.create_release_anchor(
+            self.run_root, "deploy/stray", repository_root=self.checkout
+        )
+        self.assertTrue(Path(receipt["bundle_path"]).name.endswith(".bundle"))
+        self.assertIn(receipt["sha256"], Path(receipt["bundle_path"]).name)
+        self.assertEqual(stray.read_bytes(), b"squatter")
+
+    def test_crash_remnant_between_rename_and_index_is_adopted(self) -> None:
+        commit = self.add_unpushed_commit()
+        git(self.checkout, "tag", "-a", "-m", "anchor", "deploy/crashed", commit)
+        first = STACK.create_release_anchor(
+            self.run_root, "deploy/crashed", repository_root=self.checkout
+        )
+        bundle_bytes = Path(first["bundle_path"]).read_bytes()
+        # Simulate a crash after the atomic bundle rename, before index commit.
+        self.strip_index_entry("refs/tags/deploy/crashed")
+        recovered = STACK.create_release_anchor(
+            self.run_root, "deploy/crashed", repository_root=self.checkout
+        )
+        self.assertEqual(recovered["sha256"], first["sha256"])
+        self.assertEqual(Path(recovered["bundle_path"]).read_bytes(), bundle_bytes)
+
+    def test_conflicting_file_at_content_address_is_refused(self) -> None:
+        commit = self.add_unpushed_commit()
+        git(self.checkout, "tag", "-a", "-m", "anchor", "deploy/conflict", commit)
+        first = STACK.create_release_anchor(
+            self.run_root, "deploy/conflict", repository_root=self.checkout
+        )
+        self.strip_index_entry("refs/tags/deploy/conflict")
+        Path(first["bundle_path"]).write_bytes(b"not the recorded content")
+        with self.assertRaisesRegex(STACK.DeploymentError, "conflicting file"):
             STACK.create_release_anchor(
-                self.run_root, "deploy/squat", repository_root=self.checkout
+                self.run_root, "deploy/conflict", repository_root=self.checkout
             )
         self.assertEqual(
-            (bundle_directory / "deploy-squat.bundle").read_bytes(), b"squatter"
+            Path(first["bundle_path"]).read_bytes(), b"not the recorded content"
         )
 
-    def test_gate_history_is_append_only_and_preserves_exceptions(self) -> None:
+    def test_symlinked_recorded_bundle_is_refused(self) -> None:
+        commit = self.add_unpushed_commit()
+        git(self.checkout, "tag", "-a", "-m", "anchor", "deploy/sym", commit)
+        receipt = STACK.create_release_anchor(
+            self.run_root, "deploy/sym", repository_root=self.checkout
+        )
+        bundle = Path(receipt["bundle_path"])
+        moved = bundle.with_name("moved-aside.bundle")
+        bundle.rename(moved)
+        bundle.symlink_to(moved)
+        with self.assertRaisesRegex(STACK.DeploymentError, "symlink"):
+            STACK.create_release_anchor(
+                self.run_root, "deploy/sym", repository_root=self.checkout
+            )
+
+    def test_malformed_anchor_store_fails_closed(self) -> None:
+        commit = self.add_unpushed_commit()
+        git(self.checkout, "tag", "-a", "-m", "anchor", "deploy/badstore", commit)
+        STACK.release_anchor_store(self.run_root).write_text(
+            "{not json", encoding="utf-8"
+        )
+        with self.assertRaisesRegex(STACK.DeploymentError, "fails closed"):
+            STACK.create_release_anchor(
+                self.run_root, "deploy/badstore", repository_root=self.checkout
+            )
+        with self.assertRaisesRegex(STACK.DeploymentError, "fails closed"):
+            STACK.release_source_state(commit, self.run_root, self.checkout)
+
+    def test_anchor_store_lock_is_exclusive(self) -> None:
+        import fcntl
+
+        commit = self.add_unpushed_commit()
+        git(self.checkout, "tag", "-a", "-m", "anchor", "deploy/locked", commit)
+        lock_path = self.run_root / "release-anchors.lock"
+        with lock_path.open("a+", encoding="utf-8") as holder:
+            fcntl.flock(holder.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with self.assertRaisesRegex(STACK.DeploymentError, "another process"):
+                STACK.create_release_anchor(
+                    self.run_root, "deploy/locked", repository_root=self.checkout
+                )
+
+    def test_gate_history_is_hash_chained_and_preserves_exceptions(self) -> None:
         commit = self.add_unpushed_commit()
         STACK.enforce_release_source(
             self.run_root,
             commit,
-            "governed exception: history test",
+            "incident:INC-123 history test",
             repository_root=self.checkout,
+            exception_approver="release-operator",
         )
         history = self.run_root / "release-source-history.jsonl"
         first_line = history.read_text(encoding="utf-8").splitlines()[0]
@@ -288,27 +370,82 @@ class ReleaseSourceGateTest(unittest.TestCase):
         )
         lines = history.read_text(encoding="utf-8").splitlines()
         self.assertEqual(len(lines), 2)
-        # The recorded exception is preserved verbatim by the later run.
+        # The recorded exception is preserved verbatim by the later run and
+        # the chain verifies end to end.
         self.assertEqual(lines[0], first_line)
-        self.assertEqual(
-            json.loads(lines[0])["override_reason"],
-            "governed exception: history test",
-        )
+        first = json.loads(lines[0])
+        self.assertEqual(first["override_reason"], "incident:INC-123 history test")
+        self.assertEqual(first["override_approver"], "release-operator")
+        self.assertIsNone(first["prev_sha256"])
         self.assertIsNone(json.loads(lines[1])["override_reason"])
+        self.assertEqual(STACK.verify_chained_history(history), 2)
+
+    def test_history_chain_detects_rewrites(self) -> None:
+        commit = self.add_unpushed_commit()
+        git(self.checkout, "push", "origin", "main")
+        git(self.checkout, "fetch", "origin")
+        STACK.enforce_release_source(
+            self.run_root, commit, None, repository_root=self.checkout
+        )
+        STACK.enforce_release_source(
+            self.run_root, commit, None, repository_root=self.checkout
+        )
+        history = self.run_root / "release-source-history.jsonl"
+        lines = history.read_text(encoding="utf-8").splitlines()
+        tampered = json.loads(lines[0])
+        tampered["source_commit"] = "0" * 40
+        history.write_text(
+            json.dumps(tampered, sort_keys=True, separators=(",", ":"))
+            + "\n"
+            + lines[1]
+            + "\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(STACK.DeploymentError, "chain break"):
+            STACK.verify_chained_history(history)
 
     def test_override_records_reason_instead_of_weakening_silently(self) -> None:
         commit = self.add_unpushed_commit()
         state = STACK.enforce_release_source(
             self.run_root,
             commit,
-            "governed exception: incident rollforward",
+            "incident:INC-1234 rollforward",
             repository_root=self.checkout,
+            exception_approver="release-operator",
         )
         self.assertFalse(state["anchored"])
-        self.assertEqual(
-            self.receipt()["override_reason"],
+        receipt = self.receipt()
+        self.assertEqual(receipt["override_reason"], "incident:INC-1234 rollforward")
+        self.assertEqual(receipt["override_approver"], "release-operator")
+
+    def test_exception_reason_must_reference_a_tracking_identifier(self) -> None:
+        commit = self.add_unpushed_commit()
+        for bad_reason in (
             "governed exception: incident rollforward",
-        )
+            "incident:",
+            "x" * 300,
+            "incident:INC-1 secret\ttoken",
+        ):
+            with self.assertRaisesRegex(STACK.DeploymentError, "tracking identifier"):
+                STACK.enforce_release_source(
+                    self.run_root,
+                    commit,
+                    bad_reason,
+                    repository_root=self.checkout,
+                    exception_approver="release-operator",
+                )
+
+    def test_exception_requires_a_named_approver(self) -> None:
+        commit = self.add_unpushed_commit()
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("FS2_RELEASE_EXCEPTION_APPROVER", None)
+            with self.assertRaisesRegex(STACK.DeploymentError, "exception-approver"):
+                STACK.enforce_release_source(
+                    self.run_root,
+                    commit,
+                    "incident:INC-1234 rollforward",
+                    repository_root=self.checkout,
+                )
 
 
 class ApplyCommandGateWiringTest(unittest.TestCase):

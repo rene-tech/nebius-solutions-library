@@ -88,7 +88,17 @@ def private_directory(path: Path) -> None:
     path.chmod(0o700)
 
 
+def fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
 def private_json(path: Path, value: Any) -> None:
+    if path.is_symlink():
+        raise DeploymentError(f"private state file must not be a symlink: {path}")
     temporary = path.with_name(f".{path.name}.tmp-{os.getpid()}")
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     descriptor = os.open(temporary, flags, 0o600)
@@ -96,8 +106,11 @@ def private_json(path: Path, value: Any) -> None:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             json.dump(value, handle, indent=2, sort_keys=True)
             handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
         os.replace(temporary, path)
         path.chmod(0o600)
+        fsync_directory(path.parent)
     finally:
         if temporary.exists():
             temporary.unlink()
@@ -116,8 +129,44 @@ def private_append_jsonl(path: Path, value: Any) -> None:
     try:
         with os.fdopen(descriptor, "a", encoding="utf-8") as handle:
             handle.write(line)
+            handle.flush()
+            os.fsync(handle.fileno())
     finally:
         path.chmod(0o600)
+
+
+def private_append_chained(path: Path, record: dict[str, Any]) -> None:
+    """Append a hash-chained JSON line: each record commits to its predecessor.
+
+    The chain makes truncation or rewriting of earlier records detectable
+    (tamper-EVIDENT, not immutable — WORM storage of the log is operator
+    infrastructure). Verify with verify_chained_history().
+    """
+    previous = None
+    if path.is_file():
+        lines = [line for line in path.read_bytes().splitlines() if line.strip()]
+        if lines:
+            previous = hashlib.sha256(lines[-1]).hexdigest()
+    private_append_jsonl(path, {**record, "prev_sha256": previous})
+
+
+def verify_chained_history(path: Path) -> int:
+    """Return the record count after verifying the history hash chain."""
+    if not path.is_file():
+        return 0
+    previous = None
+    count = 0
+    for line in path.read_bytes().splitlines():
+        if not line.strip():
+            continue
+        record = json.loads(line)
+        if record.get("prev_sha256") != previous:
+            raise DeploymentError(
+                f"release-source history chain break at record {count} in {path}"
+            )
+        previous = hashlib.sha256(line).hexdigest()
+        count += 1
+    return count
 
 
 def private_text(path: Path, value: str) -> None:
@@ -369,6 +418,12 @@ RELEASE_ANCHOR_TAG_PATTERNS = (
     "refs/tags/release",
     "refs/tags/deploy",
 )
+# Exceptions must be bounded printable ASCII bound to a tracking identifier.
+RELEASE_EXCEPTION_REASON_PATTERN = re.compile(
+    r"^(incident|change|ticket|task):[A-Za-z0-9][A-Za-z0-9._/-]{1,63}"
+    r"( [\x20-\x7e]{1,160})?$"
+)
+RELEASE_EXCEPTION_APPROVER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._@-]{1,79}$")
 
 
 def _refs_containing(root: Path, commit: str, patterns: Sequence[str]) -> list[str]:
@@ -433,13 +488,25 @@ def release_anchor_store(run_root: Path) -> Path:
 
 def _read_release_anchors(run_root: Path) -> dict[str, Any]:
     store = release_anchor_store(run_root)
+    if store.is_symlink():
+        raise DeploymentError(f"anchor store must not be a symlink: {store}")
     if not store.is_file():
         return {}
+    # A malformed store fails closed: silently treating it as empty would let
+    # corruption erase recorded release evidence.
     try:
         value = json.loads(store.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {}
-    return value if isinstance(value, dict) else {}
+    except json.JSONDecodeError as exc:
+        raise DeploymentError(
+            f"release anchor store is malformed and fails closed: {store}; "
+            "restore it from backup before anchoring or deploying"
+        ) from exc
+    if not isinstance(value, dict):
+        raise DeploymentError(
+            f"release anchor store is malformed and fails closed: {store}; "
+            "restore it from backup before anchoring or deploying"
+        )
+    return value
 
 
 def _bundle_lists_ref_at(root: Path, bundle: Path, ref: str, target: str) -> bool:
@@ -474,6 +541,8 @@ def _bundle_verified_tags(
         if not isinstance(entry, dict):
             continue
         bundle = Path(str(entry.get("bundle_path", "")))
+        if bundle.is_symlink():
+            continue
         if not bundle.is_absolute() or not bundle.is_file():
             continue
         if str(bundle).startswith(str(root) + os.sep):
@@ -502,6 +571,70 @@ def _bundle_verified_tags(
     return sorted(verified)
 
 
+@contextmanager
+def _release_anchor_lock(run_root: Path) -> Iterator[None]:
+    """Serialize anchor-store read-modify-write cycles across processes."""
+    lock_path = run_root / "release-anchors.lock"
+    if lock_path.is_symlink():
+        raise DeploymentError(f"anchor lock must not be a symlink: {lock_path}")
+    with lock_path.open("a+", encoding="utf-8") as lock:
+        lock_path.chmod(0o600)
+        try:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise DeploymentError(
+                f"another process owns the release-anchor store at {run_root}"
+            ) from exc
+        yield
+
+
+def _verify_bundle_identity(
+    root: Path,
+    run_root: Path,
+    bundle: Path,
+    tag_ref: str,
+    tag_target: str,
+    commit: str,
+) -> None:
+    """Fully verify a bundle artifact against one exact tag identity.
+
+    Covers integrity (`git bundle verify`), the exact tag OBJECT at its
+    recorded target (`bundle list-heads`), and restorability: a real bare
+    clone must resolve the tag object and its peeled commit exactly.
+    """
+    run(
+        ["git", "-C", str(root), "bundle", "verify", str(bundle)],
+        capture=True,
+        env=clean_environment(),
+    )
+    if not _bundle_lists_ref_at(root, bundle, tag_ref, tag_target):
+        raise DeploymentError(
+            f"bundle {bundle} does not carry {tag_ref} at tag object {tag_target}"
+        )
+    with tempfile.TemporaryDirectory(dir=run_root) as scratch:
+        restore = Path(scratch) / "restore.git"
+        run(
+            ["git", "clone", "--quiet", "--bare", str(bundle), str(restore)],
+            env=clean_environment(),
+        )
+        restored_target = run(
+            ["git", "-C", str(restore), "rev-parse", tag_ref],
+            capture=True,
+            env=clean_environment(),
+        ).stdout.strip()
+        restored_commit = run(
+            ["git", "-C", str(restore), "rev-parse", f"{tag_ref}^{{commit}}"],
+            capture=True,
+            env=clean_environment(),
+        ).stdout.strip()
+    if restored_target != tag_target or restored_commit != commit:
+        raise DeploymentError(
+            f"restore test failed: bundle resolves {tag_ref} to tag object "
+            f"{restored_target} (commit {restored_commit}), expected "
+            f"{tag_target} ({commit})"
+        )
+
+
 def create_release_anchor(
     run_root: Path,
     tag_ref: str,
@@ -509,15 +642,19 @@ def create_release_anchor(
 ) -> dict[str, Any]:
     """Bundle a release/deploy tag into the private run root and prove restore.
 
-    The bundle is self-contained (full history reachable from the tag), stored
-    mode 0600 inside the 0700 run root, hash-recorded, `git bundle verify`-ed,
-    and restore-tested with a real clone before the receipt is written.
+    The bundle is self-contained (full history reachable from the tag), built
+    and fully verified — integrity, exact tag object, and a real clone
+    restore — in a same-filesystem temporary path, fsynced, and only then
+    atomically renamed into place; the index entry is committed afterwards
+    under a store lock. A remnant at the final path from a crashed run is
+    adopted only if it fully verifies against the current exact tag identity;
+    anything else at that path is refused.
 
     Anchor evidence is write-once. An existing entry is never replaced: an
     identity-equal re-run is an idempotent no-op that re-verifies the recorded
-    artifact, and any mismatch — a moved tag, a changed or missing bundle, an
-    unrecorded file at the bundle path — is refused so old evidence can never
-    be silently rewritten. Superseding a release means anchoring a NEW tag.
+    hash, integrity, and tag object, and any mismatch — a moved or recreated
+    tag, a changed or missing bundle — is refused so old evidence can never be
+    silently rewritten. Superseding a release means anchoring a NEW tag.
     """
     root = repository_root or REPOSITORY_ROOT
     if not tag_ref.startswith("refs/tags/"):
@@ -541,86 +678,107 @@ def create_release_anchor(
     ).stdout.strip()
     bundle_directory = run_root / "release-anchors"
     private_directory(bundle_directory)
-    bundle = bundle_directory / (
-        tag_ref.removeprefix("refs/tags/").replace("/", "-") + ".bundle"
-    )
 
-    anchors = _read_release_anchors(run_root)
-    existing = anchors.get(tag_ref)
-    if existing is not None:
-        if (
-            existing.get("tag_target") != tag_target
-            or existing.get("commit") != commit
-        ):
-            raise DeploymentError(
-                f"anchor {tag_ref} is already recorded at commit "
-                f"{existing.get('commit')} (tag object {existing.get('tag_target')}) "
-                f"but the tag now resolves to {commit} ({tag_target}); anchors "
-                "are immutable — a moved tag is never re-anchored, create a "
-                "new release/deploy tag instead"
+    with _release_anchor_lock(run_root):
+        anchors = _read_release_anchors(run_root)
+        existing = anchors.get(tag_ref)
+        if existing is not None:
+            if (
+                existing.get("tag_target") != tag_target
+                or existing.get("commit") != commit
+            ):
+                raise DeploymentError(
+                    f"anchor {tag_ref} is already recorded at commit "
+                    f"{existing.get('commit')} (tag object "
+                    f"{existing.get('tag_target')}) but the tag now resolves "
+                    f"to {commit} ({tag_target}); anchors are immutable — a "
+                    "moved or recreated tag is never re-anchored, create a "
+                    "new release/deploy tag instead"
+                )
+            recorded_bundle = Path(str(existing.get("bundle_path", "")))
+            if recorded_bundle.is_symlink():
+                raise DeploymentError(
+                    f"anchor bundle path is a symlink: {recorded_bundle}"
+                )
+            if not recorded_bundle.is_file():
+                raise DeploymentError(
+                    f"anchor {tag_ref} is recorded but its bundle is missing: "
+                    f"{recorded_bundle}; evidence is immutable — restore the "
+                    "bundle from backup or anchor a new tag, never recreate "
+                    "it in place"
+                )
+            if _sha256_file(recorded_bundle) != existing.get("sha256"):
+                raise DeploymentError(
+                    f"anchor {tag_ref} bundle no longer matches its recorded "
+                    f"SHA-256: {recorded_bundle}; evidence is immutable — "
+                    "refusing to overwrite; investigate the tamper and anchor "
+                    "a new tag"
+                )
+            # Idempotent path re-verifies the artifact, not just existence.
+            run(
+                ["git", "-C", str(root), "bundle", "verify", str(recorded_bundle)],
+                capture=True,
+                env=clean_environment(),
             )
-        recorded_bundle = Path(str(existing.get("bundle_path", "")))
-        if not recorded_bundle.is_file():
-            raise DeploymentError(
-                f"anchor {tag_ref} is recorded but its bundle is missing: "
-                f"{recorded_bundle}; evidence is immutable — restore the "
-                "bundle from backup or anchor a new tag, never recreate it "
-                "in place"
+            if not _bundle_lists_ref_at(
+                root, recorded_bundle, tag_ref, existing["tag_target"]
+            ):
+                raise DeploymentError(
+                    f"anchor {tag_ref} bundle no longer lists the tag at its "
+                    f"recorded target; refusing"
+                )
+            return {"anchor_tag": tag_ref, **existing, "idempotent": True}
+
+        # The bundle is built and fully verified in a same-filesystem staging
+        # directory, then published under its own content hash. Content
+        # addressing makes the final name collision-free by construction:
+        # nothing is ever overwritten, a remnant from a crash between rename
+        # and index commit is re-adopted only when its bytes match its name
+        # and its identity verifies, and stray files in the evidence
+        # directory are inert rather than blocking.
+        with tempfile.TemporaryDirectory(dir=bundle_directory) as staging:
+            candidate = Path(staging) / "candidate.bundle"
+            run(
+                ["git", "-C", str(root), "bundle", "create", str(candidate), tag_ref],
+                env=clean_environment(),
             )
-        if _sha256_file(recorded_bundle) != existing.get("sha256"):
-            raise DeploymentError(
-                f"anchor {tag_ref} bundle no longer matches its recorded "
-                f"SHA-256: {recorded_bundle}; evidence is immutable — refusing "
-                "to overwrite; investigate the tamper and anchor a new tag"
+            candidate.chmod(0o600)
+            _verify_bundle_identity(
+                root, run_root, candidate, tag_ref, tag_target, commit
             )
-        run(
-            ["git", "-C", str(root), "bundle", "verify", str(recorded_bundle)],
-            capture=True,
-            env=clean_environment(),
-        )
-        return {"anchor_tag": tag_ref, **existing, "idempotent": True}
-    if bundle.exists():
-        raise DeploymentError(
-            f"unrecorded file already exists at the anchor bundle path "
-            f"{bundle}; refusing to overwrite evidence-directory content"
-        )
-    run(
-        ["git", "-C", str(root), "bundle", "create", str(bundle), tag_ref],
-        env=clean_environment(),
-    )
-    bundle.chmod(0o600)
-    run(
-        ["git", "-C", str(root), "bundle", "verify", str(bundle)],
-        capture=True,
-        env=clean_environment(),
-    )
-    with tempfile.TemporaryDirectory(dir=run_root) as scratch:
-        restore = Path(scratch) / "restore.git"
-        run(
-            ["git", "clone", "--quiet", "--bare", str(bundle), str(restore)],
-            env=clean_environment(),
-        )
-        restored_commit = run(
-            ["git", "-C", str(restore), "rev-parse", f"{tag_ref}^{{commit}}"],
-            capture=True,
-            env=clean_environment(),
-        ).stdout.strip()
-    if restored_commit != commit:
-        raise DeploymentError(
-            f"restore test failed: bundle resolves {tag_ref} to "
-            f"{restored_commit}, expected {commit}"
-        )
-    entry = {
-        "bundle_path": str(bundle),
-        "sha256": _sha256_file(bundle),
-        "tag_target": tag_target,
-        "commit": commit,
-        "restore_tested": True,
-    }
-    anchors = _read_release_anchors(run_root)
-    anchors[tag_ref] = entry
-    private_json(release_anchor_store(run_root), anchors)
-    return {"anchor_tag": tag_ref, **entry}
+            bundle_sha = _sha256_file(candidate)
+            bundle = bundle_directory / f"{bundle_sha}.bundle"
+            if bundle.is_symlink():
+                raise DeploymentError(f"anchor bundle path is a symlink: {bundle}")
+            if bundle.exists():
+                if _sha256_file(bundle) != bundle_sha:
+                    raise DeploymentError(
+                        f"conflicting file already exists at the "
+                        f"content-addressed anchor path {bundle}; refusing to "
+                        "overwrite evidence-directory content"
+                    )
+                _verify_bundle_identity(
+                    root, run_root, bundle, tag_ref, tag_target, commit
+                )
+            else:
+                descriptor = os.open(candidate, os.O_RDONLY)
+                try:
+                    os.fsync(descriptor)
+                finally:
+                    os.close(descriptor)
+                os.rename(candidate, bundle)
+                fsync_directory(bundle_directory)
+        entry = {
+            "bundle_path": str(bundle),
+            "sha256": bundle_sha,
+            "tag_target": tag_target,
+            "commit": commit,
+            "restore_tested": True,
+        }
+        anchors = _read_release_anchors(run_root)
+        anchors[tag_ref] = entry
+        private_json(release_anchor_store(run_root), anchors)
+        return {"anchor_tag": tag_ref, **entry}
 
 
 def release_source_state(
@@ -676,6 +834,7 @@ def enforce_release_source(
     commit: str,
     override_reason: str | None,
     repository_root: Path | None = None,
+    exception_approver: str | None = None,
 ) -> dict[str, Any]:
     """Refuse deploys whose source is not a clean, anchored release commit.
 
@@ -685,12 +844,34 @@ def enforce_release_source(
     governed, audited exception instead of silently weakening the gate.
     """
     state = release_source_state(commit, run_root, repository_root)
+    if override_reason is not None:
+        # An exception must be sanitized and bound to a non-secret incident or
+        # change identifier, and must name its approver. Binding the approver
+        # to a real, non-impersonable identity is part of the owner-gated
+        # deploy-identity work; until then this is recorded self-attestation.
+        if not RELEASE_EXCEPTION_REASON_PATTERN.match(override_reason):
+            raise DeploymentError(
+                "release-source exception reasons must reference a non-secret "
+                "tracking identifier and stay printable and bounded, e.g. "
+                "--allow-unreleased-source 'incident:INC-1234 short context' "
+                "(accepted prefixes: incident:, change:, ticket:, task:)"
+            )
+        approver = exception_approver or os.environ.get(
+            "FS2_RELEASE_EXCEPTION_APPROVER", ""
+        )
+        if not approver or not RELEASE_EXCEPTION_APPROVER_PATTERN.match(approver):
+            raise DeploymentError(
+                "a release-source exception requires --exception-approver (or "
+                "FS2_RELEASE_EXCEPTION_APPROVER) naming who authorized it"
+            )
+        state["override_approver"] = approver
     state["override_reason"] = override_reason
     state["checked_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    # Latest state for tooling, plus an append-only audit history so no later
-    # run can overwrite the evidence of an earlier evaluation or exception.
+    # Latest state for tooling, plus a hash-chained audit history: no later
+    # run can overwrite earlier evaluations, and truncation or rewriting of
+    # the exception trail is detectable via verify_chained_history().
     private_json(run_root / "release-source.json", state)
-    private_append_jsonl(run_root / "release-source-history.jsonl", state)
+    private_append_chained(run_root / "release-source-history.jsonl", state)
     failures = []
     if not state["worktree_clean"]:
         failures.append(
@@ -3614,6 +3795,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--exception-approver",
+        metavar="NAME",
+        help=(
+            "who authorized a release-source exception; required together with "
+            "--allow-unreleased-source (or set FS2_RELEASE_EXCEPTION_APPROVER)"
+        ),
+    )
+    parser.add_argument(
         "--var-file",
         type=Path,
         default=DEPLOY_ROOT / "terraform.tfvars",
@@ -3693,7 +3882,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             preflight_accelerators(args, contract)
         elif args.command == "release-gate":
             state = enforce_release_source(
-                run_root, commit, args.allow_unreleased_source
+                run_root,
+                commit,
+                args.allow_unreleased_source,
+                exception_approver=args.exception_approver,
             )
             print(json.dumps(state, indent=2, sort_keys=True))
         elif args.command == "anchor-release":
@@ -3707,7 +3899,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             plan_stack(args, run_root, contract, commit)
         elif args.command == "apply":
             require_deployable_images(contract)
-            enforce_release_source(run_root, commit, args.allow_unreleased_source)
+            enforce_release_source(
+                run_root,
+                commit,
+                args.allow_unreleased_source,
+                exception_approver=args.exception_approver,
+            )
             apply_stack(
                 args,
                 run_root,

@@ -83,10 +83,12 @@ provenance gate (see `security/image-provenance/README.md`):
    untracked drift both fail) reachable from an anchored or remote release
    ref; the wrapper enforces it on `apply` and offers a standalone
    `release-gate` command for Helm-only upgrades. Overrides require
-   `--allow-unreleased-source REASON`. All gate evaluations and exceptions
-   are recorded append-only (`release-source-history.jsonl`); anchors and
-   receipts are write-once and refuse moved tags, changed bundles, or
-   conflicting re-creation.
+   `--allow-unreleased-source` with a sanitized reason bound to a non-secret
+   tracking identifier plus a named approver. All gate evaluations and
+   exceptions are recorded in a hash-chained, tamper-evident history
+   (`release-source-history.jsonl`); anchors and receipts are write-once,
+   published atomically, and refuse moved or recreated tags, changed bundles,
+   or conflicting re-creation.
 2. **Bound release receipt:** before signing, every digest gets a cosign-signed
    release receipt binding it to its source commit/tree, the durable anchor
    bundle, and validated SBOM evidence
@@ -95,12 +97,13 @@ provenance gate (see `security/image-provenance/README.md`):
 3. **Signed digests:** every published platform image digest is cosign-signed
    with the operator release key before it is deployed; a signature without a
    bound receipt is artifact presence, not provenance.
-4. **Admission allow-list:** the receipted, signed digest is appended to the
-   `fs2-image-provenance-allowlist` ConfigMap before the rollout; the
-   `fs2-image-provenance` ValidatingAdmissionPolicy refuses unpinned,
-   foreign-registry, and non-allow-listed platform images in the platform
-   namespaces. Keep digests that live Pods, frozen scientific-stage bindings,
-   or the Helm rollback window still reference.
+4. **Admission allow-list:** the allow-list renders only from a signed,
+   complete release inventory enumerating live workloads, the Helm rollback
+   window, and frozen scientific-stage bindings, with every intentional
+   exclusion recorded as an audited drained removal; extras, missing entries,
+   and unreceipted digests abort rendering. The `fs2-image-provenance`
+   ValidatingAdmissionPolicy then refuses unpinned, foreign-registry, and
+   non-allow-listed platform images in the platform namespaces.
 
 A release deployed from an unanchored or unsigned identity is not
 customer-ready regardless of its test results.
