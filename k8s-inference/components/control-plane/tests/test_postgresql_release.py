@@ -118,6 +118,15 @@ def test_scientific_runtime_grants_converge_to_trigger_bound_completion() -> Non
     assert wait_source.count("NOT has_table_privilege") >= 4
     assert wait_source.count("NOT has_function_privilege") == 2
     assert "fs2_scientific_consume_admission_outbox_trigger" in wait_source
+    assert "fs2_scientific_bind_admission_digest_trigger" in wait_source
+    assert "t.tgrelid='public.fs2_scientific_admission_outbox'::regclass" in wait_source
+    assert "t.tgenabled='O'" in wait_source
+    assert "t.tgtype=7" in wait_source
+    assert "t.tgfoid=" in wait_source
+    assert "'public.fs2_scientific_bind_admission_digest()'::regprocedure" in wait_source
+    assert "p.prokind='f' AND NOT p.prosecdef" in wait_source
+    assert "p.prorettype='pg_catalog.trigger'::regtype AND p.pronargs=0" in wait_source
+    assert "p.proconfig=ARRAY['search_path=pg_catalog, public']" in wait_source
     assert "attname='scheduling_digest' AND attnotnull" in wait_source
     assert wait_source.count("fs2_scientific_batches','scheduling_digest','UPDATE'") == 2
     assert "SELECT,INSERT" not in wait_source

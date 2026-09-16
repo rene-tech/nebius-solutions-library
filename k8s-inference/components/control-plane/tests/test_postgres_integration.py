@@ -989,6 +989,69 @@ async def test_migration_and_schema_wait_entrypoints_need_only_database_credenti
 
 @pytest.mark.postgres
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "drift_sql",
+    [
+        "DROP TRIGGER fs2_scientific_bind_admission_digest_trigger ON public.fs2_scientific_admission_outbox",
+        "ALTER TABLE public.fs2_scientific_admission_outbox "
+        "DISABLE TRIGGER fs2_scientific_bind_admission_digest_trigger",
+        (
+            "DROP TRIGGER fs2_scientific_bind_admission_digest_trigger "
+            "ON public.fs2_scientific_admission_outbox; "
+            "CREATE TRIGGER fs2_scientific_bind_admission_digest_trigger "
+            "BEFORE INSERT ON public.fs2_scientific_admission_outbox FOR EACH STATEMENT "
+            "EXECUTE FUNCTION public.fs2_scientific_bind_admission_digest()",
+        ),
+        (
+            "DROP TRIGGER fs2_scientific_bind_admission_digest_trigger "
+            "ON public.fs2_scientific_admission_outbox; "
+            "CREATE TRIGGER fs2_scientific_bind_admission_digest_trigger "
+            "BEFORE INSERT ON public.fs2_scientific_batches FOR EACH ROW "
+            "EXECUTE FUNCTION public.fs2_scientific_bind_admission_digest()",
+        ),
+        (
+            "DROP TRIGGER fs2_scientific_bind_admission_digest_trigger "
+            "ON public.fs2_scientific_admission_outbox; "
+            "CREATE TRIGGER fs2_scientific_bind_admission_digest_trigger "
+            "BEFORE INSERT ON public.fs2_scientific_admission_outbox FOR EACH ROW "
+            "EXECUTE FUNCTION public.fs2_scientific_consume_admission_outbox()",
+        ),
+        "ALTER FUNCTION public.fs2_scientific_bind_admission_digest() SET search_path=public",
+    ],
+    ids=("missing", "disabled", "statement-level", "wrong-table", "wrong-function", "search-path"),
+)
+async def test_schema_wait_rejects_scientific_admission_digest_binder_drift(
+    postgres_store: PostgresStore,
+    drift_sql: str,
+) -> None:
+    """A complete immutable ledger cannot mask a broken predecessor binder."""
+
+    database_url = os.environ["FS2_TEST_DATABASE_URL"]
+    migrations_dir = CONTROL_ROOT / "migrations"
+    await PostgresStore.wait_for_schema(database_url, migrations_dir, timeout_seconds=1)
+    try:
+        async with postgres_store.pool.acquire() as connection:
+            await connection.execute(drift_sql)
+        with pytest.raises(RuntimeError, match="database schema runtime privileges are incomplete"):
+            await PostgresStore.wait_for_schema(database_url, migrations_dir, timeout_seconds=1)
+    finally:
+        async with postgres_store.pool.acquire() as connection:
+            await connection.execute(
+                "DROP TRIGGER IF EXISTS fs2_scientific_bind_admission_digest_trigger "
+                "ON public.fs2_scientific_admission_outbox; "
+                "DROP TRIGGER IF EXISTS fs2_scientific_bind_admission_digest_trigger "
+                "ON public.fs2_scientific_batches; "
+                "CREATE TRIGGER fs2_scientific_bind_admission_digest_trigger "
+                "BEFORE INSERT ON public.fs2_scientific_admission_outbox FOR EACH ROW "
+                "EXECUTE FUNCTION public.fs2_scientific_bind_admission_digest(); "
+                "ALTER FUNCTION public.fs2_scientific_bind_admission_digest() "
+                "SET search_path=pg_catalog, public"
+            )
+    await PostgresStore.wait_for_schema(database_url, migrations_dir, timeout_seconds=1)
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
 async def test_migrator_binds_preexisting_admission_to_its_exact_derived_digest(
     postgres_store: PostgresStore,
 ) -> None:

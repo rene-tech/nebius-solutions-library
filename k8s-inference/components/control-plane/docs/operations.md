@@ -698,6 +698,14 @@ trigger in this release. A later additive contract migration may remove it only
 after rollout evidence proves every predecessor image is quiescent; that later
 contract step is outside this release.
 
+`wait-schema` fails closed unless that compatibility trigger is present on the
+admission outbox, ordinarily enabled, and bound as an exact row-level
+`BEFORE INSERT` trigger to `fs2_scientific_bind_admission_digest()`. It also
+attests the function's zero-argument trigger signature, invoker mode, and exact
+fixed `search_path=pg_catalog, public` configuration. A complete 37-row migration
+ledger therefore cannot make a dropped, disabled, retargeted, or drifted binder
+appear ready to predecessor writers.
+
 The future live gate is read-only before any maintenance execution. Using only
 the maintenance credential, capture the payload-free request-debug aggregate:
 
