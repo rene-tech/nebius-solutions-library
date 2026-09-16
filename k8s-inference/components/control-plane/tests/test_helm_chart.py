@@ -177,6 +177,46 @@ def gateway_network_policy(documents: list[dict]) -> dict:
     )
 
 
+def test_customer_storage_credentials_are_isolated_and_egress_is_bounded() -> None:
+    base = (
+        "--set",
+        "customerStorage.enabled=true",
+        "--set",
+        "customerStorage.projectId=project-customer-data",
+        "--set",
+        "customerStorage.region=eu-north1",
+        "--set",
+        "customerStorage.resourceCredentialsSecretName=storage-resource",
+        "--set",
+        "customerStorage.iamCredentialsSecretName=storage-iam",
+    )
+    rejected = subprocess.run(  # noqa: S603 - fixed Helm binary and test-owned arguments
+        render_command(*base),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert rejected.returncode != 0
+    assert "customerStorage.egressCidrs" in rejected.stderr
+
+    documents = render(*base, "--set-string", "customerStorage.egressCidrs[0]=198.51.100.0/24")
+    named = {(item["kind"], item["metadata"]["name"]): item for item in documents}
+    runtime = named[("Deployment", "fs2-serve-control-plane")]["spec"]["template"]["spec"]
+    storage = named[("Deployment", "fs2-serve-control-plane-storage-reconciler")]["spec"]["template"]["spec"]
+    runtime_text = json.dumps(runtime)
+    storage_text = json.dumps(storage)
+    assert "storage-resource" not in runtime_text
+    assert "storage-iam" not in runtime_text
+    assert "storage-resource" in storage_text
+    assert "storage-iam" in storage_text
+
+    runtime_policy = named[("NetworkPolicy", "fs2-serve-control-plane-runtime")]
+    assert all("to" in rule for rule in runtime_policy["spec"]["egress"])
+    storage_policy = named[("NetworkPolicy", "fs2-serve-control-plane-storage-reconciler")]
+    https = next(rule for rule in storage_policy["spec"]["egress"] if rule["ports"][0]["port"] == 443)
+    assert https["to"] == [{"ipBlock": {"cidr": "198.51.100.0/24"}}]
+
+
 def application_route(documents: list[dict]) -> dict:
     return next(
         document

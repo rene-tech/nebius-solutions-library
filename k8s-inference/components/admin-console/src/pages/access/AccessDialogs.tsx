@@ -30,6 +30,7 @@ export const SCOPE_OPTIONS = [
   "operations.acknowledge",
   "tokens.manage",
   "audit.read",
+  "storage.credentials",
   "tenant.admin",
 ] as const;
 

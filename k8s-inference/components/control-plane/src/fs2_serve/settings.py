@@ -75,6 +75,18 @@ class Settings(BaseSettings):
     user_storage_keyring_file: Path = Path("/var/run/secrets/fs2-serve/customer-storage-cipher/keyring.json")
     user_storage_name_keyring_file: Path = Path("/var/run/secrets/fs2-serve/customer-storage-name/name-keyring.json")
     customer_storage_credentials_enabled: bool = False
+    user_storage_enabled: bool = False
+    user_storage_project_id: str = ""
+    user_storage_cloud_tenant_id: str = ""
+    user_storage_region: str = ""
+    user_storage_resource_credentials_file: Path | None = None
+    user_storage_iam_credentials_file: Path | None = None
+    user_storage_default_mode: Literal["tenant", "user"] = "user"
+    user_storage_quota_bytes: int = Field(default=5_000_000_000, gt=0)
+    user_storage_excluded_tenants: tuple[str, ...] = ()
+    user_storage_poll_seconds: float = Field(default=60, ge=5)
+    user_storage_key_ttl_days: int = Field(default=90, ge=1, le=365)
+    user_storage_action_timeout_seconds: float = Field(default=30, ge=1, le=120)
     route_attestors_file: Path | None = Path("/var/run/secrets/fs2-serve/attestors/route-attestors.json")
     admin_token_file: Path = Path("/var/run/secrets/fs2-serve/admin-token")
     bootstrap_access_token_file: Path = Path("/var/run/secrets/fs2-serve/bootstrap-access-token")

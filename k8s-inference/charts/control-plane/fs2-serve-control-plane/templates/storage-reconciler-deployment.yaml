@@ -1,0 +1,96 @@
+{{- if .Values.customerStorage.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-storage-reconciler
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: storage-reconciler
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "fs2-serve.storageSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fs2-serve.storageSelectorLabels" . | nindent 8 }}
+      annotations:
+        fs2.nebius.ai/image-digest: {{ .Values.image.digest | quote }}
+    spec:
+      serviceAccountName: {{ include "fs2-serve.serviceAccountName" (dict "root" . "component" "storage") }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: storage-reconciler
+          image: {{ include "fs2-serve.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["storage-reconciler"]
+          env:
+            {{- include "fs2-serve.databaseEnv" . | nindent 12 }}
+            {{- include "fs2-serve.cryptoEnv" . | nindent 12 }}
+            - name: FS2_USER_STORAGE_ENABLED
+              value: "true"
+            - name: FS2_USER_STORAGE_PROJECT_ID
+              value: {{ required "customerStorage.projectId is required" .Values.customerStorage.projectId | quote }}
+            - name: FS2_USER_STORAGE_REGION
+              value: {{ required "customerStorage.region is required" .Values.customerStorage.region | quote }}
+            - name: FS2_USER_STORAGE_DEFAULT_MODE
+              value: {{ .Values.customerStorage.defaultMode | quote }}
+            - name: FS2_USER_STORAGE_QUOTA_BYTES
+              value: {{ .Values.customerStorage.quotaBytes | int64 | quote }}
+            - name: FS2_USER_STORAGE_EXCLUDED_TENANTS
+              value: {{ .Values.customerStorage.excludedTenants | toJson | quote }}
+            - name: FS2_USER_STORAGE_POLL_SECONDS
+              value: "5"
+            - name: FS2_USER_STORAGE_KEY_TTL_DAYS
+              value: {{ .Values.customerStorage.keyTtlDays | quote }}
+            - name: FS2_USER_STORAGE_ACTION_TIMEOUT_SECONDS
+              value: {{ .Values.customerStorage.actionTimeoutSeconds | quote }}
+            - name: FS2_USER_STORAGE_RESOURCE_CREDENTIALS_FILE
+              value: /var/run/secrets/fs2-serve/customer-storage/resource/credentials.json
+            - name: FS2_USER_STORAGE_IAM_CREDENTIALS_FILE
+              value: /var/run/secrets/fs2-serve/customer-storage/iam/credentials.json
+          volumeMounts:
+            {{- include "fs2-serve.cryptoVolumeMounts" . | nindent 12 }}
+            {{- include "fs2-serve.databaseCaVolumeMount" . | nindent 12 }}
+            - name: customer-storage-resource
+              mountPath: /var/run/secrets/fs2-serve/customer-storage/resource
+              readOnly: true
+            - name: customer-storage-iam
+              mountPath: /var/run/secrets/fs2-serve/customer-storage/iam
+              readOnly: true
+          resources:
+            {{- toYaml .Values.customerStorage.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        {{- include "fs2-serve.cryptoVolumes" . | nindent 8 }}
+        {{- include "fs2-serve.databaseCaVolume" (dict "secret" .Values.secrets.database) | nindent 8 }}
+        - name: customer-storage-resource
+          secret:
+            secretName: {{ .Values.customerStorage.resourceCredentialsSecretName | quote }}
+            defaultMode: 0400
+            items:
+              - key: credentials.json
+                path: credentials.json
+        - name: customer-storage-iam
+          secret:
+            secretName: {{ .Values.customerStorage.iamCredentialsSecretName | quote }}
+            defaultMode: 0400
+            items:
+              - key: credentials.json
+                path: credentials.json
+{{- end }}

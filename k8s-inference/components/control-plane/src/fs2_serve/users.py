@@ -14,6 +14,7 @@ from .models import Principal, Scope
 from .store import ConflictError, NotFoundError
 from .user_models import InferenceUser, UserAppChoice, UserCreate, UserDetail, UserList, UserPatch, UserRow, owner_id
 from .user_repository import UserRepository
+from .user_storage import UserStorageService
 
 
 class UserService:
@@ -27,6 +28,7 @@ class UserService:
         self.repository = repository
         self.access = access
         self.app_catalog = app_catalog
+        self.storage: UserStorageService | None = None
 
     async def apps(self) -> list[UserAppChoice]:
         return await self.app_catalog() if self.app_catalog else []
@@ -75,7 +77,12 @@ class UserService:
         keys = await self.access._project_keys(
             [token for token in tokens if token.principal_id == user.principal_id], tenant_id=user.tenant_id
         )
-        return UserDetail(user=await self._row(user, context), keys=keys, apps=await self.apps())
+        return UserDetail(
+            user=await self._row(user, context),
+            keys=keys,
+            apps=await self.apps(),
+            storage=await self.storage.view(user.tenant_id, user.principal_id) if self.storage else None,
+        )
 
     async def create(self, identity: OperatorPrincipal, request: UserCreate) -> InferenceUser:
         await self.access.authorize(identity, OperatorRole.OPERATOR, action="user.create", tenant_id=request.tenant_id)
@@ -103,6 +110,10 @@ class UserService:
             raise ValueError("enabled cannot be null")
         if "app_ids" in changes:
             await self._validate_apps(request.app_ids)
+        if self.storage is not None and "enabled" in changes and changes["enabled"] != user.enabled:
+            # A disable is committed to the cloud key before the user record is
+            # changed, so a disabled owner can never retain an active S3 key.
+            await self.storage.set_enabled(user.tenant_id, user.principal_id, bool(changes["enabled"]))
         changes.update(updated_at=datetime.now(UTC), source="configured")
         return await self.repository.save(InferenceUser.model_validate({**user.model_dump(), **changes}))
 
@@ -121,7 +132,7 @@ class UserService:
             return principal
         scopes = principal.scopes
         if not user.enabled:
-            scopes = scopes - {Scope.INFERENCE_INVOKE, Scope.MCP_INVOKE}
+            scopes = scopes - {Scope.INFERENCE_INVOKE, Scope.MCP_INVOKE, Scope.STORAGE_CREDENTIALS}
         models = principal.models
         if user.app_ids is not None:
             apps = await self.apps()

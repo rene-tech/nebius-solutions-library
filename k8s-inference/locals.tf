@@ -1130,6 +1130,7 @@ locals {
     credential_generation_history   = var.deployment.secrets.credential_generation_history
     bootstrap_access_expires_at     = var.deployment.secrets.bootstrap_access_expires_at
     keyring_generations             = var.deployment.secrets.keyring_generations
+    customer_storage                = var.deployment.storage.customer_buckets
     deployment_profile              = local.model_profile
     enabled_model_ids               = local.selected_model_ids
     model_image_overrides           = local.effective_model_images

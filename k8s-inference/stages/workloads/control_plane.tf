@@ -305,6 +305,7 @@ resource "helm_release" "control_plane" {
     yamlencode(local.scientific_access_overrides),
     yamlencode(local.website_access_overrides),
     yamlencode(local.scientific_chart_overrides),
+    yamlencode(local.customer_storage_chart_values),
   ]
 
   lifecycle {
