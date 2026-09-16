@@ -221,6 +221,7 @@ class _UpstreamCapture:
                 max_bytes=self.debug_max_body_bytes,
                 observed_bytes=self.observed_bytes,
                 credential_prefixes=prefixes,
+                is_response=True,
             )
         )
         return DebugExchange(

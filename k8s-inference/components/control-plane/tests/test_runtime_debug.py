@@ -99,6 +99,8 @@ async def test_native_rejection_captures_exact_upstream_request_and_validation_r
     assert exchange.method == "POST" and exchange.endpoint == "/native/predict"
     assert exchange.http_status == status and exchange.error_type == "upstream_http_error"
     assert exchange.started_at <= exchange.completed_at
+    # Structured JSON request and error response are captured verbatim (no secret to
+    # redact); the validation error detail is retained as the debugging target.
     assert exchange.request_body.data.encode() == request_body and exchange.request_body.complete
     assert exchange.response_body.data.encode() == error_body and exchange.response_body.complete
     assert exchange.request_body.observed_bytes == len(request_body)
@@ -155,7 +157,10 @@ async def test_out_of_scope_operation_is_gated_before_capture(registry) -> None:
 
 
 @pytest.mark.asyncio
-async def test_binary_error_is_lossless_base64_without_changing_public_result(registry) -> None:
+async def test_binary_error_response_is_withheld_without_changing_public_result(registry) -> None:
+    """SAI-01: an arbitrary/binary response body is not structurally recognized and is
+    withheld (fail closed) rather than stored, since a secret in opaque bytes cannot
+    be scrubbed. The public result and status are unchanged."""
     raw = b"\xff\x00\x81validation failure\x80"
 
     async def handler(_request):
@@ -168,8 +173,8 @@ async def test_binary_error_is_lossless_base64_without_changing_public_result(re
         )
     assert result.status_code == 400 and result.body == b""
     captured = sink.exchanges[0].response_body
-    assert captured.encoding == "base64" and base64.b64decode(captured.data) == raw
-    assert captured.complete and captured.observed_bytes == len(raw)
+    assert _stored(captured) == b"[REDACTED]" and captured.redacted and captured.truncated
+    assert captured.complete and captured.observed_bytes == len(raw)  # true length still reported
 
 
 @pytest.mark.asyncio
@@ -206,6 +211,7 @@ async def test_stored_error_is_retrievable_with_shared_header_and_query_credenti
     assert len(listing.items) == 1
     detail = await sink.get(listing.items[0].id, tenant_id=operation.tenant_id)
     assert detail is not None and detail.response_body.complete
+    # Legit error detail is retained; the echoed header/query/body secrets are gone.
     assert detail.response_body.redacted and "missing input" in detail.response_body.data
     assert detail.request_body.redacted and "synthetic request" in detail.request_body.data
     rendered = detail.model_dump_json()
@@ -231,7 +237,13 @@ async def test_protocol_failures_capture_body_without_reclassifying_public_excep
         with pytest.raises(PreemptedError if case == "preempted" else RuntimeProtocolError):
             await runtime(client, sink).invoke(registry.get("qwen3-8b"), claimed(registry), b"{}")
     exchange = sink.exchanges[0]
-    assert exchange.response_body.data.encode() == body and exchange.response_body.complete
+    if case == "content_type":
+        # text/plain is not a structurally recognized response -> withheld (fail closed).
+        assert _stored(exchange.response_body) == b"[REDACTED]" and exchange.response_body.redacted
+    else:
+        # JSON content type -> structurally recognized and retained (no secret here).
+        assert exchange.response_body.data.encode() == body
+    assert exchange.response_body.complete
     assert exchange.http_status == status
     assert exchange.error_type == ("PreemptedError" if case == "preempted" else "RuntimeProtocolError")
 
@@ -392,6 +404,7 @@ async def test_federated_internal_retry_captures_each_attempt_and_redacts_actual
         rendered = "\n".join(exchange.model_dump_json() for exchange in sink.exchanges)
         assert "federation-test-value-one" not in rendered and "fake-cookie-secret" not in rendered
         if first_failure == "http_status":
+            # 503 error response: legit detail retained; the echoed auth token is gone.
             assert sink.exchanges[0].response_body.redacted
             assert "busy" in sink.exchanges[0].response_body.data
         else:

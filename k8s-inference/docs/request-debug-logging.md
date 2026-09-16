@@ -2,8 +2,10 @@
 
 This is an opt-in operator debugging facility, separate from ordinary logs, usage
 counters and logical run history. It is **off by default** and, when enabled, is
-governed: each stored body is capped to a redacted prefix, captures are deleted by
-the platform's central retention purge, and reading a captured exchange requires an
+governed: a captured body that fits the store cap is stored whole and fully
+inspected, while one over the cap (or an arbitrary/unstructured response) is
+withheld rather than stored as a boundary-cut prefix; captures are deleted by the
+platform's central retention purge; and reading a captured exchange requires an
 ADMIN operator and is audited. Enable it deliberately for a bounded window rather
 than leaving it on as a standing state.
 
@@ -56,10 +58,11 @@ capture off.
 
 One more chart value bounds each retained record and is safe to leave at default:
 
-- `config.requestDebugMaxBodyBytes` (default `65536`) caps the stored size of each
-  captured request/response body. Only a bounded, redacted prefix is kept, and the
-  middleware buffers at most this cap plus a small fixed overlap (never a multiple of
-  the payload) regardless of body size.
+- `config.requestDebugMaxBodyBytes` (default `65536`, max `1048576`) caps the stored
+  size of each captured request/response body and the bytes the sanitizer ever
+  processes for one body. A body within the cap is stored whole; a body over the cap
+  is withheld entirely (never a boundary-cut prefix). The buffer never exceeds the
+  cap regardless of payload size.
 
 Retention/purge of captured exchanges (and of transport telemetry) is owned by the
 platform's central maintenance purge — its own retention settings, DELETE grants
@@ -140,12 +143,14 @@ content_type: observed value or null
 observed_bytes: number of body bytes actually observed before redaction
 complete: whether the body finished on the wire (wire-completeness only)
 redacted: whether sensitive content was replaced
-truncated: whether only a bounded prefix was stored (observed_bytes still full)
+truncated: whether the body was withheld rather than stored (observed_bytes still full)
 ```
 
-`complete` and `truncated` are independent: a body that finished on the wire but was
-larger than the store cap is `complete=true, truncated=true` (do not read truncated
-as incomplete). A body cut off on the wire is `complete=false`.
+`complete` and `truncated` are independent: a wire-complete body that was withheld
+(because it exceeded the cap, was an arbitrary/unstructured response, or its request
+exceeded the cap) is `complete=true, truncated=true` with its bytes replaced by a
+`[REDACTED]` marker — do not read `truncated` as incomplete. A body cut off on the
+wire is `complete=false`.
 
 Nullable identities/statuses are not invented. A request without a durable
 operation shows **No operation**; an unavailable status is **Not observed**, not
@@ -153,22 +158,30 @@ HTTP 0 or success.
 
 ## Completeness, storage and limits
 
-- Each stored body is capped at `requestDebugMaxBodyBytes`. A body larger than the
-  cap is stored as a bounded, redacted prefix with `truncated=true`, while
-  `observed_bytes` still reports the full length seen on the wire. Capture does not
-  bypass existing endpoint validation, upload or runtime response bounds, and it is
-  not an unlimited packet recorder or a new model payload-size allowance.
+- Each stored body is bounded by `requestDebugMaxBodyBytes`. A body within the cap is
+  stored whole and fully inspected; a body over the cap is **withheld** entirely
+  (a `[REDACTED]` marker, `truncated=true`), never stored as a boundary-cut prefix,
+  because a credential crossing the cap could leave bytes no scrub can be trusted to
+  remove. `observed_bytes` still reports the full length seen on the wire. Capture
+  does not bypass existing endpoint validation, upload or runtime response bounds, and
+  it is not an unlimited packet recorder or a new model payload-size allowance.
 - A rejected request body may never have been consumed by the application. The
   public middleware does not drain it merely to fill a log. Interrupted, unread,
   failed or limit-exceeded streams remain explicitly partial/incomplete. An empty
   complete body is different from zero bytes retained from an unread body.
-- Fail-closed response withholding: when a request is larger than the inspection
-  buffer, its uninspected tail could contain a credential the capture never saw, so
-  the response body is **withheld** rather than stored (its bytes are replaced with
-  `[REDACTED]`, `redacted=true`, `truncated=true`), while `observed_bytes` still
-  reports the true response length. This prevents a credential in the unseen request
-  tail from being echoed back into storage. The request body itself is still stored
-  as a bounded, redacted prefix.
+- Fail-closed response handling: a response body is withheld when the matching
+  request exceeded the cap (its uninspected tail could echo a credential the capture
+  never saw) and when the response itself is arbitrary/unstructured (not JSON, SSE or
+  form — a non-format secret in opaque bytes cannot be scrubbed). A withheld body is
+  a `[REDACTED]` marker with `redacted=true, truncated=true`; `observed_bytes` still
+  reports the true length. Legitimate structured error detail is retained (it is the
+  debugging target); a truly arbitrary, non-format secret embedded in free-text
+  detail that is neither a sensitive-key value, a recognized token format, nor a
+  request-echoed value cannot be distinguished from that legitimate text and is
+  bounded instead by scope, expiry, ADMIN-gating and auditing.
+- Capture scope (which tenant/App is recorded) is decided only from
+  server-authoritative dispatch state, never a caller-declared model/tool in the
+  request body, so a caller cannot spoof another App's scope.
 - `observed_bytes` is not necessarily the displayed length after redaction or
   base64 encoding. Public counts describe observed application body chunks;
   upstream response counts describe the decoded HTTP body iterator, not compressed

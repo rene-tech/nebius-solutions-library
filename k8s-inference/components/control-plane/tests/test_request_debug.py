@@ -230,13 +230,15 @@ async def test_send_failure_preserves_observed_chunk_and_original_exception():
     store = InMemoryDebugStore()
 
     async def app(scope, receive, send):
-        await send({"type": "http.response.start", "status": 200})
-        await send({"type": "http.response.body", "body": b"generated but delivery failed"})
+        await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
+        await send({"type": "http.response.body", "body": b'{"partial":"generated"}'})
 
     with pytest.raises(OSError, match="connection closed"):
         await capture(app, store=store, send_error=True)
     (exchange,) = store.exchanges.values()
-    assert exchange.response_body.data == "generated but delivery failed"
+    # The chunk observed before the send failed is captured (structured 200 response),
+    # and the exchange is explicitly incomplete/disconnected with the original error.
+    assert exchange.response_body.data == '{"partial":"generated"}'
     assert exchange.disconnected and not exchange.response_body.complete and exchange.error_type == "OSError"
 
 
@@ -733,6 +735,135 @@ async def test_middleware_captures_response_when_request_fits_the_buffer():
     (exchange,) = store.exchanges.values()
     assert secret not in exchange.model_dump_json()  # echoed credential redacted
     assert b"ok" in _stored_bytes(exchange.response_body)  # but the response body is kept
+
+
+@pytest.mark.parametrize(
+    "request_body",
+    [
+        b"{'api_key': 'SQSECRETVALUE0123456789'}",  # single-quoted (non-JSON)
+        b"grant_type=password&api_key=SQSECRETVALUE0123456789&scope=read",  # form-urlencoded
+    ],
+)
+async def test_single_quoted_and_form_request_credentials_are_redacted_in_response_echo(request_body):
+    """SAI-01: a credential the request carries in a single-quoted or form-encoded field
+    is learned and removed from a response that echoes it, not just from the request copy."""
+    secret = "SQSECRETVALUE0123456789"
+
+    async def app(scope, receive, send):
+        await receive()
+        await send({"type": "http.response.start", "status": 400, "headers": [(b"content-type", b"application/json")]})
+        # An arbitrary error detail echoes the credential in plaintext.
+        await send({"type": "http.response.body", "body": b'{"detail":"rejected value ' + secret.encode() + b'"}'})
+
+    store, _, _ = await capture(
+        app,
+        chunks=[{"type": "http.request", "body": request_body, "more_body": False}],
+        headers=[(b"content-type", b"application/json")],
+    )
+    (exchange,) = store.exchanges.values()
+    assert secret not in exchange.model_dump_json()  # gone from request copy AND response echo
+    assert exchange.request_body.redacted and exchange.response_body.redacted
+
+
+async def test_arbitrary_and_binary_response_bodies_are_withheld():
+    """SAI-01: a response that is not structurally recognized (plain text, binary) is
+    withheld rather than stored, since a non-format secret in opaque bytes can't be scrubbed."""
+    for content_type, body in (
+        (b"text/plain", b"opaque secret ZZZTOKEN maybe"),
+        (b"application/octet-stream", b"\x00\xff\x80bin"),
+    ):
+
+        async def app(scope, receive, send, _body=body, _ct=content_type):
+            await receive()
+            await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", _ct)]})
+            await send({"type": "http.response.body", "body": _body, "more_body": False})
+
+        store, _, _ = await capture(
+            app,
+            chunks=[{"type": "http.request", "body": b'{"model":"boltz2"}'}],
+            headers=[(b"content-type", b"application/json")],
+        )
+        (exchange,) = store.exchanges.values()
+        assert _stored_bytes(exchange.response_body) == b"[REDACTED]"
+        assert exchange.response_body.redacted and exchange.response_body.truncated
+
+
+async def test_success_response_content_fields_are_preserved():
+    """SAI-01: fail-closed handling must not erase the debugging target — a success
+    response's own content fields (message/content/detail) are retained."""
+    body = b'{"choices":[{"message":{"content":"the model output"}}],"detail":"ok"}'
+
+    async def app(scope, receive, send):
+        await receive()
+        await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
+        await send({"type": "http.response.body", "body": body, "more_body": False})
+
+    store, _, _ = await capture(
+        app,
+        chunks=[{"type": "http.request", "body": b'{"model":"boltz2"}'}],
+        headers=[(b"content-type", b"application/json")],
+    )
+    (exchange,) = store.exchanges.values()
+    assert _stored_bytes(exchange.response_body) == body and not exchange.response_body.redacted
+
+
+@pytest.mark.parametrize("state", [{}, {"model_id": "qwen3-8b"}, {"model_id": "boltz2"}])
+async def test_mcp_scope_uses_server_model_not_caller_declared_body(state):
+    """SAI-01: /mcp capture scope is decided from server-authoritative dispatch state
+    (state["model_id"]), never the caller-declared model in the request body. A caller
+    declaring an in-scope model it is not authorized for must not force capture."""
+    spoof = b'{"method":"tools/call","params":{"name":"unrelated","arguments":{"model":"boltz2"}}}'
+
+    async def app(scope, receive, send):
+        await receive()
+        await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
+        await send({"type": "http.response.body", "body": b'{"ok":true}'})
+
+    policy = DebugCapturePolicy(enabled=True, models=frozenset({"boltz2"}), expires_at=_FUTURE)
+    store, _, _ = await capture(
+        app, path="/mcp", chunks=[{"type": "http.request", "body": spoof}], policy=policy, state=dict(state)
+    )
+    if state.get("model_id") == "boltz2":
+        (exchange,) = store.exchanges.values()
+        assert exchange.model_id == "boltz2"  # only a server-resolved in-scope model captures
+    else:
+        assert store.exchanges == {}  # spoofed body model, or an unrelated server model, does not
+
+
+async def test_concurrent_near_cap_captures_stay_within_a_bounded_memory_budget():
+    """SAI-01: many concurrent captures of near-cap malformed bodies stay bounded in
+    time and aggregate memory (per-capture sanitizer input is capped; >cap is withheld)."""
+    import time
+    import tracemalloc
+
+    cap = 64 * 1024
+    body = (b'{"password":"' + b'x"y":"' * cap)[:cap]  # exactly the cap, dense scalars
+
+    async def app(scope, receive, send):
+        await receive()
+        await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
+        await send({"type": "http.response.body", "body": b'{"ok":true}', "more_body": False})
+
+    async def one():
+        store, _, _ = await capture(
+            app,
+            chunks=[{"type": "http.request", "body": body}],
+            headers=[(b"content-type", b"application/json")],
+            max_body_bytes=cap,
+        )
+        return next(iter(store.exchanges.values()))
+
+    tracemalloc.start()
+    start = time.perf_counter()
+    exchanges = await asyncio.gather(*(one() for _ in range(16)))
+    elapsed = time.perf_counter() - start
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    assert elapsed < 5.0  # no catastrophic backtracking across the concurrent set
+    assert peak < 64 * 1024 * 1024  # aggregate stays far below a per-body blowup
+    # Dense-secret bodies whose redaction expands past the cap are withheld, not stored.
+    for exchange in exchanges:
+        assert len(_stored_bytes(exchange.request_body)) <= cap
 
 
 async def test_middleware_redacts_credential_split_across_request_chunks():

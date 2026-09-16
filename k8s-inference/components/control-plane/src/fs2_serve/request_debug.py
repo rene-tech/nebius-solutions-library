@@ -1,12 +1,24 @@
 """Opt-in HTTP/MCP debug captures, separate from usage telemetry.
 
 Capture is off by default and, when enabled, is scoped, time-bounded and
-memory-bounded: each stored body is capped to a redacted prefix, captures are
-deleted by the platform's central retention purge, and detail reads require an
-ADMIN operator and emit an audit event. Authentication material is removed;
-encrypted PostgreSQL details are available only through the operator API. No body, header, query or exception
-message is written to ordinary application logs. An unread or interrupted body
-is explicit, and a body stored only as a bounded prefix is flagged truncated.
+memory-bounded. Bodies are fail closed: a body within the store cap is stored
+whole and fully inspected; a body over the cap, or an arbitrary/unstructured
+response body, is withheld entirely (a redaction marker), never stored as a
+boundary-cut prefix. Response capture is also withheld when the matching request
+exceeded the cap, so an uninspected request tail cannot be echoed into storage.
+Sanitization removes authentication material, sensitive JSON/form/query keys
+(double- and single-quoted), recognized token formats and credentials learned
+from the request. Captures are deleted by the platform's central retention purge,
+and detail reads require an ADMIN operator and emit an audit event. No body,
+header, query or exception message is written to ordinary application logs.
+
+Model/App scope is decided from server-authoritative dispatch state only, never a
+caller-declared request body. Residual: a secret embedded in free-text error
+detail that is neither a sensitive-key value, a recognized token format, nor a
+value echoed from the request cannot be distinguished from the legitimate error
+text the facility exists to show; it is not blanket-redacted (that would erase the
+debugging target) and is instead bounded by scope, expiry, ADMIN-gating, auditing
+and the arbitrary-body withholding above.
 """
 
 from __future__ import annotations
@@ -99,9 +111,10 @@ _UNTERMINATED_VALUE_MAX = 4096
 # An unterminated scalar runs to end-of-buffer, so only the tail can hold one.
 # Bound the search window so scanning stays linear regardless of body size.
 _UNTERMINATED_SCAN = _UNTERMINATED_VALUE_MAX + 512
-# Overlap buffered beyond the store cap: enough to see and redact a credential
-# straddling the cap, but a fixed bound rather than a multiple of the payload.
-_CAPTURE_OVERLAP = 8192
+# Response content types whose structure we recognize and can scrub. A response
+# body that is neither one of these nor parseable JSON is treated as arbitrary and
+# withheld rather than stored (fail closed).
+_STRUCTURED_CONTENT = frozenset({"application/json", "text/event-stream", "application/x-www-form-urlencoded"})
 
 
 class DebugBody(StrictModel):
@@ -249,6 +262,18 @@ def _redact_json(value: Any) -> Any:
     return value
 
 
+def _try_json(raw: bytes) -> tuple[Any, bool]:
+    try:
+        return json.loads(raw), True
+    except (ValueError, UnicodeError, RecursionError):
+        return None, False
+
+
+def _structured_content(content_type: str | None) -> bool:
+    base = (content_type or "").split(";", 1)[0].strip().lower()
+    return base.endswith("+json") or base in _STRUCTURED_CONTENT
+
+
 def _redact_scalar(match: re.Match[bytes]) -> bytes:
     try:
         # json.loads decodes escapes, so an escaped sensitive key still matches.
@@ -283,22 +308,23 @@ def _is_form(content_type: str | None) -> bool:
 
 
 def capture_store_limit(max_body_bytes: int | None) -> int | None:
-    """Bytes to buffer for a capture: the store cap plus a bounded overlap.
+    """Bytes to buffer for a capture: exactly the store cap.
 
-    The overlap lets a credential straddling the cap be seen and redacted before
-    truncation, while keeping the buffer a fixed size above the cap rather than a
-    multiple of the (unbounded) payload.
+    A body that fits in the cap is stored whole (and fully inspected); a body that
+    exceeds it is withheld entirely rather than stored as a boundary-cut prefix, so
+    the buffer never needs to exceed the cap.
     """
-    return None if max_body_bytes is None else max_body_bytes + _CAPTURE_OVERLAP
+    return max_body_bytes
 
 
 def suppressed_body(content_type: str | None, observed_bytes: int, complete: bool) -> DebugBody:
     """A fail-closed placeholder stored instead of a body that cannot be captured safely.
 
-    Used for a response whose matching request exceeded the inspection buffer: the
-    uninspected request tail could hold a credential we never saw, so echoing it
-    into storage cannot be ruled out. The true observed length and wire-completeness
-    are still reported; the body itself is withheld.
+    Used when a body cannot be retained without risking a leak: it exceeded the
+    store cap (an uninspected tail/boundary could hide a credential), it is a
+    response whose matching request exceeded the cap (the uninspected request tail
+    could be echoed), or it is an arbitrary/unstructured response body. The true
+    observed length and wire-completeness are still reported; the body is withheld.
     """
     return DebugBody(
         encoding="utf-8",
@@ -349,27 +375,37 @@ def body_capture(
     known_credentials: Credentials = (),
     max_bytes: int | None = None,
     credential_prefixes: Credentials = (),
+    *,
+    is_response: bool = False,
 ) -> DebugBody:
     observed = len(raw)
+    # Withhold, never truncate. A body larger than the store cap is not stored as a
+    # bounded prefix: a credential crossing the cap can leave 1..N bytes at the
+    # boundary that no scrub can be trusted to remove, so the whole body is withheld
+    # (fail closed). Callers still report the true observed length via the marker.
+    if max_bytes is not None and observed > max_bytes:
+        return suppressed_body(content_type, observed, complete)
+    parsed, is_json = _try_json(raw)
+    # Response fail closed: only retain a structurally recognized response
+    # (parseable JSON or an allowlisted structured content type). An arbitrary,
+    # unstructured or binary response body could hide a non-format secret in free
+    # text we cannot identify, so it is withheld rather than stored.
+    if is_response and not is_json and not _structured_content(content_type):
+        return suppressed_body(content_type, observed, complete)
     original = raw
-    # Redact the COMPLETE observed body first, then enforce the stored-byte cap.
-    # Doing it in this order is a security requirement: truncating first could
-    # keep a credential as a partial prefix that full-body redaction would have
-    # removed, and redaction (which can grow the body, e.g. a short value ->
-    # "[REDACTED]") must not be able to push the stored copy back past the cap.
-    # Sanitization below is conservative and driven by key names and value
-    # formats, so a sensitive value is removed on its own merits even when it
-    # never appeared in the request (a response-only secret).
+    # Sanitization is conservative and driven by key names and value formats, so a
+    # sensitive value is removed on its own merits even when it never appeared in
+    # the request (a response-only secret). Legitimate error-detail text is retained
+    # (it is the debugging target); see the module docstring for the residual on an
+    # arbitrary, non-format secret embedded in free text.
     if _is_form(content_type):
         raw = _redact_form(raw)
-    # Parse regardless of Content-Type: malformed/mislabeled requests are the
-    # reason debug capture exists. Preserve exact original bytes when unchanged.
-    try:
-        parsed = json.loads(raw)
+        parsed, is_json = _try_json(raw)
+    if is_json:
         redacted_json = _redact_json(parsed)
         if redacted_json != parsed:
             raw = json.dumps(redacted_json, ensure_ascii=False, separators=(",", ":")).encode()
-    except (ValueError, UnicodeError, RecursionError):
+    else:
         # Also covers JSON inside SSE data lines and partial/malformed bodies,
         # including single-quoted (repr-style) objects that never parse as JSON.
         raw = _JSON_SCALAR.sub(_redact_scalar, raw)
@@ -379,24 +415,18 @@ def body_capture(
     raw = _redact_bytes(raw, known_credentials)
     raw = _redact_prefix_runs(raw, credential_prefixes)
     if not complete:
+        # A wire-incomplete body can end mid-credential; scrub a dangling prefix.
         raw = _trim_trailing_partial(raw, (*known_credentials, *credential_prefixes))
+    # Redaction can expand the body (a short value -> "[REDACTED]"). A stored body
+    # is always the COMPLETE redacted body within the cap, never a clipped prefix:
+    # if redaction pushed it past the cap, withhold it rather than clip a boundary.
+    if max_bytes is not None and len(raw) > max_bytes:
+        return suppressed_body(content_type, observed, complete)
     redacted = raw != original
-    # Now that the full body is redacted, cap the retained bytes. A `truncated`
-    # body stores only this bounded prefix; `observed_bytes` still reports the
-    # full wire length and `complete` still reports whether the wire body ended.
-    truncated = max_bytes is not None and len(raw) > max_bytes
-    if truncated:
-        raw = raw[:max_bytes]
-        # The cap is a fresh boundary that can leave a credential prefix dangling
-        # inside the retained bytes; re-run redaction and scrub the trailing partial.
-        raw = _redact_bytes(raw, known_credentials)
-        raw = _redact_prefix_runs(raw, credential_prefixes)
-        raw = _trim_trailing_partial(raw, (*known_credentials, *credential_prefixes))
     try:
         text = raw.decode("utf-8")
         encoding: Literal["utf-8", "base64"] = "utf-8"
     except UnicodeError:
-        # A cap can slice a multi-byte sequence; base64 keeps the prefix exact.
         text, encoding = base64.b64encode(raw).decode("ascii"), "base64"
     return DebugBody(
         encoding=encoding,
@@ -405,7 +435,7 @@ def body_capture(
         observed_bytes=observed,
         complete=complete,
         redacted=redacted,
-        truncated=truncated,
+        truncated=False,
     )
 
 
@@ -418,21 +448,24 @@ def bounded_body_capture(
     max_bytes: int | None,
     observed_bytes: int,
     credential_prefixes: Credentials = (),
+    is_response: bool = False,
 ) -> DebugBody:
-    """Redact/cap a bounded prefix while reporting the true observed length.
+    """Store a fully-inspected body, or withhold it when it exceeded the cap.
 
-    ``head`` is at most a bounded buffer (near the store cap); ``observed_bytes``
-    is the full number of wire bytes seen. ``complete`` reports wire-completeness
-    only (whether the body ended on the wire) and is kept independent of buffer
-    completeness, so a body that finished on the wire but was stored only as a
-    bounded prefix is reported ``complete=True, truncated=True``. When the tail
-    beyond ``head`` was discarded (``observed_bytes`` exceeds the buffer) the head
-    always exceeds the store cap, so ``body_capture`` truncates it and runs its
-    boundary scrub unconditionally; the body is additionally flagged truncated.
+    ``head`` is the buffered prefix (at most the store cap) and ``observed_bytes``
+    the full wire length. When the body exceeded the cap it was only partially
+    buffered, so it is withheld entirely (never stored as a boundary-cut prefix);
+    otherwise ``head`` holds the whole body and it is redacted and stored. ``complete``
+    reports wire-completeness only. A withheld body reports ``truncated=True``.
     """
-    bounded = observed_bytes > len(head)
-    body = body_capture(head, content_type, complete, known_credentials, max_bytes, credential_prefixes)
-    return body.model_copy(update={"observed_bytes": observed_bytes, "truncated": body.truncated or bounded})
+    if max_bytes is not None and observed_bytes > max_bytes:
+        return suppressed_body(content_type, observed_bytes, complete)
+    # observed_bytes <= max_bytes, so head holds the entire body. Pass max_bytes so
+    # body_capture still withholds it if redaction expands the stored copy past the cap.
+    body = body_capture(
+        head, content_type, complete, known_credentials, max_bytes, credential_prefixes, is_response=is_response
+    )
+    return body.model_copy(update={"observed_bytes": observed_bytes})
 
 
 def _body_bytes(body: DebugBody) -> bytes:
@@ -465,15 +498,33 @@ def credential_values(headers: HeaderPairs, query: str | bytes = "", body: bytes
             elif credential and isinstance(value, str) and value and value != REDACTED:
                 values.append(value)
 
-        try:
-            collect(json.loads(body))
-        except (ValueError, UnicodeError, RecursionError):
+        parsed, is_json = _try_json(body)
+        if is_json:
+            collect(parsed)
+        else:
+            # Non-JSON request bodies: learn sensitive values from double-quoted and
+            # single-quoted scalars and form-urlencoded pairs, so a value the request
+            # copy redacts is also removed from any response that echoes it.
             for match in _JSON_SCALAR.finditer(body):
                 try:
                     if _name(json.loads(match[1])) in _AUTH_NAMES:
                         collect(json.loads(match[3]), True)
                 except (ValueError, UnicodeError):
                     continue
+            for match in _JSON_SCALAR_SQ.finditer(body):
+                if _name(match[1][1:-1].decode("latin-1")) in _AUTH_NAMES:
+                    scalar = match[3]
+                    if scalar[:1] in (b"'", b'"'):
+                        scalar = scalar[1:-1]
+                    text = scalar.decode("latin-1")
+                    if text and text != REDACTED:
+                        values.append(text)
+            for form_part in body.split(b"&"):
+                form_key, form_sep, form_value = form_part.partition(b"=")
+                if form_sep and _name(unquote_plus(form_key.decode("latin-1"))) in _AUTH_NAMES | {"key"}:
+                    text = unquote_plus(form_value.decode("latin-1"))
+                    if text and text != REDACTED:
+                        values.append(text)
     return tuple(values)
 
 
@@ -506,7 +557,13 @@ def _sanitize(exchange: DebugExchange) -> DebugExchange:
     bodies = {}
     for field in ("request_body", "response_body"):
         previous = getattr(exchange, field)
-        clean = body_capture(_body_bytes(previous), previous.content_type, previous.complete, known)
+        clean = body_capture(
+            _body_bytes(previous),
+            previous.content_type,
+            previous.complete,
+            known,
+            is_response=field == "response_body",
+        )
         bodies[field] = clean.model_copy(
             update={
                 "observed_bytes": previous.observed_bytes,
@@ -927,32 +984,33 @@ class DebugCaptureMiddleware:
                     principal = pre_resolved  # reuse any pre-buffer resolution
                 if principal is None:
                     principal = await self._resolve_principal(request_headers)
+                # Model/tool attribution is server-authoritative only: the trusted
+                # dispatch path sets state["model_id"]/["mcp_tool"] (api.py and the
+                # MCP middleware, including for pre-admission rejections), and the
+                # path names the model for /v1/models/{model}:invoke. The request
+                # body's caller-declared model/tool is never trusted for the scope
+                # gate — a caller could otherwise spoof another App's scope.
                 model_id = (
                     _label(state.get("model_id"))
                     or _label(scope.get("path_params", {}).get("model_id"))
                     or _label(path_model)
                 )
                 tool = _label(state.get("mcp_tool"))
-                try:
-                    claimed = json.loads(request_parts)
-                    if isinstance(claimed, dict):
-                        if path in {"/mcp", "/mcp/"}:
-                            params = claimed.get("params", {})
-                            if isinstance(params, dict):
-                                tool = tool or _label(params.get("name"))
-                                claimed = params.get("arguments", {})
-                        if isinstance(claimed, dict):
-                            model_id = model_id or _label(claimed.get("model_id", claimed.get("model")))
-                except (ValueError, UnicodeError, RecursionError):
-                    pass
                 capture_tenant = principal.tenant_id if principal else None
                 # Scoped, time-bounded gate: only record exchanges the policy
                 # admits. An unscoped/expired/disabled policy records nothing.
                 if self.policy.should_capture(tenant_id=capture_tenant, model_id=model_id, now=datetime.now(UTC)):
-                    known = credential_values([*request_headers, *response_headers], query, bytes(request_parts))
+                    # Fail closed: a request larger than the store cap has an
+                    # uninspected tail that could hold or echo a credential, so both
+                    # bodies are withheld and no body credential learning is needed.
+                    request_truncated = store_limit is not None and request_observed > store_limit
+                    request_head = bytes(request_parts)
+                    known = credential_values(
+                        [*request_headers, *response_headers], query, b"" if request_truncated else request_head
+                    )
                     # A credential in an unterminated/bounded request scalar is only
                     # known as a prefix; redact it (and its echoed suffix) in BOTH bodies.
-                    prefixes = body_credential_prefixes(bytes(request_parts))
+                    prefixes = () if request_truncated else body_credential_prefixes(request_head)
                     request_type = next(
                         (_text(value) for key, value in request_headers if key.lower() == b"content-type"), None
                     )
@@ -964,7 +1022,7 @@ class DebugCaptureMiddleware:
                     # response, so the response body is withheld rather than stored.
                     response_body = (
                         suppressed_body(response_type, response_observed, response_complete)
-                        if store_limit is not None and request_observed > store_limit
+                        if request_truncated
                         else bounded_body_capture(
                             bytes(response_parts),
                             response_type,
@@ -973,6 +1031,7 @@ class DebugCaptureMiddleware:
                             max_bytes=self.max_body_bytes,
                             observed_bytes=response_observed,
                             credential_prefixes=prefixes,
+                            is_response=True,
                         )
                     )
                     exchange = DebugExchange(

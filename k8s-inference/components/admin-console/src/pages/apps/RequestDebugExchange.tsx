@@ -87,8 +87,8 @@ export function DebugBodyView({
           <dd>
             {body.truncated
               ? body.complete
-                ? "Complete on the wire; stored copy truncated"
-                : "Partial / incomplete; stored copy truncated"
+                ? "Complete on the wire; body withheld"
+                : "Partial / incomplete; body withheld"
               : body.complete
                 ? "Complete"
                 : "Partial / incomplete"}
@@ -101,8 +101,9 @@ export function DebugBodyView({
       </dl>
       {body.truncated ? (
         <p className="inline-notice">
-          Only a bounded prefix was stored; the stored copy is truncated even
-          though {body.observed_bytes.toLocaleString()} bytes were observed.
+          The body was withheld and not stored — it exceeded the stored-size cap,
+          was an arbitrary/unstructured response, or its request exceeded the cap —
+          even though {body.observed_bytes.toLocaleString()} bytes were observed.
         </p>
       ) : null}
       {!body.complete ? (
