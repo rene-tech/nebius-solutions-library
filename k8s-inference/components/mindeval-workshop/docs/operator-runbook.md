@@ -15,9 +15,11 @@ Nebius Managed PostgreSQL instance. This add-on reuses that database and does no
 migrate it. Live playback requires PostgreSQL session semantics for LISTEN/NOTIFY;
 a transaction-pooling proxy cannot be used for its dedicated listener connection.
 
-Public entry points are `/workshop`, `/v1/workshop`, `/v1/mindeval` and the
-platform speech/MindGuard endpoints on the configured origin. No port forwarding
-is required for attendees. Existing `/admin`, `/mcp` and scientific endpoints
+Public entry points are `/v1/workshop`, `/v1/mindeval` and the
+platform speech/MindGuard endpoints on the configured origin. The user requested
+removal of the workshop webpage; do not deploy or restore `/workshop` or its
+static assets. Clients use the API; no replacement workshop website is requested.
+Existing `/admin`, `/mcp` and scientific endpoints
 must still work after a rollout.
 
 Deploy the shared control plane first when authorization/voice contracts change,
@@ -47,12 +49,12 @@ provider rate limits. Do not increase provider/cloud quotas as an implicit fix.
 - Complete two unchanged-release rehearsals with ten teams, full-dialogue
   coverage of each selected clinician, strict judge parsing and complete
   classifier prefix coverage. Retain API payloads, reports, timing and errors.
-- Verify spoken playback, typed/microphone intervention on either role,
-  reconnect, abort and resume from the public participant path.
+- Verify speech, interventions on either role, reconnect, abort and resume
+  through the public APIs used by the workshop client.
 - Verify provider transient-error handling and scoped speech/pod interruption.
   A graceful Pod drain is **not** evidence of abrupt VM or physical-node loss;
   label each failure experiment accurately.
-- Supply the attendee guide and a clearly labeled **prerecorded demonstration**
+- Supply the API integration documentation and a clearly labeled **prerecorded demonstration**
   fallback using synthetic profile recordings. Never replay a recording while
   presenting it as a live response.
 

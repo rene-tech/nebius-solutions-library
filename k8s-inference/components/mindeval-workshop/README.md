@@ -1,8 +1,9 @@
 # MindEval workshop
 
-A resumable, multi-team workshop on the Scientific AI platform. The browser UI
-is `/workshop`; its API is `/v1/workshop`. Existing platform API keys authenticate
-both. The upstream Token Factory credential never goes to an attendee/browser.
+A resumable, multi-team evaluation API on the Scientific AI platform at
+`/v1/workshop`. There is no hosted workshop webpage: `/workshop` and its static
+assets were removed at the user's request. Existing platform API keys
+authenticate clients; the upstream Token Factory credential remains server-side.
 
 This is a research demonstration with simulated patient profiles, not a clinical
 product or a validated measure of therapeutic safety. MindEval's fixed judge and
@@ -11,9 +12,9 @@ classification is **unavailable**, never a safe result.
 
 ## Participant workflow
 
-See [the attendee guide](docs/attendee-quickstart.md) for controls, comparison and
-exports, and [the operator runbook](docs/operator-runbook.md) for deployment,
-recovery and event acceptance. The UI provides two deliberately separate modes:
+See the HTTP API below for controls and exports, and
+[the operator runbook](docs/operator-runbook.md) for deployment and recovery.
+The API retains two deliberately separate modes:
 
 - **Text benchmark:** original MindEval prompts and alternating role-relative
   histories. Only completed, untouched text runs enter the comparison table.
@@ -24,7 +25,7 @@ recovery and event acceptance. The UI provides two deliberately separate modes:
 
 Pause, nudge, typed/microphone takeover, return-to-model and abort are recorded
 as interventions. Work is fenced by a run version and worker lease. A late model
-response cannot overwrite human intervention. Disconnecting the browser does
+response cannot overwrite human intervention. Disconnecting a client does
 not discard server-side runs. A process loss is an explicit interruption, not a
 silent replay of possibly billed provider work.
 
@@ -45,7 +46,7 @@ completion. Neither provider nor attendee credentials belong in evidence or
 Helm values. Back up the database and its encryption key together; losing the
 key prevents pending work from authenticating.
 
-The interface authenticates with a key held only in tab memory. Reports and audio
+Clients authenticate with an ordinary Bearer key. Reports and audio
 are accessible only to the authenticated tenant/principal that owns the run.
 No separate "scientific access" identity scheme is introduced.
 
@@ -108,3 +109,7 @@ Public acceptance is driven by
 `../mindeval-gateway/scripts/rehearse_workshop.py`, using ten restricted test
 principals rather than an administrator/provider key. Preserve failed and
 diagnostic evidence; do not relabel it as a passing release rehearsal.
+
+Earlier browser acceptance receipts remain as historical evidence of r10.
+They do not describe a currently hosted UI. The UI files and UI-only test
+harnesses were removed; API, persistence, worker and speech-protocol tests remain.

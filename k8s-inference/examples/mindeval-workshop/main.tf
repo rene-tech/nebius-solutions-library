@@ -23,10 +23,6 @@ module "mindeval_workshop" {
   values         = var.values
 }
 
-output "workshop_url" {
-  value = module.mindeval_workshop.workshop_url
-}
-
 output "workshop_api_url" {
   value = module.mindeval_workshop.workshop_api_url
 }

@@ -43,13 +43,12 @@ def auth(respx_mock):
     return {"Authorization": "Bearer team1"}
 
 
-async def test_catalog_login_and_static_ui(api, auth, respx_mock):
+async def test_catalog_remains_available_without_hosted_webpage(api, auth, respx_mock):
     respx_mock.get("http://gateway/v1/mindeval/catalog").respond(200, json={"data": [], "judge_model": "fixed"})
     respx_mock.get("http://gateway/v1/mindeval/profiles").respond(200, json={"data": []})
-    page = await api.get("/workshop")
-    assert page.status_code == 200 and 'id="create-form"' in page.text
-    script = await api.get("/workshop/static/app.js")
-    assert script.status_code == 200 and "localStorage" not in script.text
+    for path in ("/workshop", "/workshop/", "/workshop/static/index.html", "/workshop/static/app.js"):
+        assert (await api.get(path)).status_code == 404
+        assert (await api.get(path, headers=auth)).status_code == 404
     response = await api.get("/v1/workshop/catalog", headers=auth)
     assert response.status_code == 200 and response.json()["limits"]["workers_per_team"] == 5
 

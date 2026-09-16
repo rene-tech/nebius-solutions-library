@@ -1,4 +1,4 @@
-"""Attendee API and browser UI for durable text/spoken MindEval runs."""
+"""API for durable text/spoken MindEval runs; no hosted workshop webpage."""
 
 import asyncio
 import contextlib
@@ -12,8 +12,7 @@ import httpx
 import uvicorn
 from fastapi import FastAPI, Header, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 from prometheus_client import Counter, Gauge, generate_latest
 from websockets.asyncio.client import connect
 
@@ -483,21 +482,6 @@ def create_app(settings=None, *, store=None, client=None, start_workers=True):
         finally:
             with contextlib.suppress(RuntimeError, WebSocketDisconnect):
                 await socket.close()
-
-    static = Path(__file__).with_name("static")
-    app.mount("/workshop/static", StaticFiles(directory=static), name="workshop-static")
-
-    @app.get("/workshop")
-    @app.get("/workshop/")
-    async def page():
-        return FileResponse(
-            static / "index.html",
-            headers={
-                "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; "
-                "connect-src 'self'; "
-                "media-src 'self' blob:; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'"
-            },
-        )
 
     return app
 

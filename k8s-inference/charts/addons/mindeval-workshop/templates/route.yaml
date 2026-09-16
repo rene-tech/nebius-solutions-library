@@ -15,7 +15,6 @@ spec:
   {{- end }}
   rules:
     - matches:
-        - {path: {type: PathPrefix, value: /workshop}}
         - {path: {type: PathPrefix, value: /v1/workshop}}
       backendRefs:
         - {name: {{ .Values.workshop.name }}, port: 8080}

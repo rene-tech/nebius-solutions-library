@@ -1,8 +1,15 @@
 # MindEval workshop release — 2026-09-16
 
+## Scope correction: no hosted workshop webpage
+
+The user requested removal of the workshop website after the r10 tests below.
+`/workshop`, its static assets, serving routes and Terraform `workshop_url`
+output are removed. The backend APIs, model services, credentials and stored
+run/audio evidence remain. Browser results below are historical r10 evidence,
+not an instruction to host or recreate a workshop website.
+
 ## Entry points and scope
 
-- Participant interface: <https://89.169.99.188/workshop>
 - Resumable workshop API: <https://89.169.99.188/v1/workshop>
 - Token Factory gateway: <https://89.169.99.188/v1/mindeval>
 - Existing platform administration and MCP: `/admin` and `/mcp` on the same origin.
@@ -156,14 +163,14 @@ terraform -chdir=k8s-inference/examples/mindeval-workshop apply -input=false \
   /home/tux/secure-handoff/scientific-ai-mindeval-20260916/workshop-r10-clean.tfplan
 ```
 
-Terraform outputs expose the workshop URL, workshop API and gateway API listed
-above. Public HTTPS was checked with normal certificate verification: the live
+Terraform outputs expose the workshop API and gateway API listed
+above; the webpage URL output is removed. Public HTTPS was checked with normal certificate verification: the live
 Let's Encrypt certificate includes the IP in its SAN, and GET `/workshop` returns
 200 with TLS verification result zero. The final r10 runner does not disable TLS
 verification; older r9 diagnostic invocations used `--insecure` and remain labeled
 as such in their receipts.
 
-Read the [attendee quickstart](../components/mindeval-workshop/docs/attendee-quickstart.md)
+Read the [API documentation](../components/mindeval-workshop/README.md)
 and [operator runbook](../components/mindeval-workshop/docs/operator-runbook.md).
 The reproducible prerecorded fallback is clearly labeled, includes both voices,
 and was tested offline in Chromium with no external requests. Its ZIP is in the

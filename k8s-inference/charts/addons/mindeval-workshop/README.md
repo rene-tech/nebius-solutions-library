@@ -1,7 +1,7 @@
 # MindEval workshop add-on
 
 Deploys two CPU services: a single persistent MindEval inference gateway and two
-workshop API/UI replicas. The workshop uses the platform PostgreSQL database in
+workshop API/worker replicas. No workshop webpage is hosted. The workshop uses the platform PostgreSQL database in
 its own `fs2_workshop` schema. The gateway is deliberately a singleton: its fair
 RPM/TPM scheduler and SQLite registration store require one process. Its
 Deployment always uses `Recreate` and one replica.
@@ -37,7 +37,7 @@ migration DSN/CA. It preserves failed Jobs for diagnosis and removes successful
 Jobs. Runtime pods use the ordinary database role. Gateway SQLite storage is
 retained on Helm uninstall; deletion of that PVC is a separate explicit action.
 
-One additional HTTPRoute attaches `/workshop` and `/v1/workshop` to the workshop,
+One additional HTTPRoute attaches `/v1/workshop` to the workshop API,
 and `/v1/mindeval` to the gateway, with 900-second request/backend timeouts.
 Existing routes, speech endpoints and the website are unchanged. A narrowly
 scoped additive NetworkPolicy allows these two app labels into the existing

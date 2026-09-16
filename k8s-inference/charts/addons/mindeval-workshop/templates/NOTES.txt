@@ -1,4 +1,3 @@
-Workshop: {{ .Values.workshop.publicOrigin }}/workshop
 Workshop API: {{ .Values.workshop.publicOrigin }}/v1/workshop
 Gateway API: {{ .Values.workshop.publicOrigin }}/v1/mindeval
 

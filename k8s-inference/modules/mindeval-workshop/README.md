@@ -21,11 +21,14 @@ take precedence over YAML overrides. Credential bytes belong in existing Secret
 resources, never Helm values or Terraform inputs. The Helm provider is inherited
 from the caller; configure the exact existing kubeconfig/context there.
 
-Outputs are `workshop_url`, `workshop_api_url`, `gateway_api_url`, `release_name`
+Outputs are `workshop_api_url`, `gateway_api_url`, `release_name`
 and `namespace`. Helm waits for the schema hook and ready pods with atomic
 rollback. The gateway PVC is retained by the chart on uninstall. Changing the
 chart's singleton scheduler semantics requires implementing distributed rate
 accounting first.
+
+No workshop webpage is hosted. The former `workshop_url` output was removed;
+the API and gateway URLs remain available for client integrations.
 
 This module and the standalone `examples/mindeval-workshop` root are validated
 using `terraform init -backend=false` and `terraform validate`. No Terraform
