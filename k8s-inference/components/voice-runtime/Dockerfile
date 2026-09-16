@@ -15,7 +15,9 @@ RUN mkdir -p /opt/nemo-speech /opt/voice-upstream /opt/fs2_voice_upstream \
     && touch /opt/fs2_voice_upstream/__init__.py \
     && sed -i 's/from nemo_voice_agent.pipecat.services.nemo.utils import/from fs2_voice_upstream.utils import/' \
        /opt/fs2_voice_upstream/streaming_asr.py /opt/fs2_voice_upstream/streaming_diar.py \
-    && python -m pip install --no-cache-dir --no-deps /opt/nemo-speech
+    && true
+COPY patches/tts_models_init.py /opt/nemo-speech/nemo/collections/tts/models/__init__.py
+RUN python -m pip install --no-cache-dir --no-deps /opt/nemo-speech
 WORKDIR /opt/fs2-voice
 COPY requirements-tts.lock ./requirements-tts.lock
 RUN python -m pip install --no-cache-dir -r requirements-tts.lock \

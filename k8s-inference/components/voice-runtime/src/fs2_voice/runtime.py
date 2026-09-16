@@ -52,7 +52,8 @@ class Runtime:
             raise RuntimeError("cuda_required")
         spec = MODELS[self.model_id]
         checkpoint = self.checkpoint_dir / spec.filename
-        sha = hashlib.file_digest(checkpoint.open("rb"), "sha256").hexdigest()
+        with checkpoint.open("rb") as checkpoint_file:
+            sha = hashlib.file_digest(checkpoint_file, "sha256").hexdigest()
         if sha != spec.sha256:
             raise RuntimeError("checkpoint_checksum_mismatch")
         self.timings["checkpoint_verify_seconds"] = time.monotonic() - started
@@ -63,11 +64,17 @@ class Runtime:
             self.model = NemoStreamingASRService(str(checkpoint), att_context_size=[70, 1], device="cuda")
         elif self.model_id == MAGPIE:
             from nemo.collections.tts.models import MagpieTTSModel
-            from omegaconf import OmegaConf, open_dict
+            from omegaconf import open_dict
 
             cfg = MagpieTTSModel.restore_from(str(checkpoint), return_config=True)
             with open_dict(cfg):
                 cfg.codecmodel_path = str(self.checkpoint_dir / "nanocodec.nemo")
+                for tokenizer in cfg.text_tokenizers.values():
+                    if tokenizer.get("pretrained_model") == "google/byt5-small":
+                        tokenizer.pretrained_model = (
+                            "/opt/fs2-voice/hf/hub/models--google--byt5-small/snapshots/"
+                            "68377bdc18a2ffec8a0533fef03b1c513a4dd49d"
+                        )
             self.model = MagpieTTSModel.restore_from(str(checkpoint), override_config_path=cfg, map_location="cuda")
             self.model.eval().cuda()
         else:
@@ -111,20 +118,35 @@ class Runtime:
                 events.append({"type": "transcript.partial", "segment": self.segment, "text": self.text.strip()})
             if result.is_final:
                 events.append({"type": "transcript.final", "segment": self.segment, "text": self.text.strip()})
-                for token, event, probability in (("<EOU>", "turn.eou", result.eou_prob),
-                                                   ("<EOB>", "turn.eob", result.eob_prob)):
+                for token, event, probability in (
+                    ("<EOU>", "turn.eou", result.eou_prob),
+                    ("<EOB>", "turn.eob", result.eob_prob),
+                ):
                     if token in result.text:
-                        events.append({"type": event, "segment": self.segment, "source": "model_token",
-                                       "probability": probability, "audio_offset_seconds": self.samples / 16000})
+                        events.append(
+                            {
+                                "type": event,
+                                "segment": self.segment,
+                                "source": "model_token",
+                                "probability": probability,
+                                "audio_offset_seconds": self.samples / 16000,
+                            }
+                        )
                 self.segment += 1
                 self.text = ""
         else:
             probabilities = self.model.diarize(pcm)
             if not np.isfinite(probabilities).all() or probabilities.ndim != 2 or probabilities.shape[1] != 4:
                 raise RuntimeError("invalid_speaker_probabilities")
-            events.append({"type": "speaker.activity", "start_seconds": self.frames * .08,
-                           "frame_duration_seconds": .08, "speakers": ["speaker_0", "speaker_1", "speaker_2", "speaker_3"],
-                           "probabilities": probabilities.tolist()})
+            events.append(
+                {
+                    "type": "speaker.activity",
+                    "start_seconds": self.frames * 0.08,
+                    "frame_duration_seconds": 0.08,
+                    "speakers": ["speaker_0", "speaker_1", "speaker_2", "speaker_3"],
+                    "probabilities": probabilities.tolist(),
+                }
+            )
             self.frames += len(probabilities)
             self.model.total_preds = self.model.total_preds[:, -6:, :]
         return events
@@ -138,8 +160,8 @@ class Runtime:
         self.pending.extend(pcm)
         events = []
         while len(self.pending) >= self.frame_bytes:
-            chunk = bytes(self.pending[:self.frame_bytes])
-            del self.pending[:self.frame_bytes]
+            chunk = bytes(self.pending[: self.frame_bytes])
+            del self.pending[: self.frame_bytes]
             events.extend(self._step(chunk))
         return events
 
@@ -153,8 +175,14 @@ class Runtime:
             for _ in range(10):
                 events.extend(self._step(bytes(self.frame_bytes)))
             if self.text.strip():
-                events.append({"type": "transcript.final", "segment": self.segment, "text": self.text.strip(),
-                               "reason": "session_finish"})
+                events.append(
+                    {
+                        "type": "transcript.final",
+                        "segment": self.segment,
+                        "text": self.text.strip(),
+                        "reason": "session_finish",
+                    }
+                )
                 self.text = ""
         return events
 
@@ -165,9 +193,12 @@ class Runtime:
             if cancelled.is_set():
                 return
             with torch.inference_mode():
-                audio, lengths = self.model.do_tts(phrase, language=request.language,
-                                                  apply_TN=request.apply_text_normalization,
-                                                  speaker_index=VOICES[request.voice])
+                audio, lengths = self.model.do_tts(
+                    phrase,
+                    language="ar_MSA" if request.language == "ar" else request.language,
+                    apply_TN=request.apply_text_normalization,
+                    speaker_index=VOICES[request.voice],
+                )
             if cancelled.is_set():
                 return
             length = int(lengths.reshape(-1)[0])
@@ -179,4 +210,4 @@ class Runtime:
             for offset in range(0, len(pcm), 4410):
                 if cancelled.is_set():
                     return
-                yield pcm[offset:offset + 4410]
+                yield pcm[offset : offset + 4410]

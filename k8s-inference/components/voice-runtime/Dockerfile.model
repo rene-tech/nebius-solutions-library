@@ -14,6 +14,10 @@ ADD --checksum=sha256:28c2518de3e3d5a2c7d9bca40a7ebc0644eb76c60b890970365325bdd8
     https://huggingface.co/nvidia/nemo-nano-codec-22khz-1.89kbps-21.5fps/resolve/fc00890b604aa2de298d2641ffc6c5f6caf8c4d7/nemo-nano-codec-22khz-1.89kbps-21.5fps.nemo \
     /opt/fs2-voice/weights/nanocodec.nemo
 RUN chmod -R a+rX /opt/fs2-voice/weights
+COPY src /opt/fs2-voice/src
+RUN python -m pip install --no-cache-dir --no-deps /opt/fs2-voice
 ENV HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+ARG SOURCE_REVISION
 LABEL ai.fs2.model.repository="nvidia/${MODEL_REPOSITORY}" ai.fs2.model.revision=${MODEL_REVISION} ai.fs2.model.sha256=${MODEL_SHA256}
+LABEL org.opencontainers.image.revision=${SOURCE_REVISION}
 USER 10001

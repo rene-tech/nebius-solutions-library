@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
+import anyio
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, generate_latest
@@ -28,7 +29,9 @@ def create_app(runtime: Runtime, *, load: bool = True):
     requests = Counter("fs2_voice_requests_total", "Requests by terminal status", ["status"], registry=registry)
     occupied = Gauge("fs2_voice_occupied", "Worker occupied including cancelled GPU work", registry=registry)
     ready = Gauge("fs2_voice_ready", "Model loaded and not draining", registry=registry)
-    audio = Counter("fs2_voice_audio_seconds_total", "Accepted input/generated output audio", ["direction"], registry=registry)
+    audio = Counter(
+        "fs2_voice_audio_seconds_total", "Accepted input/generated output audio", ["direction"], registry=registry
+    )
     duration = Histogram("fs2_voice_request_seconds", "Total accepted request time", registry=registry)
     first = Histogram("fs2_voice_first_output_seconds", "Accepted request to first usable output", registry=registry)
     executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="voice-gpu")
@@ -80,8 +83,10 @@ def create_app(runtime: Runtime, *, load: bool = True):
     @app.get("/readyz")
     async def readiness():
         status = 200 if state["loaded"] and not state["draining"] else 503
-        return JSONResponse({"ready": status == 200, "busy": state["busy"], "model": runtime.model_id,
-                             "timings": runtime.timings}, status_code=status)
+        return JSONResponse(
+            {"ready": status == 200, "busy": state["busy"], "model": runtime.model_id, "timings": runtime.timings},
+            status_code=status,
+        )
 
     @app.get("/v1/voice/capabilities")
     async def contract():
@@ -110,7 +115,7 @@ def create_app(runtime: Runtime, *, load: bool = True):
         def put(item):
             while not cancelled.is_set():
                 try:
-                    chunks.put(item, timeout=.1)
+                    chunks.put(item, timeout=0.1)
                     return
                 except queue.Full:
                     continue
@@ -131,9 +136,22 @@ def create_app(runtime: Runtime, *, load: bool = True):
         async def stream():
             samples, sequence, status = 0, 0, "cancelled"
             try:
-                yield json.dumps({"type": "audio.start", "request_id": request_id, "model": MAGPIE,
-                                  "voice": payload.voice, "language": payload.language, "sample_rate_hz": 22050,
-                                  "channels": 1, "encoding": "pcm_s16le", "streaming_mode": "phrase_incremental"}) + "\n"
+                yield (
+                    json.dumps(
+                        {
+                            "type": "audio.start",
+                            "request_id": request_id,
+                            "model": MAGPIE,
+                            "voice": payload.voice,
+                            "language": payload.language,
+                            "sample_rate_hz": 22050,
+                            "channels": 1,
+                            "encoding": "pcm_s16le",
+                            "streaming_mode": "phrase_incremental",
+                        }
+                    )
+                    + "\n"
+                )
                 while True:
                     if await request.is_disconnected():
                         return
@@ -144,21 +162,39 @@ def create_app(runtime: Runtime, *, load: bool = True):
                     try:
                         kind, chunk = chunks.get_nowait()
                     except queue.Empty:
-                        await asyncio.sleep(.005)
+                        await asyncio.sleep(0.005)
                         continue
                     if kind == "chunk":
                         if sequence == 0:
                             first.observe(time.monotonic() - started)
                         samples += len(chunk) // 2
                         audio.labels("output").inc(len(chunk) / 44100)
-                        yield json.dumps({"type": "audio.chunk", "sequence": sequence, "sample_rate_hz": 22050,
-                                          "audio_base64": base64.b64encode(chunk).decode()}) + "\n"
+                        yield (
+                            json.dumps(
+                                {
+                                    "type": "audio.chunk",
+                                    "sequence": sequence,
+                                    "sample_rate_hz": 22050,
+                                    "audio_base64": base64.b64encode(chunk).decode(),
+                                }
+                            )
+                            + "\n"
+                        )
                         sequence += 1
                     elif kind == "done":
                         status = "completed"
-                        yield json.dumps({"type": "audio.done", "samples": samples, "chunks": sequence,
-                                          "duration_seconds": samples / 22050,
-                                          "processing_seconds": time.monotonic() - started}) + "\n"
+                        yield (
+                            json.dumps(
+                                {
+                                    "type": "audio.done",
+                                    "samples": samples,
+                                    "chunks": sequence,
+                                    "duration_seconds": samples / 22050,
+                                    "processing_seconds": time.monotonic() - started,
+                                }
+                            )
+                            + "\n"
+                        )
                         return
                     else:
                         status = "failed"
@@ -166,14 +202,24 @@ def create_app(runtime: Runtime, *, load: bool = True):
                         return
             finally:
                 cancelled.set()
-                await asyncio.shield(task)
-                duration.observe(time.monotonic() - started)
-                requests.labels(status).inc()
-                release()
+                with anyio.CancelScope(shield=True):
+                    try:
+                        await asyncio.shield(task)
+                    finally:
+                        duration.observe(time.monotonic() - started)
+                        requests.labels(status).inc()
+                        release()
 
-        return StreamingResponse(stream(), media_type="application/x-ndjson",
-                                 headers={"X-Backend-Id": backend, "X-Request-Id": request_id,
-                                          "Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+        return StreamingResponse(
+            stream(),
+            media_type="application/x-ndjson",
+            headers={
+                "X-Backend-Id": backend,
+                "X-Request-Id": request_id,
+                "Cache-Control": "no-store",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     @app.websocket("/v1/voice/stream")
     async def stream_audio(ws: WebSocket):
@@ -190,8 +236,14 @@ def create_app(runtime: Runtime, *, load: bool = True):
             acquire()
             admitted = True
             await call(runtime.reset)
-            await ws.send_json({"type": "session.ready", "session_id": str(uuid4()), "backend_id": backend,
-                                **capabilities(runtime.model_id)})
+            await ws.send_json(
+                {
+                    "type": "session.ready",
+                    "session_id": str(uuid4()),
+                    "backend_id": backend,
+                    **capabilities(runtime.model_id),
+                }
+            )
             while True:
                 remaining = 1800 - (time.monotonic() - started)
                 if remaining <= 0:
@@ -220,8 +272,13 @@ def create_app(runtime: Runtime, *, load: bool = True):
                     events = await call(runtime.finish)
                     for event in events:
                         await ws.send_json(event)
-                    await ws.send_json({"type": "session.done", "audio_seconds": runtime.samples / 16000,
-                                        "processing_seconds": time.monotonic() - started})
+                    await ws.send_json(
+                        {
+                            "type": "session.done",
+                            "audio_seconds": runtime.samples / 16000,
+                            "processing_seconds": time.monotonic() - started,
+                        }
+                    )
                     status = "completed"
                     return
                 for event in events:
@@ -231,8 +288,14 @@ def create_app(runtime: Runtime, *, load: bool = True):
                     await ws.send_json(event)
         except WebSocketDisconnect:
             status = "cancelled"
-        except (ValidationError, ValueError, asyncio.TimeoutError, HTTPException) as exc:
-            code = "invalid_request" if isinstance(exc, ValidationError) else "idle_timeout" if isinstance(exc, asyncio.TimeoutError) else str(exc)
+        except (TimeoutError, ValidationError, ValueError, HTTPException) as exc:
+            code = (
+                "invalid_request"
+                if isinstance(exc, ValidationError)
+                else "idle_timeout"
+                if isinstance(exc, asyncio.TimeoutError)
+                else str(exc)
+            )
             if isinstance(exc, HTTPException):
                 code = exc.detail["code"]
             await ws.send_json({"type": "error", "code": code, "retryable": not admitted})
@@ -244,10 +307,13 @@ def create_app(runtime: Runtime, *, load: bool = True):
                 pass
         finally:
             if admitted:
-                await call(runtime.reset)
-                duration.observe(time.monotonic() - started)
-                requests.labels(status).inc()
-                release()
+                with anyio.CancelScope(shield=True):
+                    try:
+                        await call(runtime.reset)
+                    finally:
+                        duration.observe(time.monotonic() - started)
+                        requests.labels(status).inc()
+                        release()
             try:
                 await ws.close()
             except RuntimeError:
@@ -260,8 +326,14 @@ def main():
     import uvicorn
 
     runtime = Runtime(os.environ["FS2_VOICE_MODEL"], os.getenv("FS2_VOICE_CHECKPOINT_DIR", "/opt/fs2-voice/weights"))
-    uvicorn.run(create_app(runtime), host="0.0.0.0", port=int(os.getenv("PORT", "8000")),
-                ws_max_size=32768, ws_max_queue=4, timeout_graceful_shutdown=180)
+    uvicorn.run(
+        create_app(runtime),
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", "8000")),
+        ws_max_size=32768,
+        ws_max_queue=4,
+        timeout_graceful_shutdown=180,
+    )
 
 
 if __name__ == "__main__":
