@@ -177,6 +177,15 @@ def gateway_network_policy(documents: list[dict]) -> dict:
     )
 
 
+@pytest.mark.parametrize("extra,limit", [((), "512Mi"), (("--set", "temporaryStorage.sizeLimit=1Gi"), "1Gi")])
+def test_gateway_has_writable_bounded_multipart_scratch(extra, limit):
+    pod = gateway_deployment(render(*extra))["spec"]["template"]["spec"]
+    runtime = next(container for container in pod["containers"] if container["name"] == "control-plane")
+    assert runtime["securityContext"]["readOnlyRootFilesystem"] is True
+    assert {"name": "upload-tmp", "mountPath": "/tmp"} in runtime["volumeMounts"]
+    assert next(volume for volume in pod["volumes"] if volume["name"] == "upload-tmp")["emptyDir"] == {"sizeLimit": limit}
+
+
 def application_route(documents: list[dict]) -> dict:
     return next(
         document

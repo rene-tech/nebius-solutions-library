@@ -309,6 +309,10 @@ spec:
             {{- include "fs2-serve.runtimeEnv" . | nindent 12 }}
           volumeMounts:
             {{- include "fs2-serve.runtimeVolumeMounts" . | nindent 12 }}
+            # Multipart UploadFile spills files larger than 1 MiB to disk.
+            # Keep that scratch writable without changing the read-only image.
+            - name: upload-tmp
+              mountPath: /tmp
           startupProbe:
             httpGet:
               path: /livez
@@ -338,6 +342,9 @@ spec:
               drop: ["ALL"]
       volumes:
         {{- include "fs2-serve.runtimeVolumes" . | nindent 8 }}
+        - name: upload-tmp
+          emptyDir:
+            sizeLimit: {{ ((.Values.temporaryStorage | default dict).sizeLimit | default "512Mi") | quote }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

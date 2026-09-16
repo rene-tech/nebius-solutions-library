@@ -387,6 +387,10 @@ migration:
       cpu: 500m
       memory: 512Mi
 
+# Per-Pod scratch for multipart uploads. This is not retained tenant storage.
+temporaryStorage:
+  sizeLimit: 512Mi
+
 resources:
   requests:
     cpu: 250m

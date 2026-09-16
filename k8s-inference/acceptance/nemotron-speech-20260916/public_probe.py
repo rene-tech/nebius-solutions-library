@@ -116,7 +116,10 @@ def main():
                                 raise RuntimeError("public_speech_operation_timeout")
                         row["wall_seconds"] = time.monotonic()-started
                         row["final_status"] = response.status_code
-                        row["result"] = response.json()
+                        if "json" in response.headers.get("content-type", ""):
+                            row["result"] = response.json()
+                        else:
+                            row["result"] = {"error": "non_json_response", "body": response.text[:1000]}
                         response.raise_for_status()
                         if not row["result"].get("text", "").strip():
                             raise RuntimeError("public_speech_empty_transcript")
