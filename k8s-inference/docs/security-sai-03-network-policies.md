@@ -1,14 +1,16 @@
 # SAI-03 model-runtime network isolation
 
 Status: additive corrective successor whose direct parent is rejected source
-commit `6dc67038698ed4d0412873e02baa1d50b179ff3c`; that exact commit remains
-preserved as negative evidence. Earlier rejected commits
-`093798f53cb4249887e59513a3b0114246f7e94c`,
-`92f9394cb3eb76b9b02f7682c96c056ae600e9ed` and
-`89b5cfe17cffd0a1924fcb4f1af52c8a449c4d1e` are evidence only and are not
-ancestors of this successor. No commit in this lineage has been deployed;
-production rollout remains gated on a future independently accepted SAI-07/KEDA
-successor and a new integration review.
+commit `9b71b8a58b1e23a1d5f9d9ac11243dbad9a4652f`; that exact commit remains
+preserved as negative evidence. Rejected commits
+`6dc67038698ed4d0412873e02baa1d50b179ff3c` and
+`093798f53cb4249887e59513a3b0114246f7e94c` are ancestors of this successor and
+remain negative evidence; `92f9394cb3eb76b9b02f7682c96c056ae600e9ed` and
+`89b5cfe17cffd0a1924fcb4f1af52c8a449c4d1e` remain separate rejected evidence.
+No commit in this lineage has been deployed. Production rollout remains gated
+on independent exact-commit source review, the future accepted SAI-07/KEDA
+successor, a clean integration review, and execution of the real saved rollback
+plan gate when deletion-capable testing is authorized.
 
 This change closes the source-side causes of SAI-03 without relying on runtime
 pods to carry the historical `app.kubernetes.io/instance` label:
@@ -38,6 +40,14 @@ pods to carry the historical `app.kubernetes.io/instance` label:
   acquisition-plan annotation on Job and Pod template, and the dedicated cache
   service account. A runtime Deployment cannot regain public TCP/443 by copying
   the support profile label.
+- Network-profile admission also binds **who may create** each parent workload.
+  Arbitrary namespace Job writers cannot self-select public acquisition or
+  support egress: scientific Job/JobSet creation is limited to the exact
+  control-plane runtime service account; App/Deployment creation is limited to
+  the exact model-controller service account; JobSet and Kubernetes child
+  objects are limited to their exact controller identities; cache, acceptance,
+  CronJob, ReplicationController, and other transition-owned parents require
+  the exact authenticated writer while it holds the retained transition Lease.
 - The model controller renders no `NetworkPolicy`, has no NetworkPolicy HTTP
   endpoint, and receives no NetworkPolicy RBAC verbs. A compromised controller
   therefore cannot create an allow-all policy. Serving ingress is limited to
@@ -118,7 +128,10 @@ the rule before either can integrate.
    definitions, and every label-producing controller/manifest while both the
    admission bindings and `fs2-models/default-deny` remain absent.
 2. After those rollouts converge, apply `inventory`. The supported wrapper
-   first acquires the retained `fs2-system/fs2-model-network-transition` Lease.
+   resolves its exact Kubernetes username with `kubectl auth whoami`, then
+   acquires the retained `fs2-system/fs2-model-network-transition` Lease. A
+   deny-mode Lease policy permits only that recorded identity to acquire, renew,
+   or release the Lease; it rejects holder theft and deletion.
    Terraform installs six deny-mode workload-profile bindings only after Helm,
    static models, keepers, and acceptance producers, plus a binding that
    forbids update or deletion of the exact boundary marker and a separate
@@ -132,19 +145,29 @@ the rule before either can integrate.
    only in the deny-absent `rollback-helm` phase. The namespaced
    model controller has no admission-policy authority, and the live marker is
    protected even though the controller retains ordinary ConfigMap access. A
+   separate parameterized admission guard covers the exact finite
+   NetworkPolicies (including any newly named policy), the marker,
+   ValidatingAdmissionPolicies, and
+   ValidatingAdmissionPolicyBindings. The API server accepts their mutation
+   only from the recorded writer while the Lease has a non-empty holder; the
+   Terraform-owned objects also carry that writer as non-authoritative
+   provenance. Thus Helm or
+   another Terraform client with unrelated credentials cannot race or weaken
+   the verified boundary merely by ignoring the wrapper. A
    return to `prepare` is structurally impossible after the fence is armed.
 3. Export `model_runtime_network_policy_transition` from the applied inventory
    state and run the read-only receipt tool. It lists **all** Pod-producing
    workload kinds and Pods in `fs2-models`, rejects an empty workload inventory,
    naked/orphaned Pods, unknown profiles, and incomplete rollouts. It includes
    old ReplicaSets, core ReplicationControllers, CronJobs, workload class,
-   exact admission-policy/binding UIDs and specs, the live controller, and the
+   exact admission-policy/binding UIDs, resourceVersions, and complete stored
+   specs, the live controller, and the
    retained transition-Lease UID rather than desired values. Receipt capture is
    refused while another transition owns the Lease.
 4. Set phase `enforce` and supply that receipt. A `local-exec` apply fence
    re-runs the read-only census after Helm, static models, keepers, acceptance,
    finite policies, and admission bindings have converged. Only a byte-equivalent
-   live census, exact admission resources, an unexpired matching Lease holder,
+   live census, exact full admission resources, an unexpired matching Lease holder,
    and the exact running controller digest unlock `default-deny`. The admission
    freezes reject an external Helm release write or direct model-controller
    mutation after verification; the Lease serializes every supported
@@ -160,6 +183,10 @@ the rule before either can integrate.
    update. It accepts any subset of those three changes so a crash between them
    is resumable, while still rejecting Helm or unrelated mutation. The
    controller and Helm release-storage freezes remain active through this phase.
+   The source allowlist now accepts crash-resume subsets, but the required real
+   saved-plan proof has not been run under the current no-test/no-delete
+   constraint; rollback remains an integration gate rather than accepted
+   evidence.
 6. After that exact plan is applied, generate a `deny-absent` receipt. The tool
    refuses it while the deny exists or any finite allow policy is missing. Set
    `rollback-helm` with both receipts. Terraform independently re-reads the live
@@ -225,6 +252,17 @@ still converging while the model-controller Deployment was available. No
 resource was created, patched, deleted, or restarted by this task.
 
 ## Verification
+
+Independent review of exact rejected parent
+`9b71b8a58b1e23a1d5f9d9ac11243dbad9a4652f` / tree
+`801c4c72ceb805781b5232b55da2427329979045` was final
+**SOURCE/INTEGRATION/LIVE NO-GO**. It confirmed the complete census, finite
+profiles, receipt refresh path, retryable rollback source graph, live imageID
+observation, and clean `4ea4b126` controls, while rejecting self-selected
+parent writers, projection-only admission receipts, cooperative-only Lease
+serialization, and the absence of a real saved rollback plan. This successor
+addresses the first three findings in source; the fourth remains deliberately
+unexecuted under the no-test/no-delete constraint.
 
 Run from `k8s-inference` unless a command changes directory:
 

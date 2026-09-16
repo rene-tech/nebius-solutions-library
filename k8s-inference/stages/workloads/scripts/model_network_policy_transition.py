@@ -27,7 +27,7 @@ COMPONENT_LABEL = "app.kubernetes.io/component"
 PART_OF_LABEL = "app.kubernetes.io/part-of"
 NAMESPACE = "fs2-models"
 SYSTEM_NAMESPACE = "fs2-system"
-INVENTORY_SCHEMA = "fs2-serve.nebius.ai/model-runtime-network-inventory/v3"
+INVENTORY_SCHEMA = "fs2-serve.nebius.ai/model-runtime-network-inventory/v4"
 DENY_ABSENT_SCHEMA = "fs2-serve.nebius.ai/model-runtime-network-deny-absent/v2"
 WORKLOAD_RESOURCES = {
     "deployments": ("apps/v1", "Deployment", "deployments.apps"),
@@ -204,6 +204,9 @@ def _contract(contract: dict[str, Any], *, phases: set[str]) -> dict[str, Any]:
         raise ReceiptError("transition contract Lease name is invalid")
     if contract.get("transition_lock_namespace") != SYSTEM_NAMESPACE:
         raise ReceiptError("transition contract Lease namespace is invalid")
+    transition_writer = contract.get("transition_writer_username")
+    if not isinstance(transition_writer, str) or not transition_writer:
+        raise ReceiptError("transition contract authenticated writer is missing")
     image = _object(contract.get("control_plane_image"), "contract.control_plane_image")
     if not isinstance(image.get("repository"), str) or not image["repository"]:
         raise ReceiptError("control-plane image repository is missing")
@@ -798,22 +801,16 @@ def _admission_state(
         uid = metadata.get("uid")
         if not isinstance(uid, str) or not uid:
             raise ReceiptError(f"admission policy {name} has no UID")
+        resource_version = metadata.get("resourceVersion")
+        if not isinstance(resource_version, str) or not resource_version:
+            raise ReceiptError(f"admission policy {name} has no resourceVersion")
         spec = _object(item.get("spec"), f"admission policy {name}.spec")
-        match_constraints = _object(
-            spec.get("matchConstraints"),
-            f"admission policy {name}.matchConstraints",
-        )
-        normalized = {
-            "failurePolicy": spec.get("failurePolicy"),
-            "resourceRules": match_constraints.get("resourceRules"),
-            "validations": spec.get("validations"),
-        }
-        spec_sha256 = _sha256(normalized)
+        spec_sha256 = _sha256(spec)
         if spec_sha256 != contract["admission_policy_spec_sha256"].get(name):
             raise ReceiptError(f"admission policy {name} spec differs from Terraform")
         policies[name] = {
             "uid": uid,
-            "failure_policy": spec.get("failurePolicy"),
+            "resource_version": resource_version,
             "spec_sha256": spec_sha256,
         }
     missing_policies = sorted(expected_policies - set(policies))
@@ -832,30 +829,18 @@ def _admission_state(
         if isinstance(name, str) and name in expected_bindings:
             if not isinstance(uid, str) or not uid:
                 raise ReceiptError(f"admission binding {name} has no UID")
+            resource_version = metadata.get("resourceVersion")
+            if not isinstance(resource_version, str) or not resource_version:
+                raise ReceiptError(f"admission binding {name} has no resourceVersion")
             spec = _object(item.get("spec"), f"admission binding {name}.spec")
-            match_resources = _object(
-                spec.get("matchResources"),
-                f"admission binding {name}.matchResources",
-            )
-            namespace_selector = _object(
-                match_resources.get("namespaceSelector"),
-                f"admission binding {name}.namespaceSelector",
-            ).get("matchLabels")
-            normalized = {
-                "policyName": spec.get("policyName"),
-                "validationActions": spec.get("validationActions"),
-                "namespaceSelector": namespace_selector,
-            }
-            spec_sha256 = _sha256(normalized)
+            spec_sha256 = _sha256(spec)
             if spec_sha256 != contract["admission_binding_spec_sha256"].get(name):
                 raise ReceiptError(
                     f"admission binding {name} spec differs from Terraform"
                 )
             bindings[name] = {
                 "uid": uid,
-                "policy_name": spec.get("policyName"),
-                "validation_actions": spec.get("validationActions"),
-                "namespace_selector": namespace_selector,
+                "resource_version": resource_version,
                 "spec_sha256": spec_sha256,
             }
     missing_bindings = sorted(expected_bindings - set(bindings))
@@ -887,6 +872,16 @@ def _transition_lock(
     uid = metadata.get("uid")
     if not isinstance(uid, str) or not uid:
         raise ReceiptError("model-network transition Lease has no UID")
+    annotations = _object(
+        metadata.get("annotations", {}), "transition Lease.metadata.annotations"
+    )
+    if (
+        annotations.get("fs2-serve.nebius.ai/network-transition-writer")
+        != contract["transition_writer_username"]
+    ):
+        raise ReceiptError(
+            "model-network transition Lease authenticated writer differs from Terraform"
+        )
     spec = _object(matches[0].get("spec", {}), "transition Lease.spec")
     holder = spec.get("holderIdentity", "")
     if not isinstance(holder, str):
@@ -916,9 +911,8 @@ def _transition_lock(
         raise ReceiptError(
             "model-network transition Lease renewTime is invalid"
         ) from exc
-    if (
-        renewed.tzinfo is None
-        or renewed + timedelta(seconds=duration) <= datetime.now(UTC)
+    if renewed.tzinfo is None or renewed + timedelta(seconds=duration) <= datetime.now(
+        UTC
     ):
         raise ReceiptError("model-network transition Lease expired during verification")
     return uid

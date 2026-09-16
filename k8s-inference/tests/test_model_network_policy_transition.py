@@ -23,6 +23,7 @@ FREEZE_ADMISSION_POLICY = "fs2-model-network-controller-freeze"
 FREEZE_ADMISSION_BINDING = f"{FREEZE_ADMISSION_POLICY}-fs2-system"
 HELM_FREEZE_ADMISSION_POLICY = "fs2-model-network-helm-freeze"
 HELM_FREEZE_ADMISSION_BINDING = f"{HELM_FREEZE_ADMISSION_POLICY}-fs2-system"
+TRANSITION_WRITER = "security-remediation@example.test"
 CONTROLLER = "fs2-serve-control-plane-model-controller"
 IMAGE = {
     "repository": "registry.example.test/fs2/control-plane",
@@ -61,32 +62,17 @@ def prepare_contract() -> dict[str, object]:
             ]
         ),
         "admission_policy_spec_sha256": {
-            item["metadata"]["name"]: transition._sha256(
-                {
-                    "failurePolicy": item["spec"]["failurePolicy"],
-                    "resourceRules": item["spec"]["matchConstraints"][
-                        "resourceRules"
-                    ],
-                    "validations": item["spec"]["validations"],
-                }
-            )
+            item["metadata"]["name"]: transition._sha256(item["spec"])
             for item in policies
         },
         "admission_binding_spec_sha256": {
-            item["metadata"]["name"]: transition._sha256(
-                {
-                    "policyName": item["spec"]["policyName"],
-                    "validationActions": item["spec"]["validationActions"],
-                    "namespaceSelector": item["spec"]["matchResources"][
-                        "namespaceSelector"
-                    ]["matchLabels"],
-                }
-            )
+            item["metadata"]["name"]: transition._sha256(item["spec"])
             for item in bindings
         },
         "controller_deployment_name": CONTROLLER,
         "transition_lock_name": "fs2-model-network-transition",
         "transition_lock_namespace": "fs2-system",
+        "transition_writer_username": TRANSITION_WRITER,
         "control_plane_image": IMAGE,
         "inventory_receipt_sha256": None,
     }
@@ -221,7 +207,11 @@ def _policy(
     expression: str,
 ) -> dict[str, object]:
     return {
-        "metadata": {"name": name, "uid": f"uid-{name}"},
+        "metadata": {
+            "name": name,
+            "uid": f"uid-{name}",
+            "resourceVersion": f"rv-{name}",
+        },
         "spec": {
             "failurePolicy": "Fail",
             "matchConstraints": {
@@ -287,7 +277,11 @@ def admission_policies() -> dict[str, object]:
 def admission_bindings() -> dict[str, object]:
     def binding(name: str, policy: str, namespace: str) -> dict[str, object]:
         return {
-            "metadata": {"name": name, "uid": f"uid-{name}"},
+            "metadata": {
+                "name": name,
+                "uid": f"uid-{name}",
+                "resourceVersion": f"rv-{name}",
+            },
             "spec": {
                 "policyName": policy,
                 "validationActions": ["Deny"],
@@ -323,6 +317,9 @@ def transition_leases(*, holder: str = "") -> dict[str, object]:
                     "name": "fs2-model-network-transition",
                     "namespace": "fs2-system",
                     "uid": "uid-transition-lock",
+                    "annotations": {
+                        "fs2-serve.nebius.ai/network-transition-writer": TRANSITION_WRITER,
+                    },
                 },
                 "spec": {
                     "holderIdentity": holder,
@@ -361,15 +358,15 @@ def test_inventory_receipt_binds_workload_pod_controller_and_admission() -> None
     assert receipt["pods"]["qwen3-8b-pod"]["workload_class"] == "runtime"
     assert receipt["live_controller"]["deployment_uid"] == "uid-controller"
     assert receipt["transition_lock_uid"] == "uid-transition-lock"
-    assert receipt["admission_bindings"][FREEZE_ADMISSION_BINDING][
-        "policy_name"
-    ] == FREEZE_ADMISSION_POLICY
-    assert receipt["admission_bindings"][FREEZE_ADMISSION_BINDING][
-        "namespace_selector"
-    ] == {"kubernetes.io/metadata.name": "fs2-system"}
-    assert receipt["admission_bindings"][HELM_FREEZE_ADMISSION_BINDING][
-        "policy_name"
-    ] == HELM_FREEZE_ADMISSION_POLICY
+    assert receipt["schema"].endswith("/v4")
+    assert (
+        receipt["admission_policies"][ADMISSION_POLICY]["resource_version"]
+        == f"rv-{ADMISSION_POLICY}"
+    )
+    assert (
+        receipt["admission_bindings"][FREEZE_ADMISSION_BINDING]["resource_version"]
+        == f"rv-{FREEZE_ADMISSION_BINDING}"
+    )
     assert receipt["payload_sha256"] == transition._sha256(
         {key: value for key, value in receipt.items() if key != "payload_sha256"}
     )
@@ -542,9 +539,7 @@ def test_inventory_covers_every_pod_producing_controller_kind() -> None:
     }
 
     contract = prepare_contract()
-    profiles = sorted(
-        [PROFILE, "cache-resident-zero-egress-v1", "job-internal-v1"]
-    )
+    profiles = sorted([PROFILE, "cache-resident-zero-egress-v1", "job-internal-v1"])
     contract["profiles"] = profiles
     contract["profiles_sha256"] = transition.hashlib.sha256(
         json.dumps(profiles, separators=(",", ":")).encode()
@@ -627,6 +622,23 @@ def test_receipt_rejects_admission_spec_or_transition_lock_drift() -> None:
             captured_at="2026-09-16T18:00:00Z",
         )
 
+    bindings = admission_bindings()
+    bindings["items"][0]["spec"]["matchResources"]["objectSelector"] = {
+        "matchLabels": {"unreviewed": "true"}
+    }
+    with pytest.raises(transition.ReceiptError, match="differs from Terraform"):
+        transition.inventory_receipt(
+            prepare_contract(),
+            workload_resources(deployment()),
+            {"items": [pod()]},
+            controller_deployments(),
+            controller_pods(),
+            admission_policies(),
+            bindings,
+            transition_leases(),
+            captured_at="2026-09-16T18:00:00Z",
+        )
+
     with pytest.raises(transition.ReceiptError, match="active"):
         transition.inventory_receipt(
             prepare_contract(),
@@ -639,6 +651,162 @@ def test_receipt_rejects_admission_spec_or_transition_lock_drift() -> None:
             transition_leases(holder="another-transition"),
             captured_at="2026-09-16T18:00:00Z",
         )
+
+    leases = transition_leases()
+    leases["items"][0]["metadata"]["annotations"][
+        "fs2-serve.nebius.ai/network-transition-writer"
+    ] = "unrelated-writer@example.test"
+    with pytest.raises(transition.ReceiptError, match="authenticated writer"):
+        transition.inventory_receipt(
+            prepare_contract(),
+            workload_resources(deployment()),
+            {"items": [pod()]},
+            controller_deployments(),
+            controller_pods(),
+            admission_policies(),
+            admission_bindings(),
+            leases,
+            captured_at="2026-09-16T18:00:00Z",
+        )
+
+
+def test_receipt_hashes_every_policy_and_binding_semantic_field() -> None:
+    policy_mutations = (
+        lambda spec: spec.update(
+            {"paramKind": {"apiVersion": "v1", "kind": "ConfigMap"}}
+        ),
+        lambda spec: spec.update(
+            {"matchConditions": [{"name": "drift", "expression": "true"}]}
+        ),
+        lambda spec: spec.update(
+            {"auditAnnotations": [{"key": "drift", "valueExpression": "'x'"}]}
+        ),
+        lambda spec: spec.update(
+            {"variables": [{"name": "drift", "expression": "true"}]}
+        ),
+    )
+    binding_mutations = (
+        lambda spec: spec["matchResources"].update(
+            {"objectSelector": {"matchLabels": {"drift": "true"}}}
+        ),
+        lambda spec: spec["matchResources"].update(
+            {
+                "resourceRules": [
+                    {
+                        "apiGroups": ["*"],
+                        "apiVersions": ["*"],
+                        "operations": ["*"],
+                        "resources": ["*"],
+                    }
+                ]
+            }
+        ),
+        lambda spec: spec.update(
+            {
+                "paramRef": {
+                    "name": "drift",
+                    "namespace": "fs2-system",
+                    "parameterNotFoundAction": "Allow",
+                }
+            }
+        ),
+    )
+
+    for mutate in policy_mutations:
+        policies = admission_policies()
+        mutate(policies["items"][0]["spec"])
+        with pytest.raises(transition.ReceiptError, match="differs from Terraform"):
+            transition.inventory_receipt(
+                prepare_contract(),
+                workload_resources(deployment()),
+                {"items": [pod()]},
+                controller_deployments(),
+                controller_pods(),
+                policies,
+                admission_bindings(),
+                transition_leases(),
+                captured_at="2026-09-16T18:00:00Z",
+            )
+
+    for mutate in binding_mutations:
+        bindings = admission_bindings()
+        mutate(bindings["items"][0]["spec"])
+        with pytest.raises(transition.ReceiptError, match="differs from Terraform"):
+            transition.inventory_receipt(
+                prepare_contract(),
+                workload_resources(deployment()),
+                {"items": [pod()]},
+                controller_deployments(),
+                controller_pods(),
+                admission_policies(),
+                bindings,
+                transition_leases(),
+                captured_at="2026-09-16T18:00:00Z",
+            )
+
+
+def test_apply_verifier_binds_admission_resource_versions_and_all_semantics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    contract = prepare_contract()
+    contract["phase"] = "enforce"
+    receipt = capture(contract=contract)
+    monkeypatch.setenv("FS2_NETWORK_TRANSITION_LOCK_IDENTITY", "test-holder")
+
+    policies = admission_policies()
+    policies["items"][0]["metadata"]["resourceVersion"] = "rv-replaced"
+    with pytest.raises(transition.ReceiptError, match="apply-time"):
+        transition.verify_enforce(
+            contract,
+            receipt,
+            workload_resources(deployment()),
+            {"items": [pod()]},
+            controller_deployments(),
+            controller_pods(),
+            policies,
+            admission_bindings(),
+            transition_leases(holder="test-holder"),
+        )
+
+    policies = admission_policies()
+    policies["items"][0]["spec"]["matchConditions"] = [
+        {"name": "unreviewed", "expression": "true"}
+    ]
+    with pytest.raises(transition.ReceiptError, match="differs from Terraform"):
+        transition.verify_enforce(
+            contract,
+            receipt,
+            workload_resources(deployment()),
+            {"items": [pod()]},
+            controller_deployments(),
+            controller_pods(),
+            policies,
+            admission_bindings(),
+            transition_leases(holder="test-holder"),
+        )
+
+
+def test_source_authorizes_profile_creation_by_exact_writer_and_active_lease() -> None:
+    source = (ROOT / "stages/workloads/network_policies.tf").read_text()
+    assert "request.userInfo.username" in source
+    assert "model_runtime_controller_writer" in source
+    assert "model_runtime_scientific_writer" in source
+    assert "model_runtime_jobset_writer" in source
+    assert "model_runtime_active_transition_writer_expression" in source
+    assert "paramKind = {" in source
+    assert 'kind       = "Lease"' in source
+    assert 'parameterNotFoundAction = "Deny"' in source
+    assert "model_runtime_network_transition_guard_admission_binding" in source
+    assert "model_runtime_network_lease_guard_admission_binding" in source
+    assert "request.resource.resource == 'networkpolicies'" in source
+    assert "request.namespace == 'fs2-models'" in source
+    assert source.count("request.operation != 'CREATE' ||") >= 6
+    assert (
+        "resource_version"
+        in (
+            ROOT / "stages/workloads/scripts/model_network_policy_transition.py"
+        ).read_text()
+    )
 
 
 def test_terraform_enforcement_orders_apply_fence_before_default_deny() -> None:
@@ -681,10 +849,9 @@ def test_terraform_enforcement_orders_apply_fence_before_default_deny() -> None:
         'resource "kubernetes_manifest" "model_runtime_network_boundary_marker_admission_binding"',
         1,
     )[0]
-    assert 'operations  = ["UPDATE", "DELETE"]' in marker_admission
+    assert "spec = local.model_runtime_admission_policy_specs[" in marker_admission
     assert (
-        "oldObject.metadata.name != 'fs2-runtime-network-policy-boundary-v2'"
-        in marker_admission
+        "oldObject.metadata.name != 'fs2-runtime-network-policy-boundary-v2'" in source
     )
     assert "prevent_destroy = true" in marker_admission
     freeze_binding = source.split(
@@ -696,7 +863,7 @@ def test_terraform_enforcement_orders_apply_fence_before_default_deny() -> None:
     )[0]
     assert '"rollback-remove-deny"' in freeze_binding
     assert '"rollback-helm"' not in freeze_binding
-    assert '"kubernetes.io/metadata.name" = "fs2-system"' in freeze_binding
+    assert "model_runtime_admission_binding_specs" in freeze_binding
     helm_freeze_admission = source.split(
         'resource "kubernetes_manifest" "model_runtime_network_helm_freeze_admission"',
         1,
@@ -704,12 +871,10 @@ def test_terraform_enforcement_orders_apply_fence_before_default_deny() -> None:
         'resource "kubernetes_manifest" "model_runtime_network_controller_freeze_admission_binding"',
         1,
     )[0]
-    assert 'resources   = ["configmaps", "secrets"]' in helm_freeze_admission
-    assert "object.metadata.labels['owner'] != 'helm'" in helm_freeze_admission
-    assert (
-        "object.metadata.labels['name'] != 'fs2-serve-control-plane'"
-        in helm_freeze_admission
-    )
+    assert "spec = local.model_runtime_admission_policy_specs[" in helm_freeze_admission
+    assert 'resources   = ["configmaps", "secrets"]' in source
+    assert "object.metadata.labels['owner'] != 'helm'" in source
+    assert "object.metadata.labels['name'] != 'fs2-serve-control-plane'" in source
     helm_freeze_binding = source.split(
         'resource "kubernetes_manifest" "model_runtime_network_helm_freeze_admission_binding"',
         1,
@@ -719,7 +884,7 @@ def test_terraform_enforcement_orders_apply_fence_before_default_deny() -> None:
     )[0]
     assert '"rollback-remove-deny"' in helm_freeze_binding
     assert '"rollback-helm"' not in helm_freeze_binding
-    assert '"kubernetes.io/metadata.name" = "fs2-system"' in helm_freeze_binding
+    assert "model_runtime_admission_binding_specs" in helm_freeze_binding
     assert "model_runtime_network_class_label" in source
     assert "workload_classes" in source
 

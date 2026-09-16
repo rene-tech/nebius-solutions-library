@@ -255,12 +255,22 @@ class InferenceStackTests(unittest.TestCase):
         subprocess_run: mock.Mock,
         mutating_run: mock.Mock,
     ) -> None:
-        subprocess_run.return_value = subprocess.CompletedProcess(
-            args=["kubectl-test"],
-            returncode=1,
-            stdout="",
-            stderr="Error from server (Forbidden): leases is forbidden",
-        )
+        subprocess_run.side_effect = [
+            subprocess.CompletedProcess(
+                args=["kubectl-test", "auth", "whoami"],
+                returncode=0,
+                stdout=json.dumps(
+                    {"status": {"userInfo": {"username": "reviewer@example.test"}}}
+                ),
+                stderr="",
+            ),
+            subprocess.CompletedProcess(
+                args=["kubectl-test", "get", "lease"],
+                returncode=1,
+                stdout="",
+                stderr="Error from server (Forbidden): leases is forbidden",
+            ),
+        ]
 
         with self.assertRaisesRegex(STACK.DeploymentError, "cannot inspect"):
             with STACK.model_network_transition_lock(
@@ -272,6 +282,66 @@ class InferenceStackTests(unittest.TestCase):
                 self.fail("an unauthorized Lease read must not acquire the lock")
 
         mutating_run.assert_not_called()
+
+    @mock.patch.object(STACK, "run")
+    @mock.patch.object(STACK.subprocess, "run")
+    def test_transition_lock_binds_the_authenticated_writer_in_the_lease(
+        self,
+        subprocess_run: mock.Mock,
+        mutating_run: mock.Mock,
+    ) -> None:
+        username = "security-remediation@example.test"
+        subprocess_run.side_effect = [
+            subprocess.CompletedProcess(
+                args=["kubectl-test", "auth", "whoami"],
+                returncode=0,
+                stdout=json.dumps({"status": {"userInfo": {"username": username}}}),
+                stderr="",
+            ),
+            subprocess.CompletedProcess(
+                args=["kubectl-test", "get", "lease"],
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "metadata": {
+                            "resourceVersion": "17",
+                            "annotations": {
+                                "fs2-serve.nebius.ai/network-transition-writer": username
+                            },
+                        },
+                        "spec": {
+                            "holderIdentity": "",
+                            "leaseDurationSeconds": 1,
+                            "renewTime": "2020-01-01T00:00:00Z",
+                            "leaseTransitions": 4,
+                        },
+                    }
+                ),
+                stderr="",
+            ),
+        ]
+
+        with STACK.model_network_transition_lock(
+            kubectl="kubectl-test",
+            kubeconfig="/read-only/kubeconfig",
+            context="test-context",
+            run_id="test-run",
+        ) as (holder, observed_username):
+            self.assertTrue(holder.startswith("test-run:"))
+            self.assertEqual(username, observed_username)
+
+        acquisition_patch = json.loads(
+            mutating_run.call_args_list[0].kwargs["input_text"]
+        )
+        self.assertIn(
+            {
+                "op": "add",
+                "path": "/metadata/annotations/fs2-serve.nebius.ai~1network-transition-writer",
+                "value": username,
+            },
+            acquisition_patch,
+        )
+        self.assertEqual(2, mutating_run.call_count)
 
     def test_rollback_remove_deny_plan_is_exactly_bounded(self) -> None:
         current = contract()

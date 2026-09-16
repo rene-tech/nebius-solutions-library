@@ -1314,19 +1314,17 @@ variable "model_runtime_network_policy" {
         }))
       })
       transition_lock_uid = string
-      admission_policies  = map(object({
-        uid            = string
-        failure_policy = string
-        spec_sha256    = string
+      admission_policies = map(object({
+        uid              = string
+        resource_version = string
+        spec_sha256      = string
       }))
-      admission_bindings  = map(object({
-        uid                  = string
-        policy_name          = string
-        validation_actions   = list(string)
-        namespace_selector   = map(string)
-        spec_sha256          = string
+      admission_bindings = map(object({
+        uid              = string
+        resource_version = string
+        spec_sha256      = string
       }))
-      payload_sha256     = string
+      payload_sha256 = string
     }), null)
     deny_absent_receipt = optional(object({
       schema                     = string
@@ -1379,6 +1377,24 @@ variable "model_network_transition_lock_identity" {
   sensitive   = true
 }
 
+variable "model_network_transition_writer_username" {
+  description = "Exact Kubernetes-authenticated username that acquired the retained model-network transition Lease; supplied only by inference-stack."
+  type        = string
+  default     = ""
+  nullable    = false
+
+  validation {
+    condition = (
+      var.model_runtime_network_policy.phase == "prepare" ||
+      (
+        length(var.model_network_transition_writer_username) > 0 &&
+        length(var.model_network_transition_writer_username) <= 1024
+      )
+    )
+    error_message = "Every post-prepare model-network transition requires the exact non-empty authenticated Kubernetes username."
+  }
+}
+
 variable "model_network_transition_lock_required" {
   description = "True only for a supported workloads apply running under the cluster-wide model-network transition Lease; offline plans leave it false."
   type        = bool
@@ -1388,9 +1404,13 @@ variable "model_network_transition_lock_required" {
   validation {
     condition = (
       !var.model_network_transition_lock_required ||
-      (var.model_network_transition_lock_identity != "" && var.model_runtime_network_policy.phase != "prepare")
+      (
+        var.model_network_transition_lock_identity != "" &&
+        var.model_network_transition_writer_username != "" &&
+        var.model_runtime_network_policy.phase != "prepare"
+      )
     )
-    error_message = "A required model-network transition lock needs a non-empty holder identity and a post-prepare phase."
+    error_message = "A required model-network transition lock needs a non-empty holder identity, exact authenticated writer, and a post-prepare phase."
   }
 }
 

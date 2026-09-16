@@ -2267,13 +2267,39 @@ def model_network_transition_lock(
     kubeconfig: str,
     context: str,
     run_id: str,
-) -> Iterator[str]:
-    """Hold the cluster-wide workloads/Helm transition Lease without deleting it."""
+) -> Iterator[tuple[str, str]]:
+    """Hold the API-guarded transition Lease as one authenticated writer."""
     namespace = "fs2-system"
     name = "fs2-model-network-transition"
     holder = f"{run_id}:{os.getpid()}:{secrets.token_hex(16)}"
     environment = clean_environment()
     base = [kubectl, "--kubeconfig", kubeconfig, "--context", context]
+    authenticated = subprocess.run(
+        [*base, "auth", "whoami", "-o", "json"],
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if authenticated.returncode != 0:
+        raise DeploymentError(
+            "cannot resolve the exact Kubernetes-authenticated transition writer: "
+            + (
+                authenticated.stderr.strip()
+                or authenticated.stdout.strip()
+                or "kubectl auth whoami failed"
+            )
+        )
+    try:
+        authenticated_username = json.loads(authenticated.stdout)["status"]["userInfo"][
+            "username"
+        ]
+    except (KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise DeploymentError(
+            "kubectl auth whoami returned no exact authenticated username"
+        ) from exc
+    if not isinstance(authenticated_username, str) or not authenticated_username:
+        raise DeploymentError("the authenticated transition writer is empty")
     observed = subprocess.run(
         [*base, "-n", namespace, "get", "lease", name, "-o", "json"],
         env=environment,
@@ -2287,7 +2313,11 @@ def model_network_transition_lock(
         if "notfound" not in diagnostic and "not found" not in diagnostic:
             raise DeploymentError(
                 "cannot inspect the model-network transition Lease: "
-                + (observed.stderr.strip() or observed.stdout.strip() or "unknown error")
+                + (
+                    observed.stderr.strip()
+                    or observed.stdout.strip()
+                    or "unknown error"
+                )
             )
         lease = {
             "apiVersion": "coordination.k8s.io/v1",
@@ -2298,6 +2328,9 @@ def model_network_transition_lock(
                 "labels": {
                     "app.kubernetes.io/part-of": "fs2-serve",
                     "fs2-serve.nebius.ai/policy-owner": "network-transition",
+                },
+                "annotations": {
+                    "fs2-serve.nebius.ai/network-transition-writer": authenticated_username,
                 },
             },
             "spec": {
@@ -2317,6 +2350,17 @@ def model_network_transition_lock(
         try:
             lease = json.loads(observed.stdout)
             metadata = lease["metadata"]
+            annotations = metadata.get("annotations", {})
+            if not isinstance(annotations, dict):
+                raise ValueError("Lease annotations are malformed")
+            prior_writer = annotations.get(
+                "fs2-serve.nebius.ai/network-transition-writer"
+            )
+            if prior_writer not in {None, authenticated_username}:
+                raise DeploymentError(
+                    "model-network transition Lease is bound to a different "
+                    "authenticated writer"
+                )
             spec = lease.get("spec", {})
             if "holderIdentity" not in spec or "leaseTransitions" not in spec:
                 raise ValueError("required Lease state is absent")
@@ -2327,7 +2371,9 @@ def model_network_transition_lock(
             duration = int(spec.get("leaseDurationSeconds", 0))
             transitions = int(spec["leaseTransitions"])
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            raise DeploymentError("model-network transition Lease is malformed") from exc
+            raise DeploymentError(
+                "model-network transition Lease is malformed"
+            ) from exc
         if current_holder and renew_time + timedelta(seconds=duration) > now:
             raise DeploymentError(
                 f"model-network transition Lease is held by {current_holder!r}"
@@ -2339,6 +2385,21 @@ def model_network_transition_lock(
                 "value": metadata["resourceVersion"],
             },
             {"op": "test", "path": "/spec/holderIdentity", "value": current_holder},
+            (
+                {
+                    "op": "add",
+                    "path": "/metadata/annotations",
+                    "value": {
+                        "fs2-serve.nebius.ai/network-transition-writer": authenticated_username,
+                    },
+                }
+                if "annotations" not in metadata
+                else {
+                    "op": "add",
+                    "path": "/metadata/annotations/fs2-serve.nebius.ai~1network-transition-writer",
+                    "value": authenticated_username,
+                }
+            ),
             {"op": "replace", "path": "/spec/holderIdentity", "value": holder},
             {"op": "replace", "path": "/spec/leaseDurationSeconds", "value": 7200},
             {
@@ -2367,7 +2428,7 @@ def model_network_transition_lock(
             env=environment,
         )
     try:
-        yield holder
+        yield holder, authenticated_username
     finally:
         released_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
         release_patch = [
@@ -2786,10 +2847,14 @@ def apply_stack(
 
     transition = contract["stages"]["workloads"]["model_runtime_network_policy"]
 
-    def apply_workloads(lock_identity: str = "") -> None:
+    def apply_workloads(
+        lock_identity: str = "", transition_writer_username: str = ""
+    ) -> None:
         overrides = {
             "FS2_NETWORK_TRANSITION_LOCK_IDENTITY": lock_identity,
+            "FS2_NETWORK_TRANSITION_WRITER_USERNAME": transition_writer_username,
             "TF_VAR_model_network_transition_lock_identity": lock_identity,
+            "TF_VAR_model_network_transition_writer_username": transition_writer_username,
             "TF_VAR_model_network_transition_lock_required": json.dumps(
                 bool(lock_identity)
             ),
@@ -2813,8 +2878,8 @@ def apply_stack(
             kubeconfig=dynamic["kubeconfig_path"],
             context=dynamic["kube_context"],
             run_id=contract["run_id"],
-        ) as lock_identity:
-            apply_workloads(lock_identity)
+        ) as (lock_identity, transition_writer_username):
+            apply_workloads(lock_identity, transition_writer_username)
 
     # Record the accepted root contract after all of its staged consumers converge.
     apply_plan(

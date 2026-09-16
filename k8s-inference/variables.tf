@@ -208,19 +208,17 @@ variable "deployment" {
             }))
           })
           transition_lock_uid = string
-          admission_policies  = map(object({
-            uid            = string
-            failure_policy = string
-            spec_sha256    = string
+          admission_policies = map(object({
+            uid              = string
+            resource_version = string
+            spec_sha256      = string
           }))
-          admission_bindings  = map(object({
-            uid                = string
-            policy_name        = string
-            validation_actions = list(string)
-            namespace_selector = map(string)
-            spec_sha256        = string
+          admission_bindings = map(object({
+            uid              = string
+            resource_version = string
+            spec_sha256      = string
           }))
-          payload_sha256     = string
+          payload_sha256 = string
         }), null)
         deny_absent_receipt = optional(object({
           schema                     = string

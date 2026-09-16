@@ -252,6 +252,8 @@ run "prepare_installs_inert_admission_policies" {
       kubernetes_manifest.model_runtime_network_boundary_marker_admission,
       kubernetes_manifest.model_runtime_network_controller_freeze_admission,
       kubernetes_manifest.model_runtime_network_helm_freeze_admission,
+      kubernetes_manifest.model_runtime_network_lease_guard_admission,
+      kubernetes_manifest.model_runtime_network_transition_guard_admission,
     ]
   }
 
@@ -260,9 +262,15 @@ run "prepare_installs_inert_admission_policies" {
       length(kubernetes_manifest.model_runtime_network_profile_admission) == 6 &&
       kubernetes_manifest.model_runtime_network_boundary_marker_admission.manifest.metadata.name == "fs2-model-network-boundary-marker" &&
       kubernetes_manifest.model_runtime_network_controller_freeze_admission.manifest.metadata.name == "fs2-model-network-controller-freeze" &&
-      kubernetes_manifest.model_runtime_network_helm_freeze_admission.manifest.metadata.name == "fs2-model-network-helm-freeze"
+      kubernetes_manifest.model_runtime_network_helm_freeze_admission.manifest.metadata.name == "fs2-model-network-helm-freeze" &&
+      kubernetes_manifest.model_runtime_network_lease_guard_admission.manifest.metadata.name == "fs2-model-network-transition-lease-guard" &&
+      kubernetes_manifest.model_runtime_network_transition_guard_admission.manifest.metadata.name == "fs2-model-network-transition-guard" &&
+      strcontains(jsonencode(kubernetes_manifest.model_runtime_network_profile_admission["jobs"].manifest.spec), "request.userInfo.username") &&
+      strcontains(jsonencode(kubernetes_manifest.model_runtime_network_profile_admission["jobs"].manifest.spec), "fs2-serve-control-plane-runtime") &&
+      strcontains(jsonencode(kubernetes_manifest.model_runtime_network_profile_admission["jobs"].manifest.spec), "jobset-system") &&
+      kubernetes_manifest.model_runtime_network_profile_admission["jobs"].manifest.spec.paramKind.kind == "Lease"
     )
-    error_message = "Prepare must install the six profile policies plus the boundary-marker, controller-freeze, and Helm-release-freeze policies."
+    error_message = "Prepare must install writer-bound finite-profile admission plus the marker, freeze, Lease, and protected-transition policies."
   }
 }
 
@@ -285,9 +293,10 @@ run "inventory_arms_only_with_default_deny_absent" {
   command = plan
 
   variables {
-    model_runtime_network_policy          = { phase = "inventory" }
-    model_network_transition_lock_identity = "terraform-test-holder"
-    model_network_transition_lock_required = true
+    model_runtime_network_policy             = { phase = "inventory" }
+    model_network_transition_lock_identity   = "terraform-test-holder"
+    model_network_transition_writer_username = "terraform-test@example.test"
+    model_network_transition_lock_required   = true
   }
 
   override_data {
@@ -309,10 +318,11 @@ run "enforce_rejects_a_legacy_v2_receipt" {
   command = plan
 
   variables {
-    model_express                          = merge(var.model_express, { enabled = false, models = {} })
-    model_network_transition_lock_identity = "terraform-test-holder"
-    model_network_transition_lock_required = true
-    model_runtime_network_policy          = {
+    model_express                            = merge(var.model_express, { enabled = false, models = {} })
+    model_network_transition_lock_identity   = "terraform-test-holder"
+    model_network_transition_writer_username = "terraform-test@example.test"
+    model_network_transition_lock_required   = true
+    model_runtime_network_policy = {
       phase = "enforce"
       inventory_receipt = {
         schema          = "fs2-serve.nebius.ai/model-runtime-network-inventory/v2"
@@ -368,7 +378,7 @@ run "enforce_rejects_a_legacy_v2_receipt" {
         transition_lock_uid = "uid-transition-lock"
         admission_policies  = {}
         admission_bindings  = {}
-        payload_sha256     = "728dd1ac4ef231f19533b4b9275833a863e04d3c5b69f61e1bf6f142069f83b4"
+        payload_sha256      = "728dd1ac4ef231f19533b4b9275833a863e04d3c5b69f61e1bf6f142069f83b4"
       }
     }
   }

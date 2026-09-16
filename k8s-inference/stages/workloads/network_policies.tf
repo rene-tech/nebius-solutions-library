@@ -102,44 +102,76 @@ locals {
   model_runtime_boundary_marker_admission_policy_name   = "fs2-model-network-boundary-marker"
   model_runtime_controller_freeze_admission_policy_name = "fs2-model-network-controller-freeze"
   model_runtime_helm_freeze_admission_policy_name       = "fs2-model-network-helm-freeze"
+  model_runtime_lease_guard_admission_policy_name       = "fs2-model-network-transition-lease-guard"
+  model_runtime_transition_guard_admission_policy_name  = "fs2-model-network-transition-guard"
+  model_runtime_transition_lease_name                   = "fs2-model-network-transition"
+  model_runtime_transition_lease_namespace              = "fs2-system"
+  model_runtime_transition_writer_annotation            = "fs2-serve.nebius.ai/network-transition-writer"
+  model_runtime_controller_writer = (
+    "system:serviceaccount:fs2-system:fs2-serve-control-plane-controller"
+  )
+  model_runtime_scientific_writer = (
+    "system:serviceaccount:fs2-system:fs2-serve-control-plane-runtime"
+  )
+  model_runtime_jobset_writer = format(
+    "system:serviceaccount:jobset-system:%s",
+    try(
+      data.terraform_remote_state.foundation.outputs.cluster_contract.jobset.controller_name,
+      "fs2-${var.run_id}-jobset-controller",
+    ),
+  )
+  model_runtime_controller_manager_writer = "system:kube-controller-manager"
+  model_runtime_replicaset_writers = [
+    local.model_runtime_controller_manager_writer,
+    "system:serviceaccount:kube-system:deployment-controller",
+  ]
+  model_runtime_cronjob_writers = [
+    local.model_runtime_controller_manager_writer,
+    "system:serviceaccount:kube-system:cronjob-controller",
+  ]
+  model_runtime_pod_controller_writers = [
+    local.model_runtime_controller_manager_writer,
+    "system:serviceaccount:kube-system:daemon-set-controller",
+    "system:serviceaccount:kube-system:job-controller",
+    "system:serviceaccount:kube-system:replicaset-controller",
+    "system:serviceaccount:kube-system:replication-controller",
+    "system:serviceaccount:kube-system:statefulset-controller",
+  ]
+  model_runtime_active_transition_writer_expression = trimspace(<<-CEL
+    request.userInfo.username == ${jsonencode(var.model_network_transition_writer_username)} &&
+    has(params.spec.holderIdentity) &&
+    params.spec.holderIdentity != '' &&
+    has(params.metadata.annotations) &&
+    params.metadata.annotations[${jsonencode(local.model_runtime_transition_writer_annotation)}] == request.userInfo.username
+  CEL
+  )
   model_runtime_admission_policy_names = sort(concat(
     local.model_runtime_profile_admission_policy_names,
     [
       local.model_runtime_boundary_marker_admission_policy_name,
       local.model_runtime_controller_freeze_admission_policy_name,
       local.model_runtime_helm_freeze_admission_policy_name,
+      local.model_runtime_lease_guard_admission_policy_name,
+      local.model_runtime_transition_guard_admission_policy_name,
     ],
   ))
-  model_runtime_admission_binding_specs = merge(
-    {
-      for name in concat(
-        local.model_runtime_profile_admission_policy_names,
-        [local.model_runtime_boundary_marker_admission_policy_name],
-      ) : "${name}-fs2-models" => {
-        policy_name = name
-        namespace   = "fs2-models"
-      }
-    },
-    {
-      "${local.model_runtime_controller_freeze_admission_policy_name}-fs2-system" = {
-        policy_name = local.model_runtime_controller_freeze_admission_policy_name
-        namespace   = "fs2-system"
-      }
-      "${local.model_runtime_helm_freeze_admission_policy_name}-fs2-system" = {
-        policy_name = local.model_runtime_helm_freeze_admission_policy_name
-        namespace   = "fs2-system"
-      }
-    },
-  )
-  model_runtime_admission_binding_names = sort(keys(local.model_runtime_admission_binding_specs))
   model_runtime_controller_deployment_name = "fs2-serve-control-plane-model-controller"
   model_runtime_admission_specs = {
     apps = {
-      name         = "fs2-model-network-profile-apps"
-      api_groups   = ["apps"]
-      api_versions = ["v1"]
-      resources    = ["deployments", "statefulsets", "daemonsets", "replicasets"]
-      expression   = <<-CEL
+      name              = "fs2-model-network-profile-apps"
+      api_groups        = ["apps"]
+      api_versions      = ["v1"]
+      resources         = ["deployments", "statefulsets", "daemonsets", "replicasets"]
+      writer_expression = <<-CEL
+        request.operation != 'CREATE' ||
+        (request.kind.kind == 'ReplicaSet' ?
+          (request.userInfo.username in ${jsonencode(local.model_runtime_replicaset_writers)} &&
+           has(object.metadata.ownerReferences) &&
+           object.metadata.ownerReferences.exists(owner, has(owner.controller) && owner.controller == true && owner.kind == 'Deployment')) :
+          (request.userInfo.username == ${jsonencode(local.model_runtime_controller_writer)} ||
+           (${local.model_runtime_active_transition_writer_expression})))
+      CEL
+      expression        = <<-CEL
         has(object.metadata.labels) &&
         object.metadata.labels['app.kubernetes.io/part-of'] == 'fs2-serve' &&
         ((object.metadata.labels['app.kubernetes.io/component'] == 'model-runtime' &&
@@ -158,11 +190,23 @@ locals {
       CEL
     }
     jobs = {
-      name         = "fs2-model-network-profile-jobs"
-      api_groups   = ["batch"]
-      api_versions = ["v1"]
-      resources    = ["jobs"]
-      expression   = <<-CEL
+      name              = "fs2-model-network-profile-jobs"
+      api_groups        = ["batch"]
+      api_versions      = ["v1"]
+      resources         = ["jobs"]
+      writer_expression = <<-CEL
+        request.operation != 'CREATE' ||
+        (has(object.metadata.ownerReferences) &&
+         object.metadata.ownerReferences.exists(owner, has(owner.controller) && owner.controller == true && owner.kind == 'JobSet') ?
+          request.userInfo.username == ${jsonencode(local.model_runtime_jobset_writer)} :
+         (has(object.metadata.ownerReferences) &&
+          object.metadata.ownerReferences.exists(owner, has(owner.controller) && owner.controller == true && owner.kind == 'CronJob') ?
+           request.userInfo.username in ${jsonencode(local.model_runtime_cronjob_writers)} :
+          (object.metadata.labels['${local.model_runtime_network_class_label}'] == 'internal-job' ?
+            request.userInfo.username == ${jsonencode(local.model_runtime_scientific_writer)} :
+            (${local.model_runtime_active_transition_writer_expression}))))
+      CEL
+      expression        = <<-CEL
         has(object.metadata.labels) &&
         object.metadata.labels['app.kubernetes.io/part-of'] == 'fs2-serve' &&
         ((object.metadata.labels['${local.model_runtime_network_class_label}'] == 'acceptance' &&
@@ -200,11 +244,16 @@ locals {
       CEL
     }
     jobsets = {
-      name         = "fs2-model-network-profile-jobsets"
-      api_groups   = ["jobset.x-k8s.io"]
-      api_versions = ["v1alpha2"]
-      resources    = ["jobsets"]
-      expression   = <<-CEL
+      name              = "fs2-model-network-profile-jobsets"
+      api_groups        = ["jobset.x-k8s.io"]
+      api_versions      = ["v1alpha2"]
+      resources         = ["jobsets"]
+      writer_expression = <<-CEL
+        request.operation != 'CREATE' ||
+        request.userInfo.username == ${jsonencode(local.model_runtime_scientific_writer)} ||
+        (${local.model_runtime_active_transition_writer_expression})
+      CEL
+      expression        = <<-CEL
         has(object.metadata.labels) &&
         object.metadata.labels['app.kubernetes.io/part-of'] == 'fs2-serve' &&
         object.metadata.labels['${local.model_runtime_network_class_label}'] == 'internal-job' &&
@@ -223,11 +272,15 @@ locals {
       CEL
     }
     pods = {
-      name         = "fs2-model-network-profile-pods"
-      api_groups   = [""]
-      api_versions = ["v1"]
-      resources    = ["pods"]
-      expression   = <<-CEL
+      name              = "fs2-model-network-profile-pods"
+      api_groups        = [""]
+      api_versions      = ["v1"]
+      resources         = ["pods"]
+      writer_expression = <<-CEL
+        request.operation != 'CREATE' ||
+        request.userInfo.username in ${jsonencode(local.model_runtime_pod_controller_writers)}
+      CEL
+      expression        = <<-CEL
         has(object.metadata.labels) &&
         object.metadata.labels['app.kubernetes.io/part-of'] == 'fs2-serve' &&
         ((object.metadata.labels['${local.model_runtime_network_class_label}'] == 'runtime' &&
@@ -257,7 +310,7 @@ locals {
           object.spec.serviceAccountName == 'cache-service-account')) &&
         has(object.metadata.ownerReferences) &&
         object.metadata.ownerReferences.exists(owner, has(owner.controller) && owner.controller == true && owner.kind in ['Deployment', 'StatefulSet', 'DaemonSet', 'ReplicaSet', 'ReplicationController', 'Job']) &&
-        ((request.operation == 'CREATE' && request.userInfo.username == 'system:kube-controller-manager') ||
+        ((request.operation == 'CREATE' && request.userInfo.username in ${jsonencode(local.model_runtime_pod_controller_writers)}) ||
          (request.operation == 'UPDATE' &&
           has(oldObject.metadata.labels) &&
           oldObject.metadata.labels['${local.model_runtime_network_class_label}'] == object.metadata.labels['${local.model_runtime_network_class_label}'] &&
@@ -265,11 +318,15 @@ locals {
       CEL
     }
     cronjobs = {
-      name         = "fs2-model-network-profile-cronjobs"
-      api_groups   = ["batch"]
-      api_versions = ["v1"]
-      resources    = ["cronjobs"]
-      expression   = <<-CEL
+      name              = "fs2-model-network-profile-cronjobs"
+      api_groups        = ["batch"]
+      api_versions      = ["v1"]
+      resources         = ["cronjobs"]
+      writer_expression = <<-CEL
+        request.operation != 'CREATE' ||
+        (${local.model_runtime_active_transition_writer_expression})
+      CEL
+      expression        = <<-CEL
         has(object.metadata.labels) &&
         object.metadata.labels['app.kubernetes.io/part-of'] == 'fs2-serve' &&
         object.metadata.labels['${local.model_runtime_network_class_label}'] == 'internal-job' &&
@@ -284,11 +341,15 @@ locals {
       CEL
     }
     replicationcontrollers = {
-      name         = "fs2-model-network-profile-replicationcontrollers"
-      api_groups   = [""]
-      api_versions = ["v1"]
-      resources    = ["replicationcontrollers"]
-      expression   = <<-CEL
+      name              = "fs2-model-network-profile-replicationcontrollers"
+      api_groups        = [""]
+      api_versions      = ["v1"]
+      resources         = ["replicationcontrollers"]
+      writer_expression = <<-CEL
+        request.operation != 'CREATE' ||
+        (${local.model_runtime_active_transition_writer_expression})
+      CEL
+      expression        = <<-CEL
         has(object.metadata.labels) &&
         object.metadata.labels['app.kubernetes.io/part-of'] == 'fs2-serve' &&
         object.metadata.labels['app.kubernetes.io/component'] == 'model-runtime' &&
@@ -302,62 +363,85 @@ locals {
       CEL
     }
   }
-  model_runtime_profile_admission_policy_spec_sha256 = {
-    for _, admission in local.model_runtime_admission_specs : admission.name => sha256(jsonencode({
+  model_runtime_profile_admission_policy_specs = {
+    for _, admission in local.model_runtime_admission_specs : admission.name => {
       failurePolicy = "Fail"
+      paramKind = {
+        apiVersion = "coordination.k8s.io/v1"
+        kind       = "Lease"
+      }
+      matchConstraints = {
+        matchPolicy = "Equivalent"
+        resourceRules = [{
+          apiGroups   = admission.api_groups
+          apiVersions = admission.api_versions
+          operations  = ["CREATE", "UPDATE"]
+          resources   = admission.resources
+          scope       = "Namespaced"
+        }]
+      }
+      validations = [
+        {
+          expression = trimspace(admission.expression)
+          message    = "fs2-models workloads and Pods require one immutable Terraform-owned network profile"
+          reason     = "Forbidden"
+        },
+        {
+          expression = trimspace(admission.writer_expression)
+          message    = "only the workload's exact platform controller or the active network-transition writer may create this profiled object"
+          reason     = "Forbidden"
+        },
+      ]
+    }
+  }
+  model_runtime_marker_admission_policy_spec = {
+    failurePolicy = "Fail"
+    matchConstraints = {
+      matchPolicy = "Equivalent"
       resourceRules = [{
-        apiGroups   = admission.api_groups
-        apiVersions = admission.api_versions
-        operations  = ["CREATE", "UPDATE"]
-        resources   = admission.resources
+        apiGroups   = [""]
+        apiVersions = ["v1"]
+        operations  = ["UPDATE", "DELETE"]
+        resources   = ["configmaps"]
         scope       = "Namespaced"
       }]
-      validations = [{
-        expression = trimspace(admission.expression)
-        message    = "fs2-models workloads and Pods require one immutable Terraform-owned network profile"
-        reason     = "Forbidden"
-      }]
-    }))
-  }
-  model_runtime_marker_admission_policy_spec_sha256 = sha256(jsonencode({
-    failurePolicy = "Fail"
-    resourceRules = [{
-      apiGroups   = [""]
-      apiVersions = ["v1"]
-      operations  = ["UPDATE", "DELETE"]
-      resources   = ["configmaps"]
-      scope       = "Namespaced"
-    }]
+    }
     validations = [{
       expression = "oldObject.metadata.name != 'fs2-runtime-network-policy-boundary-v2'"
       message    = "the fs2 model-network boundary marker is immutable and non-deletable"
       reason     = "Forbidden"
     }]
-  }))
-  model_runtime_controller_freeze_admission_policy_spec_sha256 = sha256(jsonencode({
+  }
+  model_runtime_controller_freeze_admission_policy_spec = {
     failurePolicy = "Fail"
-    resourceRules = [{
-      apiGroups   = ["apps"]
-      apiVersions = ["v1"]
-      operations  = ["UPDATE", "DELETE"]
-      resources   = ["deployments"]
-      scope       = "Namespaced"
-    }]
+    matchConstraints = {
+      matchPolicy = "Equivalent"
+      resourceRules = [{
+        apiGroups   = ["apps"]
+        apiVersions = ["v1"]
+        operations  = ["UPDATE", "DELETE"]
+        resources   = ["deployments"]
+        scope       = "Namespaced"
+      }]
+    }
     validations = [{
       expression = "oldObject.metadata.name != '${local.model_runtime_controller_deployment_name}'"
       message    = "the live model-controller is frozen while the fs2-models network boundary is armed"
       reason     = "Forbidden"
     }]
-  }))
-  model_runtime_helm_freeze_admission_policy_spec_sha256 = sha256(jsonencode({
+  }
+  model_runtime_helm_freeze_admission_policy_spec = {
     failurePolicy = "Fail"
-    resourceRules = [{
-      apiGroups   = [""]
-      apiVersions = ["v1"]
-      operations  = ["CREATE", "UPDATE", "DELETE"]
-      resources   = ["configmaps", "secrets"]
-      scope       = "Namespaced"
-    }]
+    matchConstraints = {
+      matchPolicy = "Equivalent"
+      resourceRules = [{
+        apiGroups   = [""]
+        apiVersions = ["v1"]
+        operations  = ["CREATE", "UPDATE", "DELETE"]
+        resources   = ["configmaps", "secrets"]
+        scope       = "Namespaced"
+      }]
+    }
     validations = [{
       expression = trimspace(<<-CEL
         request.operation == 'CREATE' ?
@@ -376,21 +460,208 @@ locals {
       message = "the fs2-serve-control-plane Helm release is frozen while the fs2-models network boundary is armed"
       reason  = "Forbidden"
     }]
-  }))
-  model_runtime_admission_policy_spec_sha256 = merge(
-    local.model_runtime_profile_admission_policy_spec_sha256,
+  }
+  model_runtime_lease_guard_admission_policy_spec = {
+    failurePolicy = "Fail"
+    matchConstraints = {
+      matchPolicy = "Equivalent"
+      resourceRules = [{
+        apiGroups   = ["coordination.k8s.io"]
+        apiVersions = ["v1"]
+        operations  = ["UPDATE", "DELETE"]
+        resources   = ["leases"]
+        scope       = "Namespaced"
+      }]
+    }
+    validations = [{
+      expression = trimspace(<<-CEL
+        oldObject.metadata.name != ${jsonencode(local.model_runtime_transition_lease_name)} ||
+        (request.operation == 'UPDATE' &&
+         has(oldObject.metadata.annotations) &&
+         oldObject.metadata.annotations[${jsonencode(local.model_runtime_transition_writer_annotation)}] == request.userInfo.username &&
+         has(object.metadata.annotations) &&
+         object.metadata.annotations[${jsonencode(local.model_runtime_transition_writer_annotation)}] == request.userInfo.username &&
+         ((oldObject.spec.holderIdentity == '' && object.spec.holderIdentity != '') ||
+          (oldObject.spec.holderIdentity != '' && object.spec.holderIdentity == oldObject.spec.holderIdentity) ||
+          (oldObject.spec.holderIdentity != '' && object.spec.holderIdentity == '')))
+      CEL
+      )
+      message = "the retained model-network transition Lease may be acquired, renewed, or released only by its exact authenticated writer"
+      reason  = "Forbidden"
+    }]
+  }
+  model_runtime_transition_guard_resource_rules = [
     {
-      (local.model_runtime_boundary_marker_admission_policy_name)   = local.model_runtime_marker_admission_policy_spec_sha256
-      (local.model_runtime_controller_freeze_admission_policy_name) = local.model_runtime_controller_freeze_admission_policy_spec_sha256
-      (local.model_runtime_helm_freeze_admission_policy_name)       = local.model_runtime_helm_freeze_admission_policy_spec_sha256
+      apiGroups   = ["networking.k8s.io"]
+      apiVersions = ["v1"]
+      operations  = ["CREATE", "UPDATE", "DELETE"]
+      resources   = ["networkpolicies"]
+      scope       = "Namespaced"
+    },
+    {
+      apiGroups   = [""]
+      apiVersions = ["v1"]
+      operations  = ["CREATE", "UPDATE", "DELETE"]
+      resources   = ["configmaps"]
+      scope       = "Namespaced"
+    },
+    {
+      apiGroups   = ["admissionregistration.k8s.io"]
+      apiVersions = ["v1"]
+      operations  = ["CREATE", "UPDATE", "DELETE"]
+      resources = [
+        "validatingadmissionpolicies",
+        "validatingadmissionpolicybindings",
+      ]
+      scope = "Cluster"
+    },
+  ]
+  model_runtime_transition_guard_admission_policy_spec = {
+    failurePolicy = "Fail"
+    paramKind = {
+      apiVersion = "coordination.k8s.io/v1"
+      kind       = "Lease"
+    }
+    matchConstraints = {
+      matchPolicy   = "Equivalent"
+      resourceRules = local.model_runtime_transition_guard_resource_rules
+    }
+    variables = [
+      {
+        name       = "targetMetadata"
+        expression = "request.operation == 'CREATE' ? object.metadata : oldObject.metadata"
+      },
+      {
+        name = "protectedObject"
+        expression = trimspace(<<-CEL
+          (request.resource.group == 'networking.k8s.io' &&
+           request.resource.resource == 'networkpolicies' &&
+           request.namespace == 'fs2-models') ||
+          (request.resource.group == '' &&
+           request.resource.resource == 'configmaps' &&
+           request.namespace == 'fs2-models' &&
+           variables.targetMetadata.name == 'fs2-runtime-network-policy-boundary-v2') ||
+          (request.resource.group == 'admissionregistration.k8s.io' &&
+           request.resource.resource == 'validatingadmissionpolicies' &&
+           variables.targetMetadata.name in ${jsonencode(local.model_runtime_admission_policy_names)}) ||
+          (request.resource.group == 'admissionregistration.k8s.io' &&
+           request.resource.resource == 'validatingadmissionpolicybindings' &&
+           variables.targetMetadata.name in ${jsonencode(local.model_runtime_admission_binding_names)})
+        CEL
+        )
+      },
+    ]
+    validations = [{
+      expression = trimspace(<<-CEL
+        !variables.protectedObject ||
+        (request.userInfo.username == ${jsonencode(var.model_network_transition_writer_username)} &&
+         has(params.spec.holderIdentity) &&
+         params.spec.holderIdentity != '' &&
+         has(params.metadata.annotations) &&
+         params.metadata.annotations[${jsonencode(local.model_runtime_transition_writer_annotation)}] == request.userInfo.username)
+      CEL
+      )
+      message = "fs2-models NetworkPolicies and Terraform-owned boundary admission objects require the exact active transition writer and Lease"
+      reason  = "Forbidden"
+    }]
+  }
+  model_runtime_admission_policy_specs = merge(
+    local.model_runtime_profile_admission_policy_specs,
+    {
+      (local.model_runtime_boundary_marker_admission_policy_name)   = local.model_runtime_marker_admission_policy_spec
+      (local.model_runtime_controller_freeze_admission_policy_name) = local.model_runtime_controller_freeze_admission_policy_spec
+      (local.model_runtime_helm_freeze_admission_policy_name)       = local.model_runtime_helm_freeze_admission_policy_spec
+      (local.model_runtime_lease_guard_admission_policy_name)       = local.model_runtime_lease_guard_admission_policy_spec
+      (local.model_runtime_transition_guard_admission_policy_name)  = local.model_runtime_transition_guard_admission_policy_spec
     },
   )
+  model_runtime_admission_binding_specs = merge(
+    {
+      for name in local.model_runtime_profile_admission_policy_names : "${name}-fs2-models" => {
+        policyName        = name
+        validationActions = ["Deny"]
+        paramRef = {
+          name                    = local.model_runtime_transition_lease_name
+          namespace               = local.model_runtime_transition_lease_namespace
+          parameterNotFoundAction = "Deny"
+        }
+        matchResources = {
+          matchPolicy = "Equivalent"
+          namespaceSelector = {
+            matchLabels = { "kubernetes.io/metadata.name" = "fs2-models" }
+          }
+        }
+      }
+    },
+    {
+      "${local.model_runtime_boundary_marker_admission_policy_name}-fs2-models" = {
+        policyName        = local.model_runtime_boundary_marker_admission_policy_name
+        validationActions = ["Deny"]
+        matchResources = {
+          matchPolicy = "Equivalent"
+          namespaceSelector = {
+            matchLabels = { "kubernetes.io/metadata.name" = "fs2-models" }
+          }
+        }
+      }
+      "${local.model_runtime_controller_freeze_admission_policy_name}-fs2-system" = {
+        policyName        = local.model_runtime_controller_freeze_admission_policy_name
+        validationActions = ["Deny"]
+        matchResources = {
+          matchPolicy = "Equivalent"
+          namespaceSelector = {
+            matchLabels = { "kubernetes.io/metadata.name" = "fs2-system" }
+          }
+        }
+      }
+      "${local.model_runtime_helm_freeze_admission_policy_name}-fs2-system" = {
+        policyName        = local.model_runtime_helm_freeze_admission_policy_name
+        validationActions = ["Deny"]
+        matchResources = {
+          matchPolicy = "Equivalent"
+          namespaceSelector = {
+            matchLabels = { "kubernetes.io/metadata.name" = "fs2-system" }
+          }
+        }
+      }
+      "${local.model_runtime_lease_guard_admission_policy_name}-fs2-system" = {
+        policyName        = local.model_runtime_lease_guard_admission_policy_name
+        validationActions = ["Deny"]
+        matchResources = {
+          matchPolicy = "Equivalent"
+          resourceRules = [{
+            apiGroups   = ["coordination.k8s.io"]
+            apiVersions = ["v1"]
+            operations  = ["UPDATE", "DELETE"]
+            resources   = ["leases"]
+            scope       = "Namespaced"
+          }]
+          namespaceSelector = {
+            matchLabels = { "kubernetes.io/metadata.name" = local.model_runtime_transition_lease_namespace }
+          }
+        }
+      }
+      "${local.model_runtime_transition_guard_admission_policy_name}-global" = {
+        policyName        = local.model_runtime_transition_guard_admission_policy_name
+        validationActions = ["Deny"]
+        paramRef = {
+          name                    = local.model_runtime_transition_lease_name
+          namespace               = local.model_runtime_transition_lease_namespace
+          parameterNotFoundAction = "Deny"
+        }
+        matchResources = {
+          matchPolicy   = "Equivalent"
+          resourceRules = local.model_runtime_transition_guard_resource_rules
+        }
+      }
+    },
+  )
+  model_runtime_admission_binding_names = sort(keys(local.model_runtime_admission_binding_specs))
+  model_runtime_admission_policy_spec_sha256 = {
+    for name, spec in local.model_runtime_admission_policy_specs : name => sha256(jsonencode(spec))
+  }
   model_runtime_admission_binding_spec_sha256 = {
-    for binding_name, binding in local.model_runtime_admission_binding_specs : binding_name => sha256(jsonencode({
-      policyName        = binding.policy_name
-      validationActions = ["Deny"]
-      namespaceSelector = { "kubernetes.io/metadata.name" = binding.namespace }
-    }))
+    for name, spec in local.model_runtime_admission_binding_specs : name => sha256(jsonencode(spec))
   }
 
   model_runtime_inventory_receipt_payload = var.model_runtime_network_policy.inventory_receipt == null ? null : {
@@ -469,8 +740,9 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
     admission_policy_spec_sha256  = local.model_runtime_admission_policy_spec_sha256
     admission_binding_spec_sha256 = local.model_runtime_admission_binding_spec_sha256
     controller_deployment_name    = local.model_runtime_controller_deployment_name
-    transition_lock_name          = "fs2-model-network-transition"
-    transition_lock_namespace     = "fs2-system"
+    transition_lock_name          = local.model_runtime_transition_lease_name
+    transition_lock_namespace     = local.model_runtime_transition_lease_namespace
+    transition_writer_username    = var.model_network_transition_writer_username
     control_plane_image           = var.control_plane_image
     inventory_receipt_sha256      = try(var.model_runtime_network_policy.inventory_receipt.payload_sha256, null)
     deny_absent_receipt_sha256    = try(var.model_runtime_network_policy.deny_absent_receipt.payload_sha256, null)
@@ -483,9 +755,10 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
     precondition {
       condition = var.model_runtime_network_policy.phase == "prepare" || (
         var.model_network_transition_lock_required &&
-        var.model_network_transition_lock_identity != ""
+        var.model_network_transition_lock_identity != "" &&
+        var.model_network_transition_writer_username != ""
       )
-      error_message = "Every post-prepare model-network transition must run through inference-stack while it holds the cluster-wide transition Lease."
+      error_message = "Every post-prepare model-network transition must run through inference-stack as the exact authenticated writer while it holds the cluster-wide transition Lease."
     }
 
     precondition {
@@ -509,7 +782,7 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
         "rollback-remove-deny",
         "rollback-helm",
         ], var.model_runtime_network_policy.phase) || try(
-        var.model_runtime_network_policy.inventory_receipt.schema == "fs2-serve.nebius.ai/model-runtime-network-inventory/v3" &&
+        var.model_runtime_network_policy.inventory_receipt.schema == "fs2-serve.nebius.ai/model-runtime-network-inventory/v4" &&
         var.model_runtime_network_policy.inventory_receipt.cluster_id == var.cluster_id &&
         var.model_runtime_network_policy.inventory_receipt.namespace == "fs2-models" &&
         can(formatdate("YYYY-MM-DD'T'hh:mm:ssZ", var.model_runtime_network_policy.inventory_receipt.captured_at)) &&
@@ -522,20 +795,18 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
         jsonencode(sort(keys(var.model_runtime_network_policy.inventory_receipt.admission_bindings))) == jsonencode(local.model_runtime_admission_binding_names) &&
         alltrue([for name, policy in var.model_runtime_network_policy.inventory_receipt.admission_policies :
           policy.uid != "" &&
-          policy.failure_policy == "Fail" &&
+          policy.resource_version != "" &&
           policy.spec_sha256 == local.model_runtime_admission_policy_spec_sha256[name]
         ]) &&
         alltrue([for name, binding in var.model_runtime_network_policy.inventory_receipt.admission_bindings :
           binding.uid != "" &&
-          binding.policy_name == local.model_runtime_admission_binding_specs[name].policy_name &&
-          binding.validation_actions == ["Deny"] &&
-          binding.namespace_selector == { "kubernetes.io/metadata.name" = local.model_runtime_admission_binding_specs[name].namespace } &&
+          binding.resource_version != "" &&
           binding.spec_sha256 == local.model_runtime_admission_binding_spec_sha256[name]
         ]) &&
         var.model_runtime_network_policy.inventory_receipt.payload_sha256 == sha256(jsonencode(local.model_runtime_inventory_receipt_payload)),
         false,
       )
-      error_message = "Enforcement and deny removal require a valid v3 workload/Pod receipt for this cluster, the live digest-pinned model-controller, exact admission policy and binding UIDs/specs, namespace, and finite profile catalog. Expected payload digest: ${sha256(jsonencode(local.model_runtime_inventory_receipt_payload))}."
+      error_message = "Enforcement and deny removal require a valid v4 workload/Pod receipt for this cluster, the live digest-pinned model-controller, exact admission policy and binding UIDs/resourceVersions/full specs, namespace, and finite profile catalog. Expected payload digest: ${sha256(jsonencode(local.model_runtime_inventory_receipt_payload))}."
     }
 
     precondition {
@@ -581,24 +852,11 @@ resource "kubernetes_manifest" "model_runtime_network_profile_admission" {
         "app.kubernetes.io/component"      = "namespace-network-boundary"
         "fs2-serve.nebius.ai/policy-owner" = "terraform-profile-admission"
       })
-    }
-    spec = {
-      failurePolicy = "Fail"
-      matchConstraints = {
-        resourceRules = [{
-          apiGroups   = each.value.api_groups
-          apiVersions = each.value.api_versions
-          operations  = ["CREATE", "UPDATE"]
-          resources   = each.value.resources
-          scope       = "Namespaced"
-        }]
+      annotations = {
+        (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
       }
-      validations = [{
-        expression = trimspace(each.value.expression)
-        message    = "fs2-models workloads and Pods require one immutable Terraform-owned network profile"
-        reason     = "Forbidden"
-      }]
     }
+    spec = local.model_runtime_admission_policy_specs[each.value.name]
   }
 
   field_manager {
@@ -623,18 +881,11 @@ resource "kubernetes_manifest" "model_runtime_network_profile_admission_binding"
         "app.kubernetes.io/component"      = "namespace-network-boundary"
         "fs2-serve.nebius.ai/policy-owner" = "terraform-profile-admission"
       })
-    }
-    spec = {
-      policyName        = each.value.name
-      validationActions = ["Deny"]
-      matchResources = {
-        namespaceSelector = {
-          matchLabels = {
-            "kubernetes.io/metadata.name" = "fs2-models"
-          }
-        }
+      annotations = {
+        (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
       }
     }
+    spec = local.model_runtime_admission_binding_specs["${each.value.name}-fs2-models"]
   }
 
   field_manager {
@@ -671,24 +922,11 @@ resource "kubernetes_manifest" "model_runtime_network_boundary_marker_admission"
         "app.kubernetes.io/component"      = "namespace-network-boundary"
         "fs2-serve.nebius.ai/policy-owner" = "terraform-boundary-marker-admission"
       })
-    }
-    spec = {
-      failurePolicy = "Fail"
-      matchConstraints = {
-        resourceRules = [{
-          apiGroups   = [""]
-          apiVersions = ["v1"]
-          operations  = ["UPDATE", "DELETE"]
-          resources   = ["configmaps"]
-          scope       = "Namespaced"
-        }]
+      annotations = {
+        (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
       }
-      validations = [{
-        expression = "oldObject.metadata.name != 'fs2-runtime-network-policy-boundary-v2'"
-        message    = "the fs2 model-network boundary marker is immutable and non-deletable"
-        reason     = "Forbidden"
-      }]
     }
+    spec = local.model_runtime_admission_policy_specs[local.model_runtime_boundary_marker_admission_policy_name]
   }
 
   field_manager {
@@ -713,18 +951,11 @@ resource "kubernetes_manifest" "model_runtime_network_boundary_marker_admission_
         "app.kubernetes.io/component"      = "namespace-network-boundary"
         "fs2-serve.nebius.ai/policy-owner" = "terraform-boundary-marker-admission"
       })
-    }
-    spec = {
-      policyName        = local.model_runtime_boundary_marker_admission_policy_name
-      validationActions = ["Deny"]
-      matchResources = {
-        namespaceSelector = {
-          matchLabels = {
-            "kubernetes.io/metadata.name" = "fs2-models"
-          }
-        }
+      annotations = {
+        (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
       }
     }
+    spec = local.model_runtime_admission_binding_specs["${local.model_runtime_boundary_marker_admission_policy_name}-fs2-models"]
   }
 
   field_manager {
@@ -756,24 +987,11 @@ resource "kubernetes_manifest" "model_runtime_network_controller_freeze_admissio
         "app.kubernetes.io/component"      = "namespace-network-boundary"
         "fs2-serve.nebius.ai/policy-owner" = "terraform-controller-freeze"
       })
-    }
-    spec = {
-      failurePolicy = "Fail"
-      matchConstraints = {
-        resourceRules = [{
-          apiGroups   = ["apps"]
-          apiVersions = ["v1"]
-          operations  = ["UPDATE", "DELETE"]
-          resources   = ["deployments"]
-          scope       = "Namespaced"
-        }]
+      annotations = {
+        (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
       }
-      validations = [{
-        expression = "oldObject.metadata.name != '${local.model_runtime_controller_deployment_name}'"
-        message    = "the live model-controller is frozen while the fs2-models network boundary is armed"
-        reason     = "Forbidden"
-      }]
     }
+    spec = local.model_runtime_admission_policy_specs[local.model_runtime_controller_freeze_admission_policy_name]
   }
 
   field_manager {
@@ -799,42 +1017,111 @@ resource "kubernetes_manifest" "model_runtime_network_helm_freeze_admission" {
         "app.kubernetes.io/component"      = "namespace-network-boundary"
         "fs2-serve.nebius.ai/policy-owner" = "terraform-helm-freeze"
       })
-    }
-    spec = {
-      failurePolicy = "Fail"
-      matchConstraints = {
-        resourceRules = [{
-          apiGroups   = [""]
-          apiVersions = ["v1"]
-          operations  = ["CREATE", "UPDATE", "DELETE"]
-          resources   = ["configmaps", "secrets"]
-          scope       = "Namespaced"
-        }]
+      annotations = {
+        (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
       }
-      validations = [{
-        expression = trimspace(<<-CEL
-          request.operation == 'CREATE' ?
-            (!has(object.metadata.labels) ||
-             !('owner' in object.metadata.labels) ||
-             !('name' in object.metadata.labels) ||
-             object.metadata.labels['owner'] != 'helm' ||
-             object.metadata.labels['name'] != 'fs2-serve-control-plane') :
-            (!has(oldObject.metadata.labels) ||
-             !('owner' in oldObject.metadata.labels) ||
-             !('name' in oldObject.metadata.labels) ||
-             oldObject.metadata.labels['owner'] != 'helm' ||
-             oldObject.metadata.labels['name'] != 'fs2-serve-control-plane')
-        CEL
-        )
-        message = "the fs2-serve-control-plane Helm release is frozen while the fs2-models network boundary is armed"
-        reason  = "Forbidden"
-      }]
     }
+    spec = local.model_runtime_admission_policy_specs[local.model_runtime_helm_freeze_admission_policy_name]
   }
 
   field_manager {
     force_conflicts = false
     name            = "fs2-model-network-helm-freeze"
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+# The retained Lease has an API-server-enforced writer boundary. A client may
+# acquire, renew, or release it only as the exact authenticated identity that
+# the supported wrapper recorded. It can never delete the Lease or steal a
+# non-empty holder identity. This closes the cooperative-lock gap without
+# granting the model controller any admission-policy authority.
+resource "kubernetes_manifest" "model_runtime_network_lease_guard_admission" {
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicy"
+    metadata = {
+      name = local.model_runtime_lease_guard_admission_policy_name
+      labels = merge(local.common_labels, {
+        "app.kubernetes.io/component"      = "namespace-network-boundary"
+        "fs2-serve.nebius.ai/policy-owner" = "terraform-transition-guard"
+      })
+      annotations = {
+        (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
+      }
+    }
+    spec = local.model_runtime_admission_policy_specs[local.model_runtime_lease_guard_admission_policy_name]
+  }
+
+  field_manager {
+    force_conflicts = false
+    name            = "fs2-model-network-transition-guard"
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "kubernetes_manifest" "model_runtime_network_lease_guard_admission_binding" {
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicyBinding"
+    metadata = {
+      name = "${local.model_runtime_lease_guard_admission_policy_name}-fs2-system"
+      labels = merge(local.common_labels, {
+        "app.kubernetes.io/component"      = "namespace-network-boundary"
+        "fs2-serve.nebius.ai/policy-owner" = "terraform-transition-guard"
+      })
+      annotations = {
+        (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
+      }
+    }
+    spec = local.model_runtime_admission_binding_specs["${local.model_runtime_lease_guard_admission_policy_name}-fs2-system"]
+  }
+
+  field_manager {
+    force_conflicts = false
+    name            = "fs2-model-network-transition-guard"
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [
+    kubernetes_manifest.model_runtime_network_lease_guard_admission,
+  ]
+}
+
+# This second guard protects the exact finite policies, default deny, marker,
+# VAPs, and bindings. After inventory, every mutation must come from the exact
+# authenticated Lease writer while its holder is active. CREATE/UPDATE also
+# carries the current holder token, so an unrelated Helm/Terraform process that
+# merely shares RBAC cannot race the verified transition.
+resource "kubernetes_manifest" "model_runtime_network_transition_guard_admission" {
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicy"
+    metadata = {
+      name = local.model_runtime_transition_guard_admission_policy_name
+      labels = merge(local.common_labels, {
+        "app.kubernetes.io/component"      = "namespace-network-boundary"
+        "fs2-serve.nebius.ai/policy-owner" = "terraform-transition-guard"
+      })
+      annotations = {
+        (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
+      }
+    }
+    spec = local.model_runtime_admission_policy_specs[local.model_runtime_transition_guard_admission_policy_name]
+  }
+
+  field_manager {
+    force_conflicts = false
+    name            = "fs2-model-network-transition-guard"
   }
 
   lifecycle {
@@ -858,18 +1145,11 @@ resource "kubernetes_manifest" "model_runtime_network_controller_freeze_admissio
         "app.kubernetes.io/component"      = "namespace-network-boundary"
         "fs2-serve.nebius.ai/policy-owner" = "terraform-controller-freeze"
       })
-    }
-    spec = {
-      policyName        = local.model_runtime_controller_freeze_admission_policy_name
-      validationActions = ["Deny"]
-      matchResources = {
-        namespaceSelector = {
-          matchLabels = {
-            "kubernetes.io/metadata.name" = "fs2-system"
-          }
-        }
+      annotations = {
+        (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
       }
     }
+    spec = local.model_runtime_admission_binding_specs["${local.model_runtime_controller_freeze_admission_policy_name}-fs2-system"]
   }
 
   field_manager {
@@ -899,18 +1179,11 @@ resource "kubernetes_manifest" "model_runtime_network_helm_freeze_admission_bind
         "app.kubernetes.io/component"      = "namespace-network-boundary"
         "fs2-serve.nebius.ai/policy-owner" = "terraform-helm-freeze"
       })
-    }
-    spec = {
-      policyName        = local.model_runtime_helm_freeze_admission_policy_name
-      validationActions = ["Deny"]
-      matchResources = {
-        namespaceSelector = {
-          matchLabels = {
-            "kubernetes.io/metadata.name" = "fs2-system"
-          }
-        }
+      annotations = {
+        (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
       }
     }
+    spec = local.model_runtime_admission_binding_specs["${local.model_runtime_helm_freeze_admission_policy_name}-fs2-system"]
   }
 
   field_manager {
@@ -924,6 +1197,47 @@ resource "kubernetes_manifest" "model_runtime_network_helm_freeze_admission_bind
   ]
 }
 
+resource "kubernetes_manifest" "model_runtime_network_transition_guard_admission_binding" {
+  count = var.model_runtime_network_policy.phase == "prepare" ? 0 : 1
+
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicyBinding"
+    metadata = {
+      name = "${local.model_runtime_transition_guard_admission_policy_name}-global"
+      labels = merge(local.common_labels, {
+        "app.kubernetes.io/component"      = "namespace-network-boundary"
+        "fs2-serve.nebius.ai/policy-owner" = "terraform-transition-guard"
+      })
+      annotations = {
+        (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
+      }
+    }
+    spec = local.model_runtime_admission_binding_specs["${local.model_runtime_transition_guard_admission_policy_name}-global"]
+  }
+
+  field_manager {
+    force_conflicts = false
+    name            = "fs2-model-network-transition-guard"
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [
+    kubernetes_manifest.model_runtime_network_transition_guard_admission,
+    kubernetes_manifest.model_runtime_network_lease_guard_admission_binding,
+    kubernetes_manifest.model_runtime_network_profile_admission_binding,
+    kubernetes_manifest.model_runtime_network_boundary_marker_admission_binding,
+    kubernetes_manifest.model_runtime_network_controller_freeze_admission_binding,
+    kubernetes_manifest.model_runtime_network_helm_freeze_admission_binding,
+    kubernetes_network_policy_v1.model_runtime_base_profile,
+    kubernetes_network_policy_v1.model_runtime_modelexpress_profile,
+    kubernetes_network_policy_v1.model_namespace_support_profile,
+  ]
+}
+
 resource "kubernetes_config_map_v1" "model_runtime_network_enforcement" {
   count = var.model_runtime_network_policy.phase == "prepare" ? 0 : 1
 
@@ -934,6 +1248,9 @@ resource "kubernetes_config_map_v1" "model_runtime_network_enforcement" {
       "app.kubernetes.io/component"                 = "namespace-network-boundary"
       "fs2-serve.nebius.ai/network-boundary-marker" = "true"
     })
+    annotations = {
+      (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
+    }
   }
 
   data = {
@@ -953,6 +1270,7 @@ resource "kubernetes_config_map_v1" "model_runtime_network_enforcement" {
     kubernetes_manifest.model_runtime_network_boundary_marker_admission_binding,
     kubernetes_manifest.model_runtime_network_controller_freeze_admission_binding,
     kubernetes_manifest.model_runtime_network_helm_freeze_admission_binding,
+    kubernetes_manifest.model_runtime_network_transition_guard_admission_binding,
   ]
 }
 
@@ -967,6 +1285,9 @@ resource "kubernetes_network_policy_v1" "model_runtime_base_profile" {
       (local.model_runtime_network_profile_label) = each.key
       "fs2-serve.nebius.ai/policy-owner"          = "terraform-profile"
     })
+    annotations = {
+      (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
+    }
   }
 
   spec {
@@ -1037,6 +1358,9 @@ resource "kubernetes_network_policy_v1" "model_runtime_modelexpress_profile" {
       (local.model_runtime_network_profile_label) = each.key
       "fs2-serve.nebius.ai/policy-owner"          = "terraform-profile"
     })
+    annotations = {
+      (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
+    }
   }
 
   spec {
@@ -1179,12 +1503,15 @@ resource "kubernetes_network_policy_v1" "model_namespace_support_profile" {
       (local.model_runtime_network_profile_label) = each.key
       "fs2-serve.nebius.ai/policy-owner"          = "terraform-profile"
     })
+    annotations = {
+      (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
+    }
   }
 
   spec {
     pod_selector {
       match_labels = {
-        "app.kubernetes.io/part-of"                = "fs2-serve"
+        "app.kubernetes.io/part-of"                 = "fs2-serve"
         (local.model_runtime_network_profile_label) = each.key
       }
       match_expressions {
@@ -1343,6 +1670,7 @@ resource "terraform_data" "model_runtime_network_policy_apply_fence" {
     kubernetes_manifest.model_runtime_network_profile_admission_binding,
     kubernetes_manifest.model_runtime_network_controller_freeze_admission_binding,
     kubernetes_manifest.model_runtime_network_helm_freeze_admission_binding,
+    kubernetes_manifest.model_runtime_network_transition_guard_admission_binding,
     kubernetes_network_policy_v1.model_runtime_base_profile,
     kubernetes_network_policy_v1.model_runtime_modelexpress_profile,
     kubernetes_network_policy_v1.model_namespace_support_profile,
@@ -1356,8 +1684,12 @@ resource "kubernetes_network_policy_v1" "model_namespace_default_deny" {
     name      = "default-deny"
     namespace = "fs2-models"
     labels = merge(local.common_labels, {
-      "app.kubernetes.io/component" = "namespace-network-boundary"
+      "app.kubernetes.io/component"      = "namespace-network-boundary"
+      "fs2-serve.nebius.ai/policy-owner" = "terraform-default-deny"
     })
+    annotations = {
+      (local.model_runtime_transition_writer_annotation) = var.model_network_transition_writer_username
+    }
   }
 
   spec {
@@ -1370,6 +1702,7 @@ resource "kubernetes_network_policy_v1" "model_namespace_default_deny" {
   depends_on = [
     terraform_data.model_runtime_network_policy_apply_fence,
     kubernetes_config_map_v1.model_runtime_network_enforcement,
+    kubernetes_manifest.model_runtime_network_transition_guard_admission_binding,
     kubernetes_network_policy_v1.model_runtime_base_profile,
     kubernetes_network_policy_v1.model_runtime_modelexpress_profile,
     kubernetes_network_policy_v1.model_namespace_support_profile,
