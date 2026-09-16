@@ -1,0 +1,9 @@
+# Additional TTS dependencies, constrained against the immutable speech base.
+-c ../speech-runtime/requirements-nemo.lock
+janome
+jieba
+nemo_text_processing
+nltk
+pypinyin
+pypinyin-dict
+pyopenjtalk

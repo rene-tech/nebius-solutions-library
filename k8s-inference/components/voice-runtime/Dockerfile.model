@@ -1,0 +1,19 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+ARG MODEL_REPOSITORY
+ARG MODEL_REVISION
+ARG MODEL_FILENAME
+ARG MODEL_SHA256
+ADD --checksum=sha256:${MODEL_SHA256} \
+    https://huggingface.co/nvidia/${MODEL_REPOSITORY}/resolve/${MODEL_REVISION}/${MODEL_FILENAME} \
+    /opt/fs2-voice/weights/${MODEL_FILENAME}
+# Small shared codec is needed only by the Magpie process; it is never loaded
+# into the Parakeet/Sortformer process. Retained in the common artifact layer.
+ADD --checksum=sha256:28c2518de3e3d5a2c7d9bca40a7ebc0644eb76c60b890970365325bdd8e9f099 \
+    https://huggingface.co/nvidia/nemo-nano-codec-22khz-1.89kbps-21.5fps/resolve/fc00890b604aa2de298d2641ffc6c5f6caf8c4d7/nemo-nano-codec-22khz-1.89kbps-21.5fps.nemo \
+    /opt/fs2-voice/weights/nanocodec.nemo
+RUN chmod -R a+rX /opt/fs2-voice/weights
+ENV HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+LABEL ai.fs2.model.repository="nvidia/${MODEL_REPOSITORY}" ai.fs2.model.revision=${MODEL_REVISION} ai.fs2.model.sha256=${MODEL_SHA256}
+USER 10001
