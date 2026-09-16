@@ -2193,6 +2193,30 @@ async def test_distinct_configured_roles_run_activation_and_retention_with_close
                 "UPDATE fs2_audit_events SET occurred_at=clock_timestamp()-interval '2 hours' WHERE id=$1",
                 audit_id,
             )
+            await owner_connection.execute(
+                """
+                INSERT INTO fs2_request_debug(
+                    id,source,started_at,completed_at,endpoint,method,http_status,disconnected,
+                    request_observed_bytes,response_observed_bytes,request_complete,response_complete,
+                    request_redacted,response_redacted,key_id,nonce,ciphertext
+                ) VALUES($1,'public',clock_timestamp()-interval '2 hours',clock_timestamp(),
+                    '/v1/models','GET',200,false,0,0,true,true,true,true,'payload-v1',$2,$3)
+                """,
+                uuid4(),
+                b"n" * 12,
+                b"restricted-debug",
+            )
+            await owner_connection.execute(
+                """
+                INSERT INTO fs2_request_telemetry(
+                    request_id,started_at,completed_at,endpoint,method,transport,http_status,
+                    response_duration_seconds,request_bytes,response_bytes,request_bytes_observed,
+                    response_bytes_observed,request_complete,response_complete,disconnected
+                ) VALUES($1,clock_timestamp()-interval '2 hours',clock_timestamp(),
+                    '/v1/models','GET','http',200,0,0,0,0,0,true,true,false)
+                """,
+                uuid4(),
+            )
 
         maintenance_pool = await asyncpg.create_pool(
             dsn=database_url,
@@ -2209,9 +2233,12 @@ async def test_distinct_configured_roles_run_activation_and_retention_with_close
             token_retention_seconds=31536000,
             audit_retention_seconds=3600,
             usage_retention_seconds=3600,
+            request_debug_retention_seconds=3600,
+            request_telemetry_retention_seconds=3600,
         )
         assert deleted["operations"] == 0 and deleted["tokens"] == 0
         assert deleted["audit"] == 1 and deleted["usage"] == 1
+        assert deleted["request_debug"] == 1 and deleted["request_telemetry"] == 1
 
         async with maintenance_pool.acquire() as maintenance_connection:
             for statement in (
@@ -2219,6 +2246,9 @@ async def test_distinct_configured_roles_run_activation_and_retention_with_close
                 "SELECT digest FROM fs2_tokens LIMIT 0",
                 "SELECT detail FROM fs2_audit_events LIMIT 0",
                 "SELECT outcome FROM fs2_usage_facts LIMIT 0",
+                "SELECT ciphertext FROM fs2_request_debug LIMIT 0",
+                "SELECT endpoint FROM fs2_request_telemetry LIMIT 0",
+                "SELECT document FROM fs2_scientific_run_results LIMIT 0",
                 "SELECT * FROM fs2_operation_events LIMIT 0",
                 "SELECT last_value FROM fs2_operation_events_id_seq",
                 "SELECT * FROM fs2_model_deployments LIMIT 0",
@@ -3061,6 +3091,25 @@ async def test_terminal_usage_facts_are_exactly_once_survive_operation_retention
         assert not await connection.fetchval(
             "SELECT has_table_privilege('fs2_serve_maintenance','fs2_usage_facts','INSERT,UPDATE')"
         )
+        for table in (
+            "fs2_request_debug",
+            "fs2_request_telemetry",
+            "fs2_scientific_run_results",
+            "fs2_scientific_artifacts",
+        ):
+            assert await connection.fetchval(
+                "SELECT has_table_privilege('fs2_serve_maintenance',$1,'DELETE')",
+                table,
+            )
+        assert await connection.fetchval(
+            "SELECT has_column_privilege('fs2_serve_maintenance','fs2_request_debug','started_at','SELECT')"
+        )
+        assert not await connection.fetchval(
+            "SELECT has_column_privilege('fs2_serve_maintenance','fs2_request_debug','ciphertext','SELECT')"
+        )
+        assert not await connection.fetchval(
+            "SELECT has_column_privilege('fs2_serve_maintenance','fs2_scientific_run_results','document','SELECT')"
+        )
         assert await connection.fetchval("SELECT prosecdef FROM pg_proc WHERE proname='fs2_record_terminal_usage'")
         await connection.execute(
             "UPDATE fs2_operations SET completed_at=clock_timestamp()-interval '2 days' WHERE id=ANY($1::uuid[])",
@@ -3264,6 +3313,60 @@ async def test_audit_retention_is_bounded_independently(postgres_store: Postgres
 
 @pytest.mark.postgres
 @pytest.mark.asyncio
+async def test_request_debug_and_telemetry_retention_are_bounded_independently(
+    postgres_store: PostgresStore,
+) -> None:
+    old_debug_id, current_debug_id = uuid4(), uuid4()
+    old_telemetry_id, current_telemetry_id = uuid4(), uuid4()
+    async with postgres_store.pool.acquire() as connection:
+        await connection.executemany(
+            """
+            INSERT INTO fs2_request_debug(
+                id,source,started_at,completed_at,endpoint,method,http_status,disconnected,
+                request_observed_bytes,response_observed_bytes,request_complete,response_complete,
+                request_redacted,response_redacted,key_id,nonce,ciphertext
+            ) VALUES($1,'public',$2,$2,'/v1/models','GET',200,false,0,0,true,true,true,true,
+                'payload-v1',$3,$4)
+            """,
+            [
+                (old_debug_id, datetime.now(UTC) - timedelta(hours=2), b"n" * 12, b"old-debug"),
+                (current_debug_id, datetime.now(UTC), b"n" * 12, b"current-debug"),
+            ],
+        )
+        await connection.executemany(
+            """
+            INSERT INTO fs2_request_telemetry(
+                request_id,started_at,completed_at,endpoint,method,transport,http_status,
+                response_duration_seconds,request_bytes,response_bytes,request_bytes_observed,
+                response_bytes_observed,request_complete,response_complete,disconnected
+            ) VALUES($1,$2,$2,'/v1/models','GET','http',200,0,0,0,0,0,true,true,false)
+            """,
+            [
+                (old_telemetry_id, datetime.now(UTC) - timedelta(hours=2)),
+                (current_telemetry_id, datetime.now(UTC)),
+            ],
+        )
+
+    deleted = await postgres_store.delete_expired_rows(
+        operation_retention_seconds=604800,
+        token_retention_seconds=604800,
+        request_debug_retention_seconds=3600,
+        request_telemetry_retention_seconds=3600,
+    )
+    assert deleted["request_debug"] == deleted["request_telemetry"] == 1
+    async with postgres_store.pool.acquire() as connection:
+        assert await connection.fetchval(
+            "SELECT array_agg(id) FROM fs2_request_debug WHERE id=ANY($1::uuid[])",
+            [old_debug_id, current_debug_id],
+        ) == [current_debug_id]
+        assert await connection.fetchval(
+            "SELECT array_agg(request_id) FROM fs2_request_telemetry WHERE request_id=ANY($1::uuid[])",
+            [old_telemetry_id, current_telemetry_id],
+        ) == [current_telemetry_id]
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
 async def test_admin_reporting_queries_are_bounded_paginated_and_payload_free(
     postgres_store: PostgresStore,
 ) -> None:
@@ -3396,14 +3499,20 @@ async def test_customer_input_upload_is_verified_and_terminal_in_postgres(
     assert operation.status is OperationStatus.SUCCEEDED
     assert operation.outcome == "artifact_uploaded"
     async with postgres_store.pool.acquire() as connection:
-        assert await connection.fetchval(
-            "SELECT count(*) FROM fs2_scientific_artifacts WHERE operation_id=$1",
-            begun.operation_id,
-        ) == 1
-        assert await connection.fetchval(
-            "SELECT count(*) FROM fs2_operation_events WHERE operation_id=$1 AND event='artifact_uploaded'",
-            begun.operation_id,
-        ) == 1
+        assert (
+            await connection.fetchval(
+                "SELECT count(*) FROM fs2_scientific_artifacts WHERE operation_id=$1",
+                begun.operation_id,
+            )
+            == 1
+        )
+        assert (
+            await connection.fetchval(
+                "SELECT count(*) FROM fs2_operation_events WHERE operation_id=$1 AND event='artifact_uploaded'",
+                begun.operation_id,
+            )
+            == 1
+        )
 
 
 @pytest.mark.postgres
@@ -3478,9 +3587,10 @@ async def test_scientific_admission_outbox_recovers_after_committed_operation_wi
     assert len(pending) == 1
     frozen = state_from_value(pending[0].payload)
     assert frozen.operation_id == pending[0].operation_id
-    assert frozen.scheduling.captured_at == (
-        await postgres_store.get_operation(frozen.operation_id, tenant_id=principal.tenant_id)
-    ).accepted_at
+    assert (
+        frozen.scheduling.captured_at
+        == (await postgres_store.get_operation(frozen.operation_id, tenant_id=principal.tenant_id)).accepted_at
+    )
     assert await postgres_store.claim_operation("generic-worker", lease_seconds=30) is None
 
     input_attempt_id = uuid4()
@@ -3515,8 +3625,7 @@ async def test_scientific_admission_outbox_recovers_after_committed_operation_wi
         )
         for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
             assert await connection.fetchval(
-                "SELECT has_table_privilege('fs2_serve_runtime',"
-                "'fs2_scientific_admission_outbox',$1)",
+                "SELECT has_table_privilege('fs2_serve_runtime','fs2_scientific_admission_outbox',$1)",
                 privilege,
             )
 

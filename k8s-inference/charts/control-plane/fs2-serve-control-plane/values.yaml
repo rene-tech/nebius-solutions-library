@@ -334,6 +334,8 @@ config:
   patRetentionSeconds: "604800"
   auditRetentionSeconds: "2592000"
   usageRetentionSeconds: "7776000"
+  requestDebugRetentionSeconds: "86400"
+  requestTelemetryRetentionSeconds: "7776000"
   # Opaque browser operator session lifetime; bounded to 5 minutes..24 hours.
   adminSessionTtlSeconds: "28800"
   syncWaitSeconds: "2"
@@ -580,6 +582,10 @@ prometheusRule:
 maintenance:
   enabled: true
   schedule: "*/1 * * * *"
+  # Empty leaves this reusable chart independent of Kueue. The platform stage
+  # binds maintenance to its admitted CPU LocalQueue so the Job webhook owns
+  # release before the Pod webhook observes the Job.
+  queueName: ""
 
 httpRoute:
   enabled: false

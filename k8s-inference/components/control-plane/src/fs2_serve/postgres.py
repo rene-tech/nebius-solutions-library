@@ -477,6 +477,7 @@ class PostgresStore:
                     f"fs2_activation_target_state,fs2_activation_controller_status,"
                     f"fs2_activation_model_fences,fs2_telemetry_subjects,"
                     f"fs2_telemetry_correlations,fs2_lifecycle_signals,fs2_lifecycle_rollups,"
+                    f"fs2_request_debug,fs2_request_telemetry,"
                     f"fs2_reporting_lifecycle_latest,fs2_reporting_gpu_phase_usage,"
                     f"fs2_reporting_lifecycle_workloads FROM {role}"
                 )
@@ -534,9 +535,7 @@ class PostgresStore:
                 f"fs2_reporting_lifecycle_workloads TO {quoted_runtime}"
             )
             await connection.execute(f"GRANT SELECT,INSERT,UPDATE ON fs2_model_deployments TO {quoted_runtime}")
-            await connection.execute(
-                f"GRANT SELECT,INSERT,UPDATE ON fs2_apps,fs2_inference_users TO {quoted_runtime}"
-            )
+            await connection.execute(f"GRANT SELECT,INSERT,UPDATE ON fs2_apps,fs2_inference_users TO {quoted_runtime}")
             await connection.execute(
                 f"GRANT SELECT,INSERT ON fs2_request_telemetry,fs2_request_debug TO {quoted_runtime}"
             )
@@ -619,6 +618,49 @@ class PostgresStore:
             )
             await connection.execute(
                 f"GRANT SELECT (operation_id,occurred_at),DELETE ON fs2_usage_facts TO {quoted_maintenance}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (id,started_at),DELETE ON fs2_request_debug TO {quoted_maintenance}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (request_id,started_at),DELETE ON fs2_request_telemetry TO {quoted_maintenance}"
+            )
+            await connection.execute(
+                f"GRANT DELETE ON fs2_scientific_stage_attempts,fs2_scientific_artifacts,"
+                f"fs2_scientific_uploads,fs2_scientific_stage_commits,"
+                f"fs2_scientific_stage_commit_attempts,fs2_scientific_run_results,"
+                f"fs2_scientific_artifact_events TO {quoted_maintenance}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (operation_id,tenant_id) ON fs2_scientific_stage_attempts TO {quoted_maintenance}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (operation_id,tenant_id,storage_key,size_bytes) "
+                f"ON fs2_scientific_artifacts TO {quoted_maintenance}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (operation_id,tenant_id) ON fs2_scientific_uploads TO {quoted_maintenance}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (operation_id,tenant_id) ON fs2_scientific_stage_commits TO {quoted_maintenance}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (operation_id) ON fs2_scientific_stage_commit_attempts TO {quoted_maintenance}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (operation_id,tenant_id,retention_expires_at) "
+                f"ON fs2_scientific_run_results TO {quoted_maintenance}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (operation_id,tenant_id) ON fs2_scientific_artifact_events TO {quoted_maintenance}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (operation_id),"
+                f"INSERT (operation_id,tenant_id,purged_at,artifact_count,byte_count,retention_expired_at) "
+                f"ON fs2_scientific_retention_ledger TO {quoted_maintenance}"
+            )
+            await connection.execute(
+                f"GRANT USAGE,SELECT ON fs2_scientific_retention_ledger_id_seq TO {quoted_maintenance}"
             )
             await connection.execute(
                 f"GRANT SELECT (id,model_id,model_revision,status,attempt,lease_expires_at,deadline_at) "
@@ -3733,6 +3775,8 @@ class PostgresStore:
         token_retention_seconds: int,
         audit_retention_seconds: int = 2592000,
         usage_retention_seconds: int = 7776000,
+        request_debug_retention_seconds: int = 86400,
+        request_telemetry_retention_seconds: int = 7776000,
     ) -> dict[str, int]:
         # Keep operation deletion and token deletion in separate transactions.
         # No transaction may lock an operation and then a token: all state
@@ -3744,6 +3788,22 @@ class PostgresStore:
                     SELECT id FROM fs2_operations
                     WHERE status IN ('succeeded','failed','cancelled','preempted','expired')
                       AND completed_at < clock_timestamp()-make_interval(secs=>$1::double precision)
+                      AND NOT EXISTS (
+                          SELECT 1 FROM fs2_scientific_stage_attempts
+                          WHERE operation_id=fs2_operations.id
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM fs2_scientific_stage_commits
+                          WHERE operation_id=fs2_operations.id
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM fs2_scientific_run_results
+                          WHERE operation_id=fs2_operations.id
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM fs2_scientific_artifact_events
+                          WHERE operation_id=fs2_operations.id
+                      )
                     ORDER BY completed_at,id FOR UPDATE SKIP LOCKED LIMIT 100
                 )
                 DELETE FROM fs2_operations o USING candidates c WHERE o.id=c.id RETURNING o.id
@@ -3813,11 +3873,37 @@ class PostgresStore:
                 """,
                 usage_retention_seconds,
             )
+            request_debug = await connection.fetch(
+                """
+                WITH candidates AS (
+                    SELECT id FROM fs2_request_debug
+                    WHERE started_at < clock_timestamp()-make_interval(secs=>$1::double precision)
+                    ORDER BY started_at,id LIMIT 100
+                )
+                DELETE FROM fs2_request_debug d USING candidates c
+                WHERE d.id=c.id RETURNING d.id
+                """,
+                request_debug_retention_seconds,
+            )
+            request_telemetry = await connection.fetch(
+                """
+                WITH candidates AS (
+                    SELECT request_id FROM fs2_request_telemetry
+                    WHERE started_at < clock_timestamp()-make_interval(secs=>$1::double precision)
+                    ORDER BY started_at,request_id LIMIT 100
+                )
+                DELETE FROM fs2_request_telemetry t USING candidates c
+                WHERE t.request_id=c.request_id RETURNING t.request_id
+                """,
+                request_telemetry_retention_seconds,
+            )
         return {
             "operations": len(operations),
             "tokens": deleted_tokens,
             "audit": len(audit),
             "usage": len(usage),
+            "request_debug": len(request_debug),
+            "request_telemetry": len(request_telemetry),
         }
 
     async def list_audit(self, *, tenant_id: str | None = None, limit: int = 100) -> list[AuditEvent]:
@@ -4099,6 +4185,8 @@ class PostgresMaintenanceStore:
         token_retention_seconds: int,
         audit_retention_seconds: int,
         usage_retention_seconds: int,
+        request_debug_retention_seconds: int = 86400,
+        request_telemetry_retention_seconds: int = 7776000,
     ) -> dict[str, int]:
         return cast(
             dict[str, int],
@@ -4108,5 +4196,7 @@ class PostgresMaintenanceStore:
                 token_retention_seconds=token_retention_seconds,
                 audit_retention_seconds=audit_retention_seconds,
                 usage_retention_seconds=usage_retention_seconds,
+                request_debug_retention_seconds=request_debug_retention_seconds,
+                request_telemetry_retention_seconds=request_telemetry_retention_seconds,
             ),
         )

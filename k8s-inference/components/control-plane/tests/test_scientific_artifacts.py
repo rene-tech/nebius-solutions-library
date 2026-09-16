@@ -26,7 +26,7 @@ from jsonschema import Draft202012Validator
 from pydantic import ValidationError
 
 from fs2_serve.crypto import KeyedHasher, PayloadCipher
-from fs2_serve.postgres import PostgresStore
+from fs2_serve.postgres import PostgresMaintenanceStore, PostgresStore
 from fs2_serve.scientific_artifacts import (
     HANDLE_CLOCK_SKEW,
     MAX_HANDLE_TTL,
@@ -1224,6 +1224,23 @@ async def runtime_pool(postgres_store):
         await pool.close()
 
 
+@pytest_asyncio.fixture
+async def maintenance_pool(postgres_store):
+    """A pool restricted to the production retention role."""
+
+    database_url = os.environ["FS2_TEST_DATABASE_URL"].replace("postgresql+asyncpg://", "postgresql://", 1)
+
+    async def assume_maintenance_role(connection) -> None:
+        await connection.execute("SET ROLE fs2_serve_maintenance")
+
+    pool = await asyncpg.create_pool(dsn=database_url, min_size=2, max_size=8, init=assume_maintenance_role)
+    assert pool is not None
+    try:
+        yield pool
+    finally:
+        await pool.close()
+
+
 @pytest.mark.postgres
 async def test_postgres_enforces_attempt_terminal_and_immutability_fences(runtime_pool) -> None:
     operation_id = uuid4()
@@ -1321,7 +1338,9 @@ async def test_postgres_commits_exactly_one_stage_manifest_under_contention(runt
 
 
 @pytest.mark.postgres
-async def test_postgres_terminal_result_fences_writes_and_retention_purges(runtime_pool) -> None:
+async def test_postgres_terminal_result_fences_writes_and_retention_purges(
+    runtime_pool, maintenance_pool, postgres_store
+) -> None:
     operation_id = uuid4()
     await insert_operation(runtime_pool, operation_id)
     store = FakeObjectStore()
@@ -1368,8 +1387,30 @@ async def test_postgres_terminal_result_fences_writes_and_retention_purges(runti
     with pytest.raises(ResultAlreadyTerminalError):
         await open_attempt(service, operation_id=operation_id, stage_id="score")
 
+    async with postgres_store.pool.acquire() as connection:
+        await connection.execute(
+            """
+            UPDATE fs2_operations
+            SET status='cancelled',completed_at=clock_timestamp()-interval '2 days',outcome='cancelled'
+            WHERE id=$1
+            """,
+            operation_id,
+        )
+
+    # The shorter generic operation TTL must not abort the entire maintenance
+    # batch or erase scientific artifacts before their independent TTL.
+    maintenance = PostgresMaintenanceStore(maintenance_pool)
+    before_artifact_expiry = await maintenance.delete_expired_rows(
+        operation_retention_seconds=3600,
+        token_retention_seconds=604800,
+        audit_retention_seconds=2592000,
+        usage_retention_seconds=7776000,
+    )
+    assert before_artifact_expiry["operations"] == 0
+    assert await postgres_store.get_operation(operation_id, tenant_id=TENANT)
+
     expired = ScientificArtifactService(
-        repository=repository,
+        repository=PostgresArtifactRepository(maintenance_pool),
         object_store=store,
         allowed_media_types=ALLOWED_MEDIA_TYPES,
         clock=lambda: NOW + timedelta(days=3),
@@ -1379,10 +1420,23 @@ async def test_postgres_terminal_result_fences_writes_and_retention_purges(runti
     assert purges[0].artifact_count == 1
     assert inputs.storage_key in store.deleted
     assert await expired.purge_expired() == []
+    after_artifact_expiry = await maintenance.delete_expired_rows(
+        operation_retention_seconds=3600,
+        token_retention_seconds=604800,
+        audit_retention_seconds=2592000,
+        usage_retention_seconds=7776000,
+    )
+    assert after_artifact_expiry["operations"] == 1
     async with runtime_pool.acquire() as connection:
         assert (
             await connection.fetchval(
                 "SELECT count(*) FROM fs2_scientific_artifacts WHERE operation_id=$1", operation_id
+            )
+            == 0
+        )
+        assert (
+            await connection.fetchval(
+                "SELECT count(*) FROM fs2_scientific_run_results WHERE operation_id=$1", operation_id
             )
             == 0
         )

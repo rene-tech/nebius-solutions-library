@@ -321,7 +321,14 @@ async def test_operation_idempotency_and_pat_rows_have_bounded_deletion(cipher, 
         operation_retention_seconds=1,
         token_retention_seconds=1,
     )
-    assert deleted == {"operations": 1, "tokens": 1, "audit": 0, "usage": 0}
+    assert deleted == {
+        "operations": 1,
+        "tokens": 1,
+        "audit": 0,
+        "usage": 0,
+        "request_debug": 0,
+        "request_telemetry": 0,
+    }
     assert not store.operations and not store.idempotency and not store.tokens
 
 

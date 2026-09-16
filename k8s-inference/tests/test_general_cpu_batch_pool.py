@@ -881,6 +881,7 @@ class GeneralCpuSourceTests(unittest.TestCase):
             'resource "kubernetes_manifest" "general_cpu_flavor"',
             'resource "kubernetes_manifest" "general_cpu_cluster_queue"',
             'resource "kubernetes_manifest" "general_cpu_local_queue"',
+            'resource "kubernetes_manifest" "maintenance_local_queue"',
         ):
             with self.subTest(resource=resource):
                 self.assertEqual(self.workloads.count(resource), 1)
@@ -898,6 +899,15 @@ class GeneralCpuSourceTests(unittest.TestCase):
         self.assertNotIn("general_cpu_chart_overrides", self.control_plane)
         self.assertIn("cpu_class_digests", self.workloads)
         self.assertIn("external_lane_facts", self.workloads)
+
+    def test_platform_maintenance_uses_an_admitted_namespace_local_queue(self) -> None:
+        self.assertIn('["fs2-system"]', self.workloads)
+        self.assertIn('namespace = "fs2-system"', self.workloads)
+        self.assertIn("kubernetes_manifest.maintenance_local_queue", self.control_plane)
+        self.assertIn(
+            "queueName = local.general_cpu_enabled ? var.general_cpu_lane.local_queue : \"\"",
+            self.control_plane,
+        )
 
     def test_the_contributed_entry_is_digested_exactly(self) -> None:
         self.assertIn("cpu_class_digests", self.module)

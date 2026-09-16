@@ -132,10 +132,10 @@ HTTP 0 or success.
   a missing row is not proof no request happened. Process failure can also leave
   missing captures. Bodies from before capture was enabled, or from failed
   persistence, cannot be reconstructed from old usage/logical-run metadata.
-- **No automatic retention period, deletion job or purge endpoint is configured.**
-  Enabling capture increases PostgreSQL/storage use. Disabling it stops new
-  capture but does not delete retained history. Agree on a private-data retention
-  process before prolonged use; do not assume an automatic expiry exists.
+- The fixed-cadence maintenance Job deletes bounded batches older than
+  `FS2_REQUEST_DEBUG_RETENTION_SECONDS` (24 hours by default). Disabling capture
+  stops new writes but does not bypass that purge. Keep the maintenance Job and
+  its failure alert healthy whenever capture is enabled.
 
 ## Verification status
 

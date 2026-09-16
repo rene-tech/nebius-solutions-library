@@ -2556,6 +2556,7 @@ class PostgresArtifactRepository:
                     "DELETE FROM fs2_scientific_uploads WHERE operation_id=$1 AND tenant_id=$2",
                     "DELETE FROM fs2_scientific_artifacts WHERE operation_id=$1 AND tenant_id=$2",
                     "DELETE FROM fs2_scientific_stage_attempts WHERE operation_id=$1 AND tenant_id=$2",
+                    "DELETE FROM fs2_scientific_run_results WHERE operation_id=$1 AND tenant_id=$2",
                 ):
                     await connection.execute(statement, operation_id, tenant_id)
                 return RetentionPurge(

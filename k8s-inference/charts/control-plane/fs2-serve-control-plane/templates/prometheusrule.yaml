@@ -28,6 +28,14 @@ spec:
           annotations:
             summary: fs2-serve has unavailable control-plane replicas
             description: Available gateway replicas remain below the declared Deployment replica count.
+        - alert: Fs2ServeMaintenanceJobFailed
+          expr: max_over_time(kube_job_status_failed{namespace={{ .Release.Namespace | quote }},job_name=~{{ printf "%s-maintenance-.+" (include "fs2-serve.fullname" .) | quote }}}[10m]) > 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: fs2-serve retention maintenance is failing
+            description: A retention maintenance Job reported failure during the last ten minutes.
         - alert: Fs2ServeOldestQueueAgeHigh
           expr: max(fs2_serve_oldest_queued_operation_age_seconds) > {{ .Values.prometheusRule.maxQueueAgeSeconds }}
           for: 10m

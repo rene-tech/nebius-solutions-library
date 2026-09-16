@@ -579,7 +579,8 @@ async def build_runtime(settings: Settings) -> AppRuntime:
 
         canonical_catalog = augment_native_catalog(
             load_catalog(settings.catalog_dir, repo_root=settings.repo_root),
-            settings.catalog_dir, repo_root=settings.repo_root,
+            settings.catalog_dir,
+            repo_root=settings.repo_root,
         )
         configuration_repository = StoreConfigurationRepository(store)
         configuration_service = ConfigurationService(
@@ -660,12 +661,17 @@ async def serve(settings: Settings) -> None:
 async def maintain(settings: Settings) -> None:
     store = await PostgresMaintenanceStore.connect(settings.database_url)
     try:
+        artifact_service = _artifact_service(settings, PostgresArtifactRepository(store.pool))
+        if artifact_service is not None:
+            await artifact_service.purge_expired()
         await store.purge_expired_payloads()
         await store.delete_expired_rows(
             operation_retention_seconds=settings.operation_retention_seconds,
             token_retention_seconds=settings.pat_retention_seconds,
             audit_retention_seconds=settings.audit_retention_seconds,
             usage_retention_seconds=settings.usage_retention_seconds,
+            request_debug_retention_seconds=settings.request_debug_retention_seconds,
+            request_telemetry_retention_seconds=settings.request_telemetry_retention_seconds,
         )
     finally:
         await store.close()

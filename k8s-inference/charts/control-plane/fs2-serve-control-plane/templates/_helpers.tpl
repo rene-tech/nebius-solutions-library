@@ -183,6 +183,10 @@ app.kubernetes.io/component: model-controller
   value: {{ .Values.config.auditRetentionSeconds | quote }}
 - name: FS2_USAGE_RETENTION_SECONDS
   value: {{ .Values.config.usageRetentionSeconds | quote }}
+- name: FS2_REQUEST_DEBUG_RETENTION_SECONDS
+  value: {{ .Values.config.requestDebugRetentionSeconds | quote }}
+- name: FS2_REQUEST_TELEMETRY_RETENTION_SECONDS
+  value: {{ .Values.config.requestTelemetryRetentionSeconds | quote }}
 {{- end -}}
 
 {{- define "fs2-serve.runtimeEnv" -}}
@@ -409,6 +413,7 @@ app.kubernetes.io/component: model-controller
 {{- define "fs2-serve.maintenanceEnv" -}}
 {{ include "fs2-serve.maintenanceDatabaseEnv" . }}
 {{ include "fs2-serve.retentionEnv" . }}
+{{ include "fs2-serve.scientificArtifactsEnv" . }}
 {{- end -}}
 
 {{- define "fs2-serve.cryptoVolumeMounts" -}}

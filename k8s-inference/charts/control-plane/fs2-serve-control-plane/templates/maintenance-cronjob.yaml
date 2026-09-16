@@ -11,6 +11,11 @@ spec:
   successfulJobsHistoryLimit: 2
   failedJobsHistoryLimit: 3
   jobTemplate:
+    {{- if .Values.maintenance.queueName }}
+    metadata:
+      labels:
+        kueue.x-k8s.io/queue-name: {{ .Values.maintenance.queueName | quote }}
+    {{- end }}
     spec:
       backoffLimit: 2
       activeDeadlineSeconds: 300
@@ -40,6 +45,7 @@ spec:
                 {{- include "fs2-serve.maintenanceEnv" . | nindent 16 }}
               volumeMounts:
                 {{- include "fs2-serve.databaseCaVolumeMount" . | nindent 16 }}
+                {{- include "fs2-serve.scientificArtifactsVolumeMounts" . | nindent 16 }}
               resources:
                 requests:
                   cpu: 50m
@@ -54,4 +60,5 @@ spec:
                   drop: ["ALL"]
           volumes:
             {{- include "fs2-serve.databaseCaVolume" (dict "secret" .Values.secrets.maintenanceDatabase) | nindent 12 }}
+            {{- include "fs2-serve.scientificArtifactsVolumes" . | nindent 12 }}
 {{- end }}

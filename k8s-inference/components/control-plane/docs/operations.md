@@ -325,9 +325,11 @@ sequence, target-state, model-fence, or heartbeat mutation privilege.
 Runtime can append ordinary audit events but has no usage-fact access and no
 `UPDATE`/`DELETE` on audit or usage facts; it cannot delete operations or PATs.
 The maintenance role can erase expired ciphertext and delete bounded aged
-operations, PATs, audit rows, and usage rows through the maintenance process.
-Its column-level reads exclude ciphertext, principals, token digests, results,
-and audit detail, and it has no fact `INSERT`/`UPDATE` or schema authority.
+operations, PATs, audit rows, usage rows, request-debug rows, request telemetry,
+and expired scientific artifact metadata through the maintenance process. Its
+column-level reads exclude ciphertext, principals, token digests, scientific
+result documents, and audit detail. It can insert only the durable scientific
+retention receipt and has no fact `UPDATE` or schema authority.
 The activation role receives intent, target-state, and controller-health
 `SELECT`/`INSERT`/`UPDATE`, activation-event `INSERT` plus sequence `USAGE`, and
 only operation columns `id`, `model_id`, `model_revision`, `status`, `attempt`,
@@ -422,7 +424,14 @@ until its existing payload TTL. Terminal operation/idempotency rows are deleted
 after `FS2_OPERATION_RETENTION_SECONDS`; revoked/expired PAT verifier rows are
 deleted after `FS2_PAT_RETENTION_SECONDS` once no operation references them.
 Audit rows have an independent `FS2_AUDIT_RETENTION_SECONDS` bound. A
-payload-free `fs2_usage_facts` row is inserted exactly once by the same
+request-debug capture has an independent
+`FS2_REQUEST_DEBUG_RETENTION_SECONDS` bound, and payload-free request telemetry
+uses `FS2_REQUEST_TELEMETRY_RETENTION_SECONDS`. When scientific artifact
+storage is enabled, the same pass first removes expired objects and their
+metadata under `FS2_ARTIFACT_RETENTION_SECONDS`; generic operation retention
+skips an operation while any independently retained scientific metadata still
+references it.
+A payload-free `fs2_usage_facts` row is inserted exactly once by the same
 database transaction that first makes any operation terminal, including
 cancel, revocation, deadline/payload expiry, exhausted release, stale recovery,
 preemption, and normal completion. Facts survive shorter operation retention
@@ -433,10 +442,11 @@ on every scrape and maintenance pass. The worker completion callback observes
 only process-local latency histograms and is deliberately not a terminal count
 or accounting authority.
 The optional `PrometheusRule` requires the matching `ServiceMonitor` and alerts
-on missing route metadata/scrapes, unavailable Deployment replicas, sustained
-queue age/depth, synchronous-wait saturation, and authentication failure
-spikes. Its expressions use only bounded catalog/state/reason series; they do
-not introduce principal, tenant, token, prompt, response, or bearer labels.
+on missing route metadata/scrapes, unavailable Deployment replicas, failed
+retention maintenance Jobs, sustained queue age/depth, synchronous-wait
+saturation, and authentication failure spikes. Its expressions use only
+bounded catalog/state/reason series; they do not introduce principal, tenant,
+token, prompt, response, or bearer labels.
 Status and cancel always return metadata, never a decrypted result; status
 does not mutate or purge result availability. Every lifecycle route and MCP
 tool resolves the authenticated principal/token owner before model policy, so
@@ -643,11 +653,15 @@ already-present identity and Secret, so it completes before Helm rolls out an
 image whose init process waits for the new schema. Both modes avoid a
 migration/Deployment wait cycle. The Job receives only the DDL-capable
 `secrets.migrationsDatabase` reference.
-Maintenance receives only `secrets.maintenanceDatabase` plus bounded retention
-durations. The explicit erasure marker lets it purge ciphertext without payload
-or ledger keys. It receives no runtime database, catalog, payload/ledger
-keyring, PAT-pepper, route-attestor, admin, activation, federation, or DDL
-credential.
+Maintenance receives `secrets.maintenanceDatabase`, bounded retention
+durations, and, only when scientific artifacts are enabled, the dedicated
+artifact-store credential needed to delete expired objects. The explicit
+erasure marker lets it purge ciphertext without payload or ledger keys. It
+receives no runtime database, catalog, payload/ledger keyring, PAT-pepper,
+route-attestor, admin, activation, federation, or DDL credential. The platform
+stage submits each maintenance Job through a namespace-local CPU queue before
+Kueue allows its Pod to start; reusable chart installs remain queue-independent
+unless `maintenance.queueName` is configured.
 Payload AEAD, ledger HMAC, PAT pepper, and public route-attestor material are
 separate Secret objects and projected only into consumers that need them.
 `secrets.migrationsDatabase`, `secrets.database`, and

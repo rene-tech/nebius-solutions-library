@@ -214,6 +214,9 @@ locals {
       interval = "5s"
     } : {})
     prometheusRule = { enabled = true }
+    maintenance = {
+      queueName = local.general_cpu_enabled ? var.general_cpu_lane.local_queue : ""
+    }
     nodeSelector = {
       "workload.fs2.nebius/system" = "true"
       "capacity.fs2.nebius/type"   = "regular"
@@ -309,6 +312,7 @@ resource "helm_release" "control_plane" {
     module.reference_data,
     kubernetes_manifest.additional_local_queue,
     kubernetes_manifest.general_cpu_local_queue,
+    kubernetes_manifest.maintenance_local_queue,
     kubernetes_manifest.model_local_queue,
   ]
 }

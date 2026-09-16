@@ -294,9 +294,7 @@ class Store(Protocol):
         scientific_admission_factory: Callable[[OperationView], dict[str, object]] | None = None,
     ) -> OperationView: ...
 
-    async def get_scientific_admission(
-        self, operation_id: UUID
-    ) -> PendingScientificAdmission | None: ...
+    async def get_scientific_admission(self, operation_id: UUID) -> PendingScientificAdmission | None: ...
 
     async def list_scientific_admissions(self, *, limit: int = 100) -> list[PendingScientificAdmission]: ...
 
@@ -463,6 +461,8 @@ class Store(Protocol):
         token_retention_seconds: int,
         audit_retention_seconds: int = 2592000,
         usage_retention_seconds: int = 7776000,
+        request_debug_retention_seconds: int = 86400,
+        request_telemetry_retention_seconds: int = 7776000,
     ) -> dict[str, int]: ...
 
     async def list_audit(self, *, tenant_id: str | None = None, limit: int = 100) -> list[AuditEvent]: ...

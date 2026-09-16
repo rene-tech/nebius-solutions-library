@@ -423,7 +423,7 @@ Tempo launches through a datasource-selected Grafana Explore link.
 Optional preproduction customer request/response capture and the authorized
 Apps/Runs debug viewer are described in
 [Request debug logging](docs/request-debug-logging.md), including capture limits,
-encrypted storage and the absence of automatic retention/deletion.
+encrypted storage and the fixed-cadence bounded retention purge.
 
 ### Scientific result artifact store
 

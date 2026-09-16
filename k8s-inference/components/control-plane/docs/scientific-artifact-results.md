@@ -140,7 +140,11 @@ holds for everything else.
 Object deletion runs before the durable rows are removed and is idempotent, so
 an interrupted purge converges on the next pass instead of leaving metadata
 pointing at bytes that are already gone. The ledger survives the purge it
-records, so what was deleted and when remains provable.
+records, so what was deleted and when remains provable. The fixed-cadence
+maintenance process invokes this purge before generic database retention.
+Generic operation deletion leaves an operation in place while any artifact
+attempt, stage commit, terminal result, or artifact event still references it,
+so a shorter operation TTL cannot violate the independent artifact TTL.
 
 ## Configuration
 

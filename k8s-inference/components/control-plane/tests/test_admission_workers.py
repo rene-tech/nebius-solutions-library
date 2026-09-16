@@ -533,8 +533,17 @@ class RuntimeSupervisorBoundaryStore(MemoryStore):
         token_retention_seconds: int,
         audit_retention_seconds: int,
         usage_retention_seconds: int,
+        request_debug_retention_seconds: int = 86400,
+        request_telemetry_retention_seconds: int = 7776000,
     ) -> dict[str, int]:
-        del operation_retention_seconds, token_retention_seconds, audit_retention_seconds, usage_retention_seconds
+        del (
+            operation_retention_seconds,
+            token_retention_seconds,
+            audit_retention_seconds,
+            usage_retention_seconds,
+            request_debug_retention_seconds,
+            request_telemetry_retention_seconds,
+        )
         raise AssertionError("gateway runtime must not delete durable facts")
 
 

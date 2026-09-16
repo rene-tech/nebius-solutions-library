@@ -2472,9 +2472,11 @@ class MemoryStore:
         token_retention_seconds: int,
         audit_retention_seconds: int = 2592000,
         usage_retention_seconds: int = 7776000,
+        request_debug_retention_seconds: int = 86400,
+        request_telemetry_retention_seconds: int = 7776000,
     ) -> dict[str, int]:
         async with self._lock:
-            del usage_retention_seconds
+            del usage_retention_seconds, request_debug_retention_seconds, request_telemetry_retention_seconds
             now = datetime.now(UTC)
             operation_cutoff = now - timedelta(seconds=operation_retention_seconds)
             deleted_operations = [
@@ -2514,6 +2516,8 @@ class MemoryStore:
                 "tokens": len(deleted_tokens),
                 "audit": deleted_audit,
                 "usage": 0,
+                "request_debug": 0,
+                "request_telemetry": 0,
             }
 
     async def list_audit(self, *, tenant_id: str | None = None, limit: int = 100) -> list[AuditEvent]:

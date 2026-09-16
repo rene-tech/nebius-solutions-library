@@ -43,12 +43,15 @@ locals {
     # aggregation. The academic-cpu class and its distinct LocalQueue are
     # assembled below; this widens only the existing general CPU ClusterQueue's
     # namespace selector and adds no quota or capacity.
-    admitted_namespaces = (
-      var.general_cpu_lane.enabled &&
-      var.general_cpu_pools != null &&
-      var.academic_assets.enabled &&
-      var.academic_assets.execution.enabled
-    ) ? [var.academic_assets.namespace] : []
+    admitted_namespaces = concat(
+      var.general_cpu_lane.enabled && var.general_cpu_pools != null ? ["fs2-system"] : [],
+      (
+        var.general_cpu_lane.enabled &&
+        var.general_cpu_pools != null &&
+        var.academic_assets.enabled &&
+        var.academic_assets.execution.enabled
+      ) ? [var.academic_assets.namespace] : [],
+    )
   }
 
   # Identities only. The reference-data class itself is produced and assembled
@@ -159,6 +162,52 @@ resource "kubernetes_manifest" "general_cpu_local_queue" {
 
   lifecycle {
     replace_triggered_by = [terraform_data.general_cpu_local_queue_binding[each.key]]
+  }
+
+  depends_on = [kubernetes_manifest.general_cpu_cluster_queue]
+}
+
+# The control-plane maintenance Job runs through a real LocalQueue rather than
+# racing Kueue's Pod webhook as an unmanaged Job. Reuse the existing general
+# CPU ClusterQueue without publishing this operator-only queue as a customer
+# scheduling class.
+resource "terraform_data" "maintenance_local_queue_binding" {
+  for_each = local.general_cpu_enabled ? {
+    (var.general_cpu_lane.local_queue) = var.general_cpu_lane.cluster_queue
+  } : {}
+
+  input = {
+    namespace     = "fs2-system"
+    cluster_queue = each.value
+  }
+
+  triggers_replace = ["fs2-system", each.value]
+}
+
+resource "kubernetes_manifest" "maintenance_local_queue" {
+  for_each = terraform_data.maintenance_local_queue_binding
+
+  manifest = {
+    apiVersion = "kueue.x-k8s.io/v1beta2"
+    kind       = "LocalQueue"
+    metadata = {
+      name      = each.key
+      namespace = "fs2-system"
+      labels    = local.common_labels
+    }
+    spec = {
+      clusterQueue = each.value.input.cluster_queue
+      fairSharing  = { weight = tostring(var.general_cpu_lane.fair_sharing_weight) }
+    }
+  }
+
+  field_manager {
+    force_conflicts = false
+    name            = "fs2-${var.run_id}-maintenance-queue"
+  }
+
+  lifecycle {
+    replace_triggered_by = [terraform_data.maintenance_local_queue_binding[each.key]]
   }
 
   depends_on = [kubernetes_manifest.general_cpu_cluster_queue]

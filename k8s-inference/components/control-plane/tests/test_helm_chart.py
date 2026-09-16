@@ -1736,6 +1736,7 @@ def test_maintenance_is_independent_fixed_cadence_and_network_egress_is_allowlis
     deployment = gateway_deployment(documents)
     assert cron["spec"]["schedule"] == "*/1 * * * *"
     assert cron["spec"]["concurrencyPolicy"] == "Forbid"
+    assert "metadata" not in cron["spec"]["jobTemplate"]
     assert cron["spec"]["jobTemplate"]["spec"]["template"]["spec"]["containers"][0]["args"] == ["maintenance"]
     maintenance_pod = cron["spec"]["jobTemplate"]["spec"]["template"]["spec"]
     maintenance = maintenance_pod["containers"][0]
@@ -1745,6 +1746,8 @@ def test_maintenance_is_independent_fixed_cadence_and_network_egress_is_allowlis
         "FS2_PAT_RETENTION_SECONDS",
         "FS2_AUDIT_RETENTION_SECONDS",
         "FS2_USAGE_RETENTION_SECONDS",
+        "FS2_REQUEST_DEBUG_RETENTION_SECONDS",
+        "FS2_REQUEST_TELEMETRY_RETENTION_SECONDS",
     }
     assert maintenance["env"][0]["valueFrom"]["secretKeyRef"] == {
         "name": "fs2-serve-database-maintenance",
@@ -1773,6 +1776,34 @@ def test_maintenance_is_independent_fixed_cadence_and_network_egress_is_allowlis
     assert policy["spec"]["ingress"] == []
     assert any(5432 in [port["port"] for port in rule.get("ports", [])] for rule in policy["spec"]["egress"])
     assert any(53 in [port["port"] for port in rule.get("ports", [])] for rule in policy["spec"]["egress"])
+
+    queued_documents = render("--set", "maintenance.queueName=general-cpu")
+    queued_cron = next(document for document in queued_documents if document["kind"] == "CronJob")
+    assert queued_cron["spec"]["jobTemplate"]["metadata"]["labels"] == {"kueue.x-k8s.io/queue-name": "general-cpu"}
+
+    artifact_documents = render(
+        "--set",
+        "scientificArtifacts.enabled=true",
+        "--set",
+        "scientificArtifacts.egressCidrs[0]=203.0.113.10/32",
+    )
+    artifact_cron = next(document for document in artifact_documents if document["kind"] == "CronJob")
+    artifact_pod = artifact_cron["spec"]["jobTemplate"]["spec"]["template"]["spec"]
+    artifact_container = artifact_pod["containers"][0]
+    artifact_env = {item["name"] for item in artifact_container["env"]}
+    assert "FS2_ARTIFACT_RETENTION_SECONDS" in artifact_env
+    assert {mount["name"] for mount in artifact_container["volumeMounts"]} == {"artifact-store", "database-ca"}
+    assert {volume["name"] for volume in artifact_pod["volumes"]} == {"artifact-store", "database-ca"}
+    artifact_policy = next(
+        document
+        for document in artifact_documents
+        if document["kind"] == "NetworkPolicy" and document["metadata"]["name"].endswith("-maintenance")
+    )
+    assert any(
+        rule.get("to") == [{"ipBlock": {"cidr": "203.0.113.10/32"}}]
+        and rule.get("ports") == [{"port": 443, "protocol": "TCP"}]
+        for rule in artifact_policy["spec"]["egress"]
+    )
 
 
 def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -> None:
@@ -1927,6 +1958,7 @@ def test_gateway_alerts_are_bounded_payload_free_and_cover_release_failures() ->
         "Fs2ServeAuthenticationFailureSpike",
         "Fs2ServeLifecycleReconciliationFailed",
         "Fs2ServeLifecycleOccupancyUnclassified",
+        "Fs2ServeMaintenanceJobFailed",
         "Fs2ServePublicCertificateNotReady",
         "Fs2ServePublicCertificateRenewalOverdue",
         "Fs2ServePublicCertificateExpiresSoon",
@@ -1940,6 +1972,7 @@ def test_gateway_alerts_are_bounded_payload_free_and_cover_release_failures() ->
     assert "fs2_serve_lifecycle_workloads_total" in rendered
     assert "fs2_serve_lifecycle_unclassified_gpu_seconds_total" in rendered
     assert "kube_deployment_status_replicas_available" in rendered
+    assert "kube_job_status_failed" in rendered
     assert "certmanager_certificate_ready_status" in rendered
     assert "certmanager_certificate_renewal_timestamp_seconds" in rendered
     assert "certmanager_certificate_expiration_timestamp_seconds" in rendered
@@ -3037,6 +3070,8 @@ def test_grafana_reporting_role_is_aggregate_only_and_provisioned_by_migration_j
     assert "GRANT SELECT,INSERT ON fs2_operation_events,fs2_audit_events" in store_source
     assert "DELETE ON fs2_audit_events TO {quoted_maintenance}" in store_source
     assert "DELETE ON fs2_usage_facts TO {quoted_maintenance}" in store_source
+    assert "DELETE ON fs2_request_debug TO {quoted_maintenance}" in store_source
+    assert "DELETE ON fs2_request_telemetry TO {quoted_maintenance}" in store_source
     assert "GRANT SELECT (id,model_id,model_revision,status,attempt,lease_expires_at,deadline_at) " in store_source
     assert "GRANT SELECT (id,model_id,model_revision,status,attempt,max_attempts,worker_id," not in store_source
 
@@ -3474,8 +3509,14 @@ def test_object_storage_egress_is_opt_in_and_scoped_to_tls() -> None:
         for rule in item["spec"].get("egress", [])
         if any(peer.get("ipBlock", {}).get("cidr") == "203.0.113.0/24" for peer in rule.get("to", []))
     ]
-    assert len(rules) == 1
-    assert rules[0]["ports"] == [{"port": 443, "protocol": "TCP"}]
+    assert len(rules) == 2
+    assert all(rule["ports"] == [{"port": 443, "protocol": "TCP"}] for rule in rules)
+    selected_components = {
+        item["spec"]["podSelector"]["matchLabels"]["app.kubernetes.io/component"]
+        for item in with_egress
+        if item["kind"] == "NetworkPolicy" and any(rule in item["spec"].get("egress", []) for rule in rules)
+    }
+    assert selected_components == {"gateway", "maintenance"}
 
 
 def test_extra_kueue_namespaces_grant_least_privilege_capacity_reads() -> None:
