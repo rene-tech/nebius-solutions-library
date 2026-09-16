@@ -38,9 +38,10 @@ two workshop replicas, context `fs2-storage-h100`, namespace `fs2-system`.
 retained `gateway_http_error` and `enforcement: observe`; none invented a safe
 classification. Replaying the first completed transcript via the public
 `/v1/mindguard/assess` with its ordinary owner PAT returned 200/completed and
-evaluated all three patient prefixes. Source inspection identifies the likely
-internal/public authority mismatch: CP TrustedEdgeMiddleware requires the
-public Host for `/v1/*`, whereas the workshop addressed the internal Service.
+evaluated all three patient prefixes. A no-credential, no-inference probe from a
+workshop pod subsequently confirmed HTTP421 `Invalid Host header` for the
+internal Service authority. CP TrustedEdgeMiddleware requires the public Host
+for `/v1/*`, whereas the workshop addressed the internal Service.
 The coordinator owns the caller fix and fresh acceptance rehearsals.
 
 The original diagnostic runner's `summary.json` says `passed: true` because that
