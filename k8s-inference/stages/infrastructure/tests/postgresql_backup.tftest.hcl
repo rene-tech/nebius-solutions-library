@@ -63,10 +63,11 @@ mock_provider "nebius" {
 }
 
 variables {
-  project_id    = "project-syntheticlocal"
-  source_commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-  run_id        = "pgbackup1"
-  cluster_name  = "fs2-postgresql-backup-test"
+  project_id                  = "project-syntheticlocal"
+  source_commit               = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  run_id                      = "pgbackup1"
+  cluster_name                = "fs2-postgresql-backup-test"
+  control_plane_allowed_cidrs = ["192.0.2.1/32"]
 
   target_binding = {
     project_id          = "project-syntheticlocal"

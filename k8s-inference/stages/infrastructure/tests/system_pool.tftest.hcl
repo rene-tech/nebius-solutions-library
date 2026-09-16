@@ -112,7 +112,9 @@ run "system_nodes_honor_a_bounded_tfvars_override" {
 
   variables {
     system_pool = {
-      inotify_max_user_instances = 16384
+      node_count                             = 3
+      inotify_max_user_instances             = 16384
+      three_node_ha_cost_review_acknowledged = true
     }
   }
 
@@ -134,7 +136,9 @@ run "an_unsafe_low_inotify_ceiling_is_rejected" {
 
   variables {
     system_pool = {
-      inotify_max_user_instances = 128
+      node_count                             = 3
+      inotify_max_user_instances             = 128
+      three_node_ha_cost_review_acknowledged = true
     }
   }
 
