@@ -128,7 +128,9 @@ class NebiusUserStorage:
             await self._operation(
                 self.memberships.create(
                     iam.CreateGroupMembershipRequest(
-                        metadata=self._metadata(group_id, name),
+                        # IAM group memberships do not support resource names.
+                        # Their stable identity is the group/member pair above.
+                        metadata=ResourceMetadata(parent_id=group_id),
                         spec=iam.GroupMembershipSpec(member_id=account.metadata.id),
                     )
                 )
