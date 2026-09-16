@@ -112,6 +112,8 @@ class Rehearsal:
             "label": args.run_label,
             "started_at": datetime.now(timezone.utc).isoformat(),
             "base_url": args.base_url,
+            "tls_verification": not args.insecure,
+            "report_collection_concurrency": 5,
             "image_provenance": {
                 "gateway": args.gateway_image,
                 "workshop": args.workshop_image,
@@ -150,6 +152,35 @@ class Rehearsal:
                 json.dumps({"method": method, "path": path, "status": response.status_code, "response": data})
             )
         return data, response.status_code
+
+    async def collect_run_reports(self, jobs):
+        """Five concurrent read-only chains; preserve caller order and filtering."""
+        gate = asyncio.Semaphore(5)
+
+        async def fetch(team, run_id):
+            async with gate:
+                row, _ = await self.request("GET", f"/v1/workshop/runs/{run_id}", team=team)
+                report, _ = await self.request("GET", f"/v1/workshop/runs/{run_id}/report", team=team)
+                check(row["id"] == run_id and report["run"]["id"] == run_id, "report has another run's data")
+                events, status = await self.request(
+                    "GET", f"/v1/mindeval/runs/{run_id}/events", team=team, expected=(200, 404)
+                )
+                return {
+                    "team": team,
+                    "run_id": run_id,
+                    "row": row,
+                    "report": report,
+                    "gateway_events": events if status == 200 else None,
+                }
+
+        tasks = [asyncio.create_task(fetch(team, run_id)) for team, run_id in jobs]
+        try:
+            return await asyncio.gather(*tasks)
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def preflight(self):
         response = await self.client.get("/v1/workshop/catalog")
@@ -370,36 +401,31 @@ class Rehearsal:
         check(not active, f"repetition{number} timed out with nonterminal runs; see samples")
         check(len(final) == 60, f"expected60 terminal runs, got{len(final)}")
         all_results, failures, telemetry, coverage = [], [], [], Counter()
-        for team in range(10):
-            for run_id in state["run_ids"][str(team)]:
-                row, _ = await self.request("GET", f"/v1/workshop/runs/{run_id}", team=team)
-                report, _ = await self.request("GET", f"/v1/workshop/runs/{run_id}/report", team=team)
-                check(report["run"]["id"] == run_id, "report has another run's data")
-                if row["status"] != "completed":
-                    failures.append({"run_id": run_id, "status": row["status"], "error": row["state"].get("error")})
-                else:
-                    judgment = row["state"].get("judgment") or {}
-                    try:
-                        validate_completed(row, self.catalog["judge_model"])
-                        validate_classification(row)
-                    except (AcceptanceFailure, KeyError, TypeError) as exc:
-                        failures.append({"run_id": run_id, "status": row["status"], "error": str(exc)})
-                    for turn in row["state"]["transcript"]:
-                        if turn.get("completion"):
-                            telemetry.append(turn["completion"])
-                    telemetry.append(judgment)
-                classification = row["state"].get("classification")
-                coverage["missing" if classification is None else classification.get("status", "observed")] += 1
-                gateway_events, status = await self.request(
-                    "GET", f"/v1/mindeval/runs/{run_id}/events", team=team, expected=(200, 404)
-                )
-                all_results.append(
-                    {
-                        "team": self.teams[team]["label"],
-                        "report": report,
-                        "gateway_events": gateway_events if status == 200 else None,
-                    }
-                )
+        jobs = [(team, run_id) for team in range(10) for run_id in state["run_ids"][str(team)]]
+        for result in await self.collect_run_reports(jobs):
+            team, run_id, row = result["team"], result["run_id"], result["row"]
+            if row["status"] != "completed":
+                failures.append({"run_id": run_id, "status": row["status"], "error": row["state"].get("error")})
+            else:
+                judgment = row["state"].get("judgment") or {}
+                try:
+                    validate_completed(row, self.catalog["judge_model"])
+                    validate_classification(row)
+                except (AcceptanceFailure, KeyError, TypeError) as exc:
+                    failures.append({"run_id": run_id, "status": row["status"], "error": str(exc)})
+                for turn in row["state"]["transcript"]:
+                    if turn.get("completion"):
+                        telemetry.append(turn["completion"])
+                telemetry.append(judgment)
+            classification = row["state"].get("classification")
+            coverage["missing" if classification is None else classification.get("status", "observed")] += 1
+            all_results.append(
+                {
+                    "team": self.teams[team]["label"],
+                    "report": result["report"],
+                    "gateway_events": result["gateway_events"],
+                }
+            )
         self.save(f"repetition-{number}-reports.json", all_results)
         state["failures"] = failures
         state["classifier_coverage"] = dict(coverage)
@@ -487,11 +513,11 @@ class Rehearsal:
                 break
             await asyncio.sleep(self.args.poll_seconds)
         reports, failures, telemetry = [], [], []
-        for row in rows:
-            run_id = row["id"]
-            report, _ = await self.request("GET", f"/v1/workshop/runs/{run_id}/report")
-            gateway_events, _ = await self.request("GET", f"/v1/mindeval/runs/{run_id}/events", expected=(200, 404))
-            reports.append({"report": report, "gateway_events": gateway_events})
+        collected = await self.collect_run_reports([(0, run_id) for run_id in run_ids])
+        rows = [result["row"] for result in collected]
+        for result in collected:
+            run_id, row = result["run_id"], result["row"]
+            reports.append({"report": result["report"], "gateway_events": result["gateway_events"]})
             try:
                 check(row["status"] == "completed", f"full dialogue {row['status']}: {row['state'].get('error')}")
                 validate_completed(row, self.catalog["judge_model"], self.args.full_dialogue_turns)
@@ -544,7 +570,9 @@ def main():
     parser.add_argument("--poll-seconds", type=float, default=5)
     parser.add_argument("--ca-file")
     parser.add_argument(
-        "--insecure", action="store_true", help="Explicitly accept the rehearsal endpoint's self-signed TLS certificate"
+        "--insecure",
+        action="store_true",
+        help="Explicitly disable TLS verification; not needed for the public workshop",
     )
     args = parser.parse_args()
     check(

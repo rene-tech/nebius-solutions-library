@@ -1,3 +1,4 @@
+import asyncio
 import importlib.util
 import json
 from pathlib import Path
@@ -192,3 +193,118 @@ async def test_full_cohort_uses_all_six_clinicians_and_checks_21_messages(tmp_pa
         assert len(json.loads((tmp_path / "full-dialogue.json").read_text())["runs"]) == 6
     finally:
         await rehearsal.client.aclose()
+
+
+@pytest.fixture
+async def report_reader(tmp_path):
+    args = SimpleNamespace(
+        output=str(tmp_path),
+        insecure=False,
+        ca_file=None,
+        base_url="https://fixture.test",
+        run_label="read-only",
+        gateway_image="gateway",
+        workshop_image="workshop",
+    )
+    teams = [{"label": f"team-{i}", "token": f"fixture-private-token-{i}"} for i in range(10)]
+    rehearsal = runner.Rehearsal(args, teams, None)
+    yield rehearsal
+    await rehearsal.client.aclose()
+
+
+async def test_parallel_reports_are_read_only_bounded_and_in_input_order(report_reader):
+    active, peak, finished, methods = 0, 0, [], []
+
+    async def respond(request):
+        nonlocal active, peak
+        methods.append(request.method)
+        run_id = request.url.path.split("/")[4]
+        index = int(run_id.removeprefix("run-"))
+        assert request.headers["Authorization"] == f"Bearer fixture-private-token-{index % 10}"
+        active += 1
+        peak = max(peak, active)
+        try:
+            await asyncio.sleep(0.001 * (6 - index % 6))
+            if request.url.path.endswith("/events"):
+                finished.append(run_id)
+                return httpx.Response(404 if index == 1 else 200, json={"data": []})
+            row = make_run()
+            row["id"] = run_id
+            return httpx.Response(200, json={"run": row} if request.url.path.endswith("/report") else row)
+        finally:
+            active -= 1
+
+    await report_reader.client.aclose()
+    report_reader.client = httpx.AsyncClient(base_url="https://fixture.test", transport=httpx.MockTransport(respond))
+    jobs = [(i % 10, f"run-{i}") for i in range(12)]
+    results = await report_reader.collect_run_reports(jobs)
+    assert peak == 5 and active == 0
+    assert len(methods) == 36 and set(methods) == {"GET"}
+    assert [(item["team"], item["run_id"]) for item in results] == jobs
+    assert finished != [run_id for _, run_id in jobs]
+    assert results[1]["gateway_events"] is None
+    assert report_reader.summary["tls_verification"] is True
+
+
+async def test_parallel_reports_reject_another_runs_identity(report_reader):
+    async def respond(request):
+        return httpx.Response(
+            200, json={"run": {"id": "wrong"}} if request.url.path.endswith("/report") else {"id": "mine"}
+        )
+
+    await report_reader.client.aclose()
+    report_reader.client = httpx.AsyncClient(base_url="https://fixture.test", transport=httpx.MockTransport(respond))
+    with pytest.raises(runner.AcceptanceFailure, match="another run"):
+        await report_reader.collect_run_reports([(0, "mine")])
+
+
+async def test_parallel_reports_keep_credential_filtering(report_reader):
+    async def respond(request):
+        return httpx.Response(200, json={"id": "mine", "accidental": report_reader.teams[0]["token"]})
+
+    await report_reader.client.aclose()
+    report_reader.client = httpx.AsyncClient(base_url="https://fixture.test", transport=httpx.MockTransport(respond))
+    with pytest.raises(runner.AcceptanceFailure, match="exposed credential"):
+        await report_reader.collect_run_reports([(0, "mine")])
+
+
+async def test_parallel_reports_preserve_invalid_classifier_result(report_reader):
+    row = make_run()
+    row["state"]["transcript"] = [{"role": "patient"}]
+    row["state"]["classification"] = {"status": "unavailable", "error": "fixture failure"}
+
+    async def respond(request):
+        if request.url.path.endswith("/events"):
+            return httpx.Response(200, json={"data": []})
+        return httpx.Response(200, json={"run": row} if request.url.path.endswith("/report") else row)
+
+    await report_reader.client.aclose()
+    report_reader.client = httpx.AsyncClient(base_url="https://fixture.test", transport=httpx.MockTransport(respond))
+    result = (await report_reader.collect_run_reports([(0, row["id"])]))[0]
+    assert result["report"]["run"]["state"]["classification"] == row["state"]["classification"]
+    with pytest.raises(runner.AcceptanceFailure, match="unavailable"):
+        runner.validate_classification(result["row"])
+
+
+async def test_parallel_report_cancellation_cleans_up_readers(report_reader):
+    active = 0
+    started = asyncio.Event()
+
+    async def respond(request):
+        nonlocal active
+        active += 1
+        if active == 5:
+            started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            active -= 1
+
+    await report_reader.client.aclose()
+    report_reader.client = httpx.AsyncClient(base_url="https://fixture.test", transport=httpx.MockTransport(respond))
+    task = asyncio.create_task(report_reader.collect_run_reports([(0, f"run-{i}") for i in range(12)]))
+    await asyncio.wait_for(started.wait(), timeout=2)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert active == 0

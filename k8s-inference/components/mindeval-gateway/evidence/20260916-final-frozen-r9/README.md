@@ -98,8 +98,11 @@ by this test worker. No physical-node-loss test is claimed; graceful speech Pod
 drain is separate worker evidence. The gateway remains explicitly singleton,
 not a distributed or HA inference queue.
 
-The public runner used `https://89.169.99.188` and explicitly accepted the
-existing self-signed TLS certificate. Only protected ordinary PATs were used on
+The r9 public runner used `https://89.169.99.188` with `--insecure`, so that
+historical invocation did not verify TLS. This is not evidence of a self-signed
+certificate: subsequent ordinary `curl` GET verification succeeded with HTTP200,
+and the coordinator verified a publicly trusted Let's Encrypt certificate.
+Current reproduction commands retain normal TLS verification. Only protected ordinary PATs were used on
 the customer path; every saved response was checked against all supplied token
 values. Neither PATs nor the raw TF credential are in these artifacts.
 
@@ -109,7 +112,7 @@ After coordinator approval of a ready, frozen release, from the gateway componen
 
 ```sh
 .venv/bin/python scripts/rehearse_workshop.py \
-  --base-url https://89.169.99.188 --insecure \
+  --base-url https://89.169.99.188 \
   --keys-file /path/to/protected-ten-team-keys.json \
   --output evidence/NEW-UNIQUE-LABEL --run-label NEW-UNIQUE-LABEL \
   --gateway-image REGISTRY/IMAGE@sha256:VERIFIED_GATEWAY_DIGEST \
