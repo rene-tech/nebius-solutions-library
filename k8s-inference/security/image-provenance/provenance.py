@@ -123,6 +123,37 @@ def render_allowlist(
     }
 
 
+def render_guard_params(security_principals: Sequence[str]) -> dict:
+    """Render the security-owned guard parameter ConfigMap.
+
+    This is a SEPARATE artifact from the release allow-list: the guard
+    policy's parameters are applied and mutated only by the security
+    automation identity, so the identity that deploys releases can never
+    edit who guards the controls.
+    """
+    for principal in security_principals:
+        if not AUTOMATION_PRINCIPAL_PATTERN.match(str(principal)):
+            raise ProvenanceError(
+                f"invalid security principal: {principal!r}"
+            )
+    return {
+        "apiVersion": "v1",
+        "kind": "ConfigMap",
+        "metadata": {
+            "name": GUARD_PARAMS_NAME,
+            "namespace": ALLOWLIST_NAMESPACE,
+            "labels": {
+                "app.kubernetes.io/name": "fs2-image-provenance",
+                "app.kubernetes.io/part-of": "fs2-serve",
+                "security.fs2.nebius.ai/finding": "sai-09",
+            },
+        },
+        "data": {
+            "security-principals": "\n".join(sorted(set(security_principals))),
+        },
+    }
+
+
 def receipt_path(run_root: Path, digest: str) -> Path:
     # One directory per digest so the receipt and its signature publish
     # together in a single atomic directory rename.
@@ -285,6 +316,17 @@ def _read_evidence_bytes(path: Path, private: bool = True) -> bytes:
         os.close(fd)
 
 
+# The release verification key is pinned by fingerprint IN REVIEWED SOURCE,
+# breaking the circularity of a key that sits next to (and would otherwise
+# authenticate) the authority files it verifies: a caller-selected or
+# co-located substitute key never verifies anything, because its hash cannot
+# equal this constant. Rotating the key is an owner action: commit the new
+# cosign.pub AND this constant together through review.
+RELEASE_KEY_SHA256 = (
+    "56919b309fb65821c8a7d317730ed18613fe9b2a7e52295fce4fffb12c63a208"
+)
+
+
 class _PinnedPublicKey:
     """One safe read of the verification key, reused for every check.
 
@@ -308,6 +350,16 @@ class _PinnedPublicKey:
         copy.chmod(0o600)
         self.path = str(copy)
         self.sha256 = hashlib.sha256(key_bytes).hexdigest()
+        if self.sha256 != RELEASE_KEY_SHA256:
+            self._holder.cleanup()
+            self._holder = None
+            raise ProvenanceError(
+                f"verification key {self._source} (sha256 {self.sha256}) does "
+                "not match the source-pinned release key fingerprint "
+                f"{RELEASE_KEY_SHA256}; a substituted key never verifies "
+                "anything — rotate keys through review, updating cosign.pub "
+                "and the pinned fingerprint together"
+            )
         return self
 
     def __exit__(self, *exc_info) -> None:
@@ -1542,7 +1594,15 @@ def load_bound_receipt(
 INVENTORY_SCHEMA = "fs2-serve.nebius.ai/release-inventory/v4"
 COLLECTOR_METHOD = "fs2-live-enumeration/v1"
 INVENTORY_CHECKPOINT_SCHEMA = "fs2-serve.nebius.ai/inventory-checkpoint/v1"
-SCOPE_SCHEMA = "fs2-serve.nebius.ai/release-scope/v2"
+SCOPE_SCHEMA = "fs2-serve.nebius.ai/release-scope/v3"
+RECOVERY_SCHEMA = "fs2-serve.nebius.ai/admission-recovery/v1"
+GUARD_PARAMS_NAME = "fs2-security-guard-params"
+PROTECTED_POLICY_NAMES = (
+    "fs2-image-provenance",
+    "fs2-helm-release-governance",
+    "fs2-provenance-guard",
+)
+RECOVERY_MAX_VALIDITY_HOURS = 72
 INVENTORY_SOURCES = (
     "live_workloads",
     "helm_rollback_window",
@@ -1559,12 +1619,20 @@ CLUSTER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{1,127}$")
 RESOURCE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9/._:-]{0,255}$")
 NAMESPACE_PATTERN = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 PRINCIPAL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9@:/._-]{0,255}$")
+# Owner decision (2026-09-16): deploy principals are AUTOMATION-ONLY — a
+# Kubernetes ServiceAccount identity, never a human user. Enforcement is
+# ADDITIVE deny (admission + this contract), not credential revocation.
+AUTOMATION_PRINCIPAL_PATTERN = re.compile(
+    r"^system:serviceaccount:[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?:"
+    r"[a-z0-9]([a-z0-9-]{0,251}[a-z0-9])?$"
+)
 SCOPE_FIELDS = (
     "cluster",
     "namespaces",
     "registry_prefixes",
     "platform_repository_prefix",
     "deploy_principals",
+    "security_principals",
     "verification_key_sha256",
     "policy_sha256",
 )
@@ -1631,12 +1699,37 @@ def _validated_scope(value, context: str) -> dict:
         not isinstance(principals, list)
         or len(set(principals)) != len(principals)
         or not all(
-            isinstance(item, str) and PRINCIPAL_PATTERN.match(item)
+            isinstance(item, str) and AUTOMATION_PRINCIPAL_PATTERN.match(item)
             for item in principals
         )
     ):
         raise ProvenanceError(
-            f"{context} needs a list of unique valid deploy principals"
+            f"{context} needs a list of unique AUTOMATION deploy principals "
+            "(system:serviceaccount:<namespace>:<name>); the owner decision "
+            "is an automation-only, short-lived release identity — human "
+            "usernames never hold deploy authority"
+        )
+    security = value.get("security_principals")
+    if (
+        not isinstance(security, list)
+        or not security
+        or len(set(security)) != len(security)
+        or not all(
+            isinstance(item, str) and AUTOMATION_PRINCIPAL_PATTERN.match(item)
+            for item in security
+        )
+    ):
+        raise ProvenanceError(
+            f"{context} needs a non-empty list of unique AUTOMATION security "
+            "principals (system:serviceaccount:<namespace>:<name>); the "
+            "external security-owned admission boundary is operated by a "
+            "separate automation identity, never a human"
+        )
+    if set(security) & set(principals):
+        raise ProvenanceError(
+            f"{context} security principals must be DISJOINT from deploy "
+            "principals: the identity that guards the provenance controls "
+            "can never be the identity that deploys through them"
         )
     if not SHA256_PATTERN.match(str(value.get("verification_key_sha256", ""))):
         raise ProvenanceError(
@@ -1654,25 +1747,69 @@ def _collapse_whitespace(value) -> str:
     return " ".join(str(value or "").split())
 
 
+def _normalized_rule(rule: dict) -> dict:
+    return {
+        "apiGroups": list(rule.get("apiGroups") or []),
+        "apiVersions": list(rule.get("apiVersions") or []),
+        "operations": sorted(rule.get("operations") or []),
+        "resources": list(rule.get("resources") or []),
+        "resourceNames": sorted(rule.get("resourceNames") or []),
+        "scope": rule.get("scope"),
+    }
+
+
+def _normalized_selector(selector) -> dict:
+    selector = selector or {}
+    return {
+        "matchLabels": dict(selector.get("matchLabels") or {}),
+        "matchExpressions": [
+            {
+                "key": expression.get("key"),
+                "operator": expression.get("operator"),
+                "values": sorted(expression.get("values") or []),
+            }
+            for expression in selector.get("matchExpressions") or []
+        ],
+    }
+
+
 def _normalized_policy_spec(document: dict) -> dict:
+    """Normalize EVERY behavior-bearing policy field, narrowing ones included.
+
+    A live object that silently narrows enforcement — excludeResourceRules,
+    an objectSelector, a namespaceSelector on matchConstraints, a changed
+    matchPolicy, or injected matchConditions — must compare UNEQUAL, not be
+    ignored.
+    """
     spec = document.get("spec", {}) or {}
+    constraints = spec.get("matchConstraints") or {}
     return {
         "failurePolicy": spec.get("failurePolicy"),
+        "matchPolicy": constraints.get("matchPolicy"),
         "paramKind": {
             "apiVersion": (spec.get("paramKind") or {}).get("apiVersion"),
             "kind": (spec.get("paramKind") or {}).get("kind"),
         },
         "resourceRules": [
+            _normalized_rule(rule)
+            for rule in constraints.get("resourceRules") or []
+        ],
+        "excludeResourceRules": [
+            _normalized_rule(rule)
+            for rule in constraints.get("excludeResourceRules") or []
+        ],
+        "constraintNamespaceSelector": _normalized_selector(
+            constraints.get("namespaceSelector")
+        ),
+        "constraintObjectSelector": _normalized_selector(
+            constraints.get("objectSelector")
+        ),
+        "matchConditions": [
             {
-                "apiGroups": list(rule.get("apiGroups") or []),
-                "apiVersions": list(rule.get("apiVersions") or []),
-                "operations": sorted(rule.get("operations") or []),
-                "resources": list(rule.get("resources") or []),
-                "scope": rule.get("scope"),
+                "name": condition.get("name"),
+                "expression": _collapse_whitespace(condition.get("expression")),
             }
-            for rule in (spec.get("matchConstraints") or {}).get(
-                "resourceRules", []
-            )
+            for condition in spec.get("matchConditions") or []
         ],
         "variables": [
             {
@@ -1689,30 +1826,62 @@ def _normalized_policy_spec(document: dict) -> dict:
             }
             for validation in spec.get("validations", [])
         ],
+        "auditAnnotations": [
+            {
+                "key": annotation.get("key"),
+                "valueExpression": _collapse_whitespace(
+                    annotation.get("valueExpression")
+                ),
+            }
+            for annotation in spec.get("auditAnnotations") or []
+        ],
     }
 
 
 def _normalized_binding_spec(document: dict) -> dict:
+    """Normalize EVERY behavior-bearing binding field, narrowing ones included.
+
+    The reproduced bypass compared a live binding carrying an exclude-all
+    excludeResourceRules as EQUAL because only the namespaceSelector was
+    normalized; every matchResources field now participates.
+    """
     spec = document.get("spec", {}) or {}
     param_ref = spec.get("paramRef") or {}
-    selector = (spec.get("matchResources") or {}).get("namespaceSelector") or {}
+    matches = spec.get("matchResources") or {}
     return {
         "policyName": spec.get("policyName"),
         "validationActions": sorted(spec.get("validationActions") or []),
         "paramRef": {
             "name": param_ref.get("name"),
             "namespace": param_ref.get("namespace"),
+            "selector": _normalized_selector(param_ref.get("selector")),
             "parameterNotFoundAction": param_ref.get("parameterNotFoundAction"),
         },
-        "namespaceSelector": [
-            {
-                "key": expression.get("key"),
-                "operator": expression.get("operator"),
-                "values": sorted(expression.get("values") or []),
-            }
-            for expression in selector.get("matchExpressions", [])
+        "matchPolicy": matches.get("matchPolicy"),
+        "namespaceSelector": _normalized_selector(
+            matches.get("namespaceSelector")
+        ),
+        "objectSelector": _normalized_selector(matches.get("objectSelector")),
+        "resourceRules": [
+            _normalized_rule(rule) for rule in matches.get("resourceRules") or []
+        ],
+        "excludeResourceRules": [
+            _normalized_rule(rule)
+            for rule in matches.get("excludeResourceRules") or []
         ],
     }
+
+
+def _committed_all_documents(policy_path: Path) -> list[dict]:
+    import yaml
+
+    return [
+        document
+        for document in yaml.safe_load_all(
+            _read_evidence_bytes(policy_path, private=False)
+        )
+        if document
+    ]
 
 
 def _committed_policy_documents(policy_path: Path) -> tuple[bytes, dict, dict]:
@@ -1793,12 +1962,16 @@ def _assert_policy_matches_scope(
             "reviewed policy revision"
         )
     committed_binding = _normalized_binding_spec(binding)
-    expressions = committed_binding["namespaceSelector"]
+    expressions = committed_binding["namespaceSelector"]["matchExpressions"]
     if (
         len(expressions) != 1
         or expressions[0]["key"] != "kubernetes.io/metadata.name"
         or expressions[0]["operator"] != "In"
         or expressions[0]["values"] != sorted(owner_scope["namespaces"])
+        or committed_binding["namespaceSelector"]["matchLabels"]
+        or committed_binding["objectSelector"] != _normalized_selector(None)
+        or committed_binding["resourceRules"]
+        or committed_binding["excludeResourceRules"]
     ):
         raise ProvenanceError(
             "the committed admission policy binding must select exactly the "
@@ -1895,10 +2068,159 @@ def _assert_policy_matches_scope(
     if _normalized_binding_spec(live_binding) != committed_binding:
         raise ProvenanceError(
             "the LIVE fs2-image-provenance binding does not equal the "
-            "committed, owner-pinned definition (actions, paramRef, or "
-            "namespace selector drifted — e.g. Audit-only or NotIn); "
-            "rendering fails closed"
+            "committed, owner-pinned definition (actions, paramRef, "
+            "selectors, or resource rules drifted — e.g. Audit-only, NotIn, "
+            "or an exclude-all narrowing); rendering fails closed"
         )
+    # The security-owned guard must be live and identical too: rendering an
+    # allow-list while the guard is absent or weakened would hand out a
+    # release artifact whose protections do not actually exist.
+    guard_policy = next(
+        (
+            document
+            for document in _committed_all_documents(policy_path)
+            if document.get("kind") == "ValidatingAdmissionPolicy"
+            and document.get("metadata", {}).get("name") == "fs2-provenance-guard"
+        ),
+        None,
+    )
+    guard_binding = next(
+        (
+            document
+            for document in _committed_all_documents(policy_path)
+            if document.get("kind") == "ValidatingAdmissionPolicyBinding"
+            and document.get("metadata", {}).get("name") == "fs2-provenance-guard"
+        ),
+        None,
+    )
+    if guard_policy is None or guard_binding is None:
+        raise ProvenanceError(
+            f"the committed manifest {policy_path} lacks the "
+            "fs2-provenance-guard policy or binding; rendering fails closed"
+        )
+    try:
+        live_guard_policy = json.loads(
+            live_runner(
+                [
+                    "kubectl",
+                    "get",
+                    "validatingadmissionpolicy",
+                    "fs2-provenance-guard",
+                    "-o",
+                    "json",
+                ]
+            )
+        )
+        live_guard_binding = json.loads(
+            live_runner(
+                [
+                    "kubectl",
+                    "get",
+                    "validatingadmissionpolicybinding",
+                    "fs2-provenance-guard",
+                    "-o",
+                    "json",
+                ]
+            )
+        )
+    except (subprocess.CalledProcessError, OSError, json.JSONDecodeError) as error:
+        raise ProvenanceError(
+            "the LIVE fs2-provenance-guard policy/binding cannot be read; "
+            "the security-owned admission boundary must be applied before "
+            "any allow-list renders — rendering fails closed"
+        ) from error
+    if _normalized_policy_spec(live_guard_policy) != _normalized_policy_spec(
+        guard_policy
+    ) or _normalized_binding_spec(live_guard_binding) != _normalized_binding_spec(
+        guard_binding
+    ):
+        raise ProvenanceError(
+            "the LIVE fs2-provenance-guard does not equal the committed, "
+            "owner-pinned definition; a weakened guard refuses rendering"
+        )
+
+
+def load_recovery_authorization(
+    recovery_path: Path, public_key_path: str, verifier=None
+) -> tuple[dict, str]:
+    """Verify an OWNER-SIGNED break-glass recovery authorization.
+
+    The reversible Audit/Warn toggle on a protected binding requires the
+    guard's recovery annotation to carry the SHA-256 of this document; the
+    security automation runs this verification BEFORE applying the toggle.
+    The document is owner-signed (detached cosign signature over the exact
+    bytes), names one protected binding and the exact validationActions to
+    set, is bound to a tracking identifier, and is valid only inside a
+    bounded time window — deletion is never a recovery action.
+    """
+    signature_path = recovery_path.parent / (recovery_path.name + ".sig")
+    if not recovery_path.is_file() or recovery_path.is_symlink():
+        raise ProvenanceError(
+            f"missing recovery authorization: {recovery_path}"
+        )
+    if not signature_path.is_file() or signature_path.is_symlink():
+        raise ProvenanceError(
+            f"recovery authorization at {recovery_path} is UNSIGNED "
+            f"({signature_path} is missing); break-glass fails closed"
+        )
+    payload = _read_evidence_bytes(recovery_path, private=False)
+    signature = _read_evidence_bytes(signature_path, private=False)
+    _verify_blob_bytes(
+        public_key_path,
+        payload,
+        signature,
+        verifier,
+        f"recovery authorization {recovery_path}",
+    )
+    try:
+        document = json.loads(payload)
+    except json.JSONDecodeError as error:
+        raise ProvenanceError(
+            f"recovery authorization is malformed: {recovery_path}"
+        ) from error
+    if not isinstance(document, dict) or document.get("schema") != RECOVERY_SCHEMA:
+        raise ProvenanceError(
+            f"{recovery_path} is not a {RECOVERY_SCHEMA} document"
+        )
+    if document.get("target") not in PROTECTED_POLICY_NAMES:
+        raise ProvenanceError(
+            f"{recovery_path} does not target a protected binding"
+        )
+    actions = document.get("actions")
+    if (
+        not isinstance(actions, list)
+        or not actions
+        or len(set(actions)) != len(actions)
+        or not set(actions) <= {"Deny", "Audit", "Warn"}
+    ):
+        raise ProvenanceError(
+            f"{recovery_path} must name the exact validationActions to set "
+            "(a unique non-empty subset of Deny/Audit/Warn); deletion is "
+            "never a recovery action"
+        )
+    if not DRAIN_REASON_PATTERN.match(str(document.get("reason", ""))):
+        raise ProvenanceError(
+            f"{recovery_path} needs a reason bound to a tracking identifier "
+            "(incident:/change:/ticket:/task:)"
+        )
+    issued_at = _parse_rfc3339(
+        str(document.get("issued_at", "")), f"{recovery_path} issued_at"
+    )
+    expires_at = _parse_rfc3339(
+        str(document.get("expires_at", "")), f"{recovery_path} expires_at"
+    )
+    validity = (expires_at - issued_at).total_seconds()
+    if not 0 < validity <= RECOVERY_MAX_VALIDITY_HOURS * 3600:
+        raise ProvenanceError(
+            f"{recovery_path} validity window must be positive and at most "
+            f"{RECOVERY_MAX_VALIDITY_HOURS}h"
+        )
+    now = datetime.now(UTC)
+    if (issued_at - now).total_seconds() > _CLOCK_SKEW_SECONDS:
+        raise ProvenanceError(f"{recovery_path} is not yet valid")
+    if now > expires_at:
+        raise ProvenanceError(f"{recovery_path} has expired")
+    return document, hashlib.sha256(payload).hexdigest()
 
 
 def load_owner_scope(
@@ -1914,8 +2236,11 @@ def load_owner_scope(
     locally-committed, or substituted scope simply fails signature
     verification; producing a new valid signature requires the owner-held
     private key, which never lives in the repository. The shipped scope is
-    EMPTY and unsigned: rendering is impossible until the owner populates,
-    reviews, and SIGNS the exact scope.
+    EMPTY and owner-SIGNED: the signature verifies, and its EMPTINESS is what
+    fails closed — rendering stays impossible until the owner populates and
+    re-signs the exact scope. The verification key itself is pinned by
+    SHA-256 in reviewed source (RELEASE_KEY_SHA256), so a substituted
+    co-located key never verifies anything.
     """
     signature_path = scope_path.parent / (scope_path.name + ".sig")
     if not scope_path.is_file() or scope_path.is_symlink():
@@ -1987,8 +2312,10 @@ def load_signed_inventory(
     Drains can never remove an ACTIVE image: a drained reference must not
     appear in live_workloads and must come from a non-live source (rollback
     window or frozen bindings), with a reason bound to a tracking identifier.
-    Owner scope decisions about live sibling programs belong in the admission
-    policy's match scope, never in inventory falsification. platform_images
+    There is NO sibling-program carve-out: the owner decision (2026-09-16)
+    is that MindEval passes the identical signed-source/SBOM/provenance/
+    admission gates — its live digests must be receipted, signed, and
+    inventoried like every other platform image. platform_images
     must equal the source union minus those audited non-live drains.
     """
     if (
@@ -2186,17 +2513,13 @@ WORKLOAD_KINDS = (
     ("deployment", "deployments"),
     ("daemonset", "daemonsets"),
     ("statefulset", "statefulsets"),
+    ("replicaset", "replicasets"),
+    ("replicationcontroller", "replicationcontrollers"),
     ("job", "jobs"),
     ("cronjob", "cronjobs"),
 )
-
-FROZEN_RESOURCE_ID_PATTERN = re.compile(
-    r"^([a-z]+)/([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)/([A-Za-z0-9._-]{1,253})$"
-)
-HELM_RESOURCE_ID_PATTERN = re.compile(
-    r"^helm/([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)/([A-Za-z0-9._-]{1,253})/([0-9]{1,6})$"
-)
-
+FROZEN_BINDING_LABEL = "security.fs2.nebius.ai/frozen-binding=true"
+HELM_PAGE_SIZE = 256
 
 def _pod_template_images(spec: dict) -> Iterator[str]:
     for field in ("containers", "initContainers", "ephemeralContainers"):
@@ -2227,21 +2550,25 @@ def collect_authoritative_observation(scope: dict, runner=_run_capture) -> dict:
                 "authenticated live enumeration returned no usable identity; "
                 "rendering fails closed"
             )
+        # The kubeconfig cluster NAME is client-side mutable; the
+        # kube-system namespace UID is assigned by the API server at cluster
+        # creation and cannot be edited, so the scope pins THAT.
         cluster = runner(
             [
                 "kubectl",
-                "config",
-                "view",
-                "--minify",
+                "get",
+                "namespace",
+                "kube-system",
                 "-o",
-                "jsonpath={.clusters[0].name}",
+                "jsonpath={.metadata.uid}",
             ]
         ).strip()
         if cluster != scope["cluster"]:
             raise ProvenanceError(
-                f"the authenticated session targets cluster {cluster!r}, but "
-                f"the owner-approved scope names {scope['cluster']!r}; "
-                "rendering fails closed against a foreign cluster"
+                f"the authenticated session targets the cluster whose "
+                f"kube-system namespace UID is {cluster!r}, but the "
+                f"owner-approved scope pins {scope['cluster']!r}; rendering "
+                "fails closed against a foreign cluster"
             )
         live_images: set[str] = set()
         live_resources: set[str] = set()
@@ -2293,13 +2620,50 @@ def collect_authoritative_observation(scope: dict, runner=_run_capture) -> dict:
         helm_images: set[str] = set()
         helm_resources: set[str] = set()
         for namespace in scope["namespaces"]:
-            releases = json.loads(
-                runner(["helm", "list", "-n", namespace, "-o", "json"]) or "[]"
-            )
-            for release in releases or []:
+            releases: list[dict] = []
+            offset = 0
+            while True:
+                # helm list caps at 256 and --max 0 does NOT mean unlimited:
+                # paginate with --offset until a short page arrives, and use
+                # --all so no status filter hides a release.
+                page = json.loads(
+                    runner(
+                        [
+                            "helm",
+                            "list",
+                            "-n",
+                            namespace,
+                            "--all",
+                            "--max",
+                            str(HELM_PAGE_SIZE),
+                            "--offset",
+                            str(offset),
+                            "-o",
+                            "json",
+                        ]
+                    )
+                    or "[]"
+                )
+                releases.extend(page or [])
+                if len(page or []) < HELM_PAGE_SIZE:
+                    break
+                offset += HELM_PAGE_SIZE
+            for release in releases:
                 name = str(release.get("name", ""))
                 history = json.loads(
-                    runner(["helm", "history", name, "-n", namespace, "-o", "json"])
+                    runner(
+                        [
+                            "helm",
+                            "history",
+                            name,
+                            "-n",
+                            namespace,
+                            "--max",
+                            "10000",
+                            "-o",
+                            "json",
+                        ]
+                    )
                     or "[]"
                 )
                 for entry in history or []:
@@ -2339,52 +2703,67 @@ def collect_authoritative_observation(scope: dict, runner=_run_capture) -> dict:
 def _verify_frozen_bindings(
     scope: dict, source: dict, inventory_path: Path, runner
 ) -> None:
-    """Frozen refs must come from the exact live resources they claim.
+    """Frozen bindings are ENUMERATED authoritatively, never signer-chosen.
 
-    Every recorded resource identity is fetched through the authenticated
-    API and the platform references extracted from those objects must equal
-    the recorded refs exactly — self-asserted or forged frozen coverage
-    fails closed.
+    The signer does not pick which resources count: the collector lists every
+    ConfigMap labeled `security.fs2.nebius.ai/frozen-binding=true` in the
+    owner-approved namespaces through the authenticated API, extracts the
+    platform references those objects actually carry, and the signed source's
+    refs AND resource identities must equal that enumeration exactly. An
+    omitted labeled binding, a forged reference, or a self-asserted resource
+    identity all fail closed. (Labeling/unlabeling a binding is a cluster
+    mutation visible to the admission and audit controls, not a signer
+    decision.)
     """
     recorded = {
         validate_digest_reference(str(ref)) for ref in source.get("refs") or []
     }
-    resource_ids = [str(item) for item in source.get("resource_ids") or []]
-    if not recorded and not resource_ids:
-        return
+    recorded_ids = {str(item) for item in source.get("resource_ids") or []}
     found: set[str] = set()
+    found_ids: set[str] = set()
     try:
-        for resource_id in resource_ids:
-            match = FROZEN_RESOURCE_ID_PATTERN.match(resource_id)
-            if not match or match.group(2) not in scope["namespaces"]:
-                raise ProvenanceError(
-                    f"{inventory_path} frozen_scientific_bindings resource "
-                    f"identity {resource_id!r} is not a fetchable "
-                    "kind/namespace/name inside the owner-approved namespaces"
+        for namespace in scope["namespaces"]:
+            listing = json.loads(
+                runner(
+                    [
+                        "kubectl",
+                        "get",
+                        "configmaps",
+                        "-n",
+                        namespace,
+                        "-l",
+                        FROZEN_BINDING_LABEL,
+                        "-o",
+                        "json",
+                    ]
                 )
-            kind, namespace, _, name = (
-                match.group(1),
-                match.group(2),
-                match.group(3),
-                match.group(4),
             )
-            payload = runner(
-                ["kubectl", "get", kind, name, "-n", namespace, "-o", "json"]
-            )
-            found |= _platform_references_in_text(
-                payload, scope["platform_repository_prefix"]
-            )
-    except (subprocess.CalledProcessError, OSError) as error:
+            for item in listing.get("items") or []:
+                name = str((item.get("metadata") or {}).get("name", ""))
+                references = _platform_references_in_text(
+                    json.dumps(item), scope["platform_repository_prefix"]
+                )
+                if references:
+                    found |= references
+                    found_ids.add(f"configmap/{namespace}/{name}")
+    except (subprocess.CalledProcessError, OSError, json.JSONDecodeError) as error:
         raise ProvenanceError(
-            f"{inventory_path} frozen_scientific_bindings resources cannot "
-            "be fetched through the authenticated API; rendering fails closed"
+            f"{inventory_path} frozen_scientific_bindings cannot be "
+            "authoritatively enumerated through the authenticated API; "
+            "rendering fails closed"
         ) from error
     if found != recorded:
         raise ProvenanceError(
             f"{inventory_path} frozen_scientific_bindings refs do not equal "
-            "the platform references in the fetched live resources; missing "
-            f"from records: {sorted(found - recorded) or 'none'}; recorded "
-            f"but not present: {sorted(recorded - found) or 'none'}"
+            "the authenticated enumeration of labeled frozen bindings; "
+            f"omitted: {sorted(found - recorded) or 'none'}; recorded but "
+            f"not present: {sorted(recorded - found) or 'none'}"
+        )
+    if found_ids != recorded_ids:
+        raise ProvenanceError(
+            f"{inventory_path} frozen_scientific_bindings resource identities "
+            "do not equal the authenticated enumeration; forged or "
+            "self-asserted identities never render"
         )
 
 
@@ -2532,6 +2911,52 @@ def _enforce_inventory_monotonicity(
     )
 
 
+@contextmanager
+def _acceptance_chain_lock(run_root: Path) -> Iterator[None]:
+    """Serialize acceptance-chain verify+append cycles across processes.
+
+    Without the lock, two concurrent renders could both compute the same next
+    sequence and link two DIFFERENT records at that sequence, permanently
+    poisoning the chain (which can never be repaired by deletion under the
+    no-delete constraint). The lock makes verify+append atomic per run root.
+    """
+    import fcntl
+
+    lock_path = run_root / "release-inventory-heads.lock"
+    if lock_path.is_symlink():
+        raise ProvenanceError(
+            f"acceptance chain lock must not be a symlink: {lock_path}"
+        )
+    with lock_path.open("a+", encoding="utf-8") as lock:
+        lock_path.chmod(0o600)
+        try:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise ProvenanceError(
+                f"another render owns the inventory acceptance chain at "
+                f"{run_root}; concurrent acceptance is refused"
+            ) from error
+        yield
+
+
+def _link_no_replace_or_adopt(staged: Path, final: Path, payload: bytes) -> None:
+    """link(2) publication that ADOPTS a byte-identical survivor.
+
+    A crash-and-retry (or a concurrent identical append) leaves the same
+    bytes at the final path; anything else at that path fails closed.
+    """
+    try:
+        os.link(staged, final)
+    except FileExistsError:
+        if final.is_symlink() or not final.is_file() or (
+            _read_evidence_bytes(final) != payload
+        ):
+            raise ProvenanceError(
+                f"conflicting file already exists at {final}; the acceptance "
+                "chain never replaces existing content"
+            ) from None
+
+
 def _append_acceptance_head(
     run_root: Path,
     chain: list[dict],
@@ -2588,14 +3013,12 @@ def _append_acceptance_head(
         )
         _fsync_file(staged)
         _fsync_file(staged_signature)
-        try:
-            os.link(staged, final)
-            os.link(staged_signature, final_signature)
-        except FileExistsError as error:
-            raise ProvenanceError(
-                f"inventory acceptance head {final} already exists; "
-                "concurrent or replayed acceptance is refused"
-            ) from error
+        # Signature FIRST: a bare .sig is inert to chain verification, but a
+        # bare .json would poison the chain unrecoverably (deletion is
+        # forbidden). A crash between the two links leaves a recoverable
+        # state, and a retry with identical bytes adopts the survivors.
+        _link_no_replace_or_adopt(staged_signature, final_signature, signature_bytes)
+        _link_no_replace_or_adopt(staged, final, payload)
         _fsync_dir(directory)
 
 
@@ -2638,7 +3061,12 @@ def verified_allowlist(
     recorded inventory annotation is the hash of the bytes that were verified
     and parsed — never a re-read of the mutable pathname.
     """
-    with _PinnedPublicKey(public_key_path) as pinned:
+    with (
+        _PinnedPublicKey(public_key_path) as pinned,
+        # One render per run root: chain verify+append is atomic under an
+        # exclusive lock, so concurrent renders can never fork the sequence.
+        _acceptance_chain_lock(receipts_root),
+    ):
         owner_scope = load_owner_scope(Path(scope_path), pinned.path, verifier)
         if pinned.sha256 != owner_scope["verification_key_sha256"]:
             raise ProvenanceError(
@@ -3001,6 +3429,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     sign.add_argument("reference", nargs="+", help="<registry>/<repo>@sha256:<hex>")
 
+    guard = subcommands.add_parser(
+        "render-guard-params",
+        help=(
+            "render the SECURITY-owned guard parameter ConfigMap from the "
+            "owner-signed scope (applied by the security automation, never "
+            "the release identity)"
+        ),
+    )
+    guard.add_argument("--public-key", required=True)
+    guard.add_argument("--scope", required=True, type=Path)
+
+    recovery = subcommands.add_parser(
+        "verify-recovery",
+        help=(
+            "verify an owner-signed break-glass recovery authorization and "
+            "print the annotation value the guard requires"
+        ),
+    )
+    recovery.add_argument("--public-key", required=True)
+    recovery.add_argument("--recovery", required=True, type=Path)
+
     verify = subcommands.add_parser(
         "verify", help="cosign-verify digest references with the public key"
     )
@@ -3041,6 +3490,28 @@ def main(argv: Sequence[str] | None = None) -> int:
             run_commands(
                 [cosign_sign_command(args.key, ref) for ref in args.reference]
             )
+    elif args.command == "render-guard-params":
+        with _PinnedPublicKey(args.public_key) as pinned:
+            owner_scope = load_owner_scope(args.scope, pinned.path)
+        print(
+            json.dumps(
+                render_guard_params(owner_scope["security_principals"]),
+                indent=2,
+                sort_keys=True,
+            )
+        )
+    elif args.command == "verify-recovery":
+        with _PinnedPublicKey(args.public_key) as pinned:
+            document, annotation = load_recovery_authorization(
+                args.recovery, pinned.path
+            )
+        print(
+            json.dumps(
+                {"recovery": document, "annotation": annotation},
+                indent=2,
+                sort_keys=True,
+            )
+        )
     elif args.command == "verify":
         run_commands(
             [cosign_verify_command(args.public_key, ref) for ref in args.reference]

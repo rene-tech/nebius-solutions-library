@@ -9,6 +9,7 @@ tags do not silently satisfy the gate.
 
 from __future__ import annotations
 
+import hashlib
 import importlib.machinery
 import importlib.util
 import io
@@ -102,7 +103,6 @@ class ReleaseSourceGateTest(unittest.TestCase):
         produced, so any dirty edit or local re-commit fails verification the
         same way a real cosign check would without the private key.
         """
-        import hashlib
 
         directory = self.checkout / "security" / "image-provenance"
         directory.mkdir(parents=True, exist_ok=True)
@@ -119,8 +119,18 @@ class ReleaseSourceGateTest(unittest.TestCase):
         signature.write_text("fixture-owner-signature\n", encoding="utf-8")
         signature.chmod(0o644)
         key = directory / "cosign.pub"
-        key.write_text("-----BEGIN PUBLIC KEY-----\nfixture\n-----END PUBLIC KEY-----\n", encoding="utf-8")
+        key_content = "-----BEGIN PUBLIC KEY-----\nfixture\n-----END PUBLIC KEY-----\n"
+        key.write_text(key_content, encoding="utf-8")
         key.chmod(0o644)
+        # Pin the fixture key exactly as production pins the committed key.
+        if not hasattr(self, "_original_pin"):
+            self._original_pin = STACK.RELEASE_KEY_SHA256
+            self.addCleanup(
+                lambda: setattr(STACK, "RELEASE_KEY_SHA256", self._original_pin)
+            )
+        STACK.RELEASE_KEY_SHA256 = hashlib.sha256(
+            key_content.encode("utf-8")
+        ).hexdigest()
         self.signed_authority_hashes.add(hashlib.sha256(payload).hexdigest())
         git(self.checkout, "add", "security", *(extra_paths or []))
         git(self.checkout, "commit", "-m", commit_message)
@@ -128,7 +138,6 @@ class ReleaseSourceGateTest(unittest.TestCase):
         git(self.checkout, "fetch", "origin")
 
     def authority_verifier(self, command: list[str]) -> None:
-        import hashlib
 
         payload = Path(command[-1]).read_bytes()
         if hashlib.sha256(payload).hexdigest() not in self.signed_authority_hashes:
@@ -204,6 +213,18 @@ class ReleaseSourceGateTest(unittest.TestCase):
             self.run_root, commit, None, repository_root=self.checkout
         )
         self.assertIn("refs/tags/deploy/gate-test", state["anchor_refs"])
+
+    def test_locally_moved_tracking_ref_never_anchors(self) -> None:
+        # The reproduced attack: `git update-ref refs/remotes/origin/main` to
+        # a local commit while the REAL remote is unchanged. Tracking refs
+        # are only trusted when ls-remote confirms their exact tip.
+        commit = self.add_unpushed_commit()
+        git(self.checkout, "update-ref", "refs/remotes/origin/main", commit)
+        with self.assertRaisesRegex(STACK.DeploymentError, "release-source gate"):
+            STACK.enforce_release_source(
+                self.run_root, commit, None, repository_root=self.checkout
+            )
+        self.assertFalse(self.receipt()["anchored"])
 
     def test_local_only_tag_without_bundle_does_not_satisfy_the_gate(self) -> None:
         commit = self.add_unpushed_commit()
@@ -589,6 +610,27 @@ class ReleaseSourceGateTest(unittest.TestCase):
                     exception_approver=approver,
                     authority_verifier=self.authority_verifier,
                 )
+
+    def test_substituted_verification_key_never_grants_authority(self) -> None:
+        # Swapping the co-located cosign.pub (plus a matching signature) is
+        # powerless: the key fingerprint is pinned in reviewed source.
+        commit = self.add_unpushed_commit()
+        key = (
+            self.checkout / "security" / "image-provenance" / "cosign.pub"
+        )
+        key.write_text(
+            "-----BEGIN PUBLIC KEY-----\nattacker\n-----END PUBLIC KEY-----\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(STACK.DeploymentError, "source-pinned"):
+            STACK.enforce_release_source(
+                self.run_root,
+                commit,
+                "incident:INC-1 key swap",
+                repository_root=self.checkout,
+                exception_approver="release-operator",
+                authority_verifier=self.authority_verifier,
+            )
 
     def test_dirty_approver_file_never_self_authorizes(self) -> None:
         # The exact reproduced attack: reviewed EMPTY approver list, a

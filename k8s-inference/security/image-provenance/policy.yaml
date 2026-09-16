@@ -246,3 +246,104 @@ spec:
         - key: kubernetes.io/metadata.name
           operator: In
           values: [fs2-system]
+---
+# External security-owned admission boundary (owner-approved 2026-09-16).
+# SEPARATE from the release path: a distinct security automation identity —
+# never the release/deploy identity, never a human — is the only principal
+# that may mutate or delete the protected provenance controls (these policy
+# objects, their bindings, the allow-list ConfigMap, and this guard's own
+# parameter ConfigMap). Deletion of the guard itself is matched and denied
+# like any other protected object. Break-glass is a REVERSIBLE, SIGNED mode
+# toggle, never a deletion: changing a protected binding's validationActions
+# (e.g. Deny -> Audit/Warn and back) additionally requires a
+# security.fs2.nebius.ai/recovery-authorization annotation carrying the
+# SHA-256 of an owner-signed recovery document (verified with
+# `provenance.py verify-recovery` before the security automation applies it).
+# Residuals (owner IAM, not admission): impersonation rights must not be
+# granted (admission sees only the effective user), and API-server-level
+# access remains the trust root. Bootstrap order: create
+# fs2-security-guard-params (before this guard exists), then apply the guard;
+# afterwards both ConfigMaps and all policy objects are mutation-protected.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: fs2-provenance-guard
+  labels:
+    app.kubernetes.io/name: fs2-image-provenance
+    app.kubernetes.io/part-of: fs2-serve
+    security.fs2.nebius.ai/finding: sai-09
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: v1
+    kind: ConfigMap
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["admissionregistration.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["UPDATE", "DELETE"]
+        resources: ["validatingadmissionpolicies", "validatingadmissionpolicybindings"]
+        scope: Cluster
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["configmaps"]
+        scope: Namespaced
+  variables:
+    - name: securityPrincipals
+      expression: >-
+        ('security-principals' in params.data
+         ? params.data['security-principals'] : '')
+        .split("\n").filter(p, p != '')
+    - name: subject
+      expression: >-
+        object != null ? object : oldObject
+    - name: isProtected
+      expression: >-
+        request.resource.group == 'admissionregistration.k8s.io'
+        ? ['fs2-image-provenance', 'fs2-helm-release-governance',
+           'fs2-provenance-guard'].exists(n, n == variables.subject.metadata.name)
+        : (variables.subject.metadata.namespace == 'fs2-system' &&
+           ['fs2-image-provenance-allowlist', 'fs2-security-guard-params']
+           .exists(n, n == variables.subject.metadata.name))
+  validations:
+    - expression: >-
+        !variables.isProtected ||
+        variables.securityPrincipals.exists(p, p == request.userInfo.username)
+      message: >-
+        protected provenance controls (policies, bindings, allow-list and
+        guard parameters) may only be changed by the security automation
+        identity; the release identity and humans write nothing here (SAI-09)
+      reason: Forbidden
+    - expression: >-
+        request.resource.resource != 'validatingadmissionpolicybindings' ||
+        object == null || oldObject == null ||
+        object.spec.validationActions == oldObject.spec.validationActions ||
+        (has(object.metadata.annotations) &&
+         'security.fs2.nebius.ai/recovery-authorization' in
+         object.metadata.annotations &&
+         object.metadata.annotations['security.fs2.nebius.ai/recovery-authorization']
+         .matches('^[0-9a-f]{64}$'))
+      message: >-
+        changing enforcement actions is break-glass: attach the
+        security.fs2.nebius.ai/recovery-authorization annotation carrying the
+        SHA-256 of an owner-signed recovery document (verify-recovery); the
+        toggle is reversible and deletion is never the recovery path (SAI-09)
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: fs2-provenance-guard
+  labels:
+    app.kubernetes.io/name: fs2-image-provenance
+    app.kubernetes.io/part-of: fs2-serve
+    security.fs2.nebius.ai/finding: sai-09
+spec:
+  policyName: fs2-provenance-guard
+  validationActions: [Deny, Audit]
+  paramRef:
+    name: fs2-security-guard-params
+    namespace: fs2-system
+    parameterNotFoundAction: Deny
+  matchResources: {}

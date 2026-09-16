@@ -111,9 +111,17 @@ provenance gate (see `security/image-provenance/README.md`):
    namespaces, prefixes, principals, and key identity; the signed inventory
    and every CLI argument must equal it exactly). Scope and exception-approver
    authority is OWNER-SIGNED (detached cosign signatures verified against the
-   committed release key over the exact bytes parsed; no Git ref is
-   consulted) — dirty, locally-committed, or substituted authority files fail
-   closed. The inventory carries a strictly monotonic generation checked
+   release key over the exact bytes parsed, with the key fingerprint pinned
+   in reviewed source; no Git ref is consulted, and branch anchors in the
+   release gate only count when `git ls-remote` confirms their exact tip
+   against the real remote) — dirty, locally-committed, or substituted
+   authority files and keys fail closed. Deploy principals are automation
+   ServiceAccounts only (owner decision: short-lived automation-only release
+   identity), disjoint from the security principals that operate the
+   security-owned `fs2-provenance-guard` protecting the policies, bindings,
+   and parameter ConfigMaps, with a reversible, owner-signed break-glass
+   (never deletion). MindEval passes these identical gates with no
+   exception. The inventory carries a strictly monotonic generation checked
    against a SIGNED, hash-chained, no-replace acceptance chain (no replay of
    older signed inventories), and rendering authoritatively re-observes the
    cluster through the authenticated API — Pods AND workload controllers,

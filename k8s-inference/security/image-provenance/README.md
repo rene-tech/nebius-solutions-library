@@ -98,10 +98,13 @@ bump — in order:
    --output-file inventory.json.sig inventory.json`. The renderer refuses to
    run without it and renders **only** the inventory set — extras, missing
    entries, and unreceipted or unsigned digests all abort:
-   `provenance.py render-allowlist --public-key … --run-root <run>
-   --inventory inventory.json --scope
+   `provenance.py render-allowlist --public-key … --key <cosign.key>
+   --run-root <run> --inventory inventory.json --scope
    security/image-provenance/release-scope.json --registry-prefix …
-   --platform-repository-prefix … --deploy-principal <user>` (optional
+   --platform-repository-prefix … --deploy-principal
+   system:serviceaccount:<ns>:<name>` (`--key` signs the acceptance-chain
+   head on success; deploy principals are AUTOMATION ServiceAccounts by
+   owner decision — a human username is refused; optional
    `--image` arguments must equal the inventory exactly and exist only as a
    cross-check). The inventory additionally carries a strictly increasing
    integer `generation` and a typed collector
@@ -119,31 +122,60 @@ bump — in order:
    gate, as for the gate history.) At render time the tool authoritatively
    re-observes the cluster through the AUTHENTICATED API (kubectl and helm
    required — unavailable enumeration fails closed): live platform images
-   from Pods AND workload controllers (a scaled-to-zero or crash-looping
-   Deployment counts with no Pod), the Helm rollback window re-derived from
-   `helm history`/`helm get manifest` per revision, and frozen bindings
-   re-fetched from the exact resources their signed identities name; every
-   source's refs AND resource identities must equal the observation, the
-   kubeconfig cluster identity must equal the scope's cluster, and the
+   from Pods AND every workload controller (Deployments, DaemonSets,
+   StatefulSets, ReplicaSets, ReplicationControllers, Jobs, CronJobs — a
+   scaled-to-zero or crash-looping controller counts with no Pod), the Helm
+   rollback window re-derived from `helm list --all` with explicit
+   `--offset` pagination (helm caps pages at 256 and `--max 0` is NOT
+   unlimited) plus `helm history --max 10000`/`helm get manifest` per
+   revision, and frozen bindings ENUMERATED authoritatively — every
+   ConfigMap labeled `security.fs2.nebius.ai/frozen-binding=true` in the
+   scope namespaces, never a signer-chosen resource list; every source's
+   refs AND resource identities must equal the observation, the scope's
+   `cluster` pins the kube-system namespace UID (server-assigned and
+   immutable, unlike the client-editable kubeconfig cluster name), and the
    recorded collector identity must equal the authenticated identity — a
    signer cannot omit an active sibling image, drain a rollback revision the
    history still carries, or self-assert coverage. **Admission scope is
    never caller-chosen**: the committed `release-scope.json` is the single
    authority and it is OWNER-SIGNED — the detached
-   `release-scope.json.sig` must verify against the pinned release key over
-   the exact bytes parsed; no Git ref is consulted (local tracking refs are
-   writable by any local process via `git update-ref` and are NOT
-   authority). It ships EMPTY (signed), so rendering fails closed until the
-   owner populates and signs the exact scope. The scope pins the committed
+   `release-scope.json.sig` must verify against the release key over the
+   exact bytes parsed, and the key itself is pinned by SHA-256 IN REVIEWED
+   SOURCE (`RELEASE_KEY_SHA256`), so a co-located or caller-substituted
+   cosign.pub can never verify anything; no Git ref is consulted (local
+   tracking refs are writable by any local process via `git update-ref` and
+   are NOT authority — the wrapper's release gate likewise only trusts
+   branch anchors whose exact tip `git ls-remote` confirms against the real
+   remote). The scope ships EMPTY and owner-signed: the signature verifies
+   and the EMPTINESS fails closed until the owner populates and re-signs. The scope pins the committed
    admission policy manifest by SHA-256, the binding must select exactly the
    scope's namespaces with a single `In` expression, include `Deny` in its
    validationActions, and fail closed on the exact allow-list ConfigMap —
    and the LIVE ValidatingAdmissionPolicy and binding, fetched through the
    authenticated session, must equal the committed definitions on every
-   enforced field (a missing, Audit-only, `NotIn`, or otherwise drifted live
-   object refuses rendering). The scope's namespaces render into the
-   ConfigMap `namespaces` key and the policy denies any request whose
-   namespace is not listed — claimed and enforced coverage cannot drift. The signed inventory's `scope` must equal it exactly (a
+   enforced field — failurePolicy, paramKind/paramRef (selector included),
+   matchPolicy, resourceRules AND excludeResourceRules, namespace/object
+   selectors, matchConditions, variables, validations, auditAnnotations, and
+   validationActions — so a missing, Audit-only, `NotIn`, exclude-all, or
+   otherwise narrowed live object refuses rendering. The SECURITY-OWNED
+   guard (`fs2-provenance-guard`) must be live and identical too: it
+   restricts UPDATE/DELETE of the protected policies, bindings, allow-list,
+   and its own parameter ConfigMap to the scope's `security_principals`
+   (automation ServiceAccounts, DISJOINT from the deploy principals), and
+   makes enforcement-action changes break-glass — reversible, never a
+   deletion, and gated on an owner-signed recovery authorization
+   (`provenance.py verify-recovery` prints the annotation the guard
+   demands; `render-guard-params` renders the security-owned parameter
+   ConfigMap, which the release renderer never emits). Acceptance-chain
+   appends are serialized under an exclusive lock with the signature linked
+   before the record, so concurrent renders cannot fork a sequence and a
+   crash between links is retry-recoverable without deletion. The scope's
+   namespaces render into the ConfigMap `namespaces` key and the policy
+   denies any request whose namespace is not listed — claimed and enforced
+   coverage cannot drift. MindEval is under IDENTICAL gates by owner
+   decision: it runs in fs2-system, inside the enforced namespaces, and its
+   digests must be receipted, signed, and inventoried like every other
+   platform image — no carve-out, no drain. The signed inventory's `scope` must equal it exactly (a
    signer cannot substitute their own coverage), every CLI argument must
    equal it (a mistyped platform prefix cannot bypass platform-digest
    gating), the pinned key hash must equal its recorded key identity, every

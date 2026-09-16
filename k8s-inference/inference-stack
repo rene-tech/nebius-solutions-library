@@ -366,6 +366,14 @@ def _release_approvers(
     payload = _read_public_input(approver_file)
     signature = _read_public_input(signature_file)
     public_key = _read_public_input(key_file)
+    key_sha256 = hashlib.sha256(public_key).hexdigest()
+    if key_sha256 != RELEASE_KEY_SHA256:
+        raise DeploymentError(
+            f"verification key {key_file} (sha256 {key_sha256}) does not "
+            "match the source-pinned release key fingerprint "
+            f"{RELEASE_KEY_SHA256}; a substituted key never grants exception "
+            "authority"
+        )
     _verify_authority_signature(
         payload,
         signature,
@@ -687,6 +695,12 @@ RELEASE_EXCEPTION_REASON_PATTERN = re.compile(
     r"( [\x20-\x7e]{1,160})?$"
 )
 RELEASE_EXCEPTION_APPROVER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._@-]{1,79}$")
+# Source-pinned fingerprint of the committed release verification key: a
+# co-located or substituted cosign.pub never authenticates authority files.
+# Key rotation = owner review updating cosign.pub AND this constant together.
+RELEASE_KEY_SHA256 = (
+    "56919b309fb65821c8a7d317730ed18613fe9b2a7e52295fce4fffb12c63a208"
+)
 
 
 def _refs_containing(root: Path, commit: str, patterns: Sequence[str]) -> list[str]:
@@ -704,6 +718,45 @@ def _refs_containing(root: Path, commit: str, patterns: Sequence[str]) -> list[s
         env=clean_environment(),
     )
     return sorted({line.strip() for line in refs.stdout.splitlines() if line.strip()})
+
+
+def _remote_verified_branches(root: Path, branch_refs: Sequence[str]) -> list[str]:
+    """Keep only branch anchors whose tip the REAL remote confirms.
+
+    refs/remotes/origin/* are LOCAL tracking refs, movable by any local
+    process via `git update-ref`, so they are never trusted on their own:
+    `git ls-remote --heads origin` asks the actual remote (read-only) and a
+    branch only anchors when the local tracking tip EQUALS the remote's
+    answer. `--contains` reachability to that network-confirmed tip is then
+    content-addressed ancestry, which a local ref rewrite cannot fake.
+    """
+    if not branch_refs:
+        return []
+    listing = run(
+        ["git", "-C", str(root), "ls-remote", "--heads", "origin"],
+        capture=True,
+        env=clean_environment(),
+    )
+    remote_targets: dict[str, str] = {}
+    for line in listing.stdout.splitlines():
+        parts = line.split("\t")
+        if len(parts) != 2:
+            continue
+        sha, refname = parts[0].strip(), parts[1].strip()
+        remote_targets[refname] = sha
+    verified = []
+    for ref in branch_refs:
+        if not ref.startswith("refs/remotes/origin/"):
+            continue
+        name = ref[len("refs/remotes/origin/"):]
+        local_target = run(
+            ["git", "-C", str(root), "rev-parse", ref],
+            capture=True,
+            env=clean_environment(),
+        ).stdout.strip()
+        if remote_targets.get(f"refs/heads/{name}") == local_target:
+            verified.append(ref)
+    return verified
 
 
 def _remote_verified_tags(root: Path, tag_refs: Sequence[str]) -> list[str]:
@@ -1262,7 +1315,14 @@ def release_source_state(
     dirty_paths = sorted(
         line[3:].strip() for line in status.stdout.splitlines() if line.strip()
     )
-    branch_refs = _refs_containing(root, commit, RELEASE_ANCHOR_BRANCH_PATTERNS)
+    tracking_branch_refs = _refs_containing(
+        root, commit, RELEASE_ANCHOR_BRANCH_PATTERNS
+    )
+    try:
+        branch_refs = _remote_verified_branches(root, tracking_branch_refs)
+    except DeploymentError:
+        # The remote is unreachable: tracking refs alone never anchor.
+        branch_refs = []
     local_tag_refs = _refs_containing(root, commit, RELEASE_ANCHOR_TAG_PATTERNS)
     remote_verified_tags: list[str] = []
     bundle_verified_tags: list[str] = []
