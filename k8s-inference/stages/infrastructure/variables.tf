@@ -245,16 +245,17 @@ variable "system_pool" {
     coupled to preemptible GPU capacity.
   EOT
   type = object({
-    capacity                   = optional(string, "regular")
-    platform                   = optional(string, "cpu-d3")
-    preset                     = optional(string, "8vcpu-32gb")
-    node_count                 = optional(number)
-    boot_disk_type             = optional(string, "NETWORK_SSD")
-    boot_disk_gib              = optional(number, 160)
-    max_surge                  = optional(number)
-    max_unavailable            = optional(number)
-    drain_timeout              = optional(string, "15m")
-    inotify_max_user_instances = optional(number, 8192)
+    capacity                               = optional(string, "regular")
+    platform                               = optional(string, "cpu-d3")
+    preset                                 = optional(string, "8vcpu-32gb")
+    node_count                             = optional(number)
+    boot_disk_type                         = optional(string, "NETWORK_SSD")
+    boot_disk_gib                          = optional(number, 160)
+    max_surge                              = optional(number)
+    max_unavailable                        = optional(number)
+    drain_timeout                          = optional(string, "15m")
+    inotify_max_user_instances             = optional(number, 8192)
+    three_node_ha_cost_review_acknowledged = optional(bool, false)
   })
   default  = null
   nullable = true
@@ -284,10 +285,11 @@ variable "system_pool" {
       floor(var.system_pool.inotify_max_user_instances) == var.system_pool.inotify_max_user_instances &&
       var.system_pool.inotify_max_user_instances >= 256 &&
       var.system_pool.inotify_max_user_instances <= 65536 &&
+      var.system_pool.three_node_ha_cost_review_acknowledged &&
       can(regex("^[1-9][0-9]*m$", var.system_pool.drain_timeout)),
       false,
     )
-    error_message = "system_pool must use regular capacity, at least three nodes, a bounded provider shape/boot disk/inotify ceiling, and an integral nonzero rollout allowance."
+    error_message = "an explicit system_pool must use regular capacity, at least three nodes, safe rollout bounds, and an explicit three-node HA quota/cost-review acknowledgement."
   }
 }
 
@@ -566,7 +568,12 @@ variable "postgresql_backup" {
       bucket_name  = string
       max_size_gib = number
     })
-    retention_days = number
+    retention_days                    = number
+    database_volume_size_gib          = number
+    estimated_daily_wal_gib           = number
+    capacity_headroom_percent         = number
+    required_capacity_gib             = number
+    capacity_cost_review_acknowledged = bool
   })
   default = {
     enabled = false
@@ -575,9 +582,14 @@ variable "postgresql_backup" {
     }
     object_storage = {
       bucket_name  = "disabled-postgresql-backup.invalid"
-      max_size_gib = 256
+      max_size_gib = 6144
     }
-    retention_days = 30
+    retention_days                    = 30
+    database_volume_size_gib          = 100
+    estimated_daily_wal_gib           = 32
+    capacity_headroom_percent         = 25
+    required_capacity_gib             = 5480
+    capacity_cost_review_acknowledged = false
   }
 
   validation {
@@ -586,15 +598,26 @@ variable "postgresql_backup" {
         var.postgresql_backup.lifecycle.retention_mode == "retain" &&
         can(regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$", var.postgresql_backup.object_storage.bucket_name)) &&
         floor(var.postgresql_backup.object_storage.max_size_gib) == var.postgresql_backup.object_storage.max_size_gib &&
-        var.postgresql_backup.object_storage.max_size_gib >= 16 &&
-        var.postgresql_backup.object_storage.max_size_gib <= 4096 &&
+        var.postgresql_backup.object_storage.max_size_gib >= var.postgresql_backup.required_capacity_gib &&
+        var.postgresql_backup.object_storage.max_size_gib <= 65536 &&
         floor(var.postgresql_backup.retention_days) == var.postgresql_backup.retention_days &&
         var.postgresql_backup.retention_days >= 7 &&
-        var.postgresql_backup.retention_days <= 365
+        var.postgresql_backup.retention_days <= 365 &&
+        floor(var.postgresql_backup.database_volume_size_gib) == var.postgresql_backup.database_volume_size_gib &&
+        var.postgresql_backup.database_volume_size_gib >= 32 &&
+        floor(var.postgresql_backup.estimated_daily_wal_gib) == var.postgresql_backup.estimated_daily_wal_gib &&
+        var.postgresql_backup.estimated_daily_wal_gib >= 1 &&
+        floor(var.postgresql_backup.capacity_headroom_percent) == var.postgresql_backup.capacity_headroom_percent &&
+        var.postgresql_backup.capacity_headroom_percent >= 20 &&
+        var.postgresql_backup.required_capacity_gib == ceil((
+          var.postgresql_backup.database_volume_size_gib * (var.postgresql_backup.retention_days + 2) +
+          var.postgresql_backup.estimated_daily_wal_gib * (var.postgresql_backup.retention_days + 7)
+        ) * (100 + var.postgresql_backup.capacity_headroom_percent) / 100) &&
+        (var.system_pool == null || var.postgresql_backup.capacity_cost_review_acknowledged)
       ),
       false,
     )
-    error_message = "enabled postgresql_backup must be retained, use a valid dedicated bucket name, allocate 16-4096 whole GiB, and retain backups for 7-365 days."
+    error_message = "enabled postgresql_backup must be retained and capacity-sized from volume, daily WAL, 7-365 day retention and at least 20% headroom; explicit system-pool rollouts require capacity/cost acknowledgement."
   }
 }
 

@@ -48,6 +48,13 @@ were:
 These observations are not deployment provenance. SAI-09 must identify the
 exact producing source before a shared rollout.
 
+Independent review rejected commit `ee1e3db7afdffd3f90710990f1a333c30895d16e`.
+That immutable candidate used `targetImmediate`, which stopped recovery at the
+end of a base backup, and retained only 256 GiB for a 100 GiB database with
+daily backups and 30-day retention. It is negative evidence and must never be
+rolled out. This successor replaces both contracts; it does not rewrite the
+rejected commit into a successful result.
+
 ## Implemented contract
 
 The root facade always provisions a distinct versioned backup bucket. There is
@@ -59,6 +66,25 @@ window. Its dedicated service account receives only `storage.object-editor` on
 `postgresql/v1/*`; the secret half of its S3 key is delivered through
 MysteryBox and enters the Kubernetes Secret through Terraform write-only data.
 
+Backup capacity is retention-aware rather than a fixed 256 GiB. The enforced
+minimum is:
+
+```text
+ceil(((database GiB * (retention days + 2 boundary backups))
+    + (estimated daily WAL GiB * (retention days + 7 cleanup-lag days)))
+    * (100 + headroom percent) / 100)
+```
+
+For the full-catalog defaults this is 5,480 GiB: a 100 GiB database, one daily
+base backup, 32 GiB/day estimated WAL, 30 retained days, seven WAL/version
+cleanup-lag days, and 25% headroom. The default retained bucket ceiling is
+6,144 GiB. A 256 GiB value fails validation before planning. Because the live
+Nebius quota response exposes current Standard-storage usage but not an
+explicit ceiling, `inference-stack preflight`, `plan`, and `apply` all capture
+a private, payload-free live usage receipt and require an explicit capacity and
+cost acknowledgement; the receipt never claims that observed usage is a
+reservation.
+
 The database always has three instances with required hostname anti-affinity on
 the regular system pool. Its `barmanObjectStore` configuration sends base
 backups and compressed WAL to the dedicated store. A self-owned immediate
@@ -68,17 +94,36 @@ cron tick and then continues on schedule.
 The public Envoy data plane has two replicas, required hostname anti-affinity,
 and a PodDisruptionBudget with `minAvailable: 1`. Both Envoy and PostgreSQL
 remain pinned to the system pool, whose capacity profiles and explicit override
-now reject fewer than three nodes.
+now reject fewer than three nodes. The retained private deployment input
+currently requests one system node, so it deliberately fails the new source
+gate. Promotion requires an intentional change to three nodes, the explicit
+`three_node_ha_cost_review_acknowledged` flag, and fresh saved-plan, quota and
+cost review. The remediation does not silently resize the retained system.
 
-Restore verification is deliberately a second, opt-in apply. Setting
-`deployment.acceptance.verify_database_restore=true` creates a temporary CNPG
-cluster recovered from the object store with `targetImmediate`, then runs a
-bounded Job using the existing `restore_verifier` login. The Job checks the
-recovered database and migration table and proves the verifier still cannot
-read customer operations. It has no service-account token, runs non-root with a
-read-only root filesystem, and receives only the existing database login and
-recovered cluster CA. Set the flag back to false and re-apply workloads after
-capturing evidence.
+Restore verification is deliberately a four-apply acceptance sequence after
+one exact `Backup` has completed:
+
+1. Enable `prepare_database_restore_marker` with that Backup's resource name,
+   completion time, and a new non-sensitive marker ID. The bounded source Job
+   commits marker A with its WAL LSN, emits a target timestamp, waits, and then
+   commits marker B with its WAL LSN.
+2. Disable marker preparation, enable `verify_database_restore`, and supply the
+   captured target timestamp. The temporary CNPG cluster recovers with
+   `recoveryTarget.targetTime`. The verifier requires a non-null replay LSN,
+   marker A at or before the replay boundary, and marker B absent. This proves
+   archived WAL replay beyond the selected base backup and a bounded PITR stop.
+3. Disable verification and enable `cleanup_database_restore_marker` with the
+   same Backup, marker and target identity. The bounded source Job refuses
+   anything except the exact A/B pair, revokes the marker-only grant and drops
+   the non-sensitive marker table atomically.
+4. Clear every acceptance field and apply the reviewed resource-cleanup plan.
+
+The existing `restore_verifier` login receives SELECT only on the non-sensitive
+marker table and no CREATE or write privilege. It also fails unless it has no
+table or column SELECT on token, operation, audit, request/response payload,
+artifact, credential, secret, or session-bearing relations. The Job has no
+service account token, runs non-root with a read-only root filesystem, and
+receives only the existing database login and recovered-cluster CA.
 
 ## Planned staged rollout
 
@@ -87,22 +132,37 @@ capturing evidence.
    Helm revisions, image digests, CNPG cluster UID/generation, system node-group
    identity and Terraform state serials. Require the shared Helm releases to be
    terminal and healthy; a `pending-*` state is a no-go.
-2. Plan infrastructure only. The plan may add the dedicated bucket, service
-   account/group/key, and two regular `cpu-d3` system nodes; it must not replace
-   the cluster, public IP, database PVCs, or unrelated resources. Apply the
-   reviewed saved plan and wait for all three system nodes to be Ready.
+2. Change the retained private system-pool input from one to three regular
+   nodes and set both node and backup capacity/cost acknowledgements only after
+   reviewing live quota, current pricing and the private preflight receipt.
+   Save the infrastructure binary plan and JSON. Require a no replacement
+   result: the plan may add the dedicated bucket, identity/key and two system
+   nodes, but it must not replace the cluster, public IP, database PVCs or any
+   unrelated resource. Apply that exact reviewed plan and wait for all three
+   system nodes to be Ready.
 3. Plan and apply workloads with restore verification disabled. Confirm the
    database rolls one instance at a time and reaches three healthy instances on
    three different nodes. Confirm two Envoy replicas become Ready on distinct
    nodes and the PDB has one allowed disruption.
-4. Wait for a completed `Backup` and a non-null
-   `status.firstRecoverabilityPoint`. Confirm continuous WAL archive health
-   from CNPG status/events without reading backup contents.
-5. Enable `verify_database_restore`, apply the reviewed workload plan, wait for
-   the recovery cluster and Job to succeed, save payload-free status/events,
-   then disable the flag and apply the cleanup plan. Confirm the temporary
-   cluster, Job, PVC and Pods are absent; retain the production backups.
-6. Re-run anonymous landing/catalog, lead submission, PAT/model grants,
+4. Wait for a completed scheduled `Backup` and a non-null
+   `status.firstRecoverabilityPoint`. Record `lastArchivedWal` twice across a
+   controlled non-sensitive marker write and require it to advance; confirm
+   continuous WAL archive health from CNPG status/events without reading backup
+   contents.
+5. Run the marker-preparation apply for the exact completed Backup. Capture the
+   payload-free marker A/B LSNs and emitted target time. Run the distinct
+   recovery apply and require marker A present, marker B absent, a replay LSN at
+   or after A, and all sensitive-table denial checks. Save only status/events
+   and bounded verifier output, never table contents.
+6. Run the marker-cleanup apply with the same exact identity. Require its
+   payload-free success receipt, then clear every acceptance flag/identity and
+   apply the saved resource-cleanup plan. Confirm the marker table/grant,
+   marker Job, cleanup Job, recovery Cluster, verifier Job, PVC and Pods are
+   absent; retain the production backups.
+7. Under an approved one-system-node disruption, require both Envoy replicas to
+   start on distinct nodes, the PDB to retain one available replica, and the
+   public endpoint to remain healthy. Restore the node and require 2/2 Ready.
+8. Re-run anonymous landing/catalog, lead submission, PAT/model grants,
    synchronous and streaming inference, MCP initialize/list/call, admin
    session/role, operations/results/artifacts/uploads, customer storage,
    Kueue/model admission, request-debug and observability smoke tests. Verify
@@ -116,13 +176,18 @@ Example non-secret verification commands:
 kubectl --context k8s-inference-h100 -n fs2-data get scheduledbackups,backups
 kubectl --context k8s-inference-h100 -n fs2-data get cluster fs2-control-db \
   -o jsonpath='{.status.firstRecoverabilityPoint}{"\n"}'
+kubectl --context k8s-inference-h100 -n fs2-data get cluster fs2-control-db \
+  -o jsonpath='{.status.lastArchivedWal}{"\n"}'
 kubectl --context k8s-inference-h100 -n fs2-data get pods \
   -l cnpg.io/cluster=fs2-control-db -o custom-columns=NAME:.metadata.name,NODE:.spec.nodeName,READY:.status.containerStatuses[0].ready
 kubectl --context k8s-inference-h100 -n envoy-gateway-system get pods \
   -l gateway.envoyproxy.io/owning-gateway-name=public \
   -o custom-columns=NAME:.metadata.name,NODE:.spec.nodeName,READY:.status.containerStatuses[0].ready
 kubectl --context k8s-inference-h100 -n envoy-gateway-system get pdb
+kubectl --context k8s-inference-h100 -n fs2-data logs job/fs2-control-db-pitr-marker \
+  | grep '^FS2_PITR_TARGET_TIME='
 kubectl --context k8s-inference-h100 -n fs2-data get job fs2-control-db-restore-verifier
+kubectl --context k8s-inference-h100 -n fs2-data logs job/fs2-control-db-pitr-marker-cleanup
 ```
 
 ## Rollback and retention
@@ -137,11 +202,13 @@ fails, restore the exact prior reconciled chart values while retaining the
 expanded node pool. Never shrink the node pool, delete the retained bucket, or
 discard WAL during incident rollback.
 
-The temporary recovery cluster is not rollback data; setting
-`verify_database_restore=false` removes it after evidence capture. The durable
-backup bucket is rollback data and intentionally blocks an ordinary full-stack
-destroy until an operator explicitly adopts it or follows a separately
-reviewed data-retirement procedure.
+The temporary recovery cluster is not rollback data; completing marker cleanup,
+then setting all three acceptance phases to false and clearing their identity
+fields, removes temporary resources after evidence capture. The durable backup
+bucket is rollback data and intentionally blocks an
+ordinary full-stack destroy until an operator explicitly adopts it or follows a
+separately reviewed data-retirement procedure. Do not roll back by shrinking
+the system pool while the database or edge depends on three-node placement.
 
 ## Current verification and cost state
 
@@ -153,25 +220,30 @@ three-node PostgreSQL spread, two-node Envoy spread and recovered-cluster Job
 success remain mandatory after the parent releases the SAI-09 gate. No model or
 GPU behavior changes in this remediation, so a GPU verification run is not
 applicable. The eventual plan adds two regular CPU system nodes and a retained
-256 GiB object-storage ceiling by default; record the provider plan and current
-pricing before approval rather than estimating cost in this document.
+6,144 GiB object-storage ceiling by default. A read-only live check on
+2026-09-16 observed 239,727,929,141 bytes of Standard-storage use in the target
+project/region and no explicit ceiling in the returned allowance. This is
+usage evidence, not capacity or price approval; refresh the receipt and record
+the provider plan and current pricing before approving the no-replacement plan.
 
 The source gate completed with these exact results:
 
 - root, infrastructure and workloads `terraform validate`: pass;
-- infrastructure `terraform test`: 22 passed, including two new backup-plane
-  plan tests;
-- focused SAI-06, deployment-contract and wrapper tests: 134 passed plus 104
-  parameterized subtests;
+- focused infrastructure backup tests: 3 passed, including retention-aware
+  sizing acceptance and rejection of both a disposable bucket and 256 GiB;
+- focused SAI-06, deployment-contract, wrapper and infrastructure-contract
+  tests: 164 passed plus 104 parameterized subtests;
 - Helm lint and public-edge rendering: pass, including exact Envoy replica,
   anti-affinity and PDB assertions; one-replica and disabled-PDB inputs were
   both rejected;
-- Trivy HIGH/CRITICAL configuration scans: zero findings in the new backup
-  Terraform, database Terraform and rendered chart; repository secret scan:
-  zero findings; changed-file public-reference scan: zero findings.
+- Trivy HIGH/CRITICAL configuration scans: zero findings in the changed backup
+  and database Terraform; repository secret scan: zero findings;
+- Ruff lint over the changed Python wrapper/tests, Terraform recursive format
+  check and `git diff --check`: pass.
 
 The broader current checkout is not represented as green. The workloads
-Terraform suite reported 34 passed, 3 failed and 10 skipped in untouched
+Terraform suite reported 37 passed, 3 failed and 10 skipped; all three new
+PITR plan cases passed, while the failures remain in untouched
 general-CPU/scientific-artifact cases. The broad Python suite reported 497
 passed, 14 failed and 492 parameterized subtests passed; failures were outside
 the SAI-06 diff (one missing optional host dependency, existing public-export

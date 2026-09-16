@@ -11,6 +11,10 @@ locals {
   postgresql_backup_writer_role     = "storage.object-editor"
   postgresql_backup_endpoint        = "https://storage.${local.selected_target.region}.nebius.cloud"
   postgresql_backup_noncurrent_days = var.postgresql_backup.retention_days + 7
+  postgresql_backup_required_capacity_gib = ceil((
+    var.postgresql_backup.database_volume_size_gib * (var.postgresql_backup.retention_days + 2) +
+    var.postgresql_backup.estimated_daily_wal_gib * (var.postgresql_backup.retention_days + 7)
+  ) * (100 + var.postgresql_backup.capacity_headroom_percent) / 100)
   postgresql_backup_lifecycle_rules = [
     {
       id                                = "abort-incomplete-multipart-uploads"
@@ -40,16 +44,21 @@ resource "terraform_data" "postgresql_backup_contract" {
   count = var.postgresql_backup.enabled ? 1 : 0
 
   input = {
-    bucket_name     = var.postgresql_backup.object_storage.bucket_name
-    max_size_gib    = var.postgresql_backup.object_storage.max_size_gib
-    retention_mode  = var.postgresql_backup.lifecycle.retention_mode
-    retention_days  = var.postgresql_backup.retention_days
-    region          = local.selected_target.region
-    object_root     = local.postgresql_backup_root
-    writer_role     = local.postgresql_backup_writer_role
-    writer_paths    = [local.postgresql_backup_path_scope]
-    lifecycle_rules = [for rule in local.postgresql_backup_lifecycle_rules : rule.id]
-    secret_delivery = "MYSTERY_BOX"
+    bucket_name                       = var.postgresql_backup.object_storage.bucket_name
+    max_size_gib                      = var.postgresql_backup.object_storage.max_size_gib
+    retention_mode                    = var.postgresql_backup.lifecycle.retention_mode
+    retention_days                    = var.postgresql_backup.retention_days
+    database_volume_size_gib          = var.postgresql_backup.database_volume_size_gib
+    estimated_daily_wal_gib           = var.postgresql_backup.estimated_daily_wal_gib
+    capacity_headroom_percent         = var.postgresql_backup.capacity_headroom_percent
+    required_capacity_gib             = var.postgresql_backup.required_capacity_gib
+    capacity_cost_review_acknowledged = var.postgresql_backup.capacity_cost_review_acknowledged
+    region                            = local.selected_target.region
+    object_root                       = local.postgresql_backup_root
+    writer_role                       = local.postgresql_backup_writer_role
+    writer_paths                      = [local.postgresql_backup_path_scope]
+    lifecycle_rules                   = [for rule in local.postgresql_backup_lifecycle_rules : rule.id]
+    secret_delivery                   = "MYSTERY_BOX"
   }
 
   lifecycle {
@@ -63,6 +72,13 @@ resource "terraform_data" "postgresql_backup_contract" {
         (!var.scientific_artifacts.enabled || var.postgresql_backup.object_storage.bucket_name != var.scientific_artifacts.object_storage.bucket_name)
       )
       error_message = "PostgreSQL backups must use a dedicated bucket, identity and MysteryBox key."
+    }
+    precondition {
+      condition = (
+        var.postgresql_backup.object_storage.max_size_gib >=
+        local.postgresql_backup_required_capacity_gib
+      )
+      error_message = "PostgreSQL backup storage is below the retention-aware base-backup, WAL and headroom requirement."
     }
   }
 

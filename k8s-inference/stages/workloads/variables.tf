@@ -390,6 +390,16 @@ variable "postgresql_backup" {
         current_object_expiration              = string
         lifecycle_rule_ids                     = list(string)
       })
+      sizing = object({
+        database_volume_size_gib          = number
+        daily_base_backup_count           = number
+        estimated_daily_wal_gib           = number
+        capacity_headroom_percent         = number
+        required_capacity_gib             = number
+        configured_capacity_gib           = number
+        live_capacity_preflight_required  = bool
+        capacity_cost_review_acknowledged = bool
+      })
       lifecycle = object({
         retention_mode     = string
         destroy_status     = string
@@ -430,6 +440,9 @@ variable "postgresql_backup" {
         var.postgresql_backup.storage_contract.layout.root == "postgresql/v1" &&
         var.postgresql_backup.storage_contract.layout.server_name == "fs2-control-db" &&
         var.postgresql_backup.storage_contract.retention.barman_retention_days == var.postgresql_backup.retention_days &&
+        var.postgresql_backup.storage_contract.sizing.daily_base_backup_count == 1 &&
+        var.postgresql_backup.storage_contract.sizing.configured_capacity_gib >= var.postgresql_backup.storage_contract.sizing.required_capacity_gib &&
+        var.postgresql_backup.storage_contract.sizing.live_capacity_preflight_required &&
         var.postgresql_backup.storage_contract.lifecycle.retention_mode == "retain" &&
         var.postgresql_backup.storage_contract.lifecycle.destroy_status == "blocked-retained"
       ),
@@ -1693,9 +1706,86 @@ variable "run_acceptance_job" {
 }
 
 variable "run_database_restore_verification_job" {
-  description = "Create a temporary one-instance CNPG recovery cluster from the retained object backup and run the existing restore_verifier login against it. Enable only after a successful backup; disable after evidence capture to remove the temporary resources."
+  description = "Create a temporary one-instance CNPG point-in-time recovery cluster and run the marker-only restore_verifier login. Requires a prior completed marker-preparation apply."
   type        = bool
   default     = false
+}
+
+variable "prepare_database_restore_marker_job" {
+  description = "Create the bounded source-database Job that writes non-sensitive marker A, emits a target time, and writes marker B. Run only after recording a completed base backup; disable before the recovery apply."
+  type        = bool
+  default     = false
+}
+
+variable "cleanup_database_restore_marker_job" {
+  description = "Create the bounded source-database Job that removes the exact verified marker pair and its marker-only grant after successful recovery acceptance."
+  type        = bool
+  default     = false
+}
+
+variable "database_restore_source_backup_name" {
+  description = "Exact non-sensitive CNPG Backup resource name used as the PITR base."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "database_restore_source_backup_time" {
+  description = "RFC3339 completion time of the exact source Backup, recorded before marker preparation."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "database_restore_marker_id" {
+  description = "Non-sensitive stable marker prefix. The source Job writes the derived -a and -b rows around the target timestamp."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "database_restore_target_time" {
+  description = "RFC3339 PITR target emitted between marker A and marker B by the completed marker Job. Required for the recovery and exact cleanup applies."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+check "database_restore_acceptance_contract" {
+  assert {
+    condition = try(
+      (
+        (var.prepare_database_restore_marker_job ? 1 : 0) +
+        (var.run_database_restore_verification_job ? 1 : 0) +
+        (var.cleanup_database_restore_marker_job ? 1 : 0)
+        ) == 0 ? (
+        var.database_restore_source_backup_name == null &&
+        var.database_restore_source_backup_time == null &&
+        var.database_restore_marker_id == null &&
+        var.database_restore_target_time == null
+        ) : (
+        (
+          (var.prepare_database_restore_marker_job ? 1 : 0) +
+          (var.run_database_restore_verification_job ? 1 : 0) +
+          (var.cleanup_database_restore_marker_job ? 1 : 0)
+        ) == 1 &&
+        var.postgresql_backup.enabled &&
+        can(regex("^[a-z0-9][a-z0-9-]{7,62}$", var.database_restore_source_backup_name)) &&
+        can(timecmp(var.database_restore_source_backup_time, "1970-01-01T00:00:00Z")) &&
+        can(regex("^[a-z0-9][a-z0-9-]{7,62}$", var.database_restore_marker_id)) &&
+        (
+          var.prepare_database_restore_marker_job ?
+          var.database_restore_target_time == null :
+          (
+            can(timecmp(var.database_restore_target_time, var.database_restore_source_backup_time)) &&
+            timecmp(var.database_restore_target_time, var.database_restore_source_backup_time) > 0
+          )
+        )
+      ),
+      false,
+    )
+    error_message = "PITR acceptance requires serialized marker, recovery and cleanup applies bound to an exact completed Backup; recovery and cleanup use the later target captured between marker A and marker B."
+  }
 }
 
 variable "academic_assets" {

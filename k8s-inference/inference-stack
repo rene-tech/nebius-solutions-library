@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator, Mapping, Sequence
 from urllib.parse import urlsplit
@@ -367,7 +368,9 @@ def validate_configuration(
 def preflight_accelerators(
     args: argparse.Namespace,
     contract: Mapping[str, Any],
-) -> None:
+    *,
+    emit: bool = True,
+) -> dict[str, Any]:
     """Validate project-local platform, preset, capacity, and driver facts live."""
     pools = contract["stages"]["infrastructure"].get("custom_accelerator_pools", {})
     if not pools:
@@ -567,18 +570,126 @@ def preflight_accelerators(
             pool_evidence["reservation"] = reservation_evidence
         checked.append(pool_evidence)
 
-    print(
-        json.dumps(
-            {
-                "status": "compatible",
-                "project_id": project_id,
-                "kubernetes_version": kubernetes_version,
-                "accelerator_pools": checked,
-                "capacity_advisor": "Run Capacity Advisor immediately before apply; availability is not guaranteed by compatibility.",
-            },
-            indent=2,
+    evidence = {
+        "status": "compatible",
+        "project_id": project_id,
+        "kubernetes_version": kubernetes_version,
+        "accelerator_pools": checked,
+        "capacity_advisor": "Run Capacity Advisor immediately before apply; availability is not guaranteed by compatibility.",
+    }
+    if emit:
+        print(json.dumps(evidence, indent=2))
+    return evidence
+
+
+def preflight_postgresql_backup_capacity(
+    args: argparse.Namespace,
+    contract: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Capture the live standard-object usage behind the retention-aware cap."""
+    project_id = str(contract["target"]["project_id"])
+    region = str(contract["target"]["region"])
+    backup = contract["stages"]["infrastructure"]["postgresql_backup"]
+    configured_gib = int(backup["object_storage"]["max_size_gib"])
+    required_gib = int(backup["required_capacity_gib"])
+    if configured_gib < required_gib:
+        raise DeploymentError(
+            f"PostgreSQL backup capacity {configured_gib} GiB is below the retention-aware requirement {required_gib} GiB"
         )
+
+    result = run(
+        [
+            args.nebius,
+            "--profile",
+            args.nebius_profile,
+            "quotas",
+            "quota-allowance",
+            "list",
+            "--parent-id",
+            project_id,
+            "--all",
+            "--format",
+            "json",
+        ],
+        capture=True,
+        env=clean_environment(),
     )
+    document = json.loads(result.stdout)
+    matches = [
+        item
+        for item in document.get("items", [])
+        if item.get("metadata", {}).get("name") == "storage.bucket.size.standard"
+        and item.get("spec", {}).get("region") == region
+    ]
+    if len(matches) != 1:
+        raise DeploymentError(
+            "live capacity preflight requires exactly one standard object-storage usage allowance for the target project and region"
+        )
+    status = matches[0].get("status", {})
+    usage_text = str(status.get("usage", ""))
+    if status.get("unit") != "byte" or not re.fullmatch(r"[0-9]+", usage_text):
+        raise DeploymentError(
+            "live standard object-storage usage is absent or malformed"
+        )
+    usage_bytes = int(usage_text)
+    if status.get("usage_state") not in {"USAGE_STATE_USED", "USAGE_STATE_UNUSED"}:
+        raise DeploymentError("live standard object-storage usage state is unknown")
+    limit_text = status.get("limit")
+    if limit_text is not None and not re.fullmatch(r"[0-9]+", str(limit_text)):
+        raise DeploymentError("live standard object-storage limit is malformed")
+    provider_limit_bytes = int(limit_text) if limit_text is not None else None
+    configured_bytes = configured_gib * 1024**3
+    projected_usage_bytes = usage_bytes + configured_bytes
+    if (
+        provider_limit_bytes is not None
+        and projected_usage_bytes > provider_limit_bytes
+    ):
+        raise DeploymentError(
+            "current Standard object-storage usage plus the configured PostgreSQL backup capacity exceeds the live provider limit"
+        )
+
+    system_pool = contract["stages"]["infrastructure"].get("system_pool")
+    if system_pool is not None and (
+        int(system_pool.get("node_count", 0)) < 3
+        or system_pool.get("three_node_ha_cost_review_acknowledged") is not True
+        or backup.get("capacity_cost_review_acknowledged") is not True
+    ):
+        raise DeploymentError(
+            "the explicit system-pool rollout requires three nodes plus node and backup capacity/cost acknowledgements"
+        )
+
+    return {
+        "schema": "fs2-serve.nebius.ai/sai06-capacity-preflight/v1",
+        "checked_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "project_id": project_id,
+        "region": region,
+        "quota_name": "storage.bucket.size.standard",
+        "quota_unit": "byte",
+        "observed_usage_bytes": usage_bytes,
+        "observed_usage_state": status["usage_state"],
+        "provider_explicit_limit_bytes": provider_limit_bytes,
+        "database_volume_size_gib": int(backup["database_volume_size_gib"]),
+        "estimated_daily_wal_gib": int(backup["estimated_daily_wal_gib"]),
+        "retention_days": int(backup["retention_days"]),
+        "headroom_percent": int(backup["capacity_headroom_percent"]),
+        "required_capacity_gib": required_gib,
+        "configured_bucket_max_gib": configured_gib,
+        "configured_bucket_max_bytes": configured_bytes,
+        "projected_usage_if_fully_allocated_bytes": projected_usage_bytes,
+        "provider_limit_verdict": (
+            "within-explicit-provider-limit"
+            if provider_limit_bytes is not None
+            else "provider-limit-not-exposed-manual-quota-review-required"
+        ),
+        "cost_review_acknowledged": bool(
+            backup.get("capacity_cost_review_acknowledged")
+        ),
+        "system_pool_nodes": (
+            int(system_pool["node_count"]) if system_pool is not None else None
+        ),
+        "status": "live-usage-observed",
+        "limitation": "A usage observation is not a provider reservation; review quota and current pricing again immediately before applying the saved no-replacement plan.",
+    }
 
 
 def require_deployable_images(contract: Mapping[str, Any]) -> None:
@@ -2019,8 +2130,9 @@ def write_downstream_variables(
             raise DeploymentError(
                 "staged scientific batch execution requires the dedicated artifact store"
             )
-        if scientific_batch.get("writes_enabled") is True and not (
-            scientific_batch.get("enabled") is True
+        if (
+            scientific_batch.get("writes_enabled") is True
+            and scientific_batch.get("enabled") is not True
         ):
             raise DeploymentError(
                 "scientific batch Kubernetes writes require the batch controller gate"
@@ -3342,11 +3454,33 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             )
         elif args.command == "preflight":
-            preflight_accelerators(args, contract)
+            capacity = preflight_postgresql_backup_capacity(args, contract)
+            accelerators = preflight_accelerators(args, contract, emit=False)
+            private_json(
+                run_root / "sai06-postgresql-capacity-preflight.json", capacity
+            )
+            print(
+                json.dumps(
+                    {
+                        "status": "compatible",
+                        "postgresql_backup_capacity": capacity,
+                        "accelerators": accelerators,
+                    },
+                    indent=2,
+                )
+            )
         elif args.command == "plan":
+            capacity = preflight_postgresql_backup_capacity(args, contract)
+            private_json(
+                run_root / "sai06-postgresql-capacity-preflight.json", capacity
+            )
             plan_stack(args, run_root, contract, commit)
         elif args.command == "apply":
             require_deployable_images(contract)
+            capacity = preflight_postgresql_backup_capacity(args, contract)
+            private_json(
+                run_root / "sai06-postgresql-capacity-preflight.json", capacity
+            )
             apply_stack(
                 args,
                 run_root,

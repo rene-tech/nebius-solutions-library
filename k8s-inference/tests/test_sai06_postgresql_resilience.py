@@ -5,8 +5,12 @@ import importlib.util
 import json
 from pathlib import Path
 import re
+import subprocess
 import sys
+from types import SimpleNamespace
+from unittest import mock
 
+import pytest
 import yaml
 
 
@@ -113,6 +117,115 @@ def test_postgresql_backup_is_versioned_retained_and_mysterybox_delivered() -> N
     assert 'output "postgresql_backup_object_storage_access"' in outputs
 
 
+def test_postgresql_backup_capacity_is_retention_aware_and_live_checked() -> None:
+    root_variables = _text("variables.tf")
+    root_locals = _text("locals.tf")
+    infrastructure = _text("stages/infrastructure/postgresql_backup.tf")
+    stack = _text("inference-stack")
+
+    assert "estimated_daily_wal_gib" in root_variables
+    assert "capacity_headroom_percent" in root_variables
+    assert "postgresql_backup_required_capacity_gib" in root_locals
+    assert "max_size_gib = optional(number, 6144)" in root_variables
+    assert "var.postgresql_backup.object_storage.max_size_gib >=" in infrastructure
+    assert "local.postgresql_backup_required_capacity_gib" in infrastructure
+    assert "preflight_postgresql_backup_capacity" in stack
+    assert '"storage.bucket.size.standard"' in stack
+    assert '"sai06-postgresql-capacity-preflight.json"' in stack
+
+
+def test_live_capacity_preflight_binds_usage_sizing_and_cost_review() -> None:
+    contract = {
+        "target": {"project_id": "project-test", "region": "eu-north1"},
+        "stages": {
+            "infrastructure": {
+                "system_pool": {
+                    "node_count": 3,
+                    "three_node_ha_cost_review_acknowledged": True,
+                },
+                "postgresql_backup": {
+                    "object_storage": {"max_size_gib": 6144},
+                    "retention_days": 30,
+                    "database_volume_size_gib": 100,
+                    "estimated_daily_wal_gib": 32,
+                    "capacity_headroom_percent": 25,
+                    "required_capacity_gib": 5480,
+                    "capacity_cost_review_acknowledged": True,
+                },
+            }
+        },
+    }
+    payload = {
+        "items": [
+            {
+                "metadata": {"name": "storage.bucket.size.standard"},
+                "spec": {"region": "eu-north1"},
+                "status": {
+                    "usage": "239725098497",
+                    "unit": "byte",
+                    "usage_state": "USAGE_STATE_USED",
+                },
+            }
+        ]
+    }
+
+    with mock.patch.object(
+        STACK,
+        "run",
+        return_value=subprocess.CompletedProcess(
+            ["nebius"], 0, stdout=json.dumps(payload), stderr=""
+        ),
+    ):
+        evidence = STACK.preflight_postgresql_backup_capacity(
+            SimpleNamespace(nebius="nebius", nebius_profile="sandbox"), contract
+        )
+
+    assert evidence["required_capacity_gib"] == 5480
+    assert evidence["configured_bucket_max_gib"] == 6144
+    assert evidence["observed_usage_bytes"] == 239725098497
+    assert evidence["provider_explicit_limit_bytes"] is None
+    assert evidence["projected_usage_if_fully_allocated_bytes"] > evidence[
+        "observed_usage_bytes"
+    ]
+    assert (
+        evidence["provider_limit_verdict"]
+        == "provider-limit-not-exposed-manual-quota-review-required"
+    )
+    assert evidence["system_pool_nodes"] == 3
+    assert evidence["cost_review_acknowledged"] is True
+
+    contract["stages"]["infrastructure"]["system_pool"]["node_count"] = 1
+    with (
+        mock.patch.object(
+            STACK,
+            "run",
+            return_value=subprocess.CompletedProcess(
+                ["nebius"], 0, stdout=json.dumps(payload), stderr=""
+            ),
+        ),
+        pytest.raises(STACK.DeploymentError, match="three nodes"),
+    ):
+        STACK.preflight_postgresql_backup_capacity(
+            SimpleNamespace(nebius="nebius", nebius_profile="sandbox"), contract
+        )
+
+    contract["stages"]["infrastructure"]["system_pool"]["node_count"] = 3
+    payload["items"][0]["status"]["limit"] = "1000000000000"
+    with (
+        mock.patch.object(
+            STACK,
+            "run",
+            return_value=subprocess.CompletedProcess(
+                ["nebius"], 0, stdout=json.dumps(payload), stderr=""
+            ),
+        ),
+        pytest.raises(STACK.DeploymentError, match="exceeds the live provider limit"),
+    ):
+        STACK.preflight_postgresql_backup_capacity(
+            SimpleNamespace(nebius="nebius", nebius_profile="sandbox"), contract
+        )
+
+
 def test_backup_handoff_is_exact_retained_and_secret_free(tmp_path: Path) -> None:
     contract, dynamic = _backup_handoff_inputs(tmp_path)
     STACK.private_directory(tmp_path)
@@ -153,6 +266,7 @@ def test_cnpg_archives_wal_schedules_backups_and_requires_host_spread() -> None:
     assert "barmanObjectStore" in database
     assert 'compression = "gzip"' in database
     assert "maxParallel" in database
+    _assert_hcl_assignment(database, "archive_timeout", '"60s"')
     assert "retentionPolicy" in database
     assert 'kind       = "ScheduledBackup"' in database
     assert 'method               = "barmanObjectStore"' in database
@@ -160,12 +274,25 @@ def test_cnpg_archives_wal_schedules_backups_and_requires_host_spread() -> None:
     assert 'backupOwnerReference = "self"' in database
 
 
-def test_restore_verification_recovers_backup_and_uses_existing_login() -> None:
+def test_restore_verification_replays_wal_between_paired_markers() -> None:
     database = _text("stages/workloads/database.tf")
 
     _assert_hcl_assignment(database, "name", '"fs2-control-db-backup-source"')
     _assert_hcl_assignment(database, "source", '"fs2-control-db-backup-source"')
-    _assert_hcl_assignment(database, "targetImmediate", "true")
+    assert "targetImmediate" not in database
+    _assert_hcl_assignment(database, "targetTime", "var.database_restore_target_time")
+    assert 'resource "kubernetes_job_v1" "database_pitr_marker"' in database
+    assert "fs2_pitr_restore_markers" in database
+    assert "FS2_PITR_TARGET_TIME=" in database
+    assert "-a" in database
+    assert "-b" in database
+    assert "pg_current_wal_insert_lsn()" in database
+    assert "pg_last_wal_replay_lsn()" in database
+    assert "prepare_database_restore_marker_job" in database
+    assert 'resource "kubernetes_job_v1" "database_pitr_marker_cleanup"' in database
+    assert "safe_cleanup" in database
+    assert "safe_prepare" in database
+    assert "DROP TABLE public.fs2_pitr_restore_markers" in database
     assert 'resource "kubernetes_job_v1" "database_restore_verification"' in database
     assert (
         'resource "terraform_data" "postgresql_restore_verification_contract"'
@@ -180,6 +307,42 @@ def test_restore_verification_recovers_backup_and_uses_existing_login() -> None:
     )
     _assert_hcl_assignment(database, "automount_service_account_token", "false")
     assert "to_regclass('public.fs2_schema_migrations')" in database
+
+
+def test_restore_verifier_is_marker_only_and_denied_sensitive_tables() -> None:
+    database = _text("stages/workloads/database.tf")
+
+    assert "GRANT SELECT ON TABLE public.fs2_pitr_restore_markers" in database
+    assert "REVOKE CREATE ON SCHEMA public" in database
+    for table in (
+        "fs2_tokens",
+        "fs2_operations",
+        "fs2_operation_events",
+        "fs2_audit_events",
+        "fs2_request_debug",
+        "fs2_scientific_artifacts",
+        "fs2_scientific_uploads",
+        "fs2_scientific_artifact_events",
+        "fs2_scientific_run_results",
+        "fs2_operator_sessions",
+    ):
+        assert table in database
+    assert "has_any_column_privilege" in database
+    assert "credential|secret|token|session|operation|audit|payload|artifact" in database
+    assert "pg_attribute" in database
+
+
+def test_explicit_system_pool_requires_three_node_cost_acknowledgement() -> None:
+    root_variables = _text("variables.tf")
+    infrastructure_variables = _text("stages/infrastructure/variables.tf")
+    example = _text("terraform.tfvars.example")
+
+    for source in (root_variables, infrastructure_variables):
+        assert "three_node_ha_cost_review_acknowledged" in source
+        assert "node_count >= 3" in source
+    assert re.search(
+        r"three_node_ha_cost_review_acknowledged\s*=\s*true", example
+    )
 
 
 def test_public_envoy_has_two_replicas_required_spread_and_a_pdb() -> None:
@@ -222,3 +385,9 @@ def test_rollout_runbook_preserves_release_gate_and_rollback() -> None:
     assert "firstRecoverabilityPoint" in runbook
     assert "rollback" in runbook.lower()
     assert "restore_verifier" in runbook
+    assert "marker A" in runbook
+    assert "marker B" in runbook
+    assert "marker cleanup" in runbook.lower()
+    assert "no replacement" in runbook.lower()
+    assert "quota" in runbook.lower()
+    assert "cost" in runbook.lower()

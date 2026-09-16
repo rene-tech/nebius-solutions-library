@@ -471,6 +471,16 @@ output "postgresql_backup_storage_contract" {
       current_object_expiration              = "cloudnative-pg-barman-owned"
       lifecycle_rule_ids                     = [for rule in local.postgresql_backup_lifecycle_rules : rule.id]
     }
+    sizing = {
+      database_volume_size_gib          = var.postgresql_backup.database_volume_size_gib
+      daily_base_backup_count           = 1
+      estimated_daily_wal_gib           = var.postgresql_backup.estimated_daily_wal_gib
+      capacity_headroom_percent         = var.postgresql_backup.capacity_headroom_percent
+      required_capacity_gib             = local.postgresql_backup_required_capacity_gib
+      configured_capacity_gib           = var.postgresql_backup.object_storage.max_size_gib
+      live_capacity_preflight_required  = true
+      capacity_cost_review_acknowledged = var.postgresql_backup.capacity_cost_review_acknowledged
+    }
     lifecycle = {
       retention_mode     = "retain"
       destroy_status     = "blocked-retained"

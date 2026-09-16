@@ -91,9 +91,14 @@ variables {
     }
     object_storage = {
       bucket_name  = "fs2-postgresql-backup-test"
-      max_size_gib = 256
+      max_size_gib = 6144
     }
-    retention_days = 30
+    retention_days                    = 30
+    database_volume_size_gib          = 100
+    estimated_daily_wal_gib           = 32
+    capacity_headroom_percent         = 25
+    required_capacity_gib             = 5480
+    capacity_cost_review_acknowledged = true
   }
 }
 
@@ -116,9 +121,9 @@ run "backup_plane_is_versioned_retained_scoped_and_mysterybox_delivered" {
       length(nebius_storage_v1_bucket.postgresql_backup) == 1 &&
       nebius_storage_v1_bucket.postgresql_backup[0].name == "fs2-postgresql-backup-test" &&
       nebius_storage_v1_bucket.postgresql_backup[0].versioning_policy == "ENABLED" &&
-      nebius_storage_v1_bucket.postgresql_backup[0].max_size_bytes == 256 * 1024 * 1024 * 1024
+      nebius_storage_v1_bucket.postgresql_backup[0].max_size_bytes == 6144 * 1024 * 1024 * 1024
     )
-    error_message = "PostgreSQL requires exactly one dedicated, versioned and capacity-bounded backup bucket."
+    error_message = "PostgreSQL requires one dedicated, versioned and retention-aware capacity-bounded backup bucket."
   }
 
   assert {
@@ -143,6 +148,8 @@ run "backup_plane_is_versioned_retained_scoped_and_mysterybox_delivered" {
     condition = (
       terraform_data.postgresql_backup_contract[0].input.retention_mode == "retain" &&
       terraform_data.postgresql_backup_contract[0].input.retention_days == 30 &&
+      terraform_data.postgresql_backup_contract[0].input.required_capacity_gib == 5480 &&
+      terraform_data.postgresql_backup_contract[0].input.max_size_gib == 6144 &&
       join(",", terraform_data.postgresql_backup_contract[0].input.lifecycle_rules) == "abort-incomplete-multipart-uploads,expire-noncurrent-versions-after-recovery-window" &&
       nebius_storage_v1_bucket.postgresql_backup[0].lifecycle_configuration.rules[1].noncurrent_version_expiration.noncurrent_days == 37
     )
@@ -165,9 +172,43 @@ run "disposable_postgresql_backup_is_rejected" {
       }
       object_storage = {
         bucket_name  = "fs2-postgresql-backup-test"
+        max_size_gib = 6144
+      }
+      retention_days                    = 30
+      database_volume_size_gib          = 100
+      estimated_daily_wal_gib           = 32
+      capacity_headroom_percent         = 25
+      required_capacity_gib             = 5480
+      capacity_cost_review_acknowledged = true
+    }
+  }
+
+  expect_failures = [var.postgresql_backup]
+}
+
+run "undersized_postgresql_backup_is_rejected" {
+  command = plan
+
+  plan_options {
+    target = [terraform_data.postgresql_backup_contract]
+  }
+
+  variables {
+    postgresql_backup = {
+      enabled = true
+      lifecycle = {
+        retention_mode = "retain"
+      }
+      object_storage = {
+        bucket_name  = "fs2-postgresql-backup-test"
         max_size_gib = 256
       }
-      retention_days = 30
+      retention_days                    = 30
+      database_volume_size_gib          = 100
+      estimated_daily_wal_gib           = 32
+      capacity_headroom_percent         = 25
+      required_capacity_gib             = 5480
+      capacity_cost_review_acknowledged = true
     }
   }
 

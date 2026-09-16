@@ -207,6 +207,146 @@ variables {
     }
   }
   nvcrio_dockerconfigjson = "{\"auths\":{}}"
+  postgresql_backup = {
+    enabled               = true
+    retention_days        = 30
+    schedule              = "0 0 2 * * *"
+    credential_generation = 1
+    storage_contract = {
+      schema     = "fs2-serve.nebius.ai/postgresql-backup-storage/v1"
+      project_id = "project-modelexpresstest"
+      region     = "us-north1"
+      object_storage = {
+        id                = "storagebucket-postgresqltest"
+        name              = "fs2-modelexpress-test-postgresql-backup"
+        endpoint          = "https://storage.us-north1.nebius.cloud"
+        max_size_gib      = 6144
+        versioning_policy = "ENABLED"
+        storage_class     = "STANDARD"
+        addressing_style  = "path"
+        verify_tls        = true
+      }
+      writer = {
+        service_account_id = "serviceaccount-postgresqltest"
+        group_id           = "group-postgresqltest"
+        role               = "storage.object-editor"
+        paths              = ["postgresql/v1/*"]
+        secret_delivery    = "MYSTERY_BOX"
+      }
+      layout = {
+        root             = "postgresql/v1"
+        destination_path = "s3://fs2-modelexpress-test-postgresql-backup/postgresql/v1"
+        server_name      = "fs2-control-db"
+      }
+      retention = {
+        barman_retention_days                  = 30
+        abort_incomplete_multipart_upload_days = 1
+        noncurrent_version_expiration_days     = 37
+        current_object_expiration              = "cloudnative-pg-barman-owned"
+        lifecycle_rule_ids = [
+          "abort-incomplete-multipart-uploads",
+          "expire-noncurrent-versions-after-recovery-window",
+        ]
+      }
+      sizing = {
+        database_volume_size_gib          = 100
+        daily_base_backup_count           = 1
+        estimated_daily_wal_gib           = 32
+        capacity_headroom_percent         = 25
+        required_capacity_gib             = 5480
+        configured_capacity_gib           = 6144
+        live_capacity_preflight_required  = true
+        capacity_cost_review_acknowledged = true
+      }
+      lifecycle = {
+        retention_mode     = "retain"
+        destroy_status     = "blocked-retained"
+        destroy_completion = "full-stack-destroy-incomplete-postgresql-backup-retained"
+        adoption_status    = "ids-exported-for-explicit-state-adoption"
+        retained_ids       = { bucket = "storagebucket-postgresqltest" }
+      }
+    }
+    object_storage_access = {
+      key_id              = "accesskey-postgresqltest"
+      access_key_id       = "AJE000POSTGRESQLTEST"
+      secret_reference_id = "mysteryboxsecret-postgresqltest"
+      resource_version    = 0
+    }
+  }
+}
+
+run "pitr_marker_contract_binds_exact_completed_backup" {
+  command = plan
+
+  plan_options {
+    target = [terraform_data.postgresql_pitr_marker_contract]
+  }
+
+  variables {
+    prepare_database_restore_marker_job = true
+    database_restore_source_backup_name = "fs2-control-db-20260916020000"
+    database_restore_source_backup_time = "2026-09-16T02:05:00Z"
+    database_restore_marker_id          = "sai06-20260916-a1b2c3d4"
+  }
+
+  assert {
+    condition = (
+      terraform_data.postgresql_pitr_marker_contract[0].input.source_backup_name == "fs2-control-db-20260916020000" &&
+      terraform_data.postgresql_pitr_marker_contract[0].input.source_backup_time == "2026-09-16T02:05:00Z" &&
+      terraform_data.postgresql_pitr_marker_contract[0].input.marker_id == "sai06-20260916-a1b2c3d4"
+    )
+    error_message = "Marker preparation must bind the exact completed Backup identity and non-sensitive marker ID."
+  }
+}
+
+run "pitr_recovery_contract_uses_the_between_marker_target" {
+  command = plan
+
+  plan_options {
+    target = [terraform_data.postgresql_restore_verification_contract]
+  }
+
+  variables {
+    run_database_restore_verification_job = true
+    database_restore_source_backup_name   = "fs2-control-db-20260916020000"
+    database_restore_source_backup_time   = "2026-09-16T02:05:00Z"
+    database_restore_marker_id            = "sai06-20260916-a1b2c3d4"
+    database_restore_target_time          = "2026-09-16T03:00:00.000000Z"
+  }
+
+  assert {
+    condition = (
+      terraform_data.postgresql_restore_verification_contract[0].input.expected_before == "sai06-20260916-a1b2c3d4-a" &&
+      terraform_data.postgresql_restore_verification_contract[0].input.expected_after == "sai06-20260916-a1b2c3d4-b" &&
+      terraform_data.postgresql_restore_verification_contract[0].input.target_time == "2026-09-16T03:00:00.000000Z"
+    )
+    error_message = "Recovery must bind the exact target between marker A and marker B."
+  }
+}
+
+run "pitr_cleanup_contract_is_bound_to_the_verified_marker_pair" {
+  command = plan
+
+  plan_options {
+    target = [terraform_data.postgresql_pitr_marker_cleanup_contract]
+  }
+
+  variables {
+    cleanup_database_restore_marker_job = true
+    database_restore_source_backup_name = "fs2-control-db-20260916020000"
+    database_restore_source_backup_time = "2026-09-16T02:05:00Z"
+    database_restore_marker_id          = "sai06-20260916-a1b2c3d4"
+    database_restore_target_time        = "2026-09-16T03:00:00.000000Z"
+  }
+
+  assert {
+    condition = (
+      terraform_data.postgresql_pitr_marker_cleanup_contract[0].input.marker_id == "sai06-20260916-a1b2c3d4" &&
+      terraform_data.postgresql_pitr_marker_cleanup_contract[0].input.target_time == "2026-09-16T03:00:00.000000Z" &&
+      terraform_data.postgresql_pitr_marker_cleanup_contract[0].input.cleanup_scope == "exact marker A/B pair and marker-only table/grant"
+    )
+    error_message = "Cleanup must remain bound to the exact verified marker pair and target."
+  }
 }
 
 run "the_store_is_absent_from_the_chart_until_it_is_enabled" {

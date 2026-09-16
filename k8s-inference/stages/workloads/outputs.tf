@@ -430,7 +430,9 @@ output "managed_resource_count" {
     (var.run_acceptance_job ? 4 : 0) +
     (var.run_acceptance_job && var.deployment_profile == "full_catalog" ? 1 : 0)
     + (var.postgresql_backup.enabled ? 3 : 0)
+    + (var.prepare_database_restore_marker_job ? 2 : 0)
     + (var.run_database_restore_verification_job ? 3 : 0)
+    + (var.cleanup_database_restore_marker_job ? 2 : 0)
     + (var.model_express.enabled ? 1 : 0)
     + (local.modelexpress_managed ? 2 : 0)
     + (local.modelexpress_nvcr_required ? 1 : 0)
@@ -488,9 +490,20 @@ output "postgresql_backup_status" {
     wal_archiving                = true
     anti_affinity                = "required"
     system_node_minimum          = 3
+    retention_aware_capacity_gib = var.postgresql_backup.storage_contract.sizing.required_capacity_gib
+    configured_capacity_gib      = var.postgresql_backup.storage_contract.sizing.configured_capacity_gib
+    live_capacity_preflight      = "required-before-plan-and-apply"
+    marker_preparation_enabled   = var.prepare_database_restore_marker_job
+    marker_job_name              = var.prepare_database_restore_marker_job ? "fs2-control-db-pitr-marker" : null
     restore_verification_enabled = var.run_database_restore_verification_job
     restore_cluster_name         = var.run_database_restore_verification_job ? "fs2-control-db-restore-verification" : null
     restore_job_name             = var.run_database_restore_verification_job ? "fs2-control-db-restore-verifier" : null
+    restore_source_backup_name   = var.database_restore_source_backup_name
+    restore_source_backup_time   = var.database_restore_source_backup_time
+    restore_marker_id            = var.database_restore_marker_id
+    restore_target_time          = var.database_restore_target_time
+    marker_cleanup_enabled       = var.cleanup_database_restore_marker_job
+    marker_cleanup_job_name      = var.cleanup_database_restore_marker_job ? "fs2-control-db-pitr-marker-cleanup" : null
     credential_secret            = "fs2-data/${local.postgresql_backup_secret_name}"
     credential_delivery          = "MYSTERY_BOX_WRITE_ONLY"
   } : null
