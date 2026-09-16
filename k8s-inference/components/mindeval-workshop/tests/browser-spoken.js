@@ -30,7 +30,7 @@ async page => {
         const event = JSON.parse(payload.toString());
         // Incoming public metadata only. Never capture outgoing auth messages.
         if (event.type !== 'audio.chunk' || !evidence.events.some(e => e.type === 'audio.chunk')) {
-          evidence.events.push({type: event.type, at: Date.now(), role: event.role, stream_id: event.stream_id});
+          evidence.events.push({type: event.type, at: Date.now(), role: event.role, stream_id: event.stream_id, reason: event.reason, code: event.code});
         }
       } catch { /* Not an application JSON frame. */ }
     });
@@ -73,7 +73,13 @@ async page => {
   check(Object.keys(report.run.state.judgment?.judgment || {}).length === 5, 'complete five-axis judgment retained');
   evidence.audio_probe = await page.evaluate(() => window.workshopAudioProbe);
   evidence.segment_count = turns.reduce((sum, turn) => sum + turn.audio_segments.length, 0);
-  evidence.passed = true;
+  evidence.functional_completion_passed = true;
+  evidence.live_playback_errors = evidence.events.filter(event => ['playback.gap', 'playback.error'].includes(event.type));
+  evidence.seamless_live_passed = evidence.live_playback_errors.length === 0;
+  evidence.passed = evidence.seamless_live_passed;
+  if (evidence.passed) evidence.checks.push('no live playback gaps or errors');
+  else evidence.error = 'Live playback was interrupted; functional completion is not seamless audio acceptance';
   await page.evaluate(value => { window.workshopSpokenAcceptance = value; }, evidence);
+  if (!evidence.passed) throw new Error(evidence.error);
   return evidence;
 }

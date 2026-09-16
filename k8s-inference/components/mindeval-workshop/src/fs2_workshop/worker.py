@@ -28,6 +28,36 @@ class RemoteFailure(Exception):
         super().__init__(message)
 
 
+class PlaybackPacer:
+    """Bound producer lead, not memory/queue limits; both waits are cancellable."""
+
+    MAX_LEAD_SECONDS = 0.5
+
+    def __init__(self, clock=None, sleep=None):
+        self.clock = clock or time.monotonic
+        self.sleep = sleep or asyncio.sleep
+        self.end = 0.0
+        self.chunk_wait_seconds = 0.0
+        self.drain_wait_seconds = 0.0
+        self.max_lead_seconds = 0.0
+
+    async def before_chunk(self, duration):
+        now = self.clock()
+        delay = max(0, max(self.end, now) + duration - now - self.MAX_LEAD_SECONDS)
+        if delay:
+            await self.sleep(delay)
+            self.chunk_wait_seconds += delay
+        now = self.clock()
+        self.end = max(self.end, now) + duration
+        self.max_lead_seconds = max(self.max_lead_seconds, self.end - now)
+
+    async def drain(self):
+        delay = max(0, self.end - self.clock())
+        if delay:
+            await self.sleep(delay)
+            self.drain_wait_seconds += delay
+
+
 async def json_call(client, method, url, token, *, body=None, host=None):
     headers = {"Authorization": f"Bearer {token}"}
     if host:
@@ -103,8 +133,9 @@ async def synthesis_events(client, url, headers, text, role, config):
 
 
 class Worker:
-    def __init__(self, store, settings, client):
+    def __init__(self, store, settings, client, *, playback_clock=None, playback_sleep=None):
         self.store, self.settings, self.client = store, settings, client
+        self.playback_clock, self.playback_sleep = playback_clock, playback_sleep
         self.owner = str(uuid4())
         self.stopping = False
 
@@ -354,84 +385,103 @@ class Worker:
         headers = {"Authorization": f"Bearer {token}", "Host": urlsplit(self.settings.public_origin).netloc}
         started, first_audio, pcm, rate, final = time.monotonic(), None, bytearray(), None, None
         sequence, segments, recognized, recordings = 0, [], [], []
-        duration, pacing, playback_end, single_wav = 0.0, 0.0, 0.0, None
+        duration, single_wav, live_offset = 0.0, None, 0
+        pacer = PlaybackPacer(self.playback_clock, self.playback_sleep)
+
+        async def emit_pending(*, flush=False):
+            nonlocal sequence, live_offset
+            if not emit:
+                return
+            # Reuse the existing bounded segment PCM. Coalesce tiny upstream
+            # tails so a time bound also bounds the event burst: at most 47 full
+            # 2 KiB chunks per 0.5 s, even at 96 kHz. First audio stays immediate.
+            while live_offset < len(pcm):
+                remaining = len(pcm) - live_offset
+                if remaining < 2048 and not flush and live_offset:
+                    break
+                piece = pcm[live_offset : live_offset + 2048]
+                await pacer.before_chunk(len(piece) / (rate * 2))
+                await emit(
+                    {
+                        "type": "audio.chunk",
+                        "sequence": sequence,
+                        "encoding": "pcm_s16le",
+                        "sample_rate_hz": rate,
+                        "channels": 1,
+                        "audio_base64": base64.b64encode(piece).decode(),
+                    }
+                )
+                live_offset += len(piece)
+                sequence += 1
+
         single_segment = len(speech_segments(text, 1024)) == 1
         if emit:
             await emit({"type": "audio.start", "voice": config[f"{role}_voice"], "mode": "spoken_experience"})
-        async for event in synthesis_events(
-            self.client,
-            self.settings.platform_url.rstrip("/") + "/v1/voice/synthesize",
-            headers,
-            text,
-            role,
-            config,
-        ):
-            if event["type"] == "audio.chunk":
-                if first_audio is None:
-                    first_audio = time.monotonic() - started
-                current_rate = int(event["sample_rate_hz"])
-                if not 8000 <= current_rate <= 96000 or event.get("encoding", "pcm_s16le") != "pcm_s16le":
-                    raise RemoteFailure("tts_format_invalid", "Speech must be mono PCM16 at a supported sample rate")
-                if event.get("channels", 1) != 1:
-                    raise RemoteFailure("tts_format_invalid", "Speech must be mono PCM16")
-                if rate is not None and rate != current_rate:
-                    raise RemoteFailure("tts_format_changed", "Speech sample rate changed within one utterance")
-                rate = current_rate
-                chunk = base64.b64decode(event["audio_base64"], validate=True)
-                if len(chunk) % 2:
-                    raise RemoteFailure("tts_format_invalid", "PCM16 speech chunk ended within a sample")
-                pcm.extend(chunk)
-                if len(pcm) > 8 * 1024 * 1024 - 44:
-                    raise RemoteFailure("tts_too_large", "One speech segment exceeded 8 MiB; no audio was truncated")
-                if emit:
-                    # 2 KiB PCM becomes 2732 base64 bytes, leaving room for the
-                    # envelope below the 4 KiB notification boundary.
-                    for offset in range(0, len(chunk), 2048):
-                        piece = chunk[offset : offset + 2048]
-                        await emit(
-                            {
-                                "type": "audio.chunk",
-                                "sequence": sequence,
-                                "encoding": "pcm_s16le",
-                                "sample_rate_hz": rate,
-                                "channels": 1,
-                                "audio_base64": base64.b64encode(piece).decode(),
-                            }
+        async with contextlib.aclosing(
+            synthesis_events(
+                self.client,
+                self.settings.platform_url.rstrip("/") + "/v1/voice/synthesize",
+                headers,
+                text,
+                role,
+                config,
+            )
+        ) as events:
+            async for event in events:
+                if event["type"] == "audio.chunk":
+                    if first_audio is None:
+                        first_audio = time.monotonic() - started
+                    current_rate = int(event["sample_rate_hz"])
+                    if not 8000 <= current_rate <= 96000 or event.get("encoding", "pcm_s16le") != "pcm_s16le":
+                        raise RemoteFailure(
+                            "tts_format_invalid", "Speech must be mono PCM16 at a supported sample rate"
                         )
-                        playback_end = max(playback_end, time.monotonic()) + len(piece) / (rate * 2)
-                        sequence += 1
-            elif event["type"] == "audio.done":
-                final = event
-                if not pcm or not rate:
-                    raise RemoteFailure("tts_incomplete", "Speech segment contained no audio")
-                segment_duration = len(pcm) / (rate * 2)
-                audio = wav_bytes(bytes(pcm), rate)
-                pcm = bytearray()
-                chunk = b""
-                result = await self.transcribe(headers, audio, config["language"])
-                segment_metadata = {
-                    "tts": event,
-                    "asr": result,
-                    "voice": config[f"{role}_voice"],
-                    "duration_seconds": segment_duration,
-                    "sample_rate_hz": rate,
-                }
-                if retain:
-                    recordings.append(await retain(event["segment_index"], audio, segment_metadata))
-                if single_segment and not retain:
-                    single_wav = audio
-                del audio
-                recognized.append(result["text"].strip())
-                segments.append(segment_metadata)
-                duration += segment_duration
-                # Pace each bounded segment, not an entire long turn, so browser
-                # buffering and worker memory do not grow with turn length.
-                pause = max(0, playback_end - time.monotonic()) if emit else 0
-                if pause:
-                    pacing += pause
-                    await asyncio.sleep(pause)
-            elif event["type"] in {"audio.error", "error"}:
-                raise RemoteFailure("tts_failed", "Speech generation returned an error")
+                    if event.get("channels", 1) != 1:
+                        raise RemoteFailure("tts_format_invalid", "Speech must be mono PCM16")
+                    if rate is not None and rate != current_rate:
+                        raise RemoteFailure("tts_format_changed", "Speech sample rate changed within one utterance")
+                    rate = current_rate
+                    chunk = base64.b64decode(event["audio_base64"], validate=True)
+                    if len(chunk) % 2:
+                        raise RemoteFailure("tts_format_invalid", "PCM16 speech chunk ended within a sample")
+                    pcm.extend(chunk)
+                    if len(pcm) > 8 * 1024 * 1024 - 44:
+                        raise RemoteFailure(
+                            "tts_too_large", "One speech segment exceeded 8 MiB; no audio was truncated"
+                        )
+                    await emit_pending()
+                elif event["type"] == "audio.done":
+                    final = event
+                    if not pcm or not rate:
+                        raise RemoteFailure("tts_incomplete", "Speech segment contained no audio")
+                    await emit_pending(flush=True)
+                    segment_duration = len(pcm) / (rate * 2)
+                    audio = wav_bytes(bytes(pcm), rate)
+                    pcm = bytearray()
+                    live_offset = 0
+                    chunk = b""
+                    result = await self.transcribe(headers, audio, config["language"])
+                    segment_metadata = {
+                        "tts": event,
+                        "asr": result,
+                        "voice": config[f"{role}_voice"],
+                        "duration_seconds": segment_duration,
+                        "sample_rate_hz": rate,
+                    }
+                    if retain:
+                        recordings.append(await retain(event["segment_index"], audio, segment_metadata))
+                    if single_segment and not retain:
+                        single_wav = audio
+                    del audio
+                    recognized.append(result["text"].strip())
+                    segments.append(segment_metadata)
+                    duration += segment_duration
+                    # Preserve segment drain/ASR semantics; most waiting now occurs
+                    # before publishing PCM, so one initial burst cannot fill the bus.
+                    if emit:
+                        await pacer.drain()
+                elif event["type"] in {"audio.error", "error"}:
+                    raise RemoteFailure("tts_failed", "Speech generation returned an error")
         if not recognized or pcm or not rate or final is None:
             raise RemoteFailure("tts_incomplete", "Speech generation did not deliver complete audio")
         if emit:
@@ -448,7 +498,10 @@ class Worker:
                 "voice": config[f"{role}_voice"],
                 "first_audio_seconds": first_audio,
                 "duration_seconds": duration,
-                "playback_pacing_seconds": pacing,
+                "playback_pacing_seconds": pacer.chunk_wait_seconds + pacer.drain_wait_seconds,
+                "playback_chunk_pacing_seconds": pacer.chunk_wait_seconds,
+                "playback_lead_limit_seconds": pacer.MAX_LEAD_SECONDS,
+                "playback_max_lead_seconds": pacer.max_lead_seconds,
                 "live_chunks": sequence,
                 "experience_mode": "spoken_not_canonical",
                 "roundtrip_seconds": time.monotonic() - started,

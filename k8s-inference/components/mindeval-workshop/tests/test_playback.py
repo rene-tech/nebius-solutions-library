@@ -12,7 +12,182 @@ from test_worker import SETTINGS
 from fs2_workshop.app import create_app
 from fs2_workshop.models import CreateRuns, Intervention
 from fs2_workshop.store import LIVE_PAYLOAD_LIMIT, LiveAudioBus, notify_playback
-from fs2_workshop.worker import RemoteFailure, Worker, speech_segments
+from fs2_workshop.worker import PlaybackPacer, RemoteFailure, Worker, speech_segments
+
+
+@pytest.mark.parametrize("rate", [8000, 22050, 96000])
+async def test_burst_pcm_pacing_bounds_real_bus_and_preserves_first_audio(rate):
+    # Drive the actual notification callback/consumer without network timing.
+    # The first TTS frame alone exceeds the entire unchanged subscriber queue.
+    bus = LiveAudioBus(None)
+    queue = bus.subscribe("burst")
+    pcm = b"\x01\0" * 100000
+    tail = b"\x02\0" * 200
+    received, sent, sleeps, closed = [], [], [], []
+    now, high_water, provider_done = 0.0, 0, False
+
+    async def advance(delay):
+        nonlocal now
+        sleeps.append(delay)
+        now += delay
+        await asyncio.sleep(0)  # Real consumer runs, without wall-clock waiting.
+
+    async def consume():
+        while True:
+            event = await queue.get()
+            received.append(event)
+            if event["type"] == "audio.end":
+                return
+
+    class Burst(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            nonlocal provider_done
+            yield (
+                json.dumps(
+                    {"type": "audio.chunk", "sample_rate_hz": rate, "audio_base64": base64.b64encode(pcm).decode()}
+                )
+                + "\n"
+            ).encode()
+            # Tiny provider frames must not defeat a time-based queue bound.
+            for offset in range(0, len(tail), 2):
+                yield (
+                    json.dumps(
+                        {
+                            "type": "audio.chunk",
+                            "sample_rate_hz": rate,
+                            "audio_base64": base64.b64encode(tail[offset : offset + 2]).decode(),
+                        }
+                    )
+                    + "\n"
+                ).encode()
+            provider_done = True
+            yield b'{"type":"audio.done"}\n'
+
+        async def aclose(self):
+            closed.append(now)
+
+    async def upstream(request):
+        if request.url.path.endswith("synthesize"):
+            return httpx.Response(200, stream=Burst())
+        assert closed  # Release the streaming response before bounded ASR upload.
+        return httpx.Response(200, json={"text": "All audio retained"})
+
+    async def emit(event):
+        nonlocal high_water
+        sent.append((event, now, provider_done))
+        bus.receive(None, None, None, json.dumps({**event, "run_id": "burst"}))
+        high_water = max(high_water, queue.qsize())
+
+    consumer = asyncio.create_task(consume())
+    try:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as client:
+            audio, transcript, metadata = await Worker(
+                None, SETTINGS, client, playback_clock=lambda: now, playback_sleep=advance
+            ).speak_and_listen(
+                "unused", "Burst", "clinician", {"language": "en", "clinician_voice": "Jason"}, emit=emit
+            )
+        await asyncio.wait_for(consumer, 1)
+        assert not any(event["type"] == "playback.gap" for event in received)
+        chunks = [event for event in received if event["type"] == "audio.chunk"]
+        assert [event["sequence"] for event in chunks] == list(range(len(chunks)))
+        assert b"".join(base64.b64decode(event["audio_base64"]) for event in chunks) == pcm + tail
+        assert audio[44:] == pcm + tail and transcript == "All audio retained"
+        first = next(item for item in sent if item[0]["type"] == "audio.chunk")
+        assert first[1:] == (0.0, False)  # Immediate, before provider completion.
+        assert high_water < 64 and queue.maxsize == 64
+        assert 0 < metadata["playback_max_lead_seconds"] <= PlaybackPacer.MAX_LEAD_SECONDS + 1e-9
+        assert metadata["playback_chunk_pacing_seconds"] > 0
+        assert sum(sleeps) == pytest.approx(len(pcm + tail) / (rate * 2))
+        assert all(0 < delay <= PlaybackPacer.MAX_LEAD_SECONDS + 1e-9 for delay in sleeps)
+        assert all(len(json.dumps(event).encode()) < LIVE_PAYLOAD_LIMIT for event in received)
+    finally:
+        consumer.cancel()
+        await asyncio.gather(consumer, return_exceptions=True)
+        bus.unsubscribe("burst", queue)
+
+
+async def test_barge_in_cancels_during_chunk_pacing_and_closes_tts_without_partial_commit(store):
+    row = await create(store, mode="spoken")
+    running = await store.claim("worker", 90, 5)
+    pacing_started, response_closed = asyncio.Event(), asyncio.Event()
+    emitted, uploaded, retained = [], [], []
+
+    async def blocked_sleep(_delay):
+        pacing_started.set()
+        await asyncio.Event().wait()
+
+    class Burst(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            pcm = b"\x01\0" * 100000
+            yield (
+                json.dumps(
+                    {"type": "audio.chunk", "sample_rate_hz": 22050, "audio_base64": base64.b64encode(pcm).decode()}
+                )
+                + "\n"
+            ).encode()
+            yield b'{"type":"audio.done"}\n'
+
+        async def aclose(self):
+            response_closed.set()
+
+    async def upstream(request):
+        if request.url.path.endswith("synthesize"):
+            return httpx.Response(200, stream=Burst())
+        uploaded.append(True)
+        return httpx.Response(200, json={"text": "Must not commit"})
+
+    async def emit(event):
+        emitted.append(event)
+
+    async def retain(*args):
+        retained.append(args)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as client:
+        worker = Worker(store, SETTINGS, client, playback_clock=lambda: 0.0, playback_sleep=blocked_sleep)
+
+        async def speak(_row):
+            await worker.speak_and_listen(
+                "unused",
+                "Burst",
+                "clinician",
+                {"language": "en", "clinician_voice": "Jason"},
+                emit=emit,
+                retain=retain,
+            )
+
+        worker._step = speak
+        task = asyncio.create_task(worker.step(running))
+        try:
+            await asyncio.wait_for(pacing_started.wait(), 1)
+            await store.intervene(row["id"], IDENTITY, Intervention(action="pause"))
+            await asyncio.wait_for(task, 2)
+            assert response_closed.is_set()
+            assert any(event["type"] == "audio.chunk" for event in emitted)
+            assert not any(event["type"] == "audio.end" for event in emitted)
+            assert not uploaded and not retained
+            assert (await store.get(row["id"], IDENTITY))["status"] == "paused"
+            assert await store.pool.fetchval("SELECT count(*) FROM fs2_workshop.audio_segments") == 0
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_pacing_keeps_upstream_error_explicit():
+    emitted = []
+
+    async def upstream(_request):
+        return httpx.Response(200, text='{"type":"audio.error","message":"provider failed"}\n')
+
+    async def emit(event):
+        emitted.append(event)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as client:
+        with pytest.raises(RemoteFailure, match="Speech generation returned an error") as failure:
+            await Worker(None, SETTINGS, client).speak_and_listen(
+                "unused", "words", "clinician", {"language": "en", "clinician_voice": "Jason"}, emit=emit
+            )
+    assert failure.value.code == "tts_failed"
+    assert not any(event["type"] == "audio.end" for event in emitted)
 
 
 async def test_shared_pg_listener_fans_out_only_selected_run_and_bounds_slow_clients(store):
@@ -80,14 +255,16 @@ async def test_pcm_is_notified_before_tts_completion_and_split_below_notify_limi
                 )
             )
             assert (await asyncio.wait_for(queue.get(), 2))["type"] == "audio.start"
-            events = [await asyncio.wait_for(queue.get(), 2) for _ in range(3)]
+            events = [await asyncio.wait_for(queue.get(), 2) for _ in range(2)]
             assert not task.done()
-            assert [event["sequence"] for event in events] == [0, 1, 2]
-            assert b"".join(base64.b64decode(event["audio_base64"]) for event in events) == pcm
+            assert [event["sequence"] for event in events] == [0, 1]
             assert all(len(json.dumps(event).encode()) <= LIVE_PAYLOAD_LIMIT for event in events)
             assert all("never-in-notifications" not in json.dumps(event) for event in events)
             continue_tts.set()
             wav, recognized, metadata = await asyncio.wait_for(task, 2)
+            events.append(await asyncio.wait_for(queue.get(), 2))
+            assert [event["sequence"] for event in events] == [0, 1, 2]
+            assert b"".join(base64.b64decode(event["audio_base64"]) for event in events) == pcm
             assert wav.startswith(b"RIFF") and recognized == "Recognized completed utterance"
             assert metadata["experience_mode"] == "spoken_not_canonical"
             assert (await queue.get())["type"] == "audio.end"

@@ -15,7 +15,7 @@ The DSN must be direct PostgreSQL or session pooling, not transaction PgBouncer.
 The current `fs2-control-db-rw.fs2-data.svc.cluster.local:5432` service points to
 the existing CNPG primary.
 
-PCM16 mono chunks are split into 2 KiB pieces. Their versioned, sequenced JSON
+PCM16 mono chunks are packetized into 2 KiB pieces. Their versioned, sequenced JSON
 envelopes remain below 4 KiB, under PostgreSQL's 8 KiB NOTIFY limit. The browser
 schedules each arriving chunk immediately; it does not await a complete WAV or
 ASR response. Playback needs a browser user gesture, exposed as Enable live audio.
@@ -23,6 +23,25 @@ Creating a spoken run attempts to enable it from that user gesture. A 64-event
 per-listener queue has explicit gap signaling; missing segments stop that live
 stream until the next utterance. Reconnect is explicit/automatic, and joining
 mid-turn plays only newly arriving audio. Completed recordings remain available.
+
+The producer now waits **before each notification** to stay at most 0.5 seconds
+ahead of estimated playback. First audio is immediate; tiny subsequent provider
+fragments are coalesced in the existing segment PCM buffer, and the last fragment
+is flushed at segment completion. This is at most 47 full chunks in the lead
+window even at 96 kHz, below the unchanged 64-event listener queue. No queue,
+memory, GPU or infrastructure limits are increased. This reduces healthy burst
+overflow risk; it cannot guarantee continuity through a slow/disconnected client
+or a database-listener reconnect. Those failures still emit explicit gaps.
+
+Per-chunk waits are cancellable and close the TTS HTTP response on cancellation.
+Pacing intentionally applies backpressure to the upstream streaming reader:
+the request can remain open roughly until audio duration minus the 0.5-second
+lead, potentially increasing TTS model/lease occupancy depending on upstream
+buffering. ASR still begins only after that bounded segment's synthesis response
+has closed, and the remaining playback is drained after ASR/retention. Reports
+separate chunk pacing time, total pacing time, configured lead and maximum
+observed producer lead. Live GPU-occupancy/throughput cost requires deployed
+measurement; the worker cannot prove when a remote model releases its lease.
 
 Pause, Take over, Abort and microphone controls synchronously stop all local
 scheduled and retained-recording playback before awaiting a network request.
@@ -74,6 +93,24 @@ database recovery, long-text preservation, sample-rate mismatch, segmented ASR,
 10 MiB of total audio in bounded uploads, partial artifact fencing and pending
 takeover Resume. Native JavaScript tests verify immediate scheduling, PCM16
 decoding and synchronous queued-source cancellation.
+
+Deterministic virtual-clock tests deliver a 200,000-byte first TTS frame and 200
+tiny tail frames through the actual `LiveAudioBus` callback and consumer at
+8/22.05/96 kHz. They verify lossless ordered delivery, immediate audio before
+provider completion, lead <=0.5 seconds, fewer than 64 queued events, no gaps and
+no wall-clock audio-duration sleeps. A real PostgreSQL intervention cancels a
+worker while its pacing wait is pending, closes the HTTP response and retains no
+partial turn. Existing LISTEN/NOTIFY delivery and explicit provider-error tests
+remain part of the suite.
+
+The r9 spoken run `33c26d98-4ac6-42ef-a3df-0b00f4e32629` completed and retained all
+four turns, but a `playback.gap` during the final patient turn means seamless live
+audio acceptance **failed**. Its original functional `passed:true` receipt remains
+unchanged. The summarized capture omitted `reason`, so queue overflow versus
+listener reconnect cannot be proven retrospectively. The revised browser test
+retains `reason`/`code`, saves functional completion evidence, and requires zero
+`playback.gap` or `playback.error` events for a healthy acceptance pass. Final r10
+under-load verification belongs to the coordinated release owner.
 
 These are not a substitute for final deployed-browser, real speech-model and
 frozen rehearsal acceptance. The parent deployment task owns those checks and
