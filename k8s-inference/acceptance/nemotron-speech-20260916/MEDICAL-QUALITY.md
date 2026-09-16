@@ -39,11 +39,14 @@ offline-weight images were not part of this cohort.
 
 All audio was sent in 20 ms frames at recording speed, not uploaded first and
 replayed as text. First partial is measured from session start, not verified
-speech onset. English's first reference turn starts at 2.533s. German's delayed
-first text needs investigation: a simple -40 dB silence detector finds audio
-after 0.436s, so nine seconds must not be dismissed as nine seconds of silence.
-Neither this detector nor these measurements certify a two-second German
-speech-onset latency target. Finalization and file/live consistency passed.
+speech onset. English's first reference turn starts at 2.533s. The German model
+aligns its first recognized word at8.400s, suggesting about0.615s of additional
+latency. This is **model-derived alignment, not independently verified onset**.
+A -40dB detector finds non-silent audio at0.436s, but cannot distinguish music,
+speech or noise. Therefore neither “nine seconds of model latency” nor “nine
+seconds of silence” is established. A listening/onset check remains necessary
+before claiming a speech-onset latency target. Finalization and file/live
+consistency passed.
 
 ## Quality interpretation
 
@@ -89,5 +92,6 @@ python score_medical.py --assets /home/tux/demo-assets/medical-speech-en-de-2026
 
 Remaining: quality/latency optimization with unchanged comparable cohorts,
 German human review/reference, public file/live tests with real tenant grants,
-mixed load/scaling/preemption/drain, fresh snapshot restore correctness and
-startup benefit. Passing this diagnostic does not complete onboarding.
+mixed load/scaling/preemption/drain and public cold-start benefit. Subsequent
+[fresh snapshot restores](SNAPSHOT-RESTORE.md) passed full-recording equality.
+Passing these private diagnostics does not complete onboarding.

@@ -47,7 +47,8 @@ and [`fresh snapshot restore`](../acceptance/nemotron-speech-20260916/SNAPSHOT-R
 Both 30-minute synthetic files and all five supplied medical recordings were
 processed completely. English approximate mixed-speaker WER is 16–18% for the
 English model and 19–22% for multilingual; medical-term errors remain. German
-has no verified transcript, and its first paced partial took 9.015 s. Do not
+has no verified transcript; its first paced partial took 9.015 s from playback
+start, about0.615s after the model-aligned first word (not verified onset). Do not
 claim clinical accuracy, acceptable live latency or customer readiness.
 
 Initial H100 direct-runtime evidence is retained in
