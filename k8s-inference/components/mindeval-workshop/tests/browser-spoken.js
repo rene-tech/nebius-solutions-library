@@ -57,10 +57,14 @@ async page => {
   await page.waitForFunction(() => /^(completed|failed|aborted)/.test(document.querySelector('#run-status').textContent), null, {timeout: 900000});
   const completed = (await page.locator('#run-status').textContent()).startsWith('completed');
   check(completed, 'spoken evaluation completed after resume');
-  const reportResponse = page.waitForResponse(r => r.url().endsWith(`/runs/${evidence.run_id}/report`));
+  // Chromium handles Content-Disposition attachments as downloads; their
+  // response bodies are not available through Response.json(). Read run state
+  // through the ordinary refresh response and save the download separately.
+  const stateResponse = page.waitForResponse(r => r.url().endsWith(`/runs/${evidence.run_id}`));
+  await page.getByRole('button', {name: 'Refresh', exact: true}).click();
+  const report = {run: await (await stateResponse).json()};
   const download = page.waitForEvent('download');
   await page.getByRole('button', {name: 'Download evidence', exact: true}).click();
-  const report = await (await reportResponse).json();
   await (await download).saveAs(`output/playwright/spoken-${evidence.run_id}.json`);
   const turns = report.run.state.transcript.filter(turn => !turn.seed);
   check(turns.length === 4, 'all four requested spoken turns retained');
