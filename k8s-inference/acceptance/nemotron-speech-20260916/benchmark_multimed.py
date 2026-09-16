@@ -63,13 +63,15 @@ with httpx.Client(base_url="http://127.0.0.1:8000", timeout=120, trust_env=False
 
 def aggregate(rows):
     """All failures remain in the denominator; score an empty hypothesis for them."""
-    counts = {key: sum(row["quality"][key] for row in rows) for key in
+    scored = [row for row in rows if row["quality"] is not None]
+    counts = {key: sum(row["quality"][key] for row in scored) for key in
               ("reference_words", "substitutions", "deletions", "insertions", "correct")}
     errors = counts["substitutions"] + counts["deletions"] + counts["insertions"]
     good = [row for row in rows if row.get("http_status") == 200 and row.get("result", {}).get("text", "").strip()]
     seconds = sum(row.get("result", {}).get("audio_seconds", 0) for row in good)
     processing = sum(row.get("result", {}).get("processing_seconds", 0) for row in good)
-    return {"requests": len(rows), "nonempty_successes": len(good), "failed_or_empty": len(rows)-len(good),
+    return {"requests": len(rows), "scored_references": len(scored), "unscorable_references": len(rows)-len(scored),
+            "nonempty_successes": len(good), "failed_or_empty": len(rows)-len(good),
             **counts, "wer": errors / counts["reference_words"] if counts["reference_words"] else None,
             "decoded_audio_seconds": seconds, "summed_processing_seconds": processing,
             "summed_http_seconds": sum(row["wall_seconds"] for row in rows),
@@ -87,7 +89,7 @@ def main():
     with args.parquet.open("rb") as handle:
         assert hashlib.file_digest(handle, "sha256").hexdigest() == PARQUET_SHA256
     cases = pq.read_table(args.parquet).to_pylist()
-    assert len(cases) == 1091 and all(words(case["text"]) for case in cases)
+    assert len(cases) == 1091
     kubectl = ["kubectl", "--kubeconfig", args.kubeconfig, "--context", args.context]
     pod = json.loads(subprocess.check_output(kubectl + ["-n", "fs2-models", "get", "pod", args.pod, "-o", "json"]))
     assert pod["metadata"]["labels"].get("workload.fs2.nebius/owner") == "nemotron-speech-20260916"
@@ -100,6 +102,8 @@ def main():
         "publisher_license_label": "MIT", "parquet_sha256": PARQUET_SHA256,
         "normalization": "NFKC/lowercase, punctuation ignored, XML tags removed; numbers, compounds, umlauts and hesitations unchanged",
         "corpus_rows": len(cases), "dataset_reported_audio_seconds": sum(case["duration"] for case in cases),
+        "unscorable_reference_indices": [i for i, case in enumerate(cases) if not words(case["text"])],
+        "unscorable_policy": "Run every clip; punctuation-only reference is not valid ground truth for WER and is separately retained",
         "model": MODEL, "pod": args.pod, "pod_uid": pod["metadata"]["uid"],
         "image": next(c["image"] for c in pod["spec"]["containers"] if c["name"] == "speech"),
         "node": pod["spec"]["nodeName"], "source_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
@@ -157,7 +161,8 @@ def main():
                         row.update(reference=case["text"], input_path=case["audio"]["path"],
                                    input_sha256=batch[row["case"]]["payload"]["audio"]["sha256"],
                                    dataset_duration_seconds=case["duration"])
-                        row["quality"] = alignment(case["text"], row.get("result", {}).get("text", ""))
+                        row["quality"] = (alignment(case["text"], row.get("result", {}).get("text", ""))
+                                          if words(case["text"]) else None)
                         rows.append(row)
                         output.write(json.dumps(row, ensure_ascii=False) + "\n")
                         output.flush()

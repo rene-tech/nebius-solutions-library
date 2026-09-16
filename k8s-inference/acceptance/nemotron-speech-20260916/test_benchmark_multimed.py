@@ -24,3 +24,9 @@ def test_failed_requests_are_scored_as_deletions_not_dropped():
 def test_empty_summary_is_not_perfect_accuracy():
     assert aggregate([])["wer"] is None
 
+
+def test_punctuation_only_reference_is_retained_but_not_ground_truth():
+    summary = aggregate([{"http_status": 200, "wall_seconds": 1, "quality": None,
+                          "result": {"text": "ein Wort", "audio_seconds": 6, "processing_seconds": 0.5}}])
+    assert summary["requests"] == 1 and summary["unscorable_references"] == 1
+    assert summary["wer"] is None
