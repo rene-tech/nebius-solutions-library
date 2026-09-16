@@ -2033,6 +2033,20 @@ class DeploymentContractTests(unittest.TestCase):
             {
                 "endpoint": "modelexpress.example.test:8001",
                 "external_network": {
+                    "coordinator_cidrs": ["0.0.0.0/1", "128.0.0.0/1"]
+                },
+            },
+            {
+                "endpoint": "modelexpress.example.test:8001",
+                "external_network": {"coordinator_cidrs": ["2001:db8::/32"]},
+            },
+            {
+                "endpoint": "modelexpress.example.test:8001",
+                "external_network": {"coordinator_cidrs": ["2001:db8::/64"]},
+            },
+            {
+                "endpoint": "modelexpress.example.test:8001",
+                "external_network": {
                     "coordinator_namespace": "Invalid_Namespace",
                     "coordinator_pod_labels": {"app": "modelexpress"},
                 },
@@ -2072,6 +2086,74 @@ class DeploymentContractTests(unittest.TestCase):
                     "Kubernetes namespace/Pod selector or CIDR route",
                     f"{result.stdout}\n{result.stderr}",
                 )
+
+        deployment = json.loads(json.dumps(base))
+        deployment["acceleration"] = {
+            "model_express": {
+                "enabled": True,
+                "deployment_mode": "external",
+                "metadata_backend": "redis",
+                "endpoint": "modelexpress.example.test:8001",
+                "external_network": {
+                    "coordinator_cidrs": [
+                        "192.0.2.10/32",
+                        "2001:db8::10/128",
+                    ]
+                },
+                "models": {"qwen3-8b": {"runtime_adapter": "vllm"}},
+            }
+        }
+        variable_file = self._write_configuration(
+            "modelexpress-external-exact-hosts", deployment
+        )
+        result, _ = self._plan_file(
+            variable_file, "modelexpress-external-exact-hosts"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_scientific_artifact_root_plan_requires_address_family_host_routes(
+        self,
+    ) -> None:
+        base = {
+            "schema_version": 1,
+            "name": "fs2-artifact-route-test",
+            "target": self.catalog_target(),
+            "storage": {
+                "scientific_artifacts": {
+                    "enabled": True,
+                    "egress_cidrs": ["203.0.113.10/32"],
+                }
+            },
+        }
+        for index, cidr in enumerate(("2001:db8::/32", "2001:db8::/64")):
+            with self.subTest(cidr=cidr):
+                deployment = json.loads(json.dumps(base))
+                deployment["storage"]["scientific_artifacts"]["egress_cidrs"] = [
+                    cidr
+                ]
+                variable_file = self._write_configuration(
+                    f"scientific-artifact-invalid-host-{index}", deployment
+                )
+                result, _ = self._plan_file(
+                    variable_file, f"scientific-artifact-invalid-host-{index}"
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(
+                    "exact approved media type",
+                    re.sub(r"\s+", " ", f"{result.stdout}\n{result.stderr}"),
+                )
+
+        deployment = json.loads(json.dumps(base))
+        deployment["storage"]["scientific_artifacts"]["egress_cidrs"] = [
+            "2001:db8::10/128"
+        ]
+        variable_file = self._write_configuration(
+            "scientific-artifact-exact-ipv6-host", deployment
+        )
+        result, _ = self._plan_file(
+            variable_file, "scientific-artifact-exact-ipv6-host"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_fast_start_inputs_propagate_to_the_workload_stage(self) -> None:
         evidence_file = self.run_root / "fast-start-evidence.json"

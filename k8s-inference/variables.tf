@@ -898,7 +898,15 @@ variable "deployment" {
       ) &&
       alltrue([
         for cidr in var.deployment.acceleration.model_express.external_network.coordinator_cidrs :
-        try("${cidrhost(cidr, 0)}/${element(split("/", cidr), 1)}" == cidr, false)
+        can(cidrhost(cidr, 0)) && (
+          (
+            can(regex("^([0-9]{1,3}\\.){3}[0-9]{1,3}/32$", cidr)) &&
+            endswith(cidr, "/32")
+            ) || (
+            strcontains(cidr, ":") &&
+            endswith(cidr, "/128")
+          )
+        )
       ]) &&
       (
         var.deployment.acceleration.model_express.external_network.coordinator_namespace == null ||
@@ -1249,7 +1257,15 @@ variable "deployment" {
         length(var.deployment.storage.scientific_artifacts.egress_cidrs) > 0 &&
         alltrue([
           for cidr in var.deployment.storage.scientific_artifacts.egress_cidrs :
-          can(cidrhost(cidr, 0)) && (endswith(cidr, "/32") || endswith(cidr, "/128"))
+          can(cidrhost(cidr, 0)) && (
+            (
+              can(regex("^([0-9]{1,3}\\.){3}[0-9]{1,3}/32$", cidr)) &&
+              endswith(cidr, "/32")
+              ) || (
+              strcontains(cidr, ":") &&
+              endswith(cidr, "/128")
+            )
+          )
         ]) &&
         floor(var.deployment.storage.scientific_artifacts.credential_generation) == var.deployment.storage.scientific_artifacts.credential_generation &&
         var.deployment.storage.scientific_artifacts.credential_generation >= 1 &&
