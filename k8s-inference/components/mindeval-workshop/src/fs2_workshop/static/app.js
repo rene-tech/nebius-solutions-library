@@ -1,8 +1,91 @@
+import {PCMPlayback} from './playback.js';
+
 const $ = (id) => document.getElementById(id);
-let token = '', selected = null, runs = [], polling = false, mic = null;
+let token = '', selected = null, runs = [], polling = false, mic = null, noticeSequence = 0, refreshErrorSequence = null;
 const audioUrls = new Map();
 const terminal = new Set(['completed', 'failed', 'aborted']);
-function notice(message, error = false) { $('notice').textContent = message; $('notice').classList.toggle('error', error); }
+const playback = new PCMPlayback(), recordings = new Set();
+let playbackSocket = null, playbackRun = null, playbackVersion = 0, playbackBlocked = false, playbackRetry = null, playbackNeedsStart = false;
+const liveStreams = new Map();
+function stopPlayback(message) {
+  playback.stop(); recordings.forEach(player => player.pause());
+  if (message) $('live-status').textContent = message;
+}
+function closePlayback() {
+  clearTimeout(playbackRetry); playbackRetry = null;
+  const socket = playbackSocket; playbackSocket = null; playbackRun = null;
+  socket?.close(); liveStreams.clear(); playbackVersion = 0; playbackBlocked = false; playbackNeedsStart = false;
+  stopPlayback();
+}
+async function enablePlayback() {
+  recordings.forEach(player => player.pause());
+  await playback.enable(); $('live-audio').textContent = 'Mute live audio';
+  $('live-audio').setAttribute('aria-pressed', 'true');
+  $('live-status').textContent = 'Live audio enabled · waiting for the next speech chunk.';
+}
+$('live-audio').onclick = async () => {
+  if (playback.enabled) {
+    stopPlayback('Live audio muted. The evaluation continues; recordings are retained.');
+    playback.enabled = false; $('live-audio').textContent = 'Enable live audio';
+    $('live-audio').setAttribute('aria-pressed', 'false');
+  } else { try { await enablePlayback(); } catch (error) { notice(error.message, true); } }
+};
+$('reconnect-audio').onclick = async () => { closePlayback(); if (selected) await showRun(); };
+function followPlayback(run) {
+  $('live-playback').hidden = run.state.config.mode !== 'spoken';
+  if (run.state.config.mode !== 'spoken') { closePlayback(); return; }
+  if (playbackRun === run.id && playbackSocket) return;
+  closePlayback(); playbackRun = run.id;
+  const socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/v1/workshop/runs/${run.id}/playback`);
+  playbackSocket = socket;
+  socket.onopen = () => socket.send(JSON.stringify({token}));
+  socket.onmessage = ({data}) => {
+    if (playbackSocket !== socket) return;
+    try {
+      const event = JSON.parse(data);
+      if (event.type === 'playback.ready') {
+        playbackVersion = event.version; playbackBlocked = ['paused', 'takeover', 'aborted', 'failed', 'interrupted'].includes(event.status);
+        $('live-status').textContent = playback.enabled ? 'Connected to live audio. Earlier completed turns can be replayed below.' : 'Press Enable live audio. Completed recordings remain available after reconnect.';
+      } else if (event.type === 'playback.control') {
+        if (event.version < playbackVersion) return;
+        stopPlayback(event.barge_in ? 'Barge-in recorded · speech stopped.' : `Playback control: ${event.action}`);
+        liveStreams.clear(); playbackVersion = event.version;
+        playbackBlocked = ['paused', 'takeover', 'aborted', 'failed', 'interrupted'].includes(event.status);
+        refresh();
+      } else if (event.type === 'playback.gap' || event.type === 'playback.error') {
+        stopPlayback('Live connection interrupted. Replay completed recordings below.'); liveStreams.clear(); playbackNeedsStart = true;
+      } else if (event.type.startsWith('audio.')) {
+        if (event.version < playbackVersion || playbackBlocked) return;
+        playbackVersion = event.version;
+        if (event.type === 'audio.stop') {
+          stopPlayback('Speech stopped; the in-flight turn was not committed.'); liveStreams.delete(event.stream_id);
+        } else if (event.type === 'audio.start') {
+          playbackNeedsStart = false;
+          liveStreams.set(event.stream_id, {next: 0, broken: false});
+          $('live-status').textContent = `${event.role} · ${event.voice} · generating speech${playback.enabled ? '' : ' (muted)'}`;
+        } else if (event.type === 'audio.chunk') {
+          if (playbackNeedsStart) return;
+          let stream = liveStreams.get(event.stream_id);
+          if (!stream) { stream = {next: event.sequence, broken: false}; liveStreams.set(event.stream_id, stream); }
+          if (stream.broken) return;
+          if (event.sequence !== stream.next) { stream.broken = true; stopPlayback('A live audio segment was missed. Use the completed recording.'); return; }
+          stream.next++;
+          if (playback.chunk(event)) $('live-status').textContent = `${event.role} · playing live · ${playback.bufferedSeconds.toFixed(1)} s buffered`;
+        } else if (event.type === 'audio.end') {
+          const stream = liveStreams.get(event.stream_id);
+          if (stream && event.chunks !== stream.next) stopPlayback('Incomplete live audio. Use the completed recording.');
+          else $('live-status').textContent = `Speech received · ${playback.bufferedSeconds.toFixed(1)} s buffered · awaiting retained transcript`;
+        }
+      }
+    } catch (error) { stopPlayback(error.message); playback.enabled = false; $('live-audio').textContent = 'Enable live audio'; }
+  };
+  socket.onclose = () => {
+    if (playbackSocket !== socket) return;
+    playbackSocket = null; stopPlayback('Live audio disconnected. Reconnecting; completed recordings are retained.');
+    playbackRetry = setTimeout(() => { const current = runs.find(item => item.id === selected); if (token && current?.id === run.id) followPlayback(current); }, 1500);
+  };
+}
+function notice(message, error = false) { $('notice').textContent = message; $('notice').classList.toggle('error', error); return ++noticeSequence; }
 function node(tag, text, cls) { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; }
 function selectedValues(id) { return [...$(id).selectedOptions].map(o => o.value); }
 async function api(path, options = {}) {
@@ -15,6 +98,7 @@ function fillSelect(id, values, label, initial = false) {
   $(id).replaceChildren(...values.map((v, i) => { const option = node('option', label(v)); option.value = v.id; option.selected = initial && i === 0; return option; }));
 }
 function disconnect() {
+  closePlayback(); playback.close(); recordings.clear();
   stopMic(true); token = ''; selected = null; runs = []; $('key').value = ''; $('workspace').hidden = true; $('login').hidden = false;
   audioUrls.forEach(URL.revokeObjectURL); audioUrls.clear(); notice('Disconnected. Submitted evaluations continue on the server.');
 }
@@ -40,6 +124,7 @@ $('mode').onchange = () => {
 $('create-form').onsubmit = async (event) => {
   event.preventDefault(); const button = event.submitter; button.disabled = true;
   try {
+    if ($('mode').value === 'spoken') { try { await enablePlayback(); } catch (error) { notice(error.message, true); } }
     const profiles = selectedValues('profiles'); if (profiles.length > 20) throw new Error('Choose at most 20 patient profiles.');
     const data = await json('/v1/workshop/runs', {method: 'POST', headers: {'Idempotency-Key': crypto.randomUUID()}, body: JSON.stringify({
       profile_ids: profiles, patient_model: $('patient').value, clinician_models: selectedValues('clinicians'),
@@ -56,7 +141,7 @@ function renderRuns() {
     const button = node('button', undefined, `run-card ${run.id === selected ? 'selected' : ''}`);
     const c = run.state.config;
     button.append(node('strong', c.clinician_model.split('/').pop()), node('span', `${c.profile_id} · ${c.mode} · ${run.status}`), node('small', run.id));
-    button.onclick = async () => { selected = run.id; renderRuns(); await showRun(); }; $('runs').append(button);
+    button.onclick = async () => { if (selected !== run.id) { closePlayback(); await stopMic(true); } selected = run.id; renderRuns(); await showRun(); }; $('runs').append(button);
   }
   const table = node('table'); const head = node('tr'); ['Clinician', 'Profile', 'Mean score / 6', 'Run'].forEach(v => head.append(node('th', v))); table.append(head);
   for (const run of runs.filter(r => r.status === 'completed' && r.state.benchmark_eligible)) {
@@ -67,8 +152,8 @@ function renderRuns() {
 }
 async function refresh() {
   if (polling || !token) return; polling = true;
-  try { runs = (await json('/v1/workshop/runs')).data; renderRuns(); if (selected) await showRun(); }
-  catch (error) { notice(`${error.message}. Existing runs are retained; retry Refresh.`, true); }
+  try { runs = (await json('/v1/workshop/runs')).data; renderRuns(); if (selected) await showRun(); if (refreshErrorSequence === noticeSequence) notice('Connection restored. Retained runs are up to date.'); refreshErrorSequence = null; }
+  catch (error) { refreshErrorSequence = notice(`${error.message}. Existing runs are retained; retry Refresh.`, true); }
   finally { polling = false; }
 }
 $('refresh').onclick = refresh;
@@ -76,6 +161,7 @@ setInterval(refresh, 3000);
 let renderedVersion = '';
 async function showRun() {
   const id = selected; const run = await json(`/v1/workshop/runs/${id}`); if (id !== selected) return;
+  followPlayback(run);
   $('detail').hidden = false; $('run-status').textContent = `${run.status} · ${run.id}`;
   $('run-title').textContent = `${run.state.config.profile_id} · ${run.state.config.clinician_model.split('/').pop()}`;
   const s = run.state; const fingerprint = `${id}:${run.version}`; if (fingerprint === renderedVersion) return; renderedVersion = fingerprint;
@@ -83,15 +169,15 @@ async function showRun() {
   if (s.error) $('run-labels').append(node('p', `${s.error.code}: ${s.error.message}`, 'error'));
   if (run.status === 'interrupted') $('run-labels').append(node('p', 'Execution was interrupted. Inspect the last event, then Resume. An in-flight provider call may have incurred usage.', 'error'));
   document.querySelectorAll('[data-action]').forEach(b => { b.disabled = terminal.has(run.status); });
-  $('transcript').replaceChildren();
+  recordings.forEach(player => player.pause()); recordings.clear(); $('transcript').replaceChildren();
   for (const turn of s.transcript) {
     const article = node('article', undefined, `turn ${turn.role}`);
     article.append(node('strong', `${turn.role} · ${turn.human ? 'human' : turn.seed ? 'initial greeting' : 'model'}`), node('p', turn.content));
     if (turn.generated_content) { const d = node('details'); d.append(node('summary', 'Original generated text'), node('p', turn.generated_content)); article.append(d); }
     if (turn.completion?.telemetry) article.append(node('small', `Queue ${Number(turn.completion.telemetry.queue_ms || 0).toFixed(0)} ms · response ${Number(turn.completion.telemetry.latency_ms || 0).toFixed(0)} ms`));
     if (turn.audio_url) {
-      const play = node('button', 'Load recording', 'secondary');
-      play.onclick = async () => { try { let url = audioUrls.get(turn.audio_url); if (!url) { url = URL.createObjectURL(await (await api(turn.audio_url)).blob()); audioUrls.set(turn.audio_url, url); } const player = node('audio'); player.controls = true; player.src = url; play.replaceWith(player); await player.play(); } catch (error) { notice(error.message, true); } }; article.append(play);
+      const play = node('button', 'Replay recording', 'secondary');
+      play.onclick = async () => { try { stopPlayback('Replaying retained audio; live playback is muted.'); playback.enabled = false; $('live-audio').textContent = 'Enable live audio'; let url = audioUrls.get(turn.audio_url); if (!url) { url = URL.createObjectURL(await (await api(turn.audio_url)).blob()); audioUrls.set(turn.audio_url, url); } const player = node('audio'); player.controls = true; player.src = url; recordings.add(player); play.replaceWith(player); await player.play(); } catch (error) { notice(error.message, true); } }; article.append(play);
     }
     $('transcript').append(article);
   }
@@ -106,8 +192,10 @@ async function showRun() {
 }
 async function command(action, text) {
   if (!selected) return;
-  try { await json(`/v1/workshop/runs/${selected}/interventions`, {method: 'POST', body: JSON.stringify({action, role: $('role').value, ...(text ? {text} : {})})}); $('message').value = ''; await refresh(); notice(`Recorded: ${action}. This run is labeled as intervened.`); }
-  catch (error) { notice(error.message, true); }
+  // Stop locally before awaiting HTTP. Network latency must not delay barge-in.
+  if (action !== 'resume') { stopPlayback('Barge-in · local speech stopped; recording intervention…'); playbackBlocked = true; }
+  try { const updated = await json(`/v1/workshop/runs/${selected}/interventions`, {method: 'POST', body: JSON.stringify({action, role: $('role').value, ...(text ? {text} : {})})}); playbackVersion = updated.version; playbackBlocked = ['paused', 'takeover', 'aborted', 'failed', 'interrupted'].includes(updated.status); $('message').value = ''; await refresh(); notice(`Recorded: ${action}. This run is labeled as intervened.`); }
+  catch (error) { notice(`${error.message}. Local playback is stopped; the server intervention was not confirmed.`, true); }
 }
 document.querySelectorAll('[data-action]').forEach(b => { b.onclick = () => command(b.dataset.action); });
 $('nudge').onclick = () => command('nudge', $('message').value);
@@ -124,6 +212,7 @@ async function stopMic(cancel = false) {
 $('stop-microphone').onclick = () => stopMic();
 $('microphone').onclick = async () => {
   if (!selected || mic) return;
+  stopPlayback('Microphone takeover · local speech stopped.');
   try {
     // The server validates current role ownership again before opening ASR.
     const stream = await navigator.mediaDevices.getUserMedia({audio: {channelCount: 1, echoCancellation: true}});

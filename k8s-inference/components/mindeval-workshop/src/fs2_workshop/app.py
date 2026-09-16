@@ -18,7 +18,7 @@ from prometheus_client import Counter, Gauge, generate_latest
 from websockets.asyncio.client import connect
 
 from .models import CreateRuns, Intervention, Settings
-from .store import Store, public_run
+from .store import LiveAudioBus, Store, public_run
 from .worker import RemoteFailure, Worker, json_call, wav_bytes
 
 REQUESTS = Counter("fs2_workshop_requests_total", "Workshop API requests", ["method", "status"])
@@ -76,6 +76,8 @@ def create_app(settings=None, *, store=None, client=None, start_workers=True):
             store = Store(pool, Path(settings.credential_key_file).read_bytes().strip())
         app.state.store, app.state.client = store, client
         app.state.auth = Identity(client, settings.auth_url)
+        app.state.audio_bus = LiveAudioBus(store.pool)
+        await app.state.audio_bus.start()
         workers = [Worker(store, settings, client) for _ in range(settings.workers)] if start_workers else []
         tasks = [asyncio.create_task(w.loop()) for w in workers]
         try:
@@ -86,6 +88,7 @@ def create_app(settings=None, *, store=None, client=None, start_workers=True):
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
+            await app.state.audio_bus.close()
             if owns_client:
                 await client.aclose()
             if owns_store:
@@ -219,6 +222,69 @@ def create_app(settings=None, *, store=None, client=None, start_workers=True):
         if content is None:
             raise HTTPException(404, "No recording for this turn")
         return Response(bytes(content), media_type="audio/wav")
+
+    @app.websocket("/v1/workshop/runs/{run_id}/playback")
+    async def playback(socket: WebSocket, run_id: UUID):
+        if socket.headers.get("origin") not in {None, settings.public_origin}:
+            await socket.close(code=1008)
+            return
+        await socket.accept()
+        queue, receiving, pending = None, None, None
+        try:
+            first = await asyncio.wait_for(socket.receive_text(), 10)
+            if len(first) > 8192:
+                raise ValueError("Authentication message too large")
+            identity, _ = await app.state.auth.verify("Bearer " + str(json.loads(first).get("token", "")))
+            # Ownership is checked before subscribing: shared database notifications
+            # never carry credentials, and cannot bypass this per-run authorization.
+            await app.state.store.get(run_id, identity)
+            queue = app.state.audio_bus.subscribe(run_id)
+            row = await app.state.store.get(run_id, identity)
+            await socket.send_json(
+                {
+                    "type": "playback.ready",
+                    "run_id": str(run_id),
+                    "version": row["version"],
+                    "status": row["status"],
+                    "mode": row["state"]["config"]["mode"],
+                    "recordings": [
+                        {"turn_index": index, "url": turn["audio_url"]}
+                        for index, turn in enumerate(row["state"]["transcript"])
+                        if turn.get("audio_url")
+                    ],
+                    "replay": "completed_turn_wav_only",
+                }
+            )
+            receiving = asyncio.create_task(socket.receive())
+            pending = asyncio.create_task(queue.get())
+            while True:
+                done, _ = await asyncio.wait({receiving, pending}, timeout=20, return_when=asyncio.FIRST_COMPLETED)
+                if receiving in done:
+                    message = receiving.result()
+                    if message["type"] == "websocket.disconnect":
+                        return
+                    receiving = asyncio.create_task(socket.receive())
+                if pending in done:
+                    await asyncio.wait_for(socket.send_json(pending.result()), 10)
+                    pending = asyncio.create_task(queue.get())
+                if not done:
+                    await socket.send_json({"type": "playback.keepalive"})
+        except WebSocketDisconnect:
+            pass
+        except (HTTPException, KeyError, ValueError, TimeoutError):
+            with contextlib.suppress(RuntimeError, WebSocketDisconnect):
+                await socket.send_json(
+                    {"type": "playback.error", "message": "Playback unavailable; verify run ownership and reconnect"}
+                )
+        finally:
+            if queue is not None:
+                app.state.audio_bus.unsubscribe(run_id, queue)
+            tasks = [task for task in (receiving, pending) if task is not None]
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            with contextlib.suppress(RuntimeError, WebSocketDisconnect):
+                await socket.close()
 
     @app.websocket("/v1/workshop/runs/{run_id}/microphone")
     async def microphone(socket: WebSocket, run_id: UUID):

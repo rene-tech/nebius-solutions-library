@@ -5,15 +5,21 @@ import base64
 import contextlib
 import io
 import json
+import logging
+import re
 import time
 import wave
 from datetime import UTC, datetime
 from urllib.parse import urlsplit
 from uuid import uuid4
 
+import asyncpg
 import httpx
 
 from .models import judge_interaction, messages_for
+
+DATABASE_ERRORS = (asyncpg.PostgresError, asyncpg.InterfaceError, OSError, TimeoutError)
+LOG = logging.getLogger(__name__)
 
 
 class RemoteFailure(Exception):
@@ -47,6 +53,53 @@ def wav_bytes(pcm, rate):
     return target.getvalue()
 
 
+def speech_segments(text, limit=4096):
+    """Preserve every character, preferring sentence and then word boundaries."""
+    segments = []
+    while len(text) > limit:
+        prefix = text[:limit]
+        boundaries = list(re.finditer(r"[.!?][\"')\]]?\s+", prefix))
+        cut = boundaries[-1].end() if boundaries else prefix.rfind(" ") + 1
+        if cut <= 0:
+            cut = limit  # One overlong word still cannot exceed the provider bound.
+        segments.append(text[:cut])
+        text = text[cut:]
+    if text:
+        segments.append(text)
+    return segments
+
+
+async def synthesis_events(client, url, headers, text, role, config):
+    for index, segment in enumerate(speech_segments(text)):
+        complete, has_audio = False, False
+        async with client.stream(
+            "POST",
+            url,
+            headers=headers,
+            json={
+                "model": "magpie-tts-multilingual-357m",
+                "text": segment,
+                "language": config["language"],
+                "voice": config[f"{role}_voice"],
+                "apply_text_normalization": False,
+            },
+        ) as response:
+            if not response.is_success:
+                raise RemoteFailure("tts_http_error", f"Speech generation returned HTTP {response.status_code}")
+            async for line in response.aiter_lines():
+                if not line:
+                    continue
+                event = json.loads(line)
+                if event["type"] == "audio.chunk":
+                    has_audio = True
+                elif event["type"] == "audio.done":
+                    complete = True
+                    event = {**event, "segment_index": index, "input_characters": len(segment)}
+                yield event
+        if not complete or not has_audio:
+            raise RemoteFailure("tts_incomplete", "Speech generation did not deliver complete audio for every segment")
+
+
 class Worker:
     def __init__(self, store, settings, client):
         self.store, self.settings, self.client = store, settings, client
@@ -54,13 +107,37 @@ class Worker:
         self.stopping = False
 
     async def heartbeat(self, run_id):
+        delay = self.settings.lease_seconds / 3
         while True:
-            await asyncio.sleep(self.settings.lease_seconds / 3)
-            await self.store.heartbeat(run_id, self.owner, self.settings.lease_seconds)
+            await asyncio.sleep(delay)
+            try:
+                await self.store.heartbeat(run_id, self.owner, self.settings.lease_seconds)
+                delay = self.settings.lease_seconds / 3
+            except DATABASE_ERRORS:
+                # Retry delay is bounded; expired leases cannot commit a result.
+                LOG.warning("Workshop heartbeat database unavailable; lease fencing remains active")
+                delay = min(5, max(1, delay / 2))
+
+    async def finish(self, *args, **kwargs):
+        try:
+            return await self.store.finish_step(*args, **kwargs)
+        except DATABASE_ERRORS:
+            # Do not replay an uncertain provider call. A surviving/next worker
+            # marks this expired lease interrupted and requires explicit Resume.
+            LOG.warning("Workshop finish database unavailable; leaving lease for explicit interrupted recovery")
+            return False
 
     async def loop(self):
+        failures = 0
         while not self.stopping:
-            row = await self.store.claim(self.owner, self.settings.lease_seconds, self.settings.max_team_workers)
+            try:
+                row = await self.store.claim(self.owner, self.settings.lease_seconds, self.settings.max_team_workers)
+                failures = 0
+            except DATABASE_ERRORS:
+                failures += 1
+                LOG.warning("Workshop claim database unavailable; retrying without replaying active work")
+                await asyncio.sleep(min(5, failures))
+                continue
             if row is None:
                 await asyncio.sleep(0.5)
                 continue
@@ -69,7 +146,7 @@ class Worker:
             try:
                 await self.step(row)
             except asyncio.CancelledError:
-                await self.store.finish_step(
+                await self.finish(
                     row,
                     row["state"],
                     "interrupted",
@@ -77,6 +154,14 @@ class Worker:
                     {"reason": "worker shutdown; resume explicitly"},
                 )
                 raise
+            except DATABASE_ERRORS:
+                await self.finish(
+                    row,
+                    row["state"],
+                    "interrupted",
+                    "run.interrupted",
+                    {"reason": "database interruption; explicit resume prevents hidden replay"},
+                )
             except Exception as exc:
                 code = exc.code if isinstance(exc, RemoteFailure) else "worker_error"
                 message = (
@@ -90,13 +175,44 @@ class Worker:
                     "exception_type": type(exc).__name__,
                     "elapsed_seconds": time.monotonic() - started,
                 }
-                await self.store.finish_step(row, row["state"], "failed", "run.failed", row["state"]["error"])
+                await self.finish(row, row["state"], "failed", "run.failed", row["state"]["error"])
             finally:
                 heartbeat.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await heartbeat
 
     async def step(self, row):
+        if row["state"]["config"]["mode"] != "spoken":
+            return await self._step(row)
+        row = {**row, "playback_stream_id": str(uuid4())}
+        task = asyncio.create_task(self._step(row))
+        try:
+            while not task.done():
+                await asyncio.wait({task}, timeout=0.25)
+                if not task.done() and not await self.store.current(row):
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+                    await self.store.playback(
+                        row,
+                        {
+                            "type": "audio.stop",
+                            "stream_id": row["playback_stream_id"],
+                            "reason": "step_superseded",
+                            "barge_in": True,
+                        },
+                    )
+                    return
+            return await task
+        except BaseException:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            with contextlib.suppress(Exception):
+                await self.store.playback(
+                    row, {"type": "audio.stop", "stream_id": row["playback_stream_id"], "reason": "step_ended"}
+                )
+            raise
+
+    async def _step(self, row):
         state, config = row["state"], row["state"]["config"]
         token = self.store.cipher.decrypt(bytes(row["credential_ciphertext"])).decode()
         root = self.settings.gateway_url.rstrip("/") + "/v1/mindeval"
@@ -200,9 +316,21 @@ class Worker:
         }
         audio_record = None
         if config["mode"] == "spoken":
-            audio, recognized, metadata = await self.speak_and_listen(token, content, role, config)
-            turn["generated_content"], turn["content"], turn["speech"] = content, recognized, metadata
             turn_index = len(state["transcript"])
+
+            async def emit(event):
+                await self.store.playback(
+                    row,
+                    {
+                        **event,
+                        "stream_id": row["playback_stream_id"],
+                        "turn_index": turn_index,
+                        "role": role,
+                    },
+                )
+
+            audio, recognized, metadata = await self.speak_and_listen(token, content, role, config, emit=emit)
+            turn["generated_content"], turn["content"], turn["speech"] = content, recognized, metadata
             audio_record = (turn_index, audio, metadata)
             turn["audio_url"] = f"/v1/workshop/runs/{row['id']}/audio/{turn_index}"
         state["transcript"].append(turn)
@@ -211,45 +339,62 @@ class Worker:
         next_status = "takeover" if state.get("takeover_role") == state["next_role"] else "queued"
         await self.store.finish_step(row, state, next_status, "turn.completed", turn, audio=audio_record)
 
-    async def speak_and_listen(self, token, text, role, config):
+    async def speak_and_listen(self, token, text, role, config, *, emit=None):
         headers = {"Authorization": f"Bearer {token}", "Host": urlsplit(self.settings.public_origin).netloc}
         started, first_audio, pcm, rate, final = time.monotonic(), None, bytearray(), None, None
-        async with self.client.stream(
-            "POST",
+        sequence, segments = 0, []
+        if emit:
+            await emit({"type": "audio.start", "voice": config[f"{role}_voice"], "mode": "spoken_experience"})
+        async for event in synthesis_events(
+            self.client,
             self.settings.platform_url.rstrip("/") + "/v1/voice/synthesize",
-            headers=headers,
-            json={
-                "model": "magpie-tts-multilingual-357m",
-                "text": text,
-                "language": config["language"],
-                "voice": config[f"{role}_voice"],
-                "apply_text_normalization": False,
-            },
-        ) as response:
-            if not response.is_success:
-                raise RemoteFailure("tts_http_error", f"Speech generation returned HTTP {response.status_code}")
-            async for line in response.aiter_lines():
-                if not line:
-                    continue
-                event = json.loads(line)
-                if event["type"] == "audio.chunk":
-                    if first_audio is None:
-                        first_audio = time.monotonic() - started
-                    current_rate = int(event["sample_rate_hz"])
-                    if rate is not None and rate != current_rate:
-                        raise RemoteFailure("tts_format_changed", "Speech sample rate changed within one utterance")
-                    rate = current_rate
-                    pcm.extend(base64.b64decode(event["audio_base64"], validate=True))
-                    if len(pcm) > 8 * 1024 * 1024 - 44:
-                        raise RemoteFailure(
-                            "tts_too_large", "Synthesized utterance exceeded the 8 MiB speech upload limit"
+            headers,
+            text,
+            role,
+            config,
+        ):
+            if event["type"] == "audio.chunk":
+                if first_audio is None:
+                    first_audio = time.monotonic() - started
+                current_rate = int(event["sample_rate_hz"])
+                if not 8000 <= current_rate <= 96000 or event.get("encoding", "pcm_s16le") != "pcm_s16le":
+                    raise RemoteFailure("tts_format_invalid", "Speech must be mono PCM16 at a supported sample rate")
+                if event.get("channels", 1) != 1:
+                    raise RemoteFailure("tts_format_invalid", "Speech must be mono PCM16")
+                if rate is not None and rate != current_rate:
+                    raise RemoteFailure("tts_format_changed", "Speech sample rate changed within one utterance")
+                rate = current_rate
+                chunk = base64.b64decode(event["audio_base64"], validate=True)
+                if len(chunk) % 2:
+                    raise RemoteFailure("tts_format_invalid", "PCM16 speech chunk ended within a sample")
+                pcm.extend(chunk)
+                if len(pcm) > 8 * 1024 * 1024 - 44:
+                    raise RemoteFailure("tts_too_large", "Synthesized utterance exceeded the 8 MiB speech upload limit")
+                if emit:
+                    # 2 KiB PCM becomes 2732 base64 bytes, leaving room for the
+                    # envelope below the 4 KiB notification boundary.
+                    for offset in range(0, len(chunk), 2048):
+                        await emit(
+                            {
+                                "type": "audio.chunk",
+                                "sequence": sequence,
+                                "encoding": "pcm_s16le",
+                                "sample_rate_hz": rate,
+                                "channels": 1,
+                                "audio_base64": base64.b64encode(chunk[offset : offset + 2048]).decode(),
+                            }
                         )
-                elif event["type"] == "audio.done":
-                    final = event
-                elif event["type"] in {"audio.error", "error"}:
-                    raise RemoteFailure("tts_failed", "Speech generation returned an error")
+                        sequence += 1
+            elif event["type"] == "audio.done":
+                final = event
+                segments.append(event)
+            elif event["type"] in {"audio.error", "error"}:
+                raise RemoteFailure("tts_failed", "Speech generation returned an error")
         if not pcm or not rate or final is None:
             raise RemoteFailure("tts_incomplete", "Speech generation did not deliver complete audio")
+        duration = len(pcm) / (rate * 2)
+        if emit:
+            await emit({"type": "audio.end", "chunks": sequence, "duration_seconds": duration})
         audio = wav_bytes(bytes(pcm), rate)
         asr_model = "nemotron-speech-en-0-6b" if config["language"] == "en" else "nemotron-speech-multilingual-0-6b"
         response = await self.client.post(
@@ -281,14 +426,24 @@ class Worker:
         result = response.json()
         if not result.get("text", "").strip():
             raise RemoteFailure("asr_empty", "Speech recognition produced an empty transcript")
+        # Spoken runs progress at listening pace, so successive generated turns
+        # cannot fill an unbounded browser audio queue. Canonical runs are unchanged.
+        pacing = max(0, duration - (time.monotonic() - started - first_audio)) if emit else 0
+        if pacing:
+            await asyncio.sleep(pacing)
         return (
             audio,
             result["text"],
             {
                 "tts": final,
+                "tts_segments": segments,
                 "asr": result,
                 "voice": config[f"{role}_voice"],
                 "first_audio_seconds": first_audio,
+                "duration_seconds": duration,
+                "playback_pacing_seconds": pacing,
+                "live_chunks": sequence,
+                "experience_mode": "spoken_not_canonical",
                 "roundtrip_seconds": time.monotonic() - started,
             },
         )

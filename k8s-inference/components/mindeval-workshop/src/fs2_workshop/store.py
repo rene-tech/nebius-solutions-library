@@ -1,6 +1,7 @@
 """Durable, fair workshop queue shared by API/worker replicas."""
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import os
@@ -11,6 +12,97 @@ import asyncpg
 from cryptography.fernet import Fernet
 
 from .models import TERMINAL, CreateRuns, Intervention
+
+LIVE_CHANNEL = "fs2_workshop_playback"
+LIVE_PAYLOAD_LIMIT = 4096
+
+
+class LiveAudioBus:
+    """One pooled LISTEN connection per API replica, never one per participant.
+
+    Notifications are ephemeral. Slow/disconnected listeners fall back to the
+    existing retained WAV endpoint; audio is never silently replayed as live.
+    Only the authenticated WebSocket route registers participant subscriptions.
+    """
+
+    def __init__(self, pool):
+        self.pool = pool
+        self.subscribers = {}
+        self.ready = asyncio.Event()
+        self.task = None
+
+    def subscribe(self, run_id):
+        queue = asyncio.Queue(maxsize=64)
+        self.subscribers.setdefault(str(run_id), set()).add(queue)
+        return queue
+
+    def unsubscribe(self, run_id, queue):
+        queues = self.subscribers.get(str(run_id), set())
+        queues.discard(queue)
+        if not queues:
+            self.subscribers.pop(str(run_id), None)
+
+    def receive(self, _connection, _pid, _channel, payload):
+        event = json.loads(payload)
+        for queue in self.subscribers.get(event["run_id"], set()):
+            if queue.full():
+                while not queue.empty():
+                    queue.get_nowait()
+                queue.put_nowait({"type": "playback.gap", "run_id": event["run_id"], "reason": "slow_listener"})
+            else:
+                queue.put_nowait(event)
+
+    async def start(self):
+        self.task = asyncio.create_task(self.listen())
+        try:
+            await asyncio.wait_for(self.ready.wait(), 15)
+        except BaseException:
+            await self.close()
+            raise
+
+    async def listen(self):
+        while True:
+            try:
+                async with self.pool.acquire() as connection:
+                    disconnected = asyncio.Event()
+
+                    def callback(_connection, ended=disconnected):
+                        ended.set()
+
+                    connection.add_termination_listener(callback)
+                    try:
+                        await connection.add_listener(LIVE_CHANNEL, self.receive)
+                        self.ready.set()
+                        await disconnected.wait()
+                    finally:
+                        with contextlib.suppress(Exception):
+                            await connection.remove_listener(LIVE_CHANNEL, self.receive)
+                            connection.remove_termination_listener(callback)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                pass
+            for run_id in list(self.subscribers):
+                self.receive(
+                    None,
+                    None,
+                    None,
+                    json.dumps({"type": "playback.gap", "run_id": run_id, "reason": "database_listener_reconnecting"}),
+                )
+            await asyncio.sleep(1)
+
+    async def close(self):
+        if self.task:
+            self.task.cancel()
+            await asyncio.gather(self.task, return_exceptions=True)
+            self.task = None
+
+
+async def notify_playback(connection, run_id, event):
+    payload = json.dumps({**event, "run_id": str(run_id)}, separators=(",", ":"))
+    if len(payload.encode()) > LIVE_PAYLOAD_LIMIT:
+        raise ValueError("live playback notification exceeds 4 KiB")
+    await connection.execute("SELECT pg_notify($1,$2)", LIVE_CHANNEL, payload)
 
 
 def decoded(row):
@@ -162,11 +254,23 @@ class Store:
     async def heartbeat(self, run_id, owner, lease):
         await self.pool.execute(
             "UPDATE fs2_workshop.runs SET lease_until=now()+$3*interval '1 second' "
-            "WHERE id=$1 AND lease_owner=$2 AND status='running'",
+            "WHERE id=$1 AND lease_owner=$2 AND status='running' AND lease_until>now()",
             run_id,
             owner,
             lease,
         )
+
+    async def current(self, row):
+        return await self.pool.fetchval(
+            "SELECT EXISTS(SELECT 1 FROM fs2_workshop.runs WHERE id=$1 AND version=$2 "
+            "AND lease_owner=$3 AND status='running' AND lease_until>now())",
+            row["id"],
+            row["version"],
+            row["lease_owner"],
+        )
+
+    async def playback(self, row, event):
+        await notify_playback(self.pool, row["id"], {"version": row["version"], **event})
 
     async def finish_step(self, row, state: dict, status: str, kind: str, event: dict, *, audio=None):
         async with self.pool.acquire() as c, c.transaction():
@@ -175,7 +279,7 @@ class Store:
                 "lease_owner=NULL,lease_until=NULL,updated_at=now(),"
                 "credential_ciphertext=CASE WHEN $5 IN ('completed','failed','aborted') THEN NULL "
                 "ELSE credential_ciphertext END WHERE id=$1 AND version=$2 AND lease_owner=$3 "
-                "AND status='running' RETURNING id",
+                "AND status='running' AND lease_until>now() RETURNING id",
                 row["id"],
                 row["version"],
                 row["lease_owner"],
@@ -210,6 +314,8 @@ class Store:
             state = decoded(row)["state"]
             status = row["status"]
             data = {**command.model_dump(), "at": (await c.fetchval("SELECT now()")).isoformat()}
+            if state["config"]["mode"] == "spoken" and command.action in {"pause", "takeover", "abort"}:
+                data.update({"barge_in": True, "barge_in_kind": "operator_requested", "playback_action": "stop"})
             if command.action == "pause":
                 status = "paused"
             elif command.action == "abort":
@@ -263,6 +369,17 @@ class Store:
                 status,
             )
             await self.event(c, run_id, "intervention." + command.action, data)
+            await notify_playback(
+                c,
+                run_id,
+                {
+                    "type": "playback.control",
+                    "action": command.action,
+                    "status": status,
+                    "version": updated["version"],
+                    "barge_in": data.get("barge_in", False),
+                },
+            )
             return public_run(decoded(updated))
 
 

@@ -33,7 +33,7 @@ class CreateRuns(Contract):
     mode: Literal["canonical", "spoken"] = "canonical"
     max_turns: int = Field(default=10, ge=2, le=30)
     temperature: float = Field(default=0.7, ge=0, le=2)
-    max_completion_tokens: int = Field(default=1024, ge=64, le=8192)
+    max_completion_tokens: int = Field(default=4096, ge=64, le=8192)
     language: str = Field(default="en", pattern=r"^[a-z]{2}(?:-[A-Z]{2})?$")
     patient_voice: str = Field(default="Sofia", min_length=1, max_length=100)
     clinician_voice: str = Field(default="Jason", min_length=1, max_length=100)
