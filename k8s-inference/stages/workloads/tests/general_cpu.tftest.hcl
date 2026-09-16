@@ -481,7 +481,7 @@ run "an_exact_cpu_runtime_renders_one_static_service_without_a_gpu" {
   variables {
     enabled_model_ids = ["msa-search-pdb70"]
     model_image_overrides = {
-      msa-search-pdb70 = "cr.eu-north1.nebius.cloud/test/msa-search-pdb70@sha256:f6e514e8773142f381971698d10047d834fbc0d09b6c331cd469685bc2b7ce85"
+      msa-search-pdb70 = "cr.eu-north1.nebius.cloud/test/msa-search-pdb70@sha256:8049b921688cd65c1c87cfbae38d3ec02db472e419ba762a6320766529a7663d"
     }
     model_pool_overrides = {}
     model_controller = {
@@ -535,7 +535,7 @@ run "admin_configuration_accepts_the_explicit_zero_accelerator_cpu_tuple" {
   variables {
     enabled_model_ids = ["msa-search-pdb70"]
     model_image_overrides = {
-      msa-search-pdb70 = "cr.eu-north1.nebius.cloud/test/msa-search-pdb70@sha256:f6e514e8773142f381971698d10047d834fbc0d09b6c331cd469685bc2b7ce85"
+      msa-search-pdb70 = "cr.eu-north1.nebius.cloud/test/msa-search-pdb70@sha256:8049b921688cd65c1c87cfbae38d3ec02db472e419ba762a6320766529a7663d"
     }
     model_pool_overrides = {}
     model_controller = {
@@ -612,7 +612,7 @@ run "admin_configuration_accepts_the_explicit_zero_accelerator_cpu_tuple" {
           }
           artifact = {
             image_repository                = "cr.eu-north1.nebius.cloud/test/msa-search-pdb70"
-            image_digest                    = "sha256:f6e514e8773142f381971698d10047d834fbc0d09b6c331cd469685bc2b7ce85"
+            image_digest                    = "sha256:8049b921688cd65c1c87cfbae38d3ec02db472e419ba762a6320766529a7663d"
             model_revision                  = "2a3cb71cb615b8534b3134013e9cbecf003339bc"
             artifact_manifest_sha256        = "2a3cb71cb615b8534b3134013e9cbecf003339bc6f034c4e6545dfdf91229c52"
             acquisition_contract_sha256     = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

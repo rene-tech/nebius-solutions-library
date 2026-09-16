@@ -6,6 +6,12 @@ deployment = {
   schema_version = 1
   name           = "k8s-inference-demo"
 
+  pod_security = {
+    # Exact Kubernetes username that performs the host-agent migration.
+    # The exception admission policy denies every other user.
+    exception_manager_usernames = ["replace-with-rollout-username"]
+  }
+
   target = {
     project_id   = "project-yourprojectid"
     project_name = "my-inference-project"

@@ -5,6 +5,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import httpx
 import pytest
@@ -25,6 +26,7 @@ from fs2_serve.fast_start_policy import FastStartHistoryWindow
 from fs2_serve.model_deployment import (
     FIELD_MANAGER,
     FINALIZER,
+    AppDeploymentIdentity,
     CacheTier,
     DesiredState,
     DrainObservation,
@@ -43,7 +45,6 @@ from fs2_serve.model_deployment_bridge import _normalize_keys
 from fs2_serve.model_deployment_controller import (
     RESOURCE_ENDPOINTS,
     BoundedKeyQueue,
-    ControllerError,
     ControllerHealth,
     Discovery,
     FenceLostError,
@@ -582,6 +583,125 @@ async def test_controller_hands_off_every_bounded_burst_segment_and_aggregates_s
         ("reserved-h100", "burst"),
         ("preemptible-h100", "burst"),
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("pool_layout", ["single", "multi"])
+async def test_app_runtime_profiles_cover_full_controller_lifecycle(pool_layout: str) -> None:
+    """Unbounded App names reuse a finite Terraform-owned network profile."""
+
+    app_id = UUID("12345678-1234-5678-9234-567812345678")
+    public_model_id = f"app-{app_id.hex}"
+    if pool_layout == "single":
+        infrastructure = envelope()
+        pool_refs = ["pool-a"]
+        availability = model_spec().availability.model_copy(update={"min_replicas": 0, "max_replicas": 4})
+    else:
+        infrastructure = reserved_and_preemptible_envelope()
+        pool_refs = ["reserved-h100", "preemptible-h100"]
+        availability = model_spec().availability.model_copy(update={"min_replicas": 1, "max_replicas": 4})
+    spec = model_spec().model_copy(
+        update={
+            "app": AppDeploymentIdentity(
+                app_id=app_id,
+                public_model_id=public_model_id,
+            ),
+            "placement": model_spec().placement.model_copy(update={"pool_refs": pool_refs}),
+            "availability": availability,
+            "exposure": model_spec().exposure.model_copy(
+                update={
+                    "open_ai_aliases": [],
+                    "mcp_tool_name": f"app_{app_id.hex}",
+                }
+            ),
+        }
+    )
+    raw = model_object()
+    raw["metadata"]["name"] = public_model_id
+    raw["spec"] = spec.model_dump(mode="json", by_alias=True)
+    api = FakeApi(raw)
+    subject = ModelDeploymentController(
+        api=api,
+        envelope=infrastructure,
+        renderer=renderer(),
+        namespace="fs2-models",
+        holder_identity="fs2-system/controller:pod-uid",
+        prometheus_server_address="http://prometheus:9090",
+        writes_enabled=True,
+        active_operations=ZeroActiveOperations(),
+        queue_capacity=2,
+        worker_count=1,
+        poll_seconds=0.01,
+    )
+    key = ModelKey(namespace="fs2-models", name=public_model_id)
+
+    assert (await subject.reconcile(key, fence())).action == "finalizer-added"
+    assert (await subject.reconcile(key, fence())).action == "autoscaler-bootstrap"
+    assert (await subject.reconcile(key, fence())).action == "autoscaler-handoff"
+
+    deployments = {item.observed.name: item for item in api.resources.values() if item.observed.kind == "Deployment"}
+    assert not any(item.observed.kind == "NetworkPolicy" for item in api.resources.values())
+    assert all(
+        item.raw["spec"]["template"]["metadata"]["labels"]["fs2-serve.nebius.ai/network-profile"]
+        == "gateway-dns-tcp-8000-v1"
+        for item in deployments.values()
+    )
+    if pool_layout == "single":
+        assert len(deployments) == 1
+        assert next(iter(deployments)).endswith("-burst-pool-a")
+    else:
+        assert len(deployments) == 3
+        assert any("-hot-reserved-h100" in name for name in deployments)
+        assert any("-burst-preemptible-h100" in name for name in deployments)
+        assert any("-burst-reserved-h100" in name for name in deployments)
+
+    original_deployment_digests = {name: item.observed.digest for name, item in deployments.items()}
+    updated = spec.model_copy(
+        update={"policy": spec.policy.model_copy(update={"allowed_principal_ids": ["principal-updated"]})}
+    )
+    api.model["spec"] = updated.model_dump(mode="json", by_alias=True)
+    api.model["metadata"]["generation"] = 2
+    api.model["metadata"]["resourceVersion"] = "2"
+    for _ in range(3):
+        await subject.reconcile(key, fence())
+    updated_deployments = {
+        item.observed.name: item for item in api.resources.values() if item.observed.kind == "Deployment"
+    }
+    assert updated_deployments.keys() == deployments.keys()
+    assert all(
+        updated_deployments[name].observed.digest != original_deployment_digests[name] for name in updated_deployments
+    )
+
+    stale = next(iter(updated_deployments.values())).model_copy(deep=True)
+    stale_name = f"{public_model_id}-hot-retired-pool"
+    stale.observed = stale.observed.model_copy(update={"name": stale_name})
+    stale.raw["metadata"]["name"] = stale_name
+    api.resources[stale.observed.identity] = stale
+    api.calls.clear()
+    result = await subject.reconcile(key, fence())
+    assert result.action.endswith("delete-first")
+    assert ("delete", stale.observed.identity) in api.calls
+    assert stale.observed.identity not in api.resources
+
+    draining = updated.model_copy(
+        update={
+            "lifecycle": LifecycleSpec(desired_state=DesiredState.DRAINING),
+            "availability": updated.availability.model_copy(update={"min_replicas": 0}),
+        }
+    )
+    api.model["spec"] = draining.model_dump(mode="json", by_alias=True)
+    api.model["metadata"]["generation"] = 3
+    api.model["metadata"]["resourceVersion"] = "3"
+    await subject.reconcile(key, fence())
+    await subject.reconcile(key, fence())
+    api.model["metadata"]["deletionTimestamp"] = "2026-09-16T18:00:00Z"
+    for _ in range(8):
+        result = await subject.reconcile(key, fence())
+        if result.action == "finalizer-removed":
+            break
+    assert result.action == "finalizer-removed"
+    assert FINALIZER not in api.model["metadata"]["finalizers"]
+    assert not api.resources
 
 
 @pytest.mark.asyncio
@@ -1592,45 +1712,141 @@ async def test_http_writer_uses_non_forcing_ssa_resource_version_and_read_after_
 
 
 @pytest.mark.asyncio
-async def test_http_writer_rejects_network_policy_before_any_api_request(tmp_path: Path) -> None:
+async def test_http_app_lifecycle_needs_no_networkpolicy_authorization_and_preserves_other_apps(
+    tmp_path: Path,
+) -> None:
+    """Exercise arbitrary App writes through the real HTTP Kubernetes client.
+
+    The simulated apiserver returns RBAC 403 for every NetworkPolicy request.
+    Create, update, owned stale cleanup and finalizer changes must still work,
+    while an existing App with a different ownership label remains untouched.
+    """
+
     token = tmp_path / "token"
     token.write_text("projected-service-account-token")
-    policy_name = "fs2-runtime-app-example-burst-pool-a"
-    manifest = {
-        "apiVersion": "networking.k8s.io/v1",
-        "kind": "NetworkPolicy",
-        "metadata": {
-            "name": policy_name,
-            "namespace": "fs2-models",
-            "ownerReferences": [
-                {
-                    "apiVersion": "inference.fs2.nebius.ai/v1alpha1",
-                    "kind": "ModelDeployment",
-                    "name": "app-example",
-                    "uid": "cr-uid-1",
-                    "controller": True,
-                    "blockOwnerDeletion": True,
-                }
-            ],
-        },
-        "spec": {
-            "podSelector": {"matchLabels": {"fs2-serve.nebius.ai/model-deployment": "app-example"}},
-            "policyTypes": ["Ingress", "Egress"],
-        },
-    }
-    desired = RenderedResource(
-        apiVersion="networking.k8s.io/v1",
-        kind="NetworkPolicy",
-        namespace="fs2-models",
-        name=policy_name,
-        manifest=manifest,
-        digest=canonical_digest(manifest),
+    app_id = UUID("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee")
+    public_model_id = f"app-{app_id.hex}"
+    app_spec = model_spec().model_copy(
+        update={
+            "app": AppDeploymentIdentity(app_id=app_id, public_model_id=public_model_id),
+            "placement": model_spec().placement.model_copy(update={"pool_refs": ["pool-a"]}),
+            "availability": model_spec().availability.model_copy(update={"min_replicas": 0, "max_replicas": 1}),
+            "exposure": model_spec().exposure.model_copy(
+                update={"open_ai_aliases": [], "mcp_tool_name": f"app_{app_id.hex}"}
+            ),
+        }
     )
-    requests: list[httpx.Request] = []
+    owner_uid = "uid-app-arbitrary"
+    context = RenderContext(
+        name=public_model_id,
+        namespace="fs2-models",
+        uid=owner_uid,
+        generation=1,
+        pool=envelope().pools["pool-a"],
+        eligible_pools=[envelope().pools["pool-a"]],
+        prometheus_server_address="http://prometheus:9090",
+    )
+    initial = renderer().render(app_spec, context)
+    assert not any(item.kind == "NetworkPolicy" for item in initial.resources)
+    assert all(
+        item.manifest["spec"]["template"]["metadata"]["labels"]["fs2-serve.nebius.ai/network-profile"]
+        == "gateway-dns-tcp-8000-v1"
+        for item in initial.resources
+        if item.kind == "Deployment"
+    )
+
+    model_path = f"/apis/inference.fs2.nebius.ai/v1alpha1/namespaces/fs2-models/modeldeployments/{public_model_id}"
+    model = model_object()
+    model["metadata"].update({"name": public_model_id, "uid": owner_uid})
+    model["spec"] = app_spec.model_dump(mode="json", by_alias=True)
+    other_path = "/api/v1/namespaces/fs2-models/configmaps/app-existing-config"
+    other_app = {
+        "apiVersion": "v1",
+        "kind": "ConfigMap",
+        "metadata": {
+            "name": "app-existing-config",
+            "namespace": "fs2-models",
+            "uid": "uid-existing",
+            "resourceVersion": "19",
+            "labels": {"fs2-serve.nebius.ai/model-deployment": "app-existing"},
+            "ownerReferences": [{"uid": "uid-existing-app", "controller": True}],
+        },
+        "data": {"preserved": "true"},
+    }
+    resources: dict[str, dict[str, Any]] = {other_path: copy.deepcopy(other_app)}
+    forbidden_network_requests: list[str] = []
+    revision = 20
 
     def handler(request: httpx.Request) -> httpx.Response:
-        requests.append(request)
-        raise AssertionError("NetworkPolicy rejection must occur before Kubernetes I/O")
+        nonlocal revision
+        path = request.url.path
+        if "/networkpolicies" in path:
+            forbidden_network_requests.append(f"{request.method} {path}")
+            return httpx.Response(403, json={"kind": "Status", "reason": "Forbidden"})
+        if path.endswith("/leases/fs2-model-controller"):
+            current_fence = fence()
+            return httpx.Response(
+                200,
+                json={
+                    "metadata": {
+                        "name": current_fence.name,
+                        "namespace": current_fence.namespace,
+                        "uid": "lease-uid",
+                        "resourceVersion": current_fence.resource_version,
+                        "annotations": {"inference.fs2.nebius.ai/fence-token": current_fence.token},
+                    },
+                    "spec": {
+                        "holderIdentity": current_fence.holder_identity,
+                        "leaseDurationSeconds": current_fence.duration_seconds,
+                        "renewTime": current_fence.renew_time.isoformat(),
+                    },
+                },
+            )
+        if path == model_path:
+            if request.method == "GET":
+                return httpx.Response(200, json=model)
+            if request.method == "PATCH":
+                patch = json.loads(request.content)
+                if "finalizers" in patch.get("metadata", {}):
+                    model["metadata"]["finalizers"] = patch["metadata"]["finalizers"]
+                revision += 1
+                model["metadata"]["resourceVersion"] = str(revision)
+                return httpx.Response(200, json=model)
+        if request.method == "GET" and "labelSelector" in request.url.params:
+            selector = request.url.params["labelSelector"]
+            key, value = selector.split("=", 1)
+            items = [
+                copy.deepcopy(item)
+                for item_path, item in resources.items()
+                if item_path.startswith(path + "/") and item.get("metadata", {}).get("labels", {}).get(key) == value
+            ]
+            return httpx.Response(200, json={"items": items})
+        if request.method == "GET" and path.endswith("/pods"):
+            return httpx.Response(200, json={"items": []})
+        if request.method == "GET":
+            body = resources.get(path)
+            return (
+                httpx.Response(200, json=body)
+                if body is not None
+                else httpx.Response(404, json={"kind": "Status", "reason": "NotFound"})
+            )
+        if request.method == "PATCH":
+            body = json.loads(request.content)
+            revision += 1
+            metadata = body.setdefault("metadata", {})
+            metadata.update(
+                {
+                    "uid": resources.get(path, {}).get("metadata", {}).get("uid", f"uid-{revision}"),
+                    "resourceVersion": str(revision),
+                    "managedFields": [{"manager": FIELD_MANAGER}],
+                }
+            )
+            resources[path] = copy.deepcopy(body)
+            return httpx.Response(200, json=body)
+        if request.method == "DELETE":
+            resources.pop(path, None)
+            return httpx.Response(200, json={"kind": "Status", "status": "Success"})
+        return httpx.Response(405)
 
     http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.invalid")
     client = HttpKubernetesModelClient(
@@ -1640,9 +1856,42 @@ async def test_http_writer_rejects_network_policy_before_any_api_request(tmp_pat
         writes_enabled=True,
         client=http,
     )
-    with pytest.raises(ControllerError, match="outside the writer allowlist"):
-        await client.apply_resource(desired, owner_uid="cr-uid-1", fence=fence())
-    assert requests == []
+    key = ModelKey(namespace="fs2-models", name=public_model_id)
+    empty = await client.discover(key=key, owner_uid=owner_uid, render=initial)
+    assert not empty.resources
+    for resource in initial.resources:
+        await client.apply_resource(resource, owner_uid=owner_uid, fence=fence())
+
+    updated_spec = app_spec.model_copy(
+        update={"policy": app_spec.policy.model_copy(update={"allowed_principal_ids": ["principal-updated"]})}
+    )
+    updated = renderer().render(updated_spec, context.model_copy(update={"generation": 2}))
+    for resource in updated.resources:
+        await client.apply_resource(resource, owner_uid=owner_uid, fence=fence())
+
+    stale_path = f"/api/v1/namespaces/fs2-models/configmaps/{public_model_id}-stale"
+    resources[stale_path] = {
+        "apiVersion": "v1",
+        "kind": "ConfigMap",
+        "metadata": {
+            "name": f"{public_model_id}-stale",
+            "namespace": "fs2-models",
+            "uid": "uid-stale",
+            "resourceVersion": "88",
+            "labels": {"fs2-serve.nebius.ai/model-deployment": public_model_id},
+            "ownerReferences": [{"uid": owner_uid, "controller": True}],
+        },
+    }
+    discovered = await client.discover(key=key, owner_uid=owner_uid, render=updated)
+    stale = next(item for item in discovered.resources if item.observed.name.endswith("-stale"))
+    assert await client.delete_resource(stale.observed.identity, owner_uid=owner_uid, fence=fence())
+    await client.set_finalizer(key, owner_uid=owner_uid, present=True, fence=fence())
+    await client.set_finalizer(key, owner_uid=owner_uid, present=False, fence=fence())
+
+    assert forbidden_network_requests == []
+    assert resources[other_path] == other_app
+    assert model["metadata"]["finalizers"] == []
+    assert stale_path not in resources
     await http.aclose()
 
 

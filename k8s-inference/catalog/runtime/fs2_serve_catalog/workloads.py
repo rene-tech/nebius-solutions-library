@@ -28,6 +28,12 @@ REPLICA_FIELD_MANAGER = "fs2-model-activation-controller"
 REPLICA_OWNERSHIP_SCHEMA = "fs2-serve.nebius.ai/replica-field-ownership/v1"
 MOUNTED_CONTENT_MODELS = frozenset({"qwen3-8b", "glm-5-2-fp8", "nv-reason-cxr-3b"})
 RUNTIME_NETWORK_POLICY_SCHEMA = "fs2-serve.nebius.ai/runtime-startup-network-policy/v1"
+RUNTIME_NETWORK_PROFILE_LABEL = "fs2-serve.nebius.ai/network-profile"
+
+
+def runtime_network_profile(record: ModelRecord, *, service_port: int = 8000) -> str:
+    mode = "zero-egress" if record.model_id in MOUNTED_CONTENT_MODELS else "dns"
+    return f"gateway-{mode}-tcp-{service_port}-v1"
 
 
 def replica_field_ownership(api_version: str, kind: str) -> dict[str, Any]:
@@ -319,7 +325,9 @@ def _metadata(record: ModelRecord, capability: BackendCapability) -> dict[str, A
             "app.kubernetes.io/name": record.model_id,
             "app.kubernetes.io/part-of": "fs2-serve",
             "app.kubernetes.io/managed-by": "fs2-serve-models",
+            "app.kubernetes.io/component": "model-runtime",
             "fs2-serve.nebius.ai/model-id": record.model_id,
+            RUNTIME_NETWORK_PROFILE_LABEL: runtime_network_profile(record),
         },
         "annotations": {
             "fs2-serve.nebius.ai/model-digest": record.digest,
@@ -390,17 +398,48 @@ def _metadata(record: ModelRecord, capability: BackendCapability) -> dict[str, A
 def render_runtime_network_policy(
     record: ModelRecord, *, namespace: str
 ) -> dict[str, Any]:
-    """Render the exact deny-all egress policy required for mounted-content startup."""
+    """Render the runtime boundary for one exact catalog model."""
 
-    if record.model_id not in MOUNTED_CONTENT_MODELS:
-        raise CatalogError("runtime deny-egress policy is reviewed only for mounted-content models")
     if namespace != "fs2-models":
         raise CatalogError("model runtime NetworkPolicy is owned only in fs2-models")
+    mounted_content = record.model_id in MOUNTED_CONTENT_MODELS
+    egress = []
+    if not mounted_content:
+        egress = [
+            {
+                "to": [
+                    {
+                        "namespaceSelector": {
+                            "matchLabels": {
+                                "kubernetes.io/metadata.name": "kube-system"
+                            }
+                        },
+                        "podSelector": {
+                            "matchExpressions": [
+                                {
+                                    "key": "k8s-app",
+                                    "operator": "In",
+                                    "values": ["coredns", "kube-dns"],
+                                }
+                            ]
+                        },
+                    }
+                ],
+                "ports": [
+                    {"protocol": "UDP", "port": 53},
+                    {"protocol": "TCP", "port": 53},
+                ],
+            }
+        ]
     return {
         "apiVersion": "networking.k8s.io/v1",
         "kind": "NetworkPolicy",
         "metadata": {
-            "name": f"{record.model_id}-runtime-deny-egress",
+            "name": (
+                f"{record.model_id}-runtime-deny-egress"
+                if mounted_content
+                else f"{record.model_id}-runtime"
+            ),
             "namespace": namespace,
             "labels": {
                 "app.kubernetes.io/part-of": "fs2-serve",
@@ -414,10 +453,34 @@ def render_runtime_network_policy(
         },
         "spec": {
             "podSelector": {
-                "matchLabels": {"fs2-serve.nebius.ai/model-id": record.model_id}
+                "matchLabels": {
+                    "app.kubernetes.io/component": "model-runtime",
+                    RUNTIME_NETWORK_PROFILE_LABEL: runtime_network_profile(record),
+                }
             },
-            "policyTypes": ["Egress"],
-            "egress": [],
+            "policyTypes": ["Ingress", "Egress"],
+            "ingress": [
+                {
+                    "from": [
+                        {
+                            "namespaceSelector": {
+                                "matchLabels": {
+                                    "kubernetes.io/metadata.name": "fs2-system"
+                                }
+                            },
+                            "podSelector": {
+                                "matchLabels": {
+                                    "app.kubernetes.io/name": "fs2-serve-control-plane",
+                                    "app.kubernetes.io/instance": "fs2-serve-control-plane",
+                                    "app.kubernetes.io/component": "gateway",
+                                }
+                            },
+                        }
+                    ],
+                    "ports": [{"protocol": "TCP", "port": 8000}],
+                }
+            ],
+            "egress": egress,
         },
     }
 
@@ -481,9 +544,11 @@ def render_native_http_workload(
             "ports": [{"name": "http", "port": 8000, "targetPort": "http"}],
         },
     }
-    items = [deployment, service]
-    if record.model_id in MOUNTED_CONTENT_MODELS:
-        items.append(render_runtime_network_policy(record, namespace=namespace))
+    items = [
+        deployment,
+        service,
+        render_runtime_network_policy(record, namespace=namespace),
+    ]
     return {"apiVersion": "v1", "kind": "List", "items": items}
 
 
@@ -509,6 +574,10 @@ def render_kserve_standard_workload(
         raise CatalogError("KServe custom predictor is not the NIM Operator adapter")
     if value["interface"]["execution_mode"] != "http":
         raise CatalogError("KServe HTTP adapter cannot serve a batch-only model")
+    raise CatalogError(
+        "KServe operator child Pod NetworkPolicy selector is unqualified; "
+        "use the native adapter until an exact propagated-label contract is proven"
+    )
     metadata = _metadata(record, backend_capability)
     annotations = dict(metadata["annotations"])
     annotations["serving.kserve.io/deploymentMode"] = "Standard"
@@ -560,6 +629,10 @@ def render_nim_operator_cache(
         raise CatalogError("NIMCache adapter requires an exact NIM record and owner")
     if llm_engine not in {None, "vllm", "sglang"}:
         raise CatalogError("NIMCache LLM engine is outside the Operator contract")
+    raise CatalogError(
+        "NIM Operator child Pod NetworkPolicy selector is unqualified; "
+        "the adapter remains disabled until exact propagated labels are proven"
+    )
     prerequisites.require([NGC_PULL_SECRET, NGC_RUNTIME_SECRET, SHARED_CACHE_PVC])
     pull_secret = prerequisites.resource(NGC_PULL_SECRET)
     runtime_secret = prerequisites.resource(NGC_RUNTIME_SECRET)
@@ -628,6 +701,10 @@ def render_nim_operator_service(
         raise CatalogError("NIMService cache identity differs from the exact model record")
     if not isinstance(profile, str) or len(profile) > 256:
         raise CatalogError("NIM profile must be bounded text")
+    raise CatalogError(
+        "NIM Operator child Pod NetworkPolicy selector is unqualified; "
+        "the adapter remains disabled until exact propagated labels are proven"
+    )
     prerequisites.require([NGC_PULL_SECRET, NGC_RUNTIME_SECRET, SHARED_CACHE_PVC])
     pull_secret = prerequisites.resource(NGC_PULL_SECRET)
     runtime_secret = prerequisites.resource(NGC_RUNTIME_SECRET)

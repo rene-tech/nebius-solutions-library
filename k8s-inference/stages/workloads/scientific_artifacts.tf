@@ -716,6 +716,7 @@ resource "terraform_data" "scientific_artifacts_contract" {
     precondition {
       condition = (
         !local.scientific_artifacts_enabled ||
+        !var.reference_data.enabled ||
         var.scientific_artifacts.storage_contract.object_storage.name != try(var.reference_data.storage_contract.object_storage.name, null)
       )
       error_message = "the scientific result store must be a bucket distinct from the reference-data plane."

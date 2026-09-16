@@ -1355,7 +1355,10 @@ variable "deployment" {
         length(var.deployment.storage.scientific_artifacts.egress_cidrs) > 0 &&
         alltrue([
           for cidr in var.deployment.storage.scientific_artifacts.egress_cidrs :
-          can(cidrhost(cidr, 0)) && (endswith(cidr, "/32") || endswith(cidr, "/128"))
+          can(cidrhost(cidr, 0)) && (
+            (can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+/32$", cidr)) && endswith(cidr, "/32")) ||
+            (strcontains(cidr, ":") && endswith(cidr, "/128"))
+          )
         ]) &&
         floor(var.deployment.storage.scientific_artifacts.credential_generation) == var.deployment.storage.scientific_artifacts.credential_generation &&
         var.deployment.storage.scientific_artifacts.credential_generation >= 1 &&

@@ -75,6 +75,7 @@ FIELD_MANAGER = "fs2-model-controller"
 SPEC_DIGEST_ANNOTATION = "fs2-serve.nebius.ai/spec-digest"
 MODEL_DEPLOYMENT_LABEL = "fs2-serve.nebius.ai/model-deployment"
 MODEL_ID_LABEL = "fs2-serve.nebius.ai/model-id"
+NETWORK_PROFILE_LABEL = "fs2-serve.nebius.ai/network-profile"
 KUEUE_QUEUE_LABEL = "kueue.x-k8s.io/queue-name"
 KUEUE_PRIORITY_LABEL = "kueue.x-k8s.io/priority-class"
 EFFECTIVE_HOT_FLOOR_ANNOTATION = "fs2-serve.nebius.ai/effective-hot-floor"
@@ -723,9 +724,15 @@ class ModelExpressQualification(KubernetesModel):
         elif self.coordinator_namespace is not None or self.coordinator_pod_labels or not self.coordinator_cidrs:
             raise ValueError("ModelExpress IP-block coordinator route is incomplete")
         try:
-            normalized_cidrs = [str(ip_network(cidr, strict=True)) for cidr in self.coordinator_cidrs]
+            networks = [ip_network(cidr, strict=True) for cidr in self.coordinator_cidrs]
         except ValueError:
             raise ValueError("ModelExpress coordinator CIDR must be a canonical network") from None
+        if any(
+            (network.version == 4 and network.prefixlen != 32) or (network.version == 6 and network.prefixlen != 128)
+            for network in networks
+        ):
+            raise ValueError("ModelExpress coordinator CIDRs must be exact IPv4 /32 or IPv6 /128 hosts")
+        normalized_cidrs = [str(network) for network in networks]
         if len(normalized_cidrs) != len(set(normalized_cidrs)):
             raise ValueError("ModelExpress coordinator CIDRs must be unique")
         return self
@@ -1798,6 +1805,7 @@ class LegacyTemplateBundle(KubernetesModel):
     runtime_container_name: str = Field(min_length=1, max_length=253, pattern=DNS_LABEL_PATTERN)
     primary_service_name: str = Field(min_length=1, max_length=63, pattern=DNS_LABEL_PATTERN)
     primary_service_port: int = Field(ge=1, le=65535)
+    runtime_egress_mode: Literal["dns", "none"] = "dns"
     resources: list[dict[str, Any]] = Field(min_length=1, max_length=255)
 
 
@@ -1878,6 +1886,40 @@ def _modelexpress_transfer_identity(
     digest_hex = digest_bytes.hex()
     label = "mx-" + base64.b32encode(digest_bytes).decode("ascii").rstrip("=").lower()
     return f"fs2:sha256:{digest_hex}", label
+
+
+def _runtime_network_profile(
+    *,
+    service_port: int,
+    egress_mode: Literal["dns", "none"],
+    qualification: ModelExpressQualification | None,
+    pool: PoolEnvelope,
+    accelerators_per_replica: int,
+) -> str:
+    """Return one finite Terraform-owned runtime network-policy profile.
+
+    Ordinary and mounted-content profiles are bounded by the serving port.
+    ModelExpress profiles bind the exact reviewed qualification, accelerator,
+    backend, service port and device count.  Apps may create unbounded resource
+    names, but can only select one of these finite, non-permissive profiles.
+    """
+
+    if qualification is None:
+        mode = "dns" if egress_mode == "dns" else "zero-egress"
+        return f"gateway-{mode}-tcp-{service_port}-v1"
+    transport = qualification.pool_transports[pool.pool_id]
+    digest = hashlib.sha256(
+        canonical_json(
+            {
+                "acceleratorClass": pool.accelerator_class,
+                "acceleratorsPerReplica": accelerators_per_replica,
+                "configDigest": qualification.config_digest,
+                "nixlBackend": transport.nixl_backend,
+                "servicePort": service_port,
+            }
+        )
+    ).hexdigest()
+    return f"mx-{digest[:60]}"
 
 
 def _metric_name(model_ref: str) -> str:
@@ -2665,6 +2707,15 @@ class LegacyManifestRenderer:
                     **pod_metadata.get("labels", {}),
                     MODEL_EXPRESS_TRANSFER_GROUP_LABEL: transfer_group,
                 }
+            network_profile = _runtime_network_profile(
+                service_port=bundle.primary_service_port,
+                egress_mode=bundle.runtime_egress_mode,
+                qualification=context.model_express,
+                pool=segment.pool,
+                accelerators_per_replica=spec.placement.accelerators_per_replica,
+            )
+            workload_metadata["labels"][NETWORK_PROFILE_LABEL] = network_profile
+            pod_metadata["labels"][NETWORK_PROFILE_LABEL] = network_profile
             if mechanism is not None and mechanism in DECLARED_MECHANISMS:
                 declaration = context.mechanism_declaration(mechanism)
                 if declaration is None:

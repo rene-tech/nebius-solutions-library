@@ -222,6 +222,36 @@ run "disabled_academic_config_is_projected_as_disabled" {
   }
 }
 
+run "model_namespace_is_default_denied_after_finite_runtime_profiles" {
+  command = plan
+
+  plan_options {
+    target = [
+      kubernetes_network_policy_v1.model_runtime_base_profile,
+      kubernetes_network_policy_v1.model_namespace_default_deny,
+    ]
+  }
+
+  assert {
+    condition = (
+      kubernetes_network_policy_v1.model_namespace_default_deny.metadata[0].name == "default-deny" &&
+      kubernetes_network_policy_v1.model_namespace_default_deny.metadata[0].namespace == "fs2-models" &&
+      toset(kubernetes_network_policy_v1.model_namespace_default_deny.spec[0].policy_types) == toset(["Ingress", "Egress"])
+    )
+    error_message = "fs2-models must have one Terraform-owned ingress-and-egress default deny."
+  }
+
+  assert {
+    condition = (
+      kubernetes_network_policy_v1.model_runtime_base_profile["gateway-zero-egress-tcp-8000-v1"].metadata[0].namespace == "fs2-models" &&
+      kubernetes_network_policy_v1.model_runtime_base_profile["gateway-zero-egress-tcp-8000-v1"].spec[0].pod_selector[0].match_labels["fs2-serve.nebius.ai/network-profile"] == "gateway-zero-egress-tcp-8000-v1" &&
+      toset(kubernetes_network_policy_v1.model_runtime_base_profile["gateway-zero-egress-tcp-8000-v1"].spec[0].policy_types) == toset(["Ingress", "Egress"]) &&
+      length(kubernetes_network_policy_v1.model_runtime_base_profile["gateway-zero-egress-tcp-8000-v1"].spec[0].egress) == 0
+    )
+    error_message = "Mounted-content runtimes need a finite Terraform profile with gateway ingress and true zero egress."
+  }
+}
+
 run "enabled_academic_config_reaches_the_chart" {
   command = plan
 
@@ -257,6 +287,10 @@ run "enabled_academic_config_reaches_the_chart" {
         general_shared_cache    = false
         deny_egress_on_validate = true
       }
+      # This test covers value projection only.  Keep the execution lane off;
+      # Kueue admission is exercised with a qualified model and capacity in
+      # scientific_scheduling_render.tftest.hcl.
+      execution                 = { enabled = false }
       assets                    = {}
       readiness_manifest_sha256 = "2b5a21f8eca6d8e465f29c508a6717915b84e73cb351d24811223a70228a3e36"
     }
@@ -333,6 +367,7 @@ run "localized_private_generation_reaches_the_chart" {
         general_shared_cache    = false
         deny_egress_on_validate = true
       }
+      execution = { enabled = false }
       assets = {
         pyrosetta-bindcraft = {
           model_id              = "bindcraft"

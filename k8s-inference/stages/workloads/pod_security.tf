@@ -29,7 +29,7 @@ locals {
     dataset = {
       id          = var.reference_data.pipeline.bundle_id
       revision    = try(local.reference_data_source_catalog.bundles[var.reference_data.pipeline.bundle_id].revision, "prepare")
-      tree_sha256 = coalesce(var.reference_data.expected_tree_sha256, "")
+      tree_sha256 = var.reference_data.expected_tree_sha256 == null ? "" : var.reference_data.expected_tree_sha256
     }
     storage = {
       filesystem_id   = try(var.reference_data.storage_contract.filesystem.id, "prepare")

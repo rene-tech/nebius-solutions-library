@@ -175,6 +175,13 @@ class DeploymentContractTests(unittest.TestCase):
     ) -> Path:
         deployment = dict(deployment)
         deployment.setdefault("applications", TEST_APPLICATIONS)
+        # Every rollout fixture needs an exact admission identity for the
+        # host-agent exception namespace.  Production inputs supply the actual
+        # authenticated rollout username; tests use this non-live identity.
+        deployment.setdefault("pod_security", {}).setdefault(
+            "exception_manager_usernames", ["sai07-test-rollout-manager"]
+        )
+
         # core_capacity is bounded by measured schedulable capacity, never by
         # a preset's nominal size, so a profile-pool fixture that budgets core
         # resources states the measurement. A custom-pool fixture declares it
@@ -230,6 +237,47 @@ class DeploymentContractTests(unittest.TestCase):
 
     def catalog_target(self) -> dict[str, Any]:
         return TEST_TARGET
+
+    def test_root_scientific_artifact_egress_requires_exact_host_routes(self) -> None:
+        accepted = {
+            "schema_version": 1,
+            "name": "fs2-artifact-ipv6-host",
+            "target": self.catalog_target(),
+            "storage": {
+                "scientific_artifacts": {
+                    "enabled": True,
+                    "egress_cidrs": ["2001:db8::10/128"],
+                }
+            },
+        }
+        accepted_file = self._write_configuration("artifact-ipv6-host", accepted)
+        accepted_outputs = self._planned_outputs(accepted_file, "artifact-ipv6-host")
+        self.assertEqual(
+            accepted_outputs["deployment_contract"]["stages"]["workloads"][
+                "scientific_artifacts"
+            ]["egress_cidrs"],
+            ["2001:db8::10/128"],
+        )
+
+        for label, cidr in (
+            ("ipv6-32", "2001:db8::/32"),
+            ("ipv6-64", "2001:db8:1::/64"),
+        ):
+            with self.subTest(cidr=cidr):
+                rejected = {
+                    **accepted,
+                    "name": f"fs2-artifact-{label}",
+                    "storage": {
+                        "scientific_artifacts": {
+                            "enabled": True,
+                            "egress_cidrs": [cidr],
+                        }
+                    },
+                }
+                rejected_file = self._write_configuration(label, rejected)
+                result, _ = self._plan_file(rejected_file, label)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("exact /32 or /128", result.stderr)
 
     def test_one_configuration_normalizes_to_a_deterministic_stage_contract(
         self,

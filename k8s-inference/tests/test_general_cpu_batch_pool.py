@@ -183,6 +183,9 @@ class GeneralCpuPoolTests(unittest.TestCase):
         deployment.setdefault("applications", TEST_APPLICATIONS)
         deployment.setdefault("schema_version", 1)
         deployment.setdefault("target", TEST_TARGET)
+        deployment.setdefault("pod_security", {}).setdefault(
+            "exception_manager_usernames", ["sai07-test-rollout-manager"]
+        )
         # A CPU pool and the reference-data plane both budget cpu and memory,
         # which Kueue drops before admission unless core admission is on, so
         # the facade refuses either without it. Every fixture that declares

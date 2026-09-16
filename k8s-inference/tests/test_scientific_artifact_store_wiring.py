@@ -379,7 +379,14 @@ class TfvarsSurfaceTests(ArtifactStoreContractTests):
 
     def test_only_exact_host_addresses_may_be_allow_listed(self) -> None:
         for source in (self.root_variables, self.workloads_variables):
-            self.assertIn('endswith(cidr, "/32") || endswith(cidr, "/128")', source)
+            self.assertIn(
+                'can(regex("^[0-9]+\\\\.[0-9]+\\\\.[0-9]+\\\\.[0-9]+/32$", cidr))',
+                source,
+            )
+            self.assertIn('strcontains(cidr, ":") && endswith(cidr, "/128")', source)
+            self.assertNotIn(
+                'endswith(cidr, "/32") || endswith(cidr, "/128")', source
+            )
 
     def test_write_only_secret_data_requires_terraform_1_11(self) -> None:
         # An older binary treats data_wo as an unknown attribute, which would

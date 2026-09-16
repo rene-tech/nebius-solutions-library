@@ -16,6 +16,11 @@ deployment = {
   schema_version = 1
   name           = "inference-academic-raw-af3"
 
+  pod_security = {
+    # Replace with the exact authenticated username used for the rollout.
+    exception_manager_usernames = ["replace-with-rollout-username"]
+  }
+
   target = {
     project_id   = "project-yourprojectid"
     project_name = "my-inference-project"

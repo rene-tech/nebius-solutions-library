@@ -1063,7 +1063,7 @@ locals {
     pod_security_dataset = {
       id          = var.deployment.storage.reference_data.pipeline.bundle_id
       revision    = try(jsondecode(file("${path.module}/reference-data/source-catalog.json")).bundles[var.deployment.storage.reference_data.pipeline.bundle_id].revision, "")
-      tree_sha256 = coalesce(var.deployment.storage.reference_data.expected_tree_sha256, "")
+      tree_sha256 = var.deployment.storage.reference_data.expected_tree_sha256 == null ? "" : var.deployment.storage.reference_data.expected_tree_sha256
     }
     pod_security_exception_manager_usernames = sort(tolist(var.deployment.pod_security.exception_manager_usernames))
     grafana_admin_secret_ref                 = var.deployment.secrets.grafana_admin_secret

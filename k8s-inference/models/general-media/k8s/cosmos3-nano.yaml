@@ -286,9 +286,13 @@ data:
             "token": False,
         }
         try:
-            return Path(snapshot_download(**arguments, local_files_only=True)), "huggingface-local-cache"
-        except Exception:
-            return Path(snapshot_download(**arguments)), "huggingface-download"
+            return Path(snapshot_download(**arguments, local_files_only=True)), "offline-prestaged-huggingface-cache"
+        except Exception as error:
+            raise RuntimeError(
+                "offline cold-cache preflight failed: the exact pinned Hugging Face "
+                "snapshot is absent; stage the reviewed acquisition plan into this "
+                "PVC before creating the runtime Pod"
+            ) from error
 
 
     def main() -> int:
@@ -1330,8 +1334,11 @@ metadata:
     app.kubernetes.io/name: cosmos3-nano
     app.kubernetes.io/part-of: fs2-serve
     app.kubernetes.io/version: 7a312c868bcce8e40b3eb40861300a9d0ba3fde1
+    fs2-serve.nebius.ai/model-id: cosmos3-nano
+    fs2-serve.nebius.ai/network-profile: gateway-dns-tcp-8080-v1
   annotations:
     fs2.nebius/cache-content-path: /model-cache/cosmos3-nano/sha256/dfa7b03382ba78d7f80703652706c3cfa777cefac48634df49345c4302af2c95/payload
+    fs2.nebius/cold-cache-preflight: offline-prestaged-required
     fs2.nebius/localization-receipt-schema: fs2-serve.nebius.ai/shared-cache-localization-receipt/v2
     fs2.nebius/model-precision: bfloat16
     fs2.nebius/model-repository: nvidia/Cosmos3-Nano
@@ -1355,8 +1362,11 @@ spec:
         app.kubernetes.io/name: cosmos3-nano
         app.kubernetes.io/part-of: fs2-serve
         app.kubernetes.io/version: 7a312c868bcce8e40b3eb40861300a9d0ba3fde1
+        fs2-serve.nebius.ai/model-id: cosmos3-nano
+        fs2-serve.nebius.ai/network-profile: gateway-dns-tcp-8080-v1
       annotations:
         fs2.nebius/cache-content-path: /model-cache/cosmos3-nano/sha256/dfa7b03382ba78d7f80703652706c3cfa777cefac48634df49345c4302af2c95/payload
+        fs2.nebius/cold-cache-preflight: offline-prestaged-required
         fs2.nebius/localization-receipt-schema: fs2-serve.nebius.ai/shared-cache-localization-receipt/v2
         fs2.nebius/model-precision: bfloat16
         fs2.nebius/model-repository: nvidia/Cosmos3-Nano
@@ -1391,6 +1401,10 @@ spec:
             - name: FS2_LOCALIZATION_WORKERS
               value: "16"
             - name: HF_HUB_DISABLE_TELEMETRY
+              value: "1"
+            - name: HF_HUB_OFFLINE
+              value: "1"
+            - name: TRANSFORMERS_OFFLINE
               value: "1"
             - name: HF_HOME
               value: /model-cache/huggingface
@@ -1619,7 +1633,8 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/instance: cosmos3-nano
+      app.kubernetes.io/component: model-runtime
+      fs2-serve.nebius.ai/model-id: cosmos3-nano
   policyTypes:
     - Ingress
     - Egress
@@ -1628,24 +1643,28 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: fs2-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: fs2-serve-control-plane
+              app.kubernetes.io/instance: fs2-serve-control-plane
+              app.kubernetes.io/component: gateway
       ports:
         - port: 8080
-          protocol: TCP
-        - port: 8000
           protocol: TCP
   egress:
     - to:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchExpressions:
+              - key: k8s-app
+                operator: In
+                values:
+                  - coredns
+                  - kube-dns
       ports:
         - port: 53
           protocol: UDP
         - port: 53
-          protocol: TCP
-    - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-      ports:
-        - port: 443
           protocol: TCP

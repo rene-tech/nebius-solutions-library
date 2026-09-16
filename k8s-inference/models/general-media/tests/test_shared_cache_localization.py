@@ -37,7 +37,9 @@ def canonical_bytes(value: object) -> bytes:
 def documents(name: str) -> list[dict[str, object]]:
     return [
         item
-        for item in yaml.safe_load_all((MANIFEST_ROOT / name).read_text(encoding="utf-8"))
+        for item in yaml.safe_load_all(
+            (MANIFEST_ROOT / name).read_text(encoding="utf-8")
+        )
         if item is not None
     ]
 
@@ -51,6 +53,121 @@ def localization_config(name: str) -> dict[str, object]:
 
 
 class SharedCacheLocalizationTests(unittest.TestCase):
+    def test_static_runtime_policies_match_pods_and_preserve_egress_profiles(
+        self,
+    ) -> None:
+        expected = {
+            "qwen3-8b.yaml": (8000, "gateway-zero-egress-tcp-8000-v1"),
+            "cosmos3-nano.yaml": (8080, "gateway-dns-tcp-8080-v1"),
+        }
+        for filename, (service_port, network_profile) in expected.items():
+            policy = next(
+                item for item in documents(filename) if item["kind"] == "NetworkPolicy"
+            )
+            model_id = filename.removesuffix(".yaml")
+            self.assertEqual(
+                {
+                    "app.kubernetes.io/component": "model-runtime",
+                    "fs2-serve.nebius.ai/model-id": model_id,
+                },
+                policy["spec"]["podSelector"]["matchLabels"],
+            )
+            deployment = next(
+                item for item in documents(filename) if item["kind"] == "Deployment"
+            )
+            pod_labels = deployment["spec"]["template"]["metadata"]["labels"]
+            self.assertEqual(network_profile, pod_labels["fs2-serve.nebius.ai/network-profile"])
+            self.assertLessEqual(
+                policy["spec"]["podSelector"]["matchLabels"].items(),
+                pod_labels.items(),
+                "the committed policy selector must match the actual Pod template",
+            )
+            self.assertEqual(["Ingress", "Egress"], policy["spec"]["policyTypes"])
+            self.assertEqual(
+                {
+                    "app.kubernetes.io/name": "fs2-serve-control-plane",
+                    "app.kubernetes.io/instance": "fs2-serve-control-plane",
+                    "app.kubernetes.io/component": "gateway",
+                },
+                policy["spec"]["ingress"][0]["from"][0]["podSelector"]["matchLabels"],
+            )
+            self.assertEqual(
+                [{"port": service_port, "protocol": "TCP"}],
+                policy["spec"]["ingress"][0]["ports"],
+            )
+            if filename == "qwen3-8b.yaml":
+                self.assertEqual([], policy["spec"]["egress"])
+            else:
+                self.assertEqual(
+                    [
+                        {
+                            "key": "k8s-app",
+                            "operator": "In",
+                            "values": ["coredns", "kube-dns"],
+                        }
+                    ],
+                    policy["spec"]["egress"][0]["to"][0]["podSelector"][
+                        "matchExpressions"
+                    ],
+                )
+            self.assertNotIn("ipBlock", json.dumps(policy["spec"]))
+
+    def test_empty_cache_fails_offline_preflight_without_a_network_fallback(self) -> None:
+        for filename in ("qwen3-8b.yaml", "cosmos3-nano.yaml"):
+            config = localization_config(filename)
+            script = config["data"]["localize.py"]
+            deployment = next(
+                item for item in documents(filename) if item["kind"] == "Deployment"
+            )
+            pod_template = deployment["spec"]["template"]
+            self.assertEqual(
+                "offline-prestaged-required",
+                pod_template["metadata"]["annotations"][
+                    "fs2.nebius/cold-cache-preflight"
+                ],
+            )
+            localizer = next(
+                item
+                for item in pod_template["spec"]["initContainers"]
+                if item["name"] == "localize-model"
+            )
+            localizer_environment = {
+                item["name"]: item["value"] for item in localizer["env"]
+            }
+            self.assertEqual("1", localizer_environment["HF_HUB_OFFLINE"])
+            self.assertEqual("1", localizer_environment["TRANSFORMERS_OFFLINE"])
+            calls: list[dict[str, object]] = []
+
+            def offline_miss(**kwargs: object) -> str:
+                calls.append(dict(kwargs))
+                raise FileNotFoundError("synthetic empty cache")
+
+            fake_huggingface = types.ModuleType("huggingface_hub")
+            fake_huggingface.snapshot_download = offline_miss
+            with tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                lock_path = root / "model.lock.json"
+                lock_path.write_text(config["data"]["model.lock.json"], encoding="utf-8")
+                environment = {
+                    "FS2_MODEL_LOCK_PATH": str(lock_path),
+                    "FS2_CACHE_ROOT": str(root / "cache"),
+                    "FS2_HF_CACHE_ROOT": str(root / "huggingface"),
+                    "FS2_CACHE_LOCK_TIMEOUT_SECONDS": "1",
+                }
+                namespace: dict[str, object] = {"__name__": "offline_localizer_under_test"}
+                with patch.dict(os.environ, environment, clear=False), patch.dict(
+                    sys.modules, {"huggingface_hub": fake_huggingface}
+                ):
+                    exec(script, namespace)
+                    with self.assertRaisesRegex(
+                        RuntimeError,
+                        "offline cold-cache preflight failed",
+                    ):
+                        namespace["main"]()
+
+            self.assertEqual(1, len(calls), filename)
+            self.assertIs(True, calls[0].get("local_files_only"), filename)
+
     def test_qwen_and_cosmos_bind_exact_content_addresses(self) -> None:
         expected = {
             "qwen3-8b.yaml": {
@@ -99,10 +216,14 @@ class SharedCacheLocalizationTests(unittest.TestCase):
                 model["total_size_bytes"], sum(item["size"] for item in model["files"])
             )
 
-            deployment = next(item for item in resources if item["kind"] == "Deployment")
+            deployment = next(
+                item for item in resources if item["kind"] == "Deployment"
+            )
             pod = deployment["spec"]["template"]["spec"]
             localizer = next(
-                item for item in pod["initContainers"] if item["name"] == "localize-model"
+                item
+                for item in pod["initContainers"]
+                if item["name"] == "localize-model"
             )
             runtime = pod["containers"][0]
             content_path = (
@@ -145,7 +266,9 @@ class SharedCacheLocalizationTests(unittest.TestCase):
         )
         self.assertEqual(evidence["source"]["revision"], lock["revision"])
         self.assertEqual(evidence["content"]["digest"], lock["content_digest"])
-        self.assertEqual(evidence["content"]["expanded_bytes"], lock["total_size_bytes"])
+        self.assertEqual(
+            evidence["content"]["expanded_bytes"], lock["total_size_bytes"]
+        )
         self.assertEqual(
             evidence["content"]["files"],
             [
@@ -223,8 +346,9 @@ class SharedCacheLocalizationTests(unittest.TestCase):
                 "FS2_CACHE_LOCK_TIMEOUT_SECONDS": "5",
             }
             namespace: dict[str, object] = {"__name__": "localizer_under_test"}
-            with patch.dict(os.environ, environment, clear=False), patch.dict(
-                sys.modules, {"huggingface_hub": fake_huggingface}
+            with (
+                patch.dict(os.environ, environment, clear=False),
+                patch.dict(sys.modules, {"huggingface_hub": fake_huggingface}),
             ):
                 exec(script, namespace)
                 namespace["print"] = lambda *_args, **_kwargs: None
@@ -245,9 +369,7 @@ class SharedCacheLocalizationTests(unittest.TestCase):
                 self.assertEqual([], errors)
                 self.assertEqual(1, calls)
 
-                content_root = (
-                    root / "cache" / "fixture" / "sha256" / content_digest
-                )
+                content_root = root / "cache" / "fixture" / "sha256" / content_digest
                 self.assertFalse((content_root / "payload" / ".cache").exists())
                 receipt = json.loads(
                     (content_root / "localization-receipt.json").read_text(
