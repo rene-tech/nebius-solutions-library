@@ -17,6 +17,7 @@ helm_test_values=(
   --set "config.authorizationServerUrl=${test_authorization_url}"
   --set "config.publicAuthorityMode=ip"
   --set "httpRoute.authorityMode=ip"
+  --set-string "networkPolicy.envoyController.webhookSourceCidrs[0]=192.0.2.10/32"
 )
 
 cd "${control_root}"

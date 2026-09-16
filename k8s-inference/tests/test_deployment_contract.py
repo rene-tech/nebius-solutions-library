@@ -3631,5 +3631,17 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn("deployment", manager["integrations"]["frameworks"])
 
 
+def test_workloads_wires_exact_discovered_api_endpoint_hosts_to_envoy_webhook() -> None:
+    locals_source = (DEPLOY_ROOT / "stages/workloads/locals.tf").read_text(encoding="utf-8")
+    control_plane_source = (DEPLOY_ROOT / "stages/workloads/control_plane.tf").read_text(encoding="utf-8")
+    cluster_contract_source = (DEPLOY_ROOT / "stages/workloads/cluster_contract.tf").read_text(encoding="utf-8")
+
+    assert "kubernetes_api_endpoint_cidrs = toset([" in locals_source
+    assert 'strcontains(ip, ":") ? 128 : 32' in locals_source
+    assert "webhookSourceCidrs = sort(tolist(local.kubernetes_api_endpoint_cidrs))" in control_plane_source
+    assert "length(local.kubernetes_api_endpoint_cidrs) >= 1" in cluster_contract_source
+    assert "local.kubernetes_api_endpoint_cidrs" in cluster_contract_source
+
+
 if __name__ == "__main__":
     unittest.main()

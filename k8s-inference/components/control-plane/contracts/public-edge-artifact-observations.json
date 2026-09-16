@@ -61,6 +61,16 @@
     "xds_port": 18000,
     "metrics_port": 19001,
     "webhook_port": 9443,
+    "webhook_sources": {
+      "value_source": "networkPolicy.envoyController.webhookSourceCidrs",
+      "terraform_source": "local.kubernetes_api_endpoint_cidrs",
+      "required_for_public_gateway": true,
+      "allowed_prefixes": [
+        "IPv4 /32",
+        "IPv6 /128"
+      ],
+      "default": []
+    },
     "dns_peer": {
       "namespace_labels": {
         "kubernetes.io/metadata.name": "kube-system"

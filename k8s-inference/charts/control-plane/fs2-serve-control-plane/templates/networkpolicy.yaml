@@ -1,5 +1,14 @@
 {{- if .Values.networkPolicy.enabled }}
 {{- $network := .Values.networkPolicy }}
+{{- $webhookSourceCidrs := $network.envoyController.webhookSourceCidrs }}
+{{- if and .Values.publicGateway.enabled (eq (len $webhookSourceCidrs) 0) }}
+{{- fail "publicGateway requires nonempty networkPolicy.envoyController.webhookSourceCidrs from exact Kubernetes API endpoint host routes" }}
+{{- end }}
+{{- range $webhookSourceCidrs }}
+{{- if not (regexMatch "^(([0-9]{1,3}\\.){3}[0-9]{1,3}/32|[0-9A-Fa-f:]+/128)$" .) }}
+{{- fail "networkPolicy.envoyController.webhookSourceCidrs accepts only exact IPv4 /32 or IPv6 /128 Kubernetes API endpoint hosts" }}
+{{- end }}
+{{- end }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -378,14 +387,16 @@ spec:
       ports:
         - port: {{ $network.envoyController.metricsPort }}
           protocol: TCP
+    {{- if gt (len $webhookSourceCidrs) 0 }}
     - from:
-        {{- range $network.envoyController.webhookSourceCidrs }}
+        {{- range $webhookSourceCidrs }}
         - ipBlock:
             cidr: {{ . | quote }}
         {{- end }}
       ports:
         - port: {{ $network.envoyController.webhookPort }}
           protocol: TCP
+    {{- end }}
 {{- end }}
 ---
 apiVersion: networking.k8s.io/v1

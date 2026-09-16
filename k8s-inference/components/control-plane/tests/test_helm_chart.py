@@ -32,6 +32,7 @@ TEST_ALLOCATION_ID = "vpcallocation-e00abc123xyz"
 TEST_ACME_EMAIL = "edge-owner@unit.test"
 TEST_HTTP_NODE_PORT = 31425
 TEST_HTTPS_NODE_PORT = 32633
+TEST_WEBHOOK_SOURCE_CIDR = "192.0.2.10/32"
 TEST_CATALOG_ROLLOUT_DIGEST = "sha256:" + "3" * 64
 HELM = shutil.which("helm")
 assert HELM is not None, "helm is required for chart tests"
@@ -91,6 +92,8 @@ def edge_prerequisite_values() -> list[str]:
         "publicTls.acmeIssuer.enabled=true",
         "--set",
         f"publicTls.acmeIssuer.email={TEST_ACME_EMAIL}",
+        "--set-string",
+        f"networkPolicy.envoyController.webhookSourceCidrs[0]={TEST_WEBHOOK_SOURCE_CIDR}",
     ]
 
 
@@ -149,6 +152,8 @@ def render_command(*extra: str) -> list[str]:
         "publicTls.acmeIssuer.enabled=true",
         "--set",
         f"publicTls.acmeIssuer.email={TEST_ACME_EMAIL}",
+        "--set-string",
+        f"networkPolicy.envoyController.webhookSourceCidrs[0]={TEST_WEBHOOK_SOURCE_CIDR}",
         *extra,
     ]
 
@@ -674,6 +679,7 @@ def test_offline_entrypoint_supplies_every_required_nonplaceholder_chart_value()
         "config.authorizationServerUrl=${test_authorization_url}",
         "config.publicAuthorityMode=ip",
         "httpRoute.authorityMode=ip",
+        "networkPolicy.envoyController.webhookSourceCidrs[0]=192.0.2.10/32",
     ):
         assert value in source
     assert source.count('"${helm_test_values[@]}"') == 3
@@ -1986,6 +1992,13 @@ def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -
         "port": 53,
         "protocols": ["UDP", "TCP"],
     }
+    assert contract["envoy_gateway"]["webhook_sources"] == {
+        "value_source": "networkPolicy.envoyController.webhookSourceCidrs",
+        "terraform_source": "local.kubernetes_api_endpoint_cidrs",
+        "required_for_public_gateway": True,
+        "allowed_prefixes": ["IPv4 /32", "IPv6 /128"],
+        "default": [],
+    }
     assert contract["envoy_gateway"]["controller_selector"] == {
         "app.kubernetes.io/name": "gateway-helm",
         "control-plane": "envoy-gateway",
@@ -2026,7 +2039,7 @@ def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -
             "ports": [{"port": 19001, "protocol": "TCP"}],
         },
         {
-            "from": [{"ipBlock": {"cidr": "0.0.0.0/0"}}],
+            "from": [{"ipBlock": {"cidr": TEST_WEBHOOK_SOURCE_CIDR}}],
             "ports": [{"port": 9443, "protocol": "TCP"}],
         },
     ]
@@ -2067,12 +2080,91 @@ def test_public_envoy_dns_selector_and_webhook_sources_are_cluster_configurable(
     assert webhook_rule["from"] == [{"ipBlock": {"cidr": "192.0.2.10/32"}}]
 
 
+def test_public_envoy_webhook_sources_default_closed_and_require_exact_host_routes() -> None:
+    values = yaml.safe_load((CHART / "values.yaml").read_text())
+    assert values["networkPolicy"]["envoyController"]["webhookSourceCidrs"] == []
+
+    closed_render = subprocess.run(  # noqa: S603 - fixed Helm binary and test-owned arguments
+        [
+            HELM,
+            "template",
+            "fs2-serve",
+            str(CHART),
+            "--namespace",
+            "fs2-system",
+            *helm_values(),
+            "--set",
+            "networkPolicy.enabled=true",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    closed_documents = [document for document in yaml.safe_load_all(closed_render.stdout) if document]
+    assert not any(
+        document["kind"] == "NetworkPolicy"
+        and document["metadata"]["name"] == "fs2-serve-control-plane-envoy-controller-xds"
+        for document in closed_documents
+    )
+
+    rejected_source_sets = (
+        [],
+        ["0.0.0.0/0"],
+        ["::/0"],
+        ["0.0.0.0/1", "128.0.0.0/1"],
+        ["::/1", "8000::/1"],
+        ["10.0.0.0/8"],
+        ["2001:db8::/64"],
+    )
+    for source_cidrs in rejected_source_sets:
+        command = render_command()
+        source_index = command.index(
+            f"networkPolicy.envoyController.webhookSourceCidrs[0]={TEST_WEBHOOK_SOURCE_CIDR}"
+        )
+        del command[source_index - 1 : source_index + 1]
+        command.extend(
+            [
+                "--skip-schema-validation",
+                "--set-json",
+                f"networkPolicy.envoyController.webhookSourceCidrs={json.dumps(source_cidrs)}",
+            ]
+        )
+        result = subprocess.run(  # noqa: S603 - fixed Helm binary and adversarial values
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode != 0, source_cidrs
+        assert "webhookSourceCidrs" in result.stderr
+
+
+def test_public_envoy_webhook_sources_accept_only_bounded_ipv4_and_ipv6_hosts() -> None:
+    documents = render(
+        "--set-json",
+        'networkPolicy.envoyController.webhookSourceCidrs=["192.0.2.10/32","2001:db8::10/128"]',
+    )
+    controller = next(
+        document["spec"]
+        for document in documents
+        if document["kind"] == "NetworkPolicy"
+        and document["metadata"]["name"] == "fs2-serve-control-plane-envoy-controller-xds"
+    )
+    webhook_rule = next(
+        rule for rule in controller["ingress"] if rule["ports"] == [{"port": 9443, "protocol": "TCP"}]
+    )
+    assert webhook_rule["from"] == [
+        {"ipBlock": {"cidr": "192.0.2.10/32"}},
+        {"ipBlock": {"cidr": "2001:db8::10/128"}},
+    ]
+
+
 @pytest.mark.skipif(
     os.environ.get("FS2_LIVE_GATEWAY_ROUTE_DISCOVERY") != "1",
     reason="opt-in read-only verification against the selected Kubernetes context",
 )
 def test_public_envoy_policy_covers_discovered_live_gateway_flows() -> None:
-    """Resolve live DNS, Envoy ports, and attached HTTPRoute backends."""
+    """Resolve live API hosts, DNS, Envoy ports, and HTTPRoute backends."""
 
     assert os.environ.get("KUBECONFIG"), "live discovery requires an explicit KUBECONFIG"
     assert KUBECTL is not None, "live discovery requires kubectl"
@@ -2092,9 +2184,37 @@ def test_public_envoy_policy_covers_discovered_live_gateway_flows() -> None:
     namespaces = {
         item["metadata"]["name"]: item["metadata"].get("labels", {}) for item in get_json("namespaces")["items"]
     }
+    api_endpoint_slices = get_json(
+        "endpointslices.discovery.k8s.io",
+        "-n",
+        "default",
+        "-l",
+        "kubernetes.io/service-name=kubernetes",
+    )["items"]
+    api_endpoint_addresses = sorted(
+        {
+            address
+            for endpoint_slice in api_endpoint_slices
+            for endpoint in endpoint_slice.get("endpoints", [])
+            if endpoint.get("conditions", {}).get("ready") is not False
+            for address in endpoint.get("addresses", [])
+        }
+    )
+    api_endpoint_cidrs = [f"{address}/{'128' if ':' in address else '32'}" for address in api_endpoint_addresses]
+    assert api_endpoint_cidrs, "default/kubernetes has no ready API EndpointSlice hosts"
 
     live_render_command = render_command(*admin_console_values())
     live_render_command[2] = "fs2-serve-control-plane"
+    source_index = live_render_command.index(
+        f"networkPolicy.envoyController.webhookSourceCidrs[0]={TEST_WEBHOOK_SOURCE_CIDR}"
+    )
+    del live_render_command[source_index - 1 : source_index + 1]
+    live_render_command.extend(
+        [
+            "--set-json",
+            f"networkPolicy.envoyController.webhookSourceCidrs={json.dumps(api_endpoint_cidrs)}",
+        ]
+    )
     rendered = subprocess.run(  # noqa: S603 - fixed Helm binary and test-owned arguments
         live_render_command,
         check=True,
@@ -2174,6 +2294,12 @@ def test_public_envoy_policy_covers_discovered_live_gateway_flows() -> None:
         19001,
         9443,
     }
+    webhook_rule = next(
+        rule
+        for rule in controller_policy["ingress"]
+        if rule["ports"] == [{"port": 9443, "protocol": "TCP"}]
+    )
+    assert webhook_rule["from"] == [{"ipBlock": {"cidr": cidr}} for cidr in api_endpoint_cidrs]
     assert any(port["port"] == 19001 for rule in public_envoy["ingress"] for port in rule["ports"])
     webhooks = get_json("mutatingwebhookconfigurations.admissionregistration.k8s.io")["items"]
     assert any(

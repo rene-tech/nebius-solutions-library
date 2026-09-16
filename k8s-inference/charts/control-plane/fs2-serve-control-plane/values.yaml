@@ -458,11 +458,9 @@ networkPolicy:
     port: 18000
     metricsPort: 19001
     webhookPort: 9443
-    # Managed Kubernetes API servers are outside workload namespaces. Narrow
-    # this list to the control-plane source ranges when the provider exposes
-    # stable ranges; the default preserves webhook availability while the
-    # destination remains one selected Pod and one TLS-only port.
-    webhookSourceCidrs: [0.0.0.0/0]
+    # Public releases fail closed until Terraform supplies the ready Kubernetes
+    # API endpoint host routes. Aggregates and default routes are rejected.
+    webhookSourceCidrs: []
   solver:
     namespaceLabels:
       kubernetes.io/metadata.name: fs2-system

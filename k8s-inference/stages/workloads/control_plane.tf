@@ -72,6 +72,9 @@ locals {
       kubernetesApiCidrs = sort(tolist(local.kubernetes_api_egress_cidrs))
       artifactStoreCidrs = sort(tolist(var.scientific_artifacts.egress_cidrs))
       dns                = { podLabels = { "k8s-app" = "coredns" } }
+      envoyController = {
+        webhookSourceCidrs = sort(tolist(local.kubernetes_api_endpoint_cidrs))
+      }
       prometheus = {
         namespaceLabels = { "kubernetes.io/metadata.name" = "fs2-observability" }
         podLabels = {

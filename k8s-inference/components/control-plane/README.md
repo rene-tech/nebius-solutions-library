@@ -62,11 +62,13 @@ admitting their entire namespaces.
 
 Controller ingress admits only proxy xDS on 18000, Prometheus metrics on
 19001, and managed API-server webhook calls on 9443. The webhook source CIDRs
-are cluster-configurable because managed API servers are not namespace-scoped;
-installations with stable provider ranges should narrow the compatibility
-default. Every pod-originated cross-namespace flow combines a namespace
-selector with an exact pod selector. The control-plane release namespace still
-depends on the foundation default-deny boundary.
+are cluster-configurable because managed API servers are not namespace-scoped.
+Defaults are empty, public releases require a nonempty set, and only exact IPv4
+`/32` or IPv6 `/128` hosts are accepted. The workloads stage supplies the ready
+Kubernetes API EndpointSlice addresses; aggregates and default routes fail
+before rendering. Every pod-originated cross-namespace flow combines a
+namespace selector with an exact pod selector. The control-plane release
+namespace still depends on the foundation default-deny boundary.
 Exact controller artifact digests and the
 reconciled artifact observations are in
 `contracts/public-edge-artifact-observations.json`. Those observations are

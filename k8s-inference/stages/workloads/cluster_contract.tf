@@ -155,13 +155,19 @@ resource "terraform_data" "cluster_contract" {
         data.kubernetes_service_v1.kubernetes_api.metadata[0].namespace == "default" &&
         can(cidrhost(local.kubernetes_api_service_cidr, 0)) &&
         length(local.kubernetes_api_endpoint_ips) >= 1 &&
+        length(local.kubernetes_api_endpoint_cidrs) >= 1 &&
+        alltrue([
+          for cidr in local.kubernetes_api_endpoint_cidrs :
+          can(cidrhost(cidr, 0)) &&
+          (endswith(cidr, "/32") || endswith(cidr, "/128"))
+        ]) &&
         alltrue([for cidr in local.kubernetes_api_egress_cidrs : can(cidrhost(cidr, 0))]) &&
         (
           length(var.admin_kubernetes_api_cidrs) == 0 ||
           var.admin_kubernetes_api_cidrs == local.kubernetes_api_egress_cidrs
         )
       )
-      error_message = "Grafana and the admin reader require the default/kubernetes Service IP, ready API endpoint host routes, and target-contract private subnet fallback; an optional supplied CIDR set is an assertion and must match the complete set."
+      error_message = "The public webhook, Grafana, and the admin reader require nonempty ready API endpoint /32 or /128 host routes; API egress additionally requires the default/kubernetes Service IP and target-contract private subnet fallback, and an optional supplied CIDR set must match that complete egress set."
     }
     precondition {
       condition = (
