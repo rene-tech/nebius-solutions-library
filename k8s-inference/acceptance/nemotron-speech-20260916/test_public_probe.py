@@ -1,9 +1,11 @@
 import hashlib
 import json
+import subprocess
+import wave
 
 import httpx
 
-from public_probe import IDS, submit_file
+from public_probe import IDS, prepare_audio, submit_file
 
 
 def test_large_recording_keeps_all_bytes_and_uses_async_artifact(tmp_path):
@@ -55,3 +57,23 @@ def test_small_recording_uses_multipart(tmp_path):
     with httpx.Client(base_url="https://platform.test", transport=httpx.MockTransport(handler)) as client:
         assert submit_file(client, path, IDS[0], "en", row).status_code == 200
     assert row["transport"] == "multipart"
+
+
+def test_long_fixture_repeats_every_source_sample(tmp_path):
+    source = tmp_path / "source.wav"
+    # Nonzero varying PCM makes silent padding/trimming detectable.
+    raw = b"".join((i % 3000).to_bytes(2, "little", signed=True) for i in range(16000))
+    with wave.open(str(source), "wb") as audio:
+        audio.setnchannels(1)
+        audio.setsampwidth(2)
+        audio.setframerate(16000)
+        audio.writeframes(raw)
+    output = tmp_path / "four.flac"
+    metadata = prepare_audio(source, output, 4)
+    decoded = subprocess.check_output(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
+                                       "-i", str(output), "-f", "s16le", "pipe:1"])
+    assert decoded == raw * 4
+    assert metadata["source_audio_seconds"] == 1
+    assert metadata["expected_audio_seconds"] == 4
+    assert metadata["source_repeat_count"] == 4
+    assert metadata["transport_sha256"] == hashlib.sha256(output.read_bytes()).hexdigest()

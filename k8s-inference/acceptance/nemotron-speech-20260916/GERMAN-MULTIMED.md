@@ -111,15 +111,14 @@ reference; MultiMed supplements them rather than inventing one for them.
 
 ## Public rollout, kept separate
 
-Speech backend image from6b9fc084d is deployed (Helm127/128), and both speech
-Apps were created through the admin preview/apply API with access restricted to
-Rene during onboarding, one hot replica and at most two replicas per model.
-Existing model registrations and infrastructure limits were preserved.
+The two Apps use ordinary tenant API-key model grants, one hot replica and at
+most two replicas per model. Test credentials were scoped Rene keys, revoked
+after each cohort; this does not imply other tenants received new model grants.
+Existing sibling registrations and infrastructure limits were preserved.
 
-The first full public multipart cohort failed HTTP500 because Starlette tried
-to spool a >1MiB file and the read-only gateway container had no writable `/tmp`.
-The negative receipt is `public-medical-files-r1.json`; its temporary key was
-revoked. Chart fix6a7c84193 adds bounded Pod-local multipart scratch, with145
-Helm/route tests passing. Retest receipts and rollout status must be consulted
-before claiming this failure resolved. Public live/MCP, scaling, production
-snapshot activation and complete feature acceptance are still separate gates.
+Complete medical files, typed MCP and real-time-paced public streams have now
+passed, including a nine-call mixed cohort. That cohort also exposed burst
+startup failures and long waits; final scaling qualification is not complete.
+See [public integration](PUBLIC-INTEGRATION.md) for exact releases, timings,
+negative receipts and current fixes. The German scores above remain the private
+fixed-profile benchmark, not a fabricated public cold-start measurement.

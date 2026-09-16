@@ -40,8 +40,42 @@ full German reference benchmark and English mixed-speaker quality reports.
   polling and result retrieval entirely through MCP. Both complete consultations
   passed, English32.857s/German27.843s. Tool names end in `_native`; derive them
   from live discovery, not a guessed App-name conversion.
-- Next unchanged-release cohort: real-time-paced public streams overlapping
-  native/MCP file work, with observed replica changes. Its outcome is pending.
+
+## Public mixed cohort r1 — all nine calls completed; scale-out defect found
+
+Source `7e5e682d2`, Helm131, 11:46–11:55 UTC. Two full, **real-time-paced** live
+sessions overlapped five file jobs and two typed MCP jobs. All completed and all
+three temporary keys were revoked. No audio was shortened. Both live final
+transcripts exactly matched the durable result and emitted partials before EOS.
+
+| Paced stream | Audio | Session ready | First partial from playback start | Last audio to completion |
+|---|---:|---:|---:|---:|
+| English consultation01 |457.920s|1.600s|3.429s|0.184s|
+| German Herzrasen |421.860s|2.022s|9.028s|0.615s|
+
+First partial is measured from playback start, **not annotated speech onset**.
+The German model aligns its first word at8.4s; that is not independent ground
+truth. Do not describe9.028s as processing latency.
+
+File completion times were155.627/37.031/227.407/61.399/25.022s in the order of
+the table above. MCP English/German completed in231.119/214.666s. These include
+waiting under mixed load; they are not the isolated processing times. The busy
+worker fix kept admitted jobs alive without duplicate submission. However,
+long waits remain a poor experience and this is **not a passing scaling gate**.
+
+Replica observation confirms English burst desired0→1 and ready0→1. The German
+burst was requested but repeatedly evicted while unpacking NeMo into the2Gi
+`/tmp` emptyDir. The hot replica eventually served the waiting jobs. Prepared
+fix routes model unpacking to the existing8Gi `/cache` (`TMPDIR=/cache`), without
+increasing resource or cloud limits. Apply through additive template registration
+and normal App drain/preview/apply, then rerun; do not patch controller-owned
+Deployments manually. Post-fix results are not yet included here.
+
+Receipts: `public-medical-live-paced-r1.json`, `public-medical-files-mixed-r1.json`,
+`public-medical-mcp-mixed-r1.json`, `public-mixed-scaling-r1.jsonl`, and
+`multilingual-pods-before-scratch-fix.json`. The original observer's Pod `ready`
+field only checked container status; use retained Pod Ready conditions and
+Deployment ready counts. The observer source now checks the actual Ready gate.
 
 ## Failures retained and fixes
 
@@ -62,13 +96,13 @@ full German reference benchmark and English mixed-speaker quality reports.
 5. MCP r1 driver guessed the tool name without `_native`; switched to actual
    `get_model_schema` discovery. This was a test-client error, not absent tools.
 6. MCP r2 overlapped a live English session: runtime429 `runtime_busy` became a
-   failed admitted job. **A real shared-capacity bug.** Candidate7e5e682d2 waits
+   failed admitted job. **A real shared-capacity bug.** Deployed7e5e682d2 waits
    only for the exact speech no-work-accepted response, keeps the operation ID
    and attempt, refreshes artifact handles on each wait, allows a new Service
    endpoint, and honors cancellation and the existing queue/deadline policy.
    It does not replay accepted audio.124targeted tests passed, plus78runtime/
    usage tests after adding decoded audio duration to file usage. Full regression
-   and public mixed-cohort verification are still pending. Native files otherwise
+   passed2,106tests with15skipped; public mixed-cohort results are above. Native files otherwise
    had missing audio modality usage, although transcript duration was present.
 
 The capacity wait currently occupies an executor and is shown as Running after

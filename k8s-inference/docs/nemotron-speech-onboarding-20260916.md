@@ -58,10 +58,13 @@ match; one spoken-reference clip produced no transcript. See the full
 [German benchmark report](../acceptance/nemotron-speech-20260916/GERMAN-MULTIMED.md),
 which retains failures, normalization, exact conditions and raw word alignments.
 
-Public backend and both Apps are deployed. Full customer-path qualification is
-underway, not passed: multipart scratch and shared-App policy corrections are
-applied; KEDA rejected the multilingual autoscaler's long generated name and
-the reusable renderer correction is being released. Negative receipts remain.
+Public backend and both Apps are deployed. Complete files, typed MCP and full
+real-time-paced live streams pass through ordinary customer keys, including a
+nine-call mixed cohort. Multipart scratch, shared-App policy, KEDA name length
+and busy-worker failures have been corrected. The mixed cohort exposed a burst
+startup scratch-space defect; its fix and final scaling qualification are in
+progress. See [public integration evidence](../acceptance/nemotron-speech-20260916/PUBLIC-INTEGRATION.md).
+Negative receipts remain; these results do not complete all acceptance gates.
 
 Initial H100 direct-runtime evidence is retained in
 [`acceptance/nemotron-speech-20260916`](../acceptance/nemotron-speech-20260916/README.md).
@@ -71,8 +74,8 @@ All rows still require public-path evidence; CPU tests alone do not qualify them
 
 | Capability | Upstream / selected adapter | Platform status |
 | --- | --- | --- |
-| Live incremental audio, early partials, final flush | NeMo `Frame` / `transcribe_step` | Both models verified directly on H100 at 560 ms; public transport pending |
-| Complete file transcription | Same stream, all frames through EOS | 30-minute synthetic files and complete medical recordings passed privately; public multipart/artifact APIs deployed, full customer-path tests underway |
+| Live incremental audio, early partials, final flush | NeMo `Frame` / `transcribe_step` | Both models passed complete public paced consultations at560ms, including simultaneous file/MCP work |
+| Complete file transcription | Same stream, all frames through EOS | All five complete medical recordings passed public multipart/artifact APIs;30-minute recordings passed privately, public30-minute qualification remains |
 | English 80/160/560/1120 ms | Left context 70, right 0/1/6/13 | Strict options and profile validation; GPU matrix pending |
 | Multilingual additionally 320 ms | Left context 56, right 0/1/3/6/13 | Strict options and profile validation; GPU matrix pending |
 | 32 out-of-box locales | 19 primary + 13 broad-coverage | Identifiers CPU-tested; English/German recordings measured, other languages unqualified |
@@ -153,8 +156,9 @@ Read-only inventory on 2026-09-16: Scientific AI cluster
 `mk8scluster-e00j5z9te7x5dd9g6a` / project-e00rene / eu-north1 has unused
 preemptible H100 and regular L40S GPU slots. Initial diagnostics reused H100s without
 creating nodes or changing quotas. Initial diagnostic Jobs completed and were
-removed. Two private snapshot-restored Pods remain until their~12:23UTC deadline;
-two public speech Apps have one hot H100 replica each and maximum two. Gateway
+removed. The two private restored benchmark Pods were removed after retaining
+evidence; clean snapshot directories remain on the existing shared PVC. Two
+public speech Apps are configured with one hot H100 replica each and maximum two. Gateway
 rollout includes the speech backend/audio upload scratch; sibling registrations
 are preserved. Production snapshots are not yet enabled. Resource identities,
 raw traces and phase-separated timings are recorded in the acceptance directory.

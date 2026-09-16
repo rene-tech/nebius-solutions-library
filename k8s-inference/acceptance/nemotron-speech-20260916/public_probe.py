@@ -14,6 +14,7 @@ import json
 import subprocess
 import tempfile
 import time
+import wave
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
@@ -21,6 +22,22 @@ from uuid import uuid4
 import httpx
 
 IDS = ("nemotron-speech-en-0-6b", "nemotron-speech-multilingual-0-6b")
+
+
+def prepare_audio(source, output, repetitions=1):
+    """Losslessly repeat whole provided recordings; retain duration provenance."""
+    if repetitions not in (1, 4, 5):
+        raise ValueError("unexpected acceptance repeat count")
+    with wave.open(str(source), "rb") as audio:
+        seconds = audio.getnframes() / audio.getframerate()
+    subprocess.run(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
+                    "-stream_loop", str(repetitions-1), "-i", str(source), "-c:a", "flac", str(output)],
+                   check=True, timeout=90)
+    return {"source_audio_seconds": seconds, "source_repeat_count": repetitions,
+            "expected_audio_seconds": seconds * repetitions,
+            "input_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+            "transport_sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
+            "transport_bytes": output.stat().st_size}
 
 
 def submit_file(client, path, model, language, row):
@@ -78,7 +95,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("kubeconfig", "context", "origin"):
         parser.add_argument("--" + name, required=True)
-    parser.add_argument("--mode", choices=("apply-apps", "repair-app-policy", "drain-apps", "update-templates", "files", "live", "mcp"), required=True)
+    parser.add_argument("--mode", choices=("apply-apps", "repair-app-policy", "drain-apps", "update-templates", "files", "long-files", "live", "mcp"), required=True)
     parser.add_argument("--paced", action="store_true", help="Replay live audio at original recording speed")
     parser.add_argument("--proposals", type=Path)
     parser.add_argument("--template-refs", type=Path)
@@ -171,17 +188,18 @@ def main():
                 (IDS[1], "de-grippaler-infekt", "ready/de/hhu-grippaler-infekt.wav", "de"),
                 (IDS[1], "de-polyarthritis", "ready/de/hhu-polyarthritis.wav", "de"),
             ]
+            if args.mode == "long-files":
+                cases = [cases[0], cases[2]]
+                receipt["fixture_note"] = "Whole medical recordings repeated to exceed30min, not independent30min consultations"
             with httpx.Client(base_url=args.origin, headers={"authorization": "Bearer " + key}, timeout=60, trust_env=False) as client:
                 for model, case, relative, language in cases:
                     source = args.assets / relative
                     with tempfile.TemporaryDirectory(prefix="fs2-speech-public-") as directory:
                         path = Path(directory) / "recording.flac"
-                        subprocess.run(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-i", str(source),
-                                        "-c:a", "flac", str(path)], check=True, timeout=90)
+                        repetitions = (4 if model == IDS[0] else 5) if args.mode == "long-files" else 1
+                        provenance = prepare_audio(source, path, repetitions)
                         started = time.monotonic()
-                        row = {"model": model, "case": case, "input_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
-                               "transport_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-                               "transport_bytes": path.stat().st_size}
+                        row = {"model": model, "case": case, **provenance}
                         receipt["measurements"].append(row)
                         response = submit_file(client, path, model, language, row)
                         row.update(submit_status=response.status_code,
@@ -217,6 +235,9 @@ def main():
                         response.raise_for_status()
                         if not row["result"].get("text", "").strip():
                             raise RuntimeError("public_speech_empty_transcript")
+                        row["complete_duration"] = abs(row["result"]["audio_seconds"]-row["expected_audio_seconds"]) < 0.001
+                        if not row["complete_duration"]:
+                            raise RuntimeError("public_speech_incomplete_audio")
                         args.output.write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + "\n")
                         print(json.dumps({"case": case, "model": model, "status": "completed",
                                           "wall_seconds": row["wall_seconds"], "operation_id": row["operation_id"]}), flush=True)
