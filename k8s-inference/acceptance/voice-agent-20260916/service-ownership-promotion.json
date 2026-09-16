@@ -1,0 +1,44 @@
+[
+  {
+    "model": "parakeet-realtime-eou-120m-v1",
+    "service_uid": "7942da0a-1985-43be-92c1-9cfdc644ba18",
+    "cluster_ip": "10.5.171.27",
+    "new_owner": {
+      "apiVersion": "inference.fs2.nebius.ai/v1alpha1",
+      "kind": "ModelDeployment",
+      "name": "parakeet-realtime-eou-120m-v1",
+      "uid": "d46ae1a2-d856-45c3-8a14-90e72418cee9",
+      "controller": true,
+      "blockOwnerDeletion": true
+    },
+    "cluster_ip_preserved": true
+  },
+  {
+    "model": "magpie-tts-multilingual-357m",
+    "service_uid": "5c6e50ae-52e3-4ea1-83a4-8a4bf22d0d40",
+    "cluster_ip": "10.5.173.104",
+    "new_owner": {
+      "apiVersion": "inference.fs2.nebius.ai/v1alpha1",
+      "kind": "ModelDeployment",
+      "name": "magpie-tts-multilingual-357m",
+      "uid": "fb0a45dd-4507-4b5f-b599-6e9b49434a50",
+      "controller": true,
+      "blockOwnerDeletion": true
+    },
+    "cluster_ip_preserved": true
+  },
+  {
+    "model": "diar-streaming-sortformer-4spk-v2-1",
+    "service_uid": "28e547da-e960-43cd-b6f1-066493c608c8",
+    "cluster_ip": "10.5.226.1",
+    "new_owner": {
+      "apiVersion": "inference.fs2.nebius.ai/v1alpha1",
+      "kind": "ModelDeployment",
+      "name": "diar-streaming-sortformer-4spk-v2-1",
+      "uid": "68256880-33c3-4381-8ae5-e3f07011e933",
+      "controller": true,
+      "blockOwnerDeletion": true
+    },
+    "cluster_ip_preserved": true
+  }
+]
