@@ -223,6 +223,41 @@ class ReleaseSourceGateTest(unittest.TestCase):
         )
         self.assertIn("refs/tags/deploy/gate-test", state["anchor_refs"])
 
+    def test_url_insteadof_rewrite_cannot_redirect_verification(self) -> None:
+        # git config url.<attacker>.insteadOf=<pinned-url> would silently
+        # rewrite the pinned URL when ls-remote loads config; verification
+        # runs config-isolated and outside any repository, so the rewrite is
+        # inert and the REAL pinned remote (which lacks the commit) answers.
+        commit = self.add_unpushed_commit()
+        attacker = Path(self._temporary.name) / "redirect-attacker.git"
+        subprocess.run(
+            ["git", "init", "--bare", "--initial-branch=main", str(attacker)],
+            check=True,
+            capture_output=True,
+        )
+        git(self.checkout, "push", str(attacker), "HEAD:refs/heads/main")
+        git(
+            self.checkout,
+            "config",
+            f"url.{attacker}.insteadOf",
+            STACK.RELEASE_REMOTE_URL,
+        )
+        try:
+            with self.assertRaisesRegex(
+                STACK.DeploymentError, "release-source gate"
+            ):
+                STACK.enforce_release_source(
+                    self.run_root, commit, None, repository_root=self.checkout
+                )
+            self.assertFalse(self.receipt()["anchored"])
+        finally:
+            git(
+                self.checkout,
+                "config",
+                "--unset",
+                f"url.{attacker}.insteadOf",
+            )
+
     def test_attacker_controlled_remote_url_never_anchors(self) -> None:
         # remote.origin.url lives in mutable local config: repointing origin
         # at an attacker repository that genuinely serves the commit must be

@@ -648,6 +648,7 @@ def default_scope_fixture(key_sha256: str) -> dict:
         "security_principals": [SECURITY_PRINCIPAL],
         "verification_key_sha256": key_sha256,
         "frozen_bindings": [],
+        "iam_exempt_subjects": [],
         "policy_sha256": hashlib.sha256(POLICY_PATH.read_bytes()).hexdigest(),
     }
 
@@ -848,6 +849,8 @@ class VerifiedAllowlistTest(unittest.TestCase):
         frozen_objects=None,
         controller_images=None,
         cluster="fixture-cluster",
+        cluster_role_bindings=None,
+        cluster_roles=None,
     ):
         """Serve the full authoritative observation surface.
 
@@ -964,7 +967,16 @@ class VerifiedAllowlistTest(unittest.TestCase):
                         }
                     )
                 raise subprocess.CalledProcessError(1, command)
-            if command[:3] == ["kubectl", "get", "configmaps"] and "-l" in command:
+            if command[:3] == ["kubectl", "get", "clusterroles"]:
+                return json.dumps({"items": list(cluster_roles or [])})
+            if command[:3] == ["kubectl", "get", "clusterrolebindings"]:
+                return json.dumps({"items": list(cluster_role_bindings or [])})
+            if command[:3] == ["kubectl", "get", "roles"]:
+                return json.dumps({"items": []})
+            if command[:3] == ["kubectl", "get", "rolebindings"]:
+                return json.dumps({"items": []})
+            if command[:3] == ["kubectl", "get", "configmaps"]:
+                # Content-based discovery scans EVERY ConfigMap; no label.
                 namespace = command[command.index("-n") + 1]
                 if namespace != "fs2-system":
                     return json.dumps({"items": []})
@@ -1177,14 +1189,12 @@ class VerifiedAllowlistTest(unittest.TestCase):
             name="frozen-omitting.json",
         )
 
-        def unlabeled_runner(command):
-            # Label listing returns NOTHING (binding was unlabeled), but the
-            # pinned resource still exists and carries the reference.
-            if command[:3] == ["kubectl", "get", "configmaps"] and "-l" in command:
-                return json.dumps({"items": []})
-            return self.live_runner(frozen_objects={"frozen-0": [frozen_ref]})(
-                command
-            )
+        # Discovery is CONTENT-based and label-independent: the (unlabeled)
+        # binding is found by the plain ConfigMap scan AND by the owner pin,
+        # so the signer's omission refuses either way.
+        unlabeled_runner = self.live_runner(
+            frozen_objects={"frozen-0": [frozen_ref]}
+        )
 
         with self.assertRaisesRegex(
             TOOL.ProvenanceError, "frozen_scientific_bindings refs"
@@ -1817,6 +1827,141 @@ class VerifiedAllowlistTest(unittest.TestCase):
         unsigned.chmod(0o644)
         with self.assertRaisesRegex(TOOL.ProvenanceError, "UNSIGNED"):
             self.render(scope_path=unsigned)
+
+    def test_identity_boundary_violations_refuse_rendering(self) -> None:
+        # The external boundary is ENFORCED at render: any non-exempt subject
+        # holding a forbidden identity path (here: impersonation) refuses.
+        impersonator_role = {
+            "metadata": {"name": "impersonator"},
+            "rules": [
+                {
+                    "apiGroups": [""],
+                    "resources": ["users"],
+                    "verbs": ["impersonate"],
+                }
+            ],
+        }
+        mallory_binding = {
+            "metadata": {"name": "mallory-can-impersonate"},
+            "roleRef": {"kind": "ClusterRole", "name": "impersonator"},
+            "subjects": [{"kind": "User", "name": "mallory"}],
+        }
+        violating_runner = self.live_runner(
+            cluster_roles=[impersonator_role],
+            cluster_role_bindings=[mallory_binding],
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "identity boundary"):
+            self.render(live_runner=violating_runner)
+        # An owner-SIGNED exemption (bootstrap subjects) permits it.
+        exempt_scope = dict(self.scope, iam_exempt_subjects=["User:mallory"])
+        scope_path = write_scope_fixture(
+            self.run_root, exempt_scope, name="exempt-scope.json"
+        )
+        inventory = write_inventory_fixture(
+            self.run_root,
+            [self.REFERENCE_A, self.REFERENCE_B],
+            scope=exempt_scope,
+            name="exempt-inventory.json",
+        )
+        self.render(
+            inventory=inventory,
+            scope_path=scope_path,
+            live_runner=violating_runner,
+        )
+
+    def test_wildcard_grant_to_humans_is_a_violation(self) -> None:
+        # A cluster-admin-shaped wildcard grant to a non-exempt human trips
+        # every forbidden rule; the security principal itself is allowed.
+        wildcard_role = {
+            "metadata": {"name": "everything"},
+            "rules": [
+                {"apiGroups": ["*"], "resources": ["*"], "verbs": ["*"]}
+            ],
+        }
+        human_binding = {
+            "metadata": {"name": "human-cluster-admin"},
+            "roleRef": {"kind": "ClusterRole", "name": "everything"},
+            "subjects": [{"kind": "User", "name": "some-human"}],
+        }
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "identity boundary"):
+            self.render(
+                live_runner=self.live_runner(
+                    cluster_roles=[wildcard_role],
+                    cluster_role_bindings=[human_binding],
+                )
+            )
+        security_binding = {
+            "metadata": {"name": "security-automation"},
+            "roleRef": {"kind": "ClusterRole", "name": "everything"},
+            "subjects": [
+                {
+                    "kind": "ServiceAccount",
+                    "namespace": "fs2-security",
+                    "name": "fs2-admission-guard",
+                }
+            ],
+        }
+        self.render(
+            live_runner=self.live_runner(
+                cluster_roles=[wildcard_role],
+                cluster_role_bindings=[security_binding],
+            )
+        )
+
+    def test_recovery_refuses_arbitrary_action_subsets(self) -> None:
+        import hashlib as h
+        from datetime import UTC, datetime, timedelta
+
+        now = datetime.now(UTC)
+        for actions in (
+            ["Deny"],
+            ["Warn"],
+            ["Audit"],
+            ["Deny", "Warn"],
+            ["Deny", "Audit", "Warn"],
+        ):
+            document = {
+                "schema": TOOL.RECOVERY_SCHEMA,
+                "target": "fs2-image-provenance",
+                "actions": actions,
+                "reason": "incident:INC-5 subset probe",
+                "issued_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "expires_at": (now + timedelta(hours=1)).strftime(
+                    "%Y-%m-%dT%H:%M:%SZ"
+                ),
+            }
+            payload = json.dumps(document).encode("utf-8")
+            recovery = self.run_root / "subset.json"
+            recovery.write_bytes(payload)
+            recovery.chmod(0o644)
+            signature = self.run_root / "subset.json.sig"
+            signature.write_text("fixture-owner-signature\n", encoding="utf-8")
+            signature.chmod(0o644)
+            SIGNED_AUTHORITY_HASHES.add(h.sha256(payload).hexdigest())
+            with self.assertRaisesRegex(
+                TOOL.ProvenanceError, "sanctioned enforcement state"
+            ):
+                TOOL.load_recovery_authorization(
+                    recovery, self._tmp.name, NOOP_VERIFIER
+                )
+
+    def test_sigkill_hardlink_remnants_do_not_wedge_the_chain(self) -> None:
+        # A SIGKILL between link(2) and staging cleanup leaves published
+        # files with nlink=2 (the remnant may never be deleted). Chain
+        # verification and adoption must keep working over such files, since
+        # every byte is verified against signatures/content addresses.
+        self.render()
+        heads_dir = self.run_root / "release-inventory-heads"
+        for entry in list(heads_dir.iterdir()):
+            if entry.name.endswith((".json", ".sig")):
+                os.link(entry, heads_dir / (".remnant-" + entry.name))
+        next_inventory = write_inventory_fixture(
+            self.run_root,
+            [self.REFERENCE_A, self.REFERENCE_B],
+            generation=2,
+            name="gen2-after-remnant.json",
+        )
+        self.render(inventory=next_inventory)
 
     def test_weakened_or_absent_live_policy_refuses_rendering(self) -> None:
         import copy

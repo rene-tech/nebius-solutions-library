@@ -708,6 +708,35 @@ RELEASE_KEY_SHA256 = (
 RELEASE_REMOTE_URL = "https://github.com/rene-tech/nebius-solutions-library.git"
 
 
+def _isolated_git_environment() -> dict[str, str]:
+    """Environment for remote-verification git calls: no config, no rewrite.
+
+    `git ls-remote <url>` still loads system/global/local config and the
+    GIT_CONFIG_* environment, so `url.<attacker>.insteadOf = <pinned-url>`
+    (or an injected env config) would silently REDIRECT the pinned URL to an
+    attacker remote. Remote verification therefore runs with every git
+    config source disabled and all inherited GIT_* variables stripped; the
+    call also runs OUTSIDE any repository (`git -C /`), so repo-local config
+    cannot apply either.
+    """
+    environment = {
+        key: value
+        for key, value in clean_environment().items()
+        if not key.startswith("GIT_") and not key.startswith("XDG_")
+    }
+    environment.update(
+        {
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_CONFIG_SYSTEM": "/dev/null",
+            "GIT_CONFIG_GLOBAL": "/dev/null",
+            "GIT_CONFIG_COUNT": "0",
+            "GIT_TERMINAL_PROMPT": "0",
+            "GIT_ASKPASS": "/bin/true",
+        }
+    )
+    return environment
+
+
 def _refs_containing(root: Path, commit: str, patterns: Sequence[str]) -> list[str]:
     refs = run(
         [
@@ -739,9 +768,9 @@ def _remote_verified_branches(root: Path, branch_refs: Sequence[str]) -> list[st
     if not branch_refs:
         return []
     listing = run(
-        ["git", "-C", str(root), "ls-remote", "--heads", RELEASE_REMOTE_URL],
+        ["git", "-C", "/", "ls-remote", "--heads", RELEASE_REMOTE_URL],
         capture=True,
-        env=clean_environment(),
+        env=_isolated_git_environment(),
     )
     remote_targets: dict[str, str] = {}
     for line in listing.stdout.splitlines():
@@ -770,9 +799,9 @@ def _remote_verified_tags(root: Path, tag_refs: Sequence[str]) -> list[str]:
     if not tag_refs:
         return []
     listing = run(
-        ["git", "-C", str(root), "ls-remote", "--tags", RELEASE_REMOTE_URL],
+        ["git", "-C", "/", "ls-remote", "--tags", RELEASE_REMOTE_URL],
         capture=True,
-        env=clean_environment(),
+        env=_isolated_git_environment(),
     )
     remote_targets: dict[str, str] = {}
     for line in listing.stdout.splitlines():
@@ -880,21 +909,23 @@ def _open_evidence_descriptor(path: Path) -> int:
         os.close(dir_fd)
 
 
-def _read_evidence_file(path: Path) -> bytes:
+def _read_evidence_file(path: Path, allow_hardlinks: bool = False) -> bytes:
     """Read private evidence with a secure walk and pre/post fstat stability.
 
-    The OPEN descriptor must be a regular, single-linked, caller-owned file
-    with no group/other access, and it must be byte-for-byte stable across
-    the read: a same-inode overwrite during a multi-chunk read yields mixed
-    content no single version ever had, so any size/mtime/ctime/nlink/mode
-    change between the pre- and post-read fstat refuses the bytes.
+    The OPEN descriptor must be a regular, caller-owned file with no group/
+    other access, and byte-for-byte stable across the read. Link count must
+    be 1 UNLESS the caller explicitly tolerates hardlinks: content-addressed
+    stores verify the bytes against an independent hash afterwards, and a
+    SIGKILL between link(2) and staging cleanup legitimately leaves the
+    published file with nlink=2 (the staging remnant may never be deleted
+    under the no-delete constraint), which must not wedge recovery.
     """
     descriptor = _open_evidence_descriptor(path)
     try:
         before = os.fstat(descriptor)
         if (
             not stat.S_ISREG(before.st_mode)
-            or before.st_nlink != 1
+            or (before.st_nlink != 1 and not allow_hardlinks)
             or before.st_uid != os.getuid()
             or stat.S_IMODE(before.st_mode) & ~0o600
         ):
@@ -929,8 +960,10 @@ def _read_evidence_file(path: Path) -> bytes:
         os.close(descriptor)
 
 
-def _sha256_file(path: Path) -> str:
-    return hashlib.sha256(_read_evidence_file(path)).hexdigest()
+def _sha256_file(path: Path, allow_hardlinks: bool = False) -> str:
+    return hashlib.sha256(
+        _read_evidence_file(path, allow_hardlinks=allow_hardlinks)
+    ).hexdigest()
 
 
 def release_anchor_store(run_root: Path) -> Path:
@@ -991,7 +1024,7 @@ def _verified_bundle_snapshot(
     pathname swap between hashing and git use cannot make the verified bytes
     differ from the bytes git consumes.
     """
-    data = _read_evidence_file(bundle)
+    data = _read_evidence_file(bundle, allow_hardlinks=True)
     if hashlib.sha256(data).hexdigest() != expected_sha256:
         raise DeploymentError(
             f"anchor bundle no longer matches its recorded SHA-256: {bundle}; "
@@ -1284,7 +1317,7 @@ def create_release_anchor(
                 fsync_directory(bundle_directory)
         # Staging is cleaned first so the published winner is single-linked,
         # then the winner is re-verified at the published path.
-        if published and _sha256_file(bundle) != bundle_sha:
+        if published and _sha256_file(bundle, allow_hardlinks=True) != bundle_sha:
             raise DeploymentError(
                 f"published anchor bundle changed during publication: "
                 f"{bundle}; refusing to index it"

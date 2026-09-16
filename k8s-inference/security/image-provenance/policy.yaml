@@ -21,15 +21,18 @@
 # prefix, signed digests, deploy principals) lives in the paramRef ConfigMap
 # fs2-system/fs2-image-provenance-allowlist. The governed path renders it with
 # security/image-provenance/provenance.py render-allowlist, which requires a
-# signed release receipt and a cosign verification for every digest — but the
-# ConfigMap itself is NOT mutation-protected: any principal with ConfigMap
-# update in fs2-system can add digests or deploy principals directly,
-# bypassing the renderer. Closure of that gap is an owner-gated IAM decision
-# (see the parent program's docs/deploy-identity-proposal.md): exclusive
-# automation-identity RBAC on this ConfigMap, admission protection of the
-# ConfigMap and of these policy objects, and removal of human workload/
-# ConfigMap-mutation/impersonation rights. Until then this policy set is a
-# bootstrap-fail-closed but operator-bypassable control.
+# signed release receipt and a cosign verification for every digest. The
+# ConfigMap IS mutation-protected in-cluster once fs2-provenance-guard is
+# applied (only the security automation identity may write it); the policy
+# OBJECTS themselves cannot be admission-protected (see the guard header:
+# admission-configuration writes are architecturally exempt), so their
+# non-removability is the owner-executed EXTERNAL IAM closure — which the
+# renderer ENFORCES read-only at every render: verify-iam-boundary refuses
+# to render while any non-exempt subject holds admission-configuration
+# write/delete, impersonation (users/groups/serviceaccounts/uids/extras),
+# ServiceAccount token minting, RBAC bind/escalate, or protected-namespace
+# secrets access, and the live-equality check refuses on any drifted,
+# weakened, or missing policy object.
 #
 # Failure posture:
 #   - failurePolicy Fail plus fail-closed CEL: a missing or malformed
@@ -54,12 +57,22 @@
 #   live under the platform prefix. Mutable tags (`:latest`) and foreign
 #   registries (e.g. evil.invalid/debug:latest) are denied at injection.
 #
-# Rollback (non-destructive first — keep the policies and audit trail):
-#   kubectl patch validatingadmissionpolicybinding fs2-image-provenance \
-#     --type=json -p '[{"op":"replace","path":"/spec/validationActions","value":["Audit","Warn"]}]'
-#   (same for fs2-helm-release-governance; restore ["Deny","Audit"] to re-enable).
-# Deleting the policy objects or the allow-list ConfigMap removes enforcement
-# entirely and requires the same authorization as disabling a security control.
+# Rollback / break-glass (governed; never a direct patch, never deletion):
+#   1. The OWNER signs a bounded recovery authorization naming the target
+#      binding and exactly one sanctioned state — [Audit, Warn] to observe,
+#      [Deny, Audit] to restore enforcement.
+#   2. `provenance.py verify-recovery --recovery <doc> --public-key
+#      security/image-provenance/cosign.pub` verifies it and prints the
+#      annotation value; `provenance.py reconcile-boundary --recovery <doc>`
+#      emits the exact annotated patch (PLAN only; --execute works only in an
+#      authorized rollout window under the SECURITY identity).
+#   3. While a binding is weakened, every allow-list render REFUSES (live
+#      actions differ from the committed definition), so observation mode
+#      cannot silently become the new normal.
+# A direct kubectl patch by any other identity is an out-of-contract bypass:
+# it is detected (render refusal + audit) and, once the external IAM closure
+# is executed, the identity holding such rights no longer exists. Deletion is
+# never rollback.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:

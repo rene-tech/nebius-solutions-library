@@ -251,7 +251,9 @@ def _open_evidence_descriptor(path: Path) -> int:
         os.close(dir_fd)
 
 
-def _read_evidence_bytes(path: Path, private: bool = True) -> bytes:
+def _read_evidence_bytes(
+    path: Path, private: bool = True, allow_hardlinks: bool = False
+) -> bytes:
     """Read evidence via a secure component walk and refuse anomalies.
 
     Every path component down to the file is opened without following
@@ -267,7 +269,12 @@ def _read_evidence_bytes(path: Path, private: bool = True) -> bytes:
         status = os.fstat(fd)
         if not stat_module.S_ISREG(status.st_mode):
             raise ProvenanceError(f"evidence path is not a regular file: {path}")
-        if status.st_nlink != 1:
+        if status.st_nlink != 1 and not allow_hardlinks:
+            # Content-addressed/signature-verified stores opt out: their
+            # bytes are verified against independent expectations, and a
+            # SIGKILL between link(2) and staging cleanup legitimately leaves
+            # nlink=2 remnants that may never be deleted and must not wedge
+            # recovery.
             raise ProvenanceError(
                 f"evidence file has link count {status.st_nlink}: {path}; "
                 "hardlinked evidence is refused"
@@ -838,7 +845,7 @@ def _verified_bundle_snapshot(
         raise ProvenanceError(
             f"anchor bundle for {context} is missing or a symlink: {bundle_path}"
         )
-    bundle_bytes = _read_evidence_bytes(bundle_path)
+    bundle_bytes = _read_evidence_bytes(bundle_path, allow_hardlinks=True)
     if hashlib.sha256(bundle_bytes).hexdigest() != expected_sha256:
         raise ProvenanceError(
             f"anchor bundle for {context} no longer matches its recorded "
@@ -881,7 +888,7 @@ def _retain_sbom_evidence(
             pass
         else:
             _fsync_dir(directory)
-    published = _read_evidence_bytes(final)
+    published = _read_evidence_bytes(final, allow_hardlinks=True)
     if (
         hashlib.sha256(published).hexdigest() != sha256_hex
         or published != payload
@@ -903,7 +910,7 @@ def _reproven_sbom_evidence(
             f"retained SBOM evidence for {context} is missing: {retained}; a "
             "receipt without its content-addressed evidence authorizes nothing"
         )
-    payload = _read_evidence_bytes(retained)
+    payload = _read_evidence_bytes(retained, allow_hardlinks=True)
     if hashlib.sha256(payload).hexdigest() != sha256_hex:
         raise ProvenanceError(
             f"retained SBOM evidence for {context} no longer matches its "
@@ -1132,8 +1139,8 @@ def _existing_receipt_or_conflict(
             f"{final_dir}; refusing to overwrite — restore or archive the "
             "existing evidence first"
         )
-    receipt_bytes = _read_evidence_bytes(path)
-    signature_bytes = _read_evidence_bytes(signature)
+    receipt_bytes = _read_evidence_bytes(path, allow_hardlinks=True)
+    signature_bytes = _read_evidence_bytes(signature, allow_hardlinks=True)
     try:
         _verify_blob_bytes(
             public_key_path,
@@ -1273,8 +1280,12 @@ def _publish_receipt(
         ):
             leftover.unlink()
         staging.rmdir()
-        published_receipt = _read_evidence_bytes(final_dir / "receipt.json")
-        published_signature = _read_evidence_bytes(final_dir / "receipt.json.sig")
+        published_receipt = _read_evidence_bytes(
+            final_dir / "receipt.json", allow_hardlinks=True
+        )
+        published_signature = _read_evidence_bytes(
+            final_dir / "receipt.json.sig", allow_hardlinks=True
+        )
         if (
             published_receipt != staged_receipt_bytes
             or published_signature != staged_signature_bytes
@@ -1568,8 +1579,8 @@ def load_bound_receipt(
             f"no signed release receipt for {reference} at {path}; create one "
             "with provenance.py receipt before signing or allow-listing"
         )
-    receipt_bytes = _read_evidence_bytes(path)
-    signature_bytes = _read_evidence_bytes(signature)
+    receipt_bytes = _read_evidence_bytes(path, allow_hardlinks=True)
+    signature_bytes = _read_evidence_bytes(signature, allow_hardlinks=True)
     try:
         _verify_blob_bytes(
             public_key_path,
@@ -1594,7 +1605,7 @@ def load_bound_receipt(
 INVENTORY_SCHEMA = "fs2-serve.nebius.ai/release-inventory/v4"
 COLLECTOR_METHOD = "fs2-live-enumeration/v1"
 INVENTORY_CHECKPOINT_SCHEMA = "fs2-serve.nebius.ai/inventory-checkpoint/v1"
-SCOPE_SCHEMA = "fs2-serve.nebius.ai/release-scope/v4"
+SCOPE_SCHEMA = "fs2-serve.nebius.ai/release-scope/v5"
 RECOVERY_SCHEMA = "fs2-serve.nebius.ai/admission-recovery/v1"
 GUARD_PARAMS_NAME = "fs2-security-guard-params"
 PROTECTED_POLICY_NAMES = (
@@ -1636,6 +1647,69 @@ SCOPE_FIELDS = (
     "verification_key_sha256",
     "policy_sha256",
     "frozen_bindings",
+    "iam_exempt_subjects",
+)
+RBAC_SUBJECT_PATTERN = re.compile(
+    r"^(User:[A-Za-z0-9@:/._-]{1,255}"
+    r"|Group:[A-Za-z0-9@:/._-]{1,255}"
+    r"|ServiceAccount:[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?:"
+    r"[a-z0-9]([a-z0-9-]{0,251}[a-z0-9])?)$"
+)
+# The owner's COMPLETE identity-path closure list, machine-readable: any
+# subject holding ANY of these permissions can reach the security identity
+# (directly or by minting/stealing credentials) and voids the external
+# boundary. `verify-iam-boundary` audits live RBAC against this table and the
+# renderer refuses to render while a non-exempt subject holds one.
+FORBIDDEN_IDENTITY_RULES: tuple[dict[str, "set[str] | str | bool"], ...] = (
+    # Mutating the admission configuration itself (architecturally exempt
+    # from in-cluster admission, so ONLY IAM can protect it).
+    {
+        "apiGroups": {"admissionregistration.k8s.io"},
+        "resources": {
+            "validatingadmissionpolicies",
+            "validatingadmissionpolicybindings",
+            "mutatingwebhookconfigurations",
+            "validatingwebhookconfigurations",
+        },
+        "verbs": {"create", "update", "patch", "delete", "deletecollection"},
+        "why": "admission-configuration write/delete",
+    },
+    # Impersonation of every identity dimension.
+    {
+        "apiGroups": {""},
+        "resources": {"users", "groups", "serviceaccounts", "uids"},
+        "verbs": {"impersonate"},
+        "why": "identity impersonation",
+    },
+    {
+        "apiGroups": {"authentication.k8s.io"},
+        "resources": {"userextras", "uids"},
+        "verbs": {"impersonate"},
+        "why": "identity impersonation (extras/uid)",
+    },
+    # Minting ServiceAccount credentials.
+    {
+        "apiGroups": {""},
+        "resources": {"serviceaccounts/token"},
+        "verbs": {"create"},
+        "why": "ServiceAccount token minting",
+    },
+    # Privilege delegation through RBAC itself.
+    {
+        "apiGroups": {"rbac.authorization.k8s.io"},
+        "resources": {"roles", "clusterroles"},
+        "verbs": {"bind", "escalate"},
+        "why": "RBAC bind/escalate delegation",
+    },
+    # Stored-credential delegation: reading Secrets in the protected
+    # namespaces can expose ServiceAccount credentials.
+    {
+        "apiGroups": {""},
+        "resources": {"secrets"},
+        "verbs": {"get", "list", "watch"},
+        "why": "stored-credential access in protected namespaces",
+        "namespaced_to_scope": True,
+    },
 )
 FROZEN_BINDING_ID_PATTERN = re.compile(
     r"^configmap/([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)/([a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?)$"
@@ -1743,6 +1817,22 @@ def _validated_scope(value, context: str) -> dict:
         raise ProvenanceError(
             f"{context} needs the exact SHA-256 of the committed admission "
             "policy manifest it authorizes"
+        )
+    exempt = value.get("iam_exempt_subjects")
+    if (
+        not isinstance(exempt, list)
+        or len(set(exempt)) != len(exempt)
+        or not all(
+            isinstance(item, str) and RBAC_SUBJECT_PATTERN.match(item)
+            for item in exempt
+        )
+    ):
+        raise ProvenanceError(
+            f"{context} needs a list of unique RBAC subjects "
+            "(User:<name> | Group:<name> | ServiceAccount:<ns>:<name>) that "
+            "the OWNER exempts from the identity-path audit (e.g. bootstrap "
+            "system groups); everything else holding a forbidden verb "
+            "refuses rendering"
         )
     frozen = value.get("frozen_bindings")
     if (
@@ -2305,16 +2395,15 @@ def load_recovery_authorization(
             f"{recovery_path} does not target a protected binding"
         )
     actions = document.get("actions")
-    if (
-        not isinstance(actions, list)
-        or not actions
-        or len(set(actions)) != len(actions)
-        or not set(actions) <= {"Deny", "Audit", "Warn"}
+    if not isinstance(actions, list) or sorted(actions) not in (
+        ["Audit", "Deny"],
+        ["Audit", "Warn"],
     ):
         raise ProvenanceError(
-            f"{recovery_path} must name the exact validationActions to set "
-            "(a unique non-empty subset of Deny/Audit/Warn); deletion is "
-            "never a recovery action"
+            f"{recovery_path} must name exactly one sanctioned enforcement "
+            "state: [Deny, Audit] (enforce/restore) or [Audit, Warn] "
+            "(observation break-glass); arbitrary action subsets and "
+            "deletion are never recovery"
         )
     if not DRAIN_REASON_PATTERN.match(str(document.get("reason", ""))):
         raise ProvenanceError(
@@ -2636,6 +2725,9 @@ WORKLOAD_KINDS = (
     ("job", "jobs"),
     ("cronjob", "cronjobs"),
 )
+# The frozen-binding label is an OPTIONAL operator hint only: discovery is
+# content-based (see _verify_frozen_bindings) and never depends on a
+# removable label.
 FROZEN_BINDING_LABEL = "security.fs2.nebius.ai/frozen-binding=true"
 HELM_PAGE_SIZE = 256
 
@@ -2823,15 +2915,17 @@ def _verify_frozen_bindings(
 ) -> None:
     """Frozen bindings are ENUMERATED authoritatively, never signer-chosen.
 
-    The signer does not pick which resources count: the collector lists every
-    ConfigMap labeled `security.fs2.nebius.ai/frozen-binding=true` in the
-    owner-approved namespaces through the authenticated API, extracts the
-    platform references those objects actually carry, and the signed source's
-    refs AND resource identities must equal that enumeration exactly. An
-    omitted labeled binding, a forged reference, or a self-asserted resource
-    identity all fail closed. (Labeling/unlabeling a binding is a cluster
-    mutation visible to the admission and audit controls, not a signer
-    decision.)
+    Discovery is CONTENT-BASED and label-independent: every ConfigMap in the
+    owner-approved namespaces is fetched through the authenticated API, and
+    any object that actually CARRIES a platform image reference is frozen
+    surface — so a NEW binding is discovered the moment it exists, no
+    producer has to emit (and no attacker can remove) an opt-in label. The
+    `security.fs2.nebius.ai/frozen-binding=true` label remains an optional
+    operator hint only. On top of discovery, the OWNER-SIGNED scope pins
+    known bindings (`frozen_bindings`), which are fetched directly and MUST
+    exist. The signed source's refs AND resource identities must equal the
+    union exactly; omission, forgery, and self-asserted identities all fail
+    closed.
     """
     recorded = {
         validate_digest_reference(str(ref)) for ref in source.get("refs") or []
@@ -2884,8 +2978,6 @@ def _verify_frozen_bindings(
                         "configmaps",
                         "-n",
                         namespace,
-                        "-l",
-                        FROZEN_BINDING_LABEL,
                         "-o",
                         "json",
                     ]
@@ -2893,6 +2985,8 @@ def _verify_frozen_bindings(
             )
             for item in listing.get("items") or []:
                 name = str((item.get("metadata") or {}).get("name", ""))
+                if name in (ALLOWLIST_NAME, GUARD_PARAMS_NAME):
+                    continue
                 references = _platform_references_in_text(
                     json.dumps(item), scope["platform_repository_prefix"]
                 )
@@ -2922,6 +3016,148 @@ def _verify_frozen_bindings(
 
 ACCEPTANCE_HEAD_SCHEMA = "fs2-serve.nebius.ai/inventory-acceptance/v1"
 GENESIS_HASH = "0" * 64
+
+
+def _rbac_rule_is_forbidden(rule: dict, namespaced: bool, scope: dict) -> str | None:
+    """Return the reason when an RBAC rule grants a forbidden identity path."""
+    groups = {str(g) for g in rule.get("apiGroups") or []}
+    resources = {str(r) for r in rule.get("resources") or []}
+    verbs = {str(v) for v in rule.get("verbs") or []}
+    for forbidden in FORBIDDEN_IDENTITY_RULES:
+        forbidden_groups = set(map(str, forbidden["apiGroups"]))  # type: ignore[arg-type]
+        forbidden_resources = set(map(str, forbidden["resources"]))  # type: ignore[arg-type]
+        forbidden_verbs = set(map(str, forbidden["verbs"]))  # type: ignore[arg-type]
+        # `namespaced_to_scope` rules are enforced everywhere they can reach
+        # the protected namespaces: namespaced bindings are only enumerated
+        # INSIDE the scope namespaces, and a cluster-wide grant covers them
+        # by definition, so both binding shapes are audited identically.
+        if not (groups & forbidden_groups or "*" in groups):
+            continue
+        if not (resources & forbidden_resources or "*" in resources):
+            continue
+        if not (verbs & forbidden_verbs or "*" in verbs):
+            continue
+        return str(forbidden["why"])
+    return None
+
+
+def _binding_subjects(binding: dict) -> list[str]:
+    subjects = []
+    for subject in binding.get("subjects") or []:
+        kind = str(subject.get("kind", ""))
+        name = str(subject.get("name", ""))
+        if kind == "ServiceAccount":
+            namespace = str(subject.get("namespace", ""))
+            subjects.append(f"ServiceAccount:{namespace}:{name}")
+        else:
+            subjects.append(f"{kind}:{name}")
+    return subjects
+
+
+def _assert_iam_boundary(owner_scope: dict, live_runner) -> None:
+    """ENFORCE the external identity boundary at render time, read-only.
+
+    The external provider/IAM control is not prose: this audit walks every
+    live (Cluster)RoleBinding through the authenticated API, resolves its
+    role's rules, and REFUSES to render while any subject outside the
+    owner-signed exemption list (plus the security principals) holds a
+    forbidden identity path — admission-configuration writes, impersonation
+    in any dimension, ServiceAccount token minting, RBAC bind/escalate, or
+    stored-credential access in the protected namespaces. Until the owner
+    executes the IAM closure at the authorized rollout window, rendering
+    fails closed; afterwards, any regression re-opens the refusal. This is
+    the enforced arm; the reconcile-boundary plan output is the operator
+    runbook for the same contract.
+    """
+    allowed = set(owner_scope["iam_exempt_subjects"])
+    # Security principals are system:serviceaccount:<ns>:<name>; RBAC
+    # subjects spell the same identity ServiceAccount:<ns>:<name> (and a
+    # username-style User: subject is possible too) — accept both spellings.
+    for principal in owner_scope["security_principals"]:
+        allowed.add(f"User:{principal}")
+        if principal.startswith("system:serviceaccount:"):
+            namespace_and_name = principal[len("system:serviceaccount:"):]
+            allowed.add(f"ServiceAccount:{namespace_and_name}")
+    violations: list[str] = []
+    try:
+        cluster_roles = {
+            str(item.get("metadata", {}).get("name", "")): item
+            for item in json.loads(
+                live_runner(["kubectl", "get", "clusterroles", "-o", "json"])
+            ).get("items")
+            or []
+        }
+        cluster_bindings = json.loads(
+            live_runner(["kubectl", "get", "clusterrolebindings", "-o", "json"])
+        ).get("items") or []
+        namespaced_bindings: list[tuple[str, dict, dict]] = []
+        for namespace in owner_scope["namespaces"]:
+            roles = {
+                str(item.get("metadata", {}).get("name", "")): item
+                for item in json.loads(
+                    live_runner(
+                        ["kubectl", "get", "roles", "-n", namespace, "-o", "json"]
+                    )
+                ).get("items")
+                or []
+            }
+            for binding in (
+                json.loads(
+                    live_runner(
+                        [
+                            "kubectl",
+                            "get",
+                            "rolebindings",
+                            "-n",
+                            namespace,
+                            "-o",
+                            "json",
+                        ]
+                    )
+                ).get("items")
+                or []
+            ):
+                namespaced_bindings.append((namespace, binding, roles))
+    except (subprocess.CalledProcessError, OSError, json.JSONDecodeError) as error:
+        raise ProvenanceError(
+            "the live RBAC surface cannot be audited through the "
+            "authenticated API; the identity boundary is unverifiable — "
+            "rendering fails closed"
+        ) from error
+
+    def check(binding: dict, rules: list[dict], namespaced: bool) -> None:
+        for rule in rules or []:
+            reason = _rbac_rule_is_forbidden(rule, namespaced, owner_scope)
+            if reason is None:
+                continue
+            for subject in _binding_subjects(binding):
+                if subject not in allowed:
+                    binding_name = str(
+                        binding.get("metadata", {}).get("name", "?")
+                    )
+                    violations.append(
+                        f"{subject} holds '{reason}' via {binding_name}"
+                    )
+
+    for binding in cluster_bindings:
+        role_ref = binding.get("roleRef") or {}
+        role = cluster_roles.get(str(role_ref.get("name", "")), {})
+        check(binding, role.get("rules") or [], namespaced=False)
+    for namespace, binding, roles in namespaced_bindings:
+        role_ref = binding.get("roleRef") or {}
+        if str(role_ref.get("kind", "")) == "ClusterRole":
+            role = cluster_roles.get(str(role_ref.get("name", "")), {})
+        else:
+            role = roles.get(str(role_ref.get("name", "")), {})
+        check(binding, role.get("rules") or [], namespaced=True)
+    if violations:
+        raise ProvenanceError(
+            "the external identity boundary does not hold: "
+            + "; ".join(sorted(set(violations))[:10])
+            + " — rendering fails closed until the owner-executed IAM "
+            "closure removes these grants (or the owner signs an explicit "
+            "exemption into the scope)"
+        )
 
 
 def _acceptance_heads_directory(run_root: Path) -> Path:
@@ -2967,8 +3203,8 @@ def _verified_acceptance_chain(
                 f"inventory acceptance head {head} is UNSIGNED; the "
                 "acceptance chain fails closed"
             )
-        payload = _read_evidence_bytes(head)
-        signature = _read_evidence_bytes(signature_path)
+        payload = _read_evidence_bytes(head, allow_hardlinks=True)
+        signature = _read_evidence_bytes(signature_path, allow_hardlinks=True)
         _verify_blob_bytes(
             public_key_path,
             payload,
@@ -3102,7 +3338,7 @@ def _link_no_replace_or_adopt(staged: Path, final: Path, payload: bytes) -> None
         os.link(staged, final)
     except FileExistsError:
         if final.is_symlink() or not final.is_file() or (
-            _read_evidence_bytes(final) != payload
+            _read_evidence_bytes(final, allow_hardlinks=True) != payload
         ):
             raise ProvenanceError(
                 f"conflicting file already exists at {final}; the acceptance "
@@ -3153,7 +3389,7 @@ def _append_acceptance_head(
                     f"conflicting file already exists at {final_signature}; "
                     "the acceptance chain never replaces existing content"
                 )
-            orphan = _read_evidence_bytes(final_signature)
+            orphan = _read_evidence_bytes(final_signature, allow_hardlinks=True)
             try:
                 _verify_blob_bytes(
                     public_key_path,
@@ -3397,6 +3633,7 @@ def verified_allowlist(
                 ) from error
             digests.append(reference.rsplit("@", 1)[1])
         _assert_policy_matches_scope(owner_scope, live_runner)
+        _assert_iam_boundary(owner_scope, live_runner)
         manifest = render_allowlist(
             owner_scope["registry_prefixes"],
             owner_scope["platform_repository_prefix"],
@@ -3625,6 +3862,32 @@ def main(argv: Sequence[str] | None = None) -> int:
     guard.add_argument("--public-key", required=True)
     guard.add_argument("--scope", required=True, type=Path)
 
+    reconcile = subcommands.add_parser(
+        "reconcile-boundary",
+        help=(
+            "security-owned reconciler: audit the live policy objects, "
+            "guard parameters, and IAM identity paths against the committed "
+            "manifest + owner-signed scope, and emit the exact restore "
+            "commands (PLAN ONLY by default; --execute is refused without "
+            "FS2_ROLLOUT_AUTHORIZED=1 at the separately authorized window)"
+        ),
+    )
+    reconcile.add_argument("--public-key", required=True)
+    reconcile.add_argument("--scope", required=True, type=Path)
+    reconcile.add_argument(
+        "--recovery",
+        type=Path,
+        help=(
+            "owner-signed recovery authorization; when given, emit the "
+            "annotated validationActions patch it authorizes"
+        ),
+    )
+    reconcile.add_argument(
+        "--execute",
+        action="store_true",
+        help="apply the emitted commands (rollout window only)",
+    )
+
     recovery = subcommands.add_parser(
         "verify-recovery",
         help=(
@@ -3685,6 +3948,81 @@ def main(argv: Sequence[str] | None = None) -> int:
                 sort_keys=True,
             )
         )
+    elif args.command == "reconcile-boundary":
+        if args.execute and os.environ.get("FS2_ROLLOUT_AUTHORIZED") != "1":
+            raise ProvenanceError(
+                "reconcile-boundary --execute is refused outside a "
+                "separately authorized rollout window "
+                "(FS2_ROLLOUT_AUTHORIZED=1); run without --execute for the "
+                "plan"
+            )
+        with _PinnedPublicKey(args.public_key) as pinned:
+            owner_scope = load_owner_scope(args.scope, pinned.path)
+            plan: list[list[str]] = []
+            policy_path = Path(__file__).resolve().parent / "policy.yaml"
+            try:
+                _assert_policy_matches_scope(owner_scope, _run_capture)
+            except ProvenanceError as drift:
+                print(f"# policy drift detected: {drift}", file=sys.stderr)
+                plan.append(["kubectl", "apply", "-f", str(policy_path)])
+                plan.append(
+                    [
+                        "kubectl",
+                        "-n",
+                        ALLOWLIST_NAMESPACE,
+                        "apply",
+                        "-f",
+                        "<render-guard-params output>",
+                    ]
+                )
+            try:
+                _assert_iam_boundary(owner_scope, _run_capture)
+            except ProvenanceError as violation:
+                print(f"# identity-path violation: {violation}", file=sys.stderr)
+                print(
+                    "# IAM closure is an owner action: remove the listed "
+                    "grants via provider IAM/RBAC (see README identity-path "
+                    "list); no kubectl command is emitted because RBAC "
+                    "removal is owner-executed",
+                    file=sys.stderr,
+                )
+            if args.recovery is not None:
+                document, annotation = load_recovery_authorization(
+                    args.recovery, pinned.path
+                )
+                patch = json.dumps(
+                    {
+                        "metadata": {
+                            "annotations": {
+                                "security.fs2.nebius.ai/recovery-authorization": annotation
+                            }
+                        },
+                        "spec": {"validationActions": document["actions"]},
+                    }
+                )
+                plan.append(
+                    [
+                        "kubectl",
+                        "patch",
+                        "validatingadmissionpolicybinding",
+                        document["target"],
+                        "--type=merge",
+                        "-p",
+                        patch,
+                    ]
+                )
+            for command in plan:
+                print("PLAN: " + " ".join(command))
+            if args.execute:
+                for command in plan:
+                    if "<render-guard-params output>" in command:
+                        raise ProvenanceError(
+                            "render the guard parameters to a file first "
+                            "(render-guard-params) and apply that artifact"
+                        )
+                    _run_capture(command)
+            elif not plan:
+                print("PLAN: nothing to reconcile — live state matches")
     elif args.command == "verify-recovery":
         with _PinnedPublicKey(args.public_key) as pinned:
             document, annotation = load_recovery_authorization(

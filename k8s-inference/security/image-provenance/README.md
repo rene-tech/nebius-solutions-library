@@ -329,22 +329,30 @@ spec:
 EOF
 ```
 
-## Rollback (non-destructive first)
+## Rollback / break-glass (governed; never a direct patch, never deletion)
 
-Denials are rolled back by demoting enforcement to observation, which keeps
-the policies, the allow-list, and the audit trail in place:
+Enforcement changes are a SIGNED, bounded, reversible procedure executed by
+the security identity — a direct `kubectl patch` is out-of-contract (it is
+detected: every allow-list render refuses while live actions differ from the
+committed definition, and after the owner IAM closure no other identity holds
+the right at all):
 
-```bash
-kubectl patch validatingadmissionpolicybinding fs2-image-provenance \
-  --type=json -p '[{"op":"replace","path":"/spec/validationActions","value":["Audit","Warn"]}]'
-kubectl patch validatingadmissionpolicybinding fs2-helm-release-governance \
-  --type=json -p '[{"op":"replace","path":"/spec/validationActions","value":["Audit","Warn"]}]'
-```
+1. The owner signs a recovery authorization (schema
+   `fs2-serve.nebius.ai/admission-recovery/v1`) naming ONE target binding and
+   exactly one sanctioned state: `[Audit, Warn]` (observe) or `[Deny, Audit]`
+   (restore enforcement), bounded to at most 72h and a tracking identifier.
+2. `provenance.py verify-recovery --recovery <doc> --public-key
+   security/image-provenance/cosign.pub` verifies the signature over the
+   exact bytes and prints the annotation value.
+3. `provenance.py reconcile-boundary --public-key … --scope … --recovery
+   <doc>` emits the exact annotated patch (PLAN by default; `--execute`
+   refuses outside an authorized rollout window, `FS2_ROLLOUT_AUTHORIZED=1`,
+   and is run by the SECURITY identity only). The same command plans
+   re-application of drifted policy objects and reports identity-path
+   violations for the owner.
 
-Re-enable by restoring `["Deny", "Audit"]`. Deleting the policy objects and
-the allow-list ConfigMap removes enforcement entirely and is a last resort
-that requires the same authorization as disabling a security control.
-Existing Pods are never affected by the policies; only new admissions are.
+Deletion is never rollback. Existing Pods are never affected by the
+policies; only new admissions are.
 
 ## Deliberate boundaries and residuals
 
@@ -388,8 +396,37 @@ Existing Pods are never affected by the policies; only new admissions are.
   owner-signed scope), and drift or deletion of ANY of the six policy
   objects is DETECTED at every render by the live-equality check
   (image-provenance, Helm-governance, and guard policies + bindings, all
-  normalized over every narrowing field WITH API defaulting applied), which
-  refuses to render against a missing, weakened, or drifted object.
+  normalized over every narrowing field WITH API defaulting applied — a
+  live GET returns persisted defaults such as `matchPolicy: Equivalent` and
+  rule scope `*`, which compare equal to committed YAML that omits them),
+  which refuses to render against a missing, weakened, or drifted object,
+  and the live guard-params content must equal the owner-signed scope. The
+  IDENTITY side of the external boundary is ENFORCED read-only at every
+  render: `_assert_iam_boundary` walks live (Cluster)RoleBindings and
+  refuses while any non-exempt subject (outside the scope's
+  `security_principals` and owner-signed `iam_exempt_subjects`) holds a
+  forbidden identity path — admission-configuration write/delete,
+  impersonation of users/groups/serviceaccounts/uids/extras, ServiceAccount
+  token minting, RBAC bind/escalate, or protected-namespace secrets access —
+  so rendering stays impossible until the owner executes the IAM closure at
+  the authorized window and re-opens on any later regression.
+  `reconcile-boundary` is the security-owned runbook command: it plans
+  re-application of drifted objects, reports identity-path violations, and
+  emits the annotated recovery patch; `--execute` refuses outside an
+  authorized rollout window. Remote verification is redirect-proof: the
+  wrapper's ls-remote runs config-isolated (`GIT_CONFIG_*` disabled, outside
+  any repository), so `url.*.insteadOf` rewrites and repo/global config
+  cannot divert the source-pinned URL. Frozen-binding discovery is
+  CONTENT-BASED across every ConfigMap in the scope namespaces — the
+  `frozen-binding` label is an optional hint, never the mechanism, so a new
+  or unlabeled binding is discovered the moment it carries a platform
+  reference, on top of the owner-pinned must-exist list. Crash remnants
+  cannot wedge recovery: content-addressed/signature-verified stores
+  tolerate the nlink=2 debris a SIGKILL between link(2) and staging cleanup
+  leaves behind (the remnant is never deleted; the bytes are still verified
+  against their hash/signature), and an orphaned acceptance-head signature
+  is VERIFIED over the deterministic payload and adopted rather than
+  re-signed (real ECDSA is randomized).
 - Kind boundary evidence (2026-09-16): as the configured cluster-admin
   principal, a direct config-only Pod patch, mutation of the allow-list
   ConfigMap, deletion of the VAP objects, and a Helm release-Secret write
