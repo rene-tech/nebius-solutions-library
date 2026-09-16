@@ -172,6 +172,9 @@ output "owned_resource_ids" {
     scientific_artifacts_writer_sa  = try(nebius_iam_v1_service_account.scientific_artifacts[0].id, null)
     scientific_artifacts_group      = try(nebius_iam_v1_group.scientific_artifacts_writers[0].id, null)
     scientific_artifacts_access_key = try(nebius_iam_v2_access_key.scientific_artifacts[0].id, null)
+    postgresql_backup_writer_sa     = try(nebius_iam_v1_service_account.postgresql_backup[0].id, null)
+    postgresql_backup_group         = try(nebius_iam_v1_group.postgresql_backup_writers[0].id, null)
+    postgresql_backup_access_key    = try(nebius_iam_v2_access_key.postgresql_backup[0].id, null)
     nodepull_sa                     = nebius_iam_v1_service_account.nodepull.id
     target_reader_group             = nebius_iam_v1_group.target_registry_readers.id
     external_reader_groups = {
@@ -430,5 +433,80 @@ output "scientific_artifacts_object_storage_access" {
     access_key_id       = nebius_iam_v2_access_key.scientific_artifacts[0].status.aws_access_key_id
     secret_reference_id = nebius_iam_v2_access_key.scientific_artifacts[0].status.secret_reference_id
     resource_version    = nebius_iam_v2_access_key.scientific_artifacts[0].resource_version
+  } : null
+}
+
+output "postgresql_backup_storage_contract" {
+  description = "Dedicated same-region retained and versioned CloudNativePG backup store. Contains no credential material."
+  value = var.postgresql_backup.enabled ? {
+    schema     = "fs2-serve.nebius.ai/postgresql-backup-storage/v1"
+    project_id = nonsensitive(var.project_id)
+    region     = local.selected_target.region
+    object_storage = {
+      id                = nebius_storage_v1_bucket.postgresql_backup[0].id
+      name              = nebius_storage_v1_bucket.postgresql_backup[0].name
+      endpoint          = local.postgresql_backup_endpoint
+      max_size_gib      = var.postgresql_backup.object_storage.max_size_gib
+      versioning_policy = "ENABLED"
+      storage_class     = "STANDARD"
+      addressing_style  = "path"
+      verify_tls        = true
+    }
+    writer = {
+      service_account_id = nebius_iam_v1_service_account.postgresql_backup[0].id
+      group_id           = nebius_iam_v1_group.postgresql_backup_writers[0].id
+      role               = local.postgresql_backup_writer_role
+      paths              = [local.postgresql_backup_path_scope]
+      secret_delivery    = "MYSTERY_BOX"
+    }
+    layout = {
+      root             = local.postgresql_backup_root
+      destination_path = "s3://${nebius_storage_v1_bucket.postgresql_backup[0].name}/${local.postgresql_backup_root}"
+      server_name      = "fs2-control-db"
+    }
+    retention = {
+      barman_retention_days                  = var.postgresql_backup.retention_days
+      abort_incomplete_multipart_upload_days = 1
+      noncurrent_version_expiration_days     = local.postgresql_backup_noncurrent_days
+      current_object_expiration              = "cloudnative-pg-barman-owned"
+      lifecycle_rule_ids                     = [for rule in local.postgresql_backup_lifecycle_rules : rule.id]
+    }
+    lifecycle = {
+      retention_mode     = "retain"
+      destroy_status     = "blocked-retained"
+      destroy_completion = "full-stack-destroy-incomplete-postgresql-backup-retained"
+      adoption_status    = "ids-exported-for-explicit-state-adoption"
+      retained_ids = {
+        bucket = nebius_storage_v1_bucket.postgresql_backup[0].id
+      }
+    }
+  } : null
+}
+
+output "postgresql_backup_lifecycle" {
+  description = "Retention and adoption contract for the durable PostgreSQL recovery boundary."
+  value = var.postgresql_backup.enabled ? {
+    retention_mode     = "retain"
+    status             = "managed-retained"
+    destroy_status     = "blocked-retained"
+    destroy_completion = "full-stack-destroy-incomplete-postgresql-backup-retained"
+    adoption_status    = "ids-exported-for-explicit-state-adoption"
+    resource_ids = {
+      bucket          = nebius_storage_v1_bucket.postgresql_backup[0].id
+      service_account = nebius_iam_v1_service_account.postgresql_backup[0].id
+      group           = nebius_iam_v1_group.postgresql_backup_writers[0].id
+      access_key      = nebius_iam_v2_access_key.postgresql_backup[0].id
+    }
+  } : null
+}
+
+output "postgresql_backup_object_storage_access" {
+  description = "Sensitive handoff containing only the PostgreSQL backup key's non-secret resource ID, S3 access-key ID, MysteryBox reference and resource version."
+  sensitive   = true
+  value = var.postgresql_backup.enabled ? {
+    key_id              = nebius_iam_v2_access_key.postgresql_backup[0].id
+    access_key_id       = nebius_iam_v2_access_key.postgresql_backup[0].status.aws_access_key_id
+    secret_reference_id = nebius_iam_v2_access_key.postgresql_backup[0].status.secret_reference_id
+    resource_version    = nebius_iam_v2_access_key.postgresql_backup[0].resource_version
   } : null
 }

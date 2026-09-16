@@ -340,6 +340,19 @@ deployment = {
   # The pipeline never shares the Kubernetes system pool. Its image must
   # contain Python, zstd and the AWS CLI and must be digest pinned.
   # storage = {
+  #   # PostgreSQL backups are always enabled and retained. This block only
+  #   # tunes the dedicated versioned bucket, CNPG retention/schedule, and
+  #   # non-secret rotation generation; there is intentionally no disable flag.
+  #   postgresql_backup = {
+  #     object_storage = {
+  #       # Omit bucket_name for the deterministic deployment/run-derived name.
+  #       max_size_gib = 256
+  #     }
+  #     retention_days        = 30
+  #     # CloudNativePG uses a six-field cron expression (seconds first).
+  #     schedule              = "0 0 2 * * *"
+  #     credential_generation = 1
+  #   }
   #   fast_start_claims = {
   #     manage                     = true
   #     storage_class              = "csi-mounted-fs-path-sc"
@@ -577,7 +590,11 @@ deployment = {
   }
 
   acceptance = {
-    create_probe_job = false
+    create_probe_job        = false
+    # Enable only for the second, supervised workload apply after the initial
+    # ScheduledBackup is successful. It creates a temporary recovery cluster
+    # and a bounded read-only verification Job; disable and apply to clean up.
+    verify_database_restore = false
   }
 }
 

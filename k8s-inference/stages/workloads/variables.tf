@@ -350,6 +350,116 @@ variable "scientific_artifacts" {
   }
 }
 
+variable "postgresql_backup" {
+  description = "Root-derived durable CloudNativePG backup store and non-secret MysteryBox handoff. The S3 secret is resolved ephemerally during apply."
+  type = object({
+    enabled               = bool
+    retention_days        = number
+    schedule              = string
+    credential_generation = number
+    storage_contract = optional(object({
+      schema     = string
+      project_id = string
+      region     = string
+      object_storage = object({
+        id                = string
+        name              = string
+        endpoint          = string
+        max_size_gib      = number
+        versioning_policy = string
+        storage_class     = string
+        addressing_style  = string
+        verify_tls        = bool
+      })
+      writer = object({
+        service_account_id = string
+        group_id           = string
+        role               = string
+        paths              = list(string)
+        secret_delivery    = string
+      })
+      layout = object({
+        root             = string
+        destination_path = string
+        server_name      = string
+      })
+      retention = object({
+        barman_retention_days                  = number
+        abort_incomplete_multipart_upload_days = number
+        noncurrent_version_expiration_days     = number
+        current_object_expiration              = string
+        lifecycle_rule_ids                     = list(string)
+      })
+      lifecycle = object({
+        retention_mode     = string
+        destroy_status     = string
+        destroy_completion = string
+        adoption_status    = string
+        retained_ids = object({
+          bucket = string
+        })
+      })
+    }))
+    object_storage_access = optional(object({
+      key_id              = string
+      access_key_id       = string
+      secret_reference_id = string
+      resource_version    = number
+    }))
+  })
+  default = {
+    enabled               = false
+    retention_days        = 30
+    schedule              = "0 0 2 * * *"
+    credential_generation = 1
+    storage_contract      = null
+    object_storage_access = null
+  }
+
+  validation {
+    condition = try(
+      !var.postgresql_backup.enabled || (
+        var.postgresql_backup.storage_contract.schema == "fs2-serve.nebius.ai/postgresql-backup-storage/v1" &&
+        var.postgresql_backup.storage_contract.project_id == nonsensitive(var.project_id) &&
+        var.postgresql_backup.storage_contract.region == var.target_contract.region &&
+        var.postgresql_backup.storage_contract.object_storage.endpoint == "https://storage.${var.target_contract.region}.nebius.cloud" &&
+        var.postgresql_backup.storage_contract.object_storage.versioning_policy == "ENABLED" &&
+        var.postgresql_backup.storage_contract.writer.role == "storage.object-editor" &&
+        join(",", var.postgresql_backup.storage_contract.writer.paths) == "postgresql/v1/*" &&
+        var.postgresql_backup.storage_contract.writer.secret_delivery == "MYSTERY_BOX" &&
+        var.postgresql_backup.storage_contract.layout.root == "postgresql/v1" &&
+        var.postgresql_backup.storage_contract.layout.server_name == "fs2-control-db" &&
+        var.postgresql_backup.storage_contract.retention.barman_retention_days == var.postgresql_backup.retention_days &&
+        var.postgresql_backup.storage_contract.lifecycle.retention_mode == "retain" &&
+        var.postgresql_backup.storage_contract.lifecycle.destroy_status == "blocked-retained"
+      ),
+      false,
+    )
+    error_message = "enabled postgresql_backup requires the exact same-project/same-region retained versioned bucket contract and a MysteryBox key scoped to storage.object-editor on postgresql/v1/*."
+  }
+
+  validation {
+    condition = try(
+      !var.postgresql_backup.enabled || (
+        length(var.postgresql_backup.object_storage_access.access_key_id) >= 8 &&
+        can(regex("^[A-Za-z0-9_-]+$", var.postgresql_backup.object_storage_access.access_key_id)) &&
+        can(regex("^[a-z][a-z0-9-]+$", var.postgresql_backup.object_storage_access.secret_reference_id)) &&
+        can(regex("^[a-z][a-z0-9-]+$", var.postgresql_backup.object_storage_access.key_id)) &&
+        var.postgresql_backup.object_storage_access.resource_version >= 0 &&
+        floor(var.postgresql_backup.retention_days) == var.postgresql_backup.retention_days &&
+        var.postgresql_backup.retention_days >= 7 &&
+        var.postgresql_backup.retention_days <= 365 &&
+        can(regex("^\\S+(?:\\s+\\S+){5}$", var.postgresql_backup.schedule)) &&
+        floor(var.postgresql_backup.credential_generation) == var.postgresql_backup.credential_generation &&
+        var.postgresql_backup.credential_generation >= 1 &&
+        var.postgresql_backup.credential_generation <= 1000
+      ),
+      false,
+    )
+    error_message = "enabled postgresql_backup requires complete non-secret MysteryBox access identifiers, 7-365 retention days, a six-field CNPG cron schedule and a bounded credential generation."
+  }
+}
+
 variable "scientific_batch" {
   description = "Staged scientific batch gates and immutable execution map. Batch execution requires the artifact store; Kubernetes writes require batch."
   type = object({
@@ -1578,6 +1688,12 @@ variable "nvcrio_dockerconfigjson" {
 
 variable "run_acceptance_job" {
   description = "Create a one-shot authenticated HTTPS /v1/models and MCP tools/list probe after the platform is Ready."
+  type        = bool
+  default     = false
+}
+
+variable "run_database_restore_verification_job" {
+  description = "Create a temporary one-instance CNPG recovery cluster from the retained object backup and run the existing restore_verifier login against it. Enable only after a successful backup; disable after evidence capture to remove the temporary resources."
   type        = bool
   default     = false
 }

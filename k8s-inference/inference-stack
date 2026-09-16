@@ -1728,6 +1728,40 @@ def infrastructure_outputs(
         if scientific_artifacts_enabled
         else None
     )
+    postgresql_backup_enabled = (
+        contract.get("stages", {})
+        .get("infrastructure", {})
+        .get("postgresql_backup", {})
+        .get("enabled")
+        is True
+    )
+    postgresql_backup_storage = (
+        terraform_optional_json_output(
+            terraform, INFRA_ROOT, "postgresql_backup_storage_contract", environment
+        )
+        if postgresql_backup_enabled
+        else None
+    )
+    # The secret half remains in MysteryBox. This handoff contains only the
+    # cloud key identity, public S3 access-key ID, opaque secret reference and
+    # resource version used to derive a non-secret rollout revision.
+    postgresql_backup_access = (
+        terraform_optional_json_output(
+            terraform,
+            INFRA_ROOT,
+            "postgresql_backup_object_storage_access",
+            environment,
+        )
+        if postgresql_backup_enabled
+        else None
+    )
+    postgresql_backup_lifecycle = (
+        terraform_optional_json_output(
+            terraform, INFRA_ROOT, "postgresql_backup_lifecycle", environment
+        )
+        if postgresql_backup_enabled
+        else None
+    )
     # A general CPU pool is optional, so the output is read only when the facade
     # declared one. Its absence is a valid deployment, not a missing handoff.
     general_cpu_pools = (
@@ -1765,6 +1799,9 @@ def infrastructure_outputs(
         "scientific_artifacts_storage_contract": scientific_artifacts_storage,
         "scientific_artifacts_object_storage_access": scientific_artifacts_access,
         "scientific_artifacts_lifecycle": scientific_artifacts_lifecycle,
+        "postgresql_backup_storage_contract": postgresql_backup_storage,
+        "postgresql_backup_object_storage_access": postgresql_backup_access,
+        "postgresql_backup_lifecycle": postgresql_backup_lifecycle,
     }
 
 
@@ -1913,6 +1950,38 @@ def write_downstream_variables(
             )
         workloads["scientific_artifacts"] = {
             **scientific_artifacts,
+            "storage_contract": storage_contract if enabled else None,
+            "object_storage_access": object_access if enabled else None,
+        }
+    postgresql_backup = workloads.get("postgresql_backup")
+    if isinstance(postgresql_backup, Mapping):
+        enabled = postgresql_backup.get("enabled") is True
+        storage_contract = dynamic.get("postgresql_backup_storage_contract")
+        object_access = dynamic.get("postgresql_backup_object_storage_access")
+        lifecycle = dynamic.get("postgresql_backup_lifecycle")
+        if enabled and (
+            not isinstance(storage_contract, Mapping)
+            or not isinstance(object_access, Mapping)
+            or not isinstance(lifecycle, Mapping)
+        ):
+            raise DeploymentError(
+                "the mandatory PostgreSQL backup plane requires complete retained "
+                "storage, lifecycle and object-access outputs"
+            )
+        if enabled and set(object_access) != {
+            "key_id",
+            "access_key_id",
+            "secret_reference_id",
+            "resource_version",
+        }:
+            raise DeploymentError(
+                "the PostgreSQL backup access handoff must contain exactly the key's "
+                "non-secret identifiers"
+            )
+        if enabled and lifecycle.get("retention_mode") != "retain":
+            raise DeploymentError("the PostgreSQL backup plane must remain retained")
+        workloads["postgresql_backup"] = {
+            **postgresql_backup,
             "storage_contract": storage_contract if enabled else None,
             "object_storage_access": object_access if enabled else None,
         }
@@ -2188,6 +2257,17 @@ def workload_endpoint_outputs(
         if scientific_enabled
         else None
     )
+    postgresql_backup_enabled = (
+        contract.get("stages", {})
+        .get("workloads", {})
+        .get("postgresql_backup", {})
+        .get("enabled")
+        is True
+    )
+    if postgresql_backup_enabled:
+        outputs["postgresql_backup"] = terraform_optional_json_output(
+            terraform, WORKLOADS_ROOT, "postgresql_backup_status", environment
+        )
     return outputs
 
 

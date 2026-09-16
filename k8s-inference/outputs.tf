@@ -67,6 +67,24 @@ output "effective_configuration" {
       credential_secret       = "fs2-system/fs2-serve-artifact-store"
       object_key              = "scientific/v1/tenants/<tenant>/operations/<operation>/stages/<stage>/shards/<shard>/attempts/<attempt>/<input|output>/sha256/<digest>"
     }
+    postgresql_backup = {
+      enabled               = true
+      region                = var.deployment.target.region
+      bucket_name           = local.postgresql_backup_bucket_name
+      max_size_gib          = var.deployment.storage.postgresql_backup.object_storage.max_size_gib
+      retention_mode        = "retain"
+      retention_days        = var.deployment.storage.postgresql_backup.retention_days
+      schedule              = var.deployment.storage.postgresql_backup.schedule
+      secret_delivery       = "MYSTERY_BOX"
+      credential_generation = var.deployment.storage.postgresql_backup.credential_generation
+      credential_secret     = "fs2-data/fs2-control-db-backup"
+      wal_archiving         = true
+      restore_verification  = var.deployment.acceptance.verify_database_restore
+      distinct_from_other_stores = (
+        local.postgresql_backup_bucket_name != local.reference_data_bucket_name &&
+        local.postgresql_backup_bucket_name != local.scientific_artifacts_bucket_name
+      )
+    }
     scientific_batch = {
       enabled        = var.deployment.scientific_batch.enabled
       writes_enabled = var.deployment.scientific_batch.writes_enabled

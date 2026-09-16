@@ -266,7 +266,7 @@ variable "system_pool" {
       can(regex("^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$", var.system_pool.preset)) &&
       (var.system_pool.node_count == null ? true : (
         floor(var.system_pool.node_count) == var.system_pool.node_count &&
-        var.system_pool.node_count >= 1 &&
+        var.system_pool.node_count >= 3 &&
         var.system_pool.node_count <= 32
       )) &&
       contains(["NETWORK_SSD", "NETWORK_SSD_IO_M3", "NETWORK_SSD_NON_REPLICATED"], var.system_pool.boot_disk_type) &&
@@ -287,7 +287,7 @@ variable "system_pool" {
       can(regex("^[1-9][0-9]*m$", var.system_pool.drain_timeout)),
       false,
     )
-    error_message = "system_pool must use regular capacity, a bounded provider shape/count/boot disk/inotify ceiling, and an integral nonzero rollout allowance."
+    error_message = "system_pool must use regular capacity, at least three nodes, a bounded provider shape/boot disk/inotify ceiling, and an integral nonzero rollout allowance."
   }
 }
 
@@ -552,6 +552,49 @@ variable "scientific_artifacts" {
       false,
     )
     error_message = "enabled scientific_artifacts requires an explicit retain or disposable lifecycle, a valid globally unique bucket name, 16-65536 whole GiB of capacity and a 1-3650 day application retention window."
+  }
+}
+
+variable "postgresql_backup" {
+  description = "Dedicated retained, versioned object store and MysteryBox identity for CloudNativePG base backups and WAL archives. The root facade always enables this contract."
+  type = object({
+    enabled = bool
+    lifecycle = object({
+      retention_mode = string
+    })
+    object_storage = object({
+      bucket_name  = string
+      max_size_gib = number
+    })
+    retention_days = number
+  })
+  default = {
+    enabled = false
+    lifecycle = {
+      retention_mode = "retain"
+    }
+    object_storage = {
+      bucket_name  = "disabled-postgresql-backup.invalid"
+      max_size_gib = 256
+    }
+    retention_days = 30
+  }
+
+  validation {
+    condition = try(
+      !var.postgresql_backup.enabled || (
+        var.postgresql_backup.lifecycle.retention_mode == "retain" &&
+        can(regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$", var.postgresql_backup.object_storage.bucket_name)) &&
+        floor(var.postgresql_backup.object_storage.max_size_gib) == var.postgresql_backup.object_storage.max_size_gib &&
+        var.postgresql_backup.object_storage.max_size_gib >= 16 &&
+        var.postgresql_backup.object_storage.max_size_gib <= 4096 &&
+        floor(var.postgresql_backup.retention_days) == var.postgresql_backup.retention_days &&
+        var.postgresql_backup.retention_days >= 7 &&
+        var.postgresql_backup.retention_days <= 365
+      ),
+      false,
+    )
+    error_message = "enabled postgresql_backup must be retained, use a valid dedicated bucket name, allocate 16-4096 whole GiB, and retain backups for 7-365 days."
   }
 }
 

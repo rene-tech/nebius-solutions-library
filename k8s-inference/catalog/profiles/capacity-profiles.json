@@ -2,12 +2,12 @@
   "schema_version": 1,
   "capacity_profiles": {
     "minimal": {
-      "system_nodes": 1,
+      "system_nodes": 3,
       "gpu_1x_max_nodes": 1,
       "gpu_8x_max_nodes": 1,
       "maximum_gpus": 9,
       "shared_cache_size_gib": 128,
-      "description": "Cheap developer profile; both GPU pools can scale from zero."
+      "description": "Resilient three-node system plane; both GPU pools can scale from zero."
     },
     "full_catalog": {
       "system_nodes": 3,

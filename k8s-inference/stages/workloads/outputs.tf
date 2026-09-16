@@ -429,6 +429,8 @@ output "managed_resource_count" {
     (data.terraform_remote_state.foundation.outputs.grafana_publication_contract.enabled ? 2 : 0) +
     (var.run_acceptance_job ? 4 : 0) +
     (var.run_acceptance_job && var.deployment_profile == "full_catalog" ? 1 : 0)
+    + (var.postgresql_backup.enabled ? 3 : 0)
+    + (var.run_database_restore_verification_job ? 3 : 0)
     + (var.model_express.enabled ? 1 : 0)
     + (local.modelexpress_managed ? 2 : 0)
     + (local.modelexpress_nvcr_required ? 1 : 0)
@@ -469,7 +471,29 @@ output "managed_resource_count" {
 }
 
 output "sensitive_state_notice" {
-  value = "Generated admin, MCP/inference, Grafana, database, and cryptographic bootstrap material is stored in the run-owned local workloads state; keep the run root mode 0700/state files mode 0600 and destroy it after acceptance."
+  value = "Generated admin, MCP/inference, Grafana, database, and cryptographic bootstrap material is stored in the run-owned local workloads state; keep the run root mode 0700/state files mode 0600. The versioned PostgreSQL backup bucket is retained independently and prevents full-stack destroy until it is explicitly adopted or removed under the documented recovery policy."
+}
+
+output "postgresql_backup_status" {
+  description = "Non-secret CNPG backup, WAL and restore-verification contract. Live backup success and firstRecoverabilityPoint must still be checked after rollout."
+  value = var.postgresql_backup.enabled ? {
+    schema                       = "fs2-serve.nebius.ai/postgresql-backup-runtime/v1"
+    cluster_name                 = "fs2-control-db"
+    scheduled_backup_name        = "fs2-control-db"
+    bucket_name                  = var.postgresql_backup.storage_contract.object_storage.name
+    destination_path             = var.postgresql_backup.storage_contract.layout.destination_path
+    retention_days               = var.postgresql_backup.retention_days
+    schedule                     = var.postgresql_backup.schedule
+    base_backup                  = "barmanObjectStore"
+    wal_archiving                = true
+    anti_affinity                = "required"
+    system_node_minimum          = 3
+    restore_verification_enabled = var.run_database_restore_verification_job
+    restore_cluster_name         = var.run_database_restore_verification_job ? "fs2-control-db-restore-verification" : null
+    restore_job_name             = var.run_database_restore_verification_job ? "fs2-control-db-restore-verifier" : null
+    credential_secret            = "fs2-data/${local.postgresql_backup_secret_name}"
+    credential_delivery          = "MYSTERY_BOX_WRITE_ONLY"
+  } : null
 }
 
 output "academic_assets" {

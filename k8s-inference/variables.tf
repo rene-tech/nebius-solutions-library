@@ -569,6 +569,21 @@ variable "deployment" {
           "video/mp4",
         ])
       }), {})
+
+      # PostgreSQL is the platform system of record. Its backup store is
+      # mandatory and retained independently of the cluster lifecycle; unlike
+      # scientific result storage, callers cannot disable or make it
+      # disposable. The bucket name is derived from the deployment/run when
+      # omitted so every installation gets a dedicated versioned boundary.
+      postgresql_backup = optional(object({
+        object_storage = optional(object({
+          bucket_name  = optional(string)
+          max_size_gib = optional(number, 256)
+        }), {})
+        retention_days        = optional(number, 30)
+        schedule              = optional(string, "0 0 2 * * *")
+        credential_generation = optional(number, 1)
+      }), {})
     }), {})
 
     # Staged scientific batch execution. The execution map defaults to the
@@ -695,7 +710,8 @@ variable "deployment" {
     }), {})
 
     acceptance = optional(object({
-      create_probe_job = optional(bool, false)
+      create_probe_job        = optional(bool, false)
+      verify_database_restore = optional(bool, false)
     }), {})
   })
 
@@ -1047,7 +1063,7 @@ variable "deployment" {
         var.deployment.cluster.system_pool.node_count == null ||
         (
           floor(var.deployment.cluster.system_pool.node_count) == var.deployment.cluster.system_pool.node_count &&
-          var.deployment.cluster.system_pool.node_count >= 1 &&
+          var.deployment.cluster.system_pool.node_count >= 3 &&
           var.deployment.cluster.system_pool.node_count <= 32
         )
       ) &&
@@ -1076,7 +1092,28 @@ variable "deployment" {
       can(regex("^[1-9][0-9]*m$", var.deployment.cluster.system_pool.drain_timeout)),
       false,
     )
-    error_message = "cluster.system_pool must match the bounded regular CPU-pool, disk, rollout, drain-time, and inotify contract consumed by infrastructure."
+    error_message = "cluster.system_pool must match the bounded regular CPU-pool contract consumed by infrastructure, including at least three nodes, safe disk/rollout settings, drain time, and inotify capacity."
+  }
+
+  validation {
+    condition = try(
+      (
+        var.deployment.storage.postgresql_backup.object_storage.bucket_name == null ||
+        can(regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$", var.deployment.storage.postgresql_backup.object_storage.bucket_name))
+      ) &&
+      floor(var.deployment.storage.postgresql_backup.object_storage.max_size_gib) == var.deployment.storage.postgresql_backup.object_storage.max_size_gib &&
+      var.deployment.storage.postgresql_backup.object_storage.max_size_gib >= 16 &&
+      var.deployment.storage.postgresql_backup.object_storage.max_size_gib <= 4096 &&
+      floor(var.deployment.storage.postgresql_backup.retention_days) == var.deployment.storage.postgresql_backup.retention_days &&
+      var.deployment.storage.postgresql_backup.retention_days >= 7 &&
+      var.deployment.storage.postgresql_backup.retention_days <= 365 &&
+      can(regex("^\\S+(?:\\s+\\S+){5}$", var.deployment.storage.postgresql_backup.schedule)) &&
+      floor(var.deployment.storage.postgresql_backup.credential_generation) == var.deployment.storage.postgresql_backup.credential_generation &&
+      var.deployment.storage.postgresql_backup.credential_generation >= 1 &&
+      var.deployment.storage.postgresql_backup.credential_generation <= 1000,
+      false,
+    )
+    error_message = "storage.postgresql_backup requires a valid dedicated bucket name (when overridden), 16-4096 whole GiB, 7-365 retention days, a six-field CNPG cron schedule, and a bounded positive credential generation."
   }
 
   validation {

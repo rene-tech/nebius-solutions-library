@@ -142,6 +142,11 @@ locals {
     "${var.deployment.name}-${local.run_id}-scientific-artifacts",
   )
 
+  postgresql_backup_bucket_name = coalesce(
+    var.deployment.storage.postgresql_backup.object_storage.bucket_name,
+    "${var.deployment.name}-${local.run_id}-postgresql-backup",
+  )
+
   # General CPU pools. Capacity mode is exactly one of fixed or autoscaling, so
   # the effective bounds are unambiguous and the lane's nominal quota is derived
   # from the maximum node count an operator actually authorized.
@@ -1046,6 +1051,17 @@ locals {
       }
       retention_days = var.deployment.storage.scientific_artifacts.retention_days
     }
+    postgresql_backup = {
+      enabled = true
+      lifecycle = {
+        retention_mode = "retain"
+      }
+      object_storage = {
+        bucket_name  = local.postgresql_backup_bucket_name
+        max_size_gib = var.deployment.storage.postgresql_backup.object_storage.max_size_gib
+      }
+      retention_days = var.deployment.storage.postgresql_backup.retention_days
+    }
     public_edge_mode         = var.deployment.edge.mode
     public_edge_source_cidrs = sort(tolist(var.deployment.edge.source_cidrs))
     port_forward_local_ports = var.deployment.edge.port_forward_ports
@@ -1174,6 +1190,12 @@ locals {
       media_types           = sort(tolist(var.deployment.storage.scientific_artifacts.media_types))
       credential_generation = var.deployment.storage.scientific_artifacts.credential_generation
     }
+    postgresql_backup = {
+      enabled               = true
+      retention_days        = var.deployment.storage.postgresql_backup.retention_days
+      schedule              = var.deployment.storage.postgresql_backup.schedule
+      credential_generation = var.deployment.storage.postgresql_backup.credential_generation
+    }
     scientific_batch = {
       enabled                  = var.deployment.scientific_batch.enabled
       writes_enabled           = var.deployment.scientific_batch.writes_enabled
@@ -1203,9 +1225,10 @@ locals {
       external_network = var.deployment.acceleration.model_express.external_network
       models           = var.deployment.acceleration.model_express.models
     }
-    acme_email         = var.deployment.edge.acme_email
-    acme_environment   = var.deployment.edge.acme_environment
-    run_acceptance_job = var.deployment.acceptance.create_probe_job
+    acme_email                            = var.deployment.edge.acme_email
+    acme_environment                      = var.deployment.edge.acme_environment
+    run_acceptance_job                    = var.deployment.acceptance.create_probe_job
+    run_database_restore_verification_job = var.deployment.acceptance.verify_database_restore
     control_plane_image = {
       repository = var.deployment.applications.control_plane.repository
       digest     = var.deployment.applications.control_plane.digest
