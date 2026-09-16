@@ -73,3 +73,47 @@ Synthetic English outputs are not medical accuracy or clinical validation.
 Speaker labels may change across new sessions and are not persistent identities.
 H100/Blackwell compatibility, new-node elastic cold starts and restored
 snapshots are not inferred from the L40S measurements.
+
+## Measured acceptance
+
+Full control-plane suite: 2031 passed, 102 skipped. Additional native/input
+catalog tests: 84 passed; registration/legacy profile tests: 15 passed;
+deployment storage/model coverage: 2 passed; resident runtime lifecycle: 13 passed.
+
+| Resident L40S worker | First output, three warm runs | End-to-end RTF, three runs | Sampled peak GPU memory |
+| --- | --- | --- | --- |
+| Magpie, Sofia | 1.19 / 1.23 / 1.24 s | 0.737 / 0.746 / 0.734 | 4411 MiB |
+| Parakeet | 0.57 / 0.66 / 0.66 s | 0.657 / 0.677 / 0.678 | 1681 MiB |
+| Sortformer | 0.50 / 0.58 / 0.68 s | 0.363 / 0.379 / 0.384 | 1711 MiB |
+
+RTF includes connection, delivery and session cleanup; streaming ASR first
+output is measured from request start, not just model kernel time. Paced input
+naturally has wall/audio ratio above one and is recorded separately. Parakeet
+produced an actual `turn.eou` model token in clean and noisy streams; no EOB token
+was observed in this fixture, and the service does not fabricate one.
+
+All 12 documented Magpie languages produced finite nonempty speech using their
+requested tokenizer; all five actual named voices produced distinct WAV audio.
+`quality-results.json` records the multilingual cohort and three alternating
+Sofia/Jason/Sofia utterances: normalized English WER 0.0 clean and 0.0222 with
+12 dB room noise plus echoes. Sortformer produced anonymous labels 0 and 1 with
+zero best-permutation error on 128 central speech frames for each case. This
+excludes 0.5 seconds at turn boundaries and is explicitly **not official DER**.
+
+Real overload returned 429. Disconnecting long Magpie synthesis released the
+worker in 2.04 s; the next request produced a complete WAV. Draining Parakeet
+rejected a new stream while the admitted stream completed with the full text;
+readiness then returned 503. A fresh cached-image Parakeet Pod became Ready in
+36 s from creation, 30 s from container start. Production preStop drains and
+waits up to 1850 s for the active session, within its 1900 s termination budget.
+
+`sibling-public-results.json` confirms the two pre-existing Nemotron Apps still
+return HTTP 200 with complete synthetic English/German transcripts through the
+ordinary public multipart route. The short-lived test key was revoked. This
+pre-registration receipt does not claim the new public voice route was exposed;
+it correctly returned 404 at that point. Publication and final public-path
+acceptance are coordinated by the manager after the combined rollout.
+
+Raw GPU samples and exact Pod/node/image/startup provenance are retained in
+`runtime-provenance.json` and three CSV files. GPU means include idle periods and
+must not be presented as sustained throughput utilization.

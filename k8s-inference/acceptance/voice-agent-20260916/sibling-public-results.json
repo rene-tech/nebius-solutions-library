@@ -1,0 +1,77 @@
+{
+  "scope": "public synthetic voice acceptance",
+  "measurements": [
+    {
+      "model": "nemotron-speech-en-0-6b",
+      "status": 200,
+      "elapsed_seconds": 2.664953193627298,
+      "input_sha256": "d3153c8689d58af015ecc84710e54b2b019e52a90e61aea6bff23c7d765bc127",
+      "result": {
+        "text": "The workshop starts at nine. Please bring your notebook and meet us at the observatory",
+        "segments": [
+          {
+            "type": "transcript.final",
+            "session_id": "b90fe50e-2eb0-4be4-bd37-338e806325e8",
+            "sequence": 8,
+            "segment_id": 0,
+            "revision": 8,
+            "text": " The workshop starts at nine. Please bring your notebook and meet us at the observatory",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " The workshop starts at nine. Please bring your notebook and meet us at the observatory",
+                "start_seconds": 0.08,
+                "end_seconds": 4.0,
+                "confidence": null
+              }
+            ]
+          }
+        ],
+        "audio_seconds": 4.4581875,
+        "processing_seconds": 0.2997991240117699,
+        "model": "nemotron-speech-en-0.6b",
+        "language": "en-US",
+        "model_revision": "ebe59e5a817142986528bbbee5dba8db7b38ed50"
+      },
+      "operation_id": "5192a118-6330-4e69-b6c3-b5aa322dc7f1"
+    },
+    {
+      "model": "nemotron-speech-multilingual-0-6b",
+      "status": 200,
+      "elapsed_seconds": 2.6754303434863687,
+      "input_sha256": "cb0717cfaee5c102baf0b1c62df534f0d3c5658ccef9be2bf3205a9de769e14e",
+      "result": {
+        "text": "Guten Morgen.  Der Workshop beginnt um neun Uhr.",
+        "segments": [
+          {
+            "type": "transcript.final",
+            "session_id": "990d7d4e-48f4-4fb5-8a4b-10786ee8d67f",
+            "sequence": 5,
+            "segment_id": 0,
+            "revision": 5,
+            "text": " Guten Morgen.  Der Workshop beginnt um neun Uhr.",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " Guten Morgen.  Der Workshop beginnt um neun Uhr.",
+                "start_seconds": 0.56,
+                "end_seconds": 3.12,
+                "confidence": null
+              }
+            ]
+          }
+        ],
+        "audio_seconds": 3.204375,
+        "processing_seconds": 0.24878357094712555,
+        "model": "nemotron-speech-multilingual-0.6b",
+        "language": "de-DE",
+        "model_revision": "ea30d66debe3740a08b573244286791d423d6b3e"
+      },
+      "operation_id": "77e51fb6-1b30-4045-9553-174d14d58864"
+    }
+  ],
+  "key_revoked": true,
+  "catalog_has_sibling_models": true,
+  "ungranted_voice_status": 404,
+  "status": "passed"
+}

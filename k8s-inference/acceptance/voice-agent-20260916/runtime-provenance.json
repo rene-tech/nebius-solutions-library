@@ -1,0 +1,256 @@
+{
+  "context": "fs2-storage-h100",
+  "namespace": "fs2-models",
+  "project": "project-e00rene",
+  "region": "eu-north1",
+  "cluster": "mk8scluster-e00j5z9te7x5dd9g6a",
+  "capacity": "existing regular L40S headroom; preemptible H100 NotReady",
+  "pods": [
+    {
+      "name": "fs2-voice-magpie-r20260916-748887cd54-k2lbb",
+      "uid": "5262c1e3-5b61-41cd-a1f3-fcdef2213185",
+      "model": "magpie-tts-multilingual-357m",
+      "node": "computeinstance-e00r165maajnbg7wrr",
+      "created_at": "2026-09-16T16:38:51Z",
+      "started_at": "2026-09-16T16:38:52Z",
+      "ready_at": "2026-09-16T16:39:31Z",
+      "creation_to_ready_seconds": 40.0,
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:fc9db5fd5df87e819766297d90a4595664aec63e7dbfd6735b3f2053b4725ead",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:fc9db5fd5df87e819766297d90a4595664aec63e7dbfd6735b3f2053b4725ead",
+      "image_pull_policy": "IfNotPresent",
+      "restarts": 0,
+      "gpu_request": "1"
+    },
+    {
+      "name": "fs2-voice-parakeet-r20260916-5fc95ffdf7-fm92n",
+      "uid": "dc9a7352-4233-4c9f-8619-489cbaebcf74",
+      "model": "parakeet-realtime-eou-120m-v1",
+      "node": "computeinstance-e00tfvy9gb2n0vm6h2",
+      "created_at": "2026-09-16T16:50:22Z",
+      "started_at": "2026-09-16T16:50:28Z",
+      "ready_at": "2026-09-16T16:50:58Z",
+      "creation_to_ready_seconds": 36.0,
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa",
+      "image_pull_policy": "IfNotPresent",
+      "restarts": 0,
+      "gpu_request": "1"
+    },
+    {
+      "name": "fs2-voice-sortformer-r20260916-69fffd6cc-2gf6m",
+      "uid": "95777dd9-8b6b-4e49-9c5d-36795ca9dfdd",
+      "model": "diar-streaming-sortformer-4spk-v2-1",
+      "node": "computeinstance-e00krzha55t0sg3t56",
+      "created_at": "2026-09-16T16:31:31Z",
+      "started_at": "2026-09-16T16:34:05Z",
+      "ready_at": "2026-09-16T16:34:41Z",
+      "creation_to_ready_seconds": 190.0,
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253",
+      "image_pull_policy": "IfNotPresent",
+      "restarts": 0,
+      "gpu_request": "1"
+    }
+  ],
+  "initial_pods": [
+    {
+      "name": "fs2-voice-magpie-r20260916-75c56d566b-29ph7",
+      "uid": "a0705376-c60a-4415-9105-2f33b7fc8922",
+      "model": "magpie-tts-multilingual-357m",
+      "node": "computeinstance-e00r165maajnbg7wrr",
+      "created_at": "2026-09-16T16:32:09Z",
+      "started_at": null,
+      "ready_at": null,
+      "creation_to_ready_seconds": null,
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:f4e4afecc1d3a95b156e3257040bd3f93f708d8edb9d0be85714535e1966058b",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:f4e4afecc1d3a95b156e3257040bd3f93f708d8edb9d0be85714535e1966058b",
+      "image_pull_policy": "IfNotPresent",
+      "restarts": 3,
+      "gpu_request": "1"
+    },
+    {
+      "name": "fs2-voice-parakeet-r20260916-b56c7889c-8z2wp",
+      "uid": "bc4c78e6-3e41-4c93-a328-de210a9bdf5c",
+      "model": "parakeet-realtime-eou-120m-v1",
+      "node": "computeinstance-e00tfvy9gb2n0vm6h2",
+      "created_at": "2026-09-16T16:31:37Z",
+      "started_at": "2026-09-16T16:34:08Z",
+      "ready_at": "2026-09-16T16:34:47Z",
+      "creation_to_ready_seconds": 190.0,
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa",
+      "image_pull_policy": "IfNotPresent",
+      "restarts": 0,
+      "gpu_request": "1"
+    },
+    {
+      "name": "fs2-voice-sortformer-r20260916-69fffd6cc-2gf6m",
+      "uid": "95777dd9-8b6b-4e49-9c5d-36795ca9dfdd",
+      "model": "diar-streaming-sortformer-4spk-v2-1",
+      "node": "computeinstance-e00krzha55t0sg3t56",
+      "created_at": "2026-09-16T16:31:31Z",
+      "started_at": "2026-09-16T16:34:05Z",
+      "ready_at": "2026-09-16T16:34:41Z",
+      "creation_to_ready_seconds": 190.0,
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253",
+      "image_pull_policy": "IfNotPresent",
+      "restarts": 0,
+      "gpu_request": "1"
+    }
+  ],
+  "gpu_samples": {
+    "magpie": {
+      "file": "fs2-voice-magpie-gpu-r20260916.csv",
+      "sha256": "f61a2662d82f0561284f7cd6ffbb9bbf8dabb7385696492a6254913c3732a3ce",
+      "samples": 220,
+      "start": "2026/09/16 16:40:07.540",
+      "end": "2026/09/16 16:41:57.239",
+      "memory_peak_mib": 4411.0,
+      "utilization_peak_percent": 32.0,
+      "utilization_mean_percent": 7.545454545454546,
+      "note": "500ms nvidia-smi samples spanning sequential warm/native tests and idle; not a sustained-throughput claim"
+    },
+    "parakeet": {
+      "file": "fs2-voice-parakeet-gpu-r20260916.csv",
+      "sha256": "9d9c46502f7be7565bfad69d7b732391ec0b93b4f3e3be0977c4f3ce5c3f85f8",
+      "samples": 220,
+      "start": "2026/09/16 16:40:09.307",
+      "end": "2026/09/16 16:41:58.844",
+      "memory_peak_mib": 1681.0,
+      "utilization_peak_percent": 14.0,
+      "utilization_mean_percent": 1.6818181818181819,
+      "note": "500ms nvidia-smi samples spanning sequential warm/native tests and idle; not a sustained-throughput claim"
+    },
+    "sortformer": {
+      "file": "fs2-voice-sortformer-gpu-r20260916.csv",
+      "sha256": "9cec75fc476d938a23628e351655542a98026a1e23aecc6e213c456662789f4e",
+      "samples": 220,
+      "start": "2026/09/16 16:40:10.868",
+      "end": "2026/09/16 16:42:00.411",
+      "memory_peak_mib": 1711.0,
+      "utilization_peak_percent": 16.0,
+      "utilization_mean_percent": 0.2818181818181818,
+      "note": "500ms nvidia-smi samples spanning sequential warm/native tests and idle; not a sustained-throughput claim"
+    }
+  },
+  "snapshot": {
+    "enabled": false,
+    "criu_installed": false,
+    "cuda_checkpoint_installed": false,
+    "restored_public_cohort": false
+  },
+  "framework": {
+    "torch": "2.8.0+cu128",
+    "cuda": "12.8",
+    "compute_capability": "8.9",
+    "driver": "580.173.02"
+  },
+  "image_events": [
+    {
+      "pod": "fs2-voice-magpie-r20260916-748887cd54-k2lbb",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/fs2-voice-magpie-r20260916-748887cd54-k2lbb to computeinstance-e00r165maajnbg7wrr",
+      "first_at": "2026-09-16T16:38:51Z",
+      "last_at": "2026-09-16T16:38:51Z"
+    },
+    {
+      "pod": "fs2-voice-magpie-r20260916-748887cd54-k2lbb",
+      "reason": "Pulling",
+      "message": "Pulling image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:fc9db5fd5df87e819766297d90a4595664aec63e7dbfd6735b3f2053b4725ead\"",
+      "first_at": "2026-09-16T16:38:51Z",
+      "last_at": "2026-09-16T16:38:51Z"
+    },
+    {
+      "pod": "fs2-voice-magpie-r20260916-748887cd54-k2lbb",
+      "reason": "Pulled",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:fc9db5fd5df87e819766297d90a4595664aec63e7dbfd6735b3f2053b4725ead\" in 270ms (270ms including waiting). Image size: 8560615176 bytes.",
+      "first_at": "2026-09-16T16:38:52Z",
+      "last_at": "2026-09-16T16:38:52Z"
+    },
+    {
+      "pod": "fs2-voice-magpie-r20260916-75c56d566b-29ph7",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/fs2-voice-magpie-r20260916-75c56d566b-29ph7 to computeinstance-e00r165maajnbg7wrr",
+      "first_at": "2026-09-16T16:32:09Z",
+      "last_at": "2026-09-16T16:32:09Z"
+    },
+    {
+      "pod": "fs2-voice-magpie-r20260916-75c56d566b-29ph7",
+      "reason": "Pulling",
+      "message": "Pulling image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:f4e4afecc1d3a95b156e3257040bd3f93f708d8edb9d0be85714535e1966058b\"",
+      "first_at": "2026-09-16T16:32:10Z",
+      "last_at": "2026-09-16T16:32:10Z"
+    },
+    {
+      "pod": "fs2-voice-magpie-r20260916-75c56d566b-29ph7",
+      "reason": "Pulled",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:f4e4afecc1d3a95b156e3257040bd3f93f708d8edb9d0be85714535e1966058b\" in 2m50.845s (2m50.845s including waiting). Image size: 8560562479 bytes.",
+      "first_at": "2026-09-16T16:35:01Z",
+      "last_at": "2026-09-16T16:35:01Z"
+    },
+    {
+      "pod": "fs2-voice-magpie-r20260916-75c56d566b-29ph7",
+      "reason": "Pulled",
+      "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:f4e4afecc1d3a95b156e3257040bd3f93f708d8edb9d0be85714535e1966058b\" already present on machine and can be accessed by the pod",
+      "first_at": "2026-09-16T16:35:32Z",
+      "last_at": "2026-09-16T16:37:51Z"
+    },
+    {
+      "pod": "fs2-voice-parakeet-r20260916-5fc95ffdf7-fm92n",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/fs2-voice-parakeet-r20260916-5fc95ffdf7-fm92n to computeinstance-e00tfvy9gb2n0vm6h2",
+      "first_at": "2026-09-16T16:50:27Z",
+      "last_at": "2026-09-16T16:50:27Z"
+    },
+    {
+      "pod": "fs2-voice-parakeet-r20260916-5fc95ffdf7-fm92n",
+      "reason": "Pulled",
+      "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa\" already present on machine and can be accessed by the pod",
+      "first_at": "2026-09-16T16:50:28Z",
+      "last_at": "2026-09-16T16:50:28Z"
+    },
+    {
+      "pod": "fs2-voice-parakeet-r20260916-b56c7889c-8z2wp",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/fs2-voice-parakeet-r20260916-b56c7889c-8z2wp to computeinstance-e00tfvy9gb2n0vm6h2",
+      "first_at": "2026-09-16T16:31:37Z",
+      "last_at": "2026-09-16T16:31:37Z"
+    },
+    {
+      "pod": "fs2-voice-parakeet-r20260916-b56c7889c-8z2wp",
+      "reason": "Pulling",
+      "message": "Pulling image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa\"",
+      "first_at": "2026-09-16T16:31:37Z",
+      "last_at": "2026-09-16T16:31:37Z"
+    },
+    {
+      "pod": "fs2-voice-parakeet-r20260916-b56c7889c-8z2wp",
+      "reason": "Pulled",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa\" in 2m20.915s (2m20.915s including waiting). Image size: 7284242608 bytes.",
+      "first_at": "2026-09-16T16:33:58Z",
+      "last_at": "2026-09-16T16:33:58Z"
+    },
+    {
+      "pod": "fs2-voice-sortformer-r20260916-69fffd6cc-2gf6m",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/fs2-voice-sortformer-r20260916-69fffd6cc-2gf6m to computeinstance-e00krzha55t0sg3t56",
+      "first_at": "2026-09-16T16:31:31Z",
+      "last_at": "2026-09-16T16:31:31Z"
+    },
+    {
+      "pod": "fs2-voice-sortformer-r20260916-69fffd6cc-2gf6m",
+      "reason": "Pulling",
+      "message": "Pulling image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253\"",
+      "first_at": "2026-09-16T16:31:31Z",
+      "last_at": "2026-09-16T16:31:31Z"
+    },
+    {
+      "pod": "fs2-voice-sortformer-r20260916-69fffd6cc-2gf6m",
+      "reason": "Pulled",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253\" in 2m31.486s (2m31.486s including waiting). Image size: 7304508947 bytes.",
+      "first_at": "2026-09-16T16:34:03Z",
+      "last_at": "2026-09-16T16:34:03Z"
+    }
+  ]
+}
