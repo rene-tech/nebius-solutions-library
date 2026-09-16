@@ -63,9 +63,10 @@ mock_provider "nebius" {
 }
 
 variables {
-  project_id    = "project-syntheticlocal"
-  source_commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-  run_id        = "systest1"
+  project_id                  = "project-syntheticlocal"
+  source_commit               = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  run_id                      = "systest1"
+  control_plane_allowed_cidrs = ["192.0.2.1/32"]
 
   target_binding = {
     project_id          = "project-syntheticlocal"
@@ -138,4 +139,14 @@ run "an_unsafe_low_inotify_ceiling_is_rejected" {
   }
 
   expect_failures = [var.system_pool]
+}
+
+run "a_universal_control_plane_allowlist_is_rejected" {
+  command = plan
+
+  variables {
+    control_plane_allowed_cidrs = ["0.0.0.0/0"]
+  }
+
+  expect_failures = [var.control_plane_allowed_cidrs]
 }

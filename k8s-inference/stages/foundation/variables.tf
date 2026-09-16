@@ -218,14 +218,32 @@ variable "grafana_admin_secret_ref" {
 }
 
 variable "bootstrap_grafana_credentials" {
-  description = "Optional credentials used only for a disposable fresh-cluster bootstrap. They enter the local foundation state. Leave null when the referenced Secret is provisioned externally."
+  description = "Optional credentials used only for a fresh-cluster bootstrap. The ephemeral value is delivered through write-only Secret data and never enters Terraform state."
   type = object({
     username = string
     password = string
   })
   sensitive = true
+  ephemeral = true
   nullable  = true
   default   = null
+}
+
+variable "bootstrap_grafana_credentials_configured" {
+  description = "Non-secret presence signal supplied by the wrapper so ephemeral credentials never participate in resource addressing."
+  type        = bool
+  default     = false
+}
+
+variable "credential_generation" {
+  description = "Positive write-only revision for the Grafana bootstrap credential."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = floor(var.credential_generation) == var.credential_generation && var.credential_generation >= 1
+    error_message = "credential_generation must be a positive whole number."
+  }
 }
 
 variable "alertmanager" {

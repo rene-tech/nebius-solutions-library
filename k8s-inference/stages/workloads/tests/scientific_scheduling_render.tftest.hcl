@@ -218,7 +218,8 @@ variables {
       }
     }
   }
-  nvcrio_dockerconfigjson = "{\"auths\":{}}"
+  nvcrio_dockerconfigjson            = "{\"auths\":{}}"
+  nvcrio_dockerconfigjson_configured = true
 
   # The reference-data plane, whose CPU ClusterQueue the licensed CPU lane
   # points at. Its pool is a 32 vCPU / 128 GB class node with conservative

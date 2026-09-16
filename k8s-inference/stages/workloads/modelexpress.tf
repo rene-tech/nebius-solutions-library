@@ -159,9 +159,10 @@ resource "kubernetes_secret_v1" "modelexpress_nvcrio" {
     labels    = local.common_labels
   }
   type = "kubernetes.io/dockerconfigjson"
-  data = {
+  data_wo = {
     ".dockerconfigjson" = var.nvcrio_dockerconfigjson
   }
+  data_wo_revision = var.credential_generations.registry
 
   depends_on = [kubernetes_namespace_v1.modelexpress]
 }
@@ -190,7 +191,7 @@ resource "helm_release" "modelexpress" {
     }
 
     precondition {
-      condition     = !local.modelexpress_nvcr_required || var.nvcrio_dockerconfigjson != null
+      condition     = !local.modelexpress_nvcr_required || var.nvcrio_dockerconfigjson_configured
       error_message = "A managed nvcr.io ModelExpress server requires FS2_NVCR_DOCKERCONFIGJSON."
     }
   }

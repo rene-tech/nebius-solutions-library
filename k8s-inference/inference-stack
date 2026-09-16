@@ -4,11 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import fcntl
 import hashlib
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -81,10 +84,37 @@ def run(
 
 
 def private_directory(path: Path) -> None:
+    if any(parent.is_symlink() for parent in (path, *path.parents)):
+        raise DeploymentError(f"run root path must not contain a symlink: {path}")
     if path.exists() and (path.is_symlink() or not path.is_dir()):
         raise DeploymentError(f"run root must be a real directory: {path}")
     path.mkdir(parents=True, exist_ok=True, mode=0o700)
     path.chmod(0o700)
+
+
+def secure_run_root(run_root: Path) -> None:
+    """Make every run-owned artifact private without following links."""
+
+    if run_root.is_symlink() or not run_root.is_dir():
+        raise DeploymentError(f"run root must be a real directory: {run_root}")
+    for directory, directory_names, file_names in os.walk(
+        run_root, topdown=True, followlinks=False
+    ):
+        current = Path(directory)
+        if current.is_symlink():
+            raise DeploymentError(f"run root contains a directory symlink: {current}")
+        current.chmod(0o700)
+        for name in directory_names:
+            path = current / name
+            if path.is_symlink():
+                raise DeploymentError(f"run root contains a directory symlink: {path}")
+            path.chmod(0o700)
+        for name in file_names:
+            path = current / name
+            if path.is_symlink():
+                raise DeploymentError(f"run root contains a file symlink: {path}")
+            mode = stat.S_IMODE(path.stat().st_mode)
+            path.chmod(0o700 if mode & stat.S_IXUSR else 0o600)
 
 
 def private_json(path: Path, value: Any) -> None:
@@ -1495,6 +1525,7 @@ def stage_environment(
             {"username": username, "password": password},
             separators=(",", ":"),
         )
+        environment["TF_VAR_bootstrap_grafana_credentials_configured"] = "true"
 
     if stage == "workloads":
         ngc_key = os.environ.get(secret_names["ngc_api_key"])
@@ -1512,6 +1543,12 @@ def stage_environment(
             environment["TF_VAR_ngc_api_key"] = ngc_key
         if docker_config:
             environment["TF_VAR_nvcrio_dockerconfigjson"] = docker_config
+        environment["TF_VAR_ngc_api_key_configured"] = (
+            "true" if ngc_key else "false"
+        )
+        environment["TF_VAR_nvcrio_dockerconfigjson_configured"] = (
+            "true" if docker_config else "false"
+        )
 
     return environment
 
@@ -2195,8 +2232,10 @@ def workload_access_bundle(
     terraform: str,
     run_root: Path,
     contract: Mapping[str, Any],
+    *,
+    kubectl: str = "kubectl",
 ) -> dict[str, Any]:
-    """Read the explicit sensitive connection bundle from workloads state."""
+    """Build a sensitive connection bundle without persisting values in state."""
 
     environment = stage_environment(
         run_root, "workloads", contract, include_secrets=False
@@ -2204,7 +2243,16 @@ def workload_access_bundle(
     bundle = terraform_json_output(
         terraform, WORKLOADS_ROOT, "access_bundle", environment
     )
-    if not isinstance(bundle, dict) or bundle.get("schema") != "fs2-serve.nebius.ai/access-bundle/v1":
+    if (
+        isinstance(bundle, dict)
+        and bundle.get("schema")
+        == "fs2-serve.nebius.ai/access-bundle-contract/v2"
+    ):
+        bundle = hydrate_access_bundle(kubectl, run_root, bundle)
+    if (
+        not isinstance(bundle, dict)
+        or bundle.get("schema") != "fs2-serve.nebius.ai/access-bundle/v1"
+    ):
         raise DeploymentError("the workloads access bundle is missing or malformed")
 
     cluster = bundle.get("cluster")
@@ -2420,6 +2468,148 @@ def workload_access_bundle(
                 "the scientific artifact bundle must never carry object-storage secret material"
             )
     return bundle
+
+
+def kubernetes_secret_values(
+    kubectl: str,
+    run_root: Path,
+    *,
+    context: str,
+    namespace: str,
+    name: str,
+    keys: Sequence[str],
+) -> dict[str, str]:
+    """Read named UTF-8 Secret keys into memory without echoing their values."""
+
+    if not all(
+        isinstance(value, str) and value.strip()
+        for value in (context, namespace, name, *keys)
+    ):
+        raise DeploymentError("the workloads credential Secret reference is malformed")
+    kubeconfig = run_root / "kubeconfig"
+    if kubeconfig.is_symlink() or not kubeconfig.is_file():
+        raise DeploymentError("the run-owned kubeconfig is absent or unsafe")
+    if stat.S_IMODE(kubeconfig.stat().st_mode) & 0o077:
+        raise DeploymentError("the run-owned kubeconfig must be owner-only")
+    result = run(
+        [
+            kubectl,
+            "--kubeconfig",
+            str(kubeconfig),
+            "--context",
+            context,
+            "-n",
+            namespace,
+            "get",
+            "secret",
+            name,
+            "-o",
+            "json",
+        ],
+        env=clean_environment(),
+        capture=True,
+    )
+    try:
+        document = json.loads(result.stdout)
+        encoded = document["data"]
+        if not isinstance(encoded, dict):
+            raise TypeError
+        values = {
+            key: base64.b64decode(encoded[key], validate=True).decode("utf-8")
+            for key in keys
+        }
+    except (
+        KeyError,
+        TypeError,
+        UnicodeDecodeError,
+        binascii.Error,
+        json.JSONDecodeError,
+    ) as error:
+        raise DeploymentError(
+            f"Kubernetes Secret {namespace}/{name} is missing a required UTF-8 value"
+        ) from error
+    if any(not value for value in values.values()):
+        raise DeploymentError(
+            f"Kubernetes Secret {namespace}/{name} contains an empty required value"
+        )
+    return values
+
+
+def hydrate_access_bundle(
+    kubectl: str,
+    run_root: Path,
+    access_contract: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Resolve write-only credentials from live Secrets for an explicit handoff."""
+
+    cluster = access_contract.get("cluster")
+    refs = access_contract.get("credential_secret_refs")
+    if not isinstance(cluster, dict) or not isinstance(refs, dict):
+        raise DeploymentError("the workloads access bundle contract is malformed")
+    context = cluster.get("kube_context")
+    if not isinstance(context, str) or not context.strip():
+        raise DeploymentError("the workloads access bundle contract is malformed")
+
+    def read(reference: Any, *keys: str) -> dict[str, str]:
+        if not isinstance(reference, dict):
+            raise DeploymentError(
+                "the workloads credential Secret reference is malformed"
+            )
+        return kubernetes_secret_values(
+            kubectl,
+            run_root,
+            context=context,
+            namespace=reference.get("namespace"),
+            name=reference.get("name"),
+            keys=keys,
+        )
+
+    admin_ref = refs.get("admin")
+    bootstrap_ref = refs.get("mcp_inference")
+    grafana_ref = refs.get("grafana")
+    if not all(
+        isinstance(item, dict) for item in (admin_ref, bootstrap_ref, grafana_ref)
+    ):
+        raise DeploymentError("the workloads credential Secret reference is malformed")
+    admin = read(admin_ref, admin_ref.get("key"))
+    bootstrap = read(bootstrap_ref, bootstrap_ref.get("key"))
+    grafana = read(
+        grafana_ref,
+        grafana_ref.get("username_key"),
+        grafana_ref.get("password_key"),
+    )
+    admin_token = admin[admin_ref["key"]]
+    shared_token = bootstrap[bootstrap_ref["key"]]
+    scientific_ref = refs.get("scientific")
+    scientific_token = None
+    if scientific_ref is not None:
+        if not isinstance(scientific_ref, dict):
+            raise DeploymentError(
+                "the workloads credential Secret reference is malformed"
+            )
+        scientific = read(scientific_ref, scientific_ref.get("key"))
+        scientific_token = scientific[scientific_ref["key"]]
+
+    return {
+        "schema": "fs2-serve.nebius.ai/access-bundle/v1",
+        "cluster": cluster,
+        "endpoints": access_contract.get("endpoints"),
+        "credentials": {
+            "admin_bootstrap_token": admin_token,
+            "mcp_inference_token": shared_token,
+            "inference_access_token": shared_token,
+            "scientific_access_token": scientific_token,
+            "grafana": {
+                "username": grafana[grafana_ref["username_key"]],
+                "password": grafana[grafana_ref["password_key"]],
+            },
+        },
+        "mcp_access": access_contract.get("mcp_access"),
+        "scientific_access": access_contract.get("scientific_access"),
+        "reference_data": access_contract.get("reference_data"),
+        "reference_data_contract": access_contract.get("reference_data_contract"),
+        "scientific_artifacts": access_contract.get("scientific_artifacts"),
+    }
 
 
 def state_ready(
@@ -3053,14 +3243,49 @@ def output_stack(
     run_root: Path,
     contract: Mapping[str, Any],
 ) -> None:
-    """Print the intentionally requested sensitive post-apply access bundle."""
+    """Write the explicitly requested access bundle to an owner-only file."""
     if not state_ready(args.terraform, run_root, "workloads", contract):
         raise DeploymentError(
             "workloads are not applied; run inference-stack apply before requesting endpoints"
         )
+    requested_path = getattr(args, "credential_file", None)
+    if requested_path is None:
+        raise DeploymentError(
+            "output requires --credential-file in an existing owner-only directory"
+        )
+    candidate = requested_path.expanduser().absolute()
+    if candidate.is_symlink():
+        raise DeploymentError("credential-file must not be a symlink")
+    parent = candidate.parent
+    if any(path.is_symlink() for path in (parent, *parent.parents)):
+        raise DeploymentError("credential-file parent must be a real directory")
+    if not parent.is_dir():
+        raise DeploymentError("credential-file parent must be a real directory")
+    parent_status = parent.stat()
+    if (
+        parent_status.st_uid != os.geteuid()
+        or stat.S_IMODE(parent_status.st_mode) & 0o077
+    ):
+        raise DeploymentError(
+            "credential-file parent must be owner-owned and owner-only"
+        )
+    destination = parent / candidate.name
+    private_json(
+        destination,
+        workload_access_bundle(
+            args.terraform,
+            run_root,
+            contract,
+            kubectl=args.kubectl,
+        ),
+    )
     print(
         json.dumps(
-            workload_access_bundle(args.terraform, run_root, contract),
+            {
+                "status": "credential-file-written",
+                "credential_file": str(destination),
+                "mode": "0600",
+            },
             indent=2,
         )
     )
@@ -3214,6 +3439,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=os.environ.get("NEBIUS_PROFILE", "sandbox"),
         help="authenticated Nebius CLI profile (default: NEBIUS_PROFILE or sandbox)",
     )
+    parser.add_argument(
+        "--credential-file",
+        type=Path,
+        help="owner-only destination required by the output command; secret values are never printed",
+    )
     return parser.parse_args(argv)
 
 
@@ -3226,62 +3456,66 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise DeploymentError(
             f"configuration does not exist: {variable_file}; copy terraform.tfvars.example first"
         )
-    run_root = (args.run_root or default_run_root(variable_file)).expanduser().resolve()
+    run_root = (args.run_root or default_run_root(variable_file)).expanduser().absolute()
     private_directory(run_root)
+    secure_run_root(run_root)
 
     lock_path = run_root / ".inference-stack.lock"
     if lock_path.is_symlink():
         raise DeploymentError(f"lock path must not be a symlink: {lock_path}")
-    with lock_path.open("a+", encoding="utf-8") as lock:
-        lock_path.chmod(0o600)
-        try:
-            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
-            raise DeploymentError(
-                f"another inference-stack process owns {run_root}"
-            ) from exc
+    try:
+        with lock_path.open("a+", encoding="utf-8") as lock:
+            lock_path.chmod(0o600)
+            try:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                raise DeploymentError(
+                    f"another inference-stack process owns {run_root}"
+                ) from exc
 
-        contract, configuration_environment = validate_configuration(
-            args.terraform, variable_file, run_root
-        )
-        proxy_arguments: list[str] | None = None
-        commit = source_commit()
-        if args.command == "validate":
-            validate_stage_roots(args.terraform, run_root)
-            print(
-                json.dumps(
-                    {
-                        "status": "valid",
-                        "run_root": str(run_root),
-                        "deployment": contract["name"],
-                        "profiles": contract["profiles"],
-                        "accelerator_pools": contract["selected_accelerator_pool_ids"],
-                        "models": contract["selected_model_ids"],
-                    },
-                    indent=2,
+            contract, configuration_environment = validate_configuration(
+                args.terraform, variable_file, run_root
+            )
+            proxy_arguments: list[str] | None = None
+            commit = source_commit()
+            if args.command == "validate":
+                validate_stage_roots(args.terraform, run_root)
+                print(
+                    json.dumps(
+                        {
+                            "status": "valid",
+                            "run_root": str(run_root),
+                            "deployment": contract["name"],
+                            "profiles": contract["profiles"],
+                            "accelerator_pools": contract["selected_accelerator_pool_ids"],
+                            "models": contract["selected_model_ids"],
+                        },
+                        indent=2,
+                    )
                 )
-            )
-        elif args.command == "preflight":
-            preflight_accelerators(args, contract)
-        elif args.command == "plan":
-            plan_stack(args, run_root, contract, commit)
-        elif args.command == "apply":
-            require_deployable_images(contract)
-            apply_stack(
-                args,
-                run_root,
-                contract,
-                commit,
-                configuration_environment,
-            )
-        elif args.command == "destroy":
-            destroy_stack(args, run_root, contract, commit)
-        elif args.command == "output":
-            output_stack(args, run_root, contract)
-        elif args.command == "proxy":
-            proxy_arguments = internal_proxy_command(args, run_root, contract)
-        else:
-            status_stack(args, run_root, contract)
+            elif args.command == "preflight":
+                preflight_accelerators(args, contract)
+            elif args.command == "plan":
+                plan_stack(args, run_root, contract, commit)
+            elif args.command == "apply":
+                require_deployable_images(contract)
+                apply_stack(
+                    args,
+                    run_root,
+                    contract,
+                    commit,
+                    configuration_environment,
+                )
+            elif args.command == "destroy":
+                destroy_stack(args, run_root, contract, commit)
+            elif args.command == "output":
+                output_stack(args, run_root, contract)
+            elif args.command == "proxy":
+                proxy_arguments = internal_proxy_command(args, run_root, contract)
+            else:
+                status_stack(args, run_root, contract)
+    finally:
+        secure_run_root(run_root)
     if proxy_arguments is not None:
         try:
             run(proxy_arguments, env=clean_environment())

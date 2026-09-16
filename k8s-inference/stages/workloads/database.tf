@@ -133,14 +133,15 @@ resource "kubernetes_secret_v1" "database_consumer" {
   }
 
   type = "Opaque"
-  data = {
+  data_wo = {
     url = format(
       "postgresql://%s:%s@fs2-control-db-rw.fs2-data.svc.cluster.local:5432/fs2serve?sslmode=verify-full&sslrootcert=/tls/ca.crt",
       local.database_accounts[each.value.account].username,
-      urlencode(random_password.database[each.value.account].result),
+      urlencode(ephemeral.random_password.database[each.value.account].result),
     )
     "ca.crt" = data.kubernetes_secret_v1.database_ca.data["ca.crt"]
   }
+  data_wo_revision = var.credential_generations.database
 }
 
 resource "kubernetes_secret_v1" "grafana_datasource" {
@@ -155,7 +156,7 @@ resource "kubernetes_secret_v1" "grafana_datasource" {
   }
 
   type = "Opaque"
-  data = {
+  data_wo = {
     "datasource.yaml" = yamlencode({
       apiVersion = 1
       prune      = false
@@ -185,7 +186,7 @@ resource "kubernetes_secret_v1" "grafana_datasource" {
             timescaledb            = false
           }
           secureJsonData = {
-            password  = random_password.database["reporting"].result
+            password  = ephemeral.random_password.database["reporting"].result
             tlsCACert = data.kubernetes_secret_v1.database_ca.data["ca.crt"]
           }
         },
@@ -206,4 +207,5 @@ resource "kubernetes_secret_v1" "grafana_datasource" {
       ]
     })
   }
+  data_wo_revision = var.credential_generations.database
 }

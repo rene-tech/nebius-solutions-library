@@ -64,23 +64,26 @@ locals {
   }
 }
 
-resource "random_password" "database" {
+ephemeral "random_password" "database" {
+  provider = random.ephemeral
   for_each = local.database_accounts
 
   length  = 40
   special = false
 }
 
-resource "random_password" "key_material" {
+ephemeral "random_password" "key_material" {
+  provider = random.ephemeral
   for_each = toset(["payload", "ledger", "pepper", "attestor"])
 
   length  = 32
   special = false
 }
 
-resource "random_password" "admin_token" {
-  length  = 48
-  special = false
+ephemeral "random_password" "admin_token" {
+  provider = random.ephemeral
+  length   = 48
+  special  = false
 }
 
 resource "kubernetes_secret_v1" "database_account" {
@@ -93,10 +96,11 @@ resource "kubernetes_secret_v1" "database_account" {
   }
 
   type = "kubernetes.io/basic-auth"
-  data = {
+  data_wo = {
     username = each.value.username
-    password = random_password.database[each.key].result
+    password = ephemeral.random_password.database[each.key].result
   }
+  data_wo_revision = var.credential_generations.database
 
   depends_on = [terraform_data.cluster_contract]
 }
@@ -108,10 +112,11 @@ resource "kubernetes_secret_v1" "payload_keyring" {
     labels    = local.common_labels
   }
   type = "Opaque"
-  data = {
-    "keyring.json" = jsonencode({ active_key_id = "payload-v1", keys = { "payload-v1" = base64encode(random_password.key_material["payload"].result) } })
+  data_wo = {
+    "keyring.json" = jsonencode({ active_key_id = "payload-v1", keys = { "payload-v1" = base64encode(ephemeral.random_password.key_material["payload"].result) } })
   }
-  depends_on = [terraform_data.cluster_contract]
+  data_wo_revision = var.credential_generations.key_material
+  depends_on       = [terraform_data.cluster_contract]
 }
 
 resource "kubernetes_secret_v1" "ledger_keyring" {
@@ -121,10 +126,11 @@ resource "kubernetes_secret_v1" "ledger_keyring" {
     labels    = local.common_labels
   }
   type = "Opaque"
-  data = {
-    "keyring.json" = jsonencode({ active_key_id = "ledger-v1", keys = { "ledger-v1" = base64encode(random_password.key_material["ledger"].result) } })
+  data_wo = {
+    "keyring.json" = jsonencode({ active_key_id = "ledger-v1", keys = { "ledger-v1" = base64encode(ephemeral.random_password.key_material["ledger"].result) } })
   }
-  depends_on = [terraform_data.cluster_contract]
+  data_wo_revision = var.credential_generations.key_material
+  depends_on       = [terraform_data.cluster_contract]
 }
 
 resource "kubernetes_secret_v1" "token_pepper" {
@@ -134,10 +140,11 @@ resource "kubernetes_secret_v1" "token_pepper" {
     labels    = local.common_labels
   }
   type = "Opaque"
-  data = {
-    "keyring.json" = jsonencode({ active_key_id = "pepper-v1", keys = { "pepper-v1" = base64encode(random_password.key_material["pepper"].result) } })
+  data_wo = {
+    "keyring.json" = jsonencode({ active_key_id = "pepper-v1", keys = { "pepper-v1" = base64encode(ephemeral.random_password.key_material["pepper"].result) } })
   }
-  depends_on = [terraform_data.cluster_contract]
+  data_wo_revision = var.credential_generations.key_material
+  depends_on       = [terraform_data.cluster_contract]
 }
 
 resource "kubernetes_secret_v1" "route_attestors" {
@@ -147,12 +154,13 @@ resource "kubernetes_secret_v1" "route_attestors" {
     labels    = local.common_labels
   }
   type = "Opaque"
-  data = {
+  data_wo = {
     "attestors.json" = jsonencode({
-      "sha256:${sha256(random_password.key_material["attestor"].result)}" = trimsuffix(replace(replace(base64encode(random_password.key_material["attestor"].result), "+", "-"), "/", "_"), "=")
+      "sha256:${sha256(ephemeral.random_password.key_material["attestor"].result)}" = trimsuffix(replace(replace(base64encode(ephemeral.random_password.key_material["attestor"].result), "+", "-"), "/", "_"), "=")
     })
   }
-  depends_on = [terraform_data.cluster_contract]
+  data_wo_revision = var.credential_generations.key_material
+  depends_on       = [terraform_data.cluster_contract]
 }
 
 resource "kubernetes_secret_v1" "admin" {
@@ -162,10 +170,11 @@ resource "kubernetes_secret_v1" "admin" {
     labels    = local.common_labels
   }
   type = "Opaque"
-  data = {
-    token = random_password.admin_token.result
+  data_wo = {
+    token = ephemeral.random_password.admin_token.result
   }
-  depends_on = [terraform_data.cluster_contract]
+  data_wo_revision = var.credential_generations.admin
+  depends_on       = [terraform_data.cluster_contract]
 }
 
 resource "kubernetes_secret_v1" "ngc_api_key" {
@@ -177,10 +186,11 @@ resource "kubernetes_secret_v1" "ngc_api_key" {
     labels    = local.common_labels
   }
   type = "Opaque"
-  data = {
+  data_wo = {
     NGC_API_KEY = var.ngc_api_key
   }
-  depends_on = [terraform_data.cluster_contract]
+  data_wo_revision = var.credential_generations.registry
+  depends_on       = [terraform_data.cluster_contract]
 }
 
 resource "kubernetes_secret_v1" "nvcrio_cred" {
@@ -192,10 +202,11 @@ resource "kubernetes_secret_v1" "nvcrio_cred" {
     labels    = local.common_labels
   }
   type = "kubernetes.io/dockerconfigjson"
-  data = {
+  data_wo = {
     ".dockerconfigjson" = var.nvcrio_dockerconfigjson
   }
-  depends_on = [terraform_data.cluster_contract]
+  data_wo_revision = var.credential_generations.registry
+  depends_on       = [terraform_data.cluster_contract]
 }
 
 resource "kubernetes_secret_v1" "dcgm_exporter_nvcrio" {
@@ -207,8 +218,9 @@ resource "kubernetes_secret_v1" "dcgm_exporter_nvcrio" {
     labels    = local.common_labels
   }
   type = "kubernetes.io/dockerconfigjson"
-  data = {
+  data_wo = {
     ".dockerconfigjson" = var.nvcrio_dockerconfigjson
   }
-  depends_on = [terraform_data.cluster_contract]
+  data_wo_revision = var.credential_generations.registry
+  depends_on       = [terraform_data.cluster_contract]
 }

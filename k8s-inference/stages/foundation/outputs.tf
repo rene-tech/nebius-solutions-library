@@ -25,7 +25,7 @@ output "managed_resource_count" {
   # addresses only when it is enabled.
   value = (
     31 +
-    (nonsensitive(var.bootstrap_grafana_credentials == null) ? 0 : 1) +
+    (var.bootstrap_grafana_credentials_configured ? 1 : 0) +
     (var.jobset.enabled ? 5 : 0)
   )
 }

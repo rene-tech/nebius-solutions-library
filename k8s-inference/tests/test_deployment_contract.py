@@ -175,6 +175,9 @@ class DeploymentContractTests(unittest.TestCase):
     ) -> Path:
         deployment = dict(deployment)
         deployment.setdefault("applications", TEST_APPLICATIONS)
+        cluster = dict(deployment.get("cluster", {}))
+        cluster.setdefault("control_plane_allowed_cidrs", ["192.0.2.1/32"])
+        deployment["cluster"] = cluster
         # core_capacity is bounded by measured schedulable capacity, never by
         # a preset's nominal size, so a profile-pool fixture that budgets core
         # resources states the measurement. A custom-pool fixture declares it
@@ -438,6 +441,26 @@ class DeploymentContractTests(unittest.TestCase):
             "maxUnavailable = var.control_plane_rollout.max_unavailable",
             control_plane_source,
         )
+
+    def test_control_plane_api_requires_a_bounded_source_allowlist(self) -> None:
+        for name, cidrs in (
+            ("empty", []),
+            ("universal-ipv4", ["0.0.0.0/0"]),
+            ("universal-ipv6", ["::/0"]),
+        ):
+            with self.subTest(name=name):
+                deployment = {
+                    "schema_version": 1,
+                    "name": f"fs2-api-allowlist-{name}",
+                    "target": self.catalog_target(),
+                    "cluster": {"control_plane_allowed_cidrs": cidrs},
+                }
+                result, _ = self._plan_file(
+                    self._write_configuration(f"api-allowlist-{name}", deployment),
+                    f"api-allowlist-{name}",
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("control_plane_allowed_cidrs", result.stderr)
 
     def test_system_pool_inotify_ceiling_is_a_bounded_tfvars_setting(self) -> None:
         deployment = {

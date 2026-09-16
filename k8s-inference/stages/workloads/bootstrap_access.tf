@@ -18,7 +18,7 @@ locals {
     "use.noncommercial",
   ]
   bootstrap_access_token = sensitive(
-    "fs2_pat_${random_id.bootstrap_access_token_id.hex}_${random_password.bootstrap_access_token_secret.result}"
+    "fs2_pat_${random_id.bootstrap_access_token_id.hex}_${ephemeral.random_password.bootstrap_access_token_secret.result}"
   )
   bootstrap_access_overrides = {
     bootstrapAccess = {
@@ -44,7 +44,7 @@ locals {
   scientific_access_models      = ["*"]
   scientific_access_scopes      = local.bootstrap_access_scopes
   scientific_access_token = local.scientific_access_enabled ? sensitive(
-    "fs2_pat_${random_id.scientific_access_token_id[0].hex}_${random_password.scientific_access_token_secret[0].result}"
+    "fs2_pat_${random_id.scientific_access_token_id[0].hex}_${ephemeral.random_password.scientific_access_token_secret[0].result}"
   ) : null
   scientific_access_overrides = {
     scientificAccess = {
@@ -69,13 +69,10 @@ resource "random_id" "bootstrap_access_token_id" {
   }
 }
 
-resource "random_password" "bootstrap_access_token_secret" {
-  length  = 48
-  special = false
-  keepers = {
-    cluster_id = var.cluster_id
-    tenant_id  = local.bootstrap_access_tenant_id
-  }
+ephemeral "random_password" "bootstrap_access_token_secret" {
+  provider = random.ephemeral
+  length   = 48
+  special  = false
 }
 
 resource "random_id" "scientific_access_token_id" {
@@ -87,14 +84,11 @@ resource "random_id" "scientific_access_token_id" {
   }
 }
 
-resource "random_password" "scientific_access_token_secret" {
-  count   = local.scientific_access_enabled ? 1 : 0
-  length  = 48
-  special = false
-  keepers = {
-    cluster_id = var.cluster_id
-    tenant_id  = local.scientific_access_tenant_id
-  }
+ephemeral "random_password" "scientific_access_token_secret" {
+  provider = random.ephemeral
+  count    = local.scientific_access_enabled ? 1 : 0
+  length   = 48
+  special  = false
 }
 
 resource "kubernetes_secret_v1" "bootstrap_access" {
@@ -107,9 +101,10 @@ resource "kubernetes_secret_v1" "bootstrap_access" {
   }
 
   type = "Opaque"
-  data = {
+  data_wo = {
     token = local.bootstrap_access_token
   }
+  data_wo_revision = var.credential_generations.access
 
   depends_on = [terraform_data.cluster_contract]
 }
@@ -126,9 +121,10 @@ resource "kubernetes_secret_v1" "scientific_access" {
   }
 
   type = "Opaque"
-  data = {
+  data_wo = {
     token = local.scientific_access_token
   }
+  data_wo_revision = var.credential_generations.access
 
   depends_on = [terraform_data.cluster_contract]
 }

@@ -264,7 +264,8 @@ variables {
       }
     }
   }
-  nvcrio_dockerconfigjson = "{\"auths\":{}}"
+  nvcrio_dockerconfigjson            = "{\"auths\":{}}"
+  nvcrio_dockerconfigjson_configured = true
   # The lane budgets cpu and memory, so core admission is on. These are one
   # truth at the facade: budget_core_resources is exactly
   # scheduling.core_capacity != null, and the root refuses an enabled general

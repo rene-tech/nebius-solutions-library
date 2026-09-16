@@ -226,13 +226,18 @@ variable "kubernetes_version" {
 }
 
 variable "control_plane_allowed_cidrs" {
-  description = "Optional public API allowlist. Empty relies on Nebius authentication during the short validation lifecycle."
+  description = "Required public API allowlist containing only operator and automation source networks."
   type        = list(string)
-  default     = []
 
   validation {
-    condition     = alltrue([for cidr in var.control_plane_allowed_cidrs : can(cidrhost(cidr, 0))])
-    error_message = "Every control-plane allowlist entry must be a valid CIDR."
+    condition = (
+      length(var.control_plane_allowed_cidrs) >= 1 &&
+      length(var.control_plane_allowed_cidrs) <= 8 &&
+      !contains(var.control_plane_allowed_cidrs, "0.0.0.0/0") &&
+      !contains(var.control_plane_allowed_cidrs, "::/0") &&
+      alltrue([for cidr in var.control_plane_allowed_cidrs : can(cidrhost(cidr, 0))])
+    )
+    error_message = "control_plane_allowed_cidrs must contain one to eight bounded, valid operator or automation source CIDRs."
   }
 }
 

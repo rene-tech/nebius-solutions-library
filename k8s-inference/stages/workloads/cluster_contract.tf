@@ -34,11 +34,8 @@ data "kubernetes_config_map_v1" "foundation_contract" {
   }
 }
 
-data "kubernetes_secret_v1" "grafana_admin" {
-  metadata {
-    name      = data.terraform_remote_state.foundation.outputs.grafana_admin_secret_ref.name
-    namespace = "fs2-observability"
-  }
+locals {
+  grafana_admin_secret_ref = data.terraform_remote_state.foundation.outputs.grafana_admin_secret_ref
 }
 
 data "kubernetes_resource" "envoyproxy_crd" {
@@ -276,8 +273,8 @@ resource "terraform_data" "cluster_contract" {
     }
     precondition {
       condition = (
-        (!local.ngc_api_key_required || var.ngc_api_key != null) &&
-        (!(local.model_nvcr_credentials_required || local.dcgm_nvcr_credentials_required) || var.nvcrio_dockerconfigjson != null)
+        (!local.ngc_api_key_required || var.ngc_api_key_configured) &&
+        (!(local.model_nvcr_credentials_required || local.dcgm_nvcr_credentials_required) || var.nvcrio_dockerconfigjson_configured)
       )
       error_message = "The selected NIM models require ngc_api_key and nvcrio_dockerconfigjson; the full-catalog DCGM exporter independently requires nvcrio_dockerconfigjson."
     }

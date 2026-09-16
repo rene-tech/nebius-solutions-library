@@ -1561,19 +1561,53 @@ variable "catalog_rollout_digest" {
 }
 
 variable "ngc_api_key" {
-  description = "NGC entitlement used by selected NIM models. Required only when model_artifacts marks an enabled model accordingly; stored in disposable local state."
+  description = "NGC entitlement used by selected NIM models. The ephemeral value is delivered only through write-only Secret data."
   type        = string
   sensitive   = true
+  ephemeral   = true
   nullable    = true
   default     = null
 }
 
 variable "nvcrio_dockerconfigjson" {
-  description = "Docker config JSON for selected nvcr.io model images and the full-catalog DCGM exporter; stored in disposable local state."
+  description = "Docker config JSON for selected nvcr.io images. The ephemeral value is delivered only through write-only Secret data."
   type        = string
   sensitive   = true
+  ephemeral   = true
   nullable    = true
   default     = null
+}
+
+variable "ngc_api_key_configured" {
+  description = "Non-secret presence signal supplied by the wrapper for the ephemeral NGC entitlement."
+  type        = bool
+  default     = false
+}
+
+variable "nvcrio_dockerconfigjson_configured" {
+  description = "Non-secret presence signal supplied by the wrapper for the ephemeral registry credential."
+  type        = bool
+  default     = false
+}
+
+variable "credential_generations" {
+  description = "Independent positive rotation generations for write-only credential classes."
+  type = object({
+    admin        = optional(number, 1)
+    access       = optional(number, 1)
+    database     = optional(number, 1)
+    key_material = optional(number, 1)
+    registry     = optional(number, 1)
+  })
+  default = {}
+
+  validation {
+    condition = alltrue([
+      for generation in values(var.credential_generations) :
+      floor(generation) == generation && generation >= 1
+    ])
+    error_message = "Every credential_generations value must be a positive whole number."
+  }
 }
 
 variable "run_acceptance_job" {

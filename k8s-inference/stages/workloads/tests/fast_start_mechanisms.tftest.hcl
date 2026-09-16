@@ -221,7 +221,8 @@ variables {
       }
     }
   }
-  nvcrio_dockerconfigjson = "{\"auths\":{}}"
+  nvcrio_dockerconfigjson            = "{\"auths\":{}}"
+  nvcrio_dockerconfigjson_configured = true
 }
 
 run "deployment_runtime_settings_reach_gpu_requests_and_cache_paths" {

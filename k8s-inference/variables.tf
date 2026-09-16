@@ -31,9 +31,9 @@ variable "deployment" {
       }))
     })
 
-    cluster = optional(object({
+    cluster = object({
       kubernetes_version          = optional(string, "1.35")
-      control_plane_allowed_cidrs = optional(set(string), [])
+      control_plane_allowed_cidrs = set(string)
       system_pool = optional(object({
         capacity                   = optional(string, "regular")
         platform                   = optional(string, "cpu-d3")
@@ -46,7 +46,7 @@ variable "deployment" {
         drain_timeout              = optional(string, "15m")
         inotify_max_user_instances = optional(number, 8192)
       }))
-    }), {})
+    })
 
     accelerator_pool_capacity = optional(map(object({
       min_nodes = number
@@ -692,6 +692,14 @@ variable "deployment" {
       grafana_password_env  = optional(string, "FS2_GRAFANA_ADMIN_PASSWORD")
       ngc_api_key_env       = optional(string, "FS2_NGC_API_KEY")
       nvcr_dockerconfig_env = optional(string, "FS2_NVCR_DOCKERCONFIGJSON")
+      credential_generations = optional(object({
+        admin        = optional(number, 1)
+        access       = optional(number, 1)
+        database     = optional(number, 1)
+        key_material = optional(number, 1)
+        registry     = optional(number, 1)
+        grafana      = optional(number, 1)
+      }), {})
     }), {})
 
     acceptance = optional(object({
@@ -1020,10 +1028,26 @@ variable "deployment" {
   }
 
   validation {
+    condition = (
+      length(var.deployment.cluster.control_plane_allowed_cidrs) >= 1 &&
+      length(var.deployment.cluster.control_plane_allowed_cidrs) <= 8 &&
+      length(setintersection(
+        var.deployment.cluster.control_plane_allowed_cidrs,
+        toset(["0.0.0.0/0", "::/0"]),
+      )) == 0 &&
+      alltrue([
+        for cidr in var.deployment.cluster.control_plane_allowed_cidrs : can(cidrhost(cidr, 0))
+      ])
+    )
+    error_message = "cluster.control_plane_allowed_cidrs must contain one to eight bounded, valid operator or automation source CIDRs."
+  }
+
+  validation {
     condition = alltrue([
-      for cidr in var.deployment.cluster.control_plane_allowed_cidrs : can(cidrhost(cidr, 0))
+      for generation in values(var.deployment.secrets.credential_generations) :
+      floor(generation) == generation && generation >= 1
     ])
-    error_message = "Every cluster.control_plane_allowed_cidrs entry must be a valid CIDR."
+    error_message = "Every secrets.credential_generations value must be a positive whole number and must increase for its coordinated credential rotation."
   }
 
   validation {

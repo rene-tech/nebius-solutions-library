@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.machinery
 import importlib.util
+import base64
 import hashlib
 import io
 import json
@@ -410,6 +411,40 @@ class InferenceStackTests(unittest.TestCase):
                 first_bytes, {path.name: path.read_bytes() for path in paths}
             )
             self.assertEqual(list(run_root.glob(".*.tmp-*")), [])
+
+    def test_secure_run_root_removes_group_and_world_access_recursively(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="inference-stack-private-") as temporary:
+            run_root = Path(temporary) / "run"
+            nested = run_root / "nested"
+            nested.mkdir(parents=True, mode=0o755)
+            state = run_root / "workloads.tfstate.backup"
+            state.write_text("metadata-only-test", encoding="utf-8")
+            state.chmod(0o664)
+            helper = nested / "helper"
+            helper.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            helper.chmod(0o755)
+
+            STACK.secure_run_root(run_root)
+
+            self.assertEqual(stat.S_IMODE(run_root.stat().st_mode), 0o700)
+            self.assertEqual(stat.S_IMODE(nested.stat().st_mode), 0o700)
+            self.assertEqual(stat.S_IMODE(state.stat().st_mode), 0o600)
+            self.assertEqual(stat.S_IMODE(helper.stat().st_mode), 0o700)
+
+    def test_secure_run_root_rejects_links_without_changing_their_targets(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="inference-stack-link-") as temporary:
+            parent = Path(temporary)
+            run_root = parent / "run"
+            run_root.mkdir(mode=0o700)
+            target = parent / "outside"
+            target.write_text("outside", encoding="utf-8")
+            target.chmod(0o644)
+            (run_root / "unsafe").symlink_to(target)
+
+            with self.assertRaisesRegex(STACK.DeploymentError, "file symlink"):
+                STACK.secure_run_root(run_root)
+
+            self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o644)
 
     def test_reference_data_handoff_stays_non_secret_and_exact(self) -> None:
         configuration = contract()
@@ -1432,24 +1467,137 @@ class InferenceStackTests(unittest.TestCase):
             {"storage": storage_contract, "plane": None},
         )
 
-    def test_output_explicitly_emits_the_sensitive_access_bundle(self) -> None:
+    def test_output_writes_owner_only_bundle_without_printing_secrets(self) -> None:
         access_bundle = complete_reference_access_bundle()
         output = io.StringIO()
-        with (
-            mock.patch.object(STACK, "state_ready", return_value=True),
-            mock.patch.object(
-                STACK,
-                "workload_access_bundle",
-                return_value=access_bundle,
-            ) as workload_access_bundle,
-            redirect_stdout(output),
-        ):
-            STACK.output_stack(arguments(), Path("/private/test-run"), contract())
+        with tempfile.TemporaryDirectory(prefix="inference-stack-output-") as temporary:
+            run_root = Path(temporary) / "run"
+            destination_parent = Path(temporary) / "handoff"
+            run_root.mkdir(mode=0o700)
+            destination_parent.mkdir(mode=0o700)
+            destination = destination_parent / "access.json"
+            args = arguments()
+            args.credential_file = destination
+            with (
+                mock.patch.object(STACK, "state_ready", return_value=True),
+                mock.patch.object(
+                    STACK,
+                    "workload_access_bundle",
+                    return_value=access_bundle,
+                ) as workload_access_bundle,
+                redirect_stdout(output),
+            ):
+                STACK.output_stack(args, run_root, contract())
 
-        self.assertEqual(json.loads(output.getvalue()), access_bundle)
-        workload_access_bundle.assert_called_once_with(
-            "terraform-test", Path("/private/test-run"), contract()
-        )
+            receipt = json.loads(output.getvalue())
+            self.assertEqual(receipt["status"], "credential-file-written")
+            self.assertNotIn("test-only", output.getvalue())
+            self.assertEqual(json.loads(destination.read_text()), access_bundle)
+            self.assertEqual(stat.S_IMODE(destination.stat().st_mode), 0o600)
+            workload_access_bundle.assert_called_once_with(
+                "terraform-test", run_root, contract(), kubectl="kubectl-test"
+            )
+
+    def test_output_requires_an_explicit_private_destination(self) -> None:
+        with mock.patch.object(STACK, "state_ready", return_value=True):
+            with self.assertRaisesRegex(STACK.DeploymentError, "credential-file"):
+                STACK.output_stack(arguments(), Path("/private/test-run"), contract())
+
+    def test_output_refuses_a_symlink_destination(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="inference-stack-output-") as temporary:
+            directory = Path(temporary)
+            directory.chmod(0o700)
+            target = directory / "target.json"
+            target.write_text("unchanged\n", encoding="utf-8")
+            destination = directory / "access.json"
+            destination.symlink_to(target)
+            args = arguments()
+            args.credential_file = destination
+            with mock.patch.object(STACK, "state_ready", return_value=True):
+                with self.assertRaisesRegex(STACK.DeploymentError, "symlink"):
+                    STACK.output_stack(args, directory / "run", contract())
+
+            self.assertEqual(target.read_text(encoding="utf-8"), "unchanged\n")
+
+    def test_private_directory_rejects_a_symlinked_parent(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="inference-stack-run-root-") as temporary:
+            root = Path(temporary)
+            target = root / "target"
+            target.mkdir(mode=0o700)
+            link = root / "link"
+            link.symlink_to(target, target_is_directory=True)
+
+            with self.assertRaisesRegex(STACK.DeploymentError, "symlink"):
+                STACK.private_directory(link / "run")
+
+            self.assertFalse((target / "run").exists())
+
+    def test_access_contract_hydrates_credentials_only_from_live_secrets(self) -> None:
+        access_contract = complete_access_bundle()
+        access_contract["schema"] = "fs2-serve.nebius.ai/access-bundle-contract/v2"
+        del access_contract["credentials"]
+        access_contract["credential_secret_refs"] = {
+            "admin": {
+                "namespace": "fs2-system",
+                "name": "admin-secret",
+                "key": "token",
+            },
+            "mcp_inference": {
+                "namespace": "fs2-system",
+                "name": "bootstrap-secret",
+                "key": "token",
+            },
+            "scientific": None,
+            "grafana": {
+                "namespace": "fs2-observability",
+                "name": "grafana-secret",
+                "username_key": "admin-user",
+                "password_key": "admin-password",
+            },
+        }
+        values = {
+            "admin-secret": {"token": "test-only-admin-token"},
+            "bootstrap-secret": {"token": "test-only-client-token"},
+            "grafana-secret": {
+                "admin-user": "test-only-grafana-user",
+                "admin-password": "test-only-grafana-password",
+            },
+        }
+        calls: list[list[str]] = []
+
+        def fake_run(command, **_kwargs):
+            calls.append(list(command))
+            secret_name = command[command.index("secret") + 1]
+            payload = {
+                "data": {
+                    key: base64.b64encode(value.encode()).decode()
+                    for key, value in values[secret_name].items()
+                }
+            }
+            return subprocess.CompletedProcess(command, 0, stdout=json.dumps(payload))
+
+        with tempfile.TemporaryDirectory(prefix="inference-stack-hydrate-") as temporary:
+            run_root = Path(temporary)
+            kubeconfig = run_root / "kubeconfig"
+            kubeconfig.write_text("test-only-kubeconfig", encoding="utf-8")
+            kubeconfig.chmod(0o600)
+            with (
+                mock.patch.object(STACK, "stage_environment", return_value={}),
+                mock.patch.object(
+                    STACK, "terraform_json_output", return_value=access_contract
+                ),
+                mock.patch.object(STACK, "run", side_effect=fake_run),
+            ):
+                bundle = STACK.workload_access_bundle(
+                    "terraform-test",
+                    run_root,
+                    contract(),
+                    kubectl="kubectl-test",
+                )
+
+        self.assertEqual(bundle["credentials"], complete_access_bundle()["credentials"])
+        self.assertEqual(len(calls), 3)
+        self.assertTrue(all("test-only" not in " ".join(call) for call in calls))
 
     def test_access_bundle_validation_requires_requested_connection_fields(
         self,

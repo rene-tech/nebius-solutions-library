@@ -183,6 +183,9 @@ class GeneralCpuPoolTests(unittest.TestCase):
         deployment.setdefault("applications", TEST_APPLICATIONS)
         deployment.setdefault("schema_version", 1)
         deployment.setdefault("target", TEST_TARGET)
+        cluster = dict(deployment.get("cluster", {}))
+        cluster.setdefault("control_plane_allowed_cidrs", ["192.0.2.1/32"])
+        deployment["cluster"] = cluster
         # A CPU pool and the reference-data plane both budget cpu and memory,
         # which Kueue drops before admission unless core admission is on, so
         # the facade refuses either without it. Every fixture that declares

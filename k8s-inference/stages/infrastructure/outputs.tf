@@ -11,6 +11,16 @@ output "cluster_version" {
   value = nebius_mk8s_v1_cluster.validation.status.control_plane.version
 }
 
+output "operator_handoff_contract" {
+  description = "Dedicated viewer-only service-account identity. Issue its authentication key out of band; never place private key material in Terraform."
+  value = {
+    service_account_id = nonsensitive(nebius_iam_v1_service_account.operator_handoff.id)
+    group_id           = nonsensitive(nebius_iam_v1_group.operator_handoff_viewers.id)
+    role               = nebius_iam_v1_access_permit.operator_handoff_viewer.role
+    resource_id        = nonsensitive(data.nebius_iam_v2_project.target.id)
+  }
+}
+
 output "target_contract" {
   description = "Non-secret reviewed target and legacy source_registry alias used by downstream acceptance receipts. New consumers should use registry_delivery_contract; source_registry names the cluster-local target registry for compatibility."
   value = {
@@ -173,6 +183,8 @@ output "owned_resource_ids" {
     scientific_artifacts_group      = try(nebius_iam_v1_group.scientific_artifacts_writers[0].id, null)
     scientific_artifacts_access_key = try(nebius_iam_v2_access_key.scientific_artifacts[0].id, null)
     nodepull_sa                     = nebius_iam_v1_service_account.nodepull.id
+    operator_handoff_sa             = nebius_iam_v1_service_account.operator_handoff.id
+    operator_handoff_viewer_group   = nebius_iam_v1_group.operator_handoff_viewers.id
     target_reader_group             = nebius_iam_v1_group.target_registry_readers.id
     external_reader_groups = {
       for registry_id, group in nebius_iam_v1_group.external_registry_readers : registry_id => group.id

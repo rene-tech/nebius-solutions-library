@@ -4,6 +4,9 @@
 # matrix before apply.
 
 deployment = {
+  cluster = {
+    control_plane_allowed_cidrs = ["192.0.2.1/32"] # Replace before deployment.
+  }
   schema_version = 1
   name           = "inference-heterogeneous"
 

@@ -7,6 +7,37 @@ resource "nebius_iam_v1_service_account" "nodepull" {
   depends_on = [terraform_data.target_contract]
 }
 
+# Human and automation handoffs use a separate identity that receives only the
+# project viewer role. Its authentication key is issued out of band so private
+# key material never enters Terraform configuration or state.
+resource "nebius_iam_v1_service_account" "operator_handoff" {
+  parent_id   = var.project_id
+  name        = "${local.resource_name}-handoff-viewer"
+  description = "Read-only Kubernetes handoff for fs2 lifecycle ${var.run_id}"
+  labels      = merge(local.common_labels, { purpose = "operator-handoff-viewer" })
+
+  depends_on = [terraform_data.target_contract]
+}
+
+resource "nebius_iam_v1_group" "operator_handoff_viewers" {
+  parent_id = data.nebius_iam_v2_project.target.id
+  name      = "${local.resource_name}-handoff-viewers"
+  labels    = merge(local.common_labels, { purpose = "operator-handoff-viewer" })
+
+  depends_on = [terraform_data.target_contract]
+}
+
+resource "nebius_iam_v1_group_membership" "operator_handoff_viewer" {
+  parent_id = nebius_iam_v1_group.operator_handoff_viewers.id
+  member_id = nebius_iam_v1_service_account.operator_handoff.id
+}
+
+resource "nebius_iam_v1_access_permit" "operator_handoff_viewer" {
+  parent_id   = nebius_iam_v1_group.operator_handoff_viewers.id
+  resource_id = data.nebius_iam_v2_project.target.id
+  role        = "viewer"
+}
+
 resource "nebius_iam_v1_group" "target_registry_readers" {
   # Access permits inherit the group's scope, so the run-owned registry uses a
   # group in the target project. External registries receive their own groups

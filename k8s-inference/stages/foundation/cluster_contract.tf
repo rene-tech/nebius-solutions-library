@@ -111,7 +111,7 @@ resource "terraform_data" "cluster_contract" {
 }
 
 resource "kubernetes_secret_v1" "grafana_admin" {
-  count = var.bootstrap_grafana_credentials == null ? 0 : 1
+  count = var.bootstrap_grafana_credentials_configured ? 1 : 0
 
   metadata {
     name      = var.grafana_admin_secret_ref.name
@@ -119,10 +119,11 @@ resource "kubernetes_secret_v1" "grafana_admin" {
     labels    = local.common_labels
   }
 
-  data = {
+  data_wo = {
     (var.grafana_admin_secret_ref.user_key)     = var.bootstrap_grafana_credentials.username
     (var.grafana_admin_secret_ref.password_key) = var.bootstrap_grafana_credentials.password
   }
+  data_wo_revision = var.credential_generation
 
   type = "Opaque"
 

@@ -23,36 +23,6 @@ output "admin_web_interface_url" {
   value       = var.admin_console == null ? null : "${trimsuffix(local.public_base_url, "/")}/admin/"
 }
 
-output "admin_token" {
-  description = "Private disposable admin credential used only to mint/revoke scoped PATs through the cluster-internal admin API; it is not valid public /v1 or /mcp authorization."
-  value       = random_password.admin_token.result
-  sensitive   = true
-}
-
-output "admin_bootstrap_token" {
-  description = "Bootstrap credential for creating the initial admin browser session; it is not a public inference credential."
-  value       = random_password.admin_token.result
-  sensitive   = true
-}
-
-output "mcp_access_token" {
-  description = "Terraform-owned scoped PAT provisioned in the durable control-plane token store for MCP and inference bootstrap access."
-  value       = local.bootstrap_access_token
-  sensitive   = true
-}
-
-output "inference_access_token" {
-  description = "Alias of mcp_access_token for OpenAI-compatible inference clients; the bootstrap PAT intentionally grants both MCP and inference scopes."
-  value       = local.bootstrap_access_token
-  sensitive   = true
-}
-
-output "scientific_access_token" {
-  description = "Terraform-owned scoped PAT for the academic scientific tenant, or null when academic assets are disabled."
-  value       = local.scientific_access_token
-  sensitive   = true
-}
-
 output "grafana_url" {
   description = "Published native-login Grafana URL, or null when publication is disabled."
   value       = local.grafana_publication.enabled ? local.grafana_publication.external_url : null
@@ -66,18 +36,6 @@ output "alertmanager_url" {
 output "tempo_explore_url" {
   description = "Authenticated Grafana Explore deep link with the provisioned Tempo datasource selected, or null when Grafana publication is disabled."
   value       = local.tempo_grafana_explore_url
-}
-
-output "grafana_admin_username" {
-  description = "Grafana bootstrap username read from the foundation-owned existing Secret."
-  value       = data.kubernetes_secret_v1.grafana_admin.data[data.terraform_remote_state.foundation.outputs.grafana_admin_secret_ref.user_key]
-  sensitive   = true
-}
-
-output "grafana_admin_password" {
-  description = "Grafana bootstrap password read from the foundation-owned existing Secret."
-  value       = data.kubernetes_secret_v1.grafana_admin.data[data.terraform_remote_state.foundation.outputs.grafana_admin_secret_ref.password_key]
-  sensitive   = true
 }
 
 output "cluster_id" {
@@ -111,10 +69,9 @@ output "kubeconfig_command" {
 }
 
 output "access_bundle" {
-  description = "Sensitive post-apply connection bundle. Request it explicitly and never place it in logs or tickets."
-  sensitive   = true
+  description = "Non-secret access contract. The wrapper resolves credential values from live Secrets only for an explicit owner-only file handoff."
   value = {
-    schema = "fs2-serve.nebius.ai/access-bundle/v1"
+    schema = "fs2-serve.nebius.ai/access-bundle-contract/v2"
     cluster = {
       project_id   = nonsensitive(var.project_id)
       region       = local.selected_target.region
@@ -136,14 +93,27 @@ output "access_bundle" {
       alertmanager_url   = local.alertmanager_grafana_url
       tempo_explore_url  = local.tempo_grafana_explore_url
     }
-    credentials = {
-      admin_bootstrap_token   = random_password.admin_token.result
-      mcp_inference_token     = local.bootstrap_access_token
-      inference_access_token  = local.bootstrap_access_token
-      scientific_access_token = local.scientific_access_token
+    credential_secret_refs = {
+      admin = {
+        namespace = kubernetes_secret_v1.admin.metadata[0].namespace
+        name      = kubernetes_secret_v1.admin.metadata[0].name
+        key       = "token"
+      }
+      mcp_inference = {
+        namespace = kubernetes_secret_v1.bootstrap_access.metadata[0].namespace
+        name      = kubernetes_secret_v1.bootstrap_access.metadata[0].name
+        key       = "token"
+      }
+      scientific = local.scientific_access_enabled ? {
+        namespace = kubernetes_secret_v1.scientific_access[0].metadata[0].namespace
+        name      = kubernetes_secret_v1.scientific_access[0].metadata[0].name
+        key       = "token"
+      } : null
       grafana = {
-        username = data.kubernetes_secret_v1.grafana_admin.data[data.terraform_remote_state.foundation.outputs.grafana_admin_secret_ref.user_key]
-        password = data.kubernetes_secret_v1.grafana_admin.data[data.terraform_remote_state.foundation.outputs.grafana_admin_secret_ref.password_key]
+        namespace    = "fs2-observability"
+        name         = local.grafana_admin_secret_ref.name
+        username_key = local.grafana_admin_secret_ref.user_key
+        password_key = local.grafana_admin_secret_ref.password_key
       }
     }
     mcp_access = {
@@ -413,7 +383,7 @@ output "managed_resource_count" {
   value = (
     # Profile-independent identity, credential, database, queue, control-plane,
     # and Grafana egress addresses. Profile-shaped collections stay explicit.
-    47 +
+    34 +
     (local.ngc_api_key_required ? 1 : 0) +
     (local.model_nvcr_credentials_required ? 1 : 0) +
     (local.dcgm_nvcr_credentials_required ? 1 : 0) +
@@ -469,7 +439,7 @@ output "managed_resource_count" {
 }
 
 output "sensitive_state_notice" {
-  value = "Generated admin, MCP/inference, Grafana, database, and cryptographic bootstrap material is stored in the run-owned local workloads state; keep the run root mode 0700/state files mode 0600 and destroy it after acceptance."
+  value = "Generated and operator-supplied credentials use ephemeral values plus Kubernetes write-only Secret data. State and plans retain metadata only; keep the complete run root owner-only."
 }
 
 output "academic_assets" {

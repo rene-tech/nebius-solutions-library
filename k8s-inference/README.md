@@ -159,7 +159,9 @@ NEBIUS_PROFILE=sandbox ./inference-stack validate --var-file terraform.tfvars
 NEBIUS_PROFILE=sandbox ./inference-stack plan --var-file terraform.tfvars
 NEBIUS_PROFILE=sandbox ./inference-stack apply --var-file terraform.tfvars
 NEBIUS_PROFILE=sandbox ./inference-stack status --var-file terraform.tfvars
-NEBIUS_PROFILE=sandbox ./inference-stack output --var-file terraform.tfvars
+install -d -m 0700 /a/private/operator-handoff
+NEBIUS_PROFILE=sandbox ./inference-stack output --var-file terraform.tfvars \
+  --credential-file /a/private/operator-handoff/access.json
 ```
 
 After a deployment, `apply` and `status` print all non-secret customer entry
@@ -188,10 +190,12 @@ address. An `internal-only` deployment emits loopback URLs instead; those are
 usable only while the run-scoped operator proxy from the workloads
 `port_forward_contract` is active.
 
-The explicit `inference-stack output` command is the credential handoff. It
-prints the sensitive `access_bundle`, including the admin URL and bootstrap
-token, MCP and `/v1` URLs plus their scoped PAT, Grafana URL and native-login
-credentials, cluster/project/region identity, and the kubeconfig command:
+The explicit `inference-stack output --credential-file <path>` command is the
+credential handoff. Terraform exposes only a non-secret v2 contract containing
+Secret references. The wrapper resolves those references through the
+run-owned kubeconfig and writes the assembled v1 bundle atomically to an
+explicit file in an existing owner-only directory. The destination is mode
+`0600`; credential values are never printed to stdout:
 
 ```json
 {
@@ -215,23 +219,24 @@ tenant. Use that credential for academic scientific submissions; tenant
 enforcement is not weakened or shared between the two credentials. Other
 tenant credentials remain a live admin-console operation.
 
-Open the emitted `admin_portal_url` and paste
+Open `endpoints.admin_portal_url` from the protected file and paste
 `credentials.admin_bootstrap_token` into the operator sign-in form. MCP clients
 use `credentials.mcp_inference_token` as a Bearer token, OpenAI-compatible
 clients use `credentials.inference_access_token`, academic scientific clients
 use `credentials.scientific_access_token`, and Grafana uses the emitted
-`credentials.grafana.username` and `credentials.grafana.password`. To print
-one value directly from the bundle:
+`credentials.grafana.username` and `credentials.grafana.password`. Read a value
+only from the protected file when it is needed:
 
 ```bash
-NEBIUS_PROFILE=sandbox ./inference-stack output --var-file terraform.tfvars \
-  | jq -r '.credentials.admin_bootstrap_token'
+jq -r '.credentials.admin_bootstrap_token' \
+  /a/private/operator-handoff/access.json
 ```
 
-Run it only in a private terminal and do not pipe its output to logs, CI
-artifacts, tickets, or shell history. The credentials necessarily live in the
-protected run-owned Terraform state; automatic `apply` and `status` output
-remain non-secret.
+Do not copy the file or its values into logs, CI artifacts, tickets, or shell
+history. Delete it after the receiving operator has imported the credentials.
+The generated passwords and provider Secret payloads are ephemeral/write-only,
+so their values do not live in Terraform state or plan files. Automatic
+`apply`, `status`, and `output` stdout remain non-secret.
 
 The shipped example selects a shared public endpoint, so no foreground process
 or client-side port forwarding is required:
@@ -329,13 +334,11 @@ customer key can use those models when its model permissions include them.
 The admin token is deliberately not valid for `/mcp` or `/v1`.
 An intentionally revoked or expired Terraform bootstrap PAT stays inactive:
 the next Helm upgrade fails closed instead of silently reactivating it. Rotate
-the Terraform-owned token material before that upgrade by applying with both
-`-replace=random_id.bootstrap_access_token_id` and
-`-replace=random_password.bootstrap_access_token_secret` through the same
-protected workloads-stage workflow.
-Rotate the optional academic credential independently with
-`-replace=random_id.scientific_access_token_id[0]` and
-`-replace=random_password.scientific_access_token_secret[0]`.
+credentials through a reviewed change to the applicable
+`deployment.secrets.credential_generations` value. Generations are independent
+for `admin`, `access`, `database`, `key_material`, `registry`, and `grafana`, so
+an operator can stage a bounded rotation instead of replacing every credential
+at once.
 
 The platform operator owns the Apps, model deployments, caches and shared
 capacity. Customers do not deploy or own a separate copy of a model. A customer
@@ -363,12 +366,18 @@ the location explicit:
   --run-root /a/private/k8s-inference-state-directory
 ```
 
-The wrapper creates the run directory with mode `0700` and generated contract,
-plan, state-input, and kubeconfig files with private permissions where it owns
-them. Secret values are passed through process environment only and never
-written to generated stage tfvars. Terraform state can still contain sensitive
-provider or resource data, so the whole run directory must be protected and
-backed up according to the operator's policy.
+The wrapper recursively enforces owner-only permissions every time it starts
+and finishes: directories are `0700`, regular data files are `0600`, and
+owner-executable files retain only their owner execute bits. It rejects any
+symlink below the run root instead of following it. Secret values are passed
+through process environment only and never written to generated stage tfvars.
+Terraform state can still contain sensitive provider metadata, so the whole
+run directory must be protected and backed up according to the operator's
+policy.
+
+The Kubernetes API allowlist, viewer-only operator handoff identity, state and
+plan hygiene, rotation generations, and staged verification procedure are
+documented in [Operator access hygiene](docs/OPERATOR_ACCESS_HYGIENE.md).
 
 ## Configuration
 
