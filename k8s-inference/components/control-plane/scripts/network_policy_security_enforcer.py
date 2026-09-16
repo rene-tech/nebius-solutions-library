@@ -44,6 +44,7 @@ ATTESTATION_SCHEMA = "fs2-serve.nebius.ai/network-policy-security-automation-att
 RECOVERY_APPROVAL_SCHEMA = "fs2-serve.nebius.ai/network-policy-recovery-approval/v2"
 HANDOFF_SECONDS = 30
 MAX_REQUEST_BYTES = 1024 * 1024
+SOCKET_READ_SECONDS = 5.0
 RELAXED_SELECTOR = {"fs2.nebius.ai/network-policy-deny-relaxed": "true"}
 ACTIVE_DENY_SPEC = {"podSelector": {}, "policyTypes": ["Ingress"], "ingress": []}
 RELAXED_DENY_SPEC = {
@@ -156,6 +157,8 @@ class KubernetesAPI(Protocol):
 
     def cluster_identity(self) -> dict[str, str]: ...
 
+    def user_info(self) -> dict[str, Any]: ...
+
 
 @dataclass(frozen=True)
 class CommandResult:
@@ -235,6 +238,36 @@ class KubectlAPI:
         return {
             "api_server_sha256": sha256_text(clusters[0]["cluster"]["server"]),
             "kube_system_uid": uid,
+        }
+
+    def user_info(self) -> dict[str, Any]:
+        try:
+            response = json.loads(self._run("auth", "whoami", "-o", "json").stdout)
+            info = response["status"]["userInfo"]
+        except (json.JSONDecodeError, KeyError, TypeError) as error:
+            raise EnforcerError("security kubeconfig has no exact whoami identity") from error
+        if (
+            not isinstance(info.get("username"), str)
+            or not info["username"]
+            or not isinstance(info.get("uid"), str)
+            or not info["uid"]
+            or not isinstance(info.get("groups", []), list)
+            or not isinstance(info.get("extra", {}), dict)
+            or not all(isinstance(group, str) and group for group in info.get("groups", []))
+            or not all(
+                isinstance(key, str)
+                and key
+                and isinstance(values, list)
+                and all(isinstance(value, str) for value in values)
+                for key, values in info.get("extra", {}).items()
+            )
+        ):
+            raise EnforcerError("security whoami identity is incomplete")
+        return {
+            "username": info["username"],
+            "uid": info["uid"],
+            "groups": sorted(info.get("groups", [])),
+            "extra": {key: sorted(values) for key, values in sorted(info.get("extra", {}).items())},
         }
 
 
@@ -426,15 +459,26 @@ class SecurityEnforcer:
         if evidence != expected:
             raise EnforcerError("protected topology evidence changed")
         handoff = contract.get("security_handoff", {})
+        identity = handoff.get("identity_boundary", {})
+        now = dt.datetime.now(dt.UTC)
         if (
             handoff.get("client_public_key_sha256") != self.client_key_id
             or handoff.get("server_public_key_sha256") != self.server_key_id
             or handoff.get("recovery_public_key_sha256") != self.recovery_key_id
             or handoff.get("peer_uid") != self.expected_peer_uid
             or handoff.get("peer_gid") != self.expected_peer_gid
+            or handoff.get("peer_gid_contract") != "effective-dedicated"
             or handoff.get("cluster") != self.expected_cluster
             or handoff.get("allowed_actions") != ["transition-mutation", "set-admission-recovery"]
             or handoff.get("delete_allowed") is not False
+            or identity.get("schema") != "fs2-serve.nebius.ai/network-policy-identity-boundary/v1"
+            or identity.get("security_user_info_sha256") != sha256_json(self.api.user_info())
+            or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("denied_human_subjects_sha256", "")))
+            or identity.get("plan_preflight_verified") is not True
+            or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("plan_preflight_sha256", "")))
+            or identity.get("bootstrap_must_be_expired") is not True
+            or instant(identity.get("bootstrap_expires_at"), field="bootstrap identity expires_at") > now
+            or instant(identity.get("security_expires_at"), field="security identity expires_at") <= now
         ):
             raise EnforcerError("live topology does not authorize this enforcer")
         return resource, contract
@@ -863,6 +907,7 @@ class SecurityEnforcer:
                 or accepted.get("issued_at") != signed.get("issued_at")
                 or accepted.get("expires_at") != signed.get("expires_at")
                 or accepted.get("signer_key_id") != signed.get("signer_key_id")
+                or (prior_recovery.get("state") == "complete" and expires <= now)
             )
         else:
             binding_invalid = (
@@ -915,9 +960,76 @@ class SecurityEnforcer:
     @staticmethod
     def _recovery_object_evidence(resource_object: dict[str, Any]) -> dict[str, Any]:
         evidence = object_evidence(resource_object)
+        metadata = resource_object.get("metadata", {})
+        evidence["labels"] = metadata.get("labels", {})
+        evidence["annotations"] = metadata.get("annotations", {})
         evidence["spec"] = resource_object.get("spec")
         evidence["data"] = resource_object.get("data")
         return evidence
+
+    @staticmethod
+    def _recovery_content(evidence: dict[str, Any]) -> dict[str, Any]:
+        return {
+            key: evidence.get(key)
+            for key in (
+                "api_version",
+                "kind",
+                "namespace",
+                "name",
+                "uid",
+                "labels",
+                "annotations",
+                "spec",
+                "data",
+            )
+        }
+
+    @classmethod
+    def _recovery_target(
+        cls,
+        before: dict[str, Any],
+        *,
+        desired_actions: list[str],
+        mode: str,
+    ) -> dict[str, dict[str, Any]]:
+        binding = cls._recovery_content(cast(dict[str, Any], before["binding"]))
+        parameter = cls._recovery_content(cast(dict[str, Any], before["parameter"]))
+        binding_spec = dict(cast(dict[str, Any], binding["spec"]))
+        binding_spec["validationActions"] = desired_actions
+        parameter_data = dict(cast(dict[str, Any], parameter["data"]))
+        parameter_data.update(mode=mode, delete_allowed="false")
+        binding["spec"] = binding_spec
+        parameter["data"] = parameter_data
+        return {"binding": binding, "parameter": parameter}
+
+    @classmethod
+    def _recovery_state(
+        cls,
+        binding: dict[str, Any],
+        parameter: dict[str, Any],
+        recovery: dict[str, Any],
+    ) -> str:
+        before = cast(dict[str, Any], recovery.get("before", {}))
+        target = cast(dict[str, Any], recovery.get("target", {}))
+        live_binding = cls._recovery_content(cls._recovery_object_evidence(binding))
+        live_parameter = cls._recovery_content(cls._recovery_object_evidence(parameter))
+        before_binding = cls._recovery_content(cast(dict[str, Any], before.get("binding", {})))
+        before_parameter = cls._recovery_content(cast(dict[str, Any], before.get("parameter", {})))
+        target_binding = cast(dict[str, Any], target.get("binding", {}))
+        target_parameter = cast(dict[str, Any], target.get("parameter", {}))
+        pair = {"binding": live_binding, "parameter": live_parameter}
+        if pair == {"binding": before_binding, "parameter": before_parameter}:
+            return "before"
+        if pair == {"binding": target_binding, "parameter": target_parameter}:
+            return "target"
+        intermediate = (
+            {"binding": before_binding, "parameter": target_parameter}
+            if recovery.get("mode") == "audit-warn"
+            else {"binding": target_binding, "parameter": before_parameter}
+        )
+        if pair == intermediate:
+            return "intermediate"
+        raise EnforcerError("recovery objects drifted outside the approved before/intermediate/target states")
 
     def _recovery(self, request: dict[str, Any], body: dict[str, Any]) -> dict[str, Any]:
         if set(body) != {
@@ -978,11 +1090,22 @@ class SecurityEnforcer:
         ):
             raise EnforcerError("recovery objects are not the exact permanent boundary")
         desired_actions = ["Audit", "Warn"] if body["mode"] == "audit-warn" else ["Deny"]
+        if same_recovery and same_recovery.get("state") == "complete":
+            after = same_recovery.get("after")
+            if not isinstance(after, dict) or after != {
+                "binding": self._recovery_object_evidence(binding),
+                "parameter": self._recovery_object_evidence(parameter),
+            }:
+                raise EnforcerError("completed recovery is terminal and its exact live state has drifted")
+            self._lease_is_fenced(lease, cast(dict[str, Any], body["lease"]))
+            return {"binding": binding, "parameter": parameter, "receipt": receipt_object}
         if same_recovery and same_recovery.get("state") == "intent":
             pass
-        elif same_recovery and same_recovery.get("state") == "complete":
-            pass
         else:
+            before = {
+                "binding": self._recovery_object_evidence(binding),
+                "parameter": self._recovery_object_evidence(parameter),
+            }
             recovery = {
                 "schema": "fs2-serve.nebius.ai/network-policy-security-recovery/v1",
                 "state": "intent",
@@ -995,11 +1118,12 @@ class SecurityEnforcer:
                     "holder_identity": lease.get("spec", {}).get("holderIdentity"),
                     "lease_transitions": lease.get("spec", {}).get("leaseTransitions"),
                 },
-                "before": {
-                    "binding": self._recovery_object_evidence(binding),
-                    "parameter": self._recovery_object_evidence(parameter),
-                },
-                "target": {"validation_actions": desired_actions, "mode": body["mode"], "delete_allowed": False},
+                "before": before,
+                "target": self._recovery_target(
+                    before,
+                    desired_actions=desired_actions,
+                    mode=body["mode"],
+                ),
             }
             if recovery["before"] != {
                 "binding": authorization["binding"],
@@ -1008,6 +1132,7 @@ class SecurityEnforcer:
                 raise EnforcerError("recovery intent differs from the security-approved old objects")
             receipt_object, receipt = self._patch_recovery_receipt(receipt_object, receipt, recovery)
         recovery = cast(dict[str, Any], receipt.get("security_recovery", {}))
+        state = self._recovery_state(binding, parameter, recovery)
         if recovery.get("state") == "intent":
             recovery = {
                 **recovery,
@@ -1022,7 +1147,7 @@ class SecurityEnforcer:
             }
             receipt_object, receipt = self._patch_recovery_receipt(receipt_object, receipt, recovery)
         # Audit/Warn changes the parameter first; Deny changes the binding first.
-        if body["mode"] == "audit-warn" and parameter.get("data", {}).get("mode") != "audit-warn":
+        if body["mode"] == "audit-warn" and state == "before":
             parameter = self.api.patch(
                 "configmap",
                 PARAMETER_NAME,
@@ -1033,7 +1158,12 @@ class SecurityEnforcer:
                     "data": {**parameter["data"], "mode": "audit-warn", "delete_allowed": "false"},
                 },
             )
-        if binding.get("spec", {}).get("validationActions") != desired_actions:
+            binding = self.api.get("validatingadmissionpolicybinding", ADMISSION_NAME)
+            parameter = self.api.get("configmap", PARAMETER_NAME, RELEASE_NAMESPACE)
+            state = self._recovery_state(binding, parameter, recovery)
+            if state != "intermediate":
+                raise EnforcerError("Audit/Warn recovery did not reach its exact approved intermediate state")
+        if state in {"before", "intermediate"} and binding.get("spec", {}).get("validationActions") != desired_actions:
             binding = self.api.patch(
                 "validatingadmissionpolicybinding",
                 ADMISSION_NAME,
@@ -1044,7 +1174,13 @@ class SecurityEnforcer:
                     "spec": {"validationActions": desired_actions},
                 },
             )
-        if body["mode"] == "deny" and parameter.get("data", {}).get("mode") != "deny":
+            binding = self.api.get("validatingadmissionpolicybinding", ADMISSION_NAME)
+            parameter = self.api.get("configmap", PARAMETER_NAME, RELEASE_NAMESPACE)
+            state = self._recovery_state(binding, parameter, recovery)
+            expected = "target" if body["mode"] == "audit-warn" else "intermediate"
+            if state != expected:
+                raise EnforcerError("recovery binding mutation did not reach its exact approved state")
+        if body["mode"] == "deny" and state == "intermediate":
             parameter = self.api.patch(
                 "configmap",
                 PARAMETER_NAME,
@@ -1062,14 +1198,7 @@ class SecurityEnforcer:
         receipt = receipt_from_object(receipt_object)
         live_lease = self.api.get("lease", STATE_NAME, RELEASE_NAMESPACE)
         recovery = cast(dict[str, Any], receipt.get("security_recovery", {}))
-        recorded_before = recovery.get("before", {})
-        if (
-            binding.get("spec", {}).get("validationActions") != desired_actions
-            or parameter.get("data", {}).get("mode") != body["mode"]
-            or parameter.get("data", {}).get("delete_allowed") != "false"
-            or binding.get("metadata", {}).get("uid") != recorded_before.get("binding", {}).get("uid")
-            or parameter.get("metadata", {}).get("uid") != recorded_before.get("parameter", {}).get("uid")
-        ):
+        if self._recovery_state(binding, parameter, recovery) != "target":
             raise EnforcerError("recovery did not reach the exact reversible target")
         self._lease_is_fenced(live_lease, cast(dict[str, Any], body["lease"]))
         if recovery.get("state") != "complete":
@@ -1090,6 +1219,11 @@ class SecurityEnforcer:
             or final_recovery.get("state") != "complete"
             or final_recovery.get("mode") != body["mode"]
             or final_recovery.get("recovery_reference") != body["recovery_reference"]
+            or final_recovery.get("after")
+            != {
+                "binding": self._recovery_object_evidence(binding),
+                "parameter": self._recovery_object_evidence(parameter),
+            }
         ):
             raise EnforcerError("durable recovery completion reread failed")
         return {"binding": binding, "parameter": parameter, "receipt": final_receipt_object}
@@ -1117,6 +1251,9 @@ class SecurityEnforcer:
                 "allowed_actions": ["transition-mutation", "set-admission-recovery"],
                 "recovery_modes": ["Audit", "Warn", "Deny"],
                 "delete_allowed": False,
+                "security_user_info_sha256": contract.get("security_handoff", {})
+                .get("identity_boundary", {})
+                .get("security_user_info_sha256"),
             }
         elif action == "transition-mutation":
             result = self._transition_mutation(body)
@@ -1128,6 +1265,9 @@ class SecurityEnforcer:
 def serve_connection(connection: socket.socket, enforcer: SecurityEnforcer) -> None:
     credentials = connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
     _pid, peer_uid, peer_gid = struct.unpack("3i", credentials)
+    if peer_uid != enforcer.expected_peer_uid or peer_gid != enforcer.expected_peer_gid:
+        raise EnforcerError("Unix peer UID/GID is not authorized")
+    connection.settimeout(SOCKET_READ_SECONDS)
     chunks: list[bytes] = []
     size = 0
     while True:
@@ -1189,6 +1329,8 @@ def parse_arguments(argv: Sequence[str]) -> argparse.Namespace:
         parser.error("peer UID/GID must be positive")
     if arguments.peer_uid == os.geteuid():
         parser.error("security enforcer and rollout peer must use distinct Unix UIDs")
+    if arguments.peer_gid in {os.getegid(), *os.getgroups()}:
+        parser.error("security enforcer and rollout peer must use a dedicated disjoint Unix GID")
     for name in ("socket", "security_kubeconfig", "server_private_key"):
         if not Path(getattr(arguments, name)).is_absolute():
             parser.error(f"{name} path must be absolute")

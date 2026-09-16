@@ -176,6 +176,19 @@ resource "terraform_data" "cluster_contract" {
         floor(data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.peer_uid) == data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.peer_uid &&
         data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.peer_gid >= 1 &&
         floor(data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.peer_gid) == data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.peer_gid &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.peer_gid_contract == "effective-dedicated" &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.schema == "fs2-serve.nebius.ai/network-policy-identity-boundary/v1" &&
+        can(regex("^[0-9a-f]{64}$", data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.release_user_info_sha256)) &&
+        can(regex("^[0-9a-f]{64}$", data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.security_user_info_sha256)) &&
+        can(regex("^[0-9a-f]{64}$", data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.bootstrap_user_info_sha256)) &&
+        can(regex("^[0-9a-f]{64}$", data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.denied_human_subjects_sha256)) &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.plan_preflight_verified &&
+        can(regex("^[0-9a-f]{64}$", data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.plan_preflight_sha256)) &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.bootstrap_must_be_expired &&
+        timecmp(timestamp(), data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.bootstrap_expires_at) > 0 &&
+        timecmp(timestamp(), data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.release_expires_at) < 0 &&
+        timecmp(timestamp(), data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.security_expires_at) < 0 &&
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.identity_boundary.permitted_shared_groups == ["system:authenticated", "system:serviceaccounts"] &&
         data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_handoff.cluster == {
           api_server_sha256 = sha256(local.selected_api_server)
           kube_system_uid   = var.kube_system_uid

@@ -784,10 +784,21 @@ manual Helm uninstall and workload credentials therefore cannot remove the last
 selected allow or the policy protecting it. Every permanent object has
 Terraform `prevent_destroy` and an ownership label. Kubernetes deliberately
 does not invoke API-based admission for its own policy and binding resources,
-so this design does not claim self-protection. Foundation applies the admission
-policy and binding with a separate security-owner kubeconfig, while a mandatory
-preflight binds both foundation kubeconfigs to the same API server and exact
-`kube-system` UID. It proves the ordinary identity cannot patch, update, delete,
+so this design does not claim self-protection. Foundation creates the admission
+objects with a dedicated non-human bootstrap credential whose cryptographic
+expiry is at most 15 minutes. That credential is distinct from the release and
+runtime-enforcer credentials and is never passed to workloads; workload plan
+and the transition coordinator refuse to proceed until its recorded expiry has
+passed. The runtime security credential cannot create either admission object
+or use unnamed patch/update. A mandatory preflight binds all three kubeconfigs
+to the same API server and exact `kube-system` UID, compares canonical full
+`whoami` username/UID/groups/extras with the configured expiring identities,
+and permits only the common authenticated/service-account baseline groups. It
+is a plan-time external data check, not a creation-only provisioner; every plan
+reruns it and binds its query hash into protected topology. Reviewed human
+subjects are checked through nonpersistent SubjectAccessReviews for protected
+mutation, namespace/finalize, token, impersonation and RBAC delegation denial.
+It proves the release identity cannot patch, update, delete,
 or collection-delete either admission resource, any permanent guard/deny,
 transition/parameter ConfigMap, or Lease; it also cannot mint the retained
 transition-ServiceAccount token, impersonate any user, group, ServiceAccount,
@@ -795,14 +806,16 @@ UID or user-extra, or bind/escalate or rewrite the boundary RBAC delegation.
 The security identity can patch/update only the exact governed objects and
 cannot delete them, collection-delete their resource types, bind, escalate, or
 delegate its authority.
-Before foundation apply, provision the mode-0600
-`<run_root>/network-policy-security-owner-kubeconfig` for the exact configured
-external username. Its identity must be distinct from the ordinary run
-kubeconfig and independently authorized for the protected resources. The apply
-fails closed unless both exact named owner permissions and negative ordinary
-permissions are proven. The security-owner kubeconfig path is never emitted to
-workloads. Protected topology instead pins a Unix handoff socket, the exact
-coordinator peer UID/GID, distinct Ed25519 coordinator-request, enforcer-response
+Before foundation apply, provision distinct mode-0600 runtime-owner and
+short-lived bootstrap kubeconfigs for their exact configured non-human
+identities. The apply fails closed unless exact named runtime permissions,
+unnamed/collection negatives, token/impersonation/delegation negatives, and
+bootstrap-only creation are proven. Namespace UPDATE/DELETE and
+`namespaces/finalize` are denied to release and runtime identities. Neither
+kubeconfig path is emitted to workloads. Protected topology instead pins a
+Unix handoff socket, the exact coordinator peer UID and dedicated effective GID,
+the canonical identity hashes and expiry boundary, distinct Ed25519
+coordinator-request, enforcer-response
 and recovery-approval public keys, and the SHA-256 of the selected API server
 plus exact `kube-system` UID. The coordinator has only its request-signing key
 and ordinary kubeconfig. The security-owner kubeconfig and response-signing key
@@ -811,7 +824,9 @@ by `network-policy-security-enforcer.sh`; that UID must differ from the rollout
 peer UID. The socket parent is likewise enforcer-owned and is not group/world
 writable. The separate recovery-approval private key is never present in either
 process. The enforcer
-checks `SO_PEERCRED`, verifies the coordinator signature, rereads the
+checks `SO_PEERCRED` immediately after `accept` and before reading any bytes,
+rejects a supplementary-only GID, applies a five-second socket read deadline
+and one-MiB frame limit, verifies the coordinator signature, rereads the
 same-cluster topology, target UID/resourceVersion/state hash, Lease fence and
 durable receipt, and authorizes only the named semantic operations
 `lease-acquire`, `lease-renew`, `lease-release`, `receipt-write`, `guard-stage`,
@@ -829,11 +844,14 @@ mutation path. Incident recovery is reversible: separately approved signed autom
 the binding and its parameter ConfigMap from `Deny` to `Audit`+`Warn`, and may
 restore `Deny`. A short-lived recovery signature is bound to an exact SEC, INC,
 or CHG record, cluster, topology UID/hash, receipt UID/resourceVersion/hash, and
-the exact old binding and parameter UID/resourceVersion/state/spec/data.
-The enforcer records the exact old binding/parameter objects and recovery intent
+the exact old binding and parameter UID/resourceVersion/state/labels/
+annotations/spec/data. The enforcer records those complete object contracts and recovery intent
 before mutation, including the accepted approval hash and its original receipt
-binding. Resume must present that exact approval; once durably accepted it
-remains the bounded recovery capability even after its issuance window closes.
+binding. Intent resume must present that exact approval; only an already
+durable intent may outlive the issuance window. A completed recovery is
+terminal: while the original approval remains unexpired, retry is an exact-state
+read-only no-op; after expiry or any drift it is rejected and a new
+reference/approval is required.
 The enforcer refreshes its attempt/Lease fence on resume, applies the safe
 parameter-first relaxation or binding-first re-enforcement order, rereads all
 live objects, records the exact new objects, and only then reports completion.
@@ -867,7 +885,8 @@ comes from protected live topology rather than caller-rendered booleans.
 
 ```bash
 # Run under the security-owned identity. Startup refuses to unlink or replace
-# an existing socket path.
+# an existing socket path. Launch the coordinator with EXACT_COORDINATOR_GID as
+# its effective/primary GID; supplementary membership is insufficient.
 components/control-plane/scripts/network-policy-security-enforcer.sh serve \
   --socket /run/fs2/network-policy-security.sock \
   --security-kubeconfig SECURITY_OWNER_KUBECONFIG \

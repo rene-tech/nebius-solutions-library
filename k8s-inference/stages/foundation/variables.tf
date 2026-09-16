@@ -77,11 +77,38 @@ variable "kube_system_uid" {
 variable "network_policy_boundary" {
   description = "Foundation-owned namespaces for the permanent Envoy allow/deny boundary. Workloads may consume but never own or disable this boundary."
   type = object({
-    mode                                     = optional(string, "public")
-    gateway_namespace                        = optional(string, "envoy-gateway-system")
-    controller_namespace                     = optional(string, "envoy-gateway-system")
-    security_owner_kubeconfig_path           = optional(string)
-    security_owner_username                  = optional(string, "fs2-network-policy-security-owner")
+    mode                               = optional(string, "public")
+    gateway_namespace                  = optional(string, "envoy-gateway-system")
+    controller_namespace               = optional(string, "envoy-gateway-system")
+    security_owner_kubeconfig_path     = optional(string)
+    security_owner_username            = optional(string, "fs2-network-policy-security-owner")
+    security_bootstrap_kubeconfig_path = optional(string)
+    security_bootstrap_username        = optional(string, "fs2-network-policy-security-bootstrap")
+    release_identity = optional(object({
+      username   = string
+      uid        = string
+      groups     = list(string)
+      extra      = map(list(string))
+      expires_at = string
+    }))
+    security_owner_identity = optional(object({
+      username   = string
+      uid        = string
+      groups     = list(string)
+      extra      = map(list(string))
+      expires_at = string
+    }))
+    security_bootstrap_identity = optional(object({
+      username   = string
+      uid        = string
+      groups     = list(string)
+      extra      = map(list(string))
+      expires_at = string
+    }))
+    denied_human_subjects = optional(list(object({
+      username = string
+      groups   = list(string)
+    })), [])
     security_handoff_socket_path             = optional(string, "/run/fs2/network-policy-security.sock")
     security_handoff_server_public_key       = optional(string)
     security_handoff_client_public_key       = optional(string)
@@ -100,9 +127,83 @@ variable "network_policy_boundary" {
   validation {
     condition = can(regex(
       "^[A-Za-z0-9:@._/-]{3,253}$",
+      var.network_policy_boundary.security_bootstrap_username,
+    ))
+    error_message = "The security bootstrap username must be a bounded Kubernetes username without CEL quoting characters."
+  }
+
+  validation {
+    condition = can(regex(
+      "^[A-Za-z0-9:@._/-]{3,253}$",
       var.network_policy_boundary.security_owner_username,
     ))
     error_message = "The external security-owner username must be a bounded Kubernetes username without CEL quoting characters."
+  }
+
+  validation {
+    condition = (
+      var.network_policy_boundary.security_bootstrap_kubeconfig_path == null ||
+      (
+        startswith(var.network_policy_boundary.security_bootstrap_kubeconfig_path, "/") &&
+        !strcontains(var.network_policy_boundary.security_bootstrap_kubeconfig_path, "..") &&
+        abspath(var.network_policy_boundary.security_bootstrap_kubeconfig_path) != abspath(var.kubeconfig_path) &&
+        (
+          var.network_policy_boundary.security_owner_kubeconfig_path == null ||
+          abspath(var.network_policy_boundary.security_bootstrap_kubeconfig_path) !=
+          abspath(var.network_policy_boundary.security_owner_kubeconfig_path)
+        )
+      )
+    )
+    error_message = "The short-lived security-bootstrap kubeconfig must be absolute, traversal-free, and distinct from release/runtime security credentials."
+  }
+
+  validation {
+    condition = var.network_policy_boundary.mode != "public" || try(
+      alltrue([
+        for identity in [
+          var.network_policy_boundary.release_identity,
+          var.network_policy_boundary.security_owner_identity,
+          var.network_policy_boundary.security_bootstrap_identity,
+          ] : (
+          identity != null &&
+          length(identity.uid) >= 8 &&
+          length(identity.groups) == length(distinct(identity.groups)) &&
+          alltrue([for values in values(identity.extra) : length(values) == length(distinct(values))]) &&
+          can(timecmp(identity.expires_at, identity.expires_at)) &&
+          can(regex("^(system:serviceaccount:[a-z0-9-]+:[a-z0-9-]+|fs2-[a-z0-9-]+-(release|security-owner|security-bootstrap))$", identity.username))
+        )
+      ]) &&
+      var.network_policy_boundary.security_owner_identity.username == var.network_policy_boundary.security_owner_username &&
+      var.network_policy_boundary.security_bootstrap_identity.username == var.network_policy_boundary.security_bootstrap_username &&
+      length(distinct([
+        var.network_policy_boundary.release_identity.username,
+        var.network_policy_boundary.security_owner_identity.username,
+        var.network_policy_boundary.security_bootstrap_identity.username,
+      ])) == 3 &&
+      length(distinct([
+        var.network_policy_boundary.release_identity.uid,
+        var.network_policy_boundary.security_owner_identity.uid,
+        var.network_policy_boundary.security_bootstrap_identity.uid,
+      ])) == 3 &&
+      length(var.network_policy_boundary.denied_human_subjects) > 0 &&
+      length(var.network_policy_boundary.denied_human_subjects) == length(distinct([
+        for subject in var.network_policy_boundary.denied_human_subjects : subject.username
+      ])) &&
+      alltrue([
+        for subject in var.network_policy_boundary.denied_human_subjects :
+        can(regex("^[A-Za-z0-9:@._/-]{3,253}$", subject.username)) &&
+        length(subject.groups) > 0 &&
+        length(subject.groups) == length(distinct(subject.groups)) &&
+        alltrue([for group in subject.groups : can(regex("^[A-Za-z0-9:@._/-]{1,253}$", group))]) &&
+        !contains([
+          var.network_policy_boundary.release_identity.username,
+          var.network_policy_boundary.security_owner_identity.username,
+          var.network_policy_boundary.security_bootstrap_identity.username,
+        ], subject.username)
+      ]),
+      false,
+    )
+    error_message = "Public boundary identities must be exact, unique, non-human, expiring whoami tuples; reviewed human subjects must be distinct and complete."
   }
 
   validation {

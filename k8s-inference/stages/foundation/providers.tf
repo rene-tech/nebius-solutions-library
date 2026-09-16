@@ -3,12 +3,11 @@ provider "kubernetes" {
   config_context = var.kube_context
 }
 
-# Admission ownership is deliberately separate from the ordinary foundation
-# and workload identity. The preflight in control_plane_network_policy_boundary.tf
-# proves the ordinary identity cannot remove this policy or impersonate its owner.
+# Creation uses a dedicated, short-lived bootstrap identity. It is distinct
+# from both the ordinary release identity and the name-scoped runtime enforcer.
 provider "kubernetes" {
   alias          = "network_policy_security_owner"
-  config_path    = pathexpand(local.control_plane_network_policy_security_owner_kubeconfig_path)
+  config_path    = pathexpand(local.control_plane_network_policy_security_bootstrap_kubeconfig_path)
   config_context = var.kube_context
 }
 

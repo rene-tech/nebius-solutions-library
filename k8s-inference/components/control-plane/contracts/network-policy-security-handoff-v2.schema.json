@@ -100,7 +100,7 @@
       "additionalProperties": false,
       "required": [
         "api_version", "kind", "namespace", "name", "uid", "resource_version", "state_sha256",
-        "spec", "data"
+        "labels", "annotations", "spec", "data"
       ],
       "properties": {
         "api_version": { "type": "string", "minLength": 1, "maxLength": 96 },
@@ -110,6 +110,8 @@
         "uid": { "$ref": "#/$defs/uid" },
         "resource_version": { "$ref": "#/$defs/resourceVersion" },
         "state_sha256": { "$ref": "#/$defs/sha256" },
+        "labels": { "type": "object", "additionalProperties": { "type": "string" } },
+        "annotations": { "type": "object", "additionalProperties": { "type": "string" } },
         "spec": { "type": ["object", "null"] },
         "data": { "type": ["object", "null"] }
       }

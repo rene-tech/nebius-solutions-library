@@ -20,6 +20,9 @@ SOLUTION_ROOT = CONTROL_ROOT.parents[1]
 CHART = SOLUTION_ROOT / "charts" / "control-plane" / "fs2-serve-control-plane"
 TERRAFORM = SOLUTION_ROOT / "stages" / "workloads" / "control_plane.tf"
 BOUNDARY_TERRAFORM = SOLUTION_ROOT / "stages" / "foundation" / "control_plane_network_policy_boundary.tf"
+BOUNDARY_PREFLIGHT = (
+    SOLUTION_ROOT / "stages" / "foundation" / "scripts" / "verify-network-policy-security-preflight.py"
+)
 HANDOFF_SCHEMA = CONTROL_ROOT / "contracts" / "network-policy-security-handoff-v2.schema.json"
 ENFORCER_SCRIPT = CONTROL_ROOT / "scripts" / "network_policy_security_enforcer.py"
 
@@ -312,7 +315,17 @@ def test_signed_handoff_must_bind_the_same_cluster_identity() -> None:
     transition.security_handoff_server_public_key = public_key
     transition.security_handoff_client_public_key = public_key
     transition.security_handoff_client_private_key = TRANSITION.Path("/run/fs2/client.key")
-    transition.bootstrap_kubectl = FakeCommand(lambda *_args: _result())
+    release_info = {
+        "username": "fs2-network-policy-release",
+        "uid": "release-uid",
+        "groups": ["system:authenticated"],
+        "extra": {},
+    }
+    transition.bootstrap_kubectl = FakeCommand(
+        lambda arguments, _kwargs: _result(
+            stdout=json.dumps({"status": {"userInfo": release_info}}) if arguments[:2] == ("auth", "whoami") else ""
+        )
+    )
     transition._cluster_identity = lambda _command: ("https://api-one", "uid-one")
     transition._protected_topology = lambda _command: {
         "contract": {
@@ -328,6 +341,21 @@ def test_signed_handoff_must_bind_the_same_cluster_identity() -> None:
                 "recovery_public_key_sha256": "e" * 64,
                 "peer_uid": TRANSITION.os.geteuid(),
                 "peer_gid": TRANSITION.os.getegid(),
+                "peer_gid_contract": "effective-dedicated",
+                "identity_boundary": {
+                    "schema": "fs2-serve.nebius.ai/network-policy-identity-boundary/v1",
+                    "release_user_info_sha256": TRANSITION.sha256_json(release_info),
+                    "security_user_info_sha256": "d" * 64,
+                    "bootstrap_user_info_sha256": "e" * 64,
+                    "denied_human_subjects_sha256": "f" * 64,
+                    "plan_preflight_verified": True,
+                    "plan_preflight_sha256": "a" * 64,
+                    "release_expires_at": (dt.datetime.now(dt.UTC) + dt.timedelta(minutes=20)).isoformat(),
+                    "security_expires_at": (dt.datetime.now(dt.UTC) + dt.timedelta(minutes=20)).isoformat(),
+                    "bootstrap_expires_at": (dt.datetime.now(dt.UTC) - dt.timedelta(minutes=1)).isoformat(),
+                    "bootstrap_must_be_expired": True,
+                    "permitted_shared_groups": ["system:authenticated", "system:serviceaccounts"],
+                },
                 "cluster": {"api_server_sha256": "different", "kube_system_uid": "uid-two"},
                 "allowed_actions": ["transition-mutation", "set-admission-recovery"],
                 "delete_allowed": False,
@@ -1504,8 +1532,9 @@ def test_signed_recovery_is_reversible_audit_warn_or_deny_and_never_delete() -> 
         def request(self, action: str, body: dict[str, Any]) -> dict[str, Any]:
             self.calls.append((action, body))
             actions = ["Audit", "Warn"] if body["mode"] == "audit-warn" else ["Deny"]
-            return {
-                "binding": {
+            binding = {
+                    "apiVersion": "admissionregistration.k8s.io/v1",
+                    "kind": "ValidatingAdmissionPolicyBinding",
                     "metadata": {
                         "name": "fs2-network-policy-boundary",
                         "uid": "binding-uid-000000000000",
@@ -1516,8 +1545,10 @@ def test_signed_recovery_is_reversible_audit_warn_or_deny_and_never_delete() -> 
                         "policyName": "fs2-network-policy-boundary",
                         "validationActions": actions,
                     },
-                },
-                "parameter": {
+                }
+            parameter = {
+                    "apiVersion": "v1",
+                    "kind": "ConfigMap",
                     "metadata": {
                         "namespace": "fs2-system",
                         "name": "fs2-network-policy-boundary-parameters",
@@ -1526,7 +1557,33 @@ def test_signed_recovery_is_reversible_audit_warn_or_deny_and_never_delete() -> 
                         "labels": {TRANSITION.BOUNDARY_LABEL: TRANSITION.BOUNDARY_VALUE},
                     },
                     "data": {"mode": body["mode"], "delete_allowed": "false"},
-                },
+                }
+
+            def evidence(resource: dict[str, Any]) -> dict[str, Any]:
+                metadata = resource["metadata"]
+                state = {
+                    "labels": metadata.get("labels", {}),
+                    "annotations": metadata.get("annotations", {}),
+                    "spec": resource.get("spec"),
+                    "data": resource.get("data"),
+                }
+                return {
+                    "api_version": resource["apiVersion"],
+                    "kind": resource["kind"],
+                    "namespace": metadata.get("namespace", ""),
+                    "name": metadata["name"],
+                    "uid": metadata["uid"],
+                    "resource_version": metadata["resourceVersion"],
+                    "labels": state["labels"],
+                    "annotations": state["annotations"],
+                    "spec": state["spec"],
+                    "data": state["data"],
+                    "state_sha256": TRANSITION.sha256_json(state),
+                }
+
+            return {
+                "binding": binding,
+                "parameter": parameter,
                 "receipt": {
                     "metadata": {
                         "uid": "receipt-uid-0000000000000",
@@ -1540,6 +1597,10 @@ def test_signed_recovery_is_reversible_audit_warn_or_deny_and_never_delete() -> 
                                     "state": "complete",
                                     "mode": body["mode"],
                                     "recovery_reference": body["recovery_reference"],
+                                    "after": {
+                                        "binding": evidence(binding),
+                                        "parameter": evidence(parameter),
+                                    },
                                 },
                             }
                         )
@@ -1561,6 +1622,7 @@ def test_signed_recovery_is_reversible_audit_warn_or_deny_and_never_delete() -> 
 
 def test_foundation_security_owner_permanently_owns_boundary_outside_workloads() -> None:
     boundary = BOUNDARY_TERRAFORM.read_text()
+    preflight = BOUNDARY_PREFLIGHT.read_text()
     control_plane = TERRAFORM.read_text()
 
     for resource in (
@@ -1592,23 +1654,45 @@ def test_foundation_security_owner_permanently_owns_boundary_outside_workloads()
     assert 'security_named_can delete "$resource" fs2-network-policy-boundary)" = "no"' in boundary
     assert 'ordinary_named_can "$verb" "$resource" "$name" --namespace "$namespace"' in boundary
     assert "fs2-network-policy-boundary-parameters" in boundary
-    assert 'ordinary_named_can impersonate users.authentication.k8s.io "$FS2_SECURITY_OWNER_USERNAME"' in boundary
     assert "ordinary_named_can create serviceaccounts fs2-network-policy-transition --subresource=token" in boundary
     assert 'ordinary_can impersonate "$resource"' in boundary
-    assert "ordinary_named_can impersonate groups.authentication.k8s.io system:masters" in boundary
-    assert "ordinary_named_can impersonate groups.authentication.k8s.io system:authenticated" in boundary
-    assert "ordinary_named_can impersonate groups.authentication.k8s.io system:serviceaccounts" in boundary
-    assert "ordinary_named_can impersonate users.authentication.k8s.io fs2-network-policy-security-probe" in boundary
-    assert "ordinary_named_can impersonate serviceaccounts fs2-system:fs2-network-policy-security-probe" in boundary
-    assert "ordinary_named_can impersonate uids.authentication.k8s.io 00000000-0000-4000-8000-000000000000" in boundary
-    assert "ordinary_named_can impersonate userextras.authentication.k8s.io scopes" in boundary
-    assert "ordinary_named_can impersonate userextras.authentication.k8s.io fs2.nebius.ai/security-probe" in boundary
+    assert 'ordinary_named_can impersonate "$resource" "$name"' in boundary
+    assert 'security_named_can impersonate "$resource" "$name"' in boundary
+    assert 'bootstrap_named_can impersonate "$resource" "$name"' in boundary
+    for target in (
+        "users.authentication.k8s.io|$FS2_SECURITY_OWNER_USERNAME",
+        "groups.authentication.k8s.io|system:masters",
+        "groups.authentication.k8s.io|system:authenticated",
+        "groups.authentication.k8s.io|system:serviceaccounts",
+        "users.authentication.k8s.io|fs2-network-policy-security-probe",
+        "serviceaccounts|fs2-system:fs2-network-policy-security-probe",
+        "uids.authentication.k8s.io|00000000-0000-4000-8000-000000000000",
+        "userextras.authentication.k8s.io|scopes",
+        "userextras.authentication.k8s.io|fs2.nebius.ai/security-probe",
+    ):
+        assert target in boundary
     assert 'ordinary_can "$verb" "$resource" "$${namespace_args[@]}"' in boundary
     assert 'ordinary_named_can "$verb" "$resource" "$name"' in boundary
     assert "security_named_can escalate" in boundary
     assert "get namespace kube-system -o 'jsonpath={.metadata.uid}'" in boundary
     assert 'test "$ordinary_server" = "$security_server"' in boundary
     assert "auth whoami -o json" in boundary
+    assert "normalize_identity" in boundary
+    assert "security_bootstrap_kubeconfig" in boundary
+    assert 'security_can "$verb" "$resource")" = "no"' in boundary
+    assert 'ordinary_named_can update namespaces/finalize fs2-system' in boundary
+    assert 'security_named_can update namespaces/finalize fs2-system' in boundary
+    assert 'test "$(id -g)" = "$FS2_PEER_GID"' in boundary
+    assert "SubjectAccessReview" in boundary
+    assert "FS2_DENIED_HUMAN_SUBJECTS" in boundary
+    assert "subject_denied" in boundary
+    assert "credential_expiry_epoch" in boundary
+    assert 'data "external" "control_plane_network_policy_security_preflight_v2"' in boundary
+    assert "plan_preflight_sha256" in boundary
+    assert "SubjectAccessReview" in preflight
+    assert "credential_expiry" in preflight
+    assert "--resource-name=fs2-network-policy-boundary" in preflight
+    assert 'subresource="finalize"' in preflight
     assert "stat -c '%u' \"$FS2_SECURITY_KUBECONFIG\"" in boundary
     assert 'test "$(id -u)" != "$FS2_PEER_UID"' in boundary
     assert 'security_named_can "$verb" "$resource" fs2-network-policy-boundary' in boundary

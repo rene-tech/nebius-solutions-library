@@ -5,6 +5,7 @@ import copy
 import datetime as dt
 import importlib.util
 import json
+import struct
 import sys
 import uuid
 from types import ModuleType
@@ -42,6 +43,12 @@ def _load_approval_module() -> ModuleType:
 
 APPROVAL = _load_approval_module()
 CLUSTER = {"api_server_sha256": "a" * 64, "kube_system_uid": "kube-system-uid-000000000000"}
+SECURITY_USER_INFO = {
+    "username": "fs2-network-policy-security-owner",
+    "uid": "security-owner-uid",
+    "groups": ["system:authenticated"],
+    "extra": {},
+}
 
 
 def _public_value(private_key: Ed25519PrivateKey) -> str:
@@ -70,6 +77,9 @@ class FakeAPI:
 
     def cluster_identity(self) -> dict[str, str]:
         return dict(CLUSTER)
+
+    def user_info(self) -> dict[str, Any]:
+        return copy.deepcopy(SECURITY_USER_INFO)
 
     def get(self, resource: str, name: str, namespace: str = "") -> dict[str, Any]:
         return copy.deepcopy(self.objects[(resource, name, namespace)])
@@ -124,6 +134,7 @@ def _fixture() -> tuple[
     client_value = _public_value(client_key)
     server_value = _public_value(server_key)
     recovery_value = _public_value(recovery_key)
+    now = dt.datetime.now(dt.UTC)
     contract = {
         "schema": "fs2-serve.nebius.ai/network-policy-boundary-topology/v1",
         "mode": "public",
@@ -144,6 +155,21 @@ def _fixture() -> tuple[
             "recovery_public_key_sha256": ENFORCER.sha256_text(recovery_value),
             "peer_uid": 1001,
             "peer_gid": 1002,
+            "peer_gid_contract": "effective-dedicated",
+            "identity_boundary": {
+                "schema": "fs2-serve.nebius.ai/network-policy-identity-boundary/v1",
+                "release_user_info_sha256": "b" * 64,
+                "security_user_info_sha256": ENFORCER.sha256_json(SECURITY_USER_INFO),
+                "bootstrap_user_info_sha256": "c" * 64,
+                "denied_human_subjects_sha256": "d" * 64,
+                "plan_preflight_verified": True,
+                "plan_preflight_sha256": "e" * 64,
+                "release_expires_at": (now + dt.timedelta(minutes=30)).isoformat().replace("+00:00", "Z"),
+                "security_expires_at": (now + dt.timedelta(minutes=30)).isoformat().replace("+00:00", "Z"),
+                "bootstrap_expires_at": (now - dt.timedelta(seconds=1)).isoformat().replace("+00:00", "Z"),
+                "bootstrap_must_be_expired": True,
+                "permitted_shared_groups": ["system:authenticated", "system:serviceaccounts"],
+            },
             "cluster": CLUSTER,
             "allowed_actions": ["transition-mutation", "set-admission-recovery"],
             "delete_allowed": False,
@@ -340,6 +366,9 @@ def test_enforcer_requires_peer_uid_and_client_signature_and_signs_response() ->
         "transition-mutation",
         "set-admission-recovery",
     ]
+    assert response["signed"]["result"]["security_user_info_sha256"] == ENFORCER.sha256_json(
+        SECURITY_USER_INFO
+    )
     assert api.patches == []
 
     with pytest.raises(ENFORCER.EnforcerError, match="peer UID"):
@@ -350,6 +379,80 @@ def test_enforcer_requires_peer_uid_and_client_signature_and_signs_response() ->
     tampered["signed"]["body"] = {"arbitrary": True}
     with pytest.raises(ENFORCER.EnforcerError, match="signature"):
         enforcer.handle_envelope(tampered, peer_uid=1001, peer_gid=1002)
+
+
+def test_socket_rejects_peer_before_recv_and_sets_a_bounded_read_deadline() -> None:
+    _api, enforcer, client_key, _server_key, _recovery_key = _fixture()
+
+    class Connection:
+        def __init__(self, uid: int, gid: int, chunks: list[bytes]) -> None:
+            self.uid = uid
+            self.gid = gid
+            self.chunks = chunks
+            self.timeout: float | None = None
+            self.recv_called = False
+            self.response = b""
+
+        def getsockopt(self, _level: int, _option: int, _length: int) -> bytes:
+            return struct.pack("3i", 999, self.uid, self.gid)
+
+        def settimeout(self, value: float) -> None:
+            self.timeout = value
+
+        def recv(self, _size: int) -> bytes:
+            self.recv_called = True
+            return self.chunks.pop(0)
+
+        def sendall(self, response: bytes) -> None:
+            self.response = response
+
+    rejected = Connection(1002, 1002, [b"never read"])
+    with pytest.raises(ENFORCER.EnforcerError, match="peer UID/GID"):
+        ENFORCER.serve_connection(rejected, enforcer)
+    assert rejected.recv_called is False
+    assert rejected.timeout is None
+
+    payload = ENFORCER.canonical(_signed_request(client_key, "attest", {})).encode()
+    accepted = Connection(1001, 1002, [payload, b""])
+    ENFORCER.serve_connection(accepted, enforcer)
+    assert accepted.timeout == ENFORCER.SOCKET_READ_SECONDS
+    assert 0 < accepted.timeout < ENFORCER.HANDOFF_SECONDS
+    assert accepted.response.endswith(b"\n")
+
+    oversized = Connection(1001, 1002, [b"x" * (ENFORCER.MAX_REQUEST_BYTES + 1)])
+    with pytest.raises(ENFORCER.EnforcerError, match="byte bound"):
+        ENFORCER.serve_connection(oversized, enforcer)
+    assert oversized.timeout == ENFORCER.SOCKET_READ_SECONDS
+
+
+def test_enforcer_rejects_a_peer_gid_shared_with_the_security_process(monkeypatch: Any) -> None:
+    monkeypatch.setattr(ENFORCER.os, "geteuid", lambda: 2000)
+    monkeypatch.setattr(ENFORCER.os, "getegid", lambda: 3000)
+    monkeypatch.setattr(ENFORCER.os, "getgroups", lambda: [1002, 3000])
+    with pytest.raises(SystemExit):
+        ENFORCER.parse_arguments(
+            [
+                "serve",
+                "--socket",
+                "/run/fs2/security.sock",
+                "--security-kubeconfig",
+                "/run/fs2/security.kubeconfig",
+                "--client-public-key",
+                "A" * 43,
+                "--server-private-key",
+                "/run/fs2/server.key",
+                "--recovery-public-key",
+                "B" * 43,
+                "--peer-uid",
+                "1001",
+                "--peer-gid",
+                "1002",
+                "--api-server-sha256",
+                "a" * 64,
+                "--kube-system-uid",
+                "kube-system-uid-000000000000",
+            ]
+        )
 
 
 def test_enforcer_rejects_arbitrary_protected_patch_and_allows_exact_semantic_patch() -> None:
@@ -543,6 +646,61 @@ def test_recovery_approval_rejects_changed_old_admission_object() -> None:
             peer_gid=1002,
         )
     assert api.patches == []
+
+
+def test_recovery_intent_rejects_drift_outside_exact_intermediate_state() -> None:
+    api, enforcer, client_key, _server_key, recovery_key = _fixture()
+    api.fail_once = ("validatingadmissionpolicybinding", ENFORCER.ADMISSION_NAME, "")
+    body = _recovery_body(api, recovery_key)
+    with pytest.raises(ENFORCER.EnforcerError, match="injected"):
+        enforcer.handle_envelope(
+            _signed_request(client_key, "set-admission-recovery", body),
+            peer_uid=1001,
+            peer_gid=1002,
+        )
+    patch_count = len(api.patches)
+    binding = api.objects[("validatingadmissionpolicybinding", ENFORCER.ADMISSION_NAME, "")]
+    binding["spec"]["unexpected"] = {"preserved": "drift"}
+    resumed = _recovery_body(api, recovery_key)
+    resumed["approval"] = body["approval"]
+    with pytest.raises(ENFORCER.EnforcerError, match="approved before/intermediate/target"):
+        enforcer.handle_envelope(
+            _signed_request(client_key, "set-admission-recovery", resumed),
+            peer_uid=1001,
+            peer_gid=1002,
+        )
+    assert len(api.patches) == patch_count
+
+
+def test_completed_recovery_is_bounded_read_only_and_rejects_full_object_drift() -> None:
+    api, enforcer, client_key, _server_key, recovery_key = _fixture()
+    body = _recovery_body(api, recovery_key)
+    response = enforcer.handle_envelope(
+        _signed_request(client_key, "set-admission-recovery", body),
+        peer_uid=1001,
+        peer_gid=1002,
+    )
+    patch_count = len(api.patches)
+
+    replay = _recovery_body(api, recovery_key)
+    replay["approval"] = body["approval"]
+    replayed = enforcer.handle_envelope(
+        _signed_request(client_key, "set-admission-recovery", replay),
+        peer_uid=1001,
+        peer_gid=1002,
+    )
+    assert len(api.patches) == patch_count
+    assert replayed["signed"]["result"]["receipt"] == response["signed"]["result"]["receipt"]
+
+    binding = api.objects[("validatingadmissionpolicybinding", ENFORCER.ADMISSION_NAME, "")]
+    binding["metadata"]["annotations"] = {"unexpected": "drift"}
+    with pytest.raises(ENFORCER.EnforcerError, match="terminal.*drifted"):
+        enforcer.handle_envelope(
+            _signed_request(client_key, "set-admission-recovery", replay),
+            peer_uid=1001,
+            peer_gid=1002,
+        )
+    assert len(api.patches) == patch_count
 
 
 def test_server_response_signature_cannot_authorize_a_request() -> None:

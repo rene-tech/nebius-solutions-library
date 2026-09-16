@@ -33,6 +33,9 @@ from network_policy_security_enforcer import (
 
 def recovery_object_evidence(resource_object: dict[str, Any]) -> dict[str, Any]:
     evidence = object_evidence(resource_object)
+    metadata = resource_object.get("metadata", {})
+    evidence["labels"] = metadata.get("labels", {})
+    evidence["annotations"] = metadata.get("annotations", {})
     evidence["spec"] = resource_object.get("spec")
     evidence["data"] = resource_object.get("data")
     return evidence

@@ -8,6 +8,17 @@ kube_context     = "fs2-disposable-rreplace01"
 kube_system_uid  = "00000000-0000-0000-0000-000000000000"
 project_id       = "project-REPLACE-WITH-EXACT-APPROVED-ID"
 
+# Public-edge releases also require a separate mode-0600, <=15-minute
+# bootstrap kubeconfig and a mode-0600, <=1-hour runtime-enforcer kubeconfig.
+# Supply all three exact `kubectl auth whoami -o json` userInfo tuples (release,
+# security owner, bootstrap), including UID, sorted groups/extras and the
+# credential's cryptographically verified expiry, in the private tfvars file.
+# Include every reviewed human username/group subject in
+# `denied_human_subjects`; bootstrap performs explicit SubjectAccessReviews for
+# protected mutation, namespace/finalize, token, impersonation and delegation.
+# The bootstrap credential creates the permanent boundary but is expired before
+# workloads may plan; the runtime owner has only exact-name get/patch/update.
+
 # Pass the exact infra-disposable `target_contract` output. It is required and
 # authoritative for project, region, network, tenant, and source-registry
 # identity; the deployment workflow renders it automatically.

@@ -81,6 +81,48 @@ def sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
 
+def identity_instant(value: Any, *, field: str) -> dt.datetime:
+    if not isinstance(value, str):
+        raise TransitionError(f"{field} is not an RFC3339 instant")
+    try:
+        parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise TransitionError(f"{field} is not an RFC3339 instant") from error
+    if parsed.tzinfo is None:
+        raise TransitionError(f"{field} has no timezone")
+    return parsed.astimezone(dt.UTC)
+
+
+def normalized_user_info(response: dict[str, Any]) -> dict[str, Any]:
+    try:
+        info = response["status"]["userInfo"]
+    except (KeyError, TypeError) as error:
+        raise TransitionError("release kubeconfig has no exact whoami identity") from error
+    if (
+        not isinstance(info.get("username"), str)
+        or not info["username"]
+        or not isinstance(info.get("uid"), str)
+        or not info["uid"]
+        or not isinstance(info.get("groups", []), list)
+        or not isinstance(info.get("extra", {}), dict)
+        or not all(isinstance(group, str) and group for group in info.get("groups", []))
+        or not all(
+            isinstance(key, str)
+            and key
+            and isinstance(values, list)
+            and all(isinstance(value, str) for value in values)
+            for key, values in info.get("extra", {}).items()
+        )
+    ):
+        raise TransitionError("release whoami identity is incomplete")
+    return {
+        "username": info["username"],
+        "uid": info["uid"],
+        "groups": sorted(info.get("groups", [])),
+        "extra": {key: sorted(values) for key, values in sorted(info.get("extra", {}).items())},
+    }
+
+
 @dataclass(frozen=True)
 class CommandResult:
     returncode: int
@@ -557,7 +599,14 @@ class Transition:
             "api_server_sha256": sha256_text(cluster_server),
             "kube_system_uid": kube_system_uid,
         }
-        allowed_peer_groups = {os.getegid(), *os.getgroups()}
+        identity_boundary = handoff_contract.get("identity_boundary", {})
+        try:
+            release_whoami = normalized_user_info(
+                cast(dict[str, Any], json.loads(self.bootstrap_kubectl.run("auth", "whoami", "-o", "json").stdout))
+            )
+        except json.JSONDecodeError as error:
+            raise TransitionError("release whoami is not valid JSON") from error
+        now = dt.datetime.now(dt.UTC)
         if (
             handoff_contract.get("schema") != "fs2-serve.nebius.ai/network-policy-security-handoff/v2"
             or handoff_contract.get("socket_path") != str(self.security_handoff_socket)
@@ -568,11 +617,25 @@ class Transition:
             or handoff_contract.get("client_private_key_path") != str(self.security_handoff_client_private_key)
             or not re.fullmatch(r"[0-9a-f]{64}", str(handoff_contract.get("recovery_public_key_sha256", "")))
             or handoff_contract.get("peer_uid") != os.geteuid()
-            or handoff_contract.get("peer_gid") not in allowed_peer_groups
+            or handoff_contract.get("peer_gid") != os.getegid()
+            or handoff_contract.get("peer_gid_contract") != "effective-dedicated"
             or handoff_contract.get("cluster") != cluster
             or handoff_contract.get("allowed_actions") != ["transition-mutation", "set-admission-recovery"]
             or handoff_contract.get("delete_allowed") is not False
             or handoff_contract.get("recovery_modes") != ["Audit", "Warn", "Deny"]
+            or identity_boundary.get("schema")
+            != "fs2-serve.nebius.ai/network-policy-identity-boundary/v1"
+            or identity_boundary.get("release_user_info_sha256") != sha256_json(release_whoami)
+            or not re.fullmatch(
+                r"[0-9a-f]{64}", str(identity_boundary.get("denied_human_subjects_sha256", ""))
+            )
+            or identity_boundary.get("plan_preflight_verified") is not True
+            or not re.fullmatch(r"[0-9a-f]{64}", str(identity_boundary.get("plan_preflight_sha256", "")))
+            or identity_boundary.get("bootstrap_must_be_expired") is not True
+            or identity_instant(identity_boundary.get("bootstrap_expires_at"), field="bootstrap identity expires_at")
+            > now
+            or identity_instant(identity_boundary.get("release_expires_at"), field="release identity expires_at")
+            <= now
         ):
             raise TransitionError("signed handoff does not match protected same-cluster topology")
         self.verify_external_iam_boundary(contract)
@@ -591,6 +654,7 @@ class Transition:
             "allowed_actions": ["transition-mutation", "set-admission-recovery"],
             "recovery_modes": ["Audit", "Warn", "Deny"],
             "delete_allowed": False,
+            "security_user_info_sha256": identity_boundary.get("security_user_info_sha256"),
         }:
             raise TransitionError("security automation attestation is not the exact narrow contract")
         self.security_handoff = handoff
@@ -2299,10 +2363,37 @@ class Transition:
         except json.JSONDecodeError as error:
             raise TransitionError("signed recovery handoff returned an invalid durable receipt") from error
         recovery = recovered.get("security_recovery", {})
+
+        def recovery_evidence(resource_object: dict[str, Any]) -> dict[str, Any]:
+            metadata = resource_object.get("metadata", {})
+            evidence = {
+                "api_version": resource_object.get("apiVersion"),
+                "kind": resource_object.get("kind"),
+                "namespace": metadata.get("namespace", ""),
+                "name": metadata.get("name"),
+                "uid": metadata.get("uid"),
+                "resource_version": metadata.get("resourceVersion"),
+                "labels": metadata.get("labels", {}),
+                "annotations": metadata.get("annotations", {}),
+                "spec": resource_object.get("spec"),
+                "data": resource_object.get("data"),
+            }
+            evidence["state_sha256"] = sha256_json(
+                {
+                    "labels": evidence["labels"],
+                    "annotations": evidence["annotations"],
+                    "spec": evidence["spec"],
+                    "data": evidence["data"],
+                }
+            )
+            return evidence
+
         if (
             recovery.get("state") != "complete"
             or recovery.get("mode") != mode
             or recovery.get("recovery_reference") != self.arguments.recovery_reference
+            or recovery.get("after")
+            != {"binding": recovery_evidence(binding), "parameter": recovery_evidence(parameter)}
         ):
             raise TransitionError("signed recovery handoff did not durably complete")
 
