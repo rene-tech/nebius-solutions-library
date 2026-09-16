@@ -39,7 +39,7 @@ def check(condition, message):
         raise AcceptanceFailure(message)
 
 
-def validate_completed(row, judge):
+def validate_completed(row, judge, turns=2):
     judgment = row["state"].get("judgment") or {}
     scores = judgment.get("judgment", {})
     check(
@@ -52,7 +52,7 @@ def validate_completed(row, judge):
     )
     check(judgment["model"] == judge, "run used a different judge")
     check(row["state"].get("benchmark_eligible") is True, "unintervened canonical run is not eligible")
-    check(len(row["state"]["transcript"]) == 5, "two-round transcript has wrong length")
+    check(len(row["state"]["transcript"]) == 1 + 2 * turns, "canonical transcript has wrong length")
 
 
 def read_credentials(path, denied_path=None):
@@ -403,9 +403,12 @@ class Rehearsal:
     async def run(self):
         try:
             await self.preflight()
-            await self.controls()
+            if self.args.repetitions:
+                await self.controls()
             for repetition in range(1, self.args.repetitions + 1):
                 await self.repetition(repetition)
+            if self.args.full_dialogue_turns:
+                await self.full_dialogue()
             self.summary["passed"] = all(check["passed"] for check in self.summary["checks"])
         except Exception as exc:
             message = str(exc)
@@ -424,6 +427,55 @@ class Rehearsal:
         )
         return self.summary["passed"]
 
+    async def full_dialogue(self):
+        started = time.monotonic()
+        created, _ = await self.request(
+            "POST",
+            "/v1/workshop/runs",
+            key=self.args.run_label + "-full-dialogue",
+            expected=(202,),
+            body={
+                "profile_ids": [self.profiles[20]["id"]],
+                "patient_model": self.patient,
+                "clinician_models": [self.patient],
+                "mode": "canonical",
+                "max_turns": self.args.full_dialogue_turns,
+                "max_completion_tokens": 4096,
+            },
+        )
+        run_id = created["data"][0]["id"]
+        path = f"/v1/workshop/runs/{run_id}"
+        self.summary["full_dialogue"] = {"run_id": run_id, "turns": self.args.full_dialogue_turns}
+        self.save("summary.json", self.summary)
+        deadline = time.monotonic() + self.args.timeout_seconds
+        while time.monotonic() < deadline:
+            row, _ = await self.request("GET", path)
+            print(
+                json.dumps(
+                    {"full_dialogue": run_id, "status": row["status"], "messages": len(row["state"]["transcript"])}
+                ),
+                flush=True,
+            )
+            if row["status"] in TERMINAL:
+                break
+            await asyncio.sleep(self.args.poll_seconds)
+        report, _ = await self.request("GET", path + "/report")
+        gateway_events, _ = await self.request("GET", f"/v1/mindeval/runs/{run_id}/events", expected=(200, 404))
+        self.save("full-dialogue.json", {"report": report, "gateway_events": gateway_events})
+        check(row["status"] == "completed", f"full dialogue {row['status']}: {row['state'].get('error')}")
+        validate_completed(row, self.catalog["judge_model"], self.args.full_dialogue_turns)
+        check(row["state"].get("classification") is not None, "full dialogue classifier coverage missing")
+        self.summary["full_dialogue"].update(
+            {
+                "passed": True,
+                "elapsed_seconds": round(time.monotonic() - started, 3),
+                "classification": row["state"]["classification"],
+            }
+        )
+        self.record(
+            "full_canonical_dialogue_complete", run_id=run_id, transcript_messages=len(row["state"]["transcript"])
+        )
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -435,6 +487,12 @@ def main():
     parser.add_argument("--gateway-image", required=True)
     parser.add_argument("--workshop-image", required=True)
     parser.add_argument("--repetitions", type=int, default=2)
+    parser.add_argument(
+        "--full-dialogue-turns",
+        type=int,
+        default=0,
+        help="Also run one full canonical dialogue; use --repetitions 0 for only this diagnostic",
+    )
     parser.add_argument("--timeout-seconds", type=int, default=1800)
     parser.add_argument("--poll-seconds", type=float, default=5)
     parser.add_argument("--ca-file")
@@ -442,6 +500,10 @@ def main():
         "--insecure", action="store_true", help="Explicitly accept the rehearsal endpoint's self-signed TLS certificate"
     )
     args = parser.parse_args()
+    check(
+        args.repetitions >= 0 and args.full_dialogue_turns >= 0 and args.repetitions + args.full_dialogue_turns > 0,
+        "request at least one rehearsal or full dialogue",
+    )
     teams, denied = read_credentials(args.keys_file, args.denied_key_file)
     raise SystemExit(0 if asyncio.run(Rehearsal(args, teams, denied).run()) else 1)
 

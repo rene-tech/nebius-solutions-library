@@ -49,6 +49,14 @@ def test_rejects_changed_judge_or_nonbenchmark_run():
         runner.validate_completed(row, "judge")
 
 
+def test_full_dialogue_checks_complete_round_count():
+    row = make_run()
+    with pytest.raises(runner.AcceptanceFailure, match="wrong length"):
+        runner.validate_completed(row, "judge", turns=10)
+    row["state"]["transcript"] = [{"content": "example"} for _ in range(21)]
+    runner.validate_completed(row, "judge", turns=10)
+
+
 def test_duplicate_credentials_fail(tmp_path):
     path = tmp_path / "keys.json"
     path.write_text(json.dumps(["duplicate"] * 10))
