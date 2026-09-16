@@ -379,15 +379,31 @@ class ReleaseSourceGateTest(unittest.TestCase):
     def test_malformed_anchor_store_fails_closed(self) -> None:
         commit = self.add_unpushed_commit()
         git(self.checkout, "tag", "-a", "-m", "anchor", "deploy/badstore", commit)
-        STACK.release_anchor_store(self.run_root).write_text(
-            "{not json", encoding="utf-8"
-        )
+        store = STACK.release_anchor_store(self.run_root)
+        store.write_text("{not json", encoding="utf-8")
+        store.chmod(0o600)
         with self.assertRaisesRegex(STACK.DeploymentError, "fails closed"):
             STACK.create_release_anchor(
                 self.run_root, "deploy/badstore", repository_root=self.checkout
             )
         with self.assertRaisesRegex(STACK.DeploymentError, "fails closed"):
             STACK.release_source_state(commit, self.run_root, self.checkout)
+
+    def test_anomalous_anchor_store_fails_closed(self) -> None:
+        # A group/other-accessible store is an anomaly, not an empty store.
+        commit = self.add_unpushed_commit()
+        git(self.checkout, "tag", "-a", "-m", "anchor", "deploy/anom", commit)
+        store = STACK.release_anchor_store(self.run_root)
+        store.write_text("{}", encoding="utf-8")
+        store.chmod(0o664)
+        with self.assertRaisesRegex(STACK.DeploymentError, "fails closed"):
+            STACK.release_source_state(commit, self.run_root, self.checkout)
+        store.chmod(0o600)
+        hardlink = self.run_root / "store-hardlink.json"
+        os.link(store, hardlink)
+        with self.assertRaisesRegex(STACK.DeploymentError, "fails closed"):
+            STACK.release_source_state(commit, self.run_root, self.checkout)
+        hardlink.unlink()
 
     def test_anchor_store_lock_is_exclusive(self) -> None:
         import fcntl

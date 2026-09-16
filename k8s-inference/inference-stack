@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -631,10 +632,32 @@ def _read_release_anchors(run_root: Path) -> dict[str, Any]:
         raise DeploymentError(f"anchor store must not be a symlink: {store}")
     if not store.is_file():
         return {}
-    # A malformed store fails closed: silently treating it as empty would let
-    # corruption erase recorded release evidence.
+    # The store is read once through an O_NOFOLLOW descriptor and the OPEN
+    # DESCRIPTOR is fstat-checked; a malformed or anomalous store fails
+    # closed: silently treating it as empty would let corruption erase
+    # recorded release evidence.
     try:
-        value = json.loads(store.read_text(encoding="utf-8"))
+        descriptor = os.open(store, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError as exc:
+        raise DeploymentError(
+            f"cannot open anchor store safely (symlink or missing): {store}"
+        ) from exc
+    with os.fdopen(descriptor, "rb") as handle:
+        status = os.fstat(handle.fileno())
+        if (
+            not stat.S_ISREG(status.st_mode)
+            or status.st_nlink != 1
+            or status.st_uid != os.getuid()
+            or status.st_mode & 0o077
+        ):
+            raise DeploymentError(
+                f"release anchor store is anomalous (non-regular, hardlinked, "
+                f"foreign-owned, or group/other accessible) and fails closed: "
+                f"{store}; restore it from backup before anchoring or deploying"
+            )
+        data = handle.read()
+    try:
+        value = json.loads(data)
     except json.JSONDecodeError as exc:
         raise DeploymentError(
             f"release anchor store is malformed and fails closed: {store}; "
