@@ -423,7 +423,7 @@ output "managed_resource_count" {
     length(local.terraform_owned_model_scalers) +
     length(local.fast_start_managed_compile_cache_claims) +
     length(local.fast_start_managed_residency_receipt_claims) +
-    (var.model_controller.enabled ? 2 : 0) +
+    (var.model_controller.enabled ? 3 : 0) +
     (local.model_controller_bootstrap_enabled ? 3 : 0) +
     (local.admin_configuration_enabled ? 1 : 0) +
     (data.terraform_remote_state.foundation.outputs.grafana_publication_contract.enabled ? 2 : 0) +

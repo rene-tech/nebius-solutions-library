@@ -31,6 +31,47 @@ variable "run_id" {
   }
 }
 
+variable "pod_security_rollout_phase" {
+  description = "Ordered PSA rollout/rollback phase. Restore phases remove enforcement before moving host agents back, then remove the exception namespace."
+  type        = string
+  default     = "prepare"
+
+  validation {
+    condition = contains([
+      "prepare",
+      "migrate-reference-data",
+      "enforce",
+      "rollback-restore-host-agents",
+      "rollback-remove-exception",
+    ], var.pod_security_rollout_phase)
+    error_message = "pod_security_rollout_phase must name an ordered rollout or rollback phase."
+  }
+}
+
+variable "pod_security_host_agent_readiness_receipt_sha256" {
+  description = "Non-secret digest of the readiness evidence captured after all host agents move to the exception namespace."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.pod_security_host_agent_readiness_receipt_sha256 == null || can(regex("^[a-f0-9]{64}$", var.pod_security_host_agent_readiness_receipt_sha256))
+    error_message = "pod_security_host_agent_readiness_receipt_sha256 must be a lowercase SHA-256 digest."
+  }
+}
+
+variable "pod_security_host_agent_restore_receipt_sha256" {
+  description = "Non-secret digest of readiness evidence captured after host agents are restored to their original namespaces."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.pod_security_host_agent_restore_receipt_sha256 == null || can(regex("^[a-f0-9]{64}$", var.pod_security_host_agent_restore_receipt_sha256))
+    error_message = "pod_security_host_agent_restore_receipt_sha256 must be a lowercase SHA-256 digest."
+  }
+}
+
 variable "cluster_id" {
   description = "Exact Nebius Managed Kubernetes cluster ID emitted by the reviewed infrastructure state."
   type        = string

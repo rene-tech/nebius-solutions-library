@@ -2247,6 +2247,20 @@ class DeploymentContractTests(unittest.TestCase):
             "model_controller_supported_template_gvks = toset([", 1
         )[1].split("])" , 1)[0]
         self.assertNotIn('"v1/PersistentVolumeClaim"', controller_owned_gvks)
+        self.assertNotIn('"v1/ServiceAccount"', controller_owned_gvks)
+        self.assertNotIn('"apps/v1/DaemonSet"', controller_owned_gvks)
+        self.assertIn("model_controller_released_template_gvks", controller_source)
+        self.assertIn('toset(["v1/ServiceAccount"])', controller_source)
+        self.assertIn(
+            'resource "kubernetes_service_account_v1" "model_runtime"',
+            models_source,
+        )
+        self.assertIn(
+            'if mechanism != "hostMemoryResidency"', controller_source
+        )
+        self.assertNotIn(
+            "model_controller_network_policy_resource_names", controller_source
+        )
         self.assertIn(
             'document.manifest.kind == "PersistentVolumeClaim"', controller_source
         )
@@ -2565,8 +2579,10 @@ class DeploymentContractTests(unittest.TestCase):
         foundation_locals = (
             DEPLOY_ROOT / "stages/foundation/locals.tf"
         ).read_text(encoding="utf-8")
-        namespace_block_start = foundation_locals.index("namespaces = toset([")
-        namespace_block_end = foundation_locals.index("])", namespace_block_start)
+        namespace_block_start = foundation_locals.index("namespaces = toset(concat([")
+        namespace_block_end = foundation_locals.index(
+            "], local.node_observability_exception_enabled", namespace_block_start
+        )
         foundation_namespaces = set(
             re.findall(
                 r'"([a-z0-9-]+)"',

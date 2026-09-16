@@ -21,10 +21,10 @@ output "cluster_contract" {
 output "managed_resource_count" {
   description = "Expected managed Terraform address count for plan review."
   # 29 pre-existing addresses, the Kueue release verification, and the always
-  # present jobset-system namespace. The JobSet module itself contributes five
-  # addresses only when it is enabled.
+  # present jobset-system and node-observability namespaces. The JobSet module
+  # itself contributes five addresses only when it is enabled.
   value = (
-    31 +
+    32 +
     (nonsensitive(var.bootstrap_grafana_credentials == null) ? 0 : 1) +
     (var.jobset.enabled ? 5 : 0)
   )

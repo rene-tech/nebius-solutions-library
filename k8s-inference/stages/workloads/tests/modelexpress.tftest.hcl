@@ -266,7 +266,7 @@ run "external_modelexpress_accepts_an_exact_ipv6_host" {
   variables {
     model_express = merge(var.model_express, {
       deployment_mode = "external"
-      server_image     = null
+      server_image    = null
       external_network = {
         coordinator_namespace  = null
         coordinator_pod_labels = {}
@@ -291,7 +291,7 @@ run "external_modelexpress_rejects_equivalent_ipv4_default_route_pair" {
   variables {
     model_express = merge(var.model_express, {
       deployment_mode = "external"
-      server_image     = null
+      server_image    = null
       external_network = {
         coordinator_namespace  = null
         coordinator_pod_labels = {}
@@ -313,7 +313,7 @@ run "external_modelexpress_rejects_ipv6_32_route" {
   variables {
     model_express = merge(var.model_express, {
       deployment_mode = "external"
-      server_image     = null
+      server_image    = null
       external_network = {
         coordinator_namespace  = null
         coordinator_pod_labels = {}
@@ -335,7 +335,7 @@ run "external_modelexpress_rejects_ipv6_64_route" {
   variables {
     model_express = merge(var.model_express, {
       deployment_mode = "external"
-      server_image     = null
+      server_image    = null
       external_network = {
         coordinator_namespace  = null
         coordinator_pod_labels = {}

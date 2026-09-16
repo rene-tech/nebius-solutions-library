@@ -982,7 +982,7 @@ def test_modelexpress_two_pool_binding_allows_a_one_pool_placement_subset() -> N
     assert not any(item.kind == "NetworkPolicy" for item in plan.resources)
 
 
-def test_actual_qwen_two_pool_render_preserves_inference_dns_and_modelexpress_flows() -> None:
+def test_actual_qwen_two_pool_render_uses_finite_profile_and_hardened_identity() -> None:
     source_documents = [item for item in yaml.safe_load_all(QWEN_MANIFEST.read_text()) if item]
     source_policy = next(item for item in source_documents if item["kind"] == "NetworkPolicy")
     bundle_resources = [
@@ -992,7 +992,6 @@ def test_actual_qwen_two_pool_render_preserves_inference_dns_and_modelexpress_fl
         in {
             ("v1", "ConfigMap"),
             ("v1", "Service"),
-            ("v1", "ServiceAccount"),
             ("apps/v1", "Deployment"),
         }
     ]
@@ -1046,6 +1045,12 @@ def test_actual_qwen_two_pool_render_preserves_inference_dns_and_modelexpress_fl
     assert all(
         "app.kubernetes.io/instance" not in item["spec"]["template"]["metadata"]["labels"] for item in deployments
     )
+    assert all(
+        item["spec"]["template"]["spec"]["serviceAccountName"] == "fs2-model-runtime"
+        and item["spec"]["template"]["spec"]["automountServiceAccountToken"] is False
+        for item in deployments
+    )
+    assert not any(item.kind == "ServiceAccount" for item in plan.resources)
     expected_profile = (
         "mx-"
         + hashlib.sha256(
@@ -1065,8 +1070,7 @@ def test_actual_qwen_two_pool_render_preserves_inference_dns_and_modelexpress_fl
     assert {
         item["spec"]["template"]["metadata"]["labels"]["fs2-serve.nebius.ai/network-profile"] for item in deployments
     } == {expected_profile}
-
-    # The source NetworkPolicy remains Terraform-owned and byte-equivalent.
+    # The source profile remains Terraform-owned and byte-equivalent.
     assert source_policy == next(
         item for item in yaml.safe_load_all(QWEN_MANIFEST.read_text()) if item and item["kind"] == "NetworkPolicy"
     )
@@ -1094,7 +1098,7 @@ def test_modelexpress_rejects_mixed_accelerators_and_non_vllm_runtime() -> None:
         ModelQualification.model_validate(qualification_payload)
 
 
-def test_modelexpress_external_coordinator_requires_an_exact_host_profile() -> None:
+def test_modelexpress_external_coordinator_uses_an_exact_host_profile_without_rendering_a_policy() -> None:
     configured = modelexpress_qualification("pool-a").model_copy(
         update={
             "deployment_mode": "external",
@@ -1118,8 +1122,10 @@ def test_modelexpress_external_coordinator_requires_an_exact_host_profile() -> N
         prometheus_server_address="http://prometheus:9090",
         model_express=configured,
     )
-    deployment = next(item.manifest for item in renderer().render(spec, context).resources if item.kind == "Deployment")
+    plan = renderer().render(spec, context)
+    deployment = next(item.manifest for item in plan.resources if item.kind == "Deployment")
     assert deployment["spec"]["template"]["metadata"]["labels"]["fs2-serve.nebius.ai/network-profile"].startswith("mx-")
+    assert not any(item.kind == "NetworkPolicy" for item in plan.resources)
 
     invalid = configured.model_dump(mode="json", by_alias=True)
     invalid["coordinatorCidrs"] = []
@@ -1512,7 +1518,7 @@ def test_reconcile_rejects_foreign_collision_and_cleans_only_proven_owned_stale_
     assert repair.target_generation == 1
 
 
-def test_reconcile_switches_only_workload_profile_when_modelexpress_is_disabled() -> None:
+def test_reconcile_switches_only_workload_profile_and_never_manages_networkpolicies() -> None:
     spec = model_spec().model_copy(
         update={"placement": model_spec().placement.model_copy(update={"pool_refs": ["pool-a"]})}
     )
@@ -1551,6 +1557,7 @@ def test_reconcile_switches_only_workload_profile_when_modelexpress_is_disabled(
         discovery_complete=True,
     )
     assert plan.action is ReconcileAction.APPLY
+    assert not any(item.kind == "NetworkPolicy" for item in accelerated.resources)
     assert not any(item.kind == "NetworkPolicy" for item in plan.apply_resources)
     assert not any("NetworkPolicy" in identity for identity in plan.delete_resource_identities)
     changed_deployment = next(item for item in plan.apply_resources if item.kind == "Deployment")

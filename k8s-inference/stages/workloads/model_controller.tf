@@ -579,9 +579,16 @@ locals {
   model_controller_supported_template_gvks = toset([
     "v1/ConfigMap",
     "v1/Service",
-    "v1/ServiceAccount",
     "apps/v1/Deployment",
   ])
+  # Existing controller-owned per-model ServiceAccounts are deliberately
+  # released from both writers during the migration. Dynamic Deployments use
+  # the dedicated Terraform-owned account instead; legacy accounts remain only
+  # until their ModelDeployment owner is removed by Kubernetes garbage collection.
+  model_controller_released_template_gvks = setunion(
+    local.model_controller_supported_template_gvks,
+    toset(["v1/ServiceAccount"]),
+  )
 
   # Reuse the exact rendered, image-rewritten and placement-checked documents
   # from the legacy Terraform path. A bundle is only promoted into the live
@@ -1149,7 +1156,14 @@ locals {
       contains(keys(local.model_controller_modelexpress_bindings), model_id) ? {
         modelExpress = local.model_controller_modelexpress_bindings[model_id]
       } : {},
-      try(local.model_controller_fast_start_mechanism_declarations[model_id], {}),
+      # Host-memory residency needs a DaemonSet writer. The dynamic controller
+      # deliberately has no DaemonSet RBAC; an operator-owned holder must be
+      # introduced before this declaration can be published again.
+      try({
+        for mechanism, declaration in local.model_controller_fast_start_mechanism_declarations[model_id] :
+        mechanism => declaration
+        if mechanism != "hostMemoryResidency"
+      }, {}),
       try(local.model_controller_cpu_configuration[model_id], {}),
     )
   }
@@ -1250,7 +1264,7 @@ locals {
       var.model_controller.workload_owner == "terraform" ||
       !contains(local.model_controller_dynamic_model_ids, document.model_id) ||
       !contains(
-        local.model_controller_supported_template_gvks,
+        local.model_controller_released_template_gvks,
         "${document.manifest.apiVersion}/${document.manifest.kind}",
       )
     )

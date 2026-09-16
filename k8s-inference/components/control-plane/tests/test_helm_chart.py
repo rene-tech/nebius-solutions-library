@@ -299,6 +299,14 @@ def test_gpu_allocation_observer_is_opt_in_and_has_exact_node_local_contract() -
     pod_spec = daemonset["spec"]["template"]["spec"]
     container = pod_spec["containers"][0]
     assert daemonset["metadata"]["name"] == "fs2-serve-control-plane-gpu-observer"
+    assert daemonset["metadata"]["namespace"] == "fs2-node-observability"
+    observer_account = next(
+        document
+        for document in documents
+        if document["kind"] == "ServiceAccount"
+        and document["metadata"]["name"] == "fs2-serve-control-plane-gpu-observer"
+    )
+    assert observer_account["metadata"]["namespace"] == "fs2-node-observability"
     assert pod_spec["nodeSelector"] == {"nebius.com/gpu": "true"}
     assert container["args"] == ["gpu-allocation-observer"]
     environment = {item["name"]: item.get("value") for item in container["env"]}
@@ -328,6 +336,9 @@ def test_gpu_allocation_observer_is_opt_in_and_has_exact_node_local_contract() -
         if document["kind"] == "RoleBinding" and document["metadata"]["name"] == daemonset["metadata"]["name"]
     ]
     assert {binding["metadata"]["namespace"] for binding in bindings} == {"fs2-models", "fs2-academic-poc"}
+    assert {subject["namespace"] for binding in bindings for subject in binding["subjects"]} == {
+        "fs2-node-observability"
+    }
 
     legacy_documents = render(
         "--set",
@@ -899,6 +910,7 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
     assert environment["FS2_MODEL_CONTROLLER_ENABLED"]["value"] == "true"
     assert environment["FS2_MODEL_CONTROLLER_WRITES_ENABLED"]["value"] == "true"
     assert environment["FS2_MODEL_CONTROLLER_HOLDER_IDENTITY"]["value"] == "$(POD_NAMESPACE)/$(POD_NAME):$(POD_UID)"
+    assert "FS2_MODEL_CONTROLLER_NETWORK_POLICY_RESOURCE_NAMES_BY_DEPLOYMENT" not in environment
     assert environment["FS2_ADMIN_CAPACITY_ENABLED"]["value"] == "true"
     assert environment["FS2_ADMIN_KUBERNETES_API_URL"]["value"] == "https://kubernetes.default.svc"
     assert environment["FS2_ADMIN_KUBERNETES_TOKEN_FILE"]["value"] == "/var/run/secrets/fs2-model-controller/token"
@@ -932,9 +944,12 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
     } in model_role["rules"]
     assert {
         "apiGroups": ["apps"],
-        "resources": ["daemonsets", "deployments"],
+        "resources": ["deployments"],
         "verbs": ["get", "list", "watch", "create", "patch", "delete"],
     } in model_role["rules"]
+    assert not any("daemonsets" in rule["resources"] for rule in model_role["rules"])
+    assert not any("serviceaccounts" in rule["resources"] for rule in model_role["rules"])
+    assert not any("networkpolicies" in rule["resources"] for rule in model_role["rules"])
     assert not any(
         document["kind"] in {"ClusterRole", "ClusterRoleBinding"} and "model-controller" in document["metadata"]["name"]
         for document in documents

@@ -376,19 +376,17 @@ run "declared_mechanisms_reach_the_model_qualification" {
   }
 
   assert {
-    condition = alltrue([
-      for mechanism in ["regionalCache", "hostMemoryResidency", "gpuResident"] :
-      contains(keys(local.model_controller_qualifications["qwen3-8b"]), mechanism)
-    ])
-    error_message = "Every declared mechanism must reach the published model qualification."
+    condition = (
+      contains(keys(local.model_controller_qualifications["qwen3-8b"]), "regionalCache") &&
+      contains(keys(local.model_controller_qualifications["qwen3-8b"]), "gpuResident") &&
+      !contains(keys(local.model_controller_qualifications["qwen3-8b"]), "hostMemoryResidency")
+    )
+    error_message = "Only mechanisms that fit the controller's namespaced RBAC boundary may reach its published qualification."
   }
 
   assert {
-    condition = (
-      local.model_controller_qualifications["qwen3-8b"].hostMemoryResidency.reservedBytes == 19327352832 &&
-      local.model_controller_qualifications["qwen3-8b"].gpuResident.minimumHotReplicas == 1
-    )
-    error_message = "The envelope must carry each mechanism's declared price and hot-floor dependency."
+    condition     = local.model_controller_qualifications["qwen3-8b"].gpuResident.minimumHotReplicas == 1
+    error_message = "The envelope must carry the retained mechanism's declared hot-floor dependency."
   }
 
   assert {

@@ -1052,7 +1052,10 @@ locals {
   }
 
   foundation_variables = {
-    grafana_admin_secret_ref = var.deployment.secrets.grafana_admin_secret
+    pod_security_rollout_phase                       = var.deployment.pod_security.rollout_phase
+    pod_security_host_agent_readiness_receipt_sha256 = var.deployment.pod_security.host_agent_readiness_receipt_sha256
+    pod_security_host_agent_restore_receipt_sha256   = var.deployment.pod_security.host_agent_restore_receipt_sha256
+    grafana_admin_secret_ref                         = var.deployment.secrets.grafana_admin_secret
     jobset = {
       enabled            = var.deployment.scientific_batch.enabled
       kubernetes_version = var.deployment.cluster.kubernetes_version
@@ -1120,20 +1123,24 @@ locals {
   }
 
   workloads_variables = {
-    deployment_profile              = local.model_profile
-    enabled_model_ids               = local.selected_model_ids
-    model_image_overrides           = local.effective_model_images
-    model_pool_overrides            = var.deployment.models.pool_overrides
-    model_runtime_overrides         = var.deployment.models.runtime_overrides
-    model_scaling_mode              = var.deployment.models.scaling.mode
-    hot_model_ids                   = sort(tolist(var.deployment.models.scaling.hot))
-    model_scaling_overrides         = var.deployment.models.scaling.overrides
-    model_startup_timeout_overrides = var.deployment.models.startup_timeout_overrides
-    keda_polling_interval_seconds   = var.deployment.models.scaling.polling_interval_seconds
-    keda_cooldown_period_seconds    = var.deployment.models.scaling.cooldown_period_seconds
-    enable_cold_start_keepers       = var.deployment.models.cold_start_keepers
-    enable_dcgm_cold_start_campaign = var.deployment.observability.dcgm_cold_start_campaign
-    request_debug_enabled           = var.deployment.observability.request_debug_enabled
+    pod_security_rollout_phase                       = var.deployment.pod_security.rollout_phase
+    pod_security_existing_scientific_namespaces      = sort(tolist(var.deployment.pod_security.existing_scientific_namespaces))
+    pod_security_host_agent_readiness_receipt_sha256 = var.deployment.pod_security.host_agent_readiness_receipt_sha256
+    pod_security_host_agent_restore_receipt_sha256   = var.deployment.pod_security.host_agent_restore_receipt_sha256
+    deployment_profile                               = local.model_profile
+    enabled_model_ids                                = local.selected_model_ids
+    model_image_overrides                            = local.effective_model_images
+    model_pool_overrides                             = var.deployment.models.pool_overrides
+    model_runtime_overrides                          = var.deployment.models.runtime_overrides
+    model_scaling_mode                               = var.deployment.models.scaling.mode
+    hot_model_ids                                    = sort(tolist(var.deployment.models.scaling.hot))
+    model_scaling_overrides                          = var.deployment.models.scaling.overrides
+    model_startup_timeout_overrides                  = var.deployment.models.startup_timeout_overrides
+    keda_polling_interval_seconds                    = var.deployment.models.scaling.polling_interval_seconds
+    keda_cooldown_period_seconds                     = var.deployment.models.scaling.cooldown_period_seconds
+    enable_cold_start_keepers                        = var.deployment.models.cold_start_keepers
+    enable_dcgm_cold_start_campaign                  = var.deployment.observability.dcgm_cold_start_campaign
+    request_debug_enabled                            = var.deployment.observability.request_debug_enabled
     # core_pool_capacity is declared inside the workloads stage's scheduling
     # object and read as var.scheduling.core_pool_capacity, so it must travel
     # inside that object. Emitted as a sibling it was an undeclared variable:
@@ -1157,13 +1164,15 @@ locals {
     fast_start_claims                     = var.deployment.storage.fast_start_claims
     accelerator_node_schedulable_capacity = local.root_accelerator_node_sizes
     reference_data = {
-      enabled    = var.deployment.storage.reference_data.enabled
-      namespace  = var.deployment.storage.reference_data.namespace
-      queue      = var.deployment.storage.reference_data.queue
-      network    = var.deployment.storage.reference_data.network
-      status     = var.deployment.storage.reference_data.status
-      pipeline   = var.deployment.storage.reference_data.pipeline
-      preprocess = var.deployment.storage.reference_data.preprocess
+      enabled                      = var.deployment.storage.reference_data.enabled
+      namespace                    = var.deployment.storage.reference_data.namespace
+      queue                        = var.deployment.storage.reference_data.queue
+      network                      = var.deployment.storage.reference_data.network
+      status                       = var.deployment.storage.reference_data.status
+      pipeline                     = var.deployment.storage.reference_data.pipeline
+      preprocess                   = var.deployment.storage.reference_data.preprocess
+      csi_migration_receipt        = var.deployment.storage.reference_data.csi_migration_receipt
+      csi_readiness_receipt_sha256 = var.deployment.storage.reference_data.csi_readiness_receipt_sha256
     }
     scientific_artifacts = {
       enabled               = var.deployment.storage.scientific_artifacts.enabled

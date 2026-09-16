@@ -82,6 +82,119 @@ run "fresh_empty_volume_status_rollout_is_service_ready" {
   }
 }
 
+run "csi_switch_requires_a_verified_migration_receipt" {
+  command = plan
+
+  variables {
+    pod_security_rollout_phase = "migrate-reference-data"
+  }
+
+  plan_options {
+    target = [terraform_data.region_contract]
+  }
+
+  expect_failures = [terraform_data.region_contract]
+}
+
+run "verified_csi_phase_mounts_the_rwx_claim_before_baseline_enforcement" {
+  command = plan
+
+  variables {
+    pod_security_rollout_phase = "migrate-reference-data"
+    csi_migration_receipt = {
+      schema             = "fs2-serve.nebius.ai/reference-data-csi-migration/v1"
+      claim_name         = "fs2-reference-data-rwx"
+      source_tree_sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      target_tree_sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      receipt_sha256     = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }
+  }
+
+  plan_options {
+    target = [
+      kubernetes_namespace_v1.reference_data,
+      kubernetes_persistent_volume_claim_v1.reference_data,
+      kubernetes_deployment_v1.status,
+    ]
+  }
+
+  assert {
+    condition = (
+      length(kubernetes_persistent_volume_claim_v1.reference_data.spec[0].access_modes) == 1 &&
+      contains(kubernetes_persistent_volume_claim_v1.reference_data.spec[0].access_modes, "ReadWriteMany") &&
+      kubernetes_persistent_volume_claim_v1.reference_data.spec[0].storage_class_name == "csi-mounted-fs-path-sc" &&
+      kubernetes_namespace_v1.reference_data.metadata[0].labels["pod-security.kubernetes.io/enforce"] == "privileged" &&
+      kubernetes_namespace_v1.reference_data.metadata[0].annotations["security.fs2.nebius.ai/pod-security-exception"] == "reference-data-csi-verification"
+    )
+    error_message = "The intermediate phase must mount the approved RWX class while retaining the temporary verification boundary."
+  }
+
+  assert {
+    condition = (
+      length(one([
+        for volume in kubernetes_deployment_v1.status[0].spec[0].template[0].spec[0].volume : volume
+        if volume.name == "reference-data"
+      ]).host_path) == 0 &&
+      one(one([
+        for volume in kubernetes_deployment_v1.status[0].spec[0].template[0].spec[0].volume : volume
+        if volume.name == "reference-data"
+      ]).persistent_volume_claim).claim_name == "fs2-reference-data-rwx"
+    )
+    error_message = "The verified CSI phase must contain no reference-data hostPath and must mount the exact RWX claim."
+  }
+}
+
+run "baseline_enforcement_refuses_missing_csi_readiness_evidence" {
+  command = plan
+
+  variables {
+    pod_security_rollout_phase = "enforce"
+    csi_migration_receipt = {
+      schema             = "fs2-serve.nebius.ai/reference-data-csi-migration/v1"
+      claim_name         = "fs2-reference-data-rwx"
+      source_tree_sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      target_tree_sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      receipt_sha256     = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }
+  }
+
+  plan_options {
+    target = [terraform_data.region_contract]
+  }
+
+  expect_failures = [terraform_data.region_contract]
+}
+
+run "baseline_enforcement_follows_verified_csi_readiness" {
+  command = plan
+
+  variables {
+    pod_security_rollout_phase = "enforce"
+    csi_migration_receipt = {
+      schema             = "fs2-serve.nebius.ai/reference-data-csi-migration/v1"
+      claim_name         = "fs2-reference-data-rwx"
+      source_tree_sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      target_tree_sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      receipt_sha256     = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }
+    csi_readiness_receipt_sha256 = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  }
+
+  plan_options {
+    target = [kubernetes_namespace_v1.reference_data, kubernetes_deployment_v1.status]
+  }
+
+  assert {
+    condition = (
+      kubernetes_namespace_v1.reference_data.metadata[0].labels["pod-security.kubernetes.io/enforce"] == "baseline" &&
+      kubernetes_namespace_v1.reference_data.metadata[0].labels["pod-security.kubernetes.io/audit"] == "restricted" &&
+      kubernetes_namespace_v1.reference_data.metadata[0].labels["pod-security.kubernetes.io/warn"] == "restricted" &&
+      length(kubernetes_namespace_v1.reference_data.metadata[0].annotations) == 0
+    )
+    error_message = "Reference data may enforce Baseline only after the receipt-gated CSI phase."
+  }
+}
+
 run "reference_queue_admits_every_declared_consumer_namespace" {
   command = plan
 

@@ -1,6 +1,7 @@
 {{- if .Values.runtimeAttribution.enabled }}
 {{- $name := printf "%s-gpu-observer" (include "fs2-serve.fullname" .) }}
 {{- $serviceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "gpu-observer") }}
+{{- $daemonSetNamespace := .Values.runtimeAttribution.daemonSetNamespace }}
 {{- $namespaces := .Values.runtimeAttribution.namespaces }}
 {{- if eq (len $namespaces) 0 }}
 {{- $namespaces = list .Values.runtimeAttribution.modelNamespace }}
@@ -35,13 +36,14 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: {{ $serviceAccount }}
-    namespace: {{ $.Release.Namespace }}
+    namespace: {{ $daemonSetNamespace }}
 ---
 {{- end }}
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   name: {{ $name }}
+  namespace: {{ $daemonSetNamespace }}
   labels:
     {{- include "fs2-serve.labels" . | nindent 4 }}
     app.kubernetes.io/component: gpu-allocation-observer

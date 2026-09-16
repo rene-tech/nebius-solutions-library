@@ -105,7 +105,8 @@ locals {
 module "academic_assets" {
   source = "../../modules/academic-assets"
 
-  academic_assets = var.academic_assets
+  academic_assets                  = var.academic_assets
+  pod_security_enforcement_enabled = var.pod_security_rollout_phase == "enforce"
   academic_network_policy = {
     internal_api_namespace = "fs2-system"
     internal_api_pod_labels = {

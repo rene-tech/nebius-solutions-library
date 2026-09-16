@@ -170,8 +170,9 @@ locals {
     # Publish exact kubelet Pod -> GPU UUID observations for the lifecycle
     # ledger. This is GPU-model agnostic and schedules only on Nebius GPU nodes.
     runtimeAttribution = {
-      enabled    = true
-      namespaces = local.runtime_attribution_namespaces
+      enabled            = true
+      daemonSetNamespace = local.gpu_observer_namespace
+      namespaces         = local.runtime_attribution_namespaces
     }
     modelController = {
       enabled                             = var.model_controller.enabled
@@ -294,6 +295,7 @@ resource "helm_release" "control_plane" {
     kubernetes_config_map_v1.admin_configuration,
     kubernetes_config_map_v1.model_controller_envelope,
     kubernetes_config_map_v1.model_controller_bundles,
+    kubernetes_service_account_v1.model_runtime,
     kubernetes_persistent_volume_claim_v1.fast_start_compile_cache,
     kubernetes_persistent_volume_claim_v1.fast_start_residency_receipt,
     kubernetes_persistent_volume_claim_v1.scientific_snapshots,

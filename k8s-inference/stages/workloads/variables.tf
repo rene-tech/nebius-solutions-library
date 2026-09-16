@@ -20,6 +20,63 @@ variable "run_root" {
   }
 }
 
+variable "pod_security_rollout_phase" {
+  description = "Ordered PSA rollout/rollback phase. Restore phases remove enforcement before moving host agents back, then remove the exception namespace."
+  type        = string
+  default     = "prepare"
+
+  validation {
+    condition = contains([
+      "prepare",
+      "migrate-reference-data",
+      "enforce",
+      "rollback-restore-host-agents",
+      "rollback-remove-exception",
+    ], var.pod_security_rollout_phase)
+    error_message = "pod_security_rollout_phase must name an ordered rollout or rollback phase."
+  }
+}
+
+variable "pod_security_host_agent_readiness_receipt_sha256" {
+  description = "Non-secret digest of readiness evidence captured after all host agents move to the exception namespace."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.pod_security_host_agent_readiness_receipt_sha256 == null || can(regex("^[a-f0-9]{64}$", var.pod_security_host_agent_readiness_receipt_sha256))
+    error_message = "pod_security_host_agent_readiness_receipt_sha256 must be a lowercase SHA-256 digest."
+  }
+}
+
+variable "pod_security_host_agent_restore_receipt_sha256" {
+  description = "Non-secret digest of readiness evidence captured after host agents are restored to their original namespaces."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.pod_security_host_agent_restore_receipt_sha256 == null || can(regex("^[a-f0-9]{64}$", var.pod_security_host_agent_restore_receipt_sha256))
+    error_message = "pod_security_host_agent_restore_receipt_sha256 must be a lowercase SHA-256 digest."
+  }
+}
+
+variable "pod_security_existing_scientific_namespaces" {
+  description = "Existing externally owned scientific namespaces that receive only the three PSA labels during the enforce phase."
+  type        = set(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for namespace in var.pod_security_existing_scientific_namespaces :
+      startswith(namespace, "fs2-") &&
+      length(namespace) <= 63 &&
+      can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", namespace))
+    ])
+    error_message = "pod_security_existing_scientific_namespaces must contain bounded fs2-* DNS labels."
+  }
+}
+
 variable "reference_data" {
   description = "Root-derived private reference-data plane bound to the exact infrastructure storage/access handoff."
   type = object({
@@ -131,6 +188,14 @@ variable "reference_data" {
       secret_reference_id = string
       revision            = number
     }))
+    csi_migration_receipt = optional(object({
+      schema             = string
+      claim_name         = string
+      source_tree_sha256 = string
+      target_tree_sha256 = string
+      receipt_sha256     = string
+    }))
+    csi_readiness_receipt_sha256 = optional(string)
   })
   default = {
     enabled   = false
@@ -171,8 +236,10 @@ variable "reference_data" {
       backoff_limit           = 2
       threads                 = 16
     }
-    storage_contract      = null
-    object_storage_access = null
+    storage_contract             = null
+    object_storage_access        = null
+    csi_migration_receipt        = null
+    csi_readiness_receipt_sha256 = null
   }
 
   validation {

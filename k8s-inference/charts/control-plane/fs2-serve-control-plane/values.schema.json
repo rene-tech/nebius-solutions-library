@@ -943,6 +943,7 @@
       "type": "object",
       "required": [
         "enabled",
+        "daemonSetNamespace",
         "modelNamespace",
         "namespaces",
         "kubernetesApiUrl",
@@ -955,6 +956,9 @@
       ],
       "properties": {
         "enabled": {"type": "boolean"},
+        "daemonSetNamespace": {
+          "const": "fs2-node-observability"
+        },
         "modelNamespace": {"$ref": "#/$defs/dnsName"},
         "namespaces": {
           "type": "array",

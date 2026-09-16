@@ -226,6 +226,9 @@ serviceAccounts:
 # Pods. Terraform enables it alongside the Kubernetes lifecycle reader.
 runtimeAttribution:
   enabled: false
+  # Host-integrated observers live outside baseline-enforced application
+  # namespaces. This namespace is Terraform-owned and explicitly audited.
+  daemonSetNamespace: fs2-node-observability
   # `modelNamespace` is retained as the fallback for older values files.
   # New callers pass the complete, bounded namespace set through `namespaces`.
   modelNamespace: fs2-models

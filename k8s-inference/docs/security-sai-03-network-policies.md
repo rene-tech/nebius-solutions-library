@@ -1,10 +1,12 @@
 # SAI-03 model-runtime network isolation
 
-Status: second corrective source successor prepared after independent review
+Status: corrective integration successor prepared after independent review
 rejected both `692a22ccb0cf56be61ca0227646bcd4d4a896046` and
 `b7e5b12e8b31b9d055ec746c3c6cd691f3519874`. Both commits remain preserved as
-negative evidence. No commit in this lineage has been deployed; production
-rollout remains intentionally gated on independent review and SAI-07 integration.
+negative evidence. The integration tree has exact SAI-07 source
+`385168566a74adf48f9624da2f7574d48e4f6ace` as a merge parent. No commit in
+this lineage has been deployed; production rollout remains intentionally gated
+on independent review of the combined tree.
 
 This change closes the source-side causes of SAI-03 without relying on runtime
 pods to carry the historical `app.kubernetes.io/instance` label:
@@ -80,10 +82,33 @@ arbitrary UUID creation, update, owned stale-resource deletion, and finalizer
 cleanup still succeed without making such a request. It also proves an existing
 App owned by another identity remains byte-for-byte unchanged.
 
-This common finite-profile/no-NetworkPolicy-authority design was relayed to the
-active SAI-07 worker. SAI-03 does not modify the SAI-07 branch or task files;
-independent integration review must verify that both exact successors remove
-the rule before either can integrate.
+SAI-03 did not modify the SAI-07 branch or task files. Instead, the task branch
+merged its exact reviewed source and resolved the combined contract below.
+
+### Exact SAI-03/SAI-07 integration contract
+
+The integration merge has these immutable parents:
+
+- SAI-03 root-validation correction:
+  `4ea4b1260e6e682a2e4f40ee251860e3cfc7b679`;
+- SAI-07 source: `385168566a74adf48f9624da2f7574d48e4f6ace`.
+
+The four textual conflicts were resolved as a bounded union, not by choosing
+one branch wholesale:
+
+| Conflict | Resolution that must remain true |
+| --- | --- |
+| `model_deployment.py` | Keep the finite Terraform-owned network-profile label derivation and SAI-07's hardened runtime service-account injection; render neither `NetworkPolicy` nor `ServiceAccount`. |
+| `test_model_deployment.py` | Assert both finite profile labels and `fs2-model-runtime` with token automount disabled for single-/multi-pool renders. |
+| `test_model_deployment_controller.py` | Keep the arbitrary UUID App lifecycle through the real HTTP client and the independent pre-I/O rejection of any attempted NetworkPolicy write. |
+| `stages/workloads/academic_assets.tf` | Pass both the exact DNS/API/object-store policy contract and SAI-07's staged Pod Security enforcement flag into the module. |
+
+The combined authorization boundary is exact: the model controller has no
+NetworkPolicy endpoint or RBAC verbs and cannot create ServiceAccounts, while
+Terraform owns the finite policies and the single `fs2-model-runtime` identity.
+Arbitrary App IDs therefore do not expand Kubernetes write authority. A merge
+that drops either the finite profile label, hardened service account, academic
+network inputs, or staged Pod Security input violates this contract.
 
 ## Pre-mutation live evidence
 
@@ -120,6 +145,12 @@ at revision 134 in `pending-rollback` to last successful revision 132 after
 revision 133 failed on the GPU observer DaemonSet. The gateway Deployment was
 still converging while the model-controller Deployment was available. No
 resource was created, patched, deleted, or restarted by this task.
+
+The independent final review of rejected `8a81670f` subsequently reported that
+the live controller Role still has NetworkPolicy verbs and all 37 live runtime
+Deployments still lack a finite profile label. That is authoritative evidence
+that the live finding remains open; it is not promotion evidence for this
+source successor. This task did not re-query or mutate the shared cluster.
 
 ## Verification
 
@@ -158,24 +189,30 @@ terraform -chdir=reference-data/terraform test \
   -filter=tests/bootstrap.tftest.hcl -no-color
 ```
 
-Observed results for this corrective successor:
+Observed results for the exact combined SAI-03/SAI-07 tree:
 
-- complete control-plane suite: 1,968 passed, 98 skipped;
-- changed controller/renderer/Helm focus: 225 passed, including finite-profile
+- complete control-plane suite: 1,970 passed, 98 skipped;
+- changed controller/renderer/Helm focus: 227 passed, including finite-profile
   derivation, real HTTP arbitrary-App lifecycle, and absence of NetworkPolicy
   RBAC;
+- complete root deployment-contract suite: 77 passed with 78 subtests,
+  including real root-plan rejection of the IPv4 `/1` equivalent-default pair
+  and broad IPv6 prefixes while preserving IPv4 `/32` and IPv6 `/128` hosts;
 - integrated gateway/model/MCP suite: 118 passed;
 - ModelExpress Terraform contract: 11 passed, including exact cross-layer
   profile inputs, IPv4 `/1`-pair rejection, IPv6 `/32` and `/64` rejection, and
   IPv6 `/128` acceptance;
-- academic-assets module: 10 passed, including separate IPv6 `/32` and `/64`
+- academic-assets module: 18 passed, including separate IPv6 `/32` and `/64`
   rejection and `/128` acceptance;
 - catalog Kubernetes adapters: 19 passed, including native selector matching
   and KServe/NIM fail-closed behavior;
-- reference-data bootstrap: 6 passed;
+- reference-data bootstrap: 10 passed;
 - general-media offline-preflight/static-policy suite: 5 passed;
-- Helm lint/template, Terraform formatting/validation, Ruff lint/format, and
-  `git diff --check`: passed.
+- Terraform validation and `git diff --check`: passed. Rejected `8a81670f`
+  failed `terraform fmt -check -recursive` on four `server_image = null`
+  alignments in the ModelExpress test; the exact integration tree formats those
+  four lines and passes the recursive check. No formatting success is claimed
+  for `8a81670f`.
 
 Trivy 0.70.0 reported zero High/Critical findings in each changed Terraform
 file. The two legacy model manifests retain two pre-existing High findings each

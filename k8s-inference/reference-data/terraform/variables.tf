@@ -113,6 +113,80 @@ variable "shared_filesystem_host_path" {
   }
 }
 
+variable "pod_security_rollout_phase" {
+  description = "Ordered PSA rollout/rollback phase; rollback phases retain the verified CSI claim while application enforcement is removed."
+  type        = string
+  default     = "prepare"
+
+  validation {
+    condition = contains([
+      "prepare",
+      "migrate-reference-data",
+      "enforce",
+      "rollback-restore-host-agents",
+      "rollback-remove-exception",
+    ], var.pod_security_rollout_phase)
+    error_message = "pod_security_rollout_phase must name an ordered rollout or rollback phase."
+  }
+}
+
+variable "filesystem_claim" {
+  description = "RWX CSI claim that receives the migrated reference-data tree before baseline enforcement."
+  type = object({
+    name          = optional(string, "fs2-reference-data-rwx")
+    storage_class = optional(string, "csi-mounted-fs-path-sc")
+    size_gib      = number
+  })
+  default = { size_gib = 2048 }
+
+  validation {
+    condition = (
+      can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", var.filesystem_claim.name)) &&
+      can(regex("^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$", var.filesystem_claim.storage_class)) &&
+      floor(var.filesystem_claim.size_gib) == var.filesystem_claim.size_gib &&
+      var.filesystem_claim.size_gib >= 1611 &&
+      var.filesystem_claim.size_gib <= 65536
+    )
+    error_message = "filesystem_claim requires DNS-safe names and a whole 1611-65536 GiB size."
+  }
+}
+
+variable "csi_migration_receipt" {
+  description = "Non-secret content-identity receipt captured after the legacy tree is copied and verified on the RWX claim."
+  type = object({
+    schema             = string
+    claim_name         = string
+    source_tree_sha256 = string
+    target_tree_sha256 = string
+    receipt_sha256     = string
+  })
+  default  = null
+  nullable = true
+
+  validation {
+    condition = var.csi_migration_receipt == null || (
+      var.csi_migration_receipt.schema == "fs2-serve.nebius.ai/reference-data-csi-migration/v1" &&
+      var.csi_migration_receipt.claim_name == var.filesystem_claim.name &&
+      can(regex("^[a-f0-9]{64}$", var.csi_migration_receipt.source_tree_sha256)) &&
+      var.csi_migration_receipt.source_tree_sha256 == var.csi_migration_receipt.target_tree_sha256 &&
+      can(regex("^[a-f0-9]{64}$", var.csi_migration_receipt.receipt_sha256))
+    )
+    error_message = "csi_migration_receipt must bind this claim and equal verified source/target tree SHA-256 identities."
+  }
+}
+
+variable "csi_readiness_receipt_sha256" {
+  description = "Non-secret digest of the Bound-claim, Ready-status, and read-only application access evidence captured after switching to CSI."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.csi_readiness_receipt_sha256 == null || can(regex("^[a-f0-9]{64}$", var.csi_readiness_receipt_sha256))
+    error_message = "csi_readiness_receipt_sha256 must be a lowercase SHA-256 digest."
+  }
+}
+
 variable "queue" {
   description = "Names and bounded CPU/memory quota for the independent Kueue preprocessing lane."
   type = object({

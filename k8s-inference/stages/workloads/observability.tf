@@ -1,4 +1,19 @@
 locals {
+  node_agents_use_exception_namespace = contains([
+    "prepare",
+    "migrate-reference-data",
+    "enforce",
+  ], var.pod_security_rollout_phase)
+  node_observability_namespace = (
+    local.node_agents_use_exception_namespace ?
+    "fs2-node-observability" :
+    "fs2-observability"
+  )
+  gpu_observer_namespace = (
+    local.node_agents_use_exception_namespace ?
+    "fs2-node-observability" :
+    "fs2-system"
+  )
   # The foundation contract exposes either the fresh run-scoped Grafana
   # Service or the retained Service override. Both share the same Helm release
   # prefix as Loki, so this keeps the selector exact without a topology flag or
@@ -181,7 +196,7 @@ resource "helm_release" "dcgm_exporter" {
   count = var.deployment_profile == "full_catalog" ? 1 : 0
 
   name             = "fs2-dcgm-exporter"
-  namespace        = "fs2-observability"
+  namespace        = local.node_observability_namespace
   repository       = "https://nvidia.github.io/dcgm-exporter/helm-charts"
   chart            = "dcgm-exporter"
   version          = "4.8.3"
