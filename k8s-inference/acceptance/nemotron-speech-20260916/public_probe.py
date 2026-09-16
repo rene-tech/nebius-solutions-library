@@ -7,6 +7,7 @@ This is an integration cohort, not complete scaling/option/resilience acceptance
 """
 
 import argparse
+import asyncio
 import base64
 import hashlib
 import json
@@ -33,6 +34,15 @@ def submit_file(client, path, model, language, row):
                 files={"file": ("recording.flac", handle, "audio/flac")},
                 headers={"idempotency-key": key})
     row["transport"] = "artifact-native-async"
+    artifact = upload_artifact(client, path, model, row, key)
+    return client.post("/v1/models/" + model + ":invoke", json={
+        "operation": "transcribe", "payload": {"audio": artifact,
+            "options": {"model": model.replace("0-6b", "0.6b"), "language": language}},
+    }, headers={"idempotency-key": key, "x-fs2-wait-seconds": "0"})
+
+
+def upload_artifact(client, path, model, row, key):
+    """Stage a complete FLAC for either HTTP or typed MCP invocation."""
     response = client.post("/v1/scientific-artifacts/uploads", json={
         "model_id": model, "sha256": row["transport_sha256"],
         "size_bytes": row["transport_bytes"], "media_type": "audio/flac", "compression": "none",
@@ -61,17 +71,15 @@ def submit_file(client, path, model, language, row):
     response.raise_for_status()
     artifact = response.json()
     row["artifact_id"] = artifact["artifact_id"]
-    return client.post("/v1/models/" + model + ":invoke", json={
-        "operation": "transcribe", "payload": {"audio": artifact,
-            "options": {"model": model.replace("0-6b", "0.6b"), "language": language}},
-    }, headers={"idempotency-key": key, "x-fs2-wait-seconds": "0"})
+    return artifact
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("kubeconfig", "context", "origin"):
         parser.add_argument("--" + name, required=True)
-    parser.add_argument("--mode", choices=("apply-apps", "repair-app-policy", "files"), required=True)
+    parser.add_argument("--mode", choices=("apply-apps", "repair-app-policy", "files", "live", "mcp"), required=True)
+    parser.add_argument("--paced", action="store_true", help="Replay live audio at original recording speed")
     parser.add_argument("--proposals", type=Path)
     parser.add_argument("--assets", type=Path)
     parser.add_argument("--output", type=Path, required=True)
@@ -129,6 +137,14 @@ def main():
             disclosure = response.json()["data"]
             key_id, key = disclosure["key"]["id"], disclosure["secret"]
             receipt["temporary_key_id"] = key_id
+            if args.mode == "live":
+                from public_live import run_cohort
+                asyncio.run(run_cohort(args.origin, key, args.assets, receipt, paced=args.paced))
+                return
+            if args.mode == "mcp":
+                from public_mcp import run_cohort
+                asyncio.run(run_cohort(args.origin, key, args.assets, receipt))
+                return
             cases = [
                 (IDS[0], "en-01", "ready/en/day1_consultation01_conversation.wav", "en"),
                 (IDS[0], "en-02", "ready/en/day1_consultation02_conversation.wav", "en"),
@@ -151,6 +167,7 @@ def main():
                         response = submit_file(client, path, model, language, row)
                         row.update(submit_status=response.status_code,
                                    operation_id=response.headers.get("x-fs2-operation-id"))
+                        args.output.write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + "\n")
                         if response.status_code == 202:
                             operation_id = response.json()["id"] if "id" in response.json() else response.json()["operation_id"]
                             row["operation_id"] = operation_id
@@ -159,6 +176,10 @@ def main():
                                 poll = client.get("/v1/operations/" + operation_id)
                                 poll.raise_for_status()
                                 operation = poll.json()
+                                history = row.setdefault("poll_history", [])
+                                if not history or history[-1]["status"] != operation["status"]:
+                                    history.append({"status": operation["status"], "elapsed_seconds": time.monotonic()-started})
+                                    args.output.write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + "\n")
                                 if operation["status"] == "succeeded":
                                     response = client.get("/v1/operations/" + operation_id + "/result")
                                     break
