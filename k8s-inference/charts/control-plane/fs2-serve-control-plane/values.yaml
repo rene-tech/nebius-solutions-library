@@ -327,12 +327,13 @@ config:
   otlpEndpoint: ""
   maxRequestBytes: "16777216"
   maxResponseBytes: "134217728"
-  # Evaluation-only customer request/response capture. Off by default; when
-  # enabled it must be scoped (tenants and/or models) AND time-bounded, or the
-  # control plane refuses to start. It is never a standing state.
+  # Evaluation-only customer request/response capture. Off by default; when enabled it must
+  # bind a MANDATORY tenant scope (requestDebugModels only narrows within it, never alone)
+  # AND be time-bounded, or the control plane refuses to start. It is never a standing state.
   requestDebugEnabled: false
-  # Hard ceiling on each stored captured body (bytes); a bounded, redacted prefix
-  # is kept, never the whole payload. Far below maxResponseBytes by design.
+  # Hard ceiling on each stored captured REQUEST body (bytes): the request body is stored
+  # credential-redacted within the cap, and a body over the cap is WITHHELD entirely (never a
+  # bounded prefix). Response bodies are always withheld. Far below maxResponseBytes by design.
   requestDebugMaxBodyBytes: "65536"
   # Retention/purge of captured exchanges is owned by the central platform
   # maintenance purge, not by this facility, so no retention value is set here.

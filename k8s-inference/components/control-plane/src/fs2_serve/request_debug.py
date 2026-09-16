@@ -42,7 +42,7 @@ import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal, Protocol, TypeVar
+from typing import Any, Literal, Protocol, TypeVar, get_args
 from urllib.parse import unquote_plus
 from uuid import UUID, uuid4
 
@@ -152,6 +152,22 @@ class DebugBody(StrictModel):
     truncated: bool = False
 
 
+# Fixed, closed enums for the MCP failure signal — the persisted fields accept ONLY these
+# values (pydantic Literal validation), and the middleware filters state to these sets so no
+# unrestricted/attacker-influenced string is ever stored (fail closed to None otherwise).
+MCPFailureCategory = Literal[
+    "invalid_request",
+    "route_unavailable",
+    "tool_execution_failure",
+    "output_contract_failure",
+    "internal_failure",
+    "unknown",
+]
+MCPErrorCodeBucket = Literal["jsonrpc_client", "jsonrpc_server", "tool", "unknown"]
+_MCP_FAILURE_CATEGORIES = frozenset(get_args(MCPFailureCategory))
+_MCP_ERROR_CODE_BUCKETS = frozenset(get_args(MCPErrorCodeBucket))
+
+
 class DebugMetadata(StrictModel):
     id: UUID
     source: Literal["public", "upstream"]
@@ -191,8 +207,8 @@ class DebugExchange(DebugMetadata):
     # DETAIL exchange only (they ride in the encrypted payload) so they need no new clear/summary
     # column or DB migration.
     mcp_is_error: bool | None = None
-    mcp_failure_category: str | None = None
-    mcp_error_code: str | None = None
+    mcp_failure_category: MCPFailureCategory | None = None
+    mcp_error_code: MCPErrorCodeBucket | None = None
 
 
 class DebugExchangeSummary(DebugMetadata):
@@ -1152,11 +1168,14 @@ class DebugCaptureMiddleware:
                 # inside an HTTP 200 stays distinguishable from success while the response
                 # body is withheld. Never derived from the response bytes.
                 mcp_is_error = state.get("mcp_is_error") if isinstance(state.get("mcp_is_error"), bool) else None
-                # Fixed server-origin failure classification (enum + bucketed code), set by the
-                # MCP dispatch path; never derived from the response bytes. _label rejects any
-                # non-string so only the fixed labels reach storage.
-                mcp_failure_category = _label(state.get("mcp_failure_category"))
-                mcp_error_code = _label(state.get("mcp_error_code"))
+                # Fixed server-origin failure classification (enum + coarse bucket), set by the
+                # MCP dispatch path; never derived from the response bytes. Fail closed: a value
+                # is stored ONLY if it is a member of the fixed enum/bucket set, else dropped to
+                # None — so no unrestricted or attacker-influenced string can ever be persisted.
+                raw_category = state.get("mcp_failure_category")
+                mcp_failure_category = raw_category if raw_category in _MCP_FAILURE_CATEGORIES else None
+                raw_code = state.get("mcp_error_code")
+                mcp_error_code = raw_code if raw_code in _MCP_ERROR_CODE_BUCKETS else None
                 capture_tenant = principal.tenant_id if principal else None
                 # Scoped, time-bounded gate: only record exchanges the policy
                 # admits. An unscoped/expired/disabled policy records nothing.

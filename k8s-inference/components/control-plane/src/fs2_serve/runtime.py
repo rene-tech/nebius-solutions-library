@@ -115,7 +115,6 @@ class _UpstreamCapture:
         self.status: int | None = None
         self.content = bytearray()
         self.observed_bytes = 0
-        self.read_started = False
         self.complete = False
         self.disconnected = False
         self.error_type: str | None = None
@@ -144,7 +143,6 @@ class _UpstreamCapture:
         self.known_credentials.extend(credential_values(self.response_headers))
 
     def observe(self, chunk: bytes) -> None:
-        self.read_started = True
         self.observed_bytes += len(chunk)
         remaining = max(0, self.store_limit - len(self.content))
         if remaining:
@@ -154,7 +152,6 @@ class _UpstreamCapture:
             self.error_detail = f"debug response capture exceeded configured maximum of {self.maximum} bytes"
 
     def finished(self) -> None:
-        self.read_started = True
         self.complete = self.observed_bytes <= self.maximum
         self.completed_at = datetime.now(UTC)
 
@@ -168,27 +165,6 @@ class _UpstreamCapture:
         self.error_detail = self.error_detail or str(error)
         self.disconnected = self.disconnected or isinstance(error, asyncio.CancelledError)
         self.completed_at = self.completed_at or datetime.now(UTC)
-
-    async def drain_unread(self, response: httpx.Response) -> None:
-        # Success bodies are observed by the normal bounded reader. Only consume
-        # a body here when normal handling did not read it (HTTP rejection,
-        # preemption or invalid headers). Never resume a partially failed stream.
-        if self.read_started or self.disconnected:
-            return
-        self.read_started = True
-        try:
-            async for chunk in response.aiter_bytes():
-                self.observe(chunk)
-                if self.observed_bytes > self.maximum:
-                    return
-            self.finished()
-        except asyncio.CancelledError as error:
-            self.failed(error)
-            raise
-        except Exception as error:
-            # Debug-only consumption must not change an already determined
-            # upstream status or replace the original protocol exception.
-            self.failed(error)
 
     def exchange(self) -> DebugExchange:
         # A credential in an unterminated request scalar is known only as a prefix;
@@ -329,6 +305,31 @@ class RuntimeClient:
         # Fail-closed default: capture nothing unless production injects a scoped,
         # time-bounded policy from settings.
         self.debug_capture_policy = debug_capture_policy or DebugCapturePolicy()
+        # Detached background tasks that build + persist debug captures OFF the customer
+        # critical path (see _schedule_capture_persist). Held so they are not GC'd mid-flight.
+        self._capture_tasks: set[asyncio.Task[None]] = set()
+
+    def _schedule_capture_persist(self, capture: _UpstreamCapture) -> None:
+        """Build (off-loop) and persist a debug capture in a DETACHED background task, so a
+        slow or large upstream error response never adds latency to the customer request. The
+        customer path neither drains the unread body nor awaits sanitize/persist."""
+        store = self.debug_store
+        if store is None:
+            return
+
+        async def _run() -> None:
+            try:
+                built = await offload_capture(capture.exchange)
+                if built is not None:
+                    await persist_debug_exchange(store, built)
+            except Exception as error:
+                # Debug serialization/storage failures never affect inference, and never put
+                # payloads or raw exception text in logs — only the exception's type name.
+                _LOGGER.warning("request debug capture failed error_type=%s", type(error).__name__)
+
+        task = asyncio.create_task(_run())
+        self._capture_tasks.add(task)
+        task.add_done_callback(self._capture_tasks.discard)
 
     @asynccontextmanager
     async def _debug_stream(
@@ -362,33 +363,29 @@ class RuntimeClient:
             async with stream as response:
                 capture.response(response)
                 response.extensions[_DEBUG_CAPTURE_EXTENSION] = capture
+                # Capture never DRAINS an otherwise-unread upstream body: the normal reader
+                # observes a successful body as the customer reads it, and an unread error body
+                # is left untouched (the response body is withheld from storage regardless), so
+                # a slow/large error never adds customer latency. Only observed bytes are kept.
                 try:
                     yield response
                 except BaseException as error:
                     capture.failed(error)
                     raise
-                finally:
-                    await capture.drain_unread(response)
         except BaseException as error:
             capture.failed(error)
             raise
         finally:
-            try:
-                # Build the exchange (CPU-bound redaction/hashing) off the event loop;
-                # None means the capture was overload-withheld (load shed), so skip persist.
-                built = await offload_capture(capture.exchange)
-                if built is not None:
-                    await persist_debug_exchange(self.debug_store, built)
-            except Exception as error:
-                # Debug serialization/storage failures must not replace an
-                # inference result. Never put payloads or exception text in logs.
-                _LOGGER.warning(
-                    "upstream debug capture failed operation_id=%s error_type=%s",
-                    operation.id,
-                    type(error).__name__,
-                )
+            # Persist OFF the customer critical path: schedule a detached background task and
+            # return immediately — never await sanitize/persist here (see _schedule_capture_persist).
+            self._schedule_capture_persist(capture)
 
     async def close(self) -> None:
+        # Drain any in-flight detached capture-persist tasks on shutdown (best-effort), so a
+        # capture is not lost and no pending task is destroyed mid-flight. They never block a
+        # live request; this only waits at teardown.
+        if self._capture_tasks:
+            await asyncio.gather(*self._capture_tasks, return_exceptions=True)
         actions = [self.federation.close()]
         if self._owns_client:
             actions.append(self.client.aclose())
@@ -683,8 +680,6 @@ class RuntimeClient:
                     )
                 content = bytearray()
                 capture = response.extensions.get(_DEBUG_CAPTURE_EXTENSION)
-                if isinstance(capture, _UpstreamCapture):
-                    capture.read_started = True
                 async for chunk in response.aiter_bytes():
                     if isinstance(capture, _UpstreamCapture):
                         capture.observe(chunk)

@@ -174,8 +174,13 @@ _CODE_JSONRPC_SERVER = "jsonrpc_server"
 _CODE_TOOL = "tool"
 
 
-# Fixed map from a known server-origin string code to a failure category.
-_TOOL_CODE_CATEGORY = {
+# Fixed, exhaustive map from a known server-origin string code (the `.code` class attribute of
+# every domain error the dispatch raises) to a failure category. Keyed by code so each error
+# subtype classifies correctly (e.g. a wrong/undecodable upstream output -> output_contract,
+# artifact not-found -> route_unavailable, a size violation -> invalid_request). Any code not
+# in this closed set falls to the fixed "unknown" bucket (fail closed).
+_CODE_CATEGORY = {
+    # MCP tool-level codes (see _tool_failure).
     "invalid_tool_arguments": _CAT_INVALID,
     "not_found": _CAT_ROUTE,
     "scientific_profile_unavailable": _CAT_ROUTE,
@@ -186,6 +191,22 @@ _TOOL_CODE_CATEGORY = {
     "rate_limit_reached": _CAT_TOOL,
     "admission_limit_reached": _CAT_TOOL,
     "internal_tool_error": _CAT_INTERNAL,
+    # Model-runtime codes (RuntimeOperationError subtypes).
+    "runtime_error": _CAT_INTERNAL,
+    "activation_failed": _CAT_TOOL,
+    "runtime_preempted": _CAT_TOOL,
+    "runtime_transport_error": _CAT_TOOL,
+    "runtime_protocol_error": _CAT_OUTPUT,  # wrong / undecodable upstream output
+    "runtime_identity_invalid": _CAT_INTERNAL,
+    # Scientific-artifact codes (ArtifactServiceError subtypes).
+    "artifact_service_error": _CAT_INTERNAL,
+    "artifact_not_found": _CAT_ROUTE,
+    "artifact_conflict": _CAT_TOOL,
+    "stale_artifact_attempt": _CAT_TOOL,
+    "artifact_verification_failed": _CAT_OUTPUT,
+    "artifact_policy_rejected": _CAT_OUTPUT,
+    "artifact_content_too_large": _CAT_INVALID,
+    "scientific_result_terminal": _CAT_TOOL,
 }
 
 
@@ -222,9 +243,6 @@ def _tool_failure(params: CallToolRequestParams, error: Exception) -> CallToolRe
     code = "internal_tool_error"
     message = "The tool failed unexpectedly. Use request_id when contacting the platform operator."
     expected = False
-    # Fixed failure category; set explicitly for branches whose code string is variable
-    # (artifact/runtime codes), otherwise derived from the fixed code->category map below.
-    category: str | None = None
     if any(isinstance(item, ConcurrencyExceededError) for item in chain):
         code, message, retryable, retry_after, expected = (
             "admission_limit_reached",
@@ -258,7 +276,6 @@ def _tool_failure(params: CallToolRequestParams, error: Exception) -> CallToolRe
         code = artifact_error.code
         message = "The artifact request was rejected by the published upload or verification policy."
         expected = True
-        category = _CAT_OUTPUT  # output-contract / verification-policy failure (code is variable)
     elif next((item for item in chain if isinstance(item, RuntimeOperationError)), None) is not None:
         runtime_error = next(item for item in chain if isinstance(item, RuntimeOperationError))
         code = runtime_error.code
@@ -266,8 +283,6 @@ def _tool_failure(params: CallToolRequestParams, error: Exception) -> CallToolRe
         retry_after = 2 if retryable else None
         message = "The selected model runtime could not complete the request."
         expected = True
-        # A 5xx runtime is an internal/server failure; a 4xx is a tool-execution failure.
-        category = _CAT_INTERNAL if runtime_error.status_code >= 500 else _CAT_TOOL
     elif any(isinstance(item, ScientificProfileError) for item in chain):
         code, message, expected = (
             "scientific_profile_unavailable",
@@ -302,15 +317,18 @@ def _tool_failure(params: CallToolRequestParams, error: Exception) -> CallToolRe
         payload["error"]["idempotency_key"] = idempotency_key
     if retry_after is not None:
         payload["error"]["retry_after_seconds"] = retry_after
+    category = _CODE_CATEGORY.get(code, _CAT_UNKNOWN)
+    # Never log the raw exception (no exc_info / str(error)): a traceback or message can carry
+    # request/URL/response/credential text. Log ONLY the fixed, safe classification labels.
     if expected:
-        LOGGER.info("MCP tool %s rejected request_id=%s error_type=%s", params.name, request_id, code)
+        LOGGER.info("MCP tool %s rejected request_id=%s category=%s", params.name, request_id, category)
     else:
-        LOGGER.exception("MCP tool %s failed request_id=%s", params.name, request_id, exc_info=error)
+        LOGGER.error("MCP tool %s failed request_id=%s category=%s", params.name, request_id, category)
     # Record the fixed, server-origin failure classification onto request state so a debug
     # capture can distinguish this tool error (even inside an HTTP 200) without the body. The
     # category is derived from the fixed code->category map; the stored code is the coarse
     # tool bucket (never the raw/verbatim string code).
-    _observe_mcp_failure(category or _TOOL_CODE_CATEGORY.get(code, _CAT_UNKNOWN), _CODE_TOOL)
+    _observe_mcp_failure(category, _CODE_TOOL)
     return _tool_result(payload).model_copy(update={"is_error": True})
 
 

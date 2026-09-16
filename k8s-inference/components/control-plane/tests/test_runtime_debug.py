@@ -100,14 +100,15 @@ async def test_native_rejection_captures_exact_upstream_request_and_validation_r
     assert exchange.http_status == status and exchange.error_type == "upstream_http_error"
     assert exchange.started_at <= exchange.completed_at
     # The request (debugging target) is captured verbatim. The error response BODY is
-    # withheld entirely (no strings/numbers/keys) — the debugging signal is http_status +
-    # error_type, both kept above.
+    # withheld entirely (no strings/numbers/keys) AND is never DRAINED off the customer path:
+    # a rejection short-circuits before reading, so the response body is unread (observed_bytes
+    # 0, incomplete) — the debugging signal is http_status + error_type, both kept above.
     assert exchange.request_body.data.encode() == request_body and exchange.request_body.complete
-    assert exchange.response_body.complete and exchange.response_body.redacted
+    assert exchange.response_body.redacted and not exchange.response_body.complete
     assert exchange.response_body.data == "[REDACTED]"
     assert "Field required" not in exchange.model_dump_json()
     assert exchange.request_body.observed_bytes == len(request_body)
-    assert exchange.response_body.observed_bytes == len(error_body)
+    assert exchange.response_body.observed_bytes == 0  # unread error body is not drained
     assert not exchange.request_body.redacted
     assert dict(exchange.request_headers)["x-request-id"] == f"{operation.id}:1"
     assert dict(exchange.response_headers)["content-type"] == "application/json"  # base MIME kept
@@ -181,7 +182,8 @@ async def test_binary_error_response_is_withheld_without_changing_public_result(
     assert result.status_code == 400 and result.body == b""
     captured = sink.exchanges[0].response_body
     assert _stored(captured) == b"[REDACTED]" and captured.redacted and captured.truncated
-    assert captured.complete and captured.observed_bytes == len(raw)  # true length still reported
+    # The 400 rejection body is not drained off the customer path: it stays unread and withheld.
+    assert not captured.complete and captured.observed_bytes == 0
 
 
 @pytest.mark.asyncio
@@ -217,8 +219,9 @@ async def test_stored_error_is_retrievable_with_shared_header_and_query_credenti
     listing = await sink.list(operation_id=operation.id, tenant_id=operation.tenant_id)
     assert len(listing.items) == 1
     detail = await sink.get(listing.items[0].id, tenant_id=operation.tenant_id)
-    assert detail is not None and detail.response_body.complete
-    # Response string values are redacted (free-text never stored); echoed secrets gone.
+    # The 422 rejection body is not drained off the customer path (unread, incomplete) and is
+    # withheld; the echoed secrets are never stored (request/header/query copies are redacted).
+    assert detail is not None and not detail.response_body.complete
     assert detail.response_body.redacted and "missing input" not in detail.response_body.data
     assert "[sha256:" not in detail.response_body.data and "[REDACTED]" in detail.response_body.data
     assert detail.request_body.redacted and "synthetic request" in detail.request_body.data
@@ -245,10 +248,11 @@ async def test_protocol_failures_capture_body_without_reclassifying_public_excep
         with pytest.raises(PreemptedError if case == "preempted" else RuntimeProtocolError):
             await runtime(client, sink).invoke(registry.get("qwen3-8b"), claimed(registry), b"{}")
     exchange = sink.exchanges[0]
-    # None of these bodies is a valid JSON document (plain text, or JSON-labeled but
-    # non-JSON), so all are withheld fail-closed regardless of content type.
+    # All bodies are withheld fail-closed. Only invalid_json is fully READ before the semantic
+    # check raises (so complete); content_type and preempted raise BEFORE the read loop and the
+    # unread body is not drained off the customer path (so incomplete).
     assert _stored(exchange.response_body) == b"[REDACTED]" and exchange.response_body.redacted
-    assert exchange.response_body.complete
+    assert exchange.response_body.complete == (case == "invalid_json")
     assert exchange.http_status == status
     assert exchange.error_type == ("PreemptedError" if case == "preempted" else "RuntimeProtocolError")
 
@@ -277,7 +281,7 @@ async def test_timeout_before_headers_captures_actual_request_and_incomplete_res
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("status", [200, 422])
+@pytest.mark.parametrize("status", [200])  # rejection (4xx/5xx) bodies are not read; see test_native_rejection
 async def test_partial_read_preserves_prefix_and_original_failure_behavior(registry, status) -> None:
     stream = Chunks([b'{"partial":'], httpx.ReadTimeout("synthetic interrupted body"))
 
@@ -302,7 +306,7 @@ async def test_partial_read_preserves_prefix_and_original_failure_behavior(regis
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("status", [200, 422])
+@pytest.mark.parametrize("status", [200])  # the response-size bound only applies to a read (success) body
 async def test_oversized_response_is_explicitly_incomplete_at_existing_bound(registry, status) -> None:
     stream = Chunks([b"123456", b"789012", b"not consumed"])
 
@@ -408,7 +412,9 @@ async def test_federated_internal_retry_captures_each_attempt_and_redacts_actual
             503 if first_failure == "http_status" else None,
             200,
         ]
-        assert sink.exchanges[0].response_body.complete == (first_failure == "http_status")
+        # The first attempt failed (503 rejection or timeout); its response body is never
+        # drained off the customer path, so it is incomplete either way. The retry succeeded.
+        assert not sink.exchanges[0].response_body.complete
         assert sink.exchanges[1].response_body.complete
         rendered = "\n".join(exchange.model_dump_json() for exchange in sink.exchanges)
         assert "federation-test-value-one" not in rendered and "fake-cookie-secret" not in rendered
@@ -470,7 +476,9 @@ async def test_upstream_bounded_response_does_not_store_a_boundary_credential(re
         )
         await runtime_client.invoke(registry.get("qwen3-8b"), claimed(registry), request_body)
     exchange = sink.exchanges[0]
-    assert exchange.response_body.observed_bytes == len(response_body)
+    # A 400 rejection body is never drained off the customer path, so it is unread and
+    # withheld; the echoed credential is never stored (the request copy is credential-redacted).
+    assert exchange.response_body.observed_bytes == 0
     assert exchange.response_body.truncated
     detail = exchange.model_dump_json()
     assert all(secret[:size] not in detail for size in range(8, len(secret) + 1))
@@ -535,4 +543,5 @@ async def test_upstream_response_suppressed_when_request_tail_uninspected(regist
     exchange = sink.exchanges[0]
     assert secret not in exchange.model_dump_json()  # not echoed anywhere in the row
     assert _stored(exchange.response_body) == b"[REDACTED]"  # response body withheld
-    assert exchange.response_body.observed_bytes == len(response_body)  # true length still reported
+    # The 400 rejection body is not drained off the customer path (unread), so nothing echoed.
+    assert exchange.response_body.observed_bytes == 0

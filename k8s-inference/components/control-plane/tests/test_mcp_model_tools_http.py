@@ -435,10 +435,10 @@ def test_mcp_failure_classifiers_are_fixed_categories_and_coarse_code_buckets():
         _CAT_ROUTE,
         _CAT_TOOL,
         _CAT_UNKNOWN,
+        _CODE_CATEGORY,
         _CODE_JSONRPC_CLIENT,
         _CODE_JSONRPC_SERVER,
         _CODE_TOOL,
-        _TOOL_CODE_CATEGORY,
         _numeric_mcp_signal,
     )
 
@@ -457,11 +457,18 @@ def test_mcp_failure_classifiers_are_fixed_categories_and_coarse_code_buckets():
         "tool",
         "unknown",
     }
-    # The fixed string-code -> category map covers the four required tool categories.
-    assert _TOOL_CODE_CATEGORY["invalid_tool_arguments"] == _CAT_INVALID
-    assert _TOOL_CODE_CATEGORY["not_found"] == _CAT_ROUTE
-    assert _TOOL_CODE_CATEGORY["rate_limit_reached"] == _CAT_TOOL
-    assert _TOOL_CODE_CATEGORY["internal_tool_error"] == _CAT_INTERNAL
+    # The fixed code -> category map classifies each origin correctly (all six categories are
+    # reachable), including wrong-output and artifact subtypes; any unmapped code is unknown.
+    assert _CODE_CATEGORY["invalid_tool_arguments"] == _CAT_INVALID
+    assert _CODE_CATEGORY["not_found"] == _CAT_ROUTE
+    assert _CODE_CATEGORY["rate_limit_reached"] == _CAT_TOOL
+    assert _CODE_CATEGORY["internal_tool_error"] == _CAT_INTERNAL
+    assert _CODE_CATEGORY["runtime_protocol_error"] == _CAT_OUTPUT  # wrong/undecodable upstream output
+    assert _CODE_CATEGORY["artifact_not_found"] == _CAT_ROUTE  # artifact not-found is not output-contract
+    assert _CODE_CATEGORY["artifact_verification_failed"] == _CAT_OUTPUT
+    assert _CODE_CATEGORY["artifact_content_too_large"] == _CAT_INVALID
+    assert set(_CODE_CATEGORY.values()) <= {_CAT_INVALID, _CAT_ROUTE, _CAT_TOOL, _CAT_OUTPUT, _CAT_INTERNAL}
+    assert "unmapped_code_xyz" not in _CODE_CATEGORY  # falls through to unknown at the call site
     # Reserved JSON-RPC codes are BUCKETED (never verbatim): client vs server; else unknown.
     assert _numeric_mcp_signal(-32602) == (_CAT_INVALID, _CODE_JSONRPC_CLIENT)  # invalid params
     assert _numeric_mcp_signal(-32601) == (_CAT_ROUTE, _CODE_JSONRPC_CLIENT)  # method not found

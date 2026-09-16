@@ -7,10 +7,10 @@ export interface DebugBody {
   complete: boolean;
   redacted: boolean;
   /**
-   * True when only a bounded prefix was stored because the body exceeded the
-   * capture size cap. `observed_bytes` still reports the full wire length, so a
-   * body can be wire-complete yet storage-truncated. Optional so exchanges
-   * captured before this field existed still parse.
+   * True when the body was WITHHELD entirely (a redaction marker, never a stored prefix):
+   * a response body is always withheld, and a request body is withheld when it exceeds the
+   * capture size cap. `observed_bytes` still reports the full wire length, so a body can be
+   * wire-complete yet withheld. Optional so exchanges captured before this field existed parse.
    */
   truncated?: boolean;
 }

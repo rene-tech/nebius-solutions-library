@@ -640,9 +640,10 @@ variable "deployment" {
     observability = optional(object({
       dcgm_cold_start_campaign = optional(bool, false)
       request_debug_enabled    = optional(bool, false)
-      # Scope + hard time-bound for request-debug capture. Enabling capture
-      # without a tenant/model scope and a bounded future expiry is rejected by
-      # the control plane; there is no global capture switch.
+      # Scope + hard time-bound for request-debug capture. A non-empty TENANT scope is
+      # MANDATORY (request_debug_models only narrows within it, never alone) and a bounded
+      # future expiry is required; enabling capture otherwise is rejected by the control
+      # plane. There is no global capture switch and no cross-tenant (model-only) capture.
       request_debug_tenants    = optional(string, "")
       request_debug_models     = optional(string, "")
       request_debug_expires_at = optional(string, "")

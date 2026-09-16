@@ -74,10 +74,12 @@ One more chart value bounds each retained record and is safe to leave at default
 Retention: captured exchanges have a **90-day TTL** (7,776,000 seconds). A record older
 than 90 days is eligible for deletion by the platform's central maintenance purge (its own
 DELETE grant and schedule); a record **within 90 days is always preserved**. This capture
-facility never deletes rows. Two independent 90-day bounds apply: the capture-expiry window
-is capped at 90 days (capture can be enabled for at most 90 days going forward and then
-stops adding rows — it deletes nothing), and the retention purge removes rows older than 90
-days. Before any purge runs, a **payload-free retention preflight** (`retention_preflight`:
+facility never deletes rows. Two DISTINCT bounds apply and must not be conflated: the capture
+ACTIVATION window (`request_debug_max_window_seconds`) is capped at **7 days** (capture may be
+enabled for at most 7 days going forward and then stops adding rows — it deletes nothing),
+while the separate 90-day RECORD-retention TTL governs how long stored rows live before the
+central purge removes those older than 90 days. Before any purge runs, a **payload-free
+retention preflight** (`retention_preflight`:
 oldest `started_at`, total count, and the count over the 90-day cutoff — aggregates over the
 clear timestamp column only, no payload read) proves how many rows are eligible; if any row
 within 90 days would be affected it must not run. The purge does not execute in any live
