@@ -1,0 +1,5 @@
+{
+  "schema": "fs2-serve.nebius.ai/release-approvers/v1",
+  "comment": "Owner-designated identities that may approve release-source exceptions. Deliberately empty: exceptions are impossible until the owner adds reviewed entries of the form {\"name\": ..., \"scope\": \"release-source-exception\", \"expires_at\": \"YYYY-MM-DDTHH:MM:SSZ\"}. Authenticating the caller AS one of these identities is the owner-gated IAM item.",
+  "approvers": []
+}

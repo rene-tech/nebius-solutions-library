@@ -20,6 +20,7 @@ import hashlib
 import json
 import os
 import re
+import stat as stat_module
 import subprocess
 import sys
 import tempfile
@@ -126,6 +127,86 @@ def receipt_path(run_root: Path, digest: str) -> Path:
     )
 
 
+def _read_evidence_bytes(path: Path) -> bytes:
+    """Read evidence via dirfd + O_NOFOLLOW and refuse filesystem anomalies.
+
+    The directory and the file are both opened without following symlinks, and
+    the OPEN DESCRIPTOR is fstat-checked: it must be a regular file with link
+    count 1, owned by the caller, with no group/other access. The bytes
+    returned are read from that descriptor exactly once, so what is verified
+    is what is parsed.
+    """
+    parent_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        try:
+            fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent_fd)
+        except OSError as error:
+            raise ProvenanceError(
+                f"cannot open evidence file safely (symlink or missing): {path}"
+            ) from error
+    finally:
+        os.close(parent_fd)
+    try:
+        status = os.fstat(fd)
+        if not stat_module.S_ISREG(status.st_mode):
+            raise ProvenanceError(f"evidence path is not a regular file: {path}")
+        if status.st_nlink != 1:
+            raise ProvenanceError(
+                f"evidence file has link count {status.st_nlink}: {path}; "
+                "hardlinked evidence is refused"
+            )
+        if status.st_uid != os.getuid():
+            raise ProvenanceError(f"evidence file has a foreign owner: {path}")
+        if status.st_mode & 0o077:
+            raise ProvenanceError(
+                f"evidence file is group/other accessible: {path}; require mode 0600"
+            )
+        chunks = []
+        while True:
+            chunk = os.read(fd, 1 << 20)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        return b"".join(chunks)
+    finally:
+        os.close(fd)
+
+
+def _verify_blob_bytes(
+    public_key_path: str,
+    payload: bytes,
+    signature: bytes,
+    verifier,
+    context: str,
+) -> None:
+    """Verify a signature over EXACTLY the bytes the caller will parse.
+
+    cosign re-reads files, so the already-read bytes are written to private
+    scratch copies and verified there; the caller then parses the same byte
+    string it passed in, eliminating any verify/parse divergence.
+    """
+    run_verifier = verifier or (
+        lambda command: subprocess.run(list(command), check=True, capture_output=True)
+    )
+    with tempfile.TemporaryDirectory(prefix=".fs2-verify-") as scratch:
+        payload_copy = Path(scratch) / "payload"
+        signature_copy = Path(scratch) / "payload.sig"
+        payload_copy.write_bytes(payload)
+        payload_copy.chmod(0o600)
+        signature_copy.write_bytes(signature)
+        signature_copy.chmod(0o600)
+        try:
+            run_verifier(
+                receipt_verify_blob_command(
+                    public_key_path, payload_copy, signature_copy
+                )
+            )
+        except subprocess.CalledProcessError as error:
+            raise ProvenanceError(
+                f"signature verification failed for {context}"
+            ) from error
+
+
 def _fsync_file(path: Path) -> None:
     descriptor = os.open(path, os.O_RDONLY)
     try:
@@ -168,7 +249,14 @@ def _resolve_amd64_image(reference: str, capture) -> tuple[dict, str, str, dict]
     manifest the SBOM subject names.
     """
     repository = reference.rsplit("@", 1)[0]
-    top = json.loads(capture(["crane", "manifest", reference]))
+    top_text = capture(["crane", "manifest", reference])
+    top_sha = hashlib.sha256(top_text.encode("utf-8")).hexdigest()
+    if f"sha256:{top_sha}" != reference.rsplit("@", 1)[1]:
+        raise ProvenanceError(
+            f"fetched top manifest of {reference} hashes to sha256:{top_sha}, "
+            "not the reference digest"
+        )
+    top = json.loads(top_text)
     if "manifests" in top:
         image_entries = [
             entry
@@ -188,9 +276,14 @@ def _resolve_amd64_image(reference: str, capture) -> tuple[dict, str, str, dict]
                 f"manifest, found {len(amd64_entries)}"
             )
         amd64_digest = amd64_entries[0]["digest"]
-        amd64_manifest = json.loads(
-            capture(["crane", "manifest", f"{repository}@{amd64_digest}"])
-        )
+        amd64_text = capture(["crane", "manifest", f"{repository}@{amd64_digest}"])
+        amd64_sha = hashlib.sha256(amd64_text.encode("utf-8")).hexdigest()
+        if f"sha256:{amd64_sha}" != amd64_digest:
+            raise ProvenanceError(
+                f"fetched linux/amd64 manifest of {reference} hashes to "
+                f"sha256:{amd64_sha}, not its descriptor digest {amd64_digest}"
+            )
+        amd64_manifest = json.loads(amd64_text)
     else:
         amd64_digest = reference.rsplit("@", 1)[1]
         amd64_manifest = top
@@ -235,35 +328,58 @@ def _validated_attestation_evidence(
     ]
     if not attestation_entries:
         return None
-    attestation_digest = None
-    for entry in attestation_entries:
-        if entry.get("annotations", {}).get("vnd.docker.reference.digest") == amd64_digest:
-            attestation_digest = entry["digest"]
-            break
-    if attestation_digest is None:
+    matching = [
+        entry
+        for entry in attestation_entries
+        if entry.get("annotations", {}).get("vnd.docker.reference.digest")
+        == amd64_digest
+    ]
+    if not matching:
         raise ProvenanceError(
             f"index {reference} carries attestation manifests, but none whose "
             f"subject is the linux/amd64 image manifest {amd64_digest}"
         )
+    if len(matching) > 1:
+        raise ProvenanceError(
+            f"index {reference} carries {len(matching)} attestation manifests "
+            f"for the linux/amd64 image manifest {amd64_digest}; ambiguous "
+            "attestations are refused"
+        )
+    attestation_digest = matching[0]["digest"]
     subject_manifest_digest = amd64_digest
-    attestation_manifest = json.loads(
-        capture(["crane", "manifest", f"{repository}@{attestation_digest}"])
+    attestation_text = capture(
+        ["crane", "manifest", f"{repository}@{attestation_digest}"]
     )
-    spdx_layer_digest = None
+    attestation_sha = hashlib.sha256(attestation_text.encode("utf-8")).hexdigest()
+    if f"sha256:{attestation_sha}" != attestation_digest:
+        raise ProvenanceError(
+            f"fetched attestation manifest of {reference} hashes to "
+            f"sha256:{attestation_sha}, not its descriptor digest "
+            f"{attestation_digest}"
+        )
+    attestation_manifest = json.loads(attestation_text)
+    spdx_layers = []
     slsa_layer_digest = None
     for layer in attestation_manifest.get("layers", []):
         if layer.get("mediaType") != IN_TOTO_MEDIA_TYPE:
             continue
         predicate = layer.get("annotations", {}).get("in-toto.io/predicate-type", "")
-        if predicate == SPDX_PREDICATE and spdx_layer_digest is None:
-            spdx_layer_digest = layer.get("digest")
+        if predicate == SPDX_PREDICATE:
+            spdx_layers.append(layer.get("digest"))
         elif predicate.startswith(SLSA_PREDICATE_PREFIX) and slsa_layer_digest is None:
             slsa_layer_digest = layer.get("digest")
-    if spdx_layer_digest is None:
+    if not spdx_layers:
         raise ProvenanceError(
             f"attestation manifest {attestation_digest} of {reference} carries "
             f"no {IN_TOTO_MEDIA_TYPE} layer with predicate {SPDX_PREDICATE}"
         )
+    if len(spdx_layers) > 1:
+        raise ProvenanceError(
+            f"attestation manifest {attestation_digest} of {reference} carries "
+            f"{len(spdx_layers)} SPDX predicate layers; ambiguous attestations "
+            "are refused"
+        )
+    spdx_layer_digest = spdx_layers[0]
     # The layer annotation alone proves nothing: fetch the blob, prove it is
     # the content the layer digest names, and validate it as a real in-toto
     # Statement carrying an SPDX document about this exact image.
@@ -292,19 +408,24 @@ def _validated_attestation_evidence(
             f"{statement.get('predicateType')!r}, expected {SPDX_PREDICATE}"
         )
     subject_hex = subject_manifest_digest.split(":", 1)[1]
-    named_subject = None
-    for subject in statement.get("subject", []) or []:
-        if not isinstance(subject, dict):
-            continue
-        if (subject.get("digest") or {}).get("sha256") == subject_hex:
-            named_subject = subject
-            break
-    if named_subject is None:
+    matching_subjects = [
+        subject
+        for subject in statement.get("subject", []) or []
+        if isinstance(subject, dict)
+        and (subject.get("digest") or {}).get("sha256") == subject_hex
+    ]
+    if not matching_subjects:
         raise ProvenanceError(
             f"SPDX attestation of {reference} does not name the image manifest "
             f"{subject_manifest_digest} as a subject"
         )
-    if not str(named_subject.get("name", "")).strip():
+    if len(matching_subjects) > 1:
+        raise ProvenanceError(
+            f"SPDX attestation of {reference} names the image manifest "
+            f"{subject_manifest_digest} as {len(matching_subjects)} subjects; "
+            "ambiguous subjects are refused"
+        )
+    if not str(matching_subjects[0].get("name", "")).strip():
         raise ProvenanceError(
             f"SPDX attestation subject for {reference} has no name"
         )
@@ -336,16 +457,28 @@ def _validate_spdx_shape(document: dict, context: str) -> list[dict]:
     SPDXRef-DOCUMENT → package DESCRIBES relationship) only packages that
     actually exist in the document.
     """
-    if not str(document.get("spdxVersion", "")).startswith("SPDX-2."):
+    if str(document.get("spdxVersion", "")) not in ("SPDX-2.2", "SPDX-2.3"):
         raise ProvenanceError(
             f"{context} has unsupported spdxVersion {document.get('spdxVersion')!r}"
         )
     if document.get("SPDXID") != "SPDXRef-DOCUMENT":
         raise ProvenanceError(f"{context} lacks SPDXID SPDXRef-DOCUMENT")
+    if document.get("dataLicense") != "CC0-1.0":
+        raise ProvenanceError(f"{context} lacks the required dataLicense CC0-1.0")
     if not str(document.get("name", "")).strip():
         raise ProvenanceError(f"{context} lacks a document name")
     if not str(document.get("documentNamespace", "")).strip():
         raise ProvenanceError(f"{context} lacks a documentNamespace")
+    creation = document.get("creationInfo")
+    if (
+        not isinstance(creation, dict)
+        or not str(creation.get("created", "")).strip()
+        or not isinstance(creation.get("creators"), list)
+        or not creation["creators"]
+    ):
+        raise ProvenanceError(
+            f"{context} lacks creationInfo with created and creators"
+        )
     packages = document.get("packages")
     if not isinstance(packages, list) or not packages:
         raise ProvenanceError(f"{context} describes no packages")
@@ -366,6 +499,10 @@ def _validate_spdx_shape(document: dict, context: str) -> list[dict]:
             raise ProvenanceError(
                 f"{context} package {spdx_id} has no name"
             )
+        if not str(package.get("downloadLocation", "")).strip():
+            raise ProvenanceError(
+                f"{context} package {spdx_id} has no downloadLocation"
+            )
         package_ids[spdx_id] = package
     described_ids = [
         str(identifier) for identifier in document.get("documentDescribes") or []
@@ -381,6 +518,11 @@ def _validate_spdx_shape(document: dict, context: str) -> list[dict]:
         raise ProvenanceError(
             f"{context} has no SPDXRef-DOCUMENT DESCRIBES relationship or "
             "documentDescribes entry"
+        )
+    if len(described_ids) != len(set(described_ids)):
+        raise ProvenanceError(
+            f"{context} describes the same element more than once; ambiguous "
+            "descriptions are refused"
         )
     described_packages = []
     for identifier in described_ids:
@@ -518,6 +660,11 @@ def create_release_receipt(
             f"anchor bundle no longer matches its recorded SHA-256: {bundle}"
         )
     tag_target = _git_capture(repository, "rev-parse", anchor_tag).strip()
+    if _git_capture(repository, "cat-file", "-t", tag_target).strip() != "tag":
+        raise ProvenanceError(
+            f"anchor {anchor_tag} is not an annotated tag object; lightweight "
+            "tags are never receipted"
+        )
     anchor_commit = _git_capture(
         repository, "rev-parse", f"{anchor_tag}^{{commit}}"
     ).strip()
@@ -647,6 +794,7 @@ def create_release_receipt(
 
 
 def _existing_receipt_or_conflict(
+    run_root: Path,
     final_dir: Path,
     reference: str,
     receipt: dict,
@@ -655,33 +803,48 @@ def _existing_receipt_or_conflict(
 ) -> dict:
     """Idempotence with full revalidation: bytes equal or refuse.
 
-    The existing signature is cryptographically re-verified — never trusted on
-    existence — before the identity comparison decides between idempotent
+    The existing signature is cryptographically re-verified over the exact
+    read bytes — never trusted on existence — and the recorded bindings are
+    revalidated before the identity comparison decides between idempotent
     return and refusal.
     """
     path = final_dir / "receipt.json"
     signature = final_dir / "receipt.json.sig"
-    if not path.is_file() or not signature.is_file():
+    if (
+        path.is_symlink()
+        or signature.is_symlink()
+        or not path.is_file()
+        or not signature.is_file()
+    ):
         raise ProvenanceError(
             f"partial receipt evidence already exists for {reference} at "
             f"{final_dir}; refusing to overwrite — restore or archive the "
             "existing evidence first"
         )
+    receipt_bytes = _read_evidence_bytes(path)
+    signature_bytes = _read_evidence_bytes(signature)
     try:
-        capture(receipt_verify_blob_command(public_key_path, path, signature))
-    except subprocess.CalledProcessError as error:
+        _verify_blob_bytes(
+            public_key_path,
+            receipt_bytes,
+            signature_bytes,
+            lambda command: capture(command),
+            f"existing receipt of {reference}",
+        )
+    except ProvenanceError as error:
         raise ProvenanceError(
             f"existing receipt signature for {reference} fails verification; "
             "receipts are immutable — refusing to overwrite; investigate the "
             "tamper"
         ) from error
     try:
-        existing = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
+        existing = json.loads(receipt_bytes)
+    except json.JSONDecodeError as error:
         raise ProvenanceError(
             f"existing receipt for {reference} is unreadable; receipts are "
             "immutable — refusing to overwrite"
         ) from error
+    validate_receipt_binding(existing, reference, run_root)
     comparable_existing = {k: v for k, v in existing.items() if k != "created_at"}
     comparable_new = {k: v for k, v in receipt.items() if k != "created_at"}
     if comparable_existing != comparable_new:
@@ -713,13 +876,13 @@ def _publish_receipt(
     path = receipt_path(run_root, receipt["digest"])
     final_dir = path.parent
     parent = final_dir.parent
-    if final_dir.is_symlink():
-        raise ProvenanceError(f"receipt path is a symlink: {final_dir}")
+    _assert_receipt_tree_safe(run_root, final_dir)
     if final_dir.exists():
         return _existing_receipt_or_conflict(
-            final_dir, reference, receipt, public_key_path, capture
+            run_root, final_dir, reference, receipt, public_key_path, capture
         )
     parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    _assert_receipt_tree_safe(run_root, final_dir)
     staging = Path(
         tempfile.mkdtemp(dir=parent, prefix=f".tmp-{receipt['digest'][7:19]}-")
     )
@@ -759,7 +922,7 @@ def _publish_receipt(
         except OSError:
             # Lost a publication race; the winner's evidence governs.
             return _existing_receipt_or_conflict(
-                final_dir, reference, receipt, public_key_path, capture
+                run_root, final_dir, reference, receipt, public_key_path, capture
             )
         _fsync_dir(parent)
         return receipt
@@ -785,14 +948,15 @@ def receipt_verify_blob_command(
     ]
 
 
-def validate_receipt_binding(receipt: dict, reference: str) -> None:
+def validate_receipt_binding(receipt: dict, reference: str, run_root: Path) -> None:
     """Refuse signing/allow-listing unless the receipt fully binds the digest.
 
-    Deep source/subject checks happened at creation and are tamper-evident via
-    the receipt signature; this validation re-verifies everything that can
-    drift afterwards: the digest identity, the durable bundle artifact (it
-    must exist, hash-match, and still carry the anchor tag at its recorded
-    target), the restore evidence, and the SBOM evidence shape.
+    Nothing recorded is taken on faith: the digest identity, the SBOM subject
+    == the recorded linux/amd64 manifest, the durable bundle artifact (exists,
+    hash-matches, still carries the anchor tag at its recorded target), and —
+    via a fresh clone restored from the bundle — the tag object, the anchor
+    commit, the source-commit ancestry, and the source tree are all
+    re-proven on every load.
     """
     reference = validate_digest_reference(reference)
     digest = reference.rsplit("@", 1)[1]
@@ -829,12 +993,14 @@ def validate_receipt_binding(receipt: dict, reference: str) -> None:
             f"release receipt for {reference} lacks the anchor bundle SHA-256"
         )
     bundle = Path(str(anchor.get("bundle_path", "")))
-    if not bundle.is_file():
+    if bundle.is_symlink() or not bundle.is_file():
         raise ProvenanceError(
-            f"anchor bundle for {reference} is missing: {bundle}; a receipt "
-            "without its durable artifact does not authorize anything"
+            f"anchor bundle for {reference} is missing or a symlink: {bundle}; "
+            "a receipt without its durable artifact does not authorize anything"
         )
-    if hashlib.sha256(bundle.read_bytes()).hexdigest() != anchor["bundle_sha256"]:
+    if hashlib.sha256(_read_evidence_bytes(bundle)).hexdigest() != anchor[
+        "bundle_sha256"
+    ]:
         raise ProvenanceError(
             f"anchor bundle for {reference} no longer matches the receipt: {bundle}"
         )
@@ -845,6 +1011,55 @@ def validate_receipt_binding(receipt: dict, reference: str) -> None:
             f"anchor bundle for {reference} does not carry {anchor.get('tag')} "
             f"at {anchor.get('tag_target')}"
         )
+    # Re-prove the recorded source identity against the bundle itself: a
+    # receipt naming a commit, tree, or tag object the durable artifact does
+    # not actually contain is refused, whatever its other fields claim.
+    with tempfile.TemporaryDirectory(dir=run_root) as scratch:
+        restore = Path(scratch) / "revalidate.git"
+        _run_capture(["git", "clone", "--quiet", "--bare", str(bundle), str(restore)])
+        restored_target = _git_capture(restore, "rev-parse", anchor["tag"]).strip()
+        restored_commit = _git_capture(
+            restore, "rev-parse", f"{anchor['tag']}^{{commit}}"
+        ).strip()
+        if restored_target != anchor.get("tag_target") or restored_commit != anchor.get(
+            "commit"
+        ):
+            raise ProvenanceError(
+                f"anchor bundle for {reference} restores {anchor['tag']} to "
+                f"{restored_target} ({restored_commit}), not the recorded "
+                f"{anchor.get('tag_target')} ({anchor.get('commit')})"
+            )
+        ancestry = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(restore),
+                "merge-base",
+                "--is-ancestor",
+                source["commit"],
+                restored_commit,
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if ancestry.returncode != 0:
+            raise ProvenanceError(
+                f"receipt source commit {source['commit']} for {reference} is "
+                "not reachable from the anchor in the restored bundle"
+            )
+        restored_tree = _git_capture(
+            restore, "rev-parse", f"{source['commit']}^{{tree}}"
+        ).strip()
+        if restored_tree != source["tree"]:
+            raise ProvenanceError(
+                f"receipt source tree {source['tree']} for {reference} does "
+                f"not match the tree {restored_tree} of its commit in the "
+                "restored bundle"
+            )
+    image_manifest = receipt.get("image_manifest", {})
+    amd64_digest = str(image_manifest.get("amd64_manifest_digest") or "")
+    config_digest = str(image_manifest.get("config_digest") or "")
+
     sbom = receipt.get("sbom", {})
     attestation = str(sbom.get("attestation_manifest_digest") or "")
     subject = str(sbom.get("subject_manifest_digest") or "")
@@ -858,9 +1073,15 @@ def validate_receipt_binding(receipt: dict, reference: str) -> None:
             SHA256_PATTERN.match(value.split(":", 1)[1])
         )
 
+    if not _is_digest(amd64_digest) or not _is_digest(config_digest):
+        raise ProvenanceError(
+            f"release receipt for {reference} lacks the exact linux/amd64 "
+            "manifest and config digests"
+        )
     attestation_bound = (
         _is_digest(attestation)
         and _is_digest(subject)
+        and subject == amd64_digest
         and _is_digest(spdx_layer)
         and bool(SHA256_PATTERN.match(statement_sha))
         and spdx_layer == f"sha256:{statement_sha}"
@@ -868,9 +1089,24 @@ def validate_receipt_binding(receipt: dict, reference: str) -> None:
     spdx_bound = bool(SHA256_PATTERN.match(spdx)) and spdx_subject == digest
     if not attestation_bound and not spdx_bound:
         raise ProvenanceError(
-            f"release receipt for {reference} lacks subject-bound SBOM evidence "
-            "(validated in-toto SPDX statement or subject-checked SPDX document)"
+            f"release receipt for {reference} lacks SBOM evidence bound to the "
+            "exact linux/amd64 manifest (in-toto subject == recorded amd64 "
+            "manifest) or a subject-checked SPDX document"
         )
+
+
+def _assert_receipt_tree_safe(run_root: Path, final_dir: Path) -> None:
+    """Refuse symlinks at every component of the receipt publication path."""
+    receipts_parent = final_dir.parent
+    for component in (run_root, receipts_parent, final_dir):
+        if component.is_symlink():
+            raise ProvenanceError(f"receipt path component is a symlink: {component}")
+    if receipts_parent.exists():
+        expected = run_root.resolve(strict=True) / receipts_parent.name
+        if receipts_parent.resolve() != expected:
+            raise ProvenanceError(
+                f"receipt store escapes the run root: {receipts_parent}"
+            )
 
 
 def load_bound_receipt(
@@ -879,81 +1115,141 @@ def load_bound_receipt(
     public_key_path: str,
     verifier=None,
 ) -> dict:
-    """Load a receipt, verify its cosign signature, then verify its bindings."""
+    """Load a receipt, verify its cosign signature, then verify its bindings.
+
+    The receipt and signature are read once through dirfd/O_NOFOLLOW with
+    anomaly checks, the signature is verified over exactly those bytes, the
+    same bytes are parsed, and the parsed bindings are then fully revalidated
+    against the durable bundle artifact.
+    """
     reference = validate_digest_reference(reference)
     path = receipt_path(run_root, reference.rsplit("@", 1)[1])
+    _assert_receipt_tree_safe(run_root, path.parent)
     signature = path.parent / (path.name + ".sig")
-    if not path.is_file() or not signature.is_file():
+    if not path.parent.is_dir() or not path.is_file() or not signature.is_file():
         raise ProvenanceError(
             f"no signed release receipt for {reference} at {path}; create one "
             "with provenance.py receipt before signing or allow-listing"
         )
-    run_verifier = verifier or (
-        lambda command: subprocess.run(list(command), check=True, capture_output=True)
-    )
+    receipt_bytes = _read_evidence_bytes(path)
+    signature_bytes = _read_evidence_bytes(signature)
     try:
-        run_verifier(receipt_verify_blob_command(public_key_path, path, signature))
-    except subprocess.CalledProcessError as error:
+        _verify_blob_bytes(
+            public_key_path,
+            receipt_bytes,
+            signature_bytes,
+            verifier,
+            f"release receipt of {reference}",
+        )
+    except ProvenanceError as error:
         raise ProvenanceError(
             f"release receipt signature verification failed for {reference}; "
             "the receipt is not trustworthy"
         ) from error
     try:
-        receipt = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
+        receipt = json.loads(receipt_bytes)
+    except json.JSONDecodeError as error:
         raise ProvenanceError(f"unreadable release receipt at {path}") from error
-    validate_receipt_binding(receipt, reference)
+    validate_receipt_binding(receipt, reference, run_root)
     return receipt
 
 
-INVENTORY_SCHEMA = "fs2-serve.nebius.ai/release-inventory/v1"
+INVENTORY_SCHEMA = "fs2-serve.nebius.ai/release-inventory/v2"
 INVENTORY_SOURCES = (
     "live_workloads",
     "helm_rollback_window",
     "frozen_scientific_bindings",
 )
+DRAIN_REASON_PATTERN = re.compile(
+    r"^(incident|change|ticket|task):[A-Za-z0-9][A-Za-z0-9._/-]{1,63}"
+    r"( [\x20-\x7e]{1,160})?$"
+)
+INVENTORY_MAX_AGE_HOURS = 24
+_CLOCK_SKEW_SECONDS = 300
+
+
+def _parse_rfc3339(value: str, context: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ProvenanceError(f"{context} has an invalid timestamp {value!r}") from error
+    if parsed.tzinfo is None:
+        raise ProvenanceError(f"{context} timestamp {value!r} lacks a timezone")
+    return parsed
 
 
 def load_signed_inventory(
-    inventory_path: Path, public_key_path: str, verifier=None
+    inventory_path: Path,
+    public_key_path: str,
+    verifier=None,
+    max_age_hours: float = INVENTORY_MAX_AGE_HOURS,
 ) -> dict:
     """Load and verify the signed, complete platform-image inventory.
 
     The inventory is the acceptance-gate document enumerating every platform
     image reference from the live workloads, the Helm rollback window, and the
-    frozen scientific-stage bindings, plus explicitly audited drained
-    removals. Its signature is verified, and its internal arithmetic is
-    proven: platform_images must equal the union of all source refs minus the
-    drained removals. Scope reductions (for example excluding a churning
-    sibling program by owner decision) must appear as audited drained
-    removals, never as silent omissions.
+    frozen scientific-stage bindings. Each source carries its observation
+    snapshot (observed_at plus the resource identities it was read from) and
+    the document carries the cluster identity and capture time, which must be
+    fresh — a stale or future-dated inventory is refused, bounding replay.
+
+    Drains can never remove an ACTIVE image: a drained reference must not
+    appear in live_workloads and must come from a non-live source (rollback
+    window or frozen bindings), with a reason bound to a tracking identifier.
+    Owner scope decisions about live sibling programs belong in the admission
+    policy's match scope, never in inventory falsification. platform_images
+    must equal the source union minus those audited non-live drains.
     """
-    run_verifier = verifier or (
-        lambda command: subprocess.run(list(command), check=True, capture_output=True)
-    )
     signature = inventory_path.parent / (inventory_path.name + ".sig")
-    if not inventory_path.is_file() or not signature.is_file():
+    if (
+        inventory_path.is_symlink()
+        or signature.is_symlink()
+        or not inventory_path.is_file()
+        or not signature.is_file()
+    ):
         raise ProvenanceError(
             f"a signed release inventory is required: {inventory_path} and "
-            f"{signature} must both exist; assemble it from live workloads, "
-            "the Helm rollback window, and frozen scientific bindings, then "
-            "sign it with the release key"
+            f"{signature} must both exist (and not be symlinks); assemble it "
+            "from live workloads, the Helm rollback window, and frozen "
+            "scientific bindings, then sign it with the release key"
         )
+    inventory_bytes = _read_evidence_bytes(inventory_path)
+    signature_bytes = _read_evidence_bytes(signature)
     try:
-        run_verifier(
-            receipt_verify_blob_command(public_key_path, inventory_path, signature)
+        _verify_blob_bytes(
+            public_key_path,
+            inventory_bytes,
+            signature_bytes,
+            verifier,
+            f"inventory {inventory_path}",
         )
-    except subprocess.CalledProcessError as error:
+    except ProvenanceError as error:
         raise ProvenanceError(
             f"inventory signature verification failed for {inventory_path}"
         ) from error
     try:
-        inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
+        inventory = json.loads(inventory_bytes)
+    except json.JSONDecodeError as error:
         raise ProvenanceError(f"unreadable inventory: {inventory_path}") from error
     if not isinstance(inventory, dict) or inventory.get("schema") != INVENTORY_SCHEMA:
         raise ProvenanceError(
             f"{inventory_path} is not a {INVENTORY_SCHEMA} document"
+        )
+    if not str(inventory.get("cluster", "")).strip():
+        raise ProvenanceError(
+            f"{inventory_path} lacks the cluster identity it was captured from"
+        )
+    now = datetime.now(UTC)
+    captured_at = _parse_rfc3339(
+        inventory.get("captured_at", ""), f"{inventory_path} captured_at"
+    )
+    age_seconds = (now - captured_at).total_seconds()
+    if age_seconds < -_CLOCK_SKEW_SECONDS:
+        raise ProvenanceError(f"{inventory_path} is dated in the future")
+    if age_seconds > max_age_hours * 3600:
+        raise ProvenanceError(
+            f"{inventory_path} is stale: captured {captured_at.isoformat()}, "
+            f"older than {max_age_hours}h; re-capture the inventory"
         )
     sources = inventory.get("sources")
     if not isinstance(sources, dict) or set(sources) != set(INVENTORY_SOURCES):
@@ -962,25 +1258,59 @@ def load_signed_inventory(
             + ", ".join(INVENTORY_SOURCES)
         )
     union: set[str] = set()
+    per_source: dict[str, set[str]] = {}
     for name in INVENTORY_SOURCES:
-        refs = (sources.get(name) or {}).get("refs")
+        source = sources.get(name) or {}
+        refs = source.get("refs")
         if not isinstance(refs, list):
             raise ProvenanceError(f"{inventory_path} source {name} lacks a refs list")
-        for reference in refs:
-            union.add(validate_digest_reference(str(reference)))
+        observed_at = _parse_rfc3339(
+            source.get("observed_at", ""), f"{inventory_path} source {name}"
+        )
+        if abs((now - observed_at).total_seconds()) > max_age_hours * 3600:
+            raise ProvenanceError(
+                f"{inventory_path} source {name} observation is stale or "
+                "future-dated"
+            )
+        resource_ids = source.get("resource_ids")
+        if not isinstance(resource_ids, list) or (refs and not resource_ids):
+            raise ProvenanceError(
+                f"{inventory_path} source {name} lacks the resource identities "
+                "its refs were observed on"
+            )
+        per_source[name] = {
+            validate_digest_reference(str(reference)) for reference in refs
+        }
+        union |= per_source[name]
+    live = per_source["live_workloads"]
+    non_live = per_source["helm_rollback_window"] | per_source[
+        "frozen_scientific_bindings"
+    ]
     drained: set[str] = set()
     for removal in inventory.get("drained_removals") or []:
-        if not isinstance(removal, dict) or not str(removal.get("reason", "")).strip():
+        if not isinstance(removal, dict):
             raise ProvenanceError(
-                f"{inventory_path} drained removals must be objects with an "
-                "audited reason"
+                f"{inventory_path} drained removals must be objects"
             )
-        drained.add(validate_digest_reference(str(removal.get("image", ""))))
-    if not drained.issubset(union):
-        raise ProvenanceError(
-            f"{inventory_path} drains images that no source lists: "
-            + ", ".join(sorted(drained - union))
-        )
+        image = validate_digest_reference(str(removal.get("image", "")))
+        reason = str(removal.get("reason", ""))
+        if not DRAIN_REASON_PATTERN.match(reason):
+            raise ProvenanceError(
+                f"{inventory_path} drain of {image} needs a reason bound to a "
+                "tracking identifier (incident:/change:/ticket:/task:)"
+            )
+        if image in live:
+            raise ProvenanceError(
+                f"{inventory_path} drains {image}, which is STILL LIVE in "
+                "live_workloads; an active image can never be drained — scope "
+                "the admission policy instead, or receipt and sign the image"
+            )
+        if image not in non_live:
+            raise ProvenanceError(
+                f"{inventory_path} drains {image}, which no non-live source "
+                "lists; there is nothing to drain"
+            )
+        drained.add(image)
     platform_images = inventory.get("platform_images")
     if not isinstance(platform_images, list) or not platform_images:
         raise ProvenanceError(f"{inventory_path} lists no platform images")
@@ -1008,6 +1338,7 @@ def verified_allowlist(
     inventory_path: Path,
     deploy_principals: Sequence[str] = (),
     verifier=None,
+    max_age_hours: float = INVENTORY_MAX_AGE_HOURS,
 ) -> dict:
     """Render the allow-list only from the signed, complete inventory.
 
@@ -1018,7 +1349,9 @@ def verified_allowlist(
     receipt and a valid cosign signature, so the ConfigMap can never drift
     ahead of the release evidence or silently drop coverage.
     """
-    inventory = load_signed_inventory(inventory_path, public_key_path, verifier)
+    inventory = load_signed_inventory(
+        inventory_path, public_key_path, verifier, max_age_hours
+    )
     inventory_references = sorted(
         validate_digest_reference(str(ref)) for ref in inventory["platform_images"]
     )
@@ -1147,8 +1480,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         help=(
             "signed release-inventory JSON (with .sig) enumerating live "
             "workloads, the Helm rollback window, frozen scientific bindings, "
-            "and audited drained removals; the allow-list renders only from it"
+            "and audited non-live drained removals; the allow-list renders "
+            "only from it"
         ),
+    )
+    render.add_argument(
+        "--max-inventory-age-hours",
+        type=float,
+        default=INVENTORY_MAX_AGE_HOURS,
+        help="refuse inventories captured longer ago than this (freshness bound)",
     )
 
     receipt = subcommands.add_parser(
@@ -1222,6 +1562,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.run_root,
             args.inventory,
             args.deploy_principal,
+            max_age_hours=args.max_inventory_age_hours,
         )
         print(json.dumps(manifest, indent=2, sort_keys=True))
     elif args.command == "receipt":

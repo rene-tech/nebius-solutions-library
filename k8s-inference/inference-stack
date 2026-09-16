@@ -135,25 +135,12 @@ def private_append_jsonl(path: Path, value: Any) -> None:
         path.chmod(0o600)
 
 
-def private_append_chained(path: Path, record: dict[str, Any]) -> None:
-    """Append a hash-chained JSON line: each record commits to its predecessor.
-
-    The chain makes truncation or rewriting of earlier records detectable
-    (tamper-EVIDENT, not immutable — WORM storage of the log is operator
-    infrastructure). Verify with verify_chained_history().
-    """
-    previous = None
-    if path.is_file():
-        lines = [line for line in path.read_bytes().splitlines() if line.strip()]
-        if lines:
-            previous = hashlib.sha256(lines[-1]).hexdigest()
-    private_append_jsonl(path, {**record, "prev_sha256": previous})
+def _history_checkpoint_path(path: Path) -> Path:
+    return path.with_name(path.name + ".head.json")
 
 
-def verify_chained_history(path: Path) -> int:
-    """Return the record count after verifying the history hash chain."""
-    if not path.is_file():
-        return 0
+def _walk_chain(path: Path) -> tuple[int, str | None]:
+    """Verify intra-chain linkage and return (record count, last line sha)."""
     previous = None
     count = 0
     for line in path.read_bytes().splitlines():
@@ -166,7 +153,156 @@ def verify_chained_history(path: Path) -> int:
             )
         previous = hashlib.sha256(line).hexdigest()
         count += 1
+    return count, previous
+
+
+def verify_chained_history(path: Path) -> int:
+    """Verify the history chain against its checkpoint; return record count.
+
+    The per-record hash chain detects rewrites of earlier records; the
+    checkpoint (record count plus terminal line hash, rewritten on every
+    append) additionally detects SUFFIX truncation, which a bare prefix chain
+    cannot. Both files share one trust domain, so this is tamper-EVIDENT
+    only; WORM/off-host anchoring of the pair is owner infrastructure.
+    """
+    checkpoint_path = _history_checkpoint_path(path)
+    if not path.is_file():
+        if checkpoint_path.is_file():
+            raise DeploymentError(
+                f"release-source history is missing but its checkpoint exists: "
+                f"{path}; the log was removed"
+            )
+        return 0
+    count, last = _walk_chain(path)
+    if not checkpoint_path.is_file():
+        raise DeploymentError(
+            f"release-source history has no checkpoint: {checkpoint_path}; "
+            "cannot rule out suffix truncation"
+        )
+    checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+    if checkpoint.get("records") != count or checkpoint.get("last_sha256") != last:
+        raise DeploymentError(
+            f"release-source history does not match its checkpoint "
+            f"({count} records, terminal {last}); suffix truncation or "
+            "rewrite detected"
+        )
     return count
+
+
+def private_append_chained(path: Path, record: dict[str, Any]) -> None:
+    """Append a hash-chained, checkpointed JSON line after verifying the chain.
+
+    Each record commits to its predecessor and the checkpoint commits to the
+    terminal record, so earlier-record rewrites AND suffix truncation are
+    detected — including at append time, which makes the gate itself fail
+    closed on a tampered history.
+    """
+    checkpoint_path = _history_checkpoint_path(path)
+    previous = None
+    count = 0
+    if path.is_file() or checkpoint_path.is_file():
+        count = verify_chained_history(path)
+        if count:
+            _, previous = _walk_chain(path)
+    line_record = {**record, "prev_sha256": previous}
+    private_append_jsonl(path, line_record)
+    line = json.dumps(line_record, sort_keys=True, separators=(",", ":")).encode(
+        "utf-8"
+    )
+    private_json(
+        checkpoint_path,
+        {"records": count + 1, "last_sha256": hashlib.sha256(line).hexdigest()},
+    )
+
+
+RELEASE_APPROVERS_SCHEMA = "fs2-serve.nebius.ai/release-approvers/v1"
+RELEASE_EXCEPTION_SCOPE = "release-source-exception"
+
+
+def _release_approvers(repository_root: Path | None) -> list[dict[str, Any]]:
+    """Owner-designated release-exception approvers from reviewed source.
+
+    Each approver entry names an identity, a scope, and an expiry, and the
+    list lives in Git so changes to approval authority are themselves
+    reviewed. An empty or absent list fails closed: no exception is possible
+    until the owner designates approvers. Authenticating the caller AS one of
+    these identities remains the owner-gated IAM item.
+    """
+    candidates = []
+    if repository_root is not None:
+        candidates.append(
+            repository_root
+            / "k8s-inference"
+            / "security"
+            / "image-provenance"
+            / "release-approvers.json"
+        )
+        candidates.append(
+            repository_root / "security" / "image-provenance" / "release-approvers.json"
+        )
+    else:
+        candidates.append(
+            SOLUTION_ROOT / "security" / "image-provenance" / "release-approvers.json"
+        )
+    for candidate in candidates:
+        if not candidate.is_file():
+            continue
+        try:
+            document = json.loads(candidate.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise DeploymentError(
+                f"release approver list is malformed and fails closed: {candidate}"
+            ) from exc
+        if (
+            not isinstance(document, dict)
+            or document.get("schema") != RELEASE_APPROVERS_SCHEMA
+            or not isinstance(document.get("approvers"), list)
+            or not all(isinstance(entry, dict) for entry in document["approvers"])
+        ):
+            raise DeploymentError(
+                f"release approver list is malformed and fails closed: {candidate}"
+            )
+        return document["approvers"]
+    return []
+
+
+def _authorized_exception_approver(
+    approver: str, repository_root: Path | None
+) -> None:
+    """Refuse exception approvers outside the reviewed, scoped, unexpired list."""
+    entries = _release_approvers(repository_root)
+    if not entries:
+        raise DeploymentError(
+            "no owner-designated release exception approvers are configured "
+            "(security/image-provenance/release-approvers.json is empty); "
+            "release-source exceptions are impossible until the owner "
+            "populates and reviews that list"
+        )
+    for entry in entries:
+        if str(entry.get("name", "")) != approver:
+            continue
+        if entry.get("scope") != RELEASE_EXCEPTION_SCOPE:
+            raise DeploymentError(
+                f"approver {approver!r} is not scoped for "
+                f"{RELEASE_EXCEPTION_SCOPE}"
+            )
+        expires = str(entry.get("expires_at", ""))
+        try:
+            expiry = time.strptime(expires, "%Y-%m-%dT%H:%M:%SZ")
+        except ValueError as exc:
+            raise DeploymentError(
+                f"approver {approver!r} has an invalid expires_at {expires!r}"
+            ) from exc
+        if time.gmtime() >= expiry:
+            raise DeploymentError(
+                f"approver {approver!r} authority expired at {expires}"
+            )
+        return
+    raise DeploymentError(
+        f"approver {approver!r} is not in the owner-designated release "
+        "approver list; exceptions require a reviewed, scoped, unexpired "
+        "approver identity"
+    )
 
 
 def private_text(path: Path, value: str) -> None:
@@ -475,8 +611,11 @@ def _remote_verified_tags(root: Path, tag_refs: Sequence[str]) -> list[str]:
 
 
 def _sha256_file(path: Path) -> str:
+    if path.is_symlink():
+        raise DeploymentError(f"evidence file must not be a symlink: {path}")
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
     digest = hashlib.sha256()
-    with path.open("rb") as handle:
+    with os.fdopen(descriptor, "rb") as handle:
         for chunk in iter(lambda: handle.read(1 << 20), b""):
             digest.update(chunk)
     return digest.hexdigest()
@@ -671,6 +810,19 @@ def create_release_anchor(
         capture=True,
         env=clean_environment(),
     ).stdout.strip()
+    # Only annotated tag OBJECTS anchor: a lightweight tag is a bare ref that
+    # carries no object of its own, so its identity cannot be distinguished
+    # from any other ref pointing at the same commit.
+    tag_type = run(
+        ["git", "-C", str(root), "cat-file", "-t", tag_target],
+        capture=True,
+        env=clean_environment(),
+    ).stdout.strip()
+    if tag_type != "tag":
+        raise DeploymentError(
+            f"anchor tag {tag_ref} is a lightweight tag (points at a "
+            f"{tag_type}); create an annotated tag (git tag -a) instead"
+        )
     commit = run(
         ["git", "-C", str(root), "rev-parse", f"{tag_ref}^{{commit}}"],
         capture=True,
@@ -748,26 +900,39 @@ def create_release_anchor(
             )
             bundle_sha = _sha256_file(candidate)
             bundle = bundle_directory / f"{bundle_sha}.bundle"
-            if bundle.is_symlink():
-                raise DeploymentError(f"anchor bundle path is a symlink: {bundle}")
-            if bundle.exists():
+            descriptor = os.open(candidate, os.O_RDONLY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+            # Publish atomically WITHOUT replacement: link(2) fails when the
+            # target exists, so there is no check-then-rename window in which
+            # injected content could be silently overwritten. On a collision
+            # the surviving file is fully re-verified before it is trusted.
+            try:
+                os.link(candidate, bundle)
+            except FileExistsError:
+                if bundle.is_symlink():
+                    raise DeploymentError(
+                        f"anchor bundle path is a symlink: {bundle}"
+                    ) from None
                 if _sha256_file(bundle) != bundle_sha:
                     raise DeploymentError(
                         f"conflicting file already exists at the "
                         f"content-addressed anchor path {bundle}; refusing to "
                         "overwrite evidence-directory content"
-                    )
+                    ) from None
                 _verify_bundle_identity(
                     root, run_root, bundle, tag_ref, tag_target, commit
                 )
             else:
-                descriptor = os.open(candidate, os.O_RDONLY)
-                try:
-                    os.fsync(descriptor)
-                finally:
-                    os.close(descriptor)
-                os.rename(candidate, bundle)
                 fsync_directory(bundle_directory)
+                # Re-verify the published winner, not the staging copy.
+                if _sha256_file(bundle) != bundle_sha:
+                    raise DeploymentError(
+                        f"published anchor bundle changed during publication: "
+                        f"{bundle}; refusing to index it"
+                    )
         entry = {
             "bundle_path": str(bundle),
             "sha256": bundle_sha,
@@ -864,6 +1029,7 @@ def enforce_release_source(
                 "a release-source exception requires --exception-approver (or "
                 "FS2_RELEASE_EXCEPTION_APPROVER) naming who authorized it"
             )
+        _authorized_exception_approver(approver, repository_root)
         state["override_approver"] = approver
     state["override_reason"] = override_reason
     state["checked_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())

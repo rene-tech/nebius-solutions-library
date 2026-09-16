@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib.machinery
 import importlib.util
 import json
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -266,6 +267,7 @@ def build_anchor_fixture(base: Path) -> dict:
     bundle = base / "release-anchors" / "deploy-fixture.bundle"
     bundle.parent.mkdir(parents=True, exist_ok=True)
     git(repo, "bundle", "create", str(bundle), "refs/tags/deploy/fixture")
+    bundle.chmod(0o600)
     sha = hashlib.sha256(bundle.read_bytes()).hexdigest()
     (base / "release-anchors.json").write_text(
         json.dumps(
@@ -299,6 +301,10 @@ def write_signed_receipt_fixture(
         "schema": TOOL.RECEIPT_SCHEMA,
         "image": reference,
         "digest": digest,
+        "image_manifest": {
+            "amd64_manifest_digest": "sha256:" + "a" * 64,
+            "config_digest": "sha256:" + "c" * 64,
+        },
         "source": {"commit": fixture["head"], "tree": fixture["tree"]},
         "anchor": {
             "mode": "bundle",
@@ -326,9 +332,12 @@ def write_signed_receipt_fixture(
         else:
             receipt[section] = value
     path = TOOL.receipt_path(run_root, digest)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     path.write_text(json.dumps(receipt), encoding="utf-8")
-    (path.parent / (path.name + ".sig")).write_text("fixture-signature\n")
+    path.chmod(0o600)
+    signature = path.parent / (path.name + ".sig")
+    signature.write_text("fixture-signature\n")
+    signature.chmod(0o600)
     return path
 
 
@@ -344,21 +353,39 @@ def write_inventory_fixture(
     drained: list[dict] | None = None,
     schema: str | None = None,
     sign: bool = True,
+    captured_at: str | None = None,
+    name: str = "inventory.json",
 ) -> Path:
+    from datetime import UTC, datetime
+
+    now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def source(refs: list[str]) -> dict:
+        return {
+            "refs": refs,
+            "observed_at": now,
+            "resource_ids": [f"fixture-resource-{i}" for i in range(len(refs))],
+        }
+
     inventory = {
         "schema": schema or TOOL.INVENTORY_SCHEMA,
+        "cluster": "fixture-cluster",
+        "captured_at": captured_at or now,
         "sources": {
-            "live_workloads": {"refs": live if live is not None else platform_images},
-            "helm_rollback_window": {"refs": helm or []},
-            "frozen_scientific_bindings": {"refs": frozen or []},
+            "live_workloads": source(live if live is not None else platform_images),
+            "helm_rollback_window": source(helm or []),
+            "frozen_scientific_bindings": source(frozen or []),
         },
         "drained_removals": drained or [],
         "platform_images": platform_images,
     }
-    path = base / "inventory.json"
+    path = base / name
     path.write_text(json.dumps(inventory), encoding="utf-8")
+    path.chmod(0o600)
     if sign:
-        (base / "inventory.json.sig").write_text("fixture-signature\n")
+        signature = base / (name + ".sig")
+        signature.write_text("fixture-signature\n")
+        signature.chmod(0o600)
     return path
 
 
@@ -449,28 +476,73 @@ class VerifiedAllowlistTest(unittest.TestCase):
             self.run_root,
             [self.REFERENCE_A],
             live=[self.REFERENCE_A],
-            drained=[{"image": self.REFERENCE_B, "reason": "never deployed"}],
+            drained=[{"image": self.REFERENCE_B, "reason": "change:CHG-1 gone"}],
         )
-        with self.assertRaisesRegex(TOOL.ProvenanceError, "no source lists"):
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "no non-live source"):
             self.render(inventory=unlisted_drain)
         undocumented_drain = write_inventory_fixture(
             self.run_root,
             [self.REFERENCE_A],
-            live=[self.REFERENCE_A, self.REFERENCE_B],
-            drained=[{"image": self.REFERENCE_B, "reason": "  "}],
+            live=[self.REFERENCE_A],
+            helm=[self.REFERENCE_B],
+            drained=[{"image": self.REFERENCE_B, "reason": "no ticket"}],
         )
-        with self.assertRaisesRegex(TOOL.ProvenanceError, "audited reason"):
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "tracking identifier"):
             self.render(inventory=undocumented_drain)
         audited = write_inventory_fixture(
             self.run_root,
             [self.REFERENCE_A],
-            live=[self.REFERENCE_A, self.REFERENCE_B],
+            live=[self.REFERENCE_A],
+            helm=[self.REFERENCE_B],
             drained=[
                 {"image": self.REFERENCE_B, "reason": "change:CHG-42 drained"}
             ],
         )
         manifest = self.render(inventory=audited)
         self.assertEqual(manifest["data"]["platform-digests"], DIGEST_A)
+
+    def test_an_active_live_image_can_never_be_drained(self) -> None:
+        # The MindEval-bypass class: a running digest must be receipted or the
+        # admission policy scoped; declaring it drained fails closed.
+        live_drain = write_inventory_fixture(
+            self.run_root,
+            [self.REFERENCE_A],
+            live=[self.REFERENCE_A, self.REFERENCE_B],
+            helm=[self.REFERENCE_B],
+            drained=[
+                {"image": self.REFERENCE_B, "reason": "change:CHG-99 scope out"}
+            ],
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "STILL LIVE"):
+            self.render(inventory=live_drain)
+
+    def test_stale_or_future_inventory_is_refused(self) -> None:
+        stale = write_inventory_fixture(
+            self.run_root,
+            [self.REFERENCE_A, self.REFERENCE_B],
+            captured_at="2026-09-10T00:00:00Z",
+            name="stale-inventory.json",
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "stale"):
+            self.render(inventory=stale)
+        future = write_inventory_fixture(
+            self.run_root,
+            [self.REFERENCE_A, self.REFERENCE_B],
+            captured_at="2036-01-01T00:00:00Z",
+            name="future-inventory.json",
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "future"):
+            self.render(inventory=future)
+
+    def test_inventory_sources_need_observation_snapshots(self) -> None:
+        inventory = write_inventory_fixture(
+            self.run_root, [self.REFERENCE_A, self.REFERENCE_B]
+        )
+        document = json.loads(inventory.read_text(encoding="utf-8"))
+        document["sources"]["live_workloads"]["resource_ids"] = []
+        inventory.write_text(json.dumps(document), encoding="utf-8")
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "resource identities"):
+            self.render()
 
     def test_unreceipted_inventory_reference_aborts_rendering(self) -> None:
         orphan = PLATFORM_PREFIX + "website@sha256:" + "9" * 64
@@ -483,10 +555,12 @@ class VerifiedAllowlistTest(unittest.TestCase):
     def test_receipt_verification_failure_aborts_rendering(self) -> None:
         import subprocess
 
+        calls = {"count": 0}
+
         def failing_after_inventory(command):
-            if command[-1] == str(self.inventory):
-                return None
-            raise subprocess.CalledProcessError(1, command)
+            calls["count"] += 1
+            if calls["count"] > 1:
+                raise subprocess.CalledProcessError(1, command)
 
         with self.assertRaisesRegex(TOOL.ProvenanceError, "not trustworthy"):
             self.render(verifier=failing_after_inventory)
@@ -506,14 +580,18 @@ class ReceiptBindingTest(unittest.TestCase):
         self.run_root = Path(self._holder.name)
         self.fixture = build_anchor_fixture(self.run_root)
 
-    def load(self):
+    def load(self, reference: str | None = None):
         return TOOL.load_bound_receipt(
-            self.run_root, self.REFERENCE, self.PUBLIC_KEY, verifier=NOOP_VERIFIER
+            self.run_root,
+            reference or self.REFERENCE,
+            self.PUBLIC_KEY,
+            verifier=NOOP_VERIFIER,
         )
 
     def create(self, capture, sbom=None):
+        # crane_capture computes self.reference from the exact index bytes.
         return TOOL.create_release_receipt(
-            self.REFERENCE,
+            self.reference,
             self.run_root,
             self.fixture["repo"],
             "deploy/fixture",
@@ -522,6 +600,9 @@ class ReceiptBindingTest(unittest.TestCase):
             sbom,
             capture=capture,
         )
+
+    def created_digest(self) -> str:
+        return self.reference.rsplit("@", 1)[1]
 
     def test_bound_receipt_loads(self) -> None:
         write_signed_receipt_fixture(self.run_root, self.REFERENCE, self.fixture)
@@ -573,12 +654,13 @@ class ReceiptBindingTest(unittest.TestCase):
                 "attestation_manifest_digest": None,
                 "subject_manifest_digest": None,
                 "spdx_layer_digest": None,
+                "statement_sha256": None,
                 "slsa_layer_digest": None,
                 "spdx_sha256": "b" * 64,
                 "spdx_subject_digest": "sha256:" + "9" * 64,
             },
         )
-        with self.assertRaisesRegex(TOOL.ProvenanceError, "subject-bound SBOM"):
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "SBOM evidence bound"):
             self.load()
 
     def test_receipt_with_attestation_but_no_spdx_layer_is_refused(self) -> None:
@@ -588,7 +670,49 @@ class ReceiptBindingTest(unittest.TestCase):
             self.fixture,
             **{"sbom.spdx_layer_digest": None},
         )
-        with self.assertRaisesRegex(TOOL.ProvenanceError, "subject-bound SBOM"):
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "SBOM evidence bound"):
+            self.load()
+
+    def test_receipt_subject_must_equal_the_recorded_amd64_manifest(self) -> None:
+        write_signed_receipt_fixture(
+            self.run_root,
+            self.REFERENCE,
+            self.fixture,
+            **{"sbom.subject_manifest_digest": "sha256:" + "b" * 64},
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "SBOM evidence bound"):
+            self.load()
+
+    def test_receipt_with_fake_source_tree_is_refused_at_load(self) -> None:
+        write_signed_receipt_fixture(
+            self.run_root,
+            self.REFERENCE,
+            self.fixture,
+            **{"source.tree": "9" * 40},
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "does not match the tree"):
+            self.load()
+
+    def test_receipt_without_image_manifest_identity_is_refused(self) -> None:
+        write_signed_receipt_fixture(
+            self.run_root,
+            self.REFERENCE,
+            self.fixture,
+            image_manifest={},
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "manifest and config"):
+            self.load()
+
+    def test_hardlinked_receipt_evidence_is_refused(self) -> None:
+        path = write_signed_receipt_fixture(self.run_root, self.REFERENCE, self.fixture)
+        os.link(path, self.run_root / "hardlink-copy.json")
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "link count"):
+            self.load()
+
+    def test_group_readable_receipt_evidence_is_refused(self) -> None:
+        path = write_signed_receipt_fixture(self.run_root, self.REFERENCE, self.fixture)
+        path.chmod(0o644)
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "group/other"):
             self.load()
 
     def test_missing_bundle_artifact_is_refused(self) -> None:
@@ -625,10 +749,19 @@ class ReceiptBindingTest(unittest.TestCase):
             "predicate": {
                 "spdxVersion": "SPDX-2.3",
                 "SPDXID": "SPDXRef-DOCUMENT",
+                "dataLicense": "CC0-1.0",
                 "name": "sbom",
                 "documentNamespace": "https://example.invalid/spdxdocs/fixture",
+                "creationInfo": {
+                    "created": "2026-09-16T00:00:00Z",
+                    "creators": ["Tool: fixture"],
+                },
                 "packages": [
-                    {"SPDXID": "SPDXRef-Package-fixture", "name": "fixture-root"}
+                    {
+                        "SPDXID": "SPDXRef-Package-fixture",
+                        "name": "fixture-root",
+                        "downloadLocation": "NOASSERTION",
+                    }
                 ],
                 "relationships": [
                     {
@@ -653,6 +786,8 @@ class ReceiptBindingTest(unittest.TestCase):
         amd64_platforms: int = 1,
         attestation_subject: str | None = None,
         config_architecture: str = "amd64",
+        duplicate_amd64_attestation: bool = False,
+        duplicate_spdx_layer: bool = False,
     ):
         """Build a deterministic multi-platform image fixture, bottom-up."""
         import hashlib
@@ -692,24 +827,23 @@ class ReceiptBindingTest(unittest.TestCase):
         if statement_layer_digest is None:
             statement_layer_digest = sha(statement_text)
         self.expected_spdx_layer_digest = statement_layer_digest
-        attestation_manifest_text = json.dumps(
+        attestation_layers = [
             {
-                "layers": [
-                    {
-                        "mediaType": "application/vnd.in-toto+json",
-                        "digest": statement_layer_digest,
-                        "annotations": {"in-toto.io/predicate-type": spdx_predicate},
-                    },
-                    {
-                        "mediaType": "application/vnd.in-toto+json",
-                        "digest": "sha256:" + "d" * 64,
-                        "annotations": {
-                            "in-toto.io/predicate-type": "https://slsa.dev/provenance/v0.2"
-                        },
-                    },
-                ]
-            }
-        )
+                "mediaType": "application/vnd.in-toto+json",
+                "digest": statement_layer_digest,
+                "annotations": {"in-toto.io/predicate-type": spdx_predicate},
+            },
+            {
+                "mediaType": "application/vnd.in-toto+json",
+                "digest": "sha256:" + "d" * 64,
+                "annotations": {
+                    "in-toto.io/predicate-type": "https://slsa.dev/provenance/v0.2"
+                },
+            },
+        ]
+        if duplicate_spdx_layer:
+            attestation_layers.append(dict(attestation_layers[0]))
+        attestation_manifest_text = json.dumps({"layers": attestation_layers})
         attestation_digest = sha(attestation_manifest_text)
         arm64_digest = "sha256:" + "b" * 64
         entries = []
@@ -735,6 +869,8 @@ class ReceiptBindingTest(unittest.TestCase):
                 },
             }
         )
+        if duplicate_amd64_attestation:
+            entries.append(dict(entries[-1]))
         entries.append(
             {
                 "digest": "sha256:" + "c" * 64,
@@ -745,11 +881,14 @@ class ReceiptBindingTest(unittest.TestCase):
             }
         )
         index_text = json.dumps({"schemaVersion": 2, "manifests": entries})
+        # The top manifest is content-addressed too: the fixture reference
+        # digest is the hash of the exact index bytes served.
+        self.reference = PLATFORM_PREFIX + "control-plane@" + sha(index_text)
 
         def capture(command):
             if command[:2] == ["crane", "manifest"]:
                 target = command[2]
-                if target == self.REFERENCE:
+                if target == self.reference:
                     return index_text
                 if target.endswith("@" + amd64_digest):
                     return amd64_manifest_text
@@ -798,13 +937,13 @@ class ReceiptBindingTest(unittest.TestCase):
             self.expected_spdx_layer_digest,
         )
         self.assertEqual(receipt["sbom"]["slsa_layer_digest"], "sha256:" + "d" * 64)
-        loaded = self.load()
+        loaded = self.load(self.reference)
         self.assertEqual(loaded["anchor"]["tag"], "refs/tags/deploy/fixture")
 
     def test_receipt_recreation_is_idempotent_and_preserves_bytes(self) -> None:
         capture = self.crane_capture(self.fixture["head"])
         first = self.create(capture)
-        path = TOOL.receipt_path(self.run_root, DIGEST_A)
+        path = TOOL.receipt_path(self.run_root, self.created_digest())
         signature = path.parent / (path.name + ".sig")
         receipt_bytes = path.read_bytes()
         signature_bytes = signature.read_bytes()
@@ -827,28 +966,52 @@ class ReceiptBindingTest(unittest.TestCase):
         with self.assertRaisesRegex(TOOL.ProvenanceError, "fails verification"):
             self.create(tamper_aware_capture)
 
+    def add_second_anchor(self, tag: str) -> None:
+        repo = self.fixture["repo"]
+        git(repo, "tag", "-a", "-m", "anchor", tag, self.fixture["head"])
+        tag_target = git(repo, "rev-parse", f"refs/tags/{tag}")
+        bundle = self.run_root / "release-anchors" / (tag.replace("/", "-") + ".bundle")
+        git(repo, "bundle", "create", str(bundle), f"refs/tags/{tag}")
+        bundle.chmod(0o600)
+        import hashlib as h
+
+        store = self.run_root / "release-anchors.json"
+        anchors = json.loads(store.read_text(encoding="utf-8"))
+        anchors[f"refs/tags/{tag}"] = {
+            "commit": self.fixture["head"],
+            "tag_target": tag_target,
+            "bundle_path": str(bundle),
+            "sha256": h.sha256(bundle.read_bytes()).hexdigest(),
+            "restore_tested": True,
+        }
+        store.write_text(json.dumps(anchors), encoding="utf-8")
+
     def test_conflicting_receipt_recreation_is_refused_and_preserves_original(
         self,
     ) -> None:
-        self.create(self.crane_capture(self.fixture["head"]))
-        path = TOOL.receipt_path(self.run_root, DIGEST_A)
+        # Same digest, different receipt content: rebind to another anchor.
+        capture = self.crane_capture(self.fixture["head"])
+        self.create(capture)
+        path = TOOL.receipt_path(self.run_root, self.created_digest())
         original_bytes = path.read_bytes()
-
-        def rename_subject(statement):
-            statement["subject"][0]["name"] = "pkg:docker/replayed-image"
-
+        self.add_second_anchor("deploy/fixture2")
         with self.assertRaisesRegex(TOOL.ProvenanceError, "immutable"):
-            self.create(
-                self.crane_capture(
-                    self.fixture["head"], statement_mutator=rename_subject
-                )
+            TOOL.create_release_receipt(
+                self.reference,
+                self.run_root,
+                self.fixture["repo"],
+                "deploy/fixture2",
+                "release.key",
+                "release.pub",
+                None,
+                capture=capture,
             )
         self.assertEqual(path.read_bytes(), original_bytes)
 
     def test_partial_receipt_evidence_is_never_overwritten(self) -> None:
         capture = self.crane_capture(self.fixture["head"])
         self.create(capture)
-        path = TOOL.receipt_path(self.run_root, DIGEST_A)
+        path = TOOL.receipt_path(self.run_root, self.created_digest())
         (path.parent / (path.name + ".sig")).unlink()
         with self.assertRaisesRegex(TOOL.ProvenanceError, "partial receipt"):
             self.create(capture)
@@ -865,21 +1028,22 @@ class ReceiptBindingTest(unittest.TestCase):
 
         with self.assertRaises(sp.CalledProcessError):
             self.create(crashing_capture)
-        final_dir = TOOL.receipt_path(self.run_root, DIGEST_A).parent
+        final_dir = TOOL.receipt_path(self.run_root, self.created_digest()).parent
         self.assertFalse(final_dir.exists())
         # Publication is recoverable: the same creation succeeds afterwards.
         receipt = self.create(self.crane_capture(self.fixture["head"]))
-        self.assertEqual(receipt["digest"], DIGEST_A)
+        self.assertEqual(receipt["digest"], self.created_digest())
         self.assertTrue(final_dir.is_dir())
 
     def test_symlinked_receipt_path_is_refused(self) -> None:
-        final_dir = TOOL.receipt_path(self.run_root, DIGEST_A).parent
+        capture = self.crane_capture(self.fixture["head"])
+        final_dir = TOOL.receipt_path(self.run_root, self.created_digest()).parent
         final_dir.parent.mkdir(parents=True, exist_ok=True)
         target = self.run_root / "elsewhere"
         target.mkdir()
         final_dir.symlink_to(target)
         with self.assertRaisesRegex(TOOL.ProvenanceError, "symlink"):
-            self.create(self.crane_capture(self.fixture["head"]))
+            self.create(capture)
 
     def test_recreated_tag_object_at_same_commit_is_refused(self) -> None:
         # Same peeled commit, different annotated tag object: never receipted.
@@ -921,6 +1085,26 @@ class ReceiptBindingTest(unittest.TestCase):
                     self.fixture["head"], config_architecture="arm64"
                 )
             )
+
+    def test_duplicate_amd64_attestations_are_refused(self) -> None:
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "ambiguous attestations"):
+            self.create(
+                self.crane_capture(
+                    self.fixture["head"], duplicate_amd64_attestation=True
+                )
+            )
+
+    def test_duplicate_spdx_layers_are_refused(self) -> None:
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "SPDX predicate layers"):
+            self.create(
+                self.crane_capture(self.fixture["head"], duplicate_spdx_layer=True)
+            )
+
+    def test_duplicate_statement_subjects_are_refused(self) -> None:
+        def duplicate_subject(statement):
+            statement["subject"].append(dict(statement["subject"][0]))
+
+        self._refused_statement_mutation(duplicate_subject, "ambiguous subjects")
 
     def test_create_receipt_refuses_unanchored_source(self) -> None:
         with self.assertRaisesRegex(TOOL.ProvenanceError, "not reachable"):
@@ -1009,16 +1193,45 @@ class ReceiptBindingTest(unittest.TestCase):
             (
                 {
                     "packages": [
-                        {"SPDXID": "SPDXRef-Package-fixture", "name": "a"},
-                        {"SPDXID": "SPDXRef-Package-fixture", "name": "b"},
+                        {
+                            "SPDXID": "SPDXRef-Package-fixture",
+                            "name": "a",
+                            "downloadLocation": "NOASSERTION",
+                        },
+                        {
+                            "SPDXID": "SPDXRef-Package-fixture",
+                            "name": "b",
+                            "downloadLocation": "NOASSERTION",
+                        },
                     ]
                 },
                 "duplicate package SPDXID",
             ),
             (
-                {"packages": [{"SPDXID": "not a valid id", "name": "a"}]},
+                {
+                    "packages": [
+                        {
+                            "SPDXID": "not a valid id",
+                            "name": "a",
+                            "downloadLocation": "NOASSERTION",
+                        }
+                    ]
+                },
                 "invalid SPDXID",
             ),
+            (
+                {
+                    "packages": [
+                        {
+                            "SPDXID": "SPDXRef-Package-fixture",
+                            "name": "a",
+                        }
+                    ]
+                },
+                "downloadLocation",
+            ),
+            ({"dataLicense": "MIT"}, "CC0-1.0"),
+            ({"creationInfo": {}}, "creationInfo"),
             (
                 {
                     "relationships": [
@@ -1051,6 +1264,7 @@ class ReceiptBindingTest(unittest.TestCase):
         package = {
             "SPDXID": "SPDXRef-Package-image",
             "name": "fixture-image",
+            "downloadLocation": "NOASSERTION",
         }
         if digest_hex is not None:
             package["checksums"] = [
@@ -1059,8 +1273,13 @@ class ReceiptBindingTest(unittest.TestCase):
         return {
             "spdxVersion": "SPDX-2.3",
             "SPDXID": "SPDXRef-DOCUMENT",
+            "dataLicense": "CC0-1.0",
             "name": "fixture-sbom",
             "documentNamespace": "https://example.invalid/spdxdocs/fixture",
+            "creationInfo": {
+                "created": "2026-09-16T00:00:00Z",
+                "creators": ["Tool: fixture"],
+            },
             "packages": [package],
             "relationships": [
                 {
@@ -1126,6 +1345,7 @@ class ReceiptBindingTest(unittest.TestCase):
             {
                 "SPDXID": "SPDXRef-Package-other",
                 "name": "other",
+                "downloadLocation": "NOASSERTION",
                 "checksums": [{"algorithm": "SHA256", "checksumValue": digest_hex}],
             }
         )

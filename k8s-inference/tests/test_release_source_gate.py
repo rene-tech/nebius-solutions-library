@@ -66,7 +66,34 @@ class ReleaseSourceGateTest(unittest.TestCase):
         git(self.checkout, "config", "user.name", "Gate Test")
         git(self.checkout, "remote", "add", "origin", str(self.origin))
         (self.checkout / "tracked.txt").write_text("v1\n", encoding="utf-8")
-        git(self.checkout, "add", "tracked.txt")
+        approvers = self.checkout / "security" / "image-provenance"
+        approvers.mkdir(parents=True)
+        (approvers / "release-approvers.json").write_text(
+            json.dumps(
+                {
+                    "schema": "fs2-serve.nebius.ai/release-approvers/v1",
+                    "approvers": [
+                        {
+                            "name": "release-operator",
+                            "scope": "release-source-exception",
+                            "expires_at": "2030-01-01T00:00:00Z",
+                        },
+                        {
+                            "name": "expired-operator",
+                            "scope": "release-source-exception",
+                            "expires_at": "2020-01-01T00:00:00Z",
+                        },
+                        {
+                            "name": "other-scope-operator",
+                            "scope": "some-other-scope",
+                            "expires_at": "2030-01-01T00:00:00Z",
+                        },
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        git(self.checkout, "add", "tracked.txt", "security")
         git(self.checkout, "commit", "-m", "anchored commit")
         git(self.checkout, "push", "origin", "main")
         git(self.checkout, "fetch", "origin")
@@ -446,6 +473,53 @@ class ReleaseSourceGateTest(unittest.TestCase):
                     "incident:INC-1234 rollforward",
                     repository_root=self.checkout,
                 )
+
+    def test_exception_approver_must_hold_reviewed_unexpired_authority(self) -> None:
+        commit = self.add_unpushed_commit()
+        for approver, pattern in (
+            ("unknown-operator", "not in the owner-designated"),
+            ("expired-operator", "expired"),
+            ("other-scope-operator", "not scoped"),
+        ):
+            with self.assertRaisesRegex(STACK.DeploymentError, pattern):
+                STACK.enforce_release_source(
+                    self.run_root,
+                    commit,
+                    "incident:INC-1234 rollforward",
+                    repository_root=self.checkout,
+                    exception_approver=approver,
+                )
+
+    def test_empty_approver_list_makes_exceptions_impossible(self) -> None:
+        commit = self.add_unpushed_commit()
+        approver_file = (
+            self.checkout / "security" / "image-provenance" / "release-approvers.json"
+        )
+        approver_file.write_text(
+            json.dumps(
+                {
+                    "schema": "fs2-serve.nebius.ai/release-approvers/v1",
+                    "approvers": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(STACK.DeploymentError, "impossible until"):
+            STACK.enforce_release_source(
+                self.run_root,
+                commit,
+                "incident:INC-1234 rollforward",
+                repository_root=self.checkout,
+                exception_approver="release-operator",
+            )
+
+    def test_lightweight_tags_are_not_anchorable(self) -> None:
+        commit = self.add_unpushed_commit()
+        git(self.checkout, "tag", "deploy/lightweight", commit)
+        with self.assertRaisesRegex(STACK.DeploymentError, "lightweight"):
+            STACK.create_release_anchor(
+                self.run_root, "deploy/lightweight", repository_root=self.checkout
+            )
 
 
 class ApplyCommandGateWiringTest(unittest.TestCase):

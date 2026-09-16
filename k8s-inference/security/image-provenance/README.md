@@ -75,25 +75,30 @@ bump — in order:
    <cosign.key> --public-key security/image-provenance/cosign.pub --run-root
    <run> <repo>@sha256:<digest>`.
 5. Assemble and sign the **complete inventory**
-   (`fs2-serve.nebius.ai/release-inventory/v1`): enumerate the current live
+   (`fs2-serve.nebius.ai/release-inventory/v2`): enumerate the current live
    workloads in the matched namespaces, the Helm rollback window
    (`helm history` digests), and frozen scientific-stage bindings as its three
-   `sources`; record every intentional exclusion as an audited
-   `drained_removals` entry with a reason (owner scope decisions — e.g.
-   excluding a sibling program — go here, never as silent omissions);
-   `platform_images` must equal the source union minus the drains, which the
-   renderer proves. Sign it: `cosign sign-blob --key <cosign.key>
-   --use-signing-config=false --tlog-upload=false --yes --output-file
-   inventory.json.sig inventory.json`. The renderer refuses to run without it
-   and renders **only** the inventory set — extras, missing entries, and
-   unreceipted or unsigned digests all abort:
+   `sources`, each with `observed_at` and the `resource_ids` it was read
+   from, plus the `cluster` identity and a `captured_at` timestamp (the
+   renderer refuses stale or future-dated inventories; default freshness
+   bound 24h, `--max-inventory-age-hours`). Drains can only remove **non-live**
+   references: a drained image must be absent from `live_workloads` and
+   present in a non-live source, with a reason bound to a tracking identifier
+   — **an active image can never be drained**; owner scope decisions about
+   live sibling programs belong in the admission policy's match scope, never
+   in the inventory. `platform_images` must equal the source union minus the
+   audited drains, which the renderer proves. Sign it: `cosign sign-blob
+   --key <cosign.key> --use-signing-config=false --tlog-upload=false --yes
+   --output-file inventory.json.sig inventory.json`. The renderer refuses to
+   run without it and renders **only** the inventory set — extras, missing
+   entries, and unreceipted or unsigned digests all abort:
    `provenance.py render-allowlist --public-key … --run-root <run>
    --inventory inventory.json --registry-prefix …
    --platform-repository-prefix … --deploy-principal <user>` (optional
    `--image` arguments must equal the inventory exactly and exist only as a
    cross-check). Assembly of the inventory from the live cluster remains an
-   acceptance-gate step; the renderer proves its internal consistency and
-   coverage, not the honesty of the enumeration itself.
+   acceptance-gate step; the renderer proves its internal consistency,
+   freshness, and coverage, not the honesty of the enumeration itself.
 6. Run the gate (`release-gate`, also automatic inside `apply`), deploy, then
    `provenance.py verify --public-key security/image-provenance/cosign.pub
    <ref>`.
@@ -104,32 +109,52 @@ Release evidence is write-once and published atomically, so neither a later
 run nor a crash or concurrent run can rewrite or truncate what an earlier
 release proved:
 
-- **Anchors** (`release-anchors.json` + content-addressed bundles): the bundle
-  is built and fully verified (integrity, exact tag object via `list-heads`,
+- **Anchors** (`release-anchors.json` + content-addressed bundles): only
+  annotated tag objects anchor (lightweight tags are refused). The bundle is
+  built and fully verified (integrity, exact tag object via `list-heads`,
   real clone restore) in a same-filesystem staging directory, fsynced, then
-  renamed to `release-anchors/<sha256>.bundle` — collision-free by
-  construction — before the index entry commits under the store lock. A
-  malformed index fails closed (it is never treated as empty). An
-  identity-equal re-run re-verifies hash, integrity, and tag object and
-  returns `idempotent: true`; a moved or recreated tag, a changed or missing
-  bundle, or a conflicting file at the content address is refused; a crash
-  remnant between rename and index commit is re-adopted only if it fully
-  verifies. Superseding a release means anchoring a new tag.
+  published to `release-anchors/<sha256>.bundle` via `link(2)` — atomic and
+  **no-replace**, so there is no check-then-rename window; on a collision the
+  surviving file is fully re-verified before it is trusted, and the published
+  winner is re-hashed after publication. A malformed index fails closed (it
+  is never treated as empty). An identity-equal re-run re-verifies hash,
+  integrity, and tag placement and returns `idempotent: true`; a moved or
+  recreated tag, a changed or missing bundle, or a conflicting file at the
+  content address is refused; a crash remnant between publication and index
+  commit is re-adopted only if it fully verifies. Superseding a release means
+  anchoring a new tag.
 - **Receipts** (`release-receipts/<digest>/receipt.json` + `.sig`): receipt
   and signature are staged together, the signature is verified, both files
   are fsynced, and one atomic directory rename publishes the pair — a failed
   signing leaves no partial published evidence and the same creation succeeds
-  on retry. Identity-equal re-creation re-verifies the existing signature and
-  returns the original bytes (`created_at` included); any difference —
-  source, SBOM, anchor — is refused and the original is left untouched.
-  Superseding requires explicitly moving the old receipt directory into an
-  archive first (an auditable filesystem action); the tool never overwrites.
+  on retry. Every load reads the pair once through dirfd + `O_NOFOLLOW`,
+  refuses non-regular files, hardlinked evidence, foreign owners, and
+  group/other-accessible modes, verifies the signature over exactly the bytes
+  it parses, and then **fully revalidates** the bindings against the bundle:
+  tag object, anchor commit, source-commit ancestry, and source tree are
+  re-proven in a fresh clone, and the SBOM subject must equal the recorded
+  linux/amd64 manifest. Identity-equal re-creation returns the original bytes
+  (`created_at` included); any difference is refused and the original is left
+  untouched. Superseding requires explicitly archiving the old receipt
+  directory first; the tool never overwrites. Symlinks are refused at every
+  path component and the store must resolve inside the run root.
+- **Registry content**: the top manifest is byte-hash-verified against the
+  reference digest, the linux/amd64 manifest, config, attestation manifest,
+  and statement against their descriptors; ambiguous duplicates — two amd64
+  attestations, two SPDX predicate layers, two matching statement subjects,
+  or repeated SPDX descriptions — are refused.
 - **Gate evaluations**: `release-source.json` holds only the latest state for
   tooling; every evaluation, including exceptions, is appended to the
   hash-chained `release-source-history.jsonl` where each record commits to
-  its predecessor. Truncation or rewriting is detectable
-  (`verify_chained_history`); the log is tamper-evident, not immutable —
-  WORM storage is an owner infrastructure item.
+  its predecessor AND a checkpoint (`…head.json`, rewritten on each append)
+  commits to the record count and terminal hash, so earlier-record rewrites
+  and **suffix truncation** are both detected — verification also runs before
+  every append, failing the gate itself on a tampered history. Exception
+  approvers must appear in the reviewed, scoped, expiring
+  `release-approvers.json` allow-list (an empty list makes exceptions
+  impossible). The pair is tamper-evident, not immutable — WORM/off-host
+  anchoring of the log and authenticating the caller as the approver identity
+  are owner infrastructure/IAM items.
 - **Registry signatures**: cosign appends signatures to a digest's `.sig`
   manifest; existing signatures are never replaced by re-signing.
 
