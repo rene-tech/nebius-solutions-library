@@ -59,7 +59,11 @@ async def relay_live(
         raise RuntimeProtocolError("live speech requires a local canonical runtime")
     url = "ws://" + origin.removeprefix("http://") + "/v1/audio/stream"
     started = time.monotonic()
-    deadline = started + 60
+    queue_seconds = model.dynamic_policy.max_queue_seconds if model.dynamic_policy is not None else 300
+    capacity_deadline = operation.accepted_at + timedelta(seconds=queue_seconds)
+    if operation.deadline_at is not None:
+        capacity_deadline = min(capacity_deadline, operation.deadline_at)
+    deadline = started + max(0, (capacity_deadline - datetime.now(UTC)).total_seconds())
     finals: list[dict[str, Any]] = []
     result_bytes = 0
     try:

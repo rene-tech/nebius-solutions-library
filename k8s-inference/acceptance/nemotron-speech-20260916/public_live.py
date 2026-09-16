@@ -59,6 +59,8 @@ async def run_one(origin, key, model, source, language, row, *, paced):
                                 raise RuntimeError("duplicate_session_ready")
                             ready = time.monotonic()
                             row["ready_seconds"] = ready - started
+                            print(json.dumps({"model": model, "event": "session.ready", "mode": row["mode"],
+                                              "operation_id": row.get("operation_id")}), flush=True)
                             producer = asyncio.create_task(upload())
                         elif kind == "transcript.partial" and event.get("text"):
                             row.setdefault("first_partial_from_audio_start_seconds", time.monotonic()-ready)

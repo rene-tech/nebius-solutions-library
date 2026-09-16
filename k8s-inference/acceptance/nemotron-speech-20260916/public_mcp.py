@@ -32,7 +32,12 @@ async def run_cohort(origin, key, assets, receipt):
         async with Client(streamable_http_client(origin + "/mcp", http_client=http), mode="2026-07-28") as client:
             listing = await client.list_tools()
             tools = {tool.name: tool.model_dump(mode="json", by_alias=True) for tool in listing.tools}
-            names = ["infer_" + model.replace("-", "_") for model in IDS]
+            receipt["discovered_tool_names"] = sorted(tools)
+            contracts = []
+            for model in IDS:
+                schema_view = result(await client.call_tool("get_model_schema", {"model_id": model, "protocol": "native"}))
+                contracts.append(next(item for item in schema_view["contracts"] if item["protocol"] == "native"))
+            names = [contract["tool_name"] for contract in contracts]
             if not all(name in tools for name in names):
                 raise RuntimeError("typed_speech_tool_missing")
             receipt["tools"] = {name: tools[name] for name in names}

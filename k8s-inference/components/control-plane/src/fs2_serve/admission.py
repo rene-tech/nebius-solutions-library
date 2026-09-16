@@ -51,7 +51,14 @@ from .models import (
     RuntimeResult,
 )
 from .registry import ModelRouteUnavailableError, OperationalModel, Registry
-from .runtime import ActivationError, PreemptedError, RouteUnavailableError, RuntimeClient, RuntimeOperationError
+from .runtime import (
+    ActivationError,
+    PreemptedError,
+    RouteUnavailableError,
+    RuntimeBusyError,
+    RuntimeClient,
+    RuntimeOperationError,
+)
 from .store import ConflictError, StaleLeaseError, Store
 from .telemetry import Metrics
 
@@ -717,13 +724,6 @@ class AdmissionService:
             )
             try:
                 model = await self._current_model(claimed)
-                if self.artifact_inputs is not None and invoke is None:
-                    request_body = await self.artifact_inputs.materialize(
-                        model,
-                        claimed.protocol,
-                        tenant_id=claimed.tenant_id,
-                        request_body=request_body,
-                    )
                 invocation_started = datetime.now(UTC)
                 with self._tracer.start_as_current_span("fs2.runtime.invoke", kind=SpanKind.CLIENT) as span:
                     span.set_attribute("fs2.operation.id", str(claimed.id))
@@ -736,7 +736,12 @@ class AdmissionService:
                     span.set_attribute("fs2.model.revision", claimed.model_revision)
                     span.set_attribute("fs2.attempt.number", claimed.attempt)
                     span.set_attribute("fs2.protocol", claimed.protocol)
-                    result = await (invoke or self.runtime.invoke)(model, claimed, request_body)
+                    if invoke is None:
+                        result, invocation_started = await self._invoke_when_capacity_available(
+                            model, claimed, request_body,
+                        )
+                    else:
+                        result = await invoke(model, claimed, request_body)
                     if invoke is not None:
                         identity, observation = await self.runtime.observe(model, claimed)
                         result = result.model_copy(update={"runtime": identity, "lifecycle": observation})
@@ -814,6 +819,41 @@ class AdmissionService:
             ),
         )
         self.metrics.observe_worker_latency(final)
+
+    async def _invoke_when_capacity_available(
+        self, model: OperationalModel, claimed: ClaimedOperation, request_body: bytes,
+    ) -> tuple[RuntimeResult, datetime]:
+        """Wait only for an explicit no-work-accepted speech busy response.
+
+        Keep the same fenced operation; cancellation/deadline and lease renewal
+        remain owned by _run_claim. A busy poll is not a failed GPU inference
+        attempt. Rematerialize short-lived audio handles after every wait so a
+        long live session cannot leave a queued file with an expired URL.
+        """
+        queue_seconds = model.dynamic_policy.max_queue_seconds if model.dynamic_policy is not None else 300
+        deadline = claimed.accepted_at + timedelta(seconds=queue_seconds)
+        if claimed.deadline_at is not None:
+            deadline = min(deadline, claimed.deadline_at)
+        delay = 0.5
+        waits = 0
+        while True:
+            payload = request_body
+            if self.artifact_inputs is not None:
+                payload = await self.artifact_inputs.materialize(
+                    model, claimed.protocol, tenant_id=claimed.tenant_id, request_body=request_body,
+                )
+            started = datetime.now(UTC)
+            try:
+                result = await self.runtime.invoke(model, claimed, payload)
+                return result, started
+            except RuntimeBusyError:
+                remaining = (deadline - datetime.now(UTC)).total_seconds()
+                if remaining <= 0:
+                    raise ActivationError("speech capacity wait deadline elapsed") from None
+                waits += 1
+                LOGGER.info("speech_capacity_wait operation_id=%s model_id=%s poll=%s", claimed.id, model.id, waits)
+                await asyncio.sleep(min(delay, remaining))
+                delay = min(delay * 1.5, 5)
 
     async def _record_claim(self, claimed: ClaimedOperation) -> None:
         occurred_at = claimed.activation_started_at or datetime.now(UTC)

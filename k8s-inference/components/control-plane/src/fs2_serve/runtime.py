@@ -17,7 +17,14 @@ import httpx
 from pydantic import ValidationError
 
 from .federation import FederationRouter, FederationTransportError
-from .models import ClaimedOperation, ReportedUsage, RuntimeIdentity, RuntimeLifecycleObservation, RuntimeResult
+from .models import (
+    ClaimedOperation,
+    ModalityUsage,
+    ReportedUsage,
+    RuntimeIdentity,
+    RuntimeLifecycleObservation,
+    RuntimeResult,
+)
 from .registry import OperationalModel, ProbeSpec
 from .request_debug import (
     DebugExchange,
@@ -53,6 +60,13 @@ class RouteUnavailableError(RuntimeOperationError):
 
 class RuntimeTransportError(RuntimeOperationError):
     code = "runtime_transport_error"
+
+
+class RuntimeBusyError(RuntimeOperationError):
+    """Selected speech worker rejected a request BEFORE taking any audio/work."""
+
+    code = "runtime_busy"
+    status_code = 429
 
 
 class RuntimeProtocolError(RuntimeOperationError):
@@ -535,9 +549,20 @@ class RuntimeClient:
         raise RuntimeProtocolError("runtime protocol is invalid")
 
     @staticmethod
-    def _reported_usage(protocol: str, body: bytes) -> ReportedUsage | None:
+    def _reported_usage(protocol: str, body: bytes, *, speech: bool = False) -> ReportedUsage | None:
         """Extract optional OpenAI token totals without making usage part of protocol validity."""
 
+        if speech and protocol == "native":
+            try:
+                payload = json.loads(body)
+            except (json.JSONDecodeError, UnicodeDecodeError, RecursionError):
+                return None
+            seconds = payload.get("audio_seconds") if isinstance(payload, dict) else None
+            if type(seconds) not in {int, float} or not 0 < seconds <= 7200:
+                return None
+            return ReportedUsage(modalities=[ModalityUsage(
+                modality="audio", direction="input", unit="seconds", amount=seconds,
+            )])
         if protocol not in {"openai-chat", "openai-completions", "openai-embeddings"}:
             return None
         try:
@@ -573,6 +598,15 @@ class RuntimeClient:
             raise RuntimeProtocolError("runtime protocol is invalid") from None
         headers = self._correlation_headers(operation)
         headers["content-type"] = operation.request_content_type
+        source_model = (
+            model.dynamic_policy.publication.source_model_ref if model.dynamic_policy is not None else model.id
+        )
+        speech = (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
+                  and source_model in {"nemotron-speech-en-0-6b", "nemotron-speech-multilingual-0-6b"})
+        if speech:
+            # A retry after explicit pre-admission busy must be able to select
+            # another Service endpoint instead of sticking to a busy socket.
+            headers["connection"] = "close"
         started = time.monotonic()
         try:
             if model.binding.backend_class == "local-kubernetes":
@@ -610,6 +644,25 @@ class RuntimeClient:
                 if response.status_code in (409, 410) and preempted is not None and preempted.lower() == "true":
                     raise PreemptedError("runtime reported preemption")
                 if not response.is_success:
+                    if speech and response.status_code == 429:
+                        rejected = bytearray()
+                        capture = response.extensions.get(_DEBUG_CAPTURE_EXTENSION)
+                        if isinstance(capture, _UpstreamCapture):
+                            capture.read_started = True
+                        async for chunk in response.aiter_bytes():
+                            if isinstance(capture, _UpstreamCapture):
+                                capture.observe(chunk)
+                            rejected.extend(chunk)
+                            if len(rejected) > 4096:
+                                raise RuntimeProtocolError("speech busy response exceeds limit")
+                        if isinstance(capture, _UpstreamCapture):
+                            capture.finished()
+                        try:
+                            busy = json.loads(rejected) == {"detail": "runtime_busy"}
+                        except (ValueError, UnicodeError):
+                            busy = False
+                        if busy:
+                            raise RuntimeBusyError("speech worker capacity is occupied")
                     # Public results/ledger remain payload-free for failures;
                     # the optional encrypted debug capture owns their bodies.
                     runtime, lifecycle = await self._trusted_runtime_observation(operation, model)
@@ -644,7 +697,7 @@ class RuntimeClient:
                     elapsed_seconds=time.monotonic() - started,
                     runtime=runtime,
                     semantic_outcome=semantic,
-                    usage=self._reported_usage(operation.protocol, bytes(content)),
+                    usage=self._reported_usage(operation.protocol, bytes(content), speech=speech),
                     lifecycle=lifecycle,
                 )
         except asyncio.CancelledError:

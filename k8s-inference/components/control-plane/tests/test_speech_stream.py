@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -127,8 +128,8 @@ COMPLETE = {"type": "session.completed", "audio_seconds": 1.0}
 
 async def relay(events):
     connector = Connector(events)
-    operation = SimpleNamespace(id=uuid4(), model_revision="revision")
-    model = SimpleNamespace(id="speech-model", binding=SimpleNamespace(
+    operation = SimpleNamespace(id=uuid4(), model_revision="revision", accepted_at=datetime.now(UTC), deadline_at=None)
+    model = SimpleNamespace(id="speech-model", dynamic_policy=None, binding=SimpleNamespace(
         backend_class="local-kubernetes", service_origin="http://speech.fs2-models.svc.cluster.local:8000"))
     queue = asyncio.Queue(maxsize=2)
     await queue.put(b"\0" * 32000)
@@ -161,8 +162,8 @@ async def test_worker_loss_never_returns_a_success(events):
 
 async def test_premature_completion_cannot_hang_waiting_for_unsent_audio():
     connector = Connector([READY, COMPLETE])
-    operation = SimpleNamespace(id=uuid4(), model_revision="revision")
-    model = SimpleNamespace(id="speech-model", binding=SimpleNamespace(
+    operation = SimpleNamespace(id=uuid4(), model_revision="revision", accepted_at=datetime.now(UTC), deadline_at=None)
+    model = SimpleNamespace(id="speech-model", dynamic_policy=None, binding=SimpleNamespace(
         backend_class="local-kubernetes", service_origin="http://speech.fs2-models.svc.cluster.local:8000"))
 
     async def send(event):
