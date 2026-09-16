@@ -62,6 +62,22 @@ def test_disconnect_is_an_error_and_always_releases_state():
     assert runtime.closed == [1]
 
 
+def test_word_alignment_comes_from_runtime_and_confidence_is_not_fabricated():
+    class AlignedRuntime(FakeRuntime):
+        profile = SimpleNamespace(confidence=False)
+
+        def step(self, stream_id, frame, options):
+            output = super().step(stream_id, frame, options)
+            output.final_segments = [SimpleNamespace(text="Complete.", start=0.08, end=0.42, conf=1.0)]
+            return output
+
+    _, output = run([START, b"\0" * 6, FINISH], AlignedRuntime())
+    final = next(event for event in output if event["type"] == "transcript.final")
+    assert final["items"] == [{"text": "Complete.", "start_seconds": 0.08,
+                               "end_seconds": 0.42, "confidence": None}]
+    assert final["granularity"] == "segment"
+
+
 def test_cancel_does_not_flush_or_report_success():
     runtime, output = run([START, b"\0\0", '{"type":"session.cancel"}'])
     assert output[-1]["type"] == "session.cancelled"

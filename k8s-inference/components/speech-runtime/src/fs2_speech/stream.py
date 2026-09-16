@@ -84,7 +84,20 @@ async def run_stream(
                 for event in events.update(
                     final=output.final_transcript, partial=output.partial_transcript, last=frame.last,
                 ):
-                    await send(event.to_dict())
+                    value = event.to_dict()
+                    if event.type == "transcript.final":
+                        # Preserve the upstream acoustic alignment. In the
+                        # default profile NeMo can emit placeholder confidence;
+                        # do not advertise it as a measured probability.
+                        confidence = bool(getattr(getattr(runtime, "profile", None), "confidence", False))
+                        value["granularity"] = start.options.output_granularity
+                        value["items"] = [
+                            {"text": segment.text, "start_seconds": float(segment.start),
+                             "end_seconds": float(segment.end),
+                             "confidence": float(segment.conf) if confidence else None}
+                            for segment in (getattr(output, "final_segments", None) or [])
+                        ]
+                    await send(value)
 
             while True:
                 message = await receive()

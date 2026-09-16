@@ -116,7 +116,9 @@ async def transcribe_file(runtime: RuntimePort, path: Path, options: SpeechOptio
     if "completed" not in state:
         raise AudioInputError(state.get("decode_error", state.get("error", "transcription_incomplete")))
     return {
-        "text": " ".join(item["text"].strip() for item in finals).strip(),
+        # NeMo includes the locale-appropriate separator in each final. Adding
+        # spaces ourselves corrupts no-space languages and punctuation joins.
+        "text": "".join(item["text"] for item in finals).strip(),
         "segments": finals,
         "audio_seconds": state["completed"]["audio_seconds"],
         "processing_seconds": time.monotonic() - started,

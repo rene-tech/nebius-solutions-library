@@ -38,7 +38,6 @@ def create_app(runtime, profile: RuntimeProfile, *, allowed_hosts: frozenset[str
     audio = Counter("fs2_speech_audio_seconds_total", "Successfully transcribed audio seconds", registry=registry)
     duration = Histogram("fs2_speech_processing_seconds", "File processing duration", registry=registry)
     state = {"ready": not load, "busy": False, "draining": False, "error": None}
-    owner = socket.gethostname()
 
     @asynccontextmanager
     async def lifespan(app):
@@ -90,13 +89,14 @@ def create_app(runtime, profile: RuntimeProfile, *, allowed_hosts: frozenset[str
 
     @app.get("/healthz")
     async def health():
-        return {"status": "alive", "backend_id": owner}
+        return {"status": "alive", "backend_id": socket.gethostname()}
 
     @app.get("/readyz")
     async def ready():
         healthy = state["ready"] and not state["draining"]
         return JSONResponse({"ready": healthy, "active_sessions": int(state["busy"]),
-                             "model": profile.model, "profile": profile.model_dump(), "backend_id": owner},
+                             "model": profile.model, "profile": profile.model_dump(),
+                             "backend_id": socket.gethostname()},
                             status_code=200 if healthy else 503)
 
     @app.post("/drain")
@@ -135,7 +135,7 @@ def create_app(runtime, profile: RuntimeProfile, *, allowed_hosts: frozenset[str
             duration.observe(result["processing_seconds"])
             total.labels("file", "completed").inc()
             return JSONResponse({**result, "model_revision": MODELS[profile.model].revision},
-                                headers={"x-backend-id": owner})
+                                headers={"x-backend-id": socket.gethostname()})
         except AudioInputError as exc:
             total.labels("file", "failed").inc()
             raise HTTPException(422, str(exc)) from None
@@ -197,8 +197,8 @@ def main():
     runtime = NeMoRuntime(profile, config_path=Path(
         "/opt/nemo/examples/asr/conf/asr_streaming_inference/cache_aware_rnnt.yaml"))
     hosts = frozenset(filter(None, os.environ.get("FS2_SPEECH_ARTIFACT_HOSTS", "").split(",")))
-    uvicorn.run(create_app(runtime, profile, allowed_hosts=hosts), host="0.0.0.0", port=8080,
-                ws_max_size=65536, ws_max_queue=2, timeout_graceful_shutdown=7205)
+    uvicorn.run(create_app(runtime, profile, allowed_hosts=hosts), host="0.0.0.0", port=8000,
+                loop="asyncio", ws_max_size=65536, ws_max_queue=2, timeout_graceful_shutdown=7205)
 
 
 if __name__ == "__main__":

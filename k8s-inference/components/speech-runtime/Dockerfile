@@ -1,8 +1,5 @@
 # Runtime qualification image; not yet a publicly exposed speech service.
 FROM pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime@sha256:417bd75df6365104c283ea4c1651fb3530d9eb5a4c2fafa51943cff2a94e6385
-ARG SOURCE_REVISION
-LABEL org.opencontainers.image.source="https://github.com/rene-tech/nebius-solutions-library" \
-      org.opencontainers.image.revision=$SOURCE_REVISION
 ENV PYTHONUNBUFFERED=1 HF_HOME=/cache/huggingface NUMBA_CACHE_DIR=/cache/numba
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git ffmpeg libsndfile1 espeak-ng build-essential \
@@ -23,4 +20,7 @@ RUN python -m pip install --no-cache-dir --no-deps . \
     && useradd --uid 10001 --create-home speech \
     && mkdir -p /cache/huggingface /cache/numba && chown -R speech:speech /cache
 USER 10001
+ARG SOURCE_REVISION
+LABEL org.opencontainers.image.source="https://github.com/rene-tech/nebius-solutions-library" \
+      org.opencontainers.image.revision=$SOURCE_REVISION
 ENTRYPOINT ["fs2-speech-probe"]

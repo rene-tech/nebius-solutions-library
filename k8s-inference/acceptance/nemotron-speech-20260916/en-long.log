@@ -1,0 +1,314 @@
+OneLogger: Setting error_handling_strategy to DISABLE_QUIETLY_AND_REPORT_METRIC_ERROR for rank (rank=0) with OneLogger disabled. To override: explicitly set error_handling_strategy parameter.
+No exporters were provided. This means that no telemetry data will be collected.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+[NeMo I 2026-09-16 09:33:22 pipeline_builder:42] Using matmul precision: high
+[NeMo I 2026-09-16 09:33:24 mixins:195] Tokenizer SentencePieceTokenizer initialized with 1024 tokens
+[NeMo W 2026-09-16 09:33:24 modelPT:176] If you intend to do training or fine-tuning, please call the ModelPT.setup_training_data() method and provide a valid configuration file to setup the train data loader.
+    Train config : 
+    use_lhotse: true
+    skip_missing_manifest_entries: true
+    input_cfg: null
+    tarred_audio_filepaths: null
+    manifest_filepath: null
+    sample_rate: 16000
+    shuffle: true
+    num_workers: 2
+    pin_memory: true
+    max_duration: 40.0
+    min_duration: 0.1
+    text_field: answer
+    batch_duration: null
+    use_bucketing: true
+    max_tps: null
+    bucket_duration_bins: null
+    bucket_batch_size: null
+    num_buckets: null
+    bucket_buffer_size: null
+    shuffle_buffer_size: null
+    augmentor: null
+    
+[NeMo W 2026-09-16 09:33:24 modelPT:183] If you intend to do validation, please call the ModelPT.setup_validation_data() or ModelPT.setup_multiple_validation_data() method and provide a valid configuration file to setup the validation data loader(s). 
+    Validation config : 
+    use_lhotse: true
+    manifest_filepath: /data/ASR/en/librispeech/test-other.json
+    sample_rate: 16000
+    batch_size: 32
+    shuffle: false
+    max_duration: 40.0
+    min_duration: 0.1
+    num_workers: 2
+    pin_memory: true
+    text_field: answer
+    tarred_audio_filepaths: null
+    
+[NeMo I 2026-09-16 09:33:27 rnnt_models:227] Using RNNT Loss : warprnnt_numba
+    Loss warprnnt_numba_kwargs: {'fastemit_lambda': 0.005, 'clamp': -1.0}
+[NeMo I 2026-09-16 09:33:27 rnnt_models:227] Using RNNT Loss : warprnnt_numba
+    Loss warprnnt_numba_kwargs: {'fastemit_lambda': 0.005, 'clamp': -1.0}
+[NeMo I 2026-09-16 09:33:27 rnnt_models:227] Using RNNT Loss : warprnnt_numba
+    Loss warprnnt_numba_kwargs: {'fastemit_lambda': 0.005, 'clamp': -1.0}
+[NeMo I 2026-09-16 09:33:29 save_restore_connector:288] Model EncDecRNNTBPEModel was successfully restored from /cache/huggingface/hub/models--nvidia--nemotron-speech-streaming-en-0.6b/snapshots/ebe59e5a817142986528bbbee5dba8db7b38ed50/nemotron-speech-streaming-en-0.6b.nemo.
+[NeMo I 2026-09-16 09:33:29 rnnt_bpe_models:399] No `decoding_cfg` passed when changing decoding strategy, using internal config
+[NeMo I 2026-09-16 09:33:29 rnnt_models:227] Using RNNT Loss : warprnnt_numba
+    Loss warprnnt_numba_kwargs: {'fastemit_lambda': 0.005, 'clamp': -1.0}
+[NeMo I 2026-09-16 09:33:29 rnnt_bpe_models:437] Changed decoding strategy to 
+    model_type: rnnt
+    strategy: greedy_batch
+    compute_hypothesis_token_set: false
+    preserve_alignments: null
+    tdt_include_token_duration: null
+    confidence_cfg:
+      preserve_frame_confidence: false
+      preserve_token_confidence: false
+      preserve_word_confidence: false
+      exclude_blank: true
+      aggregation: min
+      tdt_include_duration: false
+      method_cfg:
+        name: entropy
+        entropy_type: tsallis
+        alpha: 0.33
+        entropy_norm: exp
+        temperature: DEPRECATED
+    fused_batch_size: null
+    compute_timestamps: null
+    compute_langs: false
+    word_seperator: ' '
+    segment_seperators:
+    - .
+    - '!'
+    - '?'
+    segment_gap_threshold: null
+    rnnt_timestamp_type: all
+    greedy:
+      max_symbols_per_step: 10
+      preserve_alignments: false
+      preserve_frame_confidence: false
+      tdt_include_token_duration: false
+      tdt_include_duration_confidence: false
+      confidence_method_cfg:
+        name: entropy
+        entropy_type: tsallis
+        alpha: 0.33
+        entropy_norm: exp
+        temperature: DEPRECATED
+      loop_labels: true
+      use_cuda_graph_decoder: true
+      ngram_lm_model: null
+      ngram_lm_alpha: 0.0
+      boosting_tree:
+        model_path: null
+        key_phrases_file: null
+        key_phrases_list: null
+        key_phrase_items_list: null
+        context_score: 1.0
+        depth_scaling: 2.0
+        unk_score: 0.0
+        final_eos_score: 1.0
+        score_per_phrase: 0.0
+        source_lang: en
+        use_triton: null
+        uniform_weights: false
+        bpe_mode: default
+        use_bpe_dropout: null
+        num_of_transcriptions: 5
+        bpe_alpha: 0.3
+        var_bpe_scoring_temp: 10.0
+        var_bpe_penalize_subsplits: true
+      boosting_tree_alpha: 0.0
+      enable_per_stream_biasing: false
+      max_symbols: 10
+    beam:
+      beam_size: 2
+      search_type: default
+      score_norm: true
+      return_best_hypothesis: false
+      tsd_max_sym_exp_per_step: 50
+      alsd_max_target_len: 2.0
+      nsc_max_timesteps_expansion: 1
+      nsc_prefix_alpha: 1
+      maes_num_steps: 2
+      maes_prefix_alpha: 1
+      maes_expansion_gamma: 2.3
+      maes_expansion_beta: 2
+      language_model: null
+      softmax_temperature: 1.0
+      preserve_alignments: false
+      ngram_lm_model: null
+      ngram_lm_alpha: 0.0
+      boosting_tree:
+        model_path: null
+        key_phrases_file: null
+        key_phrases_list: null
+        key_phrase_items_list: null
+        context_score: 1.0
+        depth_scaling: 2.0
+        unk_score: 0.0
+        final_eos_score: 1.0
+        score_per_phrase: 0.0
+        source_lang: en
+        use_triton: null
+        uniform_weights: false
+        bpe_mode: default
+        use_bpe_dropout: null
+        num_of_transcriptions: 5
+        bpe_alpha: 0.3
+        var_bpe_scoring_temp: 10.0
+        var_bpe_penalize_subsplits: true
+      boosting_tree_alpha: 0.0
+      hat_subtract_ilm: false
+      hat_ilm_weight: 0.0
+      max_symbols_per_step: 10
+      blank_lm_score_mode: LM_WEIGHTED_FULL
+      pruning_mode: LATE
+      allow_cuda_graphs: true
+      enable_per_stream_biasing: false
+      preserve_frame_confidence: false
+      tdt_include_duration_confidence: false
+      confidence_method_cfg:
+        name: entropy
+        entropy_type: tsallis
+        alpha: 0.33
+        entropy_norm: exp
+        temperature: DEPRECATED
+      tsd_max_sym_exp: 50
+    temperature: 1.0
+    durations: []
+    big_blank_durations: []
+    strip_lang_tags: false
+    lang_tag_pattern: null
+    
+[NeMo I 2026-09-16 09:33:29 rnnt_models:227] Using RNNT Loss : warprnnt_numba
+    Loss warprnnt_numba_kwargs: {'fastemit_lambda': 0.005, 'clamp': -1.0}
+[NeMo I 2026-09-16 09:33:29 rnnt_decoding:1041] Joint fused batch size <= 0; Will temporarily disable fused batch step in the Joint.
+[NeMo I 2026-09-16 09:33:29 rnnt_bpe_models:437] Changed decoding strategy to 
+    model_type: rnnt
+    strategy: greedy_batch
+    compute_hypothesis_token_set: false
+    preserve_alignments: false
+    tdt_include_token_duration: null
+    confidence_cfg:
+      preserve_frame_confidence: false
+      preserve_token_confidence: false
+      preserve_word_confidence: false
+      exclude_blank: true
+      aggregation: min
+      tdt_include_duration: false
+      method_cfg:
+        name: entropy
+        entropy_type: tsallis
+        alpha: 0.33
+        entropy_norm: exp
+        temperature: DEPRECATED
+    fused_batch_size: -1
+    compute_timestamps: null
+    compute_langs: false
+    word_seperator: ' '
+    segment_seperators:
+    - .
+    - '!'
+    - '?'
+    segment_gap_threshold: null
+    rnnt_timestamp_type: all
+    greedy:
+      max_symbols_per_step: 10
+      preserve_alignments: false
+      preserve_frame_confidence: false
+      tdt_include_token_duration: false
+      tdt_include_duration_confidence: false
+      confidence_method_cfg:
+        name: entropy
+        entropy_type: tsallis
+        alpha: 0.33
+        entropy_norm: exp
+        temperature: DEPRECATED
+      loop_labels: true
+      use_cuda_graph_decoder: false
+      ngram_lm_model: null
+      ngram_lm_alpha: 0.0
+      boosting_tree:
+        model_path: null
+        key_phrases_file: null
+        key_phrases_list: null
+        key_phrase_items_list: null
+        context_score: 1.0
+        depth_scaling: 2.0
+        unk_score: 0.0
+        final_eos_score: 1.0
+        score_per_phrase: 0.0
+        source_lang: en
+        use_triton: null
+        uniform_weights: false
+        bpe_mode: default
+        use_bpe_dropout: null
+        num_of_transcriptions: 5
+        bpe_alpha: 0.3
+        var_bpe_scoring_temp: 10.0
+        var_bpe_penalize_subsplits: true
+      boosting_tree_alpha: 0.0
+      enable_per_stream_biasing: true
+      max_symbols: 10
+    beam:
+      beam_size: 4
+      search_type: default
+      score_norm: true
+      return_best_hypothesis: true
+      tsd_max_sym_exp_per_step: 50
+      alsd_max_target_len: 1.0
+      nsc_max_timesteps_expansion: 1
+      nsc_prefix_alpha: 1
+      maes_num_steps: 2
+      maes_prefix_alpha: 1
+      maes_expansion_gamma: 2.3
+      maes_expansion_beta: 2
+      language_model: null
+      softmax_temperature: 1.0
+      preserve_alignments: false
+      ngram_lm_model: null
+      ngram_lm_alpha: 0.0
+      boosting_tree:
+        model_path: null
+        key_phrases_file: null
+        key_phrases_list: null
+        key_phrase_items_list: null
+        context_score: 1.0
+        depth_scaling: 2.0
+        unk_score: 0.0
+        final_eos_score: 1.0
+        score_per_phrase: 0.0
+        source_lang: en
+        use_triton: null
+        uniform_weights: false
+        bpe_mode: default
+        use_bpe_dropout: null
+        num_of_transcriptions: 5
+        bpe_alpha: 0.3
+        var_bpe_scoring_temp: 10.0
+        var_bpe_penalize_subsplits: true
+      boosting_tree_alpha: 0.0
+      hat_subtract_ilm: false
+      hat_ilm_weight: 0.0
+      max_symbols_per_step: 10
+      blank_lm_score_mode: LM_WEIGHTED_FULL
+      pruning_mode: LATE
+      allow_cuda_graphs: true
+      enable_per_stream_biasing: false
+      preserve_frame_confidence: false
+      tdt_include_duration_confidence: false
+      confidence_method_cfg:
+        name: entropy
+        entropy_type: tsallis
+        alpha: 0.33
+        entropy_norm: exp
+        temperature: DEPRECATED
+    temperature: 1.0
+    durations: []
+    big_blank_durations: []
+    strip_lang_tags: false
+    lang_tag_pattern: null
+    
+[NeMo I 2026-09-16 09:33:29 base_builder:147] ASR model `/cache/huggingface/hub/models--nvidia--nemotron-speech-streaming-en-0.6b/snapshots/ebe59e5a817142986528bbbee5dba8db7b38ed50/nemotron-speech-streaming-en-0.6b.nemo` loaded
+[NeMo I 2026-09-16 09:33:29 cache_aware_pipeline_builder:107] `CacheAwareRNNTPipeline` pipeline loaded
+{"event": "long_probe_start", "model": "nemotron-speech-en-0.6b", "minutes_minimum": 30, "repeated_sentences": 278, "reference_body": "The research team reviewed the recording. Every sentence should appear in the complete transcript.", "reference_tail": "This is the final sentence. The last word is telescope.", "file_bytes": 79591130, "runtime_load": {"runtime_import_seconds": 6.137366423001367, "checkpoint_acquisition_seconds": 28.389920862999134, "model_load_seconds": 7.391177173001779}}
+{"event": "long_probe_complete", "model": "nemotron-speech-en-0.6b", "audio_seconds": 1804.7865625, "expected_audio_seconds": 1804.7865306122449, "wall_seconds": 104.83185301200137, "peak_host_rss_kib": 5470696, "text_sha256": "f8178dff2aaa48c73fd3ce6a4b03f13be8f8e5471895ed555d2c871503ae530d", "transcript": "The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript the research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript. The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript. The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript. The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript. The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript. The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript. The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript. The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript the research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording . Every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript . The research team reviewed the recording every sentence should appear in the complete transcript. This is the final sentence, the last word is telescope.", "segments": 506, "tail_preserved": true, "complete_duration": true, "customer_acceptance": false}
+{"event": "post_long_request", "text": "This is the final sentence , the last word is telescope.", "audio_seconds": 4.203875}
