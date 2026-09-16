@@ -19,6 +19,7 @@ from websockets.asyncio.client import connect
 
 from .models import CreateRuns, Intervention, Settings
 from .store import LiveAudioBus, Store, public_run
+from .voice_policy import PARAKEET, SileroCPU, VoicePolicy
 from .worker import RemoteFailure, Worker, json_call, wav_bytes
 
 REQUESTS = Counter("fs2_workshop_requests_total", "Workshop API requests", ["method", "status"])
@@ -76,6 +77,12 @@ def create_app(settings=None, *, store=None, client=None, start_workers=True):
             store = Store(pool, Path(settings.credential_key_file).read_bytes().strip())
         app.state.store, app.state.client = store, client
         app.state.auth = Identity(client, settings.auth_url)
+        app.state.silero = (
+            await asyncio.to_thread(SileroCPU, settings.silero_model_path)
+            if Path(settings.silero_model_path).is_file()
+            else None
+        )
+        app.state.voice_cpu_gate = asyncio.Lock()
         app.state.audio_bus = LiveAudioBus(store.pool)
         await app.state.audio_bus.start()
         workers = [Worker(store, settings, client) for _ in range(settings.workers)] if start_workers else []
@@ -325,10 +332,24 @@ def create_app(settings=None, *, store=None, client=None, start_workers=True):
             if row["status"] != "takeover" or role != row["state"]["next_role"]:
                 raise ValueError("Take over the current speaker before starting the microphone")
             model = first.get("model", "nemotron-speech-en-0-6b")
-            if model not in {"nemotron-speech-en-0-6b", "nemotron-speech-multilingual-0-6b"}:
+            if model not in {"nemotron-speech-en-0-6b", "nemotron-speech-multilingual-0-6b", PARAKEET}:
                 raise ValueError("Choose an available speech recognition model")
+            automatic = first.get("auto_finish", False)
+            if not isinstance(automatic, bool):
+                raise ValueError("auto_finish must be a boolean")
+            policy = None
+            if automatic:
+                if row["state"]["config"]["mode"] != "spoken":
+                    raise ValueError("Automatic voice policy is only available in spoken experience mode")
+                if app.state.silero is None:
+                    raise ValueError("Automatic voice policy is unavailable; use manual Finish")
+                policy = VoicePolicy(app.state.silero, asr_model=model, language=row["state"]["config"]["language"])
+            parakeet = model == PARAKEET
+            upstream_url = (
+                settings.speech_url.replace("/v1/audio/stream", "/v1/voice/stream") if parakeet else settings.speech_url
+            )
             async with connect(
-                settings.speech_url,
+                upstream_url,
                 additional_headers={"Authorization": f"Bearer {token}"},
                 max_size=1024 * 1024,
                 open_timeout=15,
@@ -337,12 +358,31 @@ def create_app(settings=None, *, store=None, client=None, start_workers=True):
                     json.dumps(
                         {
                             "type": "session.start",
-                            "options": {"model": model},
+                            **({"model": model} if parakeet else {"options": {"model": model}}),
                             "audio": {"encoding": "pcm_s16le", "sample_rate_hz": 16000, "channels": 1},
                         }
                     )
                 )
                 pcm, finals = bytearray(), []
+                send_lock, policy_lock = asyncio.Lock(), asyncio.Lock()
+                input_finished = False
+
+                async def finish_input(*, cancel=False, automatic=False):
+                    nonlocal input_finished
+                    async with send_lock:
+                        if input_finished:
+                            return
+                        input_finished = True
+                        kind = "session.cancel" if cancel else "session.finish" if parakeet else "input.finish"
+                        if automatic:
+                            await socket.send_json({"type": "voice_policy.input_finish", "automatic": True})
+                        await upstream.send(json.dumps({"type": kind}))
+
+                async def policy_events(events):
+                    for observation in events:
+                        await socket.send_json(observation)
+                    if policy.finished:
+                        await finish_input(automatic=True)
 
                 async def upload():
                     while True:
@@ -351,23 +391,29 @@ def create_app(settings=None, *, store=None, client=None, start_workers=True):
                             raise WebSocketDisconnect()
                         if event.get("bytes") is not None:
                             chunk = event["bytes"]
-                            if len(chunk) > 65536 or len(pcm) + len(chunk) > 16000 * 2 * 120:
+                            if (
+                                not chunk
+                                or len(chunk) % 2
+                                or len(chunk) > (32000 if parakeet or policy else 65536)
+                                or len(pcm) + len(chunk) > 16000 * 2 * 120
+                            ):
                                 raise ValueError("Microphone turn exceeds two minutes or maximum chunk size")
-                            pcm.extend(chunk)
-                            await upstream.send(chunk)
+                            async with send_lock:
+                                if input_finished:
+                                    return
+                                pcm.extend(chunk)
+                                await upstream.send(chunk)
+                            if policy:
+                                async with policy_lock, app.state.voice_cpu_gate:
+                                    events = await asyncio.to_thread(policy.feed, chunk)
+                                await policy_events(events)
+                                if input_finished:
+                                    return
                         elif event.get("text"):
                             control = json.loads(event["text"])
                             if control not in ({"type": "session.finish"}, {"type": "session.cancel"}):
                                 raise ValueError("Invalid microphone control")
-                            # The browser finishes a recording; the shared speech
-                            # protocol finishes its PCM input, not the session.
-                            await upstream.send(
-                                json.dumps(
-                                    {"type": "input.finish"}
-                                    if control["type"] == "session.finish"
-                                    else control
-                                )
-                            )
+                            await finish_input(cancel=control["type"] == "session.cancel")
                             return
 
                 reader = asyncio.create_task(upload())
@@ -384,7 +430,11 @@ def create_app(settings=None, *, store=None, client=None, start_workers=True):
                             if event.get("type") == "transcript.final":
                                 finals.append(event)
                             await socket.send_json(event)
-                            if event.get("type") == "session.completed":
+                            if policy:
+                                async with policy_lock:
+                                    observations = policy.observe(event)
+                                await policy_events(observations)
+                            if event.get("type") == ("session.done" if parakeet else "session.completed"):
                                 text = " ".join(str(e.get("text", "")) for e in finals).strip()
                                 if not text:
                                     raise ValueError("No complete transcript was returned")
@@ -400,14 +450,19 @@ def create_app(settings=None, *, store=None, client=None, start_workers=True):
                                     version=row["version"],
                                     audio=(
                                         wav_bytes(bytes(pcm), 16000),
-                                        {"source": "microphone", "model": model, "segments": finals},
+                                        {
+                                            "source": "microphone",
+                                            "model": model,
+                                            "segments": finals,
+                                            "voice_policy": policy.metadata() if policy else {"mode": "manual"},
+                                        },
                                     ),
                                 )
                                 await socket.send_json(
                                     {"type": "workshop.message_submitted", "run": jsonable_encoder(updated)}
                                 )
                                 break
-                            if event.get("type") in {"session.error", "session.cancelled"}:
+                            if event.get("type") in {"error", "session.error", "session.cancelled"}:
                                 break
                 finally:
                     reader.cancel()

@@ -173,6 +173,8 @@ async function showRun() {
   if (ended && mic) await stopMic(true);
   const canRecord = run.status === 'takeover' && s.takeover_role === s.next_role;
   $('microphone').disabled = Boolean(mic) || micPending || !canRecord;
+  $('auto-finish').disabled = ended || Boolean(mic) || micPending || s.config.mode !== 'spoken' || s.config.language !== 'en';
+  if (s.config.mode !== 'spoken' || s.config.language !== 'en') $('auto-finish').checked = false;
   if (!mic && !micPending) $('mic-status').textContent = ended ? 'This run has ended; new messages and microphone capture are disabled.' : canRecord ? `Ready to record as ${s.takeover_role}.` : s.takeover_role ? `Waiting for the ${s.takeover_role} turn before microphone capture.` : 'Take over the current speaker to use the microphone.';
   const fingerprint = `${id}:${run.version}`; if (fingerprint === renderedVersion) return; renderedVersion = fingerprint;
   $('run-labels').replaceChildren(node('span', s.config.mode === 'canonical' ? 'Text benchmark' : 'Spoken experience', 'pill'), node('span', s.intervened ? 'Human intervention · excluded from default comparison' : 'No interventions', 'pill'));
@@ -213,11 +215,11 @@ $('intervention-form').onsubmit = e => { e.preventDefault(); command('say', $('m
 $('download').onclick = async () => {
   try { const url = URL.createObjectURL(await (await api(`/v1/workshop/runs/${selected}/report`)).blob()); const a = node('a'); a.href = url; a.download = `${selected}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); } catch (error) { notice(error.message, true); }
 };
-async function stopMic(cancel = false) {
+async function stopMic(cancel = false, notifyServer = true) {
   if (!mic) return; const current = mic; mic = null;
   micPending = !cancel;
   current.processor?.disconnect(); current.source?.disconnect(); current.stream?.getTracks().forEach(t => t.stop()); await current.context?.close();
-  if (current.socket?.readyState === WebSocket.OPEN) current.socket.send(JSON.stringify({type: cancel ? 'session.cancel' : 'session.finish'}));
+  if (notifyServer && current.socket?.readyState === WebSocket.OPEN) current.socket.send(JSON.stringify({type: cancel ? 'session.cancel' : 'session.finish'}));
   $('stop-microphone').hidden = true; $('microphone').disabled = true; $('mic-status').textContent = cancel ? 'Recording cancelled.' : 'Finishing transcription…';
 }
 $('stop-microphone').onclick = () => stopMic();
@@ -231,7 +233,8 @@ $('microphone').onclick = async () => {
     if (context.sampleRate !== 16000) { stream.getTracks().forEach(t => t.stop()); await context.close(); throw new Error('This browser cannot record 16 kHz PCM. Use typed takeover or another browser.'); }
     const socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/v1/workshop/runs/${selected}/microphone`);
     mic = {stream, context, socket}; $('microphone').disabled = true;
-    socket.onopen = () => socket.send(JSON.stringify({token, model: 'nemotron-speech-en-0-6b'}));
+    const automatic = $('auto-finish').checked;
+    socket.onopen = () => socket.send(JSON.stringify({token, model: automatic ? 'parakeet-realtime-eou-120m-v1' : 'nemotron-speech-en-0-6b', auto_finish: automatic}));
     socket.onmessage = async ({data}) => {
       const event = JSON.parse(data);
       if (event.type === 'session.ready' && mic?.socket === socket) {
@@ -239,9 +242,11 @@ $('microphone').onclick = async () => {
         mic.source = source; mic.processor = processor; source.connect(processor); processor.connect(context.destination);
         processor.onaudioprocess = (e) => { const input = e.inputBuffer.getChannelData(0), buffer = new ArrayBuffer(input.length * 2), view = new DataView(buffer); for (let i = 0; i < input.length; i++) view.setInt16(i * 2, Math.max(-1, Math.min(1, input[i])) * 32767, true); if (socket.readyState === WebSocket.OPEN) socket.send(buffer); };
         $('stop-microphone').hidden = false; $('mic-status').textContent = 'Recording · finish to submit your turn.';
-      } else if (event.type.startsWith('transcript.')) $('mic-status').textContent = event.text || '';
+      } else if (event.type === 'voice_policy.input_finish') { await stopMic(false, false); $('mic-status').textContent = 'Automatic end of utterance · finishing transcription…'; }
+      else if (event.type.startsWith('voice_policy.')) $('mic-status').textContent = `${event.type.replace('voice_policy.', '')} · ${event.source} · no automatic backchannel speech`;
+      else if (event.type.startsWith('transcript.')) $('mic-status').textContent = event.text || '';
       else if (event.type === 'workshop.message_submitted') { micPending = false; $('mic-status').textContent = 'Your spoken turn was submitted and retained.'; await refresh(); }
-      else if (event.type === 'workshop.error' || event.type === 'session.error') { notice(event.message || 'Speech session failed; use typed takeover.', true); await stopMic(true); }
+      else if (event.type === 'workshop.error' || event.type === 'session.error' || event.type === 'error') { notice(event.message || 'Speech session failed; use manual Finish or typed takeover.', true); await stopMic(true); }
     };
     socket.onerror = () => notice('Microphone connection failed. No typed message was submitted.', true);
     socket.onclose = () => { micPending = false; if (mic?.socket === socket) stopMic(true); refresh(); };

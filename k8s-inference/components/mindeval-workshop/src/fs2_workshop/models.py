@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     max_team_workers: int = Field(default=5, ge=1, le=5)
     request_timeout_seconds: int = Field(default=180, ge=10, le=600)
     mindguard_model: Literal["mindguard-4b", "mindguard-8b"] | None = "mindguard-4b"
+    silero_model_path: str = "/opt/voice-policy/silero_vad.onnx"
 
 
 class Contract(BaseModel):
