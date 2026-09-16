@@ -56,7 +56,7 @@ uv run --frozen pytest -q
 uv run --frozen ruff check adapters.py example.py tests
 ```
 
-Eight tests passed on 2026-09-16 using the actual installed framework. Network
+Nine tests passed on 2026-09-16 using the actual installed framework. Network
 responses are deterministic fixtures, **not live model-quality evidence**.
 `tests/two_voices.json` contains distinct short PCM wire fixtures and separate
 Sofia/Jason text expectations; those four-byte PCM payloads are intentionally

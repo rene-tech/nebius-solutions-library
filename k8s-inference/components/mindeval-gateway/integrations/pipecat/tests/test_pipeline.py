@@ -5,8 +5,8 @@ from pathlib import Path
 import httpx
 import pytest
 
-from adapters import PlatformClient
-from example import CRITERIA, run_pipeline
+from adapters import MAGPIE, PlatformClient, wav_bytes
+from example import CRITERIA, run_pipeline, validate_wav
 
 VOICES = json.loads((Path(__file__).parent / "two_voices.json").read_text())
 
@@ -54,7 +54,14 @@ class Backend:
             assert body["text"] == VOICES[body["voice"]]["text"]
             events = [
                 {"type": "operation.queued", "operation_id": "fixture"},
-                {"type": "audio.start", "encoding": "pcm_s16le", "sample_rate_hz": 22050},
+                {
+                    "type": "audio.start",
+                    "encoding": "pcm_s16le",
+                    "sample_rate_hz": 22050,
+                    "channels": 1,
+                    "model": MAGPIE,
+                    "voice": body["voice"],
+                },
                 {
                     "type": "audio.chunk",
                     "sample_rate_hz": 22050,
@@ -108,6 +115,14 @@ async def test_real_pipecat_worker_rtvi_handshake_and_two_voice_frames(queued):
     assert {"bot-ready", "bot-llm-text", "metrics", "server-message"} <= types
     assert report["canonical_judgment"]
     assert len([r for r in backend.calls if r.url.path.endswith("/transcriptions")]) == 2
+
+
+def test_wav_output_decodes_with_nonzero_pcm_and_expected_duration():
+    properties = validate_wav(wav_bytes(b"\x01\x00\x02\x00", 22050))
+    assert properties["samples"] == 2 and properties["peak_pcm16"] == 2
+    assert properties["duration_seconds"] == 2 / 22050
+    with pytest.raises(ValueError, match="silent"):
+        validate_wav(wav_bytes(b"\x00\x00", 22050))
 
 
 async def test_truncated_ndjson_cannot_report_success_or_run_judge():

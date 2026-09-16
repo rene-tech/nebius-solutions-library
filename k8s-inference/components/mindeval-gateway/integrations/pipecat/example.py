@@ -3,10 +3,13 @@
 import argparse
 import asyncio
 import hashlib
+import io
 import json
 import math
 import ssl
+import struct
 import time
+import wave
 from pathlib import Path
 from uuid import uuid4
 
@@ -34,6 +37,22 @@ CRITERIA = {
     "Therapeutic Relationship & Alliance",
     "AI-Specific Communication Quality",
 }
+
+
+def validate_wav(content):
+    with wave.open(io.BytesIO(content), "rb") as audio:
+        if audio.getnchannels() != 1 or audio.getsampwidth() != 2 or audio.getframerate() != 22050:
+            raise ValueError("unexpected generated WAV format")
+        pcm = audio.readframes(audio.getnframes())
+        samples = [value[0] for value in struct.iter_unpack("<h", pcm)]
+        if not samples or not any(samples):
+            raise ValueError("generated WAV is empty or entirely silent")
+        return {
+            "samples": len(samples),
+            "duration_seconds": len(samples) / audio.getframerate(),
+            "peak_pcm16": max(abs(value) for value in samples),
+            "rms_pcm16": math.sqrt(sum(value * value for value in samples) / len(samples)),
+        }
 
 
 class Recorder(FrameProcessor):
@@ -217,6 +236,7 @@ async def main_async(args):
     for item in audio:
         name = f"{item['index']:03}-{item['role']}-{item['voice']}.wav"
         content = wav_bytes(item["pcm"], item["sample_rate"])
+        audio_properties = validate_wav(content)
         (output / name).write_bytes(content)
         report["audio_files"].append(
             {
@@ -224,6 +244,7 @@ async def main_async(args):
                 "sha256": hashlib.sha256(content).hexdigest(),
                 "bytes": len(content),
                 "sample_rate": item["sample_rate"],
+                **audio_properties,
             }
         )
     rendered = json.dumps(report, indent=2)

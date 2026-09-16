@@ -203,9 +203,17 @@ class MagpieProcessor(CheckedProcessor):
                 if kind == "operation.queued":
                     continue
                 if kind == "audio.start":
-                    if audio_started or event.get("encoding") != "pcm_s16le" or event.get("sample_rate_hz") != 22050:
+                    if (
+                        audio_started
+                        or event.get("encoding") != "pcm_s16le"
+                        or event.get("sample_rate_hz") != 22050
+                        or event.get("channels") != 1
+                        or event.get("model") != MAGPIE
+                        or event.get("voice") != voice
+                    ):
                         raise RuntimeError("Magpie audio format changed")
                     audio_started = True
+                    context["tts_start"] = event
                     start = TTSStartedFrame(context_id=context_id)
                     start.metadata.update(context)
                     await self.push_frame(start)
