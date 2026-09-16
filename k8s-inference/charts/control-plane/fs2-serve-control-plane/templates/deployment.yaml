@@ -1,6 +1,25 @@
 {{- if lt (.Values.config.maxSyncWaiters | int) (.Values.config.workerConcurrency | int) }}
 {{- fail "config.maxSyncWaiters must be greater than or equal to config.workerConcurrency" }}
 {{- end }}
+{{- if .Values.customerStorage.enabled }}
+{{- if not .Values.networkPolicy.enabled }}
+{{- fail "customerStorage requires networkPolicy.enabled=true" }}
+{{- end }}
+{{- if eq (len .Values.customerStorage.egressCidrs) 0 }}
+{{- fail "customerStorage.egressCidrs requires at least one bounded Nebius API destination" }}
+{{- end }}
+{{- if or (not .Values.customerStorage.resourceCredentialsSecretName) (not .Values.customerStorage.iamCredentialsSecretName) }}
+{{- fail "customerStorage requires split resource and IAM credential Secrets" }}
+{{- end }}
+{{- if eq .Values.customerStorage.resourceCredentialsSecretName .Values.customerStorage.iamCredentialsSecretName }}
+{{- fail "customerStorage resource and IAM credential Secrets must differ" }}
+{{- end }}
+{{- range .Values.customerStorage.egressCidrs }}
+{{- if or (eq . "0.0.0.0/0") (eq . "::/0") (not (regexMatch "^(([0-9]{1,3}\\.){3}[0-9]{1,3}/([1-9]|[12][0-9]|3[0-2])|[0-9A-Fa-f:]+/([1-9]|[1-9][0-9]|1[01][0-9]|12[0-8]))$" .)) }}
+{{- fail "customerStorage.egressCidrs accepts only bounded IPv4 or IPv6 CIDRs" }}
+{{- end }}
+{{- end }}
+{{- end }}
 {{- if .Values.adminConfiguration.enabled }}
 {{- if not (regexMatch "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$" .Values.adminConfiguration.configMapName) }}
 {{- fail "adminConfiguration.configMapName is required when enabled" }}
@@ -57,7 +76,7 @@
 {{- if or (ne .Values.migration.runtimeDatabaseRole "fs2_serve_runtime") (ne .Values.migration.reportingDatabaseRole "fs2_serve_reporting") (ne .Values.migration.maintenanceDatabaseRole "fs2_serve_maintenance") (ne .Values.migration.activationDatabaseRole "fs2_serve_activation") }}
 {{- fail "database group roles must match the canonical PostgreSQL release contract" }}
 {{- end }}
-{{- if or (ne .Values.migration.releaseContract.schema "fs2-serve.nebius.ai/postgresql-release-contract/v1") (ne .Values.migration.releaseContract.contractPayloadSha256 "bb2a18a8132b0e65356b1c4960b7893ff601240b4ccd899e5d53e00bf1aff11e") (ne .Values.migration.releaseContract.migrationSetSha256 "9614eae993e7003ab3e4dd854bd4c5a7e7929e97256b6209899088c789af83d2") (ne (int .Values.migration.releaseContract.migrationCount) 29) (ne .Values.migration.releaseContract.firstMigrationVersion "0001_initial.sql") (ne .Values.migration.releaseContract.lastMigrationVersion "0029_request_debug.sql") (ne .Values.migration.releaseContract.namespaceRoleOwnershipSha256 "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca") }}
+{{- if or (ne .Values.migration.releaseContract.schema "fs2-serve.nebius.ai/postgresql-release-contract/v1") (ne .Values.migration.releaseContract.contractPayloadSha256 "87dee4c94353034f368ef45e63b9ec28aa04b16aa20fdf01a757b8dbe134c009") (ne .Values.migration.releaseContract.migrationSetSha256 "6f4017391de80017ca579e6363d1dce72903e6e568a3901d889359d58e4f27a6") (ne (int .Values.migration.releaseContract.migrationCount) 32) (ne .Values.migration.releaseContract.firstMigrationVersion "0001_initial.sql") (ne .Values.migration.releaseContract.lastMigrationVersion "0032_user_storage_security.sql") (ne .Values.migration.releaseContract.namespaceRoleOwnershipSha256 "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca") }}
 {{- fail "migration release receipt inputs must match the canonical PostgreSQL contract" }}
 {{- end }}
 {{- if ne .Values.httpRoute.authorityMode .Values.config.publicAuthorityMode }}

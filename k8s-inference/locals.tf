@@ -1120,6 +1120,7 @@ locals {
   }
 
   workloads_variables = {
+    customer_storage                = var.deployment.storage.customer_buckets
     deployment_profile              = local.model_profile
     enabled_model_ids               = local.selected_model_ids
     model_image_overrides           = local.effective_model_images

@@ -1,5 +1,25 @@
 replicaCount: 2
 
+customerStorage:
+  enabled: false
+  projectId: ""
+  region: ""
+  defaultMode: user
+  quotaBytes: 5000000000
+  excludedTenants: []
+  resourceCredentialsSecretName: ""
+  iamCredentialsSecretName: ""
+  egressCidrs: []
+  keyTtlDays: 90
+  actionTimeoutSeconds: 30
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
 image:
   # Required immutable production repository and digest; empty defaults fail validation.
   repository: ""
@@ -220,6 +240,10 @@ serviceAccounts:
     create: true
     name: ""
     annotations: {}
+  storage:
+    create: true
+    name: ""
+    annotations: {}
 
 # Optional node-local attribution source. It reads only kubelet's device-plugin
 # checkpoint and publishes a bounded Pod UID -> GPU UUID observation onto model
@@ -364,11 +388,11 @@ migration:
   # for the final PostgreSQL release receipt; chart validation rejects drift.
   releaseContract:
     schema: fs2-serve.nebius.ai/postgresql-release-contract/v1
-    contractPayloadSha256: bb2a18a8132b0e65356b1c4960b7893ff601240b4ccd899e5d53e00bf1aff11e
-    migrationSetSha256: 9614eae993e7003ab3e4dd854bd4c5a7e7929e97256b6209899088c789af83d2
-    migrationCount: 29
+    contractPayloadSha256: 87dee4c94353034f368ef45e63b9ec28aa04b16aa20fdf01a757b8dbe134c009
+    migrationSetSha256: 6f4017391de80017ca579e6363d1dce72903e6e568a3901d889359d58e4f27a6
+    migrationCount: 32
     firstMigrationVersion: 0001_initial.sql
-    lastMigrationVersion: 0029_request_debug.sql
+    lastMigrationVersion: 0032_user_storage_security.sql
     namespaceRoleOwnershipSha256: 47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca
   resources:
     requests:

@@ -579,7 +579,8 @@ async def build_runtime(settings: Settings) -> AppRuntime:
 
         canonical_catalog = augment_native_catalog(
             load_catalog(settings.catalog_dir, repo_root=settings.repo_root),
-            settings.catalog_dir, repo_root=settings.repo_root,
+            settings.catalog_dir,
+            repo_root=settings.repo_root,
         )
         configuration_repository = StoreConfigurationRepository(store)
         configuration_service = ConfigurationService(
@@ -668,6 +669,53 @@ async def maintain(settings: Settings) -> None:
             usage_retention_seconds=settings.usage_retention_seconds,
         )
     finally:
+        await store.close()
+
+
+async def reconcile_user_storage(settings: Settings) -> None:
+    """Run cloud reconciliation outside every Internet-facing process."""
+    from nebius.sdk import SDK
+
+    from .user_repository import PostgresUserRepository
+    from .user_storage import UserStorageService
+    from .user_storage_models import StoragePolicy
+    from .user_storage_nebius import NebiusUserStorage
+    from .user_storage_repository import PostgresUserStorageRepository
+
+    required = (
+        settings.user_storage_project_id,
+        settings.user_storage_region,
+        settings.user_storage_resource_credentials_file,
+        settings.user_storage_iam_credentials_file,
+    )
+    if not settings.user_storage_enabled or not all(required):
+        raise RuntimeError("storage-reconciler requires a project, region and two credential files")
+    store = await _store(settings)
+    provider = NebiusUserStorage(
+        SDK(credentials_file_name=settings.user_storage_resource_credentials_file),
+        iam_sdk=SDK(credentials_file_name=settings.user_storage_iam_credentials_file),
+        project_id=settings.user_storage_project_id,
+        tenant_id=settings.user_storage_cloud_tenant_id,
+        region=settings.user_storage_region,
+        name_hasher=store.hasher,
+        key_ttl_days=settings.user_storage_key_ttl_days,
+    )
+    service = UserStorageService(
+        PostgresUserStorageRepository(store.pool, store.cipher),
+        provider,
+        PostgresUserRepository(store.pool),
+        default=StoragePolicy(
+            mode=settings.user_storage_default_mode,
+            quota_bytes=settings.user_storage_quota_bytes,
+        ),
+        excluded_tenants=settings.user_storage_excluded_tenants,
+        poll_seconds=settings.user_storage_poll_seconds,
+        action_timeout_seconds=settings.user_storage_action_timeout_seconds,
+    )
+    try:
+        await service._run()
+    finally:
+        await service.close()
         await store.close()
 
 
@@ -766,6 +814,7 @@ def main() -> None:
             "postgresql-release-contract",
             "model-controller",
             "gpu-allocation-observer",
+            "storage-reconciler",
             "scientific-materialize",
             "scientific-materialize-many",
             "scientific-collect",
@@ -791,6 +840,7 @@ def main() -> None:
             "bootstrap-access": bootstrap_access,
             "model-controller": run_model_controller,
             "gpu-allocation-observer": observe_gpu_allocations,
+            "storage-reconciler": reconcile_user_storage,
         }[args.command]
         asyncio.run(action(settings))
 

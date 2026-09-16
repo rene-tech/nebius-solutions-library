@@ -10,6 +10,7 @@ from pydantic import AwareDatetime, Field
 from .access_models import AdminApiKey, PrincipalKind
 from .admin_models import AdminMeasurement
 from .models import StrictModel
+from .user_storage_models import UserStorage
 
 
 def owner_id(tenant_id: str, principal_id: str) -> UUID:
@@ -102,6 +103,7 @@ class UserDetail(StrictModel):
     user: UserRow
     keys: list[AdminApiKey]
     apps: list[UserAppChoice]
+    storage: UserStorage | None = None
     policy_note: str = (
         "User settings restrict, never expand, each API key's policy. Existing key limits remain per key. "
         "Academic classification is informational; every model uses the same app permissions. "

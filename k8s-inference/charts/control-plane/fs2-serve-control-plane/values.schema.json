@@ -28,6 +28,25 @@
     "scientificArtifacts"
   ],
   "properties": {
+    "customerStorage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "projectId", "region", "defaultMode", "quotaBytes", "excludedTenants", "resourceCredentialsSecretName", "iamCredentialsSecretName", "egressCidrs", "keyTtlDays", "actionTimeoutSeconds", "resources"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "projectId": {"type": "string"},
+        "region": {"type": "string"},
+        "defaultMode": {"enum": ["tenant", "user"]},
+        "quotaBytes": {"type": "integer", "minimum": 1},
+        "excludedTenants": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "resourceCredentialsSecretName": {"type": "string"},
+        "iamCredentialsSecretName": {"type": "string"},
+        "egressCidrs": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "keyTtlDays": {"type": "integer", "minimum": 1, "maximum": 365},
+        "actionTimeoutSeconds": {"type": "number", "minimum": 1, "maximum": 120},
+        "resources": {"type": "object"}
+      }
+    },
     "replicaCount": {
       "type": "integer",
       "minimum": 2
@@ -915,7 +934,8 @@
         "migration",
         "bootstrap",
         "controller",
-        "gpu-observer"
+        "gpu-observer",
+        "storage"
       ],
       "properties": {
         "runtime": {
@@ -934,6 +954,9 @@
           "$ref": "#/$defs/serviceAccount"
         },
         "gpu-observer": {
+          "$ref": "#/$defs/serviceAccount"
+        },
+        "storage": {
           "$ref": "#/$defs/serviceAccount"
         }
       },
@@ -1576,11 +1599,11 @@
           ],
           "properties": {
             "schema": {"const": "fs2-serve.nebius.ai/postgresql-release-contract/v1"},
-            "contractPayloadSha256": {"const": "bb2a18a8132b0e65356b1c4960b7893ff601240b4ccd899e5d53e00bf1aff11e"},
-            "migrationSetSha256": {"const": "9614eae993e7003ab3e4dd854bd4c5a7e7929e97256b6209899088c789af83d2"},
-            "migrationCount": {"const": 29},
+            "contractPayloadSha256": {"const": "87dee4c94353034f368ef45e63b9ec28aa04b16aa20fdf01a757b8dbe134c009"},
+            "migrationSetSha256": {"const": "6f4017391de80017ca579e6363d1dce72903e6e568a3901d889359d58e4f27a6"},
+            "migrationCount": {"const": 32},
             "firstMigrationVersion": {"const": "0001_initial.sql"},
-            "lastMigrationVersion": {"const": "0029_request_debug.sql"},
+            "lastMigrationVersion": {"const": "0032_user_storage_security.sql"},
             "namespaceRoleOwnershipSha256": {"const": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca"}
           },
           "additionalProperties": false

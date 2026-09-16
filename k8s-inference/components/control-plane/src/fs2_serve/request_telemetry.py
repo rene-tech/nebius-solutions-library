@@ -304,7 +304,10 @@ class PostgresRequestTelemetryStore:
                 operation_id,
                 tenant_id,
             )
-        return [RequestTelemetry.model_validate(dict(row)) for row in rows]
+        # Rolling upgrades may add columns before all readers have upgraded.
+        return [
+            RequestTelemetry.model_validate({key: row[key] for key in RequestTelemetry.model_fields}) for row in rows
+        ]
 
     async def usage(
         self, model_id: str, from_at: datetime, to_at: datetime, tenant_id: str | None

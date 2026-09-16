@@ -1,6 +1,6 @@
 {
   "canonicalization": "utf8-json-sort-keys-no-whitespace",
-  "contract_payload_sha256": "bb2a18a8132b0e65356b1c4960b7893ff601240b4ccd899e5d53e00bf1aff11e",
+  "contract_payload_sha256": "87dee4c94353034f368ef45e63b9ec28aa04b16aa20fdf01a757b8dbe134c009",
   "migration_set": {
     "algorithm": "sha256",
     "ordered_migrations": [
@@ -148,9 +148,24 @@
         "ordinal": 29,
         "sha256": "a02fe7eb59ea664c4cb4972158a59d52b5df22aa937eb83cd9a287939a90438a",
         "version": "0029_request_debug.sql"
+      },
+      {
+        "ordinal": 30,
+        "sha256": "25228cd592492009f0d8b6c43be64c5075e2c454f6407d078f8b4add7c98f3f3",
+        "version": "0030_mcp_semantic_outcomes.sql"
+      },
+      {
+        "ordinal": 31,
+        "sha256": "c3c97b15e58ddc165a4c03c262a878189e2245293cf571e96eb4eaa516f23030",
+        "version": "0031_user_storage.sql"
+      },
+      {
+        "ordinal": 32,
+        "sha256": "286c35e1a469c08a3caa31472d27b9433024d84c8e5185bc4855e5e0ee1cad1d",
+        "version": "0032_user_storage_security.sql"
       }
     ],
-    "sha256": "9614eae993e7003ab3e4dd854bd4c5a7e7929e97256b6209899088c789af83d2"
+    "sha256": "6f4017391de80017ca579e6363d1dce72903e6e568a3901d889359d58e4f27a6"
   },
   "namespace_role_ownership": {
     "credential_secrets": [
@@ -263,9 +278,9 @@
   "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca",
   "required_release_receipt_inputs": {
     "first_migration_version": "0001_initial.sql",
-    "last_migration_version": "0029_request_debug.sql",
-    "migration_count": 29,
-    "migration_set_sha256": "9614eae993e7003ab3e4dd854bd4c5a7e7929e97256b6209899088c789af83d2",
+    "last_migration_version": "0032_user_storage_security.sql",
+    "migration_count": 32,
+    "migration_set_sha256": "6f4017391de80017ca579e6363d1dce72903e6e568a3901d889359d58e4f27a6",
     "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca"
   },
   "schema": "fs2-serve.nebius.ai/postgresql-release-contract/v1"

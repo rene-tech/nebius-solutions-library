@@ -50,6 +50,11 @@ app.kubernetes.io/component: admin-console
 app.kubernetes.io/component: maintenance
 {{- end -}}
 
+{{- define "fs2-serve.storageSelectorLabels" -}}
+{{ include "fs2-serve.selectorLabels" . }}
+app.kubernetes.io/component: storage-reconciler
+{{- end -}}
+
 {{- define "fs2-serve.migrationSelectorLabels" -}}
 {{ include "fs2-serve.selectorLabels" . }}
 app.kubernetes.io/component: migration
@@ -190,6 +195,20 @@ app.kubernetes.io/component: model-controller
 {{ include "fs2-serve.cryptoEnv" . }}
 {{ include "fs2-serve.payloadEnv" . }}
 {{- include "fs2-serve.scientificArtifactsEnv" . }}
+{{- if .Values.customerStorage.enabled }}
+- name: FS2_USER_STORAGE_ENABLED
+  value: "true"
+- name: FS2_USER_STORAGE_PROJECT_ID
+  value: {{ required "customerStorage.projectId is required" .Values.customerStorage.projectId | quote }}
+- name: FS2_USER_STORAGE_REGION
+  value: {{ required "customerStorage.region is required" .Values.customerStorage.region | quote }}
+- name: FS2_USER_STORAGE_DEFAULT_MODE
+  value: {{ .Values.customerStorage.defaultMode | quote }}
+- name: FS2_USER_STORAGE_QUOTA_BYTES
+  value: {{ .Values.customerStorage.quotaBytes | int64 | quote }}
+- name: FS2_USER_STORAGE_EXCLUDED_TENANTS
+  value: {{ .Values.customerStorage.excludedTenants | toJson | quote }}
+{{- end }}
 - name: FS2_CATALOG_DIR
   value: {{ ternary .Values.catalog.imagePath "/etc/fs2-serve/catalog" (eq .Values.catalog.delivery "image") | quote }}
 {{- if eq .Values.catalog.delivery "image" }}
