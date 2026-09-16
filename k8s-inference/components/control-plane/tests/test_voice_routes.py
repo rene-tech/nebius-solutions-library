@@ -11,7 +11,7 @@ import pytest
 from pydantic import ValidationError
 
 from fs2_serve.runtime import RuntimeProtocolError, RuntimeTransportError
-from fs2_serve.voice_routes import MAGPIE, VoiceSynthesisRequest, relay_synthesis
+from fs2_serve.voice_routes import MAGPIE, VoiceSynthesisRequest, relay_synthesis, relay_voice_stream
 
 
 def objects():
@@ -77,3 +77,66 @@ def test_voice_contract_rejects_unsupported_options(fields):
     with pytest.raises(ValidationError):
         VoiceSynthesisRequest(**{"text": "hello", **fields})
     assert VoiceSynthesisRequest(text="hello").model == MAGPIE
+
+
+class StreamSocket:
+    def __init__(self, events):
+        self.events = list(events)
+        self.sent = []
+        self.finished = asyncio.Event()
+
+    async def send(self, value):
+        self.sent.append(value)
+        if value == '{"type":"session.finish"}':
+            self.finished.set()
+
+    async def recv(self):
+        return json.dumps({"type": "session.ready"})
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return False
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        await self.finished.wait()
+        if not self.events:
+            raise StopAsyncIteration
+        return json.dumps(self.events.pop(0))
+
+
+@pytest.mark.asyncio
+async def test_stream_retains_finals_not_partials_and_records_usage():
+    model, operation = objects()
+    model.id = "parakeet-realtime-eou-120m-v1"
+    socket = StreamSocket(
+        [
+            {"type": "transcript.partial", "text": "Hel"},
+            {"type": "transcript.final", "text": "Hello"},
+            {"type": "turn.eou", "source": "model_token"},
+            {"type": "session.done", "audio_seconds": 1.0},
+        ]
+    )
+    audio, output = asyncio.Queue(), asyncio.Queue()
+    await audio.put(b"\0\0" * 16000)
+    await audio.put('{"type":"session.finish"}')
+    result = await relay_voice_stream(model, operation, b"{}", audio, output.put, connector=lambda *a, **k: socket)
+    assert json.loads(result.body)["text"] == "Hello"
+    assert len(json.loads(result.body)["events"]) == 2
+    assert result.usage.modalities[0].amount == 1.0
+    assert output.qsize() == 4  # ready + partial + final + actual EOU; done withheld until durable
+    assert socket.sent[-1] == '{"type":"session.finish"}'
+
+
+@pytest.mark.asyncio
+async def test_stream_worker_loss_does_not_create_complete_result():
+    model, operation = objects()
+    socket = StreamSocket([{"type": "transcript.partial", "text": "incomplete"}])
+    audio = asyncio.Queue()
+    await audio.put('{"type":"session.finish"}')
+    with pytest.raises(RuntimeTransportError):
+        await relay_voice_stream(model, operation, b"{}", audio, asyncio.Queue().put, connector=lambda *a, **k: socket)

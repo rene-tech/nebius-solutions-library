@@ -199,7 +199,9 @@ def deployment_runtime_model_schema(catalog_dir: Path) -> dict[str, Any]:
     gpu_schema["b300_state"]["enum"].append("not-applicable")
     schema["properties"]["cache"]["properties"]["owner"]["enum"].append("runtime-image")
     schema["$defs"]["artifact"]["properties"]["kind"]["enum"].extend(["reference-database", "formula"])
-    schema["properties"]["model"]["properties"]["family"]["enum"].extend(["biological-age", "speech-recognition"])
+    schema["properties"]["model"]["properties"]["family"]["enum"].extend(
+        ["biological-age", "speech-recognition", "speech-synthesis", "speaker-diarization"]
+    )
     return schema
 
 
