@@ -357,9 +357,17 @@ def create_app(settings=None, *, store=None, client=None, start_workers=True):
                             await upstream.send(chunk)
                         elif event.get("text"):
                             control = json.loads(event["text"])
-                            if control.get("type") not in {"session.finish", "session.cancel"}:
+                            if control not in ({"type": "session.finish"}, {"type": "session.cancel"}):
                                 raise ValueError("Invalid microphone control")
-                            await upstream.send(json.dumps(control))
+                            # The browser finishes a recording; the shared speech
+                            # protocol finishes its PCM input, not the session.
+                            await upstream.send(
+                                json.dumps(
+                                    {"type": "input.finish"}
+                                    if control["type"] == "session.finish"
+                                    else control
+                                )
+                            )
                             return
 
                 reader = asyncio.create_task(upload())

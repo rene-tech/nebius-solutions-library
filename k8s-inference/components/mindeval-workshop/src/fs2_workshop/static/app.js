@@ -168,14 +168,16 @@ async function showRun() {
   $('detail').hidden = false; $('run-status').textContent = `${run.status} · ${run.id}`;
   $('run-title').textContent = `${run.state.config.profile_id} · ${run.state.config.clinician_model.split('/').pop()}`;
   const s = run.state;
+  const ended = terminal.has(run.status);
+  document.querySelectorAll('[data-action], #role, #intervention-form button, #intervention-form textarea').forEach(b => { b.disabled = ended; });
+  if (ended && mic) await stopMic(true);
   const canRecord = run.status === 'takeover' && s.takeover_role === s.next_role;
   $('microphone').disabled = Boolean(mic) || micPending || !canRecord;
-  if (!mic && !micPending) $('mic-status').textContent = canRecord ? `Ready to record as ${s.takeover_role}.` : s.takeover_role ? `Waiting for the ${s.takeover_role} turn before microphone capture.` : 'Take over the current speaker to use the microphone.';
+  if (!mic && !micPending) $('mic-status').textContent = ended ? 'This run has ended; new messages and microphone capture are disabled.' : canRecord ? `Ready to record as ${s.takeover_role}.` : s.takeover_role ? `Waiting for the ${s.takeover_role} turn before microphone capture.` : 'Take over the current speaker to use the microphone.';
   const fingerprint = `${id}:${run.version}`; if (fingerprint === renderedVersion) return; renderedVersion = fingerprint;
   $('run-labels').replaceChildren(node('span', s.config.mode === 'canonical' ? 'Text benchmark' : 'Spoken experience', 'pill'), node('span', s.intervened ? 'Human intervention · excluded from default comparison' : 'No interventions', 'pill'));
   if (s.error) $('run-labels').append(node('p', `${s.error.code}: ${s.error.message}`, 'error'));
   if (run.status === 'interrupted') $('run-labels').append(node('p', 'Execution was interrupted. Inspect the last event, then Resume. An in-flight provider call may have incurred usage.', 'error'));
-  document.querySelectorAll('[data-action]').forEach(b => { b.disabled = terminal.has(run.status); });
   recordings.forEach(player => player.pause()); recordings.clear(); $('transcript').replaceChildren();
   for (const turn of s.transcript) {
     const article = node('article', undefined, `turn ${turn.role}`);
