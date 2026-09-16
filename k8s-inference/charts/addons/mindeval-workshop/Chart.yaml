@@ -1,0 +1,6 @@
+apiVersion: v2
+name: mindeval-workshop
+description: CPU services for the Scientific AI MindEval workshop and public Token Factory gateway
+type: application
+version: 0.1.0
+appVersion: "1"

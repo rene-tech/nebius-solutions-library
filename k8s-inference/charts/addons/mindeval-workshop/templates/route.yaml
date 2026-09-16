@@ -1,0 +1,32 @@
+{{- if .Values.route.enabled }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .Values.route.name }}
+  labels:
+    {{- include "mindeval.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ .Values.route.gatewayName }}
+      namespace: {{ .Values.route.gatewayNamespace }}
+      sectionName: {{ .Values.route.sectionName }}
+  {{- with .Values.route.hostnames }}
+  hostnames: {{ toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    - matches:
+        - {path: {type: PathPrefix, value: /workshop}}
+        - {path: {type: PathPrefix, value: /v1/workshop}}
+      backendRefs:
+        - {name: {{ .Values.workshop.name }}, port: 8080}
+      timeouts:
+        request: {{ .Values.route.timeout }}
+        backendRequest: {{ .Values.route.timeout }}
+    - matches:
+        - {path: {type: PathPrefix, value: /v1/mindeval}}
+      backendRefs:
+        - {name: {{ .Values.gateway.name }}, port: 8080}
+      timeouts:
+        request: {{ .Values.route.timeout }}
+        backendRequest: {{ .Values.route.timeout }}
+{{- end }}

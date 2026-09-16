@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.workshop.name }}
+  labels:
+    {{- include "mindeval.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ .Values.workshop.name }}
+spec:
+  replicas: {{ .Values.workshop.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.workshop.name }}
+  template:
+    metadata:
+      labels:
+        {{- include "mindeval.labels" . | nindent 8 }}
+        app.kubernetes.io/name: {{ .Values.workshop.name }}
+    spec:
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: workshop
+          image: {{ include "mindeval.workshopImage" . | quote }}
+          ports:
+            - {name: http, containerPort: 8080}
+          env:
+            - name: WORKSHOP_DATABASE_URL
+              valueFrom:
+                secretKeyRef: {name: {{ .Values.workshop.databaseSecret }}, key: {{ .Values.workshop.databaseSecretKey }}}
+            - {name: WORKSHOP_CREDENTIAL_KEY_FILE, value: /var/run/secrets/workshop/key}
+            - name: WORKSHOP_PUBLIC_ORIGIN
+              value: {{ .Values.workshop.publicOrigin | quote }}
+            - name: WORKSHOP_GATEWAY_URL
+              value: {{ printf "http://%s.%s.svc:8080" .Values.gateway.name .Release.Namespace | quote }}
+            - name: WORKSHOP_AUTH_URL
+              value: {{ .Values.workshop.authUrl | quote }}
+            - name: WORKSHOP_PLATFORM_URL
+              value: {{ .Values.workshop.platformUrl | quote }}
+            - name: WORKSHOP_SPEECH_URL
+              value: {{ .Values.workshop.speechUrl | quote }}
+            - name: WORKSHOP_WORKERS
+              value: {{ .Values.workshop.workers | quote }}
+            - name: WORKSHOP_REQUEST_TIMEOUT_SECONDS
+              value: {{ .Values.workshop.requestTimeoutSeconds | quote }}
+          resources: {{ toYaml .Values.workshop.resources | nindent 12 }}
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          volumeMounts:
+            - {name: credentials, mountPath: /var/run/secrets/workshop, readOnly: true}
+            - {name: database-ca, mountPath: /tls, readOnly: true}
+      volumes:
+        - name: credentials
+          secret:
+            secretName: {{ .Values.workshop.credentialSecret }}
+            defaultMode: 0440
+            items:
+              - {key: {{ .Values.workshop.credentialSecretKey }}, path: key}
+        - name: database-ca
+          secret:
+            secretName: {{ .Values.workshop.databaseSecret }}
+            defaultMode: 0440
+            items:
+              - {key: {{ .Values.workshop.databaseCaKey }}, path: ca.crt}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.workshop.name }}
+  labels:
+    {{- include "mindeval.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/name: {{ .Values.workshop.name }}
+  ports:
+    - {name: http, port: 8080, targetPort: http}

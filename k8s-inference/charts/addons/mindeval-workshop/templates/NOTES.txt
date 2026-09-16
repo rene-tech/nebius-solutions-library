@@ -1,0 +1,8 @@
+Workshop: {{ .Values.workshop.publicOrigin }}/workshop
+Workshop API: {{ .Values.workshop.publicOrigin }}/v1/workshop
+Gateway API: {{ .Values.workshop.publicOrigin }}/v1/mindeval
+
+The gateway is a mandatory singleton with a persistent SQLite volume.
+Existing platform bearer credentials authenticate all inference requests.
+Credential Secret values are never rendered by this chart.
+The migration hook updates only the separate fs2_workshop database schema.

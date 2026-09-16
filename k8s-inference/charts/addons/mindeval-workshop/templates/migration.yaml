@@ -1,0 +1,55 @@
+{{- if .Values.migration.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.workshop.name }}-migrate
+  labels:
+    {{- include "mindeval.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  activeDeadlineSeconds: {{ .Values.migration.activeDeadlineSeconds }}
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        {{- include "mindeval.labels" . | nindent 8 }}
+        app.kubernetes.io/name: {{ .Values.workshop.name }}-migrate
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: migrate
+          image: {{ include "mindeval.workshopImage" . | quote }}
+          command: [/app/.venv/bin/fs2-workshop-migrate]
+          env:
+            - name: WORKSHOP_DATABASE_URL
+              valueFrom:
+                secretKeyRef: {name: {{ .Values.migration.databaseSecret }}, key: {{ .Values.migration.databaseSecretKey }}}
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: '1', memory: 512Mi}
+          volumeMounts:
+            - {name: database-ca, mountPath: /tls, readOnly: true}
+      volumes:
+        - name: database-ca
+          secret:
+            secretName: {{ .Values.migration.databaseSecret }}
+            defaultMode: 0440
+            items:
+              - {key: {{ .Values.migration.databaseCaKey }}, path: ca.crt}
+{{- end }}

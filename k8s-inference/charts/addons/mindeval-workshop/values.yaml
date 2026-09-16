@@ -1,0 +1,53 @@
+gateway:
+  name: fs2-mindeval-gateway
+  image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/mindeval-gateway@sha256:4d7c32408cdc7a8bb5df55b73408146d6fe5aee759927f9211790b0874ef2db7
+  authUrl: http://fs2-serve-control-plane.fs2-system.svc:8080/internal/ext-authz
+  tokenFactorySecret: mindeval-token-factory
+  tokenFactorySecretKey: api-key
+  persistence:
+    claimName: mindeval-gateway-data
+    storageClass: compute-csi-default-sc
+    size: 1Gi
+    retain: true
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: '2', memory: 512Mi}
+workshop:
+  name: fs2-mindeval-workshop
+  image: ""
+  replicas: 2
+  workers: 10
+  requestTimeoutSeconds: 600
+  publicOrigin: https://89.169.99.188
+  authUrl: http://fs2-serve-control-plane.fs2-system.svc:8080/internal/ext-authz
+  platformUrl: http://fs2-serve-control-plane.fs2-system.svc:8080
+  speechUrl: ws://fs2-serve-control-plane.fs2-system.svc:8080/v1/audio/stream
+  databaseSecret: fs2-serve-database
+  databaseSecretKey: url
+  databaseCaKey: ca.crt
+  credentialSecret: fs2-workshop-credentials
+  credentialSecretKey: key
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: '2', memory: 1Gi}
+migration:
+  enabled: true
+  databaseSecret: fs2-serve-database-migrations
+  databaseSecretKey: url
+  databaseCaKey: ca.crt
+  activeDeadlineSeconds: 300
+route:
+  enabled: true
+  name: fs2-mindeval-workshop
+  gatewayName: public
+  gatewayNamespace: fs2-system
+  sectionName: public-https
+  hostnames: []
+  timeout: 900s
+networkPolicy:
+  controlPlaneAccess: true
+  controlPlaneNamespace: fs2-system
+  controlPlaneName: fs2-serve-control-plane
+imagePullSecrets: []
+nodeSelector: {}
+tolerations: []
