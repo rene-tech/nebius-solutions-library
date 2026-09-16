@@ -328,6 +328,15 @@ class RuntimeClient:
             async with stream as response:
                 yield response
             return
+        # Pre-allocation admission: win a NON-BLOCKING reservation BEFORE constructing the capture,
+        # which copies the request body and retains response chunks. If no slot is free, bypass
+        # capture and allocate nothing, so concurrent upstream captures cannot pin unbounded memory
+        # ahead of the enqueue/drop decision. The worker releases the slot after it persists; the
+        # defensive enqueue-drop below releases it here.
+        if self._persist_queue is None or not self._persist_queue.try_reserve():
+            async with stream as response:
+                yield response
+            return
         capture = _UpstreamCapture(
             operation,
             endpoint,
@@ -355,9 +364,11 @@ class RuntimeClient:
             raise
         finally:
             # Persist OFF the customer critical path: enqueue on the bounded queue and return
-            # immediately — never await sanitize/persist here. A full queue drops (overload shed).
-            if self._persist_queue is not None:
-                self._persist_queue.submit(capture.exchange)
+            # immediately — never await sanitize/persist here. The worker releases the reservation
+            # after it persists; on the defensive enqueue-drop (overload shed), release it here so
+            # the admission bound cannot leak downward.
+            if self._persist_queue is not None and not self._persist_queue.submit(capture.exchange):
+                self._persist_queue.release()
 
     async def close(self) -> None:
         # Drain + stop the bounded capture-persist queue on shutdown (best-effort), so a queued

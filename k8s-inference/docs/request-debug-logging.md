@@ -190,17 +190,27 @@ HTTP 0 or success.
 
 ## Completeness, storage and limits
 
-- Each stored body is bounded by `requestDebugMaxBodyBytes`. A body within the cap is
-  stored whole and fully inspected; a body over the cap is **withheld** entirely
-  (a `[REDACTED]` marker, `truncated=true`), never stored as a boundary-cut prefix,
-  because a credential crossing the cap could leave bytes no scrub can be trusted to
-  remove. `observed_bytes` still reports the full length seen on the wire. Capture
-  does not bypass existing endpoint validation, upload or runtime response bounds, and
-  it is not an unlimited packet recorder or a new model payload-size allowance.
+- Each stored body is bounded by `requestDebugMaxBodyBytes`. The stored request body is
+  **whole-or-withhold**: a request body that is within the cap **and** wire-complete is
+  stored whole and fully inspected; one that is over the cap **or** wire-incomplete is
+  **withheld** entirely (a `[REDACTED]` marker, `truncated=true`), never stored as a
+  boundary-cut or partial prefix — a credential crossing the cap, or dangling at the end of
+  an incomplete body, could leave bytes no scrub can be trusted to remove. `observed_bytes`
+  still reports the full length seen on the wire. Capture does not bypass existing endpoint
+  validation, upload or runtime response bounds, and it is not an unlimited packet recorder
+  or a new model payload-size allowance.
 - A rejected request body may never have been consumed by the application. The
-  public middleware does not drain it merely to fill a log. Interrupted, unread,
-  failed or limit-exceeded streams remain explicitly partial/incomplete. An empty
-  complete body is different from zero bytes retained from an unread body.
+  public middleware does not drain it merely to fill a log. An interrupted, unread,
+  failed or limit-exceeded body is recorded as **incomplete** (via `observed_bytes` and the
+  completeness flag) and its content is **withheld** — whole-or-withhold, never a partial
+  prefix. An empty complete body is different from an unread body (which is withheld).
+- Capture never adds latency to a customer request and cannot exhaust memory under load:
+  the request path only wins a non-blocking reservation and enqueues a build closure on a
+  **bounded** queue, then returns; a single background worker sanitizes and persists off the
+  event loop. A reservation is taken **before** any buffer is allocated, so the number of
+  concurrent in-flight captures (and thus total capture memory) is bounded — an admission
+  overflow bypasses capture for that request rather than queuing or holding buffers without
+  bound. On shutdown the queue is drained and the worker stopped so queued captures persist.
 - The response body is **never stored** — it is withheld entirely (a `[REDACTED]` marker,
   `truncated=true`), regardless of content type or structure. This is fail closed and
   content-independent: any part of an untrusted response can carry an opaque secret — not
@@ -226,6 +236,14 @@ HTTP 0 or success.
   operation failed"); the raw exception string is never stored, because an SDK may have
   embedded a prompt, URL or credential in it. The `error_type` and `http_status` carry
   the actionable classification.
+- Storage schema (`fs2_request_debug`, migration `0029`): the **clear** columns hold only
+  list/filter metadata (ids, timestamps, tenant/model/tool, status, `error_type`, the typed
+  MCP failure signal). The redacted headers/query, the credential-redacted **request** body
+  and the **withheld** response-body marker, plus the generic `error_detail`, live only inside
+  the encrypted payload under the existing AES-GCM key ring — there is no clear body column.
+  There is no operation foreign key: a pre-admission rejection (no operation) is itself the
+  evidence being captured. (This describes the schema; the migration file is hash-pinned and
+  is never edited for documentation.)
 - Capture scope (which tenant/App is recorded) is decided only from
   **server-authoritative** dispatch state after catalog/route authorization — never a
   caller-declared model or tool name from the request body — so a caller cannot spoof
@@ -263,9 +281,9 @@ HTTP 0 or success.
   preserved**. It runs only after a **payload-free preflight** (oldest `started_at` + counts,
   no payload read — see `retention_preflight`) confirms the eligible set, and never in a live
   environment without explicit rollout authorization. Enabling capture still increases
-  PostgreSQL/storage use within the 90-day window; disabling capture (or the ≤90-day
-  capture-expiry lapsing) stops new rows but does not retroactively delete history faster
-  than the TTL. Reads require ADMIN and are audited, so retention is bounded and access is
+  PostgreSQL/storage use within the 90-day window; disabling capture (or the ≤7-day
+  capture activation window lapsing — DISTINCT from the 90-day record TTL) stops new rows
+  but does not retroactively delete history faster than the TTL. Reads require ADMIN and are audited, so retention is bounded and access is
   attributable rather than open-ended.
 
 ## Verification status

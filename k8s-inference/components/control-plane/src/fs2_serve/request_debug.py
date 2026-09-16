@@ -516,19 +516,6 @@ def _redact_prefix_runs(raw: bytes, prefixes: Credentials) -> bytes:
     return raw
 
 
-def _trim_trailing_partial(raw: bytes, credentials: Credentials) -> bytes:
-    """Scrub a credential whose leading bytes dangle at the end of a buffer.
-
-    A streaming or cap boundary can cut a credential mid-value, leaving a prefix
-    of it at the end of the retained bytes that whole-value redaction misses.
-    """
-    for credential in _known_bytes(credentials):
-        for size in range(min(len(credential) - 1, len(raw)), 7, -1):
-            if raw.endswith(credential[:size]):
-                return raw[:-size] + REDACTED.encode()
-    return raw
-
-
 def body_capture(
     raw: bytes,
     content_type: str | None,
@@ -554,6 +541,12 @@ def body_capture(
         # Only the true length and wire-completeness are kept; the stored Content-Type is
         # reduced to a bare MIME type (parameters dropped) by suppressed_body, or omitted.
         return suppressed_body(content_type, observed, complete)
+    if not complete:
+        # Whole-or-withhold: a wire-incomplete REQUEST body is withheld ENTIRELY, never stored
+        # as a partial prefix. The contract is whole-complete-within-cap or withhold — and an
+        # incomplete body can also end mid-credential, so no retained prefix is trustworthy.
+        # Only the true observed length and the incomplete flag are kept.
+        return suppressed_body(content_type, observed, complete)
     parsed, is_json = _try_json(raw)
     original = raw
     # Request sanitization is conservative and driven by key names and value formats,
@@ -575,9 +568,8 @@ def body_capture(
     credential_prefixes = tuple(credential_prefixes)
     raw = _redact_bytes(raw, known_credentials)
     raw = _redact_prefix_runs(raw, credential_prefixes)
-    if not complete:
-        # A wire-incomplete body can end mid-credential; scrub a dangling prefix.
-        raw = _trim_trailing_partial(raw, (*known_credentials, *credential_prefixes))
+    # (A wire-incomplete body is already withheld above — whole-or-withhold — so the stored body
+    # here is always complete; no dangling-credential trim of a partial tail is needed.)
     # Redaction can expand the body (a short value -> "[REDACTED]"). A stored body
     # is always the COMPLETE redacted body within the cap, never a clipped prefix:
     # if redaction pushed it past the cap, withhold it rather than clip a boundary.
@@ -951,18 +943,62 @@ class DebugPersistQueue:
     capture is DROPPED (overload shed, counted in ``dropped``), so a burst can neither block the
     request path nor grow memory without bound (each queued closure holds only a bounded buffer).
     ``drain``/``aclose`` are for TESTS and SHUTDOWN only; they must never be called on a request.
+
+    Enqueue-time bounding (queue depth) is not enough on its own: a capture holds a cap-sized
+    buffer during the WHOLE in-flight request, before the enqueue/drop decision, so arbitrarily
+    many concurrent requests could pin unbounded memory ahead of the queue. A caller therefore
+    wins a NON-BLOCKING reservation (``try_reserve``) BEFORE it allocates or copies any buffer,
+    and bypasses capture entirely when none is free — so total in-flight capture memory is bounded
+    by the reservation count across both the building and the queued/persisting phases.
     """
 
-    def __init__(self, store: DebugStore, *, maxsize: int = 256, persist_timeout_seconds: float = 2.0) -> None:
+    def __init__(
+        self,
+        store: DebugStore,
+        *,
+        maxsize: int = 256,
+        max_inflight: int | None = None,
+        persist_timeout_seconds: float = 2.0,
+    ) -> None:
         self._store = store
         self._queue: asyncio.Queue[Callable[[], DebugExchange | None]] = asyncio.Queue(maxsize=max(1, maxsize))
         self._worker: asyncio.Task[None] | None = None
         self._persist_timeout_seconds = persist_timeout_seconds
+        # Admission bound on concurrent in-flight captures: the number that may hold cap-sized
+        # buffers at once, across the building phase (a request still accumulating bytes) AND the
+        # queued/persisting phase. Defaults to the queue depth, so a reserved capture always fits
+        # the queue (a submit drop is only a defensive backstop). Reservations are released by the
+        # worker (submitted captures) or by ``release`` (bypassed/failed ones), never lost.
+        self._max_inflight = max(1, max_inflight if max_inflight is not None else max(1, maxsize))
+        self._inflight = 0
         self.dropped = 0
 
+    def try_reserve(self) -> bool:
+        """Non-blocking admission for ONE capture, taken BEFORE any buffer is allocated/copied.
+
+        Returns True and holds a slot when in-flight captures are below the bound; returns False
+        (counting a drop) at the bound, so the caller bypasses capture and allocates nothing.
+        asyncio is single-threaded, so this check-and-increment needs no lock. The slot is freed
+        by ``release`` (a bypassed/failed capture) or by the worker after it persists a submitted
+        capture — so the bound can neither leak downward nor be exceeded."""
+        if self._inflight >= self._max_inflight:
+            self.dropped += 1
+            return False
+        self._inflight += 1
+        return True
+
+    def release(self) -> None:
+        """Return a reservation for a capture that was NOT handed to the worker (bypassed,
+        dropped at enqueue, or failed before submit). Submitted captures are released by the
+        worker after persistence; call this exactly once for every un-submitted ``try_reserve``."""
+        if self._inflight > 0:
+            self._inflight -= 1
+
     def submit(self, builder: Callable[[], DebugExchange | None]) -> bool:
-        """Enqueue a capture builder for background persistence. Non-blocking: returns False and
-        counts a drop if the bounded queue is full — it never blocks or awaits the caller."""
+        """Enqueue a RESERVED capture for background persistence (the caller must already hold a
+        ``try_reserve`` slot). On success the worker releases that slot after it persists; on
+        QueueFull (a defensive backstop — with max_inflight <= maxsize a reserved capture always
+        fits) it returns False so the caller releases. Non-blocking: never blocks or awaits."""
         self._ensure_worker()
         try:
             self._queue.put_nowait(builder)
@@ -985,6 +1021,9 @@ class DebugPersistQueue:
             except Exception as error:
                 LOGGER.warning("request debug capture failed error_type=%s", type(error).__name__)
             finally:
+                # Free the reservation held for this submitted capture (its buffers are now
+                # released), then mark the queue item done for drain()/aclose().
+                self.release()
                 self._queue.task_done()
 
     async def drain(self) -> None:
@@ -1145,6 +1184,15 @@ class DebugCaptureMiddleware:
         if not self.policy.path_model_admissible(path_model, started_at):
             await self.app(scope, receive, send)
             return
+        # Pre-allocation admission: win a NON-BLOCKING reservation BEFORE allocating or filling any
+        # capture buffer. A path-admissible request buffers a bounded head from here on, so if no
+        # reservation is free we bypass capture entirely — never allocating a buffer — rather than
+        # let arbitrarily many concurrent requests each pin a cap-sized buffer ahead of the
+        # enqueue/drop decision. The slot is released below when the capture is not submitted; the
+        # worker releases it when it is (after persistence).
+        if not self.persist_queue.try_reserve():
+            await self.app(scope, receive, send)
+            return
         request_headers = list(scope.get("headers", []))
         # Tenant scope is enforced AFTER the app runs, from the auth-resolved principal on
         # scope state — not by re-verifying the bearer token here. Re-verifying would repeat
@@ -1164,6 +1212,8 @@ class DebugCaptureMiddleware:
         response_headers: list[tuple[bytes, bytes]] = []
         response_operation: UUID | None = None
         query = scope.get("query_string", b"")
+        # Tracks whether the reserved slot was handed to the worker; if not, it is released below.
+        submitted = False
 
         def _accumulate(buffer: bytearray, chunk: bytes) -> None:
             # Keep only a bounded prefix; the observed counters below track the
@@ -1327,9 +1377,15 @@ class DebugCaptureMiddleware:
 
                     # Enqueue for OFF-PATH persistence and return immediately — never await
                     # sanitize/persist here, so the client response is never delayed. A full
-                    # bounded queue drops the capture (overload shed).
-                    self.persist_queue.submit(build_exchange)
+                    # bounded queue drops the capture (overload shed); the worker releases the
+                    # reservation when it accepts one.
+                    submitted = self.persist_queue.submit(build_exchange)
             except Exception as error:
                 LOGGER.warning(
                     "request debug capture failed request_id=%s error_type=%s", request_id, type(error).__name__
                 )
+            finally:
+                # Release the reservation for every capture NOT handed to the worker (out of
+                # scope, an enqueue drop, or a build error) so the admission bound cannot leak.
+                if not submitted:
+                    self.persist_queue.release()

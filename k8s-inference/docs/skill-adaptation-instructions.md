@@ -300,12 +300,14 @@ Do not discard the upstream response merely because it is not JSON or not 2xx.
 Give the user a short summary and correlation IDs; keep complete request/response
 data privately available for authorized debugging rather than dumping it into
 chat or source control. Do not require customer skills to have admin API access.
-Full request/response and upstream-attempt debug capture is deployed and enabled
-on the retained H100 platform as of 2026-09-09. Authorized operators find it in
+Opt-in request and upstream-attempt debug capture is available but DEFAULT-OFF; when an
+operator enables it (tenant-scoped and time-bounded), authorized ADMINs find it in
 Admin → Apps → Runs / request logs, including errors with no operation ID.
-Customer skills need no admin access. Capture redacts credentials and records
-partial/unread bodies honestly; earlier uncaptured payloads cannot be recovered.
-Other deployments must enable the feature before making the same promise.
+Customer skills need no admin access. The request body is stored credential-REDACTED; the
+response/upstream body is NEVER stored (withheld). Capture is whole-or-withhold: a body over
+the cap, or one that is wire-incomplete, is withheld entirely — never stored as a partial
+prefix. Earlier uncaptured payloads cannot be recovered. Every deployment must deliberately
+enable the (default-off) feature before making the same promise.
 
 ## 8. Install into the actual LibreChat agent
 

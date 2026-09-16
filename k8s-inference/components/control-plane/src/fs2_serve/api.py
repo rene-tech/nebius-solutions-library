@@ -551,6 +551,11 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             if runtime.route_revalidator is not None:
                 await runtime.route_revalidator.close()
             await runtime.admission.close()
+            if runtime.request_debug_persist_queue is not None:
+                # Drain + stop the off-path capture-persist queue BEFORE the store closes, so
+                # queued captures are persisted (not lost) and the worker is not left running
+                # against a closing store. Shutdown only — never on a request path.
+                await runtime.request_debug_persist_queue.aclose()
             if runtime.owns_store:
                 await runtime.store.close()
 
@@ -862,12 +867,15 @@ def create_app(runtime: AppRuntime) -> FastAPI:
 
     @app.exception_handler(ScientificProfileError)
     async def scientific_profile_error(request: Request, error: ScientificProfileError) -> JSONResponse:
+        # Log fixed, non-sensitive fields only: method, path, and the exception's own FIXED
+        # category message (every ScientificProfileError is raised with a fixed developer string).
+        # NEVER exc_info: a traceback and the `raise ... from` chain can carry customer/schema
+        # detail from the underlying cause — same fail-closed logging discipline as the MCP path.
         SCIENTIFIC_LOGGER.warning(
             "scientific profile unavailable method=%s path=%s reason=%s",
             request.method,
             request.url.path,
             error,
-            exc_info=(type(error), error, error.__traceback__),
         )
         return _error(503, "scientific_profile_unavailable", "scientific workload profile is unavailable")
 

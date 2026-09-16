@@ -254,11 +254,13 @@ class Settings(BaseSettings):
     # WITHHELD entirely (never stored), enabling it records customer request content, so it
     # must stay a deliberate, tenant-scoped, time-bounded operator choice, not a standing state.
     request_debug_enabled: bool = False
-    # Hard ceiling on the stored size of each captured request/response body, and the
-    # upper bound on the bytes the sanitizer ever processes for one body. It is
-    # intentionally far below max_response_bytes: a body within the cap is stored whole
-    # (fully inspected and redacted); a body over the cap is withheld entirely, never a
-    # boundary-cut prefix. The ceiling is capped at 256 KiB to bound per-capture
+    # Hard ceiling on the stored size of the captured REQUEST body, and the upper bound on the
+    # bytes the sanitizer ever processes for one body. (The response body is NEVER stored — it is
+    # withheld entirely — so for a response this only bounds how much is buffered to decide the
+    # withhold, never what is kept.) It is intentionally far below max_response_bytes: a request
+    # body within the cap is stored whole (fully inspected and redacted); one over the cap — or a
+    # wire-incomplete one — is withheld entirely, never a boundary-cut or partial prefix
+    # (whole-or-withhold). The ceiling is capped at 256 KiB to bound per-capture
     # sanitizer CPU/memory; sanitization also runs off the event loop with bounded
     # concurrency (request_debug.offload_capture), so a burst cannot stall inference.
     request_debug_max_body_bytes: int = Field(default=64 * 1024, ge=1024, le=256 * 1024)

@@ -170,9 +170,11 @@ def test_unredacted_bodies_roundtrip_exactly_without_new_size_cap(raw, content_t
     ],
 )
 def test_identifiable_json_credentials_redacted_even_malformed_or_sse(raw):
-    body = body_capture(raw, "application/json", False)
+    # These are wire-COMPLETE but malformed/SSE request bodies (redaction robustness on odd
+    # shapes). A wire-INCOMPLETE body is instead withheld entirely — covered separately.
+    body = body_capture(raw, "application/json", True)
     assert body.redacted and "JSON_SECRET" not in body.data and "ACDEFG" in body.data
-    assert body.observed_bytes == len(raw) and not body.complete
+    assert body.observed_bytes == len(raw) and body.complete
 
 
 def test_query_headers_and_partial_known_credentials_are_redacted_without_changing_inputs():
@@ -190,7 +192,12 @@ def test_query_headers_and_partial_known_credentials_are_redacted_without_changi
     cleaned = redact_headers(headers, known)
     assert cleaned[-1] == ("Content-Type", "application/json")
     assert all(value == "[REDACTED]" for _, value in cleaned[:-1])
-    assert body_capture(b"failure CUSTOM_SEC", "text/plain", False, known).data == "failure [REDACTED]"
+    # A wire-COMPLETE body has its full known credential redacted in place.
+    assert body_capture(b"failure CUSTOM_SECRET", "text/plain", True, known).data == "failure [REDACTED]"
+    # A wire-INCOMPLETE body that could end mid-credential is withheld ENTIRELY (whole-or-withhold),
+    # which is strictly safer than trimming a dangling credential prefix.
+    incomplete = body_capture(b"failure CUSTOM_SEC", "text/plain", False, known)
+    assert incomplete.data == "[REDACTED]" and incomplete.truncated and not incomplete.complete
 
 
 async def test_rejected_json_complete_capture_reuses_principal_and_redacts_credential_echo():
@@ -246,7 +253,10 @@ async def test_disconnected_partial_upload_has_no_invented_status():
     store, _, _ = await capture(app, chunks=[{"type": "http.request", "body": b"partial", "more_body": True}])
     (exchange,) = store.exchanges.values()
     assert exchange.disconnected and exchange.http_status is None
-    assert exchange.request_body.data == "partial" and not exchange.request_body.complete
+    # Whole-or-withhold: a wire-incomplete request body is withheld entirely (never stored as a
+    # prefix), yet its true observed length and incomplete flag are still recorded.
+    assert exchange.request_body.data == "[REDACTED]" and exchange.request_body.truncated
+    assert not exchange.request_body.complete and exchange.request_body.observed_bytes == len(b"partial")
     assert not exchange.response_body.complete
 
 
@@ -478,9 +488,12 @@ def test_bounded_capture_keeps_wire_complete_separate_from_truncation():
     discarded = bounded_body_capture(head, "application/json", True, (), max_bytes=256, observed_bytes=len(head) + 9999)
     assert discarded.complete is True and discarded.truncated is True
     assert discarded.observed_bytes == len(head) + 9999
-    # A body cut off on the wire is not complete.
+    # Whole-or-withhold: a body cut off on the wire is withheld ENTIRELY (never a stored prefix),
+    # regardless of size — including a SMALL incomplete body that fits under the cap.
     partial = bounded_body_capture(head, "application/json", False, (), max_bytes=256, observed_bytes=len(head))
-    assert partial.complete is False and partial.truncated is True
+    assert partial.complete is False and partial.truncated is True and _stored_bytes(partial) == b"[REDACTED]"
+    small = bounded_body_capture(b'{"a":1}', "application/json", False, (), max_bytes=256, observed_bytes=7)
+    assert small.complete is False and small.truncated is True and _stored_bytes(small) == b"[REDACTED]"
 
 
 def test_redaction_stays_linear_on_pathological_buffer():
@@ -494,7 +507,9 @@ def test_redaction_stays_linear_on_pathological_buffer():
     body = (b'{"password":"' + b'x"y":"' * (limit // 6))[:limit]  # many quotes + sensitive scalar
     tracemalloc.start()
     start = time.perf_counter()
-    debug = body_capture(body, "application/json", complete=False, max_bytes=cap)
+    # complete=True so the body actually reaches the redaction path under test (a wire-incomplete
+    # body is now withheld before redaction, which would make this perf assertion a no-op).
+    debug = body_capture(body, "application/json", complete=True, max_bytes=cap)
     elapsed = time.perf_counter() - start
     _, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
@@ -1420,4 +1435,29 @@ async def test_persist_queue_is_bounded_nonblocking_and_drops_on_overload():
     assert accepted == 2 and queue.dropped == 3
     await queue.drain()  # tests/shutdown only
     assert len(store.exchanges) == 2  # only the accepted (non-dropped) captures persisted
+    await queue.aclose()
+
+
+async def test_persist_queue_reserves_before_buffering_and_bounds_inflight():
+    """SAI-01: total in-flight capture memory is bounded by a NON-BLOCKING reservation taken
+    BEFORE any buffer is allocated — not just by enqueued-item count. try_reserve() admits up to
+    the bound then sheds the next reservation (counted, non-blocking); a bypassed/failed
+    reservation is freed by release(), and a submitted capture's slot is freed by the worker after
+    it persists (so the bound recovers without an explicit release)."""
+    from fs2_serve.request_debug import DebugPersistQueue
+
+    store = InMemoryDebugStore()
+    queue = DebugPersistQueue(store, maxsize=8, max_inflight=2)
+    # Admit up to the in-flight bound, then shed the next reservation (bypass; count the drop).
+    assert queue.try_reserve() and queue.try_reserve()
+    assert not queue.try_reserve() and queue.dropped == 1
+    # A reserved capture that is NOT submitted (bypassed/failed) frees its slot via release().
+    queue.release()
+    assert queue.try_reserve()  # slot reclaimed immediately
+    # A reserved capture that IS submitted has its slot freed by the worker after persistence.
+    queue.submit(lambda: row(id=uuid4()))
+    await queue.drain()
+    assert len(store.exchanges) == 1
+    queue.release()  # free the one still-held (never-submitted) reservation
+    assert queue.try_reserve() and queue.try_reserve()  # both slots free again
     await queue.aclose()

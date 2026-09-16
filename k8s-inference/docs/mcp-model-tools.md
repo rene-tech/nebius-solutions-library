@@ -122,9 +122,10 @@ and, when applicable, `operation_id`, `idempotency_key`, and
 `retry_after_seconds`. Preserve those values rather than retrying blindly.
 
 Runtime failures are different: an accepted operation may fail while executing.
-Operators can inspect its actual request and upstream error in
-[request debug logging](request-debug-logging.md) when enabled. Full model inputs
-belong in that access-controlled view, not copied API keys or ordinary logs.
+Operators can inspect its actual request and the retained failure signal (HTTP status,
+failure category, and `mcp_is_error`) in [request debug logging](request-debug-logging.md)
+when enabled — the upstream/response body itself is never stored (withheld). Full model
+inputs belong in that access-controlled view, not copied API keys or ordinary logs.
 
 ## NVIDIA BioNeMo toolkit compatibility
 

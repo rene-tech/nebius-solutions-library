@@ -1,7 +1,6 @@
 -- Opt-in preproduction debug exchanges. Clear columns contain only list/filter
--- metadata; the encrypted payload (AES-GCM key ring) holds redacted headers/query, the
--- credential-redacted REQUEST body and the WITHHELD response-body marker (response bodies
--- are never stored), plus a generic error_detail. No operation FK: pre-admission rejection is evidence.
+-- metadata; headers, query, complete bodies and exception detail use the existing
+-- AES-GCM payload key ring. No operation FK: pre-admission rejection is evidence.
 CREATE TABLE fs2_request_debug (
     id uuid PRIMARY KEY,
     source text NOT NULL CHECK (source IN ('public', 'upstream')),
