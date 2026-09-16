@@ -340,8 +340,8 @@ deployment = {
   }
 
   # Both acknowledgements are intentionally explicit even when no pool/storage
-  # override is present. Numeric allowance still comes from the short-lived
-  # --sai06-capacity-receipt, not these booleans.
+  # override is present. Apply authority still comes from the short-lived,
+  # Ed25519-signed, exact-plan --sai06-capacity-receipt, not these booleans.
   storage = {
     postgresql_backup = {
       capacity_cost_review_acknowledged = true
@@ -371,7 +371,8 @@ deployment = {
   #     estimated_daily_wal_gib           = 32
   #     capacity_headroom_percent         = 25
   #     # Required for the effective capacity even when system_pool is null.
-  #     # Pass a fresh numeric --sai06-capacity-receipt to preflight/plan/apply.
+  #     # Run plan, obtain a trusted signature over its approval request, then
+  #     # pass the envelope as --sai06-capacity-receipt only to apply.
   #     capacity_cost_review_acknowledged = true
   #     # CloudNativePG uses a six-field cron expression (seconds first).
   #     schedule              = "0 0 2 * * *"

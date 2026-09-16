@@ -1,76 +1,162 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://fs2-serve.nebius.ai/schemas/sai06-capacity-approval-v1.json",
-  "title": "SAI-06 capacity approval",
+  "$id": "https://fs2-serve.nebius.ai/schemas/sai06-capacity-approval-envelope-v2.json",
+  "title": "SAI-06 signed capacity approval envelope",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "schema",
-    "project_id",
-    "region",
-    "reviewed_at",
-    "valid_until",
-    "plan_binding_sha256",
-    "reviewed_by",
-    "evidence_sha256",
-    "allowances"
-  ],
+  "required": ["schema", "algorithm", "key_id", "payload", "signature"],
   "properties": {
     "schema": {
-      "const": "fs2-serve.nebius.ai/sai06-capacity-approval/v1"
+      "const": "fs2-serve.nebius.ai/sai06-capacity-approval-envelope/v2"
     },
-    "project_id": {
+    "algorithm": { "const": "Ed25519" },
+    "key_id": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "signature": {
       "type": "string",
-      "pattern": "^project-[a-z0-9]+$"
+      "contentEncoding": "base64",
+      "minLength": 88,
+      "maxLength": 88
     },
-    "region": {
-      "type": "string",
-      "pattern": "^[a-z][a-z0-9-]+$"
-    },
-    "reviewed_at": {
-      "type": "string",
-      "format": "date-time"
-    },
-    "valid_until": {
-      "type": "string",
-      "format": "date-time"
-    },
-    "plan_binding_sha256": {
-      "type": "string",
-      "pattern": "^[0-9a-f]{64}$"
-    },
-    "reviewed_by": {
-      "type": "string",
-      "minLength": 3,
-      "maxLength": 128
-    },
-    "evidence_sha256": {
-      "type": "string",
-      "pattern": "^[0-9a-f]{64}$"
-    },
-    "allowances": {
-      "type": "array",
-      "minItems": 2,
-      "maxItems": 2,
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["resource", "unit", "ceiling"],
-        "properties": {
-          "resource": {
-            "enum": [
-              "compute.system_pool.nodes",
-              "storage.bucket.size.standard"
-            ]
-          },
-          "unit": {
-            "enum": ["node", "byte"]
-          },
-          "ceiling": {
-            "type": "integer",
-            "minimum": 1
-          }
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "issuer",
+        "issued_at",
+        "valid_until",
+        "nonce",
+        "request_sha256",
+        "request",
+        "approved_ceilings",
+        "owner_overrides"
+      ],
+      "properties": {
+        "schema": {
+          "const": "fs2-serve.nebius.ai/sai06-capacity-approval/v2"
+        },
+        "issuer": { "type": "string", "minLength": 3, "maxLength": 128 },
+        "issued_at": { "type": "string", "format": "date-time" },
+        "valid_until": { "type": "string", "format": "date-time" },
+        "nonce": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "request_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "request": { "$ref": "#/$defs/request" },
+        "approved_ceilings": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "$ref": "#/$defs/ceiling" }
+        },
+        "owner_overrides": {
+          "type": "array",
+          "maxItems": 2,
+          "items": { "$ref": "#/$defs/override" }
         }
+      }
+    }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "resource": {
+      "enum": ["compute.instance.count", "storage.bucket.size.standard"]
+    },
+    "unit": { "enum": ["count", "byte"] },
+    "projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource",
+        "unit",
+        "provider_current_usage",
+        "provider_limit",
+        "existing_allocation",
+        "desired_allocation",
+        "incremental_demand",
+        "projected_usage",
+        "provider_limit_missing"
+      ],
+      "properties": {
+        "resource": { "$ref": "#/$defs/resource" },
+        "unit": { "$ref": "#/$defs/unit" },
+        "provider_current_usage": { "type": "integer", "minimum": 0 },
+        "provider_limit": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0 },
+            { "type": "null" }
+          ]
+        },
+        "existing_allocation": { "type": "integer", "minimum": 0 },
+        "desired_allocation": { "type": "integer", "minimum": 0 },
+        "incremental_demand": { "type": "integer", "minimum": 0 },
+        "projected_usage": { "type": "integer", "minimum": 0 },
+        "provider_limit_missing": { "type": "boolean" }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "created_at",
+        "nonce",
+        "project_id",
+        "region",
+        "source_commit",
+        "source_tree",
+        "infrastructure_plan_sha256",
+        "infrastructure_plan_json_sha256",
+        "quota_evidence_sha256",
+        "capacity_plan_binding_sha256",
+        "resources"
+      ],
+      "properties": {
+        "schema": {
+          "const": "fs2-serve.nebius.ai/sai06-capacity-approval-request/v2"
+        },
+        "created_at": { "type": "string", "format": "date-time" },
+        "nonce": { "$ref": "#/$defs/digest" },
+        "project_id": {
+          "type": "string",
+          "pattern": "^project-[a-z0-9]+$"
+        },
+        "region": {
+          "type": "string",
+          "pattern": "^[a-z]{2}-[a-z]+[0-9]+$"
+        },
+        "source_commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "source_tree": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "infrastructure_plan_sha256": { "$ref": "#/$defs/digest" },
+        "infrastructure_plan_json_sha256": { "$ref": "#/$defs/digest" },
+        "quota_evidence_sha256": { "$ref": "#/$defs/digest" },
+        "capacity_plan_binding_sha256": { "$ref": "#/$defs/digest" },
+        "resources": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "$ref": "#/$defs/projection" }
+        }
+      }
+    },
+    "ceiling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resource", "unit", "ceiling"],
+      "properties": {
+        "resource": { "$ref": "#/$defs/resource" },
+        "unit": { "$ref": "#/$defs/unit" },
+        "ceiling": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "override": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resource", "unit", "ceiling", "reason", "evidence_sha256"],
+      "properties": {
+        "resource": { "$ref": "#/$defs/resource" },
+        "unit": { "$ref": "#/$defs/unit" },
+        "ceiling": { "type": "integer", "minimum": 1 },
+        "reason": { "type": "string", "minLength": 10, "maxLength": 512 },
+        "evidence_sha256": { "$ref": "#/$defs/digest" }
       }
     }
   }

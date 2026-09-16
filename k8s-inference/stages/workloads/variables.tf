@@ -378,6 +378,20 @@ variable "postgresql_backup" {
         paths              = list(string)
         secret_delivery    = string
       })
+      inventory_reader = object({
+        service_account_id = string
+        group_id           = string
+        roles              = list(string)
+        paths              = list(string)
+        secret_delivery    = string
+      })
+      receipt_publisher = object({
+        service_account_id = string
+        group_id           = string
+        role               = string
+        paths              = list(string)
+        secret_delivery    = string
+      })
       layout = object({
         root             = string
         destination_path = string
@@ -420,14 +434,28 @@ variable "postgresql_backup" {
       secret_reference_id = string
       resource_version    = number
     }))
+    inventory_object_storage_access = optional(object({
+      key_id              = string
+      access_key_id       = string
+      secret_reference_id = string
+      resource_version    = number
+    }))
+    receipt_object_storage_access = optional(object({
+      key_id              = string
+      access_key_id       = string
+      secret_reference_id = string
+      resource_version    = number
+    }))
   })
   default = {
-    enabled               = false
-    retention_days        = 30
-    schedule              = "0 0 2 * * *"
-    credential_generation = 1
-    storage_contract      = null
-    object_storage_access = null
+    enabled                         = false
+    retention_days                  = 30
+    schedule                        = "0 0 2 * * *"
+    credential_generation           = 1
+    storage_contract                = null
+    object_storage_access           = null
+    inventory_object_storage_access = null
+    receipt_object_storage_access   = null
   }
 
   validation {
@@ -439,8 +467,14 @@ variable "postgresql_backup" {
         var.postgresql_backup.storage_contract.object_storage.endpoint == "https://storage.${var.target_contract.region}.nebius.cloud" &&
         var.postgresql_backup.storage_contract.object_storage.versioning_policy == "ENABLED" &&
         var.postgresql_backup.storage_contract.writer.role == "storage.object-editor" &&
-        join(",", var.postgresql_backup.storage_contract.writer.paths) == "postgresql/v1/*" &&
+        join(",", var.postgresql_backup.storage_contract.writer.paths) == "postgresql/v1/fs2-control-db/*" &&
         var.postgresql_backup.storage_contract.writer.secret_delivery == "MYSTERY_BOX" &&
+        join(",", var.postgresql_backup.storage_contract.inventory_reader.roles) == "storage.object-lister,storage.object-viewer" &&
+        join(",", var.postgresql_backup.storage_contract.inventory_reader.paths) == "postgresql/v1/*" &&
+        var.postgresql_backup.storage_contract.inventory_reader.secret_delivery == "MYSTERY_BOX" &&
+        var.postgresql_backup.storage_contract.receipt_publisher.role == "storage.uploader" &&
+        join(",", var.postgresql_backup.storage_contract.receipt_publisher.paths) == "postgresql/v1/restore-verification/success/*" &&
+        var.postgresql_backup.storage_contract.receipt_publisher.secret_delivery == "MYSTERY_BOX" &&
         var.postgresql_backup.storage_contract.layout.root == "postgresql/v1" &&
         var.postgresql_backup.storage_contract.layout.server_name == "fs2-control-db" &&
         var.postgresql_backup.storage_contract.retention.barman_retention_days == var.postgresql_backup.retention_days &&
@@ -466,7 +500,7 @@ variable "postgresql_backup" {
       ),
       false,
     )
-    error_message = "enabled postgresql_backup requires the exact same-project/same-region retained versioned bucket contract and a MysteryBox key scoped to storage.object-editor on postgresql/v1/*."
+    error_message = "enabled postgresql_backup requires the exact retained bucket plus split MysteryBox writer, read-only inventory and upload-only receipt identities."
   }
 
   validation {
@@ -477,6 +511,16 @@ variable "postgresql_backup" {
         can(regex("^[a-z][a-z0-9-]+$", var.postgresql_backup.object_storage_access.secret_reference_id)) &&
         can(regex("^[a-z][a-z0-9-]+$", var.postgresql_backup.object_storage_access.key_id)) &&
         var.postgresql_backup.object_storage_access.resource_version >= 0 &&
+        length(var.postgresql_backup.inventory_object_storage_access.access_key_id) >= 8 &&
+        can(regex("^[A-Za-z0-9_-]+$", var.postgresql_backup.inventory_object_storage_access.access_key_id)) &&
+        can(regex("^[a-z][a-z0-9-]+$", var.postgresql_backup.inventory_object_storage_access.secret_reference_id)) &&
+        can(regex("^[a-z][a-z0-9-]+$", var.postgresql_backup.inventory_object_storage_access.key_id)) &&
+        var.postgresql_backup.inventory_object_storage_access.resource_version >= 0 &&
+        length(var.postgresql_backup.receipt_object_storage_access.access_key_id) >= 8 &&
+        can(regex("^[A-Za-z0-9_-]+$", var.postgresql_backup.receipt_object_storage_access.access_key_id)) &&
+        can(regex("^[a-z][a-z0-9-]+$", var.postgresql_backup.receipt_object_storage_access.secret_reference_id)) &&
+        can(regex("^[a-z][a-z0-9-]+$", var.postgresql_backup.receipt_object_storage_access.key_id)) &&
+        var.postgresql_backup.receipt_object_storage_access.resource_version >= 0 &&
         floor(var.postgresql_backup.retention_days) == var.postgresql_backup.retention_days &&
         var.postgresql_backup.retention_days >= 7 &&
         var.postgresql_backup.retention_days <= 365 &&

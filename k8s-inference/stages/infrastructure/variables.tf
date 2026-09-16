@@ -627,48 +627,6 @@ variable "postgresql_backup" {
   }
 }
 
-variable "sai06_capacity_approval" {
-  description = "Short-lived numeric node/storage allowance validated by inference-stack and rechecked by the infrastructure plan. Null is never valid for an enabled PostgreSQL backup create/update plan."
-  type = object({
-    schema                            = string
-    project_id                        = string
-    region                            = string
-    reviewed_at                       = string
-    valid_until                       = string
-    reviewed_by                       = string
-    evidence_sha256                   = string
-    plan_binding_sha256               = string
-    system_node_ceiling               = number
-    storage_ceiling_bytes             = number
-    observed_storage_usage_bytes      = number
-    configured_storage_capacity_bytes = number
-    projected_storage_usage_bytes     = number
-    effective_system_node_count       = number
-  })
-  default  = null
-  nullable = true
-
-  validation {
-    condition = var.sai06_capacity_approval == null || try(
-      var.sai06_capacity_approval.schema == "fs2-serve.nebius.ai/sai06-capacity-approval/v1" &&
-      can(regex("^[A-Za-z0-9][A-Za-z0-9._@/-]{2,127}$", var.sai06_capacity_approval.reviewed_by)) &&
-      can(regex("^[0-9a-f]{64}$", var.sai06_capacity_approval.evidence_sha256)) &&
-      can(regex("^[0-9a-f]{64}$", var.sai06_capacity_approval.plan_binding_sha256)) &&
-      floor(var.sai06_capacity_approval.system_node_ceiling) == var.sai06_capacity_approval.system_node_ceiling &&
-      floor(var.sai06_capacity_approval.storage_ceiling_bytes) == var.sai06_capacity_approval.storage_ceiling_bytes &&
-      floor(var.sai06_capacity_approval.observed_storage_usage_bytes) == var.sai06_capacity_approval.observed_storage_usage_bytes &&
-      floor(var.sai06_capacity_approval.configured_storage_capacity_bytes) == var.sai06_capacity_approval.configured_storage_capacity_bytes &&
-      floor(var.sai06_capacity_approval.projected_storage_usage_bytes) == var.sai06_capacity_approval.projected_storage_usage_bytes &&
-      floor(var.sai06_capacity_approval.effective_system_node_count) == var.sai06_capacity_approval.effective_system_node_count &&
-      var.sai06_capacity_approval.system_node_ceiling >= 1 &&
-      var.sai06_capacity_approval.storage_ceiling_bytes >= 1 &&
-      var.sai06_capacity_approval.observed_storage_usage_bytes >= 0,
-      false,
-    )
-    error_message = "sai06_capacity_approval must be the exact numeric, digest-bound SAI-06 capacity receipt emitted by the live preflight."
-  }
-}
-
 variable "capacity_profile" {
   description = "Reviewed capacity envelope. full_catalog supports every canonical route plus the second MSA backend without HCL edits."
   type        = string

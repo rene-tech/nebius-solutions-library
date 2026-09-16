@@ -1,6 +1,8 @@
 locals {
-  postgresql_image              = "ghcr.io/cloudnative-pg/postgresql:18.4-system-trixie@sha256:42708a75345b7a48fdd9257b071830783a97fd228529196b6313187a7198e185"
-  postgresql_backup_secret_name = "fs2-control-db-backup"
+  postgresql_image                        = "ghcr.io/cloudnative-pg/postgresql:18.4-system-trixie@sha256:42708a75345b7a48fdd9257b071830783a97fd228529196b6313187a7198e185"
+  postgresql_backup_secret_name           = "fs2-control-db-backup"
+  postgresql_backup_inventory_secret_name = "fs2-control-db-backup-inventory"
+  postgresql_restore_receipt_secret_name  = "fs2-control-db-restore-receipt"
   postgresql_backup_credential_identity = var.postgresql_backup.enabled ? join("|", [
     var.postgresql_backup.object_storage_access.key_id,
     var.postgresql_backup.object_storage_access.access_key_id,
@@ -10,6 +12,26 @@ locals {
   postgresql_backup_credential_revision = var.postgresql_backup.enabled ? (
     var.postgresql_backup.credential_generation * 16777216 +
     parseint(substr(sha256(local.postgresql_backup_credential_identity), 0, 6), 16)
+  ) : 0
+  postgresql_backup_inventory_credential_identity = var.postgresql_backup.enabled ? join("|", [
+    var.postgresql_backup.inventory_object_storage_access.key_id,
+    var.postgresql_backup.inventory_object_storage_access.access_key_id,
+    var.postgresql_backup.inventory_object_storage_access.secret_reference_id,
+    tostring(var.postgresql_backup.inventory_object_storage_access.resource_version),
+  ]) : ""
+  postgresql_backup_inventory_credential_revision = var.postgresql_backup.enabled ? (
+    var.postgresql_backup.credential_generation * 16777216 +
+    parseint(substr(sha256(local.postgresql_backup_inventory_credential_identity), 0, 6), 16)
+  ) : 0
+  postgresql_restore_receipt_credential_identity = var.postgresql_backup.enabled ? join("|", [
+    var.postgresql_backup.receipt_object_storage_access.key_id,
+    var.postgresql_backup.receipt_object_storage_access.access_key_id,
+    var.postgresql_backup.receipt_object_storage_access.secret_reference_id,
+    tostring(var.postgresql_backup.receipt_object_storage_access.resource_version),
+  ]) : ""
+  postgresql_restore_receipt_credential_revision = var.postgresql_backup.enabled ? (
+    var.postgresql_backup.credential_generation * 16777216 +
+    parseint(substr(sha256(local.postgresql_restore_receipt_credential_identity), 0, 6), 16)
   ) : 0
   postgresql_backup_barman_object_store = var.postgresql_backup.enabled ? {
     destinationPath = var.postgresql_backup.storage_contract.layout.destination_path
@@ -90,6 +112,60 @@ resource "kubernetes_secret_v1" "postgresql_backup" {
   data_wo_revision = local.postgresql_backup_credential_revision
 
   depends_on = [terraform_data.cluster_contract]
+}
+
+ephemeral "nebius_mysterybox_v1_secret_payload_entry" "postgresql_backup_inventory" {
+  count = var.postgresql_backup.enabled ? 1 : 0
+
+  secret_id = var.postgresql_backup.inventory_object_storage_access.secret_reference_id
+  key       = "secret"
+}
+
+resource "kubernetes_secret_v1" "postgresql_backup_inventory" {
+  count = var.postgresql_backup.enabled ? 1 : 0
+
+  metadata {
+    name      = local.postgresql_backup_inventory_secret_name
+    namespace = "fs2-data"
+    labels = merge(local.common_labels, {
+      "fs2.nebius.ai/credential-purpose" = "postgresql-backup-inventory-reader"
+    })
+  }
+
+  type = "Opaque"
+  data_wo = {
+    ACCESS_KEY_ID     = var.postgresql_backup.inventory_object_storage_access.access_key_id
+    ACCESS_SECRET_KEY = ephemeral.nebius_mysterybox_v1_secret_payload_entry.postgresql_backup_inventory[0].data.string_value
+    AWS_REGION        = var.postgresql_backup.storage_contract.region
+  }
+  data_wo_revision = local.postgresql_backup_inventory_credential_revision
+}
+
+ephemeral "nebius_mysterybox_v1_secret_payload_entry" "postgresql_restore_receipt" {
+  count = var.postgresql_backup.enabled && var.run_database_restore_verification_job ? 1 : 0
+
+  secret_id = var.postgresql_backup.receipt_object_storage_access.secret_reference_id
+  key       = "secret"
+}
+
+resource "kubernetes_secret_v1" "postgresql_restore_receipt" {
+  count = var.postgresql_backup.enabled && var.run_database_restore_verification_job ? 1 : 0
+
+  metadata {
+    name      = local.postgresql_restore_receipt_secret_name
+    namespace = "fs2-data"
+    labels = merge(local.common_labels, {
+      "fs2.nebius.ai/credential-purpose" = "postgresql-restore-receipt-publisher"
+    })
+  }
+
+  type = "Opaque"
+  data_wo = {
+    ACCESS_KEY_ID     = var.postgresql_backup.receipt_object_storage_access.access_key_id
+    ACCESS_SECRET_KEY = ephemeral.nebius_mysterybox_v1_secret_payload_entry.postgresql_restore_receipt[0].data.string_value
+    AWS_REGION        = var.postgresql_backup.storage_contract.region
+  }
+  data_wo_revision = local.postgresql_restore_receipt_credential_revision
 }
 
 resource "kubernetes_manifest" "control_database" {
@@ -706,38 +782,65 @@ resource "kubernetes_job_v1" "database_restore_verification_receipt" {
             import hashlib
             import json
             import os
+            import secrets
             import boto3
+            from botocore.config import Config
 
             marker_id = os.environ["PITR_MARKER_ID"]
             target_time = os.environ["PITR_TARGET_TIME"]
-            receipt_id = hashlib.sha256(
-                (marker_id + "|" + target_time).encode("utf-8")
-            ).hexdigest()
+            subject = {
+                "project_id": os.environ["PROJECT_ID"],
+                "region": os.environ["AWS_REGION"],
+                "bucket_name": os.environ["S3_BUCKET"],
+                "server_name": os.environ["SERVER_NAME"],
+                "source_commit": os.environ["SOURCE_COMMIT"],
+                "run_id": os.environ["RUN_ID"],
+                "source_backup_name": os.environ["SOURCE_BACKUP_NAME"],
+                "source_backup_time": os.environ["SOURCE_BACKUP_TIME"],
+                "marker_id": marker_id,
+                "target_time": target_time,
+                "publisher_access_key_id": os.environ["AWS_ACCESS_KEY_ID"],
+            }
+            canonical_subject = json.dumps(
+                subject, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+            completed = datetime.datetime.now(datetime.timezone.utc)
+            receipt = {
+                "schema": "fs2-serve.nebius.ai/postgresql-restore-verification/v2",
+                "status": "passed",
+                "subject": subject,
+                "verification_binding_sha256": hashlib.sha256(
+                    canonical_subject
+                ).hexdigest(),
+                "nonce": secrets.token_hex(32),
+                "completed_at": completed.isoformat().replace("+00:00", "Z"),
+                "valid_until": (completed + datetime.timedelta(days=8))
+                .isoformat()
+                .replace("+00:00", "Z"),
+            }
             body = json.dumps(
-                {
-                    "schema": "fs2-serve.nebius.ai/postgresql-restore-verification/v1",
-                    "status": "passed",
-                    "marker_id": marker_id,
-                    "target_time": target_time,
-                    "completed_at": datetime.datetime.now(
-                        datetime.timezone.utc
-                    ).isoformat().replace("+00:00", "Z"),
-                },
+                receipt,
                 sort_keys=True,
                 separators=(",", ":"),
             ).encode("utf-8")
+            receipt_id = hashlib.sha256(body).hexdigest()
             client = boto3.client(
                 "s3",
                 endpoint_url=os.environ["S3_ENDPOINT"],
                 region_name=os.environ["AWS_REGION"],
                 aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
                 aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
+                config=Config(
+                    signature_version="s3v4",
+                    s3={"addressing_style": "path"},
+                ),
             )
             client.put_object(
                 Bucket=os.environ["S3_BUCKET"],
                 Key="postgresql/v1/restore-verification/success/" + receipt_id + ".json",
                 Body=body,
                 ContentType="application/json",
+                IfNoneMatch="*",
             )
           PYTHON
           ]
@@ -748,6 +851,30 @@ resource "kubernetes_job_v1" "database_restore_verification_receipt" {
           env {
             name  = "PITR_TARGET_TIME"
             value = var.database_restore_target_time
+          }
+          env {
+            name  = "PROJECT_ID"
+            value = nonsensitive(var.project_id)
+          }
+          env {
+            name  = "SOURCE_COMMIT"
+            value = var.infrastructure_contract.source_commit
+          }
+          env {
+            name  = "RUN_ID"
+            value = var.run_id
+          }
+          env {
+            name  = "SERVER_NAME"
+            value = var.postgresql_backup.storage_contract.layout.server_name
+          }
+          env {
+            name  = "SOURCE_BACKUP_NAME"
+            value = var.database_restore_source_backup_name
+          }
+          env {
+            name  = "SOURCE_BACKUP_TIME"
+            value = var.database_restore_source_backup_time
           }
           env {
             name  = "S3_ENDPOINT"
@@ -761,7 +888,7 @@ resource "kubernetes_job_v1" "database_restore_verification_receipt" {
             name = "AWS_ACCESS_KEY_ID"
             value_from {
               secret_key_ref {
-                name = kubernetes_secret_v1.postgresql_backup[0].metadata[0].name
+                name = kubernetes_secret_v1.postgresql_restore_receipt[0].metadata[0].name
                 key  = "ACCESS_KEY_ID"
               }
             }
@@ -770,7 +897,7 @@ resource "kubernetes_job_v1" "database_restore_verification_receipt" {
             name = "AWS_SECRET_ACCESS_KEY"
             value_from {
               secret_key_ref {
-                name = kubernetes_secret_v1.postgresql_backup[0].metadata[0].name
+                name = kubernetes_secret_v1.postgresql_restore_receipt[0].metadata[0].name
                 key  = "ACCESS_SECRET_KEY"
               }
             }
@@ -779,7 +906,7 @@ resource "kubernetes_job_v1" "database_restore_verification_receipt" {
             name = "AWS_REGION"
             value_from {
               secret_key_ref {
-                name = kubernetes_secret_v1.postgresql_backup[0].metadata[0].name
+                name = kubernetes_secret_v1.postgresql_restore_receipt[0].metadata[0].name
                 key  = "AWS_REGION"
               }
             }

@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import importlib.machinery
 import importlib.util
+import base64
+import hashlib
+import io
 import json
 import re
 import shutil
@@ -11,9 +14,12 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
+from contextlib import redirect_stdout
 
 import pytest
 import yaml
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 ROOT = Path(__file__).resolve().parents[1]
 STACK_PATH = ROOT / "inference-stack"
@@ -73,7 +79,17 @@ def _backup_handoff_inputs(run_root: Path) -> tuple[dict, dict]:
             },
             "writer": {
                 "role": "storage.object-editor",
+                "paths": ["postgresql/v1/fs2-control-db/*"],
+                "secret_delivery": "MYSTERY_BOX",
+            },
+            "inventory_reader": {
+                "roles": ["storage.object-lister", "storage.object-viewer"],
                 "paths": ["postgresql/v1/*"],
+                "secret_delivery": "MYSTERY_BOX",
+            },
+            "receipt_publisher": {
+                "role": "storage.uploader",
+                "paths": ["postgresql/v1/restore-verification/success/*"],
                 "secret_delivery": "MYSTERY_BOX",
             },
         },
@@ -81,6 +97,18 @@ def _backup_handoff_inputs(run_root: Path) -> tuple[dict, dict]:
             "key_id": "accesskey-postgresql-test",
             "access_key_id": "TESTPOSTGRESQLACCESSKEY",
             "secret_reference_id": "mysterybox-postgresql-test",
+            "resource_version": 1,
+        },
+        "postgresql_backup_inventory_object_storage_access": {
+            "key_id": "accesskey-postgresql-inventory-test",
+            "access_key_id": "TESTPOSTGRESQLINVENTORY",
+            "secret_reference_id": "mysterybox-postgresql-inventory-test",
+            "resource_version": 1,
+        },
+        "postgresql_backup_receipt_object_storage_access": {
+            "key_id": "accesskey-postgresql-receipt-test",
+            "access_key_id": "TESTPOSTGRESQLRECEIPT",
+            "secret_reference_id": "mysterybox-postgresql-receipt-test",
             "resource_version": 1,
         },
         "postgresql_backup_lifecycle": {
@@ -112,10 +140,25 @@ def test_postgresql_backup_is_versioned_retained_and_mysterybox_delivered() -> N
     assert 'versioning_policy     = "ENABLED"' in infrastructure
     assert "prevent_destroy = true" in infrastructure
     assert 'secret_delivery_mode = "MYSTERY_BOX"' in infrastructure
-    assert 'paths    = ["postgresql/v1/*"]' in infrastructure
-    assert 'roles    = ["storage.object-editor"]' in infrastructure
+    assert "postgresql_backup_writer_path_scope" in infrastructure
+    assert (
+        'postgresql_backup_writer_role                 = "storage.object-editor"'
+        in infrastructure
+    )
+    assert (
+        'postgresql_backup_inventory_roles             = ["storage.object-lister", "storage.object-viewer"]'
+        in infrastructure
+    )
+    assert (
+        'postgresql_backup_receipt_role                = "storage.uploader"'
+        in infrastructure
+    )
+    assert "postgresql_backup_inventory" in infrastructure
+    assert "postgresql_restore_receipt" in infrastructure
     assert 'output "postgresql_backup_storage_contract"' in outputs
     assert 'output "postgresql_backup_object_storage_access"' in outputs
+    assert 'output "postgresql_backup_inventory_object_storage_access"' in outputs
+    assert 'output "postgresql_backup_receipt_object_storage_access"' in outputs
 
 
 def test_postgresql_backup_capacity_is_retention_aware_and_live_checked() -> None:
@@ -137,38 +180,10 @@ def test_postgresql_backup_capacity_is_retention_aware_and_live_checked() -> Non
     assert '"sai06_capacity_plan_binding": sai06_capacity_plan_binding(' in stack
     assert '"storage.bucket.size.standard"' in stack
     assert '"sai06-postgresql-capacity-preflight.json"' in stack
-    assert (
-        "var.sai06_capacity_approval.plan_binding_sha256 == "
-        "local.postgresql_capacity_plan_binding"
-    ) in infrastructure
-
-
-def _capacity_receipt(contract: dict, *, now: datetime | None = None) -> dict:
-    captured = now or datetime.now(UTC)
-    return {
-        "schema": "fs2-serve.nebius.ai/sai06-capacity-approval/v1",
-        "project_id": contract["target"]["project_id"],
-        "region": contract["target"]["region"],
-        "reviewed_at": captured.isoformat().replace("+00:00", "Z"),
-        "valid_until": (captured + timedelta(hours=12))
-        .isoformat()
-        .replace("+00:00", "Z"),
-        "plan_binding_sha256": STACK.sai06_capacity_plan_binding(contract),
-        "reviewed_by": "platform-capacity-review",
-        "evidence_sha256": "a" * 64,
-        "allowances": [
-            {
-                "resource": "compute.system_pool.nodes",
-                "unit": "node",
-                "ceiling": 3,
-            },
-            {
-                "resource": "storage.bucket.size.standard",
-                "unit": "byte",
-                "ceiling": 20 * 1024**4,
-            },
-        ],
-    }
+    assert "SAI06_APPROVAL_REQUEST_NAME" in stack
+    assert "infrastructure_plan_sha256" in stack
+    assert "source_tree" in stack
+    assert "Ed25519PublicKey" in stack
 
 
 def _capacity_contract() -> dict:
@@ -195,32 +210,154 @@ def _capacity_contract() -> dict:
     }
 
 
-def _write_capacity_receipt(tmp_path: Path, receipt: dict) -> Path:
-    path = tmp_path / "capacity-receipt.json"
-    path.write_text(json.dumps(receipt), encoding="utf-8")
-    path.chmod(0o600)
-    return path
+def _quota_payload(
+    *, compute_limit: int | None = 30, storage_limit: int | None = 30 * 1024**4
+) -> dict:
+    def item(name: str, unit: str, usage: int, limit: int | None) -> dict:
+        status = {
+            "usage": str(usage),
+            "unit": unit,
+            "usage_state": "USAGE_STATE_USED",
+        }
+        if limit is not None:
+            status["limit"] = str(limit)
+        return {
+            "metadata": {"name": name},
+            "spec": {"region": "eu-north1"},
+            "status": status,
+        }
 
-
-def test_live_capacity_preflight_binds_usage_sizing_and_cost_review(
-    tmp_path: Path,
-) -> None:
-    contract = _capacity_contract()
-    receipt_path = _write_capacity_receipt(tmp_path, _capacity_receipt(contract))
-    payload = {
+    return {
         "items": [
-            {
-                "metadata": {"name": "storage.bucket.size.standard"},
-                "spec": {"region": "eu-north1"},
-                "status": {
-                    "usage": "239725098497",
-                    "unit": "byte",
-                    "usage_state": "USAGE_STATE_USED",
-                },
-            }
+            item("compute.instance.count", "count", 15, compute_limit),
+            item(
+                "storage.bucket.size.standard", "byte", 239_725_098_497, storage_limit
+            ),
         ]
     }
 
+
+def _plan_document(
+    *,
+    node_before: int = 1,
+    node_after: int = 3,
+    storage_before: int = 0,
+    storage_after: int = 12288 * 1024**3,
+) -> dict:
+    return {
+        "resource_changes": [
+            {
+                "address": "nebius_mk8s_v1_node_group.system",
+                "change": {
+                    "before": {"fixed_node_count": node_before},
+                    "after": {"fixed_node_count": node_after},
+                    "actions": ["update"],
+                },
+            },
+            {
+                "address": "nebius_storage_v1_bucket.postgresql_backup[0]",
+                "change": {
+                    "before": None
+                    if storage_before == 0
+                    else {"max_size_bytes": storage_before},
+                    "after": {"max_size_bytes": storage_after},
+                    "actions": ["create"] if storage_before == 0 else ["no-op"],
+                },
+            },
+        ]
+    }
+
+
+def _signed_approval(
+    request: dict,
+    *,
+    compute_ceiling: int = 30,
+    storage_ceiling: int = 30 * 1024**4,
+    owner_overrides: list[dict] | None = None,
+    now: datetime | None = None,
+) -> tuple[dict, dict]:
+    private_key = Ed25519PrivateKey.generate()
+    public_key = private_key.public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw
+    )
+    key_id = hashlib.sha256(public_key).hexdigest()
+    captured = now or datetime.now(UTC)
+    payload = {
+        "schema": "fs2-serve.nebius.ai/sai06-capacity-approval/v2",
+        "issuer": "platform-capacity-owner",
+        "issued_at": captured.isoformat().replace("+00:00", "Z"),
+        "valid_until": (captured + timedelta(hours=12))
+        .isoformat()
+        .replace("+00:00", "Z"),
+        "nonce": request["nonce"],
+        "request_sha256": STACK.canonical_sha256(request),
+        "request": request,
+        "approved_ceilings": [
+            {
+                "resource": "compute.instance.count",
+                "unit": "count",
+                "ceiling": compute_ceiling,
+            },
+            {
+                "resource": "storage.bucket.size.standard",
+                "unit": "byte",
+                "ceiling": storage_ceiling,
+            },
+        ],
+        "owner_overrides": owner_overrides or [],
+    }
+    signature = private_key.sign(
+        json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode()
+    )
+    envelope = {
+        "schema": "fs2-serve.nebius.ai/sai06-capacity-approval-envelope/v2",
+        "algorithm": "Ed25519",
+        "key_id": key_id,
+        "payload": payload,
+        "signature": base64.b64encode(signature).decode(),
+    }
+    trust = {
+        "schema": "fs2-serve.nebius.ai/sai06-trusted-issuers/v1",
+        "issuers": [
+            {
+                "issuer": "platform-capacity-owner",
+                "key_id": key_id,
+                "algorithm": "Ed25519",
+                "public_key_base64": base64.b64encode(public_key).decode(),
+                "roles": ["capacity-approver", "capacity-owner"],
+                "enabled": True,
+            }
+        ],
+    }
+    return envelope, trust
+
+
+def _approval_request(resources: list[dict]) -> dict:
+    return {
+        "schema": "fs2-serve.nebius.ai/sai06-capacity-approval-request/v2",
+        "created_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "nonce": "1" * 64,
+        "project_id": "project-test",
+        "region": "eu-north1",
+        "source_commit": "a" * 40,
+        "source_tree": "b" * 40,
+        "infrastructure_plan_sha256": "c" * 64,
+        "infrastructure_plan_json_sha256": "d" * 64,
+        "quota_evidence_sha256": "e" * 64,
+        "capacity_plan_binding_sha256": "f" * 64,
+        "resources": resources,
+    }
+
+
+def test_live_capacity_preflight_binds_compute_storage_and_incremental_deltas() -> None:
+    contract = _capacity_contract()
+    payload = _quota_payload()
     with mock.patch.object(
         STACK,
         "run",
@@ -229,163 +366,334 @@ def test_live_capacity_preflight_binds_usage_sizing_and_cost_review(
         ),
     ):
         evidence = STACK.preflight_postgresql_backup_capacity(
-            SimpleNamespace(
-                nebius="nebius",
-                nebius_profile="sandbox",
-                sai06_capacity_receipt=receipt_path,
-            ),
+            SimpleNamespace(nebius="nebius", nebius_profile="sandbox"),
             contract,
+            plan_document=_plan_document(),
         )
 
-    assert evidence["required_capacity_gib"] == 11585
-    assert evidence["configured_bucket_max_gib"] == 12288
-    assert evidence["observed_usage_bytes"] == 239725098497
-    assert evidence["provider_explicit_limit_bytes"] is None
-    assert evidence["projected_usage_if_fully_allocated_bytes"] > evidence[
-        "observed_usage_bytes"
-    ]
-    assert evidence["provider_limit_verdict"] == "within-reviewed-capacity-ceiling"
-    assert evidence["capacity_receipt"]["plan_binding_sha256"] == (
-        STACK.sai06_capacity_plan_binding(contract)
+    resources = {item["resource"]: item for item in evidence["resources"]}
+    assert resources["compute.instance.count"]["incremental_demand"] == 2
+    assert resources["compute.instance.count"]["projected_usage"] == 17
+    assert (
+        resources["storage.bucket.size.standard"]["incremental_demand"]
+        == 12288 * 1024**3
     )
-    assert evidence["capacity_receipt"]["storage_ceiling_bytes"] == 20 * 1024**4
-    assert evidence["capacity_receipt"]["system_node_ceiling"] == 3
-    assert evidence["system_pool_nodes"] == 3
-    assert evidence["cost_review_acknowledged"] is True
+    assert evidence["quota_evidence_sha256"] == STACK.canonical_sha256(payload)
+    assert evidence["apply_authorized"] is False
 
-    contract["stages"]["infrastructure"]["system_pool"]["node_count"] = 1
-    with (
-        mock.patch.object(
-            STACK,
-            "run",
-            return_value=subprocess.CompletedProcess(
-                ["nebius"], 0, stdout=json.dumps(payload), stderr=""
-            ),
+    recurring = STACK.sai06_capacity_projections(
+        payload,
+        project_id="project-test",
+        region="eu-north1",
+        plan_document=_plan_document(
+            node_before=3,
+            node_after=3,
+            storage_before=12288 * 1024**3,
+            storage_after=12288 * 1024**3,
         ),
-        pytest.raises(STACK.DeploymentError, match="three nodes"),
-    ):
-        STACK.preflight_postgresql_backup_capacity(
-            SimpleNamespace(
-                nebius="nebius",
-                nebius_profile="sandbox",
-                sai06_capacity_receipt=receipt_path,
-            ),
-            contract,
-        )
-
-    contract["stages"]["infrastructure"]["system_pool"]["node_count"] = 3
-    payload["items"][0]["status"]["limit"] = "1000000000000"
-    with (
-        mock.patch.object(
-            STACK,
-            "run",
-            return_value=subprocess.CompletedProcess(
-                ["nebius"], 0, stdout=json.dumps(payload), stderr=""
-            ),
-        ),
-        pytest.raises(STACK.DeploymentError, match="exceeds the live provider limit"),
-    ):
-        STACK.preflight_postgresql_backup_capacity(
-            SimpleNamespace(
-                nebius="nebius",
-                nebius_profile="sandbox",
-                sai06_capacity_receipt=receipt_path,
-            ),
-            contract,
-        )
+        fallback_system_nodes=3,
+        fallback_storage_bytes=12288 * 1024**3,
+    )
+    recurring_index = {item["resource"]: item for item in recurring}
+    assert recurring_index["compute.instance.count"]["incremental_demand"] == 0
+    assert recurring_index["storage.bucket.size.standard"]["incremental_demand"] == 0
 
 
-def test_capacity_preflight_rejects_missing_stale_wrong_scope_and_insufficient_receipts(
+def test_capacity_plan_rejects_any_resource_replacement() -> None:
+    accepted = _plan_document()
+    STACK.require_sai06_no_replacements(accepted)
+
+    replacement = _plan_document()
+    replacement["resource_changes"].append(
+        {
+            "address": "nebius_mk8s_v1_cluster.this",
+            "change": {"before": {}, "after": {}, "actions": ["delete", "create"]},
+        }
+    )
+    with pytest.raises(STACK.DeploymentError, match="no-replacement.*cluster.this"):
+        STACK.require_sai06_no_replacements(replacement)
+
+
+def test_signed_approval_rejects_missing_limits_without_owner_override() -> None:
+    resources = STACK.sai06_capacity_projections(
+        _quota_payload(compute_limit=None, storage_limit=None),
+        project_id="project-test",
+        region="eu-north1",
+        plan_document=_plan_document(),
+        fallback_system_nodes=3,
+        fallback_storage_bytes=12288 * 1024**3,
+    )
+    request = _approval_request(resources)
+    envelope, trust = _signed_approval(request)
+    with pytest.raises(STACK.DeploymentError, match="absent.*owner override"):
+        STACK.validate_sai06_capacity_receipt(envelope, request, trust)
+
+    overrides = [
+        {
+            "resource": item["resource"],
+            "unit": item["unit"],
+            "ceiling": 30 if item["unit"] == "count" else 30 * 1024**4,
+            "reason": "Provider omitted a numeric limit; capacity owner reviewed the exact saved plan.",
+            "evidence_sha256": "9" * 64,
+        }
+        for item in resources
+    ]
+    envelope, trust = _signed_approval(request, owner_overrides=overrides)
+    summary = STACK.validate_sai06_capacity_receipt(envelope, request, trust)
+    assert summary["owner_override_resources"] == [
+        "compute.instance.count",
+        "storage.bucket.size.standard",
+    ]
+
+
+def test_signed_approval_rejects_forgery_stale_scope_and_insufficient_limit() -> None:
+    resources = STACK.sai06_capacity_projections(
+        _quota_payload(),
+        project_id="project-test",
+        region="eu-north1",
+        plan_document=_plan_document(),
+        fallback_system_nodes=3,
+        fallback_storage_bytes=12288 * 1024**3,
+    )
+    request = _approval_request(resources)
+    envelope, trust = _signed_approval(request)
+    forged = json.loads(json.dumps(envelope))
+    forged["payload"]["request"]["project_id"] = "project-other"
+    with pytest.raises(STACK.DeploymentError, match="different request|signature"):
+        STACK.validate_sai06_capacity_receipt(forged, request, trust)
+
+    stale, trust = _signed_approval(request, now=datetime.now(UTC) - timedelta(days=2))
+    with pytest.raises(STACK.DeploymentError, match="stale|expired"):
+        STACK.validate_sai06_capacity_receipt(stale, request, trust)
+
+    insufficient, trust = _signed_approval(request, compute_ceiling=16)
+    with pytest.raises(STACK.DeploymentError, match="exceeds the signed ceiling"):
+        STACK.validate_sai06_capacity_receipt(insufficient, request, trust)
+
+    extra_field = json.loads(json.dumps(request))
+    extra_field["caller_note"] = "not part of the exact approval request"
+    extra_envelope, trust = _signed_approval(extra_field)
+    with pytest.raises(STACK.DeploymentError, match="request fields are not exact"):
+        STACK.validate_sai06_capacity_receipt(extra_envelope, extra_field, trust)
+
+    invalid_math = json.loads(json.dumps(request))
+    invalid_math["resources"][0]["projected_usage"] += 1
+    invalid_envelope, trust = _signed_approval(invalid_math)
+    with pytest.raises(STACK.DeploymentError, match="projected capacity is malformed"):
+        STACK.validate_sai06_capacity_receipt(invalid_envelope, invalid_math, trust)
+
+
+def test_apply_loader_rejects_a_trusted_signature_for_the_wrong_project(
     tmp_path: Path,
 ) -> None:
     contract = _capacity_contract()
-    payload = {
-        "items": [
-            {
-                "metadata": {"name": "storage.bucket.size.standard"},
-                "spec": {"region": "eu-north1"},
-                "status": {
-                    "usage": "239725098497",
-                    "unit": "byte",
-                    "usage_state": "USAGE_STATE_USED",
-                },
-            }
-        ]
-    }
+    plan_document = _plan_document()
+    resources = STACK.sai06_capacity_projections(
+        _quota_payload(),
+        project_id="project-test",
+        region="eu-north1",
+        plan_document=plan_document,
+        fallback_system_nodes=3,
+        fallback_storage_bytes=12288 * 1024**3,
+    )
+    plan_path = tmp_path / "infrastructure-plan.tfplan"
+    plan_path.write_bytes(b"exact-saved-plan")
+    plan_path.chmod(0o600)
+    STACK.private_json(tmp_path / "infrastructure-plan.plan.json", plan_document)
+    request = _approval_request(resources)
+    request.update(
+        {
+            "project_id": "project-other",
+            "source_commit": "a" * 40,
+            "source_tree": "b" * 40,
+            "infrastructure_plan_sha256": hashlib.sha256(
+                b"exact-saved-plan"
+            ).hexdigest(),
+            "infrastructure_plan_json_sha256": STACK.canonical_sha256(plan_document),
+            "quota_evidence_sha256": "e" * 64,
+            "capacity_plan_binding_sha256": STACK.sai06_capacity_plan_binding(contract),
+        }
+    )
+    envelope, trust = _signed_approval(request)
+    STACK.private_json(tmp_path / STACK.SAI06_APPROVAL_REQUEST_NAME, request)
+    receipt_path = tmp_path / "capacity-approval.json"
+    trust_path = tmp_path / "trusted-issuers.json"
+    STACK.private_json(receipt_path, envelope)
+    STACK.private_json(trust_path, trust)
 
-    def invoke(receipt_path: Path | None) -> None:
-        with mock.patch.object(
-            STACK,
-            "run",
-            return_value=subprocess.CompletedProcess(
-                ["nebius"], 0, stdout=json.dumps(payload), stderr=""
+    with (
+        mock.patch.object(STACK, "SAI06_TRUSTED_ISSUERS_PATH", trust_path),
+        mock.patch.object(STACK, "source_tree", return_value="b" * 40),
+        pytest.raises(STACK.DeploymentError, match="project_id no longer matches"),
+    ):
+        STACK.load_and_validate_sai06_capacity_approval(
+            SimpleNamespace(
+                sai06_capacity_receipt=receipt_path,
+                nebius="nebius",
+                nebius_profile="sandbox",
             ),
-        ):
-            STACK.preflight_postgresql_backup_capacity(
-                SimpleNamespace(
-                    nebius="nebius",
-                    nebius_profile="sandbox",
-                    sai06_capacity_receipt=receipt_path,
-                ),
-                contract,
-            )
+            tmp_path,
+            contract,
+            "a" * 40,
+        )
 
-    with pytest.raises(STACK.DeploymentError, match="capacity receipt"):
-        invoke(None)
 
-    no_node_ack = _capacity_contract()
-    no_node_ack["stages"]["infrastructure"]["system_pool"][
-        "three_node_ha_cost_review_acknowledged"
-    ] = False
-    original_contract = contract
-    contract = no_node_ack
-    with pytest.raises(STACK.DeploymentError, match="cost acknowledgements"):
-        invoke(_write_capacity_receipt(tmp_path, _capacity_receipt(contract)))
+def test_secure_approval_loader_rejects_symlink_hardlink_and_permissive_mode(
+    tmp_path: Path,
+) -> None:
+    original = tmp_path / "approval.json"
+    original.write_text("{}", encoding="utf-8")
+    original.chmod(0o600)
+    assert STACK._secure_json_file(original, label="test approval", private=True) == {}
 
-    no_backup_ack = _capacity_contract()
-    no_backup_ack["stages"]["infrastructure"]["postgresql_backup"][
-        "capacity_cost_review_acknowledged"
-    ] = False
-    contract = no_backup_ack
-    with pytest.raises(STACK.DeploymentError, match="cost acknowledgements"):
-        invoke(_write_capacity_receipt(tmp_path, _capacity_receipt(contract)))
-    contract = original_contract
+    symlink = tmp_path / "approval-symlink.json"
+    symlink.symlink_to(original)
+    with pytest.raises(STACK.DeploymentError, match="opened safely"):
+        STACK._secure_json_file(symlink, label="test approval", private=True)
 
-    stale = _capacity_receipt(contract, now=datetime.now(UTC) - timedelta(days=2))
-    with pytest.raises(STACK.DeploymentError, match="stale|expired"):
-        invoke(_write_capacity_receipt(tmp_path, stale))
+    hardlink = tmp_path / "approval-hardlink.json"
+    hardlink.hardlink_to(original)
+    with pytest.raises(STACK.DeploymentError, match="singly linked"):
+        STACK._secure_json_file(original, label="test approval", private=True)
+    hardlink.unlink()
+    original.chmod(0o640)
+    with pytest.raises(STACK.DeploymentError, match="0600"):
+        STACK._secure_json_file(original, label="test approval", private=True)
 
-    wrong_project = _capacity_receipt(contract)
-    wrong_project["project_id"] = "project-other"
-    with pytest.raises(STACK.DeploymentError, match="project|scope"):
-        invoke(_write_capacity_receipt(tmp_path, wrong_project))
-
-    wrong_plan = _capacity_receipt(contract)
-    wrong_plan["plan_binding_sha256"] = "b" * 64
-    with pytest.raises(STACK.DeploymentError, match="different plan"):
-        invoke(_write_capacity_receipt(tmp_path, wrong_plan))
-
-    insufficient_nodes = _capacity_receipt(contract)
-    insufficient_nodes["allowances"][0]["ceiling"] = 2
-    with pytest.raises(STACK.DeploymentError, match="system-node allowance"):
-        invoke(_write_capacity_receipt(tmp_path, insufficient_nodes))
-
-    insufficient_storage = _capacity_receipt(contract)
-    insufficient_storage["allowances"][1]["ceiling"] = 1024**3
-    with pytest.raises(STACK.DeploymentError, match="object-storage allowance"):
-        invoke(_write_capacity_receipt(tmp_path, insufficient_storage))
+    plan = tmp_path / "plan.tfplan"
+    plan.write_bytes(b"exact-saved-plan")
+    plan.chmod(0o600)
+    assert (
+        STACK._secure_sha256_file(plan, label="test plan")
+        == hashlib.sha256(b"exact-saved-plan").hexdigest()
+    )
+    plan_link = tmp_path / "plan-link.tfplan"
+    plan_link.symlink_to(plan)
+    with pytest.raises(STACK.DeploymentError, match="opened safely"):
+        STACK._secure_sha256_file(plan_link, label="test plan")
 
 
 def test_capacity_receipt_schema_is_strict_and_matches_runtime_resources() -> None:
     schema = json.loads(_text("docs/sai06-capacity-approval.schema.json"))
 
     assert schema["additionalProperties"] is False
-    allowance = schema["properties"]["allowances"]
-    assert allowance["minItems"] == allowance["maxItems"] == 2
-    assert set(allowance["items"]["properties"]["resource"]["enum"]) == {
-        "compute.system_pool.nodes",
+    assert schema["properties"]["algorithm"]["const"] == "Ed25519"
+    assert schema["$defs"]["request"]["additionalProperties"] is False
+    assert schema["$defs"]["projection"]["additionalProperties"] is False
+    assert set(schema["$defs"]["resource"]["enum"]) == {
+        "compute.instance.count",
         "storage.bucket.size.standard",
     }
+
+
+def test_destroy_preflights_all_plans_before_any_delete_and_retains_postgresql(
+    tmp_path: Path,
+) -> None:
+    configuration = {
+        "stages": {
+            "infrastructure": {
+                "postgresql_backup": {
+                    "enabled": True,
+                    "lifecycle": {"retention_mode": "retain"},
+                }
+            }
+        }
+    }
+    dynamic = {
+        "postgresql_backup_storage_contract": {
+            "schema": "fs2-serve.nebius.ai/postgresql-backup-storage/v1",
+            "object_storage": {
+                "id": "storagebucket-test",
+                "name": "postgresql-backup-test",
+            },
+        },
+        "postgresql_backup_lifecycle": {
+            "retention_mode": "retain",
+            "adoption_status": "ids-exported-for-explicit-state-adoption",
+        },
+    }
+    events: list[str] = []
+
+    def plan(*_args: object, **kwargs: object) -> tuple[Path, dict, dict]:
+        stage = str(kwargs["stage"])
+        events.append(f"plan:{stage}")
+        return tmp_path / f"{stage}-destroy.tfplan", {}, {}
+
+    def apply(*args: object, **_kwargs: object) -> None:
+        events.append(f"apply:{Path(str(args[1])).name}")
+
+    with (
+        mock.patch.object(STACK, "state_has_resources", return_value=True),
+        mock.patch.object(STACK, "state_ready", return_value=True),
+        mock.patch.object(STACK, "infrastructure_outputs", return_value=dynamic),
+        mock.patch.object(
+            STACK,
+            "write_downstream_variables",
+            return_value=(tmp_path / "foundation.json", tmp_path / "workloads.json"),
+        ),
+        mock.patch.object(STACK, "workload_endpoint_outputs", return_value={}),
+        mock.patch.object(STACK, "plan_stage", side_effect=plan),
+        mock.patch.object(STACK, "apply_plan", side_effect=apply),
+        mock.patch.object(STACK, "write_infrastructure_variables") as write_infra,
+        redirect_stdout(io.StringIO()),
+    ):
+        STACK.destroy_stack(
+            SimpleNamespace(
+                terraform="terraform",
+                nebius="nebius",
+                nebius_profile="sandbox",
+                kubectl="kubectl",
+            ),
+            tmp_path,
+            configuration,
+            "a" * 40,
+        )
+
+    assert events == [
+        "plan:workloads",
+        "plan:foundation",
+        "apply:workloads",
+        "apply:foundation",
+    ]
+    write_infra.assert_not_called()
+    receipt = json.loads((tmp_path / "postgresql-backup-retention.json").read_text())
+    assert receipt["postgresql_backup"]["lifecycle"]["retention_mode"] == "retain"
+
+
+def test_destroy_plan_failure_makes_zero_deletions(tmp_path: Path) -> None:
+    configuration = {"stages": {"infrastructure": {}}}
+
+    def plan(*_args: object, **kwargs: object) -> tuple[Path, dict, dict]:
+        if kwargs["stage"] == "foundation":
+            raise STACK.DeploymentError("foundation destroy plan rejected")
+        return tmp_path / "workloads-destroy.tfplan", {}, {}
+
+    with (
+        mock.patch.object(
+            STACK,
+            "write_infrastructure_variables",
+            return_value=tmp_path / "infra.json",
+        ),
+        mock.patch.object(STACK, "state_has_resources", return_value=True),
+        mock.patch.object(STACK, "state_ready", return_value=False),
+        mock.patch.object(
+            STACK,
+            "plan_stage",
+            side_effect=plan,
+        ),
+        mock.patch.object(STACK, "apply_plan") as apply_plan,
+        pytest.raises(STACK.DeploymentError, match="foundation destroy plan rejected"),
+    ):
+        # Cached downstream inputs make this a pure plan-order test.
+        (tmp_path / "foundation.tfvars.json").write_text("{}")
+        (tmp_path / "workloads.tfvars.json").write_text("{}")
+        STACK.destroy_stack(
+            SimpleNamespace(terraform="terraform", nebius_profile="sandbox"),
+            tmp_path,
+            configuration,
+            "a" * 40,
+        )
+    apply_plan.assert_not_called()
 
 
 def test_backup_handoff_is_exact_retained_and_secret_free(tmp_path: Path) -> None:
@@ -401,6 +709,14 @@ def test_backup_handoff_is_exact_retained_and_secret_free(tmp_path: Path) -> Non
     assert (
         backup["object_storage_access"]
         == dynamic["postgresql_backup_object_storage_access"]
+    )
+    assert (
+        backup["inventory_object_storage_access"]
+        == dynamic["postgresql_backup_inventory_object_storage_access"]
+    )
+    assert (
+        backup["receipt_object_storage_access"]
+        == dynamic["postgresql_backup_receipt_object_storage_access"]
     )
     assert "secret-access-key" not in generated_text
     assert "secret_value" not in generated_text
@@ -490,7 +806,9 @@ def test_restore_verifier_is_marker_only_and_denied_sensitive_tables() -> None:
     ):
         assert table in database
     assert "has_any_column_privilege" in database
-    assert "credential|secret|token|session|operation|audit|payload|artifact" in database
+    assert (
+        "credential|secret|token|session|operation|audit|payload|artifact" in database
+    )
     assert "pg_attribute" in database
 
 
@@ -503,12 +821,12 @@ def test_effective_system_pool_requires_three_node_cost_acknowledgement() -> Non
     assert "three_node_ha_cost_review_acknowledged" in infrastructure_variables
     for source in (root_variables, infrastructure_variables):
         assert "node_count >= 3" in source
-    assert re.search(
-        r"system_pool_cost_review_acknowledged\s*=\s*true", example
-    )
+    assert re.search(r"system_pool_cost_review_acknowledged\s*=\s*true", example)
 
 
-def test_default_system_pool_requires_effective_node_and_backup_acknowledgements() -> None:
+def test_default_system_pool_requires_effective_node_and_backup_acknowledgements() -> (
+    None
+):
     root_variables = _text("variables.tf")
     root_locals = _text("locals.tf")
     stack = _text("inference-stack")
@@ -517,7 +835,7 @@ def test_default_system_pool_requires_effective_node_and_backup_acknowledgements
     assert "local.selected_capacity.system_nodes" in root_locals
     assert "three_node_ha_cost_review_acknowledged" in root_locals
     assert "not isinstance(system_pool, Mapping)" in stack
-    assert "backup.get(\"capacity_cost_review_acknowledged\") is not True" in stack
+    assert 'backup.get("capacity_cost_review_acknowledged") is not True' in stack
 
 
 def test_backup_observability_is_executable_and_covers_every_sai06_signal() -> None:
@@ -540,6 +858,8 @@ def test_backup_observability_is_executable_and_covers_every_sai06_signal() -> N
     ):
         assert alert in monitoring
     assert "list_object_versions" in metrics
+    assert "get_object" in metrics
+    assert "validate_restore_receipt" in metrics
     assert "fs2_postgresql_backup_bucket_usage_bytes" in metrics
     assert "fs2_postgresql_backup_bucket_capacity_bytes" in metrics
     assert "fs2_postgresql_restore_last_success_timestamp_seconds" in metrics
@@ -587,11 +907,25 @@ def test_backup_alert_promql_is_accepted_by_promtool(tmp_path: Path) -> None:
 def test_successful_restore_publishes_a_nonsensitive_durable_receipt() -> None:
     database = _text("stages/workloads/database.tf")
 
-    assert 'resource "kubernetes_job_v1" "database_restore_verification_receipt"' in database
+    assert (
+        'resource "kubernetes_job_v1" "database_restore_verification_receipt"'
+        in database
+    )
     assert "restore-verification/success/" in database
     assert "boto3.client" in database
+    assert '"fs2-serve.nebius.ai/postgresql-restore-verification/v2"' in database
+    assert 'IfNoneMatch="*"' in database
+    assert "verification_binding_sha256" in database
+    assert "kubernetes_secret_v1.postgresql_restore_receipt" in database
+    assert (
+        "count = var.postgresql_backup.enabled && "
+        "var.run_database_restore_verification_job ? 1 : 0"
+    ) in database
+    assert "kubernetes_secret_v1.postgresql_backup_inventory" in _text(
+        "stages/workloads/postgresql_backup_monitoring.tf"
+    )
     assert "depends_on = [kubernetes_job_v1.database_restore_verification]" in database
-    assert 'automount_service_account_token = false' in database
+    assert "automount_service_account_token = false" in database
 
 
 def test_public_envoy_has_two_replicas_required_spread_and_a_pdb() -> None:

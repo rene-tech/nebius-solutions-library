@@ -77,6 +77,18 @@ resource "kubernetes_deployment_v1" "postgresql_backup_metrics" {
             value = "postgresql/v1/"
           }
           env {
+            name  = "PROJECT_ID"
+            value = nonsensitive(var.project_id)
+          }
+          env {
+            name  = "SERVER_NAME"
+            value = var.postgresql_backup.storage_contract.layout.server_name
+          }
+          env {
+            name  = "RECEIPT_PUBLISHER_ACCESS_KEY_ID"
+            value = var.postgresql_backup.receipt_object_storage_access.access_key_id
+          }
+          env {
             name  = "BUCKET_CAPACITY_BYTES"
             value = tostring(var.postgresql_backup.storage_contract.sizing.configured_capacity_gib * 1024 * 1024 * 1024)
           }
@@ -84,7 +96,7 @@ resource "kubernetes_deployment_v1" "postgresql_backup_metrics" {
             name = "AWS_ACCESS_KEY_ID"
             value_from {
               secret_key_ref {
-                name = kubernetes_secret_v1.postgresql_backup[0].metadata[0].name
+                name = kubernetes_secret_v1.postgresql_backup_inventory[0].metadata[0].name
                 key  = "ACCESS_KEY_ID"
               }
             }
@@ -93,7 +105,7 @@ resource "kubernetes_deployment_v1" "postgresql_backup_metrics" {
             name = "AWS_SECRET_ACCESS_KEY"
             value_from {
               secret_key_ref {
-                name = kubernetes_secret_v1.postgresql_backup[0].metadata[0].name
+                name = kubernetes_secret_v1.postgresql_backup_inventory[0].metadata[0].name
                 key  = "ACCESS_SECRET_KEY"
               }
             }
@@ -102,7 +114,7 @@ resource "kubernetes_deployment_v1" "postgresql_backup_metrics" {
             name = "AWS_REGION"
             value_from {
               secret_key_ref {
-                name = kubernetes_secret_v1.postgresql_backup[0].metadata[0].name
+                name = kubernetes_secret_v1.postgresql_backup_inventory[0].metadata[0].name
                 key  = "AWS_REGION"
               }
             }

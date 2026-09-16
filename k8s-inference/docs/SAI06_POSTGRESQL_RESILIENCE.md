@@ -64,6 +64,16 @@ acknowledgement, and treated a provider response with no numeric limit as a
 manual-review note rather than a hard stop. It is also immutable negative
 evidence and is not rollout-authorized.
 
+Independent final review then rejected
+`d1a939e7bb90bb75e315c0e0097d32e0277f7a63`. Its HA, PITR, privilege-denial,
+retention sizing and alerting remained useful, but its capacity JSON was
+caller-authored and unsigned, provider compute/current-use enforcement was
+incomplete, recurring applies double-counted existing bucket allocation,
+destroy could remove workloads before retained-storage planning failed, and
+the backup writer credential was reused by inventory and receipt workloads.
+This successor preserves `d1a939e7` as NO-GO evidence; it is never an apply
+input.
+
 ## Implemented contract
 
 The root facade always provisions a distinct versioned backup bucket. There is
@@ -73,9 +83,28 @@ the only supported CloudNativePG schedule is the once-daily six-field cron
 daily capacity math. The bucket has
 `prevent_destroy`, keeps current backup/WAL objects under Barman retention, and
 expires only incomplete uploads and non-current versions outside the recovery
-window. Its dedicated service account receives only `storage.object-editor` on
-`postgresql/v1/*`; the secret half of its S3 key is delivered through
-MysteryBox and enters the Kubernetes Secret through Terraform write-only data.
+window. Three distinct MysteryBox-delivered identities are mandatory:
+
+- CloudNativePG alone receives `storage.object-editor` on
+  `postgresql/v1/fs2-control-db/*` for base backup, WAL and Barman retention;
+- the metrics validator receives only `storage.object-lister` and
+  `storage.object-viewer` on `postgresql/v1/*` so it can inventory versions and
+  content-validate a receipt but cannot upload or delete objects;
+- the one-shot receipt publisher receives only `storage.uploader` on
+  `postgresql/v1/restore-verification/success/*`; it cannot list, read or delete
+  backup data.
+
+Each secret half enters only its own Kubernetes Secret through Terraform
+write-only data. The receipt-publisher Secret exists only for the bounded
+restore-verification apply and is deleted when that flag is cleared; the
+ordinary serving release cannot retrieve or use it. No one credential is
+shared by CNPG, monitoring and receipt publication.
+
+The role split follows the Nebius IAM role/action contracts: the object lister
+can enumerate versions without object reads, the object viewer can read without
+writes, and the uploader can put objects without list/read/delete privileges.
+See the [Nebius Object Storage roles](https://docs.nebius.com/iam/authorization/roles)
+and [supported S3 actions](https://docs.nebius.com/object-storage/supported-actions).
 
 Backup capacity is retention-aware rather than a fixed 256 GiB. The enforced
 minimum is:
@@ -94,23 +123,33 @@ days before each deleted version expires, and 25% headroom. The default
 retained bucket ceiling is 12,288 GiB. Both 256 GiB and the rejected 6,144 GiB
 value fail validation before planning.
 
-`inference-stack preflight`, `plan`, and `apply` require a mode-0600
-`--sai06-capacity-receipt`. The receipt contains numeric ceilings for
-`compute.system_pool.nodes` and `storage.bucket.size.standard`, is bound to the
-exact effective plan digest, project and region, names its reviewer and source
-evidence digest, and is valid for at most 24 hours. Missing, stale,
-wrong-project, wrong-plan and insufficient receipts all fail closed. Current
-live object-storage usage plus the configured bucket maximum must fit the
-reviewed ceiling and any numeric provider ceiling. A provider response with no
-numeric limit provides no apply authority by itself.
+`inference-stack preflight` is observation-only. `plan` writes the exact
+infrastructure binary plan and JSON, queries both `compute.instance.count` and
+`storage.bucket.size.standard`, and emits a mode-0600 approval request with a
+random 256-bit nonce. That request binds project, region, source commit and
+tree, binary-plan and plan-JSON SHA-256, raw quota-evidence SHA-256, current
+usage, numeric provider limits, existing and desired allocations, positive
+incremental deltas, projected use, and the effective SAI-06 contract digest.
 
-The read-only `inference-stack validate` output publishes the non-sensitive
-`sai06_capacity_plan_binding` that an independent operator places in the
-receipt. The infrastructure stage recomputes that SHA-256 from its actual
-project, region, effective node count, daily schedule and storage-sizing inputs;
-it does not trust the wrapper's summary. Direct Terraform planning therefore
-also rejects a missing, stale, wrong-project, wrong-plan or insufficient
-receipt.
+`apply` never replans infrastructure. It securely opens the request, plan JSON,
+approval envelope and checked-in issuer registry using directory-relative
+descriptors with `O_NOFOLLOW`; it verifies regular-file type, trusted owner,
+mode, one link and stable device/inode/size metadata before and after the read.
+It then verifies an Ed25519 signature from an enabled, checked-in trusted
+issuer, a maximum 24-hour validity window, the exact request/nonce, and both
+signed ceilings. The live provider query is repeated immediately before apply;
+any usage, limit or evidence change requires a new plan and signature.
+
+Capacity uses the Terraform before/after values. A recurring no-op bucket
+contributes zero bytes instead of adding the full 12 TiB allocation a second
+time; system demand is likewise the positive node-count delta, while provider
+projected usage remains current use plus that delta. A missing provider limit
+fails closed unless the trusted issuer also has the `capacity-owner` role and
+signs a resource-specific numeric override, reason and independent evidence
+digest. An unsigned boolean or caller-selected public key is never authority.
+The checked-in issuer registry intentionally contains no production key in
+this source candidate, so shared apply remains blocked until an independently
+reviewed owner key is added by the integration/release owner.
 
 The database always has three instances with required hostname anti-affinity on
 the regular system pool. Its `barmanObjectStore` configuration sends base
@@ -126,9 +165,10 @@ currently requests one system node, so it deliberately fails the new source
 gate. Promotion requires an intentional change to three nodes and the
 top-level `system_pool_cost_review_acknowledged` flag. That acknowledgement
 applies to the effective profile-derived count even when `system_pool` is null;
-the backup acknowledgement is independently mandatory. The numeric capacity
-receipt, no-replacement saved plan, quota and price review remain additional
-gates. The remediation does not silently resize the retained system.
+the backup acknowledgement is independently mandatory. The trusted signed
+capacity approval, no-replacement saved plan, quota and price review remain
+additional gates. The remediation does not silently resize the retained
+system.
 
 Restore verification is deliberately a four-apply acceptance sequence after
 one exact `Backup` has completed:
@@ -143,9 +183,16 @@ one exact `Backup` has completed:
    marker A at or before the replay boundary, and marker B absent. This proves
    archived WAL replay beyond the selected base backup and a bounded PITR stop.
    Only after that verifier succeeds, a separate no-service-account-token Job
-   writes a non-sensitive success receipt under
-   `postgresql/v1/restore-verification/success/`; its S3 `LastModified` drives
-   the restore-test-age metric.
+   writes a non-sensitive, nonce-bearing v2 receipt under a content-addressed
+   key in `postgresql/v1/restore-verification/success/`, using the upload-only
+   publisher and an explicit S3 Signature Version 4 request. The receipt binds
+   the publisher access-key identity. The read-only metrics identity fetches at
+   most 8 KiB and validates the exact project, region, bucket, server, publisher,
+   source commit, run, backup,
+   marker, target-time ordering, expiry, verification-subject digest and
+   content-addressed object key before exporting its completion time. A forged,
+   stale, oversized or differently scoped object is an exporter failure, not a
+   restore success.
 3. Disable verification and enable `cleanup_database_restore_marker` with the
    same Backup, marker and target identity. The bounded source Job refuses
    anything except the exact A/B pair, revokes the marker-only grant and drops
@@ -162,10 +209,11 @@ receives only the existing database login and recovered-cluster CA.
 The release also creates a `ServiceMonitor` and `PrometheusRule`. Native CNPG
 metrics alert on failed/stale backups, a missing first recoverability point,
 WAL failures and an unarchived WAL backlog. A non-root, read-only exporter in
-`fs2-data` lists only metadata for all current and non-current versions under
-the backup prefix and exposes total bytes, configured capacity, pressure,
-inventory health and the newest durable restore-verification receipt time. It
-never exports keys, payloads or credentials. Warning/critical bucket thresholds
+`fs2-data` inventories all current and non-current versions under the backup
+prefix, reads only the newest bounded receipt for content validation, and
+exposes total bytes, configured capacity, pressure, inventory health and the
+newest validated restore-verification completion time. It never exports keys,
+payloads or credentials. Warning/critical bucket thresholds
 are 80/90 percent, and restore verification is stale after seven days.
 The current release uses CloudNativePG's in-core `barmanObjectStore`, so its
 native backup metrics remain populated even though CNPG has deprecated them in
@@ -181,13 +229,16 @@ the rules to the plugin metric names in the same reviewed rollout.
    terminal and healthy; a `pending-*` state is a no-go.
 2. Change the retained private system-pool input from one to three regular
    nodes and set both node and backup capacity/cost acknowledgements only after
-   reviewing live quota and current pricing. Generate a <=24-hour mode-0600
-   numeric capacity receipt bound to the exact project, region and effective
-   plan; pass it with `--sai06-capacity-receipt` to preflight, plan and apply.
-   Save the infrastructure binary plan and JSON. Require a no replacement
+   reviewing live quota and current pricing. Run `plan`, review its mode-0600
+   approval request, and have a registered Ed25519 capacity issuer sign the
+   exact request. If the provider again omits a numeric limit, require a
+   `capacity-owner` signature over the exact numeric override and evidence
+   digest. Pass only that envelope with `--sai06-capacity-receipt` to `apply`.
+   Require a no replacement
    result: the plan may add the dedicated bucket, identity/key and two system
    nodes, but it must not replace the cluster, public IP, database PVCs or any
-   unrelated resource. Apply that exact reviewed plan and wait for all three
+   unrelated resource. The wrapper rechecks plan hashes and live quota, then
+   applies that exact reviewed plan and waits for all three
    system nodes to be Ready.
 3. Plan and apply workloads with restore verification disabled. Confirm the
    database rolls one instance at a time and reaches three healthy instances on
@@ -263,6 +314,14 @@ ordinary full-stack destroy until an operator explicitly adopts it or follows a
 separately reviewed data-retirement procedure. Do not roll back by shrinking
 the system pool while the database or edge depends on three-node placement.
 
+`destroy` discovers that retained boundary before planning anything. It
+requires the retained PostgreSQL storage/lifecycle outputs, plans every
+eligible downstream destroy stage before applying the first deletion, omits
+the infrastructure stage, and writes a mode-0600 adoption receipt. If any
+workload, foundation or infrastructure destroy plan fails, zero destroy plans
+are applied. This provides a safe partial destroy instead of discovering
+`prevent_destroy` only after an outage.
+
 ## Current verification and cost state
 
 Wave 1 performed source tests and read-only live inspection only. It created no
@@ -274,30 +333,38 @@ success and all backup/WAL/bucket/restore alerts remain mandatory after the
 parent releases the SAI-09 gate. No model or GPU behavior changes in this
 remediation, so a GPU verification run is not applicable. The eventual plan
 adds two regular CPU system nodes and a retained 12,288 GiB object-storage
-ceiling by default. A read-only live check on
-2026-09-16 observed 239,727,929,141 bytes of Standard-storage use in the target
-project/region and no explicit ceiling in the returned allowance. This is
-usage evidence, not capacity or price approval; refresh the receipt and record
-the provider plan and current pricing before approving the no-replacement plan.
-A fresh numeric receipt is mandatory because that live response did not expose
-a limit.
+ceiling by default. A read-only live check on 2026-09-16 observed
+`compute.instance.count` usage 15 and `storage.bucket.size.standard` usage
+239,792,496,897 bytes in the target project/region; both allowance records
+omitted a numeric limit. This is usage evidence, not capacity or price
+approval. The source now refuses apply unless fresh numeric provider limits
+appear or an authenticated `capacity-owner` signs exact plan-bound numeric
+overrides.
 
 The source gate completed with these exact results:
 
 - root, infrastructure and workloads `terraform validate`: pass;
-- complete infrastructure Terraform tests: 27 passed; the seven SAI-06 backup
-  cases include valid exact-plan binding plus rejection of disposable,
-  undersized, missing-receipt, stale, wrong-project and insufficient receipts;
-- focused SAI-06, deployment-contract and wrapper tests: 147 passed plus 104
-  parameterized subtests;
-- Helm lint and public-edge rendering: pass, including exact Envoy replica,
-  anti-affinity and PDB assertions; one-replica and disabled-PDB inputs were
-  both rejected;
+- combined deployment/wrapper/SAI-06 Python suite: 154 passed plus 104
+  subtests; the focused SAI-06/wrapper subset: 77 passed plus 31 subtests. It
+  covers signed issuer verification,
+  forgery/staleness/scope/insufficient-limit rejection, missing-limit owner
+  override, exact request/resource validation, safe descriptor loading,
+  compute/storage delta math, replacement rejection, all-plans-first destroy,
+  retained partial destroy, content-bound receipts, PITR, privilege denial, HA
+  and alerts;
+- infrastructure Terraform backup tests cover the three exact bucket-policy
+  identities plus retained/versioned sizing and negative lifecycle/capacity:
+  3 passed, 0 failed;
+- Helm lint with explicit immutable image/catalog identities and HTTPS origins
+  passed. Public-edge regression assertions cover exact Envoy replica,
+  anti-affinity and PDB settings; one-replica and disabled-PDB inputs are both
+  rejected;
 - the exact pinned CloudNativePG/PostgreSQL image imported both `boto3 1.43.70`
   and the exporter under a read-only, network-disabled container run;
-- strict Ruff and mypy passed for the new metrics implementation and SAI-06
-  tests; fatal Python checks and compilation passed for the wrapper; Terraform
-  recursive format and `git diff --check` passed;
+- strict Ruff passed for the wrapper, metrics implementation and SAI-06 tests;
+  strict mypy passed for the metrics exporter with only boto3's missing type
+  marker excluded; Python compilation, Terraform recursive format and
+  `git diff --check` passed;
 - Trivy HIGH/CRITICAL configuration scans found zero findings in the changed
   backup/database/monitoring Terraform, and the repository secret scan found
   zero secrets.
@@ -307,9 +374,12 @@ Terraform file containing the new PITR cases reported 8 passed, 1 failed and 2
 skipped. All three PITR cases passed; the failure is the pre-existing
 scientific-artifact bucket-reuse expectation being preempted by an unrelated
 Kueue CPU-admission precondition. It is retained rather than rewritten as
-promotion evidence. The sibling SAI-10 secret-migration candidate is clean at
-`851a15df2` but remains queued for independent review. It is deliberately not
-merged and is not an ancestor of this SAI-06 candidate. After both candidates
-independently pass review, integration must begin with a read-only merge-tree
-check from their shared base and rerun both suites; any overlap belongs in a
-separate integration commit rather than either source-remediation lineage.
+promotion evidence. The unaccepted SAI-10 successor `851a15df2` remains
+deliberately unmerged and is not an ancestor of this SAI-06 candidate. A
+read-only merge-tree reports exactly five conflicts:
+`examples/scheduling-academic-raw-af3.tfvars`, `inference-stack`,
+`stages/infrastructure/tests/system_pool.tftest.hcl`,
+`terraform.tfvars.example`, and `variables.tf`. Reconciliation is forbidden
+until SAI-10 has an accepted clean successor; then it belongs in a separate
+integration commit with both suites rerun, never in either independently
+reviewed source lineage.

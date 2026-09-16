@@ -3,15 +3,130 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
+import re
 import time
 from collections.abc import Iterable, Mapping
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Lock
 from typing import Any
 
 RESTORE_RECEIPT_PREFIX = "restore-verification/success/"
+RECEIPT_FIELDS = {
+    "schema",
+    "status",
+    "subject",
+    "verification_binding_sha256",
+    "nonce",
+    "completed_at",
+    "valid_until",
+}
+RECEIPT_SUBJECT_FIELDS = {
+    "project_id",
+    "region",
+    "bucket_name",
+    "server_name",
+    "source_commit",
+    "run_id",
+    "source_backup_name",
+    "source_backup_time",
+    "marker_id",
+    "target_time",
+    "publisher_access_key_id",
+}
+
+
+def _utc(value: object) -> datetime:
+    if not isinstance(value, str) or not value.endswith("Z"):
+        raise ValueError("receipt timestamp is not UTC Z time")
+    return datetime.fromisoformat(value[:-1] + "+00:00").astimezone(UTC)
+
+
+def newest_restore_receipt_key(
+    pages: Iterable[Mapping[str, Any]], *, prefix: str
+) -> str | None:
+    receipt_prefix = f"{prefix.rstrip('/')}/{RESTORE_RECEIPT_PREFIX}"
+    candidates: list[tuple[datetime, str]] = []
+    for page in pages:
+        for version in page.get("Versions", []):
+            key = str(version.get("Key", ""))
+            modified = version.get("LastModified")
+            if (
+                version.get("IsLatest") is True
+                and re.fullmatch(re.escape(receipt_prefix) + r"[0-9a-f]{64}\.json", key)
+                and isinstance(modified, datetime)
+            ):
+                candidates.append((modified, key))
+    return max(candidates)[1] if candidates else None
+
+
+def validate_restore_receipt(
+    key: str,
+    body: bytes,
+    *,
+    prefix: str,
+    project_id: str,
+    region: str,
+    bucket_name: str,
+    server_name: str,
+    publisher_access_key_id: str,
+    now: datetime | None = None,
+) -> float:
+    """Validate exact receipt content and its content-addressed immutable key."""
+    if len(body) == 0 or len(body) > 8192:
+        raise ValueError("restore receipt has an invalid size")
+    expected_key = (
+        f"{prefix.rstrip('/')}/{RESTORE_RECEIPT_PREFIX}"
+        f"{hashlib.sha256(body).hexdigest()}.json"
+    )
+    if key != expected_key:
+        raise ValueError("restore receipt key is not bound to its exact content")
+    document = json.loads(body)
+    if not isinstance(document, dict) or set(document) != RECEIPT_FIELDS:
+        raise ValueError("restore receipt fields are not exact")
+    if (
+        document["schema"] != "fs2-serve.nebius.ai/postgresql-restore-verification/v2"
+        or document["status"] != "passed"
+    ):
+        raise ValueError("restore receipt schema/status is invalid")
+    subject = document["subject"]
+    if not isinstance(subject, dict) or set(subject) != RECEIPT_SUBJECT_FIELDS:
+        raise ValueError("restore receipt subject fields are not exact")
+    if (
+        subject["project_id"] != project_id
+        or subject["region"] != region
+        or subject["bucket_name"] != bucket_name
+        or subject["server_name"] != server_name
+        or subject["publisher_access_key_id"] != publisher_access_key_id
+    ):
+        raise ValueError("restore receipt scope is invalid")
+    if not re.fullmatch(
+        r"[0-9a-f]{40}", str(subject["source_commit"])
+    ) or not re.fullmatch(r"[0-9a-f]{64}", str(document["nonce"])):
+        raise ValueError("restore receipt source or nonce is invalid")
+    canonical_subject = json.dumps(
+        subject, sort_keys=True, separators=(",", ":")
+    ).encode()
+    if (
+        document["verification_binding_sha256"]
+        != hashlib.sha256(canonical_subject).hexdigest()
+    ):
+        raise ValueError("restore receipt verification subject is unbound")
+    completed = _utc(document["completed_at"])
+    valid_until = _utc(document["valid_until"])
+    current = (now or datetime.now(UTC)).astimezone(UTC)
+    if completed > current + timedelta(minutes=5):
+        raise ValueError("restore receipt completion is in the future")
+    if valid_until <= current or valid_until > completed + timedelta(days=9):
+        raise ValueError("restore receipt is expired or overlong")
+    source_backup_time = _utc(subject["source_backup_time"])
+    target_time = _utc(subject["target_time"])
+    if not source_backup_time < target_time <= completed:
+        raise ValueError("restore receipt PITR time ordering is invalid")
+    return completed.timestamp()
 
 
 def summarize_versions(
@@ -24,8 +139,6 @@ def summarize_versions(
     noncurrent_bytes = 0
     version_count = 0
     delete_marker_count = 0
-    restore_last_success = 0.0
-    receipt_prefix = f"{prefix.rstrip('/')}/{RESTORE_RECEIPT_PREFIX}"
     for page in pages:
         for version in page.get("Versions", []):
             key = str(version.get("Key", ""))
@@ -37,12 +150,6 @@ def summarize_versions(
             version_count += 1
             if version.get("IsLatest") is True:
                 current_bytes += size
-                if key.startswith(receipt_prefix):
-                    modified = version.get("LastModified")
-                    if isinstance(modified, datetime):
-                        restore_last_success = max(
-                            restore_last_success, modified.timestamp()
-                        )
             else:
                 noncurrent_bytes += size
         delete_marker_count += sum(
@@ -59,7 +166,7 @@ def summarize_versions(
         "usage_ratio": usage_bytes / capacity_bytes,
         "version_count": version_count,
         "delete_marker_count": delete_marker_count,
-        "restore_last_success_timestamp_seconds": restore_last_success,
+        "restore_last_success_timestamp_seconds": 0.0,
     }
 
 
@@ -72,19 +179,13 @@ def render_metrics(
 ) -> str:
     values = {
         "fs2_postgresql_backup_bucket_usage_bytes": summary.get("usage_bytes", 0),
-        "fs2_postgresql_backup_bucket_current_bytes": summary.get(
-            "current_bytes", 0
-        ),
+        "fs2_postgresql_backup_bucket_current_bytes": summary.get("current_bytes", 0),
         "fs2_postgresql_backup_bucket_noncurrent_bytes": summary.get(
             "noncurrent_bytes", 0
         ),
-        "fs2_postgresql_backup_bucket_capacity_bytes": summary.get(
-            "capacity_bytes", 0
-        ),
+        "fs2_postgresql_backup_bucket_capacity_bytes": summary.get("capacity_bytes", 0),
         "fs2_postgresql_backup_bucket_usage_ratio": summary.get("usage_ratio", 0),
-        "fs2_postgresql_backup_bucket_object_versions": summary.get(
-            "version_count", 0
-        ),
+        "fs2_postgresql_backup_bucket_object_versions": summary.get("version_count", 0),
         "fs2_postgresql_backup_bucket_delete_markers": summary.get(
             "delete_marker_count", 0
         ),
@@ -139,15 +240,39 @@ class Inventory:
                 try:
                     if self._client is None:
                         self._client = build_client()
-                    pages = self._client.get_paginator("list_object_versions").paginate(
-                        Bucket=os.environ["S3_BUCKET"],
-                        Prefix=os.environ["S3_PREFIX"],
+                    pages = list(
+                        self._client.get_paginator("list_object_versions").paginate(
+                            Bucket=os.environ["S3_BUCKET"],
+                            Prefix=os.environ["S3_PREFIX"],
+                        )
                     )
                     self._summary = summarize_versions(
                         pages,
                         prefix=os.environ["S3_PREFIX"],
                         capacity_bytes=int(os.environ["BUCKET_CAPACITY_BYTES"]),
                     )
+                    receipt_key = newest_restore_receipt_key(
+                        pages, prefix=os.environ["S3_PREFIX"]
+                    )
+                    if receipt_key is not None:
+                        response = self._client.get_object(
+                            Bucket=os.environ["S3_BUCKET"], Key=receipt_key
+                        )
+                        body = response["Body"].read(8193)
+                        self._summary["restore_last_success_timestamp_seconds"] = (
+                            validate_restore_receipt(
+                                receipt_key,
+                                body,
+                                prefix=os.environ["S3_PREFIX"],
+                                project_id=os.environ["PROJECT_ID"],
+                                region=os.environ["AWS_REGION"],
+                                bucket_name=os.environ["S3_BUCKET"],
+                                server_name=os.environ["SERVER_NAME"],
+                                publisher_access_key_id=os.environ[
+                                    "RECEIPT_PUBLISHER_ACCESS_KEY_ID"
+                                ],
+                            )
+                        )
                     self._last_success = now
                     self._success = True
                 except Exception:  # the failure is exported, never logged with secrets

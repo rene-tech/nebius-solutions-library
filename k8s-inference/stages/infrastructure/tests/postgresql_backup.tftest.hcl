@@ -101,37 +101,6 @@ variables {
     required_capacity_gib             = 11585
     capacity_cost_review_acknowledged = true
   }
-
-  sai06_capacity_approval = {
-    schema          = "fs2-serve.nebius.ai/sai06-capacity-approval/v1"
-    project_id      = "project-syntheticlocal"
-    region          = "us-north1"
-    reviewed_at     = timeadd(timestamp(), "-1h")
-    valid_until     = timeadd(timestamp(), "12h")
-    reviewed_by     = "terraform-test"
-    evidence_sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-    plan_binding_sha256 = sha256(jsonencode({
-      schema                      = "fs2-serve.nebius.ai/sai06-capacity-plan/v1"
-      project_id                  = "project-syntheticlocal"
-      region                      = "us-north1"
-      effective_system_node_count = 3
-      postgresql_backup = {
-        configured_capacity_gib   = 12288
-        schedule                  = "0 0 2 * * *"
-        retention_days            = 30
-        database_volume_size_gib  = 100
-        estimated_daily_wal_gib   = 32
-        capacity_headroom_percent = 25
-        required_capacity_gib     = 11585
-      }
-    }))
-    system_node_ceiling               = 3
-    storage_ceiling_bytes             = 20 * 1024 * 1024 * 1024 * 1024
-    observed_storage_usage_bytes      = 0
-    configured_storage_capacity_bytes = 12288 * 1024 * 1024 * 1024
-    projected_storage_usage_bytes     = 12288 * 1024 * 1024 * 1024
-    effective_system_node_count       = 3
-  }
 }
 
 run "backup_plane_is_versioned_retained_scoped_and_mysterybox_delivered" {
@@ -145,6 +114,14 @@ run "backup_plane_is_versioned_retained_scoped_and_mysterybox_delivered" {
       nebius_iam_v1_group.postgresql_backup_writers,
       nebius_iam_v1_group_membership.postgresql_backup_writer,
       nebius_iam_v2_access_key.postgresql_backup,
+      nebius_iam_v1_service_account.postgresql_backup_inventory,
+      nebius_iam_v1_group.postgresql_backup_inventory_readers,
+      nebius_iam_v1_group_membership.postgresql_backup_inventory_reader,
+      nebius_iam_v2_access_key.postgresql_backup_inventory,
+      nebius_iam_v1_service_account.postgresql_restore_receipt,
+      nebius_iam_v1_group.postgresql_restore_receipt_publishers,
+      nebius_iam_v1_group_membership.postgresql_restore_receipt_publisher,
+      nebius_iam_v2_access_key.postgresql_restore_receipt,
     ]
   }
 
@@ -160,10 +137,14 @@ run "backup_plane_is_versioned_retained_scoped_and_mysterybox_delivered" {
 
   assert {
     condition = (
-      join(",", nebius_storage_v1_bucket.postgresql_backup[0].bucket_policy.rules[0].paths) == "postgresql/v1/*" &&
-      join(",", nebius_storage_v1_bucket.postgresql_backup[0].bucket_policy.rules[0].roles) == "storage.object-editor"
+      join(",", nebius_storage_v1_bucket.postgresql_backup[0].bucket_policy.rules[0].paths) == "postgresql/v1/fs2-control-db/*" &&
+      join(",", nebius_storage_v1_bucket.postgresql_backup[0].bucket_policy.rules[0].roles) == "storage.object-editor" &&
+      join(",", nebius_storage_v1_bucket.postgresql_backup[0].bucket_policy.rules[1].paths) == "postgresql/v1/*" &&
+      join(",", nebius_storage_v1_bucket.postgresql_backup[0].bucket_policy.rules[1].roles) == "storage.object-lister,storage.object-viewer" &&
+      join(",", nebius_storage_v1_bucket.postgresql_backup[0].bucket_policy.rules[2].paths) == "postgresql/v1/restore-verification/success/*" &&
+      join(",", nebius_storage_v1_bucket.postgresql_backup[0].bucket_policy.rules[2].roles) == "storage.uploader"
     )
-    error_message = "The PostgreSQL backup identity must be scoped to storage.object-editor on the canonical prefix only."
+    error_message = "PostgreSQL backup writing, inventory reading and receipt publishing must use distinct narrowly scoped roles."
   }
 
   assert {
@@ -171,7 +152,9 @@ run "backup_plane_is_versioned_retained_scoped_and_mysterybox_delivered" {
       length(nebius_iam_v1_service_account.postgresql_backup) == 1 &&
       length(nebius_iam_v1_group.postgresql_backup_writers) == 1 &&
       length(nebius_iam_v1_group_membership.postgresql_backup_writer) == 1 &&
-      nebius_iam_v2_access_key.postgresql_backup[0].secret_delivery_mode == "MYSTERY_BOX"
+      nebius_iam_v2_access_key.postgresql_backup[0].secret_delivery_mode == "MYSTERY_BOX" &&
+      nebius_iam_v2_access_key.postgresql_backup_inventory[0].secret_delivery_mode == "MYSTERY_BOX" &&
+      nebius_iam_v2_access_key.postgresql_restore_receipt[0].secret_delivery_mode == "MYSTERY_BOX"
     )
     error_message = "PostgreSQL backups require a dedicated identity and a MysteryBox-delivered key."
   }
@@ -251,105 +234,4 @@ run "undersized_postgresql_backup_is_rejected" {
   }
 
   expect_failures = [var.postgresql_backup]
-}
-
-run "missing_numeric_capacity_approval_is_rejected" {
-  command = plan
-
-  plan_options {
-    target = [terraform_data.postgresql_backup_contract]
-  }
-
-  variables {
-    sai06_capacity_approval = null
-  }
-
-  expect_failures = [terraform_data.postgresql_backup_contract]
-}
-
-run "stale_numeric_capacity_approval_is_rejected" {
-  command = plan
-
-  plan_options {
-    target = [terraform_data.postgresql_backup_contract]
-  }
-
-  variables {
-    sai06_capacity_approval = {
-      schema                            = "fs2-serve.nebius.ai/sai06-capacity-approval/v1"
-      project_id                        = "project-syntheticlocal"
-      region                            = "us-north1"
-      reviewed_at                       = timeadd(timestamp(), "-25h")
-      valid_until                       = timeadd(timestamp(), "-2h")
-      reviewed_by                       = "terraform-test"
-      evidence_sha256                   = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-      plan_binding_sha256               = "83072be0831a4f36d04086df748254f909c6e215407423f74e1178bfd6a83e47"
-      system_node_ceiling               = 3
-      storage_ceiling_bytes             = 20 * 1024 * 1024 * 1024 * 1024
-      observed_storage_usage_bytes      = 0
-      configured_storage_capacity_bytes = 12288 * 1024 * 1024 * 1024
-      projected_storage_usage_bytes     = 12288 * 1024 * 1024 * 1024
-      effective_system_node_count       = 3
-    }
-  }
-
-  expect_failures = [terraform_data.postgresql_backup_contract]
-}
-
-run "wrong_project_capacity_approval_is_rejected" {
-  command = plan
-
-  plan_options {
-    target = [terraform_data.postgresql_backup_contract]
-  }
-
-  variables {
-    sai06_capacity_approval = {
-      schema                            = "fs2-serve.nebius.ai/sai06-capacity-approval/v1"
-      project_id                        = "project-wrong"
-      region                            = "us-north1"
-      reviewed_at                       = timeadd(timestamp(), "-1h")
-      valid_until                       = timeadd(timestamp(), "12h")
-      reviewed_by                       = "terraform-test"
-      evidence_sha256                   = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-      plan_binding_sha256               = "83072be0831a4f36d04086df748254f909c6e215407423f74e1178bfd6a83e47"
-      system_node_ceiling               = 3
-      storage_ceiling_bytes             = 20 * 1024 * 1024 * 1024 * 1024
-      observed_storage_usage_bytes      = 0
-      configured_storage_capacity_bytes = 12288 * 1024 * 1024 * 1024
-      projected_storage_usage_bytes     = 12288 * 1024 * 1024 * 1024
-      effective_system_node_count       = 3
-    }
-  }
-
-  expect_failures = [terraform_data.postgresql_backup_contract]
-}
-
-run "insufficient_numeric_capacity_approval_is_rejected" {
-  command = plan
-
-  plan_options {
-    target = [terraform_data.postgresql_backup_contract]
-  }
-
-  variables {
-    sai06_capacity_approval = {
-      schema                            = "fs2-serve.nebius.ai/sai06-capacity-approval/v1"
-      project_id                        = "project-syntheticlocal"
-      region                            = "us-north1"
-      reviewed_at                       = timeadd(timestamp(), "-1h")
-      valid_until                       = timeadd(timestamp(), "12h")
-      reviewed_by                       = "terraform-test"
-      evidence_sha256                   = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-      plan_binding_sha256               = "83072be0831a4f36d04086df748254f909c6e215407423f74e1178bfd6a83e47"
-      system_node_ceiling               = 2
-      storage_ceiling_bytes             = 12287 * 1024 * 1024 * 1024
-      observed_storage_usage_bytes      = 0
-      configured_storage_capacity_bytes = 12288 * 1024 * 1024 * 1024
-      projected_storage_usage_bytes     = 12288 * 1024 * 1024 * 1024
-      effective_system_node_count       = 3
-    }
-  }
-
-  expect_failures = [terraform_data.postgresql_backup_contract]
 }

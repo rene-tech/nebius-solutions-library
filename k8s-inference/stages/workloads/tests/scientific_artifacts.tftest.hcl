@@ -230,7 +230,21 @@ variables {
         service_account_id = "serviceaccount-postgresqltest"
         group_id           = "group-postgresqltest"
         role               = "storage.object-editor"
+        paths              = ["postgresql/v1/fs2-control-db/*"]
+        secret_delivery    = "MYSTERY_BOX"
+      }
+      inventory_reader = {
+        service_account_id = "serviceaccount-postgresqlinventorytest"
+        group_id           = "group-postgresqlinventorytest"
+        roles              = ["storage.object-lister", "storage.object-viewer"]
         paths              = ["postgresql/v1/*"]
+        secret_delivery    = "MYSTERY_BOX"
+      }
+      receipt_publisher = {
+        service_account_id = "serviceaccount-postgresqlreceipttest"
+        group_id           = "group-postgresqlreceipttest"
+        role               = "storage.uploader"
+        paths              = ["postgresql/v1/restore-verification/success/*"]
         secret_delivery    = "MYSTERY_BOX"
       }
       layout = {
@@ -274,6 +288,18 @@ variables {
       key_id              = "accesskey-postgresqltest"
       access_key_id       = "AJE000POSTGRESQLTEST"
       secret_reference_id = "mysteryboxsecret-postgresqltest"
+      resource_version    = 0
+    }
+    inventory_object_storage_access = {
+      key_id              = "accesskey-postgresqlinventorytest"
+      access_key_id       = "AJE000POSTGRESQLINVENTORY"
+      secret_reference_id = "mysteryboxsecret-postgresqlinventorytest"
+      resource_version    = 0
+    }
+    receipt_object_storage_access = {
+      key_id              = "accesskey-postgresqlreceipttest"
+      access_key_id       = "AJE000POSTGRESQLRECEIPT"
+      secret_reference_id = "mysteryboxsecret-postgresqlreceipttest"
       resource_version    = 0
     }
   }

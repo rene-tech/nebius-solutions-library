@@ -4,11 +4,15 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import fcntl
 import hashlib
 import json
 import os
 import re
+import secrets
+import stat
 import subprocess
 import sys
 import tempfile
@@ -41,6 +45,14 @@ STAGE_COMPLETION_OUTPUTS = {
     "infrastructure": "accelerator_pool_contract",
     "foundation": "cluster_contract",
     "workloads": "deployment_contract",
+}
+SAI06_TRUSTED_ISSUERS_PATH = (
+    SOLUTION_ROOT / "docs" / "sai06-capacity-trusted-issuers.json"
+)
+SAI06_APPROVAL_REQUEST_NAME = "sai06-capacity-approval-request.json"
+SAI06_CAPACITY_RESOURCES = {
+    "compute.instance.count": "count",
+    "storage.bucket.size.standard": "byte",
 }
 
 
@@ -144,7 +156,9 @@ def require_terraform_version(terraform: str) -> tuple[int, int, int]:
         env=clean_environment(),
     )
     if result.returncode != 0:
-        raise DeploymentError(f"cannot determine the Terraform version using {terraform!r}")
+        raise DeploymentError(
+            f"cannot determine the Terraform version using {terraform!r}"
+        )
     try:
         raw = json.loads(result.stdout)["terraform_version"]
         version = tuple(int(part) for part in raw.split("-")[0].split(".")[:3])
@@ -585,8 +599,15 @@ def preflight_accelerators(
 def preflight_postgresql_backup_capacity(
     args: argparse.Namespace,
     contract: Mapping[str, Any],
+    *,
+    plan_document: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Fail closed on the live and independently reviewed SAI-06 capacity."""
+    """Capture the provider's exact SAI-06 capacity observation.
+
+    This function never grants apply authority. A plan-bound approval request is
+    generated only after Terraform has written the infrastructure binary plan;
+    apply then requires a trusted Ed25519 issuer to sign that exact request.
+    """
     project_id = str(contract["target"]["project_id"])
     region = str(contract["target"]["region"])
     backup = contract["stages"]["infrastructure"]["postgresql_backup"]
@@ -598,9 +619,10 @@ def preflight_postgresql_backup_capacity(
             f"PostgreSQL backup capacity {configured_gib} GiB is below the "
             f"retention-aware requirement {required_gib} GiB"
         )
-    if not isinstance(system_pool, Mapping) or int(
-        system_pool.get("node_count", 0)
-    ) < 3:
+    if (
+        not isinstance(system_pool, Mapping)
+        or int(system_pool.get("node_count", 0)) < 3
+    ):
         raise DeploymentError(
             "the effective system-pool plan must contain at least three nodes"
         )
@@ -612,23 +634,6 @@ def preflight_postgresql_backup_capacity(
             "the effective three-node system pool and PostgreSQL backup "
             "capacity both require explicit cost acknowledgements"
         )
-
-    receipt_path = getattr(args, "sai06_capacity_receipt", None)
-    if receipt_path is None:
-        raise DeploymentError(
-            "SAI-06 capacity receipt is required; provider responses without numeric limits are not apply authority"
-        )
-    receipt_path = Path(receipt_path).expanduser()
-    if receipt_path.is_symlink() or not receipt_path.is_file():
-        raise DeploymentError("SAI-06 capacity receipt must be a regular file")
-    receipt_path = receipt_path.resolve()
-    if receipt_path.stat().st_mode & 0o077:
-        raise DeploymentError("SAI-06 capacity receipt must have mode 0600")
-    try:
-        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
-        raise DeploymentError("SAI-06 capacity receipt is not valid JSON") from error
-    receipt_summary = validate_sai06_capacity_receipt(receipt, contract)
 
     result = run(
         [
@@ -647,91 +652,43 @@ def preflight_postgresql_backup_capacity(
         capture=True,
         env=clean_environment(),
     )
-    document = json.loads(result.stdout)
-    matches = [
-        item
-        for item in document.get("items", [])
-        if item.get("metadata", {}).get("name") == "storage.bucket.size.standard"
-        and item.get("spec", {}).get("region") == region
-    ]
-    if len(matches) != 1:
+    try:
+        document = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
         raise DeploymentError(
-            "live capacity preflight requires exactly one standard "
-            "object-storage usage allowance for the target project and region"
-        )
-    status = matches[0].get("status", {})
-    usage_text = str(status.get("usage", ""))
-    if status.get("unit") != "byte" or not re.fullmatch(r"[0-9]+", usage_text):
-        raise DeploymentError(
-            "live standard object-storage usage is absent or malformed"
-        )
-    usage_bytes = int(usage_text)
-    if status.get("usage_state") not in {"USAGE_STATE_USED", "USAGE_STATE_UNUSED"}:
-        raise DeploymentError("live standard object-storage usage state is unknown")
-    limit_text = status.get("limit")
-    if limit_text is not None and not re.fullmatch(r"[0-9]+", str(limit_text)):
-        raise DeploymentError("live standard object-storage limit is malformed")
-    provider_limit_bytes = int(limit_text) if limit_text is not None else None
-    configured_bytes = configured_gib * 1024**3
-    projected_usage_bytes = usage_bytes + configured_bytes
-    reviewed_storage_ceiling = receipt_summary["storage_ceiling_bytes"]
-    if projected_usage_bytes > reviewed_storage_ceiling:
-        raise DeploymentError(
-            "current Standard object-storage usage plus configured PostgreSQL "
-            "backup capacity exceeds the reviewed object-storage allowance"
-        )
-    if (
-        provider_limit_bytes is not None
-        and projected_usage_bytes > provider_limit_bytes
-    ):
-        raise DeploymentError(
-            "current Standard object-storage usage plus the configured "
-            "PostgreSQL backup capacity exceeds the live provider limit"
-        )
-    if int(system_pool["node_count"]) > receipt_summary["system_node_ceiling"]:
-        raise DeploymentError(
-            "effective system-node demand exceeds the reviewed system-node allowance"
-        )
-    receipt_summary = {
-        **receipt_summary,
-        "observed_storage_usage_bytes": usage_bytes,
-        "configured_storage_capacity_bytes": configured_bytes,
-        "projected_storage_usage_bytes": projected_usage_bytes,
-        "effective_system_node_count": int(system_pool["node_count"]),
-    }
+            "live provider quota response is not valid JSON"
+        ) from error
+    projections = sai06_capacity_projections(
+        document,
+        project_id=project_id,
+        region=region,
+        plan_document=plan_document,
+        fallback_system_nodes=int(system_pool["node_count"]),
+        fallback_storage_bytes=configured_gib * 1024**3,
+    )
 
     return {
-        "schema": "fs2-serve.nebius.ai/sai06-capacity-preflight/v1",
+        "schema": "fs2-serve.nebius.ai/sai06-capacity-preflight/v2",
         "checked_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "project_id": project_id,
         "region": region,
-        "quota_name": "storage.bucket.size.standard",
-        "quota_unit": "byte",
-        "observed_usage_bytes": usage_bytes,
-        "observed_usage_state": status["usage_state"],
-        "provider_explicit_limit_bytes": provider_limit_bytes,
+        "quota_evidence_sha256": canonical_sha256(document),
+        "resources": projections,
         "database_volume_size_gib": int(backup["database_volume_size_gib"]),
         "estimated_daily_wal_gib": int(backup["estimated_daily_wal_gib"]),
         "retention_days": int(backup["retention_days"]),
         "headroom_percent": int(backup["capacity_headroom_percent"]),
         "required_capacity_gib": required_gib,
         "configured_bucket_max_gib": configured_gib,
-        "configured_bucket_max_bytes": configured_bytes,
-        "projected_usage_if_fully_allocated_bytes": projected_usage_bytes,
-        "provider_limit_verdict": (
-            "within-explicit-provider-limit-and-reviewed-capacity-ceiling"
-            if provider_limit_bytes is not None
-            else "within-reviewed-capacity-ceiling"
-        ),
-        "capacity_receipt": receipt_summary,
         "cost_review_acknowledged": bool(
             backup.get("capacity_cost_review_acknowledged")
         ),
         "system_pool_nodes": int(system_pool["node_count"]),
-        "status": "live-usage-and-reviewed-capacity-approved",
+        "status": "observation-only",
+        "apply_authorized": False,
         "limitation": (
-            "This approval is valid only for the exact plan binding and receipt "
-            "validity window; refresh both immediately before apply."
+            "This is not apply authority. Apply requires a trusted Ed25519 "
+            "approval bound to the exact saved plan and this fresh observation."
         ),
     }
 
@@ -775,112 +732,711 @@ def _sai06_utc_timestamp(value: object, label: str) -> datetime:
     return parsed.astimezone(UTC)
 
 
-def validate_sai06_capacity_receipt(
-    receipt: object,
+def _sai06_plan_allocation(
+    plan_document: Mapping[str, Any] | None,
+    *,
+    address_suffix: str,
+    attribute: str,
+    fallback_after: int,
+) -> tuple[int, int, int]:
+    """Return before, after and positive incremental demand from a saved plan."""
+    if plan_document is None:
+        return 0, fallback_after, fallback_after
+    matches = [
+        change
+        for change in plan_document.get("resource_changes", [])
+        if str(change.get("address", "")).endswith(address_suffix)
+    ]
+    if len(matches) != 1:
+        raise DeploymentError(
+            f"SAI-06 plan must contain exactly one {address_suffix} resource change"
+        )
+    change = matches[0].get("change", {})
+    before = change.get("before") or {}
+    after = change.get("after") or {}
+    before_value = before.get(attribute, 0)
+    after_value = after.get(attribute, 0)
+    if any(
+        isinstance(value, bool) or not isinstance(value, int) or value < 0
+        for value in (before_value, after_value)
+    ):
+        raise DeploymentError(
+            f"SAI-06 plan has malformed {address_suffix}.{attribute} allocation"
+        )
+    return before_value, after_value, max(after_value - before_value, 0)
+
+
+def require_sai06_no_replacements(plan_document: Mapping[str, Any]) -> None:
+    """Reject any infrastructure replacement from the SAI-06 saved plan."""
+    replacements = sorted(
+        str(change.get("address", ""))
+        for change in plan_document.get("resource_changes", [])
+        if change.get("mode", "managed") == "managed"
+        and {"create", "delete"}.issubset(
+            set(change.get("change", {}).get("actions", []))
+        )
+    )
+    if replacements:
+        raise DeploymentError(
+            "SAI-06 requires a no-replacement infrastructure plan; replacements: "
+            + ", ".join(replacements)
+        )
+
+
+def sai06_capacity_projections(
+    quota_document: Mapping[str, Any],
+    *,
+    project_id: str,
+    region: str,
+    plan_document: Mapping[str, Any] | None,
+    fallback_system_nodes: int,
+    fallback_storage_bytes: int,
+) -> list[dict[str, Any]]:
+    """Join provider current-use/limits to exact Terraform allocation deltas."""
+    allocations = {
+        "compute.instance.count": _sai06_plan_allocation(
+            plan_document,
+            address_suffix="nebius_mk8s_v1_node_group.system",
+            attribute="fixed_node_count",
+            fallback_after=fallback_system_nodes,
+        ),
+        "storage.bucket.size.standard": _sai06_plan_allocation(
+            plan_document,
+            address_suffix="nebius_storage_v1_bucket.postgresql_backup[0]",
+            attribute="max_size_bytes",
+            fallback_after=fallback_storage_bytes,
+        ),
+    }
+    projections: list[dict[str, Any]] = []
+    for resource, unit in SAI06_CAPACITY_RESOURCES.items():
+        matches = [
+            item
+            for item in quota_document.get("items", [])
+            if item.get("metadata", {}).get("name") == resource
+            and item.get("spec", {}).get("region") == region
+        ]
+        if len(matches) != 1:
+            raise DeploymentError(
+                f"live capacity preflight requires exactly one {resource} "
+                f"allowance for project {project_id} in {region}"
+            )
+        status = matches[0].get("status", {})
+        usage = status.get("usage")
+        limit = status.get("limit")
+        if status.get("unit") != unit or not re.fullmatch(r"[0-9]+", str(usage)):
+            raise DeploymentError(
+                f"live {resource} current usage is absent or malformed"
+            )
+        if status.get("usage_state") not in {"USAGE_STATE_USED", "USAGE_STATE_UNUSED"}:
+            raise DeploymentError(f"live {resource} usage state is unknown")
+        if limit is not None and not re.fullmatch(r"[0-9]+", str(limit)):
+            raise DeploymentError(f"live {resource} provider limit is malformed")
+        before, after, delta = allocations[resource]
+        current = int(str(usage))
+        numeric_limit = None if limit is None else int(str(limit))
+        projections.append(
+            {
+                "resource": resource,
+                "unit": unit,
+                "provider_current_usage": current,
+                "provider_limit": numeric_limit,
+                "existing_allocation": before,
+                "desired_allocation": after,
+                "incremental_demand": delta,
+                "projected_usage": current + delta,
+                "provider_limit_missing": numeric_limit is None,
+            }
+        )
+    return projections
+
+
+def source_tree() -> str:
+    result = run(
+        ["git", "-C", str(REPOSITORY_ROOT), "rev-parse", "HEAD^{tree}"],
+        capture=True,
+        env=clean_environment(),
+    )
+    tree = result.stdout.strip()
+    if not re.fullmatch(r"[0-9a-f]{40}", tree):
+        raise DeploymentError(
+            "the source checkout does not have an exact Git tree identity"
+        )
+    return tree
+
+
+def write_sai06_capacity_approval_request(
+    run_root: Path,
     contract: Mapping[str, Any],
+    commit: str,
+    plan_path: Path,
+    plan_document: Mapping[str, Any],
+    capacity: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Seal the exact saved plan and live quota snapshot for offline signing."""
+    request = {
+        "schema": "fs2-serve.nebius.ai/sai06-capacity-approval-request/v2",
+        "created_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "nonce": secrets.token_hex(32),
+        "project_id": contract["target"]["project_id"],
+        "region": contract["target"]["region"],
+        "source_commit": commit,
+        "source_tree": source_tree(),
+        "infrastructure_plan_sha256": _secure_sha256_file(
+            plan_path, label="SAI-06 infrastructure binary plan"
+        ),
+        "infrastructure_plan_json_sha256": canonical_sha256(plan_document),
+        "quota_evidence_sha256": capacity["quota_evidence_sha256"],
+        "capacity_plan_binding_sha256": sai06_capacity_plan_binding(contract),
+        "resources": capacity["resources"],
+    }
+    private_json(run_root / SAI06_APPROVAL_REQUEST_NAME, request)
+    return request
+
+
+def _secure_json_file(
+    path: Path,
+    *,
+    label: str,
+    private: bool,
+    max_bytes: int = 1024 * 1024,
+) -> Any:
+    """Read JSON through stable descriptors without following any symlink."""
+    candidate = path.expanduser()
+    if not candidate.is_absolute():
+        candidate = Path.cwd() / candidate
+    parts = candidate.parts
+    if (
+        not parts
+        or parts[0] != "/"
+        or any(part in {"", ".", ".."} for part in parts[1:])
+    ):
+        raise DeploymentError(f"{label} path must be an absolute canonical path")
+    directory_fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+    try:
+        for component in parts[1:-1]:
+            next_fd = os.open(
+                component,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                dir_fd=directory_fd,
+            )
+            os.close(directory_fd)
+            directory_fd = next_fd
+            directory_stat = os.fstat(directory_fd)
+            directory_mode = stat.S_IMODE(directory_stat.st_mode)
+            if directory_stat.st_uid not in {0, os.geteuid()}:
+                raise DeploymentError(
+                    f"{label} parent directory has an untrusted owner"
+                )
+            if directory_mode & 0o002 and not directory_mode & stat.S_ISVTX:
+                raise DeploymentError(f"{label} parent directory is replaceable")
+        flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC
+        descriptor = os.open(parts[-1], flags, dir_fd=directory_fd)
+        try:
+            before = os.fstat(descriptor)
+            mode = stat.S_IMODE(before.st_mode)
+            if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+                raise DeploymentError(f"{label} must be a singly linked regular file")
+            if before.st_uid not in {0, os.geteuid()}:
+                raise DeploymentError(f"{label} has an untrusted owner")
+            if (private and mode != 0o600) or (not private and mode & 0o022):
+                expected = "0600" if private else "not group/other writable"
+                raise DeploymentError(f"{label} mode must be {expected}")
+            if before.st_size <= 0 or before.st_size > max_bytes:
+                raise DeploymentError(f"{label} has an invalid size")
+            chunks: list[bytes] = []
+            remaining = before.st_size
+            while remaining:
+                chunk = os.read(descriptor, min(remaining, 65536))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                remaining -= len(chunk)
+            after = os.fstat(descriptor)
+            named = os.stat(parts[-1], dir_fd=directory_fd, follow_symlinks=False)
+            identity = lambda value: (  # noqa: E731 - compact immutable identity
+                value.st_dev,
+                value.st_ino,
+                value.st_uid,
+                value.st_gid,
+                stat.S_IMODE(value.st_mode),
+                value.st_nlink,
+                value.st_size,
+            )
+            if identity(before) != identity(after) or identity(before) != identity(
+                named
+            ):
+                raise DeploymentError(f"{label} changed while it was being read")
+            if remaining != 0:
+                raise DeploymentError(f"{label} was truncated while it was being read")
+        finally:
+            os.close(descriptor)
+    except OSError as error:
+        raise DeploymentError(
+            f"{label} cannot be opened safely: {error.strerror}"
+        ) from error
+    finally:
+        os.close(directory_fd)
+    try:
+        return json.loads(b"".join(chunks))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise DeploymentError(f"{label} is not valid UTF-8 JSON") from error
+
+
+def _secure_sha256_file(path: Path, *, label: str) -> str:
+    """Hash a private regular file through a stable, non-following descriptor."""
+    candidate = path.expanduser()
+    if not candidate.is_absolute():
+        candidate = Path.cwd() / candidate
+    parts = candidate.parts
+    if (
+        not parts
+        or parts[0] != "/"
+        or any(part in {"", ".", ".."} for part in parts[1:])
+    ):
+        raise DeploymentError(f"{label} path must be an absolute canonical path")
+    directory_fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+    try:
+        for component in parts[1:-1]:
+            next_fd = os.open(
+                component,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                dir_fd=directory_fd,
+            )
+            os.close(directory_fd)
+            directory_fd = next_fd
+            directory_stat = os.fstat(directory_fd)
+            directory_mode = stat.S_IMODE(directory_stat.st_mode)
+            if directory_stat.st_uid not in {0, os.geteuid()}:
+                raise DeploymentError(
+                    f"{label} parent directory has an untrusted owner"
+                )
+            if directory_mode & 0o002 and not directory_mode & stat.S_ISVTX:
+                raise DeploymentError(f"{label} parent directory is replaceable")
+        descriptor = os.open(
+            parts[-1],
+            os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC,
+            dir_fd=directory_fd,
+        )
+        try:
+            before = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(before.st_mode)
+                or before.st_nlink != 1
+                or before.st_uid not in {0, os.geteuid()}
+                or stat.S_IMODE(before.st_mode) != 0o600
+                or before.st_size <= 0
+            ):
+                raise DeploymentError(
+                    f"{label} must be an owner-trusted, mode-0600, singly linked regular file"
+                )
+            digest = hashlib.sha256()
+            while chunk := os.read(descriptor, 1024 * 1024):
+                digest.update(chunk)
+            after = os.fstat(descriptor)
+            named = os.stat(parts[-1], dir_fd=directory_fd, follow_symlinks=False)
+            identity = lambda value: (  # noqa: E731 - compact immutable identity
+                value.st_dev,
+                value.st_ino,
+                value.st_uid,
+                value.st_gid,
+                stat.S_IMODE(value.st_mode),
+                value.st_nlink,
+                value.st_size,
+            )
+            if identity(before) != identity(after) or identity(before) != identity(
+                named
+            ):
+                raise DeploymentError(f"{label} changed while it was being hashed")
+            return digest.hexdigest()
+        finally:
+            os.close(descriptor)
+    except OSError as error:
+        raise DeploymentError(
+            f"{label} cannot be opened safely: {error.strerror}"
+        ) from error
+    finally:
+        os.close(directory_fd)
+
+
+def validate_sai06_capacity_receipt(
+    envelope: object,
+    request: Mapping[str, Any],
+    trusted_issuers: object,
     *,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Validate a short-lived numeric ceiling bound to this exact plan."""
-    if not isinstance(receipt, Mapping):
-        raise DeploymentError("SAI-06 capacity receipt must be a JSON object")
-    expected_fields = {
+    """Verify a trusted Ed25519 signature over the exact saved-plan request."""
+    request_fields = {
         "schema",
+        "created_at",
+        "nonce",
         "project_id",
         "region",
-        "reviewed_at",
+        "source_commit",
+        "source_tree",
+        "infrastructure_plan_sha256",
+        "infrastructure_plan_json_sha256",
+        "quota_evidence_sha256",
+        "capacity_plan_binding_sha256",
+        "resources",
+    }
+    if set(request) != request_fields or request.get("schema") != (
+        "fs2-serve.nebius.ai/sai06-capacity-approval-request/v2"
+    ):
+        raise DeploymentError("SAI-06 approval request fields are not exact")
+    for field in (
+        "infrastructure_plan_sha256",
+        "infrastructure_plan_json_sha256",
+        "quota_evidence_sha256",
+        "capacity_plan_binding_sha256",
+    ):
+        if not re.fullmatch(r"[0-9a-f]{64}", str(request.get(field, ""))):
+            raise DeploymentError(f"SAI-06 approval request {field} is malformed")
+    if (
+        not re.fullmatch(r"[0-9a-f]{64}", str(request.get("nonce", "")))
+        or not re.fullmatch(r"[0-9a-f]{40}", str(request.get("source_commit", "")))
+        or not re.fullmatch(r"[0-9a-f]{40}", str(request.get("source_tree", "")))
+        or not re.fullmatch(r"project-[a-z0-9]+", str(request.get("project_id", "")))
+        or not re.fullmatch(r"[a-z]{2}-[a-z]+[0-9]+", str(request.get("region", "")))
+    ):
+        raise DeploymentError("SAI-06 approval request identity is malformed")
+    request_created_at = _sai06_utc_timestamp(
+        request.get("created_at"), "request.created_at"
+    )
+    if not isinstance(envelope, Mapping) or set(envelope) != {
+        "schema",
+        "algorithm",
+        "key_id",
+        "payload",
+        "signature",
+    }:
+        raise DeploymentError("SAI-06 capacity approval envelope fields are not exact")
+    if (
+        envelope.get("schema")
+        != "fs2-serve.nebius.ai/sai06-capacity-approval-envelope/v2"
+        or envelope.get("algorithm") != "Ed25519"
+    ):
+        raise DeploymentError("SAI-06 capacity approval envelope is unsupported")
+    if (
+        not isinstance(trusted_issuers, Mapping)
+        or set(trusted_issuers) != {"schema", "issuers"}
+        or trusted_issuers.get("schema")
+        != "fs2-serve.nebius.ai/sai06-trusted-issuers/v1"
+    ):
+        raise DeploymentError("SAI-06 trusted issuer registry is malformed")
+    payload = envelope.get("payload")
+    if not isinstance(payload, Mapping) or set(payload) != {
+        "schema",
+        "issuer",
+        "issued_at",
         "valid_until",
-        "plan_binding_sha256",
-        "reviewed_by",
-        "evidence_sha256",
-        "allowances",
-    }
-    if set(receipt) != expected_fields:
-        raise DeploymentError("SAI-06 capacity receipt fields are not exact")
-    if receipt.get("schema") != "fs2-serve.nebius.ai/sai06-capacity-approval/v1":
-        raise DeploymentError("SAI-06 capacity receipt schema is unsupported")
+        "nonce",
+        "request_sha256",
+        "request",
+        "approved_ceilings",
+        "owner_overrides",
+    }:
+        raise DeploymentError("SAI-06 signed approval payload fields are not exact")
+    if payload.get("schema") != "fs2-serve.nebius.ai/sai06-capacity-approval/v2":
+        raise DeploymentError("SAI-06 signed approval schema is unsupported")
     if (
-        receipt.get("project_id") != contract["target"]["project_id"]
-        or receipt.get("region") != contract["target"]["region"]
+        payload.get("request") != request
+        or payload.get("request_sha256") != canonical_sha256(request)
+        or payload.get("nonce") != request.get("nonce")
     ):
         raise DeploymentError(
-            "SAI-06 capacity receipt project/region scope does not match the plan"
+            "SAI-06 approval is bound to a different request or saved plan"
         )
-    expected_binding = sai06_capacity_plan_binding(contract)
-    if receipt.get("plan_binding_sha256") != expected_binding:
+    issuers = trusted_issuers.get("issuers")
+    if not isinstance(issuers, list):
+        raise DeploymentError("SAI-06 trusted issuer registry is malformed")
+    matches = [
+        item
+        for item in issuers
+        if isinstance(item, Mapping)
+        and set(item)
+        == {
+            "issuer",
+            "key_id",
+            "algorithm",
+            "public_key_base64",
+            "roles",
+            "enabled",
+        }
+        and item.get("enabled") is True
+        and item.get("issuer") == payload.get("issuer")
+        and item.get("key_id") == envelope.get("key_id")
+        and item.get("algorithm") == "Ed25519"
+    ]
+    if len(matches) != 1:
+        raise DeploymentError("SAI-06 approval issuer/key is not trusted")
+    issuer = matches[0]
+    roles = issuer.get("roles")
+    if not isinstance(roles, list) or "capacity-approver" not in roles:
+        raise DeploymentError("SAI-06 approval issuer lacks the capacity-approver role")
+    try:
+        public_key = base64.b64decode(issuer["public_key_base64"], validate=True)
+        signature = base64.b64decode(envelope["signature"], validate=True)
+    except (KeyError, TypeError, ValueError, binascii.Error) as error:
         raise DeploymentError(
-            "SAI-06 capacity receipt is bound to a different plan"
-        )
-    reviewed_by = receipt.get("reviewed_by")
-    evidence_sha256 = receipt.get("evidence_sha256")
+            "SAI-06 approval key or signature encoding is invalid"
+        ) from error
     if (
-        not isinstance(reviewed_by, str)
-        or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._@/-]{2,127}", reviewed_by)
-        or not isinstance(evidence_sha256, str)
-        or not re.fullmatch(r"[0-9a-f]{64}", evidence_sha256)
+        len(public_key) != 32
+        or len(signature) != 64
+        or hashlib.sha256(public_key).hexdigest() != envelope.get("key_id")
     ):
         raise DeploymentError(
-            "SAI-06 capacity receipt requires a bounded reviewer identity and exact evidence SHA-256"
+            "SAI-06 approval key identity or signature size is invalid"
         )
-    reviewed_at = _sai06_utc_timestamp(receipt.get("reviewed_at"), "reviewed_at")
-    valid_until = _sai06_utc_timestamp(receipt.get("valid_until"), "valid_until")
+    try:
+        from cryptography.exceptions import InvalidSignature
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+        Ed25519PublicKey.from_public_bytes(public_key).verify(
+            signature,
+            json.dumps(
+                payload,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+                allow_nan=False,
+            ).encode(),
+        )
+    except ImportError as error:
+        raise DeploymentError(
+            "cryptography is required to verify SAI-06 Ed25519 approvals"
+        ) from error
+    except InvalidSignature as error:
+        raise DeploymentError("SAI-06 approval signature is invalid") from error
+    issued_at = _sai06_utc_timestamp(payload.get("issued_at"), "issued_at")
+    valid_until = _sai06_utc_timestamp(payload.get("valid_until"), "valid_until")
     current = (now or datetime.now(UTC)).astimezone(UTC)
-    if reviewed_at > current + timedelta(minutes=5):
-        raise DeploymentError("SAI-06 capacity receipt review time is in the future")
-    if reviewed_at < current - timedelta(hours=24):
-        raise DeploymentError("SAI-06 capacity receipt is stale")
-    if valid_until <= current or valid_until > reviewed_at + timedelta(hours=24):
-        raise DeploymentError("SAI-06 capacity receipt is expired or overlong")
-    allowances = receipt.get("allowances")
-    if not isinstance(allowances, list) or len(allowances) != 2:
+    if issued_at > current + timedelta(minutes=5) or issued_at < current - timedelta(
+        hours=24
+    ):
+        raise DeploymentError("SAI-06 signed approval is stale or from the future")
+    if valid_until <= current or valid_until > issued_at + timedelta(hours=24):
+        raise DeploymentError("SAI-06 signed approval is expired or overlong")
+    if issued_at < request_created_at - timedelta(minutes=5) or issued_at > (
+        request_created_at + timedelta(hours=24)
+    ):
         raise DeploymentError(
-            "SAI-06 capacity receipt requires exactly system-node and object-storage allowances"
+            "SAI-06 signed approval is not contemporaneous with its plan request"
         )
-    indexed: dict[str, Mapping[str, Any]] = {}
-    for allowance in allowances:
-        if not isinstance(allowance, Mapping):
-            raise DeploymentError("SAI-06 capacity receipt allowance is malformed")
-        if set(allowance) != {"resource", "unit", "ceiling"}:
-            raise DeploymentError(
-                "SAI-06 capacity receipt allowance fields are not exact"
-            )
-        resource = allowance.get("resource")
-        if not isinstance(resource, str) or resource in indexed:
-            raise DeploymentError(
-                "SAI-06 capacity receipt resource allowances must be unique"
-            )
-        indexed[resource] = allowance
-    expected_units = {
-        "compute.system_pool.nodes": "node",
-        "storage.bucket.size.standard": "byte",
-    }
-    ceilings: dict[str, int] = {}
-    for resource, unit in expected_units.items():
-        allowance = indexed.get(resource)
-        ceiling = None if allowance is None else allowance.get("ceiling")
+
+    ceilings = payload.get("approved_ceilings")
+    overrides = payload.get("owner_overrides")
+    if not isinstance(ceilings, list) or not isinstance(overrides, list):
+        raise DeploymentError("SAI-06 signed capacity limits are malformed")
+    ceiling_index: dict[str, int] = {}
+    for item in ceilings:
+        if not isinstance(item, Mapping) or set(item) != {
+            "resource",
+            "unit",
+            "ceiling",
+        }:
+            raise DeploymentError("SAI-06 approved ceiling is malformed")
+        resource, unit, ceiling = (
+            item.get("resource"),
+            item.get("unit"),
+            item.get("ceiling"),
+        )
         if (
-            allowance is None
-            or allowance.get("unit") != unit
+            resource not in SAI06_CAPACITY_RESOURCES
+            or unit != SAI06_CAPACITY_RESOURCES[resource]
+            or resource in ceiling_index
             or isinstance(ceiling, bool)
             or not isinstance(ceiling, int)
             or ceiling <= 0
         ):
-            raise DeploymentError(
-                f"SAI-06 capacity receipt lacks a numeric {resource} allowance"
+            raise DeploymentError("SAI-06 approved ceiling is invalid")
+        ceiling_index[str(resource)] = ceiling
+    if set(ceiling_index) != set(SAI06_CAPACITY_RESOURCES):
+        raise DeploymentError("SAI-06 approval must cover compute and storage")
+    override_index: dict[str, int] = {}
+    for item in overrides:
+        if not isinstance(item, Mapping) or set(item) != {
+            "resource",
+            "unit",
+            "ceiling",
+            "reason",
+            "evidence_sha256",
+        }:
+            raise DeploymentError("SAI-06 owner override is malformed")
+        resource, unit, ceiling = (
+            item.get("resource"),
+            item.get("unit"),
+            item.get("ceiling"),
+        )
+        if (
+            resource not in SAI06_CAPACITY_RESOURCES
+            or unit != SAI06_CAPACITY_RESOURCES[resource]
+            or resource in override_index
+            or isinstance(ceiling, bool)
+            or not isinstance(ceiling, int)
+            or ceiling <= 0
+            or not re.fullmatch(r"[0-9a-f]{64}", str(item.get("evidence_sha256", "")))
+            or not isinstance(item.get("reason"), str)
+            or len(item["reason"].strip()) < 10
+        ):
+            raise DeploymentError("SAI-06 owner override is invalid")
+        override_index[str(resource)] = ceiling
+
+    resources = request.get("resources")
+    if not isinstance(resources, list) or len(resources) != 2:
+        raise DeploymentError("SAI-06 approval request resources are malformed")
+    seen_resources: set[str] = set()
+    for resource in resources:
+        if not isinstance(resource, Mapping) or set(resource) != {
+            "resource",
+            "unit",
+            "provider_current_usage",
+            "provider_limit",
+            "existing_allocation",
+            "desired_allocation",
+            "incremental_demand",
+            "projected_usage",
+            "provider_limit_missing",
+        }:
+            raise DeploymentError("SAI-06 approval request resource is malformed")
+        name = str(resource.get("resource"))
+        if (
+            name not in SAI06_CAPACITY_RESOURCES
+            or name in seen_resources
+            or resource.get("unit") != SAI06_CAPACITY_RESOURCES[name]
+        ):
+            raise DeploymentError("SAI-06 approval request resource is invalid")
+        seen_resources.add(name)
+        projected = resource.get("projected_usage")
+        provider_limit = resource.get("provider_limit")
+        numeric_fields = (
+            resource.get("provider_current_usage"),
+            resource.get("existing_allocation"),
+            resource.get("desired_allocation"),
+            resource.get("incremental_demand"),
+            projected,
+        )
+        if (
+            any(
+                isinstance(value, bool) or not isinstance(value, int) or value < 0
+                for value in numeric_fields
             )
-        ceilings[resource] = ceiling
+            or resource["incremental_demand"]
+            != max(resource["desired_allocation"] - resource["existing_allocation"], 0)
+            or projected
+            != resource["provider_current_usage"] + resource["incremental_demand"]
+            or resource.get("provider_limit_missing") != (provider_limit is None)
+        ):
+            raise DeploymentError("SAI-06 projected capacity is malformed")
+        if projected > ceiling_index.get(name, -1):
+            raise DeploymentError(
+                f"SAI-06 projected {name} usage exceeds the signed ceiling"
+            )
+        if provider_limit is None:
+            if "capacity-owner" not in roles or projected > override_index.get(
+                name, -1
+            ):
+                raise DeploymentError(
+                    f"SAI-06 provider limit for {name} is absent and lacks an authenticated owner override"
+                )
+        elif (
+            isinstance(provider_limit, bool)
+            or not isinstance(provider_limit, int)
+            or projected > provider_limit
+        ):
+            raise DeploymentError(
+                f"SAI-06 projected {name} usage exceeds the provider limit"
+            )
+        elif name in override_index:
+            raise DeploymentError(
+                f"SAI-06 owner override for {name} is forbidden when the provider returned a limit"
+            )
+    if seen_resources != set(SAI06_CAPACITY_RESOURCES):
+        raise DeploymentError("SAI-06 approval request must cover compute and storage")
     return {
-        "schema": receipt["schema"],
-        "project_id": receipt["project_id"],
-        "region": receipt["region"],
-        "reviewed_at": receipt["reviewed_at"],
-        "valid_until": receipt["valid_until"],
-        "reviewed_by": reviewed_by,
-        "evidence_sha256": evidence_sha256,
-        "plan_binding_sha256": expected_binding,
-        "system_node_ceiling": ceilings["compute.system_pool.nodes"],
-        "storage_ceiling_bytes": ceilings["storage.bucket.size.standard"],
+        "schema": payload["schema"],
+        "issuer": payload["issuer"],
+        "key_id": envelope["key_id"],
+        "issued_at": payload["issued_at"],
+        "valid_until": payload["valid_until"],
+        "nonce": payload["nonce"],
+        "request_sha256": payload["request_sha256"],
+        "owner_override_resources": sorted(override_index),
     }
+
+
+def load_and_validate_sai06_capacity_approval(
+    args: argparse.Namespace,
+    run_root: Path,
+    contract: Mapping[str, Any],
+    commit: str,
+) -> dict[str, Any]:
+    """Securely load and revalidate the request, trust store and signature."""
+    request = _secure_json_file(
+        run_root / SAI06_APPROVAL_REQUEST_NAME,
+        label="SAI-06 approval request",
+        private=True,
+    )
+    receipt_path = getattr(args, "sai06_capacity_receipt", None)
+    if receipt_path is None:
+        raise DeploymentError("SAI-06 signed capacity approval is required for apply")
+    envelope = _secure_json_file(
+        Path(receipt_path), label="SAI-06 signed approval", private=True
+    )
+    trusted = _secure_json_file(
+        SAI06_TRUSTED_ISSUERS_PATH,
+        label="SAI-06 trusted issuer registry",
+        private=False,
+    )
+    plan_path = run_root / "infrastructure-plan.tfplan"
+    plan_json_path = run_root / "infrastructure-plan.plan.json"
+    if (
+        not plan_path.is_file()
+        or plan_path.is_symlink()
+        or not plan_json_path.is_file()
+        or plan_json_path.is_symlink()
+    ):
+        raise DeploymentError(
+            "SAI-06 apply requires the exact previously saved infrastructure plan and JSON"
+        )
+    plan_document = _secure_json_file(
+        plan_json_path,
+        label="SAI-06 infrastructure plan JSON",
+        private=True,
+        max_bytes=128 * 1024 * 1024,
+    )
+    if not isinstance(request, Mapping):
+        raise DeploymentError("SAI-06 approval request is malformed")
+    expected = {
+        "project_id": contract["target"]["project_id"],
+        "region": contract["target"]["region"],
+        "source_commit": commit,
+        "source_tree": source_tree(),
+        "infrastructure_plan_sha256": _secure_sha256_file(
+            plan_path, label="SAI-06 infrastructure binary plan"
+        ),
+        "infrastructure_plan_json_sha256": canonical_sha256(plan_document),
+        "capacity_plan_binding_sha256": sai06_capacity_plan_binding(contract),
+    }
+    for field, value in expected.items():
+        if request.get(field) != value:
+            raise DeploymentError(
+                f"SAI-06 approval request {field} no longer matches apply"
+            )
+    # Re-query immediately before apply. Any change in usage, limits or provider
+    # evidence invalidates the signature rather than being hand-waved as drift.
+    fresh = preflight_postgresql_backup_capacity(
+        args, contract, plan_document=plan_document
+    )
+    if (
+        request.get("quota_evidence_sha256") != fresh["quota_evidence_sha256"]
+        or request.get("resources") != fresh["resources"]
+    ):
+        raise DeploymentError(
+            "SAI-06 provider capacity observation changed after approval; re-plan and re-sign"
+        )
+    return validate_sai06_capacity_receipt(envelope, request, trusted)
 
 
 def require_deployable_images(contract: Mapping[str, Any]) -> None:
@@ -927,17 +1483,18 @@ def require_deployable_images(contract: Mapping[str, Any]) -> None:
     if isinstance(reference_data, Mapping) and reference_data.get("enabled") is True:
         for component in ("status", "pipeline"):
             configuration = reference_data.get(component, {})
-            if not isinstance(configuration, Mapping) or configuration.get("enabled") is not True:
+            if (
+                not isinstance(configuration, Mapping)
+                or configuration.get("enabled") is not True
+            ):
                 continue
             image = configuration.get("image")
-            if not isinstance(image, str) or image.split("/", 1)[0].endswith(".invalid"):
-                raise DeploymentError(
-                    f"reference-data {component} image is unresolved"
-                )
+            if not isinstance(image, str) or image.split("/", 1)[0].endswith(
+                ".invalid"
+            ):
+                raise DeploymentError(f"reference-data {component} image is unresolved")
             if policy == "regional-mirror":
-                split_digest_reference(
-                    image, label=f"reference-data {component}"
-                )
+                split_digest_reference(image, label=f"reference-data {component}")
 
 
 def split_digest_reference(reference: str, *, label: str) -> tuple[str, str]:
@@ -1041,7 +1598,10 @@ def selected_image_artifacts(
     if isinstance(reference_data, Mapping) and reference_data.get("enabled") is True:
         for component in ("status", "pipeline"):
             configuration = reference_data.get(component, {})
-            if isinstance(configuration, Mapping) and configuration.get("enabled") is True:
+            if (
+                isinstance(configuration, Mapping)
+                and configuration.get("enabled") is True
+            ):
                 sources.append(
                     (f"reference-data/{component}", str(configuration["image"]))
                 )
@@ -1114,12 +1674,15 @@ def rewritten_workloads(
         rewritten_reference_data = dict(reference_data)
         for component in ("status", "pipeline"):
             configuration = rewritten_reference_data.get(component)
-            if not isinstance(configuration, Mapping) or configuration.get("enabled") is not True:
+            if (
+                not isinstance(configuration, Mapping)
+                or configuration.get("enabled") is not True
+            ):
                 continue
             rewritten_configuration = dict(configuration)
-            rewritten_configuration["image"] = artifacts[
-                f"reference-data/{component}"
-            ]["target_reference"]
+            rewritten_configuration["image"] = artifacts[f"reference-data/{component}"][
+                "target_reference"
+            ]
             rewritten_reference_data[component] = rewritten_configuration
         workloads["reference_data"] = rewritten_reference_data
     return workloads
@@ -1167,23 +1730,35 @@ def selected_deployment_runtimes(model_images: Mapping[str, str]) -> dict[str, A
         entry = json.loads(path.read_text(encoding="utf-8"))
         model_id = entry["model_id"]
         image = model_images.get(model_id)
-        if image is None or image.rsplit("@", 1)[-1] != entry["record"]["runtime"]["image"]["digest"]:
+        if (
+            image is None
+            or image.rsplit("@", 1)[-1] != entry["record"]["runtime"]["image"]["digest"]
+        ):
             continue
         if model_id in selected:
-            raise DeploymentError(f"model {model_id!r} has ambiguous deployment runtime records")
+            raise DeploymentError(
+                f"model {model_id!r} has ambiguous deployment runtime records"
+            )
         selected[model_id] = entry
     return selected
 
 
-def deployment_runtime_configuration_identities(entries: Mapping[str, Any]) -> dict[str, Any]:
+def deployment_runtime_configuration_identities(
+    entries: Mapping[str, Any],
+) -> dict[str, Any]:
     """Use the control plane's exact artifact identities for the admin baseline."""
     paths = [str(CATALOG_ROOT), str(SOLUTION_ROOT / "components/control-plane/src")]
     added = [path for path in paths if path not in sys.path]
     sys.path[:0] = added
     try:
-        from fs2_serve.deployment_runtimes import deployment_runtime_configuration_identity
+        from fs2_serve.deployment_runtimes import (
+            deployment_runtime_configuration_identity,
+        )
 
-        return {model_id: deployment_runtime_configuration_identity(entry) for model_id, entry in entries.items()}
+        return {
+            model_id: deployment_runtime_configuration_identity(entry)
+            for model_id, entry in entries.items()
+        }
     finally:
         for path in added:
             sys.path.remove(path)
@@ -1334,9 +1909,13 @@ def derived_admin_configuration(
 
     model_images = workloads.get("model_image_overrides", {})
     selected_model_ids = contract.get("selected_model_ids", [])
-    deployment_runtimes = selected_deployment_runtimes({
-        model_id: model_images[model_id] for model_id in selected_model_ids if model_id in model_images
-    })
+    deployment_runtimes = selected_deployment_runtimes(
+        {
+            model_id: model_images[model_id]
+            for model_id in selected_model_ids
+            if model_id in model_images
+        }
+    )
     cpu_runtime_model_ids = {
         model_id
         for model_id, entry in deployment_runtimes.items()
@@ -1350,9 +1929,13 @@ def derived_admin_configuration(
             "alternatives": [],
         }
     }
-    native_ids = set(json.loads(
-        (SOLUTION_ROOT / "catalog/profiles/model-profiles.json").read_text(encoding="utf-8")
-    ).get("managed_native_model_ids", []))
+    native_ids = set(
+        json.loads(
+            (SOLUTION_ROOT / "catalog/profiles/model-profiles.json").read_text(
+                encoding="utf-8"
+            )
+        ).get("managed_native_model_ids", [])
+    )
     managed_cpu_ids = cpu_runtime_model_ids & native_ids
     if cpu_runtime_model_ids:
         general_cpu_contract = dynamic.get("general_cpu_pool_contract")
@@ -1377,7 +1960,9 @@ def derived_admin_configuration(
             )
         for pool_id, raw_pool in sorted(general_pools.items()):
             if pool_id in pools or not isinstance(raw_pool, Mapping):
-                raise DeploymentError("the general CPU pool identity is malformed or duplicated")
+                raise DeploymentError(
+                    "the general CPU pool identity is malformed or duplicated"
+                )
             pools[str(pool_id)] = {
                 "resource_name": "cpu",
                 "accelerator_class": "CPU",
@@ -1405,19 +1990,30 @@ def derived_admin_configuration(
             }
             if managed_cpu_ids:
                 resources = raw_pool.get("schedulable_capacity", {})
-                pools[str(pool_id)].update({
-                    "allocatable_cpu_millis": int(resources.get("cpu_millicores", 0)),
-                    "allocatable_memory_bytes": int(resources.get("memory_mib", 0)) * 1048576,
-                })
+                pools[str(pool_id)].update(
+                    {
+                        "allocatable_cpu_millis": int(
+                            resources.get("cpu_millicores", 0)
+                        ),
+                        "allocatable_memory_bytes": int(resources.get("memory_mib", 0))
+                        * 1048576,
+                    }
+                )
             pool_features[str(pool_id)] = {}
-    deployment_identities = deployment_runtime_configuration_identities(deployment_runtimes) if deployment_runtimes else {}
+    deployment_identities = (
+        deployment_runtime_configuration_identities(deployment_runtimes)
+        if deployment_runtimes
+        else {}
+    )
     scaling = {
         model_id: (
             {
                 "min_replicas": 1,
                 "max_replicas": 1,
                 "target_queue_depth": 1,
-                "polling_interval_seconds": int(workloads["keda_polling_interval_seconds"]),
+                "polling_interval_seconds": int(
+                    workloads["keda_polling_interval_seconds"]
+                ),
                 "cooldown_seconds": int(workloads["keda_cooldown_period_seconds"]),
             }
             if model_id in cpu_runtime_model_ids and model_id not in managed_cpu_ids
@@ -1465,12 +2061,11 @@ def derived_admin_configuration(
             model_id=model_id,
             accelerator_class=str(gpu["class"]),
         )
-        selected_pool_features = [
-            pool_features[pool_id] for pool_id in pool_ids
-        ]
+        selected_pool_features = [pool_features[pool_id] for pool_id in pool_ids]
         cache_tier = (
             "node-local"
-            if model_id in cpu_runtime_model_ids or any(
+            if model_id in cpu_runtime_model_ids
+            or any(
                 item.get("local_cache") == "node-local"
                 for item in selected_pool_features
             )
@@ -1492,7 +2087,9 @@ def derived_admin_configuration(
             "placement": {
                 "pool_ids": pool_ids,
                 "accelerators": int(gpu["count"]),
-                "topology_policy": "any" if model_id in cpu_runtime_model_ids else "single-node",
+                "topology_policy": "any"
+                if model_id in cpu_runtime_model_ids
+                else "single-node",
             },
             "autoscaling": scaling[model_id],
             "queue": {
@@ -1535,18 +2132,26 @@ def derived_admin_configuration(
             },
         }
         if model_id in managed_cpu_ids:
-            models[model_id]["placement"].update({
-                "cpu_millis": int(value["resources"]["cpu_millis"]),
-                "memory_bytes": int(value["resources"]["memory_bytes"]),
-            })
+            models[model_id]["placement"].update(
+                {
+                    "cpu_millis": int(value["resources"]["cpu_millis"]),
+                    "memory_bytes": int(value["resources"]["memory_bytes"]),
+                }
+            )
         if model_id in deployment_identities:
             identity = deployment_identities[model_id]
-            models[model_id]["artifact"].update({
-                key: identity[key] for key in (
-                    "model_revision", "artifact_manifest_sha256", "acquisition_contract_sha256",
-                    "provenance_sha256", "semantic_health_contract_sha256",
-                )
-            })
+            models[model_id]["artifact"].update(
+                {
+                    key: identity[key]
+                    for key in (
+                        "model_revision",
+                        "artifact_manifest_sha256",
+                        "acquisition_contract_sha256",
+                        "provenance_sha256",
+                        "semantic_health_contract_sha256",
+                    )
+                }
+            )
 
     configuration = {
         "schema_version": "fs2.admin-configuration/v1",
@@ -1823,13 +2428,10 @@ def write_infrastructure_variables(
     contract: Mapping[str, Any],
     commit: str,
     nebius_profile: str,
-    capacity_approval: Mapping[str, Any] | None = None,
 ) -> Path:
     variables = dict(contract["stages"]["infrastructure"])
     variables["source_commit"] = commit
     variables["nebius_profile"] = nebius_profile
-    if capacity_approval is not None:
-        variables["sai06_capacity_approval"] = dict(capacity_approval)
     path = run_root / "infrastructure.tfvars.json"
     private_json(path, variables)
     return path
@@ -2060,6 +2662,26 @@ def infrastructure_outputs(
         if postgresql_backup_enabled
         else None
     )
+    postgresql_backup_inventory_access = (
+        terraform_optional_json_output(
+            terraform,
+            INFRA_ROOT,
+            "postgresql_backup_inventory_object_storage_access",
+            environment,
+        )
+        if postgresql_backup_enabled
+        else None
+    )
+    postgresql_backup_receipt_access = (
+        terraform_optional_json_output(
+            terraform,
+            INFRA_ROOT,
+            "postgresql_backup_receipt_object_storage_access",
+            environment,
+        )
+        if postgresql_backup_enabled
+        else None
+    )
     postgresql_backup_lifecycle = (
         terraform_optional_json_output(
             terraform, INFRA_ROOT, "postgresql_backup_lifecycle", environment
@@ -2106,6 +2728,8 @@ def infrastructure_outputs(
         "scientific_artifacts_lifecycle": scientific_artifacts_lifecycle,
         "postgresql_backup_storage_contract": postgresql_backup_storage,
         "postgresql_backup_object_storage_access": postgresql_backup_access,
+        "postgresql_backup_inventory_object_storage_access": postgresql_backup_inventory_access,
+        "postgresql_backup_receipt_object_storage_access": postgresql_backup_receipt_access,
         "postgresql_backup_lifecycle": postgresql_backup_lifecycle,
     }
 
@@ -2132,10 +2756,13 @@ def existing_controller_ownership(
             if resource.get("mode") == "managed"
             and resource.get("type") == "terraform_data"
             and not resource.get("module")
-            and resource.get("name") in {"cluster_contract", "model_controller_contract"}
+            and resource.get("name")
+            in {"cluster_contract", "model_controller_contract"}
         }
         controller = inputs["model_controller_contract"]
-        accepted = controller.get("accepted_handoff_receipt") or controller.get("expected_handoff_receipt")
+        accepted = controller.get("accepted_handoff_receipt") or controller.get(
+            "expected_handoff_receipt"
+        )
         if (
             inputs["cluster_contract"]["cluster_id"] != cluster_id
             or controller.get("workload_owner") != "controller"
@@ -2155,13 +2782,22 @@ def existing_controller_ownership(
                 cpu = instance["attributes"]["input"]["value"]
                 for document in (cpu["deployment"], cpu["service_manifest"]):
                     metadata = document["metadata"]
-                    cpu_resources.add((document["kind"], metadata["namespace"], metadata["name"]))
+                    cpu_resources.add(
+                        (document["kind"], metadata["namespace"], metadata["name"])
+                    )
                 deployment = cpu["deployment"]
-                account = deployment["spec"]["template"]["spec"].get("serviceAccountName")
+                account = deployment["spec"]["template"]["spec"].get(
+                    "serviceAccountName"
+                )
                 if account:
-                    cpu_resources.add(("ServiceAccount", deployment["metadata"]["namespace"], account))
+                    cpu_resources.add(
+                        ("ServiceAccount", deployment["metadata"]["namespace"], account)
+                    )
         for resource in resources:
-            if resource.get("mode") != "managed" or resource.get("type") != "kubernetes_manifest":
+            if (
+                resource.get("mode") != "managed"
+                or resource.get("type") != "kubernetes_manifest"
+            ):
                 continue
             if resource.get("name") == "model_scaler" and resource.get("instances"):
                 return False
@@ -2169,9 +2805,18 @@ def existing_controller_ownership(
                 for instance in resource.get("instances", []):
                     manifest = instance["attributes"]["manifest"]["value"]
                     metadata = manifest.get("metadata", {})
-                    if (manifest.get("kind"), metadata.get("namespace"), metadata.get("name")) in cpu_resources:
+                    if (
+                        manifest.get("kind"),
+                        metadata.get("namespace"),
+                        metadata.get("name"),
+                    ) in cpu_resources:
                         continue
-                    if manifest.get("kind") in {"Deployment", "Service", "ServiceAccount", "ConfigMap"}:
+                    if manifest.get("kind") in {
+                        "Deployment",
+                        "Service",
+                        "ServiceAccount",
+                        "ConfigMap",
+                    }:
                         return False
         return True
     except (OSError, ValueError, KeyError, IndexError, TypeError):
@@ -2263,22 +2908,32 @@ def write_downstream_variables(
         enabled = postgresql_backup.get("enabled") is True
         storage_contract = dynamic.get("postgresql_backup_storage_contract")
         object_access = dynamic.get("postgresql_backup_object_storage_access")
+        inventory_access = dynamic.get(
+            "postgresql_backup_inventory_object_storage_access"
+        )
+        receipt_access = dynamic.get("postgresql_backup_receipt_object_storage_access")
         lifecycle = dynamic.get("postgresql_backup_lifecycle")
         if enabled and (
             not isinstance(storage_contract, Mapping)
             or not isinstance(object_access, Mapping)
+            or not isinstance(inventory_access, Mapping)
+            or not isinstance(receipt_access, Mapping)
             or not isinstance(lifecycle, Mapping)
         ):
             raise DeploymentError(
                 "the mandatory PostgreSQL backup plane requires complete retained "
                 "storage, lifecycle and object-access outputs"
             )
-        if enabled and set(object_access) != {
-            "key_id",
-            "access_key_id",
-            "secret_reference_id",
-            "resource_version",
-        }:
+        if enabled and any(
+            set(access)
+            != {
+                "key_id",
+                "access_key_id",
+                "secret_reference_id",
+                "resource_version",
+            }
+            for access in (object_access, inventory_access, receipt_access)
+        ):
             raise DeploymentError(
                 "the PostgreSQL backup access handoff must contain exactly the key's "
                 "non-secret identifiers"
@@ -2289,6 +2944,8 @@ def write_downstream_variables(
             **postgresql_backup,
             "storage_contract": storage_contract if enabled else None,
             "object_storage_access": object_access if enabled else None,
+            "inventory_object_storage_access": inventory_access if enabled else None,
+            "receipt_object_storage_access": receipt_access if enabled else None,
         }
     general_cpu_lane = workloads.get("general_cpu_lane")
     if isinstance(general_cpu_lane, Mapping):
@@ -2307,7 +2964,10 @@ def write_downstream_variables(
                 raise DeploymentError(
                     "a general CPU pool must never carry the reference-data filesystem"
                 )
-            if pool_contract.get("schema") != "fs2-serve.nebius.ai/general-cpu-pools/v1":
+            if (
+                pool_contract.get("schema")
+                != "fs2-serve.nebius.ai/general-cpu-pools/v1"
+            ):
                 raise DeploymentError(
                     "the general CPU pool handoff must be the v1 general-CPU pool contract"
                 )
@@ -2590,7 +3250,10 @@ def workload_access_bundle(
     bundle = terraform_json_output(
         terraform, WORKLOADS_ROOT, "access_bundle", environment
     )
-    if not isinstance(bundle, dict) or bundle.get("schema") != "fs2-serve.nebius.ai/access-bundle/v1":
+    if (
+        not isinstance(bundle, dict)
+        or bundle.get("schema") != "fs2-serve.nebius.ai/access-bundle/v1"
+    ):
         raise DeploymentError("the workloads access bundle is missing or malformed")
 
     cluster = bundle.get("cluster")
@@ -2606,7 +3269,9 @@ def workload_access_bundle(
     ):
         raise DeploymentError("the workloads access bundle is missing or malformed")
 
-    def has_non_empty_strings(document: Mapping[str, Any], fields: tuple[str, ...]) -> bool:
+    def has_non_empty_strings(
+        document: Mapping[str, Any], fields: tuple[str, ...]
+    ) -> bool:
         return all(
             isinstance(document.get(field), str) and bool(document[field].strip())
             for field in fields
@@ -2656,9 +3321,7 @@ def workload_access_bundle(
         raise DeploymentError("the workloads access bundle is missing or malformed")
     scopes = mcp_access.get("scopes")
     if (
-        not has_non_empty_strings(
-            mcp_access, ("principal_id", "tenant_id")
-        )
+        not has_non_empty_strings(mcp_access, ("principal_id", "tenant_id"))
         or not isinstance(scopes, list)
         or not {"mcp.invoke", "inference.invoke"}.issubset(scopes)
     ):
@@ -2666,8 +3329,7 @@ def workload_access_bundle(
 
     academic_assets = contract.get("academic_assets")
     academic_fleet_enabled = (
-        isinstance(academic_assets, dict)
-        and academic_assets.get("enabled") is True
+        isinstance(academic_assets, dict) and academic_assets.get("enabled") is True
     )
     if academic_fleet_enabled:
         academic_tenant_id = academic_assets.get("tenant_id")
@@ -2735,8 +3397,7 @@ def workload_access_bundle(
             or (
                 lifecycle.get("retention_mode") == "retain"
                 and (
-                    lifecycle.get("destroy_status")
-                    != "blocked-retained"
+                    lifecycle.get("destroy_status") != "blocked-retained"
                     or lifecycle.get("destroy_completion")
                     != "full-stack-destroy-incomplete-infrastructure-retained"
                     or lifecycle.get("adoption_status")
@@ -2768,8 +3429,7 @@ def workload_access_bundle(
             != reference_data["bucket_id"]
             or storage.get("object_storage", {}).get("name")
             != reference_data["bucket_name"]
-            or storage.get("cpu_pool", {}).get("id")
-            != reference_data["cpu_pool_id"]
+            or storage.get("cpu_pool", {}).get("id") != reference_data["cpu_pool_id"]
             or plane.get("status_service") != reference_data["status_service"]
             or plane.get("pipeline") != reference_data["pipeline"]
         ):
@@ -2860,22 +3520,37 @@ def apply_stack(
     contract: Mapping[str, Any],
     commit: str,
     configuration_environment: Mapping[str, str],
-    capacity_approval: Mapping[str, Any] | None = None,
 ) -> None:
-    infrastructure_variables = write_infrastructure_variables(
-        run_root,
-        contract,
-        commit,
-        args.nebius_profile,
-        capacity_approval,
+    postgresql_backup_enabled = (
+        contract.get("stages", {})
+        .get("infrastructure", {})
+        .get("postgresql_backup", {})
+        .get("enabled")
+        is True
     )
-    plan_path, _, environment = plan_stage(
-        args.terraform,
-        run_root=run_root,
-        stage="infrastructure",
-        contract=contract,
-        variable_file=infrastructure_variables,
+    approval = (
+        load_and_validate_sai06_capacity_approval(args, run_root, contract, commit)
+        if postgresql_backup_enabled
+        else None
     )
+    if postgresql_backup_enabled:
+        plan_path = run_root / "infrastructure-plan.tfplan"
+        state, _, _ = stage_paths(run_root, "infrastructure")
+        environment = stage_environment(
+            run_root, "infrastructure", contract, include_secrets=True
+        )
+        terraform_init(args.terraform, INFRA_ROOT, state, environment)
+    else:
+        infrastructure_variables = write_infrastructure_variables(
+            run_root, contract, commit, args.nebius_profile
+        )
+        plan_path, _, environment = plan_stage(
+            args.terraform,
+            run_root=run_root,
+            stage="infrastructure",
+            contract=contract,
+            variable_file=infrastructure_variables,
+        )
     apply_plan(args.terraform, INFRA_ROOT, plan_path, environment)
 
     dynamic = infrastructure_outputs(
@@ -2918,7 +3593,56 @@ def apply_stack(
     )
 
     endpoints = workload_endpoint_outputs(args.terraform, run_root, contract)
-    print(json.dumps({"status": "applied", **endpoints}, indent=2))
+    result = {"status": "applied", **endpoints}
+    if approval is not None:
+        result["sai06_capacity_approval"] = approval
+    print(json.dumps(result, indent=2))
+
+
+def plan_infrastructure_with_sai06(
+    args: argparse.Namespace,
+    run_root: Path,
+    contract: Mapping[str, Any],
+    commit: str,
+    variable_file: Path,
+) -> tuple[Path, dict[str, Any], dict[str, str]]:
+    result = plan_stage(
+        args.terraform,
+        run_root=run_root,
+        stage="infrastructure",
+        contract=contract,
+        variable_file=variable_file,
+    )
+    postgresql_backup_enabled = (
+        contract.get("stages", {})
+        .get("infrastructure", {})
+        .get("postgresql_backup", {})
+        .get("enabled")
+        is True
+    )
+    if not postgresql_backup_enabled:
+        return result
+    plan_path, document, _ = result
+    require_sai06_no_replacements(document)
+    capacity = preflight_postgresql_backup_capacity(
+        args, contract, plan_document=document
+    )
+    private_json(run_root / "sai06-postgresql-capacity-preflight.json", capacity)
+    request = write_sai06_capacity_approval_request(
+        run_root, contract, commit, plan_path, document, capacity
+    )
+    print(
+        json.dumps(
+            {
+                "status": "SAI-06 capacity approval required before apply",
+                "approval_request": str(run_root / SAI06_APPROVAL_REQUEST_NAME),
+                "request_sha256": canonical_sha256(request),
+                "apply_authorized": False,
+            },
+            indent=2,
+        )
+    )
+    return result
 
 
 def plan_stack(
@@ -2926,34 +3650,24 @@ def plan_stack(
     run_root: Path,
     contract: Mapping[str, Any],
     commit: str,
-    capacity_approval: Mapping[str, Any] | None = None,
 ) -> None:
     infrastructure_variables = write_infrastructure_variables(
         run_root,
         contract,
         commit,
         args.nebius_profile,
-        capacity_approval,
     )
     if not state_ready(args.terraform, run_root, "infrastructure", contract):
-        plan_stage(
-            args.terraform,
-            run_root=run_root,
-            stage="infrastructure",
-            contract=contract,
-            variable_file=infrastructure_variables,
+        plan_infrastructure_with_sai06(
+            args, run_root, contract, commit, infrastructure_variables
         )
         print(
             "Planned infrastructure. Apply it before foundation can be planned against the new API server."
         )
         return
 
-    _, infrastructure_plan, _ = plan_stage(
-        args.terraform,
-        run_root=run_root,
-        stage="infrastructure",
-        contract=contract,
-        variable_file=infrastructure_variables,
+    _, infrastructure_plan, _ = plan_infrastructure_with_sai06(
+        args, run_root, contract, commit, infrastructure_variables
     )
     if plan_changes_managed_resources_or_outputs(infrastructure_plan):
         print(
@@ -2970,12 +3684,8 @@ def plan_stack(
         kubectl=args.kubectl,
     )
     if "artifact_delivery" not in dynamic["accelerator_pool_contract"]:
-        plan_stage(
-            args.terraform,
-            run_root=run_root,
-            stage="infrastructure",
-            contract=contract,
-            variable_file=infrastructure_variables,
+        plan_infrastructure_with_sai06(
+            args, run_root, contract, commit, infrastructure_variables
         )
         print(
             "Planned the registry-delivery contract upgrade. Apply infrastructure before planning downstream stages."
@@ -3036,14 +3746,17 @@ def destroy_stack(
     commit: str,
 ) -> None:
     reference_infrastructure = (
-        contract.get("stages", {})
-        .get("infrastructure", {})
-        .get("reference_data", {})
+        contract.get("stages", {}).get("infrastructure", {}).get("reference_data", {})
     )
     scientific_infrastructure = (
         contract.get("stages", {})
         .get("infrastructure", {})
         .get("scientific_artifacts", {})
+    )
+    postgresql_infrastructure = (
+        contract.get("stages", {})
+        .get("infrastructure", {})
+        .get("postgresql_backup", {})
     )
     reference_retained = (
         isinstance(reference_infrastructure, Mapping)
@@ -3057,7 +3770,13 @@ def destroy_stack(
         and scientific_infrastructure.get("lifecycle", {}).get("retention_mode")
         == "retain"
     )
-    retained_mode = reference_retained or scientific_retained
+    postgresql_retained = (
+        isinstance(postgresql_infrastructure, Mapping)
+        and postgresql_infrastructure.get("enabled") is True
+        and postgresql_infrastructure.get("lifecycle", {}).get("retention_mode")
+        == "retain"
+    )
+    retained_mode = reference_retained or scientific_retained or postgresql_retained
     resources = {
         stage: state_has_resources(args.terraform, run_root, stage, contract)
         for stage in ("infrastructure", "foundation", "workloads")
@@ -3116,6 +3835,20 @@ def destroy_stack(
                 "retained scientific artifact storage is missing its lifecycle output; "
                 "no resource was changed"
             )
+        if postgresql_retained and not isinstance(
+            dynamic.get("postgresql_backup_storage_contract"), Mapping
+        ):
+            raise DeploymentError(
+                "retained PostgreSQL backup storage is missing its non-secret bucket "
+                "contract; no resource was changed"
+            )
+        if postgresql_retained and not isinstance(
+            dynamic.get("postgresql_backup_lifecycle"), Mapping
+        ):
+            raise DeploymentError(
+                "retained PostgreSQL backup storage is missing its lifecycle output; "
+                "no resource was changed"
+            )
     if resources["foundation"] or resources["workloads"]:
         if (
             cached_foundation.is_file()
@@ -3162,7 +3895,7 @@ def destroy_stack(
     if not retain_infrastructure:
         destroy_order += (("infrastructure", infrastructure_variables),)
 
-    destroyed_stages: list[str] = []
+    planned_destroys: list[tuple[str, Path, dict[str, str]]] = []
     for stage, variable_file in destroy_order:
         if not resources[stage]:
             continue
@@ -3178,6 +3911,13 @@ def destroy_stack(
             variable_file=variable_file,
             destroy=True,
         )
+        planned_destroys.append((stage, plan_path, environment))
+
+    # Destructive application starts only after every eligible stage has a
+    # complete saved plan. A late foundation/infrastructure planning failure
+    # therefore cannot strand the public edge or database workloads offline.
+    destroyed_stages: list[str] = []
+    for stage, plan_path, environment in planned_destroys:
         apply_plan(args.terraform, stage_root(stage), plan_path, environment)
         destroyed_stages.append(stage)
 
@@ -3202,44 +3942,83 @@ def destroy_stack(
             if isinstance(applied_contract, Mapping)
             else None
         )
-        reference_data = None if not reference_retained else {
-            "lifecycle": lifecycle,
-            "filesystem_id": storage.get("filesystem", {}).get("id"),
-            "bucket_id": storage.get("object_storage", {}).get("id"),
-            "bucket_name": storage.get("object_storage", {}).get("name"),
-            "cpu_pool_id": storage.get("cpu_pool", {}).get("id"),
-            "status_service": None,
-            "pipeline": None,
-            "last_applied": {
-                "status_service": last_applied_status_service,
-                "pipeline": last_applied_pipeline,
-            },
-        }
-        reference_data_contract = None if not reference_retained else {
-            "storage": storage,
-            "plane": None,
-            "last_applied_plane": last_applied_plane,
-        }
+        reference_data = (
+            None
+            if not reference_retained
+            else {
+                "lifecycle": lifecycle,
+                "filesystem_id": storage.get("filesystem", {}).get("id"),
+                "bucket_id": storage.get("object_storage", {}).get("id"),
+                "bucket_name": storage.get("object_storage", {}).get("name"),
+                "cpu_pool_id": storage.get("cpu_pool", {}).get("id"),
+                "status_service": None,
+                "pipeline": None,
+                "last_applied": {
+                    "status_service": last_applied_status_service,
+                    "pipeline": last_applied_pipeline,
+                },
+            }
+        )
+        reference_data_contract = (
+            None
+            if not reference_retained
+            else {
+                "storage": storage,
+                "plane": None,
+                "last_applied_plane": last_applied_plane,
+            }
+        )
         scientific_storage = dynamic.get("scientific_artifacts_storage_contract")
         scientific_lifecycle = dynamic.get("scientific_artifacts_lifecycle")
-        scientific_artifacts = None if not scientific_retained else {
-            "lifecycle": scientific_lifecycle,
-            "bucket_id": (scientific_storage or {}).get("object_storage", {}).get("id"),
-            "bucket_name": (scientific_storage or {})
-            .get("object_storage", {})
-            .get("name"),
-            "object_key": (scientific_storage or {}).get("layout", {}).get("object_key"),
-            "last_applied": retained_workload_outputs.get("scientific_artifacts"),
-        }
-        scientific_artifacts_contract = None if not scientific_retained else {
-            "storage": scientific_storage,
-        }
-        adoption_lifecycle = lifecycle if reference_retained else scientific_lifecycle
-        receipt_path = run_root / (
+        scientific_artifacts = (
+            None
+            if not scientific_retained
+            else {
+                "lifecycle": scientific_lifecycle,
+                "bucket_id": (scientific_storage or {})
+                .get("object_storage", {})
+                .get("id"),
+                "bucket_name": (scientific_storage or {})
+                .get("object_storage", {})
+                .get("name"),
+                "object_key": (scientific_storage or {})
+                .get("layout", {})
+                .get("object_key"),
+                "last_applied": retained_workload_outputs.get("scientific_artifacts"),
+            }
+        )
+        scientific_artifacts_contract = (
+            None
+            if not scientific_retained
+            else {
+                "storage": scientific_storage,
+            }
+        )
+        postgresql_storage = dynamic.get("postgresql_backup_storage_contract")
+        postgresql_lifecycle = dynamic.get("postgresql_backup_lifecycle")
+        postgresql_backup = (
+            None
+            if not postgresql_retained
+            else {
+                "storage": postgresql_storage,
+                "lifecycle": postgresql_lifecycle,
+            }
+        )
+        adoption_lifecycle = (
+            lifecycle
+            if reference_retained
+            else scientific_lifecycle
+            if scientific_retained
+            else postgresql_lifecycle
+        )
+        receipt_name = (
             "reference-data-retention.json"
             if reference_retained
             else "scientific-artifacts-retention.json"
+            if scientific_retained
+            else "postgresql-backup-retention.json"
         )
+        receipt_path = run_root / receipt_name
         result = {
             "schema": "fs2-serve.nebius.ai/destroy-result/v1",
             "status": "infrastructure-retained",
@@ -3250,6 +4029,7 @@ def destroy_stack(
             "reference_data_contract": reference_data_contract,
             "scientific_artifacts": scientific_artifacts,
             "scientific_artifacts_contract": scientific_artifacts_contract,
+            "postgresql_backup": postgresql_backup,
             "adoption": {
                 "required_before_full_destroy": True,
                 "status": (adoption_lifecycle or {}).get("adoption_status"),
@@ -3425,9 +4205,7 @@ def status_stack(
         endpoints["reference_data_contract"] is None
         and infrastructure_reference_data_contract is not None
     ):
-        endpoints["reference_data_contract"] = (
-            infrastructure_reference_data_contract
-        )
+        endpoints["reference_data_contract"] = infrastructure_reference_data_contract
     # The store can be provisioned and correct while the batch workloads that
     # consume it are still gated off. Report the live bucket identity rather
     # than pretending the feature is absent.
@@ -3614,8 +4392,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--sai06-capacity-receipt",
         type=Path,
         help=(
-            "mode-0600, <=24h numeric node/storage allowance receipt bound to "
-            "the exact effective SAI-06 plan (required by preflight/plan/apply)"
+            "mode-0600 trusted Ed25519 approval envelope bound to the exact "
+            "saved infrastructure plan (required only by apply)"
         ),
     )
     return parser.parse_args(argv)
@@ -3685,30 +4463,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             )
         elif args.command == "plan":
-            capacity = preflight_postgresql_backup_capacity(args, contract)
-            private_json(
-                run_root / "sai06-postgresql-capacity-preflight.json", capacity
-            )
             plan_stack(
                 args,
                 run_root,
                 contract,
                 commit,
-                capacity_approval=capacity["capacity_receipt"],
             )
         elif args.command == "apply":
             require_deployable_images(contract)
-            capacity = preflight_postgresql_backup_capacity(args, contract)
-            private_json(
-                run_root / "sai06-postgresql-capacity-preflight.json", capacity
-            )
             apply_stack(
                 args,
                 run_root,
                 contract,
                 commit,
                 configuration_environment,
-                capacity_approval=capacity["capacity_receipt"],
             )
         elif args.command == "destroy":
             destroy_stack(args, run_root, contract, commit)

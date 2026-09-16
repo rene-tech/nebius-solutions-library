@@ -7,8 +7,12 @@
 
 locals {
   postgresql_backup_root                        = "postgresql/v1"
-  postgresql_backup_path_scope                  = "${local.postgresql_backup_root}/*"
+  postgresql_backup_writer_path_scope           = "${local.postgresql_backup_root}/fs2-control-db/*"
+  postgresql_backup_inventory_path_scope        = "${local.postgresql_backup_root}/*"
+  postgresql_backup_receipt_path_scope          = "${local.postgresql_backup_root}/restore-verification/success/*"
   postgresql_backup_writer_role                 = "storage.object-editor"
+  postgresql_backup_inventory_roles             = ["storage.object-lister", "storage.object-viewer"]
+  postgresql_backup_receipt_role                = "storage.uploader"
   postgresql_backup_endpoint                    = "https://storage.${local.selected_target.region}.nebius.cloud"
   postgresql_backup_noncurrent_days             = var.postgresql_backup.retention_days + 7
   postgresql_backup_current_base_backup_days    = var.postgresql_backup.retention_days + 2
@@ -48,21 +52,6 @@ locals {
       transition                    = null
     },
   ]
-  postgresql_capacity_plan_binding = sha256(jsonencode({
-    schema                      = "fs2-serve.nebius.ai/sai06-capacity-plan/v1"
-    project_id                  = nonsensitive(var.project_id)
-    region                      = local.selected_target.region
-    effective_system_node_count = local.effective_system_pool.node_count
-    postgresql_backup = {
-      configured_capacity_gib   = var.postgresql_backup.object_storage.max_size_gib
-      schedule                  = var.postgresql_backup.schedule
-      retention_days            = var.postgresql_backup.retention_days
-      database_volume_size_gib  = var.postgresql_backup.database_volume_size_gib
-      estimated_daily_wal_gib   = var.postgresql_backup.estimated_daily_wal_gib
-      capacity_headroom_percent = var.postgresql_backup.capacity_headroom_percent
-      required_capacity_gib     = var.postgresql_backup.required_capacity_gib
-    }
-  }))
 }
 
 resource "terraform_data" "postgresql_backup_contract" {
@@ -85,7 +74,11 @@ resource "terraform_data" "postgresql_backup_contract" {
     region                            = local.selected_target.region
     object_root                       = local.postgresql_backup_root
     writer_role                       = local.postgresql_backup_writer_role
-    writer_paths                      = [local.postgresql_backup_path_scope]
+    writer_paths                      = [local.postgresql_backup_writer_path_scope]
+    inventory_reader_roles            = local.postgresql_backup_inventory_roles
+    inventory_reader_paths            = [local.postgresql_backup_inventory_path_scope]
+    receipt_publisher_role            = local.postgresql_backup_receipt_role
+    receipt_publisher_paths           = [local.postgresql_backup_receipt_path_scope]
     lifecycle_rules                   = [for rule in local.postgresql_backup_lifecycle_rules : rule.id]
     secret_delivery                   = "MYSTERY_BOX"
   }
@@ -108,25 +101,6 @@ resource "terraform_data" "postgresql_backup_contract" {
         local.postgresql_backup_required_capacity_gib
       )
       error_message = "PostgreSQL backup storage is below the retention-aware base-backup, WAL and headroom requirement."
-    }
-    precondition {
-      condition = try(
-        var.sai06_capacity_approval != null &&
-        var.sai06_capacity_approval.project_id == nonsensitive(var.project_id) &&
-        var.sai06_capacity_approval.region == local.selected_target.region &&
-        var.sai06_capacity_approval.plan_binding_sha256 == local.postgresql_capacity_plan_binding &&
-        timecmp(var.sai06_capacity_approval.reviewed_at, timeadd(plantimestamp(), "5m")) <= 0 &&
-        timecmp(var.sai06_capacity_approval.reviewed_at, timeadd(plantimestamp(), "-24h")) >= 0 &&
-        timecmp(var.sai06_capacity_approval.valid_until, plantimestamp()) > 0 &&
-        timecmp(var.sai06_capacity_approval.valid_until, timeadd(var.sai06_capacity_approval.reviewed_at, "24h")) <= 0 &&
-        var.sai06_capacity_approval.effective_system_node_count == local.effective_system_pool.node_count &&
-        var.sai06_capacity_approval.system_node_ceiling >= local.effective_system_pool.node_count &&
-        var.sai06_capacity_approval.configured_storage_capacity_bytes == var.postgresql_backup.object_storage.max_size_gib * 1024 * 1024 * 1024 &&
-        var.sai06_capacity_approval.projected_storage_usage_bytes == var.sai06_capacity_approval.observed_storage_usage_bytes + var.sai06_capacity_approval.configured_storage_capacity_bytes &&
-        var.sai06_capacity_approval.storage_ceiling_bytes >= var.sai06_capacity_approval.projected_storage_usage_bytes,
-        false,
-      )
-      error_message = "PostgreSQL backup/system-pool planning requires a fresh project/region-bound numeric SAI-06 capacity receipt whose node and storage ceilings cover the exact effective demand."
     }
   }
 
@@ -167,6 +141,66 @@ resource "nebius_iam_v1_group_membership" "postgresql_backup_writer" {
   member_id = nebius_iam_v1_service_account.postgresql_backup[0].id
 }
 
+resource "nebius_iam_v1_service_account" "postgresql_backup_inventory" {
+  count = var.postgresql_backup.enabled ? 1 : 0
+
+  parent_id   = var.project_id
+  name        = "${local.resource_name}-postgresql-backup-inventory"
+  description = "Read-only PostgreSQL backup version inventory and receipt validator"
+  labels = merge(local.common_labels, {
+    purpose   = "postgresql-backup-inventory-reader"
+    retention = "durable"
+  })
+}
+
+resource "nebius_iam_v1_group" "postgresql_backup_inventory_readers" {
+  count = var.postgresql_backup.enabled ? 1 : 0
+
+  parent_id = var.project_id
+  name      = "${local.resource_name}-postgresql-backup-inventory-readers"
+  labels = merge(local.common_labels, {
+    purpose   = "postgresql-backup-inventory-read"
+    retention = "durable"
+  })
+}
+
+resource "nebius_iam_v1_group_membership" "postgresql_backup_inventory_reader" {
+  count = var.postgresql_backup.enabled ? 1 : 0
+
+  parent_id = nebius_iam_v1_group.postgresql_backup_inventory_readers[0].id
+  member_id = nebius_iam_v1_service_account.postgresql_backup_inventory[0].id
+}
+
+resource "nebius_iam_v1_service_account" "postgresql_restore_receipt" {
+  count = var.postgresql_backup.enabled ? 1 : 0
+
+  parent_id   = var.project_id
+  name        = "${local.resource_name}-postgresql-restore-receipt"
+  description = "Upload-only publisher for content-bound PostgreSQL restore receipts"
+  labels = merge(local.common_labels, {
+    purpose   = "postgresql-restore-receipt-publisher"
+    retention = "durable"
+  })
+}
+
+resource "nebius_iam_v1_group" "postgresql_restore_receipt_publishers" {
+  count = var.postgresql_backup.enabled ? 1 : 0
+
+  parent_id = var.project_id
+  name      = "${local.resource_name}-postgresql-restore-receipt-publishers"
+  labels = merge(local.common_labels, {
+    purpose   = "postgresql-restore-receipt-publish"
+    retention = "durable"
+  })
+}
+
+resource "nebius_iam_v1_group_membership" "postgresql_restore_receipt_publisher" {
+  count = var.postgresql_backup.enabled ? 1 : 0
+
+  parent_id = nebius_iam_v1_group.postgresql_restore_receipt_publishers[0].id
+  member_id = nebius_iam_v1_service_account.postgresql_restore_receipt[0].id
+}
+
 resource "nebius_storage_v1_bucket" "postgresql_backup" {
   count = var.postgresql_backup.enabled ? 1 : 0
 
@@ -181,17 +215,33 @@ resource "nebius_storage_v1_bucket" "postgresql_backup" {
     retention = "durable"
   })
   bucket_policy = {
-    rules = [{
-      group_id = nebius_iam_v1_group.postgresql_backup_writers[0].id
-      paths    = ["postgresql/v1/*"]
-      roles    = ["storage.object-editor"]
-    }]
+    rules = [
+      {
+        group_id = nebius_iam_v1_group.postgresql_backup_writers[0].id
+        paths    = [local.postgresql_backup_writer_path_scope]
+        roles    = [local.postgresql_backup_writer_role]
+      },
+      {
+        group_id = nebius_iam_v1_group.postgresql_backup_inventory_readers[0].id
+        paths    = [local.postgresql_backup_inventory_path_scope]
+        roles    = local.postgresql_backup_inventory_roles
+      },
+      {
+        group_id = nebius_iam_v1_group.postgresql_restore_receipt_publishers[0].id
+        paths    = [local.postgresql_backup_receipt_path_scope]
+        roles    = [local.postgresql_backup_receipt_role]
+      },
+    ]
   }
   lifecycle_configuration = {
     rules = local.postgresql_backup_lifecycle_rules
   }
 
-  depends_on = [nebius_iam_v1_group_membership.postgresql_backup_writer]
+  depends_on = [
+    nebius_iam_v1_group_membership.postgresql_backup_writer,
+    nebius_iam_v1_group_membership.postgresql_backup_inventory_reader,
+    nebius_iam_v1_group_membership.postgresql_restore_receipt_publisher,
+  ]
 
   lifecycle {
     prevent_destroy = true
@@ -212,6 +262,46 @@ resource "nebius_iam_v2_access_key" "postgresql_backup" {
   account = {
     service_account = {
       id = nebius_iam_v1_service_account.postgresql_backup[0].id
+    }
+  }
+
+  depends_on = [nebius_storage_v1_bucket.postgresql_backup]
+}
+
+resource "nebius_iam_v2_access_key" "postgresql_backup_inventory" {
+  count = var.postgresql_backup.enabled ? 1 : 0
+
+  parent_id            = var.project_id
+  name                 = "${local.resource_name}-postgresql-backup-inventory"
+  description          = "Read-only S3 key for PostgreSQL backup inventory metrics"
+  secret_delivery_mode = "MYSTERY_BOX"
+  labels = merge(local.common_labels, {
+    purpose   = "postgresql-backup-inventory-read"
+    retention = "durable"
+  })
+  account = {
+    service_account = {
+      id = nebius_iam_v1_service_account.postgresql_backup_inventory[0].id
+    }
+  }
+
+  depends_on = [nebius_storage_v1_bucket.postgresql_backup]
+}
+
+resource "nebius_iam_v2_access_key" "postgresql_restore_receipt" {
+  count = var.postgresql_backup.enabled ? 1 : 0
+
+  parent_id            = var.project_id
+  name                 = "${local.resource_name}-postgresql-restore-receipt"
+  description          = "Upload-only S3 key for content-bound restore receipts"
+  secret_delivery_mode = "MYSTERY_BOX"
+  labels = merge(local.common_labels, {
+    purpose   = "postgresql-restore-receipt-publish"
+    retention = "durable"
+  })
+  account = {
+    service_account = {
+      id = nebius_iam_v1_service_account.postgresql_restore_receipt[0].id
     }
   }
 
