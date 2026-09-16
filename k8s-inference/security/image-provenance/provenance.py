@@ -80,6 +80,7 @@ def render_allowlist(
     platform_repository_prefix: str,
     platform_digests: Sequence[str],
     deploy_principals: Sequence[str] = (),
+    namespaces: Sequence[str] = (),
 ) -> dict:
     """Render the admission allow-list ConfigMap consumed by policy.yaml."""
     if not registry_prefixes:
@@ -97,6 +98,9 @@ def render_allowlist(
     prefixes = [validate_registry_prefix(prefix) for prefix in registry_prefixes]
     platform_prefix = validate_registry_prefix(platform_repository_prefix)
     digests = sorted({validate_digest(digest) for digest in platform_digests})
+    for namespace in namespaces:
+        if not NAMESPACE_PATTERN.match(str(namespace)):
+            raise ProvenanceError(f"invalid namespace: {namespace!r}")
     return {
         "apiVersion": "v1",
         "kind": "ConfigMap",
@@ -114,6 +118,7 @@ def render_allowlist(
             "platform-repository-prefix": platform_prefix,
             "platform-digests": "\n".join(digests),
             "deploy-principals": "\n".join(sorted(set(deploy_principals))),
+            "namespaces": "\n".join(sorted(set(namespaces))),
         },
     }
 
@@ -252,7 +257,26 @@ def _read_evidence_bytes(path: Path, private: bool = True) -> bytes:
             if not chunk:
                 break
             chunks.append(chunk)
-        return b"".join(chunks)
+        payload = b"".join(chunks)
+        # Post-read stability: a same-inode overwrite during a multi-chunk
+        # read would yield mixed content that no single version ever had. The
+        # SAME descriptor is fstat-checked again and the inode must be
+        # byte-for-byte stable across the read, or the bytes are refused.
+        after = os.fstat(fd)
+        if (
+            len(payload) != status.st_size
+            or after.st_size != status.st_size
+            or after.st_mtime_ns != status.st_mtime_ns
+            or after.st_ctime_ns != status.st_ctime_ns
+            or after.st_nlink != status.st_nlink
+            or after.st_mode != status.st_mode
+            or after.st_uid != status.st_uid
+        ):
+            raise ProvenanceError(
+                f"evidence file changed while being read: {path}; torn or "
+                "concurrently rewritten evidence is refused"
+            )
+        return payload
     finally:
         os.close(fd)
 
@@ -268,7 +292,7 @@ class _PinnedPublicKey:
 
     def __init__(self, public_key_path: str) -> None:
         self._source = Path(public_key_path)
-        self._holder = None
+        self._holder: tempfile.TemporaryDirectory[str] | None = None
         self.path = ""
         self.sha256 = ""
 
@@ -682,6 +706,10 @@ def _package_names_exact_digest(package: dict, digest_hex: str) -> bool:
 def _validated_spdx_document(digest: str, sbom_path: Path) -> dict:
     """Parse, shape-check, and exactly subject-bind a standalone SPDX document.
 
+    `digest` is the exact linux/amd64 RUNTIME manifest digest: for a
+    multi-platform image the document must name the manifest that actually
+    runs, never the top index, whose digest also covers foreign platforms.
+
     The document is read exactly once through the anomaly-checked O_NOFOLLOW
     reader; the SAME byte string is parsed and hashed into the receipt, so a
     pathname swap between parsing and hashing cannot record a hash for bytes
@@ -975,7 +1003,9 @@ def create_release_receipt(
         reference, top, amd64_digest, capture
     )
     if sbom_evidence is None and sbom_path is not None:
-        sbom_evidence = _validated_spdx_document(digest, Path(sbom_path))
+        # The runtime identity is the exact linux/amd64 manifest, not the
+        # multi-platform index: a standalone document must name IT.
+        sbom_evidence = _validated_spdx_document(amd64_digest, Path(sbom_path))
     if sbom_evidence is None:
         raise ProvenanceError(
             f"image {reference} carries no validated in-toto SPDX attestation "
@@ -1139,16 +1169,28 @@ def _publish_receipt(
             ]
         )
         staged_signature.chmod(0o600)
-        # The complete artifact pair is verified before publication.
-        capture(
-            receipt_verify_blob_command(
-                public_key_path, staged_receipt, staged_signature
-            )
-        )
+        # One read of the staged pair; the signature is verified over EXACTLY
+        # those bytes via private scratch copies (never by re-reading the
+        # staging pathnames), and the files that get published are written
+        # fresh from the verified bytes — a swap of the staging pathname
+        # between verification and publication can publish nothing.
         staged_receipt_bytes = _read_evidence_bytes(staged_receipt)
         staged_signature_bytes = _read_evidence_bytes(staged_signature)
-        _fsync_file(staged_receipt)
-        _fsync_file(staged_signature)
+        _verify_blob_bytes(
+            public_key_path,
+            staged_receipt_bytes,
+            staged_signature_bytes,
+            lambda command: capture(command),
+            f"staged receipt of {reference}",
+        )
+        publish_receipt = staging / "publish.json"
+        publish_signature = staging / "publish.json.sig"
+        publish_receipt.write_bytes(staged_receipt_bytes)
+        publish_receipt.chmod(0o600)
+        publish_signature.write_bytes(staged_signature_bytes)
+        publish_signature.chmod(0o600)
+        _fsync_file(publish_receipt)
+        _fsync_file(publish_signature)
         _fsync_dir(staging)
         try:
             os.mkdir(final_dir, mode=0o700)
@@ -1160,15 +1202,20 @@ def _publish_receipt(
             return _existing_receipt_or_conflict(
                 run_root, final_dir, reference, receipt, public_key_path, capture
             )
-        os.link(staged_receipt, final_dir / "receipt.json")
-        os.link(staged_signature, final_dir / "receipt.json.sig")
+        os.link(publish_receipt, final_dir / "receipt.json")
+        os.link(publish_signature, final_dir / "receipt.json.sig")
         _fsync_dir(final_dir)
         _fsync_dir(parent)
         # Release the staging names first so the published files are
         # single-linked, then verify the winner: the bytes now published
         # must be exactly the verified staged bytes.
-        staged_receipt.unlink()
-        staged_signature.unlink()
+        for leftover in (
+            staged_receipt,
+            staged_signature,
+            publish_receipt,
+            publish_signature,
+        ):
+            leftover.unlink()
         staging.rmdir()
         published_receipt = _read_evidence_bytes(final_dir / "receipt.json")
         published_signature = _read_evidence_bytes(final_dir / "receipt.json.sig")
@@ -1348,7 +1395,7 @@ def validate_receipt_binding(
         and bool(SHA256_PATTERN.match(statement_sha))
         and spdx_layer == f"sha256:{statement_sha}"
     )
-    spdx_bound = bool(SHA256_PATTERN.match(spdx)) and spdx_subject == digest
+    spdx_bound = bool(SHA256_PATTERN.match(spdx)) and spdx_subject == amd64_digest
     if not attestation_bound and not spdx_bound:
         raise ProvenanceError(
             f"release receipt for {reference} lacks SBOM evidence bound to the "
@@ -1417,7 +1464,7 @@ def validate_receipt_binding(
         described = _validate_spdx_shape(
             document, f"retained SPDX evidence for {reference}"
         )
-        digest_hex = digest.split(":", 1)[1]
+        digest_hex = live_amd64.split(":", 1)[1]
         if not any(
             _package_names_exact_digest(package, digest_hex)
             for package in described
@@ -1488,7 +1535,9 @@ def load_bound_receipt(
     return receipt
 
 
-INVENTORY_SCHEMA = "fs2-serve.nebius.ai/release-inventory/v3"
+INVENTORY_SCHEMA = "fs2-serve.nebius.ai/release-inventory/v4"
+COLLECTOR_METHOD = "fs2-live-enumeration/v1"
+INVENTORY_CHECKPOINT_SCHEMA = "fs2-serve.nebius.ai/inventory-checkpoint/v1"
 SCOPE_SCHEMA = "fs2-serve.nebius.ai/release-scope/v1"
 INVENTORY_SOURCES = (
     "live_workloads",
@@ -1591,13 +1640,85 @@ def _validated_scope(value, context: str) -> dict:
     return value
 
 
+def _assert_policy_matches_scope(
+    owner_scope: dict, policy_path: Path | None = None
+) -> None:
+    """The signed/approved namespaces must equal the ACTUAL policy coverage.
+
+    The VAP binding hardcodes its namespaceSelector: a scope naming a
+    namespace the committed policy does not match (or vice versa) would make
+    the recorded coverage a lie, so the renderer compares the owner scope's
+    namespaces with every binding's selector in the committed policy.yaml and
+    refuses any difference. The policy itself additionally validates at
+    admission time that the request namespace is listed in the rendered
+    ConfigMap, so a drifted binding fails closed in the cluster too.
+    """
+    if policy_path is None:
+        policy_path = Path(__file__).resolve().parent / "policy.yaml"
+    try:
+        import yaml
+    except ImportError as error:  # pragma: no cover - environment guard
+        raise ProvenanceError(
+            "PyYAML is required to prove the admission policy matches the "
+            "owner scope; rendering fails closed"
+        ) from error
+    try:
+        documents = [
+            document
+            for document in yaml.safe_load_all(
+                _read_evidence_bytes(policy_path, private=False)
+            )
+            if document
+        ]
+    except yaml.YAMLError as error:
+        raise ProvenanceError(
+            f"cannot parse the committed admission policy: {policy_path}"
+        ) from error
+    binding_namespaces: list[list[str]] = []
+    for document in documents:
+        if document.get("kind") != "ValidatingAdmissionPolicyBinding":
+            continue
+        # The image-provenance binding IS the coverage the scope claims; the
+        # Helm-release-Secret compensating binding intentionally targets only
+        # the namespace where Helm stores release Secrets.
+        if document.get("spec", {}).get("policyName") != "fs2-image-provenance":
+            continue
+        expressions = (
+            document.get("spec", {})
+            .get("matchResources", {})
+            .get("namespaceSelector", {})
+            .get("matchExpressions", [])
+        )
+        for expression in expressions:
+            if expression.get("key") == "kubernetes.io/metadata.name":
+                binding_namespaces.append(sorted(expression.get("values") or []))
+    if not binding_namespaces:
+        raise ProvenanceError(
+            f"no namespace-bound admission policy binding found in "
+            f"{policy_path}; rendering fails closed"
+        )
+    expected = sorted(owner_scope["namespaces"])
+    for namespaces in binding_namespaces:
+        if namespaces != expected:
+            raise ProvenanceError(
+                f"the committed admission policy binding matches namespaces "
+                f"{namespaces}, but the owner-approved scope names "
+                f"{expected}; the claimed coverage must equal the enforced "
+                "coverage exactly — align the scope or the policy"
+            )
+
+
 def load_owner_scope(scope_path: Path) -> dict:
-    """Load the committed owner-approved admission scope, fail-closed.
+    """Load the owner-approved admission scope from the REVIEWED Git object.
 
     Allow-list rendering is impossible until the owner commits the exact
     scope (cluster, namespaces, prefixes, principals, key identity) through
-    review: an absent, empty, or malformed scope refuses rendering, so a
-    signer can never substitute their own coverage decisions.
+    review. The scope bytes are loaded from the blob at
+    refs/remotes/origin/main — never from the working tree, which any local
+    process can edit, and never from a local commit, which nobody reviewed —
+    so a signer can never substitute their own coverage decisions and then
+    sign a matching inventory. A working-tree copy that diverges from the
+    reviewed blob fails closed: it signals exactly that substitution.
     """
     if not scope_path.is_file() or scope_path.is_symlink():
         raise ProvenanceError(
@@ -1606,7 +1727,44 @@ def load_owner_scope(scope_path: Path) -> dict:
             "admission scope"
         )
     try:
-        document = json.loads(_read_evidence_bytes(scope_path, private=False))
+        repo_root = Path(
+            _run_capture(
+                [
+                    "git",
+                    "-C",
+                    str(scope_path.resolve().parent),
+                    "rev-parse",
+                    "--show-toplevel",
+                ]
+            ).strip()
+        )
+        relative = scope_path.resolve().relative_to(repo_root).as_posix()
+        blob = _run_capture(
+            [
+                "git",
+                "-C",
+                str(repo_root),
+                "cat-file",
+                "blob",
+                f"refs/remotes/origin/main:{relative}",
+            ]
+        ).encode("utf-8")
+    except (subprocess.CalledProcessError, ValueError, OSError) as error:
+        raise ProvenanceError(
+            f"owner release scope at {scope_path} is not a REVIEWED object on "
+            "origin/main; allow-list rendering fails closed until the exact "
+            "scope has been through review"
+        ) from error
+    working = _read_evidence_bytes(scope_path, private=False)
+    if working != blob:
+        raise ProvenanceError(
+            f"owner release scope at {scope_path} diverges from the reviewed "
+            "origin/main object and fails closed; a dirty or locally-"
+            "committed scope never authorizes rendering — restore it and "
+            "route scope changes through review"
+        )
+    try:
+        document = json.loads(blob)
     except json.JSONDecodeError as error:
         raise ProvenanceError(
             f"owner release scope is malformed and fails closed: {scope_path}"
@@ -1698,6 +1856,23 @@ def load_signed_inventory(
     if not CLUSTER_PATTERN.match(str(inventory.get("cluster", ""))):
         raise ProvenanceError(
             f"{inventory_path} lacks an exact valid cluster identity"
+        )
+    collector = inventory.get("collector")
+    if (
+        not isinstance(collector, dict)
+        or set(collector) != {"method", "identity"}
+        or collector.get("method") != COLLECTOR_METHOD
+        or not PRINCIPAL_PATTERN.match(str(collector.get("identity", "")))
+    ):
+        raise ProvenanceError(
+            f"{inventory_path} needs a typed authoritative collector: "
+            f"{{method: {COLLECTOR_METHOD}, identity: <authenticated user>}}"
+        )
+    generation = inventory.get("generation")
+    if isinstance(generation, bool) or not isinstance(generation, int) or generation < 1:
+        raise ProvenanceError(
+            f"{inventory_path} needs a positive integer generation so an "
+            "older signed inventory can never replay over a newer one"
         )
     scope = _validated_scope(
         inventory.get("scope"), f"{inventory_path} scope"
@@ -1813,6 +1988,174 @@ def load_signed_inventory(
     return inventory, hashlib.sha256(inventory_bytes).hexdigest()
 
 
+def collect_live_platform_images(
+    namespaces: Sequence[str],
+    platform_repository_prefix: str,
+    runner=_run_capture,
+) -> tuple[str, set[str], list[str]]:
+    """Authoritatively enumerate live platform images through the cluster API.
+
+    Returns (authenticated identity, digest-pinned platform image references,
+    the pod resource identities they were observed on). This is the
+    render-time collector: the signed inventory's live_workloads must equal
+    exactly what the AUTHENTICATED API session sees right now — a signer
+    cannot omit an active sibling image (e.g. live MindEval) or self-assert
+    resource identities. Any failure (no kubectl, no access, an unpinned live
+    platform image) fails closed.
+    """
+    try:
+        whoami = json.loads(runner(["kubectl", "auth", "whoami", "-o", "json"]))
+        identity = str(
+            (whoami.get("status") or {}).get("userInfo", {}).get("username", "")
+        )
+        if not PRINCIPAL_PATTERN.match(identity):
+            raise ProvenanceError(
+                "authenticated live enumeration returned no usable identity; "
+                "rendering fails closed"
+            )
+        images: set[str] = set()
+        resources: set[str] = set()
+        for namespace in namespaces:
+            listing = json.loads(
+                runner(["kubectl", "get", "pods", "-n", namespace, "-o", "json"])
+            )
+            for pod in listing.get("items") or []:
+                name = str((pod.get("metadata") or {}).get("name", ""))
+                spec = pod.get("spec") or {}
+                for field in (
+                    "containers",
+                    "initContainers",
+                    "ephemeralContainers",
+                ):
+                    for container in spec.get(field) or []:
+                        image = str(container.get("image", ""))
+                        if not image.startswith(platform_repository_prefix):
+                            continue
+                        try:
+                            images.add(validate_digest_reference(image))
+                        except ProvenanceError as error:
+                            raise ProvenanceError(
+                                f"live platform image {image!r} in pod "
+                                f"{namespace}/{name} is not digest-pinned; "
+                                "it can never be allow-listed — rendering "
+                                "fails closed"
+                            ) from error
+                        resources.add(f"pod/{namespace}/{name}")
+    except (subprocess.CalledProcessError, OSError, json.JSONDecodeError) as error:
+        raise ProvenanceError(
+            "authenticated live enumeration is unavailable; the allow-list "
+            "renders only against a live authoritative collection — "
+            "rendering fails closed"
+        ) from error
+    return identity, images, sorted(resources)
+
+
+def _inventory_checkpoint_path(run_root: Path) -> Path:
+    return run_root / "release-inventory-checkpoint.json"
+
+
+def _read_inventory_checkpoint(run_root: Path) -> dict | None:
+    """Read the local monotonic acceptance checkpoint, fail-closed.
+
+    The checkpoint is anti-replay state EXTERNAL to the signed document: it
+    records the last ACCEPTED inventory's generation, capture time, and byte
+    hash, so a previously valid signed inventory (old -> new -> old within
+    the freshness window) can never be replayed. It is local mutable state —
+    WORM/off-host anchoring of the checkpoint is the same owner
+    infrastructure item as for the gate history.
+    """
+    checkpoint_path = _inventory_checkpoint_path(run_root)
+    if checkpoint_path.is_symlink():
+        raise ProvenanceError(
+            f"inventory checkpoint is a symlink: {checkpoint_path}"
+        )
+    if not checkpoint_path.exists():
+        return None
+    try:
+        checkpoint = json.loads(_read_evidence_bytes(checkpoint_path))
+    except json.JSONDecodeError as error:
+        raise ProvenanceError(
+            f"inventory checkpoint is malformed and fails closed: "
+            f"{checkpoint_path}"
+        ) from error
+    generation = checkpoint.get("generation") if isinstance(checkpoint, dict) else None
+    if (
+        not isinstance(checkpoint, dict)
+        or checkpoint.get("schema") != INVENTORY_CHECKPOINT_SCHEMA
+        or isinstance(generation, bool)
+        or not isinstance(generation, int)
+        or generation < 1
+        or not SHA256_PATTERN.match(str(checkpoint.get("sha256", "")))
+    ):
+        raise ProvenanceError(
+            f"inventory checkpoint is malformed and fails closed: "
+            f"{checkpoint_path}"
+        )
+    _parse_rfc3339(
+        str(checkpoint.get("captured_at", "")), f"{checkpoint_path} captured_at"
+    )
+    return checkpoint
+
+
+def _enforce_inventory_monotonicity(
+    run_root: Path, inventory: dict, inventory_sha256: str, inventory_path: Path
+) -> None:
+    checkpoint = _read_inventory_checkpoint(run_root)
+    if checkpoint is None:
+        return
+    generation = inventory["generation"]
+    if generation > checkpoint["generation"]:
+        newer = _parse_rfc3339(
+            str(inventory.get("captured_at", "")), f"{inventory_path} captured_at"
+        )
+        accepted = _parse_rfc3339(
+            str(checkpoint.get("captured_at", "")), "checkpoint captured_at"
+        )
+        if newer < accepted:
+            raise ProvenanceError(
+                f"{inventory_path} generation {generation} was captured "
+                "BEFORE the last accepted inventory; a rewound capture never "
+                "advances the checkpoint"
+            )
+        return
+    if (
+        generation == checkpoint["generation"]
+        and inventory_sha256 == checkpoint["sha256"]
+    ):
+        return
+    raise ProvenanceError(
+        f"{inventory_path} replays generation {generation}; the accepted "
+        f"checkpoint is at generation {checkpoint['generation']} "
+        f"(sha256 {checkpoint['sha256'][:12]}…) — a previously valid signed "
+        "inventory can never be replayed over a newer one"
+    )
+
+
+def _advance_inventory_checkpoint(
+    run_root: Path, inventory: dict, inventory_sha256: str
+) -> None:
+    checkpoint_path = _inventory_checkpoint_path(run_root)
+    payload = json.dumps(
+        {
+            "schema": INVENTORY_CHECKPOINT_SCHEMA,
+            "generation": inventory["generation"],
+            "captured_at": inventory["captured_at"],
+            "sha256": inventory_sha256,
+        },
+        indent=2,
+        sort_keys=True,
+    )
+    descriptor, temp_name = tempfile.mkstemp(dir=run_root, prefix=".inv-cp-")
+    try:
+        os.write(descriptor, payload.encode("utf-8"))
+        os.fchmod(descriptor, 0o600)
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    os.replace(temp_name, checkpoint_path)
+    _fsync_dir(run_root)
+
+
 def verified_allowlist(
     public_key_path: str,
     references: Sequence[str],
@@ -1825,6 +2168,7 @@ def verified_allowlist(
     verifier=None,
     max_age_hours: float = INVENTORY_MAX_AGE_HOURS,
     capture=_run_capture,
+    live_runner=_run_capture,
 ) -> dict:
     """Render the allow-list only from the signed inventory + owner scope.
 
@@ -1861,6 +2205,9 @@ def verified_allowlist(
         inventory, inventory_sha256 = load_signed_inventory(
             inventory_path, pinned.path, verifier, max_age_hours
         )
+        _enforce_inventory_monotonicity(
+            receipts_root, inventory, inventory_sha256, inventory_path
+        )
         if inventory["scope"] != owner_scope:
             raise ProvenanceError(
                 f"{inventory_path} scope does not equal the owner-approved "
@@ -1881,6 +2228,36 @@ def verified_allowlist(
             raise ProvenanceError(
                 "--deploy-principal arguments must equal the owner-approved "
                 f"scope exactly: {sorted(owner_scope['deploy_principals'])}"
+            )
+        # Authoritative render-time collection: the signed live_workloads set
+        # must equal exactly what the authenticated API session sees NOW, so
+        # a signer can never omit an active image or self-assert coverage.
+        collector_identity, live_images, live_resources = (
+            collect_live_platform_images(
+                owner_scope["namespaces"],
+                owner_scope["platform_repository_prefix"],
+                live_runner,
+            )
+        )
+        recorded_live = {
+            validate_digest_reference(str(ref))
+            for ref in inventory["sources"]["live_workloads"]["refs"]
+        }
+        if recorded_live != live_images:
+            omitted = sorted(live_images - recorded_live)
+            phantom = sorted(recorded_live - live_images)
+            raise ProvenanceError(
+                f"{inventory_path} live_workloads does not equal the "
+                "authenticated live enumeration; omitted live images: "
+                f"{omitted or 'none'}; recorded-but-not-live: "
+                f"{phantom or 'none'} — re-capture the inventory"
+            )
+        if inventory["collector"]["identity"] != collector_identity:
+            raise ProvenanceError(
+                f"{inventory_path} collector identity "
+                f"{inventory['collector']['identity']!r} does not equal the "
+                f"authenticated identity {collector_identity!r}; a foreign or "
+                "self-asserted collection never renders"
             )
         inventory_references = sorted(
             validate_digest_reference(str(ref))
@@ -1919,11 +2296,13 @@ def verified_allowlist(
                     "before allow-listing"
                 ) from error
             digests.append(reference.rsplit("@", 1)[1])
+        _assert_policy_matches_scope(owner_scope)
         manifest = render_allowlist(
             owner_scope["registry_prefixes"],
             owner_scope["platform_repository_prefix"],
             digests,
             owner_scope["deploy_principals"],
+            owner_scope["namespaces"],
         )
         annotations = manifest["metadata"].setdefault("annotations", {})
         annotations["security.fs2.nebius.ai/verified-with-key-sha256"] = (
@@ -1935,6 +2314,18 @@ def verified_allowlist(
         ]
         annotations["security.fs2.nebius.ai/scope-namespaces"] = ",".join(
             owner_scope["namespaces"]
+        )
+        annotations["security.fs2.nebius.ai/inventory-generation"] = str(
+            inventory["generation"]
+        )
+        annotations["security.fs2.nebius.ai/collector-identity"] = (
+            collector_identity
+        )
+        annotations["security.fs2.nebius.ai/live-resources"] = str(
+            len(live_resources)
+        )
+        _advance_inventory_checkpoint(
+            receipts_root, inventory, inventory_sha256
         )
     return manifest
 

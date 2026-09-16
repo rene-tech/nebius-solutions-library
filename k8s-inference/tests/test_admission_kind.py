@@ -71,6 +71,7 @@ class KindAdmissionTest(unittest.TestCase):
             f"--from-literal=platform-repository-prefix={PLATFORM_PREFIX}",
             f"--from-literal=platform-digests={PLATFORM_DIGEST}",
             "--from-literal=deploy-principals=kubernetes-admin",
+            "--from-literal=namespaces=fs2-system\nfs2-models",
         )
         cls._await_policy_active()
         pod = {

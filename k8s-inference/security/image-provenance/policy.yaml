@@ -114,7 +114,19 @@ spec:
         ('platform-digests' in params.data
          ? params.data['platform-digests'] : '')
         .split("\n").filter(d, d != '')
+    - name: allowedNamespaces
+      expression: >-
+        ('namespaces' in params.data
+         ? params.data['namespaces'] : '')
+        .split("\n").filter(n, n != '')
   validations:
+    - expression: >-
+        variables.allowedNamespaces.exists(n, n == request.namespace)
+      message: >-
+        this namespace is not part of the owner-approved release scope
+        recorded in fs2-image-provenance-allowlist; the signed scope and the
+        enforced coverage must be identical (SAI-09)
+      reason: Forbidden
     - expression: >-
         variables.images.all(i, i.matches('^.+@sha256:[0-9a-f]{64}$'))
       message: >-

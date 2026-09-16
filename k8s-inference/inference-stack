@@ -220,51 +220,98 @@ RELEASE_APPROVERS_SCHEMA = "fs2-serve.nebius.ai/release-approvers/v1"
 RELEASE_EXCEPTION_SCOPE = "release-source-exception"
 
 
-def _release_approvers(repository_root: Path | None) -> list[dict[str, Any]]:
-    """Owner-designated release-exception approvers from reviewed source.
+def _reviewed_authority_blob(
+    root: Path, repository_paths: Sequence[str]
+) -> tuple[str, bytes] | None:
+    """Fetch an authority file's bytes from the REVIEWED Git object.
 
-    Each approver entry names an identity, a scope, and an expiry, and the
-    list lives in Git so changes to approval authority are themselves
-    reviewed. An empty or absent list fails closed: no exception is possible
-    until the owner designates approvers. Authenticating the caller AS one of
-    these identities remains the owner-gated IAM item.
+    Authority (approver lists, scope) must never load from the working tree:
+    a dirty checkout — the exact state an exception override exists for —
+    could otherwise grant its own authority. The bytes come from the blob at
+    `refs/remotes/origin/main`, the reviewed ref; a local commit cannot move
+    it and a dirty file cannot change it.
     """
-    candidates = []
-    if repository_root is not None:
-        candidates.append(
-            repository_root
-            / "k8s-inference"
-            / "security"
-            / "image-provenance"
-            / "release-approvers.json"
-        )
-        candidates.append(
-            repository_root / "security" / "image-provenance" / "release-approvers.json"
-        )
-    else:
-        candidates.append(
-            SOLUTION_ROOT / "security" / "image-provenance" / "release-approvers.json"
-        )
-    for candidate in candidates:
-        if not candidate.is_file():
-            continue
+    for repository_path in repository_paths:
         try:
-            document = json.loads(candidate.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
+            blob = run(
+                [
+                    "git",
+                    "-C",
+                    str(root),
+                    "cat-file",
+                    "blob",
+                    f"refs/remotes/origin/main:{repository_path}",
+                ],
+                capture=True,
+                env=clean_environment(),
+            ).stdout
+        except DeploymentError:
+            continue
+        return repository_path, blob.encode("utf-8")
+    return None
+
+
+def _release_approvers(repository_root: Path | None) -> list[dict[str, Any]]:
+    """Owner-designated release-exception approvers from the REVIEWED object.
+
+    Each approver entry names an identity, a scope, and an expiry. The list
+    is loaded from the blob at origin/main — never from the working tree or a
+    local commit — so an exception can never authorize its own authority
+    mutation: a dirty edit or unpushed commit of the approver file cannot add
+    an approver. A working-tree copy that diverges from the reviewed blob
+    fails the override CLOSED (it signals exactly the self-bootstrap attack),
+    and an empty or absent reviewed list means exceptions are impossible.
+    Authenticating the caller AS one of these identities remains the
+    owner-gated IAM item.
+    """
+    root = repository_root or SOLUTION_ROOT
+    authority = _reviewed_authority_blob(
+        root,
+        (
+            "k8s-inference/security/image-provenance/release-approvers.json",
+            "security/image-provenance/release-approvers.json",
+        ),
+    )
+    if authority is None:
+        return []
+    repository_path, blob = authority
+    # The working-tree copy may live at the blob's repo path or directly
+    # under the checkout root, depending on the checkout layout.
+    tail = Path("security/image-provenance/release-approvers.json")
+    candidates = [root / repository_path]
+    if root / tail not in candidates:
+        candidates.append(root / tail)
+    for worktree_copy in candidates:
+        if worktree_copy.is_symlink():
             raise DeploymentError(
-                f"release approver list is malformed and fails closed: {candidate}"
-            ) from exc
-        if (
-            not isinstance(document, dict)
-            or document.get("schema") != RELEASE_APPROVERS_SCHEMA
-            or not isinstance(document.get("approvers"), list)
-            or not all(isinstance(entry, dict) for entry in document["approvers"])
-        ):
-            raise DeploymentError(
-                f"release approver list is malformed and fails closed: {candidate}"
+                f"release approver list is a symlink and fails closed: "
+                f"{worktree_copy}"
             )
-        return document["approvers"]
-    return []
+        if worktree_copy.is_file() and worktree_copy.read_bytes() != blob:
+            raise DeploymentError(
+                f"release approver list at {worktree_copy} diverges from the "
+                "reviewed origin/main object; a dirty or locally-committed "
+                "authority file NEVER grants exception authority — restore "
+                "it and route approver changes through review"
+            )
+    try:
+        document = json.loads(blob)
+    except json.JSONDecodeError as exc:
+        raise DeploymentError(
+            "the reviewed release approver list is malformed and fails "
+            f"closed: origin/main:{repository_path}"
+        ) from exc
+    if (
+        not isinstance(document, dict)
+        or document.get("schema") != RELEASE_APPROVERS_SCHEMA
+        or not isinstance(document.get("approvers"), list)
+        or not all(isinstance(entry, dict) for entry in document["approvers"])
+    ):
+        raise DeploymentError(
+            "the reviewed release approver list is malformed and fails "
+            f"closed: origin/main:{repository_path}"
+        )
+    return document["approvers"]
 
 
 def _authorized_exception_approver(
@@ -695,13 +742,57 @@ def _open_evidence_descriptor(path: Path) -> int:
         os.close(dir_fd)
 
 
-def _sha256_file(path: Path) -> str:
+def _read_evidence_file(path: Path) -> bytes:
+    """Read private evidence with a secure walk and pre/post fstat stability.
+
+    The OPEN descriptor must be a regular, single-linked, caller-owned file
+    with no group/other access, and it must be byte-for-byte stable across
+    the read: a same-inode overwrite during a multi-chunk read yields mixed
+    content no single version ever had, so any size/mtime/ctime/nlink/mode
+    change between the pre- and post-read fstat refuses the bytes.
+    """
     descriptor = _open_evidence_descriptor(path)
-    digest = hashlib.sha256()
-    with os.fdopen(descriptor, "rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    try:
+        before = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_nlink != 1
+            or before.st_uid != os.getuid()
+            or before.st_mode & 0o077
+        ):
+            raise DeploymentError(
+                f"evidence file is anomalous (non-regular, hardlinked, "
+                f"foreign-owned, or group/other accessible) and fails "
+                f"closed: {path}"
+            )
+        chunks = []
+        while True:
+            chunk = os.read(descriptor, 1 << 20)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        payload = b"".join(chunks)
+        after = os.fstat(descriptor)
+        if (
+            len(payload) != before.st_size
+            or after.st_size != before.st_size
+            or after.st_mtime_ns != before.st_mtime_ns
+            or after.st_ctime_ns != before.st_ctime_ns
+            or after.st_nlink != before.st_nlink
+            or after.st_mode != before.st_mode
+            or after.st_uid != before.st_uid
+        ):
+            raise DeploymentError(
+                f"evidence file changed while being read: {path}; torn or "
+                "concurrently rewritten evidence is refused"
+            )
+        return payload
+    finally:
+        os.close(descriptor)
+
+
+def _sha256_file(path: Path) -> str:
+    return hashlib.sha256(_read_evidence_file(path)).hexdigest()
 
 
 def release_anchor_store(run_root: Path) -> Path:
@@ -718,21 +809,10 @@ def _read_release_anchors(run_root: Path) -> dict[str, Any]:
     # DESCRIPTOR is fstat-checked; a malformed or anomalous store fails
     # closed: silently treating it as empty would let corruption erase
     # recorded release evidence.
-    descriptor = _open_evidence_descriptor(store)
-    with os.fdopen(descriptor, "rb") as handle:
-        status = os.fstat(handle.fileno())
-        if (
-            not stat.S_ISREG(status.st_mode)
-            or status.st_nlink != 1
-            or status.st_uid != os.getuid()
-            or status.st_mode & 0o077
-        ):
-            raise DeploymentError(
-                f"release anchor store is anomalous (non-regular, hardlinked, "
-                f"foreign-owned, or group/other accessible) and fails closed: "
-                f"{store}; restore it from backup before anchoring or deploying"
-            )
-        data = handle.read()
+    try:
+        data = _read_evidence_file(store)
+    except DeploymentError as exc:
+        raise DeploymentError(f"{exc}; the anchor store fails closed") from exc
     try:
         value = json.loads(data)
     except json.JSONDecodeError as exc:
@@ -773,19 +853,7 @@ def _verified_bundle_snapshot(
     pathname swap between hashing and git use cannot make the verified bytes
     differ from the bytes git consumes.
     """
-    descriptor = _open_evidence_descriptor(bundle)
-    with os.fdopen(descriptor, "rb") as handle:
-        status = os.fstat(handle.fileno())
-        if (
-            not stat.S_ISREG(status.st_mode)
-            or status.st_nlink != 1
-            or status.st_uid != os.getuid()
-        ):
-            raise DeploymentError(
-                f"anchor bundle is anomalous (non-regular, hardlinked, or "
-                f"foreign-owned) and fails closed: {bundle}"
-            )
-        data = handle.read()
+    data = _read_evidence_file(bundle)
     if hashlib.sha256(data).hexdigest() != expected_sha256:
         raise DeploymentError(
             f"anchor bundle no longer matches its recorded SHA-256: {bundle}; "
@@ -1049,8 +1117,10 @@ def create_release_anchor(
             # target exists, so there is no check-then-rename window in which
             # injected content could be silently overwritten. On a collision
             # the surviving file is fully re-verified before it is trusted.
+            published = False
             try:
                 os.link(candidate, bundle)
+                published = True
             except FileExistsError:
                 if bundle.is_symlink():
                     raise DeploymentError(
@@ -1074,12 +1144,13 @@ def create_release_anchor(
                     ) from exc
             else:
                 fsync_directory(bundle_directory)
-                # Re-verify the published winner, not the staging copy.
-                if _sha256_file(bundle) != bundle_sha:
-                    raise DeploymentError(
-                        f"published anchor bundle changed during publication: "
-                        f"{bundle}; refusing to index it"
-                    )
+        # Staging is cleaned first so the published winner is single-linked,
+        # then the winner is re-verified at the published path.
+        if published and _sha256_file(bundle) != bundle_sha:
+            raise DeploymentError(
+                f"published anchor bundle changed during publication: "
+                f"{bundle}; refusing to index it"
+            )
         entry = {
             "bundle_path": str(bundle),
             "sha256": bundle_sha,

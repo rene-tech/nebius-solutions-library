@@ -109,7 +109,14 @@ provenance gate (see `security/image-provenance/README.md`):
    (`security/image-provenance/release-scope.json` — ships EMPTY, so
    rendering fails closed until the owner ratifies the exact cluster,
    namespaces, prefixes, principals, and key identity; the signed inventory
-   and every CLI argument must equal it exactly). An active-live image can
+   and every CLI argument must equal it exactly). Scope and exception-approver
+   authority load from the reviewed `origin/main` blob only — dirty or
+   locally-committed authority files fail closed. The inventory carries a
+   strictly monotonic generation checked against an external checkpoint (no
+   replay of older signed inventories), and rendering re-enumerates live
+   platform images through the authenticated cluster API: the signed
+   `live_workloads` must equal that enumeration exactly, so an active image
+   can never be omitted. An active-live image can
    never be drained out — it must be receipted and signed, or the admission
    policy's match scope must be changed by owner decision; drains apply only
    to audited non-live entries. Extras, missing entries, stale or

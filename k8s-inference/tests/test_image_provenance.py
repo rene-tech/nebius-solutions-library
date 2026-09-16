@@ -141,6 +141,7 @@ class PolicyManifestTest(unittest.TestCase):
                 "platform-repository-prefix",
                 "platform-digests",
                 "deploy-principals",
+                "namespaces",
             )
             if f"params.data['{key}']" in variable_expressions
         }
@@ -172,11 +173,16 @@ class PolicyManifestTest(unittest.TestCase):
             validation["expression"]
             for validation in self.policy["spec"]["validations"]
         ]
-        self.assertEqual(len(expressions), 3)
-        self.assertIn("@sha256:[0-9a-f]{64}", expressions[0])
-        self.assertIn("registryPrefixes.exists", expressions[1])
-        self.assertIn("platformDigests.exists", expressions[2])
-        self.assertIn("!i.startsWith(variables.platformRepositoryPrefix)", expressions[2])
+        self.assertEqual(len(expressions), 4)
+        # The request namespace must be part of the owner-approved scope
+        # recorded in the rendered allow-list, so claimed and enforced
+        # coverage can never drift apart silently.
+        self.assertIn("allowedNamespaces.exists", expressions[0])
+        self.assertIn("request.namespace", expressions[0])
+        self.assertIn("@sha256:[0-9a-f]{64}", expressions[1])
+        self.assertIn("registryPrefixes.exists", expressions[2])
+        self.assertIn("platformDigests.exists", expressions[3])
+        self.assertIn("!i.startsWith(variables.platformRepositoryPrefix)", expressions[3])
         for validation in self.policy["spec"]["validations"]:
             self.assertIn("SAI-09", validation["message"])
             self.assertEqual(validation["reason"], "Forbidden")
@@ -275,7 +281,16 @@ def build_anchor_fixture(base: Path) -> dict:
     )
     git(repo, "config", "user.email", "fixture@example.invalid")
     git(repo, "config", "user.name", "Fixture")
+    origin = base / "origin.git"
+    sp.run(
+        ["git", "init", "--bare", "--initial-branch=main", str(origin)],
+        check=True,
+        capture_output=True,
+    )
+    git(repo, "remote", "add", "origin", str(origin))
     git(repo, "commit", "--allow-empty", "-m", "anchored release")
+    git(repo, "push", "origin", "main")
+    git(repo, "fetch", "origin")
     head = git(repo, "rev-parse", "HEAD")
     tree = git(repo, "rev-parse", "HEAD^{tree}")
     git(repo, "tag", "-a", "-m", "anchor", "deploy/fixture", head)
@@ -568,12 +583,21 @@ def default_scope_fixture(key_sha256: str) -> dict:
     }
 
 
-def write_scope_fixture(base: Path, scope: dict | None, name: str = "release-scope.json") -> Path:
-    path = base / name
+def write_scope_fixture(
+    repo: Path, scope: dict | None, name: str = "release-scope.json"
+) -> Path:
+    """Commit and push a scope file through the fixture's reviewed origin."""
+    directory = repo / "security" / "image-provenance"
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / name
     path.write_text(
         json.dumps({"schema": TOOL.SCOPE_SCHEMA, "scope": scope}), encoding="utf-8"
     )
     path.chmod(0o644)
+    git(repo, "add", str(path.relative_to(repo)))
+    git(repo, "commit", "-m", f"review scope {name}")
+    git(repo, "push", "origin", "main")
+    git(repo, "fetch", "origin")
     return path
 
 
@@ -597,6 +621,7 @@ def write_inventory_fixture(
     captured_at: str | None = None,
     observed_at: str | None = None,
     scope: dict | None = None,
+    generation: int = 1,
     name: str = "inventory.json",
 ) -> Path:
     import hashlib as fixture_hashlib
@@ -614,6 +639,11 @@ def write_inventory_fixture(
     inventory = {
         "schema": schema or TOOL.INVENTORY_SCHEMA,
         "cluster": "fixture-cluster",
+        "generation": generation,
+        "collector": {
+            "method": "fs2-live-enumeration/v1",
+            "identity": "fixture-collector",
+        },
         "captured_at": captured_at or now,
         "scope": scope
         or default_scope_fixture(
@@ -678,7 +708,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
                 capture=built.capture,
             )
         self.scope = default_scope_fixture(self.key_sha256)
-        self.scope_path = write_scope_fixture(self.run_root, self.scope)
+        self.scope_path = write_scope_fixture(self.fixture["repo"], self.scope)
         self.inventory = write_inventory_fixture(
             self.run_root, [self.REFERENCE_A, self.REFERENCE_B]
         )
@@ -688,6 +718,35 @@ class VerifiedAllowlistTest(unittest.TestCase):
         if "admin-console" in text:
             return self.fx_b.capture(command)
         return self.fx_a.capture(command)
+
+    def live_runner(self, images=None, identity="fixture-collector"):
+        live = list(
+            images if images is not None else [self.REFERENCE_A, self.REFERENCE_B]
+        )
+
+        def runner(command):
+            if command[:3] == ["kubectl", "auth", "whoami"]:
+                return json.dumps(
+                    {"status": {"userInfo": {"username": identity}}}
+                )
+            if command[:3] == ["kubectl", "get", "pods"]:
+                namespace = command[command.index("-n") + 1]
+                if namespace != "fs2-system":
+                    return json.dumps({"items": []})
+                return json.dumps(
+                    {
+                        "items": [
+                            {
+                                "metadata": {"name": f"pod-{index}"},
+                                "spec": {"containers": [{"image": image}]},
+                            }
+                            for index, image in enumerate(live)
+                        ]
+                    }
+                )
+            raise AssertionError(f"unexpected live-enumeration command: {command}")
+
+        return runner
 
     def expected_digests(self) -> str:
         return "\n".join(sorted([self.DIGEST_A, self.DIGEST_B]))
@@ -701,6 +760,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
         registry_prefixes=None,
         platform_prefix=PLATFORM_PREFIX,
         deploy_principals=("deployer",),
+        live_runner=None,
     ):
         return TOOL.verified_allowlist(
             self._tmp.name,
@@ -713,6 +773,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
             deploy_principals=list(deploy_principals),
             verifier=verifier,
             capture=self.capture,
+            live_runner=live_runner or self.live_runner(),
         )
 
     def test_inventory_references_are_verified_before_rendering(self) -> None:
@@ -764,6 +825,100 @@ class VerifiedAllowlistTest(unittest.TestCase):
         self.assertNotEqual(key_paths[0], self._tmp.name)
         self.assertEqual(key_contents, {key_bytes})
 
+    def test_omitted_live_image_fails_closed(self) -> None:
+        # The MindEval-omission class: an active platform image the
+        # authenticated API session can see must appear in live_workloads.
+        mindeval = PLATFORM_PREFIX + "mindeval-gateway@sha256:" + "e" * 64
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "omitted live images"):
+            self.render(
+                live_runner=self.live_runner(
+                    [self.REFERENCE_A, self.REFERENCE_B, mindeval]
+                )
+            )
+
+    def test_phantom_recorded_live_image_fails_closed(self) -> None:
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "recorded-but-not-live"):
+            self.render(live_runner=self.live_runner([self.REFERENCE_A]))
+
+    def test_collector_identity_must_match_the_authenticated_user(self) -> None:
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "collector identity"):
+            self.render(
+                live_runner=self.live_runner(identity="someone-else")
+            )
+
+    def test_unavailable_live_enumeration_fails_closed(self) -> None:
+        import subprocess as sp
+
+        def dead_runner(command):
+            raise sp.CalledProcessError(1, command)
+
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "fails closed"):
+            self.render(live_runner=dead_runner)
+
+    def test_unpinned_live_platform_image_fails_closed(self) -> None:
+        unpinned = PLATFORM_PREFIX + "control-plane:latest"
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "not digest-pinned"):
+            self.render(
+                live_runner=self.live_runner(
+                    [self.REFERENCE_A, self.REFERENCE_B, unpinned]
+                )
+            )
+
+    def test_missing_typed_collector_is_refused(self) -> None:
+        inventory = write_inventory_fixture(
+            self.run_root,
+            [self.REFERENCE_A, self.REFERENCE_B],
+            name="no-collector.json",
+        )
+        document = json.loads(inventory.read_text(encoding="utf-8"))
+        del document["collector"]
+        inventory.write_text(json.dumps(document), encoding="utf-8")
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "typed authoritative"):
+            self.render(inventory=inventory)
+
+    def test_replayed_older_inventory_is_refused(self) -> None:
+        # old -> new -> old within the freshness window: the external
+        # monotonic checkpoint refuses the replay, and an equal-generation
+        # inventory with DIFFERENT bytes is refused too.
+        old_inventory = write_inventory_fixture(
+            self.run_root,
+            [self.REFERENCE_A, self.REFERENCE_B],
+            generation=1,
+            name="gen1.json",
+        )
+        new_inventory = write_inventory_fixture(
+            self.run_root,
+            [self.REFERENCE_A, self.REFERENCE_B],
+            generation=2,
+            name="gen2.json",
+        )
+        self.render(inventory=new_inventory)
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "replays generation"):
+            self.render(inventory=old_inventory)
+        # Idempotent re-render of the exact accepted bytes stays allowed.
+        self.render(inventory=new_inventory)
+        forked = write_inventory_fixture(
+            self.run_root,
+            [self.REFERENCE_A],
+            live=[self.REFERENCE_A],
+            generation=2,
+            name="gen2-forked.json",
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "replays generation"):
+            self.render(inventory=forked)
+
+    def test_missing_or_invalid_generation_is_refused(self) -> None:
+        inventory = write_inventory_fixture(
+            self.run_root,
+            [self.REFERENCE_A, self.REFERENCE_B],
+            name="no-generation.json",
+        )
+        document = json.loads(inventory.read_text(encoding="utf-8"))
+        del document["generation"]
+        inventory.write_text(json.dumps(document), encoding="utf-8")
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "generation"):
+            self.render(inventory=inventory)
+
     def test_nonfinite_or_unbounded_max_age_is_refused(self) -> None:
         for bad in (float("nan"), float("inf"), float("-inf"), 0, -3, 10**6, True):
             with self.assertRaisesRegex(TOOL.ProvenanceError, "finite"):
@@ -806,7 +961,9 @@ class VerifiedAllowlistTest(unittest.TestCase):
     def test_missing_or_empty_owner_scope_fails_closed(self) -> None:
         with self.assertRaisesRegex(TOOL.ProvenanceError, "fails closed"):
             self.render(scope_path=self.run_root / "no-such-scope.json")
-        empty = write_scope_fixture(self.run_root, None, name="empty-scope.json")
+        empty = write_scope_fixture(
+            self.fixture["repo"], None, name="empty-scope.json"
+        )
         with self.assertRaisesRegex(TOOL.ProvenanceError, "EMPTY"):
             self.render(scope_path=empty)
 
@@ -828,7 +985,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
         # Key identity: the pinned verification key must be the one the
         # owner scope names.
         wrong_key_scope = write_scope_fixture(
-            self.run_root,
+            self.fixture["repo"],
             dict(self.scope, verification_key_sha256="f" * 64),
             name="wrong-key-scope.json",
         )
@@ -839,6 +996,59 @@ class VerifiedAllowlistTest(unittest.TestCase):
             self.render(deploy_principals=["someone-else"])
         with self.assertRaisesRegex(TOOL.ProvenanceError, "--registry-prefix"):
             self.render(registry_prefixes=["cr.other.invalid/"])
+
+    def test_substituted_scope_never_renders(self) -> None:
+        # The reproduced attack: locally edit (or locally commit) a widened
+        # scope plus a matching signed inventory. Authority loads from the
+        # reviewed origin/main blob, so both variants fail closed.
+        substituted = dict(
+            self.scope, registry_prefixes=["cr.attacker.invalid/"]
+        )
+        self.scope_path.write_text(
+            json.dumps({"schema": TOOL.SCOPE_SCHEMA, "scope": substituted}),
+            encoding="utf-8",
+        )
+        self.scope_path.chmod(0o644)
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "diverges"):
+            self.render()
+        # A local commit is equally powerless: origin/main did not move.
+        git(self.fixture["repo"], "add", "security")
+        git(self.fixture["repo"], "commit", "-m", "attacker scope")
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "diverges"):
+            self.render()
+
+    def test_unreviewed_scope_file_never_renders(self) -> None:
+        # A scope file that origin/main has never seen is not authority.
+        unreviewed = (
+            self.fixture["repo"] / "security" / "image-provenance" / "new-scope.json"
+        )
+        unreviewed.write_text(
+            json.dumps({"schema": TOOL.SCOPE_SCHEMA, "scope": self.scope}),
+            encoding="utf-8",
+        )
+        unreviewed.chmod(0o644)
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "REVIEWED"):
+            self.render(scope_path=unreviewed)
+
+    def test_scope_namespaces_must_equal_the_enforced_policy_coverage(
+        self,
+    ) -> None:
+        # A scope claiming a namespace the committed policy binding does not
+        # match would make the recorded coverage a lie; renders refuse it.
+        widened = dict(
+            self.scope, namespaces=["fs2-extra", "fs2-models", "fs2-system"]
+        )
+        scope_path = write_scope_fixture(
+            self.fixture["repo"], widened, name="widened-scope.json"
+        )
+        inventory = write_inventory_fixture(
+            self.run_root,
+            [self.REFERENCE_A, self.REFERENCE_B],
+            scope=widened,
+            name="widened-inventory.json",
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "enforced coverage"):
+            self.render(inventory=inventory, scope_path=scope_path)
 
     def test_nonmatching_platform_prefix_cannot_bypass_platform_digests(
         self,
@@ -912,7 +1122,9 @@ class VerifiedAllowlistTest(unittest.TestCase):
                 {"image": self.REFERENCE_B, "reason": "change:CHG-42 drained"}
             ],
         )
-        manifest = self.render(inventory=audited)
+        manifest = self.render(
+            inventory=audited, live_runner=self.live_runner([self.REFERENCE_A])
+        )
         self.assertEqual(manifest["data"]["platform-digests"], self.DIGEST_A)
 
     def test_an_active_live_image_can_never_be_drained(self) -> None:
@@ -964,7 +1176,12 @@ class VerifiedAllowlistTest(unittest.TestCase):
             self.run_root, [self.REFERENCE_A, self.REFERENCE_B, orphan]
         )
         with self.assertRaisesRegex(TOOL.ProvenanceError, "no signed release receipt"):
-            self.render(inventory=inventory)
+            self.render(
+                inventory=inventory,
+                live_runner=self.live_runner(
+                    [self.REFERENCE_A, self.REFERENCE_B, orphan]
+                ),
+            )
 
     def test_receipt_verification_failure_aborts_rendering(self) -> None:
         import subprocess
@@ -1209,8 +1426,7 @@ class ReceiptBindingTest(unittest.TestCase):
         with self.assertRaisesRegex(TOOL.ProvenanceError, "content address"):
             self.load(self.reference, capture)
 
-    def standalone_sbom_for(self, digest: str) -> Path:
-        digest_hex = digest.split(":", 1)[1]
+    def standalone_sbom_for(self, digest_hex: str) -> Path:
         document = {
             "spdxVersion": "SPDX-2.3",
             "SPDXID": "SPDXRef-DOCUMENT",
@@ -1244,6 +1460,16 @@ class ReceiptBindingTest(unittest.TestCase):
         sbom.chmod(0o644)
         return sbom
 
+    def test_standalone_sbom_naming_only_the_top_index_is_refused(self) -> None:
+        # A multi-platform index digest also covers foreign platforms; the
+        # standalone document must bind the exact linux/amd64 manifest.
+        capture = self.crane_capture(
+            self.fixture["head"], include_attestation=False
+        )
+        sbom = self.standalone_sbom_for(self.reference.rsplit("@", 1)[1])
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "exact SHA256"):
+            self.create(capture, sbom=sbom)
+
     def test_standalone_receipt_retains_and_reproves_the_sbom(self) -> None:
         # Standalone receipts keep content-addressed SBOM bytes in the run
         # root; every load re-reads them, re-proves the hash, and re-validates
@@ -1251,7 +1477,11 @@ class ReceiptBindingTest(unittest.TestCase):
         capture = self.crane_capture(
             self.fixture["head"], include_attestation=False
         )
-        sbom = self.standalone_sbom_for(self.reference.rsplit("@", 1)[1])
+        # The standalone document must name the exact linux/amd64 RUNTIME
+        # manifest, never the multi-platform top index.
+        sbom = self.standalone_sbom_for(
+            self.expected_amd64_digest.split(":", 1)[1]
+        )
         receipt = self.create(capture, sbom=sbom)
         retained = TOOL._retained_sbom_path(
             self.run_root, receipt["sbom"]["spdx_sha256"], ".spdx.json"

@@ -550,8 +550,8 @@ class ReleaseSourceGateTest(unittest.TestCase):
                     exception_approver=approver,
                 )
 
-    def test_empty_approver_list_makes_exceptions_impossible(self) -> None:
-        commit = self.add_unpushed_commit()
+    def push_reviewed_approvers(self, approvers: list[dict]) -> None:
+        """Route an approver-list change through the reviewed origin/main."""
         approver_file = (
             self.checkout / "security" / "image-provenance" / "release-approvers.json"
         )
@@ -559,11 +559,63 @@ class ReleaseSourceGateTest(unittest.TestCase):
             json.dumps(
                 {
                     "schema": "fs2-serve.nebius.ai/release-approvers/v1",
-                    "approvers": [],
+                    "approvers": approvers,
                 }
             ),
             encoding="utf-8",
         )
+        git(self.checkout, "add", "security")
+        git(self.checkout, "commit", "-m", "review approver change")
+        git(self.checkout, "push", "origin", "main")
+        git(self.checkout, "fetch", "origin")
+
+    def test_dirty_approver_file_never_self_authorizes(self) -> None:
+        # The exact reproduced attack: reviewed EMPTY approver list, a
+        # dirty-added attacker approver, then a dirty-source override naming
+        # the attacker. Authority loads only from the reviewed origin/main
+        # blob, and a diverging working-tree copy fails the override closed.
+        self.push_reviewed_approvers([])
+        commit = self.add_unpushed_commit()
+        approver_file = (
+            self.checkout / "security" / "image-provenance" / "release-approvers.json"
+        )
+        attacker_list = json.dumps(
+            {
+                "schema": "fs2-serve.nebius.ai/release-approvers/v1",
+                "approvers": [
+                    {
+                        "name": "attacker",
+                        "scope": "release-source-exception",
+                        "expires_at": "2030-01-01T00:00:00Z",
+                    }
+                ],
+            }
+        )
+        approver_file.write_text(attacker_list, encoding="utf-8")
+        with self.assertRaisesRegex(STACK.DeploymentError, "NEVER grants"):
+            STACK.enforce_release_source(
+                self.run_root,
+                commit,
+                "incident:INC-1 attacker attempt",
+                repository_root=self.checkout,
+                exception_approver="attacker",
+            )
+        # A LOCAL commit of the attacker list is equally powerless: the
+        # reviewed origin/main blob did not move.
+        git(self.checkout, "add", "security")
+        git(self.checkout, "commit", "-m", "attacker approver")
+        with self.assertRaisesRegex(STACK.DeploymentError, "NEVER grants"):
+            STACK.enforce_release_source(
+                self.run_root,
+                self.head(),
+                "incident:INC-1 attacker attempt",
+                repository_root=self.checkout,
+                exception_approver="attacker",
+            )
+
+    def test_empty_approver_list_makes_exceptions_impossible(self) -> None:
+        self.push_reviewed_approvers([])
+        commit = self.add_unpushed_commit()
         with self.assertRaisesRegex(STACK.DeploymentError, "impossible until"):
             STACK.enforce_release_source(
                 self.run_root,

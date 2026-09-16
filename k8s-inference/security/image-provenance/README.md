@@ -103,10 +103,26 @@ bump — in order:
    security/image-provenance/release-scope.json --registry-prefix …
    --platform-repository-prefix … --deploy-principal <user>` (optional
    `--image` arguments must equal the inventory exactly and exist only as a
-   cross-check). **Admission scope is never caller-chosen**: the committed,
-   owner-reviewed `release-scope.json` is the single authority; it ships
-   EMPTY, so rendering fails closed until the owner populates and reviews the
-   exact scope. The signed inventory's `scope` must equal it exactly (a
+   cross-check). The inventory additionally carries a strictly increasing
+   integer `generation` and a typed collector
+   (`{method: fs2-live-enumeration/v1, identity: <authenticated user>}`);
+   the renderer keeps an external monotonic checkpoint
+   (`release-inventory-checkpoint.json` in the run root, advanced only on
+   ACCEPTED renders) so a previously valid signed inventory can never replay
+   over a newer one, and it re-enumerates the live platform images through
+   the AUTHENTICATED cluster API at render time (kubectl required —
+   unavailable enumeration fails closed): `live_workloads` must equal that
+   enumeration exactly and the recorded collector identity must equal the
+   authenticated identity, so a signer cannot omit an active sibling image
+   or self-assert coverage. **Admission scope is never caller-chosen**: the
+   committed, owner-reviewed `release-scope.json` is the single authority —
+   loaded from the blob at `refs/remotes/origin/main`, never from the
+   working tree or a local commit, with a diverging working copy failing
+   closed; it ships EMPTY, so rendering fails closed until the owner
+   populates and reviews the exact scope. The scope's namespaces must equal
+   the committed policy binding's namespaces exactly, they render into the
+   ConfigMap `namespaces` key, and the policy denies any request whose
+   namespace is not listed — claimed and enforced coverage cannot drift. The signed inventory's `scope` must equal it exactly (a
    signer cannot substitute their own coverage), every CLI argument must
    equal it (a mistyped platform prefix cannot bypass platform-digest
    gating), the pinned key hash must equal its recorded key identity, every
@@ -151,7 +167,11 @@ what an earlier release proved:
   back to verifying the occupant (idempotence or refusal); a failed signing
   leaves no partial published evidence and the same creation succeeds on
   retry; a crash mid-claim leaves a partial directory that every later load
-  and publish refuses fail-closed. Every load reads the pair once through
+  and publish refuses fail-closed. The staged pair is read ONCE, the
+  signature is verified over exactly those bytes via private scratch copies,
+  and the published files are written fresh from the verified bytes, so a
+  staging-pathname swap between verification and publication publishes
+  nothing. Every load reads the pair once through
   dirfd + `O_NOFOLLOW`,
   refuses non-regular files, hardlinked evidence, foreign owners, and
   group/other-accessible modes, verifies the signature over exactly the bytes
@@ -191,7 +211,10 @@ what an earlier release proved:
   every append, failing the gate itself on a tampered history. Exception
   approvers must appear in the reviewed, scoped, expiring
   `release-approvers.json` allow-list (an empty list makes exceptions
-  impossible). The pair is tamper-evident, not immutable — WORM/off-host
+  impossible), which is loaded from the blob at `refs/remotes/origin/main` —
+  never from the working tree or a local commit — so an exception can never
+  authorize its own authority mutation: a dirty-added or locally-committed
+  approver fails the override closed. The pair is tamper-evident, not immutable — WORM/off-host
   anchoring of the log and authenticating the caller as the approver identity
   are owner infrastructure/IAM items.
 - **Registry signatures**: cosign appends signatures to a digest's `.sig`
@@ -206,7 +229,11 @@ what an earlier release proved:
   other-writable or foreign-group-writable non-sticky ancestor, a
   foreign-owned ancestor, '.'/'..' components, and a device change (mount)
   inside the caller-owned tree are all refused — in provenance.py and in the
-  wrapper's anchor-store/bundle reads alike. Allow-list
+  wrapper's anchor-store/bundle reads alike. Every read is pre/post
+  fstat-stable: the descriptor is checked again after the bytes are read and
+  any size/mtime/ctime/nlink/mode change refuses them, so a same-inode
+  overwrite during a multi-chunk read can never yield accepted mixed
+  content; private evidence uniformly requires mode 0600 (bundles included). Allow-list
   rendering pins ONE verification-key identity: the key bytes are read once
   into a private scratch copy used for every signature check and recorded in
   the ConfigMap annotation, and the recorded inventory hash is computed over
@@ -255,8 +282,19 @@ Existing Pods are never affected by the policies; only new admissions are.
   registry origin only: scientific-stage bindings freeze historical digests at
   admission time, and an exact model allow-list would break legitimate frozen
   retries. Extending it requires feeding the list from the execution map.
-- `pods/ephemeralcontainers` is not matched, so `kubectl debug` support
-  workflows keep working for cluster admins.
+- `pods/ephemeralcontainers` IS matched: `kubectl debug` injection is
+  admission-governed like any other image, and keeps working with
+  digest-pinned images from allow-listed registries (real isolated-kind
+  admission tests prove the pinned injection is admitted and
+  `evil.invalid/debug:latest` is denied; see tests/test_admission_kind.py).
+- Kind boundary evidence (2026-09-16): as the configured cluster-admin
+  principal, a direct config-only Pod patch, mutation of the allow-list
+  ConfigMap, deletion of the VAP objects, and a Helm release-Secret write
+  were all ACCEPTED (the foreign Helm principal was denied). These are
+  explicit fail-closed owner/IAM gates — automation-only deploy identity,
+  admission protection of the ConfigMap and policy objects, removal of human
+  mutation/impersonation rights — and NOTHING in this source tree enforces
+  them; do not read this component as claiming otherwise.
 - `parameterNotFoundAction: Deny` fails closed if the allow-list ConfigMap is
   deleted; Pod churn in the matched namespaces then stalls until it is
   restored from the run-root receipt.
