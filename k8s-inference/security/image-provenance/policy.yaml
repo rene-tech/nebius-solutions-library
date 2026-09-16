@@ -16,11 +16,18 @@
 # fails immediately at the Deployment update, not minutes later at Pod churn.
 #
 # The environment-specific data (registry prefixes, platform repository
-# prefix, signed digests) lives in the paramRef ConfigMap
-# fs2-system/fs2-image-provenance-allowlist, rendered by
-# security/image-provenance/provenance.py render-allowlist, which
-# cosign-verifies every digest before it renders. This file is
-# environment-independent.
+# prefix, signed digests, deploy principals) lives in the paramRef ConfigMap
+# fs2-system/fs2-image-provenance-allowlist. The governed path renders it with
+# security/image-provenance/provenance.py render-allowlist, which requires a
+# signed release receipt and a cosign verification for every digest — but the
+# ConfigMap itself is NOT mutation-protected: any principal with ConfigMap
+# update in fs2-system can add digests or deploy principals directly,
+# bypassing the renderer. Closure of that gap is an owner-gated IAM decision
+# (see the parent program's docs/deploy-identity-proposal.md): exclusive
+# automation-identity RBAC on this ConfigMap, admission protection of the
+# ConfigMap and of these policy objects, and removal of human workload/
+# ConfigMap-mutation/impersonation rights. Until then this policy set is a
+# bootstrap-fail-closed but operator-bypassable control.
 #
 # Failure posture:
 #   - failurePolicy Fail plus fail-closed CEL: a missing or malformed
@@ -31,9 +38,12 @@
 #   - The pods/ephemeralcontainers subresource is intentionally not matched so
 #     cluster-admin `kubectl debug` support workflows keep working.
 #
-# Rollback: kubectl delete validatingadmissionpolicybinding/fs2-image-provenance \
-#   validatingadmissionpolicy/fs2-image-provenance \
-#   configmap/-n fs2-system fs2-image-provenance-allowlist
+# Rollback (non-destructive first — keep the policies and audit trail):
+#   kubectl patch validatingadmissionpolicybinding fs2-image-provenance \
+#     --type=json -p '[{"op":"replace","path":"/spec/validationActions","value":["Audit","Warn"]}]'
+#   (same for fs2-helm-release-governance; restore ["Deny","Audit"] to re-enable).
+# Deleting the policy objects or the allow-list ConfigMap removes enforcement
+# entirely and requires the same authorization as disabling a security control.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -142,12 +152,15 @@ spec:
 # A digest allow-list alone does not stop a config-only `helm upgrade` that
 # reuses allow-listed images while changing Services, routes, or chart
 # behavior. Helm records every release version as a Secret of type
-# helm.sh/release.v1, so restricting who may write those Secrets makes the
-# governed wrapper path admission-enforced, not procedural. Its enforcement
-# value requires a distinct deploy identity: while every operator shares one
-# cluster-admin principal this rule documents rather than separates authority,
-# and the identity split is an owner-level IAM action. Terraform's no-drift
-# plan remains the compensating detective control for config drift.
+# helm.sh/release.v1, so restricting who may write those Secrets makes such an
+# upgrade admission-visible. This is a COMPENSATING control, not closure: a
+# deploy-principal holder can still run direct helm upgrades, config-only
+# kubectl writes are not gated, and the wrapper release gate remains a
+# source-side boundary only, until the owner provisions the automation-only,
+# non-impersonable deploy identity and strips human mutation rights (owner
+# IAM decision, pending). While every operator shares one cluster-admin
+# principal this rule documents rather than separates authority. Terraform's
+# no-drift plan remains the compensating detective control for config drift.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:

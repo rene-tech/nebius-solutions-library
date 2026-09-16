@@ -75,15 +75,18 @@ are reproducible. Every mutating rollout — a full `inference-stack apply` and
 equally a Helm-only application digest bump — must additionally satisfy the
 provenance gate (see `security/image-provenance/README.md`):
 
-1. **Anchored source:** the deployed commit is a clean checkout (tracked and
-   untracked drift both fail) reachable from `origin/main`, an
-   `origin/release/*` branch, an origin-verified `release/*`/`deploy/*` tag,
-   or — when public publication is owner-gated — a local anchor tag backed by
-   a hash-recorded, restore-tested `git bundle` in the private run root
-   (`inference-stack anchor-release`). The wrapper enforces this on `apply`
-   and offers a standalone `release-gate` command for Helm-only upgrades;
-   overrides require `--allow-unreleased-source REASON` and are recorded in
-   the run root (`release-source.json`).
+1. **Anchored source:** every receipted release carries a `release/*` or
+   `deploy/*` tag backed by a hash-recorded, restore-tested `git bundle` in
+   the private run root (`inference-stack anchor-release`) — mandatory even
+   when the commit is also pushed to `origin/main`/`origin/release/*`. The
+   deploy-source gate additionally requires a clean checkout (tracked and
+   untracked drift both fail) reachable from an anchored or remote release
+   ref; the wrapper enforces it on `apply` and offers a standalone
+   `release-gate` command for Helm-only upgrades. Overrides require
+   `--allow-unreleased-source REASON`. All gate evaluations and exceptions
+   are recorded append-only (`release-source-history.jsonl`); anchors and
+   receipts are write-once and refuse moved tags, changed bundles, or
+   conflicting re-creation.
 2. **Bound release receipt:** before signing, every digest gets a cosign-signed
    release receipt binding it to its source commit/tree, the durable anchor
    bundle, and validated SBOM evidence

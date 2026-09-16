@@ -32,7 +32,11 @@ COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 ALLOWLIST_NAME = "fs2-image-provenance-allowlist"
 ALLOWLIST_NAMESPACE = "fs2-system"
-RECEIPT_SCHEMA = "fs2-serve.nebius.ai/release-receipt/v1"
+RECEIPT_SCHEMA = "fs2-serve.nebius.ai/release-receipt/v2"
+IN_TOTO_STATEMENT_TYPES = (
+    "https://in-toto.io/Statement/v0.1",
+    "https://in-toto.io/Statement/v1",
+)
 
 
 class ProvenanceError(RuntimeError):
@@ -183,39 +187,106 @@ def _validated_attestation_evidence(reference: str, capture) -> dict | None:
             f"attestation manifest {attestation_digest} of {reference} carries "
             f"no {IN_TOTO_MEDIA_TYPE} layer with predicate {SPDX_PREDICATE}"
         )
-    statement = json.loads(
-        capture(["crane", "blob", f"{repository}@{spdx_layer_digest}"])
-    )
-    statement_subjects = {
-        f"sha256:{value}"
-        for subject in statement.get("subject", [])
-        for algorithm, value in (subject.get("digest") or {}).items()
-        if algorithm == "sha256"
-    }
-    if subject_manifest_digest not in statement_subjects:
+    # The layer annotation alone proves nothing: fetch the blob, prove it is
+    # the content the layer digest names, and validate it as a real in-toto
+    # Statement carrying an SPDX document about this exact image.
+    statement_text = capture(["crane", "blob", f"{repository}@{spdx_layer_digest}"])
+    statement_sha256 = hashlib.sha256(statement_text.encode("utf-8")).hexdigest()
+    if f"sha256:{statement_sha256}" != spdx_layer_digest:
         raise ProvenanceError(
-            f"SPDX attestation of {reference} names subjects "
-            f"{sorted(statement_subjects)}, not the image manifest "
-            f"{subject_manifest_digest}"
+            f"fetched SPDX statement of {reference} hashes to "
+            f"sha256:{statement_sha256}, not the layer digest {spdx_layer_digest}"
         )
+    try:
+        statement = json.loads(statement_text)
+    except json.JSONDecodeError as error:
+        raise ProvenanceError(
+            f"SPDX attestation layer of {reference} is not valid JSON"
+        ) from error
+    if not isinstance(statement, dict) or statement.get("_type") not in IN_TOTO_STATEMENT_TYPES:
+        found = statement.get("_type") if isinstance(statement, dict) else type(statement).__name__
+        raise ProvenanceError(
+            f"SPDX attestation layer of {reference} is not an in-toto "
+            f"Statement (got _type={found!r})"
+        )
+    if statement.get("predicateType") != SPDX_PREDICATE:
+        raise ProvenanceError(
+            f"attestation statement of {reference} carries predicateType "
+            f"{statement.get('predicateType')!r}, expected {SPDX_PREDICATE}"
+        )
+    subject_hex = subject_manifest_digest.split(":", 1)[1]
+    named_subject = None
+    for subject in statement.get("subject", []) or []:
+        if not isinstance(subject, dict):
+            continue
+        if (subject.get("digest") or {}).get("sha256") == subject_hex:
+            named_subject = subject
+            break
+    if named_subject is None:
+        raise ProvenanceError(
+            f"SPDX attestation of {reference} does not name the image manifest "
+            f"{subject_manifest_digest} as a subject"
+        )
+    if not str(named_subject.get("name", "")).strip():
+        raise ProvenanceError(
+            f"SPDX attestation subject for {reference} has no name"
+        )
+    predicate = statement.get("predicate")
+    if not isinstance(predicate, dict) or not predicate:
+        raise ProvenanceError(
+            f"SPDX attestation of {reference} has an empty or non-object predicate"
+        )
+    _validate_spdx_shape(predicate, f"SPDX predicate of {reference}")
     return {
         "attestation_manifest_digest": attestation_digest,
         "subject_manifest_digest": subject_manifest_digest,
         "spdx_layer_digest": spdx_layer_digest,
+        "statement_sha256": statement_sha256,
         "slsa_layer_digest": slsa_layer_digest,
         "spdx_sha256": None,
         "spdx_subject_digest": None,
     }
 
 
+def _validate_spdx_shape(document: dict, context: str) -> None:
+    """Require a real SPDX 2.x document shape, not merely a truthy JSON blob."""
+    if not str(document.get("spdxVersion", "")).startswith("SPDX-2."):
+        raise ProvenanceError(
+            f"{context} has unsupported spdxVersion {document.get('spdxVersion')!r}"
+        )
+    if document.get("SPDXID") != "SPDXRef-DOCUMENT":
+        raise ProvenanceError(f"{context} lacks SPDXID SPDXRef-DOCUMENT")
+    if not str(document.get("name", "")).strip():
+        raise ProvenanceError(f"{context} lacks a document name")
+    if not str(document.get("documentNamespace", "")).strip():
+        raise ProvenanceError(f"{context} lacks a documentNamespace")
+    packages = document.get("packages")
+    if not isinstance(packages, list) or not packages:
+        raise ProvenanceError(f"{context} describes no packages")
+    describes = bool(document.get("documentDescribes"))
+    if not describes:
+        describes = any(
+            isinstance(relationship, dict)
+            and relationship.get("relationshipType") == "DESCRIBES"
+            for relationship in document.get("relationships", []) or []
+        )
+    if not describes:
+        raise ProvenanceError(
+            f"{context} has no DESCRIBES relationship or documentDescribes entry"
+        )
+
+
 def _validated_spdx_document(digest: str, sbom_path: Path) -> dict:
-    """Parse and subject-check a standalone SPDX document (no byte-searching)."""
+    """Parse, shape-check, and subject-check a standalone SPDX document."""
     try:
         document = json.loads(sbom_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise ProvenanceError(f"unreadable SPDX document: {sbom_path}") from error
-    if not str(document.get("spdxVersion", "")).startswith("SPDX-"):
+    if not isinstance(document, dict) or not str(
+        document.get("spdxVersion", "")
+    ).startswith("SPDX-"):
         raise ProvenanceError(f"{sbom_path} is not an SPDX JSON document")
+    _validate_spdx_shape(document, f"SPDX document {sbom_path}")
     digest_hex = digest.split(":", 1)[1]
     structured_values = [
         str(document.get("name", "")),
@@ -235,6 +306,7 @@ def _validated_spdx_document(digest: str, sbom_path: Path) -> dict:
         "attestation_manifest_digest": None,
         "subject_manifest_digest": None,
         "spdx_layer_digest": None,
+        "statement_sha256": None,
         "slsa_layer_digest": None,
         "spdx_sha256": hashlib.sha256(sbom_path.read_bytes()).hexdigest(),
         "spdx_subject_digest": digest,
@@ -381,12 +453,41 @@ def create_release_receipt(
         "sbom": sbom_evidence,
     }
     path = receipt_path(run_root, digest)
+    signature = path.parent / (path.name + ".sig")
+    if path.exists() or signature.exists():
+        # Receipts are write-once evidence. An identity-equal re-run is an
+        # idempotent no-op returning the original bytes (created_at included);
+        # any difference is refused so a later run can never rewrite what an
+        # earlier release proved. Superseding requires explicitly archiving
+        # the old receipt+signature elsewhere first, which stays auditable.
+        if not path.is_file() or not signature.is_file():
+            raise ProvenanceError(
+                f"partial receipt evidence already exists for {reference} "
+                f"({path} / {signature}); refusing to overwrite — restore or "
+                "archive the existing evidence first"
+            )
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise ProvenanceError(
+                f"existing receipt for {reference} is unreadable; receipts are "
+                "immutable — refusing to overwrite"
+            ) from error
+        comparable_existing = {k: v for k, v in existing.items() if k != "created_at"}
+        comparable_new = {k: v for k, v in receipt.items() if k != "created_at"}
+        if comparable_existing != comparable_new:
+            raise ProvenanceError(
+                f"a different release receipt already exists for {reference} at "
+                f"{path}; receipts are immutable — investigate the conflict and, "
+                "only if superseding is intended, archive the old receipt and "
+                "signature before creating a new one"
+            )
+        return existing
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     path.write_text(
         json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     path.chmod(0o600)
-    signature = path.parent / (path.name + ".sig")
     capture(
         [
             "cosign",
@@ -484,6 +585,7 @@ def validate_receipt_binding(receipt: dict, reference: str) -> None:
     attestation = str(sbom.get("attestation_manifest_digest") or "")
     subject = str(sbom.get("subject_manifest_digest") or "")
     spdx_layer = str(sbom.get("spdx_layer_digest") or "")
+    statement_sha = str(sbom.get("statement_sha256") or "")
     spdx = str(sbom.get("spdx_sha256") or "")
     spdx_subject = str(sbom.get("spdx_subject_digest") or "")
 
@@ -493,13 +595,17 @@ def validate_receipt_binding(receipt: dict, reference: str) -> None:
         )
 
     attestation_bound = (
-        _is_digest(attestation) and _is_digest(subject) and _is_digest(spdx_layer)
+        _is_digest(attestation)
+        and _is_digest(subject)
+        and _is_digest(spdx_layer)
+        and bool(SHA256_PATTERN.match(statement_sha))
+        and spdx_layer == f"sha256:{statement_sha}"
     )
     spdx_bound = bool(SHA256_PATTERN.match(spdx)) and spdx_subject == digest
     if not attestation_bound and not spdx_bound:
         raise ProvenanceError(
             f"release receipt for {reference} lacks subject-bound SBOM evidence "
-            "(validated in-toto SPDX layer or subject-checked SPDX document)"
+            "(validated in-toto SPDX statement or subject-checked SPDX document)"
         )
 
 

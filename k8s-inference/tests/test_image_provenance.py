@@ -312,6 +312,7 @@ def write_signed_receipt_fixture(
             "attestation_manifest_digest": "sha256:" + "f" * 64,
             "subject_manifest_digest": "sha256:" + "a" * 64,
             "spdx_layer_digest": "sha256:" + "e" * 64,
+            "statement_sha256": "e" * 64,
             "slsa_layer_digest": None,
             "spdx_sha256": None,
             "spdx_subject_digest": None,
@@ -519,8 +520,28 @@ class ReceiptBindingTest(unittest.TestCase):
             self.load()
 
     ATTESTATION_DIGEST = "sha256:" + "f" * 64
-    SPDX_LAYER_DIGEST = "sha256:" + "e" * 64
     SUBJECT_DIGEST = "sha256:" + "a" * 64
+
+    def fixture_statement(self, statement_subject: str | None = None) -> dict:
+        statement_subject = statement_subject or self.SUBJECT_DIGEST
+        return {
+            "_type": "https://in-toto.io/Statement/v0.1",
+            "predicateType": "https://spdx.dev/Document",
+            "subject": [
+                {
+                    "name": "pkg:docker/fixture-image",
+                    "digest": {"sha256": statement_subject.split(":", 1)[1]},
+                }
+            ],
+            "predicate": {
+                "spdxVersion": "SPDX-2.3",
+                "SPDXID": "SPDXRef-DOCUMENT",
+                "name": "sbom",
+                "documentNamespace": "https://example.invalid/spdxdocs/fixture",
+                "packages": [{"SPDXID": "SPDXRef-Package-fixture"}],
+                "relationships": [{"relationshipType": "DESCRIBES"}],
+            },
+        }
 
     def crane_capture(
         self,
@@ -528,10 +549,20 @@ class ReceiptBindingTest(unittest.TestCase):
         spdx_predicate: str = "https://spdx.dev/Document",
         statement_subject: str | None = None,
         tree_label: str | object = "fixture-tree",
+        statement_text: str | None = None,
+        statement_layer_digest: str | None = None,
     ):
-        statement_subject = statement_subject or self.SUBJECT_DIGEST
+        import hashlib
+
         if tree_label == "fixture-tree":
             tree_label = self.fixture["tree"]
+        if statement_text is None:
+            statement_text = json.dumps(self.fixture_statement(statement_subject))
+        if statement_layer_digest is None:
+            statement_layer_digest = (
+                "sha256:" + hashlib.sha256(statement_text.encode("utf-8")).hexdigest()
+            )
+        self.expected_spdx_layer_digest = statement_layer_digest
 
         def capture(command):
             if command[:2] == ["crane", "config"]:
@@ -546,7 +577,7 @@ class ReceiptBindingTest(unittest.TestCase):
                             "layers": [
                                 {
                                     "mediaType": "application/vnd.in-toto+json",
-                                    "digest": self.SPDX_LAYER_DIGEST,
+                                    "digest": statement_layer_digest,
                                     "annotations": {
                                         "in-toto.io/predicate-type": spdx_predicate
                                     },
@@ -576,13 +607,7 @@ class ReceiptBindingTest(unittest.TestCase):
                     }
                 )
             if command[:2] == ["crane", "blob"]:
-                return json.dumps(
-                    {
-                        "subject": [
-                            {"digest": {"sha256": statement_subject.split(":", 1)[1]}}
-                        ]
-                    }
-                )
+                return statement_text
             if command[:2] == ["cosign", "sign-blob"]:
                 self.assertIn("--tlog-upload=false", command)
                 self.assertIn("--use-signing-config=false", command)
@@ -604,10 +629,93 @@ class ReceiptBindingTest(unittest.TestCase):
         self.assertEqual(receipt["source"]["commit"], self.fixture["head"])
         self.assertEqual(receipt["source"]["tree"], self.fixture["tree"])
         self.assertEqual(receipt["anchor"]["tag_target"], self.fixture["tag_target"])
-        self.assertEqual(receipt["sbom"]["spdx_layer_digest"], self.SPDX_LAYER_DIGEST)
+        self.assertEqual(
+            receipt["sbom"]["spdx_layer_digest"], self.expected_spdx_layer_digest
+        )
+        self.assertEqual(
+            "sha256:" + receipt["sbom"]["statement_sha256"],
+            self.expected_spdx_layer_digest,
+        )
         self.assertEqual(receipt["sbom"]["slsa_layer_digest"], "sha256:" + "d" * 64)
         loaded = self.load()
         self.assertEqual(loaded["anchor"]["tag"], "refs/tags/deploy/fixture")
+
+    def test_receipt_recreation_is_idempotent_and_preserves_bytes(self) -> None:
+        capture = self.crane_capture(self.fixture["head"])
+        first = TOOL.create_release_receipt(
+            self.REFERENCE,
+            self.run_root,
+            self.fixture["repo"],
+            "deploy/fixture",
+            "release.key",
+            capture=capture,
+        )
+        path = TOOL.receipt_path(self.run_root, DIGEST_A)
+        signature = path.parent / (path.name + ".sig")
+        receipt_bytes = path.read_bytes()
+        signature_bytes = signature.read_bytes()
+        second = TOOL.create_release_receipt(
+            self.REFERENCE,
+            self.run_root,
+            self.fixture["repo"],
+            "deploy/fixture",
+            "release.key",
+            capture=capture,
+        )
+        self.assertEqual(second["created_at"], first["created_at"])
+        self.assertEqual(path.read_bytes(), receipt_bytes)
+        self.assertEqual(signature.read_bytes(), signature_bytes)
+
+    def test_conflicting_receipt_recreation_is_refused_and_preserves_original(
+        self,
+    ) -> None:
+        TOOL.create_release_receipt(
+            self.REFERENCE,
+            self.run_root,
+            self.fixture["repo"],
+            "deploy/fixture",
+            "release.key",
+            capture=self.crane_capture(self.fixture["head"]),
+        )
+        path = TOOL.receipt_path(self.run_root, DIGEST_A)
+        original_bytes = path.read_bytes()
+        changed_statement = self.fixture_statement()
+        changed_statement["subject"][0]["name"] = "pkg:docker/replayed-image"
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "immutable"):
+            TOOL.create_release_receipt(
+                self.REFERENCE,
+                self.run_root,
+                self.fixture["repo"],
+                "deploy/fixture",
+                "release.key",
+                capture=self.crane_capture(
+                    self.fixture["head"],
+                    statement_text=json.dumps(changed_statement),
+                ),
+            )
+        self.assertEqual(path.read_bytes(), original_bytes)
+
+    def test_partial_receipt_evidence_is_never_overwritten(self) -> None:
+        capture = self.crane_capture(self.fixture["head"])
+        TOOL.create_release_receipt(
+            self.REFERENCE,
+            self.run_root,
+            self.fixture["repo"],
+            "deploy/fixture",
+            "release.key",
+            capture=capture,
+        )
+        path = TOOL.receipt_path(self.run_root, DIGEST_A)
+        (path.parent / (path.name + ".sig")).unlink()
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "partial receipt"):
+            TOOL.create_release_receipt(
+                self.REFERENCE,
+                self.run_root,
+                self.fixture["repo"],
+                "deploy/fixture",
+                "release.key",
+                capture=capture,
+            )
 
     def test_create_receipt_refuses_unanchored_source(self) -> None:
         with self.assertRaisesRegex(TOOL.ProvenanceError, "not reachable"):
@@ -662,7 +770,9 @@ class ReceiptBindingTest(unittest.TestCase):
             )
 
     def test_create_receipt_refuses_statement_subject_mismatch(self) -> None:
-        with self.assertRaisesRegex(TOOL.ProvenanceError, "subjects"):
+        with self.assertRaisesRegex(
+            TOOL.ProvenanceError, "does not name the image manifest"
+        ):
             TOOL.create_release_receipt(
                 self.REFERENCE,
                 self.run_root,
@@ -672,6 +782,73 @@ class ReceiptBindingTest(unittest.TestCase):
                 capture=self.crane_capture(
                     self.fixture["head"],
                     statement_subject="sha256:" + "9" * 64,
+                ),
+            )
+
+    def _refused_statement(self, statement, pattern: str) -> None:
+        with self.assertRaisesRegex(TOOL.ProvenanceError, pattern):
+            TOOL.create_release_receipt(
+                self.REFERENCE,
+                self.run_root,
+                self.fixture["repo"],
+                "deploy/fixture",
+                "release.key",
+                capture=self.crane_capture(
+                    self.fixture["head"],
+                    statement_text=statement
+                    if isinstance(statement, str)
+                    else json.dumps(statement),
+                ),
+            )
+
+    def test_create_receipt_refuses_non_statement_blob(self) -> None:
+        # Annotation-only trust is not enough: the fetched blob must be a real
+        # in-toto Statement, not any JSON that merely mentions a subject.
+        self._refused_statement(
+            {"subject": [{"digest": {"sha256": "a" * 64}}]}, "in-toto"
+        )
+
+    def test_create_receipt_refuses_malformed_statement_blob(self) -> None:
+        self._refused_statement("this is not json", "not valid JSON")
+
+    def test_create_receipt_refuses_wrong_statement_predicate_type(self) -> None:
+        statement = self.fixture_statement()
+        statement["predicateType"] = "https://slsa.dev/provenance/v0.2"
+        self._refused_statement(statement, "predicateType")
+
+    def test_create_receipt_refuses_empty_predicate(self) -> None:
+        statement = self.fixture_statement()
+        statement["predicate"] = {}
+        self._refused_statement(statement, "empty or non-object predicate")
+
+    def test_create_receipt_refuses_unnamed_statement_subject(self) -> None:
+        statement = self.fixture_statement()
+        statement["subject"][0].pop("name")
+        self._refused_statement(statement, "no name")
+
+    def test_create_receipt_refuses_non_spdx_shaped_predicate(self) -> None:
+        for mutation, pattern in (
+            ({"spdxVersion": "CycloneDX-1.5"}, "spdxVersion"),
+            ({"SPDXID": "SPDXRef-Other"}, "SPDXRef-DOCUMENT"),
+            ({"packages": []}, "no packages"),
+            ({"relationships": []}, "DESCRIBES"),
+        ):
+            statement = self.fixture_statement()
+            statement["predicate"].update(mutation)
+            self._refused_statement(statement, pattern)
+
+    def test_create_receipt_refuses_statement_hash_mismatch(self) -> None:
+        # The blob must be the exact content the layer digest names.
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "layer digest"):
+            TOOL.create_release_receipt(
+                self.REFERENCE,
+                self.run_root,
+                self.fixture["repo"],
+                "deploy/fixture",
+                "release.key",
+                capture=self.crane_capture(
+                    self.fixture["head"],
+                    statement_layer_digest="sha256:" + "e" * 64,
                 ),
             )
 
@@ -704,17 +881,21 @@ class ReceiptBindingTest(unittest.TestCase):
                 capture=capture,
             )
 
+    def spdx_document(self, name: str) -> dict:
+        return {
+            "spdxVersion": "SPDX-2.3",
+            "SPDXID": "SPDXRef-DOCUMENT",
+            "name": name,
+            "documentNamespace": "https://example.invalid/spdxdocs/fixture",
+            "packages": [{"SPDXID": "SPDXRef-Package-fixture"}],
+            "relationships": [{"relationshipType": "DESCRIBES"}],
+        }
+
     def test_spdx_document_fallback_is_parsed_and_subject_checked(self) -> None:
         digest_hex = DIGEST_A.split(":", 1)[1]
         good = self.run_root / "sbom.spdx.json"
         good.write_text(
-            json.dumps(
-                {
-                    "spdxVersion": "SPDX-2.3",
-                    "name": f"fixture-image@sha256:{digest_hex}",
-                    "packages": [],
-                }
-            ),
+            json.dumps(self.spdx_document(f"fixture-image@sha256:{digest_hex}")),
             encoding="utf-8",
         )
         evidence = TOOL._validated_spdx_document(DIGEST_A, good)
@@ -724,19 +905,26 @@ class ReceiptBindingTest(unittest.TestCase):
         with self.assertRaisesRegex(TOOL.ProvenanceError, "not an SPDX"):
             TOOL._validated_spdx_document(DIGEST_A, not_spdx)
         wrong_subject = self.run_root / "wrong.spdx.json"
-        wrong_subject.write_text(
-            json.dumps(
-                {
-                    "spdxVersion": "SPDX-2.3",
-                    "name": "fixture-image",
-                    "comment": f"mentions sha256:{digest_hex} only informally",
-                    "packages": [],
-                }
-            ),
-            encoding="utf-8",
-        )
+        document = self.spdx_document("fixture-image")
+        document["comment"] = f"mentions sha256:{digest_hex} only informally"
+        wrong_subject.write_text(json.dumps(document), encoding="utf-8")
         with self.assertRaisesRegex(TOOL.ProvenanceError, "does not name"):
             TOOL._validated_spdx_document(DIGEST_A, wrong_subject)
+
+    def test_spdx_document_fallback_requires_document_shape(self) -> None:
+        digest_hex = DIGEST_A.split(":", 1)[1]
+        for mutation, pattern in (
+            ({"packages": []}, "no packages"),
+            ({"relationships": []}, "DESCRIBES"),
+            ({"SPDXID": "SPDXRef-Other"}, "SPDXRef-DOCUMENT"),
+            ({"documentNamespace": ""}, "documentNamespace"),
+        ):
+            document = self.spdx_document(f"fixture-image@sha256:{digest_hex}")
+            document.update(mutation)
+            path = self.run_root / "shape.spdx.json"
+            path.write_text(json.dumps(document), encoding="utf-8")
+            with self.assertRaisesRegex(TOOL.ProvenanceError, pattern):
+                TOOL._validated_spdx_document(DIGEST_A, path)
 
 
 class ReceiptSignatureRoundTripTest(unittest.TestCase):

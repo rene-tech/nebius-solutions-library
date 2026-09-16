@@ -203,6 +203,99 @@ class ReleaseSourceGateTest(unittest.TestCase):
                 self.run_root, "v1.0", repository_root=self.checkout
             )
 
+    def anchor_evidence(self, receipt: dict) -> tuple[bytes, bytes]:
+        bundle_bytes = Path(receipt["bundle_path"]).read_bytes()
+        store_bytes = STACK.release_anchor_store(self.run_root).read_bytes()
+        return bundle_bytes, store_bytes
+
+    def test_anchor_recreation_is_idempotent_for_unchanged_identity(self) -> None:
+        commit = self.add_unpushed_commit()
+        git(self.checkout, "tag", "-a", "-m", "anchor", "deploy/idempotent", commit)
+        first = STACK.create_release_anchor(
+            self.run_root, "deploy/idempotent", repository_root=self.checkout
+        )
+        bundle_bytes, store_bytes = self.anchor_evidence(first)
+        second = STACK.create_release_anchor(
+            self.run_root, "deploy/idempotent", repository_root=self.checkout
+        )
+        self.assertTrue(second["idempotent"])
+        self.assertEqual(second["sha256"], first["sha256"])
+        self.assertEqual(self.anchor_evidence(first), (bundle_bytes, store_bytes))
+
+    def test_anchor_refuses_reanchoring_a_moved_tag(self) -> None:
+        commit = self.add_unpushed_commit()
+        git(self.checkout, "tag", "-a", "-m", "anchor", "deploy/replay", commit)
+        first = STACK.create_release_anchor(
+            self.run_root, "deploy/replay", repository_root=self.checkout
+        )
+        evidence = self.anchor_evidence(first)
+        moved = self.add_unpushed_commit()
+        git(self.checkout, "tag", "-f", "-a", "-m", "moved", "deploy/replay", moved)
+        with self.assertRaisesRegex(STACK.DeploymentError, "immutable"):
+            STACK.create_release_anchor(
+                self.run_root, "deploy/replay", repository_root=self.checkout
+            )
+        # The replay attempt must not have changed the recorded evidence.
+        self.assertEqual(self.anchor_evidence(first), evidence)
+
+    def test_anchor_refuses_recreation_over_missing_or_changed_bundle(self) -> None:
+        commit = self.add_unpushed_commit()
+        git(self.checkout, "tag", "-a", "-m", "anchor", "deploy/damaged", commit)
+        receipt = STACK.create_release_anchor(
+            self.run_root, "deploy/damaged", repository_root=self.checkout
+        )
+        bundle = Path(receipt["bundle_path"])
+        original = bundle.read_bytes()
+        bundle.write_bytes(original + b"tamper")
+        with self.assertRaisesRegex(STACK.DeploymentError, "immutable"):
+            STACK.create_release_anchor(
+                self.run_root, "deploy/damaged", repository_root=self.checkout
+            )
+        bundle.unlink()
+        with self.assertRaisesRegex(STACK.DeploymentError, "restore the"):
+            STACK.create_release_anchor(
+                self.run_root, "deploy/damaged", repository_root=self.checkout
+            )
+
+    def test_anchor_refuses_unrecorded_file_at_bundle_path(self) -> None:
+        commit = self.add_unpushed_commit()
+        git(self.checkout, "tag", "-a", "-m", "anchor", "deploy/squat", commit)
+        bundle_directory = self.run_root / "release-anchors"
+        bundle_directory.mkdir(mode=0o700, exist_ok=True)
+        (bundle_directory / "deploy-squat.bundle").write_bytes(b"squatter")
+        with self.assertRaisesRegex(STACK.DeploymentError, "unrecorded file"):
+            STACK.create_release_anchor(
+                self.run_root, "deploy/squat", repository_root=self.checkout
+            )
+        self.assertEqual(
+            (bundle_directory / "deploy-squat.bundle").read_bytes(), b"squatter"
+        )
+
+    def test_gate_history_is_append_only_and_preserves_exceptions(self) -> None:
+        commit = self.add_unpushed_commit()
+        STACK.enforce_release_source(
+            self.run_root,
+            commit,
+            "governed exception: history test",
+            repository_root=self.checkout,
+        )
+        history = self.run_root / "release-source-history.jsonl"
+        first_line = history.read_text(encoding="utf-8").splitlines()[0]
+        git(self.checkout, "push", "origin", "main")
+        git(self.checkout, "fetch", "origin")
+        STACK.enforce_release_source(
+            self.run_root, commit, None, repository_root=self.checkout
+        )
+        lines = history.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 2)
+        # The recorded exception is preserved verbatim by the later run.
+        self.assertEqual(lines[0], first_line)
+        self.assertEqual(
+            json.loads(lines[0])["override_reason"],
+            "governed exception: history test",
+        )
+        self.assertIsNone(json.loads(lines[1])["override_reason"])
+
     def test_override_records_reason_instead_of_weakening_silently(self) -> None:
         commit = self.add_unpushed_commit()
         state = STACK.enforce_release_source(

@@ -12,6 +12,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator, Mapping, Sequence
@@ -100,6 +101,23 @@ def private_json(path: Path, value: Any) -> None:
     finally:
         if temporary.exists():
             temporary.unlink()
+
+
+def private_append_jsonl(path: Path, value: Any) -> None:
+    """Append one JSON line to a private, append-only evidence log.
+
+    The file is opened O_APPEND and never truncated, so earlier evidence —
+    including recorded gate exceptions — survives every later run.
+    """
+    if path.is_symlink():
+        raise DeploymentError(f"evidence log must not be a symlink: {path}")
+    line = json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n"
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    try:
+        with os.fdopen(descriptor, "a", encoding="utf-8") as handle:
+            handle.write(line)
+    finally:
+        path.chmod(0o600)
 
 
 def private_text(path: Path, value: str) -> None:
@@ -494,6 +512,12 @@ def create_release_anchor(
     The bundle is self-contained (full history reachable from the tag), stored
     mode 0600 inside the 0700 run root, hash-recorded, `git bundle verify`-ed,
     and restore-tested with a real clone before the receipt is written.
+
+    Anchor evidence is write-once. An existing entry is never replaced: an
+    identity-equal re-run is an idempotent no-op that re-verifies the recorded
+    artifact, and any mismatch — a moved tag, a changed or missing bundle, an
+    unrecorded file at the bundle path — is refused so old evidence can never
+    be silently rewritten. Superseding a release means anchoring a NEW tag.
     """
     root = repository_root or REPOSITORY_ROOT
     if not tag_ref.startswith("refs/tags/"):
@@ -520,6 +544,46 @@ def create_release_anchor(
     bundle = bundle_directory / (
         tag_ref.removeprefix("refs/tags/").replace("/", "-") + ".bundle"
     )
+
+    anchors = _read_release_anchors(run_root)
+    existing = anchors.get(tag_ref)
+    if existing is not None:
+        if (
+            existing.get("tag_target") != tag_target
+            or existing.get("commit") != commit
+        ):
+            raise DeploymentError(
+                f"anchor {tag_ref} is already recorded at commit "
+                f"{existing.get('commit')} (tag object {existing.get('tag_target')}) "
+                f"but the tag now resolves to {commit} ({tag_target}); anchors "
+                "are immutable — a moved tag is never re-anchored, create a "
+                "new release/deploy tag instead"
+            )
+        recorded_bundle = Path(str(existing.get("bundle_path", "")))
+        if not recorded_bundle.is_file():
+            raise DeploymentError(
+                f"anchor {tag_ref} is recorded but its bundle is missing: "
+                f"{recorded_bundle}; evidence is immutable — restore the "
+                "bundle from backup or anchor a new tag, never recreate it "
+                "in place"
+            )
+        if _sha256_file(recorded_bundle) != existing.get("sha256"):
+            raise DeploymentError(
+                f"anchor {tag_ref} bundle no longer matches its recorded "
+                f"SHA-256: {recorded_bundle}; evidence is immutable — refusing "
+                "to overwrite; investigate the tamper and anchor a new tag"
+            )
+        run(
+            ["git", "-C", str(root), "bundle", "verify", str(recorded_bundle)],
+            capture=True,
+            env=clean_environment(),
+        )
+        return {"anchor_tag": tag_ref, **existing, "idempotent": True}
+    if bundle.exists():
+        raise DeploymentError(
+            f"unrecorded file already exists at the anchor bundle path "
+            f"{bundle}; refusing to overwrite evidence-directory content"
+        )
     run(
         ["git", "-C", str(root), "bundle", "create", str(bundle), tag_ref],
         env=clean_environment(),
@@ -622,7 +686,11 @@ def enforce_release_source(
     """
     state = release_source_state(commit, run_root, repository_root)
     state["override_reason"] = override_reason
+    state["checked_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    # Latest state for tooling, plus an append-only audit history so no later
+    # run can overwrite the evidence of an earlier evaluation or exception.
     private_json(run_root / "release-source.json", state)
+    private_append_jsonl(run_root / "release-source-history.jsonl", state)
     failures = []
     if not state["worktree_clean"]:
         failures.append(
