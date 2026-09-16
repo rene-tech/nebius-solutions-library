@@ -247,23 +247,35 @@ spec:
           operator: In
           values: [fs2-system]
 ---
-# External security-owned admission boundary (owner-approved 2026-09-16).
-# SEPARATE from the release path: a distinct security automation identity —
-# never the release/deploy identity, never a human — is the only principal
-# that may mutate or delete the protected provenance controls (these policy
-# objects, their bindings, the allow-list ConfigMap, and this guard's own
-# parameter ConfigMap). Deletion of the guard itself is matched and denied
-# like any other protected object. Break-glass is a REVERSIBLE, SIGNED mode
-# toggle, never a deletion: changing a protected binding's validationActions
-# (e.g. Deny -> Audit/Warn and back) additionally requires a
-# security.fs2.nebius.ai/recovery-authorization annotation carrying the
-# SHA-256 of an owner-signed recovery document (verified with
-# `provenance.py verify-recovery` before the security automation applies it).
-# Residuals (owner IAM, not admission): impersonation rights must not be
-# granted (admission sees only the effective user), and API-server-level
-# access remains the trust root. Bootstrap order: create
-# fs2-security-guard-params (before this guard exists), then apply the guard;
-# afterwards both ConfigMaps and all policy objects are mutation-protected.
+# Security-owned parameter guard (owner decision #4 support control — NOT the
+# non-removable boundary itself).
+#
+# CORRECTED CONTRACT (independent reviewer ruling, 2026-09-16): Kubernetes
+# admission INTENTIONALLY does not evaluate in-cluster admission policies or
+# webhooks on writes/deletion of admission-configuration resources
+# (ValidatingAdmissionPolicy/Binding, Mutating/ValidatingWebhookConfiguration)
+# — an anti-lockout design to avoid circular dependencies. Therefore NO
+# in-cluster VAP or webhook can make the provenance policies non-removable,
+# and this guard does not claim to. The NON-REMOVABLE guarantee for the
+# policy objects is the owner-approved EXTERNAL control: provider/IAM/RBAC —
+# no human or release-identity delete/update rights on admissionregistration
+# resources, no impersonation grants, provider-held apiserver/etcd. Until
+# that external control is in place, deletion or weakening of the policy
+# objects is DETECTED (not prevented) by the renderer: every allow-list
+# render fetches the live policy objects and refuses to render unless they
+# equal the committed, owner-scope-pinned definitions.
+#
+# What this guard DOES enforce (ConfigMaps are ordinary resources that
+# admission fully evaluates): only the security automation identity may
+# create, update, or delete the allow-list ConfigMap and this guard's own
+# parameter ConfigMap. The release identity produces the rendered allow-list
+# and hands it to the security identity for application; humans write
+# nothing here. Break-glass (validationActions changes) is a PROCEDURAL
+# contract enforced by the external control and verified with
+# `provenance.py verify-recovery` (owner-signed, bounded, reversible, never
+# deletion); the renderer refuses to render against weakened live actions.
+# Bootstrap order: create fs2-security-guard-params, then apply this guard;
+# afterwards both ConfigMaps are admission-protected.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -279,21 +291,6 @@ spec:
     kind: ConfigMap
   matchConstraints:
     resourceRules:
-      - apiGroups: ["admissionregistration.k8s.io"]
-        apiVersions: ["v1"]
-        operations: ["UPDATE", "DELETE"]
-        resources: ["validatingadmissionpolicies", "validatingadmissionpolicybindings"]
-        scope: Cluster
-      # Webhook-interference guard: mutating admission runs BEFORE validating
-      # admission, so an attacker-created MutatingWebhookConfiguration whose
-      # rules reach the protected surfaces (ConfigMaps, admissionregistration
-      # objects) could tamper legitimate security-principal writes mid-flight.
-      # Creating or changing such a webhook is itself a protected operation.
-      - apiGroups: ["admissionregistration.k8s.io"]
-        apiVersions: ["v1"]
-        operations: ["CREATE", "UPDATE", "DELETE"]
-        resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
-        scope: Cluster
       - apiGroups: [""]
         apiVersions: ["v1"]
         operations: ["CREATE", "UPDATE", "DELETE"]
@@ -308,52 +305,19 @@ spec:
     - name: subject
       expression: >-
         object != null ? object : oldObject
-    - name: interferingWebhook
-      expression: >-
-        has(variables.subject.webhooks) &&
-        variables.subject.webhooks.exists(w,
-          has(w.rules) && w.rules.exists(rule,
-            (has(rule.apiGroups) && has(rule.resources) &&
-             rule.apiGroups.exists(g, g == '' || g == '*') &&
-             rule.resources.exists(res, res == 'configmaps' || res == '*'))
-            || (has(rule.apiGroups) &&
-                rule.apiGroups.exists(g,
-                  g == 'admissionregistration.k8s.io' || g == '*'))))
     - name: isProtected
       expression: >-
-        ['validatingadmissionpolicies', 'validatingadmissionpolicybindings']
-        .exists(r, r == request.resource.resource)
-        ? ['fs2-image-provenance', 'fs2-helm-release-governance',
-           'fs2-provenance-guard'].exists(n, n == variables.subject.metadata.name)
-        : (['mutatingwebhookconfigurations', 'validatingwebhookconfigurations']
-           .exists(r, r == request.resource.resource)
-           ? variables.interferingWebhook
-           : (variables.subject.metadata.namespace == 'fs2-system' &&
-              ['fs2-image-provenance-allowlist', 'fs2-security-guard-params']
-              .exists(n, n == variables.subject.metadata.name)))
+        variables.subject.metadata.namespace == 'fs2-system' &&
+        ['fs2-image-provenance-allowlist', 'fs2-security-guard-params']
+        .exists(n, n == variables.subject.metadata.name)
   validations:
     - expression: >-
         !variables.isProtected ||
         variables.securityPrincipals.exists(p, p == request.userInfo.username)
       message: >-
-        protected provenance controls (policies, bindings, allow-list and
-        guard parameters) may only be changed by the security automation
-        identity; the release identity and humans write nothing here (SAI-09)
-      reason: Forbidden
-    - expression: >-
-        request.resource.resource != 'validatingadmissionpolicybindings' ||
-        object == null || oldObject == null ||
-        object.spec.validationActions == oldObject.spec.validationActions ||
-        (has(object.metadata.annotations) &&
-         'security.fs2.nebius.ai/recovery-authorization' in
-         object.metadata.annotations &&
-         object.metadata.annotations['security.fs2.nebius.ai/recovery-authorization']
-         .matches('^[0-9a-f]{64}$'))
-      message: >-
-        changing enforcement actions is break-glass: attach the
-        security.fs2.nebius.ai/recovery-authorization annotation carrying the
-        SHA-256 of an owner-signed recovery document (verify-recovery); the
-        toggle is reversible and deletion is never the recovery path (SAI-09)
+        the allow-list and guard parameter ConfigMaps may only be changed by
+        the security automation identity; the release identity and humans
+        write nothing here (SAI-09)
       reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1

@@ -118,9 +118,12 @@ provenance gate (see `security/image-provenance/README.md`):
    authority files and keys fail closed. Deploy principals are automation
    ServiceAccounts only (owner decision: short-lived automation-only release
    identity), disjoint from the security principals that operate the
-   security-owned `fs2-provenance-guard` protecting the policies, bindings,
-   and parameter ConfigMaps, with a reversible, owner-signed break-glass
-   (never deletion). MindEval passes these identical gates with no
+   security-owned `fs2-provenance-guard` protecting the parameter ConfigMaps
+   (admission-configuration objects are architecturally exempt from
+   in-cluster admission, so their non-removability is the external
+   provider/IAM owner control; the renderer detects and refuses drift or
+   deletion of every policy object at render), with a reversible,
+   owner-signed break-glass (never deletion). MindEval passes these identical gates with no
    exception. The inventory carries a strictly monotonic generation checked
    against a SIGNED, hash-chained, no-replace acceptance chain (no replay of
    older signed inventories), and rendering authoritatively re-observes the

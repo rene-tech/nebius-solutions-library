@@ -66,6 +66,15 @@ class ReleaseSourceGateTest(unittest.TestCase):
         git(self.checkout, "config", "user.email", "gate-test@example.invalid")
         git(self.checkout, "config", "user.name", "Gate Test")
         git(self.checkout, "remote", "add", "origin", str(self.origin))
+        # Pin the fixture origin exactly as production pins the canonical
+        # remote URL in reviewed source.
+        self._original_remote_pin = STACK.RELEASE_REMOTE_URL
+        STACK.RELEASE_REMOTE_URL = str(self.origin)
+        self.addCleanup(
+            lambda: setattr(
+                STACK, "RELEASE_REMOTE_URL", self._original_remote_pin
+            )
+        )
         (self.checkout / "tracked.txt").write_text("v1\n", encoding="utf-8")
         self.signed_authority_hashes: set[str] = set()
         self.sign_approvers(
@@ -213,6 +222,27 @@ class ReleaseSourceGateTest(unittest.TestCase):
             self.run_root, commit, None, repository_root=self.checkout
         )
         self.assertIn("refs/tags/deploy/gate-test", state["anchor_refs"])
+
+    def test_attacker_controlled_remote_url_never_anchors(self) -> None:
+        # remote.origin.url lives in mutable local config: repointing origin
+        # at an attacker repository that genuinely serves the commit must be
+        # inert, because verification asks the SOURCE-PINNED URL directly.
+        commit = self.add_unpushed_commit()
+        attacker = Path(self._temporary.name) / "attacker.git"
+        subprocess.run(
+            ["git", "init", "--bare", "--initial-branch=main", str(attacker)],
+            check=True,
+            capture_output=True,
+        )
+        git(self.checkout, "push", str(attacker), "HEAD:refs/heads/main")
+        git(self.checkout, "remote", "set-url", "origin", str(attacker))
+        git(self.checkout, "fetch", "origin")
+        with self.assertRaisesRegex(STACK.DeploymentError, "release-source gate"):
+            STACK.enforce_release_source(
+                self.run_root, commit, None, repository_root=self.checkout
+            )
+        self.assertFalse(self.receipt()["anchored"])
+        git(self.checkout, "remote", "set-url", "origin", str(self.origin))
 
     def test_locally_moved_tracking_ref_never_anchors(self) -> None:
         # The reproduced attack: `git update-ref refs/remotes/origin/main` to

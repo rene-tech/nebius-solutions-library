@@ -159,14 +159,25 @@ bump — in order:
    validationActions — so a missing, Audit-only, `NotIn`, exclude-all, or
    otherwise narrowed live object refuses rendering. The SECURITY-OWNED
    guard (`fs2-provenance-guard`) must be live and identical too: it
-   restricts UPDATE/DELETE of the protected policies, bindings, allow-list,
-   and its own parameter ConfigMap to the scope's `security_principals`
-   (automation ServiceAccounts, DISJOINT from the deploy principals), and
-   makes enforcement-action changes break-glass — reversible, never a
-   deletion, and gated on an owner-signed recovery authorization
-   (`provenance.py verify-recovery` prints the annotation the guard
-   demands; `render-guard-params` renders the security-owned parameter
-   ConfigMap, which the release renderer never emits). Acceptance-chain
+   restricts writes of the allow-list and guard-parameter ConfigMaps to the
+   scope's `security_principals` (automation ServiceAccounts, DISJOINT from
+   the deploy principals). Admission-configuration objects themselves are
+   architecturally exempt from in-cluster admission (see the corrected
+   boundary note under residuals): their non-removability is the EXTERNAL
+   owner control, while the renderer's live-equality check — which also
+   covers the Helm-governance objects and the guard-params CONTENT against
+   the owner-signed scope — detects any drift, weakening, or deletion and
+   refuses to render. Break-glass (validationActions changes) is a
+   PROCEDURAL owner contract: reversible, never a deletion, authorized by an
+   owner-signed bounded recovery document (`provenance.py verify-recovery`);
+   `render-guard-params` renders the security-owned parameter ConfigMap,
+   which the release renderer never emits. The owner-signed scope also PINS
+   the frozen-binding surface (`frozen_bindings`): pinned bindings are
+   fetched directly at render and must exist, so unlabeling — the label is
+   an opt-in marker with no authority — can never silently drop coverage.
+   Trust in the Git remote is likewise source-pinned: the wrapper's
+   ls-remote verification asks the canonical URL pinned in reviewed source,
+   never the locally mutable `remote.origin.url`. Acceptance-chain
    appends are serialized under an exclusive lock with the signature linked
    before the record, so concurrent renders cannot fork a sequence and a
    crash between links is retry-recoverable without deletion. The scope's
@@ -347,32 +358,28 @@ Existing Pods are never affected by the policies; only new admissions are.
   digest-pinned images from allow-listed registries (real isolated-kind
   admission tests prove the pinned injection is admitted and
   `evil.invalid/debug:latest` is denied; see tests/test_admission_kind.py).
-- Why a VAP can guard VAP deletion — and what it still cannot do. Admission
-  is orthogonal to authorization: the API server evaluates admission
-  policies on every matched request REGARDLESS of the caller's RBAC, so
-  cluster-admin is NOT exempt from the guard, and DELETE of
-  admissionregistration objects is an admission-evaluated request like any
-  other. The earlier kind evidence that "VAP deletion succeeds as
-  cluster-admin" was collected when NO policy matched VAP deletions — it
-  proved an unprotected surface, not an architectural exemption. An
-  in-cluster admission WEBHOOK would not be stronger: its
-  WebhookConfiguration is itself a deletable API object with the identical
-  self-protection recursion, plus availability failure modes. What a VAP
-  guard genuinely cannot stop, and what therefore remains of decision #4's
-  EXTERNAL boundary as named owner gates: (1) impersonation — admission
-  sees the effective user, so `impersonate` RBAC grants must not exist
-  (owner IAM); (2) API-server/infrastructure-level control — on managed
-  mk8s the apiserver flags are held by the PROVIDER, not cluster-admin,
-  which strengthens the boundary, and any provider-level attestation is an
-  owner item; (3) etcd-level access (provider-held); (4) out-of-band
-  WORM/detection anchoring of the acceptance-chain head and gate history.
-  Webhook interference (mutating admission runs BEFORE validating, so an
-  attacker-created MutatingWebhookConfiguration reaching the protected
-  surfaces could tamper legitimate security-principal writes mid-flight) is
-  closed in-cluster: creating or changing such a webhook is itself a
-  guard-protected operation. The guard's live behavior — including denial
-  of protected-object deletion by cluster-admin — is UNVERIFIED until the
-  kind ruling or the owner apply window; treat it as designed-not-proven.
+- CORRECTED (independent reviewer adjudication, 2026-09-16 — replaces an
+  earlier FALSE claim in this section): Kubernetes admission INTENTIONALLY
+  does not evaluate in-cluster admission policies or webhooks on writes or
+  deletion of admission-configuration resources (ValidatingAdmissionPolicy,
+  its bindings, and webhook configurations) — an anti-lockout design that
+  avoids circular dependencies. The earlier kind evidence that VAP deletion
+  succeeded as cluster-admin was therefore ARCHITECTURAL, not a missing
+  rule, and NO in-cluster VAP or webhook can make the provenance policy
+  objects non-removable (a webhook configuration is equally exempt and
+  fail-open besides). The NON-REMOVABLE guarantee is exclusively the
+  owner-approved EXTERNAL control: provider-held apiserver/static admission
+  configuration, IAM/RBAC without admissionregistration write or
+  impersonation grants for humans and the release identity, and out-of-band
+  WORM anchoring. In-cluster, the truthful posture is: the guard DENIES
+  non-security writes to the two parameter ConfigMaps (ordinary resources
+  admission fully evaluates; the ConfigMaps are DERIVED STATE, never
+  authority — the renderer verifies live guard-params content against the
+  owner-signed scope), and drift or deletion of ANY of the six policy
+  objects is DETECTED at every render by the live-equality check
+  (image-provenance, Helm-governance, and guard policies + bindings, all
+  normalized over every narrowing field WITH API defaulting applied), which
+  refuses to render against a missing, weakened, or drifted object.
 - Kind boundary evidence (2026-09-16): as the configured cluster-admin
   principal, a direct config-only Pod patch, mutation of the allow-list
   ConfigMap, deletion of the VAP objects, and a Helm release-Secret write

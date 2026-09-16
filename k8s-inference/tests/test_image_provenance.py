@@ -172,60 +172,39 @@ class PolicyManifestTest(unittest.TestCase):
         for key in rendered_keys:
             self.assertIn(f"'{key}' in params.data", variable_expressions)
 
-    def test_guard_protects_policies_bindings_and_parameters(self) -> None:
-        # The external security-owned boundary: UPDATE/DELETE of the policy
-        # objects (including the guard itself) and the two parameter
-        # ConfigMaps are matched and restricted to the security principals;
-        # enforcement-action changes additionally demand the signed
-        # break-glass annotation. No deletion path exists.
+    def test_guard_protects_exactly_what_admission_can_evaluate(self) -> None:
+        # CORRECTED CONTRACT (independent reviewer ruling): Kubernetes
+        # admission intentionally does NOT evaluate in-cluster policies or
+        # webhooks on admission-configuration writes (anti-lockout), so the
+        # guard claims ONLY what admission genuinely evaluates: the two
+        # parameter ConfigMaps. Policy-object protection is the EXTERNAL
+        # owner control; the renderer detects drift/deletion at every render.
         spec = self.guard_policy["spec"]
         self.assertEqual(spec["failurePolicy"], "Fail")
-        matched = {
-            (rule["apiGroups"][0], resource, operation)
-            for rule in spec["matchConstraints"]["resourceRules"]
-            for resource in rule["resources"]
-            for operation in rule["operations"]
-        }
-        for resource in (
-            "validatingadmissionpolicies",
-            "validatingadmissionpolicybindings",
-        ):
-            for operation in ("UPDATE", "DELETE"):
-                self.assertIn(
-                    ("admissionregistration.k8s.io", resource, operation), matched
-                )
-        for operation in ("CREATE", "UPDATE", "DELETE"):
-            self.assertIn(("", "configmaps", operation), matched)
-            for resource in (
-                "mutatingwebhookconfigurations",
-                "validatingwebhookconfigurations",
-            ):
-                self.assertIn(
-                    ("admissionregistration.k8s.io", resource, operation),
-                    matched,
-                )
+        rules = spec["matchConstraints"]["resourceRules"]
+        self.assertEqual(len(rules), 1)
+        self.assertEqual(rules[0]["resources"], ["configmaps"])
+        self.assertEqual(
+            sorted(rules[0]["operations"]), ["CREATE", "DELETE", "UPDATE"]
+        )
         variables = {
             variable["name"]: variable["expression"]
             for variable in spec["variables"]
         }
         for name in (
-            "fs2-image-provenance",
-            "fs2-helm-release-governance",
-            "fs2-provenance-guard",
             "fs2-image-provenance-allowlist",
             "fs2-security-guard-params",
         ):
             self.assertIn(name, variables["isProtected"])
-        # Mutating admission runs before validating admission: creating a
-        # webhook whose rules reach the protected surfaces is itself gated.
-        self.assertIn("mutatingwebhookconfigurations", variables["isProtected"])
-        self.assertIn("interferingWebhook", variables["isProtected"])
-        self.assertIn("admissionregistration.k8s.io", variables["interferingWebhook"])
-        self.assertIn("configmaps", variables["interferingWebhook"])
-        expressions = [v["expression"] for v in spec["validations"]]
-        self.assertIn("securityPrincipals.exists", expressions[0])
-        self.assertIn("recovery-authorization", expressions[1])
-        self.assertIn("validationActions", expressions[1])
+        # No claim over admissionregistration resources survives: admission
+        # cannot evaluate those writes, so matching them would be a false
+        # promise.
+        manifest_text = json.dumps(self.guard_policy)
+        self.assertNotIn("validatingadmissionpolicies", manifest_text)
+        self.assertNotIn("mutatingwebhookconfigurations", manifest_text)
+        validations = spec["validations"]
+        self.assertEqual(len(validations), 1)
+        self.assertIn("securityPrincipals.exists", validations[0]["expression"])
         binding = self.guard_binding["spec"]
         self.assertIn("Deny", binding["validationActions"])
         self.assertEqual(binding["paramRef"]["name"], "fs2-security-guard-params")
@@ -668,6 +647,7 @@ def default_scope_fixture(key_sha256: str) -> dict:
         "deploy_principals": [AUTOMATION_PRINCIPAL],
         "security_principals": [SECURITY_PRINCIPAL],
         "verification_key_sha256": key_sha256,
+        "frozen_bindings": [],
         "policy_sha256": hashlib.sha256(POLICY_PATH.read_bytes()).hexdigest(),
     }
 
@@ -890,26 +870,44 @@ class VerifiedAllowlistTest(unittest.TestCase):
             (document["kind"], document["metadata"]["name"]): document
             for document in documents
         }
-        live_objects = {
-            ("ValidatingAdmissionPolicy", "fs2-image-provenance"): (
+
+        def server_defaulted(document):
+            # A real GET returns persisted API defaults the YAML omits.
+            import copy
+
+            live = copy.deepcopy(document)
+            spec = live.setdefault("spec", {})
+            if live["kind"] == "ValidatingAdmissionPolicy":
+                spec.setdefault("failurePolicy", "Fail")
+                constraints = spec.setdefault("matchConstraints", {})
+                constraints.setdefault("matchPolicy", "Equivalent")
+                for rule in constraints.get("resourceRules") or []:
+                    rule.setdefault("scope", "*")
+            else:
+                matches = spec.setdefault("matchResources", {})
+                matches.setdefault("matchPolicy", "Equivalent")
+                matches.setdefault("namespaceSelector", {})
+                matches.setdefault("objectSelector", {})
+            return live
+
+        live_objects = {}
+        for kind in ("ValidatingAdmissionPolicy", "ValidatingAdmissionPolicyBinding"):
+            for name in (
+                "fs2-image-provenance",
+                "fs2-helm-release-governance",
+                "fs2-provenance-guard",
+            ):
+                live_objects[(kind, name)] = server_defaulted(
+                    by_name[(kind, name)]
+                )
+        if live_policy is not None:
+            live_objects[("ValidatingAdmissionPolicy", "fs2-image-provenance")] = (
                 live_policy
-                if live_policy is not None
-                else by_name[("ValidatingAdmissionPolicy", "fs2-image-provenance")]
-            ),
-            ("ValidatingAdmissionPolicyBinding", "fs2-image-provenance"): (
-                live_binding
-                if live_binding is not None
-                else by_name[
-                    ("ValidatingAdmissionPolicyBinding", "fs2-image-provenance")
-                ]
-            ),
-            ("ValidatingAdmissionPolicy", "fs2-provenance-guard"): by_name[
-                ("ValidatingAdmissionPolicy", "fs2-provenance-guard")
-            ],
-            ("ValidatingAdmissionPolicyBinding", "fs2-provenance-guard"): by_name[
-                ("ValidatingAdmissionPolicyBinding", "fs2-provenance-guard")
-            ],
-        }
+            )
+        if live_binding is not None:
+            live_objects[
+                ("ValidatingAdmissionPolicyBinding", "fs2-image-provenance")
+            ] = live_binding
 
         def runner(command):
             joined = " ".join(str(part) for part in command)
@@ -949,6 +947,23 @@ class VerifiedAllowlistTest(unittest.TestCase):
                         ]
                     }
                 )
+            if command[:3] == ["kubectl", "get", "configmap"]:
+                name = command[3]
+                if name == "fs2-security-guard-params":
+                    return json.dumps(
+                        {
+                            "metadata": {"name": name},
+                            "data": {"security-principals": SECURITY_PRINCIPAL},
+                        }
+                    )
+                if name in frozen:
+                    return json.dumps(
+                        {
+                            "metadata": {"name": name},
+                            "data": {"refs": " ".join(frozen[name])},
+                        }
+                    )
+                raise subprocess.CalledProcessError(1, command)
             if command[:3] == ["kubectl", "get", "configmaps"] and "-l" in command:
                 namespace = command[command.index("-n") + 1]
                 if namespace != "fs2-system":
@@ -1144,6 +1159,98 @@ class VerifiedAllowlistTest(unittest.TestCase):
         with self.assertRaisesRegex(TOOL.ProvenanceError, "Helm history"):
             self.render(live_runner=self.live_runner(helm_images=[rollback]))
 
+    def test_unlabeled_owner_pinned_frozen_binding_cannot_vanish(self) -> None:
+        # The label is an opt-in marker with no authority: removing it must
+        # never silently drop an owner-pinned binding from coverage. The
+        # pinned resource is fetched DIRECTLY; omitting its refs refuses.
+        frozen_ref = PLATFORM_PREFIX + "frozen-stage@sha256:" + "c" * 64
+        pinned_scope = dict(
+            self.scope, frozen_bindings=["configmap/fs2-system/frozen-0"]
+        )
+        scope_path = write_scope_fixture(
+            self.run_root, pinned_scope, name="pinned-frozen-scope.json"
+        )
+        omitting_inventory = write_inventory_fixture(
+            self.run_root,
+            [self.REFERENCE_A, self.REFERENCE_B],
+            scope=pinned_scope,
+            name="frozen-omitting.json",
+        )
+
+        def unlabeled_runner(command):
+            # Label listing returns NOTHING (binding was unlabeled), but the
+            # pinned resource still exists and carries the reference.
+            if command[:3] == ["kubectl", "get", "configmaps"] and "-l" in command:
+                return json.dumps({"items": []})
+            return self.live_runner(frozen_objects={"frozen-0": [frozen_ref]})(
+                command
+            )
+
+        with self.assertRaisesRegex(
+            TOOL.ProvenanceError, "frozen_scientific_bindings refs"
+        ):
+            self.render(
+                inventory=omitting_inventory,
+                scope_path=scope_path,
+                live_runner=unlabeled_runner,
+            )
+
+    def test_missing_owner_pinned_frozen_binding_fails_closed(self) -> None:
+        pinned_scope = dict(
+            self.scope, frozen_bindings=["configmap/fs2-system/frozen-0"]
+        )
+        scope_path = write_scope_fixture(
+            self.run_root, pinned_scope, name="missing-frozen-scope.json"
+        )
+        inventory = write_inventory_fixture(
+            self.run_root,
+            [self.REFERENCE_A, self.REFERENCE_B],
+            scope=pinned_scope,
+            name="frozen-missing.json",
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "owner-pinned frozen"):
+            self.render(inventory=inventory, scope_path=scope_path)
+
+    def test_drifted_live_helm_governance_refuses_rendering(self) -> None:
+        import copy
+
+        documents = load_policy_documents()
+        weakened = copy.deepcopy(documents[3])
+        weakened["spec"]["validationActions"] = ["Audit"]
+
+        def drifted_runner(command):
+            if (
+                command[:3]
+                == ["kubectl", "get", "validatingadmissionpolicybinding"]
+                and command[3] == "fs2-helm-release-governance"
+            ):
+                return json.dumps(weakened)
+            return self.live_runner()(command)
+
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "Helm-governance"):
+            self.render(live_runner=drifted_runner)
+
+    def test_live_guard_params_must_equal_the_signed_scope(self) -> None:
+        # The parameter ConfigMap is derived state, never authority: live
+        # content that differs from the owner-signed scope refuses rendering.
+        def tampered_params_runner(command):
+            if (
+                command[:3] == ["kubectl", "get", "configmap"]
+                and command[3] == "fs2-security-guard-params"
+            ):
+                return json.dumps(
+                    {
+                        "metadata": {"name": "fs2-security-guard-params"},
+                        "data": {
+                            "security-principals": "system:serviceaccount:evil:sa"
+                        },
+                    }
+                )
+            return self.live_runner()(command)
+
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "never authority"):
+            self.render(live_runner=tampered_params_runner)
+
     def test_forged_frozen_binding_fails_closed(self) -> None:
         # Frozen refs must be present in the exact live resources their
         # signed identities name; a forged ref or an empty resource refuses.
@@ -1305,10 +1412,44 @@ class VerifiedAllowlistTest(unittest.TestCase):
                 self.render()
         self.render()
 
+    def randomized_signing_capture(self):
+        # Real P-256 ECDSA signatures are RANDOMIZED: every signing of the
+        # same payload yields different bytes. The fixture mirrors that so
+        # byte-identical-adoption bugs cannot hide behind a literal stub.
+        import uuid
+
+        def capture(command):
+            if command[:2] == ["cosign", "sign-blob"]:
+                Path(command[command.index("--output-file") + 1]).write_text(
+                    f"random-signature-{uuid.uuid4().hex}\n"
+                )
+                return ""
+            return self.capture(command)
+
+        return capture
+
+    def render_with_random_signatures(self, **kwargs):
+        kwargs.setdefault("verifier", authority_checking_verifier)
+        return TOOL.verified_allowlist(
+            self._tmp.name,
+            [],
+            [REGISTRY_PREFIX],
+            PLATFORM_PREFIX,
+            self.run_root,
+            kwargs.pop("inventory", None) or self.inventory,
+            self.scope_path,
+            deploy_principals=[AUTOMATION_PRINCIPAL],
+            key_path="release.key",
+            capture=self.randomized_signing_capture(),
+            live_runner=self.live_runner(),
+            **kwargs,
+        )
+
     def test_acceptance_head_crash_between_links_recovers(self) -> None:
-        # Signature links FIRST: a crash between the two link(2) calls leaves
-        # only a dangling .sig, which chain verification ignores; the retry
-        # adopts the byte-identical survivor and completes the head.
+        # Signature links FIRST, and — because real ECDSA signatures are
+        # randomized — the retry must VERIFY AND ADOPT the orphan signature
+        # over the deterministic head payload instead of demanding
+        # byte-identical re-signing, which can never happen.
         from unittest import mock
 
         original = TOOL._link_no_replace_or_adopt
@@ -1324,20 +1465,64 @@ class VerifiedAllowlistTest(unittest.TestCase):
             TOOL, "_link_no_replace_or_adopt", crash_after_first_link
         ):
             with self.assertRaises(RuntimeError):
-                self.render()
+                self.render_with_random_signatures()
         heads_dir = self.run_root / "release-inventory-heads"
         self.assertEqual(
             [entry.name for entry in heads_dir.iterdir() if entry.name.endswith(".json")],
             [],
         )
-        self.assertEqual(
-            len([e for e in heads_dir.iterdir() if e.name.endswith(".sig")]), 1
-        )
-        # Retry with the same inventory succeeds and adopts the survivor.
-        self.render()
+        orphans = [e for e in heads_dir.iterdir() if e.name.endswith(".sig")]
+        self.assertEqual(len(orphans), 1)
+        orphan_bytes = orphans[0].read_bytes()
+        # Retry re-signs DIFFERENT bytes; the orphan is verified and adopted.
+        self.render_with_random_signatures()
         self.assertEqual(
             len([e for e in heads_dir.iterdir() if e.name.endswith(".json")]), 1
         )
+        self.assertEqual(orphans[0].read_bytes(), orphan_bytes)
+
+    def test_unverifiable_orphan_head_signature_is_refused(self) -> None:
+        # An orphan signature that does not verify over the deterministic
+        # head payload is a conflict, never silently replaced.
+        import subprocess as sp
+
+        heads_dir = self.run_root / "release-inventory-heads"
+        heads_dir.mkdir(mode=0o700)
+
+        def strict_verifier(command):
+            authority_checking_verifier(command)
+            if command[:2] != ["cosign", "verify-blob"]:
+                return
+            signature = Path(
+                command[command.index("--signature") + 1]
+            ).read_bytes()
+            if signature.startswith(b"BAD"):
+                raise sp.CalledProcessError(1, command)
+
+        # Plant a bad orphan at the exact deterministic head path by letting
+        # a crashing render compute it, then corrupting the orphan.
+        from unittest import mock
+
+        original = TOOL._link_no_replace_or_adopt
+        calls = {"count": 0}
+
+        def crash_after_first_link(staged, final, payload):
+            calls["count"] += 1
+            original(staged, final, payload)
+            if calls["count"] == 1:
+                raise RuntimeError("simulated crash")
+
+        with mock.patch.object(
+            TOOL, "_link_no_replace_or_adopt", crash_after_first_link
+        ):
+            with self.assertRaises(RuntimeError):
+                self.render_with_random_signatures()
+        orphan = next(
+            entry for entry in heads_dir.iterdir() if entry.name.endswith(".sig")
+        )
+        orphan.write_bytes(b"BAD-orphan\n")
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "orphaned signature"):
+            self.render_with_random_signatures(verifier=strict_verifier)
 
     def test_acceptance_chain_tamper_and_truncation_fail_closed(self) -> None:
         # The acceptance heads are signed, content-addressed, and chained:

@@ -701,6 +701,11 @@ RELEASE_EXCEPTION_APPROVER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._@-]{1
 RELEASE_KEY_SHA256 = (
     "56919b309fb65821c8a7d317730ed18613fe9b2a7e52295fce4fffb12c63a208"
 )
+# The remote that anchors release refs is pinned IN REVIEWED SOURCE: the
+# named remote's URL (`remote.origin.url`) lives in mutable local config, so
+# an attacker repointing `origin` at their own repository must never be able
+# to "confirm" their refs. Changing the canonical remote = owner review.
+RELEASE_REMOTE_URL = "https://github.com/rene-tech/nebius-solutions-library.git"
 
 
 def _refs_containing(root: Path, commit: str, patterns: Sequence[str]) -> list[str]:
@@ -725,15 +730,16 @@ def _remote_verified_branches(root: Path, branch_refs: Sequence[str]) -> list[st
 
     refs/remotes/origin/* are LOCAL tracking refs, movable by any local
     process via `git update-ref`, so they are never trusted on their own:
-    `git ls-remote --heads origin` asks the actual remote (read-only) and a
-    branch only anchors when the local tracking tip EQUALS the remote's
-    answer. `--contains` reachability to that network-confirmed tip is then
+    `git ls-remote` asks the SOURCE-PINNED canonical remote URL directly
+    (read-only) — never the locally configured `origin`, whose URL any local
+    process can rewrite — and a branch only anchors when the local tracking
+    tip EQUALS that remote's answer. `--contains` reachability to that network-confirmed tip is then
     content-addressed ancestry, which a local ref rewrite cannot fake.
     """
     if not branch_refs:
         return []
     listing = run(
-        ["git", "-C", str(root), "ls-remote", "--heads", "origin"],
+        ["git", "-C", str(root), "ls-remote", "--heads", RELEASE_REMOTE_URL],
         capture=True,
         env=clean_environment(),
     )
@@ -760,11 +766,11 @@ def _remote_verified_branches(root: Path, branch_refs: Sequence[str]) -> list[st
 
 
 def _remote_verified_tags(root: Path, tag_refs: Sequence[str]) -> list[str]:
-    """Return the local anchor tags whose exact target also exists on origin."""
+    """Anchor tags whose exact target the SOURCE-PINNED remote confirms."""
     if not tag_refs:
         return []
     listing = run(
-        ["git", "-C", str(root), "ls-remote", "--tags", "origin"],
+        ["git", "-C", str(root), "ls-remote", "--tags", RELEASE_REMOTE_URL],
         capture=True,
         env=clean_environment(),
     )

@@ -1594,7 +1594,7 @@ def load_bound_receipt(
 INVENTORY_SCHEMA = "fs2-serve.nebius.ai/release-inventory/v4"
 COLLECTOR_METHOD = "fs2-live-enumeration/v1"
 INVENTORY_CHECKPOINT_SCHEMA = "fs2-serve.nebius.ai/inventory-checkpoint/v1"
-SCOPE_SCHEMA = "fs2-serve.nebius.ai/release-scope/v3"
+SCOPE_SCHEMA = "fs2-serve.nebius.ai/release-scope/v4"
 RECOVERY_SCHEMA = "fs2-serve.nebius.ai/admission-recovery/v1"
 GUARD_PARAMS_NAME = "fs2-security-guard-params"
 PROTECTED_POLICY_NAMES = (
@@ -1635,6 +1635,10 @@ SCOPE_FIELDS = (
     "security_principals",
     "verification_key_sha256",
     "policy_sha256",
+    "frozen_bindings",
+)
+FROZEN_BINDING_ID_PATTERN = re.compile(
+    r"^configmap/([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)/([a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?)$"
 )
 
 
@@ -1740,11 +1744,35 @@ def _validated_scope(value, context: str) -> dict:
             f"{context} needs the exact SHA-256 of the committed admission "
             "policy manifest it authorizes"
         )
+    frozen = value.get("frozen_bindings")
+    if (
+        not isinstance(frozen, list)
+        or len(set(frozen)) != len(frozen)
+        or not all(
+            isinstance(item, str)
+            and (match := FROZEN_BINDING_ID_PATTERN.match(item))
+            and match.group(1) in namespaces
+            for item in frozen
+        )
+    ):
+        raise ProvenanceError(
+            f"{context} needs a list of unique frozen-binding identities "
+            "(configmap/<namespace>/<name>) inside the approved namespaces; "
+            "the OWNER pins the frozen surface, so unlabeling a binding can "
+            "never silently remove it from coverage"
+        )
     return value
 
 
 def _collapse_whitespace(value) -> str:
     return " ".join(str(value or "").split())
+
+
+def _defaulted(value, default):
+    # The API server persists defaults the committed YAML may omit
+    # (e.g. matchPolicy: Equivalent, rule scope '*'); equality must compare
+    # the EFFECTIVE configuration, not the spelling.
+    return default if value in (None, "") else value
 
 
 def _normalized_rule(rule: dict) -> dict:
@@ -1754,7 +1782,7 @@ def _normalized_rule(rule: dict) -> dict:
         "operations": sorted(rule.get("operations") or []),
         "resources": list(rule.get("resources") or []),
         "resourceNames": sorted(rule.get("resourceNames") or []),
-        "scope": rule.get("scope"),
+        "scope": _defaulted(rule.get("scope"), "*"),
     }
 
 
@@ -1784,8 +1812,8 @@ def _normalized_policy_spec(document: dict) -> dict:
     spec = document.get("spec", {}) or {}
     constraints = spec.get("matchConstraints") or {}
     return {
-        "failurePolicy": spec.get("failurePolicy"),
-        "matchPolicy": constraints.get("matchPolicy"),
+        "failurePolicy": _defaulted(spec.get("failurePolicy"), "Fail"),
+        "matchPolicy": _defaulted(constraints.get("matchPolicy"), "Equivalent"),
         "paramKind": {
             "apiVersion": (spec.get("paramKind") or {}).get("apiVersion"),
             "kind": (spec.get("paramKind") or {}).get("kind"),
@@ -1857,7 +1885,7 @@ def _normalized_binding_spec(document: dict) -> dict:
             "selector": _normalized_selector(param_ref.get("selector")),
             "parameterNotFoundAction": param_ref.get("parameterNotFoundAction"),
         },
-        "matchPolicy": matches.get("matchPolicy"),
+        "matchPolicy": _defaulted(matches.get("matchPolicy"), "Equivalent"),
         "namespaceSelector": _normalized_selector(
             matches.get("namespaceSelector")
         ),
@@ -2137,6 +2165,96 @@ def _assert_policy_matches_scope(
         raise ProvenanceError(
             "the LIVE fs2-provenance-guard does not equal the committed, "
             "owner-pinned definition; a weakened guard refuses rendering"
+        )
+    helm_policy = next(
+        (
+            document
+            for document in _committed_all_documents(policy_path)
+            if document.get("kind") == "ValidatingAdmissionPolicy"
+            and document.get("metadata", {}).get("name")
+            == "fs2-helm-release-governance"
+        ),
+        None,
+    )
+    helm_binding = next(
+        (
+            document
+            for document in _committed_all_documents(policy_path)
+            if document.get("kind") == "ValidatingAdmissionPolicyBinding"
+            and document.get("metadata", {}).get("name")
+            == "fs2-helm-release-governance"
+        ),
+        None,
+    )
+    if helm_policy is None or helm_binding is None:
+        raise ProvenanceError(
+            f"the committed manifest {policy_path} lacks the "
+            "fs2-helm-release-governance policy or binding; rendering fails "
+            "closed"
+        )
+    try:
+        live_helm_policy = json.loads(
+            live_runner(
+                [
+                    "kubectl",
+                    "get",
+                    "validatingadmissionpolicy",
+                    "fs2-helm-release-governance",
+                    "-o",
+                    "json",
+                ]
+            )
+        )
+        live_helm_binding = json.loads(
+            live_runner(
+                [
+                    "kubectl",
+                    "get",
+                    "validatingadmissionpolicybinding",
+                    "fs2-helm-release-governance",
+                    "-o",
+                    "json",
+                ]
+            )
+        )
+        live_guard_params = json.loads(
+            live_runner(
+                [
+                    "kubectl",
+                    "get",
+                    "configmap",
+                    GUARD_PARAMS_NAME,
+                    "-n",
+                    ALLOWLIST_NAMESPACE,
+                    "-o",
+                    "json",
+                ]
+            )
+        )
+    except (subprocess.CalledProcessError, OSError, json.JSONDecodeError) as error:
+        raise ProvenanceError(
+            "the LIVE fs2-helm-release-governance objects or the "
+            f"{GUARD_PARAMS_NAME} ConfigMap cannot be read; rendering fails "
+            "closed"
+        ) from error
+    if _normalized_policy_spec(live_helm_policy) != _normalized_policy_spec(
+        helm_policy
+    ) or _normalized_binding_spec(live_helm_binding) != _normalized_binding_spec(
+        helm_binding
+    ):
+        raise ProvenanceError(
+            "the LIVE fs2-helm-release-governance does not equal the "
+            "committed, owner-pinned definition; a weakened Helm-governance "
+            "control refuses rendering"
+        )
+    # The guard-params ConfigMap is DERIVED STATE, never authority: its live
+    # content must equal what the owner-signed scope renders.
+    expected_params = render_guard_params(owner_scope["security_principals"])
+    if (live_guard_params.get("data") or {}) != expected_params["data"]:
+        raise ProvenanceError(
+            f"the LIVE {GUARD_PARAMS_NAME} ConfigMap does not equal the "
+            "owner-signed scope's security principals; in-cluster parameters "
+            "are derived state and never authority — rendering fails closed"
         )
 
 
@@ -2722,6 +2840,41 @@ def _verify_frozen_bindings(
     found: set[str] = set()
     found_ids: set[str] = set()
     try:
+        # The OWNER-SIGNED scope pins the authoritative frozen surface:
+        # every pinned binding is fetched directly and MUST exist, so
+        # removing a label (an opt-in marker with no authority) can never
+        # silently drop a binding from coverage.
+        for resource_id in scope["frozen_bindings"]:
+            match = FROZEN_BINDING_ID_PATTERN.match(resource_id)
+            if match is None:  # unreachable: _validated_scope enforced it
+                raise ProvenanceError(
+                    f"invalid frozen-binding identity in scope: {resource_id!r}"
+                )
+            namespace, name = match.group(1), match.group(3)
+            try:
+                payload = runner(
+                    [
+                        "kubectl",
+                        "get",
+                        "configmap",
+                        name,
+                        "-n",
+                        namespace,
+                        "-o",
+                        "json",
+                    ]
+                )
+            except (subprocess.CalledProcessError, OSError) as error:
+                raise ProvenanceError(
+                    f"owner-pinned frozen binding {resource_id} cannot be "
+                    "fetched; a pinned binding that disappears fails closed"
+                ) from error
+            references = _platform_references_in_text(
+                payload, scope["platform_repository_prefix"]
+            )
+            if references:
+                found |= references
+                found_ids.add(resource_id)
         for namespace in scope["namespaces"]:
             listing = json.loads(
                 runner(
@@ -2988,36 +3141,68 @@ def _append_acceptance_head(
         staged_signature = Path(staging) / "head.json.sig"
         staged.write_bytes(payload)
         staged.chmod(0o600)
-        capture(
-            [
-                "cosign",
-                "sign-blob",
-                "--key",
-                key_path,
-                "--use-signing-config=false",
-                "--tlog-upload=false",
-                "--yes",
-                "--output-file",
-                str(staged_signature),
-                str(staged),
-            ]
-        )
-        staged_signature.chmod(0o600)
-        signature_bytes = _read_evidence_bytes(staged_signature)
-        _verify_blob_bytes(
-            public_key_path,
-            payload,
-            signature_bytes,
-            verifier,
-            f"new inventory acceptance head {final.name}",
-        )
+        # Crash recovery must come BEFORE re-signing: real ECDSA signatures
+        # are randomized, so a retry can never reproduce the orphan
+        # signature's bytes. If a signature already sits at the final path,
+        # it is VERIFIED over this deterministic head payload and ADOPTED;
+        # only a signature that fails verification is a conflict.
+        adopted_signature: bytes | None = None
+        if final_signature.exists() or final_signature.is_symlink():
+            if final_signature.is_symlink() or not final_signature.is_file():
+                raise ProvenanceError(
+                    f"conflicting file already exists at {final_signature}; "
+                    "the acceptance chain never replaces existing content"
+                )
+            orphan = _read_evidence_bytes(final_signature)
+            try:
+                _verify_blob_bytes(
+                    public_key_path,
+                    payload,
+                    orphan,
+                    verifier,
+                    f"orphaned acceptance-head signature {final_signature.name}",
+                )
+            except ProvenanceError as error:
+                raise ProvenanceError(
+                    f"an orphaned signature at {final_signature} does not "
+                    "verify over the deterministic head payload; the "
+                    "acceptance chain never replaces existing content"
+                ) from error
+            adopted_signature = orphan
+        if adopted_signature is None:
+            capture(
+                [
+                    "cosign",
+                    "sign-blob",
+                    "--key",
+                    key_path,
+                    "--use-signing-config=false",
+                    "--tlog-upload=false",
+                    "--yes",
+                    "--output-file",
+                    str(staged_signature),
+                    str(staged),
+                ]
+            )
+            staged_signature.chmod(0o600)
+            signature_bytes = _read_evidence_bytes(staged_signature)
+            _verify_blob_bytes(
+                public_key_path,
+                payload,
+                signature_bytes,
+                verifier,
+                f"new inventory acceptance head {final.name}",
+            )
+            _fsync_file(staged_signature)
         _fsync_file(staged)
-        _fsync_file(staged_signature)
         # Signature FIRST: a bare .sig is inert to chain verification, but a
         # bare .json would poison the chain unrecoverably (deletion is
         # forbidden). A crash between the two links leaves a recoverable
-        # state, and a retry with identical bytes adopts the survivors.
-        _link_no_replace_or_adopt(staged_signature, final_signature, signature_bytes)
+        # state: the retry verifies and adopts the orphan signature above.
+        if adopted_signature is None:
+            _link_no_replace_or_adopt(
+                staged_signature, final_signature, signature_bytes
+            )
         _link_no_replace_or_adopt(staged, final, payload)
         _fsync_dir(directory)
 
