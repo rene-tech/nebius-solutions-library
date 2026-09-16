@@ -30,7 +30,7 @@ silent replay of possibly billed provider work.
 
 ## Architecture and persistence
 
-Two CPU API/worker replicas use managed PostgreSQL and a separate additive
+Two CPU API/worker replicas use the existing platform PostgreSQL and a separate additive
 `fs2_workshop` schema. A shared database claim admits at most five workers per
 tenant/principal, further bounded by the verified API-key concurrency policy.
 The gateway separately accounts for provider RPM/TPM and dispatches fairly

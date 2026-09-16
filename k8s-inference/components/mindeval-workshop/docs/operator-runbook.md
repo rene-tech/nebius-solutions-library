@@ -9,6 +9,12 @@ digests, prior release versions, project/region, GPU placement and verification.
 The current event target is project `project-e00rene`, eu-north1, cluster
 `mk8scluster-e00j5z9te7x5dd9g6a`; never assume the current kubectl context.
 
+The inspected platform database is a three-replica CloudNativePG cluster, reached
+directly through `fs2-control-db-rw.fs2-data.svc.cluster.local:5432`. It is not a
+Nebius Managed PostgreSQL instance. This add-on reuses that database and does not
+migrate it. Live playback requires PostgreSQL session semantics for LISTEN/NOTIFY;
+a transaction-pooling proxy cannot be used for its dedicated listener connection.
+
 Public entry points are `/workshop`, `/v1/workshop`, `/v1/mindeval` and the
 platform speech/MindGuard endpoints on the configured origin. No port forwarding
 is required for attendees. Existing `/admin`, `/mcp` and scientific endpoints
