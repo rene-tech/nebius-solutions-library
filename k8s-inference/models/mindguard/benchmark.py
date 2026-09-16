@@ -30,13 +30,37 @@ sys.path.insert(0, str(ROOT.parents[1] / "components/control-plane/src"))
 from fs2_serve.mindguard import MindGuardMessage, assess_mindguard  # noqa: E402
 
 
+def load_mindeval(path: Path) -> list[dict[str, Any]]:
+    """Accept explicit JSONL conversations or an unchanged completed run report.
+
+    Patient utterances map to model user messages, clinician utterances to assistant
+    messages. A seed patient turn remains part of the context and is also assessed.
+    MindEval rubric scores are never interpreted as safety-classifier gold labels.
+    """
+    if path.suffix == ".jsonl":
+        return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    document = json.loads(path.read_text())
+    roles = {"patient": "user", "clinician": "assistant"}
+    conversations = []
+    for item in document if isinstance(document, list) else [document]:
+        report = item.get("report", item)
+        run = report["run"]
+        if run["status"] != "completed":
+            raise ValueError("MindEval report must contain a completed run")
+        messages = [{"role": roles[message["role"]], "content": message["content"]}
+                    for message in run["state"]["transcript"]]
+        conversations.append({"id": run["id"], "messages": messages})
+    return conversations
+
+
 def load_cases(source: str, model_id: str, path: Path | None = None) -> list[dict[str, Any]]:
     lock = json.loads((ROOT / "public-models.lock.json").read_text())
     if source in {"representative", "mindeval"}:
         source_path = path if source == "mindeval" else ROOT / "representative.jsonl"
         if source_path is None:
             raise ValueError("--input is required for MindEval JSONL")
-        cases = [json.loads(line) for line in source_path.read_text().splitlines() if line.strip()]
+        cases = (load_mindeval(source_path) if source == "mindeval" else
+                 [json.loads(line) for line in source_path.read_text().splitlines() if line.strip()])
         if source == "mindeval":
             prefixes = []
             for conversation in cases:

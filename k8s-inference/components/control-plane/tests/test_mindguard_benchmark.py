@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 from fs2_serve.mindguard import REVISIONS
 
 
@@ -63,6 +65,29 @@ def test_metric_denominators_keep_errors_visible_and_exclude_warmups() -> None:
     assert metrics["completed_requests_per_second"] == 0.5
     assert metrics["latency_ms_mean"] == 100
     assert metrics["auroc"] is None
+
+
+@pytest.mark.parametrize("shape", ["report", "wrapped", "list"])
+def test_original_completed_report_maps_patient_role_without_fake_labels(tmp_path: Path, shape: str) -> None:
+    report = {"run": {"id": "run-1", "status": "completed", "state": {"transcript": [
+        {"role": "patient", "content": "Hello", "seed": True},
+        {"role": "clinician", "content": "How are you?", "completion": {"provider": "example"}},
+        {"role": "patient", "content": "I am nervous."},
+    ], "judge": {"score": 5}}}}
+    path = tmp_path / "report.json"
+    document = report if shape == "report" else {"report": report}
+    path.write_text(json.dumps([document] if shape == "list" else document))
+    cases = harness().load_cases("mindeval", "mindguard-4b", path)
+    assert [case["id"] for case in cases] == ["run-1-user-0", "run-1-user-2"]
+    assert [message["role"] for message in cases[1]["messages"]] == ["user", "assistant", "user"]
+    assert all(case["expected_safety"] is None for case in cases)
+
+
+def test_incomplete_mindeval_report_is_not_benchmarked_as_completed(tmp_path: Path) -> None:
+    path = tmp_path / "report.json"
+    path.write_text(json.dumps({"run": {"id": "run-1", "status": "running"}}))
+    with pytest.raises(ValueError, match="completed run"):
+        harness().load_cases("mindeval", "mindguard-4b", path)
 
 
 def test_unlabeled_transcripts_never_get_an_accuracy_estimate() -> None:

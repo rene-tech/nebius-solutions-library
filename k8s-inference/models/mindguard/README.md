@@ -102,6 +102,10 @@ history, and maps the dataset's `safe`, `self_harm` and `harm_others` labels.
 and expands all user-turn prefixes. Each JSONL row has `id` and `messages`; optional
 `expected_by_user_index` maps an input message index to `safety` and `categories`.
 Without supplied labels this is a runtime/coverage test, not an accuracy estimate.
+Alternatively, pass an unchanged completed report `.json`, the rehearsal wrapper
+with a `report` field, or an array of those wrappers. The adapter requires completed
+runs and maps `patient` to `user`, `clinician` to `assistant`, including the initial
+patient seed. Rubric scores are never treated as classifier safety labels.
 
 The report separates first-request, warmup and measured requests, excludes warmup
 from percentiles/throughput, counts errors explicitly, and records per-case input

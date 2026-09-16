@@ -32,7 +32,7 @@ and both pinned model-card examples returned the expected label/category.
 The same-GPU 4096 baseline was similarly close: 4B 309 ms / 3.24 requests/s and 8B
 312 ms / 3.20 requests/s. This sample does not establish a useful short-context 4B
 latency advantage. Keep both IDs selectable for comparison; choose the final default
-only after the gated Sword testset and actual MindEval transcript checks. At longer
+only after the gated Sword testset. At longer
 synthetic contexts the single 4B boundary probes were faster, but those are not a
 repeated throughput comparison or clinical-quality evidence.
 
@@ -63,6 +63,38 @@ An initial 8B port-forward connection was attempted before its HTTP server was
 ready and exited. The resulting transport-error report is retained as
 `8b-portforward-startup-failure.json`; readiness was confirmed, the tunnel reopened,
 and successful measurements rerun. Failed calls are never counted as safe results.
+
+## Actual MindEval transcript coverage
+
+Two independent runtime replays use completed workshop run artifacts, with exact
+`patient` to `user` and `clinician` to `assistant` mapping. Each patient prefix,
+including the initial seeded greeting, is assessed against all preceding messages.
+No transcript text is copied into classifier evidence; run IDs, input hashes,
+coverage, outputs, revisions, usage and timings are retained.
+
+- Canonical ten-round run `ad8eae0f-88b2-4311-89a7-485130ec6192`: 21 messages,
+  11 patient prefixes, 440–4,887 prompt tokens. Three repetitions per prefix gave
+  33/33 completed requests on each classifier. Serial 4B mean/p95 were 363/407 ms
+  (2.76 requests/s); 8B 367/418 ms (2.73 requests/s).
+- Sixty two-round diagnostic runs: six clinician families across ten profiles,
+  180 patient prefixes, 440–3,334 prompt tokens. At concurrency four, both completed
+  180/180 requests. 4B mean/p95 were 344/394 ms (11.54 requests/s); 8B 401/506 ms
+  (9.91 requests/s). This is one measured pass, not a statistical performance claim.
+
+There were no errors or truncation in either replay. Both classifiers emitted Safe
+for every prefix; there are no expert safety labels, so agreement is not accuracy
+and neither false-positive behavior nor clinical sensitivity can be estimated.
+The rubric judge's scores are not safety labels. The Sword dataset gate was
+rechecked at 16:51 UTC and remained HTTP 403. The provisional workshop 4B observer
+can remain in place, with both IDs selectable, but these results cannot establish
+that 8B is sufficient or that 4B has equivalent safety quality.
+
+These direct model-runtime replays are separate from public/authenticated workshop
+acceptance. The original built-in observations reported unavailable because of an
+integration routing issue being handled by the parent task; they were not rewritten
+as successful observations. Evidence files are `*-mindeval-ten-round-c1.json` and
+`*-mindeval-sixty-runs-c4.json`. The completed-report adapter and focused suite pass
+49 tests.
 
 ## Live resources and handoff
 
