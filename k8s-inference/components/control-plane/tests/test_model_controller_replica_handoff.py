@@ -4,7 +4,8 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
-from test_model_deployment_controller import fence
+from test_model_deployment import model_spec
+from test_model_deployment_controller import FakeApi, controller, fence, model_object
 
 from fs2_serve.model_deployment import FIELD_MANAGER, RenderedResource, canonical_digest
 from fs2_serve.model_deployment_controller import (
@@ -12,6 +13,7 @@ from fs2_serve.model_deployment_controller import (
     ControllerError,
     FenceLostError,
     HttpKubernetesModelClient,
+    ModelKey,
 )
 
 
@@ -195,3 +197,32 @@ async def test_reverse_fixed_to_autoscaled_omits_replicas_and_never_forces(tmp_p
         result = await client.apply_resource(desired, owner_uid="cr-uid-1", fence=fence())
     assert result.replica_field_managers == ["keda"]
     assert [(m, force) for m, force, _ in api.patches] == [(FIELD_MANAGER, "false")]
+
+
+@pytest.mark.asyncio
+async def test_matching_fixed_manifest_finishes_interrupted_temporary_ownership_release():
+    model = model_object()
+    spec = model_spec()
+    spec = spec.model_copy(
+        update={"availability": spec.availability.model_copy(update={"min_replicas": 1, "max_replicas": 1})}
+    )
+    model["spec"] = spec.model_dump(mode="json", by_alias=True)
+    api = FakeApi(model)
+    subject = controller(api)
+    key = ModelKey(namespace="fs2-models", name="qwen-live")
+    await subject.reconcile(key, fence())
+    await subject.reconcile(key, fence())
+    await subject.reconcile(key, fence())
+    target = next(item for item in api.resources.values() if item.observed.kind == "Deployment")
+    api.resources[target.observed.identity] = target.model_copy(
+        update={
+            "replica_field_managers": [FIELD_MANAGER, REPLICA_HANDOFF_FIELD_MANAGER],
+        }
+    )
+    api.calls.clear()
+    await subject.reconcile(key, fence())
+    assert ("apply", "Deployment") in api.calls
+    assert api.resources[target.observed.identity].replica_field_managers == [FIELD_MANAGER]
+    api.calls.clear()
+    await subject.reconcile(key, fence())
+    assert ("apply", "Deployment") not in api.calls

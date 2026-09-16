@@ -2719,7 +2719,25 @@ class ModelDeploymentController:
                 phase_requeue = True
 
         if phase_action is None:
-            for resource in plan.apply_resources:
+            resources_to_apply = list(plan.apply_resources)
+            applying = {_rendered_identity(resource) for resource in resources_to_apply}
+            # A resourceVersion conflict or process exit after the full apply
+            # can leave temporary replica ownership behind while the manifest
+            # already matches. Re-enter the guarded writer to finish release.
+            for resource in plan.render.resources if plan.render is not None else ():
+                if resource.kind != "Deployment" or "replicas" not in _mapping(resource.manifest.get("spec")):
+                    continue
+                live = _resource_snapshot(
+                    discovery, resource.api_version, resource.kind, resource.namespace, resource.name
+                )
+                if (
+                    live is not None
+                    and live.observed.controller_owner_uid == uid
+                    and REPLICA_HANDOFF_FIELD_MANAGER in live.replica_field_managers
+                    and _rendered_identity(resource) not in applying
+                ):
+                    resources_to_apply.append(resource)
+            for resource in resources_to_apply:
                 await self.api.apply_resource(resource, owner_uid=uid, fence=fence)
                 wrote = True
         if plan.remove_finalizer:
