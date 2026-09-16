@@ -63,6 +63,7 @@ from fs2_serve.model_deployment_controller import (
     ScaleHandoffReceipt,
     ScaleHandoffScaler,
     _autoscaler_handoff_complete,
+    _controller_fixed_scale_updates,
     _field_manager_conflicts,
     _model_write_fence,
     _snapshot,
@@ -2176,22 +2177,8 @@ def _fixed_scale_http_fixture() -> tuple[RenderedResource, dict[str, Any], dict[
         "readyReplicas": 1,
         "availableReplicas": 1,
     }
-    applied = copy.deepcopy(desired.manifest)
-    applied["metadata"].update(
-        {
-            "uid": "deployment-uid",
-            "resourceVersion": "12",
-            "generation": 2,
-            "managedFields": [
-                {
-                    "manager": FIELD_MANAGER,
-                    "operation": "Apply",
-                    "apiVersion": "apps/v1",
-                    "fieldsV1": {"f:spec": {"f:replicas": {}}},
-                }
-            ],
-        }
-    )
+    applied = _fixed_scale_owned_body(current, replicas=2, resource_version="12")
+    applied["metadata"]["generation"] = 2
     applied["status"] = {
         "observedGeneration": 2,
         "replicas": 2,
@@ -2468,15 +2455,15 @@ async def test_http_equal_value_coowner_retry_fails_closed_without_any_replica_w
 
 
 @pytest.mark.asyncio
-async def test_http_fixed_scale_handoff_accepts_nonforcing_full_apply_only_with_exact_readback(tmp_path: Path) -> None:
+async def test_http_fixed_scale_handoff_never_persists_a_full_deployment_when_dry_run_would_succeed(
+    tmp_path: Path,
+) -> None:
     token = tmp_path / "token"
     token.write_text("projected-service-account-token")
-    desired, current, applied = _fixed_scale_http_fixture()
+    desired, current, _ = _fixed_scale_http_fixture()
     patches: list[httpx.Request] = []
-    applied_once = False
 
     def handler(request: httpx.Request) -> httpx.Response:
-        nonlocal applied_once
         if request.url.path.endswith("/leases/fs2-model-controller"):
             return _lease_response()
         if (response := _handoff_model_response(request)) is not None:
@@ -2486,10 +2473,10 @@ async def test_http_fixed_scale_handoff_accepts_nonforcing_full_apply_only_with_
         if request.method == "PATCH":
             patches.append(request)
             assert request.url.params["force"] == "false"
+            assert request.url.params["dryRun"] == "All"
             assert not request.url.path.endswith("/scale")
-            applied_once = True
-            return httpx.Response(200, json=applied)
-        return httpx.Response(200, json=applied if applied_once else current)
+            return httpx.Response(200, json=current)
+        return httpx.Response(200, json=current)
 
     http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.invalid")
     client = HttpKubernetesModelClient(
@@ -2499,16 +2486,17 @@ async def test_http_fixed_scale_handoff_accepts_nonforcing_full_apply_only_with_
         writes_enabled=True,
         client=http,
     )
-    result = await client.apply_fixed_scale_handoff(
-        desired,
-        current=_snapshot(current, desired),
-        owner_uid="cr-uid-1",
-        model_generation=2,
-        model_fence=_handoff_model_fence(),
-        fence=fence(),
-    )
-    assert result.replica_field_managers == [FIELD_MANAGER]
+    with pytest.raises(KubernetesConflictError, match="dry-run did not prove"):
+        await client.apply_fixed_scale_handoff(
+            desired,
+            current=_snapshot(current, desired),
+            owner_uid="cr-uid-1",
+            model_generation=2,
+            model_fence=_handoff_model_fence(),
+            fence=fence(),
+        )
     assert len(patches) == 1
+    assert current["spec"]["replicas"] == 1
     await http.aclose()
 
 
@@ -2810,6 +2798,130 @@ async def test_http_dedicated_fixed_to_autoscaled_bootstrap_refreshes_status_chu
     await http.aclose()
 
 
+@pytest.mark.parametrize("receipt_fault", ["missing", "foreign-owner"])
+@pytest.mark.asyncio
+async def test_http_controller_scale_requires_exact_controller_owned_transition_receipt(
+    tmp_path: Path,
+    receipt_fault: str,
+) -> None:
+    token = tmp_path / "token"
+    token.write_text("projected-service-account-token")
+    desired, _, live = _fixed_scale_http_fixture()
+    if receipt_fault == "missing":
+        del live["metadata"]["annotations"][SCALE_HANDOFF_RECEIPT_ANNOTATION]
+    else:
+        next(
+            entry
+            for entry in live["metadata"]["managedFields"]
+            if entry["manager"] == SCALE_HANDOFF_RECEIPT_FIELD_MANAGER
+        )["manager"] = "terraform"
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(500)
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.invalid")
+    client = HttpKubernetesModelClient(
+        base_url="https://kubernetes.invalid",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        writes_enabled=True,
+        client=http,
+    )
+    with pytest.raises(KubernetesConflictError, match="transition receipt"):
+        await client.apply_controller_scale(
+            desired,
+            current=_snapshot(live, desired),
+            replicas=0,
+            owner_uid="cr-uid-1",
+            model_fence=_handoff_model_fence(),
+            fence=fence(),
+        )
+    assert requests == []
+    await http.aclose()
+
+
+@pytest.mark.asyncio
+async def test_http_controller_scale_rejects_a_fresh_replica_race_before_any_write(tmp_path: Path) -> None:
+    token = tmp_path / "token"
+    token.write_text("projected-service-account-token")
+    desired, _, discovered = _fixed_scale_http_fixture()
+    raced = copy.deepcopy(discovered)
+    raced["metadata"]["resourceVersion"] = "21"
+    raced["spec"]["replicas"] = 1
+    patches: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith(("/horizontalpodautoscalers", "/scaledobjects")):
+            return httpx.Response(200, json={"metadata": {}, "items": []})
+        if request.method == "PATCH":
+            patches.append(request)
+        return httpx.Response(200, json=raced)
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.invalid")
+    client = HttpKubernetesModelClient(
+        base_url="https://kubernetes.invalid",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        writes_enabled=True,
+        client=http,
+    )
+    with pytest.raises(KubernetesConflictError, match="replica value changed"):
+        await client.apply_controller_scale(
+            desired,
+            current=_snapshot(discovered, desired),
+            replicas=0,
+            owner_uid="cr-uid-1",
+            model_fence=_handoff_model_fence(),
+            fence=fence(),
+        )
+    assert patches == []
+    await http.aclose()
+
+
+def test_steady_fixed_scale_updates_require_exact_transition_receipt() -> None:
+    fixed = model_spec().model_copy(
+        update={
+            "placement": model_spec().placement.model_copy(update={"pool_refs": ["pool-b"]}),
+            "availability": model_spec().availability.model_copy(update={"min_replicas": 2, "max_replicas": 2}),
+        }
+    )
+    render = renderer().render(
+        fixed,
+        RenderContext(
+            name="qwen-live",
+            namespace="fs2-models",
+            uid="cr-uid-1",
+            generation=2,
+            pool=envelope().pools["pool-b"],
+            eligible_pools=[envelope().pools["pool-b"]],
+            prometheus_server_address="http://prometheus:9090",
+        ),
+    )
+    desired = next(item for item in render.resources if item.kind == "Deployment")
+    raw = copy.deepcopy(desired.manifest)
+    raw["spec"]["replicas"] = 1
+    raw["metadata"].update(
+        {
+            "uid": "deployment-uid",
+            "resourceVersion": "11",
+            "managedFields": [
+                {
+                    "manager": FIXED_SCALE_FIELD_MANAGER,
+                    "operation": "Apply",
+                    "apiVersion": "apps/v1",
+                    "subresource": "scale",
+                    "fieldsV1": {"f:spec": {"f:replicas": {}}},
+                }
+            ],
+        }
+    )
+    discovery = Discovery(resources=[_snapshot(raw, desired)], complete=True)
+    with pytest.raises(ControllerError, match="durable transition evidence"):
+        _controller_fixed_scale_updates(render, discovery, "cr-uid-1", 2)
+
+
 @pytest.mark.parametrize(
     "conflict_status",
     [
@@ -2860,6 +2972,8 @@ async def test_http_fixed_scale_handoff_refuses_any_non_exact_conflict_set(
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/leases/fs2-model-controller"):
             return _lease_response()
+        if (response := _handoff_model_response(request)) is not None:
+            return response
         if request.method == "GET" and request.url.path.endswith(("/horizontalpodautoscalers", "/scaledobjects")):
             return httpx.Response(200, json={"metadata": {}, "items": []})
         if request.method == "PATCH":
@@ -2931,6 +3045,49 @@ async def test_http_fixed_scale_handoff_requires_exact_controller_owned_transiti
     await http.aclose()
 
 
+@pytest.mark.asyncio
+async def test_http_fixed_scale_handoff_rejects_generic_replica_coownership_without_a_write(tmp_path: Path) -> None:
+    token = tmp_path / "token"
+    token.write_text("projected-service-account-token")
+    desired, current, _ = _fixed_scale_http_fixture()
+    current["metadata"]["managedFields"].append(
+        {
+            "manager": FIELD_MANAGER,
+            "operation": "Apply",
+            "apiVersion": "apps/v1",
+            "fieldsV1": {"f:spec": {"f:replicas": {}}},
+        }
+    )
+    patches: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith(("/horizontalpodautoscalers", "/scaledobjects")):
+            return httpx.Response(200, json={"metadata": {}, "items": []})
+        if request.method == "PATCH":
+            patches.append(request)
+        return httpx.Response(200, json=current)
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.invalid")
+    client = HttpKubernetesModelClient(
+        base_url="https://kubernetes.invalid",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        writes_enabled=True,
+        client=http,
+    )
+    with pytest.raises(KubernetesConflictError, match="canonical stale scale owner"):
+        await client.apply_fixed_scale_handoff(
+            desired,
+            current=_snapshot(current, desired),
+            owner_uid="cr-uid-1",
+            model_generation=2,
+            model_fence=_handoff_model_fence(),
+            fence=fence(),
+        )
+    assert patches == []
+    await http.aclose()
+
+
 @pytest.mark.parametrize(
     ("autoscaler_kind", "appearance_scan"),
     [("hpa", 1), ("scaledobject", 1), ("hpa", 2)],
@@ -2951,6 +3108,8 @@ async def test_http_fixed_scale_handoff_rechecks_every_unlabeled_targeting_autos
         nonlocal hpa_scan, scaler_scan
         if request.url.path.endswith("/leases/fs2-model-controller"):
             return _lease_response()
+        if (response := _handoff_model_response(request)) is not None:
+            return response
         if request.method == "PATCH":
             patches.append(request)
             return httpx.Response(409, json=_field_conflict_status())
@@ -3090,7 +3249,7 @@ async def test_http_scaler_appearing_after_force_fails_closed_without_stale_comp
         if request.url.path.endswith("/horizontalpodautoscalers"):
             hpa_scans += 1
             items = []
-            if hpa_scans >= 4:
+            if hpa_scans >= 3:
                 items = [
                     {
                         "apiVersion": "autoscaling/v2",
@@ -3166,7 +3325,7 @@ async def test_http_model_change_after_force_never_restores_replica_value_from_s
         if request.method == "GET" and request.url.path.endswith("/modeldeployments/qwen-live"):
             model_reads += 1
             model = _handoff_model()
-            if model_reads >= 2:
+            if model_reads >= 3:
                 model["metadata"].update({"generation": 3, "resourceVersion": "3"})
                 model["spec"]["tenantId"] = "tenant-raced"
             return httpx.Response(200, json=model)
@@ -3197,16 +3356,16 @@ async def test_http_model_change_after_force_never_restores_replica_value_from_s
             model_fence=_handoff_model_fence(),
             fence=fence(),
         )
-    assert forced and model_reads == 2
+    assert forced and model_reads == 3
     assert [request.url.path.endswith("/scale") for request in patches] == [False, True]
     assert [request.url.params["force"] for request in patches] == ["false", "true"]
     assert json.loads(patches[1].content)["spec"] == {"replicas": 2}
     await http.aclose()
 
 
-@pytest.mark.parametrize("race", ["resource-version", "owner"])
+@pytest.mark.parametrize("race", ["replicas", "owner"])
 @pytest.mark.asyncio
-async def test_http_fixed_scale_handoff_refuses_owner_or_resource_version_races(tmp_path: Path, race: str) -> None:
+async def test_http_fixed_scale_handoff_refuses_owner_or_replica_races(tmp_path: Path, race: str) -> None:
     token = tmp_path / "token"
     token.write_text("projected-service-account-token")
     desired, current, _ = _fixed_scale_http_fixture()
@@ -3217,6 +3376,8 @@ async def test_http_fixed_scale_handoff_refuses_owner_or_resource_version_races(
         nonlocal conflicted
         if request.url.path.endswith("/leases/fs2-model-controller"):
             return _lease_response()
+        if (response := _handoff_model_response(request)) is not None:
+            return response
         if request.method == "GET" and request.url.path.endswith(("/horizontalpodautoscalers", "/scaledobjects")):
             return httpx.Response(200, json={"metadata": {}, "items": []})
         if request.method == "PATCH":
@@ -3224,8 +3385,8 @@ async def test_http_fixed_scale_handoff_refuses_owner_or_resource_version_races(
             conflicted = True
             return httpx.Response(409, json=_field_conflict_status())
         body = copy.deepcopy(current)
-        if conflicted and race == "resource-version":
-            body["metadata"]["resourceVersion"] = "12"
+        if conflicted and race == "replicas":
+            body["spec"]["replicas"] = 0
         if conflicted and race == "owner":
             body["metadata"]["ownerReferences"][0]["uid"] = "other-owner"
         return httpx.Response(200, json=body)
@@ -3238,7 +3399,7 @@ async def test_http_fixed_scale_handoff_refuses_owner_or_resource_version_races(
         writes_enabled=True,
         client=http,
     )
-    with pytest.raises(KubernetesConflictError, match="target changed"):
+    with pytest.raises(KubernetesConflictError, match="replica value changed|target changed"):
         await client.apply_fixed_scale_handoff(
             desired,
             current=_snapshot(current, desired),
@@ -3249,6 +3410,111 @@ async def test_http_fixed_scale_handoff_refuses_owner_or_resource_version_races(
         )
     assert [request.url.params["force"] for request in patches] == ["false"]
     await http.aclose()
+
+
+@pytest.mark.asyncio
+async def test_http_fixed_scale_handoff_tolerates_status_only_resource_version_churn_and_pins_fresh_rv(
+    tmp_path: Path,
+) -> None:
+    token = tmp_path / "token"
+    token.write_text("projected-service-account-token")
+    desired, current, _ = _fixed_scale_http_fixture()
+    churned = copy.deepcopy(current)
+    churned["metadata"]["resourceVersion"] = "12"
+    churned["status"]["observedGeneration"] = 2
+    fixed = _fixed_scale_owned_body(churned, replicas=2, resource_version="13")
+    patches: list[httpx.Request] = []
+    state = "initial"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal state
+        if request.url.path.endswith("/leases/fs2-model-controller"):
+            return _lease_response()
+        if (response := _handoff_model_response(request)) is not None:
+            return response
+        if request.url.path.endswith(("/horizontalpodautoscalers", "/scaledobjects")):
+            return httpx.Response(200, json={"metadata": {}, "items": []})
+        if request.method == "PATCH":
+            patches.append(request)
+            body = json.loads(request.content)
+            if not request.url.path.endswith("/scale"):
+                assert request.url.params["dryRun"] == "All"
+                assert body["metadata"]["resourceVersion"] == "11"
+                state = "churned"
+                return httpx.Response(409, json=_field_conflict_status())
+            assert body["metadata"]["resourceVersion"] == "12"
+            state = "fixed"
+            return httpx.Response(200, json={"apiVersion": "autoscaling/v1", "kind": "Scale"})
+        return httpx.Response(200, json={"initial": current, "churned": churned, "fixed": fixed}[state])
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.invalid")
+    client = HttpKubernetesModelClient(
+        base_url="https://kubernetes.invalid",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        writes_enabled=True,
+        client=http,
+    )
+    result = await client.apply_fixed_scale_handoff(
+        desired,
+        current=_snapshot(current, desired),
+        owner_uid="cr-uid-1",
+        model_generation=2,
+        model_fence=_handoff_model_fence(),
+        fence=fence(),
+    )
+    assert result.desired_replicas == 2
+    assert [request.url.path.endswith("/scale") for request in patches] == [False, True]
+    await http.aclose()
+
+
+@pytest.mark.asyncio
+async def test_http_fixed_scale_handoff_rereads_model_after_dry_run_before_scale_write(tmp_path: Path) -> None:
+    token = tmp_path / "token"
+    token.write_text("projected-service-account-token")
+    desired, current, _ = _fixed_scale_http_fixture()
+    patches: list[httpx.Request] = []
+    model_reads = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal model_reads
+        if request.url.path.endswith("/leases/fs2-model-controller"):
+            return _lease_response()
+        if request.url.path.endswith("/modeldeployments/qwen-live"):
+            model_reads += 1
+            model = _handoff_model()
+            if model_reads == 2:
+                model["metadata"].update({"generation": 3, "resourceVersion": "3"})
+                model["spec"]["tenantId"] = "tenant-raced"
+            return httpx.Response(200, json=model)
+        if request.url.path.endswith(("/horizontalpodautoscalers", "/scaledobjects")):
+            return httpx.Response(200, json={"metadata": {}, "items": []})
+        if request.method == "PATCH":
+            patches.append(request)
+            return httpx.Response(409, json=_field_conflict_status())
+        return httpx.Response(200, json=current)
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.invalid")
+    client = HttpKubernetesModelClient(
+        base_url="https://kubernetes.invalid",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        writes_enabled=True,
+        client=http,
+    )
+    with pytest.raises(KubernetesConflictError, match="ModelDeployment changed"):
+        await client.apply_fixed_scale_handoff(
+            desired,
+            current=_snapshot(current, desired),
+            owner_uid="cr-uid-1",
+            model_generation=2,
+            model_fence=_handoff_model_fence(),
+            fence=fence(),
+        )
+    assert model_reads == 2
+    assert len(patches) == 1
+    assert not patches[0].url.path.endswith("/scale")
+    assert patches[0].url.params["dryRun"] == "All"
 
 
 @pytest.mark.parametrize("race", ["uid", "resource-version", "generation", "spec", "deleting"])
@@ -3301,7 +3567,7 @@ async def test_http_fixed_scale_handoff_rereads_the_exact_model_revision_before_
             model_fence=_handoff_model_fence(),
             fence=fence(),
         )
-    assert [request.url.path.endswith("/scale") for request in patches] == [False]
+    assert patches == []
     await http.aclose()
 
 

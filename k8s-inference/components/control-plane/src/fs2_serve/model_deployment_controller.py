@@ -1356,15 +1356,14 @@ class HttpKubernetesModelClient:
         resource: RenderedResource,
         owner_uid: str,
         expected_uid: str,
-        resource_version: str,
+        expected_replicas: int,
         receipt: ScaleHandoffReceipt,
-    ) -> tuple[_ReplicaFieldOwner, bool]:
+    ) -> tuple[_ReplicaFieldOwner, ResourceSnapshot]:
         cls._validate_fixed_scale_identity(
             body,
             resource=resource,
             owner_uid=owner_uid,
             expected_uid=expected_uid,
-            resource_version=resource_version,
         )
         if (
             receipt.deployment_uid != expected_uid
@@ -1375,6 +1374,9 @@ class HttpKubernetesModelClient:
             or _controller_owned_scale_handoff_receipt(body) != receipt
         ):
             raise KubernetesConflictError("fixed scale handoff receipt is absent, stale, or foreign")
+        snapshot = _snapshot(dict(body), resource)
+        if snapshot.desired_replicas != expected_replicas:
+            raise KubernetesConflictError("fixed scale handoff replica value changed before ownership transfer")
         owners = _replica_field_owners(body)
         stale = [
             owner
@@ -1383,14 +1385,52 @@ class HttpKubernetesModelClient:
             and owner.subresource == "scale"
             and owner.api_version == "apps/v1"
         ]
-        generic = _ReplicaFieldOwner(manager=FIELD_MANAGER, subresource=None, api_version="apps/v1")
-        if len(stale) != 1 or any(owner not in {stale[0], generic} for owner in owners):
-            raise KubernetesConflictError("Deployment replica field has a foreign manager")
-        # A previous non-forcing, same-value full apply can legitimately leave
-        # the generic manager co-owning replicas with the stale scale writer.
-        # It is accepted only so the dedicated /scale path can repair it; the
-        # handoff cannot succeed until the dedicated owner is exclusive.
-        return stale[0], generic in owners
+        if len(stale) != 1 or owners != stale:
+            raise KubernetesConflictError(
+                "Deployment replica ownership is not one canonical stale scale owner; manual migration is required"
+            )
+        return stale[0], snapshot
+
+    @classmethod
+    def _validate_controller_scale_owner(
+        cls,
+        body: Mapping[str, Any],
+        *,
+        resource: RenderedResource,
+        owner_uid: str,
+        expected_uid: str,
+        expected_replicas: int,
+        model_generation: int,
+        receipt: ScaleHandoffReceipt,
+    ) -> ResourceSnapshot:
+        cls._validate_fixed_scale_identity(
+            body,
+            resource=resource,
+            owner_uid=owner_uid,
+            expected_uid=expected_uid,
+        )
+        if (
+            receipt.deployment_uid != expected_uid
+            or receipt.model_uid != owner_uid
+            or receipt.model_generation > model_generation
+            or receipt.scaler.api_version != "keda.sh/v1alpha1"
+            or receipt.scaler.kind != "ScaledObject"
+            or receipt.scaler.namespace != resource.namespace
+            or _controller_owned_scale_handoff_receipt(body) != receipt
+        ):
+            raise KubernetesConflictError("controller scale write lacks its exact durable transition receipt")
+        snapshot = _snapshot(dict(body), resource)
+        if snapshot.desired_replicas != expected_replicas:
+            raise KubernetesConflictError("controller scale replica value changed before write")
+        if _replica_field_owners(body) != [
+            _ReplicaFieldOwner(
+                manager=FIXED_SCALE_FIELD_MANAGER,
+                subresource="scale",
+                api_version="apps/v1",
+            )
+        ]:
+            raise KubernetesConflictError("controller scale target has unexpected replica ownership")
+        return snapshot
 
     @classmethod
     def _verified_fixed_scale_result(
@@ -1421,19 +1461,63 @@ class HttpKubernetesModelClient:
             raise ControllerError("fixed scale handoff did not establish exact exclusive replica ownership")
         return _snapshot(dict(body), resource)
 
-    async def _patch_controller_scale(
+    async def _prepare_controller_scale_write(
+        self,
+        resource: RenderedResource,
+        *,
+        current: ResourceSnapshot,
+        expected_replicas: int,
+        owner_uid: str,
+        model_generation: int,
+        model_fence: ModelWriteFence,
+        receipt: ScaleHandoffReceipt,
+        fence: LeaseFence,
+        stale_owner: bool,
+    ) -> tuple[ResourceSnapshot, _ReplicaFieldOwner | None]:
+        """Return a fresh material tuple with the exact CR check last."""
+
+        await self._assert_no_targeting_autoscalers(resource)
+        live = await self._get_resource(resource.api_version, resource.kind, resource.namespace, resource.name)
+        if live is None:
+            raise KubernetesConflictError("controller scale target disappeared before write")
+        observed_stale: _ReplicaFieldOwner | None = None
+        if stale_owner:
+            observed_stale, live_snapshot = self._validate_fixed_scale_owner(
+                live,
+                resource=resource,
+                owner_uid=owner_uid,
+                expected_uid=current.observed.uid,
+                expected_replicas=expected_replicas,
+                receipt=receipt,
+            )
+        else:
+            live_snapshot = self._validate_controller_scale_owner(
+                live,
+                resource=resource,
+                owner_uid=owner_uid,
+                expected_uid=current.observed.uid,
+                expected_replicas=expected_replicas,
+                model_generation=model_generation,
+                receipt=receipt,
+            )
+        await self.assert_fence(fence)
+        model = await self.get_model(model_fence.key)
+        if model is None:
+            raise KubernetesConflictError("ModelDeployment disappeared before controller scale write")
+        self._validate_model_write_fence(model, model_fence)
+        return live_snapshot, observed_stale
+
+    async def _patch_prepared_controller_scale(
         self,
         resource: RenderedResource,
         *,
         current: ResourceSnapshot,
         replicas: int,
         owner_uid: str,
-        fence: LeaseFence,
         force: bool,
     ) -> ResourceSnapshot:
         if not isinstance(replicas, int) or isinstance(replicas, bool) or replicas < 0 or replicas > 2_147_483_647:
             raise ControllerError("controller scale write has an invalid replica value")
-        await self.assert_fence(fence)
         scale = {
             "apiVersion": "autoscaling/v1",
             "kind": "Scale",
@@ -1476,7 +1560,9 @@ class HttpKubernetesModelClient:
         written: ResourceSnapshot,
         expected_replicas: int,
         owner_uid: str,
+        model_generation: int,
         model_fence: ModelWriteFence,
+        receipt: ScaleHandoffReceipt,
     ) -> ResourceSnapshot:
         """Verify cross-object postconditions without making a stale compensating write.
 
@@ -1490,14 +1576,14 @@ class HttpKubernetesModelClient:
         reread = await self._get_resource(resource.api_version, resource.kind, resource.namespace, resource.name)
         if reread is None:
             raise KubernetesConflictError("fixed scale target disappeared after exceptional write")
-        return self._verified_fixed_scale_result(
+        return self._validate_controller_scale_owner(
             reread,
             resource=resource,
             owner_uid=owner_uid,
             expected_uid=written.observed.uid,
-            desired_replicas=expected_replicas,
-            expected_manager=FIXED_SCALE_FIELD_MANAGER,
-            expected_subresource="scale",
+            expected_replicas=expected_replicas,
+            model_generation=model_generation,
+            receipt=receipt,
         )
 
     async def _take_over_controller_scale(
@@ -1507,14 +1593,27 @@ class HttpKubernetesModelClient:
         current: ResourceSnapshot,
         desired_replicas: int,
         owner_uid: str,
+        model_generation: int,
         model_fence: ModelWriteFence,
+        receipt: ScaleHandoffReceipt,
         fence: LeaseFence,
     ) -> ResourceSnapshot:
         """Take replicas through /scale without ever leaving the admitted value."""
 
         if current.desired_replicas is None:
             raise KubernetesConflictError("fixed scale handoff has no live replica value")
-        if current.desired_replicas == desired_replicas:
+        prepared, _ = await self._prepare_controller_scale_write(
+            resource,
+            current=current,
+            expected_replicas=current.desired_replicas,
+            owner_uid=owner_uid,
+            model_generation=model_generation,
+            model_fence=model_fence,
+            receipt=receipt,
+            fence=fence,
+            stale_owner=True,
+        )
+        if prepared.desired_replicas == desired_replicas:
             # SSA cannot evict a previous manager with a same-value apply. A
             # replica pulse would start a zero-replica workload, exceed a
             # fixed maximum, or violate pool capacity, and a crash can strand
@@ -1522,12 +1621,11 @@ class HttpKubernetesModelClient:
             raise KubernetesConflictError(
                 "equal-value fixed scale ownership requires manual migration; no replica write was attempted"
             )
-        final = await self._patch_controller_scale(
+        final = await self._patch_prepared_controller_scale(
             resource,
-            current=current,
+            current=prepared,
             replicas=desired_replicas,
             owner_uid=owner_uid,
-            fence=fence,
             force=True,
         )
         return await self._postcheck_exceptional_scale(
@@ -1535,7 +1633,9 @@ class HttpKubernetesModelClient:
             written=final,
             expected_replicas=desired_replicas,
             owner_uid=owner_uid,
+            model_generation=model_generation,
             model_fence=model_fence,
+            receipt=receipt,
         )
 
     async def fixed_scale_guard_clear(
@@ -1589,14 +1689,16 @@ class HttpKubernetesModelClient:
         )
         if _controller_owned_scale_handoff_receipt(live) != receipt:
             raise KubernetesConflictError("receipt-backed fixed scale guard receipt changed")
+        live_snapshot = _snapshot(live, resource)
+        if current.desired_replicas is None or live_snapshot.desired_replicas != current.desired_replicas:
+            raise KubernetesConflictError("receipt-backed fixed Deployment replica value changed")
         owners = _replica_field_owners(live)
         fixed_owner = _ReplicaFieldOwner(
             manager=FIXED_SCALE_FIELD_MANAGER,
             subresource="scale",
             api_version="apps/v1",
         )
-        generic_owner = _ReplicaFieldOwner(manager=FIELD_MANAGER, subresource=None, api_version="apps/v1")
-        if owners not in ([fixed_owner], [generic_owner]):
+        if owners != [fixed_owner]:
             stale = [
                 owner
                 for owner in owners
@@ -1604,8 +1706,10 @@ class HttpKubernetesModelClient:
                 and owner.subresource == "scale"
                 and owner.api_version == "apps/v1"
             ]
-            if len(stale) != 1 or any(owner not in {stale[0], generic_owner} for owner in owners):
-                raise KubernetesConflictError("receipt-backed fixed Deployment has a foreign replica owner")
+            if len(stale) != 1 or owners != stale:
+                raise KubernetesConflictError(
+                    "receipt-backed fixed Deployment lacks one canonical scale owner; manual migration is required"
+                )
         return True
 
     async def apply_controller_scale(
@@ -1630,38 +1734,40 @@ class HttpKubernetesModelClient:
             or current.observed.controller_owner_uid != owner_uid
             or current.observed.deleting
             or _controller_owner_uid(resource.manifest) != owner_uid
+            or current.desired_replicas is None
+            or model_fence.uid != owner_uid
+            or model_fence.key.namespace != resource.namespace
         ):
             raise ControllerError("controller scale write preconditions are not satisfied")
-        live = await self._get_resource(resource.api_version, resource.kind, resource.namespace, resource.name)
-        if live is None:
-            raise KubernetesConflictError("controller scale target disappeared")
-        self._validate_fixed_scale_identity(
-            live,
+        receipt = _controller_owned_scale_handoff_receipt(current.raw)
+        if receipt is None:
+            raise KubernetesConflictError("controller scale write lacks a controller-owned transition receipt")
+        prepared, _ = await self._prepare_controller_scale_write(
             resource=resource,
+            current=current,
+            expected_replicas=current.desired_replicas,
             owner_uid=owner_uid,
-            expected_uid=current.observed.uid,
+            model_generation=model_fence.generation,
+            model_fence=model_fence,
+            receipt=receipt,
+            fence=fence,
+            stale_owner=False,
         )
-        if _replica_field_owners(live) != [
-            _ReplicaFieldOwner(
-                manager=FIXED_SCALE_FIELD_MANAGER,
-                subresource="scale",
-                api_version="apps/v1",
-            )
-        ]:
-            raise KubernetesConflictError("controller scale target has unexpected replica ownership")
-        live_snapshot = _snapshot(live, resource)
-        if live_snapshot.desired_replicas != current.desired_replicas:
-            raise KubernetesConflictError("controller scale target spec changed before write")
-        # Recheck complete HPA/ScaledObject absence plus the exact CR revision
-        # immediately before every receipt-backed fixed-scale mutation.
-        await self._assert_handoff_authorized(resource, model_fence)
-        return await self._patch_controller_scale(
+        written = await self._patch_prepared_controller_scale(
             resource,
-            current=live_snapshot,
+            current=prepared,
             replicas=replicas,
             owner_uid=owner_uid,
-            fence=fence,
             force=False,
+        )
+        return await self._postcheck_exceptional_scale(
+            resource,
+            written=written,
+            expected_replicas=replicas,
+            owner_uid=owner_uid,
+            model_generation=model_fence.generation,
+            model_fence=model_fence,
+            receipt=receipt,
         )
 
     async def apply_fixed_scale_handoff(
@@ -1709,89 +1815,68 @@ class HttpKubernetesModelClient:
         if receipt is None or receipt.model_generation != model_generation:
             raise KubernetesConflictError("fixed scale handoff lacks a controller-owned transition receipt")
 
-        endpoint = self._endpoint(resource.api_version, resource.kind)
-        live = await self._get_resource(resource.api_version, resource.kind, resource.namespace, resource.name)
-        if live is None:
-            raise KubernetesConflictError("fixed scale handoff target disappeared")
-        stale_owner, generic_coowner = self._validate_fixed_scale_owner(
-            live,
-            resource=resource,
-            owner_uid=owner_uid,
-            expected_uid=current.observed.uid,
-            resource_version=current.resource_version,
-            receipt=receipt,
-        )
-        # The generic full-object path also writes replicas. Guard it with
-        # complete targetRef scans; any conflict then enters the stricter path
-        # that re-reads the exact CR immediately before exceptional force.
-        await self._assert_no_targeting_autoscalers(resource)
-        # Do not run a same-value full-object probe. Kubernetes would add the
-        # generic manager as a co-owner without evicting the stale scale owner,
-        # wedging every retry. A previously-created exact generic co-owner is
-        # repaired through the same dedicated scale-only path.
-        if current.desired_replicas != desired_replicas and not generic_coowner:
-            manifest.setdefault("metadata", {})["resourceVersion"] = current.resource_version
-            path = endpoint.item(resource.namespace, resource.name)
-            params = {"fieldManager": FIELD_MANAGER, "force": "false", "fieldValidation": "Strict"}
-            await self.assert_fence(fence)
-            try:
-                await self._request(
-                    "PATCH",
-                    path,
-                    params=params,
-                    content_type="application/apply-patch+yaml",
-                    content=json.dumps(manifest, separators=(",", ":")).encode(),
-                )
-            except KubernetesConflictError as exc:
-                expected = KubernetesFieldConflict(
-                    manager=stale_owner.manager,
-                    subresource="scale",
-                    api_version="apps/v1",
-                    field=".spec.replicas",
-                )
-                if exc.field_conflicts != (expected,):
-                    raise
-            else:
-                reread = await self._get_resource(
-                    resource.api_version, resource.kind, resource.namespace, resource.name
-                )
-                if reread is None:
-                    raise ControllerError("fixed scale handoff target disappeared after non-forcing apply")
-                result = self._verified_fixed_scale_result(
-                    reread,
-                    resource=resource,
-                    owner_uid=owner_uid,
-                    expected_uid=current.observed.uid,
-                    desired_replicas=desired_replicas,
-                    expected_manager=FIELD_MANAGER,
-                    expected_subresource=None,
-                )
-                # A non-forcing success needs no compensation, but must still
-                # fail closed if a scaler or CR race is visible afterwards.
-                await self._assert_handoff_authorized(resource, model_fence)
-                return result
+        if current.desired_replicas is None:
+            raise KubernetesConflictError("fixed scale handoff has no live replica value")
+        if current.desired_replicas == desired_replicas:
+            raise KubernetesConflictError(
+                "equal-value fixed scale ownership requires manual migration; no replica write was attempted"
+            )
 
-        await self._assert_no_targeting_autoscalers(resource)
-        unchanged = await self._get_resource(resource.api_version, resource.kind, resource.namespace, resource.name)
-        if unchanged is None:
-            raise KubernetesConflictError("fixed scale handoff target disappeared after conflict")
-        self._validate_fixed_scale_owner(
-            unchanged,
-            resource=resource,
+        # A dry-run preserves strict API-server 409 Status validation without
+        # ever submitting a full-Deployment mutation. The complete scaler,
+        # Deployment material tuple, Lease, and exact CR are freshly checked
+        # before this request, with the CR read last.
+        prepared, stale_owner = await self._prepare_controller_scale_write(
+            resource,
+            current=current,
+            expected_replicas=current.desired_replicas,
             owner_uid=owner_uid,
-            expected_uid=current.observed.uid,
-            resource_version=current.resource_version,
+            model_generation=model_generation,
+            model_fence=model_fence,
             receipt=receipt,
+            fence=fence,
+            stale_owner=True,
         )
-        # Repeat the complete unlabeled lists and verify the exact CR revision
-        # immediately before the Lease-checked, resourceVersion-pinned write.
-        await self._assert_handoff_authorized(resource, model_fence)
+        assert stale_owner is not None
+        manifest.setdefault("metadata", {})["resourceVersion"] = prepared.resource_version
+        expected = KubernetesFieldConflict(
+            manager=stale_owner.manager,
+            subresource="scale",
+            api_version="apps/v1",
+            field=".spec.replicas",
+        )
+        try:
+            await self._request(
+                "PATCH",
+                self._endpoint(resource.api_version, resource.kind).item(resource.namespace, resource.name),
+                params={
+                    "fieldManager": FIELD_MANAGER,
+                    "force": "false",
+                    "fieldValidation": "Strict",
+                    "dryRun": "All",
+                },
+                content_type="application/apply-patch+yaml",
+                content=json.dumps(manifest, separators=(",", ":")).encode(),
+            )
+        except KubernetesConflictError as exc:
+            if exc.field_conflicts != (expected,):
+                raise
+        else:
+            raise KubernetesConflictError(
+                "fixed scale handoff dry-run did not prove the exact stale scale conflict; "
+                "no replica write was attempted"
+            )
+
+        # Re-run every material and authorization check after the dry-run and
+        # immediately before the only mutating request, which is /scale-only.
         return await self._take_over_controller_scale(
             resource,
             current=current,
             desired_replicas=desired_replicas,
             owner_uid=owner_uid,
+            model_generation=model_generation,
             model_fence=model_fence,
+            receipt=receipt,
             fence=fence,
         )
 
@@ -2419,6 +2504,10 @@ def _fixed_scale_handoff_targets(
             raise ControllerError("fixed Deployment scale handoff target is not exclusively controller-owned")
         if not external.issubset(STALE_SCALE_FIELD_MANAGERS):
             raise ControllerError("Deployment replica field has a foreign manager")
+        if not _autoscaler_scale_manager_owns_replicas(current):
+            raise ControllerError(
+                "fixed Deployment handoff lacks one canonical stale scale owner; manual migration is required"
+            )
         receipt = _controller_owned_scale_handoff_receipt(current.raw)
         if (
             receipt is None
@@ -2475,6 +2564,8 @@ def _receipt_backed_fixed_scale_targets(
         if receipt is None:
             if SCALE_HANDOFF_RECEIPT_ANNOTATION in annotations:
                 raise ControllerError("fixed Deployment scale handoff receipt is malformed or foreign")
+            if _fixed_scale_manager_owns_replicas(current):
+                raise ControllerError("dedicated fixed scale owner lacks a durable transition receipt")
             continue
         if (
             current.observed.controller_owner_uid != owner_uid
@@ -2495,6 +2586,7 @@ def _controller_fixed_scale_updates(
     render: RenderPlan | None,
     discovery: Discovery,
     owner_uid: str,
+    model_generation: int,
 ) -> list[tuple[RenderedResource, ResourceSnapshot, int]]:
     if render is None:
         return []
@@ -2521,6 +2613,17 @@ def _controller_fixed_scale_updates(
             continue
         if current.observed.controller_owner_uid != owner_uid or current.observed.deleting:
             raise ControllerError("controller scale target lost its exact ModelDeployment owner")
+        receipt = _controller_owned_scale_handoff_receipt(current.raw)
+        if (
+            receipt is None
+            or receipt.deployment_uid != current.observed.uid
+            or receipt.model_uid != owner_uid
+            or receipt.model_generation > model_generation
+            or receipt.scaler.api_version != "keda.sh/v1alpha1"
+            or receipt.scaler.kind != "ScaledObject"
+            or receipt.scaler.namespace != resource.namespace
+        ):
+            raise ControllerError("controller fixed scale update lacks exact durable transition evidence")
         if current.desired_replicas != replicas:
             updates.append((resource, current, replicas))
     return updates
@@ -3863,7 +3966,7 @@ class ModelDeploymentController:
                 requeue=True,
             )
 
-        controller_scale_updates = _controller_fixed_scale_updates(plan.render, discovery, uid)
+        controller_scale_updates = _controller_fixed_scale_updates(plan.render, discovery, uid, generation)
         if controller_scale_updates:
             model_fence = model_fence or _model_write_fence(raw, key)
             for resource, current, replicas in controller_scale_updates:

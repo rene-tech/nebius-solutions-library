@@ -81,7 +81,13 @@ modelController:
     enabled: true
     minAvailable: 1
   admission:
+    # The API-server gate is required before controller writes are enabled. It
+    # survives chart rollback and rejects pre-protocol-v2 images.
     enabled: false
+    # Additional immutable digest references explicitly approved by the
+    # release owner for binary rollback. The current chart image is always
+    # included automatically.
+    compatibleRollbackImages: []
   resources:
     requests:
       cpu: 50m

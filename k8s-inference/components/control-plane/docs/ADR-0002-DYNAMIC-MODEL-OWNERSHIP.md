@@ -65,14 +65,18 @@ decides where or when a pod runs.
    generation. Isolating the receipt manager prevents the annotation-only SSA
    write from relinquishing fields owned by the generic manager. A fixed-scale
    handoff requires that durable receipt, exact
-   Deployment UID/resourceVersion/owner continuity, and two fresh complete
+   Deployment UID/owner/replica-value continuity, and two fresh complete
    namespace lists proving that no HPA or ScaledObject (including unlabeled or
-   foreign objects) targets the Deployment. Immediately before the exceptional
-   write it also re-reads the exact ModelDeployment UID, resourceVersion,
+   foreign objects) targets the Deployment. A status-only Deployment update may
+   advance `resourceVersion`; the next write uses that fresh value but fails
+   closed if the UID, controller owner, deletion state, receipt, replica value,
+   or canonical replica owner changes. Immediately before the exceptional write
+   it also re-reads the exact ModelDeployment UID, resourceVersion,
    generation, canonical spec digest, and deletion state. It accepts only the
-   singleton
-   `.spec.replicas` conflict from the receipt-backed stale `keda` or
-   `horizontal-pod-autoscaler` scale owner. The exceptional `force=true` apply
+   singleton `.spec.replicas` conflict from the receipt-backed, exclusive stale
+   `keda` or `horizontal-pod-autoscaler` scale owner. That conflict is proved by
+   a server-side dry-run only; a full Deployment PATCH is never persisted by
+   the handoff. The exceptional `force=true` apply
    uses the Deployment `/scale` subresource, field manager
    `fs2-model-controller-fixed-scale`, and an `autoscaling/v1` `Scale` body
    containing only identity/precondition metadata and `.spec.replicas`; a full
@@ -86,8 +90,9 @@ decides where or when a pod runs.
    manager owns the field, ordinary
    full-object reconciliation stays non-forcing and omits only
    `.spec.replicas`; it continues applying the complete remaining Deployment.
-   Later fixed replica changes use the same `/scale` manager with
-   `force=false`. After every exceptional write the controller again performs
+   Later fixed replica changes require the same exact receipt and exclusive
+   dedicated owner, then use the same `/scale` manager with `force=false`.
+   After every exceptional write the controller again performs
    complete paginated all-targetRef HPA/ScaledObject scans, revalidates the CR,
    and re-reads exact Deployment identity, owner, deletion, replicas, and
    exclusive field ownership. A scaler or CR race fails closed without a
@@ -142,10 +147,10 @@ decides where or when a pod runs.
 The added state is confined to autoscaled/fixed ownership transitions. It is
 not folded into one reconcile because each security claim must survive a fresh
 API observation: first persist exact scaler identity before deletion; then
-observe ScaledObject deletion and generated-HPA garbage collection; then try
-ordinary non-forcing SSA; and only on its exact singleton replicas conflict run
-the repeated complete autoscaler scans and scale-only takeover. A dedicated fixed
-scale phase is also required so later fixed changes do not put replicas back
+observe ScaledObject deletion and generated-HPA garbage collection; then prove
+the exact singleton conflict with a non-persisting dry-run; and only on that
+proof run the repeated complete autoscaler scans and scale-only takeover. A
+dedicated fixed scale phase is also required so later fixed changes do not put replicas back
 into generic full-object SSA, while the reverse phase waits for KEDA/HPA to
 retake ownership.
 
@@ -166,10 +171,17 @@ from before scale-ownership protocol v2 is not a valid rollback target: it can
 reintroduce broad generic replica ownership or wait forever on the deleted
 KEDA object. The chart records the immutable compatible image reference and
 protocol `2` on both the controller Deployment and Pod template and retains
-five ReplicaSet revisions. Rollback must select a retained revision carrying
-that protocol annotation (or redeploy its recorded immutable digest); it must
-never select a revision without it. Future compatible releases retain the same
-annotation, so their normal revision history remains a tested rollback path.
+five ReplicaSet revisions. A fail-closed API-server
+`ValidatingAdmissionPolicy` and binding are retained independently of the
+controller Deployment. They admit only the current immutable image or an
+explicitly configured immutable compatible rollback image, and require
+protocol `2` on both Deployment and Pod template. Thus an older chart or
+operator cannot roll the workload back to a pre-v2 image without first changing
+the externally enforced release gate. Rollback selects a retained, allowlisted
+v2 revision (or redeploys its recorded immutable digest); it must never select a
+revision without the annotation. Future compatible releases retain the same
+annotation and can be explicitly allowlisted, so their normal revision history
+remains a tested rollback path.
 The controller does not recreate a deleted ScaledObject to make an old binary
 appear healthy.
 

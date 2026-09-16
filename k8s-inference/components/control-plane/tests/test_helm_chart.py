@@ -959,6 +959,38 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
     assert policy["spec"]["failurePolicy"] == "Fail"
     assert policy["spec"]["matchConstraints"]["resourceRules"][0]["operations"] == ["DELETE"]
     assert "observedGeneration == oldObject.metadata.generation" in policy["spec"]["validations"][0]["expression"]
+    release_policy = named[("ValidatingAdmissionPolicy", "fs2-serve-control-plane-model-controller-release")]
+    release_binding = named[
+        ("ValidatingAdmissionPolicyBinding", "fs2-serve-control-plane-model-controller-release")
+    ]
+    assert release_policy["metadata"]["annotations"] == {"helm.sh/resource-policy": "keep"}
+    assert release_binding["metadata"]["annotations"] == {"helm.sh/resource-policy": "keep"}
+    assert release_policy["spec"]["failurePolicy"] == "Fail"
+    assert release_policy["spec"]["matchConstraints"]["resourceRules"] == [
+        {
+            "apiGroups": ["apps"],
+            "apiVersions": ["v1"],
+            "operations": ["CREATE", "UPDATE"],
+            "resources": ["deployments"],
+            "scope": "Namespaced",
+        }
+    ]
+    assert release_policy["spec"]["matchConditions"] == [
+        {
+            "name": "exact-model-controller",
+            "expression": "object.metadata.name == 'fs2-serve-control-plane-model-controller'",
+        }
+    ]
+    release_expression = release_policy["spec"]["validations"][0]["expression"]
+    assert "scale-ownership-protocol'] == '2'" in release_expression
+    assert f'c.image in ["{rollback_image}"]' in release_expression
+    assert release_binding["spec"] == {
+        "policyName": "fs2-serve-control-plane-model-controller-release",
+        "validationActions": ["Deny"],
+        "matchResources": {
+            "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "fs2-system"}}
+        },
+    }
     network = named[("NetworkPolicy", "fs2-serve-control-plane-model-controller")]
     egress = network["spec"]["egress"]
     assert next(rule for rule in egress if rule["ports"] == [{"port": 443, "protocol": "TCP"}])["to"] == [
@@ -966,6 +998,55 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
     ]
     assert any(rule["ports"] == [{"port": 53, "protocol": "UDP"}, {"port": 53, "protocol": "TCP"}] for rule in egress)
     assert any(rule["ports"] == [{"port": 9090, "protocol": "TCP"}] for rule in egress)
+
+
+def test_model_controller_release_gate_accepts_only_explicit_immutable_rollback_images() -> None:
+    approved = "registry.nebius.cloud/unit/fs2-serve-control-plane@sha256:" + "4" * 64
+    documents = render(
+        "--set",
+        "modelController.enabled=true",
+        "--set",
+        "modelController.admission.enabled=true",
+        "--set",
+        f"modelController.admission.compatibleRollbackImages[0]={approved}",
+        "--set",
+        "modelController.infrastructureEnvelopeConfigMapName=fs2-model-envelope",
+        "--set",
+        "modelController.rendererBundlesConfigMapName=fs2-model-bundles",
+        "--set",
+        "networkPolicy.kubernetesApiCidrs[0]=10.0.0.1/32",
+    )
+    policy = next(
+        document
+        for document in documents
+        if document["kind"] == "ValidatingAdmissionPolicy"
+        and document["metadata"]["name"] == "fs2-serve-control-plane-model-controller-release"
+    )
+    expression = policy["spec"]["validations"][0]["expression"]
+    assert f'"{TEST_REPOSITORY}@{TEST_DIGEST}"' in expression
+    assert f'"{approved}"' in expression
+
+    rejected = subprocess.run(  # noqa: S603 - fixed Helm binary and test-owned arguments
+        render_command(
+            "--set",
+            "modelController.enabled=true",
+            "--set",
+            "modelController.admission.enabled=true",
+            "--set-string",
+            "modelController.admission.compatibleRollbackImages[0]=registry.invalid/controller:latest",
+            "--set",
+            "modelController.infrastructureEnvelopeConfigMapName=fs2-model-envelope",
+            "--set",
+            "modelController.rendererBundlesConfigMapName=fs2-model-bundles",
+            "--set",
+            "networkPolicy.kubernetesApiCidrs[0]=10.0.0.1/32",
+        ),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert rejected.returncode != 0
+    assert "compatibleRollbackImages" in rejected.stderr and "sha256" in rejected.stderr
 
 
 def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() -> None:

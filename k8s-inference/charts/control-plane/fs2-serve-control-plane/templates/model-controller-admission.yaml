@@ -39,4 +39,57 @@ spec:
     namespaceSelector:
       matchLabels:
         kubernetes.io/metadata.name: {{ .Values.modelController.modelNamespace }}
+---
+{{- range $image := .Values.modelController.admission.compatibleRollbackImages }}
+{{- if not (regexMatch "^[^@]+@sha256:[0-9a-f]{64}$" $image) }}
+{{- fail "modelController.admission.compatibleRollbackImages entries must be immutable sha256 image references" }}
+{{- end }}
+{{- end }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-model-controller-release
+  annotations:
+    helm.sh/resource-policy: keep
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments"]
+        scope: Namespaced
+  matchConditions:
+    - name: exact-model-controller
+      expression: object.metadata.name == '{{ include "fs2-serve.fullname" . }}-model-controller'
+  validations:
+    - expression: >-
+        has(object.metadata.annotations) &&
+        object.metadata.annotations['inference.fs2.nebius.ai/scale-ownership-protocol'] == '2' &&
+        has(object.spec.template.metadata.annotations) &&
+        object.spec.template.metadata.annotations['inference.fs2.nebius.ai/scale-ownership-protocol'] == '2' &&
+        object.spec.template.spec.containers.exists(c,
+          c.name == 'model-controller' &&
+          c.image in [{{ include "fs2-serve.image" . | quote }}{{- range $image := .Values.modelController.admission.compatibleRollbackImages }}, {{ $image | quote }}{{- end }}])
+      message: Model controller releases and rollbacks require a protocol-v2 compatible immutable image
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-model-controller-release
+  annotations:
+    helm.sh/resource-policy: keep
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+spec:
+  policyName: {{ include "fs2-serve.fullname" . }}-model-controller-release
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ .Release.Namespace }}
 {{- end }}
