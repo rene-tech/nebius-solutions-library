@@ -1,0 +1,1182 @@
+{
+  "observed_at": "2026-09-16T17:41:21.506877+00:00",
+  "context": "fs2-storage-h100",
+  "namespace": "fs2-models",
+  "node_loss_tested": false,
+  "models": [
+    {
+      "name": "magpie-tts-multilingual-357m",
+      "uid": "fb0a45dd-4507-4b5f-b599-6e9b49434a50",
+      "generation": 1,
+      "availability": {
+        "cooldownSeconds": 300,
+        "idleSeconds": 300,
+        "maxReplicas": 2,
+        "minReplicas": 1,
+        "pollingIntervalSeconds": 5,
+        "targetQueueDepth": 1,
+        "warmWindows": []
+      },
+      "snapshot_preference": "Never",
+      "observed_generation": 1,
+      "phase": "Ready",
+      "replicas": {
+        "admitted": 1,
+        "available": 1,
+        "desired": 1,
+        "localizing": 0,
+        "nodePending": 0,
+        "ready": 1,
+        "runtimeStarting": 0,
+        "warming": 0
+      }
+    },
+    {
+      "name": "parakeet-realtime-eou-120m-v1",
+      "uid": "d46ae1a2-d856-45c3-8a14-90e72418cee9",
+      "generation": 2,
+      "availability": {
+        "cooldownSeconds": 300,
+        "idleSeconds": 300,
+        "maxReplicas": 2,
+        "minReplicas": 2,
+        "pollingIntervalSeconds": 5,
+        "targetQueueDepth": 1,
+        "warmWindows": []
+      },
+      "snapshot_preference": "Never",
+      "observed_generation": 2,
+      "phase": "Ready",
+      "replicas": {
+        "admitted": 2,
+        "available": 2,
+        "desired": 2,
+        "localizing": 0,
+        "nodePending": 0,
+        "ready": 2,
+        "runtimeStarting": 0,
+        "warming": 0
+      }
+    },
+    {
+      "name": "diar-streaming-sortformer-4spk-v2-1",
+      "uid": "68256880-33c3-4381-8ae5-e3f07011e933",
+      "generation": 2,
+      "availability": {
+        "cooldownSeconds": 300,
+        "idleSeconds": 300,
+        "maxReplicas": 2,
+        "minReplicas": 2,
+        "pollingIntervalSeconds": 5,
+        "targetQueueDepth": 1,
+        "warmWindows": []
+      },
+      "snapshot_preference": "Never",
+      "observed_generation": 2,
+      "phase": "Ready",
+      "replicas": {
+        "admitted": 2,
+        "available": 2,
+        "desired": 2,
+        "localizing": 0,
+        "nodePending": 0,
+        "ready": 2,
+        "runtimeStarting": 0,
+        "warming": 0
+      }
+    }
+  ],
+  "deployments": [
+    {
+      "name": "magpie-tts-multilingual-357m",
+      "uid": "98a3652b-23dd-49a2-a800-9a18eddd45c0",
+      "strategy": {
+        "rollingUpdate": {
+          "maxSurge": 1,
+          "maxUnavailable": 0
+        },
+        "type": "RollingUpdate"
+      },
+      "replicas": 1,
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:fc9db5fd5df87e819766297d90a4595664aec63e7dbfd6735b3f2053b4725ead",
+      "status": {
+        "availableReplicas": 1,
+        "conditions": [
+          {
+            "lastTransitionTime": "2026-09-16T17:12:59Z",
+            "lastUpdateTime": "2026-09-16T17:12:59Z",
+            "message": "ReplicaSet \"magpie-tts-multilingual-357m-9c9b4685d\" has successfully progressed.",
+            "reason": "NewReplicaSetAvailable",
+            "status": "True",
+            "type": "Progressing"
+          },
+          {
+            "lastTransitionTime": "2026-09-16T17:16:40Z",
+            "lastUpdateTime": "2026-09-16T17:16:40Z",
+            "message": "Deployment has minimum availability.",
+            "reason": "MinimumReplicasAvailable",
+            "status": "True",
+            "type": "Available"
+          }
+        ],
+        "observedGeneration": 2,
+        "readyReplicas": 1,
+        "replicas": 1,
+        "terminatingReplicas": 0,
+        "updatedReplicas": 1
+      }
+    },
+    {
+      "name": "parakeet-realtime-eou-120m-v1",
+      "uid": "a9a7c01e-2773-4f80-b520-24808e8df7ea",
+      "strategy": {
+        "rollingUpdate": {
+          "maxSurge": 1,
+          "maxUnavailable": 0
+        },
+        "type": "RollingUpdate"
+      },
+      "replicas": 2,
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa",
+      "status": {
+        "availableReplicas": 2,
+        "conditions": [
+          {
+            "lastTransitionTime": "2026-09-16T17:12:54Z",
+            "lastUpdateTime": "2026-09-16T17:35:14Z",
+            "message": "ReplicaSet \"parakeet-realtime-eou-120m-v1-5d9755bc7c\" has successfully progressed.",
+            "reason": "NewReplicaSetAvailable",
+            "status": "True",
+            "type": "Progressing"
+          },
+          {
+            "lastTransitionTime": "2026-09-16T17:39:28Z",
+            "lastUpdateTime": "2026-09-16T17:39:28Z",
+            "message": "Deployment has minimum availability.",
+            "reason": "MinimumReplicasAvailable",
+            "status": "True",
+            "type": "Available"
+          }
+        ],
+        "observedGeneration": 4,
+        "readyReplicas": 2,
+        "replicas": 2,
+        "terminatingReplicas": 0,
+        "updatedReplicas": 2
+      }
+    },
+    {
+      "name": "diar-streaming-sortformer-4spk-v2-1",
+      "uid": "37908cde-a07a-4ba1-9e23-c932ddefcfaa",
+      "strategy": {
+        "rollingUpdate": {
+          "maxSurge": 1,
+          "maxUnavailable": 0
+        },
+        "type": "RollingUpdate"
+      },
+      "replicas": 2,
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253",
+      "status": {
+        "availableReplicas": 2,
+        "conditions": [
+          {
+            "lastTransitionTime": "2026-09-16T17:40:02Z",
+            "lastUpdateTime": "2026-09-16T17:40:02Z",
+            "message": "Deployment has minimum availability.",
+            "reason": "MinimumReplicasAvailable",
+            "status": "True",
+            "type": "Available"
+          },
+          {
+            "lastTransitionTime": "2026-09-16T17:13:03Z",
+            "lastUpdateTime": "2026-09-16T17:41:02Z",
+            "message": "ReplicaSet \"diar-streaming-sortformer-4spk-v2-1-b7d45646b\" has successfully progressed.",
+            "reason": "NewReplicaSetAvailable",
+            "status": "True",
+            "type": "Progressing"
+          }
+        ],
+        "observedGeneration": 4,
+        "readyReplicas": 2,
+        "replicas": 2,
+        "terminatingReplicas": 0,
+        "updatedReplicas": 2
+      }
+    }
+  ],
+  "services": [
+    {
+      "name": "magpie-tts-multilingual-357m",
+      "uid": "5c6e50ae-52e3-4ea1-83a4-8a4bf22d0d40",
+      "cluster_ip": "10.5.173.104",
+      "selector": {
+        "app.kubernetes.io/name": "magpie-tts-multilingual-357m"
+      },
+      "owners": [
+        {
+          "apiVersion": "inference.fs2.nebius.ai/v1alpha1",
+          "blockOwnerDeletion": true,
+          "controller": true,
+          "kind": "ModelDeployment",
+          "name": "magpie-tts-multilingual-357m",
+          "uid": "fb0a45dd-4507-4b5f-b599-6e9b49434a50"
+        }
+      ]
+    },
+    {
+      "name": "parakeet-realtime-eou-120m-v1",
+      "uid": "7942da0a-1985-43be-92c1-9cfdc644ba18",
+      "cluster_ip": "10.5.171.27",
+      "selector": {
+        "app.kubernetes.io/name": "parakeet-realtime-eou-120m-v1"
+      },
+      "owners": [
+        {
+          "apiVersion": "inference.fs2.nebius.ai/v1alpha1",
+          "blockOwnerDeletion": true,
+          "controller": true,
+          "kind": "ModelDeployment",
+          "name": "parakeet-realtime-eou-120m-v1",
+          "uid": "d46ae1a2-d856-45c3-8a14-90e72418cee9"
+        }
+      ]
+    },
+    {
+      "name": "diar-streaming-sortformer-4spk-v2-1",
+      "uid": "28e547da-e960-43cd-b6f1-066493c608c8",
+      "cluster_ip": "10.5.226.1",
+      "selector": {
+        "app.kubernetes.io/name": "diar-streaming-sortformer-4spk-v2-1"
+      },
+      "owners": [
+        {
+          "apiVersion": "inference.fs2.nebius.ai/v1alpha1",
+          "blockOwnerDeletion": true,
+          "controller": true,
+          "kind": "ModelDeployment",
+          "name": "diar-streaming-sortformer-4spk-v2-1",
+          "uid": "68256880-33c3-4381-8ae5-e3f07011e933"
+        }
+      ]
+    }
+  ],
+  "endpoints": [
+    {
+      "service": "diar-streaming-sortformer-4spk-v2-1",
+      "endpoints": [
+        {
+          "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-8vd9c",
+          "conditions": {
+            "ready": true,
+            "serving": true,
+            "terminating": false
+          }
+        },
+        {
+          "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-lvnxg",
+          "conditions": {
+            "ready": true,
+            "serving": true,
+            "terminating": false
+          }
+        }
+      ]
+    },
+    {
+      "service": "magpie-tts-multilingual-357m",
+      "endpoints": [
+        {
+          "pod": "magpie-tts-multilingual-357m-9c9b4685d-hcnj2",
+          "conditions": {
+            "ready": true,
+            "serving": true,
+            "terminating": false
+          }
+        }
+      ]
+    },
+    {
+      "service": "parakeet-realtime-eou-120m-v1",
+      "endpoints": [
+        {
+          "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-glcdz",
+          "conditions": {
+            "ready": true,
+            "serving": true,
+            "terminating": false
+          }
+        },
+        {
+          "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-cfqj2",
+          "conditions": {
+            "ready": true,
+            "serving": true,
+            "terminating": false
+          }
+        }
+      ]
+    }
+  ],
+  "pods": [
+    {
+      "name": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-8vd9c",
+      "uid": "fa1031ee-84bd-4b55-95ff-90dc652f1f8d",
+      "model": "diar-streaming-sortformer-4spk-v2-1",
+      "node": "computeinstance-e00tfvy9gb2n0vm6h2",
+      "created_at": "2026-09-16T17:39:34Z",
+      "started_at": "2026-09-16T17:39:57Z",
+      "ready_at": "2026-09-16T17:40:25Z",
+      "creation_to_ready_seconds": 51,
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253",
+      "image_pull_policy": "IfNotPresent",
+      "restarts": 0,
+      "gpu_request": "1"
+    },
+    {
+      "name": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-lvnxg",
+      "uid": "bcd84680-da73-457a-a8a3-5fdd000cfc62",
+      "model": "diar-streaming-sortformer-4spk-v2-1",
+      "node": "computeinstance-e00krzha55t0sg3t56",
+      "created_at": "2026-09-16T17:40:25Z",
+      "started_at": "2026-09-16T17:40:32Z",
+      "ready_at": "2026-09-16T17:41:02Z",
+      "creation_to_ready_seconds": 37,
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253",
+      "image_pull_policy": "IfNotPresent",
+      "restarts": 0,
+      "gpu_request": "1"
+    },
+    {
+      "name": "magpie-tts-multilingual-357m-9c9b4685d-hcnj2",
+      "uid": "1d4983e5-0f5b-4e02-9369-585a3ebe2965",
+      "model": "magpie-tts-multilingual-357m",
+      "node": "computeinstance-e00zs7gf1mgdygk6jv",
+      "created_at": "2026-09-16T17:12:59Z",
+      "started_at": "2026-09-16T17:15:53Z",
+      "ready_at": "2026-09-16T17:16:40Z",
+      "creation_to_ready_seconds": 221,
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:fc9db5fd5df87e819766297d90a4595664aec63e7dbfd6735b3f2053b4725ead",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:fc9db5fd5df87e819766297d90a4595664aec63e7dbfd6735b3f2053b4725ead",
+      "image_pull_policy": "IfNotPresent",
+      "restarts": 0,
+      "gpu_request": "1"
+    },
+    {
+      "name": "parakeet-realtime-eou-120m-v1-5d9755bc7c-cfqj2",
+      "uid": "da1c8fca-5fa2-4e12-ac73-caee3e428eab",
+      "model": "parakeet-realtime-eou-120m-v1",
+      "node": "computeinstance-e00dczh75qcnbj0bx8",
+      "created_at": "2026-09-16T17:38:58Z",
+      "started_at": "2026-09-16T17:38:59Z",
+      "ready_at": "2026-09-16T17:39:28Z",
+      "creation_to_ready_seconds": 30,
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa",
+      "image_pull_policy": "IfNotPresent",
+      "restarts": 0,
+      "gpu_request": "1"
+    },
+    {
+      "name": "parakeet-realtime-eou-120m-v1-5d9755bc7c-glcdz",
+      "uid": "adffb802-9262-4e4b-a848-54d8def6b574",
+      "model": "parakeet-realtime-eou-120m-v1",
+      "node": "computeinstance-e00r165maajnbg7wrr",
+      "created_at": "2026-09-16T17:34:23Z",
+      "started_at": "2026-09-16T17:34:44Z",
+      "ready_at": "2026-09-16T17:35:14Z",
+      "creation_to_ready_seconds": 51,
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa",
+      "image_pull_policy": "IfNotPresent",
+      "restarts": 0,
+      "gpu_request": "1"
+    }
+  ],
+  "preview_deployments": [
+    {
+      "name": "fs2-voice-parakeet-r20260916",
+      "replicas": 0
+    },
+    {
+      "name": "fs2-voice-magpie-r20260916",
+      "replicas": 0
+    },
+    {
+      "name": "fs2-voice-sortformer-r20260916",
+      "replicas": 0
+    }
+  ],
+  "startup_events": [
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-2rff8",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T17:39:31Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-2rff8",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/diar-streaming-sortformer-4spk-v2-1-69bb89d789-2rff8 to computeinstance-e00krzha55t0sg3t56",
+      "at": "2026-09-16T17:39:31Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-2rff8",
+      "reason": "Pulled",
+      "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253\" already present on machine and can be accessed by the pod",
+      "at": "2026-09-16T17:39:32Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-2rff8",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T17:39:32Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-2rff8",
+      "reason": "Killing",
+      "message": "Stopping container voice",
+      "at": "2026-09-16T17:40:25Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-wwflx",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T17:13:04Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-wwflx",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/diar-streaming-sortformer-4spk-v2-1-69bb89d789-wwflx to computeinstance-e00vt3d3s01p9xsrwt",
+      "at": "2026-09-16T17:13:04Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-wwflx",
+      "reason": "Pulled",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253\" in 2m39.674s (2m39.674s including waiting). Image size: 7304508947 bytes.",
+      "at": "2026-09-16T17:15:44Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-wwflx",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T17:15:44Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-wwflx",
+      "reason": "Killing",
+      "message": "Stopping container voice",
+      "at": "2026-09-16T17:41:02Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-8vd9c",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T17:39:34Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-8vd9c",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/diar-streaming-sortformer-4spk-v2-1-b7d45646b-8vd9c to computeinstance-e00tfvy9gb2n0vm6h2",
+      "at": "2026-09-16T17:39:34Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-8vd9c",
+      "reason": "Pulled",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253\" in 22.105s (22.105s including waiting). Image size: 7304508947 bytes.",
+      "at": "2026-09-16T17:39:57Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-8vd9c",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T17:39:57Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-lvnxg",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T17:40:25Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-lvnxg",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/diar-streaming-sortformer-4spk-v2-1-b7d45646b-lvnxg to computeinstance-e00krzha55t0sg3t56",
+      "at": "2026-09-16T17:40:31Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-lvnxg",
+      "reason": "Pulled",
+      "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253\" already present on machine and can be accessed by the pod",
+      "at": "2026-09-16T17:40:32Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-lvnxg",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T17:40:32Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-9c9b4685d-hcnj2",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T17:13:00Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-9c9b4685d-hcnj2",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/magpie-tts-multilingual-357m-9c9b4685d-hcnj2 to computeinstance-e00zs7gf1mgdygk6jv",
+      "at": "2026-09-16T17:13:00Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-9c9b4685d-hcnj2",
+      "reason": "Pulled",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:fc9db5fd5df87e819766297d90a4595664aec63e7dbfd6735b3f2053b4725ead\" in 2m52.105s (2m52.105s including waiting). Image size: 8560615176 bytes.",
+      "at": "2026-09-16T17:15:52Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-9c9b4685d-hcnj2",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T17:15:53Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-cfqj2",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T17:38:58Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-cfqj2",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/parakeet-realtime-eou-120m-v1-5d9755bc7c-cfqj2 to computeinstance-e00dczh75qcnbj0bx8",
+      "at": "2026-09-16T17:38:58Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-cfqj2",
+      "reason": "Pulled",
+      "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa\" already present on machine and can be accessed by the pod",
+      "at": "2026-09-16T17:38:59Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-cfqj2",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T17:38:59Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-glcdz",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T17:34:24Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-glcdz",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/parakeet-realtime-eou-120m-v1-5d9755bc7c-glcdz to computeinstance-e00r165maajnbg7wrr",
+      "at": "2026-09-16T17:34:24Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-glcdz",
+      "reason": "Pulled",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa\" in 19.599s (19.599s including waiting). Image size: 7284242608 bytes.",
+      "at": "2026-09-16T17:34:44Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-glcdz",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T17:34:44Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-slq4t",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T17:33:28Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-slq4t",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/parakeet-realtime-eou-120m-v1-5d9755bc7c-slq4t to computeinstance-e00krzha55t0sg3t56",
+      "at": "2026-09-16T17:33:28Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-slq4t",
+      "reason": "Pulled",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa\" in 23.497s (23.497s including waiting). Image size: 7284242608 bytes.",
+      "at": "2026-09-16T17:33:52Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-slq4t",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T17:33:52Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-slq4t",
+      "reason": "Killing",
+      "message": "Stopping container voice",
+      "at": "2026-09-16T17:38:58Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-4m7rw",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T17:33:23Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-4m7rw",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/parakeet-realtime-eou-120m-v1-6497d49575-4m7rw to computeinstance-e00tfvy9gb2n0vm6h2",
+      "at": "2026-09-16T17:33:23Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-4m7rw",
+      "reason": "Pulled",
+      "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa\" already present on machine and can be accessed by the pod",
+      "at": "2026-09-16T17:33:23Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-4m7rw",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T17:33:24Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-4m7rw",
+      "reason": "Killing",
+      "message": "Stopping container voice",
+      "at": "2026-09-16T17:34:23Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-vxbz6",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T17:12:54Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-vxbz6",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/parakeet-realtime-eou-120m-v1-6497d49575-vxbz6 to computeinstance-e00dczh75qcnbj0bx8",
+      "at": "2026-09-16T17:12:54Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-vxbz6",
+      "reason": "Pulled",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa\" in 2m32.049s (2m32.049s including waiting). Image size: 7284242608 bytes.",
+      "at": "2026-09-16T17:15:27Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-vxbz6",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T17:15:30Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-vxbz6",
+      "reason": "Killing",
+      "message": "Stopping container voice",
+      "at": "2026-09-16T17:35:14Z"
+    }
+  ],
+  "metrics": {
+    "fs2_voice_ready": [
+      {
+        "metric": {
+          "__name__": "fs2_voice_ready",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "magpie-tts-multilingual-357m",
+          "instance": "10.6.91.195:8000",
+          "job": "magpie-tts-multilingual-357m",
+          "namespace": "fs2-models",
+          "pod": "magpie-tts-multilingual-357m-9c9b4685d-hcnj2",
+          "service": "magpie-tts-multilingual-357m"
+        },
+        "value": [
+          1789580481.773,
+          "1"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_ready",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "diar-streaming-sortformer-4spk-v2-1",
+          "instance": "10.6.120.119:8000",
+          "job": "diar-streaming-sortformer-4spk-v2-1",
+          "namespace": "fs2-models",
+          "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-wwflx",
+          "service": "diar-streaming-sortformer-4spk-v2-1"
+        },
+        "value": [
+          1789580481.773,
+          "1"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_ready",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "parakeet-realtime-eou-120m-v1",
+          "instance": "10.6.110.230:8000",
+          "job": "parakeet-realtime-eou-120m-v1",
+          "namespace": "fs2-models",
+          "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-glcdz",
+          "service": "parakeet-realtime-eou-120m-v1"
+        },
+        "value": [
+          1789580481.773,
+          "1"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_ready",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "parakeet-realtime-eou-120m-v1",
+          "instance": "10.6.99.38:8000",
+          "job": "parakeet-realtime-eou-120m-v1",
+          "namespace": "fs2-models",
+          "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-cfqj2",
+          "service": "parakeet-realtime-eou-120m-v1"
+        },
+        "value": [
+          1789580481.773,
+          "1"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_ready",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "diar-streaming-sortformer-4spk-v2-1",
+          "instance": "10.0.1.177:8000",
+          "job": "diar-streaming-sortformer-4spk-v2-1",
+          "namespace": "fs2-models",
+          "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-8vd9c",
+          "service": "diar-streaming-sortformer-4spk-v2-1"
+        },
+        "value": [
+          1789580481.773,
+          "1"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_ready",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "diar-streaming-sortformer-4spk-v2-1",
+          "instance": "10.6.88.218:8000",
+          "job": "diar-streaming-sortformer-4spk-v2-1",
+          "namespace": "fs2-models",
+          "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-lvnxg",
+          "service": "diar-streaming-sortformer-4spk-v2-1"
+        },
+        "value": [
+          1789580481.773,
+          "1"
+        ]
+      }
+    ],
+    "fs2_voice_occupied": [
+      {
+        "metric": {
+          "__name__": "fs2_voice_occupied",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "magpie-tts-multilingual-357m",
+          "instance": "10.6.91.195:8000",
+          "job": "magpie-tts-multilingual-357m",
+          "namespace": "fs2-models",
+          "pod": "magpie-tts-multilingual-357m-9c9b4685d-hcnj2",
+          "service": "magpie-tts-multilingual-357m"
+        },
+        "value": [
+          1789580481.867,
+          "0"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_occupied",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "diar-streaming-sortformer-4spk-v2-1",
+          "instance": "10.6.120.119:8000",
+          "job": "diar-streaming-sortformer-4spk-v2-1",
+          "namespace": "fs2-models",
+          "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-wwflx",
+          "service": "diar-streaming-sortformer-4spk-v2-1"
+        },
+        "value": [
+          1789580481.867,
+          "0"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_occupied",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "parakeet-realtime-eou-120m-v1",
+          "instance": "10.6.110.230:8000",
+          "job": "parakeet-realtime-eou-120m-v1",
+          "namespace": "fs2-models",
+          "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-glcdz",
+          "service": "parakeet-realtime-eou-120m-v1"
+        },
+        "value": [
+          1789580481.867,
+          "0"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_occupied",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "parakeet-realtime-eou-120m-v1",
+          "instance": "10.6.99.38:8000",
+          "job": "parakeet-realtime-eou-120m-v1",
+          "namespace": "fs2-models",
+          "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-cfqj2",
+          "service": "parakeet-realtime-eou-120m-v1"
+        },
+        "value": [
+          1789580481.867,
+          "0"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_occupied",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "diar-streaming-sortformer-4spk-v2-1",
+          "instance": "10.0.1.177:8000",
+          "job": "diar-streaming-sortformer-4spk-v2-1",
+          "namespace": "fs2-models",
+          "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-8vd9c",
+          "service": "diar-streaming-sortformer-4spk-v2-1"
+        },
+        "value": [
+          1789580481.867,
+          "1"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_occupied",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "diar-streaming-sortformer-4spk-v2-1",
+          "instance": "10.6.88.218:8000",
+          "job": "diar-streaming-sortformer-4spk-v2-1",
+          "namespace": "fs2-models",
+          "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-lvnxg",
+          "service": "diar-streaming-sortformer-4spk-v2-1"
+        },
+        "value": [
+          1789580481.867,
+          "1"
+        ]
+      }
+    ],
+    "fs2_voice_requests_total": [
+      {
+        "metric": {
+          "__name__": "fs2_voice_requests_total",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "magpie-tts-multilingual-357m",
+          "instance": "10.6.91.195:8000",
+          "job": "magpie-tts-multilingual-357m",
+          "namespace": "fs2-models",
+          "pod": "magpie-tts-multilingual-357m-9c9b4685d-hcnj2",
+          "service": "magpie-tts-multilingual-357m",
+          "status": "completed"
+        },
+        "value": [
+          1789580481.96,
+          "10"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_requests_total",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "diar-streaming-sortformer-4spk-v2-1",
+          "instance": "10.6.120.119:8000",
+          "job": "diar-streaming-sortformer-4spk-v2-1",
+          "namespace": "fs2-models",
+          "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-wwflx",
+          "service": "diar-streaming-sortformer-4spk-v2-1",
+          "status": "completed"
+        },
+        "value": [
+          1789580481.96,
+          "2"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_requests_total",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "magpie-tts-multilingual-357m",
+          "instance": "10.6.91.195:8000",
+          "job": "magpie-tts-multilingual-357m",
+          "namespace": "fs2-models",
+          "pod": "magpie-tts-multilingual-357m-9c9b4685d-hcnj2",
+          "service": "magpie-tts-multilingual-357m",
+          "status": "cancelled"
+        },
+        "value": [
+          1789580481.96,
+          "1"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_requests_total",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "parakeet-realtime-eou-120m-v1",
+          "instance": "10.6.110.230:8000",
+          "job": "parakeet-realtime-eou-120m-v1",
+          "namespace": "fs2-models",
+          "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-glcdz",
+          "service": "parakeet-realtime-eou-120m-v1",
+          "status": "completed"
+        },
+        "value": [
+          1789580481.96,
+          "2"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_requests_total",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "diar-streaming-sortformer-4spk-v2-1",
+          "instance": "10.6.88.218:8000",
+          "job": "diar-streaming-sortformer-4spk-v2-1",
+          "namespace": "fs2-models",
+          "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-lvnxg",
+          "service": "diar-streaming-sortformer-4spk-v2-1",
+          "status": "overloaded"
+        },
+        "value": [
+          1789580481.96,
+          "2"
+        ]
+      }
+    ],
+    "fs2_voice_audio_seconds_total": [
+      {
+        "metric": {
+          "__name__": "fs2_voice_audio_seconds_total",
+          "container": "voice",
+          "direction": "output",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "magpie-tts-multilingual-357m",
+          "instance": "10.6.91.195:8000",
+          "job": "magpie-tts-multilingual-357m",
+          "namespace": "fs2-models",
+          "pod": "magpie-tts-multilingual-357m-9c9b4685d-hcnj2",
+          "service": "magpie-tts-multilingual-357m"
+        },
+        "value": [
+          1789580482.07,
+          "258.7167346938681"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_audio_seconds_total",
+          "container": "voice",
+          "direction": "input",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "diar-streaming-sortformer-4spk-v2-1",
+          "instance": "10.6.120.119:8000",
+          "job": "diar-streaming-sortformer-4spk-v2-1",
+          "namespace": "fs2-models",
+          "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-wwflx",
+          "service": "diar-streaming-sortformer-4spk-v2-1"
+        },
+        "value": [
+          1789580482.07,
+          "22.69362499999987"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_audio_seconds_total",
+          "container": "voice",
+          "direction": "input",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "parakeet-realtime-eou-120m-v1",
+          "instance": "10.6.110.230:8000",
+          "job": "parakeet-realtime-eou-120m-v1",
+          "namespace": "fs2-models",
+          "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-glcdz",
+          "service": "parakeet-realtime-eou-120m-v1"
+        },
+        "value": [
+          1789580482.07,
+          "10.916375000000007"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_audio_seconds_total",
+          "container": "voice",
+          "direction": "input",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "diar-streaming-sortformer-4spk-v2-1",
+          "instance": "10.0.1.177:8000",
+          "job": "diar-streaming-sortformer-4spk-v2-1",
+          "namespace": "fs2-models",
+          "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-8vd9c",
+          "service": "diar-streaming-sortformer-4spk-v2-1"
+        },
+        "value": [
+          1789580482.07,
+          "1.0399999999999998"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_audio_seconds_total",
+          "container": "voice",
+          "direction": "input",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "diar-streaming-sortformer-4spk-v2-1",
+          "instance": "10.6.88.218:8000",
+          "job": "diar-streaming-sortformer-4spk-v2-1",
+          "namespace": "fs2-models",
+          "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-lvnxg",
+          "service": "diar-streaming-sortformer-4spk-v2-1"
+        },
+        "value": [
+          1789580482.07,
+          "3.3600000000000017"
+        ]
+      }
+    ],
+    "fs2_voice_first_output_seconds_count": [
+      {
+        "metric": {
+          "__name__": "fs2_voice_first_output_seconds_count",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "magpie-tts-multilingual-357m",
+          "instance": "10.6.91.195:8000",
+          "job": "magpie-tts-multilingual-357m",
+          "namespace": "fs2-models",
+          "pod": "magpie-tts-multilingual-357m-9c9b4685d-hcnj2",
+          "service": "magpie-tts-multilingual-357m"
+        },
+        "value": [
+          1789580482.163,
+          "11"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_first_output_seconds_count",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "diar-streaming-sortformer-4spk-v2-1",
+          "instance": "10.6.120.119:8000",
+          "job": "diar-streaming-sortformer-4spk-v2-1",
+          "namespace": "fs2-models",
+          "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-wwflx",
+          "service": "diar-streaming-sortformer-4spk-v2-1"
+        },
+        "value": [
+          1789580482.163,
+          "2"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_first_output_seconds_count",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "parakeet-realtime-eou-120m-v1",
+          "instance": "10.6.110.230:8000",
+          "job": "parakeet-realtime-eou-120m-v1",
+          "namespace": "fs2-models",
+          "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-glcdz",
+          "service": "parakeet-realtime-eou-120m-v1"
+        },
+        "value": [
+          1789580482.163,
+          "2"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_first_output_seconds_count",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "parakeet-realtime-eou-120m-v1",
+          "instance": "10.6.99.38:8000",
+          "job": "parakeet-realtime-eou-120m-v1",
+          "namespace": "fs2-models",
+          "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-cfqj2",
+          "service": "parakeet-realtime-eou-120m-v1"
+        },
+        "value": [
+          1789580482.163,
+          "0"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_first_output_seconds_count",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "diar-streaming-sortformer-4spk-v2-1",
+          "instance": "10.0.1.177:8000",
+          "job": "diar-streaming-sortformer-4spk-v2-1",
+          "namespace": "fs2-models",
+          "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-8vd9c",
+          "service": "diar-streaming-sortformer-4spk-v2-1"
+        },
+        "value": [
+          1789580482.163,
+          "1"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_first_output_seconds_count",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "diar-streaming-sortformer-4spk-v2-1",
+          "instance": "10.6.88.218:8000",
+          "job": "diar-streaming-sortformer-4spk-v2-1",
+          "namespace": "fs2-models",
+          "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-lvnxg",
+          "service": "diar-streaming-sortformer-4spk-v2-1"
+        },
+        "value": [
+          1789580482.163,
+          "1"
+        ]
+      }
+    ]
+  }
+}

@@ -60,6 +60,7 @@ def main(args):
                     "models": ASR + (VOICE_MODELS if args.voice else []),
                     "scopes": [
                         "catalog.read",
+                        "mcp.invoke",
                         "inference.invoke",
                         "operations.read",
                         "operations.result",
@@ -180,6 +181,12 @@ def main(args):
                     receipt["voice_streams"] = asyncio.run(
                         run(args.origin, key, args.english)
                     )
+                    if args.mcp:
+                        from public_mcp import run as mcp_run
+
+                        receipt["typed_mcp"] = asyncio.run(
+                            mcp_run(args.origin, key, args.english)
+                        )
                 else:
                     denied = client.post(
                         "/v1/voice/synthesize",
@@ -213,4 +220,5 @@ if __name__ == "__main__":
     for key in ("kubeconfig", "context", "origin", "english", "german", "output"):
         parser.add_argument("--" + key, required=True)
     parser.add_argument("--voice", action="store_true")
+    parser.add_argument("--mcp", action="store_true")
     main(parser.parse_args())

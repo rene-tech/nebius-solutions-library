@@ -1,0 +1,408 @@
+{
+  "model": "parakeet-realtime-eou-120m-v1",
+  "key_revoked": true,
+  "workers_distinct": true,
+  "measurements": [
+    {
+      "model": "parakeet-realtime-eou-120m-v1",
+      "events": [
+        {
+          "type": "operation.queued",
+          "operation_id": "a2881d4d-e976-4a2e-b410-605e22c5b527"
+        },
+        {
+          "type": "session.ready",
+          "session_id": "a2881d4d-e976-4a2e-b410-605e22c5b527",
+          "backend_id": "parakeet-realtime-eou-120m-v1-5d9755bc7c-slq4t",
+          "schema": "fs2.voice/v1",
+          "model": "parakeet-realtime-eou-120m-v1",
+          "repository": "nvidia/parakeet_realtime_eou_120m-v1",
+          "revision": "a7e2b4629593dce0ec19f600e00e9904353fda2d",
+          "filename": "parakeet_realtime_eou_120m-v1.nemo",
+          "sha256": "6603a22a53b7c1a4bac4736cb24628fb568a7102ba931a28c799e2e72f109893",
+          "capability": "asr-eou",
+          "sample_rate_hz": 16000,
+          "license": "NVIDIA-Open-Model-License",
+          "runtime_revision": "3d91009e8f2ef690112eabeb6907da00ea308d7f",
+          "adapter_revision": "a01fa68f0907a52cca1b07115e0e37c68ca580e5",
+          "max_concurrent_sessions": 1,
+          "snapshot_enabled": false,
+          "languages": [
+            "en"
+          ],
+          "voices": [],
+          "streaming_mode": "cache_aware",
+          "max_text_characters": null,
+          "max_session_seconds": 1800,
+          "max_frame_bytes": 32000,
+          "resume_supported": false,
+          "reconnect_policy": "new session; reset clears all model state; never replay accepted audio",
+          "preemption_policy": "terminal worker_lost; new session required"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the works"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the worksh"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at n"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your note"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebo"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at the"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at the obser"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at the observat"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at the observatory"
+        },
+        {
+          "type": "transcript.final",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at the observatory"
+        },
+        {
+          "type": "turn.eou",
+          "segment": 0,
+          "source": "model_token",
+          "probability": 1.0,
+          "audio_offset_seconds": 4.56
+        },
+        {
+          "type": "session.done",
+          "operation_id": "a2881d4d-e976-4a2e-b410-605e22c5b527",
+          "code": null,
+          "result_path": "/v1/operations/a2881d4d-e976-4a2e-b410-605e22c5b527/result",
+          "retryable": false
+        }
+      ],
+      "backend_id": "parakeet-realtime-eou-120m-v1-5d9755bc7c-slq4t",
+      "ready_seconds": 2.1907346239313483,
+      "first_output_from_ready_seconds": 0.36376681830734015,
+      "output_before_end_of_input": true,
+      "end_of_input_seconds": 5.4596740659326315,
+      "completed": {
+        "type": "session.done",
+        "operation_id": "a2881d4d-e976-4a2e-b410-605e22c5b527",
+        "code": null,
+        "result_path": "/v1/operations/a2881d4d-e976-4a2e-b410-605e22c5b527/result",
+        "retryable": false
+      },
+      "finalization_seconds": 0.5099296057596803,
+      "durable_result": {
+        "model": "parakeet-realtime-eou-120m-v1",
+        "events": [
+          {
+            "type": "transcript.final",
+            "segment": 0,
+            "text": "the workshop starts at nine please bring your notebook and meet us at the observatory"
+          },
+          {
+            "type": "turn.eou",
+            "segment": 0,
+            "source": "model_token",
+            "probability": 1.0,
+            "audio_offset_seconds": 4.56
+          }
+        ],
+        "audio_seconds": 5.4581875,
+        "text": "the workshop starts at nine please bring your notebook and meet us at the observatory"
+      },
+      "elapsed_seconds": 9.708514839410782
+    },
+    {
+      "model": "parakeet-realtime-eou-120m-v1",
+      "events": [
+        {
+          "type": "operation.queued",
+          "operation_id": "e20e20ab-a172-49c5-a3c6-6777efa8fa99"
+        },
+        {
+          "type": "session.ready",
+          "session_id": "e20e20ab-a172-49c5-a3c6-6777efa8fa99",
+          "backend_id": "parakeet-realtime-eou-120m-v1-5d9755bc7c-glcdz",
+          "schema": "fs2.voice/v1",
+          "model": "parakeet-realtime-eou-120m-v1",
+          "repository": "nvidia/parakeet_realtime_eou_120m-v1",
+          "revision": "a7e2b4629593dce0ec19f600e00e9904353fda2d",
+          "filename": "parakeet_realtime_eou_120m-v1.nemo",
+          "sha256": "6603a22a53b7c1a4bac4736cb24628fb568a7102ba931a28c799e2e72f109893",
+          "capability": "asr-eou",
+          "sample_rate_hz": 16000,
+          "license": "NVIDIA-Open-Model-License",
+          "runtime_revision": "3d91009e8f2ef690112eabeb6907da00ea308d7f",
+          "adapter_revision": "a01fa68f0907a52cca1b07115e0e37c68ca580e5",
+          "max_concurrent_sessions": 1,
+          "snapshot_enabled": false,
+          "languages": [
+            "en"
+          ],
+          "voices": [],
+          "streaming_mode": "cache_aware",
+          "max_text_characters": null,
+          "max_session_seconds": 1800,
+          "max_frame_bytes": 32000,
+          "resume_supported": false,
+          "reconnect_policy": "new session; reset clears all model state; never replay accepted audio",
+          "preemption_policy": "terminal worker_lost; new session required"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the works"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the worksh"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at n"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your note"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebo"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at the"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at the obser"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at the observat"
+        },
+        {
+          "type": "transcript.partial",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at the observatory"
+        },
+        {
+          "type": "transcript.final",
+          "segment": 0,
+          "text": "the workshop starts at nine please bring your notebook and meet us at the observatory"
+        },
+        {
+          "type": "turn.eou",
+          "segment": 0,
+          "source": "model_token",
+          "probability": 1.0,
+          "audio_offset_seconds": 4.56
+        },
+        {
+          "type": "session.done",
+          "operation_id": "e20e20ab-a172-49c5-a3c6-6777efa8fa99",
+          "code": null,
+          "result_path": "/v1/operations/e20e20ab-a172-49c5-a3c6-6777efa8fa99/result",
+          "retryable": false
+        }
+      ],
+      "backend_id": "parakeet-realtime-eou-120m-v1-5d9755bc7c-glcdz",
+      "ready_seconds": 2.126956691034138,
+      "first_output_from_ready_seconds": 0.3641436919569969,
+      "output_before_end_of_input": true,
+      "end_of_input_seconds": 5.459614935331047,
+      "completed": {
+        "type": "session.done",
+        "operation_id": "e20e20ab-a172-49c5-a3c6-6777efa8fa99",
+        "code": null,
+        "result_path": "/v1/operations/e20e20ab-a172-49c5-a3c6-6777efa8fa99/result",
+        "retryable": false
+      },
+      "finalization_seconds": 0.4881380395963788,
+      "durable_result": {
+        "model": "parakeet-realtime-eou-120m-v1",
+        "events": [
+          {
+            "type": "transcript.final",
+            "segment": 0,
+            "text": "the workshop starts at nine please bring your notebook and meet us at the observatory"
+          },
+          {
+            "type": "turn.eou",
+            "segment": 0,
+            "source": "model_token",
+            "probability": 1.0,
+            "audio_offset_seconds": 4.56
+          }
+        ],
+        "audio_seconds": 5.4581875,
+        "text": "the workshop starts at nine please bring your notebook and meet us at the observatory"
+      },
+      "elapsed_seconds": 9.546729882247746
+    }
+  ],
+  "status": "passed"
+}

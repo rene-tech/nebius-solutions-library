@@ -42,15 +42,47 @@ envelope, renderer bundles and route ConfigMaps and prepares additive immutable
 ConfigMaps, Helm values and three App proposals. It preserves existing pools,
 limits and models, refuses replacement, and validates all proposals. The manager
 owns the combined control-plane/Helm rollout. Prepared Apps use min 1/max 2 on
-the already-existing compatible L40S pool. Normal scale-in drains existing
+the already-existing compatible L40S pool, with rolling updates, zero unavailable
+replicas and one surge replica. Normal scale-in drains existing
 sessions; abrupt preemption yields an explicit failure, never a silent replay.
 
-Temporary qualification deployments are `fs2-voice-{magpie,parakeet,sortformer}-r20260916`.
-Canonical service aliases currently point at these task-owned workers. After
-managed Apps become ready, the controller owns canonical service selectors;
-preview Deployments must be scaled to zero and their temporary service aliases
-removed only after the manager confirms a healthy managed cohort. Do not remove
-the canonical Services. No other workload or cloud limit was changed.
+`models/voice-agent/servicemonitor.yaml` is an independent declarative monitoring
+resource. Apply it after Prometheus Operator is installed; it selects only these
+three controller-managed Services, never temporary qualification aliases. It is
+separate from each individual App bundle so three controllers do not compete for
+one monitoring object. Infrastructure installs can consume the same file, e.g.:
+
+```hcl
+resource "kubernetes_manifest" "voice_agent_metrics" {
+  manifest = yamldecode(file("${path.root}/../../models/voice-agent/servicemonitor.yaml"))
+}
+```
+
+The example path is relative to `stages/workloads`; adapt it to the install root.
+Runtime readiness/occupancy, request outcomes/durations, first output histograms
+and accepted/generated audio seconds are `fs2_voice_*` metrics. Node GPU metrics
+continue to come from the existing DCGM collector; no extra GPU exporter loads.
+
+The three normal Apps are published and their canonical Services select only
+controller-managed Pods. Temporary qualification Deployments
+`fs2-voice-{magpie,parakeet,sortformer}-r20260916` are retained at zero replicas;
+their three temporary Services were deleted. Canonical Services were preserved.
+The one-time preview cutover used `promote_services.py`: verified exact matching
+ModelDeployment UIDs, added controller ownership to these previously unowned
+task-created aliases, then atomically switched selectors after managed Pods
+became Ready. Service UIDs and ClusterIPs did not change. A fresh install lets
+the controller create canonical Services and needs no alias transfer.
+No neighboring workload or cloud limit was changed.
+
+Admin fixed-replica transitions exposed an existing KEDA ownership conflict.
+The controller now transfers only `spec.replicas`, after exact owner, lease,
+UID/resource-version and absent-autoscaler checks. A separate temporary SSA
+manager claims that single field; the normal full apply remains non-forcing,
+then the temporary manager relinquishes ownership. Interrupted cleanup retries
+on reconciliation even when desired content already matches. No managedFields
+editing or broad template ownership override is used. A real disposable paused
+Deployment verified forward and reverse ownership with zero Pods/GPUs and was
+deleted; see `replica-handoff-results.json` and regression tests.
 
 ## Evidence and limits
 
@@ -76,7 +108,7 @@ snapshots are not inferred from the L40S measurements.
 
 ## Measured acceptance
 
-Full control-plane suite: 2031 passed, 102 skipped. Additional native/input
+Initial full control-plane suite: 2031 passed, 102 skipped. Additional native/input
 catalog tests: 84 passed; registration/legacy profile tests: 15 passed;
 deployment storage/model coverage: 2 passed; resident runtime lifecycle: 13 passed.
 
@@ -107,12 +139,22 @@ readiness then returned 503. A fresh cached-image Parakeet Pod became Ready in
 36 s from creation, 30 s from container start. Production preStop drains and
 waits up to 1850 s for the active session, within its 1900 s termination budget.
 
-`sibling-public-results.json` confirms the two pre-existing Nemotron Apps still
-return HTTP 200 with complete synthetic English/German transcripts through the
-ordinary public multipart route. The short-lived test key was revoked. This
-pre-registration receipt does not claim the new public voice route was exposed;
-it correctly returned 404 at that point. Publication and final public-path
-acceptance are coordinated by the manager after the combined rollout.
+`public-managed-results.json` records the published ordinary customer path:
+Magpie first PCM in 2.93 s and exact stream-to-durable-WAV equality; Parakeet
+partial in 0.36 s after session readiness, actual EOU, complete retained result
+and 0.43 s finalization; Sortformer partial in 0.62 s after readiness and 0.58 s
+finalization. Both pre-existing Nemotron Apps still return HTTP 200 with complete
+synthetic English/German transcripts. The short-lived test key was revoked.
+These are measured request examples, not guaranteed latency percentiles.
+
+`managed-baseline.json` captures actual managed images, Pod/node identities,
+Service owners/selectors, endpoints and Prometheus samples. Initial managed
+Pod creation-to-Ready was 185 s Parakeet, 190 s Sortformer and 221 s Magpie on
+existing regular L40S nodes with uncached weight layers. This is distinct from
+cached restart measurements and is not new-node provisioning time.
+The independent public Pipecat reference also completed Jason/Sofia synthesis,
+PCM frame delivery, complete WAV preservation, Nemotron transcription and
+RTVI events; its own evidence belongs to the gateway acceptance directory.
 
 Raw GPU samples and exact Pod/node/image/startup provenance are retained in
 `runtime-provenance.json` and three CSV files. GPU means include idle periods and
