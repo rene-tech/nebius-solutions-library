@@ -3,13 +3,15 @@
 {{- $suffix := trunc 12 (last (splitList "-" $generation)) -}}
 {{- $rolloutGeneration := required "rollout.generation is required" .Values.rollout.generation -}}
 {{- $rolloutSuffix := trunc 12 (last (splitList "-" $rolloutGeneration)) -}}
-{{- $rolloutPayload := dict "authority" .Values.authority.manifestSha256 "contract" .Values.contract.sha256 "custodyCommit" .Values.custody.acceptedSai10Commit "custodyReview" .Values.custody.independentReviewReceiptSha256 "image" .Values.image.digest -}}
+{{- $rolloutPayload := dict "authority" .Values.authority.manifestSha256 "contract" .Values.contract.sha256 "custodyCommit" .Values.custody.acceptedSai10Commit "custodyTree" .Values.custody.acceptedSai10Tree "custodyReview" .Values.custody.independentReviewReceiptSha256 "image" .Values.image.digest "releaseValues" .Values.authority.releaseValuesSha256 -}}
 {{- if ne $rolloutSuffix (trunc 12 (sha256sum (toJson $rolloutPayload))) }}{{ fail "rollout generation must be content-bound to image, authority, contract and accepted custody" }}{{ end -}}
 {{- $expectedRelease := printf "fs2-storage-v2-%s-%s" $suffix $rolloutSuffix -}}
 {{- if ne .Release.Name $expectedRelease }}{{ fail "each additive rollout requires its exact generation-named Helm release" }}{{ end -}}
 {{- $name := printf "fs2-storage-v2-%s-%s" $suffix $rolloutSuffix -}}
 {{- if ne .Release.Namespace "fs2-system" }}{{ fail "customer-storage-reconciler-v2 is restricted to fs2-system" }}{{ end -}}
 {{- if ne .Values.authority.schema "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v1" }}{{ fail "provider authority handoff is required" }}{{ end -}}
+{{- if not (regexMatch "^[a-f0-9]{64}$" .Values.authority.releaseValuesSha256) }}{{ fail "externally signed release-values digest is required" }}{{ end -}}
+{{- if or (not (regexMatch "^[a-f0-9]{64}$" .Values.authority.priorHeadReceiptSha256)) (not (regexMatch "^[a-f0-9]{64}$" .Values.authority.iamInventoryReceiptSha256)) (not (regexMatch "^[a-f0-9]{64}$" .Values.authority.rbacInventoryReceiptSha256)) }}{{ fail "separately anchored prior head and exact provider IAM/RBAC receipts are required" }}{{ end -}}
 {{- if ne .Values.authority.nodeSelectorValue $authorityGeneration }}{{ fail "authority node selector must equal its generation" }}{{ end -}}
 {{- if ne .Values.authority.taintValue $authorityGeneration }}{{ fail "authority taint must equal its generation" }}{{ end -}}
 {{- if ne .Values.contract.configMapName (printf "fs2-customer-storage-egress-contract-%s" $generation) }}{{ fail "contract ConfigMap must equal its generation" }}{{ end -}}
@@ -17,7 +19,9 @@
 {{- if ne (last (splitList "-" $generation)) (trunc 12 .Values.contract.sha256) }}{{ fail "contract generation must be content-bound" }}{{ end -}}
 {{- if ne .Values.predecessor.schema "fs2-serve.nebius.ai/customer-storage-egress-predecessor/v1" }}{{ fail "fixed predecessor compatibility receipt is required" }}{{ end -}}
 {{- if ne .Values.predecessor.receiptSha256 .Values.authority.predecessorCompatibilitySha256 }}{{ fail "predecessor receipt must be bound by the external provider authority ledger" }}{{ end -}}
+{{- if not (regexMatch "^[a-f0-9]{64}$" .Values.authority.boundaryPolicySha256) }}{{ fail "content-bound admission policy digest is required" }}{{ end -}}
 {{- if hasPrefix "1ae009b85" .Values.custody.acceptedSai10Commit }}{{ fail "rejected SAI-10 custody lineage is forbidden" }}{{ end -}}
+{{- if or (not (regexMatch "^[a-f0-9]{40}$" .Values.custody.acceptedSai10Tree)) (eq .Values.custody.acceptedSai10Commit .Values.custody.acceptedSai10Tree) }}{{ fail "accepted SAI-10 commit and tree custody must be distinct exact Git identities" }}{{ end -}}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -28,34 +32,6 @@ metadata:
     fs2.nebius.ai/authority-manifest-sha256: {{ .Values.authority.manifestSha256 | quote }}
     fs2.nebius.ai/provider-identity-sha256: {{ .Values.authority.providerIdentitySha256 | quote }}
 automountServiceAccountToken: false
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: {{ $name }}
-  namespace: {{ .Release.Namespace }}
-  annotations:
-    helm.sh/resource-policy: keep
-rules:
-  - apiGroups: ["networking.k8s.io"]
-    resources: ["networkpolicies"]
-    verbs: ["get", "list"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: {{ $name }}
-  namespace: {{ .Release.Namespace }}
-  annotations:
-    helm.sh/resource-policy: keep
-subjects:
-  - kind: ServiceAccount
-    name: {{ $name }}
-    namespace: {{ .Release.Namespace }}
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: {{ $name }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -87,9 +63,12 @@ spec:
         fs2.nebius.ai/image-digest: {{ .Values.image.digest | quote }}
         fs2.nebius.ai/authority-manifest-sha256: {{ .Values.authority.manifestSha256 | quote }}
         fs2.nebius.ai/provider-identity-sha256: {{ .Values.authority.providerIdentitySha256 | quote }}
+        fs2.nebius.ai/rbac-inventory-receipt-sha256: {{ .Values.authority.rbacInventoryReceiptSha256 | quote }}
+        fs2.nebius.ai/boundary-policy-sha256: {{ .Values.authority.boundaryPolicySha256 | quote }}
         fs2.nebius.ai/provider-security-group: {{ .Values.authority.securityGroupId | quote }}
         fs2.nebius.ai/provider-node-group: {{ .Values.authority.nodeGroupId | quote }}
         fs2.nebius.ai/storage-custody-commit: {{ .Values.custody.acceptedSai10Commit | quote }}
+        fs2.nebius.ai/storage-custody-tree: {{ .Values.custody.acceptedSai10Tree | quote }}
         fs2.nebius.ai/storage-custody-review: {{ .Values.custody.independentReviewReceiptSha256 | quote }}
     spec:
       serviceAccountName: {{ $name }}
@@ -136,6 +115,8 @@ spec:
             - app.kubernetes.io/component=storage-reconciler-v2
             - --pod-label
             - {{ printf "fs2.nebius.ai/storage-egress-generation=%s" $generation | quote }}
+            - --pod-label
+            - {{ printf "fs2.nebius.ai/storage-rollout-generation=%s" $rolloutGeneration | quote }}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

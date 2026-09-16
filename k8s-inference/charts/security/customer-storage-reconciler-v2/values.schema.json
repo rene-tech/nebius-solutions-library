@@ -18,12 +18,17 @@
     "authority": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schema", "generation", "manifestSha256", "predecessorCompatibilitySha256", "providerIdentitySha256", "securityGroupId", "nodeGroupId", "nodeSelectorKey", "nodeSelectorValue", "taintKey", "taintValue", "taintEffect"],
+      "required": ["schema", "generation", "manifestSha256", "priorHeadReceiptSha256", "iamInventoryReceiptSha256", "rbacInventoryReceiptSha256", "predecessorCompatibilitySha256", "boundaryPolicySha256", "releaseValuesSha256", "providerIdentitySha256", "securityGroupId", "nodeGroupId", "nodeSelectorKey", "nodeSelectorValue", "taintKey", "taintValue", "taintEffect"],
       "properties": {
         "schema": {"const": "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v1"},
         "generation": {"type": "string", "pattern": "^g[0-9]{14}-[a-f0-9]{12}$"},
         "manifestSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "priorHeadReceiptSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "iamInventoryReceiptSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "rbacInventoryReceiptSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
         "predecessorCompatibilitySha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "boundaryPolicySha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "releaseValuesSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
         "providerIdentitySha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
         "securityGroupId": {"type": "string", "pattern": "^vpcsecuritygroup-[a-z0-9]+$"},
         "nodeGroupId": {"type": "string", "pattern": "^mk8snodegroup-[a-z0-9]+$"},
@@ -77,9 +82,10 @@
     "custody": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["acceptedSai10Commit", "independentReviewReceiptSha256"],
+      "required": ["acceptedSai10Commit", "acceptedSai10Tree", "independentReviewReceiptSha256"],
       "properties": {
         "acceptedSai10Commit": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+        "acceptedSai10Tree": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
         "independentReviewReceiptSha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
       }
     },

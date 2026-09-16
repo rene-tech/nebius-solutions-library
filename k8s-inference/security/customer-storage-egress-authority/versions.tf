@@ -1,7 +1,9 @@
 terraform {
   required_version = ">= 1.11.0, < 2.0.0"
 
-  backend "local" {}
+  # Canonical applies require the security-owner's versioned, locked remote
+  # backend configuration. Local/alternate state is not an authority source.
+  backend "s3" {}
 
   required_providers {
     external = {
@@ -10,7 +12,7 @@ terraform {
     }
     nebius = {
       source  = "terraform-provider.storage.eu-north1.nebius.cloud/nebius/nebius"
-      version = ">= 0.5.232"
+      version = "= 0.5.232"
     }
   }
 }

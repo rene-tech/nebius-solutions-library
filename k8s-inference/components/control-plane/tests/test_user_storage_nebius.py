@@ -100,6 +100,14 @@ async def test_existing_unrelated_lifecycle_rule_is_preserved_but_forced_disable
             noncurrent_days=1,
         ),
     )
+    historical = storage.LifecycleRule(
+        id="expire-noncurrent-versions",
+        status=storage.LifecycleRule__Status.ENABLED,
+        noncurrent_version_expiration=storage.LifecycleNoncurrentVersionExpiration(
+            newer_noncurrent_versions=9,
+            noncurrent_days=91,
+        ),
+    )
     bucket = storage.Bucket(
         metadata=ResourceMetadata(
             id="bucket-same",
@@ -111,10 +119,8 @@ async def test_existing_unrelated_lifecycle_rule_is_preserved_but_forced_disable
         spec=storage.BucketSpec(
             max_size_bytes=5_000_000_000,
             versioning_policy=storage.VersioningPolicy.ENABLED,
-            # Include the already-canonical managed rules so the update is
-            # required solely because the unfamiliar rule is active.
             lifecycle_configuration=storage.LifecycleConfiguration(
-                rules=[unrelated, *provider.lifecycle().rules]
+                rules=[unrelated, historical]
             ),
         ),
     )
@@ -135,10 +141,11 @@ async def test_existing_unrelated_lifecycle_rule_is_preserved_but_forced_disable
     assert set(rules) == {
         "operator-created-expiry",
         "expire-noncurrent-versions",
-        "abort-incomplete-multipart-uploads",
     }
     assert all(rule.status == storage.LifecycleRule__Status.DISABLED for rule in rules.values())
     assert rules["operator-created-expiry"].noncurrent_version_expiration.noncurrent_days == 1
+    assert rules["expire-noncurrent-versions"].noncurrent_version_expiration.noncurrent_days == 91
+    assert rules["expire-noncurrent-versions"].noncurrent_version_expiration.newer_noncurrent_versions == 9
 
 
 async def test_existing_bucket_quota_change_preserves_immutable_name_and_iam_identity():
@@ -242,7 +249,7 @@ async def test_membership_has_no_name_and_explicit_key_is_recovered():
     assert provider.keys.get_secret.call_args.args[0].id == "key-alice"
 
 
-async def test_exact_membership_removes_every_unexpected_principal():
+async def test_unexpected_membership_fails_closed_without_create_or_delete():
     provider = object.__new__(NebiusUserStorage)
     expected = SimpleNamespace(
         metadata=SimpleNamespace(id="membership-expected"),
@@ -255,24 +262,18 @@ async def test_exact_membership_removes_every_unexpected_principal():
     provider._operation = AsyncMock(return_value="membership-operation")
     provider.memberships = SimpleNamespace(
         list_members=AsyncMock(
-            side_effect=[
-                SimpleNamespace(memberships=[unexpected], next_page_token=""),
-                SimpleNamespace(memberships=[expected, unexpected], next_page_token=""),
-            ]
+            return_value=SimpleNamespace(
+                memberships=[expected, unexpected], next_page_token=""
+            )
         ),
         create=Mock(),
         delete=Mock(),
     )
 
-    await provider.ensure_identity_access("group-a", "sa-alice")
-    assert provider.memberships.create.call_args.args[0].spec.member_id == "sa-alice"
-    assert provider.memberships.delete.call_args.args[0].id == "membership-unexpected"
-
-    provider.memberships.create.reset_mock()
-    provider.memberships.delete.reset_mock()
-    await provider.ensure_identity_access("group-a", "sa-alice")
+    with pytest.raises(RuntimeError, match="unexpected memberships"):
+        await provider.ensure_identity_access("group-a", "sa-alice")
     provider.memberships.create.assert_not_called()
-    assert provider.memberships.delete.call_args.args[0].id == "membership-unexpected"
+    provider.memberships.delete.assert_not_called()
 
 
 async def test_expired_existing_key_is_replaced_inactive_and_retained_as_predecessor():

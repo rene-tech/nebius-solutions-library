@@ -11,8 +11,10 @@ output "current_handoff" {
     security_owner_group          = var.security_owner_group
     security_owner_subject_sha256 = data.external.identity_separation.result.security_owner_subject_sha256
     workloads_subject_sha256      = data.external.identity_separation.result.workloads_subject_sha256
-    non_owner_inventory_sha256    = data.external.identity_separation.result.non_owner_inventory_sha256
+    identity_inventory_sha256     = data.external.identity_separation.result.identity_inventory_sha256
     provider_authority            = var.provider_authority
+    release_generation            = var.current_release_generation
+    release_name                  = local.release_names[var.current_release_generation]
     predecessor_compatibility = {
       schema                 = "fs2-serve.nebius.ai/customer-storage-egress-predecessor/v1"
       receipt_sha256         = local.predecessor_compatibility_sha256

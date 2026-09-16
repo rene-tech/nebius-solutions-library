@@ -47,6 +47,32 @@ def _items(value: dict[str, Any], field: str) -> list[dict[str, Any]]:
     return items
 
 
+def _list_all(
+    profile: str,
+    command: tuple[str, ...],
+    field: str,
+) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    page_token = ""
+    seen_tokens: set[str] = set()
+    for _ in range(1000):
+        arguments = [*command, "--page-size", "1000"]
+        if page_token:
+            arguments.extend(("--page-token", page_token))
+        response = _cli(profile, *arguments)
+        result.extend(_items(response, field))
+        next_token = response.get("next_page_token", "")
+        if not isinstance(next_token, str):
+            raise ValueError(f"Nebius {field} pagination token is malformed")
+        if not next_token:
+            return result
+        if next_token in seen_tokens:
+            raise ValueError(f"Nebius {field} pagination repeated a token")
+        seen_tokens.add(next_token)
+        page_token = next_token
+    raise ValueError(f"Nebius {field} inventory exceeded the page bound")
+
+
 def _timestamp(value: str) -> datetime:
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -57,10 +83,118 @@ def _timestamp(value: str) -> datetime:
     return parsed.astimezone(UTC)
 
 
+def _metadata_projection(item: dict[str, Any]) -> dict[str, str]:
+    metadata = item.get("metadata", {})
+    identifier = metadata.get("id")
+    name = metadata.get("name")
+    if not isinstance(identifier, str) or not identifier or not isinstance(name, str):
+        raise ValueError("Nebius IAM resource metadata is incomplete")
+    return {"id": identifier, "name": name}
+
+
+def _project_inventory(
+    profile: str,
+    project_id: str,
+    provider_principal_ids: set[str],
+) -> dict[str, Any]:
+    """Project every IAM object and grant without reading credential material."""
+
+    groups = _list_all(
+        profile,
+        ("iam", "group", "list", "--parent-id", project_id),
+        "groups",
+    )
+    service_accounts = _list_all(
+        profile,
+        ("iam", "service-account", "list", "--parent-id", project_id),
+        "service_accounts",
+    )
+    group_rows: list[dict[str, Any]] = []
+    all_principals = set(provider_principal_ids)
+    for source in groups:
+        group = _metadata_projection(source)
+        all_principals.add(group["id"])
+        memberships = _list_all(
+            profile,
+            (
+                "iam",
+                "group-membership",
+                "list-members",
+                "--parent-id",
+                group["id"],
+            ),
+            "memberships",
+        )
+        members = sorted(
+            {
+                str(item.get("spec", {}).get("member_id"))
+                for item in memberships
+                if item.get("spec", {}).get("member_id")
+            }
+        )
+        if len(members) != len(memberships):
+            raise ValueError("Nebius group membership inventory is incomplete or duplicated")
+        all_principals.update(members)
+        group_rows.append({**group, "members": members})
+
+    service_account_rows: list[dict[str, Any]] = []
+    for source in service_accounts:
+        account = _metadata_projection(source)
+        all_principals.add(account["id"])
+        keys = _list_all(
+            profile,
+            ("iam", "auth-public-key", "list", "--parent-id", account["id"]),
+            "auth_public_keys",
+        )
+        key_rows = []
+        for item in keys:
+            key_id = item.get("metadata", {}).get("id")
+            expires_at = item.get("spec", {}).get("expires_at")
+            status = item.get("status", {})
+            state = "ACTIVE" if status.get("active") is True else str(status.get("state", ""))
+            if not isinstance(key_id, str) or not key_id or not isinstance(expires_at, str):
+                raise ValueError("Nebius public-key inventory is incomplete")
+            key_rows.append({"id": key_id, "expires_at": expires_at, "state": state})
+        service_account_rows.append(
+            {
+                **account,
+                "active": source.get("status", {}).get("active") is True,
+                "auth_public_keys": sorted(key_rows, key=lambda item: item["id"]),
+            }
+        )
+
+    permit_rows: list[dict[str, str]] = []
+    for principal_id in sorted(all_principals):
+        permits = _list_all(
+            profile,
+            ("iam", "access-permit", "list", "--parent-id", principal_id),
+            "access_permits",
+        )
+        for item in permits:
+            row = {
+                "parent_id": principal_id,
+                "id": str(item.get("metadata", {}).get("id", "")),
+                "role": str(item.get("spec", {}).get("role", "")),
+                "resource_id": str(item.get("spec", {}).get("resource_id", "")),
+            }
+            if any(not value for value in row.values()):
+                raise ValueError("Nebius access-permit inventory is incomplete")
+            permit_rows.append(row)
+
+    return {
+        "groups": sorted(group_rows, key=lambda item: item["id"]),
+        "service_accounts": sorted(service_account_rows, key=lambda item: item["id"]),
+        "access_permits": sorted(permit_rows, key=lambda item: (item["parent_id"], item["id"])),
+    }
+
+
 def verify(profile: str) -> dict[str, str]:
     if not profile or profile in {"default", "sandbox"}:
         raise ValueError("a dedicated named provider-security profile is required")
     registry = strict_json(safe_root_read(REGISTRY_PATH), "authority registry")
+    identity_inventory = registry.get("kubernetes_identity_inventory")
+    if not isinstance(identity_inventory, list):
+        raise ValueError("provider-bound Kubernetes identity inventory is absent")
     whoami = _cli(profile, "iam", "whoami")
     try:
         identity = whoami["service_account_profile"]["info"]
@@ -71,16 +205,14 @@ def verify(profile: str) -> dict[str, str]:
     if identity_id != registry["authority_service_account_id"] or active is not True:
         raise ValueError("Nebius provider profile is not the active external authority")
 
-    memberships = _items(
-        _cli(
-            profile,
+    memberships = _list_all(
+        profile,
+        (
             "iam",
             "group-membership",
             "list-members",
             "--parent-id",
             registry["authority_group_id"],
-            "--page-size",
-            "1000",
         ),
         "memberships",
     )
@@ -88,17 +220,9 @@ def verify(profile: str) -> dict[str, str]:
     if members != [registry["authority_service_account_id"]]:
         raise ValueError("external authority group membership is not exact and singleton")
 
-    permits = _items(
-        _cli(
-            profile,
-            "iam",
-            "access-permit",
-            "list",
-            "--parent-id",
-            registry["authority_group_id"],
-            "--page-size",
-            "1000",
-        ),
+    permits = _list_all(
+        profile,
+        ("iam", "access-permit", "list", "--parent-id", registry["authority_group_id"]),
         "access_permits",
     )
     observed_permits = [
@@ -120,16 +244,14 @@ def verify(profile: str) -> dict[str, str]:
     ):
         raise ValueError("external authority permits differ or include admin")
 
-    public_keys = _items(
-        _cli(
-            profile,
+    public_keys = _list_all(
+        profile,
+        (
             "iam",
             "auth-public-key",
             "list",
             "--parent-id",
             registry["authority_service_account_id"],
-            "--page-size",
-            "1000",
         ),
         "auth_public_keys",
     )
@@ -158,11 +280,30 @@ def verify(profile: str) -> dict[str, str]:
         if expires_at <= now or expires_at > now + MAX_KEY_LIFETIME:
             raise ValueError("external authority public key is expired or overlong")
 
+    receipt = registry.get("provider_project_iam_inventory_receipt")
+    if not isinstance(receipt, dict) or not isinstance(receipt.get("inventory"), dict):
+        raise ValueError("signed provider project IAM inventory is absent")
+    provider_principal_ids = {
+        str(item.get("provider_principal_id"))
+        for item in identity_inventory
+        if isinstance(item, dict) and item.get("provider_principal_id")
+    }
+    observed_project_inventory = _project_inventory(
+        profile,
+        registry["authority_project_id"],
+        provider_principal_ids,
+    )
+    if observed_project_inventory != receipt["inventory"]:
+        raise ValueError("live provider project IAM inventory differs from the signed receipt")
+
     projection = {
         "identity_id": identity_id,
         "group_id": registry["authority_group_id"],
         "permits": observed_permits,
         "public_keys": observed_keys,
+        "project_inventory_sha256": hashlib.sha256(
+            canonical(observed_project_inventory)
+        ).hexdigest(),
     }
     return {
         "authorized": "true",

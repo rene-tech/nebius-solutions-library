@@ -23,13 +23,18 @@ variable "customer_storage" {
       security_owner_group          = optional(string, "")
       security_owner_subject_sha256 = optional(string, "")
       workloads_subject_sha256      = optional(string, "")
-      non_owner_inventory_sha256    = optional(string, "")
+      identity_inventory_sha256     = optional(string, "")
       provider_authority = optional(object({
         schema                                        = optional(string, "")
         generation                                    = optional(string, "")
         authority_manifest_sha256                     = optional(string, "")
+        prior_head_receipt_sha256                     = optional(string, "")
+        predecessor_state_custody_sha256              = optional(string, "")
+        predecessor_state_compatibility_sha256        = optional(string, "")
         contract_sha256                               = optional(string, "")
         predecessor_compatibility_sha256              = optional(string, "")
+        boundary_policy_sha256                        = optional(string, "")
+        release_values_sha256                         = optional(string, "")
         security_group_id                             = optional(string, "")
         node_group_id                                 = optional(string, "")
         node_selector_key                             = optional(string, "")
@@ -41,13 +46,14 @@ variable "customer_storage" {
         kubernetes_api_cidrs                          = optional(list(string), [])
         authority_service_account_sha256              = optional(string, "")
         provider_identity_sha256                      = optional(string, "")
-        kubernetes_security_owner_sha256              = optional(string, "")
-        kubernetes_workloads_sha256                   = optional(string, "")
-        kubernetes_non_owner_subjects_sha256          = optional(string, "")
+        kubernetes_identity_inventory_sha256           = optional(string, "")
+        kubernetes_rbac_inventory_sha256               = optional(string, "")
+        kubernetes_rbac_inventory_receipt_sha256       = optional(string, "")
         provider_project_iam_inventory_receipt_sha256 = optional(string, "")
         workloads_service_account_sha256              = optional(string, "")
-        release_service_accounts_sha256               = optional(string, "")
-        human_principals_sha256                       = optional(string, "")
+        accepted_sai10_commit                         = optional(string, "")
+        accepted_sai10_tree                           = optional(string, "")
+        sai10_independent_review_receipt_sha256       = optional(string, "")
       }), {})
       predecessor_compatibility = optional(object({
         schema                 = optional(string, "")
@@ -102,21 +108,32 @@ variable "customer_storage" {
         var.customer_storage.egress_boundary.security_owner_group == "fs2:customer-storage-egress-security-owner" &&
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.security_owner_subject_sha256)) &&
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.workloads_subject_sha256)) &&
-        can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.non_owner_inventory_sha256)) &&
+        can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.identity_inventory_sha256)) &&
         var.customer_storage.egress_boundary.security_owner_subject_sha256 != var.customer_storage.egress_boundary.workloads_subject_sha256 &&
         var.customer_storage.egress_boundary.provider_authority.schema == "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v1" &&
         var.customer_storage.egress_boundary.provider_authority.contract_sha256 == var.customer_storage.egress_boundary.contract_sha256 &&
         can(regex("^g[0-9]{14}-[a-f0-9]{12}$", var.customer_storage.egress_boundary.provider_authority.generation)) &&
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.authority_manifest_sha256)) &&
+        can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.prior_head_receipt_sha256)) &&
+        can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.predecessor_state_custody_sha256)) &&
+        can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.predecessor_state_compatibility_sha256)) &&
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.predecessor_compatibility_sha256)) &&
+        can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.boundary_policy_sha256)) &&
+        endswith(var.customer_storage.egress_boundary.boundary_policy_name, substr(var.customer_storage.egress_boundary.provider_authority.boundary_policy_sha256, 0, 12)) &&
+        can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.release_values_sha256)) &&
+        can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.authority_service_account_sha256)) &&
+        can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.workloads_service_account_sha256)) &&
+        var.customer_storage.egress_boundary.provider_authority.authority_service_account_sha256 != var.customer_storage.egress_boundary.provider_authority.workloads_service_account_sha256 &&
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.provider_identity_sha256)) &&
-        can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.kubernetes_security_owner_sha256)) &&
-        can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.kubernetes_workloads_sha256)) &&
-        can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.kubernetes_non_owner_subjects_sha256)) &&
+        can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.kubernetes_identity_inventory_sha256)) &&
+        can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.kubernetes_rbac_inventory_sha256)) &&
+        can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.kubernetes_rbac_inventory_receipt_sha256)) &&
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.provider_project_iam_inventory_receipt_sha256)) &&
-        var.customer_storage.egress_boundary.security_owner_subject_sha256 == var.customer_storage.egress_boundary.provider_authority.kubernetes_security_owner_sha256 &&
-        var.customer_storage.egress_boundary.workloads_subject_sha256 == var.customer_storage.egress_boundary.provider_authority.kubernetes_workloads_sha256 &&
-        var.customer_storage.egress_boundary.non_owner_inventory_sha256 == var.customer_storage.egress_boundary.provider_authority.kubernetes_non_owner_subjects_sha256 &&
+        var.customer_storage.egress_boundary.identity_inventory_sha256 == var.customer_storage.egress_boundary.provider_authority.kubernetes_identity_inventory_sha256 &&
+        can(regex("^[a-f0-9]{40}$", var.customer_storage.egress_boundary.provider_authority.accepted_sai10_commit)) &&
+        can(regex("^[a-f0-9]{40}$", var.customer_storage.egress_boundary.provider_authority.accepted_sai10_tree)) &&
+        !startswith(var.customer_storage.egress_boundary.provider_authority.accepted_sai10_commit, "1ae009b85") &&
+        can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.sai10_independent_review_receipt_sha256)) &&
         can(regex("^vpcsecuritygroup-[a-z0-9]+$", var.customer_storage.egress_boundary.provider_authority.security_group_id)) &&
         can(regex("^mk8snodegroup-[a-z0-9]+$", var.customer_storage.egress_boundary.provider_authority.node_group_id)) &&
         var.customer_storage.egress_boundary.provider_authority.node_selector_key == "workload.fs2.nebius/customer-storage-egress" &&
@@ -402,7 +419,7 @@ resource "terraform_data" "customer_storage_external_egress_boundary" {
         try(data.kubernetes_resource.customer_storage_egress_boundary_policy[0].object.metadata.annotations["fs2.nebius.ai/security-owner-subject-sha256"], "") == var.customer_storage.egress_boundary.security_owner_subject_sha256 &&
         try(data.kubernetes_resource.customer_storage_egress_boundary_policy[0].object.metadata.annotations["fs2.nebius.ai/workloads-subject-sha256"], "") == var.customer_storage.egress_boundary.workloads_subject_sha256 &&
         try(data.kubernetes_resource.customer_storage_egress_boundary_policy[0].object.spec.failurePolicy, "") == "Fail" &&
-        strcontains(jsonencode(data.kubernetes_resource.customer_storage_egress_boundary_policy[0].object.spec.validations), "request.operation != 'DELETE'") &&
+        strcontains(jsonencode(data.kubernetes_resource.customer_storage_egress_boundary_policy[0].object.spec.validations), "request.operation == 'CREATE'") &&
         strcontains(jsonencode(data.kubernetes_resource.customer_storage_egress_boundary_policy[0].object.spec.validations), var.customer_storage.egress_boundary.security_owner_group)
       )
       error_message = "The external append-only admission policy or security-owner identity is absent."

@@ -26,11 +26,13 @@ rotated outside Terraform; they must never enter a plan or state file. The
 reconciler's HTTPS egress is derived from a signed, 24-hour provider endpoint
 resolution contract and rendered only as IPv4 `/32` and IPv6 `/128` host
 routes. The canonical enforcement is outside Kubernetes: the separately
-approved `security/customer-storage-egress-authority` root creates a dedicated
-tainted node group whose only VPC security group has the signed provider/API
-routes and no default-route egress. Its root-owned trust registry pins the full
-human, release, workloads and owner identity inventory plus the approved,
-hash-chained generation ledger. A second security-owner root adds immutable,
+approved `security/customer-storage-egress-authority` root adds a dedicated
+tainted node group to the exact target cluster; the group's only VPC security
+group has the signed provider/API routes and no default-route egress. Two
+independently signed, read-only filesystem anchors
+pin the prior ledger head, exact provider IAM inventory, accepted custody and
+complete Kubernetes credential inventory plus a fresh exact RBAC inventory. A
+second security-owner root adds immutable,
 generation-named contract, trust and NetworkPolicy objects as defense in depth.
 The reconciler verifies the signed bytes, freshness, live DNS, and the effective
 union of every NetworkPolicy selecting its full label set before readiness.
@@ -43,16 +45,21 @@ reactivated without replacing a bucket, while changing `tenant` to `user`
 requires a data migration. Migration 0032 inventories historical tenant
 layouts with multiple principals, marks them `inventory_required`, and disables
 them. They are not represented as isolated until their object ownership has
-been mapped and migrated. Each bucket has versioning enabled. The historical
-rules for expiring noncurrent versions after 30 days and aborting multipart
-uploads after seven days are present only as disabled rules. Reconciliation
-also preserves every unfamiliar existing lifecycle rule and forces it disabled;
-no rule name can bypass the no-deletion default. Rules must not be enabled
-without a separate customer-data retention and deletion authorization.
+been mapped and migrated. Each bucket has versioning enabled. New buckets
+receive the two historical lifecycle templates only in a disabled state. For an
+existing bucket, reconciliation preserves every observed rule ID, order and
+provider-specific field exactly and changes only an enabled status to disabled;
+it never synthesizes or substitutes a missing historical rule. No rule name can
+bypass the no-deletion default. Rules must not be enabled without a separate
+customer-data retention and deletion authorization.
 
 New bucket names are opaque keyed identifiers; tenant and user slugs are not
 published through provider bucket listings. Existing bucket names remain
 unchanged because reconciliation never renames or replaces a data bucket.
+Unexpected or duplicate IAM group membership fails reconciliation before any
+new membership or credential activation. The reconciler never deletes a
+membership automatically; the exact drift remains preserved for separately
+authorized review while disclosure stays fail-closed.
 
 Customer S3 secrets are AES-GCM encrypted in PostgreSQL with AAD bound to the
 tenant and principal. The gateway has neither the storage envelope key nor
@@ -119,14 +126,15 @@ aggregate, arbitrary, expired, incorrectly signed, DNS-stale, or non-equal
 generations and rejects any widening policy in the effective selecting union.
 
 The first migration is compatibility-first. The fixed predecessor Deployment,
-NetworkPolicy, ConfigMap, VAP and binding remain unchanged. Terraform uses
-`removed { destroy = false }` handoffs for the three formerly managed fixed
-objects. The additive chart
+NetworkPolicy, ConfigMap, VAP and binding remain unchanged and at their original
+Terraform addresses under `prevent_destroy` plus `ignore_changes = all`; no
+state-forget handoff exists. The additive chart
 `charts/security/customer-storage-reconciler-v2` creates a distinct,
 generation-named Deployment with component `storage-reconciler-v2`; the fixed
 VAP therefore does not match or reject its generation NetworkPolicy. The exact
-fixed object UIDs and content digests form a compatibility receipt whose digest
-is committed by the signed external provider-authority generation. Both reconcilers
+fixed object UIDs and content digests form a compatibility receipt whose digest,
+workloads backend identity, state lineage and serial are committed by the
+separately signed prior-head checkpoint. Both reconcilers
 may overlap behind the existing durable locks. No fixed selector changes, and
 no retirement occurs during this handoff.
 
@@ -141,7 +149,8 @@ only a `credentials.json` key to the reconciler. Do not manage their private
 contents in this module.
 
 The additive chart remains fail-closed until it receives an independently
-accepted SAI-10 commit and immutable review receipt. The rejected SAI-10 commit
+accepted SAI-10 commit, tree and immutable review receipt from the signed
+provider authority. The rejected SAI-10 commit
 in this branch's preserved history and any unreviewed successor are not valid
 custody inputs.
 
