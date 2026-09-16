@@ -49,12 +49,14 @@ the existing HTTPS Gateway, reserved LoadBalancer, TLS, and application route
 are all enabled. See `../admin-console/docs/HELM-RELEASE.md` for provenance,
 rollout, acceptance, and rollback.
 
-The edge NetworkPolicies are the release-owned complement to the foundation's
-default-deny boundary. They bind the Envoy Gateway v1.8.3 reconciled proxy
-selector and target ports 10080/10443, gateway port 8080, cert-manager solver
-port 8089, and Envoy xDS port 18000. Solver ingress combines the exact
-`envoy-gateway-system` namespace selector with the exact proxy pod selector,
-so the cross-namespace challenge hop remains both reachable and bounded.
+The edge NetworkPolicies render an ingress default-deny and the public proxy
+policy into the namespace named by
+`networkPolicy.gateway.namespaceLabels["kubernetes.io/metadata.name"]`. The
+proxy policy restricts ingress to target ports 10080/10443 and egress to the
+control plane on 8080, the cert-manager solver on 8089, and Envoy xDS on 18000;
+an enabled admin console adds only its 8080 peer. Every cross-namespace peer
+combines a namespace selector with the exact pod selector. The control-plane
+release namespace still depends on the foundation default-deny boundary.
 Exact controller artifact digests and the
 reconciled artifact observations are in
 `contracts/public-edge-artifact-observations.json`. Those observations are

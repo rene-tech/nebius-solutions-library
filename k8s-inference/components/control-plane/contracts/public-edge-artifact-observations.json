@@ -5,7 +5,6 @@
     "independent_receipt_required": true,
     "combined_render_required": true,
     "default_deny_namespaces": [
-      "envoy-gateway-system",
       "fs2-system"
     ]
   },
@@ -22,10 +21,17 @@
     "opened_source_sha256": {
       "internal/gatewayapi/translator.go": "fd760fab13ba7808be5442e119fa5135bf60a1ad7b3782d6b48ab6b328780016",
       "internal/gatewayapi/listener.go": "633b93ec722b39223382c61ab2dfe17c301e9e2b1621be65f73bd3bd5e4fda14",
-      "internal/infrastructure/kubernetes/proxy/testdata/gateway-namespace-mode/service.yaml": "cdc06af001d38fa2215edf931b8f3cf3fc3e70200413110de5cd480a49e9f403"
+      "site/content/en/latest/tasks/operations/deployment-mode.md": "b14a65f3d426c9e68ddf2ce4aa815b5f37283f6ca70446bc773ecb203076d15c"
     },
-    "deploy_type": "GatewayNamespace",
-    "observation_method": "opened-pinned-chart-render-and-disposable-controller-reconciliation",
+    "deploy_type": "ControllerNamespace",
+    "proxy_namespace": {
+      "value_source": "networkPolicy.gateway.namespaceLabels",
+      "required_label": "kubernetes.io/metadata.name",
+      "default_deny_policy_types": [
+        "Ingress"
+      ]
+    },
+    "observation_method": "opened-pinned-chart-and-source-default-deployment-mode",
     "external_traffic_policy": "Cluster",
     "proxy_selector": {
       "app.kubernetes.io/component": "proxy",
@@ -49,7 +55,6 @@
       }
     ],
     "controller_selector": {
-      "app.kubernetes.io/instance": "envoy-gateway",
       "app.kubernetes.io/name": "gateway-helm",
       "control-plane": "envoy-gateway"
     },

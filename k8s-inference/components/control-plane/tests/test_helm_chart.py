@@ -440,6 +440,7 @@ def test_admin_console_renders_digest_bound_workload_route_and_network_boundary(
         if document["kind"] == "NetworkPolicy"
         and document["metadata"]["name"] == "fs2-serve-control-plane-public-envoy"
     )
+    assert public_edge["metadata"]["namespace"] == "envoy-gateway-system"
     egress = public_edge["spec"]["egress"]
     admin_egress = next(
         rule
@@ -448,6 +449,9 @@ def test_admin_console_renders_digest_bound_workload_route_and_network_boundary(
         == "admin-console"
     )
     assert admin_egress["ports"] == [{"port": 8080, "protocol": "TCP"}]
+    assert admin_egress["to"][0]["namespaceSelector"] == {
+        "matchLabels": {"kubernetes.io/metadata.name": "fs2-system"}
+    }
     assert all(document["kind"] != "Secret" for document in documents)
 
 
@@ -1780,6 +1784,7 @@ def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -
     policies = {document["metadata"]["name"]: document for document in documents if document["kind"] == "NetworkPolicy"}
     assert set(policies) == {
         "fs2-serve-control-plane-runtime",
+        "fs2-serve-control-plane-envoy-default-deny",
         "fs2-serve-control-plane-public-envoy",
         "fs2-serve-control-plane-acme-solver",
         "fs2-serve-control-plane-envoy-controller-xds",
@@ -1856,7 +1861,22 @@ def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -
     )
     proxy_selector = contract["envoy_gateway"]["proxy_selector"]
     assert proxy_selector == gateway_peer["podSelector"]["matchLabels"]
-    public_envoy = policies["fs2-serve-control-plane-public-envoy"]["spec"]
+    assert contract["envoy_gateway"]["deploy_type"] == "ControllerNamespace"
+    assert contract["envoy_gateway"]["proxy_namespace"] == {
+        "value_source": "networkPolicy.gateway.namespaceLabels",
+        "required_label": "kubernetes.io/metadata.name",
+        "default_deny_policy_types": ["Ingress"],
+    }
+    default_deny = policies["fs2-serve-control-plane-envoy-default-deny"]
+    assert default_deny["metadata"]["namespace"] == "envoy-gateway-system"
+    assert default_deny["spec"] == {
+        "podSelector": {},
+        "policyTypes": ["Ingress"],
+        "ingress": [],
+    }
+    public_envoy_document = policies["fs2-serve-control-plane-public-envoy"]
+    assert public_envoy_document["metadata"]["namespace"] == "envoy-gateway-system"
+    public_envoy = public_envoy_document["spec"]
     assert public_envoy["podSelector"]["matchLabels"] == proxy_selector
     assert public_envoy["ingress"] == [
         {
@@ -1869,6 +1889,7 @@ def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -
     ]
     public_egress = {tuple(port["port"] for port in rule["ports"]): rule["to"][0] for rule in public_envoy["egress"]}
     assert public_egress[(8080,)] == {
+        "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "fs2-system"}},
         "podSelector": {
             "matchLabels": {
                 "app.kubernetes.io/component": "gateway",
@@ -1878,10 +1899,17 @@ def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -
         }
     }
     solver_selector = contract["cert_manager"]["http01_solver_selector"]
-    assert public_egress[(8089,)] == {"podSelector": {"matchLabels": solver_selector}}
+    assert public_egress[(8089,)] == {
+        "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "fs2-system"}},
+        "podSelector": {"matchLabels": solver_selector},
+    }
     assert public_egress[(18000,)] == {
         "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "envoy-gateway-system"}},
         "podSelector": {"matchLabels": contract["envoy_gateway"]["controller_selector"]},
+    }
+    assert contract["envoy_gateway"]["controller_selector"] == {
+        "app.kubernetes.io/name": "gateway-helm",
+        "control-plane": "envoy-gateway",
     }
     solver = policies["fs2-serve-control-plane-acme-solver"]["spec"]
     assert solver["podSelector"]["matchLabels"] == solver_selector
@@ -1910,6 +1938,44 @@ def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -
             "ports": [{"port": 18000, "protocol": "TCP"}],
         }
     ]
+
+
+def test_public_envoy_policies_follow_the_gateway_namespace_label() -> None:
+    gateway_namespace = "edge-gateway-system"
+    documents = render(
+        "--set-string",
+        rf"networkPolicy.gateway.namespaceLabels.kubernetes\.io/metadata\.name={gateway_namespace}",
+    )
+    policies = {
+        document["metadata"]["name"]: document
+        for document in documents
+        if document["kind"] == "NetworkPolicy"
+    }
+
+    for name in (
+        "fs2-serve-control-plane-envoy-default-deny",
+        "fs2-serve-control-plane-public-envoy",
+    ):
+        assert policies[name]["metadata"]["namespace"] == gateway_namespace
+    runtime = policies["fs2-serve-control-plane-runtime"]
+    assert runtime["spec"]["ingress"][0]["from"][0]["namespaceSelector"] == {
+        "matchLabels": {"kubernetes.io/metadata.name": gateway_namespace}
+    }
+
+
+def test_public_envoy_requires_the_standard_gateway_namespace_label() -> None:
+    result = subprocess.run(  # noqa: S603 - fixed Helm binary and test-owned arguments
+        render_command(
+            "--set-string",
+            r"networkPolicy.gateway.namespaceLabels.kubernetes\.io/metadata\.name=",
+        ),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "namespaceLabels/kubernetes.io~1metadata.name" in result.stderr
 
 
 def test_gateway_alerts_are_bounded_payload_free_and_cover_release_failures() -> None:
@@ -2543,7 +2609,7 @@ def test_foundation_default_deny_and_release_edge_flows_coexist_without_plaintex
     assert contract["foundation_dependency"] == {
         "independent_receipt_required": True,
         "combined_render_required": True,
-        "default_deny_namespaces": ["envoy-gateway-system", "fs2-system"],
+        "default_deny_namespaces": ["fs2-system"],
     }
     assert contract["envoy_gateway"]["external_traffic_policy"] == "Cluster"
     assert contract["envoy_gateway"]["listener_service_ports"] == [
@@ -2565,7 +2631,8 @@ def test_foundation_default_deny_and_release_edge_flows_coexist_without_plaintex
         for document in documents
         if document["kind"] == "NetworkPolicy"
     }
-    assert ("fs2-system", "fs2-serve-control-plane-public-envoy") in policies
+    assert ("envoy-gateway-system", "fs2-serve-control-plane-envoy-default-deny") in policies
+    assert ("envoy-gateway-system", "fs2-serve-control-plane-public-envoy") in policies
     assert ("fs2-system", "fs2-serve-control-plane-acme-solver") in policies
     assert ("envoy-gateway-system", "fs2-serve-control-plane-envoy-controller-xds") in policies
 

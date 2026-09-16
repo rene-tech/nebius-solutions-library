@@ -409,6 +409,8 @@ networkPolicy:
       k8s-app: kube-dns
     port: 53
   gateway:
+    # The standard namespace-name label is also the namespace where the
+    # release creates its proxy policy and ingress default-deny.
     namespaceLabels:
       kubernetes.io/metadata.name: envoy-gateway-system
     podLabels:
@@ -421,7 +423,6 @@ networkPolicy:
     namespaceLabels:
       kubernetes.io/metadata.name: envoy-gateway-system
     podLabels:
-      app.kubernetes.io/instance: envoy-gateway
       app.kubernetes.io/name: gateway-helm
       control-plane: envoy-gateway
     port: 18000

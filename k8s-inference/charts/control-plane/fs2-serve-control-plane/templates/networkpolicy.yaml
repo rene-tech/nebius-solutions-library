@@ -204,11 +204,14 @@ spec:
 {{- end }}
 {{- end }}
 {{- if .Values.publicGateway.enabled }}
+{{- $gatewayNamespace := required "networkPolicy.gateway.namespaceLabels must include kubernetes.io/metadata.name" (index $network.gateway.namespaceLabels "kubernetes.io/metadata.name") }}
+{{- $envoyControllerNamespace := required "networkPolicy.envoyController.namespaceLabels must include kubernetes.io/metadata.name" (index $network.envoyController.namespaceLabels "kubernetes.io/metadata.name") }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: {{ include "fs2-serve.fullname" . }}-public-envoy
+  namespace: {{ $gatewayNamespace }}
   labels:
     {{- include "fs2-serve.labels" . | nindent 4 }}
     app.kubernetes.io/component: public-edge
@@ -228,7 +231,10 @@ spec:
         {{- end }}
   egress:
     - to:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
             matchLabels:
               {{- include "fs2-serve.runtimeSelectorLabels" . | nindent 14 }}
       ports:
@@ -236,7 +242,10 @@ spec:
           protocol: TCP
     {{- if .Values.adminConsole.enabled }}
     - to:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
             matchLabels:
               {{- include "fs2-serve.adminConsoleSelectorLabels" . | nindent 14 }}
       ports:
@@ -244,7 +253,10 @@ spec:
           protocol: TCP
     {{- end }}
     - to:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $network.solver.namespaceLabels | nindent 14 }}
+          podSelector:
             matchLabels:
               {{- toYaml $network.solver.podLabels | nindent 14 }}
       ports:
@@ -260,6 +272,19 @@ spec:
       ports:
         - port: {{ $network.envoyController.port }}
           protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-envoy-default-deny
+  namespace: {{ $gatewayNamespace }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: envoy-default-deny
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress: []
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -289,7 +314,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: {{ include "fs2-serve.fullname" . }}-envoy-controller-xds
-  namespace: envoy-gateway-system
+  namespace: {{ $envoyControllerNamespace }}
   labels:
     {{- include "fs2-serve.labels" . | nindent 4 }}
     app.kubernetes.io/component: envoy-controller-xds
