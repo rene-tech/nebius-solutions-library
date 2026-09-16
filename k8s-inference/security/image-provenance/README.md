@@ -76,7 +76,7 @@ bump — in order:
    <cosign.key> --public-key security/image-provenance/cosign.pub --run-root
    <run> <repo>@sha256:<digest>`.
 5. Assemble and sign the **complete inventory**
-   (`fs2-serve.nebius.ai/release-inventory/v4`): enumerate the current live
+   (`fs2-serve.nebius.ai/release-inventory/v5`): enumerate the current live
    workloads in the matched namespaces, the Helm rollback window
    (`helm history` digests), and frozen scientific-stage bindings as its three
    `sources`, each with `observed_at` and the unique, structured
@@ -340,18 +340,29 @@ committed definition, and after the owner IAM closure no other identity holds
 the right at all):
 
 1. The owner signs a recovery authorization (schema
-   `fs2-serve.nebius.ai/admission-recovery/v1`) naming ONE target binding and
+   `fs2-serve.nebius.ai/admission-recovery/v2`) naming ONE target binding —
+   pinned to the live cluster UID and the target's exact
+   UID/resourceVersion/prior actions, single-use —
    exactly one sanctioned state: `[Audit, Warn]` (observe) or `[Deny, Audit]`
    (restore enforcement), bounded to at most 72h and a tracking identifier.
 2. `provenance.py verify-recovery --recovery <doc> --public-key
    security/image-provenance/cosign.pub` verifies the signature over the
    exact bytes and prints the annotation value.
-3. `provenance.py reconcile-boundary --public-key … --scope … --recovery
-   <doc>` emits the exact annotated patch (PLAN by default; `--execute`
-   refuses outside an authorized rollout window, `FS2_ROLLOUT_AUTHORIZED=1`,
-   and is run by the SECURITY identity only). The same command plans
-   re-application of drifted policy objects and reports identity-path
-   violations for the owner.
+3. `provenance.py reconcile-boundary --public-key … --scope … --run-root …
+   --recovery <doc>` emits the exact UID/resourceVersion-fenced annotated
+   patch and prints the canonical PLAN-SHA256 over the BYTE-BOUND plan (a
+   policy apply streams the verified bytes on stdin — the plan pins content,
+   never a pathname). Execution is `--execute` PLUS an owner-signed
+   `--authorization` document pinning that exact PLAN-SHA256 and the LIVE
+   kube-system UID (single-use via the chained consume ledger), the
+   authenticated caller must be a scope security principal, the rollout
+   window flag is only an ADDITIONAL guard, identity-path violations refuse
+   execution outright, and the sequence is crash-safe one-time: journal the
+   full intent, CONSUME the authorization, execute under an exclusive lock,
+   post-check, journal complete — a crash after consume is finished with
+   `--resume` from the journaled intent, never with a second authorization.
+   Recovery documents are additionally LIVE-CLUSTER-BOUND: their pinned
+   cluster must equal the live kube-system namespace UID at plan time.
 
 Deletion is never rollback. Existing Pods are never affected by the
 policies; only new admissions are.
@@ -435,7 +446,37 @@ policies; only new admissions are.
   cluster UID, the target object's UID, resourceVersion, and prior actions,
   are single-use, and the emitted patch carries the UID/resourceVersion
   preconditions so the API server itself refuses replay against moved
-  state. Remote verification is pinned END TO END, allowlist-style: the
+  state. Every ledger and journal (consumption, publication, reconcile) is
+  hash-chained AND head-checkpointed with the chain verified on every read
+  and before every append — rewriting, splicing, and suffix truncation all
+  fail closed, so a truncated consume ledger can never silently un-consume
+  an authorization; `export-anchored-heads` emits the canonical chain-head
+  snapshot for the owner's off-host WORM store and `verify-anchored-heads`
+  fails closed when local chains regress behind the anchored copy (whole-
+  store deletion detection). kubectl and helm are OWNER-PINNED absolute
+  paths in the signed scope (`tooling`), executed with a from-scratch
+  environment (only KUBECONFIG/HOME pass through, and the authenticated
+  identity they select is then proven via whoami) — ambient PATH is never a
+  trust root. The frozen authority is identity-bound end to end: the signed
+  inventory records the authority workload UID + image (digest-pinned
+  platform code; a same-name replacement changes the UID), the database
+  name, the latest applied migration (version + sha256 from
+  fs2_schema_migrations), and the presence of the immutability trigger, and
+  every row identity carries a content digest
+  (batch/<id>/rev/<n>/<sha12-of-bindings-jsonb>) — all compared against the
+  live dump on every render. The PREVENTIVE boundary is DEFINED in source
+  (`iam-boundary.yaml`: the fs2-security namespace, both automation
+  ServiceAccounts with automountServiceAccountToken: false, and their
+  minimal RBAC; `release-scope.example.json`: the fully populated scope
+  template) and is applied only at the authorized rollout window. Identity
+  hygiene is verified for BOTH automation identities (security and deploy):
+  existence, automount disabled, no legacy token Secret, and any pod running
+  as them may mount identity only through audience-bound projections with
+  expirationSeconds <= 3600. The wholesale kube-system ServiceAccount GROUP
+  is not exemptible (controllers are exempted individually by name), Secret
+  WRITES in protected namespaces are a forbidden identity path (legacy
+  token minting), and impersonation matching covers named userextras
+  subresources. Remote verification is pinned END TO END, allowlist-style: the
   SOURCE-PINNED git binary (`/usr/bin/git`, never a PATH lookup) runs
   outside any repository with an environment built FROM SCRATCH (fixed
   system PATH; every git config source disabled; proxy/CA only from pinned

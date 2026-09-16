@@ -1,0 +1,134 @@
+# PREVENTIVE external identity boundary — SOURCE DEFINITION (SAI-09,
+# owner decision #4). This manifest DEFINES the boundary; it is applied only
+# at a separately authorized rollout window by the owner/security identity
+# (source-only additive implementation now; NO live mutation before then).
+#
+# The contract this defines, verified live at every render by
+# provenance.py's identity audit (verify path: _assert_iam_boundary +
+# _assert_identity_hygiene):
+#   * Exactly two automation identities exist for the release system, both
+#     ServiceAccounts with automountServiceAccountToken: false (tokens only
+#     via bounded, audience-bound TokenRequest projections):
+#       - RELEASE identity (deploy principal): writes Helm release Secrets
+#         through the gated wrapper path; may NOT touch admission
+#         configuration, parameter ConfigMaps, RBAC, tokens, or secrets.
+#       - SECURITY identity: sole writer of the two parameter ConfigMaps and
+#         sole executor of reconcile-boundary under an owner-signed,
+#         plan-bound, single-use authorization.
+#   * NO human and NO release identity holds, directly or transitively:
+#     admissionregistration writes (any current or future kind),
+#     impersonation in any dimension (users/groups/serviceaccounts/uids/
+#     userextras/*), ServiceAccount token minting (serviceaccounts/token or
+#     legacy token-Secret writes), RBAC bind/escalate, CSR
+#     create/approve/sign, secrets read/write in the protected namespaces,
+#     pods/exec|attach|ephemeralcontainers in the protected namespaces, or
+#     workload/ServiceAccount writes in fs2-security.
+#   * PROVIDER attestations (outside the RBAC surface, owner-held):
+#     system:masters client-certificate issuance is provider-controlled
+#     (scope.provider_attested_masters), apiserver flags/etcd/node access are
+#     provider-held, and the WORM anchor export (export-anchored-heads) is
+#     stored off-host so ledger/chain deletion is detectable.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fs2-security
+  labels:
+    app.kubernetes.io/part-of: fs2-serve
+    security.fs2.nebius.ai/finding: sai-09
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fs2-admission-guard
+  namespace: fs2-security
+  labels:
+    security.fs2.nebius.ai/finding: sai-09
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fs2-release-automation
+  namespace: fs2-system
+  labels:
+    security.fs2.nebius.ai/finding: sai-09
+automountServiceAccountToken: false
+---
+# SECURITY identity: parameter-ConfigMap writes + reconciler reads/patches.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fs2-security-boundary-operator
+  labels:
+    security.fs2.nebius.ai/finding: sai-09
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "create", "update", "patch"]
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources:
+      - validatingadmissionpolicies
+      - validatingadmissionpolicybindings
+    verbs: ["get", "list", "create", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["namespaces", "pods", "serviceaccounts", "secrets"]
+    verbs: ["get", "list"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["clusterroles", "clusterrolebindings", "roles", "rolebindings"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fs2-security-boundary-operator
+  labels:
+    security.fs2.nebius.ai/finding: sai-09
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fs2-security-boundary-operator
+subjects:
+  - kind: ServiceAccount
+    namespace: fs2-security
+    name: fs2-admission-guard
+---
+# RELEASE identity: Helm release Secrets in fs2-system ONLY (the helm
+# governance policy additionally pins the principal), plus workload apply.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fs2-release-deployer
+  namespace: fs2-system
+  labels:
+    security.fs2.nebius.ai/finding: sai-09
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create", "update", "patch", "get", "list"]
+  - apiGroups: ["", "apps", "batch"]
+    resources:
+      - pods
+      - services
+      - configmaps
+      - deployments
+      - daemonsets
+      - statefulsets
+      - jobs
+      - cronjobs
+    verbs: ["get", "list", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fs2-release-deployer
+  namespace: fs2-system
+  labels:
+    security.fs2.nebius.ai/finding: sai-09
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: fs2-release-deployer
+subjects:
+  - kind: ServiceAccount
+    namespace: fs2-system
+    name: fs2-release-automation

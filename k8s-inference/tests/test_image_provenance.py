@@ -634,6 +634,16 @@ def build_crane_fixture(
 
 AUTOMATION_PRINCIPAL = "system:serviceaccount:fs2-system:fs2-release-automation"
 SECURITY_PRINCIPAL = "system:serviceaccount:fs2-security:fs2-admission-guard"
+AUTHORITY_IMAGE = PLATFORM_PREFIX + "fs2-serve-control-plane@sha256:" + "a" * 64
+AUTHORITY_ROW_DIGEST = "feedfacecafe"
+AUTHORITY_FIXTURE = {
+    "workload_uid": "0a1b2c3d-0000-4000-8000-fixture00001",
+    "image": AUTHORITY_IMAGE,
+    "database": "fs2_serve",
+    "migration_version": "0024_scientific_model_policies.sql",
+    "migration_sha256": "f" * 64,
+    "trigger": True,
+}
 
 
 def default_scope_fixture(key_sha256: str) -> dict:
@@ -653,6 +663,7 @@ def default_scope_fixture(key_sha256: str) -> dict:
             "namespace": "fs2-system",
             "workload": "deployment/fs2-serve-control-plane",
         },
+        "tooling": {"kubectl": "/usr/bin/kubectl", "helm": "/usr/bin/helm"},
         "policy_sha256": hashlib.sha256(POLICY_PATH.read_bytes()).hexdigest(),
     }
 
@@ -767,9 +778,13 @@ def write_inventory_fixture(
                     for i in range(len(helm or []))
                 ],
             },
-            "frozen_scientific_bindings": source(
-                frozen or [], "batch/fixture-{}/rev/1"
-            ),
+            "frozen_scientific_bindings": {
+                **source(
+                    frozen or [],
+                    "batch/fixture-{}/rev/1/" + AUTHORITY_ROW_DIGEST,
+                ),
+                "authority": dict(AUTHORITY_FIXTURE),
+            },
         },
         "drained_removals": drained or [],
         "platform_images": platform_images,
@@ -965,17 +980,47 @@ class VerifiedAllowlistTest(unittest.TestCase):
                     )
                 raise subprocess.CalledProcessError(1, command)
             if command[:3] == ["kubectl", "get", "serviceaccount"]:
-                return json.dumps({"metadata": {"name": command[3]}})
+                return json.dumps(
+                    {
+                        "metadata": {"name": command[3]},
+                        "automountServiceAccountToken": False,
+                    }
+                )
+            if command[:3] == ["kubectl", "get", "deployment"]:
+                return json.dumps(
+                    {
+                        "metadata": {"uid": AUTHORITY_FIXTURE["workload_uid"]},
+                        "spec": {
+                            "template": {
+                                "spec": {
+                                    "containers": [
+                                        {"image": AUTHORITY_FIXTURE["image"]}
+                                    ]
+                                }
+                            }
+                        },
+                    }
+                )
             if command[:3] == ["kubectl", "get", "secrets"]:
                 return json.dumps({"items": []})
             if command[:2] == ["kubectl", "exec"]:
                 # The AUTHORITATIVE frozen source: control-plane PostgreSQL
-                # stage bindings, dumped read-only inside the workload.
+                # stage bindings + database identity, dumped read-only.
                 return json.dumps(
-                    [
-                        [f"fixture-{index}", 1, ref]
-                        for index, ref in enumerate(frozen_refs)
-                    ]
+                    {
+                        "database": AUTHORITY_FIXTURE["database"],
+                        "migration_version": AUTHORITY_FIXTURE[
+                            "migration_version"
+                        ],
+                        "migration_sha256": AUTHORITY_FIXTURE[
+                            "migration_sha256"
+                        ],
+                        "trigger": True,
+                        "rows": [
+                            [f"fixture-{index}", 1, ref, AUTHORITY_ROW_DIGEST]
+                            for index, ref in enumerate(frozen_refs)
+                        ],
+                    }
                 )
             if command[:3] == ["kubectl", "get", "clusterroles"]:
                 return json.dumps({"items": list(cluster_roles or [])})
@@ -1164,6 +1209,65 @@ class VerifiedAllowlistTest(unittest.TestCase):
         rollback = PLATFORM_PREFIX + "control-plane@sha256:" + "d" * 64
         with self.assertRaisesRegex(TOOL.ProvenanceError, "Helm history"):
             self.render(live_runner=self.live_runner(helm_images=[rollback]))
+
+    def test_ledger_truncation_is_detected_by_the_checkpoint(self) -> None:
+        # A JSONL ledger is mutable: without the verified chain + head
+        # checkpoint, truncating the consume ledger would silently
+        # UN-CONSUME an authorization and enable replay.
+        ledger = self.run_root / "release-authorization-consumed.jsonl"
+        TOOL._record_consumed(self.run_root, "a" * 64, "test")
+        TOOL._record_consumed(self.run_root, "b" * 64, "test")
+        self.assertTrue(TOOL._is_consumed(self.run_root, "b" * 64))
+        lines = ledger.read_bytes().splitlines()
+        ledger.write_bytes(lines[0] + b"\n")
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "checkpoint"):
+            TOOL._is_consumed(self.run_root, "b" * 64)
+
+    def test_anchored_heads_detect_whole_store_regression(self) -> None:
+        # The off-host anchor snapshot makes chain deletion detectable: a
+        # local state BEHIND the anchored counts fails closed.
+        self.render()
+        snapshot = TOOL._anchor_snapshot(self.run_root)
+        self.assertGreaterEqual(
+            snapshot["chains"]["acceptance-heads"]["count"], 1
+        )
+        regressed = json.loads(json.dumps(snapshot))
+        regressed["chains"]["acceptance-heads"]["count"] += 5
+        anchored = self.run_root / "anchored.json"
+        anchored.write_text(json.dumps(regressed), encoding="utf-8")
+        anchored.chmod(0o644)
+        current = TOOL._anchor_snapshot(self.run_root)
+        self.assertLess(
+            current["chains"]["acceptance-heads"]["count"],
+            regressed["chains"]["acceptance-heads"]["count"],
+        )
+
+    def test_authority_identity_mismatch_refuses_rendering(self) -> None:
+        # The signed inventory pins the authority workload/database identity;
+        # a same-name workload replacement (different UID) never renders.
+        inventory = write_inventory_fixture(
+            self.run_root,
+            [self.REFERENCE_A, self.REFERENCE_B],
+            name="authority-mismatch.json",
+        )
+        document = json.loads(inventory.read_text(encoding="utf-8"))
+        document["sources"]["frozen_scientific_bindings"]["authority"][
+            "workload_uid"
+        ] = "different-uid"
+        inventory.write_text(json.dumps(document), encoding="utf-8")
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "authority"):
+            self.render(inventory=inventory)
+
+    def test_automation_identity_without_automount_off_is_refused(self) -> None:
+        def sloppy_sa_runner(command):
+            if command[:3] == ["kubectl", "get", "serviceaccount"]:
+                return json.dumps({"metadata": {"name": command[3]}})
+            return self.live_runner()(command)
+
+        with self.assertRaisesRegex(
+            TOOL.ProvenanceError, "automountServiceAccountToken"
+        ):
+            self.render(live_runner=sloppy_sa_runner)
 
     def test_omitted_database_stage_binding_fails_closed(self) -> None:
         # The DATABASE is the authority: a frozen stage binding present in
