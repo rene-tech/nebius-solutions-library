@@ -2,14 +2,18 @@
 
 import asyncio
 import base64
+import io
 import json
 import logging
 import os
 import queue
+import tempfile
 import threading
 import time
+import wave
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
+from pathlib import Path
 from uuid import uuid4
 
 import anyio
@@ -101,6 +105,80 @@ def create_app(runtime: Runtime, *, load: bool = True):
         state["draining"] = True
         ready.set(0)
         return {"draining": True, "active": int(state["busy"])}
+
+    @app.post("/generate")
+    async def generate(request: Request):
+        """Whole-file/native path; the control plane externalizes binary WAV."""
+        raw = bytearray()
+        async for chunk in request.stream():
+            raw.extend(chunk)
+            if len(raw) > 32768:
+                raise HTTPException(413, "request_too_large")
+        try:
+            payload = json.loads(raw)
+            synthesis = SynthesisRequest.model_validate(payload) if runtime.model_id == MAGPIE else None
+            if synthesis is None and (not isinstance(payload, dict) or set(payload) != {"audio"}):
+                raise ValueError("invalid_audio_request")
+        except (ValueError, ValidationError):
+            raise HTTPException(422, "invalid_request") from None
+        acquire()
+        started = time.monotonic()
+        cancelled = threading.Event()
+        status = "failed"
+        try:
+            if synthesis is not None:
+
+                def collect():
+                    pcm = bytearray()
+                    for chunk in runtime.synthesize(synthesis, cancelled):
+                        pcm.extend(chunk)
+                        if len(pcm) > 16 * 1024 * 1024:
+                            raise ValueError("audio_output_limit")
+                    output = io.BytesIO()
+                    with wave.open(output, "wb") as wav:
+                        wav.setnchannels(1)
+                        wav.setsampwidth(2)
+                        wav.setframerate(22050)
+                        wav.writeframes(pcm)
+                    return output.getvalue(), len(pcm) / 44100
+
+                output, seconds = await call(collect)
+                audio.labels("output").inc(seconds)
+                status = "completed"
+                return Response(output, media_type="audio/wav", headers={"X-Backend-Id": backend})
+            from fs2_speech.audio import DownloadAudio, decoded_pcm, download_audio
+
+            source = DownloadAudio.model_validate(payload["audio"])
+            hosts = frozenset(filter(None, os.getenv("FS2_SPEECH_ARTIFACT_HOSTS", "").split(",")))
+            events = []
+            with tempfile.TemporaryDirectory(prefix="voice-file-") as directory:
+                path = Path(directory) / "audio"
+                await download_audio(source, path, hosts)
+                await call(runtime.reset)
+                async for chunk in decoded_pcm(path, max_seconds=1800):
+                    if await request.is_disconnected():
+                        raise asyncio.CancelledError
+                    for offset in range(0, len(chunk), 32000):
+                        events.extend(await call(runtime.feed, chunk[offset : offset + 32000]))
+                events.extend(await call(runtime.finish))
+            audio.labels("input").inc(runtime.samples / 16000)
+            status = "completed"
+            return {
+                "model": runtime.model_id,
+                "audio_seconds": runtime.samples / 16000,
+                "events": events,
+                "text": " ".join(e["text"] for e in events if e["type"] == "transcript.final"),
+                "processing_seconds": time.monotonic() - started,
+            }
+        finally:
+            cancelled.set()
+            with anyio.CancelScope(shield=True):
+                try:
+                    await call(runtime.reset)
+                finally:
+                    duration.observe(time.monotonic() - started)
+                    requests.labels(status).inc()
+                    release()
 
     @app.post("/v1/voice/synthesize")
     async def synthesize(payload: SynthesisRequest, request: Request):
