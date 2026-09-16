@@ -37,7 +37,7 @@ def test_additive_registration_preserves_input_and_has_no_false_qualification():
                                bundles=[LegacyTemplateBundle.model_validate(b) for b in bundles])
     for proposal in proposals:
         spec = ModelDeploymentSpec.model_validate(proposal["spec"])
-        assert spec.policy.allowed_principal_ids == ["rene"]
+        assert spec.policy.allowed_principal_ids == []
         rendered = contract.renderer().render(spec, RenderContext(
             name=proposal["name"], namespace=proposal["namespace"], generation=1,
             pool=contract.infrastructure_envelope.pools["h100-1x"],
@@ -45,6 +45,9 @@ def test_additive_registration_preserves_input_and_has_no_false_qualification():
             prometheus_server_address="http://prometheus.example:9090", preview=True,
         ))
         assert rendered.resources
+        for resource in rendered.resources:
+            if resource.kind == "ScaledObject":
+                assert len("keda-hpa-" + resource.name) <= 63
 
 
 def test_refuses_to_overwrite_an_existing_registration():

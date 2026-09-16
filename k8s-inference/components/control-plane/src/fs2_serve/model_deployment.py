@@ -1925,7 +1925,10 @@ def effective_hot_floor(spec: AvailabilitySpec, *, at: datetime) -> int:
 def scaled_object_name(model_deployment_name: str) -> str:
     """Return a stable ScaledObject name that leaves room for KEDA's HPA prefix."""
 
-    return _derived_name("fs2-model-", model_deployment_name, maximum=253 - len("keda-hpa-"))
+    # KEDA's admission webhook bounds its generated HPA name to a 63-character
+    # DNS label, even though ScaledObject names admit longer DNS subdomains.
+    # Keep existing short names unchanged and hash long names deterministically.
+    return _derived_name("fs2-model-", model_deployment_name, maximum=63 - len("keda-hpa-"))
 
 
 def scaled_object_hpa_name(model_deployment_name: str) -> str:

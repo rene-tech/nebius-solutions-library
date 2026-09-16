@@ -65,6 +65,8 @@ from fs2_serve.model_deployment import (
     effective_hot_floor,
     plan_reconciliation,
     spec_digest,
+    scaled_object_name,
+    scaled_object_hpa_name,
     validate_model_deployment,
 )
 from fs2_serve.model_deployment_preview import (
@@ -89,6 +91,15 @@ QWEN_MANIFEST = SOLUTION_ROOT / "models/general-media/k8s/qwen3-8b.yaml"
 
 def digest(character: str) -> str:
     return f"sha256:{character * 64}"
+
+
+def test_scaled_object_names_fit_keda_hpa_webhook_and_remain_stable():
+    assert scaled_object_name("qwen-live") == "fs2-model-qwen-live"
+    names = ["nemotron-speech-multilingual-0-6b-burst-h100-1x", "a" * 250, "a" * 249 + "b"]
+    result = [scaled_object_hpa_name(name) for name in names]
+    assert all(len(name) <= 63 for name in result)
+    assert len(set(result)) == len(names)
+    assert result == [scaled_object_hpa_name(name) for name in names]
 
 
 def model_spec(

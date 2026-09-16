@@ -26,7 +26,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("kubeconfig", "context", "origin"):
         parser.add_argument("--" + name, required=True)
-    parser.add_argument("--mode", choices=("apply-apps", "files"), required=True)
+    parser.add_argument("--mode", choices=("apply-apps", "repair-app-policy", "files"), required=True)
     parser.add_argument("--proposals", type=Path)
     parser.add_argument("--assets", type=Path)
     parser.add_argument("--output", type=Path, required=True)
@@ -41,9 +41,22 @@ def main():
         try:
             response = admin.post("/admin/api/v1/session", headers={"authorization": "Bearer " + token})
             response.raise_for_status()
-            if args.mode == "apply-apps":
-                for proposal in json.loads(args.proposals.read_text()):
-                    if proposal["name"] not in IDS or proposal["spec"]["policy"]["allowedPrincipalIds"] != ["rene"]:
+            if args.mode in {"apply-apps", "repair-app-policy"}:
+                proposals = []
+                if args.mode == "repair-app-policy":
+                    for name in IDS:
+                        current = admin.get("/admin/api/v1/model-deployments/" + name)
+                        current.raise_for_status()
+                        value = current.json()["data"]
+                        if value["spec"]["policy"]["allowedPrincipalIds"] not in ([], ["rene"]):
+                            raise ValueError("speech policy changed outside this task")
+                        value["spec"]["policy"]["allowedPrincipalIds"] = []
+                        proposals.append({"name": name, "namespace": value["namespace"],
+                                          "base_etag": value["etag"], "spec": value["spec"]})
+                else:
+                    proposals = json.loads(args.proposals.read_text())
+                for proposal in proposals:
+                    if proposal["name"] not in IDS or proposal["spec"]["policy"]["allowedPrincipalIds"] != []:
                         raise ValueError("not a task-scoped speech App proposal")
                     response = admin.post("/admin/api/v1/model-deployments:plan-preview", json=proposal)
                     response.raise_for_status()
@@ -53,7 +66,8 @@ def main():
                         raise RuntimeError("speech_app_preview_rejected")
                     response = admin.post("/admin/api/v1/model-deployments:apply", json={
                         "preview_id": preview["preview_id"], "proposed_etag": preview["proposed_etag"],
-                        "proposal": proposal, "idempotency_key": "speech-onboard-20260916-" + proposal["name"],
+                        "proposal": proposal, "idempotency_key": "speech-" + hashlib.sha256(
+                            (proposal["name"] + preview["proposed_etag"]).encode()).hexdigest(),
                     })
                     receipt["measurements"][-1]["apply_http_status"] = response.status_code
                     receipt["measurements"][-1]["apply"] = response.json()

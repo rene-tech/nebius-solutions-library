@@ -66,7 +66,10 @@ def append_models(envelope, bundles, selections, baseline_spec):
                              "templateRef": {"name": identity + ".legacy-v1", "digest": digest}})
         spec["availability"].update(minReplicas=1, maxReplicas=2)
         spec["placement"]["poolRefs"] = ["h100-1x", "h100-reserved-8x"]
-        spec["policy"]["allowedPrincipalIds"] = ["rene"]
+        # Shared platform Apps follow the customer's API-key model grants.
+        # Legacy principal allowlists are local to the operator tenant, not
+        # customer tenant IDs; putting "rene" here would reject Rene's key.
+        spec["policy"]["allowedPrincipalIds"] = []
         spec["exposure"]["mcpToolName"] = tool
         proposals.append({"name": identity, "namespace": "fs2-models", "spec": spec})
     envelope.pop("revision")
