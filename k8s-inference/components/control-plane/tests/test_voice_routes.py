@@ -51,6 +51,22 @@ async def test_relay_preserves_wav_and_counts_exact_usage():
 
 
 @pytest.mark.asyncio
+async def test_busy_retry_releases_backend_connection_before_new_attempt():
+    calls = []
+
+    def handler(request):
+        assert request.headers["connection"] == "close"
+        calls.append(request)
+        return (
+            httpx.Response(429) if len(calls) == 1 else httpx.Response(200, text="\n".join(map(json.dumps, events())))
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await relay_synthesis(*objects(), b'{"text":"Hello"}', asyncio.Queue().put, client=client)
+    assert len(calls) == 2 and result.body.startswith(b"RIFF")
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("mutation", ["missing_done", "wrong_count", "out_of_order", "bad_base64", "after_done"])
 async def test_incomplete_or_corrupt_audio_never_becomes_artifact(mutation):
     stream = events()

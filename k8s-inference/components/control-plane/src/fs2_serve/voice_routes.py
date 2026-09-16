@@ -79,7 +79,13 @@ async def relay_synthesis(model, operation, body: bytes, send: Callable[[dict], 
                 "POST",
                 model.binding.service_origin + "/v1/voice/synthesize",
                 content=body,
-                headers={"content-type": "application/json", "x-fs2-operation-id": str(operation.id)},
+                headers={
+                    "content-type": "application/json",
+                    "x-fs2-operation-id": str(operation.id),
+                    # Each pre-acceptance retry must permit Service balancing
+                    # to a different free replica, not pin a busy keepalive.
+                    "connection": "close",
+                },
             ) as response:
                 if response.status_code in {429, 503}:
                     # No input/audio accepted: a new connection may reach a free
