@@ -360,7 +360,7 @@ fs2-serve postgresql-release-contract
 ```
 
 The emitter verifies that the migration directory contains exactly the ordered
-`0001` through `0036` set, no missing/extra/renamed/symlinked file, and the
+`0001` through `0037` set, no missing/extra/renamed/symlinked file, and the
 contracted SHA-256 for every file. The migrator and `wait-schema` use the same
 validator. They also require the applied migration ledger to be an exact
 ordered prefix while an upgrade is running and the exact full set before a
@@ -368,13 +368,13 @@ runtime becomes ready; extra or reordered database rows fail closed.
 
 The required final release-receipt inputs are the ordered full-manifest
 migration-set SHA-256
-`8ff1bba38cb5a3ec388c94d0f00c3d2017bc39e7532fec41a338702892659cf7`,
-count `36`, first version `0001_initial.sql`, last version
-`0036_scientific_admission_complete_binding.sql`,
+`4e985e56e18adcdb5f6a8113453a2cdf60fe0be90b1162833a9ec742c548a7ae`,
+count `37`, first version `0001_initial.sql`, last version
+`0037_scientific_admission_rolling_compatibility.sql`,
 and namespace/role ownership SHA-256
 `47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca`.
 The whole logical contract payload is SHA-256
-`79fc04d988a36e02c35786e187bec937e1c86a93d1a570e2ef7959584c8cab63`.
+`42ae2d2057c8cde93ae2991237a3f804de44846f9b1610060f94927f8b043175`.
 The migration Job emits the payload, ordered-set digest, count, first/last
 version, and namespace/role digest as annotations. A later additive migration
 updates this one manifest contract; Helm and PostgreSQL code must not
@@ -435,11 +435,11 @@ the token concurrency slot while the encrypted request remains retained only
 until its existing payload TTL. Terminal operation/idempotency rows are deleted
 after `FS2_OPERATION_RETENTION_SECONDS`; revoked/expired PAT verifier rows are
 deleted after `FS2_PAT_RETENTION_SECONDS` once no operation references them.
-Audit rows have an independent `FS2_AUDIT_RETENTION_SECONDS` bound. A
-request-debug capture has an independent
-`FS2_REQUEST_DEBUG_RETENTION_SECONDS` bound, and payload-free request telemetry
-uses one 90-day (`7776000` second) `FS2_REQUEST_TELEMETRY_RETENTION_SECONDS`
-contract, matching usage-fact retention. Each maintenance transaction deletes
+Audit rows have an independent `FS2_AUDIT_RETENTION_SECONDS` bound. Request-debug
+capture uses the owner-fixed, non-configurable 90-day (`7776000` second)
+`FS2_REQUEST_DEBUG_RETENTION_SECONDS` contract. Payload-free request telemetry
+uses the same 90-day `FS2_REQUEST_TELEMETRY_RETENTION_SECONDS` contract,
+matching usage-fact retention. Each maintenance transaction deletes
 at most `FS2_RETENTION_BATCH_SIZE` rows per retention class. A Job runs at most
 `FS2_RETENTION_MAX_BATCHES`, giving a default capacity of 10,000 rows per class
 per minute without an unbounded transaction. Operators must size that product
@@ -685,6 +685,35 @@ already-present identity and Secret, so it completes before Helm rolls out an
 image whose init process waits for the new schema. Both modes avoid a
 migration/Deployment wait cycle. The Job receives only the DDL-capable
 `secrets.migrationsDatabase` reference.
+
+Migration `0037` is the expand/switch release for scientific admission digest
+binding. The migrator applies `0035` through `0037` in one transaction. The
+final schema keeps `scheduling_digest` NOT NULL, while a database-owned
+`BEFORE INSERT` trigger derives the omitted value from the closed frozen payload
+for predecessor pods that still issue the exact two-column
+`INSERT(operation_id,payload)`. The completion trigger then requires a locked
+outbox row, full state/identity/artifact/lifecycle equality and exact one-row
+consumption. A missing outbox row fails closed. Do not remove the compatibility
+trigger in this release. A later additive contract migration may remove it only
+after rollout evidence proves every predecessor image is quiescent; that later
+contract step is outside this release.
+
+The future live gate is read-only before any maintenance execution. Using only
+the maintenance credential, capture the payload-free request-debug aggregate:
+
+```sql
+SELECT count(*) AS row_count,
+       min(started_at) AS oldest_started_at,
+       count(*) FILTER (
+           WHERE started_at < clock_timestamp() - make_interval(secs => 7776000)
+       ) AS expired_count
+FROM fs2_request_debug;
+```
+
+Do not select tenant IDs, request IDs, headers, query data, bodies or ciphertext.
+If `expired_count` is nonzero, stop and obtain explicit owner direction under the
+no-delete rule; do not run maintenance or an ad-hoc purge. Record only the three
+aggregate fields and observation time in private rollout evidence.
 Maintenance receives `secrets.maintenanceDatabase`, bounded retention
 durations, and, only when scientific artifacts are enabled, the dedicated
 artifact-store credential needed to delete expired objects. The explicit
@@ -697,7 +726,7 @@ unless `maintenance.queueName` is configured.
 
 PostgreSQL migrations are forward-only. After migration `0030` (and every
 successor, including retention, privilege, bounded-progress, and admission
-binding hardening through `0036`), a raw Helm rollback
+binding/rolling-compatibility hardening through `0037`), a raw Helm rollback
 is forbidden: an image packaged only through `0029` rejects the extra applied
 migration in `wait-schema`, and its maintenance command does not contain the
 corrected FK-safe retention path. Use the current chart as a forward

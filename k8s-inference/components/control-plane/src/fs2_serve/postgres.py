@@ -150,6 +150,17 @@ RETENTION_EXPIRY_SCAN_SQL: Final = """
     ORDER BY expires_at,id
     LIMIT $2
 """
+
+# Read-only, payload-free gate used before any live maintenance execution.
+# Strict `<` preserves records exactly at the owner-confirmed 90-day boundary.
+REQUEST_DEBUG_RETENTION_PREFLIGHT_SQL: Final = """
+    SELECT count(*)::bigint AS row_count,
+           min(started_at) AS oldest_started_at,
+           count(*) FILTER (
+               WHERE started_at < clock_timestamp()-make_interval(secs=>$1::double precision)
+           )::bigint AS expired_count
+    FROM fs2_request_debug
+"""
 RETENTION_ELIGIBLE_CANDIDATES_SQL: Final = """
     SELECT candidate.id
     FROM unnest($1::uuid[]) WITH ORDINALITY AS candidate(id,ordinal)
@@ -4054,7 +4065,7 @@ class PostgresStore:
         token_retention_seconds: int,
         audit_retention_seconds: int = 2592000,
         usage_retention_seconds: int = 7776000,
-        request_debug_retention_seconds: int = 86400,
+        request_debug_retention_seconds: int = 7776000,
         request_telemetry_retention_seconds: int = 7776000,
         batch_size: int = 100,
     ) -> dict[str, int]:
@@ -4243,7 +4254,7 @@ class PostgresStore:
         token_retention_seconds: int,
         audit_retention_seconds: int = 2592000,
         usage_retention_seconds: int = 7776000,
-        request_debug_retention_seconds: int = 86400,
+        request_debug_retention_seconds: int = 7776000,
         request_telemetry_retention_seconds: int = 7776000,
     ) -> tuple[str, ...]:
         """Return payload-free names for retention classes that still have eligible rows."""
@@ -4613,6 +4624,25 @@ class PostgresMaintenanceStore:
     async def close(self) -> None:
         await self.pool.close()
 
+    async def request_debug_retention_preflight(
+        self,
+        *,
+        retention_seconds: int = 7776000,
+    ) -> dict[str, int | datetime | None]:
+        """Return only aggregate age/count data; never read captured content."""
+
+        if retention_seconds != 7776000:
+            raise ValueError("request-debug retention must equal the 90-day owner contract")
+        async with self.pool.acquire() as connection:
+            row = await connection.fetchrow(REQUEST_DEBUG_RETENTION_PREFLIGHT_SQL, retention_seconds)
+        if row is None:
+            raise RuntimeError("request-debug retention preflight returned no aggregate")
+        return {
+            "row_count": int(row["row_count"]),
+            "oldest_started_at": row["oldest_started_at"],
+            "expired_count": int(row["expired_count"]),
+        }
+
     async def purge_expired_payloads(self, *, batch_size: int = 100) -> int:
         return cast(
             int,
@@ -4626,7 +4656,7 @@ class PostgresMaintenanceStore:
         token_retention_seconds: int,
         audit_retention_seconds: int,
         usage_retention_seconds: int,
-        request_debug_retention_seconds: int = 86400,
+        request_debug_retention_seconds: int = 7776000,
         request_telemetry_retention_seconds: int = 7776000,
         batch_size: int = 100,
     ) -> dict[str, int]:
@@ -4651,7 +4681,7 @@ class PostgresMaintenanceStore:
         token_retention_seconds: int,
         audit_retention_seconds: int,
         usage_retention_seconds: int,
-        request_debug_retention_seconds: int = 86400,
+        request_debug_retention_seconds: int = 7776000,
         request_telemetry_retention_seconds: int = 7776000,
     ) -> tuple[str, ...]:
         return await PostgresStore.expired_retention_backlog(

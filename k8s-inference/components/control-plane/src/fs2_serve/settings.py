@@ -309,7 +309,9 @@ class Settings(BaseSettings):
     pat_retention_seconds: int = Field(default=604800, ge=3600, le=2592000)
     audit_retention_seconds: int = Field(default=2592000, ge=3600, le=31536000)
     usage_retention_seconds: int = Field(default=7776000, ge=86400, le=31536000)
-    request_debug_retention_seconds: int = Field(default=86400, ge=60, le=604800)
+    # Owner-fixed customer contract: request-debug records use the same exact
+    # 90-day TTL in every environment. This is intentionally not tunable.
+    request_debug_retention_seconds: Literal[7776000] = 7776000
     request_telemetry_retention_seconds: int = Field(default=7776000, ge=86400, le=31536000)
     retention_batch_size: int = Field(default=1000, ge=1, le=10000)
     retention_max_batches: int = Field(default=10, ge=1, le=100)

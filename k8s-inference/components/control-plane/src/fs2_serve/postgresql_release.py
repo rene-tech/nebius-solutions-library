@@ -125,6 +125,10 @@ EXPECTED_MIGRATIONS: Final = (
         "0036_scientific_admission_complete_binding.sql",
         "d74762b7f9d2ee0678abbbf706924450b5508e669d15246bd976c593531edbdd",
     ),
+    (
+        "0037_scientific_admission_rolling_compatibility.sql",
+        "5da00e7faa6c077b648af40ed489a48f13fb4fde94dd48fdf4383b2278641e81",
+    ),
 )
 
 NAMESPACE_ROLE_OWNERSHIP: Final[dict[str, Any]] = {

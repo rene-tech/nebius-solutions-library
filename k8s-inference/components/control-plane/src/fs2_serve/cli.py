@@ -6,7 +6,7 @@ import argparse
 import asyncio
 import logging
 import sys
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -706,6 +706,28 @@ async def maintain(settings: Settings) -> None:
         await store.close()
 
 
+async def retention_preflight(settings: Settings) -> None:
+    """Run the payload-free no-delete gate before any future live purge."""
+
+    store = await PostgresMaintenanceStore.connect(settings.database_url)
+    try:
+        observation = await store.request_debug_retention_preflight(
+            retention_seconds=settings.request_debug_retention_seconds
+        )
+        oldest_started_at = observation["oldest_started_at"]
+        oldest_rendered = oldest_started_at.isoformat() if isinstance(oldest_started_at, datetime) else "none"
+        logging.getLogger("fs2_serve.maintenance").info(
+            "request-debug retention preflight rows=%d oldest_started_at=%s expired_rows=%d",
+            observation["row_count"],
+            oldest_rendered,
+            observation["expired_count"],
+        )
+        if observation["expired_count"]:
+            raise RuntimeError("request-debug rows exceed the 90-day cutoff; explicit owner direction is required")
+    finally:
+        await store.close()
+
+
 async def migrate(settings: Settings) -> None:
     await PostgresStore.migrate_database(
         settings.database_url,
@@ -794,6 +816,7 @@ def main() -> None:
         choices=(
             "serve",
             "maintenance",
+            "retention-preflight",
             "migrate",
             "wait-schema",
             "bootstrap-access",
@@ -821,6 +844,7 @@ def main() -> None:
         action = {
             "serve": serve,
             "maintenance": maintain,
+            "retention-preflight": retention_preflight,
             "migrate": migrate,
             "wait-schema": wait_schema,
             "bootstrap-access": bootstrap_access,

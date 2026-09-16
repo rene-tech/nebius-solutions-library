@@ -8,6 +8,39 @@ from fs2_serve import cli
 
 
 @pytest.mark.asyncio
+async def test_request_debug_retention_preflight_is_read_only_and_stops_on_expired_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[object] = []
+
+    class FakeStore:
+        async def request_debug_retention_preflight(self, *, retention_seconds: int) -> dict[str, object]:
+            events.append(("preflight", retention_seconds))
+            return {
+                "row_count": 9,
+                "oldest_started_at": None,
+                "expired_count": 1,
+            }
+
+        async def close(self) -> None:
+            events.append("closed")
+
+    async def connect(_database_url: str) -> FakeStore:
+        return FakeStore()
+
+    monkeypatch.setattr(cli.PostgresMaintenanceStore, "connect", connect)
+    settings = SimpleNamespace(
+        database_url="postgresql://unit.invalid/database",
+        request_debug_retention_seconds=7776000,
+    )
+
+    with pytest.raises(RuntimeError, match="explicit owner direction"):
+        await cli.retention_preflight(settings)
+
+    assert events == [("preflight", 7776000), "closed"]
+
+
+@pytest.mark.asyncio
 async def test_maintenance_purges_artifacts_before_database_retention(monkeypatch: pytest.MonkeyPatch) -> None:
     events: list[object] = []
     database_backlog = iter([("request_debug", "request_telemetry"), ()])

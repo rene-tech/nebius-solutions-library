@@ -545,6 +545,12 @@ def test_settings_require_coherent_wait_poll_and_concurrency_bounds() -> None:
         Settings(worker_concurrency=5, max_sync_waiters=4)
 
 
+def test_request_debug_retention_is_the_exact_owner_contract() -> None:
+    assert Settings().request_debug_retention_seconds == 7776000
+    with pytest.raises(ValueError):
+        Settings(request_debug_retention_seconds=86400)
+
+
 @pytest.mark.parametrize(
     "overrides",
     [

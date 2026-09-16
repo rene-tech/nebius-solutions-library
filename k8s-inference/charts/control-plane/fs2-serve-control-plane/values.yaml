@@ -363,8 +363,8 @@ config:
   patRetentionSeconds: "604800"
   auditRetentionSeconds: "2592000"
   usageRetentionSeconds: "7776000"
-  requestDebugRetentionSeconds: "86400"
-  # Telemetry and usage share one 90-day retention contract.
+  # Request-debug, telemetry, and usage share the owner-fixed 90-day contract.
+  requestDebugRetentionSeconds: "7776000"
   requestTelemetryRetentionSeconds: "7776000"
   # Each maintenance transaction deletes at most batchSize rows per retention
   # class. A run drains at most batchSize * maxBatches rows per class, then
@@ -401,11 +401,11 @@ migration:
   # for the final PostgreSQL release receipt; chart validation rejects drift.
   releaseContract:
     schema: fs2-serve.nebius.ai/postgresql-release-contract/v1
-    contractPayloadSha256: 79fc04d988a36e02c35786e187bec937e1c86a93d1a570e2ef7959584c8cab63
-    migrationSetSha256: 8ff1bba38cb5a3ec388c94d0f00c3d2017bc39e7532fec41a338702892659cf7
-    migrationCount: 36
+    contractPayloadSha256: 42ae2d2057c8cde93ae2991237a3f804de44846f9b1610060f94927f8b043175
+    migrationSetSha256: 4e985e56e18adcdb5f6a8113453a2cdf60fe0be90b1162833a9ec742c548a7ae
+    migrationCount: 37
     firstMigrationVersion: 0001_initial.sql
-    lastMigrationVersion: 0036_scientific_admission_complete_binding.sql
+    lastMigrationVersion: 0037_scientific_admission_rolling_compatibility.sql
     namespaceRoleOwnershipSha256: 47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca
   resources:
     requests:

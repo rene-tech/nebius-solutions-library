@@ -534,7 +534,7 @@ class RuntimeSupervisorBoundaryStore(MemoryStore):
         token_retention_seconds: int,
         audit_retention_seconds: int,
         usage_retention_seconds: int,
-        request_debug_retention_seconds: int = 86400,
+        request_debug_retention_seconds: int = 7776000,
         request_telemetry_retention_seconds: int = 7776000,
         batch_size: int = 100,
     ) -> dict[str, int]:

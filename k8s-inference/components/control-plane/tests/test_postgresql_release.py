@@ -14,6 +14,7 @@ from conftest import CONTROL_ROOT
 
 import fs2_serve.scientific_artifacts as scientific_artifacts
 from fs2_serve.postgres import (
+    REQUEST_DEBUG_RETENTION_PREFLIGHT_SQL,
     RETENTION_ELIGIBLE_CANDIDATES_SQL,
     RETENTION_EXPIRY_SCAN_SQL,
     RETENTION_REVOKED_SCAN_SQL,
@@ -43,9 +44,9 @@ def test_committed_postgresql_contract_is_exact_emitted_release_receipt_input() 
     receipt = committed["required_release_receipt_inputs"]
     assert receipt == {
         "first_migration_version": "0001_initial.sql",
-        "last_migration_version": "0036_scientific_admission_complete_binding.sql",
-        "migration_count": 36,
-        "migration_set_sha256": "8ff1bba38cb5a3ec388c94d0f00c3d2017bc39e7532fec41a338702892659cf7",
+        "last_migration_version": "0037_scientific_admission_rolling_compatibility.sql",
+        "migration_count": 37,
+        "migration_set_sha256": "4e985e56e18adcdb5f6a8113453a2cdf60fe0be90b1162833a9ec742c548a7ae",
         "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca",
     }
     migrations = committed["migration_set"]["ordered_migrations"]
@@ -97,6 +98,18 @@ def test_scientific_runtime_grants_converge_to_trigger_bound_completion() -> Non
     assert "NEW.lease_expires_at IS NOT NULL" in binding_normalized
     assert "RAISE EXCEPTION USING ERRCODE='FS204'" in binding_normalized
 
+    compatibility_sql = (MIGRATIONS / "0037_scientific_admission_rolling_compatibility.sql").read_text(encoding="utf-8")
+    compatibility_normalized = " ".join(compatibility_sql.split())
+    assert "BEFORE INSERT ON fs2_scientific_admission_outbox" in compatibility_normalized
+    assert "NEW.scheduling_digest := payload_scheduling_digest" in compatibility_normalized
+    assert "ALTER COLUMN scheduling_digest DROP NOT NULL" not in compatibility_normalized
+    assert "IF NOT FOUND THEN RAISE EXCEPTION USING ERRCODE='FS204'" in compatibility_normalized
+    assert "MESSAGE='scientific admission handoff is missing'" in compatibility_normalized
+    assert "NEW.state IS DISTINCT FROM frozen_payload" in compatibility_normalized
+    assert "GET DIAGNOSTICS deleted_rows = ROW_COUNT" in compatibility_normalized
+    assert "IF deleted_rows <> 1 THEN" in compatibility_normalized
+    assert "REVOKE ALL ON FUNCTION fs2_scientific_bind_admission_digest() FROM PUBLIC" in compatibility_normalized
+
     wait_source = inspect.getsource(PostgresStore.wait_for_schema)
     assert "has_table_privilege('fs2_serve_runtime'" in wait_source
     assert "has_table_privilege(current_user" in wait_source
@@ -109,6 +122,20 @@ def test_scientific_runtime_grants_converge_to_trigger_bound_completion() -> Non
     assert wait_source.count("fs2_scientific_batches','scheduling_digest','UPDATE'") == 2
     assert "SELECT,INSERT" not in wait_source
     assert "database schema runtime privileges are incomplete" in wait_source
+
+
+def test_request_debug_preflight_is_payload_free_and_preserves_the_exact_cutoff() -> None:
+    normalized = " ".join(REQUEST_DEBUG_RETENTION_PREFLIGHT_SQL.split())
+    assert "count(*)::bigint AS row_count" in normalized
+    assert "min(started_at) AS oldest_started_at" in normalized
+    assert "count(*) FILTER" in normalized
+    assert "started_at < clock_timestamp()-make_interval" in normalized
+    assert "started_at <=" not in normalized
+    for forbidden in ("tenant_id", "request_id", "headers", "query", "body", "ciphertext"):
+        assert forbidden not in normalized
+    purge_source = " ".join(inspect.getsource(PostgresStore.delete_expired_rows).split())
+    assert "SELECT id FROM fs2_request_debug WHERE started_at < clock_timestamp()-make_interval" in purge_source
+    assert "fs2_request_debug WHERE started_at <=" not in purge_source
 
 
 def test_retention_scan_hardening_is_versioned_and_future_functions_fail_closed() -> None:

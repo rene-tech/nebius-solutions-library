@@ -1825,6 +1825,7 @@ def test_maintenance_is_independent_fixed_cadence_and_network_egress_is_allowlis
         "FS2_RETENTION_MAX_BATCHES",
     }
     maintenance_env = {item["name"]: item.get("value") for item in maintenance["env"]}
+    assert maintenance_env["FS2_REQUEST_DEBUG_RETENTION_SECONDS"] == "7776000"
     assert maintenance_env["FS2_REQUEST_TELEMETRY_RETENTION_SECONDS"] == "7776000"
     assert maintenance_env["FS2_RETENTION_BATCH_SIZE"] == "1000"
     assert maintenance_env["FS2_RETENTION_MAX_BATCHES"] == "10"
@@ -1883,6 +1884,27 @@ def test_maintenance_is_independent_fixed_cadence_and_network_egress_is_allowlis
         and rule.get("ports") == [{"port": 443, "protocol": "TCP"}]
         for rule in artifact_policy["spec"]["egress"]
     )
+
+
+def test_chart_rejects_request_debug_retention_drift_from_owner_contract() -> None:
+    result = subprocess.run(  # noqa: S603 - fixed Helm binary and bounded adversarial value.
+        [
+            HELM,
+            "template",
+            "fs2-serve",
+            str(CHART),
+            "--namespace",
+            "fs2-system",
+            *helm_values(),
+            "--set-string",
+            "config.requestDebugRetentionSeconds=86400",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "requestDebugRetentionSeconds" in result.stderr
 
 
 def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -> None:

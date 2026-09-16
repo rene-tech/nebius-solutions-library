@@ -173,12 +173,13 @@ HTTP 0 or success.
   a missing row is not proof no request happened. Process failure can also leave
   missing captures. Bodies from before capture was enabled, or from failed
   persistence, cannot be reconstructed from old usage/logical-run metadata.
-- The fixed-cadence maintenance Job deletes rows older than
-  `FS2_REQUEST_DEBUG_RETENTION_SECONDS` (24 hours by default) in bounded
+- The fixed-cadence maintenance Job is the sole purge owner for rows older than
+  the exact, non-configurable `FS2_REQUEST_DEBUG_RETENTION_SECONDS=7776000`
+  (90-day) contract, using bounded
   transactions. Its configurable batch size and maximum batch count drain up to
   10,000 rows per run by default. A remaining backlog fails the Job so the
   maintenance alert reports non-convergence. Payload-free request telemetry has
-  one 90-day retention value (`7776000` seconds). This central maintenance path
+  the same 90-day retention value (`7776000` seconds). This central maintenance path
   is the sole purge owner; the capture facility defines no DELETE grant,
   retention setting, or competing schedule. Its maintenance credential can read
   no captured payload, header, query, or ciphertext column. Disabling capture
@@ -189,6 +190,12 @@ HTTP 0 or success.
   central maintenance enabled so existing captures still expire. The exact
   schema-image and verification procedure is in the control-plane operations
   guide.
+- Before any future live rollout or purge execution, query only payload-free
+  request-debug aggregates: total row count, oldest `started_at`, and count older
+  than 90 days. If the expired count is nonzero, stop and obtain explicit owner
+  direction; the no-delete gate forbids executing purge merely because backlog
+  exists. Never select captured headers, query data, bodies, ciphertext, or
+  customer identifiers for this gate.
 
 ## Verification status
 

@@ -1109,6 +1109,110 @@ async def test_migrator_binds_preexisting_admission_to_its_exact_derived_digest(
                 "WHERE attrelid='fs2_scientific_admission_outbox'::regclass "
                 "AND attname='scheduling_digest'"
             )
+
+            legacy_operation_id = uuid4()
+            legacy_input_artifact_id = uuid4()
+            legacy_attempt_id = uuid4()
+            legacy = ScientificBatchState.admit(
+                operation_id=legacy_operation_id,
+                tenant_id="tenant-a",
+                model_id="qwen3-8b",
+                variant_id="qwen3-8b-h100",
+                input_artifact_id=legacy_input_artifact_id,
+                plan=ScientificBatchPlan(stages=(ScientificStagePlan(stage_id="design", max_attempts=2),)),
+                scheduling=scheduling,
+            )
+            legacy_payload = state_to_value(legacy)
+            await verified.execute(
+                """
+                INSERT INTO fs2_operations(
+                    id,tenant_id,principal_id,token_id,model_id,model_revision,protocol,operation,
+                    idempotency_key,request_hmac_key_id,request_hmac,request_content_type,
+                    accepted_at,payload_expires_at,max_attempts
+                ) VALUES($1,'tenant-a','principal-a',$2,'qwen3-8b','b968826d','scientific-batch-v1',
+                    'design','migration-admission-legacy-0001','hmac-v1',$3,'application/json',$4,$5,1)
+                """,
+                legacy_operation_id,
+                token_id,
+                "1" * 64,
+                accepted_at,
+                accepted_at + timedelta(days=1),
+            )
+            await verified.execute(
+                """
+                INSERT INTO fs2_scientific_stage_attempts(
+                    attempt_id,operation_id,tenant_id,stage_id,shard_id,attempt_number,
+                    status,started_at,retention_expires_at
+                ) VALUES($1,$2,'tenant-a','input','-',1,'running',$3,$3+interval '1 day')
+                """,
+                legacy_attempt_id,
+                legacy_operation_id,
+                accepted_at,
+            )
+            artifact_digest = "sha256:" + "2" * 64
+            await verified.execute(
+                """
+                INSERT INTO fs2_scientific_artifacts(
+                    id,attempt_id,operation_id,tenant_id,stage_id,shard_id,direction,digest,size_bytes,
+                    media_type,storage_key,access_profile,retention_expires_at
+                ) VALUES($1,$2,$3,'tenant-a','input','-','input',$4,1,'application/json',$5,'public',
+                    $6+interval '1 day')
+                """,
+                legacy_input_artifact_id,
+                legacy_attempt_id,
+                legacy_operation_id,
+                artifact_digest,
+                f"scientific/v1/tenants/tenant-a/operations/{legacy_operation_id}/stages/input/shards/-/"
+                f"attempts/{legacy_attempt_id}/input/sha256/{artifact_digest.removeprefix('sha256:')}",
+                accepted_at,
+            )
+            await verified.execute("SET ROLE fs2_serve_runtime")
+            try:
+                # This is the predecessor image's exact INSERT shape. The
+                # expanded successor schema must keep it valid until a later
+                # release proves every predecessor pod is quiescent.
+                await verified.execute(
+                    "INSERT INTO fs2_scientific_admission_outbox(operation_id,payload) VALUES($1,$2::jsonb)",
+                    legacy_operation_id,
+                    json.dumps(legacy_payload, sort_keys=True, separators=(",", ":")),
+                )
+                assert (
+                    await verified.fetchval(
+                        "SELECT scheduling_digest FROM fs2_scientific_admission_outbox WHERE operation_id=$1",
+                        legacy_operation_id,
+                    )
+                    == legacy.scheduling.digest
+                )
+                await verified.execute(
+                    """
+                    INSERT INTO fs2_scientific_batches(
+                        operation_id,batch_id,workload_id,tenant_id,model_id,variant_id,input_artifact_id,
+                        scheduling_digest,status,revision,cancel_requested,state
+                    ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'queued',0,false,$9::jsonb)
+                    """,
+                    legacy.operation_id,
+                    legacy.batch_id,
+                    legacy.workload_id,
+                    legacy.tenant_id,
+                    legacy.model_id,
+                    legacy.variant_id,
+                    legacy.input_artifact_id,
+                    legacy.scheduling.digest,
+                    json.dumps(legacy_payload, sort_keys=True, separators=(",", ":")),
+                )
+            finally:
+                await verified.execute("RESET ROLE")
+            assert not await verified.fetchval(
+                "SELECT EXISTS (SELECT 1 FROM fs2_scientific_admission_outbox WHERE operation_id=$1)",
+                legacy_operation_id,
+            )
+            assert (
+                await verified.fetchval(
+                    "SELECT count(*) FROM fs2_scientific_batches WHERE operation_id=$1",
+                    legacy_operation_id,
+                )
+                == 1
+            )
         finally:
             await verified.close()
     finally:
@@ -4315,6 +4419,77 @@ async def test_scientific_admission_outbox_recovers_after_committed_operation_wi
     assert await postgres_store.get_scientific_admission(other_operation.id) is not None
     with pytest.raises(ConflictError, match="not consumed by its exact durable batch"):
         await postgres_store.complete_scientific_admission(other_operation.id)
+
+    other_pending = await postgres_store.get_scientific_admission(other_operation.id)
+    assert other_pending is not None
+    other_frozen = state_from_value(other_pending.payload)
+    other_attempt_id = uuid4()
+    other_artifact_digest = "sha256:" + "3" * 64
+    async with postgres_store.pool.acquire() as connection:
+        await connection.execute(
+            """
+            INSERT INTO fs2_scientific_stage_attempts(
+                attempt_id,operation_id,tenant_id,stage_id,shard_id,attempt_number,
+                status,started_at,retention_expires_at
+            ) VALUES($1,$2,$3,'input','-',1,'running',clock_timestamp(),clock_timestamp()+interval '1 day')
+            """,
+            other_attempt_id,
+            other_frozen.operation_id,
+            other_frozen.tenant_id,
+        )
+        await connection.execute(
+            """
+            INSERT INTO fs2_scientific_artifacts(
+                id,attempt_id,operation_id,tenant_id,stage_id,shard_id,direction,digest,size_bytes,
+                media_type,storage_key,access_profile,retention_expires_at
+            ) VALUES($1,$2,$3,$4,'input','-','input',$5,1,'application/json',$6,'public',
+                clock_timestamp()+interval '1 day')
+            """,
+            other_frozen.input_artifact_id,
+            other_attempt_id,
+            other_frozen.operation_id,
+            other_frozen.tenant_id,
+            other_artifact_digest,
+            f"scientific/v1/tenants/{other_frozen.tenant_id}/operations/{other_frozen.operation_id}/"
+            f"stages/input/shards/-/attempts/{other_attempt_id}/input/sha256/"
+            f"{other_artifact_digest.removeprefix('sha256:')}",
+        )
+        assert (
+            await connection.execute(
+                "DELETE FROM fs2_scientific_admission_outbox WHERE operation_id=$1",
+                other_frozen.operation_id,
+            )
+            == "DELETE 1"
+        )
+
+    async with scientific_runtime_pool.acquire() as runtime:
+        with pytest.raises(asyncpg.PostgresError, match="scientific admission handoff is missing"):
+            await runtime.execute(
+                """
+                INSERT INTO fs2_scientific_batches(
+                    operation_id,batch_id,workload_id,tenant_id,model_id,variant_id,input_artifact_id,
+                    scheduling_digest,status,revision,cancel_requested,state
+                ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'queued',0,false,$9::jsonb)
+                """,
+                other_frozen.operation_id,
+                other_frozen.batch_id,
+                other_frozen.workload_id,
+                other_frozen.tenant_id,
+                other_frozen.model_id,
+                other_frozen.variant_id,
+                other_frozen.input_artifact_id,
+                other_frozen.scheduling.digest,
+                json.dumps(other_pending.payload, sort_keys=True, separators=(",", ":")),
+            )
+    async with postgres_store.pool.acquire() as connection:
+        assert not await connection.fetchval(
+            "SELECT EXISTS (SELECT 1 FROM fs2_scientific_admission_outbox WHERE operation_id=$1)",
+            other_frozen.operation_id,
+        )
+        assert not await connection.fetchval(
+            "SELECT EXISTS (SELECT 1 FROM fs2_scientific_batches WHERE operation_id=$1)",
+            other_frozen.operation_id,
+        )
 
 
 @pytest.mark.postgres
