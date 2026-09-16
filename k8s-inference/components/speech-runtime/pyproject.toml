@@ -7,7 +7,11 @@ name = "fs2-speech-runtime"
 version = "0.1.0"
 description = "Pinned NVIDIA streaming ASR adapter for Scientific AI"
 requires-python = ">=3.11,<3.14"
-dependencies = ["pydantic==2.12.5"]
+dependencies = [
+  "pydantic==2.12.5", "fastapi==0.141.1", "starlette==1.6.0",
+  "uvicorn==0.35.0", "httpx==0.28.1", "python-multipart==0.0.32",
+  "websockets==15.0.1", "prometheus-client==0.22.1",
+]
 
 [project.optional-dependencies]
 nemo = [
@@ -23,6 +27,7 @@ test = ["pytest==8.4.1", "ruff==0.12.11"]
 
 [project.scripts]
 fs2-speech-probe = "fs2_speech.probe:main"
+fs2-speech-serve = "fs2_speech.server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/fs2_speech"]
