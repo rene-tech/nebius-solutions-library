@@ -130,10 +130,40 @@ is excluded. Mapping assumptions, per-axis bias and human agreement limits are
 reported with the evidence. These scores are research workshop results, not
 clinical validation or a claim of therapeutic safety.
 
-Build `Dockerfile` and apply `deploy/preview.yaml` after resolving the image to a
-digest. The task-owned deployment is in `fs2-system` with service
+Build `Dockerfile` and resolve the image to a digest. Production integration uses
+`../../charts/addons/mindeval-workshop` and the optional
+`../../modules/mindeval-workshop` Terraform module. Do not also apply the
+standalone `deploy/preview.yaml` to resources owned by Helm. The task-owned
+deployment is in `fs2-system` with service
 `http://fs2-mindeval-gateway.fs2-system.svc:8080`. Supply Secret
 `mindeval-token-factory` key `api-key` from the protected credential file. The
 existing control plane must expose the extended verified policy headers, and its
 NetworkPolicy must allow gateway pods to reach the authorization endpoint. No
 shared control-plane/admin/website deployment is performed by this component.
+
+The separate public workshop acceptance runner uses ten ordinary platform PATs,
+not the upstream Token Factory credential. A protected JSON file contains
+`{"teams":[{"label":"team-01","token":"..."}, ...],"denied_token":"..."}`.
+The ten principals must share one tenant and each permit five workers; the extra
+denied PAT must lack the MindEval model grant. Never place this file in evidence.
+
+```
+.venv/bin/python scripts/rehearse_workshop.py \
+  --base-url https://YOUR_WORKSHOP_ORIGIN \
+  --keys-file /protected/rehearsal-keys.json \
+  --output evidence/public-rehearsal --run-label unique-rehearsal-label \
+  --gateway-image REGISTRY/gateway@sha256:DIGEST \
+  --workshop-image REGISTRY/workshop@sha256:DIGEST
+```
+
+Run only after the coordinator confirms deployment readiness and image stability.
+Two repetitions create 60 durable jobs each (ten teams, six clinicians), plus one
+controlled intervention run. The same label replays idempotently; a new label
+creates new jobs. The runner tests registration limits without creating 400
+inference jobs, owner isolation, grant denial, idempotent creation, fair progress,
+five-worker limits, reconnect, pause/takeover/nudge/resume/abort, exact five-axis
+judgments, token/queue/latency telemetry, and explicit classifier coverage. It
+saves public reports and gateway events, fails on any failed/invalid run, and
+does not silently retry failed jobs. `--insecure` is an explicit exception only
+for the workshop's self-signed rehearsal certificate. Image digest attestation
+remains the coordinator's cluster check, not a claim made by the public API.
