@@ -9,6 +9,19 @@ the exact string constants without executing upstream Python. The original
 unbounded LiteLLM loop and default-to-three parser are not imported or executed;
 `adapter.py` replaces that inference and parsing path.
 
+`patches/mindeval-token-factory.patch` also modifies the original upstream
+inference, interaction and judgment scripts directly. Apply it to a checkout of
+the pinned revision with `git apply --check` followed by `git apply`, and install
+this component package. Set `MINDEVAL_GATEWAY_URL` and a normal
+`SCIENTIFIC_AI_TOKEN`; the patched scripts never receive a Token Factory key.
+Pass the same `run_id` in patient/clinician/judge API parameters, exact catalog
+model IDs for patient/clinician, at most 20 original profiles and at most five
+workers. For a non-prefix profile subset, include its original `profile_id` on
+each JSONL row. The comparison-wide `comparison_models` list belongs in clinician
+API parameters. The judge ignores caller model overrides and uses the registered
+fixed judge. The patch preserves the original templates and records full
+completion usage/finish metadata through gateway telemetry.
+
 Only `https://api.tokenfactory.nebius.com/v1` is supported. Catalog discovery
 excludes dedicated endpoints and non-chat modalities. Each run registration
 persists exact public metadata, pricing, provider limits, discovery time and

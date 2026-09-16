@@ -52,7 +52,7 @@ def credential() -> str:
 
 def create_app(*, adapter=None, store=None, identity_provider=None, judge_model=None):
     scheduler = adapter.scheduler if adapter else FairScheduler()
-    state = {"adapter": adapter, "store": store, "judge": judge_model}
+    state = {"adapter": adapter, "store": store, "judge": judge_model, "calibration": None}
     auth_client = httpx.AsyncClient(timeout=10)
     auth_url = os.getenv("MINDEVAL_AUTHZ_URL", "http://fs2-serve-control-plane.fs2-system.svc:8080/internal/ext-authz")
 
@@ -63,6 +63,7 @@ def create_app(*, adapter=None, store=None, identity_provider=None, judge_model=
         if not state["judge"]:
             selection = json.loads((ASSETS / "judge_selection.json").read_text())
             state["judge"] = selection["selected_model"]
+            state["calibration"] = selection
         await state["adapter"].discover()
         yield
         await scheduler.close()
@@ -141,6 +142,7 @@ def create_app(*, adapter=None, store=None, identity_provider=None, judge_model=
             "data": models,
             "judge_model": state["judge"],
             "judge_family": family(state["judge"]),
+            "judge_calibration": state["calibration"],
             "provenance": PROVENANCE,
             "limits": {"max_profiles": 20, "workers_per_team": 5},
         }

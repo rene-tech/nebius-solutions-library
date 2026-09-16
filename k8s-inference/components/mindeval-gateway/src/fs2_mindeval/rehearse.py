@@ -66,7 +66,7 @@ def metrics(rows):
     pairs = []
     for i, left in enumerate(valid):
         for right in valid[i + 1 :]:
-            if left["profile_name"] != right["profile_name"]:
+            if left["profile_fingerprint"] != right["profile_fingerprint"]:
                 continue
             predicted = mean(left["judgment"].values()) - mean(right["judgment"].values())
             human = mean(left["human"].values()) - mean(right["human"].values())
@@ -93,7 +93,8 @@ async def run(args):
     scheduler = FairScheduler()
     adapter = TokenFactoryAdapter(key, scheduler)
     catalog = await adapter.discover()
-    (output / "catalog.json").write_text(json.dumps(catalog, indent=2) + "\n")
+    if not (output / "catalog.json").exists():
+        (output / "catalog.json").write_text(json.dumps(catalog, indent=2) + "\n")
     if args.mode == "contracts":
         profile = profile_detail("profile-000")
         records = []
@@ -149,6 +150,12 @@ async def run(args):
         rows = [row for name in names for row in groups[name]]
         output_file = output / "judgments.jsonl"
         existing = [json.loads(line) for line in output_file.read_text().splitlines()] if output_file.exists() else []
+        fingerprints = {
+            row["id"]: hashlib.sha256(json.dumps(row["member_attributes"], sort_keys=True).encode()).hexdigest()
+            for row in annotations
+        }
+        for record in existing:
+            record["profile_fingerprint"] = fingerprints[record["annotation_id"]]
         completed = {(row["candidate"], row["annotation_id"]) for row in existing}
         results = list(existing)
         semaphore = asyncio.Semaphore(8)
@@ -162,6 +169,7 @@ async def run(args):
                     "annotation_id": row["id"],
                     "clinician_model": row["model"],
                     "profile_name": row["member_attributes"]["name"],
+                    "profile_fingerprint": fingerprints[row["id"]],
                     "human": human_scores(row),
                     "split": "selection" if row["member_attributes"]["name"] in selection_names else "validation",
                 }
@@ -205,6 +213,7 @@ async def run(args):
                 )
 
         await asyncio.gather(*(evaluate(candidate, row) for row in rows for candidate in CANDIDATES))
+        output_file.write_text("".join(json.dumps(record) + "\n" for record in results))
         summary = {
             candidate: {
                 split: metrics([row for row in results if row["candidate"] == candidate and row["split"] == split])

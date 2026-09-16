@@ -33,7 +33,7 @@ spec:
         fsGroup: 10001
       containers:
         - name: gateway
-          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/mindeval-gateway:fs2-mindeval-20260916
+          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/mindeval-gateway@sha256:4d7c32408cdc7a8bb5df55b73408146d6fe5aee759927f9211790b0874ef2db7
           ports:
             - containerPort: 8080
               name: http

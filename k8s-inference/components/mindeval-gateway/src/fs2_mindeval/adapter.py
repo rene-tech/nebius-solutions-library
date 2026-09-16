@@ -140,7 +140,8 @@ class TokenFactoryAdapter:
             and model.get("architecture", {}).get("modality", "text->text").endswith("->text")
         ]
         snapshot = {"base_url": BASE_URL, "discovered_at": datetime.now(timezone.utc).isoformat(), "data": public}
-        snapshot["sha256"] = sha256(json.dumps(raw, sort_keys=True).encode()).hexdigest()
+        snapshot["sha256"] = sha256(json.dumps(public, sort_keys=True).encode()).hexdigest()
+        snapshot["source_sha256"] = sha256(json.dumps(raw, sort_keys=True).encode()).hexdigest()
         self.catalog = snapshot
         self.scheduler.configure(public)
         return snapshot
