@@ -374,6 +374,144 @@ def verify_network_policy(
         raise ValueError("live NetworkPolicy DNS/database rules do not equal the canonical policy")
 
 
+def _selector_matches(selector: dict[str, Any], labels: dict[str, str]) -> bool:
+    """Evaluate the NetworkPolicy LabelSelector subset used by this boundary."""
+
+    if set(selector) - {"matchLabels", "matchExpressions"}:
+        raise ValueError("NetworkPolicy pod selector contains unsupported fields")
+    match_labels = selector.get("matchLabels", {})
+    expressions = selector.get("matchExpressions", [])
+    if not isinstance(match_labels, dict) or not isinstance(expressions, list):
+        raise ValueError("NetworkPolicy pod selector is malformed")
+    if any(not isinstance(key, str) or not isinstance(value, str) for key, value in match_labels.items()):
+        raise ValueError("NetworkPolicy matchLabels must contain strings")
+    if any(labels.get(key) != value for key, value in match_labels.items()):
+        return False
+    for expression in expressions:
+        if not isinstance(expression, dict) or set(expression) - {"key", "operator", "values"}:
+            raise ValueError("NetworkPolicy matchExpression is malformed")
+        key = expression.get("key")
+        operator = expression.get("operator")
+        values = expression.get("values", [])
+        if not isinstance(key, str) or not isinstance(operator, str) or not isinstance(values, list):
+            raise ValueError("NetworkPolicy matchExpression fields are invalid")
+        if any(not isinstance(value, str) for value in values):
+            raise ValueError("NetworkPolicy matchExpression values must be strings")
+        present = key in labels
+        if operator == "In":
+            matches = present and labels[key] in values and bool(values)
+        elif operator == "NotIn":
+            matches = present and labels[key] not in values and bool(values)
+        elif operator == "Exists":
+            matches = present and not values
+        elif operator == "DoesNotExist":
+            matches = not present and not values
+        else:
+            raise ValueError("NetworkPolicy matchExpression operator is unsupported")
+        if not matches:
+            return False
+    return True
+
+
+def _canonical_egress_rules(
+    expected_cidrs: list[str], expected_kubernetes_api_cidrs: list[str]
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "to": [
+                {
+                    "namespaceSelector": {
+                        "matchLabels": {"kubernetes.io/metadata.name": "kube-system"}
+                    },
+                    "podSelector": {
+                        "matchLabels": {
+                            "app.kubernetes.io/instance": "coredns",
+                            "app.kubernetes.io/name": "coredns",
+                            "k8s-app": "coredns",
+                        }
+                    },
+                }
+            ],
+            "ports": [
+                {"port": 53, "protocol": "UDP"},
+                {"port": 53, "protocol": "TCP"},
+            ],
+        },
+        {
+            "to": [
+                {
+                    "namespaceSelector": {
+                        "matchLabels": {"kubernetes.io/metadata.name": "fs2-data"}
+                    },
+                    "podSelector": {"matchLabels": {"cnpg.io/cluster": "fs2-control-db"}},
+                }
+            ],
+            "ports": [{"port": 5432, "protocol": "TCP"}],
+        },
+        {
+            "to": [{"ipBlock": {"cidr": cidr}} for cidr in expected_cidrs],
+            "ports": [{"port": 443, "protocol": "TCP"}],
+        },
+        {
+            "to": [{"ipBlock": {"cidr": cidr}} for cidr in expected_kubernetes_api_cidrs],
+            "ports": [{"port": 443, "protocol": "TCP"}],
+        },
+    ]
+
+
+def verify_effective_network_policies(
+    policies: list[dict[str, Any]],
+    pod_labels: dict[str, str],
+    expected_cidrs: list[str],
+    expected_kubernetes_api_cidrs: list[str],
+) -> None:
+    """Prove the effective egress union of every policy selecting one pod.
+
+    Kubernetes unions the allowed egress of all selecting policies. Checking a
+    single canonical object therefore misses a retained or independently
+    managed policy that widens the same pod. Every observed rule must be a
+    member of the canonical set and the effective union must equal that set.
+    """
+
+    if not policies or not pod_labels:
+        raise ValueError("effective NetworkPolicy verification needs policies and pod labels")
+    canonical = _canonical_egress_rules(expected_cidrs, expected_kubernetes_api_cidrs)
+    canonical_by_digest = {_canonical(rule): rule for rule in canonical}
+    effective: dict[bytes, dict[str, Any]] = {}
+    selected = 0
+    exact_selector = 0
+    for policy in policies:
+        if not isinstance(policy, dict):
+            raise ValueError("NetworkPolicy list contains a non-object")
+        spec = policy.get("spec", {})
+        selector = spec.get("podSelector")
+        if not isinstance(selector, dict):
+            raise ValueError("NetworkPolicy is missing a pod selector")
+        if not _selector_matches(selector, pod_labels):
+            continue
+        selected += 1
+        if selector == {"matchLabels": pod_labels}:
+            exact_selector += 1
+        policy_types = spec.get("policyTypes", [])
+        rules = spec.get("egress", [])
+        if not isinstance(policy_types, list) or not isinstance(rules, list):
+            raise ValueError("selecting NetworkPolicy has malformed policyTypes or egress")
+        isolates_egress = "Egress" in policy_types or bool(rules)
+        if not isolates_egress:
+            continue
+        for rule in rules:
+            if not isinstance(rule, dict) or not rule.get("to"):
+                raise ValueError("every selecting egress rule must have explicit destinations")
+            digest = _canonical(rule)
+            if digest not in canonical_by_digest:
+                raise ValueError("a selecting NetworkPolicy widens the canonical egress set")
+            effective[digest] = rule
+    if selected == 0 or exact_selector != 1:
+        raise ValueError("exactly one generation policy must select the reconciler labels exactly")
+    if set(effective) != set(canonical_by_digest):
+        raise ValueError("effective selecting NetworkPolicy union differs from the canonical egress set")
+
+
 def _private_key(path: Path) -> Ed25519PrivateKey:
     value = serialization.load_pem_private_key(safe_read(path, maximum=16 * 1024), password=None)
     if not isinstance(value, Ed25519PrivateKey):
@@ -388,7 +526,7 @@ def _public_key(value: bytes | str) -> Ed25519PublicKey:
     return key
 
 
-def _cluster_network_policy(namespace: str, name: str) -> dict[str, Any]:
+def _cluster_network_request(path: str, label: str) -> dict[str, Any]:
     host = os.environ.get("KUBERNETES_SERVICE_HOST")
     port = os.environ.get("KUBERNETES_SERVICE_PORT_HTTPS", "443")
     if host is None:
@@ -396,7 +534,7 @@ def _cluster_network_policy(namespace: str, name: str) -> dict[str, Any]:
     token = Path("/var/run/secrets/kubernetes.io/serviceaccount/token").read_text(encoding="ascii")
     ca = Path("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt").read_text(encoding="ascii")
     context = ssl.create_default_context(cadata=ca)
-    url = f"https://{host}:{port}/apis/networking.k8s.io/v1/namespaces/{namespace}/networkpolicies/{name}"
+    url = f"https://{host}:{port}{path}"
     request = urllib.request.Request(  # noqa: S310 - exact in-cluster HTTPS authority
         url,
         headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
@@ -405,13 +543,31 @@ def _cluster_network_policy(namespace: str, name: str) -> dict[str, Any]:
         with urllib.request.urlopen(request, context=context, timeout=10) as response:  # noqa: S310
             payload = response.read(MAX_FILE_BYTES + 1)
     except (OSError, urllib.error.URLError) as exc:
-        raise ValueError("live NetworkPolicy could not be read") from exc
+        raise ValueError(f"live {label} could not be read") from exc
     if len(payload) > MAX_FILE_BYTES:
-        raise ValueError("live NetworkPolicy response exceeds its bound")
-    policy = _json_bytes(payload, "live NetworkPolicy")
-    if not isinstance(policy, dict):
-        raise ValueError("live NetworkPolicy must be an object")
-    return policy
+        raise ValueError(f"live {label} response exceeds its bound")
+    value = _json_bytes(payload, f"live {label}")
+    if not isinstance(value, dict):
+        raise ValueError(f"live {label} must be an object")
+    return value
+
+
+def _cluster_network_policy(namespace: str, name: str) -> dict[str, Any]:
+    return _cluster_network_request(
+        f"/apis/networking.k8s.io/v1/namespaces/{namespace}/networkpolicies/{name}",
+        "NetworkPolicy",
+    )
+
+
+def _cluster_network_policies(namespace: str) -> list[dict[str, Any]]:
+    value = _cluster_network_request(
+        f"/apis/networking.k8s.io/v1/namespaces/{namespace}/networkpolicies",
+        "NetworkPolicyList",
+    )
+    items = value.get("items")
+    if not isinstance(items, list):
+        raise ValueError("live NetworkPolicyList items are invalid")
+    return items
 
 
 def main() -> int:
@@ -424,6 +580,8 @@ def main() -> int:
     parser.add_argument("--expected-cidrs", type=Path)
     parser.add_argument("--expected-kubernetes-api-cidrs", type=Path)
     parser.add_argument("--kubernetes-network-policy", nargs=2, metavar=("NAMESPACE", "NAME"))
+    parser.add_argument("--kubernetes-network-policy-set", metavar="NAMESPACE")
+    parser.add_argument("--pod-label", action="append", default=[])
     parser.add_argument("--terraform-external", action="store_true")
     args = parser.parse_args()
     try:
@@ -442,6 +600,19 @@ def main() -> int:
             query = json.load(sys.stdin)
             contract = json.loads(query["contract_json"])
             result = verify_contract(contract, _public_key(query["public_key_pem"]))
+            if "network_policies_json" in query:
+                policies = json.loads(query["network_policies_json"])
+                pod_labels = json.loads(query["pod_labels_json"])
+                kubernetes_api_cidrs = json.loads(query["kubernetes_api_cidrs_json"])
+                if not isinstance(policies, list) or not isinstance(pod_labels, dict):
+                    raise ValueError("Terraform effective-policy inputs are malformed")
+                verify_effective_network_policies(
+                    policies,
+                    pod_labels,
+                    contract["cidrs"],
+                    kubernetes_api_cidrs,
+                )
+                result["effective_policy_verified"] = "true"
             print(json.dumps(result, sort_keys=True))
             return 0
         if args.contract is None or args.public_key is None:
@@ -472,6 +643,23 @@ def main() -> int:
         if args.kubernetes_network_policy is not None:
             verify_network_policy(
                 _cluster_network_policy(*args.kubernetes_network_policy),
+                contract["cidrs"],
+                expected_kubernetes_api_cidrs,
+            )
+        if args.kubernetes_network_policy_set is not None:
+            if expected_kubernetes_api_cidrs is None:
+                raise ValueError("effective policy verification requires Kubernetes API CIDRs")
+            pod_labels: dict[str, str] = {}
+            for item in args.pod_label:
+                if "=" not in item:
+                    raise ValueError("--pod-label requires key=value")
+                key, value = item.split("=", 1)
+                if not key or not value or key in pod_labels:
+                    raise ValueError("--pod-label entries must be unique non-empty key=value pairs")
+                pod_labels[key] = value
+            verify_effective_network_policies(
+                _cluster_network_policies(args.kubernetes_network_policy_set),
+                pod_labels,
                 contract["cidrs"],
                 expected_kubernetes_api_cidrs,
             )

@@ -15,11 +15,6 @@ customerStorage:
   egressCidrs: []
   kubernetesApiCidrs: []
   egressContractSha256: ""
-  egressGeneration: ""
-  egressContractConfigMapName: ""
-  egressTrustConfigMapName: ""
-  egressNetworkPolicyName: ""
-  egressBoundaryPolicyName: ""
   keyTtlDays: 90
   rotationWindowDays: 14
   actionTimeoutSeconds: 30

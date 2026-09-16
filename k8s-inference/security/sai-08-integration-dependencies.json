@@ -1,0 +1,18 @@
+{
+  "schema": "fs2-serve.nebius.ai/sai-08-integration-dependencies/v1",
+  "status": "blocked",
+  "dependencies": {
+    "sai_10_accepted_commit": null,
+    "sai_10_independent_review_receipt_sha256": null,
+    "provider_authority_registry_approval_sha256": null,
+    "provider_project_iam_inventory_receipt_sha256": null,
+    "live_predecessor_compatibility_handoff_sha256": null
+  },
+  "requirements": [
+    "accepted SAI-10 lineage with customer-storage cipher and name key generations",
+    "root-owned provider authority registry approved outside workloads state",
+    "provider-native exact project IAM inventory proving no unlisted mutator",
+    "read-only live digest handoff for every fixed predecessor object",
+    "create-only provider and Kubernetes security plans with zero delete or replace"
+  ]
+}

@@ -38,6 +38,34 @@ variable "workloads_kube_context" {
   }
 }
 
+variable "non_owner_identities" {
+  description = "Every human, release, break-glass and other credential able to reach this cluster."
+  type = map(object({
+    kubeconfig_path = string
+    kube_context    = string
+    username        = string
+    category        = string
+  }))
+
+  validation {
+    condition = (
+      length(var.non_owner_identities) >= 4 &&
+      toset([for identity in values(var.non_owner_identities) : identity.category]) == toset(["release", "human", "break-glass", "other"]) &&
+      alltrue([
+        for name, identity in var.non_owner_identities :
+        can(regex("^[a-z0-9][a-z0-9-]{0,62}$", name)) &&
+        name != "workloads" &&
+        contains(["release", "human", "break-glass", "other"], identity.category) &&
+        startswith(identity.kubeconfig_path, "/") &&
+        !strcontains(identity.kubeconfig_path, "..") &&
+        identity.kube_context != "" &&
+        identity.username != ""
+      ])
+    )
+    error_message = "Enumerate every distinct release, human, break-glass and other identity with a category and absolute private kubeconfig."
+  }
+}
+
 variable "security_owner_group" {
   description = "Authenticated group that alone may add protected customer-storage egress objects."
   type        = string
@@ -46,6 +74,73 @@ variable "security_owner_group" {
   validation {
     condition     = var.security_owner_group == "fs2:customer-storage-egress-security-owner"
     error_message = "The customer-storage boundary uses the dedicated fixed security-owner group."
+  }
+}
+
+variable "provider_authority" {
+  description = "Exact handoff from the independently approved Nebius VPC/node authority root."
+  type = object({
+    schema                                        = string
+    generation                                    = string
+    authority_manifest_sha256                     = string
+    contract_sha256                               = string
+    predecessor_compatibility_sha256              = string
+    security_group_id                             = string
+    node_group_id                                 = string
+    node_selector_key                             = string
+    node_selector_value                           = string
+    taint_key                                     = string
+    taint_value                                   = string
+    taint_effect                                  = string
+    provider_api_cidrs                            = list(string)
+    kubernetes_api_cidrs                          = list(string)
+    authority_service_account_sha256              = string
+    provider_identity_sha256                      = string
+    kubernetes_security_owner_sha256              = string
+    kubernetes_workloads_sha256                   = string
+    kubernetes_non_owner_subjects_sha256          = string
+    provider_project_iam_inventory_receipt_sha256 = string
+    workloads_service_account_sha256              = string
+    release_service_accounts_sha256               = string
+    human_principals_sha256                       = string
+  })
+
+  validation {
+    condition = (
+      var.provider_authority.schema == "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v1" &&
+      can(regex("^g[0-9]{14}-[a-f0-9]{12}$", var.provider_authority.generation)) &&
+      can(regex("^[a-f0-9]{64}$", var.provider_authority.authority_manifest_sha256)) &&
+      can(regex("^[a-f0-9]{64}$", var.provider_authority.contract_sha256)) &&
+      can(regex("^[a-f0-9]{64}$", var.provider_authority.predecessor_compatibility_sha256)) &&
+      can(regex("^vpcsecuritygroup-[a-z0-9]+$", var.provider_authority.security_group_id)) &&
+      can(regex("^mk8snodegroup-[a-z0-9]+$", var.provider_authority.node_group_id)) &&
+      var.provider_authority.node_selector_key == "workload.fs2.nebius/customer-storage-egress" &&
+      var.provider_authority.node_selector_value == var.provider_authority.generation &&
+      var.provider_authority.taint_key == var.provider_authority.node_selector_key &&
+      var.provider_authority.taint_value == var.provider_authority.generation &&
+      var.provider_authority.taint_effect == "NoSchedule" &&
+      length(var.provider_authority.provider_api_cidrs) > 0 &&
+      length(var.provider_authority.kubernetes_api_cidrs) > 0 &&
+      alltrue([
+        for cidr in concat(var.provider_authority.provider_api_cidrs, var.provider_authority.kubernetes_api_cidrs) :
+        can(regex("^([0-9]{1,3}\\.){3}[0-9]{1,3}/32$|^[0-9A-Fa-f:]+/128$", cidr))
+      ]) &&
+      alltrue([
+        for digest in [
+          var.provider_authority.authority_service_account_sha256,
+          var.provider_authority.provider_identity_sha256,
+          var.provider_authority.kubernetes_security_owner_sha256,
+          var.provider_authority.kubernetes_workloads_sha256,
+          var.provider_authority.kubernetes_non_owner_subjects_sha256,
+          var.provider_authority.provider_project_iam_inventory_receipt_sha256,
+          var.provider_authority.workloads_service_account_sha256,
+          var.provider_authority.release_service_accounts_sha256,
+          var.provider_authority.human_principals_sha256,
+        ] : can(regex("^[a-f0-9]{64}$", digest))
+      ]) &&
+      var.provider_authority.authority_service_account_sha256 != var.provider_authority.workloads_service_account_sha256
+    )
+    error_message = "provider_authority must be the exact provider-enforced, identity-separated VPC/node handoff."
   }
 }
 

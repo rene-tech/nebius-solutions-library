@@ -89,6 +89,58 @@ def test_customer_bucket_lifecycle_never_authorizes_object_deletion():
     assert rules["abort-incomplete-multipart-uploads"].abort_incomplete_multipart_upload.days_after_initiation == 7
 
 
+async def test_existing_unrelated_lifecycle_rule_is_preserved_but_forced_disabled():
+    provider = naming_provider()
+    legacy = provider.name("bucket", "kopra", "")
+    unrelated = storage.LifecycleRule(
+        id="operator-created-expiry",
+        status=storage.LifecycleRule__Status.ENABLED,
+        noncurrent_version_expiration=storage.LifecycleNoncurrentVersionExpiration(
+            newer_noncurrent_versions=1,
+            noncurrent_days=1,
+        ),
+    )
+    bucket = storage.Bucket(
+        metadata=ResourceMetadata(
+            id="bucket-same",
+            parent_id="project-test",
+            name=legacy,
+            resource_version=7,
+            labels={"fs2-storage-owner": legacy},
+        ),
+        spec=storage.BucketSpec(
+            max_size_bytes=5_000_000_000,
+            versioning_policy=storage.VersioningPolicy.ENABLED,
+            # Include the already-canonical managed rules so the update is
+            # required solely because the unfamiliar rule is active.
+            lifecycle_configuration=storage.LifecycleConfiguration(
+                rules=[unrelated, *provider.lifecycle().rules]
+            ),
+        ),
+    )
+    provider.groups = SimpleNamespace()
+    provider._named = AsyncMock(return_value=SimpleNamespace(metadata=SimpleNamespace(id="group-same")))
+    provider._operation = AsyncMock(return_value="bucket-same")
+    provider.buckets = SimpleNamespace(get=AsyncMock(return_value=bucket), update=Mock())
+
+    await provider.ensure_bucket(
+        "kopra",
+        "",
+        5_000_000_000,
+        existing={"bucket_id": "bucket-same", "group_id": "group-same"},
+    )
+
+    request = provider.buckets.update.call_args.args[0]
+    rules = {rule.id: rule for rule in request.spec.lifecycle_configuration.rules}
+    assert set(rules) == {
+        "operator-created-expiry",
+        "expire-noncurrent-versions",
+        "abort-incomplete-multipart-uploads",
+    }
+    assert all(rule.status == storage.LifecycleRule__Status.DISABLED for rule in rules.values())
+    assert rules["operator-created-expiry"].noncurrent_version_expiration.noncurrent_days == 1
+
+
 async def test_existing_bucket_quota_change_preserves_immutable_name_and_iam_identity():
     provider = naming_provider()
     legacy = provider.name("bucket", "kopra", "")

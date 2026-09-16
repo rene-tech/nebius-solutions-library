@@ -24,6 +24,42 @@ locals {
     for generation in var.boundary_generations :
     generation => "fs2-customer-storage-egress-boundary-${generation}"
   }
+
+  # The externally signed provider-authority ledger commits this digest. The
+  # Kubernetes root therefore cannot substitute a different predecessor or
+  # alter the fixed selector compatibility rule during an additive handoff.
+  predecessor_compatibility = {
+    schema            = "fs2-serve.nebius.ai/customer-storage-egress-predecessor/v1"
+    namespace         = local.namespace
+    predecessor_label = "storage-reconciler"
+    successor_label   = "storage-reconciler-v2"
+    deployment = {
+      name        = data.kubernetes_resource.predecessor_deployment.object.metadata.name
+      uid         = data.kubernetes_resource.predecessor_deployment.object.metadata.uid
+      spec_sha256 = sha256(jsonencode(data.kubernetes_resource.predecessor_deployment.object.spec))
+    }
+    network_policy = {
+      name        = data.kubernetes_resource.predecessor_network_policy.object.metadata.name
+      uid         = data.kubernetes_resource.predecessor_network_policy.object.metadata.uid
+      spec_sha256 = sha256(jsonencode(data.kubernetes_resource.predecessor_network_policy.object.spec))
+    }
+    contract = {
+      name        = data.kubernetes_resource.predecessor_contract.object.metadata.name
+      uid         = data.kubernetes_resource.predecessor_contract.object.metadata.uid
+      data_sha256 = sha256(jsonencode(data.kubernetes_resource.predecessor_contract.object.data))
+    }
+    policy = {
+      name        = data.kubernetes_resource.predecessor_policy.object.metadata.name
+      uid         = data.kubernetes_resource.predecessor_policy.object.metadata.uid
+      spec_sha256 = sha256(jsonencode(data.kubernetes_resource.predecessor_policy.object.spec))
+    }
+    binding = {
+      name        = data.kubernetes_resource.predecessor_binding.object.metadata.name
+      uid         = data.kubernetes_resource.predecessor_binding.object.metadata.uid
+      spec_sha256 = sha256(jsonencode(data.kubernetes_resource.predecessor_binding.object.spec))
+    }
+  }
+  predecessor_compatibility_sha256 = sha256(jsonencode(local.predecessor_compatibility))
 }
 
 data "external" "current_contract" {
@@ -60,23 +96,92 @@ data "external" "identity_separation" {
     workloads_kubeconfig_path      = var.workloads_kubeconfig_path
     workloads_kube_context         = var.workloads_kube_context
     security_owner_group           = var.security_owner_group
+    non_owner_identities_json      = jsonencode(var.non_owner_identities)
+    protected_names_json = jsonencode({
+      boundary_policy = local.boundary_policy_names[var.current_boundary_generation]
+      contract        = local.contract_names[var.current_generation]
+      trust           = local.trust_names[local.current_contract.trust_generation]
+      network_policy  = local.network_policy_names[var.current_generation]
+      namespace       = local.namespace
+    })
+  }
+}
+
+# Read the fixed predecessor objects exactly as compatibility inputs. They are
+# never imported, changed or deleted by this root. Their UIDs and content
+# digests make the additive handoff prove which live boundary remains active.
+data "kubernetes_resource" "predecessor_network_policy" {
+  api_version = "networking.k8s.io/v1"
+  kind        = "NetworkPolicy"
+  metadata {
+    name      = "fs2-serve-control-plane-storage-reconciler"
+    namespace = local.namespace
+  }
+}
+
+data "kubernetes_resource" "predecessor_contract" {
+  api_version = "v1"
+  kind        = "ConfigMap"
+  metadata {
+    name      = "fs2-customer-storage-egress-contract"
+    namespace = local.namespace
+  }
+}
+
+data "kubernetes_resource" "predecessor_policy" {
+  api_version = "admissionregistration.k8s.io/v1"
+  kind        = "ValidatingAdmissionPolicy"
+  metadata { name = "fs2-customer-storage-egress" }
+}
+
+data "kubernetes_resource" "predecessor_binding" {
+  api_version = "admissionregistration.k8s.io/v1"
+  kind        = "ValidatingAdmissionPolicyBinding"
+  metadata { name = "fs2-customer-storage-egress" }
+}
+
+data "kubernetes_resource" "predecessor_deployment" {
+  api_version = "apps/v1"
+  kind        = "Deployment"
+  metadata {
+    name      = "fs2-serve-control-plane-storage-reconciler"
+    namespace = local.namespace
   }
 }
 
 resource "terraform_data" "separate_security_owner" {
   input = {
-    current_generation          = var.current_generation
-    current_boundary_generation = var.current_boundary_generation
-    current_contract_sha256     = data.external.current_contract.result.contract_sha256
-    security_owner_group        = var.security_owner_group
-    security_owner_subject      = data.external.identity_separation.result.security_owner_subject_sha256
-    workloads_subject           = data.external.identity_separation.result.workloads_subject_sha256
+    current_generation             = var.current_generation
+    current_boundary_generation    = var.current_boundary_generation
+    current_contract_sha256        = data.external.current_contract.result.contract_sha256
+    security_owner_group           = var.security_owner_group
+    security_owner_subject         = data.external.identity_separation.result.security_owner_subject_sha256
+    workloads_subject              = data.external.identity_separation.result.workloads_subject_sha256
+    non_owner_inventory            = data.external.identity_separation.result.non_owner_inventory_sha256
+    provider_authority_generation  = var.provider_authority.generation
+    provider_authority_manifest    = var.provider_authority.authority_manifest_sha256
+    predecessor_compatibility      = local.predecessor_compatibility_sha256
+    provider_security_group_id     = var.provider_authority.security_group_id
+    provider_node_group_id         = var.provider_authority.node_group_id
+    predecessor_network_policy_uid = data.kubernetes_resource.predecessor_network_policy.object.metadata.uid
+    predecessor_contract_uid       = data.kubernetes_resource.predecessor_contract.object.metadata.uid
+    predecessor_policy_uid         = data.kubernetes_resource.predecessor_policy.object.metadata.uid
+    predecessor_binding_uid        = data.kubernetes_resource.predecessor_binding.object.metadata.uid
+    predecessor_deployment_uid     = data.kubernetes_resource.predecessor_deployment.object.metadata.uid
   }
 
   lifecycle {
     precondition {
       condition     = data.external.identity_separation.result.authorized == "true"
       error_message = "Live identity preflight did not prove an external owner and non-mutating workloads authority."
+    }
+    precondition {
+      condition = (
+        data.external.identity_separation.result.security_owner_subject_sha256 == var.provider_authority.kubernetes_security_owner_sha256 &&
+        data.external.identity_separation.result.workloads_subject_sha256 == var.provider_authority.kubernetes_workloads_sha256 &&
+        data.external.identity_separation.result.non_owner_inventory_sha256 == var.provider_authority.kubernetes_non_owner_subjects_sha256
+      )
+      error_message = "Kubernetes owner, workloads, release, human, break-glass or other identity inventory differs from the root-owned provider registry."
     }
     precondition {
       condition = (
@@ -103,6 +208,27 @@ resource "terraform_data" "separate_security_owner" {
     precondition {
       condition     = data.external.current_contract.result.contract_sha256 == local.contract_digests[var.current_generation]
       error_message = "The current signed-contract verifier and immutable object digest differ."
+    }
+    precondition {
+      condition = (
+        var.provider_authority.contract_sha256 == data.external.current_contract.result.contract_sha256 &&
+        var.provider_authority.provider_api_cidrs == jsondecode(data.external.current_contract.result.cidrs_json) &&
+        var.provider_authority.kubernetes_api_cidrs == sort(tolist(local.current_contract.kubernetes_api_cidrs))
+      )
+      error_message = "The Kubernetes defense-in-depth generation must equal the external provider route contract."
+    }
+    precondition {
+      condition = (
+        try(data.kubernetes_resource.predecessor_binding.object.spec.policyName, "") == "fs2-customer-storage-egress" &&
+        try(data.kubernetes_resource.predecessor_binding.object.spec.validationActions, []) == ["Deny"] &&
+        try(data.kubernetes_resource.predecessor_network_policy.object.spec.podSelector.matchLabels["app.kubernetes.io/component"], "") == "storage-reconciler" &&
+        try(data.kubernetes_resource.predecessor_deployment.object.spec.selector.matchLabels["app.kubernetes.io/component"], "") == "storage-reconciler"
+      )
+      error_message = "The fixed predecessor boundary is absent or is not the exact compatibility selector."
+    }
+    precondition {
+      condition     = local.predecessor_compatibility_sha256 == var.provider_authority.predecessor_compatibility_sha256
+      error_message = "The retained predecessor objects differ from the compatibility digest in the externally signed provider authority ledger."
     }
   }
 }
@@ -165,12 +291,14 @@ resource "kubernetes_manifest" "boundary_policy" {
           "request.name.startsWith('fs2-customer-storage-egress-')) ||",
           "(request.resource.group == 'networking.k8s.io' && request.namespace == '${local.namespace}' &&",
           "(request.operation == 'DELETE' ?",
-          "(!has(oldObject.spec.podSelector.matchLabels) ||",
-          "!('app.kubernetes.io/component' in oldObject.spec.podSelector.matchLabels) ||",
-          "oldObject.spec.podSelector.matchLabels['app.kubernetes.io/component'] == 'storage-reconciler') :",
-          "(!has(object.spec.podSelector.matchLabels) ||",
-          "!('app.kubernetes.io/component' in object.spec.podSelector.matchLabels) ||",
-          "object.spec.podSelector.matchLabels['app.kubernetes.io/component'] == 'storage-reconciler')))",
+          "(oldObject.metadata.name.startsWith('fs2-customer-storage-egress-g') ||",
+          "(has(oldObject.spec.podSelector.matchLabels) &&",
+          "'app.kubernetes.io/component' in oldObject.spec.podSelector.matchLabels &&",
+          "oldObject.spec.podSelector.matchLabels['app.kubernetes.io/component'] == 'storage-reconciler-v2')) :",
+          "(object.metadata.name.startsWith('fs2-customer-storage-egress-g') ||",
+          "(has(object.spec.podSelector.matchLabels) &&",
+          "'app.kubernetes.io/component' in object.spec.podSelector.matchLabels &&",
+          "object.spec.podSelector.matchLabels['app.kubernetes.io/component'] == 'storage-reconciler-v2'))))",
         ])
       }]
       validations = [
@@ -314,7 +442,7 @@ resource "kubernetes_network_policy_v1" "contract" {
       match_labels = {
         "app.kubernetes.io/name"                  = "fs2-serve-control-plane"
         "app.kubernetes.io/instance"              = "fs2-serve-control-plane"
-        "app.kubernetes.io/component"             = "storage-reconciler"
+        "app.kubernetes.io/component"             = "storage-reconciler-v2"
         "fs2.nebius.ai/storage-egress-generation" = each.key
       }
     }

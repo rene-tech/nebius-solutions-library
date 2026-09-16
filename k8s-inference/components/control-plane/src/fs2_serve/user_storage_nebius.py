@@ -230,9 +230,20 @@ class NebiusUserStorage:
         managed_lifecycle = self.lifecycle()
         managed_ids = {rule.id for rule in managed_lifecycle.rules}
         current_lifecycle = bucket.spec.lifecycle_configuration
-        desired_rules = [rule for rule in current_lifecycle.rules if rule.id not in managed_ids]
+        current_rules_repr = repr(current_lifecycle.rules)
+        # No customer-object deletion policy is authorized. Preserve every
+        # discovered rule and all of its provider-specific fields, but force
+        # it disabled. This is intentionally broader than the two historical
+        # rule IDs: an operator-created or provider-created expiry rule must
+        # never survive reconciliation merely because its name is unfamiliar.
+        desired_rules = []
+        for rule in current_lifecycle.rules:
+            if rule.id in managed_ids:
+                continue
+            rule.status = storage.LifecycleRule__Status.DISABLED
+            desired_rules.append(rule)
         desired_rules.extend(managed_lifecycle.rules)
-        if repr(current_lifecycle.rules) != repr(desired_rules):
+        if current_rules_repr != repr(desired_rules):
             current_lifecycle.rules = desired_rules
             bucket.spec.lifecycle_configuration = current_lifecycle
             needs_update = True

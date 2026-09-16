@@ -25,14 +25,17 @@ only the public halves of expiring JWT keys. Private keys must be generated and
 rotated outside Terraform; they must never enter a plan or state file. The
 reconciler's HTTPS egress is derived from a signed, 24-hour provider endpoint
 resolution contract and rendered only as IPv4 `/32` and IPv6 `/128` host
-routes. A separately credentialed security-owner Terraform root owns the
-admission boundary and immutable, generation-named contract, trust, and
-NetworkPolicy objects. The ordinary workloads root and Helm release can only
-read and select that exact handoff. Contract rotations add a new generation;
-old generations remain intact and cannot be deleted by either root. The
-reconciler verifies the signed bytes, freshness, live DNS, and exact live
-NetworkPolicy before readiness. Public runtime NetworkPolicies do not contain a
-customer-storage HTTPS exception.
+routes. The canonical enforcement is outside Kubernetes: the separately
+approved `security/customer-storage-egress-authority` root creates a dedicated
+tainted node group whose only VPC security group has the signed provider/API
+routes and no default-route egress. Its root-owned trust registry pins the full
+human, release, workloads and owner identity inventory plus the approved,
+hash-chained generation ledger. A second security-owner root adds immutable,
+generation-named contract, trust and NetworkPolicy objects as defense in depth.
+The reconciler verifies the signed bytes, freshness, live DNS, and the effective
+union of every NetworkPolicy selecting its full label set before readiness.
+Public runtime NetworkPolicies do not contain a customer-storage HTTPS
+exception.
 
 New installations default to per-user buckets. The immutable layout and its
 emergency enabled switch are separate: an existing layout can be disabled and
@@ -42,8 +45,10 @@ layouts with multiple principals, marks them `inventory_required`, and disables
 them. They are not represented as isolated until their object ownership has
 been mapped and migrated. Each bucket has versioning enabled. The historical
 rules for expiring noncurrent versions after 30 days and aborting multipart
-uploads after seven days are present only as disabled rules. They must not be
-enabled without a separate customer-data retention and deletion authorization.
+uploads after seven days are present only as disabled rules. Reconciliation
+also preserves every unfamiliar existing lifecycle rule and forces it disabled;
+no rule name can bypass the no-deletion default. Rules must not be enabled
+without a separate customer-data retention and deletion authorization.
 
 New bucket names are opaque keyed identifiers; tenant and user slugs are not
 published through provider bucket listings. Existing bucket names remain
@@ -104,31 +109,41 @@ uv run --project components/control-plane python \
   > customer-storage-egress-contract.json
 ```
 
-Before planning workloads, a separately approved operator applies
-`security/customer-storage-egress-boundary` with a dedicated security-owner
-kubeconfig. Its append-only `current_handoff` output supplies the exact values
-above. Neither the workloads Terraform identity nor Helm owns the admission
-policy, binding, trust ConfigMap, contract ConfigMap, or NetworkPolicy. The
-workloads plan reads all five and rejects missing, mutable, empty, aggregate,
-arbitrary, expired, incorrectly signed, DNS-stale, or non-equal generations.
-After rollout, run the same verifier with `--contract`, `--public-key`, and a
-JSON copy of the live `NetworkPolicy` via `--network-policy`; equality and exact
-TCP/443 are required.
+Before any Kubernetes change, a separately approved provider-security operator
+applies `security/customer-storage-egress-authority`. It accepts only the
+root-owned registry and its exact signed ledger, then returns the dedicated VPC
+security-group/node-group handoff. The Kubernetes security operator passes that
+handoff to `security/customer-storage-egress-boundary`. The ordinary workloads
+identity owns neither root. The workloads plan rejects missing, mutable, empty,
+aggregate, arbitrary, expired, incorrectly signed, DNS-stale, or non-equal
+generations and rejects any widening policy in the effective selecting union.
 
-Contract rotation is overlap-only: add a trust generation if needed, add a
-contract and NetworkPolicy generation, then point a later workload revision at
-the new handoff. Never remove an older map entry or use targeted replacement.
-Old pods keep their exact generation label and old security-owned policy;
-new pods select only the new policy. A rollback may reuse a retained generation
-only while its signed contract remains fresh. Otherwise the security owner must
-add a fresh contract/policy generation and the operator must deploy the prior
-application version with that new handoff. A raw rollback whose old contract is
-expired, or whose chart attempts to regain policy ownership, fails closed; it
-never deletes or recreates an immutable object.
+The first migration is compatibility-first. The fixed predecessor Deployment,
+NetworkPolicy, ConfigMap, VAP and binding remain unchanged. Terraform uses
+`removed { destroy = false }` handoffs for the three formerly managed fixed
+objects. The additive chart
+`charts/security/customer-storage-reconciler-v2` creates a distinct,
+generation-named Deployment with component `storage-reconciler-v2`; the fixed
+VAP therefore does not match or reject its generation NetworkPolicy. The exact
+fixed object UIDs and content digests form a compatibility receipt whose digest
+is committed by the signed external provider-authority generation. Both reconcilers
+may overlap behind the existing durable locks. No fixed selector changes, and
+no retirement occurs during this handoff.
+
+Later contract or provider-route rotations are overlap-only. Add the signed
+generation and a separately named reconciler; never remove an older ledger/map
+entry or use target/replace. Every additive chart object carries Helm's `keep`
+policy. Rollback means adding a prior application version under a fresh retained
+authority generation, never uninstalling or deleting a generation.
 
 The two Secrets are supplied by the credential rotation system and each exposes
 only a `credentials.json` key to the reconciler. Do not manage their private
 contents in this module.
+
+The additive chart remains fail-closed until it receives an independently
+accepted SAI-10 commit and immutable review receipt. The rejected SAI-10 commit
+in this branch's preserved history and any unreviewed successor are not valid
+custody inputs.
 
 ### Existing-state adoption
 

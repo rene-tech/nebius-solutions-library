@@ -9,7 +9,7 @@ metadata:
 rules:
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
-    resourceNames: [{{ .Values.customerStorage.egressNetworkPolicyName | quote }}]
+    resourceNames: [{{ printf "%s-storage-reconciler" (include "fs2-serve.fullname" .) | quote }}]
     verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -50,8 +50,6 @@ spec:
         fs2.nebius.ai/image-digest: {{ .Values.image.digest | quote }}
         fs2.nebius.ai/secret-rollout-sha256: {{ dict "storage" .Values.secretRollout.storageGeneration | toJson | sha256sum | quote }}
         fs2.nebius.ai/storage-egress-cidrs-sha256: {{ .Values.customerStorage.egressCidrs | toJson | sha256sum | quote }}
-        fs2.nebius.ai/storage-egress-contract-sha256: {{ .Values.customerStorage.egressContractSha256 | quote }}
-        fs2.nebius.ai/storage-egress-boundary: {{ .Values.customerStorage.egressBoundaryPolicyName | quote }}
     spec:
       serviceAccountName: {{ include "fs2-serve.serviceAccountName" (dict "root" . "component" "storage") }}
       automountServiceAccountToken: false
@@ -76,11 +74,13 @@ spec:
             - /verify/contract.json
             - --public-key
             - /verify/public-key.pem
+            - --expected-cidrs
+            - /verify/cidrs.json
             - --expected-kubernetes-api-cidrs
             - /verify/kubernetes-api-cidrs.json
             - --kubernetes-network-policy
             - {{ .Release.Namespace | quote }}
-            - {{ .Values.customerStorage.egressNetworkPolicyName | quote }}
+            - {{ printf "%s-storage-reconciler" (include "fs2-serve.fullname" .) | quote }}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -88,7 +88,8 @@ spec:
           volumeMounts:
             - {name: egress-contract, mountPath: /verify/contract.json, subPath: contract.json, readOnly: true}
             - {name: egress-trust, mountPath: /verify/public-key.pem, subPath: public-key.pem, readOnly: true}
-            - {name: egress-contract, mountPath: /verify/kubernetes-api-cidrs.json, subPath: kubernetes-api-cidrs.json, readOnly: true}
+            - {name: egress-desired, mountPath: /verify/cidrs.json, subPath: cidrs.json, readOnly: true}
+            - {name: egress-desired, mountPath: /verify/kubernetes-api-cidrs.json, subPath: kubernetes-api-cidrs.json, readOnly: true}
             - {name: kubernetes-api, mountPath: /var/run/secrets/kubernetes.io/serviceaccount, readOnly: true}
       containers:
         - name: storage-reconciler
@@ -141,16 +142,21 @@ spec:
       volumes:
         - name: egress-contract
           configMap:
-            name: {{ .Values.customerStorage.egressContractConfigMapName | quote }}
+            name: fs2-customer-storage-egress-contract
             items:
               - {key: contract.json, path: contract.json}
-              - {key: kubernetes-api-cidrs.json, path: kubernetes-api-cidrs.json}
         - name: egress-trust
-          configMap:
-            name: {{ .Values.customerStorage.egressTrustConfigMapName | quote }}
+          secret:
+            secretName: fs2-customer-storage-egress-trust
             defaultMode: 0400
             items:
               - {key: public-key.pem, path: public-key.pem}
+        - name: egress-desired
+          configMap:
+            name: {{ include "fs2-serve.fullname" . }}-storage-egress-desired
+            items:
+              - {key: cidrs.json, path: cidrs.json}
+              - {key: kubernetes-api-cidrs.json, path: kubernetes-api-cidrs.json}
         - name: kubernetes-api
           projected:
             defaultMode: 0400

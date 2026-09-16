@@ -1117,9 +1117,10 @@ def test_storage_deployment_contract_isolated_from_public_runtime():
     assert "storage-reconciler" in deployment
     assert "resourceCredentialsSecretName" in deployment
     assert "iamCredentialsSecretName" in deployment
-    assert "egressNetworkPolicyName" in deployment
-    assert "customerStorage.egressCidrs" not in network
+    assert 'printf "%s-storage-reconciler"' in deployment
+    assert "customerStorage.egressCidrs" in network
     assert 'resource "kubernetes_network_policy_v1" "contract"' in security_boundary
+    assert '"app.kubernetes.io/component"             = "storage-reconciler-v2"' in security_boundary
     assert "prevent_destroy = true" in security_boundary
     assert "tls_private_key" not in module
     assert 'role        = "editor"' in module
