@@ -250,7 +250,7 @@ class _UpstreamCapture:
             error_detail=sanitize_error_detail(self.error_detail) or None if self.error_detail else None,
             query_string=redact_query(self.query_string, known_credentials=self.known_credentials),
             request_headers=redact_headers(self.request_headers, known_credentials=self.known_credentials),
-            response_headers=redact_response_headers(self.response_headers, known_credentials=self.known_credentials),
+            response_headers=redact_response_headers(self.response_headers),
             request_body=request,
             response_body=response,
             disconnected=self.disconnected,

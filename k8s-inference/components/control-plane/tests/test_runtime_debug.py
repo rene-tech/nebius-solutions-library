@@ -99,23 +99,22 @@ async def test_native_rejection_captures_exact_upstream_request_and_validation_r
     assert exchange.method == "POST" and exchange.endpoint == "/native/predict"
     assert exchange.http_status == status and exchange.error_type == "upstream_http_error"
     assert exchange.started_at <= exchange.completed_at
-    # The request (debugging target) is captured verbatim. The error response is
-    # fail-closed: structural fields (loc/type) are kept, but free-text detail (msg) is
-    # redacted (no free-text or reversible hash); only structure/numbers remain.
+    # The request (debugging target) is captured verbatim. The error response BODY is
+    # withheld entirely (no strings/numbers/keys) — the debugging signal is http_status +
+    # error_type, both kept above.
     assert exchange.request_body.data.encode() == request_body and exchange.request_body.complete
     assert exchange.response_body.complete and exchange.response_body.redacted
-    stored = exchange.response_body.data
-    assert "Field required" not in stored and "missing" not in stored and "[sha256:" not in stored
-    assert '"detail":[' in stored and '"[REDACTED]"' in stored  # key structure kept, string values redacted
+    assert exchange.response_body.data == "[REDACTED]"
+    assert "Field required" not in exchange.model_dump_json()
     assert exchange.request_body.observed_bytes == len(request_body)
     assert exchange.response_body.observed_bytes == len(error_body)
     assert not exchange.request_body.redacted
     assert dict(exchange.request_headers)["x-request-id"] == f"{operation.id}:1"
-    assert dict(exchange.response_headers)["content-type"] == "application/json"
+    assert dict(exchange.response_headers)["content-type"] == "application/json"  # base MIME kept
 
 
 @pytest.mark.asyncio
-async def test_success_capture_preserves_request_and_hashes_response_content(registry) -> None:
+async def test_success_capture_preserves_request_and_withholds_response_body(registry) -> None:
     request_body = '{"messages":[{"content":"synthetic café fixture"}]}\n'.encode()
     response_body = b'{ "choices": [{"message": {"content": "ok"}}], "usage": {"prompt_tokens": 3} }\n'
 
@@ -130,12 +129,12 @@ async def test_success_capture_preserves_request_and_hashes_response_content(reg
     assert result.usage.input_tokens == 3
     exchange = sink.exchanges[0]
     assert exchange.error_type is None and exchange.http_status == 200
-    # The request (debugging target) is kept verbatim; the response string values are
-    # redacted (free-text never stored), while numeric fields and structure are kept.
+    # The request (debugging target) is kept verbatim; the response body is withheld
+    # entirely (content strings AND numeric fields never stored).
     assert exchange.request_body.data.encode() == request_body
-    stored = exchange.response_body.data
     assert exchange.response_body.complete and exchange.response_body.redacted
-    assert '"content":"[REDACTED]"' in stored and '"prompt_tokens":3' in stored and '"content": "ok"' not in stored
+    assert exchange.response_body.data == "[REDACTED]"
+    assert "prompt_tokens" not in exchange.model_dump_json() and "ok" not in exchange.response_body.data
 
 
 @pytest.mark.asyncio

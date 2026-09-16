@@ -2,18 +2,17 @@
 
 Capture is off by default and, when enabled, is scoped, time-bounded and
 memory-bounded. Bodies are fail closed and asymmetric. The REQUEST body (the
-debugging target) is stored redacted within the store cap. A RESPONSE body is
-stored only when it is a COMPLETE, valid JSON document; anything unknown,
-malformed, incomplete, streaming or binary is withheld (a redaction marker). A
-stored response keeps only its structure, numbers and booleans: EVERY string value
-is redacted and dict entries with an unsafe key are dropped, so no arbitrary or
-opaque secret in a string value or key is ever stored (and no reversible or
-forgeable per-value hash is used). Response headers keep only an allowlist of safe
-protocol/cache values; every other response header value is redacted. A body over
-the store cap, or whose redaction expands past it, is withheld entirely rather than
-stored as a boundary-cut prefix, and a response is withheld when its matching
-request exceeded the cap. ``error_detail`` is a generic, payload-independent code
-only; the raw exception string is never stored.
+debugging target — the customer input) is stored credential-redacted within the
+store cap. The RESPONSE body is NEVER stored: any part of an untrusted response can
+carry an opaque secret — a string, a numeric value, an object key, or a
+binary/streaming payload — so no content allowlist can be trusted. The response body
+is withheld (a redaction marker); the debugging workflow is served by the captured
+request plus the typed metadata (http_status, error_type, model/tool, timing).
+Response headers keep only two strictly-typed values (Content-Length digits and a
+bare Content-Type MIME); every other response header value is redacted. A request
+body over the store cap, or whose redaction expands past it, is withheld rather than
+stored as a boundary-cut prefix. ``error_detail`` is a generic, payload-independent
+code only; the raw exception string is never stored.
 
 Sanitization runs off the event loop in a bounded worker pool (overload sheds the
 capture). Captures are deleted by the platform's central retention purge; detail
@@ -22,9 +21,9 @@ exception message reaches ordinary application logs. Model/App capture scope is
 decided from server-authoritative dispatch state only, after authorization — never
 a caller-declared model or tool in the request body or URL path.
 
-Retaining response free-text — via a keyed (HMAC) non-reversible correlation marker,
-an intact credential-redacted copy, or a governed on-demand reveal path — is an OPEN
-owner scope decision; this module ships the safe, leak-free default (redact strings).
+Restoring response-body inspection safely — a governed on-demand audited reveal, or a
+keyed (HMAC) non-reversible correlation marker — is an OPEN owner/root scope decision
+layered on this safe default; see docs/request-debug-logging.md.
 """
 
 from __future__ import annotations
@@ -118,32 +117,16 @@ _UNTERMINATED_VALUE_MAX = 4096
 # An unterminated scalar runs to end-of-buffer, so only the tail can hold one.
 # Bound the search window so scanning stays linear regardless of body size.
 _UNTERMINATED_SCAN = _UNTERMINATED_VALUE_MAX + 512
-# RESPONSE handling is fail closed by structure, not by content type. A response is
-# stored only when it is a COMPLETE, valid JSON document; anything unknown, malformed,
-# incomplete, streaming or binary is withheld. Within a stored response NO string value
-# is retained verbatim (any could be an opaque, non-format secret): every string value
-# is redacted to a fixed non-informative marker (no reversible/forgeable hash), and
-# dict entries whose key is not a safe short identifier are dropped (a key could itself
-# be a secret). Numbers, booleans and null are inherently non-secret and are kept, so
-# structural fields (status codes, counts) and the response shape remain for debugging.
-# NOTE: retaining response free-text — via a keyed (HMAC) non-reversible correlation
-# marker, an intact credential-redacted copy, or a governed on-demand reveal path — is
-# an OPEN owner scope decision; this module ships the safe, leak-free default (redact).
-_SAFE_KEY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$")
-
-
-def _safe_key(key: object) -> bool:
-    return isinstance(key, str) and _SAFE_KEY.match(key) is not None
-
-
-def _allowlist_response(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {key: _allowlist_response(item) for key, item in value.items() if _safe_key(key)}
-    if isinstance(value, list):
-        return [_allowlist_response(item) for item in value]
-    if isinstance(value, str):
-        return REDACTED if value else value
-    return value
+# RESPONSE handling is fail closed and content-independent: the response BODY is never
+# stored. Any part of an untrusted response can carry an opaque secret — not just free
+# text, but a numeric value (secrets encode as digits), an object KEY (a secret used as
+# a field name), or a streaming/binary payload — so no allowlist over its content can be
+# trusted. The whole response body is withheld (a redaction marker); the debugging
+# workflow is served by the fully captured (credential-redacted) REQUEST plus the typed
+# metadata (http_status, error_type, model/tool, timing). Restoring response-body
+# inspection safely — a governed on-demand audited reveal, or a keyed (HMAC)
+# non-reversible correlation marker — is an OPEN owner/root scope decision layered on
+# this safe default; see docs/request-debug-logging.md.
 
 
 class DebugBody(StrictModel):
@@ -284,58 +267,42 @@ def redact_headers(pairs: HeaderPairs, known_credentials: Credentials = ()) -> l
     return result
 
 
-# Response header names whose values are safe protocol/cache metadata. Any other
-# response header value is redacted (a response may set an arbitrary secret header).
-_SAFE_RESPONSE_HEADERS = frozenset(
-    {
-        "contenttype",
-        "contentlength",
-        "contentencoding",
-        "contentlanguage",
-        "transferencoding",
-        "acceptranges",
-        "date",
-        "age",
-        "vary",
-        "cachecontrol",
-        "expires",
-        "etag",
-        "lastmodified",
-        "retryafter",
-        "allow",
-        "connection",
-        "xfs2operationid",
-        "xrequestid",
-        "xfs2preempted",
-    }
-)
 _MIME_TYPE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,126}/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,126}$")
 
 
-def redact_response_headers(pairs: HeaderPairs, known_credentials: Credentials = ()) -> list[tuple[str, str]]:
-    """Keep only allowlisted safe response header values; redact everything else.
+def _safe_content_type(content_type: str | None) -> str | None:
+    """Reduce a Content-Type to a bare MIME type, dropping any parameters.
 
-    A response header we do not recognize could carry an arbitrary secret, so its value
-    is redacted (the name is kept for structure). Safe headers still get a known-credential
-    scrub in case a credential value was echoed into one.
+    Only the ``type/subtype`` is kept (e.g. ``application/json``); parameters such as
+    ``charset=…`` or an injected ``; secret=…`` are dropped entirely. Anything that is
+    not a well-formed MIME type is omitted.
+    """
+    if content_type is None:
+        return None
+    base = content_type.split(";", 1)[0].strip()
+    return base if _MIME_TYPE.match(base) else None
+
+
+def redact_response_headers(pairs: HeaderPairs) -> list[tuple[str, str]]:
+    """Keep only strictly-typed safe response header VALUES; redact every other value.
+
+    A response header value is untrusted and can carry an opaque secret — including
+    otherwise-"safe" headers like ETag, Content-Language or X-Request-Id. Only two values
+    are kept, and only when they match an exact type: Content-Length (digits) and
+    Content-Type (reduced to a bare MIME type, parameters dropped). Every other value is
+    redacted; header names are kept for structure.
     """
     result = []
     for raw_name, raw_value in pairs:
         name, value = _text(raw_name), _text(raw_value)
-        if _name(name) in _SAFE_RESPONSE_HEADERS and _name(name) not in _AUTH_NAMES:
-            value = redact_text(value, known_credentials)
+        normalized = _name(name)
+        if normalized == "contentlength" and value.strip().isdigit():
+            result.append((name, value.strip()))
+        elif normalized == "contenttype" and _safe_content_type(value) is not None:
+            result.append((name, _safe_content_type(value) or REDACTED))
         else:
-            value = REDACTED
-        result.append((name, value))
+            result.append((name, REDACTED))
     return result
-
-
-def _safe_content_type(content_type: str | None) -> str | None:
-    """Keep an observed Content-Type only when it looks like a MIME type; else drop it."""
-    if content_type is None:
-        return None
-    base = content_type.split(";", 1)[0].strip()
-    return content_type if _MIME_TYPE.match(base) else None
 
 
 def _redact_json(value: Any) -> Any:
@@ -404,11 +371,14 @@ def suppressed_body(content_type: str | None, observed_bytes: int, complete: boo
     response whose matching request exceeded the cap (the uninspected request tail
     could be echoed), or it is an arbitrary/unstructured response body. The true
     observed length and wire-completeness are still reported; the body is withheld.
+
+    The content type is reduced to a bare MIME here so no call site can leave a
+    Content-Type PARAMETER (which could smuggle a secret) on a withheld body.
     """
     return DebugBody(
         encoding="utf-8",
         data=REDACTED,
-        content_type=content_type,
+        content_type=_safe_content_type(content_type),
         observed_bytes=observed_bytes,
         complete=complete,
         redacted=True,
@@ -447,50 +417,6 @@ def _trim_trailing_partial(raw: bytes, credentials: Credentials) -> bytes:
     return raw
 
 
-def _response_body(
-    raw: bytes,
-    content_type: str | None,
-    complete: bool,
-    known_credentials: tuple[bytes | str, ...],
-    max_bytes: int | None,
-) -> DebugBody:
-    """Fail-closed response capture.
-
-    A response is stored ONLY when it is a COMPLETE, valid JSON document. Anything
-    unknown, malformed, incomplete, streaming or binary is withheld — an opaque or
-    partial secret in such a body cannot be reliably scrubbed. A stored response keeps
-    only its structure, numbers and booleans; EVERY string value is redacted and dict
-    entries with an unsafe key are dropped (see _allowlist_response), so no arbitrary or
-    opaque secret in a string value or key is ever stored. Known credentials are also
-    scrubbed defensively.
-    """
-    observed = len(raw)
-    if not complete:
-        return suppressed_body(content_type, observed, complete)
-    parsed, is_json = _try_json(raw)
-    if not is_json:
-        return suppressed_body(content_type, observed, complete)
-    safe = _allowlist_response(parsed)
-    body = json.dumps(safe, ensure_ascii=False, separators=(",", ":")).encode()
-    body = _redact_bytes(body, known_credentials)
-    if max_bytes is not None and len(body) > max_bytes:
-        return suppressed_body(content_type, observed, complete)
-    try:
-        text = body.decode("utf-8")
-        encoding: Literal["utf-8", "base64"] = "utf-8"
-    except UnicodeError:
-        text, encoding = base64.b64encode(body).decode("ascii"), "base64"
-    return DebugBody(
-        encoding=encoding,
-        data=text,
-        content_type=content_type,
-        observed_bytes=observed,
-        complete=True,
-        redacted=safe != parsed or body != raw,
-        truncated=False,
-    )
-
-
 def body_capture(
     raw: bytes,
     content_type: str | None,
@@ -510,10 +436,12 @@ def body_capture(
         return suppressed_body(content_type, observed, complete)
     known_credentials = tuple(known_credentials)
     if is_response:
-        # Responses are fail closed by structure (see _response_body): withhold unless a
-        # complete valid JSON document, then keep only structure/numbers and redact every
-        # string value. The stored Content-Type is dropped unless it looks like a MIME type.
-        return _response_body(raw, _safe_content_type(content_type), complete, known_credentials, max_bytes)
+        # The response BODY is never stored (fail closed): any part of an untrusted
+        # response — a string, a numeric value, an object key, or a binary/streaming
+        # payload — can carry an opaque secret, so no content allowlist can be trusted.
+        # Only the true length and wire-completeness are kept; the stored Content-Type is
+        # reduced to a bare MIME type (parameters dropped) by suppressed_body, or omitted.
+        return suppressed_body(content_type, observed, complete)
     parsed, is_json = _try_json(raw)
     original = raw
     # Request sanitization is conservative and driven by key names and value formats,
@@ -1173,7 +1101,7 @@ class DebugCaptureMiddleware:
                             disconnected=disconnected,
                             query_string=redact_query(query, known),
                             request_headers=redact_headers(request_headers, known),
-                            response_headers=redact_response_headers(response_headers, known),
+                            response_headers=redact_response_headers(response_headers),
                             request_body=bounded_body_capture(
                                 bytes(request_parts),
                                 request_type,

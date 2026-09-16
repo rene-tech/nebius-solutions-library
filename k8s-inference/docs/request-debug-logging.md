@@ -3,9 +3,10 @@
 This is an opt-in operator debugging facility, separate from ordinary logs, usage
 counters and logical run history. It is **off by default** and, when enabled, is
 governed and fail closed: the request body (the debugging target) is stored redacted
-within the cap, while a response body is stored only as its structure and numbers with
-every string value redacted — an unknown, malformed, incomplete or oversize body is
-withheld entirely rather than stored as a prefix; captures are deleted by the platform's
+within the cap, while the response body is **never stored** — it is withheld entirely,
+because any part of an untrusted response (a string, a numeric value, an object key, or
+a streaming/binary payload) can carry an opaque secret. A request body that exceeds the
+cap is withheld rather than stored as a prefix; captures are deleted by the platform's
 central retention purge; and reading a captured exchange requires an ADMIN operator and
 is audited. Enable it deliberately for a bounded window rather than leaving it on as a
 standing state.
@@ -147,7 +148,7 @@ truncated: whether the body was withheld rather than stored (observed_bytes stil
 ```
 
 `complete` and `truncated` are independent: a wire-complete body that was withheld
-(because it exceeded the cap, was an arbitrary/unstructured response, or its request
+(because it is a response body, which is never stored, or because a request body
 exceeded the cap) is `complete=true, truncated=true` with its bytes replaced by a
 `[REDACTED]` marker — do not read `truncated` as incomplete. A body cut off on the
 wire is `complete=false`.
@@ -169,20 +170,22 @@ HTTP 0 or success.
   public middleware does not drain it merely to fill a log. Interrupted, unread,
   failed or limit-exceeded streams remain explicitly partial/incomplete. An empty
   complete body is different from zero bytes retained from an unread body.
-- Response bodies are fail closed by structure. A response is stored ONLY when it is a
-  **complete, valid JSON document**; anything unknown, malformed, incomplete, streaming
-  (SSE) or binary is withheld (a `[REDACTED]` marker). A stored response keeps only its
-  **structure, numbers and booleans**: **every string value is redacted** to a fixed
-  `[REDACTED]` marker (no reversible or forgeable hash) and dict entries whose key is not
-  a safe short identifier are dropped, so no arbitrary or opaque secret in a string value
-  or key is ever stored. The response is also withheld outright when its matching request
-  exceeded the cap (the uninspected request tail could be echoed). The request body (the
-  debugging target — customer input) is retained credential-redacted, not reduced this way.
-  Response headers keep only an allowlist of safe protocol/cache values (content-type,
-  content-length, cache-control, date, etag, …); every other response header value is
-  redacted. (Retaining response free-text for debugging — via a keyed non-reversible
-  correlation marker, an intact credential-redacted copy, or a governed on-demand reveal
-  path — is an open operator/owner decision layered on this safe default.)
+- The response body is **never stored** — it is withheld entirely (a `[REDACTED]` marker,
+  `truncated=true`), regardless of content type or structure. This is fail closed and
+  content-independent: any part of an untrusted response can carry an opaque secret — not
+  just free text, but a **numeric value** (a secret encoded as digits), an **object key**
+  (a secret used as a field name), or a streaming/binary payload — so no allowlist over the
+  response content can be trusted. Only the true `observed_bytes` and wire-completeness are
+  kept. The debugging workflow is served by the fully captured (credential-redacted)
+  **request** plus the typed metadata (`http_status`, `error_type`, model/tool, timing).
+  The request body (the debugging target — customer input) is retained credential-redacted,
+  not withheld this way. Response headers keep only two **strictly-typed** values —
+  Content-Length (digits only) and Content-Type (reduced to a bare `type/subtype` MIME,
+  parameters dropped); **every other** response header value is redacted, including
+  otherwise-"safe" names like ETag, Content-Language or X-Request-Id, whose values are
+  opaque and could carry a secret. (Restoring response-body inspection for debugging — via
+  a governed on-demand audited reveal, or a keyed non-reversible correlation marker — is an
+  open operator/owner decision layered on this safe default.)
 - `error_detail` is a **generic, payload-independent code only** (e.g. "runtime
   operation failed"); the raw exception string is never stored, because an SDK may have
   embedded a prompt, URL or credential in it. The `error_type` and `http_status` carry
@@ -192,8 +195,9 @@ HTTP 0 or success.
   caller-declared model or tool name from the request body — so a caller cannot spoof
   another App's scope and a denied request is not attributed to the model/tool it
   claimed.
-- Sanitizing a captured body (redaction/hashing) runs off the event loop in a
-  worker pool with bounded concurrency; under overload a capture is dropped
+- Sanitizing a captured body (credential redaction of the request; withholding the
+  response) runs off the event loop in a worker pool with bounded concurrency; under
+  overload a capture is dropped
   (best-effort) rather than delaying inference. The per-body cap
   (`requestDebugMaxBodyBytes`, max 256 KiB) also bounds sanitizer CPU/memory.
 - `observed_bytes` is not necessarily the displayed length after redaction or

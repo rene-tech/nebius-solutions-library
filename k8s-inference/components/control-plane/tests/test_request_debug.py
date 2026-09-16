@@ -22,6 +22,7 @@ from fs2_serve.request_debug import (
     persist_debug_exchange,
     redact_headers,
     redact_query,
+    redact_response_headers,
     suppressed_body,
 )
 from fs2_serve.request_telemetry import (
@@ -722,9 +723,9 @@ async def test_middleware_suppresses_response_for_request_tail_credential(gap):
     assert exchange.response_body.complete is True and exchange.response_body.truncated is True
 
 
-async def test_middleware_captures_response_when_request_fits_the_buffer():
-    """SAI-01: the suppression backstop is not overbroad — a request within the buffer
-    is fully inspected, so a matching response is captured (and redacted) normally."""
+async def test_request_within_buffer_is_captured_while_response_body_is_withheld():
+    """SAI-01: the request (debug target) is captured credential-redacted, while the
+    response body is withheld entirely — an echoed credential never reaches storage."""
     secret = "nvapi-abcdefabcdefabcdefabcdef0000"
     request = b'{"model":"boltz2","api_key":"' + secret.encode() + b'"}'
     echo = b'{"echo":"' + secret.encode() + b'","detail":"ok"}'
@@ -741,13 +742,10 @@ async def test_middleware_captures_response_when_request_fits_the_buffer():
         max_body_bytes=64 * 1024,
     )
     (exchange,) = store.exchanges.values()
-    assert secret not in exchange.model_dump_json()  # echoed credential gone
-    # A complete valid-JSON response is stored (not withheld), but its free-text content
-    # is fail-closed hashed: the echoed secret and the "ok" detail are both hashed.
-    stored = _stored_bytes(exchange.response_body)
-    assert (
-        stored != b"[REDACTED]" and b"[REDACTED]" in stored and b'"ok"' not in stored
-    )  # strings redacted, structure kept
+    assert secret not in exchange.model_dump_json()  # echoed credential gone everywhere
+    assert _stored_bytes(exchange.request_body) != b"[REDACTED]"  # request retained (redacted)
+    assert _stored_bytes(exchange.response_body) == b"[REDACTED]"  # response body withheld
+    assert exchange.response_body.observed_bytes == len(echo)  # true length still reported
 
 
 @pytest.mark.parametrize(
@@ -801,10 +799,14 @@ async def test_arbitrary_and_binary_response_bodies_are_withheld():
         assert exchange.response_body.redacted and exchange.response_body.truncated
 
 
-async def test_success_response_content_is_redacted_structure_kept():
-    """SAI-01: a structured success response keeps only its structure and numbers; every
-    string value is redacted (no free-text or hash stored)."""
-    body = b'{"choices":[{"message":{"content":"the model output"}}],"usage":{"prompt_tokens":3}}'
+async def test_success_response_body_is_withheld_including_numbers_and_keys():
+    """SAI-01: the response body is never stored — not strings, not numeric values, not
+    object keys — since any could carry an opaque secret. It is withheld entirely."""
+    # Numeric value and object key that could encode/carry a secret; none must survive.
+    body = (
+        b'{"choices":[{"message":{"content":"the model output"}}],'
+        b'"usage":{"prompt_tokens":31337},"AKIAIOSFODNN7EXAMPLE":1}'
+    )
 
     async def app(scope, receive, send):
         await receive()
@@ -818,10 +820,70 @@ async def test_success_response_content_is_redacted_structure_kept():
     )
     (exchange,) = store.exchanges.values()
     stored = _stored_bytes(exchange.response_body)
-    assert exchange.response_body.complete and exchange.response_body.redacted
-    assert b"the model output" not in stored and b"[sha256:" not in stored
-    assert b'"content":"[REDACTED]"' in stored  # string value redacted, key structure kept
-    assert b'"prompt_tokens":3' in stored  # numeric field kept for structure
+    assert exchange.response_body.complete and exchange.response_body.redacted and exchange.response_body.truncated
+    assert stored == b"[REDACTED]"  # whole response body withheld
+    assert b"the model output" not in stored and b"31337" not in stored and b"AKIAIOSFODNN7EXAMPLE" not in stored
+
+
+def test_response_headers_redact_opaque_values_and_strip_content_type_params():
+    """SAI-01: an "allowlisted-by-name" response header value is still untrusted and can
+    carry an opaque secret. Only Content-Length (digits) and a bare Content-Type MIME
+    survive; ETag/Content-Language/X-Request-Id and any Content-Type PARAMETERS (which
+    could smuggle a secret) are redacted or dropped — nothing is kept by name alone."""
+    pairs = [
+        (b"content-type", b"application/json; charset=utf-8; secret=SMUGGLED42"),
+        (b"content-length", b"128"),
+        (b"etag", b'W/"OPAQUE-ETAG-SECRET"'),
+        (b"content-language", b"SECRET-LOCALE-TAG"),
+        (b"x-request-id", b"OPAQUE-REQ-ID-SECRET"),
+        (b"set-cookie", b"session=SUPERSECRETCOOKIE; HttpOnly"),
+    ]
+    result = dict(redact_response_headers(pairs))
+    assert result["content-type"] == "application/json"  # bare MIME only, params dropped
+    assert result["content-length"] == "128"
+    assert result["etag"] == "[REDACTED]"  # opaque value redacted despite a "safe" name
+    assert result["content-language"] == "[REDACTED]"
+    assert result["x-request-id"] == "[REDACTED]"
+    assert result["set-cookie"] == "[REDACTED]"
+    rendered = repr(result)
+    for secret in (
+        "SMUGGLED42",
+        "OPAQUE-ETAG-SECRET",
+        "SECRET-LOCALE-TAG",
+        "OPAQUE-REQ-ID-SECRET",
+        "SUPERSECRETCOOKIE",
+    ):
+        assert secret not in rendered
+
+
+async def test_response_content_type_parameters_do_not_reach_the_stored_exchange():
+    """SAI-01: a response Content-Type carrying an injected parameter is reduced to a bare
+    MIME type before it is stored, so a secret smuggled as a Content-Type parameter never
+    lands in the persisted exchange (headers or the withheld-body marker's content_type)."""
+
+    async def app(scope, receive, send):
+        await receive()
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [
+                    (b"content-type", b"application/json; boundary=SMUGGLEDCTPARAM"),
+                    (b"x-request-id", b"OPAQUEREQIDSECRET"),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": b'{"ok":true}', "more_body": False})
+
+    store, _, _ = await capture(
+        app,
+        chunks=[{"type": "http.request", "body": b'{"model":"boltz2"}'}],
+        headers=[(b"content-type", b"application/json")],
+    )
+    (exchange,) = store.exchanges.values()
+    assert exchange.response_body.content_type == "application/json"  # params dropped
+    dumped = exchange.model_dump_json()
+    assert "SMUGGLEDCTPARAM" not in dumped and "OPAQUEREQIDSECRET" not in dumped
 
 
 @pytest.mark.parametrize("state", [{}, {"model_id": "qwen3-8b"}, {"model_id": "boltz2"}])
