@@ -1,0 +1,110 @@
+{
+  "models": [
+    {
+      "model": "nemotron-speech-en-0.6b",
+      "status": "cross-node-complete-recordings-passed",
+      "sample_count": 1,
+      "pod": "fs2-speech-restore-en-crossnode-r3",
+      "pod_uid": "477bfdd0-b654-492b-ac94-d494e03606bb",
+      "node": "computeinstance-e00m0hsph76ajt9sdb",
+      "source_gpu": "GPU-0c404bb3-6e89-6295-448e-f97df95344a4",
+      "target_gpu": "GPU-9f9398a1-b515-06a3-efcf-0b40de81d77b",
+      "restore_call_seconds": [
+        5.912790189962834,
+        1.1414392550941557,
+        0.022503365064039826
+      ],
+      "restore_call_sum_seconds": 7.07673281012103,
+      "pod_created_to_restore_marker_seconds": 22.325973,
+      "container_started_to_restore_marker_seconds": 8.325973,
+      "clock_note": "Restore marker excludes external readiness propagation and inference; cached images/shared storage, no node provisioning or p95 claim",
+      "snapshot_bytes": 8501526502,
+      "snapshot_files": 222,
+      "snapshot_manifest_sha256": "fbbb4122f0ec4a6c92faea3e627889248d1db197eb295a3c513f865acf31a779",
+      "comparisons": [
+        {
+          "case": "en-01",
+          "mode": "http-file",
+          "exact_match": true,
+          "audio_seconds": 457.92,
+          "wall_seconds": 23.94480779999867
+        },
+        {
+          "case": "en-01",
+          "mode": "websocket-unpaced",
+          "exact_match": true,
+          "audio_seconds": 457.92,
+          "wall_seconds": 23.794964449014515
+        },
+        {
+          "case": "en-02",
+          "mode": "http-file",
+          "exact_match": true,
+          "audio_seconds": 559.2,
+          "wall_seconds": 28.695088372100145
+        },
+        {
+          "case": "en-02",
+          "mode": "websocket-unpaced",
+          "exact_match": true,
+          "audio_seconds": 559.2,
+          "wall_seconds": 31.242671658983454
+        }
+      ],
+      "production_snapshots_enabled": false
+    },
+    {
+      "model": "nemotron-speech-multilingual-0.6b",
+      "status": "cross-node-complete-recordings-passed",
+      "sample_count": 1,
+      "pod": "fs2-speech-restore-multi-crossnode-r3",
+      "pod_uid": "9e1703b8-0305-4919-88d1-009cd33c6164",
+      "node": "computeinstance-e00p3acr87k9k4mckj",
+      "source_gpu": "GPU-3dde2475-d034-6bb9-6c36-ddee7d30dffd",
+      "target_gpu": "GPU-facf5f91-1954-6615-4fbf-418efd69bd0c",
+      "restore_call_seconds": [
+        7.7347599901258945,
+        1.226673796074465,
+        0.021184334997087717
+      ],
+      "restore_call_sum_seconds": 8.982618121197447,
+      "pod_created_to_restore_marker_seconds": 16.860119,
+      "container_started_to_restore_marker_seconds": 11.860119,
+      "clock_note": "Restore marker excludes external readiness propagation and inference; cached images/shared storage, no node provisioning or p95 claim",
+      "snapshot_bytes": 10901327725,
+      "snapshot_files": 222,
+      "snapshot_manifest_sha256": "1da4c6122629bfe3bda8a7ef2cb1df7056294ebb120144ad6912de590d1df0af",
+      "comparisons": [
+        {
+          "case": "en-01",
+          "mode": "http-file",
+          "exact_match": true,
+          "audio_seconds": 457.92,
+          "wall_seconds": 23.83266756986268
+        },
+        {
+          "case": "en-01",
+          "mode": "websocket-unpaced",
+          "exact_match": true,
+          "audio_seconds": 457.92,
+          "wall_seconds": 24.1678047911264
+        },
+        {
+          "case": "de-herzrasen",
+          "mode": "http-file",
+          "exact_match": true,
+          "audio_seconds": 421.860125,
+          "wall_seconds": 21.40912933088839
+        },
+        {
+          "case": "de-herzrasen",
+          "mode": "websocket-unpaced",
+          "exact_match": true,
+          "audio_seconds": 421.860125,
+          "wall_seconds": 21.37822591792792
+        }
+      ],
+      "production_snapshots_enabled": false
+    }
+  ]
+}

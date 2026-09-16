@@ -1,0 +1,53 @@
+{
+  "started_at": "2026-09-16T12:04:13.990851+00:00",
+  "scope": "long-files",
+  "complete_customer_acceptance": false,
+  "measurements": [
+    {
+      "model": "nemotron-speech-en-0-6b",
+      "case": "en-01",
+      "source_audio_seconds": 457.92,
+      "source_repeat_count": 4,
+      "expected_audio_seconds": 1831.68,
+      "input_sha256": "bed0455e336172d5e8c8eaa56bf54efa69cce5f115fba17cfb7d92d482953af5",
+      "transport_sha256": "7b91675957b3d02029e55612262e39dabd77b573278bf1d77fb63301a3a3e69c",
+      "transport_bytes": 26976532,
+      "transport": "artifact-native-async",
+      "upload_operation_id": "77f1a209-1d55-4884-82f2-8d4eb13d76f7",
+      "artifact_id": "6768d3a9-a0e2-41b3-a082-bc378d96da91",
+      "submit_status": 202,
+      "operation_id": "a52dab93-a1e7-4d7e-bf53-7ecda8dab0eb",
+      "poll_history": [
+        {
+          "status": "activating",
+          "elapsed_seconds": 3.981732675805688
+        },
+        {
+          "status": "running",
+          "elapsed_seconds": 6.209804411046207
+        },
+        {
+          "status": "succeeded",
+          "elapsed_seconds": 186.23665725067258
+        }
+      ],
+      "wall_seconds": 186.43398249614984,
+      "final_status": 200,
+      "result": {
+        "artifact": {
+          "artifact_id": "bdca4af1-62f6-44f7-bdb6-74505d05ad1c",
+          "compression": "none",
+          "media_type": "application/octet-stream",
+          "sha256": "c3b6756d2dba9b5fcac77427aa5a5028eb1de0ca149663b3476025b0d58383f4",
+          "size_bytes": 139589
+        },
+        "content_type": "application/json",
+        "schema": "fs2-serve.nebius.ai/operation-artifact-result/v1"
+      }
+    }
+  ],
+  "temporary_key_id": "db11d81a-91f2-4730-926b-925f680b0478",
+  "fixture_note": "Whole medical recordings repeated to exceed30min, not independent30min consultations",
+  "temporary_key_revoked": true,
+  "finished_at": "2026-09-16T12:07:22.621656+00:00"
+}

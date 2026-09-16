@@ -1,0 +1,1197 @@
+{
+    "apiVersion": "v1",
+    "items": [
+        {
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "metadata": {
+                "creationTimestamp": "2026-09-16T12:12:15Z",
+                "generation": 1,
+                "labels": {
+                    "fs2.nebius.ai/test-only": "true",
+                    "snapshot.fs2.nebius/model": "nemotron-speech-en-0.6b",
+                    "snapshot.fs2.nebius/task": "fs2-h100-fleet-snapshot-options-r20260907",
+                    "topology.kubernetes.io/region": "eu-north1",
+                    "workload.fs2.nebius/owner": "nemotron-speech-20260916"
+                },
+                "name": "fs2-speech-restore-en-crossnode-r3",
+                "namespace": "fs2-models",
+                "resourceVersion": "44494218",
+                "uid": "477bfdd0-b654-492b-ac94-d494e03606bb"
+            },
+            "spec": {
+                "activeDeadlineSeconds": 900,
+                "automountServiceAccountToken": false,
+                "containers": [
+                    {
+                        "command": [
+                            "/opt/conda/bin/python3",
+                            "/snapshot-source/serving_supervisor.py",
+                            "--directory",
+                            "/checkpoints/speech-en-0916-r2",
+                            "--request-mode",
+                            "server",
+                            "--fallback",
+                            "fail",
+                            "--request-uid",
+                            "10001",
+                            "--request-gid",
+                            "10001",
+                            "--allow-device-remap",
+                            "--source-directory",
+                            "/snapshot-bundle",
+                            "--allow-device-remap",
+                            "restore",
+                            "--",
+                            "python3",
+                            "/snapshot-source/working_directory_launcher.py",
+                            "--directory",
+                            "/opt/fs2-speech",
+                            "--uid",
+                            "10001",
+                            "--gid",
+                            "10001",
+                            "--",
+                            "python",
+                            "-m",
+                            "fs2_speech.server"
+                        ],
+                        "env": [
+                            {
+                                "name": "OMP_NUM_THREADS",
+                                "value": "2"
+                            },
+                            {
+                                "name": "FS2_SPEECH_PROFILE_JSON",
+                                "value": "{\"model\":\"nemotron-speech-en-0.6b\",\"chunk_size_ms\":560,\"strip_language_tags\":true,\"decoding\":\"greedy_batch\",\"beam_size\":4,\"precision\":\"float32\",\"confidence\":false,\"cuda_graphs\":false}"
+                            },
+                            {
+                                "name": "FS2_SPEECH_ARTIFACT_HOSTS",
+                                "value": "storage.eu-north1.nebius.cloud"
+                            },
+                            {
+                                "name": "FS2_SNAPSHOT_RUNTIME_IMAGE",
+                                "value": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/en@sha256:288f6caf0c2feb3690c963969e4a26c45a38ca1338f4abe80570b24db91423d2"
+                            },
+                            {
+                                "name": "FS2_SNAPSHOT_TOOLS_IMAGE",
+                                "value": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4"
+                            },
+                            {
+                                "name": "FS2_MODEL_REVISION",
+                                "value": "ebe59e5a817142986528bbbee5dba8db7b38ed50"
+                            },
+                            {
+                                "name": "FS2_RUNTIME_ID",
+                                "value": "nemotron-speech-en-0.6b"
+                            },
+                            {
+                                "name": "PATH",
+                                "value": "/tools/usr/sbin:/opt/conda/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+                            }
+                        ],
+                        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/en@sha256:288f6caf0c2feb3690c963969e4a26c45a38ca1338f4abe80570b24db91423d2",
+                        "imagePullPolicy": "IfNotPresent",
+                        "name": "speech",
+                        "resources": {
+                            "limits": {
+                                "cpu": "4",
+                                "ephemeral-storage": "24Gi",
+                                "memory": "32Gi",
+                                "nvidia.com/gpu": "1"
+                            },
+                            "requests": {
+                                "cpu": "2",
+                                "ephemeral-storage": "16Gi",
+                                "memory": "16Gi",
+                                "nvidia.com/gpu": "1"
+                            }
+                        },
+                        "securityContext": {
+                            "appArmorProfile": {
+                                "type": "Unconfined"
+                            },
+                            "capabilities": {
+                                "add": [
+                                    "SYS_ADMIN",
+                                    "SYS_PTRACE",
+                                    "CHECKPOINT_RESTORE",
+                                    "NET_ADMIN",
+                                    "SYS_TIME",
+                                    "SYS_RESOURCE"
+                                ]
+                            },
+                            "runAsGroup": 0,
+                            "runAsNonRoot": false,
+                            "runAsUser": 0,
+                            "seccompProfile": {
+                                "type": "Unconfined"
+                            }
+                        },
+                        "terminationMessagePath": "/dev/termination-log",
+                        "terminationMessagePolicy": "File",
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/cache",
+                                "name": "snapshot-checkpoints",
+                                "subPath": "speech-en-0916-r2/runtime-cache"
+                            },
+                            {
+                                "mountPath": "/tools",
+                                "name": "snapshot-tools"
+                            },
+                            {
+                                "mountPath": "/snapshot-source",
+                                "name": "snapshot-source",
+                                "readOnly": true
+                            },
+                            {
+                                "mountPath": "/checkpoints",
+                                "name": "snapshot-checkpoints"
+                            },
+                            {
+                                "mountPath": "/tmp",
+                                "name": "snapshot-checkpoints",
+                                "subPath": "speech-en-0916-r2/tmp"
+                            },
+                            {
+                                "mountPath": "/snapshot-bundle",
+                                "name": "snapshot-bundle",
+                                "readOnly": true,
+                                "subPath": "speech-en-0916-r2"
+                            },
+                            {
+                                "mountPath": "/checkpoints/speech-en-0916-r2/images",
+                                "name": "snapshot-bundle",
+                                "readOnly": true,
+                                "subPath": "speech-en-0916-r2/images"
+                            }
+                        ]
+                    }
+                ],
+                "dnsPolicy": "ClusterFirst",
+                "enableServiceLinks": true,
+                "initContainers": [
+                    {
+                        "command": [
+                            "/opt/conda/bin/python3",
+                            "/snapshot-address/restore_loopback_address.py",
+                            "10.6.6.136"
+                        ],
+                        "env": [
+                            {
+                                "name": "NVIDIA_VISIBLE_DEVICES",
+                                "value": "void"
+                            }
+                        ],
+                        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/en@sha256:288f6caf0c2feb3690c963969e4a26c45a38ca1338f4abe80570b24db91423d2",
+                        "imagePullPolicy": "IfNotPresent",
+                        "name": "snapshot-local-address",
+                        "resources": {
+                            "limits": {
+                                "cpu": "1",
+                                "memory": "128Mi"
+                            },
+                            "requests": {
+                                "cpu": "100m",
+                                "memory": "64Mi"
+                            }
+                        },
+                        "securityContext": {
+                            "capabilities": {
+                                "add": [
+                                    "NET_ADMIN"
+                                ],
+                                "drop": [
+                                    "ALL"
+                                ]
+                            },
+                            "runAsGroup": 0,
+                            "runAsNonRoot": false,
+                            "runAsUser": 0
+                        },
+                        "terminationMessagePath": "/dev/termination-log",
+                        "terminationMessagePolicy": "File",
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/snapshot-address",
+                                "name": "snapshot-address-source",
+                                "readOnly": true
+                            }
+                        ]
+                    },
+                    {
+                        "command": [
+                            "/bin/sh",
+                            "-c",
+                            "cp -a /snapshot-binaries/. /tools/ \u0026\u0026 cp -L /lib/x86_64-linux-gnu/libc.so.6 /lib/x86_64-linux-gnu/libm.so.6 /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 /tools/lib/ \u0026\u0026 mkdir -p \"$1/runtime-cache\" \"$1/tmp\" \u0026\u0026 if [ -n \"$2\" ]; then chown \"$2:$2\" \"$1/runtime-cache\" \"$1/tmp\"; fi \u0026\u0026 mkdir -p /tools/usr/sbin /tools/usr/lib/x86_64-linux-gnu \u0026\u0026 cp -L /usr/sbin/xtables-nft-multi /tools/usr/sbin/ \u0026\u0026 cp -L /usr/lib/x86_64-linux-gnu/libxtables.so.12 /usr/lib/x86_64-linux-gnu/libmnl.so.0 /usr/lib/x86_64-linux-gnu/libnftnl.so.11 /tools/usr/lib/x86_64-linux-gnu/ \u0026\u0026 cp -a /usr/lib/x86_64-linux-gnu/xtables /tools/usr/lib/x86_64-linux-gnu/ \u0026\u0026 for tool in iptables ip6tables; do cp /snapshot-network-source/iptables /tools/usr/sbin/$tool; chmod 0555 /tools/usr/sbin/$tool; done \u0026\u0026 for part in runtime-cache tmp; do if [ -d \"/snapshot-bundle/$part\" ]; then { fs2_copy_archive=$(mktemp /tmp/fs2-snapshot-copy.XXXXXX) \u0026\u0026 tar --format=pax --no-acls --no-xattrs --numeric-owner -C \"/snapshot-bundle/$part\" -cf \"$fs2_copy_archive\" . \u0026\u0026 tar --no-acls --no-xattrs --numeric-owner --same-owner --same-permissions -C \"$1/$part\" -xf \"$fs2_copy_archive\"; fs2_copy_status=$?; rm -f \"$fs2_copy_archive\"; (exit \"$fs2_copy_status\"); } || exit $?; fi; done",
+                            "snapshot-tools",
+                            "/checkpoints/speech-en-0916-r2",
+                            "10001"
+                        ],
+                        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4",
+                        "imagePullPolicy": "IfNotPresent",
+                        "name": "snapshot-tools",
+                        "resources": {},
+                        "securityContext": {
+                            "runAsGroup": 0,
+                            "runAsNonRoot": false,
+                            "runAsUser": 0
+                        },
+                        "terminationMessagePath": "/dev/termination-log",
+                        "terminationMessagePolicy": "File",
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/tools",
+                                "name": "snapshot-tools"
+                            },
+                            {
+                                "mountPath": "/checkpoints",
+                                "name": "snapshot-checkpoints"
+                            },
+                            {
+                                "mountPath": "/snapshot-network-source",
+                                "name": "snapshot-network-source",
+                                "readOnly": true
+                            },
+                            {
+                                "mountPath": "/snapshot-bundle",
+                                "name": "snapshot-bundle",
+                                "readOnly": true,
+                                "subPath": "speech-en-0916-r2"
+                            }
+                        ]
+                    }
+                ],
+                "nodeName": "computeinstance-e00m0hsph76ajt9sdb",
+                "nodeSelector": {
+                    "kubernetes.io/hostname": "computeinstance-e00m0hsph76ajt9sdb"
+                },
+                "preemptionPolicy": "PreemptLowerPriority",
+                "priority": 0,
+                "restartPolicy": "Never",
+                "schedulerName": "default-scheduler",
+                "securityContext": {
+                    "runAsGroup": 10001,
+                    "runAsUser": 10001,
+                    "supplementalGroups": [
+                        10001
+                    ]
+                },
+                "serviceAccount": "default",
+                "serviceAccountName": "default",
+                "terminationGracePeriodSeconds": 30,
+                "tolerations": [
+                    {
+                        "effect": "NoSchedule",
+                        "key": "dedicated",
+                        "operator": "Equal",
+                        "value": "fs2-inference"
+                    },
+                    {
+                        "effect": "NoExecute",
+                        "key": "node.kubernetes.io/not-ready",
+                        "operator": "Exists",
+                        "tolerationSeconds": 300
+                    },
+                    {
+                        "effect": "NoExecute",
+                        "key": "node.kubernetes.io/unreachable",
+                        "operator": "Exists",
+                        "tolerationSeconds": 300
+                    },
+                    {
+                        "effect": "NoSchedule",
+                        "key": "nvidia.com/gpu",
+                        "operator": "Exists"
+                    }
+                ],
+                "volumes": [
+                    {
+                        "emptyDir": {
+                            "sizeLimit": "20Gi"
+                        },
+                        "name": "cache"
+                    },
+                    {
+                        "emptyDir": {},
+                        "name": "snapshot-tools"
+                    },
+                    {
+                        "configMap": {
+                            "defaultMode": 292,
+                            "name": "fs2-fleet-snapshot-serving-workdir-v8"
+                        },
+                        "name": "snapshot-source"
+                    },
+                    {
+                        "emptyDir": {},
+                        "name": "snapshot-checkpoints"
+                    },
+                    {
+                        "configMap": {
+                            "defaultMode": 365,
+                            "name": "fs2-fleet-snapshot-net-tools-v1"
+                        },
+                        "name": "snapshot-network-source"
+                    },
+                    {
+                        "name": "snapshot-bundle",
+                        "persistentVolumeClaim": {
+                            "claimName": "fs2-fleet-snapshots-rwx-r20260907",
+                            "readOnly": true
+                        }
+                    },
+                    {
+                        "configMap": {
+                            "defaultMode": 292,
+                            "name": "fs2-fleet-snapshot-address-v1"
+                        },
+                        "name": "snapshot-address-source"
+                    }
+                ]
+            },
+            "status": {
+                "conditions": [
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-16T12:12:17Z",
+                        "observedGeneration": 1,
+                        "status": "True",
+                        "type": "PodReadyToStartContainers"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-16T12:12:28Z",
+                        "observedGeneration": 1,
+                        "status": "True",
+                        "type": "Initialized"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-16T12:12:29Z",
+                        "observedGeneration": 1,
+                        "status": "True",
+                        "type": "Ready"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-16T12:12:29Z",
+                        "observedGeneration": 1,
+                        "status": "True",
+                        "type": "ContainersReady"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-16T12:12:15Z",
+                        "observedGeneration": 1,
+                        "status": "True",
+                        "type": "PodScheduled"
+                    }
+                ],
+                "containerStatuses": [
+                    {
+                        "allocatedResources": {
+                            "cpu": "2",
+                            "ephemeral-storage": "16Gi",
+                            "memory": "16Gi",
+                            "nvidia.com/gpu": "1"
+                        },
+                        "containerID": "containerd://507a9d54c6e6ff40c1b97768141435914e6d41371335b348c67ac59eaa9857f8",
+                        "image": "sha256:263529806f4b82ecb1efe6faee05296bfa0ab64995c8319492b83299a3d93656",
+                        "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/en@sha256:288f6caf0c2feb3690c963969e4a26c45a38ca1338f4abe80570b24db91423d2",
+                        "lastState": {},
+                        "name": "speech",
+                        "ready": true,
+                        "resources": {
+                            "limits": {
+                                "cpu": "4",
+                                "ephemeral-storage": "24Gi",
+                                "memory": "32Gi",
+                                "nvidia.com/gpu": "1"
+                            },
+                            "requests": {
+                                "cpu": "2",
+                                "ephemeral-storage": "16Gi",
+                                "memory": "16Gi",
+                                "nvidia.com/gpu": "1"
+                            }
+                        },
+                        "restartCount": 0,
+                        "started": true,
+                        "state": {
+                            "running": {
+                                "startedAt": "2026-09-16T12:12:29Z"
+                            }
+                        },
+                        "user": {
+                            "linux": {
+                                "gid": 0,
+                                "supplementalGroups": [
+                                    0,
+                                    10001
+                                ],
+                                "uid": 0
+                            }
+                        },
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/cache",
+                                "name": "snapshot-checkpoints"
+                            },
+                            {
+                                "mountPath": "/tools",
+                                "name": "snapshot-tools"
+                            },
+                            {
+                                "mountPath": "/snapshot-source",
+                                "name": "snapshot-source",
+                                "readOnly": true,
+                                "recursiveReadOnly": "Disabled"
+                            },
+                            {
+                                "mountPath": "/checkpoints",
+                                "name": "snapshot-checkpoints"
+                            },
+                            {
+                                "mountPath": "/tmp",
+                                "name": "snapshot-checkpoints"
+                            },
+                            {
+                                "mountPath": "/snapshot-bundle",
+                                "name": "snapshot-bundle",
+                                "readOnly": true,
+                                "recursiveReadOnly": "Disabled"
+                            },
+                            {
+                                "mountPath": "/checkpoints/speech-en-0916-r2/images",
+                                "name": "snapshot-bundle",
+                                "readOnly": true,
+                                "recursiveReadOnly": "Disabled"
+                            }
+                        ]
+                    }
+                ],
+                "hostIP": "10.0.0.17",
+                "hostIPs": [
+                    {
+                        "ip": "10.0.0.17"
+                    }
+                ],
+                "initContainerStatuses": [
+                    {
+                        "allocatedResources": {
+                            "cpu": "100m",
+                            "memory": "64Mi"
+                        },
+                        "containerID": "containerd://1dbb44b3b7910ce7d10c61d5974023b54538a32a48aec8c4f6f700b1605a8f3c",
+                        "image": "sha256:263529806f4b82ecb1efe6faee05296bfa0ab64995c8319492b83299a3d93656",
+                        "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/en@sha256:288f6caf0c2feb3690c963969e4a26c45a38ca1338f4abe80570b24db91423d2",
+                        "lastState": {},
+                        "name": "snapshot-local-address",
+                        "ready": true,
+                        "resources": {
+                            "limits": {
+                                "cpu": "1",
+                                "memory": "128Mi"
+                            },
+                            "requests": {
+                                "cpu": "100m",
+                                "memory": "64Mi"
+                            }
+                        },
+                        "restartCount": 0,
+                        "started": false,
+                        "state": {
+                            "terminated": {
+                                "containerID": "containerd://1dbb44b3b7910ce7d10c61d5974023b54538a32a48aec8c4f6f700b1605a8f3c",
+                                "exitCode": 0,
+                                "finishedAt": "2026-09-16T12:12:16Z",
+                                "reason": "Completed",
+                                "startedAt": "2026-09-16T12:12:16Z"
+                            }
+                        },
+                        "user": {
+                            "linux": {
+                                "gid": 0,
+                                "supplementalGroups": [
+                                    0,
+                                    10001
+                                ],
+                                "uid": 0
+                            }
+                        },
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/snapshot-address",
+                                "name": "snapshot-address-source",
+                                "readOnly": true,
+                                "recursiveReadOnly": "Disabled"
+                            }
+                        ]
+                    },
+                    {
+                        "containerID": "containerd://0e30d18ab8b6abda6a954b467418a2f7a07744d30c03720d71a5016003b9cf03",
+                        "image": "sha256:dd1e374fcbad2cb6e12d186db51f49a7911642fadd366892bbf6000dfd5c7e54",
+                        "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4",
+                        "lastState": {},
+                        "name": "snapshot-tools",
+                        "ready": true,
+                        "resources": {},
+                        "restartCount": 0,
+                        "started": false,
+                        "state": {
+                            "terminated": {
+                                "containerID": "containerd://0e30d18ab8b6abda6a954b467418a2f7a07744d30c03720d71a5016003b9cf03",
+                                "exitCode": 0,
+                                "finishedAt": "2026-09-16T12:12:23Z",
+                                "reason": "Completed",
+                                "startedAt": "2026-09-16T12:12:23Z"
+                            }
+                        },
+                        "user": {
+                            "linux": {
+                                "gid": 0,
+                                "supplementalGroups": [
+                                    0,
+                                    10001
+                                ],
+                                "uid": 0
+                            }
+                        },
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/tools",
+                                "name": "snapshot-tools"
+                            },
+                            {
+                                "mountPath": "/checkpoints",
+                                "name": "snapshot-checkpoints"
+                            },
+                            {
+                                "mountPath": "/snapshot-network-source",
+                                "name": "snapshot-network-source",
+                                "readOnly": true,
+                                "recursiveReadOnly": "Disabled"
+                            },
+                            {
+                                "mountPath": "/snapshot-bundle",
+                                "name": "snapshot-bundle",
+                                "readOnly": true,
+                                "recursiveReadOnly": "Disabled"
+                            }
+                        ]
+                    }
+                ],
+                "observedGeneration": 1,
+                "phase": "Running",
+                "podIP": "10.6.82.234",
+                "podIPs": [
+                    {
+                        "ip": "10.6.82.234"
+                    }
+                ],
+                "qosClass": "Burstable",
+                "startTime": "2026-09-16T12:12:15Z"
+            }
+        },
+        {
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "metadata": {
+                "creationTimestamp": "2026-09-16T12:12:15Z",
+                "generation": 1,
+                "labels": {
+                    "fs2.nebius.ai/test-only": "true",
+                    "snapshot.fs2.nebius/model": "nemotron-speech-multilingual-0.6b",
+                    "snapshot.fs2.nebius/task": "fs2-h100-fleet-snapshot-options-r20260907",
+                    "topology.kubernetes.io/region": "eu-north1",
+                    "workload.fs2.nebius/owner": "nemotron-speech-20260916"
+                },
+                "name": "fs2-speech-restore-multi-crossnode-r3",
+                "namespace": "fs2-models",
+                "resourceVersion": "44493807",
+                "uid": "9e1703b8-0305-4919-88d1-009cd33c6164"
+            },
+            "spec": {
+                "activeDeadlineSeconds": 900,
+                "automountServiceAccountToken": false,
+                "containers": [
+                    {
+                        "command": [
+                            "/opt/conda/bin/python3",
+                            "/snapshot-source/serving_supervisor.py",
+                            "--directory",
+                            "/checkpoints/speech-multi-0916-r2",
+                            "--request-mode",
+                            "server",
+                            "--fallback",
+                            "fail",
+                            "--request-uid",
+                            "10001",
+                            "--request-gid",
+                            "10001",
+                            "--allow-device-remap",
+                            "--source-directory",
+                            "/snapshot-bundle",
+                            "--allow-device-remap",
+                            "restore",
+                            "--",
+                            "python3",
+                            "/snapshot-source/working_directory_launcher.py",
+                            "--directory",
+                            "/opt/fs2-speech",
+                            "--uid",
+                            "10001",
+                            "--gid",
+                            "10001",
+                            "--",
+                            "python",
+                            "-m",
+                            "fs2_speech.server"
+                        ],
+                        "env": [
+                            {
+                                "name": "OMP_NUM_THREADS",
+                                "value": "2"
+                            },
+                            {
+                                "name": "FS2_SPEECH_PROFILE_JSON",
+                                "value": "{\"model\":\"nemotron-speech-multilingual-0.6b\",\"chunk_size_ms\":560,\"strip_language_tags\":true,\"decoding\":\"greedy_batch\",\"beam_size\":4,\"precision\":\"float32\",\"confidence\":false,\"cuda_graphs\":false}"
+                            },
+                            {
+                                "name": "FS2_SPEECH_ARTIFACT_HOSTS",
+                                "value": "storage.eu-north1.nebius.cloud"
+                            },
+                            {
+                                "name": "FS2_SNAPSHOT_RUNTIME_IMAGE",
+                                "value": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/multilingual@sha256:628c1ffdb68c6e510de5a691432b4da9a6f64941ce5f35c57213ad8cea8b7205"
+                            },
+                            {
+                                "name": "FS2_SNAPSHOT_TOOLS_IMAGE",
+                                "value": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4"
+                            },
+                            {
+                                "name": "FS2_MODEL_REVISION",
+                                "value": "ea30d66debe3740a08b573244286791d423d6b3e"
+                            },
+                            {
+                                "name": "FS2_RUNTIME_ID",
+                                "value": "nemotron-speech-multilingual-0.6b"
+                            },
+                            {
+                                "name": "PATH",
+                                "value": "/tools/usr/sbin:/opt/conda/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+                            }
+                        ],
+                        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/multilingual@sha256:628c1ffdb68c6e510de5a691432b4da9a6f64941ce5f35c57213ad8cea8b7205",
+                        "imagePullPolicy": "IfNotPresent",
+                        "name": "speech",
+                        "resources": {
+                            "limits": {
+                                "cpu": "4",
+                                "ephemeral-storage": "24Gi",
+                                "memory": "32Gi",
+                                "nvidia.com/gpu": "1"
+                            },
+                            "requests": {
+                                "cpu": "2",
+                                "ephemeral-storage": "16Gi",
+                                "memory": "16Gi",
+                                "nvidia.com/gpu": "1"
+                            }
+                        },
+                        "securityContext": {
+                            "appArmorProfile": {
+                                "type": "Unconfined"
+                            },
+                            "capabilities": {
+                                "add": [
+                                    "SYS_ADMIN",
+                                    "SYS_PTRACE",
+                                    "CHECKPOINT_RESTORE",
+                                    "NET_ADMIN",
+                                    "SYS_TIME",
+                                    "SYS_RESOURCE"
+                                ]
+                            },
+                            "runAsGroup": 0,
+                            "runAsNonRoot": false,
+                            "runAsUser": 0,
+                            "seccompProfile": {
+                                "type": "Unconfined"
+                            }
+                        },
+                        "terminationMessagePath": "/dev/termination-log",
+                        "terminationMessagePolicy": "File",
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/cache",
+                                "name": "snapshot-checkpoints",
+                                "subPath": "speech-multi-0916-r2/runtime-cache"
+                            },
+                            {
+                                "mountPath": "/tools",
+                                "name": "snapshot-tools"
+                            },
+                            {
+                                "mountPath": "/snapshot-source",
+                                "name": "snapshot-source",
+                                "readOnly": true
+                            },
+                            {
+                                "mountPath": "/checkpoints",
+                                "name": "snapshot-checkpoints"
+                            },
+                            {
+                                "mountPath": "/tmp",
+                                "name": "snapshot-checkpoints",
+                                "subPath": "speech-multi-0916-r2/tmp"
+                            },
+                            {
+                                "mountPath": "/snapshot-bundle",
+                                "name": "snapshot-bundle",
+                                "readOnly": true,
+                                "subPath": "speech-multi-0916-r2"
+                            },
+                            {
+                                "mountPath": "/checkpoints/speech-multi-0916-r2/images",
+                                "name": "snapshot-bundle",
+                                "readOnly": true,
+                                "subPath": "speech-multi-0916-r2/images"
+                            }
+                        ]
+                    }
+                ],
+                "dnsPolicy": "ClusterFirst",
+                "enableServiceLinks": true,
+                "initContainers": [
+                    {
+                        "command": [
+                            "/opt/conda/bin/python3",
+                            "/snapshot-address/restore_loopback_address.py",
+                            "10.6.124.103"
+                        ],
+                        "env": [
+                            {
+                                "name": "NVIDIA_VISIBLE_DEVICES",
+                                "value": "void"
+                            }
+                        ],
+                        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/multilingual@sha256:628c1ffdb68c6e510de5a691432b4da9a6f64941ce5f35c57213ad8cea8b7205",
+                        "imagePullPolicy": "IfNotPresent",
+                        "name": "snapshot-local-address",
+                        "resources": {
+                            "limits": {
+                                "cpu": "1",
+                                "memory": "128Mi"
+                            },
+                            "requests": {
+                                "cpu": "100m",
+                                "memory": "64Mi"
+                            }
+                        },
+                        "securityContext": {
+                            "capabilities": {
+                                "add": [
+                                    "NET_ADMIN"
+                                ],
+                                "drop": [
+                                    "ALL"
+                                ]
+                            },
+                            "runAsGroup": 0,
+                            "runAsNonRoot": false,
+                            "runAsUser": 0
+                        },
+                        "terminationMessagePath": "/dev/termination-log",
+                        "terminationMessagePolicy": "File",
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/snapshot-address",
+                                "name": "snapshot-address-source",
+                                "readOnly": true
+                            }
+                        ]
+                    },
+                    {
+                        "command": [
+                            "/bin/sh",
+                            "-c",
+                            "cp -a /snapshot-binaries/. /tools/ \u0026\u0026 cp -L /lib/x86_64-linux-gnu/libc.so.6 /lib/x86_64-linux-gnu/libm.so.6 /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 /tools/lib/ \u0026\u0026 mkdir -p \"$1/runtime-cache\" \"$1/tmp\" \u0026\u0026 if [ -n \"$2\" ]; then chown \"$2:$2\" \"$1/runtime-cache\" \"$1/tmp\"; fi \u0026\u0026 mkdir -p /tools/usr/sbin /tools/usr/lib/x86_64-linux-gnu \u0026\u0026 cp -L /usr/sbin/xtables-nft-multi /tools/usr/sbin/ \u0026\u0026 cp -L /usr/lib/x86_64-linux-gnu/libxtables.so.12 /usr/lib/x86_64-linux-gnu/libmnl.so.0 /usr/lib/x86_64-linux-gnu/libnftnl.so.11 /tools/usr/lib/x86_64-linux-gnu/ \u0026\u0026 cp -a /usr/lib/x86_64-linux-gnu/xtables /tools/usr/lib/x86_64-linux-gnu/ \u0026\u0026 for tool in iptables ip6tables; do cp /snapshot-network-source/iptables /tools/usr/sbin/$tool; chmod 0555 /tools/usr/sbin/$tool; done \u0026\u0026 for part in runtime-cache tmp; do if [ -d \"/snapshot-bundle/$part\" ]; then { fs2_copy_archive=$(mktemp /tmp/fs2-snapshot-copy.XXXXXX) \u0026\u0026 tar --format=pax --no-acls --no-xattrs --numeric-owner -C \"/snapshot-bundle/$part\" -cf \"$fs2_copy_archive\" . \u0026\u0026 tar --no-acls --no-xattrs --numeric-owner --same-owner --same-permissions -C \"$1/$part\" -xf \"$fs2_copy_archive\"; fs2_copy_status=$?; rm -f \"$fs2_copy_archive\"; (exit \"$fs2_copy_status\"); } || exit $?; fi; done",
+                            "snapshot-tools",
+                            "/checkpoints/speech-multi-0916-r2",
+                            "10001"
+                        ],
+                        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4",
+                        "imagePullPolicy": "IfNotPresent",
+                        "name": "snapshot-tools",
+                        "resources": {},
+                        "securityContext": {
+                            "runAsGroup": 0,
+                            "runAsNonRoot": false,
+                            "runAsUser": 0
+                        },
+                        "terminationMessagePath": "/dev/termination-log",
+                        "terminationMessagePolicy": "File",
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/tools",
+                                "name": "snapshot-tools"
+                            },
+                            {
+                                "mountPath": "/checkpoints",
+                                "name": "snapshot-checkpoints"
+                            },
+                            {
+                                "mountPath": "/snapshot-network-source",
+                                "name": "snapshot-network-source",
+                                "readOnly": true
+                            },
+                            {
+                                "mountPath": "/snapshot-bundle",
+                                "name": "snapshot-bundle",
+                                "readOnly": true,
+                                "subPath": "speech-multi-0916-r2"
+                            }
+                        ]
+                    }
+                ],
+                "nodeName": "computeinstance-e00p3acr87k9k4mckj",
+                "nodeSelector": {
+                    "kubernetes.io/hostname": "computeinstance-e00p3acr87k9k4mckj"
+                },
+                "preemptionPolicy": "PreemptLowerPriority",
+                "priority": 0,
+                "restartPolicy": "Never",
+                "schedulerName": "default-scheduler",
+                "securityContext": {
+                    "runAsGroup": 10001,
+                    "runAsUser": 10001,
+                    "supplementalGroups": [
+                        10001
+                    ]
+                },
+                "serviceAccount": "default",
+                "serviceAccountName": "default",
+                "terminationGracePeriodSeconds": 30,
+                "tolerations": [
+                    {
+                        "effect": "NoSchedule",
+                        "key": "dedicated",
+                        "operator": "Equal",
+                        "value": "fs2-inference"
+                    },
+                    {
+                        "effect": "NoExecute",
+                        "key": "node.kubernetes.io/not-ready",
+                        "operator": "Exists",
+                        "tolerationSeconds": 300
+                    },
+                    {
+                        "effect": "NoExecute",
+                        "key": "node.kubernetes.io/unreachable",
+                        "operator": "Exists",
+                        "tolerationSeconds": 300
+                    },
+                    {
+                        "effect": "NoSchedule",
+                        "key": "nvidia.com/gpu",
+                        "operator": "Exists"
+                    }
+                ],
+                "volumes": [
+                    {
+                        "emptyDir": {
+                            "sizeLimit": "20Gi"
+                        },
+                        "name": "cache"
+                    },
+                    {
+                        "emptyDir": {},
+                        "name": "snapshot-tools"
+                    },
+                    {
+                        "configMap": {
+                            "defaultMode": 292,
+                            "name": "fs2-fleet-snapshot-serving-workdir-v8"
+                        },
+                        "name": "snapshot-source"
+                    },
+                    {
+                        "emptyDir": {},
+                        "name": "snapshot-checkpoints"
+                    },
+                    {
+                        "configMap": {
+                            "defaultMode": 365,
+                            "name": "fs2-fleet-snapshot-net-tools-v1"
+                        },
+                        "name": "snapshot-network-source"
+                    },
+                    {
+                        "name": "snapshot-bundle",
+                        "persistentVolumeClaim": {
+                            "claimName": "fs2-fleet-snapshots-rwx-r20260907",
+                            "readOnly": true
+                        }
+                    },
+                    {
+                        "configMap": {
+                            "defaultMode": 292,
+                            "name": "fs2-fleet-snapshot-address-v1"
+                        },
+                        "name": "snapshot-address-source"
+                    }
+                ]
+            },
+            "status": {
+                "conditions": [
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-16T12:12:17Z",
+                        "observedGeneration": 1,
+                        "status": "True",
+                        "type": "PodReadyToStartContainers"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-16T12:12:19Z",
+                        "observedGeneration": 1,
+                        "status": "True",
+                        "type": "Initialized"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-16T12:12:20Z",
+                        "observedGeneration": 1,
+                        "status": "True",
+                        "type": "Ready"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-16T12:12:20Z",
+                        "observedGeneration": 1,
+                        "status": "True",
+                        "type": "ContainersReady"
+                    },
+                    {
+                        "lastProbeTime": null,
+                        "lastTransitionTime": "2026-09-16T12:12:15Z",
+                        "observedGeneration": 1,
+                        "status": "True",
+                        "type": "PodScheduled"
+                    }
+                ],
+                "containerStatuses": [
+                    {
+                        "allocatedResources": {
+                            "cpu": "2",
+                            "ephemeral-storage": "16Gi",
+                            "memory": "16Gi",
+                            "nvidia.com/gpu": "1"
+                        },
+                        "containerID": "containerd://4a826d2bfd464f6166116e95000ab333881a70d0d1fcd600e3e4c2bb7ca45c09",
+                        "image": "sha256:b4ad7e539f505b1a6cb47be0803a162e46cd24cd0e3139ae20fc4674fdc285f0",
+                        "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/multilingual@sha256:628c1ffdb68c6e510de5a691432b4da9a6f64941ce5f35c57213ad8cea8b7205",
+                        "lastState": {},
+                        "name": "speech",
+                        "ready": true,
+                        "resources": {
+                            "limits": {
+                                "cpu": "4",
+                                "ephemeral-storage": "24Gi",
+                                "memory": "32Gi",
+                                "nvidia.com/gpu": "1"
+                            },
+                            "requests": {
+                                "cpu": "2",
+                                "ephemeral-storage": "16Gi",
+                                "memory": "16Gi",
+                                "nvidia.com/gpu": "1"
+                            }
+                        },
+                        "restartCount": 0,
+                        "started": true,
+                        "state": {
+                            "running": {
+                                "startedAt": "2026-09-16T12:12:20Z"
+                            }
+                        },
+                        "user": {
+                            "linux": {
+                                "gid": 0,
+                                "supplementalGroups": [
+                                    0,
+                                    10001
+                                ],
+                                "uid": 0
+                            }
+                        },
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/cache",
+                                "name": "snapshot-checkpoints"
+                            },
+                            {
+                                "mountPath": "/tools",
+                                "name": "snapshot-tools"
+                            },
+                            {
+                                "mountPath": "/snapshot-source",
+                                "name": "snapshot-source",
+                                "readOnly": true,
+                                "recursiveReadOnly": "Disabled"
+                            },
+                            {
+                                "mountPath": "/checkpoints",
+                                "name": "snapshot-checkpoints"
+                            },
+                            {
+                                "mountPath": "/tmp",
+                                "name": "snapshot-checkpoints"
+                            },
+                            {
+                                "mountPath": "/snapshot-bundle",
+                                "name": "snapshot-bundle",
+                                "readOnly": true,
+                                "recursiveReadOnly": "Disabled"
+                            },
+                            {
+                                "mountPath": "/checkpoints/speech-multi-0916-r2/images",
+                                "name": "snapshot-bundle",
+                                "readOnly": true,
+                                "recursiveReadOnly": "Disabled"
+                            }
+                        ]
+                    }
+                ],
+                "hostIP": "10.0.0.31",
+                "hostIPs": [
+                    {
+                        "ip": "10.0.0.31"
+                    }
+                ],
+                "initContainerStatuses": [
+                    {
+                        "allocatedResources": {
+                            "cpu": "100m",
+                            "memory": "64Mi"
+                        },
+                        "containerID": "containerd://85cbbca0c8efd9cf14475a2d44ff5935b8289e70540f4692facf241d8fae70c9",
+                        "image": "sha256:b4ad7e539f505b1a6cb47be0803a162e46cd24cd0e3139ae20fc4674fdc285f0",
+                        "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/multilingual@sha256:628c1ffdb68c6e510de5a691432b4da9a6f64941ce5f35c57213ad8cea8b7205",
+                        "lastState": {},
+                        "name": "snapshot-local-address",
+                        "ready": true,
+                        "resources": {
+                            "limits": {
+                                "cpu": "1",
+                                "memory": "128Mi"
+                            },
+                            "requests": {
+                                "cpu": "100m",
+                                "memory": "64Mi"
+                            }
+                        },
+                        "restartCount": 0,
+                        "started": false,
+                        "state": {
+                            "terminated": {
+                                "containerID": "containerd://85cbbca0c8efd9cf14475a2d44ff5935b8289e70540f4692facf241d8fae70c9",
+                                "exitCode": 0,
+                                "finishedAt": "2026-09-16T12:12:16Z",
+                                "reason": "Completed",
+                                "startedAt": "2026-09-16T12:12:16Z"
+                            }
+                        },
+                        "user": {
+                            "linux": {
+                                "gid": 0,
+                                "supplementalGroups": [
+                                    0,
+                                    10001
+                                ],
+                                "uid": 0
+                            }
+                        },
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/snapshot-address",
+                                "name": "snapshot-address-source",
+                                "readOnly": true,
+                                "recursiveReadOnly": "Disabled"
+                            }
+                        ]
+                    },
+                    {
+                        "containerID": "containerd://b2835ba53a80b5ce9d2bfce52d30ffbe112eadffb11cb897416dcb00fbd542cd",
+                        "image": "sha256:dd1e374fcbad2cb6e12d186db51f49a7911642fadd366892bbf6000dfd5c7e54",
+                        "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4",
+                        "lastState": {},
+                        "name": "snapshot-tools",
+                        "ready": true,
+                        "resources": {},
+                        "restartCount": 0,
+                        "started": false,
+                        "state": {
+                            "terminated": {
+                                "containerID": "containerd://b2835ba53a80b5ce9d2bfce52d30ffbe112eadffb11cb897416dcb00fbd542cd",
+                                "exitCode": 0,
+                                "finishedAt": "2026-09-16T12:12:18Z",
+                                "reason": "Completed",
+                                "startedAt": "2026-09-16T12:12:18Z"
+                            }
+                        },
+                        "user": {
+                            "linux": {
+                                "gid": 0,
+                                "supplementalGroups": [
+                                    0,
+                                    10001
+                                ],
+                                "uid": 0
+                            }
+                        },
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/tools",
+                                "name": "snapshot-tools"
+                            },
+                            {
+                                "mountPath": "/checkpoints",
+                                "name": "snapshot-checkpoints"
+                            },
+                            {
+                                "mountPath": "/snapshot-network-source",
+                                "name": "snapshot-network-source",
+                                "readOnly": true,
+                                "recursiveReadOnly": "Disabled"
+                            },
+                            {
+                                "mountPath": "/snapshot-bundle",
+                                "name": "snapshot-bundle",
+                                "readOnly": true,
+                                "recursiveReadOnly": "Disabled"
+                            }
+                        ]
+                    }
+                ],
+                "observedGeneration": 1,
+                "phase": "Running",
+                "podIP": "10.6.122.86",
+                "podIPs": [
+                    {
+                        "ip": "10.6.122.86"
+                    }
+                ],
+                "qosClass": "Burstable",
+                "startTime": "2026-09-16T12:12:15Z"
+            }
+        }
+    ],
+    "kind": "List",
+    "metadata": {
+        "resourceVersion": ""
+    }
+}

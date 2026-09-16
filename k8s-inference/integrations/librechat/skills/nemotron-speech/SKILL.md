@@ -42,6 +42,17 @@ use `0-6b`. Do not derive one by guessing; use discovery and the current schema.
 6. Present only a completed transcript as final. Keep model errors distinct
    from empty/silent audio. Preserve source, operation ID and any limitations.
 
+A successful long job may return an `operation-artifact-result/v1` envelope
+instead of inline `text` (the full schema is
+`fs2-serve.nebius.ai/operation-artifact-result/v1`). This is **not an empty
+transcript or failed inference**. Use the existing artifact-download tools/client
+workflow, or authenticated `GET /v1/artifacts/{artifact_id}/content`, to retrieve
+the result. Verify the returned byte count and SHA-256 against the pointer, then
+interpret its declared `content_type` (speech output is JSON). Download outside
+LLM tool arguments; keep long transcripts as files and display an appropriate
+excerpt/link rather than expanding them all into context. Do not resubmit the
+audio merely because the first response is an artifact pointer.
+
 The file adapter accepts supported compressed formats and converts them to
 mono 16 kHz audio. Current implementation bounds are 512 MiB encoded and two
 hours decoded for artifact jobs. Check the live schema for authoritative

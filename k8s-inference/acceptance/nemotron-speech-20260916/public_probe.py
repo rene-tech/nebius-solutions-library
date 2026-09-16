@@ -40,6 +40,23 @@ def prepare_audio(source, output, repetitions=1):
             "transport_bytes": output.stat().st_size}
 
 
+def resolve_result(client, value, row):
+    """Long transcripts use the same immutable result artifacts as other Apps."""
+    if value.get("schema") != "fs2-serve.nebius.ai/operation-artifact-result/v1":
+        return value
+    row["result_envelope"] = value
+    artifact = value["artifact"]
+    if value["content_type"] != "application/json" or artifact["compression"] != "none":
+        raise RuntimeError("unexpected_speech_result_artifact_format")
+    response = client.get("/v1/artifacts/" + artifact["artifact_id"] + "/content")
+    response.raise_for_status()
+    if (len(response.content) != artifact["size_bytes"] or
+            hashlib.sha256(response.content).hexdigest() != artifact["sha256"]):
+        raise RuntimeError("speech_result_artifact_checksum_mismatch")
+    row["result_artifact_verified"] = True
+    return response.json()
+
+
 def submit_file(client, path, model, language, row):
     """Keep full audio intact; use durable artifacts above compatibility size."""
     key = "speech-public-" + uuid4().hex
@@ -229,7 +246,7 @@ def main():
                         row["wall_seconds"] = time.monotonic()-started
                         row["final_status"] = response.status_code
                         if "json" in response.headers.get("content-type", ""):
-                            row["result"] = response.json()
+                            row["result"] = resolve_result(client, response.json(), row)
                         else:
                             row["result"] = {"error": "non_json_response", "body": response.text[:1000]}
                         response.raise_for_status()

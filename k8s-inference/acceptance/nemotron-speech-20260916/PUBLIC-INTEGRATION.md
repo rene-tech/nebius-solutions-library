@@ -69,13 +69,84 @@ burst was requested but repeatedly evicted while unpacking NeMo into the2Gi
 fix routes model unpacking to the existing8Gi `/cache` (`TMPDIR=/cache`), without
 increasing resource or cloud limits. Apply through additive template registration
 and normal App drain/preview/apply, then rerun; do not patch controller-owned
-Deployments manually. Post-fix results are not yet included here.
+Deployments manually. Post-fix results are below.
 
 Receipts: `public-medical-live-paced-r1.json`, `public-medical-files-mixed-r1.json`,
 `public-medical-mcp-mixed-r1.json`, `public-mixed-scaling-r1.jsonl`, and
 `multilingual-pods-before-scratch-fix.json`. The original observer's Pod `ready`
 field only checked container status; use retained Pod Ready conditions and
 Deployment ready counts. The observer source now checks the actual Ready gate.
+
+## Scratch fix and mixed cohort r2
+
+Helm132 installed additive templates while retaining previous qualified digests
+and all sibling model entries. Gateway3/3 and controller2/2 rollout checked.
+After all r1 traffic finished, both speech Apps were drained through their normal
+API and observed Cold, then new template references applied and min1/max2 restored.
+Both fresh hot Pods and both requested preemptible burst Pods reached Ready.
+New templates use `TMPDIR=/cache`; resource requests/limits are unchanged.
+
+All nine r2 calls completed, including full paced streams with exact durable
+transcript parity. Post-EOS finalization was0.282s English/0.195s German; first
+partials3.422s/9.035s from playback start. German session-ready wait28.713s included
+the new hot worker finishing conventional initialization. English files/MCP
+waited342.733s/401.223s respectively for their first result while burst capacity
+was unavailable and a concurrent long-file test occupied the new worker. These
+waits remain explicit limitations, not erased by the successful scaling result.
+The English burst was initially Unschedulable, then scheduled and loaded; the
+German burst no longer suffered the2Gi unpack eviction. Initial and final Pod
+events/specs and ten-minute replica history are retained in `*-scratch-r2.json`
+and `public-mixed-scaling-r2.jsonl`. Later image-cached repeat r3 is a separate
+cohort, not a controlled cold-start comparison.
+
+The exact Pod-create→Ready single observations were36s English hot (image
+cached),81s multilingual hot (cached),85s multilingual burst (cached), and287s
+English burst (not cached). The English burst breakdown includes71s before
+scheduling,170.483s image pull for9,718,733,705bytes, and45s container-start→Ready.
+These are conventional-load observations, not snapshot startup or p95. A snapshot
+does not eliminate a missing runtime-image pull; image pre-caching remains a
+separate required optimization for new nodes.
+
+## Unchanged-release mixed cohort r3
+
+All nine calls passed on the same Helm132/backend/runtime/template release.
+Both paced full streams again matched durable results and completed after EOS
+in0.260s English/0.351s German. Session-ready waits2.011s/1.104s. First partials
+5.234s/9.058s from playback start: English was slower than r2, so this is not an
+all-latency-gates pass or a p95 estimate. File results took27.308/33.529/92.558/
+36.763/26.210s; MCP English86.776s/German41.383s. Concurrent long-file and private
+restore checks are recorded separately; no controlled paired speedup is claimed.
+All keys revoked. Receipts `public-medical-{files,mcp}-mixed-r3.json`,
+`public-medical-live-paced-r3.json` and `public-mixed-scaling-r3.jsonl`.
+
+r2/r3 establish two consecutive unchanged-release **mixed protocol cohorts**,
+not completion of the larger feature, fairness, priority, drain/preemption,
+per-GPU accounting or production snapshot acceptance matrix.
+
+## Public 30+ minute recordings
+
+`public-medical-long-files-r2.json` passed both ordinary-key artifact/native
+async operations and downloaded/verified the complete result artifacts:
+
+| Fixture | Full decoded duration | Request to result pointer | Worker processing | Result artifact |
+|---|---:|---:|---:|---:|
+| Complete English consultation01 repeated4times |1,831.680s|125.614s|103.729s|139,589bytes|
+| Complete German Herzrasen repeated5times |2,109.301s|121.132s|115.202s|153,373bytes|
+
+These are repeated teaching recordings for duration/boundary testing, **not**
+independent30-minute consultations or extra accuracy samples. Every decoded
+sample count matches; full transcripts include the final English goodbye and
+German final exchange. A unit test verifies lossless repetition of every source
+sample. Times include mixed-load waiting/upload/polling where applicable, exclude
+local FLAC preparation and final result-artifact download. The results were then
+downloaded with the customer key and byte count/SHA-256 verified. No higher limits.
+
+The first long-file test successfully transcribed but its driver mistook the
+standard large-result artifact pointer for an empty transcript. Negative driver
+receipt `public-medical-long-files-r1.json` is retained. The fixed driver follows
+`operation-artifact-result/v1` and authenticates artifact retrieval;5helper tests
+pass, including digest-mismatch rejection. The speech skill now describes this
+path. No server result-size increase or inference retry workaround was required.
 
 ## Failures retained and fixes
 

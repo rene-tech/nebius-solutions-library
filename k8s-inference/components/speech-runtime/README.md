@@ -1,20 +1,21 @@
 # Nemotron Speech runtime — implementation in progress
 
-This component is **not publicly deployed or customer-qualified**. It establishes the
-shared contracts, exact model pins, bounded audio framing and an adapter over
-NVIDIA NeMo's cache-aware RNNT pipeline. It does not replace the control plane's
+This component is publicly deployed for qualification, **not fully customer-qualified**.
+It provides shared contracts, exact model pins, bounded audio framing and an adapter
+over NVIDIA NeMo's cache-aware RNNT pipeline. It does not replace the control plane's
 authentication, admission, durable operations, artifact delivery or billing.
 
-Initial task-owned preemptible H100 diagnostics passed for both models; see
-[raw evidence and measured limitations](../../acceptance/nemotron-speech-20260916/README.md).
-The initial image contains the probe/adapter, not the later stream lifecycle
-runner. Neither successful diagnostic is a public/customer acceptance result.
+Complete public medical file, typed MCP and real-time-paced streaming cohorts
+passed for both models; see [public evidence and remaining gaps](../../acceptance/nemotron-speech-20260916/PUBLIC-INTEGRATION.md).
+The separate [German reference benchmark](../../acceptance/nemotron-speech-20260916/GERMAN-MULTIMED.md)
+measures quality and warmed speed; it is not clinical qualification.
 
-Two Apps are planned: `nemotron-speech-en-0.6b` and
-`nemotron-speech-multilingual-0.6b`. Their independent checkpoint revisions and
+The two public App IDs are `nemotron-speech-en-0-6b` and
+`nemotron-speech-multilingual-0-6b`. Native worker/options IDs retain `0.6b`;
+discover the typed schema instead of guessing a conversion. Their checkpoint revisions and
 licenses are defined in `src/fs2_speech/contracts.py`. Application IDs differ
 from upstream repository names deliberately; discoverable descriptions must
-include the upstream names. No catalog readiness claims have been added.
+include the upstream names. Full-feature readiness remains unclaimed.
 
 ## Development and direct-runtime diagnostic
 
@@ -48,7 +49,7 @@ diagnostic with English audio is not multilingual quality qualification.
 ## Streaming contract foundation
 
 Start options explicitly negotiate mono 16 kHz signed little-endian PCM16.
-File codecs will be converted explicitly by the file adapter; PCM wire format
+File codecs are converted explicitly by the file adapter; PCM wire format
 does not imply that browsers already produce it. Odd/empty/oversized audio
 messages fail validation. Frame buffering retains at most one model frame
 between input messages and preserves the last incomplete/exact-boundary frame.
@@ -70,7 +71,8 @@ measured continuous batching remain implementation work, not delivered features.
 ## Next integration work
 
 See [implementation and qualification plan](../../docs/nemotron-speech-onboarding-20260916.md).
-Public WebSocket/file routes, durable long-file jobs, tenant grants, typed MCP,
-admin integration, fair live/batch admission, scalable deployment profiles and
-the full customer-path qualification matrix are still open. No unauthenticated
-runtime is exposed publicly and no alternate auth/billing system is introduced.
+Public WebSocket/file routes, durable artifact jobs, tenant grants and typed MCP
+are integrated. Remaining work includes full profile/option coverage, measured
+fair live/batch admission, production snapshot publication, live audio retention
+and complete lifecycle/resilience acceptance. No unauthenticated runtime is
+exposed publicly and no alternate auth/billing system is introduced.

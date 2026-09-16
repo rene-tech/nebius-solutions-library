@@ -20,7 +20,7 @@ checks, storage mounts and readiness propagation. One observation per model,
 not p95. The shared snapshot PVC is `fs2-fleet-snapshots-rwx-r20260907`; no
 H100 local NVMe claim. The original donor Pods were removed after capture;
 checkpoint directories and evidence were retained. Different-GPU UUID remapping
-and production controller publication have not been qualified here.
+was subsequently tested below; production controller publication remains open.
 
 ## Correctness checks after restore
 
@@ -67,3 +67,39 @@ Public Apps use canonical IDs `nemotron-speech-en-0-6b` and
 its `0.6b` spelling; the gateway resolves this explicitly. The new catalog
 declarations intentionally leave public-route, cold-start and scaling flags
 false, and production snapshot startup disabled pending integration tests.
+
+## Cross-node / different-GPU restore r3
+
+The same immutable clean r2 bundles were restored on the existing reserved H100
+nodes, explicitly remapping to different physical GPU UUIDs. Normal-load fallback
+was disabled. Both workers completed two full medical recordings via HTTP and
+unpaced WebSocket (eight results total); every transcript and decoded duration
+exactly matched its earlier r2 result. This is additional private-worker evidence,
+not production snapshot activation or a public cold-start SLA.
+
+| Measurement | English | Multilingual |
+|---|---:|---:|
+| CRIU restore |5.913s|7.735s|
+| CUDA restore |1.141s|1.227s|
+| CUDA unlock |0.023s|0.021s|
+| Sum of restore calls |7.077s|8.983s|
+| Pod creation to restore-complete log marker |22.326s|16.860s|
+| Immutable bundle bytes |8,501,526,502|10,901,327,725|
+| Bundle file count |222|222|
+
+One observation/model. Image/shared-filesystem caches were retained. The Pod
+clock includes scheduling/init work but ends at the supervisor marker, **not**
+at externally observed Ready or first result; it excludes node provisioning.
+Do not compare it as a controlled speedup against an unrelated image-cold run.
+Kernel/driver remain6.11.0-1016-nvidia/580.159.04, H10080GB, unchanged profiles.
+Full parsed identities, remapping, per-recording timings and exact-match checks:
+`cross-restore-analysis-r3.json`; reproducible parser `analyze_cross_restore.py`.
+Raw source/Pod/log/HTTP/live evidence is retained with `cross-`/`r3` filenames.
+Read-only bundle hash manifests are `en-snapshot-r2-manifest.json` and
+`multi-snapshot-r2-manifest.json`; no customer audio entered the saved bundles.
+
+The two task-only r3 restored Pods were removed after these checks and manifest
+capture. Their exact live specifications/UIDs are retained in
+`cross-restored-pods-before-cleanup-r3.json`. Shared snapshots and public Apps
+remain. Matched repeated cold-start trials, production renderer/fallback and
+public snapshot policy qualification are still outstanding.

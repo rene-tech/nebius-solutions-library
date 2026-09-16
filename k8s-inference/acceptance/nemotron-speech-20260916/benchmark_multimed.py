@@ -22,7 +22,6 @@ from uuid import uuid4
 
 import boto3
 import httpx
-import pyarrow.parquet as pq
 from botocore.config import Config
 
 from score_medical import alignment, words
@@ -80,6 +79,9 @@ def aggregate(rows):
 
 
 def main():
+    # Corpus loading is optional for pure scoring tests and result analysis.
+    import pyarrow.parquet as pq
+
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("kubeconfig", "context", "origin", "pod"):
         parser.add_argument("--" + name, required=True)

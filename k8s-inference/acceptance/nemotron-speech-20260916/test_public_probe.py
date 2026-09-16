@@ -4,8 +4,9 @@ import subprocess
 import wave
 
 import httpx
+import pytest
 
-from public_probe import IDS, prepare_audio, submit_file
+from public_probe import IDS, prepare_audio, resolve_result, submit_file
 
 
 def test_large_recording_keeps_all_bytes_and_uses_async_artifact(tmp_path):
@@ -77,3 +78,27 @@ def test_long_fixture_repeats_every_source_sample(tmp_path):
     assert metadata["expected_audio_seconds"] == 4
     assert metadata["source_repeat_count"] == 4
     assert metadata["transport_sha256"] == hashlib.sha256(output.read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize("corrupt", [False, True])
+def test_result_artifact_download_is_verified_before_reading(corrupt):
+    content = json.dumps({"text": "complete transcript", "audio_seconds": 1831.68}).encode()
+    envelope = {"schema": "fs2-serve.nebius.ai/operation-artifact-result/v1",
+                "content_type": "application/json", "artifact": {"artifact_id": "abc", "compression": "none",
+                "size_bytes": len(content), "sha256": hashlib.sha256(content).hexdigest()}}
+    row = {}
+
+    def handler(request):
+        assert request.url.path == "/v1/artifacts/abc/content"
+        assert request.headers["authorization"] == "Bearer ordinary-test-key"
+        return httpx.Response(200, content=b"wrong" if corrupt else content)
+
+    with httpx.Client(base_url="https://platform.test", headers={"authorization": "Bearer ordinary-test-key"},
+                      transport=httpx.MockTransport(handler)) as client:
+        if corrupt:
+            with pytest.raises(RuntimeError, match="checksum_mismatch"):
+                resolve_result(client, envelope, row)
+        else:
+            assert resolve_result(client, envelope, row) == json.loads(content)
+            assert row["result_artifact_verified"]
+        assert row["result_envelope"] == envelope

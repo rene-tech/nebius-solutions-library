@@ -62,8 +62,10 @@ Public backend and both Apps are deployed. Complete files, typed MCP and full
 real-time-paced live streams pass through ordinary customer keys, including a
 nine-call mixed cohort. Multipart scratch, shared-App policy, KEDA name length
 and busy-worker failures have been corrected. The mixed cohort exposed a burst
-startup scratch-space defect; its fix and final scaling qualification are in
-progress. See [public integration evidence](../acceptance/nemotron-speech-20260916/PUBLIC-INTEGRATION.md).
+startup scratch-space defect; its fix is deployed and two unchanged-release
+mixed cohorts passed with burst replicas reaching Ready. Public30+minute files
+and large transcript-artifact retrieval also passed. Final priority/fairness and
+resilience qualification remain open. See [public integration evidence](../acceptance/nemotron-speech-20260916/PUBLIC-INTEGRATION.md).
 Negative receipts remain; these results do not complete all acceptance gates.
 
 Initial H100 direct-runtime evidence is retained in
@@ -75,7 +77,7 @@ All rows still require public-path evidence; CPU tests alone do not qualify them
 | Capability | Upstream / selected adapter | Platform status |
 | --- | --- | --- |
 | Live incremental audio, early partials, final flush | NeMo `Frame` / `transcribe_step` | Both models passed complete public paced consultations at560ms, including simultaneous file/MCP work |
-| Complete file transcription | Same stream, all frames through EOS | All five complete medical recordings passed public multipart/artifact APIs;30-minute recordings passed privately, public30-minute qualification remains |
+| Complete file transcription | Same stream, all frames through EOS | All five medical recordings and both30+minute repeated-recording fixtures passed public multipart/artifact APIs with verified full transcript downloads |
 | English 80/160/560/1120 ms | Left context 70, right 0/1/6/13 | Strict options and profile validation; GPU matrix pending |
 | Multilingual additionally 320 ms | Left context 56, right 0/1/3/6/13 | Strict options and profile validation; GPU matrix pending |
 | 32 out-of-box locales | 19 primary + 13 broad-coverage | Identifiers CPU-tested; English/German recordings measured, other languages unqualified |
@@ -88,7 +90,7 @@ All rows still require public-path evidence; CPU tests alone do not qualify them
 | Phrase boosting / external n-gram LM | NeMo pipeline supports biasing | Not implemented; capability gap, not upstream unsupported |
 | Alternate sample rates/stereo/file codecs | Incremental ffmpeg decoding | Implemented with sample-preservation CPU tests; full codec GPU matrix pending |
 | ITN / translation / diarization | Separate pipeline components/models | Not claimed as base-checkpoint functionality; separate-model work out of scope |
-| GPU snapshots | Clean loaded worker, no customer data | Both fresh-Pod restores passed with exact full-recording parity; restore-call sums 6.717/8.552 s, public startup/controller publication pending |
+| GPU snapshots | Clean loaded worker, no customer data | Same-node and different-GPU restores passed full-recording parity; cross-node restore-call sums7.077/8.983s, public startup/controller publication pending |
 
 ## Integration sequence
 

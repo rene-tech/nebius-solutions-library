@@ -1,0 +1,2731 @@
+{
+  "started_at": "2026-09-16T12:02:03.693324+00:00",
+  "scope": "mcp",
+  "complete_customer_acceptance": false,
+  "measurements": [
+    {
+      "model": "nemotron-speech-en-0-6b",
+      "input_sha256": "bed0455e336172d5e8c8eaa56bf54efa69cce5f115fba17cfb7d92d482953af5",
+      "source_audio_seconds": 457.92,
+      "tool": "infer_nemotron_speech_en_0_6b_native",
+      "transport_sha256": "a4bf68687801610eb4af999a9633f088c3fbf5dd6dc890af23f188a13e5d31df",
+      "transport_bytes": 6748717,
+      "upload_operation_id": "8c521af6-6ab7-4a6a-b09d-40ac5c7bd74d",
+      "artifact_id": "29cc0c3b-eae4-4c77-af1d-f9e7a612d771",
+      "arguments": {
+        "audio": {
+          "artifact_id": "29cc0c3b-eae4-4c77-af1d-f9e7a612d771",
+          "sha256": "a4bf68687801610eb4af999a9633f088c3fbf5dd6dc890af23f188a13e5d31df",
+          "size_bytes": 6748717,
+          "media_type": "audio/flac",
+          "compression": "none"
+        },
+        "options": {
+          "model": "nemotron-speech-en-0.6b",
+          "language": "en"
+        },
+        "idempotency_key": "speech-mcp-f4aaa61d29dc4c158e46c9cf8f73da41",
+        "wait_seconds": 0
+      },
+      "operation_id": "3f2c382b-1059-40a7-8b38-920460133410",
+      "operation": {
+        "id": "3f2c382b-1059-40a7-8b38-920460133410",
+        "tenant_id": "rene",
+        "principal_id": "rene",
+        "token_id": "ac98db31-084e-4d87-b704-ed45e4a25f46",
+        "model_id": "nemotron-speech-en-0-6b",
+        "model_revision": "dynamic:sha256:6ee84c404b2d34de177f5dd8225e17436414cbe9088bda66464ad83bb4a1486e",
+        "protocol": "native",
+        "operation": "transcribe",
+        "idempotency_key": "speech-mcp-f4aaa61d29dc4c158e46c9cf8f73da41",
+        "status": "succeeded",
+        "accepted_at": "2026-09-16T12:02:14.748919Z",
+        "available_at": "2026-09-16T12:02:14.748919Z",
+        "deadline_at": "2026-09-16T14:02:14.737417Z",
+        "activation_started_at": "2026-09-16T12:02:14.779394Z",
+        "ready_at": "2026-09-16T12:02:14.943885Z",
+        "started_at": "2026-09-16T12:02:14.948784Z",
+        "completed_at": "2026-09-16T12:08:48.602021Z",
+        "outcome": "succeeded",
+        "semantic_outcome": "protocol_valid",
+        "http_status": 200,
+        "response_content_type": "application/json",
+        "result_available": true,
+        "payload_expires_at": "2026-09-17T12:02:14.748919Z",
+        "error_code": null,
+        "error_detail": null,
+        "attempt": 1,
+        "max_attempts": 3,
+        "fencing_token": 1,
+        "runtime": {
+          "pod_uid": null,
+          "node_uid": null,
+          "gpu_uuids": [],
+          "gpu_count": 0,
+          "preemptible": null
+        },
+        "estimated_gpu_seconds": 3600.0,
+        "reserved_gpu_seconds": 0.0,
+        "cold_start_seconds": 0.194966,
+        "input_tokens": null,
+        "output_tokens": null,
+        "modality_usage": [
+          {
+            "modality": "audio",
+            "direction": "input",
+            "unit": "seconds",
+            "amount": 457.92
+          }
+        ],
+        "modality_usage_reported": true,
+        "reused": false
+      },
+      "result": {
+        "text": "Hello hello yeah, okay hello how can I help you this morning hi um I've just had some um diarrhea for the last three days um and it's been affecting me I need to stay close to the toilet and um yeah it's been affecting my day to day activities sorry to hear that um and when you say diarrhea what do you mean by diarrhea do you mean you're going to the toilet more often or are your stools more loose Yeah so it's like loose and watery stool going to the toilet quite often um and like some pain in my like lower stomach okay and how many times a day are you going let's say over the last couple of days probably like six seven times a day six seven times a day and you may mention is mainly water tree have you noticed any other things like blood in your stools no no blood Yeah just watery and loose stool okay and you mentioned you've had some pain in your tummy as well Yeah whereabouts is a pain exactly so it's like in my lower abdomen so uh like um yeah just to one side one side and what side is that uh on the left side left side okay and can you describe the pain to me Yeah it feels um like uh cramp uh like a muscular cramp and um yeah I feel a bit weak and shaky okay and there's a pain is that is it there all the time or does it come and go uh it comes and goes and goes a pain move anywhere else for example towards your back um no just mainly my stomach okay fine and you mentioned you've been feeling quite weak and shaky as well would you mean by shaky do you mean you've been having uh are you been feeling feverish for example um yeah it doesn't feel like uh yeah I just mainly feel weaker I haven't had a fever um at the moment but I did notice um a temperature when the symptom started so um yeah around about three or four days ago you measure your temperature then yeah I didn't measure my temperature no but I felt um just a bit hot okay okay any other symptoms like sweating or um no and uh any vomiting at all Yeah so um I vomited at the start of the symptoms but now um I've stopped vomiting stop vomiting okay and was your vomit I know it's not nice thing to talk about but was it just normal food colour yeah yeah just normal vomit yeah and there was no blood in your vomit is that right no blood no no okay um and um any other symptoms at all you mentioned tummy pain you mentioned diarrhea you mentioned the vomiting anything else that comes to mind um I had a loss of appetite um so I haven't been eating as much um but I've been able to hold down fluids okay so you're drinking fluids what kind of foods have you managed to eat anything um just soups and uh yeah light foods like smoothies and yeah liquid foods mainly okay fine um and so you start just three days ago the symptoms are you aware of any triggers which may have caused your symptoms to uh to kick on So for example take away food or eating out or being around other people who would similar symptoms Yeah so I had takeaway about four days ago um uh but other than that I've yeah been uh eating normally I think unusual Yeah do you remember where you ate um yeah I ate at a Chinese restaurant with friends okay anyone else on well with similar symptoms um so no one else in the family so I uh wife and two kids and one um child was vomiting but they haven't got diarrhea there's no one with the same symptoms okay okay fine um right and uh in terms of your your overall health are you normally fitting well or um yeah I mean other than um asthma um I use an inhaler everything uh else is fine okay and did your asthma well controlled uh yeah that's fine just yeah you send inhaler and uh that's under control fine and you don't have any other tummy problem bowel problems I should be aware of no no okay um in t ap apart from the inhalers do you take any other medications uh no no other medications okay fine and in terms of just your your day to day life you said it's been affecting your life um in what way has it been affecting your life uh sorry I need to stay close to the toilet cause I go quite frequently during the these past three days okay um yeah other than that it's uh yeah the main concern and have you are you currently working at the moment uh yeah I I work work um I'm an accountant okay have you been going into work the last three days or have you been at home uh yeah I've been going to work okay that must be difficult for you then yeah it's been quite difficult and you say you mentioned you live with a wife and two children is that right Yes all right um just couple of other questions we need to ask so um do you smoke at all uh no I don't smoke and do you drink much in the web alcohol  no I I don't drink alcohol no okay so um uh normally at this stage I like to um examine you if that's okay but um um but but but but but but but but but but but but but but but but but but but but but having listened to your stories uh I think um just to recap the for the last three days you've been having loose dull diarrhea a bit of tummy pain mainly on the left hand side uh um and vomiting and being generally quite weak and lethargic you mentioned you having this Chinese takeaway as well three days ago and I wonder whether that might be the cause of your problems okay um it seems like you may have something uh called gastroenteritis which essentially just uh tummy bug or infection of your of your tummy mainly caused by viruses but it can be uh possibility of bacteria uh causing your symptoms at this stage uh what what we'd recommend is just what we say conservative management so I don't think you need anything like antibiotics is really just um making sure you're well hydrated so drinking fluids um there are things like dire light you can get from the pharmacy which uh it's um it helps replenish some of your minerals and vitamins and if you are having vomiting and diarrhea I would certainly recommend that and first you know first couple of days yeah if you are feeling feverish and weak taking some paracetamol two tablets up to four times a day for the first few days can also help I would certainly advise you to take some time work actually I know you're quite keen to work but um I would say next two two to three days um clears from your system take some time off and rest um you know if your symptoms haven't got better you know in in three to four days I'd like to come back and see you again because if it is ongoing then we have to wonder whether there's something else causing symptoms and we may need to do further tests like um taking a sample of your store so we can test that um et cetera et cetera yeah sure yeah how's that sound that sounds great Yeah yeah do you have any questions for me um no further questions okay is is is the treatment plan clear uh yeah yeah that's that's very clear thank you great well I wish you all the best okay thank you thank you bye",
+        "segments": [
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 3,
+            "segment_id": 0,
+            "revision": 3,
+            "text": " Hello hello",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " Hello hello",
+                "start_seconds": 2.88,
+                "end_seconds": 4.32,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 7,
+            "segment_id": 1,
+            "revision": 4,
+            "text": " yeah, okay hello",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " yeah, okay hello",
+                "start_seconds": 8.24,
+                "end_seconds": 9.2,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 19,
+            "segment_id": 2,
+            "revision": 12,
+            "text": " how can I help you this morning hi um I've just had some um diarrhea for the last three days",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " how can I help you this morning hi um I've just had some um diarrhea for the last three days",
+                "start_seconds": 11.2,
+                "end_seconds": 17.36,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 32,
+            "segment_id": 3,
+            "revision": 13,
+            "text": " um and it's been affecting me I need to stay close to the toilet and um yeah it's been affecting my day to day activities",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " um and it's been affecting me I need to stay close to the toilet and um yeah it's been affecting my day to day activities",
+                "start_seconds": 19.04,
+                "end_seconds": 25.2,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 33,
+            "segment_id": 4,
+            "revision": 1,
+            "text": " sor",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " sor",
+                "start_seconds": 26.8,
+                "end_seconds": 26.88,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 94,
+            "segment_id": 5,
+            "revision": 61,
+            "text": "ry to hear that um and when you say diarrhea what do you mean by diarrhea do you mean you're going to the toilet more often or are your stools more loose Yeah so it's like loose and watery stool going to the toilet quite often um and like some pain in my like lower stomach okay and how many times a day are you going let's say over the last couple of days probably like six seven times a day six seven times a day and you may mention is mainly water tree have you noticed any other things like blood in your stools no no blood Yeah just watery and loose stool okay and you mentioned you've had some pain in your tummy as well",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": "ry to hear that um and when you say diarrhea what do you mean by diarrhea do you mean you're going to the toilet more often or are your stools more loose Yeah so it's like loose and watery stool going to the toilet quite often um and like some pain in my like lower stomach okay and how many times a day are you going let's say over the last couple of days probably like six seven times a day six seven times a day and you may mention is mainly water tree have you noticed any other things like blood in your stools no no blood Yeah just watery and loose stool okay and you mentioned you've had some pain in your tummy as well",
+                "start_seconds": 27.04,
+                "end_seconds": 62.16,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 122,
+            "segment_id": 6,
+            "revision": 28,
+            "text": " Yeah whereabouts is a pain exactly so it's like in my lower abdomen so uh like um yeah just to one side one side and what side is that uh on the left side left side okay and can you describe the pain to me Yeah it feels um like uh cramp",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " Yeah whereabouts is a pain exactly so it's like in my lower abdomen so uh like um yeah just to one side one side and what side is that uh on the left side left side okay and can you describe the pain to me Yeah it feels um like uh cramp",
+                "start_seconds": 63.28,
+                "end_seconds": 80.72,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 163,
+            "segment_id": 7,
+            "revision": 41,
+            "text": " uh like a muscular cramp and um yeah I feel a bit weak and shaky okay and there's a pain is that is it there all the time or does it come and go uh it comes and goes and goes a pain move anywhere else for example towards your back um no just mainly my stomach okay fine and you mentioned you've been feeling quite weak and shaky as well would you mean by shaky do you mean you've been having uh are you been feeling feverish for example",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " uh like a muscular cramp and um yeah I feel a bit weak and shaky okay and there's a pain is that is it there all the time or does it come and go uh it comes and goes and goes a pain move anywhere else for example towards your back um no just mainly my stomach okay fine and you mentioned you've been feeling quite weak and shaky as well would you mean by shaky do you mean you've been having uh are you been feeling feverish for example",
+                "start_seconds": 81.76,
+                "end_seconds": 106.48,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 187,
+            "segment_id": 8,
+            "revision": 24,
+            "text": " um yeah it doesn't feel like uh yeah I just mainly feel weaker I haven't had a fever um at the moment but I did notice um a temperature when the symptom started so um yeah around about three or four days ago",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " um yeah it doesn't feel like uh yeah I just mainly feel weaker I haven't had a fever um at the moment but I did notice um a temperature when the symptom started so um yeah around about three or four days ago",
+                "start_seconds": 107.6,
+                "end_seconds": 120.4,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 190,
+            "segment_id": 9,
+            "revision": 3,
+            "text": " you measure your temperature then",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " you measure your temperature then",
+                "start_seconds": 121.52,
+                "end_seconds": 122.08,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 203,
+            "segment_id": 10,
+            "revision": 13,
+            "text": " yeah I didn't measure my temperature no but I felt um just a bit hot okay okay any other symptoms like sweating or um",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " yeah I didn't measure my temperature no but I felt um just a bit hot okay okay any other symptoms like sweating or um",
+                "start_seconds": 123.2,
+                "end_seconds": 130.8,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 205,
+            "segment_id": 11,
+            "revision": 2,
+            "text": " no",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " no",
+                "start_seconds": 132.72,
+                "end_seconds": 132.8,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 220,
+            "segment_id": 12,
+            "revision": 15,
+            "text": " and uh any vomiting at all Yeah so um I vomited at the start of the symptoms but now um I've stopped vomiting",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " and uh any vomiting at all Yeah so um I vomited at the start of the symptoms but now um I've stopped vomiting",
+                "start_seconds": 134.08,
+                "end_seconds": 142.24,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 230,
+            "segment_id": 13,
+            "revision": 10,
+            "text": " stop vomiting okay and was your vomit I know it's not nice thing to talk about but was it just normal food colour",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " stop vomiting okay and was your vomit I know it's not nice thing to talk about but was it just normal food colour",
+                "start_seconds": 143.44,
+                "end_seconds": 148.64,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 251,
+            "segment_id": 14,
+            "revision": 21,
+            "text": " yeah yeah just normal vomit yeah and there was no blood in your vomit is that right no blood no no okay um and um any other symptoms at all you mentioned tummy pain you mentioned diarrhea you mentioned the vomiting",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " yeah yeah just normal vomit yeah and there was no blood in your vomit is that right no blood no no okay um and um any other symptoms at all you mentioned tummy pain you mentioned diarrhea you mentioned the vomiting",
+                "start_seconds": 150.08,
+                "end_seconds": 161.84,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 254,
+            "segment_id": 15,
+            "revision": 3,
+            "text": " anything else that comes to mind",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " anything else that comes to mind",
+                "start_seconds": 163.12,
+                "end_seconds": 163.84,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 267,
+            "segment_id": 16,
+            "revision": 13,
+            "text": " um I had a loss of appetite um so I haven't been eating as much um but I've been able to hold down fluids",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " um I had a loss of appetite um so I haven't been eating as much um but I've been able to hold down fluids",
+                "start_seconds": 165.2,
+                "end_seconds": 172.48,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 270,
+            "segment_id": 17,
+            "revision": 3,
+            "text": " okay so you're drinking fluids",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " okay so you're drinking fluids",
+                "start_seconds": 173.68,
+                "end_seconds": 174.56,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 278,
+            "segment_id": 18,
+            "revision": 8,
+            "text": " what kind of foods have you managed to eat anything um just soups",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " what kind of foods have you managed to eat anything um just soups",
+                "start_seconds": 176.08,
+                "end_seconds": 180.32,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 285,
+            "segment_id": 19,
+            "revision": 7,
+            "text": " and uh yeah light foods like smoothies and",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " and uh yeah light foods like smoothies and",
+                "start_seconds": 181.44,
+                "end_seconds": 184.32,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 292,
+            "segment_id": 20,
+            "revision": 7,
+            "text": " yeah liquid foods mainly okay fine um and so",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " yeah liquid foods mainly okay fine um and so",
+                "start_seconds": 185.36,
+                "end_seconds": 189.92,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 303,
+            "segment_id": 21,
+            "revision": 11,
+            "text": " you start just three days ago the symptoms are you aware of any triggers which may have caused your symptoms to uh to kick on So for example",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " you start just three days ago the symptoms are you aware of any triggers which may have caused your symptoms to uh to kick on So for example",
+                "start_seconds": 191.12,
+                "end_seconds": 196.16,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 317,
+            "segment_id": 22,
+            "revision": 14,
+            "text": " take away food or eating out or being around other people who would similar symptoms Yeah so I had takeaway about four days ago",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " take away food or eating out or being around other people who would similar symptoms Yeah so I had takeaway about four days ago",
+                "start_seconds": 198.0,
+                "end_seconds": 204.96,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 327,
+            "segment_id": 23,
+            "revision": 10,
+            "text": " um uh but other than that I've yeah been uh eating normally",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " um uh but other than that I've yeah been uh eating normally",
+                "start_seconds": 206.64,
+                "end_seconds": 211.12,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 340,
+            "segment_id": 24,
+            "revision": 13,
+            "text": " I think unusual Yeah do you remember where you ate um yeah I ate at a Chinese restaurant with friends",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " I think unusual Yeah do you remember where you ate um yeah I ate at a Chinese restaurant with friends",
+                "start_seconds": 212.24,
+                "end_seconds": 218.96,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 365,
+            "segment_id": 25,
+            "revision": 25,
+            "text": " okay anyone else on well with similar symptoms um so no one else in the family so I uh wife and two kids and one um child was vomiting but they haven't got diarrhea there's no one with the same symptoms",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " okay anyone else on well with similar symptoms um so no one else in the family so I uh wife and two kids and one um child was vomiting but they haven't got diarrhea there's no one with the same symptoms",
+                "start_seconds": 220.08,
+                "end_seconds": 233.52,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 368,
+            "segment_id": 26,
+            "revision": 3,
+            "text": " okay okay fine",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " okay okay fine",
+                "start_seconds": 234.64,
+                "end_seconds": 235.36,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 391,
+            "segment_id": 27,
+            "revision": 23,
+            "text": " um right and uh in terms of your your overall health are you normally fitting well or um yeah I mean other than um asthma um I use an inhaler everything uh else is fine",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " um right and uh in terms of your your overall health are you normally fitting well or um yeah I mean other than um asthma um I use an inhaler everything uh else is fine",
+                "start_seconds": 236.96,
+                "end_seconds": 249.76,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 419,
+            "segment_id": 28,
+            "revision": 28,
+            "text": " okay and did your asthma well controlled uh yeah that's fine just yeah you send inhaler and uh that's under control fine and you don't have any other tummy problem bowel problems I should be aware of no no okay um in t ap apart from the inhalers do you take any other medications",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " okay and did your asthma well controlled uh yeah that's fine just yeah you send inhaler and uh that's under control fine and you don't have any other tummy problem bowel problems I should be aware of no no okay um in t ap apart from the inhalers do you take any other medications",
+                "start_seconds": 250.96,
+                "end_seconds": 267.92,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 436,
+            "segment_id": 29,
+            "revision": 17,
+            "text": " uh no no other medications okay fine and in terms of just your your day to day life you said it's been affecting your life um in what way has it been affecting your life",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " uh no no other medications okay fine and in terms of just your your day to day life you said it's been affecting your life um in what way has it been affecting your life",
+                "start_seconds": 269.44,
+                "end_seconds": 278.4,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 460,
+            "segment_id": 30,
+            "revision": 24,
+            "text": " uh sorry I need to stay close to the toilet cause I go quite frequently during the these past three days okay um yeah other than that it's uh yeah the main concern and have you are you currently working at the moment uh yeah I I work",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " uh sorry I need to stay close to the toilet cause I go quite frequently during the these past three days okay um yeah other than that it's uh yeah the main concern and have you are you currently working at the moment uh yeah I I work",
+                "start_seconds": 279.44,
+                "end_seconds": 294.88,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 472,
+            "segment_id": 31,
+            "revision": 12,
+            "text": " work um I'm an accountant okay have you been going into work the last three days or have you been at home uh yeah I've been going to work",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " work um I'm an accountant okay have you been going into work the last three days or have you been at home uh yeah I've been going to work",
+                "start_seconds": 296.48,
+                "end_seconds": 302.8,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 502,
+            "segment_id": 32,
+            "revision": 30,
+            "text": " okay that must be difficult for you then yeah it's been quite difficult and you say you mentioned you live with a wife and two children is that right Yes all right um just couple of other questions we need to ask so um do you smoke at all uh no I don't smoke and do you drink much in the web alcohol  no I I don't drink alcohol no okay",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " okay that must be difficult for you then yeah it's been quite difficult and you say you mentioned you live with a wife and two children is that right Yes all right um just couple of other questions we need to ask so um do you smoke at all uh no I don't smoke and do you drink much in the web alcohol  no I I don't drink alcohol no okay",
+                "start_seconds": 304.08,
+                "end_seconds": 322.96,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 504,
+            "segment_id": 33,
+            "revision": 2,
+            "text": " so um",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " so um",
+                "start_seconds": 324.32,
+                "end_seconds": 324.56,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 533,
+            "segment_id": 34,
+            "revision": 29,
+            "text": " uh normally at this stage I like to um examine you if that's okay but um um but but but but but but but but but but but but but but but but but but but but but having listened to your stories uh I think um just to recap the for the last three days you've been having loose dull diarrhea a bit of tummy pain mainly on the left hand side uh um and vomiting and being generally quite weak and lethargic",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " uh normally at this stage I like to um examine you if that's okay but um um but but but but but but but but but but but but but but but but but but but but but having listened to your stories uh I think um just to recap the for the last three days you've been having loose dull diarrhea a bit of tummy pain mainly on the left hand side uh um and vomiting and being generally quite weak and lethargic",
+                "start_seconds": 326.08,
+                "end_seconds": 342.64,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 547,
+            "segment_id": 35,
+            "revision": 14,
+            "text": " you mentioned you having this Chinese takeaway as well three days ago and I wonder whether that might be the cause of your problems okay um it seems like you may have something",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " you mentioned you having this Chinese takeaway as well three days ago and I wonder whether that might be the cause of your problems okay um it seems like you may have something",
+                "start_seconds": 343.92,
+                "end_seconds": 350.56,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 551,
+            "segment_id": 36,
+            "revision": 4,
+            "text": " uh called gastroenteritis",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " uh called gastroenteritis",
+                "start_seconds": 351.68,
+                "end_seconds": 353.12,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 560,
+            "segment_id": 37,
+            "revision": 9,
+            "text": " which essentially just uh tummy bug or infection of your of your tummy",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " which essentially just uh tummy bug or infection of your of your tummy",
+                "start_seconds": 354.72,
+                "end_seconds": 358.4,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 571,
+            "segment_id": 38,
+            "revision": 11,
+            "text": " mainly caused by viruses but it can be uh possibility of bacteria uh causing your symptoms",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " mainly caused by viruses but it can be uh possibility of bacteria uh causing your symptoms",
+                "start_seconds": 360.64,
+                "end_seconds": 366.4,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 589,
+            "segment_id": 39,
+            "revision": 18,
+            "text": " at this stage uh what what we'd recommend is just what we say conservative management so I don't think you need anything like antibiotics is really just um making sure you're well hydrated",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " at this stage uh what what we'd recommend is just what we say conservative management so I don't think you need anything like antibiotics is really just um making sure you're well hydrated",
+                "start_seconds": 369.2,
+                "end_seconds": 378.56,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 592,
+            "segment_id": 40,
+            "revision": 3,
+            "text": " so drinking fluids",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " so drinking fluids",
+                "start_seconds": 379.68,
+                "end_seconds": 380.96,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 596,
+            "segment_id": 41,
+            "revision": 4,
+            "text": " um there are things like",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " um there are things like",
+                "start_seconds": 383.04,
+                "end_seconds": 384.24,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 608,
+            "segment_id": 42,
+            "revision": 12,
+            "text": " dire light you can get from the pharmacy which uh it's um it helps replenish some of your minerals and vitamins",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " dire light you can get from the pharmacy which uh it's um it helps replenish some of your minerals and vitamins",
+                "start_seconds": 385.52,
+                "end_seconds": 391.44,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 617,
+            "segment_id": 43,
+            "revision": 9,
+            "text": " and if you are having vomiting and diarrhea I would certainly recommend that and first you know first couple of days",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " and if you are having vomiting and diarrhea I would certainly recommend that and first you know first couple of days",
+                "start_seconds": 392.88,
+                "end_seconds": 396.88,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 625,
+            "segment_id": 44,
+            "revision": 8,
+            "text": " yeah if you are feeling feverish and weak taking some paracetamol",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " yeah if you are feeling feverish and weak taking some paracetamol",
+                "start_seconds": 398.16,
+                "end_seconds": 402.16,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 631,
+            "segment_id": 45,
+            "revision": 6,
+            "text": " two tablets up to four times a day for the first few days can also help",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " two tablets up to four times a day for the first few days can also help",
+                "start_seconds": 403.36,
+                "end_seconds": 405.84,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 642,
+            "segment_id": 46,
+            "revision": 11,
+            "text": " I would certainly advise you to take some time work actually I know you're quite keen to work but um I would say next two two to three days um",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " I would certainly advise you to take some time work actually I know you're quite keen to work but um I would say next two two to three days um",
+                "start_seconds": 407.12,
+                "end_seconds": 413.44,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 648,
+            "segment_id": 47,
+            "revision": 6,
+            "text": " clears from your system take some time off and rest",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " clears from your system take some time off and rest",
+                "start_seconds": 415.12,
+                "end_seconds": 417.36,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 659,
+            "segment_id": 48,
+            "revision": 11,
+            "text": " um you know if your symptoms haven't got better you know in in three to four days I'd like to come back and see you again",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " um you know if your symptoms haven't got better you know in in three to four days I'd like to come back and see you again",
+                "start_seconds": 418.96,
+                "end_seconds": 424.4,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 666,
+            "segment_id": 49,
+            "revision": 7,
+            "text": " because if it is ongoing then we have to wonder whether there's something else causing symptoms",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " because if it is ongoing then we have to wonder whether there's something else causing symptoms",
+                "start_seconds": 426.0,
+                "end_seconds": 428.88,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 676,
+            "segment_id": 50,
+            "revision": 10,
+            "text": " and we may need to do further tests like um taking a sample of your store so we can test that",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " and we may need to do further tests like um taking a sample of your store so we can test that",
+                "start_seconds": 430.4,
+                "end_seconds": 434.8,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 680,
+            "segment_id": 51,
+            "revision": 4,
+            "text": " um et cetera et cetera",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " um et cetera et cetera",
+                "start_seconds": 436.24,
+                "end_seconds": 437.44,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 689,
+            "segment_id": 52,
+            "revision": 9,
+            "text": " yeah sure yeah how's that sound that sounds great Yeah yeah do you have any questions for me",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " yeah sure yeah how's that sound that sounds great Yeah yeah do you have any questions for me",
+                "start_seconds": 438.48,
+                "end_seconds": 443.04,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 696,
+            "segment_id": 53,
+            "revision": 7,
+            "text": " um no further questions okay is is is the treatment plan clear",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " um no further questions okay is is is the treatment plan clear",
+                "start_seconds": 444.64,
+                "end_seconds": 448.64,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "884314ec-9258-4345-a5d9-35c6e1256337",
+            "sequence": 707,
+            "segment_id": 54,
+            "revision": 11,
+            "text": " uh yeah yeah that's that's very clear thank you great well I wish you all the best okay thank you thank you bye",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " uh yeah yeah that's that's very clear thank you great well I wish you all the best okay thank you thank you bye",
+                "start_seconds": 449.84,
+                "end_seconds": 456.08,
+                "confidence": null
+              }
+            ]
+          }
+        ],
+        "audio_seconds": 457.92,
+        "processing_seconds": 24.512483849999967,
+        "model": "nemotron-speech-en-0.6b",
+        "language": "en-US",
+        "model_revision": "ebe59e5a817142986528bbbee5dba8db7b38ed50"
+      },
+      "wall_seconds": 401.2233180850744
+    },
+    {
+      "model": "nemotron-speech-multilingual-0-6b",
+      "input_sha256": "573a2c92bf726012808ca1188b4d105c343ef1998297b3d8fc5abbe177182357",
+      "source_audio_seconds": 421.860125,
+      "tool": "infer_nemotron_speech_multilingual_0_6b_native",
+      "transport_sha256": "e732f083aa8b7038a3b40b691b0ec9d063f3c7bdbe8549582863c07b30200d3e",
+      "transport_bytes": 6052705,
+      "upload_operation_id": "e577bfdf-10dd-4f7c-8f9f-2b028d49a7e7",
+      "artifact_id": "4ec89c92-b2eb-4a4a-bf1f-2aab84022c05",
+      "arguments": {
+        "audio": {
+          "artifact_id": "4ec89c92-b2eb-4a4a-bf1f-2aab84022c05",
+          "sha256": "e732f083aa8b7038a3b40b691b0ec9d063f3c7bdbe8549582863c07b30200d3e",
+          "size_bytes": 6052705,
+          "media_type": "audio/flac",
+          "compression": "none"
+        },
+        "options": {
+          "model": "nemotron-speech-multilingual-0.6b",
+          "language": "de"
+        },
+        "idempotency_key": "speech-mcp-cccac540e18b4f74a4f566a020c2b34f",
+        "wait_seconds": 0
+      },
+      "operation_id": "6da3b05c-d328-4ddd-a2f3-a3596acbb299",
+      "operation": {
+        "id": "6da3b05c-d328-4ddd-a2f3-a3596acbb299",
+        "tenant_id": "rene",
+        "principal_id": "rene",
+        "token_id": "ac98db31-084e-4d87-b704-ed45e4a25f46",
+        "model_id": "nemotron-speech-multilingual-0-6b",
+        "model_revision": "dynamic:sha256:7de9853b50ecc4ce141c419e5c573105dd1cc74612cd089e898a885879a6148f",
+        "protocol": "native",
+        "operation": "transcribe",
+        "idempotency_key": "speech-mcp-cccac540e18b4f74a4f566a020c2b34f",
+        "status": "succeeded",
+        "accepted_at": "2026-09-16T12:08:57.584507Z",
+        "available_at": "2026-09-16T12:08:57.584507Z",
+        "deadline_at": "2026-09-16T14:08:57.442523Z",
+        "activation_started_at": "2026-09-16T12:08:57.666289Z",
+        "ready_at": "2026-09-16T12:08:57.917186Z",
+        "started_at": "2026-09-16T12:08:57.924008Z",
+        "completed_at": "2026-09-16T12:09:20.652184Z",
+        "outcome": "succeeded",
+        "semantic_outcome": "protocol_valid",
+        "http_status": 200,
+        "response_content_type": "application/json",
+        "result_available": true,
+        "payload_expires_at": "2026-09-17T12:08:57.584507Z",
+        "error_code": null,
+        "error_detail": null,
+        "attempt": 1,
+        "max_attempts": 3,
+        "fencing_token": 1,
+        "runtime": {
+          "pod_uid": null,
+          "node_uid": null,
+          "gpu_uuids": [],
+          "gpu_count": 0,
+          "preemptible": null
+        },
+        "estimated_gpu_seconds": 3600.0,
+        "reserved_gpu_seconds": 0.0,
+        "cold_start_seconds": 0.332679,
+        "input_tokens": null,
+        "output_tokens": null,
+        "modality_usage": [
+          {
+            "modality": "audio",
+            "direction": "input",
+            "unit": "seconds",
+            "amount": 421.860125
+          }
+        ],
+        "modality_usage_reported": true,
+        "reused": false
+      },
+      "result": {
+        "text": "Sie arbeiten als Vertretung des Hausarztes in der Praxis von Doktor Berg. Der Patient Jens Mager stellt sich heute mit Herzbeschwerden bei Ihnen vor.  Vor der körperlichen Untersuchung möchten Sie mit ihm eingespräch führen. Was führt Sie her?  Ich habe seit einer Weile immer Herzrasen und zwar total heftig, also das pumpt wie verrückt und und und ein ganzer Brustkorb zittert, das fühlt sich auch nicht so gut an, als müsste das irgendwie gegen ein Widerstand irgendwie kämpfen und und jetzt nicht wenn ich gerannt bin oder so.  Ich sitze auf dem Sofa und plötzlich gebe das los, also so bisschen bringt unangenehm in der Tat, also in Ruhe pocht ihr Herz wie gegen einen Widerstand und und heftig sehr sehr schnell.  Ja, haben Sie mal gemessen.  Ja hundertsechzig Schläge pro Minute.  Seit wann sagen Sie sechs Wochen vielleicht, ich kann es nicht genau sagen, aber so seit einer Weile fällt mir das auf, also auch abends, wenn ich verso einzuschlafen oder so plötzlich nehme ich das richtig wahr, dass auch sonst eine gewisse Unruhe in ihnen steckt. Es kann sein, es ist mir, ich habe ja irgendwie schon ersi oder ist das auch neu das ist eher neu, auch eher neu.  Eher, ich glaube schon hatten Sie nie Idee, was dahinter stecken könnte.  Ich weiß nicht einmal mein Opa hatte drei Herzinfarkte und und wo ich mich natürlich fragte, ob das irgendwie erblich sein kann oder so und erst am dritten leider auch verstorben dann ich hatte auch mal eine depressive Episode vor ein paar Jahren, da hat ne aber war Trennung und alles Mögliche so und und das hatten ganz konkreten Grund und es wurde behandelt und es ging auch wieder weg und seitdem gab es das nie, aber ich habe mich gewundert eben oder habe mich das gefragt, weil ich auch emotional irgendwie seltsam unterwegs bin gerade. Seltsam unterwegs heißt dünn häufig gereizt, also ganz ganz wenig Kapazität für irgendwie Stress oder so emotional so ein bisschen von der Rolle damals hat sich irgendwas verändert vor sechs Wochen, was sie nicht so richtig benennen können und was sich auch anders anfühlt als die Depression vor einigen Jahren und sie haben sich Sorge um ihr Herz gemacht, sonst irgendwelche Ideen.  Okay, also um ihr Herz sollten wir uns kümmern und möglichst eine Erklärung finden, wie es mit Ihrem Schlaf schlecht.  Ich weiß nicht, wann ich es letzte Mal mehr als fünf Stunden ein Stück geschlafen habe und ich schwitze auch absurd viel nachts.  Ich kann mein T Shirt morgens ausbringen, damit die Wohnung putzen, wie ist der Appetit?  Gut, gut, ich hab ich habe viel Hunger und das Gewicht.  Es sind vier Kilo weg in den letzten sechs Wochen, obwohl sie viel Appetit und vier Kilo sind für mich eine ganze Menge ehrlich gesagt.  Ja vielleicht erzählen Sie mir noch zwei, drei Dinge aus Ihrem sonstigen Leben, wenn Sie mögen.  Was machen Sie genau beruflich?  Ich studiere Maschinenbau, ich habe gerade Prüfungsphase, muss ich ein bisschen mehr machen als sonst, aber es ist nicht hier wirklich dranmatisch verdiene mir ein bisschen was neben mir dazu, bisschen Autoschrauben oder Fahrräder oder so, was was mich eher entspannt als stresst mit meiner Freundin läuft alles prima, also eigentlich alles super Sexualität alles gut.  Okay, ich höre raus vor sechs Wochen fangen plötzlich diese Beschwerden an Herzklopfen viel Appetit trotzdem Gewichtsabnahme, Schlafstörung, nächtliches, vor allen Dingen nächtliches Schwitzen, eine große Unruhe, die auf mit einer Wesensveränderung irgendwie einhergeht, ohne dass sie so wirklich eine Erklärung finden in ihrem Leben, wo alles sonst ganz rund läuft im Moment Studium, Arbeit, Beziehung.  Da gibt es eigentlich nichts, wo Sie jetzt spontan sagen würden.  Das erklärt das anders als damals, als Sie diese depressive Episode hatten, dann haben Sie die Sorge, dass mit dem Herzen das nicht stimmen könnte, weil in der Familie diese Beschwerden vorgekommen sind, vor allen Dingen bei ihrem Großvater, so dass ich Ihnen jetzt vorschlagen möchte, dass wir eine sorgfältige körperliche Untersuchung machen, das machen wir gleich hinten im Nachbarzimmer und dabei insbesondere auf ihr Herz schauen.  Die Beschwerden, die sich schildern, lassen mich eine Schilddrüsenüberfunktion denken, deswegen würde ich Ihnen gerne Blut abnehmen, um zu klären, ob mit der Schilddröse alles in Ordnung ist, wenn das so wäre, könnte man das gut behandeln, bis wir uns das nächste Mal sehen in einigen Tagen können Sie ja nochmal ein bisschen schauen, ob Ihnen sonst noch was einfällt, und dann würden wir in zwei, drei Tagen uns nochmal wiedersehen und die Laborwerte besprechen und jetzt aber zuerst uns nebenan nochmal für eine Untersuchung sehen.  Wenn Sie damit einverstanden, das klingt nach einem Plan.  Ja schön, dann bis gleich.",
+        "segments": [
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 8,
+            "segment_id": 0,
+            "revision": 8,
+            "text": " Sie arbeiten als Vertretung des Hausarztes in der Praxis von Doktor Berg.",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " Sie arbeiten als Vertretung des Hausarztes in der Praxis von Doktor Berg.",
+                "start_seconds": 8.4,
+                "end_seconds": 12.88,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 16,
+            "segment_id": 1,
+            "revision": 8,
+            "text": " Der Patient Jens Mager stellt sich heute mit Herzbeschwerden bei Ihnen vor.  Vor",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " Der Patient Jens Mager stellt sich heute mit Herzbeschwerden bei Ihnen vor.  Vor",
+                "start_seconds": 13.44,
+                "end_seconds": 17.84,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 22,
+            "segment_id": 2,
+            "revision": 6,
+            "text": " der körperlichen Untersuchung möchten Sie mit ihm eingespräch führen.",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " der körperlichen Untersuchung möchten Sie mit ihm eingespräch führen.",
+                "start_seconds": 18.0,
+                "end_seconds": 20.64,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 24,
+            "segment_id": 3,
+            "revision": 2,
+            "text": " Was führt Sie her",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " Was führt Sie her",
+                "start_seconds": 25.76,
+                "end_seconds": 26.24,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 28,
+            "segment_id": 4,
+            "revision": 4,
+            "text": "?  Ich habe seit einer Weile",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": "?  Ich habe seit einer Weile",
+                "start_seconds": 27.76,
+                "end_seconds": 28.8,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 37,
+            "segment_id": 5,
+            "revision": 9,
+            "text": " immer Herzrasen und zwar total heftig, also das",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " immer Herzrasen und zwar total heftig, also das",
+                "start_seconds": 30.24,
+                "end_seconds": 34.16,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 41,
+            "segment_id": 6,
+            "revision": 4,
+            "text": " pumpt wie verrückt und und und",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " pumpt wie verrückt und und und",
+                "start_seconds": 35.84,
+                "end_seconds": 37.44,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 51,
+            "segment_id": 7,
+            "revision": 10,
+            "text": " ein ganzer Brustkorb zittert, das fühlt sich auch nicht so gut an, als müsste das irgendwie gegen ein",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " ein ganzer Brustkorb zittert, das fühlt sich auch nicht so gut an, als müsste das irgendwie gegen ein",
+                "start_seconds": 38.8,
+                "end_seconds": 43.52,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 55,
+            "segment_id": 8,
+            "revision": 4,
+            "text": " Widerstand irgendwie kämpfen und und",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " Widerstand irgendwie kämpfen und und",
+                "start_seconds": 44.8,
+                "end_seconds": 46.64,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 64,
+            "segment_id": 9,
+            "revision": 9,
+            "text": " jetzt nicht wenn ich gerannt bin oder so.  Ich sitze auf dem Sofa und plötzlich gebe das los, also",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " jetzt nicht wenn ich gerannt bin oder so.  Ich sitze auf dem Sofa und plötzlich gebe das los, also",
+                "start_seconds": 48.24,
+                "end_seconds": 52.16,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 67,
+            "segment_id": 10,
+            "revision": 3,
+            "text": " so bisschen",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " so bisschen",
+                "start_seconds": 53.92,
+                "end_seconds": 54.4,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 71,
+            "segment_id": 11,
+            "revision": 4,
+            "text": " bringt unangenehm",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " bringt unangenehm",
+                "start_seconds": 58.64,
+                "end_seconds": 59.44,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 86,
+            "segment_id": 12,
+            "revision": 15,
+            "text": " in der Tat, also in Ruhe pocht ihr Herz wie gegen einen Widerstand und und heftig sehr sehr schnell.  Ja, haben Sie mal gemessen",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " in der Tat, also in Ruhe pocht ihr Herz wie gegen einen Widerstand und und heftig sehr sehr schnell.  Ja, haben Sie mal gemessen",
+                "start_seconds": 60.64,
+                "end_seconds": 69.52,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 92,
+            "segment_id": 13,
+            "revision": 6,
+            "text": ".  Ja hundertsechzig Schläge pro Minute",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": ".  Ja hundertsechzig Schläge pro Minute",
+                "start_seconds": 70.56,
+                "end_seconds": 72.88,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 95,
+            "segment_id": 14,
+            "revision": 3,
+            "text": ".  Seit wann sagen Sie",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": ".  Seit wann sagen Sie",
+                "start_seconds": 76.88,
+                "end_seconds": 77.76,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 109,
+            "segment_id": 15,
+            "revision": 14,
+            "text": " sechs Wochen vielleicht, ich kann es nicht genau sagen, aber so seit einer Weile fällt mir das auf, also auch abends, wenn ich verso einzuschlafen oder so plötzlich",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " sechs Wochen vielleicht, ich kann es nicht genau sagen, aber so seit einer Weile fällt mir das auf, also auch abends, wenn ich verso einzuschlafen oder so plötzlich",
+                "start_seconds": 80.16,
+                "end_seconds": 86.96,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 118,
+            "segment_id": 16,
+            "revision": 9,
+            "text": " nehme ich das richtig wahr, dass auch sonst eine gewisse Unruhe in ihnen steckt.",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " nehme ich das richtig wahr, dass auch sonst eine gewisse Unruhe in ihnen steckt.",
+                "start_seconds": 90.4,
+                "end_seconds": 95.2,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 124,
+            "segment_id": 17,
+            "revision": 6,
+            "text": " Es kann sein, es ist mir, ich habe ja",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " Es kann sein, es ist mir, ich habe ja",
+                "start_seconds": 95.76,
+                "end_seconds": 98.48,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 126,
+            "segment_id": 18,
+            "revision": 2,
+            "text": " irgendwie schon",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " irgendwie schon",
+                "start_seconds": 99.68,
+                "end_seconds": 100.08,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 137,
+            "segment_id": 19,
+            "revision": 11,
+            "text": " ersi oder ist das auch neu das ist eher neu, auch eher neu.  Eher, ich glaube schon",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " ersi oder ist das auch neu das ist eher neu, auch eher neu.  Eher, ich glaube schon",
+                "start_seconds": 101.44,
+                "end_seconds": 107.04,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 143,
+            "segment_id": 20,
+            "revision": 6,
+            "text": " hatten Sie nie Idee, was dahinter stecken könnte",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " hatten Sie nie Idee, was dahinter stecken könnte",
+                "start_seconds": 108.32,
+                "end_seconds": 110.56,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 162,
+            "segment_id": 21,
+            "revision": 19,
+            "text": ".  Ich weiß nicht einmal mein Opa hatte drei Herzinfarkte und und wo ich mich natürlich fragte, ob das irgendwie erblich sein kann oder so und erst am dritten leider auch verstorben dann",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": ".  Ich weiß nicht einmal mein Opa hatte drei Herzinfarkte und und wo ich mich natürlich fragte, ob das irgendwie erblich sein kann oder so und erst am dritten leider auch verstorben dann",
+                "start_seconds": 115.52,
+                "end_seconds": 125.76,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 165,
+            "segment_id": 22,
+            "revision": 3,
+            "text": " ich hatte auch mal",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " ich hatte auch mal",
+                "start_seconds": 127.44,
+                "end_seconds": 128.0,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 201,
+            "segment_id": 23,
+            "revision": 36,
+            "text": " eine depressive Episode vor ein paar Jahren, da hat ne aber war Trennung und alles Mögliche so und und das hatten ganz konkreten Grund und es wurde behandelt und es ging auch wieder weg und seitdem gab es das nie, aber ich habe mich gewundert eben oder habe mich das gefragt, weil ich auch emotional irgendwie seltsam unterwegs bin gerade.",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " eine depressive Episode vor ein paar Jahren, da hat ne aber war Trennung und alles Mögliche so und und das hatten ganz konkreten Grund und es wurde behandelt und es ging auch wieder weg und seitdem gab es das nie, aber ich habe mich gewundert eben oder habe mich das gefragt, weil ich auch emotional irgendwie seltsam unterwegs bin gerade.",
+                "start_seconds": 129.36,
+                "end_seconds": 149.52,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 208,
+            "segment_id": 24,
+            "revision": 7,
+            "text": " Seltsam unterwegs heißt dünn häufig",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " Seltsam unterwegs heißt dünn häufig",
+                "start_seconds": 151.28,
+                "end_seconds": 154.56,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 210,
+            "segment_id": 25,
+            "revision": 2,
+            "text": " gereizt",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " gereizt",
+                "start_seconds": 156.8,
+                "end_seconds": 157.2,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 217,
+            "segment_id": 26,
+            "revision": 7,
+            "text": ", also ganz ganz wenig Kapazität für irgendwie Stress oder so",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": ", also ganz ganz wenig Kapazität für irgendwie Stress oder so",
+                "start_seconds": 158.48,
+                "end_seconds": 162.24,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 220,
+            "segment_id": 27,
+            "revision": 3,
+            "text": " emotional",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " emotional",
+                "start_seconds": 163.52,
+                "end_seconds": 164.08,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 224,
+            "segment_id": 28,
+            "revision": 4,
+            "text": " so ein bisschen von der Rolle damals",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " so ein bisschen von der Rolle damals",
+                "start_seconds": 167.52,
+                "end_seconds": 168.88,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 225,
+            "segment_id": 29,
+            "revision": 1,
+            "text": " hat",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " hat",
+                "start_seconds": 170.72,
+                "end_seconds": 170.8,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 240,
+            "segment_id": 30,
+            "revision": 15,
+            "text": " sich irgendwas verändert vor sechs Wochen, was sie nicht so richtig benennen können und was sich auch anders anfühlt als die Depression vor einigen Jahren",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " sich irgendwas verändert vor sechs Wochen, was sie nicht so richtig benennen können und was sich auch anders anfühlt als die Depression vor einigen Jahren",
+                "start_seconds": 170.8,
+                "end_seconds": 179.2,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 245,
+            "segment_id": 31,
+            "revision": 5,
+            "text": " und sie haben sich Sorge um ihr Herz gemacht",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " und sie haben sich Sorge um ihr Herz gemacht",
+                "start_seconds": 181.04,
+                "end_seconds": 182.72,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 248,
+            "segment_id": 32,
+            "revision": 3,
+            "text": ", sonst irgendwelche Ideen",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": ", sonst irgendwelche Ideen",
+                "start_seconds": 184.96,
+                "end_seconds": 185.84,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 255,
+            "segment_id": 33,
+            "revision": 7,
+            "text": ".  Okay, also um ihr Herz sollten wir uns kümmern",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": ".  Okay, also um ihr Herz sollten wir uns kümmern",
+                "start_seconds": 191.68,
+                "end_seconds": 194.56,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 264,
+            "segment_id": 34,
+            "revision": 9,
+            "text": " und möglichst eine Erklärung finden, wie es mit Ihrem Schlaf",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " und möglichst eine Erklärung finden, wie es mit Ihrem Schlaf",
+                "start_seconds": 196.0,
+                "end_seconds": 200.56,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 266,
+            "segment_id": 35,
+            "revision": 2,
+            "text": " schlecht",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " schlecht",
+                "start_seconds": 202.8,
+                "end_seconds": 202.96,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 273,
+            "segment_id": 36,
+            "revision": 7,
+            "text": ".  Ich weiß nicht, wann ich es letzte Mal mehr als fünf Stunden ein Stück geschlafen habe",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": ".  Ich weiß nicht, wann ich es letzte Mal mehr als fünf Stunden ein Stück geschlafen habe",
+                "start_seconds": 205.12,
+                "end_seconds": 208.16,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 286,
+            "segment_id": 37,
+            "revision": 13,
+            "text": " und ich schwitze auch absurd viel nachts.  Ich kann mein T Shirt morgens ausbringen, damit die Wohnung putzen",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " und ich schwitze auch absurd viel nachts.  Ich kann mein T Shirt morgens ausbringen, damit die Wohnung putzen",
+                "start_seconds": 210.56,
+                "end_seconds": 217.84,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 293,
+            "segment_id": 38,
+            "revision": 7,
+            "text": ", wie ist der Appetit?  Gut, gut, ich hab ich habe viel Hunger",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": ", wie ist der Appetit?  Gut, gut, ich hab ich habe viel Hunger",
+                "start_seconds": 220.32,
+                "end_seconds": 223.92,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 295,
+            "segment_id": 39,
+            "revision": 2,
+            "text": " und das Gewicht",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " und das Gewicht",
+                "start_seconds": 225.12,
+                "end_seconds": 225.6,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 302,
+            "segment_id": 40,
+            "revision": 7,
+            "text": ".  Es sind vier Kilo weg in den letzten sechs Wochen, obwohl sie viel Appetit",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": ".  Es sind vier Kilo weg in den letzten sechs Wochen, obwohl sie viel Appetit",
+                "start_seconds": 226.96,
+                "end_seconds": 230.64,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 307,
+            "segment_id": 41,
+            "revision": 5,
+            "text": " und vier Kilo sind für mich eine ganze Menge ehrlich gesagt",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " und vier Kilo sind für mich eine ganze Menge ehrlich gesagt",
+                "start_seconds": 234.72,
+                "end_seconds": 236.8,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 309,
+            "segment_id": 42,
+            "revision": 2,
+            "text": ".  Ja",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": ".  Ja",
+                "start_seconds": 238.4,
+                "end_seconds": 238.48,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 318,
+            "segment_id": 43,
+            "revision": 9,
+            "text": " vielleicht erzählen Sie mir noch zwei, drei Dinge aus Ihrem sonstigen Leben, wenn Sie mögen",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " vielleicht erzählen Sie mir noch zwei, drei Dinge aus Ihrem sonstigen Leben, wenn Sie mögen",
+                "start_seconds": 240.4,
+                "end_seconds": 244.24,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 324,
+            "segment_id": 44,
+            "revision": 6,
+            "text": ".  Was machen Sie genau beruflich?  Ich studiere",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": ".  Was machen Sie genau beruflich?  Ich studiere",
+                "start_seconds": 245.92,
+                "end_seconds": 249.04,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 338,
+            "segment_id": 45,
+            "revision": 14,
+            "text": " Maschinenbau, ich habe gerade Prüfungsphase, muss ich ein bisschen mehr machen als sonst, aber es ist nicht hier wirklich dranmatisch",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " Maschinenbau, ich habe gerade Prüfungsphase, muss ich ein bisschen mehr machen als sonst, aber es ist nicht hier wirklich dranmatisch",
+                "start_seconds": 250.4,
+                "end_seconds": 257.36,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 345,
+            "segment_id": 46,
+            "revision": 7,
+            "text": " verdiene mir ein bisschen was neben mir dazu, bisschen Au",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " verdiene mir ein bisschen was neben mir dazu, bisschen Au",
+                "start_seconds": 259.6,
+                "end_seconds": 263.68,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 353,
+            "segment_id": 47,
+            "revision": 8,
+            "text": "toschrauben oder Fahrräder oder so, was was mich eher entspannt als",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": "toschrauben oder Fahrräder oder so, was was mich eher entspannt als",
+                "start_seconds": 263.76,
+                "end_seconds": 267.52,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 355,
+            "segment_id": 48,
+            "revision": 2,
+            "text": " stresst",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " stresst",
+                "start_seconds": 268.88,
+                "end_seconds": 269.2,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 360,
+            "segment_id": 49,
+            "revision": 5,
+            "text": " mit meiner Freundin läuft alles prima, also",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " mit meiner Freundin läuft alles prima, also",
+                "start_seconds": 270.64,
+                "end_seconds": 272.56,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 363,
+            "segment_id": 50,
+            "revision": 3,
+            "text": " eigentlich alles super",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " eigentlich alles super",
+                "start_seconds": 274.96,
+                "end_seconds": 275.68,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 366,
+            "segment_id": 51,
+            "revision": 3,
+            "text": " Sexualität alles gut",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " Sexualität alles gut",
+                "start_seconds": 278.88,
+                "end_seconds": 280.4,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 377,
+            "segment_id": 52,
+            "revision": 11,
+            "text": ".  Okay, ich höre raus vor sechs Wochen fangen plötzlich diese Beschwerden an Herzklopfen",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": ".  Okay, ich höre raus vor sechs Wochen fangen plötzlich diese Beschwerden an Herzklopfen",
+                "start_seconds": 283.52,
+                "end_seconds": 289.92,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 384,
+            "segment_id": 53,
+            "revision": 7,
+            "text": " viel Appetit trotzdem Gewichtsabnahme, Schlafstörung",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " viel Appetit trotzdem Gewichtsabnahme, Schlafstörung",
+                "start_seconds": 291.2,
+                "end_seconds": 294.16,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 399,
+            "segment_id": 54,
+            "revision": 15,
+            "text": ", nächtliches, vor allen Dingen nächtliches Schwitzen, eine große Unruhe, die auf mit einer Wesensveränderung irgendwie einhergeht, ohne dass sie so wirklich eine Erklärung finden",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": ", nächtliches, vor allen Dingen nächtliches Schwitzen, eine große Unruhe, die auf mit einer Wesensveränderung irgendwie einhergeht, ohne dass sie so wirklich eine Erklärung finden",
+                "start_seconds": 295.84,
+                "end_seconds": 304.16,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 409,
+            "segment_id": 55,
+            "revision": 10,
+            "text": " in ihrem Leben, wo alles sonst ganz rund läuft im Moment Studium, Arbeit, Beziehung",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " in ihrem Leben, wo alles sonst ganz rund läuft im Moment Studium, Arbeit, Beziehung",
+                "start_seconds": 305.76,
+                "end_seconds": 311.04,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 431,
+            "segment_id": 56,
+            "revision": 22,
+            "text": ".  Da gibt es eigentlich nichts, wo Sie jetzt spontan sagen würden.  Das erklärt das anders als damals, als Sie diese depressive Episode hatten, dann haben Sie die Sorge, dass mit dem Herzen das nicht stimmen könnte, weil in der Familie",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": ".  Da gibt es eigentlich nichts, wo Sie jetzt spontan sagen würden.  Das erklärt das anders als damals, als Sie diese depressive Episode hatten, dann haben Sie die Sorge, dass mit dem Herzen das nicht stimmen könnte, weil in der Familie",
+                "start_seconds": 313.12,
+                "end_seconds": 325.04,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 444,
+            "segment_id": 57,
+            "revision": 13,
+            "text": " diese Beschwerden vorgekommen sind, vor allen Dingen bei ihrem Großvater, so dass ich Ihnen jetzt vorschlagen möchte, dass wir",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " diese Beschwerden vorgekommen sind, vor allen Dingen bei ihrem Großvater, so dass ich Ihnen jetzt vorschlagen möchte, dass wir",
+                "start_seconds": 326.64,
+                "end_seconds": 333.28,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 454,
+            "segment_id": 58,
+            "revision": 10,
+            "text": " eine sorgfältige körperliche Untersuchung machen, das machen wir gleich hinten im Nachbarzimmer",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " eine sorgfältige körperliche Untersuchung machen, das machen wir gleich hinten im Nachbarzimmer",
+                "start_seconds": 334.88,
+                "end_seconds": 339.6,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 466,
+            "segment_id": 59,
+            "revision": 12,
+            "text": " und dabei insbesondere auf ihr Herz schauen.  Die Beschwerden, die sich schildern, lassen mich",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " und dabei insbesondere auf ihr Herz schauen.  Die Beschwerden, die sich schildern, lassen mich",
+                "start_seconds": 341.12,
+                "end_seconds": 347.2,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 504,
+            "segment_id": 60,
+            "revision": 38,
+            "text": " eine Schilddrüsenüberfunktion denken, deswegen würde ich Ihnen gerne Blut abnehmen, um zu klären, ob mit der Schilddröse alles in Ordnung ist, wenn das so wäre, könnte man das gut behandeln, bis wir uns das nächste Mal sehen in einigen Tagen können Sie ja nochmal ein bisschen schauen, ob Ihnen sonst noch was einfällt, und dann würden wir in zwei, drei Tagen uns nochmal wiedersehen und",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " eine Schilddrüsenüberfunktion denken, deswegen würde ich Ihnen gerne Blut abnehmen, um zu klären, ob mit der Schilddröse alles in Ordnung ist, wenn das so wäre, könnte man das gut behandeln, bis wir uns das nächste Mal sehen in einigen Tagen können Sie ja nochmal ein bisschen schauen, ob Ihnen sonst noch was einfällt, und dann würden wir in zwei, drei Tagen uns nochmal wiedersehen und",
+                "start_seconds": 348.32,
+                "end_seconds": 371.52,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 520,
+            "segment_id": 61,
+            "revision": 16,
+            "text": " die Laborwerte besprechen und jetzt aber zuerst uns nebenan nochmal für eine Untersuchung sehen.  Wenn Sie damit einverstanden, das klingt nach einem Plan.  Ja schön",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": " die Laborwerte besprechen und jetzt aber zuerst uns nebenan nochmal für eine Untersuchung sehen.  Wenn Sie damit einverstanden, das klingt nach einem Plan.  Ja schön",
+                "start_seconds": 372.96,
+                "end_seconds": 382.16,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 523,
+            "segment_id": 62,
+            "revision": 3,
+            "text": ", dann bis gleich",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": ", dann bis gleich",
+                "start_seconds": 383.68,
+                "end_seconds": 384.24,
+                "confidence": null
+              }
+            ]
+          },
+          {
+            "type": "transcript.final",
+            "session_id": "f26fe775-5519-4827-bea2-c528c5d28297",
+            "sequence": 524,
+            "segment_id": 63,
+            "revision": 1,
+            "text": ".",
+            "granularity": "segment",
+            "items": [
+              {
+                "text": ".",
+                "start_seconds": 421.84,
+                "end_seconds": 421.92,
+                "confidence": null
+              }
+            ]
+          }
+        ],
+        "audio_seconds": 421.860125,
+        "processing_seconds": 22.22492570988834,
+        "model": "nemotron-speech-multilingual-0.6b",
+        "language": "de-DE",
+        "model_revision": "ea30d66debe3740a08b573244286791d423d6b3e"
+      },
+      "wall_seconds": 34.637878719717264
+    }
+  ],
+  "temporary_key_id": "ac98db31-084e-4d87-b704-ed45e4a25f46",
+  "discovered_tool_names": [
+    "acknowledge_operation",
+    "begin_model_artifact_upload",
+    "begin_scientific_artifact_upload",
+    "cancel_operation",
+    "cancel_scientific_run",
+    "download_model_artifact",
+    "download_scientific_artifact",
+    "finalize_model_artifact_upload",
+    "finalize_scientific_artifact_upload",
+    "get_model_artifact",
+    "get_model_schema",
+    "get_operation",
+    "get_operation_result",
+    "get_scientific_artifact",
+    "get_scientific_result",
+    "get_scientific_status",
+    "get_tool_catalog_revision",
+    "infer_nemotron_speech_en_0_6b_native",
+    "infer_nemotron_speech_multilingual_0_6b_native",
+    "inspect_model_artifact_manifest",
+    "inspect_scientific_artifact_manifest",
+    "invoke_model",
+    "list_models",
+    "list_scientific_events",
+    "list_scientific_models",
+    "submit_scientific_run"
+  ],
+  "tools": {
+    "infer_nemotron_speech_en_0_6b_native": {
+      "name": "infer_nemotron_speech_en_0_6b_native",
+      "title": "Nemotron Speech English 0.6B (native)",
+      "description": "Invoke Nemotron Speech English 0.6B through the managed fs2-serve route. Transcribe a complete uploaded recording. Upload and finalize audio first; no local path, URL, base64, or file bytes belong in MCP arguments. Large recordings use the returned durable operation.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "audio",
+          "options"
+        ],
+        "description": "Transcribe a complete uploaded recording. Upload and finalize audio first; no local path, URL, base64, or file bytes belong in MCP arguments. Large recordings use the returned durable operation.",
+        "properties": {
+          "audio": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "artifact_id",
+              "sha256",
+              "size_bytes",
+              "media_type",
+              "compression"
+            ],
+            "description": "Small caller-owned artifact reference returned by finalize_model_artifact_upload.",
+            "properties": {
+              "artifact_id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "Finalized artifact UUID belonging to the caller's tenant."
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$",
+                "description": "SHA-256 of the uploaded file bytes."
+              },
+              "size_bytes": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 536870912,
+                "description": "Exact encoded file size, at most 512 MiB."
+              },
+              "media_type": {
+                "type": "string",
+                "enum": [
+                  "audio/wav",
+                  "audio/x-wav",
+                  "audio/mpeg",
+                  "audio/mp4",
+                  "audio/ogg",
+                  "audio/webm",
+                  "audio/flac",
+                  "audio/aac",
+                  "video/mp4",
+                  "video/webm"
+                ],
+                "description": "Audio or audio-bearing video MIME type."
+              },
+              "compression": {
+                "const": "none",
+                "description": "No artifact-layer compression; audio codec compression is accepted."
+              }
+            },
+            "x-fs2-artifact-materialization": "download-url",
+            "x-fs2-artifact-max-bytes": 536870912,
+            "x-fs2-artifact-media-types": [
+              "audio/wav",
+              "audio/x-wav",
+              "audio/mpeg",
+              "audio/mp4",
+              "audio/ogg",
+              "audio/webm",
+              "audio/flac",
+              "audio/aac",
+              "video/mp4",
+              "video/webm"
+            ]
+          },
+          "options": {
+            "additionalProperties": false,
+            "properties": {
+              "model": {
+                "type": "string",
+                "const": "nemotron-speech-en-0.6b",
+                "description": "The exact App runtime selected by this tool."
+              },
+              "language": {
+                "anyOf": [
+                  {
+                    "maxLength": 16,
+                    "minLength": 2,
+                    "type": "string",
+                    "enum": [
+                      "en",
+                      "en-US"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Language",
+                "description": "Language/locale hint, or auto for the multilingual App. Eight adaptation-only locales are not enabled."
+              },
+              "chunk_size_ms": {
+                "default": 560,
+                "maximum": 1120,
+                "minimum": 80,
+                "title": "Chunk Size Ms",
+                "type": "integer",
+                "description": "Streaming chunk size in milliseconds; must match the App's configured worker profile. This is not an end-to-end latency promise.",
+                "enum": [
+                  80,
+                  160,
+                  560,
+                  1120
+                ]
+              },
+              "strip_language_tags": {
+                "default": true,
+                "title": "Strip Language Tags",
+                "type": "boolean",
+                "description": "Whether to remove multilingual language tags; must match the configured worker profile."
+              },
+              "output_granularity": {
+                "default": "segment",
+                "enum": [
+                  "segment",
+                  "word"
+                ],
+                "title": "Output Granularity",
+                "type": "string",
+                "description": "Requested native segment or word metadata. Returned timestamps must come from the runtime, not wall-clock inference."
+              },
+              "stop_history_eou_ms": {
+                "default": 800,
+                "maximum": 10000,
+                "minimum": 0,
+                "title": "Stop History Eou Ms",
+                "type": "integer",
+                "description": "Endpoint-history cutoff in milliseconds after an end-of-utterance marker."
+              }
+            },
+            "required": [
+              "model"
+            ],
+            "title": "SpeechOptions",
+            "type": "object",
+            "description": "Model-specific transcription options. Runtime-wide settings must match the App profile; language and output granularity are per request."
+          },
+          "idempotency_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 8,
+            "maxLength": 200,
+            "description": "Reuse this key when retrying the same submission to avoid duplicate work."
+          },
+          "wait_seconds": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 30.0,
+            "default": 0,
+            "description": "Wait briefly for completion; otherwise poll get_operation using the returned operation ID."
+          }
+        }
+      },
+      "execution": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "title": "invoke_named_modelDictOutput",
+        "type": "object"
+      },
+      "icons": null,
+      "annotations": null,
+      "_meta": {
+        "fs2_model_id": "nemotron-speech-en-0-6b",
+        "fs2_protocol": "native",
+        "fs2_model_revision": "dynamic:sha256:6ee84c404b2d34de177f5dd8225e17436414cbe9088bda66464ad83bb4a1486e",
+        "fs2_active_runtime": {
+          "variant_id": "nemotron-speech-en-0-6b-nemo-cuda-v1",
+          "kind": "independent-runtime",
+          "source_kind": "huggingface",
+          "repository": "nvidia/nemotron-speech-streaming-en-0.6b",
+          "relationship": "exact-model",
+          "nim_artifact_parity": "not-applicable"
+        },
+        "fs2_qualification": {
+          "kind": "selected-deployment-runtime",
+          "authority": "explicit-deployment-runtime-record",
+          "observed_at": null,
+          "states": {
+            "cold_start_qualified": false,
+            "elasticity_qualified": null,
+            "http_mcp_qualified": null,
+            "registered": true,
+            "route_active": true,
+            "runtime_ready": true,
+            "semantic_qualified": true
+          },
+          "state_reasons": {
+            "route_active": "Active live-route publication supersedes the retained candidate's pre-activation snapshot.",
+            "http_mcp_qualified": "No retained qualification receipt is attached to this selected deployment runtime; unknown is not a failed qualification.",
+            "elasticity_qualified": "No retained qualification receipt is attached to this selected deployment runtime; unknown is not a failed qualification."
+          }
+        },
+        "fs2_input_contract": "typed-model-v1",
+        "fs2_input_sources": [
+          "k8s-inference/components/speech-runtime/src/fs2_speech/contracts.py",
+          "k8s-inference/components/speech-runtime/src/fs2_speech/audio.py"
+        ]
+      }
+    },
+    "infer_nemotron_speech_multilingual_0_6b_native": {
+      "name": "infer_nemotron_speech_multilingual_0_6b_native",
+      "title": "Nemotron Speech Multilingual 0.6B (native)",
+      "description": "Invoke Nemotron Speech Multilingual 0.6B through the managed fs2-serve route. Transcribe a complete uploaded recording. Upload and finalize audio first; no local path, URL, base64, or file bytes belong in MCP arguments. Large recordings use the returned durable operation.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "audio",
+          "options"
+        ],
+        "description": "Transcribe a complete uploaded recording. Upload and finalize audio first; no local path, URL, base64, or file bytes belong in MCP arguments. Large recordings use the returned durable operation.",
+        "properties": {
+          "audio": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "artifact_id",
+              "sha256",
+              "size_bytes",
+              "media_type",
+              "compression"
+            ],
+            "description": "Small caller-owned artifact reference returned by finalize_model_artifact_upload.",
+            "properties": {
+              "artifact_id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "Finalized artifact UUID belonging to the caller's tenant."
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$",
+                "description": "SHA-256 of the uploaded file bytes."
+              },
+              "size_bytes": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 536870912,
+                "description": "Exact encoded file size, at most 512 MiB."
+              },
+              "media_type": {
+                "type": "string",
+                "enum": [
+                  "audio/wav",
+                  "audio/x-wav",
+                  "audio/mpeg",
+                  "audio/mp4",
+                  "audio/ogg",
+                  "audio/webm",
+                  "audio/flac",
+                  "audio/aac",
+                  "video/mp4",
+                  "video/webm"
+                ],
+                "description": "Audio or audio-bearing video MIME type."
+              },
+              "compression": {
+                "const": "none",
+                "description": "No artifact-layer compression; audio codec compression is accepted."
+              }
+            },
+            "x-fs2-artifact-materialization": "download-url",
+            "x-fs2-artifact-max-bytes": 536870912,
+            "x-fs2-artifact-media-types": [
+              "audio/wav",
+              "audio/x-wav",
+              "audio/mpeg",
+              "audio/mp4",
+              "audio/ogg",
+              "audio/webm",
+              "audio/flac",
+              "audio/aac",
+              "video/mp4",
+              "video/webm"
+            ]
+          },
+          "options": {
+            "additionalProperties": false,
+            "properties": {
+              "model": {
+                "type": "string",
+                "const": "nemotron-speech-multilingual-0.6b",
+                "description": "The exact App runtime selected by this tool."
+              },
+              "language": {
+                "anyOf": [
+                  {
+                    "maxLength": 16,
+                    "minLength": 2,
+                    "type": "string",
+                    "enum": [
+                      "ar",
+                      "ar-AR",
+                      "auto",
+                      "bg",
+                      "bg-BG",
+                      "cs",
+                      "cs-CZ",
+                      "da",
+                      "da-DK",
+                      "de",
+                      "de-DE",
+                      "en",
+                      "en-GB",
+                      "en-US",
+                      "es",
+                      "es-ES",
+                      "es-US",
+                      "et",
+                      "et-EE",
+                      "fi",
+                      "fi-FI",
+                      "fr",
+                      "fr-CA",
+                      "fr-FR",
+                      "hi",
+                      "hi-IN",
+                      "hr",
+                      "hr-HR",
+                      "hu",
+                      "hu-HU",
+                      "it",
+                      "it-IT",
+                      "ja",
+                      "ja-JP",
+                      "ko",
+                      "ko-KR",
+                      "nb",
+                      "nb-NO",
+                      "nl",
+                      "nl-NL",
+                      "pl",
+                      "pl-PL",
+                      "pt",
+                      "pt-BR",
+                      "pt-PT",
+                      "ro",
+                      "ro-RO",
+                      "ru",
+                      "ru-RU",
+                      "sk",
+                      "sk-SK",
+                      "sv",
+                      "sv-SE",
+                      "tr",
+                      "tr-TR",
+                      "uk",
+                      "uk-UA",
+                      "vi",
+                      "vi-VN",
+                      "zh",
+                      "zh-CN"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Language",
+                "description": "Language/locale hint, or auto for the multilingual App. Eight adaptation-only locales are not enabled."
+              },
+              "chunk_size_ms": {
+                "default": 560,
+                "maximum": 1120,
+                "minimum": 80,
+                "title": "Chunk Size Ms",
+                "type": "integer",
+                "description": "Streaming chunk size in milliseconds; must match the App's configured worker profile. This is not an end-to-end latency promise.",
+                "enum": [
+                  80,
+                  160,
+                  320,
+                  560,
+                  1120
+                ]
+              },
+              "strip_language_tags": {
+                "default": true,
+                "title": "Strip Language Tags",
+                "type": "boolean",
+                "description": "Whether to remove multilingual language tags; must match the configured worker profile."
+              },
+              "output_granularity": {
+                "default": "segment",
+                "enum": [
+                  "segment",
+                  "word"
+                ],
+                "title": "Output Granularity",
+                "type": "string",
+                "description": "Requested native segment or word metadata. Returned timestamps must come from the runtime, not wall-clock inference."
+              },
+              "stop_history_eou_ms": {
+                "default": 800,
+                "maximum": 10000,
+                "minimum": 0,
+                "title": "Stop History Eou Ms",
+                "type": "integer",
+                "description": "Endpoint-history cutoff in milliseconds after an end-of-utterance marker."
+              }
+            },
+            "required": [
+              "model"
+            ],
+            "title": "SpeechOptions",
+            "type": "object",
+            "description": "Model-specific transcription options. Runtime-wide settings must match the App profile; language and output granularity are per request."
+          },
+          "idempotency_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 8,
+            "maxLength": 200,
+            "description": "Reuse this key when retrying the same submission to avoid duplicate work."
+          },
+          "wait_seconds": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 30.0,
+            "default": 0,
+            "description": "Wait briefly for completion; otherwise poll get_operation using the returned operation ID."
+          }
+        }
+      },
+      "execution": null,
+      "outputSchema": {
+        "additionalProperties": true,
+        "title": "invoke_named_modelDictOutput",
+        "type": "object"
+      },
+      "icons": null,
+      "annotations": null,
+      "_meta": {
+        "fs2_model_id": "nemotron-speech-multilingual-0-6b",
+        "fs2_protocol": "native",
+        "fs2_model_revision": "dynamic:sha256:7de9853b50ecc4ce141c419e5c573105dd1cc74612cd089e898a885879a6148f",
+        "fs2_active_runtime": {
+          "variant_id": "nemotron-speech-multilingual-0-6b-nemo-cuda-v1",
+          "kind": "independent-runtime",
+          "source_kind": "huggingface",
+          "repository": "nvidia/nemotron-3.5-asr-streaming-0.6b",
+          "relationship": "exact-model",
+          "nim_artifact_parity": "not-applicable"
+        },
+        "fs2_qualification": {
+          "kind": "selected-deployment-runtime",
+          "authority": "explicit-deployment-runtime-record",
+          "observed_at": null,
+          "states": {
+            "cold_start_qualified": false,
+            "elasticity_qualified": null,
+            "http_mcp_qualified": null,
+            "registered": true,
+            "route_active": true,
+            "runtime_ready": true,
+            "semantic_qualified": true
+          },
+          "state_reasons": {
+            "route_active": "Active live-route publication supersedes the retained candidate's pre-activation snapshot.",
+            "http_mcp_qualified": "No retained qualification receipt is attached to this selected deployment runtime; unknown is not a failed qualification.",
+            "elasticity_qualified": "No retained qualification receipt is attached to this selected deployment runtime; unknown is not a failed qualification."
+          }
+        },
+        "fs2_input_contract": "typed-model-v1",
+        "fs2_input_sources": [
+          "k8s-inference/components/speech-runtime/src/fs2_speech/contracts.py",
+          "k8s-inference/components/speech-runtime/src/fs2_speech/audio.py"
+        ]
+      }
+    }
+  },
+  "temporary_key_revoked": true,
+  "finished_at": "2026-09-16T12:09:24.497299+00:00"
+}
