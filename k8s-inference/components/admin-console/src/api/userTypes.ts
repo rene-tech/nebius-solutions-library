@@ -57,6 +57,16 @@ export interface UserDetail {
   keys: AdminApiKey[];
   apps: UserAppChoice[];
   policy_note: string;
+  storage?: UserStorage | null;
+}
+export interface UserStorage {
+  state: "pending" | "ready" | "disabled" | "not_configured";
+  mode: "tenant" | "user" | "disabled";
+  quota_bytes: number;
+  bucket_name: string | null;
+  endpoint: string | null;
+  region: string | null;
+  access_key_id: string | null;
 }
 export interface UserCreate extends UserSettings {
   tenant_id: string;

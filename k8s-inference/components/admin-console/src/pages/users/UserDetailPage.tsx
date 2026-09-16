@@ -19,6 +19,7 @@ import {
   RotateKeyDialog,
 } from "../access/AccessDialogs";
 import { UserSettingsForm } from "./UserSettingsForm";
+import { UserStoragePanel } from "./UserStoragePanel";
 
 type Dialog =
   | { kind: "settings" | "create-key" }
@@ -103,6 +104,10 @@ export function UserDetailPage() {
                 </button>
               )}
             </section>
+            {data.storage && <UserStoragePanel
+              key={user.id} userId={user.id} storage={data.storage}
+              canReveal={Boolean(session && rolePermits(session.principal.role, "admin"))}
+            />}
             <section className="panel section-stack">
               <h3>Usage in selected window</h3>
               <p>{user.usage.attribution}</p>

@@ -190,6 +190,22 @@ app.kubernetes.io/component: model-controller
 {{ include "fs2-serve.cryptoEnv" . }}
 {{ include "fs2-serve.payloadEnv" . }}
 {{- include "fs2-serve.scientificArtifactsEnv" . }}
+{{- if .Values.customerStorage.enabled }}
+- name: FS2_USER_STORAGE_ENABLED
+  value: "true"
+- name: FS2_USER_STORAGE_PROJECT_ID
+  value: {{ required "customerStorage.projectId is required" .Values.customerStorage.projectId | quote }}
+- name: FS2_USER_STORAGE_REGION
+  value: {{ required "customerStorage.region is required" .Values.customerStorage.region | quote }}
+- name: FS2_USER_STORAGE_DEFAULT_MODE
+  value: {{ .Values.customerStorage.defaultMode | quote }}
+- name: FS2_USER_STORAGE_QUOTA_BYTES
+  value: {{ .Values.customerStorage.quotaBytes | int64 | quote }}
+- name: FS2_USER_STORAGE_EXCLUDED_TENANTS
+  value: {{ .Values.customerStorage.excludedTenants | toJson | quote }}
+- name: FS2_USER_STORAGE_CREDENTIALS_FILE
+  value: /var/run/secrets/fs2-serve/customer-storage/credentials.json
+{{- end }}
 - name: FS2_CATALOG_DIR
   value: {{ ternary .Values.catalog.imagePath "/etc/fs2-serve/catalog" (eq .Values.catalog.delivery "image") | quote }}
 {{- if eq .Values.catalog.delivery "image" }}
@@ -434,6 +450,11 @@ app.kubernetes.io/component: model-controller
 {{- end -}}
 
 {{- define "fs2-serve.runtimeVolumeMounts" -}}
+{{- if .Values.customerStorage.enabled }}
+- name: customer-storage
+  mountPath: /var/run/secrets/fs2-serve/customer-storage
+  readOnly: true
+{{ end }}
 {{ include "fs2-serve.cryptoVolumeMounts" . }}
 {{- include "fs2-serve.scientificArtifactsVolumeMounts" . }}
 {{ include "fs2-serve.databaseCaVolumeMount" . }}
@@ -537,6 +558,12 @@ app.kubernetes.io/component: model-controller
 {{- end -}}
 
 {{- define "fs2-serve.runtimeVolumes" -}}
+{{- if .Values.customerStorage.enabled }}
+- name: customer-storage
+  secret:
+    secretName: {{ required "customerStorage.secretName is required" .Values.customerStorage.secretName | quote }}
+    defaultMode: 0440
+{{ end }}
 {{ include "fs2-serve.cryptoVolumes" . }}
 {{- include "fs2-serve.scientificArtifactsVolumes" . }}
 {{ include "fs2-serve.databaseCaVolume" (dict "secret" .Values.secrets.database) }}

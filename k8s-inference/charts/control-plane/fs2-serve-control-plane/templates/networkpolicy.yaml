@@ -49,6 +49,13 @@ spec:
         - port: {{ .Values.service.port }}
           protocol: TCP
   egress:
+    {{- if .Values.customerStorage.enabled }}
+    # Nebius IAM/token/storage control-plane endpoints have DNS-managed IPs.
+    # The provisioner uses authenticated HTTPS; do not pin region-specific IPs.
+    - ports:
+        - port: 443
+          protocol: TCP
+    {{- end }}
     - to:
         - namespaceSelector:
             matchLabels:

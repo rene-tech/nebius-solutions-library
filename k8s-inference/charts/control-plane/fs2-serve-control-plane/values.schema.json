@@ -28,6 +28,20 @@
     "scientificArtifacts"
   ],
   "properties": {
+    "customerStorage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "projectId", "region", "defaultMode", "quotaBytes", "excludedTenants", "secretName"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "projectId": {"type": "string"},
+        "region": {"type": "string"},
+        "defaultMode": {"enum": ["tenant", "user"]},
+        "quotaBytes": {"type": "integer", "minimum": 1},
+        "excludedTenants": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "secretName": {"type": "string"}
+      }
+    },
     "replicaCount": {
       "type": "integer",
       "minimum": 2
@@ -1576,11 +1590,11 @@
           ],
           "properties": {
             "schema": {"const": "fs2-serve.nebius.ai/postgresql-release-contract/v1"},
-            "contractPayloadSha256": {"const": "bb2a18a8132b0e65356b1c4960b7893ff601240b4ccd899e5d53e00bf1aff11e"},
-            "migrationSetSha256": {"const": "9614eae993e7003ab3e4dd854bd4c5a7e7929e97256b6209899088c789af83d2"},
-            "migrationCount": {"const": 29},
+            "contractPayloadSha256": {"const": "e9015d27122a06380342dc2cfbfd15f660efea1cb20450c7f6367a349fef5d9f"},
+            "migrationSetSha256": {"const": "22a3198c91b099dc7beabded9411b2111ce49f2d4d6cd7bfe2f9cded311832c3"},
+            "migrationCount": {"const": 31},
             "firstMigrationVersion": {"const": "0001_initial.sql"},
-            "lastMigrationVersion": {"const": "0029_request_debug.sql"},
+            "lastMigrationVersion": {"const": "0031_user_storage.sql"},
             "namespaceRoleOwnershipSha256": {"const": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca"}
           },
           "additionalProperties": false

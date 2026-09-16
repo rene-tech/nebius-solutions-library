@@ -538,6 +538,10 @@ class PostgresStore:
                 f"GRANT SELECT,INSERT,UPDATE ON fs2_apps,fs2_inference_users TO {quoted_runtime}"
             )
             await connection.execute(
+                f"GRANT SELECT,INSERT,UPDATE ON fs2_storage_policies,fs2_storage_buckets,fs2_user_storage "
+                f"TO {quoted_runtime}"
+            )
+            await connection.execute(
                 f"GRANT SELECT,INSERT ON fs2_request_telemetry,fs2_request_debug TO {quoted_runtime}"
             )
             # Scientific artifact provenance. Rows are append-only for the

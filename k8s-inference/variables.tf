@@ -521,6 +521,13 @@ variable "deployment" {
       # a separate bucket, identity and key from reference_data above: results
       # and immutable public inputs have different retention and different blast
       # radius, so neither store is ever widened to serve the other.
+      customer_buckets = optional(object({
+        enabled          = optional(bool, true)
+        default_mode     = optional(string, "tenant")
+        quota_bytes      = optional(number, 5000000000)
+        excluded_tenants = optional(set(string), [])
+      }), {})
+
       scientific_artifacts = optional(object({
         enabled = optional(bool, false)
         lifecycle = optional(object({

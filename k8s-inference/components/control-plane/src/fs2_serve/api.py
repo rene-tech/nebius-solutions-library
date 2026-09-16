@@ -162,6 +162,7 @@ from .telemetry import Metrics
 from .user_models import UserAppChoice
 from .user_repository import MemoryUserRepository, PostgresUserRepository
 from .user_routes import user_router
+from .user_storage_routes import user_storage_router
 from .users import UserService
 
 LOGGER = logging.getLogger("fs2_serve.access")
@@ -519,6 +520,8 @@ async def _operation_response(runtime: AppRuntime, operation: OperationView) -> 
 def create_app(runtime: AppRuntime) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        if users_service.storage is not None:
+            users_service.storage.start()
         if runtime.route_revalidator is not None:
             await runtime.route_revalidator.start()
         if runtime.model_deployment_bridge is not None:
@@ -531,6 +534,8 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         try:
             yield
         finally:
+            if users_service.storage is not None:
+                await users_service.storage.close()
             if runtime.scientific_batch_worker is not None:
                 await runtime.scientific_batch_worker.close()
             if runtime.scientific_batch_cluster is not None:
@@ -582,6 +587,34 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         app_catalog=user_app_catalog,
     )
     runtime.tokens.principal_policy = users_service.constrain_principal
+    if runtime.settings.user_storage_enabled:
+        from nebius.sdk import SDK
+
+        from .user_storage import UserStorageService
+        from .user_storage_models import StoragePolicy
+        from .user_storage_nebius import NebiusUserStorage
+        from .user_storage_repository import PostgresUserStorageRepository
+
+        settings = runtime.settings
+        if pool is None or not all(
+            (settings.user_storage_project_id, settings.user_storage_region, settings.user_storage_credentials_file)
+        ):
+            raise ValueError("customer storage requires PostgreSQL, project, region and provisioner credentials")
+        users_service.storage = UserStorageService(
+            PostgresUserStorageRepository(pool, runtime.store.cipher),
+            NebiusUserStorage(
+                SDK(credentials_file_name=settings.user_storage_credentials_file),
+                project_id=settings.user_storage_project_id,
+                tenant_id=settings.user_storage_cloud_tenant_id,
+                region=settings.user_storage_region,
+            ),
+            users_service.repository,
+            default=StoragePolicy(
+                mode=settings.user_storage_default_mode, quota_bytes=settings.user_storage_quota_bytes
+            ),
+            excluded_tenants=settings.user_storage_excluded_tenants,
+            poll_seconds=settings.user_storage_poll_seconds,
+        )
     observations = AppObservabilityService(
         kubernetes=getattr(admin_read.capacity_adapter, "reader", None),
         prometheus_url=runtime.settings.admin_prometheus_url,
@@ -2243,6 +2276,15 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             selected_context=selected_context,
             envelope=lambda context, data: app_envelope(data, context),
             problem_responses=admin_problem_responses,
+        )
+    )
+    app.include_router(
+        user_storage_router(
+            service=users_service.storage,
+            users=users_service,
+            operator=operator,
+            principal=principal,
+            envelope=access_envelope,
         )
     )
     app.include_router(
