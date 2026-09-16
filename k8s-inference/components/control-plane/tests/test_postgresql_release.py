@@ -37,9 +37,9 @@ def test_committed_postgresql_contract_is_exact_emitted_release_receipt_input() 
     receipt = committed["required_release_receipt_inputs"]
     assert receipt == {
         "first_migration_version": "0001_initial.sql",
-        "last_migration_version": "0029_request_debug.sql",
-        "migration_count": 29,
-        "migration_set_sha256": "9614eae993e7003ab3e4dd854bd4c5a7e7929e97256b6209899088c789af83d2",
+        "last_migration_version": "0030_scientific_retention_authority.sql",
+        "migration_count": 30,
+        "migration_set_sha256": "7508bd84cfbc732524a23402019736abf1bf54bf0ed8a3cca91fbc07904f9f3b",
         "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca",
     }
     migrations = committed["migration_set"]["ordered_migrations"]
@@ -123,7 +123,11 @@ def test_scientific_runtime_update_grants_cover_every_repository_statement() -> 
             flags=re.IGNORECASE | re.DOTALL,
         )
     }
-    assert locked_scientific_tables == set(SCIENTIFIC_RUNTIME_UPDATE_COLUMNS)
+    assert locked_scientific_tables == {
+        *SCIENTIFIC_RUNTIME_UPDATE_COLUMNS,
+        # Retention uses the same module but a distinct maintenance-only pool.
+        "fs2_scientific_retention_claims",
+    }
     assert "FOR SHARE" in inspect.getsource(PostgresStore._stage_scientific_admission)
 
 

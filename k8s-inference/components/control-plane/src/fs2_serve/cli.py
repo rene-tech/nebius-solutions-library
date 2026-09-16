@@ -662,8 +662,6 @@ async def maintain(settings: Settings) -> None:
     store = await PostgresMaintenanceStore.connect(settings.database_url)
     try:
         artifact_service = _artifact_service(settings, PostgresArtifactRepository(store.pool))
-        if artifact_service is not None:
-            await artifact_service.purge_expired()
         retention = {
             "operation_retention_seconds": settings.operation_retention_seconds,
             "token_retention_seconds": settings.pat_retention_seconds,
@@ -672,11 +670,15 @@ async def maintain(settings: Settings) -> None:
             "request_debug_retention_seconds": settings.request_debug_retention_seconds,
             "request_telemetry_retention_seconds": settings.request_telemetry_retention_seconds,
         }
-        totals: dict[str, int] = {"payloads": 0}
+        totals: dict[str, int] = {"payloads": 0, "scientific_operations": 0}
         backlog: tuple[str, ...] = ()
         completed_batches = 0
         for batch_number in range(1, settings.retention_max_batches + 1):
             completed_batches = batch_number
+            if artifact_service is not None:
+                totals["scientific_operations"] += len(
+                    await artifact_service.purge_expired(limit=settings.retention_batch_size)
+                )
             totals["payloads"] += await store.purge_expired_payloads(batch_size=settings.retention_batch_size)
             deleted = await store.delete_expired_rows(
                 **retention,
@@ -684,7 +686,8 @@ async def maintain(settings: Settings) -> None:
             )
             for name, count in deleted.items():
                 totals[name] = totals.get(name, 0) + count
-            backlog = await store.expired_retention_backlog(**retention)
+            scientific_backlog = await artifact_service.retention_backlog() if artifact_service is not None else ()
+            backlog = tuple(dict.fromkeys((*scientific_backlog, *await store.expired_retention_backlog(**retention))))
             if not backlog:
                 break
         logging.getLogger("fs2_serve.maintenance").info(

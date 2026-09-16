@@ -348,7 +348,7 @@ fs2-serve postgresql-release-contract
 ```
 
 The emitter verifies that the migration directory contains exactly the ordered
-`0001` through `0015` set, no missing/extra/renamed/symlinked file, and the
+`0001` through `0030` set, no missing/extra/renamed/symlinked file, and the
 contracted SHA-256 for every file. The migrator and `wait-schema` use the same
 validator. They also require the applied migration ledger to be an exact
 ordered prefix while an upgrade is running and the exact full set before a
@@ -356,13 +356,13 @@ runtime becomes ready; extra or reordered database rows fail closed.
 
 The required final release-receipt inputs are the ordered full-manifest
 migration-set SHA-256
-`6926de8f73092cd53e0397a8b6f44e2a9e9a64e73ad4b273e08cc96b2a5c25dd`,
-count `15`, first version `0001_initial.sql`, last version
-`0015_scientific_batch_controller.sql`,
+`7508bd84cfbc732524a23402019736abf1bf54bf0ed8a3cca91fbc07904f9f3b`,
+count `30`, first version `0001_initial.sql`, last version
+`0030_scientific_retention_authority.sql`,
 and namespace/role ownership SHA-256
 `47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca`.
 The whole logical contract payload is SHA-256
-`3e9cb0cf59dd28c74f94594ef20aa5aeaa87170f79d7f498b820fdf4a8c784af`.
+`43bbf2923f7ec6fb45bd72cac8e11f13273352f0b5c7510f2f8197f3835a0043`.
 The migration Job emits the payload, ordered-set digest, count, first/last
 version, and namespace/role digest as annotations. A later additive migration
 updates this one manifest contract; Helm and PostgreSQL code must not
@@ -433,11 +433,15 @@ at most `FS2_RETENTION_BATCH_SIZE` rows per retention class. A Job runs at most
 per minute without an unbounded transaction. Operators must size that product
 above the measured peak write rate. If eligible rows remain after the final
 batch, the Job exits unsuccessfully and `Fs2ServeMaintenanceJobFailed` alerts
-on the non-converging backlog. When scientific artifact
-storage is enabled, the same pass first removes expired objects and their
-metadata under `FS2_ARTIFACT_RETENTION_SECONDS`; generic operation retention
-skips an operation while any independently retained scientific metadata still
-references it.
+on the non-converging backlog. When scientific artifact storage is enabled,
+every bounded pass removes up to the same batch size of expired object and
+metadata sets under `FS2_ARTIFACT_RETENTION_SECONDS`. Both terminal results and
+old terminal operations whose scientific flow ended before publishing a result
+are covered. Active operation leases, batch-controller leases, running attempts,
+unfinished uploads, and unexpired child rows are never deleted; an expired but
+unsafe inconsistency stays in backlog and fails the Job so the same alert fires.
+Generic operation retention skips an operation while any independently retained
+scientific metadata or retention claim still references it.
 A payload-free `fs2_usage_facts` row is inserted exactly once by the same
 database transaction that first makes any operation terminal, including
 cancel, revocation, deadline/payload expiry, exhausted release, stale recovery,

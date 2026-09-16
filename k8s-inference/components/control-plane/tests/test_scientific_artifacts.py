@@ -1140,7 +1140,7 @@ async def test_retention_deletes_objects_then_metadata_and_records_evidence() ->
 # --------------------------------------------------------------------------
 
 TRUNCATE = """
-TRUNCATE fs2_scientific_retention_ledger,fs2_scientific_artifact_events,
+TRUNCATE fs2_scientific_retention_claims,fs2_scientific_retention_ledger,fs2_scientific_artifact_events,
     fs2_scientific_stage_commit_attempts,fs2_scientific_stage_commits,
     fs2_scientific_run_results,fs2_scientific_uploads,fs2_scientific_artifacts,
     fs2_scientific_stage_attempts,fs2_operation_events,fs2_usage_facts,
@@ -1283,10 +1283,11 @@ async def test_postgres_enforces_attempt_terminal_and_immutability_fences(runtim
         with pytest.raises(asyncpg.PostgresError) as immutable:
             await connection.execute("UPDATE fs2_scientific_artifacts SET size_bytes=1 WHERE id=$1", record.artifact_id)
         assert immutable.value.sqlstate == "42501"
-        # DELETE is granted, so here the retention trigger is what refuses.
+        # Runtime has no DELETE privilege; authorization never reaches a
+        # caller-spoofable trigger path.
         with pytest.raises(asyncpg.PostgresError) as guarded:
             await connection.execute("DELETE FROM fs2_scientific_artifacts WHERE id=$1", record.artifact_id)
-        assert guarded.value.sqlstate == "FS202"
+        assert guarded.value.sqlstate == "42501"
 
 
 @pytest.mark.postgres
@@ -1387,6 +1388,57 @@ async def test_postgres_terminal_result_fences_writes_and_retention_purges(
     with pytest.raises(ResultAlreadyTerminalError):
         await open_attempt(service, operation_id=operation_id, stage_id="score")
 
+    # A runtime session cannot manufacture retention authority with the legacy
+    # custom GUC. It has no DELETE privilege, independently of the trigger.
+    async with runtime_pool.acquire() as connection:
+        for table in (
+            "fs2_scientific_stage_attempts",
+            "fs2_scientific_artifacts",
+            "fs2_scientific_uploads",
+            "fs2_scientific_stage_commits",
+            "fs2_scientific_stage_commit_attempts",
+            "fs2_scientific_run_results",
+            "fs2_scientific_artifact_events",
+            "fs2_scientific_retention_ledger",
+        ):
+            assert not await connection.fetchval(
+                "SELECT has_table_privilege(current_user,$1,'DELETE')",
+                table,
+            )
+        assert await connection.fetchval(
+            "SELECT has_table_privilege(current_user,'fs2_scientific_stage_attempts','INSERT')"
+        )
+        assert await connection.fetchval(
+            "SELECT has_column_privilege(current_user,'fs2_scientific_stage_attempts','status','UPDATE')"
+        )
+        transaction = connection.transaction()
+        await transaction.start()
+        await connection.execute("SET LOCAL fs2.retention_purge = 'on'")
+        with pytest.raises(asyncpg.InsufficientPrivilegeError):
+            await connection.execute(
+                "DELETE FROM fs2_scientific_run_results WHERE operation_id=$1",
+                operation_id,
+            )
+        await transaction.rollback()
+
+    # Exercise the trigger itself by granting DELETE only inside a transaction.
+    # Even with the obsolete GUC set, the runtime identity is not a maintenance
+    # member and receives the trigger's fail-closed SQLSTATE. Rollback removes
+    # the temporary grant.
+    async with postgres_store.pool.acquire() as connection:
+        transaction = connection.transaction()
+        await transaction.start()
+        await connection.execute("GRANT DELETE ON fs2_scientific_run_results TO fs2_serve_runtime")
+        await connection.execute("SET LOCAL ROLE fs2_serve_runtime")
+        await connection.execute("SET LOCAL fs2.retention_purge = 'on'")
+        with pytest.raises(asyncpg.PostgresError) as spoofed:
+            await connection.execute(
+                "DELETE FROM fs2_scientific_run_results WHERE operation_id=$1",
+                operation_id,
+            )
+        assert spoofed.value.sqlstate == "FS202"
+        await transaction.rollback()
+
     async with postgres_store.pool.acquire() as connection:
         await connection.execute(
             """
@@ -1413,7 +1465,7 @@ async def test_postgres_terminal_result_fences_writes_and_retention_purges(
         repository=PostgresArtifactRepository(maintenance_pool),
         object_store=store,
         allowed_media_types=ALLOWED_MEDIA_TYPES,
-        clock=lambda: NOW + timedelta(days=3),
+        clock=lambda: datetime.now(UTC) + timedelta(days=2),
     )
     purges = await expired.purge_expired()
     assert [purge.operation_id for purge in purges] == [operation_id]
@@ -1440,6 +1492,7 @@ async def test_postgres_terminal_result_fences_writes_and_retention_purges(
             )
             == 0
         )
+    async with postgres_store.pool.acquire() as connection:
         assert (
             await connection.fetchval(
                 "SELECT artifact_count FROM fs2_scientific_retention_ledger WHERE operation_id=$1",
@@ -1447,6 +1500,120 @@ async def test_postgres_terminal_result_fences_writes_and_retention_purges(
             )
             == 1
         )
+
+
+@pytest.mark.postgres
+async def test_postgres_retention_purges_safe_incomplete_runs_but_never_active_leased_work(
+    runtime_pool, maintenance_pool, postgres_store
+) -> None:
+    safe_id = uuid4()
+    leased_id = uuid4()
+    await insert_operation(runtime_pool, safe_id)
+    await insert_operation(runtime_pool, leased_id)
+    store = FakeObjectStore()
+    runtime_service = build_service(
+        PostgresArtifactRepository(runtime_pool),
+        store,
+        retention=timedelta(days=1),
+    )
+
+    safe_attempt = await open_attempt(runtime_service, operation_id=safe_id)
+    safe_artifact = await upload(
+        runtime_service,
+        store,
+        operation_id=safe_id,
+        attempt_id=safe_attempt,
+        value=b"safe-orphan",
+    )
+    await runtime_service.close_attempt(
+        CloseStageAttempt(
+            attempt_id=safe_attempt,
+            operation_id=safe_id,
+            tenant_id=TENANT,
+            status=AttemptStatus.CANCELLED,
+            completed_at=NOW + timedelta(minutes=1),
+        )
+    )
+
+    leased_attempt = await open_attempt(runtime_service, operation_id=leased_id)
+    leased_artifact = await upload(
+        runtime_service,
+        store,
+        operation_id=leased_id,
+        attempt_id=leased_attempt,
+        value=b"leased-orphan",
+    )
+    async with postgres_store.pool.acquire() as connection:
+        await connection.execute(
+            """
+            UPDATE fs2_operations
+            SET status='failed',completed_at=$2,outcome='failed',worker_id='still-running',
+                lease_expires_at=clock_timestamp()+interval '1 hour',reserved_gpu_seconds=1
+            WHERE id=$1
+            """,
+            leased_id,
+            NOW - timedelta(days=2),
+        )
+        await connection.execute(
+            """
+            UPDATE fs2_operations
+            SET status='failed',completed_at=$2,outcome='failed',worker_id=NULL,
+                lease_expires_at=NULL,reserved_gpu_seconds=0
+            WHERE id=$1
+            """,
+            safe_id,
+            NOW - timedelta(days=2),
+        )
+
+    maintenance_service = ScientificArtifactService(
+        repository=PostgresArtifactRepository(maintenance_pool),
+        object_store=store,
+        allowed_media_types=ALLOWED_MEDIA_TYPES,
+        retention=timedelta(days=1),
+        clock=lambda: datetime.now(UTC) + timedelta(days=2),
+    )
+    assert await maintenance_service.retention_backlog() == ("scientific_incomplete",)
+    purges = await maintenance_service.purge_expired(limit=10)
+    assert [purge.operation_id for purge in purges] == [safe_id]
+    assert safe_artifact.storage_key in store.deleted
+    assert leased_artifact.storage_key not in store.deleted
+    assert await maintenance_service.retention_backlog() == ("scientific_incomplete",)
+
+    async with postgres_store.pool.acquire() as connection:
+        assert not await connection.fetchval(
+            "SELECT EXISTS(SELECT 1 FROM fs2_scientific_stage_attempts WHERE operation_id=$1)",
+            safe_id,
+        )
+        assert await connection.fetchval(
+            "SELECT EXISTS(SELECT 1 FROM fs2_scientific_stage_attempts WHERE operation_id=$1)",
+            leased_id,
+        )
+
+    # Even after the operation lease is cleared, the running attempt remains a
+    # hard fence. Only its normal one-way close makes the old terminal run safe.
+    async with postgres_store.pool.acquire() as connection:
+        await connection.execute(
+            """
+            UPDATE fs2_operations
+            SET worker_id=NULL,lease_expires_at=NULL,reserved_gpu_seconds=0
+            WHERE id=$1
+            """,
+            leased_id,
+        )
+    assert await maintenance_service.purge_expired(limit=10) == []
+    await runtime_service.close_attempt(
+        CloseStageAttempt(
+            attempt_id=leased_attempt,
+            operation_id=leased_id,
+            tenant_id=TENANT,
+            status=AttemptStatus.CANCELLED,
+            completed_at=NOW + timedelta(minutes=2),
+        )
+    )
+    purges = await maintenance_service.purge_expired(limit=10)
+    assert [purge.operation_id for purge in purges] == [leased_id]
+    assert leased_artifact.storage_key in store.deleted
+    assert await maintenance_service.retention_backlog() == ()
 
 
 @pytest.mark.postgres
@@ -1525,6 +1692,27 @@ async def test_concurrent_retention_workers_purge_an_operation_exactly_once() ->
     outcomes = await asyncio.gather(*(worker().purge_expired() for _ in range(4)))
     purged = [purge for batch in outcomes for purge in batch]
     assert [purge.operation_id for purge in purged] == [operation_id]
+
+
+async def test_artifact_retention_drains_multiple_configured_batches() -> None:
+    repository = MemoryArtifactRepository()
+    store = FakeObjectStore()
+    service = build_service(repository, store, retention=timedelta(days=1))
+    operation_ids = [await _terminal_operation(service, repository, store) for _ in range(3)]
+    expired = ScientificArtifactService(
+        repository=repository,
+        object_store=store,
+        allowed_media_types=ALLOWED_MEDIA_TYPES,
+        retention=timedelta(days=1),
+        clock=lambda: NOW + timedelta(days=2),
+    )
+
+    first = await expired.purge_expired(limit=2)
+    assert [purge.operation_id for purge in first] == operation_ids[:2]
+    assert await expired.retention_backlog() == ("scientific_artifacts",)
+    second = await expired.purge_expired(limit=2)
+    assert [purge.operation_id for purge in second] == operation_ids[2:]
+    assert await expired.retention_backlog() == ()
 
 
 async def test_a_zero_byte_artifact_round_trips_without_relaxing_the_ceiling() -> None:

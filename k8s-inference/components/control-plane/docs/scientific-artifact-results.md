@@ -130,21 +130,40 @@ reservation, on the bytes and on finalization alike.
 
 ## Retention
 
-Retention only ever applies to an operation that has already published its
-terminal result. A purge claims the operation by inserting into
-`fs2_scientific_retention_ledger`, whose unique operation identity is the lock,
-then deletes the objects and finally the rows. Deletes are refused unless that
-transaction sets `fs2.retention_purge`, so the immutability guarantee still
-holds for everything else.
+Retention applies to a terminal result after its exact expiry and to an
+incomplete scientific flow only after the owning operation is terminal, its
+configured retention age has elapsed, and every attempt/artifact TTL has
+elapsed. A candidate is never deleted while an operation or batch lease is
+held, an attempt is running, or an upload is unfinished. Those expired but
+unsafe states remain visible as `scientific_incomplete` backlog and make the
+bounded maintenance Job fail, rather than being silently stranded.
+
+A purge first takes a ten-minute lease in
+`fs2_scientific_retention_claims`. The claim fences every scientific writer and
+batch-controller claim while object-store deletion occurs outside the database
+transaction. Object deletion is idempotent; a failed worker can be resumed
+after the claim lease expires. The successful metadata transaction writes the
+durable `fs2_scientific_retention_ledger`, deletes batch/event/result/stage
+children in foreign-key-safe order, and releases the claim.
+
+The runtime database role has no DELETE privilege on scientific provenance,
+result, event, or artifact tables and cannot insert a retention receipt. DELETE
+is granted only to the distinct maintenance role. Delete triggers additionally
+verify both the effective and login database identities are members of that
+configured maintenance role; caller-settable PostgreSQL settings provide no
+authority.
 
 Object deletion runs before the durable rows are removed and is idempotent, so
 an interrupted purge converges on the next pass instead of leaving metadata
 pointing at bytes that are already gone. The ledger survives the purge it
 records, so what was deleted and when remains provable. The fixed-cadence
-maintenance process invokes this purge before generic database retention.
-Generic operation deletion leaves an operation in place while any artifact
-attempt, stage commit, terminal result, or artifact event still references it,
-so a shorter operation TTL cannot violate the independent artifact TTL.
+maintenance process invokes this purge in every configurable bounded batch
+before generic database retention. Artifact and incomplete-flow backlog joins
+the other retention classes, so exhausting `FS2_RETENTION_MAX_BATCHES` exits
+unsuccessfully and activates the maintenance Job alert. Generic operation
+deletion leaves an operation in place while any scientific child or retention
+claim still references it, so a shorter operation TTL cannot violate the
+independent artifact TTL.
 
 ## Configuration
 

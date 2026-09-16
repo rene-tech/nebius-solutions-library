@@ -637,6 +637,16 @@ class RetentionPurge:
     purged_at: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class RetentionClaim:
+    """One maintenance-owned, short-lived claim for a safe retention candidate."""
+
+    operation_id: UUID
+    tenant_id: str
+    claim_token: UUID
+    retention_expired_at: datetime
+
+
 def artifact_storage_key(
     *,
     tenant_id: str,
@@ -825,11 +835,13 @@ class ArtifactRepository(Protocol):
         self, operation_id: UUID, *, tenant_id: str, after_id: int = 0, limit: int = 500
     ) -> list[ArtifactEvent]: ...
 
-    async def claim_expired(self, *, now: datetime, limit: int) -> list[tuple[UUID, str, datetime]]: ...
+    async def claim_expired(self, *, now: datetime, retention: timedelta, limit: int) -> list[RetentionClaim]: ...
 
-    async def purge_operation(self, operation_id: UUID, *, tenant_id: str, now: datetime) -> RetentionPurge: ...
+    async def purge_operation(self, claim: RetentionClaim, *, now: datetime) -> RetentionPurge: ...
 
     async def purge_keys(self, operation_id: UUID, *, tenant_id: str) -> list[str]: ...
+
+    async def expired_backlog(self, *, now: datetime, retention: timedelta) -> tuple[str, ...]: ...
 
 
 class ScientificArtifactControllerPort(Protocol):
@@ -1282,16 +1294,21 @@ class ScientificArtifactService:
 
         now = self._clock()
         purges: list[RetentionPurge] = []
-        for operation_id, tenant_id, _ in await self._repository.claim_expired(now=now, limit=limit):
-            for storage_key in await self._repository.purge_keys(operation_id, tenant_id=tenant_id):
+        for claim in await self._repository.claim_expired(now=now, retention=self._retention, limit=limit):
+            for storage_key in await self._repository.purge_keys(claim.operation_id, tenant_id=claim.tenant_id):
                 await self._store.delete(storage_key)
             try:
-                purges.append(await self._repository.purge_operation(operation_id, tenant_id=tenant_id, now=now))
+                purges.append(await self._repository.purge_operation(claim, now=now))
             except ArtifactConflictError:
                 # Another worker claimed this operation between the scan and the
                 # delete. Its purge is authoritative, so skip rather than fail.
                 continue
         return purges
+
+    async def retention_backlog(self) -> tuple[str, ...]:
+        """Return payload-free retention classes that still require work."""
+
+        return await self._repository.expired_backlog(now=self._clock(), retention=self._retention)
 
 
 @dataclass
@@ -1719,10 +1736,16 @@ class MemoryArtifactRepository:
             ]
             return matching[: max(1, limit)]
 
-    async def claim_expired(self, *, now: datetime, limit: int) -> list[tuple[UUID, str, datetime]]:
+    async def claim_expired(self, *, now: datetime, retention: timedelta, limit: int) -> list[RetentionClaim]:
+        del retention
         async with self._lock:
             return [
-                (record.operation_id, record.tenant_id, record.retention_expires_at)
+                RetentionClaim(
+                    operation_id=record.operation_id,
+                    tenant_id=record.tenant_id,
+                    claim_token=uuid4(),
+                    retention_expired_at=record.retention_expires_at,
+                )
                 for record in self._run_results.values()
                 if record.retention_expires_at <= now and record.operation_id not in self._purged
             ][: max(1, limit)]
@@ -1735,8 +1758,10 @@ class MemoryArtifactRepository:
                 if record.operation_id == operation_id and record.tenant_id == tenant_id
             ]
 
-    async def purge_operation(self, operation_id: UUID, *, tenant_id: str, now: datetime) -> RetentionPurge:
+    async def purge_operation(self, claim: RetentionClaim, *, now: datetime) -> RetentionPurge:
         async with self._lock:
+            operation_id = claim.operation_id
+            tenant_id = claim.tenant_id
             result = self._run_results.get(operation_id)
             if result is None or result.tenant_id != tenant_id:
                 raise ArtifactNotFoundError("terminal result not found")
@@ -1766,6 +1791,18 @@ class MemoryArtifactRepository:
             self._events = [event for event in self._events if event.operation_id != operation_id]
             self._purged.add(operation_id)
             return purge
+
+    async def expired_backlog(self, *, now: datetime, retention: timedelta) -> tuple[str, ...]:
+        del retention
+        async with self._lock:
+            return (
+                ("scientific_artifacts",)
+                if any(
+                    record.retention_expires_at <= now and record.operation_id not in self._purged
+                    for record in self._run_results.values()
+                )
+                else ()
+            )
 
 
 MAX_STORED_JSON_BYTES = 8 * 1024 * 1024
@@ -2482,56 +2519,170 @@ class PostgresArtifactRepository:
         )
         return [_event_from_row(row) for row in rows]
 
-    async def claim_expired(self, *, now: datetime, limit: int) -> list[tuple[UUID, str, datetime]]:
-        rows = await self.pool.fetch(
-            """
-            SELECT r.operation_id,r.tenant_id,r.retention_expires_at
-            FROM fs2_scientific_run_results r
-            WHERE r.retention_expires_at<=$1
+    async def claim_expired(self, *, now: datetime, retention: timedelta, limit: int) -> list[RetentionClaim]:
+        eligibility_sql = """
+            SELECT o.id AS operation_id,o.tenant_id,
+                CASE
+                    WHEN r.operation_id IS NOT NULL THEN r.retention_expires_at
+                    ELSE GREATEST(
+                        o.completed_at+$2::interval,
+                        COALESCE((
+                            SELECT max(a.retention_expires_at)
+                            FROM fs2_scientific_stage_attempts a WHERE a.operation_id=o.id
+                        ),o.completed_at+$2::interval),
+                        COALESCE((
+                            SELECT max(a.retention_expires_at)
+                            FROM fs2_scientific_artifacts a WHERE a.operation_id=o.id
+                        ),o.completed_at+$2::interval)
+                    )
+                END AS retention_expired_at
+            FROM fs2_operations o
+            LEFT JOIN fs2_scientific_run_results r ON r.operation_id=o.id
+            WHERE o.status IN ('succeeded','failed','cancelled','preempted','expired')
+              AND o.completed_at IS NOT NULL
+              AND o.worker_id IS NULL AND o.lease_expires_at IS NULL
+              AND o.reserved_gpu_seconds=0
               AND NOT EXISTS (
-                  SELECT 1 FROM fs2_scientific_retention_ledger l WHERE l.operation_id=r.operation_id
+                  SELECT 1 FROM fs2_scientific_retention_ledger l WHERE l.operation_id=o.id
               )
-            ORDER BY r.retention_expires_at
-            LIMIT $2
-            """,
+              AND NOT EXISTS (
+                  SELECT 1 FROM fs2_scientific_stage_attempts a
+                  WHERE a.operation_id=o.id AND a.status='running'
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM fs2_scientific_uploads u
+                  WHERE u.operation_id=o.id AND u.finalized_at IS NULL
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM fs2_scientific_stage_attempts a
+                  WHERE a.operation_id=o.id AND a.retention_expires_at>$1
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM fs2_scientific_artifacts a
+                  WHERE a.operation_id=o.id AND a.retention_expires_at>$1
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM fs2_scientific_batches b
+                  WHERE b.operation_id=o.id
+                    AND (b.status IN ('queued','running') OR b.controller_id IS NOT NULL
+                         OR b.lease_expires_at IS NOT NULL)
+              )
+              AND (
+                  (r.operation_id IS NOT NULL AND r.retention_expires_at<=$1)
+                  OR (
+                      r.operation_id IS NULL
+                      AND o.completed_at+$2::interval<=$1
+                      AND (
+                          EXISTS (SELECT 1 FROM fs2_scientific_stage_attempts a WHERE a.operation_id=o.id)
+                          OR EXISTS (SELECT 1 FROM fs2_scientific_stage_commits c WHERE c.operation_id=o.id)
+                          OR EXISTS (SELECT 1 FROM fs2_scientific_artifact_events e WHERE e.operation_id=o.id)
+                          OR EXISTS (SELECT 1 FROM fs2_scientific_uploads u WHERE u.operation_id=o.id)
+                          OR EXISTS (SELECT 1 FROM fs2_scientific_artifacts a WHERE a.operation_id=o.id)
+                          OR EXISTS (SELECT 1 FROM fs2_scientific_batches b WHERE b.operation_id=o.id)
+                          OR EXISTS (SELECT 1 FROM fs2_scientific_admission_outbox x WHERE x.operation_id=o.id)
+                      )
+                  )
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM fs2_scientific_retention_claims c
+                  WHERE c.operation_id=o.id AND c.claim_expires_at>clock_timestamp()
+              )
+        """
+        candidates = await self.pool.fetch(
+            eligibility_sql + " ORDER BY retention_expired_at,o.id LIMIT $3",  # noqa: S608
             now,
-            min(max(1, limit), 500),
+            retention,
+            min(max(1, limit), 10000),
         )
-        return [(row["operation_id"], row["tenant_id"], row["retention_expires_at"]) for row in rows]
+        claims: list[RetentionClaim] = []
+        for candidate in candidates:
+            claim_token = uuid4()
+            async with self.pool.acquire() as connection, connection.transaction():
+                await connection.execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text,727201920030))",
+                    candidate["operation_id"],
+                )
+                row = await connection.fetchrow(
+                    f"""
+                    WITH eligible AS (
+                        {eligibility_sql}
+                        AND o.id=$3
+                    )
+                    INSERT INTO fs2_scientific_retention_claims(
+                        operation_id,tenant_id,claim_token,retention_expired_at,claimed_at,claim_expires_at
+                    )
+                    SELECT operation_id,tenant_id,$4,retention_expired_at,
+                        clock_timestamp(),clock_timestamp()+interval '10 minutes'
+                    FROM eligible
+                    ON CONFLICT (operation_id) DO UPDATE
+                    SET tenant_id=EXCLUDED.tenant_id,
+                        claim_token=EXCLUDED.claim_token,
+                        retention_expired_at=EXCLUDED.retention_expired_at,
+                        claimed_at=EXCLUDED.claimed_at,
+                        claim_expires_at=EXCLUDED.claim_expires_at
+                    WHERE fs2_scientific_retention_claims.claim_expires_at<=clock_timestamp()
+                    RETURNING operation_id,tenant_id,claim_token,retention_expired_at
+                    """,  # noqa: S608
+                    now,
+                    retention,
+                    candidate["operation_id"],
+                    claim_token,
+                )
+                if row is not None:
+                    claims.append(
+                        RetentionClaim(
+                            operation_id=row["operation_id"],
+                            tenant_id=row["tenant_id"],
+                            claim_token=row["claim_token"],
+                            retention_expired_at=row["retention_expired_at"],
+                        )
+                    )
+        return claims
 
     async def purge_keys(self, operation_id: UUID, *, tenant_id: str) -> list[str]:
         rows = await self.pool.fetch(
-            "SELECT storage_key FROM fs2_scientific_artifacts WHERE operation_id=$1 AND tenant_id=$2",
+            """
+            SELECT storage_key FROM fs2_scientific_artifacts WHERE operation_id=$1 AND tenant_id=$2
+            UNION
+            SELECT storage_key FROM fs2_scientific_uploads WHERE operation_id=$1 AND tenant_id=$2
+            """,
             operation_id,
             tenant_id,
         )
         return [str(row["storage_key"]) for row in rows]
 
-    async def purge_operation(self, operation_id: UUID, *, tenant_id: str, now: datetime) -> RetentionPurge:
-        """Delete retired rows under the one session flag the triggers accept."""
+    async def purge_operation(self, claim: RetentionClaim, *, now: datetime) -> RetentionPurge:
+        """Delete one claimed operation's object metadata and durable provenance."""
 
         try:
             async with self.pool.acquire() as connection, connection.transaction():
-                await connection.execute("SET LOCAL fs2.retention_purge = 'on'")
-                result = await connection.fetchrow(
-                    "SELECT retention_expires_at FROM fs2_scientific_run_results "
-                    "WHERE operation_id=$1 AND tenant_id=$2",
-                    operation_id,
-                    tenant_id,
+                owned = await connection.fetchrow(
+                    """
+                    SELECT c.retention_expired_at
+                    FROM fs2_scientific_retention_claims c
+                    JOIN fs2_operations o ON o.id=c.operation_id AND o.tenant_id=c.tenant_id
+                    WHERE c.operation_id=$1 AND c.tenant_id=$2 AND c.claim_token=$3
+                      AND c.claim_expires_at>clock_timestamp()
+                      AND o.status IN ('succeeded','failed','cancelled','preempted','expired')
+                      AND o.worker_id IS NULL AND o.lease_expires_at IS NULL
+                      AND o.reserved_gpu_seconds=0
+                    FOR UPDATE OF c
+                    """,
+                    claim.operation_id,
+                    claim.tenant_id,
+                    claim.claim_token,
                 )
-                if result is None:
-                    raise ArtifactNotFoundError("terminal result not found")
+                if owned is None:
+                    raise ArtifactConflictError("retention claim is no longer owned")
                 totals = await connection.fetchrow(
                     "SELECT count(*) AS artifacts,COALESCE(sum(size_bytes),0) AS bytes "
                     "FROM fs2_scientific_artifacts WHERE operation_id=$1 AND tenant_id=$2",
-                    operation_id,
-                    tenant_id,
+                    claim.operation_id,
+                    claim.tenant_id,
                 )
                 assert totals is not None
-                # Claim the purge first. The ledger's unique operation identity is
-                # the lock, so a concurrent purge conflicts here rather than racing
-                # two deletions. The terminal result row itself stays unlockable
-                # because the runtime role deliberately has no UPDATE on it.
+                # The short-lived claim already owns this operation. The durable
+                # ledger now records completion atomically with metadata deletion.
                 claimed = await connection.fetchrow(
                     """
                     INSERT INTO fs2_scientific_retention_ledger
@@ -2540,16 +2691,19 @@ class PostgresArtifactRepository:
                     ON CONFLICT (operation_id) DO NOTHING
                     RETURNING operation_id
                     """,
-                    operation_id,
-                    tenant_id,
+                    claim.operation_id,
+                    claim.tenant_id,
                     now,
                     int(totals["artifacts"]),
                     int(totals["bytes"]),
-                    result["retention_expires_at"],
+                    owned["retention_expired_at"],
                 )
                 if claimed is None:
                     raise ArtifactConflictError("this operation was already purged")
                 for statement in (
+                    "DELETE FROM fs2_scientific_admission_outbox WHERE operation_id=$1 AND $2::text IS NOT NULL",
+                    "DELETE FROM fs2_scientific_batch_events WHERE operation_id=$1 AND $2::text IS NOT NULL",
+                    "DELETE FROM fs2_scientific_batches WHERE operation_id=$1 AND tenant_id=$2",
                     "DELETE FROM fs2_scientific_artifact_events WHERE operation_id=$1 AND tenant_id=$2",
                     "DELETE FROM fs2_scientific_stage_commit_attempts WHERE operation_id=$1 AND $2::text IS NOT NULL",
                     "DELETE FROM fs2_scientific_stage_commits WHERE operation_id=$1 AND tenant_id=$2",
@@ -2558,14 +2712,67 @@ class PostgresArtifactRepository:
                     "DELETE FROM fs2_scientific_stage_attempts WHERE operation_id=$1 AND tenant_id=$2",
                     "DELETE FROM fs2_scientific_run_results WHERE operation_id=$1 AND tenant_id=$2",
                 ):
-                    await connection.execute(statement, operation_id, tenant_id)
+                    await connection.execute(statement, claim.operation_id, claim.tenant_id)
+                await connection.execute(
+                    "DELETE FROM fs2_scientific_retention_claims WHERE operation_id=$1 AND claim_token=$2",
+                    claim.operation_id,
+                    claim.claim_token,
+                )
                 return RetentionPurge(
-                    operation_id=operation_id,
-                    tenant_id=tenant_id,
+                    operation_id=claim.operation_id,
+                    tenant_id=claim.tenant_id,
                     artifact_count=int(totals["artifacts"]),
                     byte_count=int(totals["bytes"]),
-                    retention_expired_at=result["retention_expires_at"],
+                    retention_expired_at=owned["retention_expired_at"],
                     purged_at=now,
                 )
         except asyncpg.PostgresError as error:
             raise (self._translate(error) or ArtifactConflictError("retention purge was rejected")) from None
+
+    async def expired_backlog(self, *, now: datetime, retention: timedelta) -> tuple[str, ...]:
+        row = await self.pool.fetchrow(
+            """
+            SELECT
+                EXISTS (
+                    SELECT 1 FROM fs2_scientific_run_results r
+                    WHERE r.retention_expires_at<=$1
+                      AND NOT EXISTS (
+                          SELECT 1 FROM fs2_scientific_retention_ledger l
+                          WHERE l.operation_id=r.operation_id
+                      )
+                ) AS scientific_artifacts,
+                EXISTS (
+                    SELECT 1 FROM fs2_operations o
+                    WHERE o.status IN ('succeeded','failed','cancelled','preempted','expired')
+                      AND o.completed_at IS NOT NULL
+                      AND o.completed_at+$2::interval<=$1
+                      AND NOT EXISTS (
+                          SELECT 1 FROM fs2_scientific_run_results r WHERE r.operation_id=o.id
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM fs2_scientific_retention_ledger l WHERE l.operation_id=o.id
+                      )
+                      AND (
+                          EXISTS (SELECT 1 FROM fs2_scientific_stage_attempts a WHERE a.operation_id=o.id)
+                          OR EXISTS (SELECT 1 FROM fs2_scientific_stage_commits c WHERE c.operation_id=o.id)
+                          OR EXISTS (SELECT 1 FROM fs2_scientific_artifact_events e WHERE e.operation_id=o.id)
+                          OR EXISTS (SELECT 1 FROM fs2_scientific_uploads u WHERE u.operation_id=o.id)
+                          OR EXISTS (SELECT 1 FROM fs2_scientific_artifacts a WHERE a.operation_id=o.id)
+                          OR EXISTS (SELECT 1 FROM fs2_scientific_batches b WHERE b.operation_id=o.id)
+                          OR EXISTS (SELECT 1 FROM fs2_scientific_admission_outbox x WHERE x.operation_id=o.id)
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM fs2_scientific_stage_attempts a
+                          WHERE a.operation_id=o.id AND a.retention_expires_at>$1
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM fs2_scientific_artifacts a
+                          WHERE a.operation_id=o.id AND a.retention_expires_at>$1
+                      )
+                ) AS scientific_incomplete
+            """,
+            now,
+            retention,
+        )
+        assert row is not None
+        return tuple(name for name in ("scientific_artifacts", "scientific_incomplete") if row[name])

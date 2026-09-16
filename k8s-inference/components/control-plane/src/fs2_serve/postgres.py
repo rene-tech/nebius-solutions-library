@@ -469,7 +469,8 @@ class PostgresStore:
                     f"fs2_scientific_stage_attempts,fs2_scientific_artifacts,fs2_scientific_uploads,"
                     f"fs2_scientific_stage_commits,fs2_scientific_stage_commit_attempts,"
                     f"fs2_scientific_run_results,fs2_scientific_artifact_events,"
-                    f"fs2_scientific_retention_ledger,fs2_scientific_batches,"
+                    f"fs2_scientific_retention_ledger,fs2_scientific_retention_claims,"
+                    f"fs2_scientific_batches,"
                     f"fs2_scientific_batch_events,fs2_scientific_admission_outbox,"
                     f"fs2_scientific_model_policies,"
                     f"fs2_reporting_model_usage,fs2_reporting_principal_usage,"
@@ -495,7 +496,9 @@ class PostgresStore:
                     f"REVOKE ALL ON FUNCTION fs2_activation_model_lock_key(text),"
                     f"fs2_runtime_ensure_activation_intent(uuid,integer,text,text,char(64),"
                     f"timestamptz,integer,text,bigint),fs2_record_terminal_usage(),"
-                    f"fs2_scientific_assert_writable(),fs2_scientific_assert_live_attempt(),"
+                    f"fs2_scientific_assert_writable(),fs2_scientific_assert_not_retained(),"
+                    f"fs2_scientific_retention_unclaimed(uuid),"
+                    f"fs2_scientific_assert_live_attempt(),"
                     f"fs2_scientific_validate_attempt_transition(),"
                     f"fs2_scientific_validate_upload_transition(),"
                     f"fs2_scientific_reject_mutation(),"
@@ -506,6 +509,50 @@ class PostgresStore:
                     f"fs2_scientific_dispatch_hold(text,text),"
                     f"fs2_reject_telemetry_mutation() FROM {role}"
                 )
+            # Install the trigger bodies only after the deployment-specific
+            # maintenance role exists. Caller-settable session variables are
+            # deliberately not authorization inputs.
+            maintenance_literal = maintenance_role.replace("'", "''")
+            await connection.execute(
+                f"""
+                CREATE OR REPLACE FUNCTION fs2_scientific_guard_retention_delete() RETURNS trigger
+                LANGUAGE plpgsql
+                SECURITY INVOKER
+                SET search_path = pg_catalog, public
+                AS $function$
+                BEGIN
+                    IF NOT pg_has_role(current_user,'{maintenance_literal}','MEMBER')
+                       OR NOT pg_has_role(session_user,'{maintenance_literal}','MEMBER') THEN
+                        RAISE EXCEPTION USING ERRCODE='FS202',
+                            MESSAGE='scientific artifact rows are deletable only by retention';
+                    END IF;
+                    RETURN OLD;
+                END
+                $function$;
+                """
+            )
+            await connection.execute(
+                f"""
+                CREATE OR REPLACE FUNCTION fs2_scientific_batch_append_only() RETURNS trigger
+                LANGUAGE plpgsql
+                SECURITY INVOKER
+                SET search_path = pg_catalog, public
+                AS $function$
+                BEGIN
+                    IF TG_OP<>'DELETE'
+                       OR NOT pg_has_role(current_user,'{maintenance_literal}','MEMBER')
+                       OR NOT pg_has_role(session_user,'{maintenance_literal}','MEMBER') THEN
+                        RAISE EXCEPTION 'scientific batch ledgers are append-only';
+                    END IF;
+                    RETURN OLD;
+                END
+                $function$;
+                """
+            )
+            await connection.execute(
+                "REVOKE ALL ON FUNCTION fs2_scientific_guard_retention_delete(),"
+                "fs2_scientific_batch_append_only() FROM PUBLIC"
+            )
             await connection.execute(
                 f"GRANT SELECT ON fs2_reporting_model_usage,fs2_reporting_principal_usage,"
                 f"fs2_reporting_terminal_totals,fs2_reporting_gpu_phase_usage,"
@@ -539,15 +586,13 @@ class PostgresStore:
             await connection.execute(
                 f"GRANT SELECT,INSERT ON fs2_request_telemetry,fs2_request_debug TO {quoted_runtime}"
             )
-            # Scientific artifact provenance. Rows are append-only for the
-            # runtime role: the only permitted updates are the two documented
-            # one-way transitions, and DELETE is additionally gated in SQL by
-            # the retention trigger, so the privilege alone cannot erase data.
+            # Scientific artifact provenance is append-only for runtime. Only
+            # the maintenance credential receives DELETE below.
             await connection.execute(
                 f"GRANT SELECT,INSERT ON fs2_scientific_stage_attempts,fs2_scientific_artifacts,"
                 f"fs2_scientific_uploads,fs2_scientific_stage_commits,"
                 f"fs2_scientific_stage_commit_attempts,fs2_scientific_run_results,"
-                f"fs2_scientific_artifact_events,fs2_scientific_retention_ledger TO {quoted_runtime}"
+                f"fs2_scientific_artifact_events TO {quoted_runtime}"
             )
             await connection.execute(f"GRANT SELECT,INSERT ON fs2_scientific_batches TO {quoted_runtime}")
             for table, columns in SCIENTIFIC_RUNTIME_UPDATE_COLUMNS.items():
@@ -564,10 +609,7 @@ class PostgresStore:
                 f"GRANT EXECUTE ON FUNCTION fs2_scientific_dispatch_hold(text,text) TO {quoted_runtime}"
             )
             await connection.execute(
-                f"GRANT DELETE ON fs2_scientific_stage_attempts,fs2_scientific_artifacts,"
-                f"fs2_scientific_uploads,fs2_scientific_stage_commits,"
-                f"fs2_scientific_stage_commit_attempts,fs2_scientific_run_results,"
-                f"fs2_scientific_artifact_events TO {quoted_runtime}"
+                f"GRANT EXECUTE ON FUNCTION fs2_scientific_retention_unclaimed(uuid) TO {quoted_runtime}"
             )
             await connection.execute(
                 f"GRANT SELECT ON fs2_schema_migrations,fs2_reporting_terminal_totals TO {quoted_runtime}"
@@ -590,7 +632,6 @@ class PostgresStore:
                 f"fs2_configuration_reconciliation_events_id_seq,"
                 f"fs2_model_deployment_status_events_id_seq,"
                 f"fs2_scientific_artifact_events_id_seq,"
-                f"fs2_scientific_retention_ledger_id_seq,"
                 f"fs2_scientific_batch_events_sequence_seq,"
                 f"fs2_lifecycle_signals_id_seq TO {quoted_runtime}"
             )
@@ -606,8 +647,8 @@ class PostgresStore:
                 f"UPDATE (gpu_seconds_reserved),DELETE ON fs2_tokens TO {quoted_maintenance}"
             )
             await connection.execute(
-                f"GRANT SELECT (id,token_id,status,reserved_gpu_seconds,payload_expires_at,"
-                f"payload_purged_at,completed_at,outcome,error_code,fencing_token),"
+                f"GRANT SELECT (id,tenant_id,token_id,status,reserved_gpu_seconds,payload_expires_at,"
+                f"payload_purged_at,completed_at,outcome,error_code,fencing_token,worker_id,lease_expires_at),"
                 f"UPDATE (request_key_id,request_nonce,request_ciphertext,response_key_id,response_nonce,"
                 f"response_ciphertext,payload_purged_at,status,completed_at,outcome,error_code,error_detail,"
                 f"worker_id,heartbeat_at,lease_expires_at,fencing_token,reserved_gpu_seconds),"
@@ -632,14 +673,16 @@ class PostgresStore:
                 f"fs2_scientific_artifact_events TO {quoted_maintenance}"
             )
             await connection.execute(
-                f"GRANT SELECT (operation_id,tenant_id) ON fs2_scientific_stage_attempts TO {quoted_maintenance}"
+                f"GRANT SELECT (operation_id,tenant_id,status,retention_expires_at) "
+                f"ON fs2_scientific_stage_attempts TO {quoted_maintenance}"
             )
             await connection.execute(
-                f"GRANT SELECT (operation_id,tenant_id,storage_key,size_bytes) "
+                f"GRANT SELECT (operation_id,tenant_id,storage_key,size_bytes,retention_expires_at) "
                 f"ON fs2_scientific_artifacts TO {quoted_maintenance}"
             )
             await connection.execute(
-                f"GRANT SELECT (operation_id,tenant_id) ON fs2_scientific_uploads TO {quoted_maintenance}"
+                f"GRANT SELECT (operation_id,tenant_id,storage_key,finalized_at) "
+                f"ON fs2_scientific_uploads TO {quoted_maintenance}"
             )
             await connection.execute(
                 f"GRANT SELECT (operation_id,tenant_id) ON fs2_scientific_stage_commits TO {quoted_maintenance}"
@@ -653,6 +696,19 @@ class PostgresStore:
             )
             await connection.execute(
                 f"GRANT SELECT (operation_id,tenant_id) ON fs2_scientific_artifact_events TO {quoted_maintenance}"
+            )
+            await connection.execute(
+                f"GRANT SELECT,INSERT,UPDATE,DELETE ON fs2_scientific_retention_claims TO {quoted_maintenance}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (operation_id,tenant_id,status,controller_id,lease_expires_at),DELETE "
+                f"ON fs2_scientific_batches TO {quoted_maintenance}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (operation_id),DELETE ON fs2_scientific_batch_events TO {quoted_maintenance}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (operation_id),DELETE ON fs2_scientific_admission_outbox TO {quoted_maintenance}"
             )
             await connection.execute(
                 f"GRANT SELECT (operation_id),"
@@ -3803,11 +3859,31 @@ class PostgresStore:
                           WHERE operation_id=fs2_operations.id
                       )
                       AND NOT EXISTS (
+                          SELECT 1 FROM fs2_scientific_uploads
+                          WHERE operation_id=fs2_operations.id
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM fs2_scientific_artifacts
+                          WHERE operation_id=fs2_operations.id
+                      )
+                      AND NOT EXISTS (
                           SELECT 1 FROM fs2_scientific_run_results
                           WHERE operation_id=fs2_operations.id
                       )
                       AND NOT EXISTS (
                           SELECT 1 FROM fs2_scientific_artifact_events
+                          WHERE operation_id=fs2_operations.id
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM fs2_scientific_batches
+                          WHERE operation_id=fs2_operations.id
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM fs2_scientific_admission_outbox
+                          WHERE operation_id=fs2_operations.id
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM fs2_scientific_retention_claims
                           WHERE operation_id=fs2_operations.id
                       )
                     ORDER BY completed_at,id FOR UPDATE SKIP LOCKED LIMIT $2
@@ -3951,11 +4027,31 @@ class PostgresStore:
                               WHERE operation_id=fs2_operations.id
                           )
                           AND NOT EXISTS (
+                              SELECT 1 FROM fs2_scientific_uploads
+                              WHERE operation_id=fs2_operations.id
+                          )
+                          AND NOT EXISTS (
+                              SELECT 1 FROM fs2_scientific_artifacts
+                              WHERE operation_id=fs2_operations.id
+                          )
+                          AND NOT EXISTS (
                               SELECT 1 FROM fs2_scientific_run_results
                               WHERE operation_id=fs2_operations.id
                           )
                           AND NOT EXISTS (
                               SELECT 1 FROM fs2_scientific_artifact_events
+                              WHERE operation_id=fs2_operations.id
+                          )
+                          AND NOT EXISTS (
+                              SELECT 1 FROM fs2_scientific_batches
+                              WHERE operation_id=fs2_operations.id
+                          )
+                          AND NOT EXISTS (
+                              SELECT 1 FROM fs2_scientific_admission_outbox
+                              WHERE operation_id=fs2_operations.id
+                          )
+                          AND NOT EXISTS (
+                              SELECT 1 FROM fs2_scientific_retention_claims
                               WHERE operation_id=fs2_operations.id
                           )
                     ) AS operations,

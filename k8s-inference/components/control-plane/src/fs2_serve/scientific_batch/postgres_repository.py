@@ -219,6 +219,7 @@ class PostgresScientificBatchRepository:
                             AND (batch.state->>'result_published')::boolean=false
                         )
                     )
+                      AND fs2_scientific_retention_unclaimed(batch.operation_id)
                       AND (batch.lease_expires_at IS NULL OR batch.lease_expires_at<=clock_timestamp())
                       -- A queued batch held by operator model policy is not
                       -- claimable: it stays durable in place while running,
