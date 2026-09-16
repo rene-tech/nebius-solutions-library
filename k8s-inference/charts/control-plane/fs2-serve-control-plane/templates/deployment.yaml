@@ -11,25 +11,6 @@
 {{- if not (regexMatch "^[a-f0-9]{64}$" .Values.customerStorage.egressContractSha256) }}
 {{- fail "customerStorage.egressContractSha256 requires the externally verified signed contract digest" }}
 {{- end }}
-{{- if not (regexMatch "^g[0-9]{14}-[a-f0-9]{12}$" .Values.customerStorage.egressGeneration) }}
-{{- fail "customerStorage.egressGeneration requires the security-owner generation identity" }}
-{{- end }}
-{{- if ne (last (splitList "-" .Values.customerStorage.egressGeneration)) (trunc 12 .Values.customerStorage.egressContractSha256) }}
-{{- fail "customerStorage.egressGeneration must be bound to the signed contract digest" }}
-{{- end }}
-{{- $generation := .Values.customerStorage.egressGeneration }}
-{{- if ne .Values.customerStorage.egressContractConfigMapName (printf "fs2-customer-storage-egress-contract-%s" $generation) }}
-{{- fail "customerStorage.egressContractConfigMapName must equal the immutable security-owner generation" }}
-{{- end }}
-{{- if not (regexMatch "^fs2-customer-storage-egress-trust-g[0-9]{14}-[a-f0-9]{12}$" .Values.customerStorage.egressTrustConfigMapName) }}
-{{- fail "customerStorage.egressTrustConfigMapName requires an immutable security-owner generation" }}
-{{- end }}
-{{- if ne .Values.customerStorage.egressNetworkPolicyName (printf "fs2-customer-storage-egress-%s" $generation) }}
-{{- fail "customerStorage.egressNetworkPolicyName must equal the immutable security-owner generation" }}
-{{- end }}
-{{- if not (regexMatch "^fs2-customer-storage-egress-boundary-g[0-9]{14}-[a-f0-9]{12}$" .Values.customerStorage.egressBoundaryPolicyName) }}
-{{- fail "customerStorage.egressBoundaryPolicyName requires the external security-owner boundary" }}
-{{- end }}
 {{- if eq (len .Values.customerStorage.kubernetesApiCidrs) 0 }}
 {{- fail "customerStorage rollout verification requires exact Kubernetes API CIDRs" }}
 {{- end }}

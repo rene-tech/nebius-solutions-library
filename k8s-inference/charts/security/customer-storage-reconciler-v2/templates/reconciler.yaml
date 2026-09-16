@@ -1,0 +1,220 @@
+{{- $generation := required "contract.generation is required" .Values.contract.generation -}}
+{{- $authorityGeneration := required "authority.generation is required" .Values.authority.generation -}}
+{{- $suffix := trunc 12 (last (splitList "-" $generation)) -}}
+{{- $rolloutGeneration := required "rollout.generation is required" .Values.rollout.generation -}}
+{{- $rolloutSuffix := trunc 12 (last (splitList "-" $rolloutGeneration)) -}}
+{{- $rolloutPayload := dict "authority" .Values.authority.manifestSha256 "contract" .Values.contract.sha256 "custodyCommit" .Values.custody.acceptedSai10Commit "custodyReview" .Values.custody.independentReviewReceiptSha256 "image" .Values.image.digest -}}
+{{- if ne $rolloutSuffix (trunc 12 (sha256sum (toJson $rolloutPayload))) }}{{ fail "rollout generation must be content-bound to image, authority, contract and accepted custody" }}{{ end -}}
+{{- $expectedRelease := printf "fs2-storage-v2-%s-%s" $suffix $rolloutSuffix -}}
+{{- if ne .Release.Name $expectedRelease }}{{ fail "each additive rollout requires its exact generation-named Helm release" }}{{ end -}}
+{{- $name := printf "fs2-storage-v2-%s-%s" $suffix $rolloutSuffix -}}
+{{- if ne .Release.Namespace "fs2-system" }}{{ fail "customer-storage-reconciler-v2 is restricted to fs2-system" }}{{ end -}}
+{{- if ne .Values.authority.schema "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v1" }}{{ fail "provider authority handoff is required" }}{{ end -}}
+{{- if ne .Values.authority.nodeSelectorValue $authorityGeneration }}{{ fail "authority node selector must equal its generation" }}{{ end -}}
+{{- if ne .Values.authority.taintValue $authorityGeneration }}{{ fail "authority taint must equal its generation" }}{{ end -}}
+{{- if ne .Values.contract.configMapName (printf "fs2-customer-storage-egress-contract-%s" $generation) }}{{ fail "contract ConfigMap must equal its generation" }}{{ end -}}
+{{- if ne .Values.contract.networkPolicyName (printf "fs2-customer-storage-egress-%s" $generation) }}{{ fail "NetworkPolicy must equal its generation" }}{{ end -}}
+{{- if ne (last (splitList "-" $generation)) (trunc 12 .Values.contract.sha256) }}{{ fail "contract generation must be content-bound" }}{{ end -}}
+{{- if ne .Values.predecessor.schema "fs2-serve.nebius.ai/customer-storage-egress-predecessor/v1" }}{{ fail "fixed predecessor compatibility receipt is required" }}{{ end -}}
+{{- if ne .Values.predecessor.receiptSha256 .Values.authority.predecessorCompatibilitySha256 }}{{ fail "predecessor receipt must be bound by the external provider authority ledger" }}{{ end -}}
+{{- if hasPrefix "1ae009b85" .Values.custody.acceptedSai10Commit }}{{ fail "rejected SAI-10 custody lineage is forbidden" }}{{ end -}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    helm.sh/resource-policy: keep
+    fs2.nebius.ai/authority-manifest-sha256: {{ .Values.authority.manifestSha256 | quote }}
+    fs2.nebius.ai/provider-identity-sha256: {{ .Values.authority.providerIdentitySha256 | quote }}
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    helm.sh/resource-policy: keep
+rules:
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    helm.sh/resource-policy: keep
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    helm.sh/resource-policy: keep
+    fs2.nebius.ai/predecessor-deployment-uid: {{ .Values.predecessor.deploymentUid | quote }}
+    fs2.nebius.ai/predecessor-network-policy-uid: {{ .Values.predecessor.networkPolicyUid | quote }}
+    fs2.nebius.ai/predecessor-receipt-sha256: {{ .Values.predecessor.receiptSha256 | quote }}
+  labels: &labels
+    app.kubernetes.io/name: fs2-serve-control-plane
+    app.kubernetes.io/instance: fs2-serve-control-plane
+    app.kubernetes.io/component: storage-reconciler-v2
+    fs2.nebius.ai/storage-egress-generation: {{ $generation | quote }}
+    fs2.nebius.ai/storage-rollout-generation: {{ $rolloutGeneration | quote }}
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+  selector:
+    matchLabels: *labels
+  template:
+    metadata:
+      labels: *labels
+      annotations:
+        fs2.nebius.ai/image-digest: {{ .Values.image.digest | quote }}
+        fs2.nebius.ai/authority-manifest-sha256: {{ .Values.authority.manifestSha256 | quote }}
+        fs2.nebius.ai/provider-identity-sha256: {{ .Values.authority.providerIdentitySha256 | quote }}
+        fs2.nebius.ai/provider-security-group: {{ .Values.authority.securityGroupId | quote }}
+        fs2.nebius.ai/provider-node-group: {{ .Values.authority.nodeGroupId | quote }}
+        fs2.nebius.ai/storage-custody-commit: {{ .Values.custody.acceptedSai10Commit | quote }}
+        fs2.nebius.ai/storage-custody-review: {{ .Values.custody.independentReviewReceiptSha256 | quote }}
+    spec:
+      serviceAccountName: {{ $name }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      {{ with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{ range . }}
+        - name: {{ . | quote }}
+        {{ end }}
+      {{ end }}
+      nodeSelector:
+        {{ .Values.authority.nodeSelectorKey }}: {{ .Values.authority.nodeSelectorValue | quote }}
+      tolerations:
+        - key: {{ .Values.authority.taintKey | quote }}
+          operator: Equal
+          value: {{ .Values.authority.taintValue | quote }}
+          effect: {{ .Values.authority.taintEffect | quote }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      initContainers:
+        - name: verify-effective-egress
+          image: {{ printf "%s@%s" .Values.image.repository .Values.image.digest | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "-m", "fs2_serve.storage_egress_contract"]
+          args:
+            - --contract
+            - /verify/contract.json
+            - --public-key
+            - /verify/public-key.pem
+            - --expected-kubernetes-api-cidrs
+            - /verify/kubernetes-api-cidrs.json
+            - --kubernetes-network-policy-set
+            - {{ .Release.Namespace | quote }}
+            - --pod-label
+            - app.kubernetes.io/name=fs2-serve-control-plane
+            - --pod-label
+            - app.kubernetes.io/instance=fs2-serve-control-plane
+            - --pod-label
+            - app.kubernetes.io/component=storage-reconciler-v2
+            - --pod-label
+            - {{ printf "fs2.nebius.ai/storage-egress-generation=%s" $generation | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: egress-contract, mountPath: /verify/contract.json, subPath: contract.json, readOnly: true}
+            - {name: egress-trust, mountPath: /verify/public-key.pem, subPath: public-key.pem, readOnly: true}
+            - {name: egress-contract, mountPath: /verify/kubernetes-api-cidrs.json, subPath: kubernetes-api-cidrs.json, readOnly: true}
+            - {name: kubernetes-api, mountPath: /var/run/secrets/kubernetes.io/serviceaccount, readOnly: true}
+      containers:
+        - name: storage-reconciler
+          image: {{ printf "%s@%s" .Values.image.repository .Values.image.digest | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["storage-reconciler"]
+          env:
+            - name: FS2_DATABASE_URL
+              valueFrom: {secretKeyRef: {name: {{ .Values.storage.databaseSecretName | quote }}, key: url}}
+            - {name: FS2_USER_STORAGE_KEYRING_FILE, value: /var/run/secrets/fs2-serve/customer-storage-crypto/keyring.json}
+            - {name: FS2_USER_STORAGE_NAME_KEYRING_FILE, value: /var/run/secrets/fs2-serve/customer-storage-crypto/name-keyring.json}
+            - {name: FS2_USER_STORAGE_ENABLED, value: "true"}
+            - {name: FS2_USER_STORAGE_PROJECT_ID, value: {{ .Values.storage.projectId | quote }}}
+            - {name: FS2_USER_STORAGE_REGION, value: {{ .Values.storage.region | quote }}}
+            - {name: FS2_USER_STORAGE_DEFAULT_MODE, value: {{ .Values.storage.defaultMode | quote }}}
+            - {name: FS2_USER_STORAGE_QUOTA_BYTES, value: {{ .Values.storage.quotaBytes | quote }}}
+            - {name: FS2_USER_STORAGE_EXCLUDED_TENANTS, value: {{ .Values.storage.excludedTenants | toJson | quote }}}
+            - {name: FS2_USER_STORAGE_POLL_SECONDS, value: "5"}
+            - {name: FS2_USER_STORAGE_KEY_TTL_DAYS, value: {{ .Values.storage.keyTtlDays | quote }}}
+            - {name: FS2_USER_STORAGE_ROTATION_WINDOW_DAYS, value: {{ .Values.storage.rotationWindowDays | quote }}}
+            - {name: FS2_USER_STORAGE_ACTION_TIMEOUT_SECONDS, value: {{ .Values.storage.actionTimeoutSeconds | quote }}}
+            - {name: FS2_USER_STORAGE_RESOURCE_CREDENTIALS_FILE, value: /var/run/secrets/fs2-serve/customer-storage/resource/credentials.json}
+            - {name: FS2_USER_STORAGE_IAM_CREDENTIALS_FILE, value: /var/run/secrets/fs2-serve/customer-storage/iam/credentials.json}
+          volumeMounts:
+            - {name: customer-storage-crypto, mountPath: /var/run/secrets/fs2-serve/customer-storage-crypto, readOnly: true}
+            - {name: database-ca, mountPath: /tls, readOnly: true}
+            - {name: customer-storage-resource, mountPath: /var/run/secrets/fs2-serve/customer-storage/resource, readOnly: true}
+            - {name: customer-storage-iam, mountPath: /var/run/secrets/fs2-serve/customer-storage/iam, readOnly: true}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+      volumes:
+        - name: egress-contract
+          configMap:
+            name: {{ .Values.contract.configMapName | quote }}
+            items:
+              - {key: contract.json, path: contract.json}
+              - {key: kubernetes-api-cidrs.json, path: kubernetes-api-cidrs.json}
+        - name: egress-trust
+          configMap:
+            name: {{ .Values.contract.trustConfigMapName | quote }}
+            defaultMode: 0400
+            items: [{key: public-key.pem, path: public-key.pem}]
+        - name: kubernetes-api
+          projected:
+            defaultMode: 0400
+            sources:
+              - serviceAccountToken: {audience: kubernetes.default.svc, expirationSeconds: 600, path: token}
+              - configMap: {name: kube-root-ca.crt, items: [{key: ca.crt, path: ca.crt}]}
+        - name: customer-storage-crypto
+          secret:
+            secretName: {{ .Values.storage.cryptoSecretName | quote }}
+            defaultMode: 0400
+            items:
+              - {key: keyring.json, path: keyring.json}
+              - {key: name-keyring.json, path: name-keyring.json}
+        - name: database-ca
+          secret:
+            secretName: {{ .Values.storage.databaseSecretName | quote }}
+            defaultMode: 0400
+            items: [{key: ca.crt, path: ca.crt}]
+        - name: customer-storage-resource
+          secret:
+            secretName: {{ .Values.storage.resourceCredentialsSecretName | quote }}
+            defaultMode: 0400
+            items: [{key: credentials.json, path: credentials.json}]
+        - name: customer-storage-iam
+          secret:
+            secretName: {{ .Values.storage.iamCredentialsSecretName | quote }}
+            defaultMode: 0400
+            items: [{key: credentials.json, path: credentials.json}]

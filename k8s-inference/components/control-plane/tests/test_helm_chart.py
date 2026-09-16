@@ -196,16 +196,6 @@ def test_customer_storage_credentials_are_isolated_and_egress_is_bounded() -> No
         "customerStorage.kubernetesApiCidrs[0]=192.0.2.1/32",
         "--set-string",
         f"customerStorage.egressContractSha256={'4' * 64}",
-        "--set-string",
-        f"customerStorage.egressGeneration={generation}",
-        "--set-string",
-        f"customerStorage.egressContractConfigMapName=fs2-customer-storage-egress-contract-{generation}",
-        "--set-string",
-        f"customerStorage.egressTrustConfigMapName=fs2-customer-storage-egress-trust-{generation}",
-        "--set-string",
-        f"customerStorage.egressNetworkPolicyName=fs2-customer-storage-egress-{generation}",
-        "--set-string",
-        f"customerStorage.egressBoundaryPolicyName=fs2-customer-storage-egress-boundary-{generation}",
     )
     rejected = subprocess.run(  # noqa: S603 - fixed Helm binary and test-owned arguments
         render_command(*base),
@@ -234,16 +224,11 @@ def test_customer_storage_credentials_are_isolated_and_egress_is_bounded() -> No
     assert "ledger-hmac-keyring" not in storage_text
     assert 'fs2-serve-database"' not in storage_text
     assert "verify-storage-egress" in storage_text
-    assert f"fs2-customer-storage-egress-contract-{generation}" in storage_text
-    assert f"fs2-customer-storage-egress-trust-{generation}" in storage_text
-    assert f"fs2-customer-storage-egress-{generation}" in storage_text
-    assert storage_template["metadata"]["annotations"]["fs2.nebius.ai/storage-egress-boundary"] == (
-        f"fs2-customer-storage-egress-boundary-{generation}"
-    )
-    assert storage_template["metadata"]["labels"]["fs2.nebius.ai/storage-egress-generation"] == generation
-    assert storage["initContainers"][0]["args"][-1] == f"fs2-customer-storage-egress-{generation}"
+    assert "fs2-customer-storage-egress-contract" in storage_text
+    assert "fs2-customer-storage-egress-trust" in storage_text
+    assert storage["initContainers"][0]["args"][-1] == "fs2-serve-control-plane-storage-reconciler"
     assert named[("Role", "fs2-serve-control-plane-storage-egress-readiness")]["rules"][0]["resourceNames"] == [
-        f"fs2-customer-storage-egress-{generation}"
+        "fs2-serve-control-plane-storage-reconciler"
     ]
     assert "storage-resource" not in disclosure_text
     assert "storage-iam" not in disclosure_text
@@ -265,7 +250,7 @@ def test_customer_storage_credentials_are_isolated_and_egress_is_bounded() -> No
     runtime_policy = named[("NetworkPolicy", "fs2-serve-control-plane-runtime")]
     assert all("to" in rule for rule in runtime_policy["spec"]["egress"])
     assert ("NetworkPolicy", f"fs2-customer-storage-egress-{generation}") not in named
-    assert ("NetworkPolicy", "fs2-serve-control-plane-storage-reconciler") not in named
+    assert ("NetworkPolicy", "fs2-serve-control-plane-storage-reconciler") in named
     assert storage["containers"][0]["name"] == "storage-reconciler"
     assert storage["initContainers"][0]["name"] == "verify-storage-egress"
 
@@ -299,21 +284,6 @@ def test_customer_storage_credentials_are_isolated_and_egress_is_bounded() -> No
     )
     assert mismatched_generation.returncode != 0
     assert "immutable secretRollout.storageGeneration identity" in mismatched_generation.stderr
-
-    mismatched_contract_generation = subprocess.run(  # noqa: S603 - fixed Helm binary and adversarial values.
-        render_command(
-            *base,
-            "--set-string",
-            "customerStorage.egressCidrs[0]=198.51.100.10/32",
-            "--set-string",
-            "customerStorage.egressGeneration=g20260916190000-555555555555",
-        ),
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert mismatched_contract_generation.returncode != 0
-    assert "bound to the signed contract digest" in mismatched_contract_generation.stderr
 
     for values in (
         ("customerStorage.egressCidrs[0]=0.0.0.0/1", "customerStorage.egressCidrs[1]=128.0.0.0/1"),

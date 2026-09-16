@@ -1,0 +1,225 @@
+data "external" "authority" {
+  program = [
+    "uv",
+    "run",
+    "--frozen",
+    "--project",
+    "${path.module}/../../components/control-plane",
+    "python",
+    "${path.module}/verify_authority_ledger.py",
+  ]
+  query = {
+    authority_manifest_json = var.authority_manifest_json
+  }
+}
+
+data "external" "provider_identity" {
+  program = [
+    "uv",
+    "run",
+    "--frozen",
+    "--project",
+    "${path.module}/../../components/control-plane",
+    "python",
+    "${path.module}/verify_provider_identity.py",
+  ]
+  query = {
+    profile = var.security_owner_nebius_profile
+  }
+}
+
+locals {
+  authority   = jsondecode(data.external.authority.result.manifest_json)
+  generations = jsondecode(data.external.authority.result.generations_json)
+  common_labels = {
+    "managed-by"         = "fs2-security-owner"
+    "security-boundary"  = "customer-storage-egress"
+    "authority-manifest" = substr(data.external.authority.result.manifest_sha256, 0, 16)
+  }
+}
+
+resource "terraform_data" "external_authority" {
+  input = {
+    manifest_sha256                 = data.external.authority.result.manifest_sha256
+    authority_project_id            = data.external.authority.result.authority_project_id
+    authority_service_account_id    = data.external.authority.result.authority_service_account_id
+    authority_group_id              = data.external.authority.result.authority_group_id
+    workloads_service_account_id    = data.external.authority.result.workloads_service_account_id
+    release_service_accounts_sha256 = data.external.authority.result.release_service_account_ids_sha256
+    human_principals_sha256         = data.external.authority.result.human_principal_ids_sha256
+    provider_identity_sha256        = data.external.provider_identity.result.provider_identity_sha256
+  }
+
+  lifecycle {
+    precondition {
+      condition     = data.external.authority.result.authorized == "true"
+      error_message = "The root-owned external provider authority did not accept this exact signed ledger."
+    }
+    precondition {
+      condition     = data.external.provider_identity.result.authorized == "true"
+      error_message = "The Nebius provider profile is not the exact narrow external authority."
+    }
+    precondition {
+      condition     = local.authority.authority_project_id == data.external.authority.result.authority_project_id
+      error_message = "The provider authority project differs from the root-owned approval registry."
+    }
+  }
+}
+
+resource "nebius_vpc_v1_security_group" "generation" {
+  for_each = local.generations
+
+  parent_id  = local.authority.authority_project_id
+  network_id = local.authority.network_id
+  name       = "fs2-storage-egress-${each.key}"
+  labels     = merge(local.common_labels, { generation = each.key })
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [terraform_data.external_authority]
+}
+
+resource "nebius_vpc_v1_security_rule" "private_ingress" {
+  for_each = local.generations
+
+  parent_id = nebius_vpc_v1_security_group.generation[each.key].id
+  name      = "fs2-storage-private-${each.key}"
+  labels    = merge(local.common_labels, { generation = each.key, purpose = "private-ingress" })
+  access    = "ALLOW"
+  protocol  = "ANY"
+  type      = "STATEFUL"
+  priority  = 100
+  ingress = {
+    source_cidrs      = each.value.private_cidrs
+    destination_ports = []
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "nebius_vpc_v1_security_rule" "dns_egress" {
+  for_each = local.generations
+
+  parent_id = nebius_vpc_v1_security_group.generation[each.key].id
+  name      = "fs2-storage-dns-${each.key}"
+  labels    = merge(local.common_labels, { generation = each.key, purpose = "dns-egress" })
+  access    = "ALLOW"
+  protocol  = "ANY"
+  type      = "STATEFUL"
+  priority  = 100
+  egress = {
+    destination_cidrs = each.value.private_cidrs
+    destination_ports = [53]
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "nebius_vpc_v1_security_rule" "database_egress" {
+  for_each = local.generations
+
+  parent_id = nebius_vpc_v1_security_group.generation[each.key].id
+  name      = "fs2-storage-db-${each.key}"
+  labels    = merge(local.common_labels, { generation = each.key, purpose = "database-egress" })
+  access    = "ALLOW"
+  protocol  = "TCP"
+  type      = "STATEFUL"
+  priority  = 100
+  egress = {
+    destination_cidrs = each.value.private_cidrs
+    destination_ports = [5432]
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "nebius_vpc_v1_security_rule" "provider_egress" {
+  for_each = local.generations
+
+  parent_id = nebius_vpc_v1_security_group.generation[each.key].id
+  name      = "fs2-storage-provider-${each.key}"
+  labels    = merge(local.common_labels, { generation = each.key, purpose = "provider-egress" })
+  access    = "ALLOW"
+  protocol  = "TCP"
+  type      = "STATEFUL"
+  priority  = 100
+  egress = {
+    destination_cidrs = sort(distinct(concat(
+      each.value.provider_api_cidrs,
+      each.value.kubernetes_api_cidrs,
+      each.value.bootstrap_https_cidrs,
+    )))
+    destination_ports = [443]
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "nebius_mk8s_v1_node_group" "generation" {
+  for_each = local.generations
+
+  parent_id        = local.authority.cluster_id
+  name             = "fs2-storage-egress-${each.key}"
+  labels           = merge(local.common_labels, { generation = each.key })
+  version          = local.authority.kubernetes_version
+  fixed_node_count = 1
+
+  strategy = {
+    max_surge       = { count = 1 }
+    max_unavailable = { count = 0 }
+    drain_timeout   = "30m"
+  }
+
+  template = {
+    metadata = {
+      labels = {
+        "workload.fs2.nebius/customer-storage-egress" = each.key
+        "fs2.nebius.ai/authority-manifest-sha256"     = data.external.authority.result.manifest_sha256
+      }
+    }
+    taints = [{
+      key    = "workload.fs2.nebius/customer-storage-egress"
+      value  = each.key
+      effect = "NO_SCHEDULE"
+    }]
+    boot_disk = {
+      size_gibibytes = each.value.boot_disk_gib
+      type           = each.value.boot_disk_type
+    }
+    network_interfaces = [{
+      subnet_id = local.authority.subnet_id
+      security_groups = [{
+        id = nebius_vpc_v1_security_group.generation[each.key].id
+      }]
+    }]
+    os                 = "ubuntu24.04"
+    reservation_policy = { policy = "FORBID" }
+    resources = {
+      platform = each.value.platform
+      preset   = each.value.preset
+    }
+    service_account_id = local.authority.node_service_account_id
+    underlay_required  = false
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [
+    nebius_vpc_v1_security_rule.private_ingress,
+    nebius_vpc_v1_security_rule.dns_egress,
+    nebius_vpc_v1_security_rule.database_egress,
+    nebius_vpc_v1_security_rule.provider_egress,
+  ]
+}

@@ -1,0 +1,71 @@
+image:
+  repository: ""
+  digest: ""
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+authority:
+  schema: ""
+  generation: ""
+  manifestSha256: ""
+  predecessorCompatibilitySha256: ""
+  providerIdentitySha256: ""
+  securityGroupId: ""
+  nodeGroupId: ""
+  nodeSelectorKey: ""
+  nodeSelectorValue: ""
+  taintKey: ""
+  taintValue: ""
+  taintEffect: ""
+
+contract:
+  generation: ""
+  sha256: ""
+  configMapName: ""
+  trustConfigMapName: ""
+  networkPolicyName: ""
+  kubernetesApiCidrs: []
+
+rollout:
+  generation: ""
+
+predecessor:
+  schema: ""
+  receiptSha256: ""
+  deploymentUid: ""
+  deploymentSpecSha256: ""
+  networkPolicyUid: ""
+  networkPolicySha256: ""
+  contractUid: ""
+  contractDataSha256: ""
+  policyUid: ""
+  policySpecSha256: ""
+  bindingUid: ""
+  bindingSpecSha256: ""
+
+custody:
+  acceptedSai10Commit: ""
+  independentReviewReceiptSha256: ""
+
+storage:
+  projectId: ""
+  region: ""
+  defaultMode: user
+  quotaBytes: 5000000000
+  excludedTenants: []
+  resourceCredentialsSecretName: ""
+  iamCredentialsSecretName: ""
+  databaseSecretName: fs2-serve-database-storage
+  cryptoSecretName: fs2-serve-storage-keyring
+  storageGeneration: 1
+  keyTtlDays: 90
+  rotationWindowDays: 14
+  actionTimeoutSeconds: 30
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
