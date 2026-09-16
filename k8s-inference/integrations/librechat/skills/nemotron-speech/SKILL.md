@@ -8,14 +8,17 @@ description: Transcribe uploaded recordings with Scientific AI Nemotron Speech t
 ## Discover before invoking
 
 Use the connected Scientific AI catalog and typed-tool discovery. The intended
-Apps are `nemotron-speech-en-0.6b` (English) and
-`nemotron-speech-multilingual-0.6b` (multilingual). A repository declaration or
+Apps are `nemotron-speech-en-0-6b` (English) and
+`nemotron-speech-multilingual-0-6b` (multilingual). A repository declaration or
 this skill is not proof of a live route. If an App is absent or not granted to
 the current API key, report that fact; do not substitute an unrelated model.
 
 Read the selected tool's current schema and model description. Public App names
 may differ from the underlying model ID. Select the App in the invocation and
 use the schema's constant model identifier in its `options` object.
+For these Apps the native tool's `options.model` uses `0.6b` while the public
+App ID, compatibility endpoint's `model`, and live `session.start` App selection
+use `0-6b`. Do not derive one by guessing; use discovery and the current schema.
 
 ## Uploaded recordings
 
