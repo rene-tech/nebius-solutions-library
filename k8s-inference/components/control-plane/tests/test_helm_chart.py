@@ -934,6 +934,20 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
         "resources": ["daemonsets", "deployments"],
         "verbs": ["get", "list", "watch", "create", "patch", "delete"],
     } in model_role["rules"]
+    scale_rules = [rule for rule in model_role["rules"] if rule["resources"] == ["deployments/scale"]]
+    assert scale_rules == [{"apiGroups": ["apps"], "resources": ["deployments/scale"], "verbs": ["patch"]}]
+    assert all("deployments/scale" not in rule["resources"] for rule in model_role["rules"] if rule not in scale_rules)
+    assert deployment["spec"]["revisionHistoryLimit"] == 5
+    rollback_image = f"{TEST_REPOSITORY}@{TEST_DIGEST}"
+    assert deployment["metadata"]["annotations"] == {
+        "inference.fs2.nebius.ai/ownership-compatible-rollback-image": rollback_image,
+        "inference.fs2.nebius.ai/scale-ownership-protocol": "2",
+    }
+    assert deployment["spec"]["template"]["metadata"]["annotations"] == {
+        "fs2.nebius.ai/image-digest": TEST_DIGEST,
+        "inference.fs2.nebius.ai/ownership-compatible-rollback-image": rollback_image,
+        "inference.fs2.nebius.ai/scale-ownership-protocol": "2",
+    }
     assert not any(
         document["kind"] in {"ClusterRole", "ClusterRoleBinding"} and "model-controller" in document["metadata"]["name"]
         for document in documents

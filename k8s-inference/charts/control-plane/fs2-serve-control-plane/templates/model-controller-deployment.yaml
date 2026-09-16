@@ -25,6 +25,9 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ include "fs2-serve.fullname" . }}-model-controller
+  annotations:
+    inference.fs2.nebius.ai/ownership-compatible-rollback-image: {{ include "fs2-serve.image" . | quote }}
+    inference.fs2.nebius.ai/scale-ownership-protocol: "2"
   labels:
     {{- include "fs2-serve.labels" . | nindent 4 }}
     app.kubernetes.io/component: model-controller
@@ -45,6 +48,8 @@ spec:
         {{- include "fs2-serve.modelControllerSelectorLabels" . | nindent 8 }}
       annotations:
         fs2.nebius.ai/image-digest: {{ .Values.image.digest | quote }}
+        inference.fs2.nebius.ai/ownership-compatible-rollback-image: {{ include "fs2-serve.image" . | quote }}
+        inference.fs2.nebius.ai/scale-ownership-protocol: "2"
     spec:
       serviceAccountName: {{ include "fs2-serve.serviceAccountName" (dict "root" . "component" "controller") }}
       automountServiceAccountToken: false
