@@ -19,14 +19,27 @@ import sys
 from pathlib import Path
 from urllib.parse import quote
 
-SCHEMA = "fs2-serve.nebius.ai/sai07-legacy-cleanup/v2"
-RESULT_SCHEMA = "fs2-serve.nebius.ai/sai07-legacy-cleanup-result/v2"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from sai07_inventory_projection import ProjectionError, live_projection  # noqa: E402
+
+SCHEMA = "fs2-serve.nebius.ai/sai07-legacy-cleanup/v3"
+RESULT_SCHEMA = "fs2-serve.nebius.ai/sai07-legacy-cleanup-result/v3"
 NAMESPACE = "fs2-models"
 MAX_OBJECTS = 128
 KINDS = {
     "NetworkPolicy": ("networking.k8s.io", "v1", "networkpolicies"),
     "ServiceAccount": ("", "v1", "serviceaccounts"),
     "DaemonSet": ("apps", "v1", "daemonsets"),
+}
+FENCE_IDENTITIES = {
+    ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicy", "", "fs2-pod-security-legacy-cleanup-fence"),
+    (
+        "admissionregistration.k8s.io/v1",
+        "ValidatingAdmissionPolicyBinding",
+        "",
+        "fs2-pod-security-legacy-cleanup-fence",
+    ),
+    ("v1", "ConfigMap", "fs2-system", "fs2-pod-security-rollout-ledger"),
 }
 
 
@@ -44,16 +57,28 @@ def path_for(kind: str, name: str) -> str:
     return f"{prefix}/namespaces/{NAMESPACE}/{resource}/{quote(name, safe='')}"
 
 
+def fence_path(api_version: str, kind: str, namespace: str, name: str) -> str:
+    resource = {
+        ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicy"): "validatingadmissionpolicies",
+        ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicyBinding"): "validatingadmissionpolicybindings",
+        ("v1", "ConfigMap"): "configmaps",
+    }[(api_version, kind)]
+    if "/" in api_version:
+        group, version = api_version.split("/", 1)
+        return f"/apis/{group}/{version}/{resource}/{quote(name, safe='')}"
+    return f"/api/{api_version}/namespaces/{namespace}/{resource}/{quote(name, safe='')}"
+
+
 class Kubectl:
     def __init__(self, kubeconfig: Path, context: str) -> None:
         self.base = ["kubectl", "--kubeconfig", str(kubeconfig), "--context", context]
 
     def raw(self, uri: str, *, allow_absent: bool = False) -> dict[str, object] | None:
-        completed = subprocess.run(
-            [*self.base, "get", "--raw", uri], check=False, capture_output=True, text=True
-        )
-        if completed.returncode != 0 and allow_absent and (
-            "not found" in completed.stderr.lower() or "404" in completed.stderr
+        completed = subprocess.run([*self.base, "get", "--raw", uri], check=False, capture_output=True, text=True)
+        if (
+            completed.returncode != 0
+            and allow_absent
+            and ("not found" in completed.stderr.lower() or "404" in completed.stderr)
         ):
             return None
         if completed.returncode != 0:
@@ -85,6 +110,7 @@ def validate_manifest(raw: object) -> tuple[dict[str, object], list[dict[str, st
         "kube_system_uid",
         "baseline_artifact_sha256",
         "prior_inventory_sha256",
+        "fence_objects",
         "objects",
     }:
         raise CleanupError("cleanup manifest fields differ from schema")
@@ -94,10 +120,38 @@ def validate_manifest(raw: object) -> tuple[dict[str, object], list[dict[str, st
         if not isinstance(raw[field], str) or not raw[field]:
             raise CleanupError(f"{field} is required")
     for field in ("baseline_artifact_sha256", "prior_inventory_sha256"):
-        if not isinstance(raw[field], str) or len(raw[field]) != 64 or any(
-            character not in "0123456789abcdef" for character in raw[field]
+        if (
+            not isinstance(raw[field], str)
+            or len(raw[field]) != 64
+            or any(character not in "0123456789abcdef" for character in raw[field])
         ):
             raise CleanupError(f"{field} must be a lowercase SHA-256")
+    fence_objects = raw["fence_objects"]
+    if not isinstance(fence_objects, list) or len(fence_objects) != 3:
+        raise CleanupError("fence_objects must contain the exact policy, binding, and ledger")
+    fence_seen: set[tuple[str, str, str, str]] = set()
+    for item in fence_objects:
+        if not isinstance(item, dict) or set(item) != {
+            "api_version",
+            "kind",
+            "namespace",
+            "name",
+            "uid",
+            "resource_version",
+            "object_sha256",
+        }:
+            raise CleanupError("cleanup fence object fields differ from schema")
+        identity = (item["api_version"], item["kind"], item["namespace"], item["name"])
+        if identity not in FENCE_IDENTITIES or identity in fence_seen:
+            raise CleanupError("cleanup fence identity is duplicated or outside the exact contract")
+        if not all(isinstance(item[field], str) and item[field] for field in ("uid", "resource_version")):
+            raise CleanupError("cleanup fence exact identity is required")
+        if not isinstance(item["object_sha256"], str) or len(item["object_sha256"]) != 64:
+            raise CleanupError("cleanup fence object hash is malformed")
+        fence_seen.add(identity)
+    if fence_seen != FENCE_IDENTITIES:
+        raise CleanupError("cleanup fence object inventory differs")
+
     objects = raw["objects"]
     if not isinstance(objects, list) or len(objects) > MAX_OBJECTS:
         raise CleanupError(f"objects must be a list of at most {MAX_OBJECTS}")
@@ -116,14 +170,15 @@ def validate_manifest(raw: object) -> tuple[dict[str, object], list[dict[str, st
             raise CleanupError("cleanup object fields differ from schema")
         if item["kind"] not in KINDS or item["namespace"] != NAMESPACE:
             raise CleanupError("cleanup object kind or namespace is outside the bounded scope")
-        expected_api_version = "v1" if item["kind"] == "ServiceAccount" else (
-            "apps/v1" if item["kind"] == "DaemonSet" else "networking.k8s.io/v1"
+        expected_api_version = (
+            "v1"
+            if item["kind"] == "ServiceAccount"
+            else ("apps/v1" if item["kind"] == "DaemonSet" else "networking.k8s.io/v1")
         )
         if item["api_version"] != expected_api_version:
             raise CleanupError("cleanup object apiVersion differs from its bounded kind")
         if not all(
-            isinstance(item[key], str) and item[key]
-            for key in ("name", "uid", "resource_version", "object_sha256")
+            isinstance(item[key], str) and item[key] for key in ("name", "uid", "resource_version", "object_sha256")
         ):
             raise CleanupError("cleanup object exact identity fields are required")
         if len(item["object_sha256"]) != 64 or any(
@@ -138,11 +193,11 @@ def validate_manifest(raw: object) -> tuple[dict[str, object], list[dict[str, st
     return raw, normalized
 
 
-def live_projection(live: dict[str, object]) -> dict[str, object]:
+def fence_projection(live: dict[str, object]) -> dict[str, object]:
     metadata = live.get("metadata")
     if not isinstance(metadata, dict):
-        raise CleanupError("live object metadata is missing")
-    result: dict[str, object] = {
+        raise CleanupError("cleanup fence metadata is missing")
+    return {
         "apiVersion": live.get("apiVersion"),
         "kind": live.get("kind"),
         "metadata": {
@@ -151,16 +206,44 @@ def live_projection(live: dict[str, object]) -> dict[str, object]:
             "uid": metadata.get("uid"),
             "resourceVersion": metadata.get("resourceVersion"),
             "generation": metadata.get("generation"),
-            "labels": metadata.get("labels", {}),
-            "annotations": metadata.get("annotations", {}),
-            "ownerReferences": metadata.get("ownerReferences", []),
             "deletionTimestamp": metadata.get("deletionTimestamp"),
         },
+        "spec": live.get("spec", {}),
+        "data": live.get("data", {}),
     }
-    for field in ("spec", "data", "automountServiceAccountToken", "imagePullSecrets", "secrets"):
-        if field in live:
-            result[field] = live[field]
-    return result
+
+
+def validate_cleanup_fence(client: Kubectl, manifest: dict[str, object]) -> None:
+    for expected in manifest["fence_objects"]:
+        path = fence_path(
+            expected["api_version"],
+            expected["kind"],
+            expected["namespace"],
+            expected["name"],
+        )
+        live = client.raw(path)
+        if live is None:  # pragma: no cover - mandatory read
+            raise CleanupError("cleanup fence object is absent")
+        metadata = live.get("metadata")
+        if not isinstance(metadata, dict) or (
+            live.get("apiVersion") != expected["api_version"]
+            or live.get("kind") != expected["kind"]
+            or metadata.get("name") != expected["name"]
+            or metadata.get("namespace", "") != expected["namespace"]
+            or metadata.get("uid") != expected["uid"]
+            or metadata.get("resourceVersion") != expected["resource_version"]
+            or hashlib.sha256(canonical(fence_projection(live))).hexdigest() != expected["object_sha256"]
+        ):
+            raise CleanupError("cleanup fence UID/resourceVersion/spec differs")
+        if expected["kind"] == "ConfigMap":
+            data = live.get("data")
+            if not isinstance(data, dict) or (
+                data.get("state") != "reference-data-ready"
+                or data.get("authorization_phase") != "cleanup-legacy-resources"
+                or data.get("authorization_owner_acknowledged") != "true"
+                or data.get("authorization_downstream_acknowledged") != "true"
+            ):
+                raise CleanupError("cleanup fence ledger is not fully acknowledged")
 
 
 def validate_live(item: dict[str, str], live: dict[str, object]) -> None:
@@ -199,9 +282,17 @@ def service_account_references(client: Kubectl, name: str) -> list[str]:
         ("StatefulSet", f"/apis/apps/v1/namespaces/{NAMESPACE}/statefulsets", ("spec", "template", "spec")),
         ("DaemonSet", f"/apis/apps/v1/namespaces/{NAMESPACE}/daemonsets", ("spec", "template", "spec")),
         ("ReplicaSet", f"/apis/apps/v1/namespaces/{NAMESPACE}/replicasets", ("spec", "template", "spec")),
-        ("ReplicationController", f"/api/v1/namespaces/{NAMESPACE}/replicationcontrollers", ("spec", "template", "spec")),
+        (
+            "ReplicationController",
+            f"/api/v1/namespaces/{NAMESPACE}/replicationcontrollers",
+            ("spec", "template", "spec"),
+        ),
         ("Job", f"/apis/batch/v1/namespaces/{NAMESPACE}/jobs", ("spec", "template", "spec")),
-        ("CronJob", f"/apis/batch/v1/namespaces/{NAMESPACE}/cronjobs", ("spec", "jobTemplate", "spec", "template", "spec")),
+        (
+            "CronJob",
+            f"/apis/batch/v1/namespaces/{NAMESPACE}/cronjobs",
+            ("spec", "jobTemplate", "spec", "template", "spec"),
+        ),
     )
     for kind, uri, path in collections:
         collection = client.raw(uri)
@@ -219,10 +310,8 @@ def service_account_references(client: Kubectl, name: str) -> list[str]:
     )
     if jobsets is not None:
         for item in jobsets.get("items", []):
-            for replicated_job in (item.get("spec", {}).get("replicatedJobs", []) or []):
-                pod_spec = (
-                    replicated_job.get("template", {}).get("spec", {}).get("template", {}).get("spec", {})
-                )
+            for replicated_job in item.get("spec", {}).get("replicatedJobs", []) or []:
+                pod_spec = replicated_job.get("template", {}).get("spec", {}).get("template", {}).get("spec", {})
                 if isinstance(pod_spec, dict) and pod_spec.get("serviceAccountName", "default") == name:
                     references.append(f"JobSet/{item['metadata']['name']}")
     model_deployments = client.raw(
@@ -265,6 +354,7 @@ def run(args: argparse.Namespace) -> dict[str, object]:
     if kube_system.get("metadata", {}).get("uid") != manifest["kube_system_uid"]:
         raise CleanupError("selected cluster kube-system UID differs from the cleanup manifest")
 
+    validate_cleanup_fence(client, manifest)
     checked: list[dict[str, str]] = []
     for item in objects:
         uri = path_for(item["kind"], item["name"])
@@ -272,19 +362,33 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         if live is None:  # pragma: no cover - mandatory object
             raise CleanupError(f"cleanup object disappeared before validation: {item['kind']}/{item['name']}")
         validate_live(item, live)
-        if item["kind"] == "ServiceAccount":
-            references = service_account_references(client, item["name"])
-            if references:
-                raise CleanupError(f"ServiceAccount {item['name']} is still referenced by {', '.join(references)}")
         checked.append(item)
     if args.execute:
-        for item in checked:
+        first_wave = [item for item in checked if item["kind"] in {"NetworkPolicy", "DaemonSet"}]
+        service_accounts = [item for item in checked if item["kind"] == "ServiceAccount"]
+        for item in first_wave:
             client.delete_exact(
                 path_for(item["kind"], item["name"]),
                 item["uid"],
                 item["resource_version"],
             )
-        for item in checked:
+        for item in first_wave:
+            if client.raw(path_for(item["kind"], item["name"]), allow_absent=True) is not None:
+                raise CleanupError(f"deleted object remains present: {item['kind']}/{item['name']}")
+        validate_cleanup_fence(client, manifest)
+        for item in service_accounts:
+            live = client.raw(path_for(item["kind"], item["name"]))
+            if live is None:  # pragma: no cover - mandatory read
+                raise CleanupError(f"cleanup object disappeared: {item['kind']}/{item['name']}")
+            validate_live(item, live)
+            references = service_account_references(client, item["name"])
+            if references:
+                raise CleanupError(f"ServiceAccount {item['name']} is still referenced by {', '.join(references)}")
+            client.delete_exact(
+                path_for(item["kind"], item["name"]),
+                item["uid"],
+                item["resource_version"],
+            )
             if client.raw(path_for(item["kind"], item["name"]), allow_absent=True) is not None:
                 raise CleanupError(f"deleted object remains present: {item['kind']}/{item['name']}")
     result = {
@@ -296,6 +400,7 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         "cluster_id": manifest["cluster_id"],
         "run_id": manifest["run_id"],
         "kube_system_uid": manifest["kube_system_uid"],
+        "fence_objects": manifest["fence_objects"],
         "checked_objects": checked,
         "removed_objects": checked if args.execute else [],
     }
@@ -316,7 +421,7 @@ def parser() -> argparse.ArgumentParser:
 def main() -> int:
     try:
         result = run(parser().parse_args())
-    except (CleanupError, OSError, json.JSONDecodeError) as error:
+    except (CleanupError, ProjectionError, OSError, json.JSONDecodeError) as error:
         print(f"SAI-07 cleanup refused: {error}", file=sys.stderr)
         return 1
     json.dump(result, sys.stdout, sort_keys=True)

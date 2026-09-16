@@ -686,8 +686,27 @@ locals {
       )
     })
   ]
-  model_documents = [
+  content_bound_model_documents = [
     for document in local.network_profiled_model_documents : merge(document, {
+      manifest = jsondecode(
+        document.manifest.kind == "ConfigMap" ?
+        jsonencode(merge(document.manifest, {
+          immutable = true
+          metadata = merge(document.manifest.metadata, {
+            annotations = merge(try(document.manifest.metadata.annotations, {}), {
+              "fs2-serve.nebius.ai/content-sha256" = "sha256:${sha256(jsonencode({
+                data       = try(document.manifest.data, {})
+                binaryData = try(document.manifest.binaryData, {})
+              }))}"
+            })
+          })
+        })) :
+        jsonencode(document.manifest)
+      )
+    })
+  ]
+  model_documents = [
+    for document in local.content_bound_model_documents : merge(document, {
       manifest = jsondecode(document.autoscaled ? jsonencode(merge(document.manifest, {
         spec = merge(document.manifest.spec, {
           replicas = 0

@@ -1810,7 +1810,6 @@ class LegacyTemplateBundle(KubernetesModel):
 
 _ALLOWED_TEMPLATE_GVKS = frozenset(
     {
-        ("v1", "ConfigMap"),
         ("v1", "PersistentVolumeClaim"),
         ("v1", "Service"),
         ("apps/v1", "Deployment"),
@@ -2892,33 +2891,6 @@ class LegacyManifestRenderer:
             if residency.reserved_bytes + runtime_memory > pool.allocatable_memory_bytes:
                 raise ValueError("host-memory holder and runtime Pods cannot fit in the pool's allocatable RAM")
 
-        if spec.lifecycle.desired_state is DesiredState.ENABLED:
-            if spec.exposure.open_ai or spec.exposure.mcp:
-                publication: dict[str, Any] = {
-                    "apiVersion": "v1",
-                    "kind": "ConfigMap",
-                    "metadata": {
-                        "name": _derived_name("fs2-model-publication-", context.name),
-                        "namespace": context.namespace,
-                        "labels": {**labels, "fs2-serve.nebius.ai/component": "publication-intent"},
-                        "annotations": annotations,
-                    },
-                    "data": {
-                        "schema": "fs2-serve.nebius.ai/model-publication-intent/v1",
-                        "model_id": spec.public_model_id,
-                        "tenant_id": spec.tenant_id,
-                        "openai": str(spec.exposure.open_ai).lower(),
-                        "openai_aliases_json": json.dumps(sorted(spec.exposure.open_ai_aliases), separators=(",", ":")),
-                        "mcp": str(spec.exposure.mcp).lower(),
-                        "mcp_tool_name": spec.exposure.mcp_tool_name or "",
-                        "policy_ref": spec.policy.policy_ref,
-                        "readiness_gate": "ModelDeployment/Ready=True",
-                    },
-                }
-                if owner_references:
-                    publication["metadata"]["ownerReferences"] = owner_references
-                rendered.append(publication)
-
         if len(rendered) > 256:
             raise ValueError("rendered resource inventory exceeds the controller bound")
 
@@ -3208,6 +3180,7 @@ def plan_reconciliation(
     effective_spec = spec
     effective_context = render_context
     drain_requested = deleting or spec.lifecycle.desired_state is not DesiredState.ENABLED
+    preserve_runtime = False
     if drain_requested:
         preserve_runtime = drain_observation is None or drain_observation.preserve_runtime
         if preserve_runtime:
@@ -3216,8 +3189,9 @@ def plan_reconciliation(
                 observed_floor = max(observed_floor, drain_observation.observed_replicas)
             effective_spec = spec.model_copy(
                 update={
-                    # Keep the scaler and runtime, but deliberately omit the
-                    # publication intent so no new admissions can enter.
+                    # Keep the scaler and runtime, while projecting the
+                    # disabled exposure directly from ModelDeployment status
+                    # so no new admissions can enter.
                     "lifecycle": LifecycleSpec(desired_state=DesiredState.ENABLED),
                     "exposure": spec.exposure.model_copy(
                         update={
@@ -3234,7 +3208,7 @@ def plan_reconciliation(
             )
             # Preserve the exact observed total without moving the hot/burst
             # boundary. This keeps active operations on their existing role
-            # Deployment while the publication is withdrawn.
+            # Deployment while the status-projected route is withdrawn.
             effective_context = render_context.model_copy(update={"minimum_total_replicas_override": observed_floor})
         else:
             effective_spec = spec.model_copy(
@@ -3301,6 +3275,16 @@ def plan_reconciliation(
             and identity not in desired_by_identity
         )
     )
+
+    if drain_requested and preserve_runtime:
+        # Route withdrawal is projected from the desired ModelDeployment and
+        # its observed status, not from a mutable Kubernetes publication
+        # object. While admitted operations remain, do not churn runtime
+        # objects merely because the desired lifecycle/spec digest changed.
+        # The zero-active-operations pass renders the real drained target and
+        # performs the scaler handoff before writing replicas=0.
+        changes = []
+        stale_identities = []
 
     if deleting:
         if drain_observation is None or not drain_observation.complete:

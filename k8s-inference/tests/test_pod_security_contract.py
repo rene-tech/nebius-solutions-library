@@ -98,12 +98,14 @@ def test_rollout_gate_consumes_prior_signed_state_without_phase_skips() -> None:
     gate = _source("modules/pod-security-rollout-gate/main.tf")
     admission = _source("stages/foundation/pod_security_admission.tf")
     expected = {
+        "bootstrap-baseline": "baseline-captured",
         "migrate-reference-data": "exception-ready",
         "cleanup-legacy-resources": "reference-data-ready",
-        "enforce": "baseline-ready",
-        "rollback-remove-enforcement": "baseline-enforced",
-        "rollback-restore-host-agents": "enforcement-removed",
-        "rollback-remove-exception": "host-agents-restored",
+        "quiesce-enforcement": "enforcement-quiesced",
+        "enforce": "baseline-enforced",
+        "rollback-remove-enforcement": "enforcement-removed",
+        "rollback-restore-host-agents": "host-agents-restored",
+        "rollback-remove-exception": "rolled-back",
     }
     for phase, terminal in expected.items():
         assert f'"{phase}"' in verifier
@@ -116,7 +118,10 @@ def test_rollout_gate_consumes_prior_signed_state_without_phase_skips() -> None:
     assert "_validate_baseline_artifact" in verifier
     assert "_validate_cleanup_result" in verifier
     assert "--as=system:serviceaccount:fs2-system:fs2-pod-security-rollout-manager" in verifier
-    assert "downstream phase authorization was already consumed" in verifier
+    assert "foundation resources have not acknowledged this authorization" in verifier
+    assert "prior phase has not been acknowledged by both Terraform stages" in verifier
+    assert '"owner-acknowledgement"' in verifier
+    assert '"downstream-acknowledgement"' in verifier
     assert 'resource "kubernetes_config_map_v1" "ledger"' in gate
     assert "prevent_destroy = true" in gate
     assert "ignore_changes  = [data]" in gate
@@ -125,9 +130,12 @@ def test_rollout_gate_consumes_prior_signed_state_without_phase_skips() -> None:
     assert 'data "external"' not in gate
     assert 'operations  = ["UPDATE", "DELETE"]' in admission
     assert "The monotonic pod-security rollout ledger may not be deleted" in admission
-    assert "object.data.size() == 14" in admission
+    assert "object.data.size() == 15" in admission
     assert "int(object.data.sequence) == int(oldObject.data.sequence) + 1" in admission
-    assert "authorization_downstream_consumed == 'false'" in admission
+    assert "authorization_owner_acknowledged == 'false'" in admission
+    assert "authorization_downstream_acknowledged == 'false'" in admission
+    assert "fs2-pod-security-enforcement-fence" in admission
+    assert "authorization_downstream_acknowledged != 'true'" in admission
 
     reference = _source("reference-data/terraform/main.tf")
     for phase, terminal in expected.items():
@@ -146,12 +154,20 @@ def test_host_agents_dual_run_before_enforcement_and_restore_before_removal() ->
         assert "legacy_host_agents_enabled" in source
         assert "exception_host_agents_enabled" in source
         assert '"prepare"' in source
+        assert '"bootstrap-baseline"' in source
         assert '"rollback-restore-host-agents"' in source
         assert '"rollback-remove-exception"' in source
     assert 'resource "helm_release" "node_exporter_exception"' in foundation
     assert 'resource "helm_release" "otel_node_exception"' in foundation
     assert 'resource "helm_release" "dcgm_exporter_exception"' in workloads
     assert "additionalDaemonSetNamespaces = local.gpu_observer_additional_namespaces" in control_plane
+
+
+def test_quiesce_acknowledgement_rechecks_clean_inventory_after_fence_cas() -> None:
+    verifier = _source("scripts/verify_pod_security_receipts.py")
+    assert 'mode in {"owner-acknowledgement", "downstream-authorization"}' in verifier
+    assert 'and observation_state == "cleanup-complete"' in verifier
+    assert 'observation_state in {"cleanup-complete", "enforcement-quiesced"}' in verifier
 
 
 def test_reference_data_uses_only_dedicated_retained_rwx_csi() -> None:
@@ -194,7 +210,7 @@ def test_scientific_inventory_is_exact_nonempty_and_scanned_before_enforcement()
     )
 
 
-def test_dynamic_controller_has_zero_networkpolicy_serviceaccount_or_daemonset_authority() -> None:
+def test_dynamic_controller_has_zero_configmap_networkpolicy_serviceaccount_or_daemonset_authority() -> None:
     renderer = _source("components/control-plane/src/fs2_serve/model_deployment.py")
     controller = _source("components/control-plane/src/fs2_serve/model_deployment_controller.py")
     workloads = _source("stages/workloads/model_controller.tf")
@@ -204,10 +220,11 @@ def test_dynamic_controller_has_zero_networkpolicy_serviceaccount_or_daemonset_a
     endpoints = controller.split("RESOURCE_ENDPOINTS = {", 1)[1].split("}\n", 1)[0]
     supported = workloads.split("model_controller_supported_template_gvks = toset([", 1)[1].split("])", 1)[0]
     for source in (allowed_gvks, endpoints, supported):
+        assert "ConfigMap" not in source
         assert "ServiceAccount" not in source
         assert "DaemonSet" not in source
         assert "NetworkPolicy" not in source
-    for resource in ("networkpolicies", "serviceaccounts", "daemonsets"):
+    for resource in ("configmaps", "networkpolicies", "serviceaccounts", "daemonsets"):
         assert resource not in rbac
     assert "model_controller_network_policy_resource_names" not in workloads
     assert "networkPolicyResourceNames" not in _source("stages/workloads/control_plane.tf")
@@ -223,7 +240,9 @@ def test_functional_replacements_are_finite_tokenless_and_exactly_admitted() -> 
     assert 'resource "kubernetes_manifest" "snapshot_pod_policy"' in snapshot
     assert "request.userInfo.username == '${local.snapshot_manager_username}'" in snapshot
     assert "object.spec.automountServiceAccountToken == false" in snapshot
-    assert "object.spec.hostNetwork == false && object.spec.hostPID == false && object.spec.hostIPC == false" in snapshot
+    assert (
+        "object.spec.hostNetwork == false && object.spec.hostPID == false && object.spec.hostIPC == false" in snapshot
+    )
     assert "object.spec.containers[0].image == '${local.snapshot_runtime_image}'" in snapshot
     assert "object.spec.containers[0].command.size() in [14,18]" in snapshot
     assert "object.spec.ephemeralContainers.size() == 0" in snapshot

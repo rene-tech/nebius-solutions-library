@@ -1,7 +1,19 @@
 locals {
+  otel_node_relay_path                = "${path.module}/../foundation/values/otel-node-relay.yaml"
+  otel_node_relay                     = file(local.otel_node_relay_path)
+  otel_node_relay_sha256              = sha256(local.otel_node_relay)
+  otel_node_config_map_name           = "fs2-otel-node-relay-${substr(local.otel_node_relay_sha256, 0, 16)}"
+  dcgm_metrics_path                   = "${path.module}/values/dcgm-metrics.csv"
+  dcgm_metrics                        = file(local.dcgm_metrics_path)
+  dcgm_metrics_sha256                 = sha256(local.dcgm_metrics)
+  dcgm_metrics_config_name            = "fs2-dcgm-metrics-${substr(local.dcgm_metrics_sha256, 0, 16)}"
+  dcgm_cold_config                    = local.dcgm_cadence_contract.profiles.coldStartCampaign.helmValues.config.data
+  dcgm_cold_config_sha256             = sha256(local.dcgm_cold_config)
+  dcgm_cold_config_map_name           = "fs2-dcgm-config-${substr(local.dcgm_cold_config_sha256, 0, 16)}"
   node_agents_use_exception_namespace = var.pod_security_rollout_phase != "rollback-remove-exception"
   legacy_host_agents_enabled = contains([
     "prepare",
+    "bootstrap-baseline",
     "rollback-restore-host-agents",
     "rollback-remove-exception",
   ], var.pod_security_rollout_phase)
@@ -18,6 +30,7 @@ locals {
   )
   gpu_observer_additional_namespaces = contains([
     "prepare",
+    "bootstrap-baseline",
     "rollback-restore-host-agents",
   ], var.pod_security_rollout_phase) ? ["fs2-system"] : []
   # The foundation contract exposes either the fresh run-scoped Grafana
@@ -33,6 +46,59 @@ locals {
   grafana_loki_datasource_url  = "http://fs2-loki.fs2-observability.svc.cluster.local:3100"
   grafana_tempo_instance_label = "${local.grafana_observability_release_prefix}-tempo"
   grafana_internal_url         = "http://${local.grafana_publication.service_name}.fs2-observability.svc.cluster.local"
+}
+
+# Both standard metrics and the optional cold-campaign configuration are
+# versioned, immutable, and retained. Helm only mounts these Terraform-owned
+# objects; it never creates a mutable fixed-name telemetry ConfigMap.
+resource "kubernetes_config_map_v1" "dcgm_metrics" {
+  for_each = merge(
+    var.deployment_profile == "full_catalog" && local.legacy_host_agents_enabled ? { "fs2-observability" = true } : {},
+    var.deployment_profile == "full_catalog" && local.exception_host_agents_enabled ? { "fs2-node-observability" = true } : {},
+  )
+
+  metadata {
+    name      = local.dcgm_metrics_config_name
+    namespace = each.key
+    labels = merge(local.common_labels, {
+      "app.kubernetes.io/component" = "dcgm-metrics-config"
+    })
+    annotations = {
+      "security.fs2.nebius.ai/content-sha256" = "sha256:${local.dcgm_metrics_sha256}"
+    }
+  }
+
+  immutable = true
+  data      = { metrics = local.dcgm_metrics }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "kubernetes_config_map_v1" "dcgm_cold_config" {
+  for_each = merge(
+    var.deployment_profile == "full_catalog" && local.legacy_host_agents_enabled ? { "fs2-observability" = true } : {},
+    var.deployment_profile == "full_catalog" && local.exception_host_agents_enabled ? { "fs2-node-observability" = true } : {},
+  )
+
+  metadata {
+    name      = local.dcgm_cold_config_map_name
+    namespace = each.key
+    labels = merge(local.common_labels, {
+      "app.kubernetes.io/component" = "dcgm-cold-config"
+    })
+    annotations = {
+      "security.fs2.nebius.ai/content-sha256" = "sha256:${local.dcgm_cold_config_sha256}"
+    }
+  }
+
+  immutable = true
+  data      = { "config.yaml" = local.dcgm_cold_config }
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "kubernetes_network_policy_v1" "grafana_observability_egress" {
@@ -219,7 +285,18 @@ resource "helm_release" "dcgm_exporter_legacy" {
     yamlencode({
       imagePullSecrets = [{ name = kubernetes_secret_v1.dcgm_exporter_nvcrio_legacy[0].metadata[0].name }]
       arguments        = local.dcgm_cadence_profile.helmValues.arguments
-      config           = local.dcgm_cadence_profile.helmValues.config
+      customMetrics    = ""
+      config = merge(local.dcgm_cadence_profile.helmValues.config, {
+        create = false
+        name   = local.dcgm_cold_config_map_name
+      })
+      extraConfigMapVolumes = [{
+        name = "exporter-metrics-volume"
+        configMap = {
+          name  = local.dcgm_metrics_config_name
+          items = [{ key = "metrics", path = "default-counters.csv" }]
+        }
+      }]
       serviceMonitor = merge(
         local.dcgm_cadence_profile.helmValues.serviceMonitor,
         { additionalLabels = { release = "fs2-${var.run_id}-monitoring" } },
@@ -229,6 +306,8 @@ resource "helm_release" "dcgm_exporter_legacy" {
 
   depends_on = [
     terraform_data.cluster_contract,
+    kubernetes_config_map_v1.dcgm_cold_config,
+    kubernetes_config_map_v1.dcgm_metrics,
     kubernetes_secret_v1.dcgm_exporter_nvcrio_legacy,
   ]
 }
@@ -257,7 +336,18 @@ resource "helm_release" "dcgm_exporter_exception" {
     yamlencode({
       imagePullSecrets = [{ name = kubernetes_secret_v1.dcgm_exporter_nvcrio_exception[0].metadata[0].name }]
       arguments        = local.dcgm_cadence_profile.helmValues.arguments
-      config           = local.dcgm_cadence_profile.helmValues.config
+      customMetrics    = ""
+      config = merge(local.dcgm_cadence_profile.helmValues.config, {
+        create = false
+        name   = local.dcgm_cold_config_map_name
+      })
+      extraConfigMapVolumes = [{
+        name = "exporter-metrics-volume"
+        configMap = {
+          name  = local.dcgm_metrics_config_name
+          items = [{ key = "metrics", path = "default-counters.csv" }]
+        }
+      }]
       serviceMonitor = merge(
         local.dcgm_cadence_profile.helmValues.serviceMonitor,
         { additionalLabels = { release = "fs2-${var.run_id}-monitoring" } },
@@ -267,6 +357,8 @@ resource "helm_release" "dcgm_exporter_exception" {
 
   depends_on = [
     terraform_data.pod_security_rollout_contract,
+    kubernetes_config_map_v1.dcgm_cold_config,
+    kubernetes_config_map_v1.dcgm_metrics,
     kubernetes_secret_v1.dcgm_exporter_nvcrio_exception,
   ]
 }

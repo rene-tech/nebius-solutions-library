@@ -1,7 +1,8 @@
 """Namespaced copies of qualified templates for independent serving apps.
 
-Artifact PVCs and service accounts are shared dependencies, not owned by the
-new app. Runtime Deployments, Services and configuration are independent.
+Artifact PVCs, service accounts and immutable ConfigMaps are shared
+Terraform-owned dependencies, not owned by the new app. Runtime Deployments
+and Services are independent.
 No model arguments or snapshot payloads are rewritten: the gateway translates
 the public app route into the original runtime model identity.
 """
@@ -27,7 +28,7 @@ def instantiate_app_template(
             deployment_name[:45].rstrip("-") + "-" + hashlib.sha256(item["metadata"]["name"].encode()).hexdigest()[:12]
         )
         for item in bundle.resources
-        if item["kind"] not in {"PersistentVolumeClaim", "ServiceAccount"}
+        if item["kind"] not in {"ConfigMap", "PersistentVolumeClaim", "ServiceAccount"}
     }
 
     services = {item["metadata"]["name"] for item in bundle.resources if item["kind"] == "Service"}
@@ -62,7 +63,7 @@ def instantiate_app_template(
     resources = [
         rewrite(copy.deepcopy(item))
         for item in bundle.resources
-        if item["kind"] not in {"PersistentVolumeClaim", "ServiceAccount"}
+        if item["kind"] not in {"ConfigMap", "PersistentVolumeClaim", "ServiceAccount"}
     ]
     app_label = {"fs2-serve.nebius.ai/app-id": str(identity.app_id)}
     deployment_sources = {

@@ -577,7 +577,6 @@ locals {
     ])
   ]), false)
   model_controller_supported_template_gvks = toset([
-    "v1/ConfigMap",
     "v1/Service",
     "apps/v1/Deployment",
   ])

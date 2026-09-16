@@ -23,7 +23,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
-SCHEMA = "fs2-serve.nebius.ai/sai07-baseline-inventory/v3"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from sai07_inventory_projection import ProjectionError, live_projection  # noqa: E402
+
+SCHEMA = "fs2-serve.nebius.ai/sai07-baseline-inventory/v4"
+LEGACY_SCHEMA = "fs2-serve.nebius.ai/sai07-baseline-inventory/v3"
 VERIFICATION_SCHEMA = "fs2-serve.nebius.ai/sai07-baseline-verification/v1"
 EXPECTED_REFERENCE_HOST_PATHS = 103
 EXPECTED_BASELINE_INCOMPATIBLE_OBJECTS = 103
@@ -52,7 +56,13 @@ EXCEPTION_OWNERS = {
     "fs2-otel-node-agent": "fs2-otel-node",
     "fs2-serve-control-plane-gpu-observer": "fs2-serve-control-plane-gpu-observer",
 }
+EXCEPTION_CONFIG_COMPONENTS = {
+    "dcgm-cold-config": ("fs2-dcgm-config-", "config.yaml"),
+    "dcgm-metrics-config": ("fs2-dcgm-metrics-", "metrics"),
+    "otel-node-config": ("fs2-otel-node-relay-", "relay"),
+}
 COLLECTIONS = {
+    "ConfigMap": ("v1", "/api/v1/namespaces/{namespace}/configmaps", ()),
     "Pod": ("v1", "/api/v1/namespaces/{namespace}/pods", ("spec",)),
     "PodTemplate": (
         "v1",
@@ -146,9 +156,7 @@ class Kubectl:
         self.base = ["kubectl", "--kubeconfig", str(kubeconfig), "--context", context]
 
     def raw(self, uri: str, *, optional: bool = False) -> dict[str, Any]:
-        result = subprocess.run(
-            [*self.base, "get", "--raw", uri], check=False, capture_output=True, text=True
-        )
+        result = subprocess.run([*self.base, "get", "--raw", uri], check=False, capture_output=True, text=True)
         if result.returncode != 0 and optional and ("not found" in result.stderr.lower() or "404" in result.stderr):
             return {"apiVersion": "v1", "kind": "List", "items": [], "metadata": {"resourceVersion": "0"}}
         if result.returncode != 0:
@@ -179,11 +187,7 @@ def pod_templates(value: dict[str, Any], path: tuple[str, ...]) -> list[tuple[di
         else:
             template = nested(value, path[:-1])
             template_metadata = template.get("metadata", {}) if isinstance(template, dict) else {}
-            annotations = (
-                template_metadata.get("annotations", {})
-                if isinstance(template_metadata, dict)
-                else {}
-            )
+            annotations = template_metadata.get("annotations", {}) if isinstance(template_metadata, dict) else {}
         return [(spec, annotations)]
 
     spec = value.get("spec", {})
@@ -200,11 +204,7 @@ def pod_templates(value: dict[str, Any], path: tuple[str, ...]) -> list[tuple[di
         if not isinstance(pod_spec, dict) or not pod_spec:
             continue
         template_metadata = pod_template.get("metadata", {})
-        annotations = (
-            template_metadata.get("annotations", {})
-            if isinstance(template_metadata, dict)
-            else {}
-        )
+        annotations = template_metadata.get("annotations", {}) if isinstance(template_metadata, dict) else {}
         results.append((pod_spec, annotations))
     return results
 
@@ -230,7 +230,10 @@ def pod_findings(spec: dict[str, Any], annotations: dict[str, Any] | None = None
             restricted.add("privileged")
         if security.get("runAsUser") == 0 or security.get("runAsNonRoot") is False:
             restricted.add("root")
-        if security.get("runAsNonRoot") is not True and (spec.get("securityContext") or {}).get("runAsNonRoot") is not True:
+        if (
+            security.get("runAsNonRoot") is not True
+            and (spec.get("securityContext") or {}).get("runAsNonRoot") is not True
+        ):
             restricted.add("runAsNonRoot")
         if security.get("allowPrivilegeEscalation") is not False:
             restricted.add("allowPrivilegeEscalation")
@@ -307,7 +310,7 @@ def read_regular(path: Path, limit: int = 128 * 1024 * 1024) -> bytes:
 
 
 def validate_artifact(value: object) -> dict[str, Any]:
-    if not isinstance(value, dict) or value.get("schema") != SCHEMA:
+    if not isinstance(value, dict) or value.get("schema") not in {SCHEMA, LEGACY_SCHEMA}:
         raise InventoryError("baseline artifact schema is unsupported")
     required = {
         "schema",
@@ -336,10 +339,13 @@ def validate_artifact(value: object) -> dict[str, Any]:
         raise InventoryError("baseline artifact inspected namespace inventory differs")
     if not isinstance(value["objects"], list) or not isinstance(value["collections"], list):
         raise InventoryError("baseline artifact inventories must be lists")
+    collection_kinds = {
+        kind: contract for kind, contract in COLLECTIONS.items() if value["schema"] == SCHEMA or kind != "ConfigMap"
+    }
     expected_collections = {
         (namespace, api_version, kind)
         for namespace in BASELINE_NAMESPACES
-        for kind, (api_version, _, _) in COLLECTIONS.items()
+        for kind, (api_version, _, _) in collection_kinds.items()
     }
     observed_collections: dict[tuple[str, str, str], int] = {}
     for collection in value["collections"]:
@@ -375,13 +381,19 @@ def validate_artifact(value: object) -> dict[str, Any]:
         observed_object_counts[key] += 1
     if observed_object_counts != observed_collections:
         raise InventoryError("baseline object counts differ from collection snapshots")
-    if (
+    for field in (
+        "reference_host_paths",
+        "baseline_incompatible_objects",
+        "restricted_incompatible_objects",
+    ):
+        if not isinstance(value[field], int) or isinstance(value[field], bool) or value[field] < 0:
+            raise InventoryError("baseline artifact finding counts are malformed")
+    if value["schema"] == LEGACY_SCHEMA and (
         value["reference_host_paths"] != EXPECTED_REFERENCE_HOST_PATHS
         or value["baseline_incompatible_objects"] != EXPECTED_BASELINE_INCOMPATIBLE_OBJECTS
-        or value["restricted_incompatible_objects"]
-        != EXPECTED_RESTRICTED_INCOMPATIBLE_OBJECTS
+        or value["restricted_incompatible_objects"] != EXPECTED_RESTRICTED_INCOMPATIBLE_OBJECTS
     ):
-        raise InventoryError("baseline artifact does not equal the reviewed 103/103/716 counts")
+        raise InventoryError("legacy v3 baseline does not equal its preserved 103/103/716 evidence")
     if not isinstance(value["legacy_controller_objects"], list):
         raise InventoryError("baseline artifact legacy controller inventory must be a list")
     if value["unauthorized_exception_objects"] != []:
@@ -410,15 +422,42 @@ def legacy_controller_identity(
     if not (controller_owned or legacy_policy):
         return None
     return {
-        "api_version": "v1" if kind == "ServiceAccount" else (
-            "apps/v1" if kind == "DaemonSet" else "networking.k8s.io/v1"
-        ),
+        "api_version": "v1"
+        if kind == "ServiceAccount"
+        else ("apps/v1" if kind == "DaemonSet" else "networking.k8s.io/v1"),
         "kind": kind,
         "namespace": namespace,
         "name": name,
         "uid": str(metadata.get("uid", "")),
         "resource_version": str(metadata.get("resourceVersion", "")),
     }
+
+
+def authorized_exception_config_map(value: dict[str, Any]) -> bool:
+    metadata = value.get("metadata", {})
+    if not isinstance(metadata, dict):
+        return False
+    name = str(metadata.get("name", ""))
+    if name == "kube-root-ca.crt":
+        return True
+    labels = metadata.get("labels", {}) or {}
+    annotations = metadata.get("annotations", {}) or {}
+    data = value.get("data", {})
+    if not isinstance(labels, dict) or not isinstance(annotations, dict) or not isinstance(data, dict):
+        return False
+    component = labels.get("app.kubernetes.io/component")
+    if component not in EXCEPTION_CONFIG_COMPONENTS or value.get("immutable") is not True:
+        return False
+    prefix, key = EXCEPTION_CONFIG_COMPONENTS[component]
+    content = data.get(key)
+    if not isinstance(content, str):
+        return False
+    digest = hashlib.sha256(content.encode()).hexdigest()
+    return (
+        name == f"{prefix}{digest[:16]}"
+        and annotations.get("security.fs2.nebius.ai/content-sha256") == f"sha256:{digest}"
+        and set(data) == {key}
+    )
 
 
 def inventory(client: Kubectl) -> dict[str, Any]:
@@ -430,9 +469,7 @@ def inventory(client: Kubectl) -> dict[str, Any]:
         or item.get("metadata", {}).get("name", "").startswith("fs2-bioir-")
     )
     if discovered != list(SCIENTIFIC_NAMESPACES):
-        raise InventoryError(
-            "live scientific namespace inventory differs from the exact frozen six-name contract"
-        )
+        raise InventoryError("live scientific namespace inventory differs from the exact frozen six-name contract")
 
     objects: list[dict[str, Any]] = []
     collections: list[dict[str, Any]] = []
@@ -442,7 +479,9 @@ def inventory(client: Kubectl) -> dict[str, Any]:
     legacy_controller_objects: list[dict[str, str]] = []
     for namespace in BASELINE_NAMESPACES:
         for kind, (api_version, uri, path) in COLLECTIONS.items():
-            collection = client.raw(uri.format(namespace=namespace), optional=kind in {"JobSet", "ModelDeployment", "ScaledObject"})
+            collection = client.raw(
+                uri.format(namespace=namespace), optional=kind in {"JobSet", "ModelDeployment", "ScaledObject"}
+            )
             items = collection.get("items", [])
             if not isinstance(items, list):
                 raise InventoryError(f"{api_version}/{kind} collection is malformed")
@@ -461,9 +500,7 @@ def inventory(client: Kubectl) -> dict[str, Any]:
                 templates = pod_templates(item, path)
                 template_results = [pod_findings(spec, annotations) for spec, annotations in templates]
                 findings = sorted({finding for result, _ in template_results for finding in result})
-                restricted_findings = sorted(
-                    {finding for _, result in template_results for finding in result}
-                )
+                restricted_findings = sorted({finding for _, result in template_results for finding in result})
                 if findings:
                     incompatible_objects += 1
                 if restricted_findings:
@@ -471,25 +508,16 @@ def inventory(client: Kubectl) -> dict[str, Any]:
                 if "hostPath" in findings:
                     reference_host_paths += 1
                 specs = [spec for spec, _ in templates]
-                projection = {
-                    "apiVersion": item.get("apiVersion", api_version),
-                    "kind": item.get("kind", kind),
-                    "metadata": {
-                        "name": metadata.get("name"),
-                        "namespace": metadata.get("namespace", namespace),
-                        "uid": metadata.get("uid"),
-                        "resourceVersion": metadata.get("resourceVersion"),
-                        "generation": metadata.get("generation"),
-                        "labels": metadata.get("labels", {}),
-                        "annotations": metadata.get("annotations", {}),
-                        "ownerReferences": metadata.get("ownerReferences", []),
-                    },
-                    "spec": item.get("spec", {}),
-                    "template": item.get("template", {}),
-                    "automountServiceAccountToken": item.get("automountServiceAccountToken"),
-                    "imagePullSecrets": item.get("imagePullSecrets", []),
-                    "secrets": item.get("secrets", []),
-                }
+                normalized = dict(item)
+                normalized.setdefault("apiVersion", api_version)
+                normalized.setdefault("kind", kind)
+                normalized_metadata = dict(metadata)
+                normalized_metadata.setdefault("namespace", namespace)
+                normalized["metadata"] = normalized_metadata
+                try:
+                    projection = live_projection(normalized)
+                except ProjectionError as error:
+                    raise InventoryError(str(error)) from error
                 objects.append(
                     {
                         "api_version": api_version,
@@ -528,12 +556,15 @@ def inventory(client: Kubectl) -> dict[str, Any]:
                             kind == "Pod"
                             and name.startswith("fs2-snapshot-")
                             and spec.get("serviceAccountName") == "fs2-snapshot-runtime"
-                            and labels.get("security.fs2.nebius.ai/snapshot-profile")
-                            == "esmfold2-h100-v1"
+                            and labels.get("security.fs2.nebius.ai/snapshot-profile") == "esmfold2-h100-v1"
                         )
                         or (kind == "ServiceAccount" and name in {"default", "fs2-snapshot-runtime"})
                         or (kind == "NetworkPolicy" and name == "fs2-snapshot-default-deny")
+                        or (kind == "ConfigMap" and authorized_exception_config_map(item))
                     ):
+                        unauthorized_exception.append(f"{exception_namespace}/{kind}/{name}")
+                elif kind == "ConfigMap":
+                    if not authorized_exception_config_map(item):
                         unauthorized_exception.append(f"{exception_namespace}/{kind}/{name}")
                 elif kind == "DaemonSet":
                     if name not in EXCEPTION_OWNERS or spec.get("serviceAccountName") != EXCEPTION_OWNERS.get(name):
@@ -556,16 +587,16 @@ def inventory(client: Kubectl) -> dict[str, Any]:
 
     result: dict[str, Any] = {
         "schema": SCHEMA,
-        "captured_at": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
+        "captured_at": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
         "cluster": {
-            "kube_system_uid": client.raw("/api/v1/namespaces/kube-system")
-            .get("metadata", {})
-            .get("uid"),
+            "kube_system_uid": client.raw("/api/v1/namespaces/kube-system").get("metadata", {}).get("uid"),
         },
         "scientific_namespaces": list(SCIENTIFIC_NAMESPACES),
         "inspected_namespaces": list(BASELINE_NAMESPACES),
         "collections": sorted(collections, key=lambda item: (item["namespace"], item["api_version"], item["kind"])),
-        "objects": sorted(objects, key=lambda item: (item["namespace"], item["api_version"], item["kind"], item["name"])),
+        "objects": sorted(
+            objects, key=lambda item: (item["namespace"], item["api_version"], item["kind"], item["name"])
+        ),
         "reference_host_paths": reference_host_paths,
         "baseline_incompatible_objects": incompatible_objects,
         "restricted_incompatible_objects": restricted_incompatible_objects,
@@ -654,7 +685,9 @@ def main() -> int:
         else:
             if args.baseline_artifact is None or args.baseline_sha256 is None:
                 raise InventoryError("initial/clean verification requires the exact baseline artifact and SHA-256")
-            if len(args.baseline_sha256) != 64 or any(character not in "0123456789abcdef" for character in args.baseline_sha256):
+            if len(args.baseline_sha256) != 64 or any(
+                character not in "0123456789abcdef" for character in args.baseline_sha256
+            ):
                 raise InventoryError("baseline SHA-256 is malformed")
             result = verify_against_artifact(
                 live,

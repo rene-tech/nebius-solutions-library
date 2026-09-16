@@ -77,7 +77,7 @@ locals {
       "object.spec.template.spec.containers[0].env.size() == 9 && object.spec.template.spec.containers[0].env.all(e, e.name in ['MY_POD_IP','OTEL_K8S_NODE_NAME','OTEL_K8S_NODE_IP','OTEL_K8S_NAMESPACE','OTEL_K8S_POD_NAME','OTEL_K8S_POD_IP','K8S_NODE_NAME','K8S_NODE_IP','GOMEMLIMIT'] && (!has(e.valueFrom) || !has(e.valueFrom.secretKeyRef))) && (!has(object.spec.template.spec.containers[0].envFrom) || object.spec.template.spec.containers[0].envFrom.size() == 0) && !has(object.spec.template.spec.containers[0].lifecycle)",
       "object.spec.template.spec.volumes.filter(v, !v.name.startsWith('kube-api-access-')).size() == 3 && object.spec.template.spec.volumes.filter(v, !v.name.startsWith('kube-api-access-')).all(v, v.name in ['opentelemetry-collector-configmap','varlogpods','varlibdockercontainers'])",
       local.pod_security_projected_api_token_expression,
-      "object.spec.template.spec.volumes.exists(v, v.name == 'opentelemetry-collector-configmap' && v.configMap.name == 'fs2-otel-node-agent')",
+      "object.spec.template.spec.volumes.exists(v, v.name == 'opentelemetry-collector-configmap' && v.configMap.name == '${local.otel_node_config_map_name}')",
       "object.spec.template.spec.volumes.exists(v, v.name == 'varlogpods' && v.hostPath == {'path':'/var/log/pods'}) && object.spec.template.spec.volumes.exists(v, v.name == 'varlibdockercontainers' && v.hostPath == {'path':'/var/lib/docker/containers'})",
       "object.spec.template.spec.containers[0].volumeMounts.filter(m, !m.name.startsWith('kube-api-access-')).size() == 3 && object.spec.template.spec.containers[0].volumeMounts.exists(m, m.name == 'opentelemetry-collector-configmap' && m.mountPath == '/conf') && object.spec.template.spec.containers[0].volumeMounts.exists(m, m.name == 'varlogpods' && m.mountPath == '/var/log/pods' && m.readOnly == true) && object.spec.template.spec.containers[0].volumeMounts.exists(m, m.name == 'varlibdockercontainers' && m.mountPath == '/var/lib/docker/containers' && m.readOnly == true)",
     ]), var.pod_security_host_agent_images["otel-node"])
@@ -92,7 +92,7 @@ locals {
       "object.spec.template.spec.containers[0].env.size() == 8 && object.spec.template.spec.containers[0].env.all(e, e.name in ['DCGM_EXPORTER_KUBERNETES','DCGM_EXPORTER_KUBERNETES_ENABLE_POD_LABELS','DCGM_EXPORTER_KUBERNETES_ENABLE_POD_UID','DCGM_EXPORTER_KUBERNETES_POD_LABEL_ALLOWLIST_REGEX','DCGM_EXPORTER_LISTEN','DCGM_EXPORTER_WEB_READ_TIMEOUT','DCGM_EXPORTER_WEB_WRITE_TIMEOUT','NODE_NAME'] && (!has(e.valueFrom) || !has(e.valueFrom.secretKeyRef))) && (!has(object.spec.template.spec.containers[0].envFrom) || object.spec.template.spec.containers[0].envFrom.size() == 0) && !has(object.spec.template.spec.containers[0].lifecycle)",
       "object.spec.template.spec.volumes.filter(v, !v.name.startsWith('kube-api-access-')).size() == 2 && object.spec.template.spec.volumes.filter(v, !v.name.startsWith('kube-api-access-')).all(v, v.name in ['pod-gpu-resources','exporter-metrics-volume'])",
       local.pod_security_projected_api_token_expression,
-      "object.spec.template.spec.volumes.exists(v, v.name == 'pod-gpu-resources' && v.hostPath == {'path':'/var/lib/kubelet/pod-resources'}) && object.spec.template.spec.volumes.exists(v, v.name == 'exporter-metrics-volume' && v.configMap.name == 'exporter-metrics-config-map')",
+      "object.spec.template.spec.volumes.exists(v, v.name == 'pod-gpu-resources' && v.hostPath == {'path':'/var/lib/kubelet/pod-resources'}) && object.spec.template.spec.volumes.exists(v, v.name == 'exporter-metrics-volume' && v.configMap.name == '${local.dcgm_metrics_config_name}')",
       "object.spec.template.spec.containers[0].volumeMounts.filter(m, !m.name.startsWith('kube-api-access-')).size() == 2 && object.spec.template.spec.containers[0].volumeMounts.exists(m, m.name == 'pod-gpu-resources' && m.mountPath == '/var/lib/kubelet/pod-resources' && m.readOnly == true) && object.spec.template.spec.containers[0].volumeMounts.exists(m, m.name == 'exporter-metrics-volume' && m.mountPath == '/etc/dcgm-exporter/default-counters.csv' && m.subPath == 'default-counters.csv')",
     ]), var.pod_security_host_agent_images["dcgm-exporter"])
     fs2-serve-control-plane-gpu-observer = format(join(" && ", [
@@ -126,6 +126,90 @@ locals {
       ),
     )
   ])
+}
+
+# Privileged host agents may consume only content-addressed immutable
+# configuration. Admission binds the complete data map on CREATE and refuses
+# later UPDATE/DELETE operations, including metadata-only rewrites.
+resource "kubernetes_manifest" "node_observability_config_policy" {
+  count = local.node_observability_exception_enabled ? 1 : 0
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicy"
+    metadata = {
+      name   = "fs2-node-observability-configs"
+      labels = local.common_labels
+    }
+    spec = {
+      failurePolicy = "Fail"
+      matchConstraints = {
+        resourceRules = [{
+          apiGroups   = [""]
+          apiVersions = ["v1"]
+          operations  = ["CREATE", "UPDATE", "DELETE"]
+          resources   = ["configmaps"]
+        }]
+      }
+      matchConditions = [{
+        name = "reviewed-host-agent-config"
+        expression = format(
+          "request.operation == 'CREATE' ? object.metadata.name in %s : oldObject.metadata.name in %s",
+          jsonencode([
+            local.otel_node_config_map_name,
+            local.dcgm_metrics_config_name,
+            local.dcgm_cold_config_map_name,
+          ]),
+          jsonencode([
+            local.otel_node_config_map_name,
+            local.dcgm_metrics_config_name,
+            local.dcgm_cold_config_map_name,
+          ]),
+        )
+      }]
+      validations = [{
+        expression = format(
+          "request.operation == 'CREATE' && object.immutable == true && ((object.metadata.name == '%s' && object.data == %s) || (object.metadata.name == '%s' && object.data == %s) || (object.metadata.name == '%s' && object.data == %s))",
+          local.otel_node_config_map_name,
+          jsonencode({ relay = local.otel_node_relay }),
+          local.dcgm_metrics_config_name,
+          jsonencode({ metrics = local.dcgm_metrics }),
+          local.dcgm_cold_config_map_name,
+          jsonencode({ "config.yaml" = local.dcgm_cold_config }),
+        )
+        message = "Host-agent configuration is immutable and must equal one reviewed content-addressed data map."
+      }]
+    }
+  }
+
+  depends_on = [terraform_data.cluster_contract]
+}
+
+resource "kubernetes_manifest" "node_observability_config_binding" {
+  count = local.node_observability_exception_enabled ? 1 : 0
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicyBinding"
+    metadata = {
+      name   = "fs2-node-observability-configs"
+      labels = local.common_labels
+    }
+    spec = {
+      policyName        = "fs2-node-observability-configs"
+      validationActions = ["Deny"]
+      matchResources = {
+        namespaceSelector = {
+          matchLabels = {
+            "security.fs2.nebius.ai/host-agent-only" = "true"
+          }
+        }
+      }
+    }
+  }
+
+  depends_on = [
+    kubernetes_manifest.node_observability_config_policy,
+    kubernetes_namespace_v1.platform,
+  ]
 }
 
 # PSA must be privileged for the reviewed node integrations, so native
@@ -408,6 +492,230 @@ resource "kubernetes_role_binding_v1" "pod_security_rollout_ledger" {
   }
 }
 
+# Installed during the signed baseline bootstrap and inactive in ordinary
+# states. The ledger CAS activates this fence atomically at
+# enforcement-quiesced; it remains active through an unacknowledged enforce
+# transition. No Pod-producing object can race into a namespace between the
+# final signed read and the pinned PSA label apply.
+resource "kubernetes_manifest" "pod_security_enforcement_fence_policy" {
+  count = local.pod_security_receipt_required ? 1 : 0
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicy"
+    metadata = {
+      name   = "fs2-pod-security-enforcement-fence"
+      labels = local.common_labels
+    }
+    spec = {
+      failurePolicy = "Fail"
+      paramKind = {
+        apiVersion = "v1"
+        kind       = "ConfigMap"
+      }
+      matchConstraints = {
+        resourceRules = [
+          {
+            apiGroups   = [""]
+            apiVersions = ["v1"]
+            operations  = ["CREATE", "UPDATE"]
+            resources   = ["pods", "podtemplates", "replicationcontrollers"]
+          },
+          {
+            apiGroups   = ["apps"]
+            apiVersions = ["v1"]
+            operations  = ["CREATE", "UPDATE"]
+            resources   = ["daemonsets", "deployments", "replicasets", "statefulsets"]
+          },
+          {
+            apiGroups   = ["batch"]
+            apiVersions = ["v1"]
+            operations  = ["CREATE", "UPDATE"]
+            resources   = ["cronjobs", "jobs"]
+          },
+          {
+            apiGroups   = ["jobset.x-k8s.io"]
+            apiVersions = ["v1alpha2"]
+            operations  = ["CREATE", "UPDATE"]
+            resources   = ["jobsets"]
+          },
+          {
+            apiGroups   = ["inference.fs2.nebius.ai"]
+            apiVersions = ["v1alpha1"]
+            operations  = ["CREATE", "UPDATE"]
+            resources   = ["modeldeployments"]
+          },
+        ]
+      }
+      validations = [{
+        expression = "!(params.data.state == 'enforcement-quiesced' || (params.data.authorization_phase == 'enforce' && params.data.authorization_downstream_acknowledged != 'true'))"
+        message    = "Pod-producing writes are fenced while baseline enforcement is quiesced or awaiting both stages' applied-state acknowledgement."
+      }]
+    }
+  }
+
+  depends_on = [module.pod_security_rollout_gate]
+}
+
+resource "kubernetes_manifest" "pod_security_enforcement_fence_binding" {
+  count = local.pod_security_receipt_required ? 1 : 0
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicyBinding"
+    metadata = {
+      name   = "fs2-pod-security-enforcement-fence"
+      labels = local.common_labels
+    }
+    spec = {
+      policyName        = "fs2-pod-security-enforcement-fence"
+      validationActions = ["Deny"]
+      paramRef = {
+        name                    = "fs2-pod-security-rollout-ledger"
+        namespace               = "fs2-system"
+        parameterNotFoundAction = "Deny"
+      }
+      matchResources = {
+        namespaceSelector = {
+          matchExpressions = [{
+            key      = "kubernetes.io/metadata.name"
+            operator = "In"
+            values = concat([
+              "fs2-data",
+              "fs2-models",
+              "fs2-observability",
+              "fs2-reference-data",
+              "fs2-system",
+            ], local.pod_security_scientific_namespaces)
+          }]
+        }
+      }
+    }
+  }
+
+  depends_on = [kubernetes_manifest.pod_security_enforcement_fence_policy]
+}
+
+# Once the exception agents and finite profiles are ready, this admission
+# fence freezes every exact legacy cleanup identity and rejects new consumers
+# of a legacy ServiceAccount. The cleanup tool can therefore remove DS/NP
+# first, re-read SA consumers, and remove SAs without a create/update race.
+resource "kubernetes_manifest" "pod_security_legacy_cleanup_fence_policy" {
+  count = local.pod_security_receipt_required ? 1 : 0
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicy"
+    metadata = {
+      name   = "fs2-pod-security-legacy-cleanup-fence"
+      labels = local.common_labels
+    }
+    spec = {
+      failurePolicy = "Fail"
+      paramKind = {
+        apiVersion = "v1"
+        kind       = "ConfigMap"
+      }
+      matchConstraints = {
+        resourceRules = [
+          {
+            apiGroups   = [""]
+            apiVersions = ["v1"]
+            operations  = ["CREATE", "UPDATE"]
+            resources   = ["pods", "podtemplates", "replicationcontrollers", "serviceaccounts"]
+          },
+          {
+            apiGroups   = ["apps"]
+            apiVersions = ["v1"]
+            operations  = ["CREATE", "UPDATE"]
+            resources   = ["daemonsets", "deployments", "replicasets", "statefulsets"]
+          },
+          {
+            apiGroups   = ["batch"]
+            apiVersions = ["v1"]
+            operations  = ["CREATE", "UPDATE"]
+            resources   = ["cronjobs", "jobs"]
+          },
+          {
+            apiGroups   = ["jobset.x-k8s.io"]
+            apiVersions = ["v1alpha2"]
+            operations  = ["CREATE", "UPDATE"]
+            resources   = ["jobsets"]
+          },
+          {
+            apiGroups   = ["inference.fs2.nebius.ai"]
+            apiVersions = ["v1alpha1"]
+            operations  = ["CREATE", "UPDATE"]
+            resources   = ["modeldeployments"]
+          },
+          {
+            apiGroups   = ["networking.k8s.io"]
+            apiVersions = ["v1"]
+            operations  = ["CREATE", "UPDATE"]
+            resources   = ["networkpolicies"]
+          },
+        ]
+      }
+      variables = [{
+        name       = "cleanupActive"
+        expression = "params.data.state in ['reference-data-ready','enforcement-quiesced','baseline-enforced']"
+      }]
+      validations = [
+        {
+          expression = format(
+            "!variables.cleanupActive || !((object.kind == 'NetworkPolicy' && object.metadata.name in %s) || (object.kind == 'ServiceAccount' && object.metadata.name in %s) || (object.kind == 'DaemonSet' && object.metadata.name in %s))",
+            jsonencode(local.pod_security_legacy_cleanup_names.networkpolicies),
+            jsonencode(local.pod_security_legacy_cleanup_names.serviceaccounts),
+            jsonencode(local.pod_security_legacy_cleanup_names.daemonsets),
+          )
+          message = "Exact legacy cleanup identities are frozen while their UID/resourceVersion-bound transition is active."
+        },
+        {
+          expression = format(
+            "!variables.cleanupActive || (object.kind == 'Pod' ? (!has(object.spec.serviceAccountName) || !(object.spec.serviceAccountName in %s)) : object.kind == 'PodTemplate' ? (!has(object.template.spec.serviceAccountName) || !(object.template.spec.serviceAccountName in %s)) : object.kind in ['Deployment','StatefulSet','DaemonSet','ReplicaSet','ReplicationController','Job'] ? (!has(object.spec.template.spec.serviceAccountName) || !(object.spec.template.spec.serviceAccountName in %s)) : object.kind == 'CronJob' ? (!has(object.spec.jobTemplate.spec.template.spec.serviceAccountName) || !(object.spec.jobTemplate.spec.template.spec.serviceAccountName in %s)) : object.kind == 'JobSet' ? object.spec.replicatedJobs.all(r, !has(r.template.spec.template.spec.serviceAccountName) || !(r.template.spec.template.spec.serviceAccountName in %s)) : object.kind == 'ModelDeployment' ? (!has(object.spec.template) || !has(object.spec.template.spec) || !has(object.spec.template.spec.serviceAccountName) || !(object.spec.template.spec.serviceAccountName in %s)) : true)",
+            jsonencode(local.pod_security_legacy_cleanup_names.serviceaccounts),
+            jsonencode(local.pod_security_legacy_cleanup_names.serviceaccounts),
+            jsonencode(local.pod_security_legacy_cleanup_names.serviceaccounts),
+            jsonencode(local.pod_security_legacy_cleanup_names.serviceaccounts),
+            jsonencode(local.pod_security_legacy_cleanup_names.serviceaccounts),
+            jsonencode(local.pod_security_legacy_cleanup_names.serviceaccounts),
+          )
+          message = "No Pod or supported controller may acquire a legacy ServiceAccount while cleanup is fenced."
+        },
+      ]
+    }
+  }
+
+  depends_on = [module.pod_security_rollout_gate]
+}
+
+resource "kubernetes_manifest" "pod_security_legacy_cleanup_fence_binding" {
+  count = local.pod_security_receipt_required ? 1 : 0
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicyBinding"
+    metadata = {
+      name   = "fs2-pod-security-legacy-cleanup-fence"
+      labels = local.common_labels
+    }
+    spec = {
+      policyName        = "fs2-pod-security-legacy-cleanup-fence"
+      validationActions = ["Deny"]
+      paramRef = {
+        name                    = "fs2-pod-security-rollout-ledger"
+        namespace               = "fs2-system"
+        parameterNotFoundAction = "Deny"
+      }
+      matchResources = {
+        namespaceSelector = {
+          matchLabels = {
+            "kubernetes.io/metadata.name" = "fs2-models"
+          }
+        }
+      }
+    }
+  }
+
+  depends_on = [kubernetes_manifest.pod_security_legacy_cleanup_fence_policy]
+}
+
 # The rollout verifier is the only component that advances this ConfigMap and
 # does so with a resourceVersion compare-and-swap. Admission makes the ledger
 # non-deletable and restricts updates to the exact reviewed rollout identities;
@@ -448,7 +756,7 @@ resource "kubernetes_manifest" "pod_security_ledger_policy" {
           message    = "The rollout ledger identity is immutable."
         },
         {
-          expression = "request.operation == 'DELETE' || (object.data.size() == 14 && ['schema','context_sha256','authority_key_id','authority_signer_identity','authority_public_key_sha256','sequence','state','last_bundle_sha256','last_receipt_id','last_nonce','authorization_phase','authorization_bundle_sha256','authorization_nonce','authorization_downstream_consumed'].all(k, k in object.data))"
+          expression = "request.operation == 'DELETE' || (object.data.size() == 15 && ['schema','context_sha256','authority_key_id','authority_signer_identity','authority_public_key_sha256','sequence','state','last_bundle_sha256','last_receipt_id','last_nonce','authorization_phase','authorization_bundle_sha256','authorization_nonce','authorization_owner_acknowledged','authorization_downstream_acknowledged'].all(k, k in object.data))"
           message    = "The rollout ledger must contain exactly the canonical admission-readable fields."
         },
         {
@@ -456,11 +764,11 @@ resource "kubernetes_manifest" "pod_security_ledger_policy" {
           message    = "The rollout ledger context and signing authority are immutable."
         },
         {
-          expression = "request.operation == 'DELETE' || ((int(object.data.sequence) == int(oldObject.data.sequence) + 1 && ((oldObject.data.state == 'unmanaged' && object.data.state == 'exception-ready') || (oldObject.data.state == 'exception-ready' && object.data.state == 'reference-data-ready') || (oldObject.data.state == 'reference-data-ready' && object.data.state == 'baseline-ready') || (oldObject.data.state == 'baseline-ready' && object.data.state == 'baseline-enforced') || (oldObject.data.state == 'baseline-enforced' && object.data.state == 'enforcement-removed') || (oldObject.data.state == 'enforcement-removed' && object.data.state == 'host-agents-restored')) && object.data.last_bundle_sha256.matches('^[a-f0-9]{64}$') && object.data.last_receipt_id != '' && object.data.last_receipt_id != oldObject.data.last_receipt_id && object.data.last_nonce != '' && object.data.last_nonce != oldObject.data.last_nonce && object.data.authorization_phase in ['migrate-reference-data','cleanup-legacy-resources','enforce','rollback-remove-enforcement','rollback-restore-host-agents','rollback-remove-exception'] && object.data.authorization_bundle_sha256 == object.data.last_bundle_sha256 && object.data.authorization_nonce == object.data.last_nonce && object.data.authorization_downstream_consumed == 'false') || (object.data.sequence == oldObject.data.sequence && object.data.state == oldObject.data.state && object.data.last_bundle_sha256 == oldObject.data.last_bundle_sha256 && object.data.last_receipt_id == oldObject.data.last_receipt_id && object.data.last_nonce == oldObject.data.last_nonce && object.data.authorization_phase == oldObject.data.authorization_phase && object.data.authorization_bundle_sha256 == oldObject.data.authorization_bundle_sha256 && object.data.authorization_nonce == oldObject.data.authorization_nonce && oldObject.data.authorization_downstream_consumed == 'false' && object.data.authorization_downstream_consumed == 'true'))"
-          message    = "The rollout ledger may only advance one reviewed phase edge or consume its exact authorization once."
+          expression = "request.operation == 'DELETE' || ((int(object.data.sequence) == int(oldObject.data.sequence) + 1 && (oldObject.data.sequence == '0' || (oldObject.data.authorization_owner_acknowledged == 'true' && oldObject.data.authorization_downstream_acknowledged == 'true')) && ((oldObject.data.state == 'unmanaged' && object.data.state == 'baseline-captured') || (oldObject.data.state == 'baseline-captured' && object.data.state == 'exception-ready') || (oldObject.data.state == 'exception-ready' && object.data.state == 'reference-data-ready') || (oldObject.data.state == 'reference-data-ready' && object.data.state == 'enforcement-quiesced') || (oldObject.data.state == 'enforcement-quiesced' && object.data.state == 'baseline-enforced') || (oldObject.data.state == 'baseline-enforced' && object.data.state == 'enforcement-removed') || (oldObject.data.state == 'enforcement-removed' && object.data.state == 'host-agents-restored') || (oldObject.data.state == 'host-agents-restored' && object.data.state == 'rolled-back')) && object.data.last_bundle_sha256.matches('^[a-f0-9]{64}$') && object.data.last_receipt_id != '' && object.data.last_receipt_id != oldObject.data.last_receipt_id && object.data.last_nonce != '' && object.data.last_nonce != oldObject.data.last_nonce && object.data.authorization_phase in ['bootstrap-baseline','migrate-reference-data','cleanup-legacy-resources','quiesce-enforcement','enforce','rollback-remove-enforcement','rollback-restore-host-agents','rollback-remove-exception'] && object.data.authorization_bundle_sha256 == object.data.last_bundle_sha256 && object.data.authorization_nonce == object.data.last_nonce && object.data.authorization_owner_acknowledged == 'false' && object.data.authorization_downstream_acknowledged == 'false') || (object.data.sequence == oldObject.data.sequence && object.data.state == oldObject.data.state && object.data.last_bundle_sha256 == oldObject.data.last_bundle_sha256 && object.data.last_receipt_id == oldObject.data.last_receipt_id && object.data.last_nonce == oldObject.data.last_nonce && object.data.authorization_phase == oldObject.data.authorization_phase && object.data.authorization_bundle_sha256 == oldObject.data.authorization_bundle_sha256 && object.data.authorization_nonce == oldObject.data.authorization_nonce && ((oldObject.data.authorization_owner_acknowledged == 'false' && object.data.authorization_owner_acknowledged == 'true' && object.data.authorization_downstream_acknowledged == oldObject.data.authorization_downstream_acknowledged) || (object.data.authorization_owner_acknowledged == oldObject.data.authorization_owner_acknowledged && oldObject.data.authorization_downstream_acknowledged == 'false' && object.data.authorization_downstream_acknowledged == 'true'))))"
+          message    = "The rollout ledger may only advance one reviewed edge after both prior acknowledgements, or monotonically acknowledge the current exact authorization."
         },
         {
-          expression = "request.operation == 'DELETE' || ((object.data.state == 'exception-ready' && object.data.authorization_phase == 'migrate-reference-data') || (object.data.state == 'reference-data-ready' && object.data.authorization_phase == 'cleanup-legacy-resources') || (object.data.state == 'baseline-ready' && object.data.authorization_phase == 'enforce') || (object.data.state == 'baseline-enforced' && object.data.authorization_phase == 'rollback-remove-enforcement') || (object.data.state == 'enforcement-removed' && object.data.authorization_phase == 'rollback-restore-host-agents') || (object.data.state == 'host-agents-restored' && object.data.authorization_phase == 'rollback-remove-exception'))"
+          expression = "request.operation == 'DELETE' || ((object.data.state == 'baseline-captured' && object.data.authorization_phase == 'bootstrap-baseline') || (object.data.state == 'exception-ready' && object.data.authorization_phase == 'migrate-reference-data') || (object.data.state == 'reference-data-ready' && object.data.authorization_phase == 'cleanup-legacy-resources') || (object.data.state == 'enforcement-quiesced' && object.data.authorization_phase == 'quiesce-enforcement') || (object.data.state == 'baseline-enforced' && object.data.authorization_phase == 'enforce') || (object.data.state == 'enforcement-removed' && object.data.authorization_phase == 'rollback-remove-enforcement') || (object.data.state == 'host-agents-restored' && object.data.authorization_phase == 'rollback-restore-host-agents') || (object.data.state == 'rolled-back' && object.data.authorization_phase == 'rollback-remove-exception'))"
           message    = "The rollout ledger state must authorize only its matching next deployment phase."
         },
       ]

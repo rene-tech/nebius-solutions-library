@@ -1,6 +1,18 @@
 locals {
-  selected_target        = var.target_contract
-  target_contract_sha256 = sha256(jsonencode(var.target_contract))
+  otel_node_relay_path      = "${path.module}/values/otel-node-relay.yaml"
+  otel_node_relay           = file(local.otel_node_relay_path)
+  otel_node_relay_sha256    = sha256(local.otel_node_relay)
+  otel_node_config_map_name = "fs2-otel-node-relay-${substr(local.otel_node_relay_sha256, 0, 16)}"
+  dcgm_metrics_path         = "${path.module}/../workloads/values/dcgm-metrics.csv"
+  dcgm_metrics              = file(local.dcgm_metrics_path)
+  dcgm_metrics_sha256       = sha256(local.dcgm_metrics)
+  dcgm_metrics_config_name  = "fs2-dcgm-metrics-${substr(local.dcgm_metrics_sha256, 0, 16)}"
+  dcgm_cadence_contract     = yamldecode(file("${path.module}/../workloads/values/dcgm-cadence-profiles.yaml"))
+  dcgm_cold_config          = local.dcgm_cadence_contract.profiles.coldStartCampaign.helmValues.config.data
+  dcgm_cold_config_sha256   = sha256(local.dcgm_cold_config)
+  dcgm_cold_config_map_name = "fs2-dcgm-config-${substr(local.dcgm_cold_config_sha256, 0, 16)}"
+  selected_target           = var.target_contract
+  target_contract_sha256    = sha256(jsonencode(var.target_contract))
 
   capacity_profile_contract              = jsondecode(file("${path.module}/../../catalog/profiles/capacity-profiles.json"))
   legacy_infrastructure_contract_enabled = var.infrastructure_contract != null
@@ -109,6 +121,7 @@ locals {
   node_observability_exception_enabled = var.pod_security_rollout_phase != "rollback-remove-exception"
   legacy_host_agents_enabled = contains([
     "prepare",
+    "bootstrap-baseline",
     "rollback-restore-host-agents",
     "rollback-remove-exception",
   ], var.pod_security_rollout_phase)

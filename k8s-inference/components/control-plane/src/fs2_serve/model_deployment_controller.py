@@ -285,7 +285,6 @@ class ResourceEndpoint:
 
 
 RESOURCE_ENDPOINTS = {
-    ("v1", "ConfigMap"): ResourceEndpoint("v1", "ConfigMap", "configmaps"),
     ("v1", "PersistentVolumeClaim"): ResourceEndpoint("v1", "PersistentVolumeClaim", "persistentvolumeclaims"),
     ("v1", "Service"): ResourceEndpoint("v1", "Service", "services"),
     ("apps/v1", "Deployment"): ResourceEndpoint("apps/v1", "Deployment", "deployments"),
@@ -1915,11 +1914,7 @@ def build_status(
             # so it cannot attest holder readiness merely because its desired
             # replica count is zero. The first ready runtime proves the exact
             # external holder receipt and makes the mechanism observable.
-            host_residency_ready = (
-                host_residency_pool_refs == set(spec.placement.pool_refs)
-                and converged
-                and ready > 0
-            )
+            host_residency_ready = host_residency_pool_refs == set(spec.placement.pool_refs) and converged and ready > 0
     fast_start = _fast_start_status(
         spec=spec,
         envelope=envelope,
@@ -2039,20 +2034,13 @@ def build_status(
                 "uid": snapshot.observed.uid,
                 "digest": snapshot.observed.digest,
             }
-        publication_resources = [
-            item
-            for item in plan.render.resources
-            if item.kind == "ConfigMap"
-            and _mapping(item.manifest.get("metadata")).get("labels", {}).get("fs2-serve.nebius.ai/component")
-            == "publication-intent"
-        ]
-        if converged and len(publication_resources) <= 1:
-            # This is the exact controller-observed publication intent. The
-            # runtime bridge still performs its independent Ready/Cold,
-            # policy, endpoint and registry fencing before exposing a route.
+        if converged:
+            # Publication is projected from the current ModelDeployment
+            # revision plus this exact observed status. No mutable ConfigMap
+            # intent is created or trusted by the controller.
             status["publication"] = {
-                "openAI": spec.exposure.open_ai if publication_resources else False,
-                "mcp": spec.exposure.mcp if publication_resources else False,
+                "openAI": spec.lifecycle.desired_state is DesiredState.ENABLED and spec.exposure.open_ai,
+                "mcp": spec.lifecycle.desired_state is DesiredState.ENABLED and spec.exposure.mcp,
                 "observedAt": _timestamp(observed_at),
             }
     if plan.action is ReconcileAction.INFRASTRUCTURE_REQUIRED:
@@ -2289,14 +2277,12 @@ class ModelDeploymentController:
         self._stop.set()
 
     async def _drain_observation(self, spec: ModelDeploymentSpec, discovery: Discovery) -> DrainObservation:
-        publication_present = any(
-            item.raw.get("metadata", {}).get("labels", {}).get("fs2-serve.nebius.ai/component") == "publication-intent"
-            and not item.observed.deleting
-            for item in discovery.resources
-        )
         deployments = [item for item in discovery.resources if item.observed.kind == "Deployment"]
         return DrainObservation(
-            publication_withdrawn=not publication_present,
+            # Dynamic publication is derived directly from desired revision
+            # and observed status, so DesiredState=Disabled is withdrawn
+            # without a mutable Kubernetes side-channel.
+            publication_withdrawn=spec.lifecycle.desired_state is not DesiredState.ENABLED,
             active_operations=await self.active_operations.active_operations(
                 tenant_id=spec.tenant_id, model_ref=spec.public_model_id
             ),
@@ -2446,14 +2432,13 @@ class ModelDeploymentController:
         wrote = False
         phase_action: str | None = None
         phase_requeue = False
-        # Delete stale scaler/publication resources first.  Applying the
-        # explicit drain replica zero in the same pass could race an HPA that
-        # still owns the scale subresource.
+        # Delete stale scaler resources first. Applying the explicit drain
+        # replica zero in the same pass could race an HPA that still owns the
+        # scale subresource. Publication is status-projected and creates no
+        # mutable Kubernetes resource.
         if plan.delete_resource_identities:
             handoff_identities = [
-                identity
-                for identity in plan.delete_resource_identities
-                if "/ScaledObject/" in identity or "fs2-model-publication-" in identity
+                identity for identity in plan.delete_resource_identities if "/ScaledObject/" in identity
             ]
             if (
                 not handoff_identities
@@ -2493,7 +2478,7 @@ class ModelDeploymentController:
             phase_action = "drain:autoscaler-removal-pending"
             phase_requeue = True
 
-        autoscaler_pairs = _autoscaler_pairs(plan.render)
+        autoscaler_pairs = [] if drain is not None and drain.preserve_runtime else _autoscaler_pairs(plan.render)
         autoscaled_target_identities = {_rendered_identity(target) for _, target in autoscaler_pairs}
         if phase_action is None and autoscaler_pairs:
             live_targets = {

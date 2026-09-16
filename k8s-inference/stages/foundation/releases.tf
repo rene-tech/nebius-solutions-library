@@ -590,9 +590,15 @@ resource "helm_release" "otel_node_legacy" {
   wait             = true
   timeout          = 900
 
-  values = [file("${path.module}/values/otel-node.yaml")]
+  values = [
+    file("${path.module}/values/otel-node.yaml"),
+    yamlencode({ configMap = { create = false, existingName = local.otel_node_config_map_name } }),
+  ]
 
-  depends_on = [helm_release.otel_gateway]
+  depends_on = [
+    helm_release.otel_gateway,
+    kubernetes_config_map_v1.otel_node_relay,
+  ]
 }
 
 moved {
@@ -614,11 +620,43 @@ resource "helm_release" "otel_node_exception" {
   wait             = true
   timeout          = 900
 
-  values = [file("${path.module}/values/otel-node.yaml")]
+  values = [
+    file("${path.module}/values/otel-node.yaml"),
+    yamlencode({ configMap = { create = false, existingName = local.otel_node_config_map_name } }),
+  ]
 
   depends_on = [
     helm_release.otel_gateway,
+    kubernetes_config_map_v1.otel_node_relay,
     kubernetes_manifest.node_observability_pod_binding,
     kubernetes_manifest.node_observability_daemonset_binding,
   ]
+}
+
+# The node collector mounts one versioned, immutable configuration. Retaining
+# every admitted generation makes rollback additive and prevents a mutable
+# name-only ConfigMap from redirecting telemetry.
+resource "kubernetes_config_map_v1" "otel_node_relay" {
+  for_each = merge(
+    local.legacy_host_agents_enabled ? { "fs2-observability" = true } : {},
+    local.exception_host_agents_enabled ? { "fs2-node-observability" = true } : {},
+  )
+
+  metadata {
+    name      = local.otel_node_config_map_name
+    namespace = each.key
+    labels = merge(local.common_labels, {
+      "app.kubernetes.io/component" = "otel-node-config"
+    })
+    annotations = {
+      "security.fs2.nebius.ai/content-sha256" = "sha256:${local.otel_node_relay_sha256}"
+    }
+  }
+
+  immutable = true
+  data      = { relay = local.otel_node_relay }
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }

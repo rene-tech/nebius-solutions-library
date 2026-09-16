@@ -1,12 +1,14 @@
 locals {
-  csi_storage_enabled = var.pod_security_rollout_phase != "prepare"
+  csi_storage_enabled = !contains(["prepare", "bootstrap-baseline"], var.pod_security_rollout_phase)
   required_rollout_terminal = {
+    "bootstrap-baseline"           = "baseline-captured"
     "migrate-reference-data"       = "exception-ready"
     "cleanup-legacy-resources"     = "reference-data-ready"
-    "enforce"                      = "baseline-ready"
-    "rollback-remove-enforcement"  = "baseline-enforced"
-    "rollback-restore-host-agents" = "enforcement-removed"
-    "rollback-remove-exception"    = "host-agents-restored"
+    "quiesce-enforcement"          = "enforcement-quiesced"
+    "enforce"                      = "baseline-enforced"
+    "rollback-remove-enforcement"  = "enforcement-removed"
+    "rollback-restore-host-agents" = "host-agents-restored"
+    "rollback-remove-exception"    = "rolled-back"
   }
   runtime_mount_path = "/reference-data"
   # The private plane label always admits the reference-data namespace itself.

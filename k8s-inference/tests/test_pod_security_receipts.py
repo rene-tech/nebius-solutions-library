@@ -18,7 +18,7 @@ assert SPEC and SPEC.loader
 verifier = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(verifier)
 
-NOW = dt.datetime(2026, 9, 16, 20, 0, tzinfo=dt.timezone.utc)
+NOW = dt.datetime(2026, 9, 16, 20, 0, tzinfo=dt.UTC)
 
 
 def canonical(value: object) -> bytes:
@@ -77,6 +77,26 @@ def context() -> dict[str, object]:
                 "component": "otel-node",
                 "legacy": {"namespace": "fs2-observability", "name": "fs2-otel-node-agent"},
                 "exception": {"namespace": "fs2-node-observability", "name": "fs2-otel-node-agent"},
+            },
+        ],
+        "host_agent_configs": [
+            {
+                "component": "dcgm-cold-config",
+                "namespace": "fs2-node-observability",
+                "name": "fs2-dcgm-config-aaaaaaaaaaaaaaaa",
+                "data_sha256": hashlib.sha256(canonical({"config.yaml": "collectors: []\n"})).hexdigest(),
+            },
+            {
+                "component": "dcgm-metrics-config",
+                "namespace": "fs2-node-observability",
+                "name": "fs2-dcgm-metrics-bbbbbbbbbbbbbbbb",
+                "data_sha256": hashlib.sha256(canonical({"metrics": "DCGM_FI_DEV_GPU_UTIL, gauge\n"})).hexdigest(),
+            },
+            {
+                "component": "otel-node-config",
+                "namespace": "fs2-node-observability",
+                "name": "fs2-otel-node-relay-cccccccccccccccc",
+                "data_sha256": hashlib.sha256(canonical({"relay": "receivers: {}\n"})).hexdigest(),
             },
         ],
         "pvc": {
@@ -157,10 +177,7 @@ def observation(value: dict[str, object]) -> dict[str, object]:
 def exception_objects() -> list[dict[str, object]]:
     identities = [
         ("v1", "Namespace", "", "fs2-node-observability"),
-        *[
-            ("apps/v1", "DaemonSet", "fs2-node-observability", name)
-            for name in sorted(verifier.EXCEPTION_DAEMONSETS)
-        ],
+        *[("apps/v1", "DaemonSet", "fs2-node-observability", name) for name in sorted(verifier.EXCEPTION_DAEMONSETS)],
         *[
             ("v1", "ServiceAccount", "fs2-node-observability", name)
             for name in sorted(verifier.EXCEPTION_SERVICE_ACCOUNTS)
@@ -185,6 +202,43 @@ def exception_objects() -> list[dict[str, object]]:
         ),
         (
             "admissionregistration.k8s.io/v1",
+            "ValidatingAdmissionPolicy",
+            "",
+            "fs2-node-observability-configs",
+        ),
+        (
+            "admissionregistration.k8s.io/v1",
+            "ValidatingAdmissionPolicyBinding",
+            "",
+            "fs2-node-observability-configs",
+        ),
+        (
+            "admissionregistration.k8s.io/v1",
+            "ValidatingAdmissionPolicy",
+            "",
+            "fs2-pod-security-enforcement-fence",
+        ),
+        (
+            "admissionregistration.k8s.io/v1",
+            "ValidatingAdmissionPolicyBinding",
+            "",
+            "fs2-pod-security-enforcement-fence",
+        ),
+        (
+            "admissionregistration.k8s.io/v1",
+            "ValidatingAdmissionPolicy",
+            "",
+            "fs2-pod-security-legacy-cleanup-fence",
+        ),
+        (
+            "admissionregistration.k8s.io/v1",
+            "ValidatingAdmissionPolicyBinding",
+            "",
+            "fs2-pod-security-legacy-cleanup-fence",
+        ),
+        *[("v1", "ConfigMap", value["namespace"], value["name"]) for value in context_host_agent_configs()],
+        (
+            "admissionregistration.k8s.io/v1",
             "ValidatingAdmissionPolicyBinding",
             "",
             "fs2-node-observability-pods",
@@ -197,9 +251,180 @@ def exception_objects() -> list[dict[str, object]]:
         ],
     ]
     identities = sorted(set(identities))
-    return [
+    objects = [
         live_object(api_version, kind, namespace, name, ordinal)
         for ordinal, (api_version, kind, namespace, name) in enumerate(identities, start=1)
+    ]
+    configs = {value["name"]: value for value in context_host_agent_configs()}
+    config_data = {
+        "dcgm-cold-config": {"config.yaml": "collectors: []\n"},
+        "dcgm-metrics-config": {"metrics": "DCGM_FI_DEV_GPU_UTIL, gauge\n"},
+        "otel-node-config": {"relay": "receivers: {}\n"},
+    }
+    for value in objects:
+        if value["kind"] == "ConfigMap" and value["metadata"]["name"] in configs:  # type: ignore[index]
+            config = configs[value["metadata"]["name"]]  # type: ignore[index]
+            value["immutable"] = True
+            value["data"] = config_data[config["component"]]
+    ordinal = len(objects) + 1
+    pvc = live_object("v1", "PersistentVolumeClaim", "fs2-reference-data", "fs2-reference-data-rwx", ordinal)
+    pvc["metadata"]["uid"] = "pvc-test-uid"  # type: ignore[index]
+    pvc["spec"] = {
+        "accessModes": ["ReadWriteMany"],
+        "storageClassName": "fs2-reference-data-retained-sc",
+        "resources": {"requests": {"storage": "1611Gi"}},
+    }
+    pvc["status"] = {"phase": "Bound"}
+    storage_class = live_object(
+        "storage.k8s.io/v1",
+        "StorageClass",
+        "",
+        "fs2-reference-data-retained-sc",
+        ordinal + 1,
+    )
+    storage_class["reclaimPolicy"] = "Retain"
+    probe = live_object(
+        "batch/v1",
+        "Job",
+        "fs2-reference-data",
+        "fs2-reference-data-read-probe-bbbbbbbbbbbb",
+        ordinal + 2,
+    )
+    probe["status"] = {
+        "succeeded": 1,
+        "conditions": [{"type": "Complete", "status": "True"}],
+    }
+    objects.extend(
+        [
+            pvc,
+            storage_class,
+            probe,
+            *successor_storage_objects({"dataset": {"tree_sha256": "b" * 64}}, ordinal + 3),
+        ]
+    )
+    return objects
+
+
+def successor_storage_objects(context: dict[str, object], start: int = 20) -> list[dict[str, object]]:
+    tree = context["dataset"]["tree_sha256"]  # type: ignore[index]
+    values: list[dict[str, object]] = []
+    checkpoint_class = live_object(
+        "storage.k8s.io/v1",
+        "StorageClass",
+        "",
+        verifier.SNAPSHOT_CHECKPOINT_STORAGE_CLASS,
+        start,
+    )
+    checkpoint_class["reclaimPolicy"] = "Retain"
+    values.append(checkpoint_class)
+    ordinal = start + 1
+    for namespace, name in verifier.REFERENCE_SUCCESSOR_CLAIMS:
+        claim = live_object("v1", "PersistentVolumeClaim", namespace, name, ordinal)
+        claim["metadata"]["annotations"] = {  # type: ignore[index]
+            "security.fs2.nebius.ai/content-tree-sha256": tree,
+        }
+        claim["spec"] = {
+            "accessModes": ["ReadOnlyMany"],
+            "storageClassName": verifier.REFERENCE_SUCCESSOR_STORAGE_CLASS,
+            "resources": {"requests": {"storage": "1611Gi"}},
+        }
+        claim["status"] = {"phase": "Bound"}
+        probe = live_object(
+            "batch/v1",
+            "Job",
+            namespace,
+            f"{name}-read-probe-{str(tree)[:12]}",
+            ordinal + 1,
+        )
+        probe["metadata"]["annotations"] = {  # type: ignore[index]
+            "security.fs2.nebius.ai/verified-tree-sha256": tree,
+        }
+        probe["spec"] = {
+            "template": {
+                "spec": {
+                    "automountServiceAccountToken": False,
+                    "volumes": [
+                        {
+                            "name": "reference-data",
+                            "persistentVolumeClaim": {"claimName": name, "readOnly": True},
+                        }
+                    ],
+                }
+            }
+        }
+        probe["status"] = {
+            "succeeded": 1,
+            "conditions": [{"type": "Complete", "status": "True"}],
+        }
+        values.extend([claim, probe])
+        ordinal += 2
+
+    durability = "e" * 64
+    checkpoint_namespace, checkpoint_name = verifier.SNAPSHOT_CHECKPOINT_CLAIM
+    checkpoint = live_object(
+        "v1",
+        "PersistentVolumeClaim",
+        checkpoint_namespace,
+        checkpoint_name,
+        ordinal,
+    )
+    checkpoint["metadata"]["annotations"] = {  # type: ignore[index]
+        "security.fs2.nebius.ai/durability-receipt-sha256": durability,
+    }
+    checkpoint["spec"] = {
+        "accessModes": ["ReadWriteMany"],
+        "storageClassName": verifier.SNAPSHOT_CHECKPOINT_STORAGE_CLASS,
+        "resources": {"requests": {"storage": "256Gi"}},
+    }
+    checkpoint["status"] = {"phase": "Bound"}
+    durability_probe = live_object(
+        "batch/v1",
+        "Job",
+        checkpoint_namespace,
+        f"fs2-snapshot-checkpoints-durability-{durability[:12]}",
+        ordinal + 1,
+    )
+    durability_probe["metadata"]["annotations"] = {  # type: ignore[index]
+        "security.fs2.nebius.ai/durability-receipt-sha256": durability,
+    }
+    durability_probe["spec"] = {
+        "template": {
+            "spec": {
+                "automountServiceAccountToken": False,
+                "volumes": [
+                    {
+                        "name": "checkpoints",
+                        "persistentVolumeClaim": {"claimName": checkpoint_name, "readOnly": False},
+                    }
+                ],
+            }
+        }
+    }
+    durability_probe["status"] = {
+        "succeeded": 1,
+        "conditions": [{"type": "Complete", "status": "True"}],
+    }
+    values.extend([checkpoint, durability_probe])
+    return values
+
+
+def context_host_agent_configs() -> list[dict[str, str]]:
+    return [
+        {
+            "component": "dcgm-cold-config",
+            "namespace": "fs2-node-observability",
+            "name": "fs2-dcgm-config-aaaaaaaaaaaaaaaa",
+        },
+        {
+            "component": "dcgm-metrics-config",
+            "namespace": "fs2-node-observability",
+            "name": "fs2-dcgm-metrics-bbbbbbbbbbbbbbbb",
+        },
+        {
+            "component": "otel-node-config",
+            "namespace": "fs2-node-observability",
+            "name": "fs2-otel-node-relay-cccccccccccccccc",
+        },
     ]
 
 
@@ -247,9 +472,7 @@ class FakeClient:
         self.ledger = deepcopy(ledger)
         self.conflict = False
 
-    def get_object(
-        self, api_version: str, kind: str, namespace: str, name: str
-    ) -> dict[str, object] | None:
+    def get_object(self, api_version: str, kind: str, namespace: str, name: str) -> dict[str, object] | None:
         if (api_version, kind, namespace, name) == (
             "v1",
             "ConfigMap",
@@ -301,7 +524,7 @@ def query(public_key: Path, context: dict[str, object], mode: str = "owner-trans
         *context["scientific_namespaces"],  # type: ignore[misc]
     ]
     artifact: dict[str, object] = {
-        "schema": "fs2-serve.nebius.ai/sai07-baseline-inventory/v3",
+        "schema": "fs2-serve.nebius.ai/sai07-baseline-inventory/v4",
         "captured_at": NOW.isoformat().replace("+00:00", "Z"),
         "cluster": {"kube_system_uid": context["kube_system_uid"]},
         "scientific_namespaces": context["scientific_namespaces"],
@@ -328,6 +551,7 @@ def query(public_key: Path, context: dict[str, object], mode: str = "owner-trans
     baseline_path = public_key.parent / "baseline.json"
     baseline_path.write_bytes(canonical(artifact))
     context["baseline"] = {
+        "schema": artifact["schema"],
         "artifact_sha256": hashlib.sha256(baseline_path.read_bytes()).hexdigest(),
         "inventory_sha256": artifact["inventory_sha256"],
         "reference_host_paths": 103,
@@ -352,6 +576,22 @@ def query(public_key: Path, context: dict[str, object], mode: str = "owner-trans
 
 def initial_ledger(query_value: dict[str, object]) -> dict[str, object]:
     ledger = verifier._initial_ledger(query_value)
+    ledger.update(
+        {
+            "sequence": 1,
+            "state": "baseline-captured",
+            "last_bundle_sha256": "1" * 64,
+            "last_receipt_id": "receipt-baseline-captured-1",
+            "last_nonce": "nonce-baseline-captured-1",
+            "authorization": {
+                "phase": "bootstrap-baseline",
+                "bundle_sha256": "1" * 64,
+                "nonce": "nonce-baseline-captured-1",
+                "owner_acknowledged": True,
+                "downstream_acknowledged": True,
+            },
+        }
+    )
     return {
         "apiVersion": "v1",
         "kind": "ConfigMap",
@@ -384,8 +624,8 @@ def signed_bundle(
         "context": query_value["expected_context"],
         "transition": {
             "receipt_id": "receipt-exception-ready-1",
-            "sequence": 1,
-            "from_state": "unmanaged",
+            "sequence": 2,
+            "from_state": "baseline-captured",
             "to_state": "exception-ready",
             "authorizes_phase": "migrate-reference-data",
             "nonce": "nonce-exception-ready-1",
@@ -444,17 +684,40 @@ def test_whole_bundle_live_verification_and_two_consumers_are_one_time(
     owner = verifier.verify_and_consume(query_value, client, NOW + dt.timedelta(seconds=5))
     assert owner["terminal_state"] == "exception-ready"
 
-    with pytest.raises(verifier.ReceiptError, match="does not extend"):
-        verifier.verify_and_consume(query_value, client, NOW + dt.timedelta(seconds=6))
+    resumed = verifier.verify_and_consume(query_value, client, NOW + dt.timedelta(seconds=6))
+    assert resumed["bundle_sha256"] == owner["bundle_sha256"]
+
+    owner_ack_query = {**query_value, "mode": "owner-acknowledgement"}
+    verifier.verify_and_consume(owner_ack_query, client, NOW + dt.timedelta(seconds=7))
+    verifier.verify_and_consume(owner_ack_query, client, NOW + dt.timedelta(seconds=8))
 
     downstream_query = {**query_value, "mode": "downstream-authorization"}
-    downstream = verifier.verify_and_consume(
-        downstream_query, client, NOW + dt.timedelta(seconds=7)
-    )
+    downstream = verifier.verify_and_consume(downstream_query, client, NOW + dt.timedelta(seconds=9))
     assert downstream["consumer"] == "downstream-authorization"
-    with pytest.raises(verifier.ReceiptError, match="already consumed"):
+    verifier.verify_and_consume(downstream_query, client, NOW + dt.timedelta(seconds=10))
+    downstream_ack_query = {**query_value, "mode": "downstream-acknowledgement"}
+    verifier.verify_and_consume(downstream_ack_query, client, NOW + dt.timedelta(seconds=11))
+    verifier.verify_and_consume(downstream_ack_query, client, NOW + dt.timedelta(seconds=12))
+
+
+def test_exact_consumed_bundle_resumes_after_expiry_but_fresh_expired_bundle_is_rejected(
+    tmp_path: Path, authority: tuple[Path, Path], context: dict[str, object]
+) -> None:
+    query_value, client, _, _ = setup_case(tmp_path, authority, context)
+    verifier.verify_and_consume(query_value, client, NOW + dt.timedelta(seconds=5))
+    resumed = verifier.verify_and_consume(
+        {**query_value, "mode": "owner-acknowledgement"},
+        client,
+        NOW + dt.timedelta(minutes=20),
+    )
+    assert resumed["terminal_state"] == "exception-ready"
+
+    fresh_query, fresh_client, _, _ = setup_case(tmp_path, authority, context)
+    with pytest.raises(verifier.ReceiptError, match="expired"):
         verifier.verify_and_consume(
-            downstream_query, client, NOW + dt.timedelta(seconds=8)
+            fresh_query,
+            fresh_client,
+            NOW + dt.timedelta(minutes=20),
         )
 
 
@@ -538,9 +801,7 @@ def test_stale_observation_and_atomic_ledger_conflict_are_rejected(
     ledger = initial_ledger(query_value)
     path = signed_bundle(tmp_path, private_key, query_value, ledger, objects)
     value = json.loads(path.read_text())
-    value["observations"]["observed_at"] = (
-        NOW - dt.timedelta(minutes=3)
-    ).isoformat().replace("+00:00", "Z")
+    value["observations"]["observed_at"] = (NOW - dt.timedelta(minutes=3)).isoformat().replace("+00:00", "Z")
     unsigned = dict(value)
     del unsigned["signature"]
     message = tmp_path / "stale.json"
@@ -587,9 +848,7 @@ def test_reference_data_transition_requires_bound_retained_rwx_and_completed_rea
         "resources": {"requests": {"storage": "1611Gi"}},
     }
     pvc["status"] = {"phase": "Bound"}
-    storage_class = live_object(
-        "storage.k8s.io/v1", "StorageClass", "", "fs2-reference-data-retained-sc", 2
-    )
+    storage_class = live_object("storage.k8s.io/v1", "StorageClass", "", "fs2-reference-data-retained-sc", 2)
     storage_class["reclaimPolicy"] = "Retain"
     probe = live_object(
         "batch/v1",
@@ -603,18 +862,20 @@ def test_reference_data_transition_requires_bound_retained_rwx_and_completed_rea
             "spec": {
                 "serviceAccountName": "fs2-reference-data",
                 "automountServiceAccountToken": False,
-                "volumes": [{
-                    "name": "reference-data",
-                    "persistentVolumeClaim": {
-                        "claimName": "fs2-reference-data-rwx",
-                        "readOnly": True,
-                    },
-                }],
+                "volumes": [
+                    {
+                        "name": "reference-data",
+                        "persistentVolumeClaim": {
+                            "claimName": "fs2-reference-data-rwx",
+                            "readOnly": True,
+                        },
+                    }
+                ],
             }
         }
     }
     probe["status"] = {"succeeded": 1, "conditions": [{"type": "Complete", "status": "True"}]}
-    objects = [pvc, storage_class, probe]
+    objects = [pvc, storage_class, probe, *successor_storage_objects(context)]
     client = FakeClient(objects, {})
     verifier._validate_live_observations(
         client,
@@ -625,12 +886,103 @@ def test_reference_data_transition_requires_bound_retained_rwx_and_completed_rea
     )
 
     probe["status"] = {"failed": 1, "conditions": [{"type": "Failed", "status": "True"}]}
-    client = FakeClient([pvc, storage_class, probe], {})
+    successor_objects = successor_storage_objects(context)
+    client = FakeClient([pvc, storage_class, probe, *successor_objects], {})
     with pytest.raises(verifier.ReceiptError, match="read probe is not exactly completed"):
         verifier._validate_live_observations(
             client,
-            [observation(pvc), observation(storage_class), observation(probe)],
+            [
+                observation(pvc),
+                observation(storage_class),
+                observation(probe),
+                *(observation(value) for value in successor_objects),
+            ],
             [],
             "reference-data-ready",
             context,
         )
+
+
+def test_reference_data_transition_rejects_missing_bioir_and_snapshot_successors(
+    context: dict[str, object],
+) -> None:
+    tree = context["dataset"]["tree_sha256"]  # type: ignore[index]
+    pvc = live_object("v1", "PersistentVolumeClaim", "fs2-reference-data", "fs2-reference-data-rwx", 1)
+    pvc["metadata"]["uid"] = context["pvc"]["uid"]  # type: ignore[index]
+    pvc["spec"] = {
+        "accessModes": ["ReadWriteMany"],
+        "storageClassName": "fs2-reference-data-retained-sc",
+        "resources": {"requests": {"storage": "1611Gi"}},
+    }
+    pvc["status"] = {"phase": "Bound"}
+    storage_class = live_object("storage.k8s.io/v1", "StorageClass", "", "fs2-reference-data-retained-sc", 2)
+    storage_class["reclaimPolicy"] = "Retain"
+    probe = live_object("batch/v1", "Job", "fs2-reference-data", f"fs2-reference-data-read-probe-{str(tree)[:12]}", 3)
+    probe["spec"] = {
+        "template": {
+            "spec": {
+                "serviceAccountName": "fs2-reference-data",
+                "automountServiceAccountToken": False,
+                "volumes": [
+                    {
+                        "name": "reference-data",
+                        "persistentVolumeClaim": {"claimName": "fs2-reference-data-rwx", "readOnly": True},
+                    }
+                ],
+            }
+        }
+    }
+    probe["status"] = {"succeeded": 1, "conditions": [{"type": "Complete", "status": "True"}]}
+    objects = [pvc, storage_class, probe]
+    with pytest.raises(verifier.ReceiptError, match="successor storage classes are absent"):
+        verifier._validate_live_observations(
+            FakeClient(objects, {}),
+            [observation(value) for value in objects],
+            [],
+            "reference-data-ready",
+            context,
+        )
+
+
+def test_successor_storage_is_acknowledged_only_at_reference_data_ready(
+    context: dict[str, object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[bool] = []
+
+    def validate(
+        client: object,
+        expected_context: dict[str, object],
+        *,
+        include_successors: bool = False,
+    ) -> None:
+        assert client is not None
+        assert expected_context is context
+        calls.append(include_successors)
+
+    monkeypatch.setattr(verifier, "_validate_reference_data_postcondition", validate)
+    client = FakeClient(exception_objects(), {})
+    verifier._validate_phase_acknowledgement(client, "migrate-reference-data", context, "downstream")
+    verifier._validate_phase_acknowledgement(client, "cleanup-legacy-resources", context, "owner")
+    verifier._validate_phase_acknowledgement(client, "cleanup-legacy-resources", context, "downstream")
+    assert calls == [False, False, True]
+
+
+def test_enforce_acknowledgement_requires_immediate_pinned_namespace_labels(
+    context: dict[str, object],
+) -> None:
+    namespaces = ["fs2-data", "fs2-models", "fs2-observability", "fs2-system"]
+    objects = [live_object("v1", "Namespace", "", name, index) for index, name in enumerate(namespaces, 1)]
+    client = FakeClient(objects, {})
+    with pytest.raises(verifier.ReceiptError, match="PSA enforcement acknowledgement differs"):
+        verifier._validate_phase_acknowledgement(client, "enforce", context, "owner")
+
+    for value in objects:
+        value["metadata"]["labels"] = {  # type: ignore[index]
+            "pod-security.kubernetes.io/enforce": "baseline",
+            "pod-security.kubernetes.io/enforce-version": "v1.35",
+            "pod-security.kubernetes.io/audit": "restricted",
+            "pod-security.kubernetes.io/audit-version": "v1.35",
+            "pod-security.kubernetes.io/warn": "restricted",
+            "pod-security.kubernetes.io/warn-version": "v1.35",
+        }
+    verifier._validate_phase_acknowledgement(FakeClient(objects, {}), "enforce", context, "owner")

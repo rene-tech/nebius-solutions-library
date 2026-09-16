@@ -3,14 +3,26 @@ variable "phase" {
   validation {
     condition = contains([
       "prepare",
+      "bootstrap-baseline",
       "migrate-reference-data",
       "cleanup-legacy-resources",
+      "quiesce-enforcement",
       "enforce",
       "rollback-remove-enforcement",
       "rollback-restore-host-agents",
       "rollback-remove-exception",
     ], var.phase)
     error_message = "phase must name one ordered SAI-07 rollout or rollback state."
+  }
+}
+
+variable "action" {
+  description = "Authorize before dependent resources, then acknowledge the same exact authorization after apply."
+  type        = string
+  default     = "authorize"
+  validation {
+    condition     = contains(["authorize", "acknowledge"], var.action)
+    error_message = "action must be authorize or acknowledge."
   }
 }
 
@@ -73,7 +85,7 @@ variable "baseline_artifact_path" {
 }
 
 variable "cleanup_result_path" {
-  description = "Exact executed cleanup result consumed only by the baseline-ready transition."
+  description = "Exact executed cleanup result consumed only by the cleanup-complete/quiesce transition."
   type        = string
   default     = null
   nullable    = true

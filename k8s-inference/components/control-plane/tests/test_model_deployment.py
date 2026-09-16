@@ -11,8 +11,6 @@ from uuid import uuid4
 import pytest
 import yaml
 from fastapi.testclient import TestClient
-from pydantic import ValidationError
-
 from fs2_serve.access_models import OperatorPrincipal, OperatorRole, PrincipalKind
 from fs2_serve.api import create_app
 from fs2_serve.fast_start_mechanisms import (
@@ -81,6 +79,7 @@ from fs2_serve.model_deployment_records import (
     ModelDeploymentObservedStatus,
     ModelDeploymentRuntimePhase,
 )
+from pydantic import ValidationError
 
 CONTROL_ROOT = Path(__file__).resolve().parents[1]
 SOLUTION_ROOT = CONTROL_ROOT.parents[1]
@@ -740,7 +739,7 @@ def test_renderer_uses_selected_pool_resource_and_safe_derived_metadata() -> Non
     assert startup["metadata"]["threshold"] == scaler["spec"]["triggers"][0]["metadata"]["threshold"]
     assert f'deployment="{deployment["metadata"]["name"]}"' in startup["metadata"]["query"]
     assert "[900s:1s]" in startup["metadata"]["query"]
-    assert any(item.manifest["metadata"]["name"].startswith("fs2-model-publication-") for item in first.resources)
+    assert not any(item.kind in {"ConfigMap", "NetworkPolicy"} for item in first.resources)
 
     disabled = spec.model_copy(
         update={
@@ -990,7 +989,6 @@ def test_actual_qwen_two_pool_render_preserves_inference_dns_and_modelexpress_fl
         for item in source_documents
         if (item["apiVersion"], item["kind"])
         in {
-            ("v1", "ConfigMap"),
             ("v1", "Service"),
             ("apps/v1", "Deployment"),
         }
@@ -1586,8 +1584,8 @@ def test_delete_is_a_drain_backstop_and_finalizer_requires_complete_empty_discov
         ),
     )
     assert draining.action is ReconcileAction.DRAIN
-    assert any("publication" in identity for identity in draining.delete_resource_identities)
-    assert not any("ScaledObject" in identity for identity in draining.delete_resource_identities)
+    assert draining.delete_resource_identities == []
+    assert draining.apply_resources == []
     assert draining.render is not None
     assert any(item.kind == "ScaledObject" for item in draining.render.resources)
     preserving_deployment = next(item for item in draining.render.resources if item.kind == "Deployment")
@@ -2007,9 +2005,14 @@ def test_host_memory_holder_identity_is_independent_of_the_app_uuid() -> None:
     declaration = render_host_memory()
     first = _render("host-memory-residency", host_memory_residency=declaration)
     second_context = render_context().model_copy(update={"name": "app-ffffffffffffffffffffffffffffffff"})
-    second = renderer().render(_pinned("host-memory-residency"), second_context.model_copy(update={
-        "host_memory_residency": declaration,
-    }))
+    second = renderer().render(
+        _pinned("host-memory-residency"),
+        second_context.model_copy(
+            update={
+                "host_memory_residency": declaration,
+            }
+        ),
+    )
 
     def holder_id(plan: RenderPlan) -> str:
         pod = _workload(plan)["spec"]["template"]["spec"]

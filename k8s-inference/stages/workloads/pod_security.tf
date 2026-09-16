@@ -11,6 +11,7 @@ locals {
   pod_security_baseline_artifact = local.pod_security_receipt_required ? jsondecode(
     file(var.pod_security_rollout_receipt.baseline_artifact_path)
     ) : {
+    schema                          = "fs2-serve.nebius.ai/sai07-baseline-inventory/v4"
     inventory_sha256                = ""
     reference_host_paths            = 0
     baseline_incompatible_objects   = 0
@@ -58,6 +59,26 @@ locals {
         exception = { namespace = "fs2-node-observability", name = "fs2-otel-node-agent" }
       },
     ]
+    host_agent_configs = [
+      {
+        component   = "dcgm-cold-config"
+        namespace   = "fs2-node-observability"
+        name        = local.dcgm_cold_config_map_name
+        data_sha256 = sha256(jsonencode({ "config.yaml" = local.dcgm_cold_config }))
+      },
+      {
+        component   = "dcgm-metrics-config"
+        namespace   = "fs2-node-observability"
+        name        = local.dcgm_metrics_config_name
+        data_sha256 = sha256(jsonencode({ metrics = local.dcgm_metrics }))
+      },
+      {
+        component   = "otel-node-config"
+        namespace   = "fs2-node-observability"
+        name        = local.otel_node_config_map_name
+        data_sha256 = sha256(jsonencode({ relay = local.otel_node_relay }))
+      },
+    ]
     pvc = {
       namespace     = "fs2-reference-data"
       name          = "fs2-reference-data-rwx"
@@ -77,6 +98,7 @@ locals {
       retention_mode  = try(var.reference_data.storage_contract.lifecycle.retention_mode, "prepare")
     }
     baseline = {
+      schema                          = local.pod_security_baseline_artifact.schema
       artifact_sha256                 = local.pod_security_receipt_required ? filesha256(var.pod_security_rollout_receipt.baseline_artifact_path) : ""
       inventory_sha256                = local.pod_security_baseline_artifact.inventory_sha256
       reference_host_paths            = local.pod_security_baseline_artifact.reference_host_paths
@@ -109,6 +131,33 @@ module "pod_security_rollout_gate" {
   receipt_key_id            = var.pod_security_rollout_receipt.key_id
   receipt_signer_identity   = var.pod_security_rollout_receipt.signer_identity
   expected_context          = local.pod_security_receipt_context
+}
+
+module "pod_security_rollout_ack" {
+  source = "../../modules/pod-security-rollout-gate"
+
+  consumer_role             = "downstream"
+  action                    = "acknowledge"
+  kubeconfig_path           = var.kubeconfig_path
+  kube_context              = var.kube_context
+  phase                     = var.pod_security_rollout_phase
+  receipt_bundle_path       = var.pod_security_rollout_receipt.bundle_path
+  receipt_public_key_path   = var.pod_security_rollout_receipt.public_key_path
+  receipt_public_key_sha256 = var.pod_security_rollout_receipt.public_key_sha256
+  baseline_artifact_path    = var.pod_security_rollout_receipt.baseline_artifact_path
+  cleanup_result_path       = var.pod_security_rollout_receipt.cleanup_result_path
+  receipt_key_id            = var.pod_security_rollout_receipt.key_id
+  receipt_signer_identity   = var.pod_security_rollout_receipt.signer_identity
+  expected_context          = local.pod_security_receipt_context
+
+  depends_on = [
+    kubernetes_labels.existing_scientific_pod_security,
+    kubernetes_config_map_v1.dcgm_cold_config,
+    kubernetes_config_map_v1.dcgm_metrics,
+    helm_release.dcgm_exporter_exception,
+    module.academic_assets,
+    module.reference_data,
+  ]
 }
 
 resource "terraform_data" "pod_security_rollout_contract" {

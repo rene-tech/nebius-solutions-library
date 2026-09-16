@@ -166,16 +166,16 @@ run "baseline_enforcement_refuses_a_non_baseline_ready_gate" {
   expect_failures = [terraform_data.region_contract]
 }
 
-run "baseline_enforcement_follows_the_signed_baseline_ready_gate" {
+run "baseline_enforcement_follows_the_signed_baseline_enforced_gate" {
   command = plan
 
   variables {
     pod_security_rollout_phase = "enforce"
     pod_security_rollout_verification = {
       phase          = "enforce"
-      terminal_state = "baseline-ready"
-      bundle_sha256  = sha256("unit-test-signed-baseline-ready-bundle")
-      sequence       = 3
+      terminal_state = "baseline-enforced"
+      bundle_sha256  = sha256("unit-test-signed-baseline-enforced-bundle")
+      sequence       = 5
       consumer       = "downstream"
     }
   }

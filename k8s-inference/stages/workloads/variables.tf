@@ -28,8 +28,10 @@ variable "pod_security_rollout_phase" {
   validation {
     condition = contains([
       "prepare",
+      "bootstrap-baseline",
       "migrate-reference-data",
       "cleanup-legacy-resources",
+      "quiesce-enforcement",
       "enforce",
       "rollback-remove-enforcement",
       "rollback-restore-host-agents",

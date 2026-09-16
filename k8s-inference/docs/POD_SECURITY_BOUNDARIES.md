@@ -34,47 +34,59 @@ workload movement. Advance only after the checks for the current phase pass:
 1. At the serialized rollout slot, record the then-current stable Helm revision
    and image digests. Confirm `request_debug_enabled=false`. A historical Helm
    revision is never a cross-ticket rollback target.
-2. `prepare`: create the admission-protected `fs2-node-observability` and
-   `fs2-snapshot-operations` namespaces, the dedicated retained CSI
-   driver/class, and the unused RWX claim. Dual-run the GPU observer, DCGM
-   exporter, node telemetry collector, and Prometheus node exporter in both old
-   and exception namespaces. Application namespaces remain unlabeled. Sign
-   `exception-ready` only after immediate reads prove the exact UID,
-   resourceVersion, spec hash, and readiness of all eight old/new agent sets,
-   the exception admission/RBAC objects, and the retained claim identity.
-3. `migrate-reference-data` consumes that signed state. Copy the retained tree
-   to `fs2-reference-data-rwx`, switch the stager and status Deployment to the
-   claim, and keep the temporary verification boundary. Sign
-   `reference-data-ready` only after the claim is Bound, source and target tree
-   identities match, status is Ready, and a read-only application probe passes.
-4. `cleanup-legacy-resources` consumes `reference-data-ready`. Reconcile every
-   retained model and App under the finite network profiles, then run the
-   UID-fenced cleanup plan for controller-created NetworkPolicies,
-   ServiceAccounts, and DaemonSets. It refuses referenced ServiceAccounts and
-   Terraform-owned profile policies. Run the exact live inventory collector;
-   sign `baseline-ready` only when all legacy-resource remainders, baseline
-   incompatibilities, host paths, and unauthorized exception objects are zero.
-5. `enforce` consumes `baseline-ready` and applies `baseline` enforcement plus
-   pinned-minor restricted warn/audit labels to
+2. `prepare`: install the admission-protected `fs2-node-observability` and
+   `fs2-snapshot-operations` boundaries and their additive replacement
+   resources. Application namespaces remain unlabeled and the old host agents
+   remain in service.
+3. `bootstrap-baseline` captures the complete v4 live inventory and advances to
+   `baseline-captured` only after an authorized whole-bundle signature binds
+   the artifact. V4 records the authoritative counts observed at capture time;
+   it does not substitute historical counts. The signed artifact and an
+   immediate live re-read must match object-for-object.
+4. `migrate-reference-data` consumes `baseline-captured`. Dual-run the GPU
+   observer, DCGM exporter, node telemetry collector, and Prometheus node
+   exporter in both old and exception namespaces. Advance to `exception-ready`
+   only after immediate reads prove exact UID, resourceVersion, spec hash,
+   immutable configuration content, and readiness of every old/new agent plus
+   the exception admission and RBAC objects.
+5. `cleanup-legacy-resources` consumes `exception-ready` and advances to
+   `reference-data-ready` only after the canonical retained RWX claim, every
+   BioIR reference-data successor, and the snapshot reference and checkpoint
+   successors are Bound to retained classes and their exact content/durability
+   probes pass. Missing claims or probes fail closed.
+6. `quiesce-enforcement` consumes `reference-data-ready`. Reconcile every
+   retained model and App under the finite network profiles, then execute only
+   a separately approved UID/resourceVersion/spec-fenced cleanup manifest for
+   controller-created NetworkPolicies, ServiceAccounts, and DaemonSets. The
+   installed admission fence prevents recreation and new ServiceAccount
+   consumers; the cleanup removes DaemonSets before its final ServiceAccount
+   reference scan. The signed cleanup result and a fresh clean inventory must
+   match the frozen baseline identities before the ledger CAS advances to
+   `enforcement-quiesced`. That CAS activates a fail-closed admission fence for
+   every Pod-producing write.
+7. `enforce` consumes `enforcement-quiesced` and applies `baseline` enforcement
+   plus pinned-minor restricted warn/audit labels to
    the foundation, reference-data, academic, ModelExpress, and explicitly listed
    existing scientific namespaces. A privileged Pod submitted to `fs2-models`
    must be rejected. Follow the negative probe with model-controller,
    arbitrary-UUID App, scientific-job, database, telemetry, and inference smoke
-   tests. Sign `baseline-enforced` only after these checks pass.
+   tests. The admission fence remains active until both Terraform stages have
+   immediately re-read the pinned labels and acknowledged the exact
+   authorization. Sign `baseline-enforced` only after these checks pass.
 
 The existing-scientific-namespace input is exactly the frozen set
 `fs2-academic-poc` plus
 `fs2-bioir-{boltz2,coverage,openfold,protenix,snapshot}`, not a prefix selector
 or an optional empty list. The read-only inventory collector independently
 compares that complete live scientific inventory before enforcement.
-Historical hostPath launchers are replaced by CSI-only renderers that refuse a
-live launch until the namespace-local claim is Bound to the retained class and
+Historical hostPath launchers have CSI-only successor contracts that refuse a
+live launch until each namespace-local claim is Bound to the retained class and
 every required subpath passes a read-only probe. The privileged donor/restore
 renderer has a separately admission-constrained exact-profile successor in
 `fs2-snapshot-operations`; it cannot launch until its exact reference and
-checkpoint claims have independently passed the same retained-content and
-durability gates. These source contracts are not evidence that those claims
-exist or contain data in a live cluster.
+checkpoint claims independently pass retained-content and durability gates.
+Source contracts are not evidence that those claims exist or contain data in a
+live cluster, and PSA rollout must stop while any successor is absent.
 
 ## Ordered rollback
 
@@ -106,7 +118,7 @@ The StorageClass is post-rendered to `Retain`; the chart release and PVC use
 `prevent_destroy`; the storage handoff must prove deletion is forbidden and
 capacity is at least the 1611 GiB request.
 
-Every later phase requires one short-lived v3 Ed25519 receipt whose single
+Every post-prepare phase requires one short-lived v4 Ed25519 receipt whose single
 signature covers the complete canonical bundle: reviewed signer identity and
 key digest, cluster/run/kube-system UID, deployment nonce, exact prior and next
 state, phase, one-time nonce, expiry, pinned PSA minor, six-namespace
@@ -122,25 +134,28 @@ from the selected API server immediately before an atomic ConfigMap
 resourceVersion compare-and-swap. The monotonic ledger is context- and
 authority-bound, deletion-protected, admission-limited to exact rollout
 identities, and stores the last receipt, nonce, sequence, state, and phase
-authorization. The workloads stage can consume that exact authorization once;
-owner or downstream replay, phase skipping, stale resourceVersions, spec/status
-drift, inventory omission, context substitution, and concurrent ledger updates
-all fail closed. A digest-shaped string or a valid signature without successful
-live reconciliation and ledger consumption has no authority.
+authorization. The owner and workloads stages acknowledge the exact
+authorization only after their dependent resources pass immediate live checks.
+An exact already-consumed bundle can resume idempotently after a process crash;
+a different or expired bundle cannot. Phase skipping, stale resourceVersions,
+spec/status drift, inventory omission, context substitution, and concurrent
+ledger updates all fail closed. A digest-shaped string or a valid signature
+without successful live reconciliation and ledger consumption has no authority.
 
 ## Model-controller ownership
 
-The dynamic model controller does not own ServiceAccounts or DaemonSets.
+The dynamic model controller does not own ConfigMaps, NetworkPolicies,
+ServiceAccounts, or DaemonSets.
 Dynamic Deployments use the dedicated, non-token-mounted `fs2-model-runtime`
 ServiceAccount provisioned by Terraform. Host-memory-residency declarations
 remain published: Terraform owns one finite holder per canonical model/pool,
 and arbitrary App UUIDs only consume its signed receipt. The controller never
 creates or mutates those DaemonSets.
 
-The controller has no NetworkPolicy API endpoint and its Role has no
-`networkpolicies` rule. It therefore cannot get, list, watch, create, patch, or
-delete policy objects. Runtime isolation is supplied by a finite set of
-Terraform-owned profiles selected by immutable
+The controller has no ConfigMap or NetworkPolicy API endpoint and its Role has
+no `configmaps` or `networkpolicies` rule. It therefore cannot get, list, watch,
+create, patch, or delete either resource kind. Runtime isolation is supplied by
+a finite set of Terraform-owned profiles selected by immutable
 `fs2-serve.nebius.ai/network-profile` Pod labels. Standard profiles are bound
 to exact service ports; ModelExpress profiles are bound to an exact reviewed
 qualification and pool. Runtime App UUIDs are never policy object identities.

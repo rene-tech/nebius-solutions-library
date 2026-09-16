@@ -7,9 +7,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-SPEC = importlib.util.spec_from_file_location(
-    "inventory", ROOT / "scripts" / "audit_sai07_baseline_inventory.py"
-)
+SPEC = importlib.util.spec_from_file_location("inventory", ROOT / "scripts" / "audit_sai07_baseline_inventory.py")
 assert SPEC and SPEC.loader
 inventory = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(inventory)
@@ -74,9 +72,7 @@ def test_baseline_scanner_rejects_every_retained_unsafe_shape() -> None:
         "hostIPC": True,
         "securityContext": {"runAsUser": 0},
         "volumes": [{"hostPath": {"path": "/mnt/fs2-reference-data/data"}}],
-        "initContainers": [
-            {"securityContext": {"privileged": True, "capabilities": {"add": ["SYS_ADMIN"]}}}
-        ],
+        "initContainers": [{"securityContext": {"privileged": True, "capabilities": {"add": ["SYS_ADMIN"]}}}],
         "containers": [
             {
                 "ports": [{"hostPort": 8080}],
@@ -103,9 +99,7 @@ def test_baseline_scanner_rejects_every_retained_unsafe_shape() -> None:
         {"container.apparmor.security.beta.kubernetes.io/runtime": "unconfined"},
     )
     assert "unconfinedAppArmor" in baseline
-    assert {"root", "runAsNonRoot", "allowPrivilegeEscalation", "seccompProfile"}.issubset(
-        restricted
-    )
+    assert {"root", "runAsNonRoot", "allowPrivilegeEscalation", "seccompProfile"}.issubset(restricted)
 
 
 def test_reviewed_baseline_pod_has_no_findings() -> None:
@@ -125,7 +119,13 @@ def test_reviewed_baseline_pod_has_no_findings() -> None:
     assert inventory.baseline_findings(spec) == []
 
 
-def baseline_artifact() -> dict[str, object]:
+def baseline_artifact(
+    schema: str = inventory.SCHEMA,
+    *,
+    reference_host_paths: int = 80,
+    baseline_incompatible_objects: int = 91,
+    restricted_incompatible_objects: int = 151,
+) -> dict[str, object]:
     collections = [
         {
             "api_version": api_version,
@@ -136,18 +136,19 @@ def baseline_artifact() -> dict[str, object]:
         }
         for namespace in inventory.BASELINE_NAMESPACES
         for kind, (api_version, _, _) in inventory.COLLECTIONS.items()
+        if schema == inventory.SCHEMA or kind != "ConfigMap"
     ]
     value: dict[str, object] = {
-        "schema": inventory.SCHEMA,
+        "schema": schema,
         "captured_at": "2026-09-16T20:00:00Z",
         "cluster": {"kube_system_uid": "cluster-uid"},
         "scientific_namespaces": list(inventory.SCIENTIFIC_NAMESPACES),
         "inspected_namespaces": list(inventory.BASELINE_NAMESPACES),
         "collections": collections,
         "objects": [],
-        "reference_host_paths": 103,
-        "baseline_incompatible_objects": 103,
-        "restricted_incompatible_objects": 716,
+        "reference_host_paths": reference_host_paths,
+        "baseline_incompatible_objects": baseline_incompatible_objects,
+        "restricted_incompatible_objects": restricted_incompatible_objects,
         "legacy_controller_objects": [],
         "unauthorized_exception_objects": [],
     }
@@ -155,7 +156,7 @@ def baseline_artifact() -> dict[str, object]:
     return value
 
 
-def test_frozen_artifact_proves_the_exact_initial_103_716_counts() -> None:
+def test_v4_bootstrap_accepts_the_exact_current_authoritative_counts() -> None:
     artifact = baseline_artifact()
     payload = inventory.canonical(artifact)
     live = {**artifact, "captured_at": "2026-09-16T20:00:30Z"}
@@ -165,10 +166,10 @@ def test_frozen_artifact_proves_the_exact_initial_103_716_counts() -> None:
         hashlib.sha256(payload).hexdigest(),
         "initial",
     )
-    assert result["baseline_reference_host_paths"] == 103
-    assert result["baseline_restricted_incompatible_objects"] == 716
+    assert result["baseline_reference_host_paths"] == 80
+    assert result["baseline_restricted_incompatible_objects"] == 151
 
-    drifted = {**live, "restricted_incompatible_objects": 715}
+    drifted = {**live, "restricted_incompatible_objects": 150}
     with pytest.raises(inventory.InventoryError, match="differs"):
         inventory.verify_against_artifact(
             drifted,
@@ -197,14 +198,42 @@ def test_inventory_covers_native_and_custom_workload_controllers() -> None:
     }.issubset(inventory.COLLECTIONS)
 
 
-def test_frozen_artifact_refuses_plausible_but_non_authoritative_counts() -> None:
-    artifact = baseline_artifact()
+def test_legacy_v3_preserves_103_103_716_without_blocking_v4_bootstrap() -> None:
+    artifact = baseline_artifact(
+        inventory.LEGACY_SCHEMA,
+        reference_host_paths=103,
+        baseline_incompatible_objects=103,
+        restricted_incompatible_objects=716,
+    )
     artifact["restricted_incompatible_objects"] = 715
     unsigned = dict(artifact)
     unsigned.pop("inventory_sha256")
     artifact["inventory_sha256"] = hashlib.sha256(inventory.canonical(unsigned)).hexdigest()
     with pytest.raises(inventory.InventoryError, match="103/103/716"):
         inventory.validate_artifact(artifact)
+
+    current = baseline_artifact()
+    assert inventory.validate_artifact(current)["reference_host_paths"] == 80
+
+
+def test_v4_projection_is_shared_with_cleanup_and_binds_deletion_timestamp() -> None:
+    value = {
+        "apiVersion": "apps/v1",
+        "kind": "DaemonSet",
+        "metadata": {
+            "name": "legacy",
+            "namespace": "fs2-models",
+            "uid": "uid-1",
+            "resourceVersion": "17",
+            "generation": 2,
+            "deletionTimestamp": None,
+            "labels": {},
+            "annotations": {},
+            "ownerReferences": [],
+        },
+        "spec": {"selector": {"matchLabels": {"app": "legacy"}}},
+    }
+    assert inventory.live_projection(value)["metadata"]["deletionTimestamp"] is None
 
 
 def test_frozen_artifact_refuses_an_omitted_namespace_controller_collection() -> None:

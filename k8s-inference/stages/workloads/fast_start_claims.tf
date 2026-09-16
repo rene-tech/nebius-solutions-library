@@ -6,6 +6,7 @@
 # drift from the names Terraform provisions.
 
 locals {
+  fast_start_residency_agent_sha256 = filesha256("${path.module}/../../components/control-plane/src/fs2_serve/residency_agent.py")
   fast_start_compile_cache_claim_rows = flatten([
     for model_id, declarations in local.model_controller_fast_start_mechanism_declarations : [
       for mechanism, declaration in declarations : {
@@ -74,10 +75,10 @@ locals {
         regexreplace(substr(holder.name, 0, 50), "[-.]+$", ""),
         substr(sha256(holder.name), 0, 12),
       )
-      agent_name = length("${holder.name}-agent") <= 253 ? "${holder.name}-agent" : format(
+      agent_name = length("${holder.name}-agent-${substr(local.fast_start_residency_agent_sha256, 0, 16)}") <= 253 ? "${holder.name}-agent-${substr(local.fast_start_residency_agent_sha256, 0, 16)}" : format(
         "%s-%s",
-        regexreplace(substr("${holder.name}-agent", 0, 240), "[-.]+$", ""),
-        substr(sha256("${holder.name}-agent"), 0, 12),
+        regexreplace(substr("${holder.name}-agent", 0, 222), "[-.]+$", ""),
+        substr(local.fast_start_residency_agent_sha256, 0, 16),
       )
     })
   ]
@@ -225,12 +226,18 @@ resource "kubernetes_config_map_v1" "fast_start_host_memory_agent" {
     annotations = {
       "fast-start.fs2.nebius/mechanism"       = "host-memory-residency"
       "fast-start.fs2.nebius/config-digest"   = each.value.declaration.configDigest
+      "fast-start.fs2.nebius/agent-sha256"    = "sha256:${local.fast_start_residency_agent_sha256}"
       "fs2-serve.nebius.ai/workload-pool-ref" = each.value.pool_ref
     }
   }
 
+  immutable = true
   data = {
     "residency_agent.py" = file("${path.module}/../../components/control-plane/src/fs2_serve/residency_agent.py")
+  }
+
+  lifecycle {
+    prevent_destroy = true
   }
 
   depends_on = [terraform_data.model_controller_contract, terraform_data.fast_start_host_memory_contract]
@@ -253,6 +260,7 @@ resource "kubernetes_manifest" "fast_start_host_memory_holder" {
       annotations = {
         "fast-start.fs2.nebius/mechanism"       = "host-memory-residency"
         "fast-start.fs2.nebius/config-digest"   = each.value.declaration.configDigest
+        "fast-start.fs2.nebius/agent-sha256"    = "sha256:${local.fast_start_residency_agent_sha256}"
         "fast-start.fs2.nebius/reserved-memory" = tostring(each.value.declaration.reservedBytes)
         "fs2-serve.nebius.ai/workload-pool-ref" = each.value.pool_ref
       }
@@ -275,6 +283,7 @@ resource "kubernetes_manifest" "fast_start_host_memory_holder" {
           annotations = {
             "fast-start.fs2.nebius/mechanism"       = "host-memory-residency"
             "fast-start.fs2.nebius/config-digest"   = each.value.declaration.configDigest
+            "fast-start.fs2.nebius/agent-sha256"    = "sha256:${local.fast_start_residency_agent_sha256}"
             "fast-start.fs2.nebius/reserved-memory" = tostring(each.value.declaration.reservedBytes)
             "fs2-serve.nebius.ai/workload-pool-ref" = each.value.pool_ref
           }

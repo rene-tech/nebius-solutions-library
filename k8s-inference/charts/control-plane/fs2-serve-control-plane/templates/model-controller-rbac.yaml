@@ -15,7 +15,7 @@ rules:
     resources: ["modeldeployments/status", "modeldeployments/finalizers"]
     verbs: ["get", "patch", "update"]
   - apiGroups: [""]
-    resources: ["configmaps", "persistentvolumeclaims", "services"]
+    resources: ["persistentvolumeclaims", "services"]
     verbs: ["get", "list", "watch", "create", "patch", "delete"]
   - apiGroups: [""]
     resources: ["pods"]

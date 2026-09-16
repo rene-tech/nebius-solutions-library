@@ -7,11 +7,6 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from test_dynamic_routes import _revision
-from test_model_deployment import envelope, model_spec, render_context, renderer
-from test_model_deployment_mutation import FakeWriter, _actor
-from test_model_deployment_publication import status_view
-
 from fs2_serve.admin import AdminProblemError, AdminReadService
 from fs2_serve.admin_models import AdminContext
 from fs2_serve.apps import AppsService, default_app_id
@@ -24,6 +19,10 @@ from fs2_serve.model_deployment_admin import StoreModelDeploymentRepository
 from fs2_serve.model_deployment_mutation import ModelDeploymentMutationService
 from fs2_serve.model_deployment_publication import project_dynamic_publications
 from fs2_serve.model_deployment_records import ModelDeploymentAppendRequest, ModelDeploymentRevisionAction
+from test_dynamic_routes import _revision
+from test_model_deployment import envelope, model_spec, render_context, renderer
+from test_model_deployment_mutation import FakeWriter, _actor
+from test_model_deployment_publication import status_view
 
 
 def _context():
@@ -124,12 +123,10 @@ def test_template_rewrites_owned_references_not_runtime_model_arguments():
     spec = _app_spec(model_spec())
     clone = instantiate_app_template(bundle, spec.public_model_id, identity=spec.app)
     cloned_runtime = clone.resources[0]["spec"]["template"]["spec"]["containers"][0]
-    config = next(item for item in clone.resources if item["kind"] == "ConfigMap")
     assert cloned_runtime["args"] == runtime["args"]
-    assert config["data"]["model"] == "qwen-runtime"
+    assert not any(item["kind"] == "ConfigMap" for item in clone.resources)
     assert cloned_runtime["env"][0]["value"] == f"http://{clone.primary_service_name}.fs2-models.svc:8000/v1"
-    assert config["data"]["upstream"] == f"http://{clone.primary_service_name}:8000"
-    assert cloned_runtime["env"][1]["valueFrom"]["configMapKeyRef"]["name"] == config["metadata"]["name"]
+    assert cloned_runtime["env"][1]["valueFrom"]["configMapKeyRef"]["name"] == "qwen-config"
     assert bundle.resources[0]["metadata"]["name"] == "qwen-runtime"
 
 
@@ -180,11 +177,10 @@ def test_two_apps_publish_independent_routes_and_restore_exact_dispatch(registry
 
 @pytest.mark.asyncio
 async def test_app_admission_preserves_public_identity_but_sends_canonical_openai_model(registry, cipher, hasher):
-    from test_admission_workers import service
-    from test_dynamic_routes import _principal
-
     from fs2_serve.models import AdmissionRequest, Scope, TokenCreate
     from fs2_serve.runtime import RuntimeClient
+    from test_admission_workers import service
+    from test_dynamic_routes import _principal
 
     original = _revision(registry)
     spec = _app_spec(original.spec)
@@ -261,10 +257,9 @@ async def test_app_admission_preserves_public_identity_but_sends_canonical_opena
 
 @pytest.mark.asyncio
 async def test_app_drain_and_automatic_cache_history_use_its_own_public_route():
+    from fs2_serve.model_deployment_controller import Discovery, ModelKey
     from test_fast_start import with_fast_start
     from test_model_deployment_controller import FakeApi, controller, fence, model_object
-
-    from fs2_serve.model_deployment_controller import Discovery, ModelKey
 
     calls = []
 
@@ -292,10 +287,9 @@ async def test_app_drain_and_automatic_cache_history_use_its_own_public_route():
 async def test_app_run_pages_usage_and_last_use_exclude_upload_bookkeeping_but_global_history_keeps_it(
     registry, cipher, hasher
 ):
-    from test_admission_workers import setup_principal
-
     from fs2_serve.admin_models import AdminOperationQuery
     from fs2_serve.models import AdmissionRequest
+    from test_admission_workers import setup_principal
 
     store = MemoryStore(cipher, hasher)
     principal = await setup_principal(store)
@@ -360,10 +354,9 @@ async def test_create_only_metadata_and_optimistic_independent_edits():
 
 @pytest.mark.asyncio
 async def test_seed_defaults_preserves_existing_clone_identity_and_edited_metadata(registry, cipher, hasher):
-    from test_scientific_admin import _readiness
-
     from fs2_serve.scientific_admin import ScientificModelSnapshot
     from fs2_serve.scientific_admin_models import ScientificModelReadinessList
+    from test_scientific_admin import _readiness
 
     repository = MemoryAppsRepository()
     app_id = uuid4()

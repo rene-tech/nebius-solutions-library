@@ -3,10 +3,25 @@ locals {
   pod_security_baseline_artifact = local.pod_security_receipt_required ? jsondecode(
     file(var.pod_security_rollout_receipt.baseline_artifact_path)
     ) : {
+    schema                          = "fs2-serve.nebius.ai/sai07-baseline-inventory/v4"
     inventory_sha256                = ""
     reference_host_paths            = 0
     baseline_incompatible_objects   = 0
     restricted_incompatible_objects = 0
+  }
+  pod_security_legacy_cleanup_names = {
+    networkpolicies = sort([
+      for item in local.pod_security_baseline_artifact.legacy_controller_objects : item.name
+      if item.kind == "NetworkPolicy" && item.namespace == "fs2-models"
+    ])
+    serviceaccounts = sort([
+      for item in local.pod_security_baseline_artifact.legacy_controller_objects : item.name
+      if item.kind == "ServiceAccount" && item.namespace == "fs2-models"
+    ])
+    daemonsets = sort([
+      for item in local.pod_security_baseline_artifact.legacy_controller_objects : item.name
+      if item.kind == "DaemonSet" && item.namespace == "fs2-models"
+    ])
   }
   pod_security_scientific_namespaces = [
     "fs2-academic-poc",
@@ -68,6 +83,26 @@ locals {
         exception = { namespace = "fs2-node-observability", name = "fs2-otel-node-agent" }
       },
     ]
+    host_agent_configs = [
+      {
+        component   = "dcgm-cold-config"
+        namespace   = "fs2-node-observability"
+        name        = local.dcgm_cold_config_map_name
+        data_sha256 = sha256(jsonencode({ "config.yaml" = local.dcgm_cold_config }))
+      },
+      {
+        component   = "dcgm-metrics-config"
+        namespace   = "fs2-node-observability"
+        name        = local.dcgm_metrics_config_name
+        data_sha256 = sha256(jsonencode({ metrics = local.dcgm_metrics }))
+      },
+      {
+        component   = "otel-node-config"
+        namespace   = "fs2-node-observability"
+        name        = local.otel_node_config_map_name
+        data_sha256 = sha256(jsonencode({ relay = local.otel_node_relay }))
+      },
+    ]
     pvc = {
       namespace     = local.pod_security_retained_context.pvc.namespace
       name          = local.pod_security_retained_context.pvc.name
@@ -77,6 +112,7 @@ locals {
     dataset = var.pod_security_dataset
     storage = local.pod_security_retained_context.storage
     baseline = {
+      schema                          = local.pod_security_baseline_artifact.schema
       artifact_sha256                 = local.pod_security_receipt_required ? filesha256(var.pod_security_rollout_receipt.baseline_artifact_path) : ""
       inventory_sha256                = local.pod_security_baseline_artifact.inventory_sha256
       reference_host_paths            = local.pod_security_baseline_artifact.reference_host_paths
@@ -122,6 +158,40 @@ module "pod_security_rollout_gate" {
     kubernetes_manifest.pod_security_ledger_binding,
     kubernetes_cluster_role_binding_v1.pod_security_rollout_reader,
     kubernetes_role_binding_v1.pod_security_rollout_ledger,
+  ]
+}
+
+# A phase is not complete when its receipt is consumed.  Re-read the signed
+# live state and acknowledge only after every foundation-side dependency has
+# applied. Exact reruns are idempotent, so a crash between CAS and state write
+# resumes the same transition instead of consuming a new nonce.
+module "pod_security_rollout_ack" {
+  source = "../../modules/pod-security-rollout-gate"
+
+  consumer_role             = "owner"
+  action                    = "acknowledge"
+  kubeconfig_path           = var.kubeconfig_path
+  kube_context              = var.kube_context
+  phase                     = var.pod_security_rollout_phase
+  receipt_bundle_path       = var.pod_security_rollout_receipt.bundle_path
+  receipt_public_key_path   = var.pod_security_rollout_receipt.public_key_path
+  receipt_public_key_sha256 = var.pod_security_rollout_receipt.public_key_sha256
+  baseline_artifact_path    = var.pod_security_rollout_receipt.baseline_artifact_path
+  cleanup_result_path       = var.pod_security_rollout_receipt.cleanup_result_path
+  receipt_key_id            = var.pod_security_rollout_receipt.key_id
+  receipt_signer_identity   = var.pod_security_rollout_receipt.signer_identity
+  expected_context          = local.pod_security_receipt_context
+
+  depends_on = [
+    kubernetes_labels.platform_pod_security,
+    kubernetes_config_map_v1.otel_node_relay,
+    kubernetes_manifest.node_observability_config_binding,
+    kubernetes_manifest.node_observability_daemonset_binding,
+    kubernetes_manifest.node_observability_pod_binding,
+    kubernetes_manifest.pod_security_enforcement_fence_binding,
+    kubernetes_manifest.pod_security_legacy_cleanup_fence_binding,
+    helm_release.node_exporter_exception,
+    helm_release.otel_node_exception,
   ]
 }
 

@@ -9,17 +9,6 @@ from uuid import UUID
 
 import httpx
 import pytest
-from test_fast_start import STORAGE_CONTRACT_DIGEST, evidence, qualify_for_fast_start, with_evidence, with_fast_start
-from test_model_deployment import (
-    envelope,
-    model_spec,
-    render_gpu_resident,
-    render_host_memory,
-    render_regional_cache,
-    renderer,
-    reserved_and_preemptible_envelope,
-)
-
 from fs2_serve.fast_start import FastStartLevel
 from fs2_serve.fast_start_identity import mechanism_config_digest
 from fs2_serve.fast_start_policy import FastStartHistoryWindow
@@ -60,6 +49,16 @@ from fs2_serve.model_deployment_controller import (
     build_status,
 )
 from fs2_serve.model_deployment_records import ModelDeploymentObservedStatus
+from test_fast_start import STORAGE_CONTRACT_DIGEST, evidence, qualify_for_fast_start, with_evidence, with_fast_start
+from test_model_deployment import (
+    envelope,
+    model_spec,
+    render_gpu_resident,
+    render_host_memory,
+    render_regional_cache,
+    renderer,
+    reserved_and_preemptible_envelope,
+)
 
 
 def test_controller_discovery_excludes_operator_owned_resource_kinds() -> None:
@@ -752,12 +751,8 @@ async def test_multi_pool_drain_preserves_the_existing_hot_boundary_while_work_i
     api.calls.clear()
 
     first = await subject.reconcile(key, fence())
-    assert first.action == "drain:delete-first"
-    assert [identity for action, identity in api.calls if action == "delete"]
-    assert all("publication" in identity for action, identity in api.calls if action == "delete")
-    api.calls.clear()
-    second = await subject.reconcile(key, fence())
-    assert second.action in {"autoscaler-install-pending", "drain"}
+    assert first.action == "drain"
+    assert not any(action in {"apply", "delete"} for action, _ in api.calls)
     assert hot_identity in api.resources
     assert api.resources[hot_identity].desired_replicas == 1
     assert not any(action == "delete" and "/Deployment/" in identity for action, identity in api.calls)
@@ -1493,9 +1488,8 @@ async def test_drain_with_active_work_withdraws_publication_but_preserves_scaler
     api.calls.clear()
 
     first = await subject.reconcile(key, fence())
-    assert first.action == "drain:delete-first"
-    deleted = [value for action, value in api.calls if action == "delete"]
-    assert deleted and all("publication" in identity for identity in deleted)
+    assert first.action == "drain"
+    assert not any(action in {"apply", "delete"} for action, _ in api.calls)
     assert any(item.observed.kind == "ScaledObject" for item in api.resources.values())
     deployment = next(item for item in api.resources.values() if item.observed.kind == "Deployment")
     assert FIELD_MANAGER not in deployment.replica_field_managers
@@ -1716,7 +1710,8 @@ async def test_http_app_lifecycle_needs_no_networkpolicy_authorization_and_prese
 ) -> None:
     """Exercise arbitrary App writes through the real HTTP Kubernetes client.
 
-    The simulated apiserver returns RBAC 403 for every NetworkPolicy request.
+    The simulated apiserver returns RBAC 403 for every NetworkPolicy or
+    ConfigMap request.
     Create, update, owned stale cleanup and finalizer changes must still work,
     while an existing App with a different ownership label remains untouched.
     """
@@ -1758,29 +1753,29 @@ async def test_http_app_lifecycle_needs_no_networkpolicy_authorization_and_prese
     model = model_object()
     model["metadata"].update({"name": public_model_id, "uid": owner_uid})
     model["spec"] = app_spec.model_dump(mode="json", by_alias=True)
-    other_path = "/api/v1/namespaces/fs2-models/configmaps/app-existing-config"
+    other_path = "/api/v1/namespaces/fs2-models/services/app-existing-service"
     other_app = {
         "apiVersion": "v1",
-        "kind": "ConfigMap",
+        "kind": "Service",
         "metadata": {
-            "name": "app-existing-config",
+            "name": "app-existing-service",
             "namespace": "fs2-models",
             "uid": "uid-existing",
             "resourceVersion": "19",
             "labels": {"fs2-serve.nebius.ai/model-deployment": "app-existing"},
             "ownerReferences": [{"uid": "uid-existing-app", "controller": True}],
         },
-        "data": {"preserved": "true"},
+        "spec": {"selector": {"app": "other"}, "ports": [{"port": 8000}]},
     }
     resources: dict[str, dict[str, Any]] = {other_path: copy.deepcopy(other_app)}
-    forbidden_network_requests: list[str] = []
+    forbidden_security_requests: list[str] = []
     revision = 20
 
     def handler(request: httpx.Request) -> httpx.Response:
         nonlocal revision
         path = request.url.path
-        if "/networkpolicies" in path:
-            forbidden_network_requests.append(f"{request.method} {path}")
+        if "/networkpolicies" in path or "/configmaps" in path:
+            forbidden_security_requests.append(f"{request.method} {path}")
             return httpx.Response(403, json={"kind": "Status", "reason": "Forbidden"})
         if path.endswith("/leases/fs2-model-controller"):
             current_fence = fence()
@@ -1868,10 +1863,10 @@ async def test_http_app_lifecycle_needs_no_networkpolicy_authorization_and_prese
     for resource in updated.resources:
         await client.apply_resource(resource, owner_uid=owner_uid, fence=fence())
 
-    stale_path = f"/api/v1/namespaces/fs2-models/configmaps/{public_model_id}-stale"
+    stale_path = f"/api/v1/namespaces/fs2-models/services/{public_model_id}-stale"
     resources[stale_path] = {
         "apiVersion": "v1",
-        "kind": "ConfigMap",
+        "kind": "Service",
         "metadata": {
             "name": f"{public_model_id}-stale",
             "namespace": "fs2-models",
@@ -1880,6 +1875,7 @@ async def test_http_app_lifecycle_needs_no_networkpolicy_authorization_and_prese
             "labels": {"fs2-serve.nebius.ai/model-deployment": public_model_id},
             "ownerReferences": [{"uid": owner_uid, "controller": True}],
         },
+        "spec": {"selector": {"app": "stale"}, "ports": [{"port": 8000}]},
     }
     discovered = await client.discover(key=key, owner_uid=owner_uid, render=updated)
     stale = next(item for item in discovered.resources if item.observed.name.endswith("-stale"))
@@ -1887,7 +1883,7 @@ async def test_http_app_lifecycle_needs_no_networkpolicy_authorization_and_prese
     await client.set_finalizer(key, owner_uid=owner_uid, present=True, fence=fence())
     await client.set_finalizer(key, owner_uid=owner_uid, present=False, fence=fence())
 
-    assert forbidden_network_requests == []
+    assert forbidden_security_requests == []
     assert resources[other_path] == other_app
     assert model["metadata"]["finalizers"] == []
     assert stale_path not in resources
@@ -2013,7 +2009,7 @@ async def test_http_delete_carries_exact_uid_and_resource_version_preconditions(
     token.write_text("projected-service-account-token")
     current = {
         "apiVersion": "v1",
-        "kind": "ConfigMap",
+        "kind": "Service",
         "metadata": {
             "name": "old",
             "namespace": "fs2-models",
@@ -2054,7 +2050,7 @@ async def test_http_delete_carries_exact_uid_and_resource_version_preconditions(
         client=http,
     )
     assert await client.delete_resource(
-        "v1/ConfigMap/fs2-models/old",
+        "v1/Service/fs2-models/old",
         owner_uid="cr-uid-1",
         fence=fence(),
     )
@@ -2438,9 +2434,7 @@ def test_runtime_sleep_offload_is_rejected_by_live_validation() -> None:
 
 def test_host_residency_waits_for_every_receipt_backed_holder() -> None:
     spec, installed = _all_mechanism_envelope("host-memory-residency")
-    spec = spec.model_copy(
-        update={"availability": spec.availability.model_copy(update={"min_replicas": 1})}
-    )
+    spec = spec.model_copy(update={"availability": spec.availability.model_copy(update={"min_replicas": 1})})
     context = _mechanism_context(spec, installed)
     plan = plan_reconciliation(
         generation=1,
@@ -2488,11 +2482,7 @@ def test_host_residency_waits_for_every_receipt_backed_holder() -> None:
 def test_host_residency_uses_the_terraform_owned_pool_inventory_when_runtime_fits() -> None:
     spec, installed = _all_mechanism_envelope("host-memory-residency")
     spec = spec.model_copy(
-        update={
-            "availability": spec.availability.model_copy(
-                update={"min_replicas": 1, "max_replicas": 4}
-            )
-        }
+        update={"availability": spec.availability.model_copy(update={"min_replicas": 1, "max_replicas": 4})}
     )
     plan = plan_reconciliation(
         generation=1,
