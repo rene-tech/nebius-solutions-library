@@ -652,7 +652,9 @@ async def build_app(settings: Settings) -> FastAPI:
 async def serve(settings: Settings) -> None:
     app = await build_app(settings)
     server = uvicorn.Server(
-        uvicorn.Config(app, host=settings.host, port=settings.port, log_level=settings.log_level.lower())
+        uvicorn.Config(app, host=settings.host, port=settings.port, log_level=settings.log_level.lower(),
+                       ws_max_size=65536, ws_max_queue=2,
+                       timeout_graceful_shutdown=settings.shutdown_grace_seconds)
     )
     await server.serve()
 

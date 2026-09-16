@@ -5,6 +5,62 @@
   "binding_scope": "exact-runtime-variant-only",
   "gpu_count_semantics": "workload-consumed-not-host-pool-shape",
   "models": {
+  "nemotron-speech-en-0-6b": {
+    "runtimes": {
+      "nemotron-speech-en-0-6b-nemo-cuda-v1": {
+        "runtime_variant": "nemotron-speech-en-0-6b-nemo-cuda-v1",
+        "runtime_ref": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/en@sha256:288f6caf0c2feb3690c963969e4a26c45a38ca1338f4abe80570b24db91423d2",
+        "runtime_ref_kind": "container-image-digest",
+        "requirements": {
+          "gpu_count": 1,
+          "topology": "single-gpu",
+          "host_architectures": [
+            "amd64"
+          ]
+        },
+        "bindings": [
+          {
+            "accelerator_class": "nvidia-h100-sxm5-80gb",
+            "pool_template": "unbound-h100",
+            "state": "hardware-validated",
+            "enabled": true,
+            "gpu_count": 1,
+            "catalog_b300_state": null,
+            "evidence": "acceptance/nemotron-speech-20260916/en-native-contract-r3.json@sha256:14556e7747bacb9f22228392cdf27a8ac17507f47c5afb183c8c4fce3a731418"
+          }
+        ],
+        "qualification_candidates": []
+      }
+    }
+  },
+  "nemotron-speech-multilingual-0-6b": {
+    "runtimes": {
+      "nemotron-speech-multilingual-0-6b-nemo-cuda-v1": {
+        "runtime_variant": "nemotron-speech-multilingual-0-6b-nemo-cuda-v1",
+        "runtime_ref": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/multilingual@sha256:628c1ffdb68c6e510de5a691432b4da9a6f64941ce5f35c57213ad8cea8b7205",
+        "runtime_ref_kind": "container-image-digest",
+        "requirements": {
+          "gpu_count": 1,
+          "topology": "single-gpu",
+          "host_architectures": [
+            "amd64"
+          ]
+        },
+        "bindings": [
+          {
+            "accelerator_class": "nvidia-h100-sxm5-80gb",
+            "pool_template": "unbound-h100",
+            "state": "hardware-validated",
+            "enabled": true,
+            "gpu_count": 1,
+            "catalog_b300_state": null,
+            "evidence": "acceptance/nemotron-speech-20260916/multi-native-contract-r3.json@sha256:187a32f376fa9e3271eb170b1d0b4877b2b56538c1cb6a741da0dc0a0af5c359"
+          }
+        ],
+        "qualification_candidates": []
+      }
+    }
+  },
     "altumage": {
       "runtimes": {
         "altumage-cuda-v1": {

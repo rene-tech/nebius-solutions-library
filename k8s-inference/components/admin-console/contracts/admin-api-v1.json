@@ -139,6 +139,10 @@
     {"method": "PATCH", "path": "/admin/api/v1/users/{user_id}", "success_status": 200, "data_schema": "InferenceUser"},
     {"method": "GET", "path": "/admin/api/v1/users/{user_id}/keys", "success_status": 200, "data_schema": "AdminApiKeyList"},
     {"method": "POST", "path": "/admin/api/v1/users/{user_id}/keys", "success_status": 201, "data_schema": "AdminApiKeyDisclosure", "secret_disclosure": "one-time", "cache_control": "no-store"},
+    {"method": "GET", "path": "/admin/api/v1/users/{user_id}/storage", "success_status": 200, "data_schema": "UserStorage"},
+    {"method": "POST", "path": "/admin/api/v1/users/{user_id}/storage/credentials", "success_status": 200, "data_schema": "StorageCredentials", "secret_disclosure": "explicit-admin-request", "cache_control": "no-store"},
+    {"method": "GET", "path": "/admin/api/v1/tenants/{tenant_id}/storage", "success_status": 200, "data_schema": "StoragePolicy"},
+    {"method": "PUT", "path": "/admin/api/v1/tenants/{tenant_id}/storage", "success_status": 200, "data_schema": "StoragePolicy"},
     {"method": "GET", "path": "/admin/api/v1/capacity/summary", "success_status": 200, "data_schema": "CapacitySummary"},
     {
       "method": "GET",

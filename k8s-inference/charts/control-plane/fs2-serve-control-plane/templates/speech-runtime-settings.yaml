@@ -1,0 +1,10 @@
+{{- if and .Values.modelController.enabled .Values.scientificArtifacts.enabled }}
+# Same regional artifact endpoint as the gateway, never a hardcoded region.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fs2-speech-runtime-settings
+  namespace: {{ .Values.modelController.modelNamespace }}
+data:
+  artifact-hosts: {{ regexReplaceAll ":[0-9]+$" (urlParse .Values.scientificArtifacts.endpoint).host "" | quote }}
+{{- end }}

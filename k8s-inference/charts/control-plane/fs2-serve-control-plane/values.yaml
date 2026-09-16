@@ -596,6 +596,8 @@ httpRoute:
   # Must remain above config.maxSyncWaitSeconds (30 seconds).
   requestTimeout: 40s
   backendRequestTimeout: 40s
+  # Dedicated upgraded connection; ordinary HTTP/MCP requests retain 40s.
+  speechStreamTimeout: 7500s
 
 # The application release owns the complete direct-IP Gateway API edge. The
 # cluster lane installs the pinned Gateway API/Envoy Gateway controllers and
@@ -737,6 +739,14 @@ scientificArtifacts:
     - application/vnd.fs2.scientific-validation+json
     - application/x-nifti
     - application/x-tar
+    - audio/wav
+    - audio/x-wav
+    - audio/mpeg
+    - audio/mp4
+    - audio/ogg
+    - audio/webm
+    - audio/flac
+    - audio/aac
     - chemical/x-cif
     - chemical/x-mmcif
     - chemical/x-pdb
@@ -748,6 +758,7 @@ scientificArtifacts:
     - text/x-a3m
     - text/x-fasta
     - video/mp4
+    - video/webm
   # CIDRs the control plane may reach on 443 to serve artifact handles and
   # verify stored objects. Empty keeps the default-deny egress policy intact.
   egressCidrs: []

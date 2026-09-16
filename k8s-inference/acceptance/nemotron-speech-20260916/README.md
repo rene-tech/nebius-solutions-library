@@ -1,5 +1,10 @@
 # Nemotron Speech: initial direct-runtime evidence
 
+**Later milestones:** [complete medical recordings and quality findings](MEDICAL-QUALITY.md)
+and [fresh GPU snapshot restoration](SNAPSHOT-RESTORE.md) supersede the original
+scope limitations below. Public customer-path qualification is still pending.
+This page retains the initial cohort's original identities and measurements.
+
 2026-09-16. **Diagnostic milestone only; neither App is customer-ready or in the
 public catalog.** Both Jobs completed successfully. No public gateway, ordinary
 tenant-key, long-recording, multilingual quality, concurrency, scaling or GPU

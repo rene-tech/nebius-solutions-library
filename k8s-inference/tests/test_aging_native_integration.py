@@ -189,7 +189,9 @@ def test_profile_schema_and_h100_only_binding():
     Draft202012Validator(
         read(ROOT / "catalog/profiles/model-profiles.schema.json")
     ).validate(profile)
-    assert profile["managed_native_model_ids"] == ["altumage", "phenoage"]
+    assert set(profile["managed_native_model_ids"]) == {
+        "altumage", "phenoage", "nemotron-speech-en-0-6b", "nemotron-speech-multilingual-0-6b",
+    }
     assert profile["profiles"]["aging"]["canonical_routes"] == ["altumage", "phenoage"]
     compatibility = read(ROOT / "catalog/profiles/model-accelerator-compatibility.json")
     (binding,) = compatibility["models"]["altumage"]["runtimes"]["altumage-cuda-v1"][
@@ -232,7 +234,9 @@ def test_production_catalog_copy_loads_without_the_developer_checkout(tmp_path):
         archived, root, repo_root=root / "packaged-repository"
     )
     assert native.digest == archived.digest
-    assert set(native.records) == set(archived.records) | {"altumage", "phenoage"}
+    assert set(native.records) == set(archived.records) | {
+        "altumage", "phenoage", "nemotron-speech-en-0-6b", "nemotron-speech-multilingual-0-6b",
+    }
     dockerfile = (ROOT / "components/control-plane/Dockerfile").read_text()
     assert (
         "COPY k8s-inference/catalog/runtime/native /workspace/runtime-catalog/native"

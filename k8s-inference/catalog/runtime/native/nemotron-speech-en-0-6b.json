@@ -1,0 +1,190 @@
+{
+  "schema": "fs2-serve.nebius.ai/native-catalog-model/v1",
+  "record": {
+    "schema": "fs2-serve.nebius.ai/model/v1",
+    "model": {
+      "id": "nemotron-speech-en-0-6b",
+      "display_name": "Nemotron Speech English 0.6B",
+      "family": "speech-recognition",
+      "tested_lane": true,
+      "source": {
+        "kind": "huggingface",
+        "repository": "nvidia/nemotron-speech-streaming-en-0.6b",
+        "revision": "ebe59e5a817142986528bbbee5dba8db7b38ed50",
+        "license": {
+          "id": "NVIDIA-Open-Model-License",
+          "state": "verified",
+          "notes": "Pinned upstream checkpoint license reviewed in docs/nemotron-speech-onboarding-20260916.md. ASR output is not clinical validation."
+        },
+        "entitlement": {
+          "required": false,
+          "state": "not-required",
+          "credential_contract": null,
+          "notes": "Public ungated checkpoint; independent NeMo adapter, not NVIDIA NIM."
+        }
+      }
+    },
+    "runtime": {
+      "kind": "custom",
+      "version": "nemo-3b08b2ac-speech-7b286d489",
+      "image": {
+        "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/en@sha256:288f6caf0c2feb3690c963969e4a26c45a38ca1338f4abe80570b24db91423d2",
+        "digest": "sha256:288f6caf0c2feb3690c963969e4a26c45a38ca1338f4abe80570b24db91423d2",
+        "state": "resolved"
+      },
+      "command": [
+        "python",
+        "-m",
+        "fs2_speech.server"
+      ]
+    },
+    "resources": {
+      "cpu_millis": 2000,
+      "memory_bytes": 17179869184,
+      "host_ram_min_bytes": null,
+      "scaler_owner": "nebius-managed-node-group-autoscaler",
+      "gpu": {
+        "class": "NVIDIA-H100-SXM5-80GB",
+        "count": 1,
+        "topology": "single-gpu",
+        "placement": null,
+        "b300_state": "unverified",
+        "alternatives": []
+      }
+    },
+    "interface": {
+      "execution_mode": "http",
+      "protocols": [
+        "native"
+      ],
+      "endpoints": {
+        "native": "/generate"
+      },
+      "readiness": {
+        "method": "GET",
+        "path": "/readyz",
+        "expected_status": 200,
+        "timeout_seconds": 600
+      },
+      "warmup": null,
+      "policy": {
+        "operations": [
+          "transcribe"
+        ],
+        "license_enforced": true,
+        "non_clinical": true,
+        "commercial_use": "license-dependent"
+      },
+      "mcp": {
+        "discoverable": true,
+        "invocable": false
+      }
+    },
+    "startup": {
+      "default": "conventional",
+      "fallback": "conventional",
+      "enabled_mechanisms": [
+        "conventional"
+      ],
+      "experiments": [
+        {
+          "mechanism": "snapshot",
+          "state": "blocked",
+          "gate": null,
+          "artifact_kind": "snapshot",
+          "artifact_manifest_digest": null,
+          "reason": "Clean H100 CUDA/CRIU capture and fresh Pod restore passed with exact full-recording file/live output parity. Production publication, public cold starts and concurrent scale-out remain unqualified; snapshots are not enabled by this declaration."
+        }
+      ],
+      "multi_gpu_criu": "unproven-disabled"
+    },
+    "cache": {
+      "owner": "runtime-image",
+      "shared_path": "/mnt/fs2-serve-cache/models/nemotron-speech-en-0-6b",
+      "local_path": "/var/lib/fs2-serve/cache/models/nemotron-speech-en-0-6b",
+      "pre_pull_image": true,
+      "artifact": {
+        "state": "platform-verified",
+        "kind": "weights",
+        "manifest_digest": "e99e16f47b043778b8aa646f0baacbc8526bd4ade0b0ca0e365bc1164560b601",
+        "expanded_bytes": 2473041920,
+        "minimum_bytes": 2473041920,
+        "capacity_bound_bytes": 2473041920,
+        "staged": false
+      }
+    },
+    "semantic_validator": {
+      "kind": "repository-command",
+      "contract": "nemotron-speech-two-native-files-and-live-parity/v1",
+      "source_path": "k8s-inference/acceptance/nemotron-speech-20260916/server_probe.py",
+      "source_sha256": "6397e4750bcd7a264d939bc564dfd36c55625ac789f43e3392f451d8786176d3",
+      "fixture_path": "k8s-inference/acceptance/nemotron-speech-20260916/native_fixtures.py",
+      "fixture_sha256": "f62b91a9c2f31e9ae7e6c4b9439d67acc3248c8b72ae661fb0da80b67e66a019",
+      "request_count": 2,
+      "distinct_requests": true,
+      "distinct_responses": true
+    },
+    "support": {
+      "state": "qualified",
+      "route_exposed": false,
+      "non_clinical": true,
+      "limitations": [
+        "Independent NVIDIA NeMo runtime, not a NVIDIA NIM container. One concurrent session per replica in the measured profile.",
+        "Full English/German acted medical recordings were processed. English mixed-speaker WER is approximate and material medical-term errors remain; German has no verified reference transcript.",
+        "Only H100, float32, greedy_batch, 560 ms, one stream and stripped language tags are GPU-qualified. Other GPU/profile combinations and public scaling are not yet qualified.",
+        "Native fixtures are protocol evidence only. Public tenant HTTP/MCP/WebSocket, batch scheduling, full option coverage and customer readiness remain pending.",
+        "File input uses authorized artifact handles; live input is 16 kHz mono PCM16. No diarization, translation or clinical interpretation is implied."
+      ]
+    },
+    "evidence": [
+      {
+        "classification": "measured-platform",
+        "hardware": "NVIDIA H100 80GB HBM3 / SM90 / driver580.159.04",
+        "outcome": "live-qualified",
+        "source_commit": "7b286d489baab29132d3a9c787fe0f7b15388980",
+        "summary": "Private restored worker: two distinct native requests and file/live equality passed. acceptance/nemotron-speech-20260916/en-native-contract-r3.json SHA256 14556e7747bacb9f22228392cdf27a8ac17507f47c5afb183c8c4fce3a731418. Complete medical recordings and quality limitations: MEDICAL-QUALITY.md. No public-route qualification."
+      }
+    ],
+    "provenance": [
+      {
+        "commit": "7b286d489baab29132d3a9c787fe0f7b15388980",
+        "tree": "8dc791debb93351a62bd6144504d448a2dc3988c",
+        "path": "k8s-inference/components/speech-runtime",
+        "classification": "measured-handoff"
+      },
+      {
+        "url": "https://huggingface.co/nvidia/nemotron-speech-streaming-en-0.6b/tree/ebe59e5a817142986528bbbee5dba8db7b38ed50",
+        "revision": "ebe59e5a817142986528bbbee5dba8db7b38ed50",
+        "classification": "reviewed-input"
+      }
+    ]
+  },
+  "variant_id": "nemotron-speech-en-0-6b-nemo-cuda-v1",
+  "runtime_architecture": "cuda",
+  "semantic_requests": {
+    "state": "qualified",
+    "blocker": null,
+    "serialization": "sha256-json-compact-no-newline/v1",
+    "invocation": {
+      "operation": "transcribe",
+      "protocol": "native",
+      "method": "POST",
+      "endpoint": "/generate"
+    },
+    "requests": [
+      {
+        "id": "speech-fixture-observatory",
+        "payload_sha256": "d9d23e4e11d4e8e0160aa544f06d3821bdbc9d53237cc72d2c23dbaab7b59fcf"
+      },
+      {
+        "id": "speech-fixture-workshop",
+        "payload_sha256": "ba90f872468e584b377f1d8bbbf2e80ad7f9eb9d1067cc3737057390b4638b7c"
+      }
+    ],
+    "assets": []
+  },
+  "artifact_manifest": {
+    "path": "../deployment-runtimes/artifacts/nemotron-speech-en-0-6b-e99e16f47b043778b8aa646f0baacbc8526bd4ade0b0ca0e365bc1164560b601.json",
+    "sha256": "e99e16f47b043778b8aa646f0baacbc8526bd4ade0b0ca0e365bc1164560b601"
+  }
+}

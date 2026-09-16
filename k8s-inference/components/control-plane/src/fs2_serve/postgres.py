@@ -2994,7 +2994,9 @@ class PostgresStore:
         )
 
     @retry_serialization
-    async def claim_operation(self, worker_id: str, *, lease_seconds: float) -> ClaimedOperation | None:
+    async def claim_operation(
+        self, worker_id: str, *, lease_seconds: float, stream_operation_id: UUID | None = None,
+    ) -> ClaimedOperation | None:
         # Cleanup is deliberately bounded, while the active-token join below
         # prevents any remaining inactive rows from becoming a queue head.
         await self._expire_inactive_queued_batch()
@@ -3007,6 +3009,8 @@ class PostgresStore:
                     AND (t.expires_at IS NULL OR t.expires_at>clock_timestamp())
                 WHERE o.status='queued' AND o.protocol<>'scientific-batch-v1'
                   AND o.protocol<>'scientific-artifact-upload-v1'
+                  AND (($2::uuid IS NULL AND o.protocol<>'speech-stream-v1')
+                       OR (o.id=$2 AND o.protocol='speech-stream-v1'))
                   AND o.available_at<=clock_timestamp()
                   AND o.payload_expires_at>clock_timestamp()
                   AND (o.deadline_at IS NULL OR o.deadline_at>clock_timestamp())
@@ -3014,6 +3018,7 @@ class PostgresStore:
                 ORDER BY o.available_at,o.accepted_at,o.id LIMIT $1
                 """,
                 _CLAIM_BATCH_SIZE,
+                stream_operation_id,
             )
         for candidate in candidates:
             async with self.pool.acquire() as connection, connection.transaction():
@@ -3050,6 +3055,8 @@ class PostgresStore:
                         FROM fs2_operations WHERE id=$1 AND token_id=$4 AND status='queued'
                           AND protocol<>'scientific-batch-v1'
                           AND protocol<>'scientific-artifact-upload-v1'
+                          AND (($5::uuid IS NULL AND protocol<>'speech-stream-v1')
+                               OR (id=$5 AND protocol='speech-stream-v1'))
                           AND available_at<=clock_timestamp() AND payload_expires_at>clock_timestamp()
                           AND (deadline_at IS NULL OR deadline_at>clock_timestamp())
                           AND attempt<max_attempts FOR UPDATE
@@ -3069,6 +3076,7 @@ class PostgresStore:
                     worker_id,
                     lease_seconds,
                     candidate["token_id"],
+                    stream_operation_id,
                 )
                 if row is None:
                     continue

@@ -314,7 +314,9 @@ class Store(Protocol):
 
     async def get_operation_result(self, operation_id: UUID, *, tenant_id: str) -> OperationResult: ...
 
-    async def claim_operation(self, worker_id: str, *, lease_seconds: float) -> ClaimedOperation | None: ...
+    async def claim_operation(
+        self, worker_id: str, *, lease_seconds: float, stream_operation_id: UUID | None = None,
+    ) -> ClaimedOperation | None: ...
 
     async def ensure_activation_intent(
         self,

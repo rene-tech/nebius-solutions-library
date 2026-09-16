@@ -21,7 +21,7 @@ from .runtime import RuntimeOperationError
 from .scientific_artifacts import ScientificArtifactControllerPort
 from .scientific_run_result import ArtifactRef, Compression
 
-Materialization = Literal["utf-8", "base64", "data-url", "json"]
+Materialization = Literal["utf-8", "base64", "data-url", "json", "download-url"]
 PathPart = str | None
 
 _MATERIALIZATION_KEY: Final = "x-fs2-artifact-materialization"
@@ -64,7 +64,7 @@ def _rules(schema: dict[str, Any]) -> tuple[_Rule, ...]:
             return
         mode = value.get(_MATERIALIZATION_KEY)
         if mode is not None:
-            if mode not in {"utf-8", "base64", "data-url", "json"}:
+            if mode not in {"utf-8", "base64", "data-url", "json", "download-url"}:
                 raise ArtifactInputError("artifact input schema has an unknown materialization")
             maximum = value.get(_MAX_BYTES_KEY)
             media_types = value.get(_MEDIA_TYPES_KEY)
@@ -172,6 +172,30 @@ class ArtifactInputMaterializer:
             raise ArtifactInputError("fixture is outside the model field contract")
         return content, media_type
 
+    async def _artifact_download(
+        self, descriptor: dict[str, Any], *, tenant_id: str, rule: _Rule,
+    ) -> dict[str, Any]:
+        """Mint only after ownership/content checks, without reading bulk bytes.
+
+        Called after worker activation. The short-lived handle is transient
+        runtime input, never the durable request or the customer's MCP schema.
+        """
+        try:
+            reference = ArtifactRef.model_validate(descriptor)
+            artifact_id = UUID(reference.artifact_id)
+        except (TypeError, ValueError) as error:
+            raise ArtifactInputError("artifact input reference is invalid") from error
+        if (reference.compression is not Compression.NONE or reference.size_bytes < 1
+                or reference.size_bytes > rule.max_bytes or reference.media_type not in rule.media_types):
+            raise ArtifactInputError("artifact input metadata is outside the model field contract")
+        result = await self._artifacts.download(artifact_id, tenant_id=tenant_id)
+        if result.artifact.to_public_ref() != reference:
+            raise ArtifactInputError("artifact input metadata does not match stored content")
+        if result.handle.method != "GET" or result.handle.headers:
+            raise ArtifactInputError("runtime download requires a presigned GET without additional credentials")
+        return {"url": result.handle.url, "sha256": reference.sha256,
+                "size_bytes": reference.size_bytes, "media_type": reference.media_type}
+
     @staticmethod
     def _decode(content: bytes, media_type: str, mode: Materialization) -> Any:
         if mode == "base64":
@@ -216,8 +240,14 @@ class ArtifactInputMaterializer:
                 if not isinstance(descriptor, dict):
                     continue
                 if "artifact_id" in descriptor:
+                    if rule.materialization == "download-url":
+                        parent[key] = await self._artifact_download(descriptor, tenant_id=tenant_id, rule=rule)
+                        matched = True
+                        continue
                     content, media_type = await self._artifact_bytes(descriptor, tenant_id=tenant_id, rule=rule)
                 elif "fixture_id" in descriptor:
+                    if rule.materialization == "download-url":
+                        raise ArtifactInputError("bulk download input requires a finalized uploaded artifact")
                     content, media_type = self._fixture_bytes(descriptor, rule=rule)
                 else:
                     continue

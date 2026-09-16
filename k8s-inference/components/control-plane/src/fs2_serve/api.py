@@ -150,6 +150,8 @@ from .scientific_input_uploads import (
 )
 from .scientific_run_result import ArtifactRef
 from .settings import Settings
+from .speech_routes import speech_router
+from .speech_stream import speech_stream_router
 from .store import (
     BudgetExceededError,
     ConcurrencyExceededError,
@@ -2217,6 +2219,16 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             },
         )
 
+    app.include_router(speech_stream_router(
+        verifier=runtime.tokens.verify, registry=runtime.registry, admission=runtime.admission, store=runtime.store,
+    ))
+    app.include_router(speech_router(
+        principal=principal, registry=runtime.registry, admission=runtime.admission,
+        store=runtime.store, uploads=runtime.scientific_input_uploads,
+        wait_seconds=runtime.settings.max_sync_wait_seconds,
+        operation_response=lambda current: _operation_response(runtime, current),
+    ))
+
     if runtime.configuration is not None:
         app.include_router(
             configuration_router(
@@ -2285,6 +2297,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             operator=operator,
             principal=principal,
             envelope=access_envelope,
+            problem_responses=admin_problem_responses,
         )
     )
     app.include_router(

@@ -1,4 +1,14 @@
 {
+  "nemotron-speech-en-0-6b": {
+    "variant_id": "nemotron-speech-en-0-6b-nemo-cuda-v1",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/nemotron-speech-en-0-6b.json"
+  },
+  "nemotron-speech-multilingual-0-6b": {
+    "variant_id": "nemotron-speech-multilingual-0-6b-nemo-cuda-v1",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/nemotron-speech-multilingual-0-6b.json"
+  },
   "altumage": {
     "variant_id": "altumage-cuda-v1",
     "runtime_kind": "custom",

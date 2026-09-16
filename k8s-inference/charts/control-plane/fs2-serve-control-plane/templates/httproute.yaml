@@ -61,4 +61,23 @@ spec:
       backendRefs:
         - name: {{ include "fs2-serve.fullname" . }}
           port: {{ .Values.service.port }}
+    - matches:
+        - path:
+            type: Exact
+            value: /v1/audio/stream
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove:
+              - x-fs2-tenant
+              - x-fs2-principal
+              - x-fs2-token-id
+              - x-fs2-model-scope
+              - x-fs2-accounting-id
+      timeouts:
+        request: {{ .Values.httpRoute.speechStreamTimeout | default "7500s" | quote }}
+        backendRequest: {{ .Values.httpRoute.speechStreamTimeout | default "7500s" | quote }}
+      backendRefs:
+        - name: {{ include "fs2-serve.fullname" . }}
+          port: {{ .Values.service.port }}
 {{- end }}

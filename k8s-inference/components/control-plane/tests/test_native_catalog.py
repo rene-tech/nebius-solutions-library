@@ -85,7 +85,9 @@ def test_native_semantics_validate_with_only_installed_repository_mirror(archive
 def test_native_records_do_not_rewrite_archival_digests_or_qualification(archive):
     augmented = augment_native_catalog(archive, CATALOG_ROOT, repo_root=REPO_ROOT)
     assert len(archive.records) == 16
-    assert set(augmented.records) == set(archive.records) | {"phenoage", "altumage"}
+    assert set(augmented.records) == set(archive.records) | {
+        "phenoage", "altumage", "nemotron-speech-en-0-6b", "nemotron-speech-multilingual-0-6b",
+    }
     assert augmented.digest == archive.digest
     assert augmented.tested_model_ids == archive.tested_model_ids
     assert augmented.blocked_candidate_ids == archive.blocked_candidate_ids

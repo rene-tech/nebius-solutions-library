@@ -1,0 +1,150 @@
+# Controller owns replicas. H100 is measured; other GPUs remain unqualified.
+# Normal scale-in drains admitted sessions; preemption can still interrupt.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nemotron-speech-multilingual-0-6b
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: nemotron-speech-multilingual-0-6b
+    fs2-serve.nebius.ai/model-id: nemotron-speech-multilingual-0-6b
+    app.kubernetes.io/part-of: fs2-serve
+spec:
+  replicas: 0
+  revisionHistoryLimit: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nemotron-speech-multilingual-0-6b
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nemotron-speech-multilingual-0-6b
+        fs2-serve.nebius.ai/model-id: nemotron-speech-multilingual-0-6b
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      nodeSelector:
+        accelerator.fs2.nebius/class: nvidia-h100-sxm5-80gb
+        kubernetes.io/arch: amd64
+      tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+      - key: workload.fs2.nebius/pool
+        operator: Equal
+        value: fs2-inference
+        effect: NoSchedule
+      terminationGracePeriodSeconds: 7230
+      containers:
+      - name: runtime
+        image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/multilingual@sha256:628c1ffdb68c6e510de5a691432b4da9a6f64941ce5f35c57213ad8cea8b7205
+        imagePullPolicy: IfNotPresent
+        command:
+        - python
+        - -m
+        - fs2_speech.server
+        env:
+        - name: FS2_SPEECH_PROFILE_JSON
+          value: '{"model":"nemotron-speech-multilingual-0.6b","chunk_size_ms":560,"strip_language_tags":true,"decoding":"greedy_batch","beam_size":4,"precision":"float32","confidence":false,"cuda_graphs":false}'
+        - name: FS2_SPEECH_ARTIFACT_HOSTS
+          valueFrom:
+            configMapKeyRef:
+              name: fs2-speech-runtime-settings
+              key: artifact-hosts
+        - name: OMP_NUM_THREADS
+          value: '2'
+        - name: TORCHINDUCTOR_CACHE_DIR
+          value: /cache/inductor
+        - name: TRITON_CACHE_DIR
+          value: /cache/triton
+        ports:
+        - name: http
+          containerPort: 8000
+        resources:
+          requests:
+            cpu: '2'
+            memory: 16Gi
+            ephemeral-storage: 8Gi
+            nvidia.com/gpu: '1'
+          limits:
+            cpu: '4'
+            memory: 32Gi
+            ephemeral-storage: 24Gi
+            nvidia.com/gpu: '1'
+        startupProbe:
+          httpGet:
+            path: /readyz
+            port: http
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 120
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: http
+          periodSeconds: 3
+          timeoutSeconds: 2
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          periodSeconds: 15
+          timeoutSeconds: 3
+          failureThreshold: 4
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - python
+              - -c
+              - import time,urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/drain',
+                method='POST'), timeout=5).read(); time.sleep(5)
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: cache
+          mountPath: /cache
+        - name: tmp
+          mountPath: /tmp
+        - name: shm
+          mountPath: /dev/shm
+      volumes:
+      - name: cache
+        emptyDir:
+          sizeLimit: 8Gi
+      - name: tmp
+        emptyDir:
+          sizeLimit: 2Gi
+      - name: shm
+        emptyDir:
+          medium: Memory
+          sizeLimit: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nemotron-speech-multilingual-0-6b
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: nemotron-speech-multilingual-0-6b
+    fs2-serve.nebius.ai/model-id: nemotron-speech-multilingual-0-6b
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: nemotron-speech-multilingual-0-6b
+  ports:
+  - name: http
+    port: 8000
+    targetPort: http

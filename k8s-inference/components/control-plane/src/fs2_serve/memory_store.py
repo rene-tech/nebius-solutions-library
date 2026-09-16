@@ -1601,7 +1601,9 @@ class MemoryStore:
                 result = {"base64": base64.b64encode(raw).decode()}
             return OperationResult(operation=metadata, result=result)
 
-    async def claim_operation(self, worker_id: str, *, lease_seconds: float) -> ClaimedOperation | None:
+    async def claim_operation(
+        self, worker_id: str, *, lease_seconds: float, stream_operation_id: UUID | None = None,
+    ) -> ClaimedOperation | None:
         async with self._lock:
             now = datetime.now(UTC)
             for row in sorted(
@@ -1611,6 +1613,10 @@ class MemoryStore:
                 if (
                     row.view.status != OperationStatus.QUEUED
                     or row.view.protocol in {"scientific-batch-v1", "scientific-artifact-upload-v1"}
+                    or (
+                        (row.view.protocol == "speech-stream-v1") if stream_operation_id is None
+                        else (row.view.id != stream_operation_id or row.view.protocol != "speech-stream-v1")
+                    )
                     or row.view.available_at > now
                     or row.view.attempt >= row.view.max_attempts
                 ):

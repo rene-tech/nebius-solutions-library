@@ -1,6 +1,7 @@
 # Nemotron Speech onboarding — 2026-09-16
 
-Status: implementation started, **not ready for customer use**. Task Deck card:
+Status: native runtime, long-file, medical and snapshot milestones passed;
+public integration underway, **not ready for customer use**. Task Deck card:
 `fs2-nemotron-speech-full-streaming-file-onboarding-r20260916`.
 
 Storage handover is complete as documentation, not full storage acceptance. The
@@ -40,6 +41,15 @@ card documents it, so full chunk coverage cannot be assumed from that path.
 
 ## Capability coverage and outstanding work
 
+Current detailed evidence is in
+[`medical quality`](../acceptance/nemotron-speech-20260916/MEDICAL-QUALITY.md)
+and [`fresh snapshot restore`](../acceptance/nemotron-speech-20260916/SNAPSHOT-RESTORE.md).
+Both 30-minute synthetic files and all five supplied medical recordings were
+processed completely. English approximate mixed-speaker WER is 16–18% for the
+English model and 19–22% for multilingual; medical-term errors remain. German
+has no verified transcript, and its first paced partial took 9.015 s. Do not
+claim clinical accuracy, acceptable live latency or customer readiness.
+
 Initial H100 direct-runtime evidence is retained in
 [`acceptance/nemotron-speech-20260916`](../acceptance/nemotron-speech-20260916/README.md).
 Both models passed six short synthetic-English repetitions, with live partials
@@ -49,20 +59,20 @@ All rows still require public-path evidence; CPU tests alone do not qualify them
 | Capability | Upstream / selected adapter | Platform status |
 | --- | --- | --- |
 | Live incremental audio, early partials, final flush | NeMo `Frame` / `transcribe_step` | Both models verified directly on H100 at 560 ms; public transport pending |
-| Complete file transcription | Same stream, all frames through EOS | 14.69 s direct fixture verified for both; multipart/long-file async API pending |
+| Complete file transcription | Same stream, all frames through EOS | 30-minute synthetic files and complete medical recordings passed privately; public multipart/artifact APIs implemented but not deployed |
 | English 80/160/560/1120 ms | Left context 70, right 0/1/6/13 | Strict options and profile validation; GPU matrix pending |
 | Multilingual additionally 320 ms | Left context 56, right 0/1/3/6/13 | Strict options and profile validation; GPU matrix pending |
-| 32 out-of-box locales | 19 primary + 13 broad-coverage | All identifiers CPU-tested, no audio languages qualified yet |
+| 32 out-of-box locales | 19 primary + 13 broad-coverage | Identifiers CPU-tested; English/German recordings measured, other languages unqualified |
 | Eight adaptation-only locales | Require an adapted checkpoint | Explicitly rejected; never advertised ready |
 | Explicit locale / automatic language selection | Per-stream NeMo language prompt | Adapter passes resolved language; real verification pending |
 | Keep/remove language tags | Immutable worker profile | Matching enforced; detection metadata/API routing pending |
-| Native punctuation/capitalization | Base checkpoint output | Not replaced by a separate model; output quality pending |
+| Native punctuation/capitalization | Base checkpoint output | Medical quality measured; medical-term errors and occasional missing segment-boundary spaces remain |
 | Greedy and MALSD beam decoding | Pinned NeMo pipeline supports both | Immutable profile settings; GPU/API qualification pending |
-| Segment/word output and confidence | NeMo pipeline outputs/configuration | Options available in adapter; serialized native output pending |
+| Segment/word output and confidence | NeMo pipeline outputs/configuration | Native alignments retained in full medical receipts; confidence remains null in measured default profile |
 | Phrase boosting / external n-gram LM | NeMo pipeline supports biasing | Not implemented; capability gap, not upstream unsupported |
-| Alternate sample rates/stereo/file codecs | Explicit preprocessing required | Native live format fixed; file conversion pending |
+| Alternate sample rates/stereo/file codecs | Incremental ffmpeg decoding | Implemented with sample-preservation CPU tests; full codec GPU matrix pending |
 | ITN / translation / diarization | Separate pipeline components/models | Not claimed as base-checkpoint functionality; separate-model work out of scope |
-| GPU snapshots | Must test a clean loaded worker | Not implemented or measured; no support claim |
+| GPU snapshots | Clean loaded worker, no customer data | Both fresh-Pod restores passed with exact full-recording parity; restore-call sums 6.717/8.552 s, public startup/controller publication pending |
 
 ## Integration sequence
 

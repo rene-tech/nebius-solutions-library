@@ -494,6 +494,12 @@ class RuntimeClient:
             # response bodies, or cluster URLs. Never chain or persist it.
             raise RuntimeIdentityError("runtime identity is invalid") from None
 
+    async def observe(
+        self, model: OperationalModel, operation: ClaimedOperation,
+    ) -> tuple[RuntimeIdentity, RuntimeLifecycleObservation | None]:
+        """Reuse trusted placement/lifecycle accounting for non-HTTP transports."""
+        return await self._trusted_runtime_observation(operation, model)
+
     @classmethod
     def _content_type(cls, response: httpx.Response, protocol: str) -> str:
         raw = cls._header(response, "content-type", maximum=128)
@@ -667,6 +673,11 @@ class StubRuntimeClient(RuntimeClient):
 
     async def activate(self, model: OperationalModel, operation: ClaimedOperation) -> None:
         del model, operation
+
+    async def observe(
+        self, model: OperationalModel, operation: ClaimedOperation,
+    ) -> tuple[RuntimeIdentity, RuntimeLifecycleObservation | None]:
+        return RuntimeIdentity(gpu_count=model.gateway.gpu_allocation_count), None
 
     async def invoke(self, model: OperationalModel, operation: ClaimedOperation, request_body: bytes) -> RuntimeResult:
         del request_body

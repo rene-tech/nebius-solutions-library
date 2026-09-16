@@ -289,7 +289,8 @@ class Settings(BaseSettings):
             "application/x-nifti,image/jpeg,image/png,image/webp,video/mp4,text/x-a3m,"
             "application/vnd.fs2.scientific-manifest+json,"
             "application/vnd.fs2.scientific-validation+json,"
-            "chemical/x-pdb,chemical/x-cif,text/plain"
+            "chemical/x-pdb,chemical/x-cif,text/plain,"
+            "audio/wav,audio/x-wav,audio/mpeg,audio/mp4,audio/ogg,audio/webm,audio/flac,audio/aac,video/webm"
         ),
         min_length=3,
         max_length=2048,

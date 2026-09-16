@@ -2174,6 +2174,7 @@ def test_public_route_exposes_inference_and_session_authenticated_admin_paths() 
     }
     assert paths == {
         "/v1": "PathPrefix",
+        "/v1/audio/stream": "Exact",
         "/mcp": "Exact",
         "/admin/api/v1": "PathPrefix",
         "/.well-known/oauth-protected-resource": "Exact",
@@ -2194,6 +2195,9 @@ def test_public_route_exposes_inference_and_session_authenticated_admin_paths() 
         "request": "40s",
         "backendRequest": "40s",
     }
+    stream_rule = route["spec"]["rules"][1]
+    assert stream_rule["timeouts"] == {"request": "7500s", "backendRequest": "7500s"}
+    assert stream_rule["filters"] == route["spec"]["rules"][0]["filters"]
     assert redirect["spec"] == {
         "parentRefs": [
             {

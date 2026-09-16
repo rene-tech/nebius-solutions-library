@@ -479,6 +479,8 @@ def test_store_uses_only_migration_global_lock_and_bounded_skip_locked_janitors(
     assert (
         "where o.status='queued' and o.protocol<>'scientific-batch-v1' "
         "and o.protocol<>'scientific-artifact-upload-v1' "
+        "and (($2::uuid is null and o.protocol<>'speech-stream-v1') "
+        "or (o.id=$2 and o.protocol='speech-stream-v1')) "
         "and o.available_at<=clock_timestamp() "
         "and o.payload_expires_at>clock_timestamp() "
         "and (o.deadline_at is null or o.deadline_at>clock_timestamp()) "

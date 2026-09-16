@@ -3,6 +3,8 @@
 import hashlib
 import json
 from dataclasses import dataclass, replace
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -13,6 +15,36 @@ from fs2_serve.artifact_inputs import ArtifactInputError, ArtifactInputMateriali
 from fs2_serve.registry import Registry
 from fs2_serve.scientific_artifacts import ArtifactContentStream
 from fs2_serve.scientific_run_result import ArtifactRef
+
+
+@pytest.mark.asyncio
+async def test_bulk_download_preserves_tenant_boundary_without_loading_audio(registry, monkeypatch):
+    reference = _reference(b"synthetic audio", media_type="audio/wav")
+    artifacts = SimpleNamespace(
+        download=AsyncMock(return_value=SimpleNamespace(
+            artifact=_Record(reference), handle=SimpleNamespace(method="GET", headers={},
+                                                               url="https://storage.example.test/signed"))),
+        open_content=AsyncMock(side_effect=AssertionError("large audio must not be buffered in the gateway")),
+    )
+    monkeypatch.setattr("fs2_serve.artifact_inputs.contract_for", lambda *args: SimpleNamespace(input_schema={
+        "type": "object", "properties": {"audio": {
+            "x-fs2-artifact-materialization": "download-url", "x-fs2-artifact-max-bytes": 512 * 1024 * 1024,
+            "x-fs2-artifact-media-types": ["audio/wav"],
+        }},
+    }))
+    materializer = ArtifactInputMaterializer(artifacts)
+    result = await materializer.materialize(_portable_model(registry, "diffdock"), "native",
+        tenant_id="tenant-a", request_body=json.dumps({"audio": reference.model_dump(mode="json")}).encode())
+    assert json.loads(result)["audio"] == {
+        "url": "https://storage.example.test/signed", "sha256": reference.sha256,
+        "size_bytes": reference.size_bytes, "media_type": "audio/wav",
+    }
+    artifacts.download.assert_awaited_once_with(UUID(reference.artifact_id), tenant_id="tenant-a")
+    artifacts.open_content.assert_not_called()
+    altered = reference.model_copy(update={"sha256": "a" * 64})
+    with pytest.raises(ArtifactInputError, match="does not match"):
+        await materializer.materialize(_portable_model(registry, "diffdock"), "native", tenant_id="tenant-a",
+            request_body=json.dumps({"audio": altered.model_dump(mode="json")}).encode())
 
 
 def _portable_model(registry: Registry, model_id: str):
