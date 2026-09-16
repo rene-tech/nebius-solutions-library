@@ -3595,15 +3595,18 @@ class PostgresStore:
                 raise ConflictError("operation is absent or nonterminal")
 
     @retry_serialization
-    async def purge_expired_payloads(self) -> int:
+    async def purge_expired_payloads(self, *, batch_size: int = 100) -> int:
+        if not 1 <= batch_size <= 10000:
+            raise ValueError("retention batch size is outside the bound")
         async with self.pool.acquire() as connection:
             candidates = await connection.fetch(
                 """
                 SELECT id,token_id FROM fs2_operations
                 WHERE payload_expires_at<=clock_timestamp()
                   AND payload_purged_at IS NULL
-                ORDER BY payload_expires_at,id LIMIT 100
-                """
+                ORDER BY payload_expires_at,id LIMIT $1
+                """,
+                batch_size,
             )
         count = 0
         for candidate in candidates:
@@ -3777,7 +3780,10 @@ class PostgresStore:
         usage_retention_seconds: int = 7776000,
         request_debug_retention_seconds: int = 86400,
         request_telemetry_retention_seconds: int = 7776000,
+        batch_size: int = 100,
     ) -> dict[str, int]:
+        if not 1 <= batch_size <= 10000:
+            raise ValueError("retention batch size is outside the bound")
         # Keep operation deletion and token deletion in separate transactions.
         # No transaction may lock an operation and then a token: all state
         # transitions that need both use token -> operation ordering.
@@ -3804,11 +3810,12 @@ class PostgresStore:
                           SELECT 1 FROM fs2_scientific_artifact_events
                           WHERE operation_id=fs2_operations.id
                       )
-                    ORDER BY completed_at,id FOR UPDATE SKIP LOCKED LIMIT 100
+                    ORDER BY completed_at,id FOR UPDATE SKIP LOCKED LIMIT $2
                 )
                 DELETE FROM fs2_operations o USING candidates c WHERE o.id=c.id RETURNING o.id
                 """,
                 operation_retention_seconds,
+                batch_size,
             )
         async with self.pool.acquire() as connection:
             candidates = await connection.fetch(
@@ -3819,9 +3826,10 @@ class PostgresStore:
                        OR (t.expires_at IS NOT NULL AND
                           t.expires_at < clock_timestamp()-make_interval(secs=>$1::double precision)))
                   AND NOT EXISTS (SELECT 1 FROM fs2_operations o WHERE o.token_id=t.id)
-                ORDER BY COALESCE(t.revoked_at,t.expires_at),t.id LIMIT 100
+                ORDER BY COALESCE(t.revoked_at,t.expires_at),t.id LIMIT $2
                 """,
                 token_retention_seconds,
+                batch_size,
             )
         deleted_tokens = 0
         for candidate in candidates:
@@ -3855,47 +3863,51 @@ class PostgresStore:
                 WITH candidates AS (
                     SELECT id FROM fs2_audit_events
                     WHERE occurred_at < clock_timestamp()-make_interval(secs=>$1::double precision)
-                    ORDER BY occurred_at,id LIMIT 100
+                    ORDER BY occurred_at,id LIMIT $2
                 )
                 DELETE FROM fs2_audit_events a USING candidates c WHERE a.id=c.id RETURNING a.id
                 """,
                 audit_retention_seconds,
+                batch_size,
             )
             usage = await connection.fetch(
                 """
                 WITH candidates AS (
                     SELECT operation_id FROM fs2_usage_facts
                     WHERE occurred_at < clock_timestamp()-make_interval(secs=>$1::double precision)
-                    ORDER BY occurred_at,operation_id LIMIT 100
+                    ORDER BY occurred_at,operation_id LIMIT $2
                 )
                 DELETE FROM fs2_usage_facts f USING candidates c
                 WHERE f.operation_id=c.operation_id RETURNING f.operation_id
                 """,
                 usage_retention_seconds,
+                batch_size,
             )
             request_debug = await connection.fetch(
                 """
                 WITH candidates AS (
                     SELECT id FROM fs2_request_debug
                     WHERE started_at < clock_timestamp()-make_interval(secs=>$1::double precision)
-                    ORDER BY started_at,id LIMIT 100
+                    ORDER BY started_at,id LIMIT $2
                 )
                 DELETE FROM fs2_request_debug d USING candidates c
                 WHERE d.id=c.id RETURNING d.id
                 """,
                 request_debug_retention_seconds,
+                batch_size,
             )
             request_telemetry = await connection.fetch(
                 """
                 WITH candidates AS (
                     SELECT request_id FROM fs2_request_telemetry
                     WHERE started_at < clock_timestamp()-make_interval(secs=>$1::double precision)
-                    ORDER BY started_at,request_id LIMIT 100
+                    ORDER BY started_at,request_id LIMIT $2
                 )
                 DELETE FROM fs2_request_telemetry t USING candidates c
                 WHERE t.request_id=c.request_id RETURNING t.request_id
                 """,
                 request_telemetry_retention_seconds,
+                batch_size,
             )
         return {
             "operations": len(operations),
@@ -3905,6 +3917,94 @@ class PostgresStore:
             "request_debug": len(request_debug),
             "request_telemetry": len(request_telemetry),
         }
+
+    async def expired_retention_backlog(
+        self,
+        *,
+        operation_retention_seconds: int,
+        token_retention_seconds: int,
+        audit_retention_seconds: int = 2592000,
+        usage_retention_seconds: int = 7776000,
+        request_debug_retention_seconds: int = 86400,
+        request_telemetry_retention_seconds: int = 7776000,
+    ) -> tuple[str, ...]:
+        """Return payload-free names for retention classes that still have eligible rows."""
+
+        async with self.pool.acquire() as connection:
+            row = await connection.fetchrow(
+                """
+                SELECT
+                    EXISTS (
+                        SELECT 1 FROM fs2_operations
+                        WHERE payload_expires_at<=clock_timestamp() AND payload_purged_at IS NULL
+                    ) AS payloads,
+                    EXISTS (
+                        SELECT 1 FROM fs2_operations
+                        WHERE status IN ('succeeded','failed','cancelled','preempted','expired')
+                          AND completed_at < clock_timestamp()-make_interval(secs=>$1::double precision)
+                          AND NOT EXISTS (
+                              SELECT 1 FROM fs2_scientific_stage_attempts
+                              WHERE operation_id=fs2_operations.id
+                          )
+                          AND NOT EXISTS (
+                              SELECT 1 FROM fs2_scientific_stage_commits
+                              WHERE operation_id=fs2_operations.id
+                          )
+                          AND NOT EXISTS (
+                              SELECT 1 FROM fs2_scientific_run_results
+                              WHERE operation_id=fs2_operations.id
+                          )
+                          AND NOT EXISTS (
+                              SELECT 1 FROM fs2_scientific_artifact_events
+                              WHERE operation_id=fs2_operations.id
+                          )
+                    ) AS operations,
+                    EXISTS (
+                        SELECT 1 FROM fs2_tokens t
+                        WHERE ((t.revoked_at IS NOT NULL AND
+                                  t.revoked_at < clock_timestamp()-make_interval(secs=>$2::double precision))
+                               OR (t.expires_at IS NOT NULL AND
+                                  t.expires_at < clock_timestamp()-make_interval(secs=>$2::double precision)))
+                          AND NOT EXISTS (SELECT 1 FROM fs2_operations o WHERE o.token_id=t.id)
+                    ) AS tokens,
+                    EXISTS (
+                        SELECT 1 FROM fs2_audit_events
+                        WHERE occurred_at < clock_timestamp()-make_interval(secs=>$3::double precision)
+                    ) AS audit,
+                    EXISTS (
+                        SELECT 1 FROM fs2_usage_facts
+                        WHERE occurred_at < clock_timestamp()-make_interval(secs=>$4::double precision)
+                    ) AS usage,
+                    EXISTS (
+                        SELECT 1 FROM fs2_request_debug
+                        WHERE started_at < clock_timestamp()-make_interval(secs=>$5::double precision)
+                    ) AS request_debug,
+                    EXISTS (
+                        SELECT 1 FROM fs2_request_telemetry
+                        WHERE started_at < clock_timestamp()-make_interval(secs=>$6::double precision)
+                    ) AS request_telemetry
+                """,
+                operation_retention_seconds,
+                token_retention_seconds,
+                audit_retention_seconds,
+                usage_retention_seconds,
+                request_debug_retention_seconds,
+                request_telemetry_retention_seconds,
+            )
+        assert row is not None
+        return tuple(
+            name
+            for name in (
+                "payloads",
+                "operations",
+                "tokens",
+                "audit",
+                "usage",
+                "request_debug",
+                "request_telemetry",
+            )
+            if row[name]
+        )
 
     async def list_audit(self, *, tenant_id: str | None = None, limit: int = 100) -> list[AuditEvent]:
         async with self.pool.acquire() as connection:
@@ -4175,8 +4275,11 @@ class PostgresMaintenanceStore:
     async def close(self) -> None:
         await self.pool.close()
 
-    async def purge_expired_payloads(self) -> int:
-        return cast(int, await PostgresStore.purge_expired_payloads(cast(PostgresStore, self)))
+    async def purge_expired_payloads(self, *, batch_size: int = 100) -> int:
+        return cast(
+            int,
+            await PostgresStore.purge_expired_payloads(cast(PostgresStore, self), batch_size=batch_size),
+        )
 
     async def delete_expired_rows(
         self,
@@ -4187,6 +4290,7 @@ class PostgresMaintenanceStore:
         usage_retention_seconds: int,
         request_debug_retention_seconds: int = 86400,
         request_telemetry_retention_seconds: int = 7776000,
+        batch_size: int = 100,
     ) -> dict[str, int]:
         return cast(
             dict[str, int],
@@ -4198,5 +4302,26 @@ class PostgresMaintenanceStore:
                 usage_retention_seconds=usage_retention_seconds,
                 request_debug_retention_seconds=request_debug_retention_seconds,
                 request_telemetry_retention_seconds=request_telemetry_retention_seconds,
+                batch_size=batch_size,
             ),
+        )
+
+    async def expired_retention_backlog(
+        self,
+        *,
+        operation_retention_seconds: int,
+        token_retention_seconds: int,
+        audit_retention_seconds: int,
+        usage_retention_seconds: int,
+        request_debug_retention_seconds: int = 86400,
+        request_telemetry_retention_seconds: int = 7776000,
+    ) -> tuple[str, ...]:
+        return await PostgresStore.expired_retention_backlog(
+            cast(PostgresStore, self),
+            operation_retention_seconds=operation_retention_seconds,
+            token_retention_seconds=token_retention_seconds,
+            audit_retention_seconds=audit_retention_seconds,
+            usage_retention_seconds=usage_retention_seconds,
+            request_debug_retention_seconds=request_debug_retention_seconds,
+            request_telemetry_retention_seconds=request_telemetry_retention_seconds,
         )

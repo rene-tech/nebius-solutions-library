@@ -1369,6 +1369,28 @@ variable "request_debug_enabled" {
   default     = false
 }
 
+variable "retention_batch_size" {
+  description = "Maximum rows deleted per retention class in one maintenance transaction."
+  type        = number
+  default     = 1000
+
+  validation {
+    condition     = floor(var.retention_batch_size) == var.retention_batch_size && var.retention_batch_size >= 1 && var.retention_batch_size <= 10000
+    error_message = "retention_batch_size must be an integer from 1 through 10000."
+  }
+}
+
+variable "retention_max_batches" {
+  description = "Maximum bounded retention batches drained by one maintenance Job before it fails for alerting."
+  type        = number
+  default     = 10
+
+  validation {
+    condition     = floor(var.retention_max_batches) == var.retention_max_batches && var.retention_max_batches >= 1 && var.retention_max_batches <= 100
+    error_message = "retention_max_batches must be an integer from 1 through 100."
+  }
+}
+
 variable "enable_dcgm_cold_start_campaign" {
   description = "Temporarily collect and scrape only GPU utilization/framebuffer proxy metrics every second for a reviewed cold-start campaign. Defaults to the standard 30-second observability cadence."
   type        = bool

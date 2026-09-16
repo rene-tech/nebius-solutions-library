@@ -467,7 +467,9 @@ def test_store_uses_only_migration_global_lock_and_bounded_skip_locked_janitors(
     assert "pg_advisory_xact_lock(fs2_activation_model_lock_key($1))" in source
     assert "async def _model_deployment_lock" in source
     assert "async def _model_deployment_idempotency_lock" in source
-    assert source.count("LIMIT 100") >= 4
+    assert source.count("LIMIT 100") >= 2
+    assert source.count("LIMIT $2") >= 8
+    assert source.count("if not 1 <= batch_size <= 10000") == 2
     assert source.count("SKIP LOCKED") >= 4
     assert "async def expire_deadline_operations" in source
     assert "deadline_expired" in source

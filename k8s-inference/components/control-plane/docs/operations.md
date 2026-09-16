@@ -426,7 +426,14 @@ deleted after `FS2_PAT_RETENTION_SECONDS` once no operation references them.
 Audit rows have an independent `FS2_AUDIT_RETENTION_SECONDS` bound. A
 request-debug capture has an independent
 `FS2_REQUEST_DEBUG_RETENTION_SECONDS` bound, and payload-free request telemetry
-uses `FS2_REQUEST_TELEMETRY_RETENTION_SECONDS`. When scientific artifact
+uses one 90-day (`7776000` second) `FS2_REQUEST_TELEMETRY_RETENTION_SECONDS`
+contract, matching usage-fact retention. Each maintenance transaction deletes
+at most `FS2_RETENTION_BATCH_SIZE` rows per retention class. A Job runs at most
+`FS2_RETENTION_MAX_BATCHES`, giving a default capacity of 10,000 rows per class
+per minute without an unbounded transaction. Operators must size that product
+above the measured peak write rate. If eligible rows remain after the final
+batch, the Job exits unsuccessfully and `Fs2ServeMaintenanceJobFailed` alerts
+on the non-converging backlog. When scientific artifact
 storage is enabled, the same pass first removes expired objects and their
 metadata under `FS2_ARTIFACT_RETENTION_SECONDS`; generic operation retention
 skips an operation while any independently retained scientific metadata still
@@ -662,6 +669,14 @@ route-attestor, admin, activation, federation, or DDL credential. The platform
 stage submits each maintenance Job through a namespace-local CPU queue before
 Kueue allows its Pod to start; reusable chart installs remain queue-independent
 unless `maintenance.queueName` is configured.
+
+Rollback has a security invariant: preserve `config.requestDebugEnabled=false`
+explicitly while selecting any earlier image or chart revision. A raw Helm
+rollback can reuse an older release's enabled value, so prepare a reviewed
+rollback values file with capture disabled and verify the rendered Deployment
+before applying it. Retention maintenance remains enabled during rollback so
+already-retained rows continue to age out.
+
 Payload AEAD, ledger HMAC, PAT pepper, and public route-attestor material are
 separate Secret objects and projected only into consumers that need them.
 `secrets.migrationsDatabase`, `secrets.database`, and

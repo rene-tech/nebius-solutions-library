@@ -523,7 +523,8 @@ class FlakyLoopStore(MemoryStore):
 class RuntimeSupervisorBoundaryStore(MemoryStore):
     """Reject destructive retention if an API replica ever crosses the role boundary."""
 
-    async def purge_expired_payloads(self) -> int:
+    async def purge_expired_payloads(self, *, batch_size: int = 100) -> int:
+        del batch_size
         raise AssertionError("gateway runtime must not run destructive payload retention")
 
     async def delete_expired_rows(
@@ -535,6 +536,7 @@ class RuntimeSupervisorBoundaryStore(MemoryStore):
         usage_retention_seconds: int,
         request_debug_retention_seconds: int = 86400,
         request_telemetry_retention_seconds: int = 7776000,
+        batch_size: int = 100,
     ) -> dict[str, int]:
         del (
             operation_retention_seconds,
@@ -543,6 +545,7 @@ class RuntimeSupervisorBoundaryStore(MemoryStore):
             usage_retention_seconds,
             request_debug_retention_seconds,
             request_telemetry_retention_seconds,
+            batch_size,
         )
         raise AssertionError("gateway runtime must not delete durable facts")
 

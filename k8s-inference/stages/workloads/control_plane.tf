@@ -65,6 +65,8 @@ locals {
       syncWaitSeconds        = "30"
       maxSyncWaitSeconds     = "30"
       requestDebugEnabled    = var.request_debug_enabled
+      retentionBatchSize     = tostring(var.retention_batch_size)
+      retentionMaxBatches    = tostring(var.retention_max_batches)
       }, var.model_scaling_mode == "keda" ? {
       activationTimeoutSeconds = "7200"
     } : {})

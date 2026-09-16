@@ -2402,20 +2402,25 @@ class MemoryStore:
             row.response = None
             row.view = row.view.model_copy(update={"result_available": False})
 
-    async def purge_expired_payloads(self) -> int:
+    async def purge_expired_payloads(self, *, batch_size: int = 100) -> int:
+        if not 1 <= batch_size <= 10000:
+            raise ValueError("retention batch size is outside the bound")
         async with self._lock:
             now = datetime.now(UTC)
             count = 0
             for row in self.operations.values():
                 if row.view.payload_expires_at is None or row.view.payload_expires_at > now:
                     continue
-                if row.request is not None or row.response is not None:
-                    count += 1
+                if row.request is None and row.response is None and row.view.status.terminal:
+                    continue
+                count += 1
                 row.request = None
                 row.response = None
                 if not row.view.status.terminal:
                     self._expire(row, now, "payload_expired")
                 row.view = row.view.model_copy(update={"result_available": False})
+                if count >= batch_size:
+                    break
             return count
 
     async def expire_deadline_operations(self) -> int:
@@ -2474,7 +2479,10 @@ class MemoryStore:
         usage_retention_seconds: int = 7776000,
         request_debug_retention_seconds: int = 86400,
         request_telemetry_retention_seconds: int = 7776000,
+        batch_size: int = 100,
     ) -> dict[str, int]:
+        if not 1 <= batch_size <= 10000:
+            raise ValueError("retention batch size is outside the bound")
         async with self._lock:
             del usage_retention_seconds, request_debug_retention_seconds, request_telemetry_retention_seconds
             now = datetime.now(UTC)
@@ -2485,7 +2493,7 @@ class MemoryStore:
                 if row.view.status.terminal
                 and row.view.completed_at is not None
                 and row.view.completed_at < operation_cutoff
-            ]
+            ][:batch_size]
             for operation_id in deleted_operations:
                 row = self.operations.pop(operation_id)
                 self.scientific_admission_outbox.pop(operation_id, None)
@@ -2504,12 +2512,17 @@ class MemoryStore:
                     (row.view.revoked_at is not None and row.view.revoked_at < token_cutoff)
                     or (row.view.expires_at is not None and row.view.expires_at < token_cutoff)
                 )
-            ]
+            ][:batch_size]
             for token_id in deleted_tokens:
                 del self.tokens[token_id]
             audit_cutoff = now - timedelta(seconds=audit_retention_seconds)
-            retained_audit = [event for event in self.audit if event.occurred_at >= audit_cutoff]
-            deleted_audit = len(self.audit) - len(retained_audit)
+            deleted_audit = 0
+            retained_audit: list[AuditEvent] = []
+            for event in self.audit:
+                if event.occurred_at < audit_cutoff and deleted_audit < batch_size:
+                    deleted_audit += 1
+                else:
+                    retained_audit.append(event)
             self.audit = retained_audit
             return {
                 "operations": len(deleted_operations),
@@ -2519,6 +2532,51 @@ class MemoryStore:
                 "request_debug": 0,
                 "request_telemetry": 0,
             }
+
+    async def expired_retention_backlog(
+        self,
+        *,
+        operation_retention_seconds: int,
+        token_retention_seconds: int,
+        audit_retention_seconds: int = 2592000,
+        usage_retention_seconds: int = 7776000,
+        request_debug_retention_seconds: int = 86400,
+        request_telemetry_retention_seconds: int = 7776000,
+    ) -> tuple[str, ...]:
+        del usage_retention_seconds, request_debug_retention_seconds, request_telemetry_retention_seconds
+        async with self._lock:
+            now = datetime.now(UTC)
+            operation_cutoff = now - timedelta(seconds=operation_retention_seconds)
+            token_cutoff = now - timedelta(seconds=token_retention_seconds)
+            audit_cutoff = now - timedelta(seconds=audit_retention_seconds)
+            referenced = {row.view.token_id for row in self.operations.values()}
+            remaining: list[str] = []
+            if any(
+                row.view.payload_expires_at is not None
+                and row.view.payload_expires_at <= now
+                and (row.request is not None or row.response is not None or not row.view.status.terminal)
+                for row in self.operations.values()
+            ):
+                remaining.append("payloads")
+            if any(
+                row.view.status.terminal
+                and row.view.completed_at is not None
+                and row.view.completed_at < operation_cutoff
+                for row in self.operations.values()
+            ):
+                remaining.append("operations")
+            if any(
+                token_id not in referenced
+                and (
+                    (row.view.revoked_at is not None and row.view.revoked_at < token_cutoff)
+                    or (row.view.expires_at is not None and row.view.expires_at < token_cutoff)
+                )
+                for token_id, row in self.tokens.items()
+            ):
+                remaining.append("tokens")
+            if any(event.occurred_at < audit_cutoff for event in self.audit):
+                remaining.append("audit")
+            return tuple(remaining)
 
     async def list_audit(self, *, tenant_id: str | None = None, limit: int = 100) -> list[AuditEvent]:
         async with self._lock:

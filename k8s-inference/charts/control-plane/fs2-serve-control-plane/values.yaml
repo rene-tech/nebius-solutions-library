@@ -335,7 +335,13 @@ config:
   auditRetentionSeconds: "2592000"
   usageRetentionSeconds: "7776000"
   requestDebugRetentionSeconds: "86400"
+  # Telemetry and usage share one 90-day retention contract.
   requestTelemetryRetentionSeconds: "7776000"
+  # Each maintenance transaction deletes at most batchSize rows per retention
+  # class. A run drains at most batchSize * maxBatches rows per class, then
+  # fails closed so the maintenance Job alert reports non-convergence.
+  retentionBatchSize: "1000"
+  retentionMaxBatches: "10"
   # Opaque browser operator session lifetime; bounded to 5 minutes..24 hours.
   adminSessionTtlSeconds: "28800"
   syncWaitSeconds: "2"

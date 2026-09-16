@@ -2239,6 +2239,15 @@ async def test_distinct_configured_roles_run_activation_and_retention_with_close
         assert deleted["operations"] == 0 and deleted["tokens"] == 0
         assert deleted["audit"] == 1 and deleted["usage"] == 1
         assert deleted["request_debug"] == 1 and deleted["request_telemetry"] == 1
+        backlog = await maintenance_store.expired_retention_backlog(
+            operation_retention_seconds=31536000,
+            token_retention_seconds=31536000,
+            audit_retention_seconds=3600,
+            usage_retention_seconds=3600,
+            request_debug_retention_seconds=3600,
+            request_telemetry_retention_seconds=3600,
+        )
+        assert "request_debug" not in backlog and "request_telemetry" not in backlog
 
         async with maintenance_pool.acquire() as maintenance_connection:
             for statement in (
@@ -3316,8 +3325,12 @@ async def test_audit_retention_is_bounded_independently(postgres_store: Postgres
 async def test_request_debug_and_telemetry_retention_are_bounded_independently(
     postgres_store: PostgresStore,
 ) -> None:
-    old_debug_id, current_debug_id = uuid4(), uuid4()
-    old_telemetry_id, current_telemetry_id = uuid4(), uuid4()
+    old_debug_ids = [uuid4() for _ in range(205)]
+    current_debug_id = uuid4()
+    old_telemetry_ids = [uuid4() for _ in range(205)]
+    current_telemetry_id = uuid4()
+    old = datetime.now(UTC) - timedelta(hours=2)
+    current = datetime.now(UTC)
     async with postgres_store.pool.acquire() as connection:
         await connection.executemany(
             """
@@ -3328,10 +3341,8 @@ async def test_request_debug_and_telemetry_retention_are_bounded_independently(
             ) VALUES($1,'public',$2,$2,'/v1/models','GET',200,false,0,0,true,true,true,true,
                 'payload-v1',$3,$4)
             """,
-            [
-                (old_debug_id, datetime.now(UTC) - timedelta(hours=2), b"n" * 12, b"old-debug"),
-                (current_debug_id, datetime.now(UTC), b"n" * 12, b"current-debug"),
-            ],
+            [(debug_id, old, b"n" * 12, b"old-debug") for debug_id in old_debug_ids]
+            + [(current_debug_id, current, b"n" * 12, b"current-debug")],
         )
         await connection.executemany(
             """
@@ -3341,28 +3352,45 @@ async def test_request_debug_and_telemetry_retention_are_bounded_independently(
                 response_bytes_observed,request_complete,response_complete,disconnected
             ) VALUES($1,$2,$2,'/v1/models','GET','http',200,0,0,0,0,0,true,true,false)
             """,
-            [
-                (old_telemetry_id, datetime.now(UTC) - timedelta(hours=2)),
-                (current_telemetry_id, datetime.now(UTC)),
-            ],
+            [(telemetry_id, old) for telemetry_id in old_telemetry_ids] + [(current_telemetry_id, current)],
         )
 
-    deleted = await postgres_store.delete_expired_rows(
-        operation_retention_seconds=604800,
-        token_retention_seconds=604800,
-        request_debug_retention_seconds=3600,
-        request_telemetry_retention_seconds=3600,
-    )
-    assert deleted["request_debug"] == deleted["request_telemetry"] == 1
+    retention = {
+        "operation_retention_seconds": 604800,
+        "token_retention_seconds": 604800,
+        "request_debug_retention_seconds": 3600,
+        "request_telemetry_retention_seconds": 3600,
+    }
+    deleted_batches = []
+    for expected in (100, 100, 5):
+        deleted = await postgres_store.delete_expired_rows(**retention, batch_size=100)
+        deleted_batches.append(deleted)
+        assert deleted["request_debug"] == deleted["request_telemetry"] == expected
+        backlog = await postgres_store.expired_retention_backlog(**retention)
+        assert ("request_debug" in backlog) is (expected == 100)
+        assert ("request_telemetry" in backlog) is (expected == 100)
+    assert sum(batch["request_debug"] for batch in deleted_batches) == 205
+    assert sum(batch["request_telemetry"] for batch in deleted_batches) == 205
+    assert "request_debug" not in await postgres_store.expired_retention_backlog(**retention)
+    assert "request_telemetry" not in await postgres_store.expired_retention_backlog(**retention)
     async with postgres_store.pool.acquire() as connection:
-        assert await connection.fetchval(
-            "SELECT array_agg(id) FROM fs2_request_debug WHERE id=ANY($1::uuid[])",
-            [old_debug_id, current_debug_id],
-        ) == [current_debug_id]
-        assert await connection.fetchval(
-            "SELECT array_agg(request_id) FROM fs2_request_telemetry WHERE request_id=ANY($1::uuid[])",
-            [old_telemetry_id, current_telemetry_id],
-        ) == [current_telemetry_id]
+        assert (
+            await connection.fetchval("SELECT count(*) FROM fs2_request_debug WHERE id=ANY($1::uuid[])", old_debug_ids)
+            == 0
+        )
+        assert (
+            await connection.fetchval(
+                "SELECT count(*) FROM fs2_request_telemetry WHERE request_id=ANY($1::uuid[])", old_telemetry_ids
+            )
+            == 0
+        )
+        assert await connection.fetchval("SELECT count(*) FROM fs2_request_debug WHERE id=$1", current_debug_id) == 1
+        assert (
+            await connection.fetchval(
+                "SELECT count(*) FROM fs2_request_telemetry WHERE request_id=$1", current_telemetry_id
+            )
+            == 1
+        )
 
 
 @pytest.mark.postgres

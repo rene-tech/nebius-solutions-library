@@ -132,10 +132,17 @@ HTTP 0 or success.
   a missing row is not proof no request happened. Process failure can also leave
   missing captures. Bodies from before capture was enabled, or from failed
   persistence, cannot be reconstructed from old usage/logical-run metadata.
-- The fixed-cadence maintenance Job deletes bounded batches older than
-  `FS2_REQUEST_DEBUG_RETENTION_SECONDS` (24 hours by default). Disabling capture
-  stops new writes but does not bypass that purge. Keep the maintenance Job and
-  its failure alert healthy whenever capture is enabled.
+- The fixed-cadence maintenance Job deletes rows older than
+  `FS2_REQUEST_DEBUG_RETENTION_SECONDS` (24 hours by default) in bounded
+  transactions. Its configurable batch size and maximum batch count drain up to
+  10,000 rows per run by default. A remaining backlog fails the Job so the
+  maintenance alert reports non-convergence. Payload-free request telemetry has
+  one 90-day retention value (`7776000` seconds). Disabling capture stops new
+  writes but does not bypass either purge.
+- Any application/chart rollback must explicitly preserve
+  `request_debug_enabled=false`; do not rely on values retained by an older Helm
+  revision. Keep maintenance enabled during rollback so existing captures still
+  expire.
 
 ## Verification status
 

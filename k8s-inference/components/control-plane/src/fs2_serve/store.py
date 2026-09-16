@@ -448,7 +448,7 @@ class Store(Protocol):
 
     async def purge_operation_payload(self, operation_id: UUID, *, tenant_id: str) -> None: ...
 
-    async def purge_expired_payloads(self) -> int: ...
+    async def purge_expired_payloads(self, *, batch_size: int = 100) -> int: ...
 
     async def expire_deadline_operations(self) -> int: ...
 
@@ -463,7 +463,19 @@ class Store(Protocol):
         usage_retention_seconds: int = 7776000,
         request_debug_retention_seconds: int = 86400,
         request_telemetry_retention_seconds: int = 7776000,
+        batch_size: int = 100,
     ) -> dict[str, int]: ...
+
+    async def expired_retention_backlog(
+        self,
+        *,
+        operation_retention_seconds: int,
+        token_retention_seconds: int,
+        audit_retention_seconds: int = 2592000,
+        usage_retention_seconds: int = 7776000,
+        request_debug_retention_seconds: int = 86400,
+        request_telemetry_retention_seconds: int = 7776000,
+    ) -> tuple[str, ...]: ...
 
     async def list_audit(self, *, tenant_id: str | None = None, limit: int = 100) -> list[AuditEvent]: ...
 

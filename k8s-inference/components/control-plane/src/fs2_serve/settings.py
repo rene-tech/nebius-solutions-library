@@ -291,6 +291,8 @@ class Settings(BaseSettings):
     usage_retention_seconds: int = Field(default=7776000, ge=86400, le=31536000)
     request_debug_retention_seconds: int = Field(default=86400, ge=60, le=604800)
     request_telemetry_retention_seconds: int = Field(default=7776000, ge=86400, le=31536000)
+    retention_batch_size: int = Field(default=1000, ge=1, le=10000)
+    retention_max_batches: int = Field(default=10, ge=1, le=100)
     admin_session_ttl_seconds: int = Field(default=28800, ge=300, le=86400)
     reporting_database_role: str = Field(
         default="fs2_serve_reporting", min_length=1, max_length=63, pattern=r"^[A-Za-z_][A-Za-z0-9_]*$"

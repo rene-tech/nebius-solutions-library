@@ -35,7 +35,7 @@ spec:
             severity: critical
           annotations:
             summary: fs2-serve retention maintenance is failing
-            description: A retention maintenance Job reported failure during the last ten minutes.
+            description: A retention maintenance Job failed or exhausted its bounded retention drain capacity during the last ten minutes.
         - alert: Fs2ServeOldestQueueAgeHigh
           expr: max(fs2_serve_oldest_queued_operation_age_seconds) > {{ .Values.prometheusRule.maxQueueAgeSeconds }}
           for: 10m

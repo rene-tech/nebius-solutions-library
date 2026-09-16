@@ -1748,7 +1748,13 @@ def test_maintenance_is_independent_fixed_cadence_and_network_egress_is_allowlis
         "FS2_USAGE_RETENTION_SECONDS",
         "FS2_REQUEST_DEBUG_RETENTION_SECONDS",
         "FS2_REQUEST_TELEMETRY_RETENTION_SECONDS",
+        "FS2_RETENTION_BATCH_SIZE",
+        "FS2_RETENTION_MAX_BATCHES",
     }
+    maintenance_env = {item["name"]: item.get("value") for item in maintenance["env"]}
+    assert maintenance_env["FS2_REQUEST_TELEMETRY_RETENTION_SECONDS"] == "7776000"
+    assert maintenance_env["FS2_RETENTION_BATCH_SIZE"] == "1000"
+    assert maintenance_env["FS2_RETENTION_MAX_BATCHES"] == "10"
     assert maintenance["env"][0]["valueFrom"]["secretKeyRef"] == {
         "name": "fs2-serve-database-maintenance",
         "key": "url",
@@ -1973,6 +1979,7 @@ def test_gateway_alerts_are_bounded_payload_free_and_cover_release_failures() ->
     assert "fs2_serve_lifecycle_unclassified_gpu_seconds_total" in rendered
     assert "kube_deployment_status_replicas_available" in rendered
     assert "kube_job_status_failed" in rendered
+    assert "exhausted its bounded retention drain capacity" in rendered
     assert "certmanager_certificate_ready_status" in rendered
     assert "certmanager_certificate_renewal_timestamp_seconds" in rendered
     assert "certmanager_certificate_expiration_timestamp_seconds" in rendered

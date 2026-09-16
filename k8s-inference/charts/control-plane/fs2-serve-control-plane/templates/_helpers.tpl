@@ -187,6 +187,10 @@ app.kubernetes.io/component: model-controller
   value: {{ .Values.config.requestDebugRetentionSeconds | quote }}
 - name: FS2_REQUEST_TELEMETRY_RETENTION_SECONDS
   value: {{ .Values.config.requestTelemetryRetentionSeconds | quote }}
+- name: FS2_RETENTION_BATCH_SIZE
+  value: {{ .Values.config.retentionBatchSize | quote }}
+- name: FS2_RETENTION_MAX_BATCHES
+  value: {{ .Values.config.retentionMaxBatches | quote }}
 {{- end -}}
 
 {{- define "fs2-serve.runtimeEnv" -}}

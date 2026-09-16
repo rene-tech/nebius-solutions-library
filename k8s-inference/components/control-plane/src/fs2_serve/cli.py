@@ -664,15 +664,39 @@ async def maintain(settings: Settings) -> None:
         artifact_service = _artifact_service(settings, PostgresArtifactRepository(store.pool))
         if artifact_service is not None:
             await artifact_service.purge_expired()
-        await store.purge_expired_payloads()
-        await store.delete_expired_rows(
-            operation_retention_seconds=settings.operation_retention_seconds,
-            token_retention_seconds=settings.pat_retention_seconds,
-            audit_retention_seconds=settings.audit_retention_seconds,
-            usage_retention_seconds=settings.usage_retention_seconds,
-            request_debug_retention_seconds=settings.request_debug_retention_seconds,
-            request_telemetry_retention_seconds=settings.request_telemetry_retention_seconds,
+        retention = {
+            "operation_retention_seconds": settings.operation_retention_seconds,
+            "token_retention_seconds": settings.pat_retention_seconds,
+            "audit_retention_seconds": settings.audit_retention_seconds,
+            "usage_retention_seconds": settings.usage_retention_seconds,
+            "request_debug_retention_seconds": settings.request_debug_retention_seconds,
+            "request_telemetry_retention_seconds": settings.request_telemetry_retention_seconds,
+        }
+        totals: dict[str, int] = {"payloads": 0}
+        backlog: tuple[str, ...] = ()
+        completed_batches = 0
+        for batch_number in range(1, settings.retention_max_batches + 1):
+            completed_batches = batch_number
+            totals["payloads"] += await store.purge_expired_payloads(batch_size=settings.retention_batch_size)
+            deleted = await store.delete_expired_rows(
+                **retention,
+                batch_size=settings.retention_batch_size,
+            )
+            for name, count in deleted.items():
+                totals[name] = totals.get(name, 0) + count
+            backlog = await store.expired_retention_backlog(**retention)
+            if not backlog:
+                break
+        logging.getLogger("fs2_serve.maintenance").info(
+            "bounded retention completed batches=%d counts=%s backlog=%s",
+            completed_batches,
+            totals,
+            ",".join(backlog) or "none",
         )
+        if backlog:
+            raise RuntimeError(
+                f"retention backlog remains after {settings.retention_max_batches} bounded batches: {','.join(backlog)}"
+            )
     finally:
         await store.close()
 
