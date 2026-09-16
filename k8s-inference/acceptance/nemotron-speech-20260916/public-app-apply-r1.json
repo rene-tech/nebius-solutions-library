@@ -1,0 +1,1708 @@
+{
+  "started_at": "2026-09-16T11:14:11.712353+00:00",
+  "scope": "apply-apps",
+  "complete_customer_acceptance": false,
+  "measurements": [
+    {
+      "model": "nemotron-speech-en-0-6b",
+      "preview": {
+        "schema_version": "fs2-serve.nebius.ai/model-deployment-render-preview/v1",
+        "preview_id": "d568e8c9-b6c7-4793-b841-40caa2c87bc0",
+        "name": "nemotron-speech-en-0-6b",
+        "namespace": "fs2-models",
+        "base_etag": null,
+        "proposed_etag": "sha256:c3b586babfae71ca3c1aacba1982e6d79458ad59290a7e799de4cc24edc95447",
+        "decision": {
+          "disposition": "accepted",
+          "specDigest": "sha256:c3b586babfae71ca3c1aacba1982e6d79458ad59290a7e799de4cc24edc95447",
+          "issues": [],
+          "terraformInputs": [],
+          "admittedPoolRef": "h100-reserved-8x",
+          "fastStart": {
+            "mode": "Fixed",
+            "fallbackPolicy": "AllowLowerLevel",
+            "requestedLevel": "Off",
+            "minimumLevel": null,
+            "maximumLevel": null,
+            "qualifiedLevel": "Off",
+            "assignedLevel": "Off",
+            "requestedTargetSeconds": null,
+            "targetSeconds": null,
+            "qualification": {
+              "state": "NoTarget",
+              "reason": "NoFastStartTarget",
+              "message": "assigned level Off has no startup-time target (h100-1x: no compatible model-start p95)"
+            },
+            "modelStart": null,
+            "capacityWait": null,
+            "endToEnd": null,
+            "selectedIdentityDigest": null,
+            "pools": [
+              {
+                "poolRef": "h100-1x",
+                "acceleratorClass": "nvidia-h100-sxm5-80gb",
+                "qualifiedLevel": "Off",
+                "reason": "NoCurrentRuntimeEvidence",
+                "mechanisms": [],
+                "selectedMechanism": null,
+                "selectedCompatibilityTupleDigest": null,
+                "selectedIdentityDigest": null,
+                "receiptDigests": [],
+                "modelStart": null,
+                "capacityWait": null,
+                "endToEnd": null,
+                "paths": [],
+                "retainedPaths": []
+              },
+              {
+                "poolRef": "h100-reserved-8x",
+                "acceleratorClass": "nvidia-h100-sxm5-80gb",
+                "qualifiedLevel": "Off",
+                "reason": "NoCurrentRuntimeEvidence",
+                "mechanisms": [],
+                "selectedMechanism": null,
+                "selectedCompatibilityTupleDigest": null,
+                "selectedIdentityDigest": null,
+                "receiptDigests": [],
+                "modelStart": null,
+                "capacityWait": null,
+                "endToEnd": null,
+                "paths": [],
+                "retainedPaths": []
+              }
+            ]
+          },
+          "fastStartMechanism": {
+            "mechanism": "conventional",
+            "source": "Default",
+            "renderable": true,
+            "reason": "ConventionalDefault"
+          }
+        },
+        "render": {
+          "renderer": "legacy-manifest-v1",
+          "specDigest": "sha256:c3b586babfae71ca3c1aacba1982e6d79458ad59290a7e799de4cc24edc95447",
+          "renderDigest": "sha256:7f247fa414613443c5895f8dfda5d86eaa3c1673833e4b81def507ec3a6825df",
+          "resources": [
+            {
+              "apiVersion": "apps/v1",
+              "kind": "Deployment",
+              "namespace": "fs2-models",
+              "name": "nemotron-speech-en-0-6b-burst-h100-1x",
+              "manifest": {
+                "apiVersion": "apps/v1",
+                "kind": "Deployment",
+                "metadata": {
+                  "labels": {
+                    "app.kubernetes.io/name": "nemotron-speech-en-0-6b",
+                    "app.kubernetes.io/part-of": "fs2-serve",
+                    "fs2-serve.nebius.ai/model-id": "nemotron-speech-en-0-6b",
+                    "app.kubernetes.io/managed-by": "fs2-model-controller",
+                    "app.kubernetes.io/component": "model-runtime",
+                    "fs2-serve.nebius.ai/model-deployment": "nemotron-speech-en-0-6b",
+                    "kueue.x-k8s.io/queue-name": "inference-models",
+                    "kueue.x-k8s.io/priority-class": "standard",
+                    "fs2-serve.nebius.ai/workload-role": "burst-h100-1x"
+                  },
+                  "name": "nemotron-speech-en-0-6b-burst-h100-1x",
+                  "namespace": "fs2-models",
+                  "annotations": {
+                    "fs2-serve.nebius.ai/spec-digest": "sha256:c3b586babfae71ca3c1aacba1982e6d79458ad59290a7e799de4cc24edc95447",
+                    "fs2-serve.nebius.ai/effective-hot-floor": "1",
+                    "fs2-serve.nebius.ai/workload-pool-ref": "h100-1x",
+                    "fs2-serve.nebius.ai/workload-role": "burst",
+                    "fs2-serve.nebius.ai/workload-segment-capacity": "1",
+                    "fs2-serve.nebius.ai/workload-segment-offset": "1"
+                  }
+                },
+                "spec": {
+                  "revisionHistoryLimit": 2,
+                  "selector": {
+                    "matchLabels": {
+                      "fs2-serve.nebius.ai/model-deployment": "nemotron-speech-en-0-6b",
+                      "fs2-serve.nebius.ai/workload-role": "burst-h100-1x"
+                    }
+                  },
+                  "strategy": {
+                    "type": "Recreate"
+                  },
+                  "template": {
+                    "metadata": {
+                      "labels": {
+                        "fs2-serve.nebius.ai/model-id": "nemotron-speech-en-0-6b",
+                        "app.kubernetes.io/managed-by": "fs2-model-controller",
+                        "app.kubernetes.io/part-of": "fs2-serve",
+                        "app.kubernetes.io/component": "model-runtime",
+                        "fs2-serve.nebius.ai/model-deployment": "nemotron-speech-en-0-6b",
+                        "fs2-serve.nebius.ai/workload-role": "burst-h100-1x"
+                      },
+                      "annotations": {
+                        "fs2-serve.nebius.ai/spec-digest": "sha256:c3b586babfae71ca3c1aacba1982e6d79458ad59290a7e799de4cc24edc95447",
+                        "fs2-serve.nebius.ai/effective-hot-floor": "1",
+                        "fs2-serve.nebius.ai/workload-pool-ref": "h100-1x",
+                        "fs2-serve.nebius.ai/workload-role": "burst",
+                        "fs2-serve.nebius.ai/workload-segment-capacity": "1",
+                        "fs2-serve.nebius.ai/workload-segment-offset": "1"
+                      }
+                    },
+                    "spec": {
+                      "automountServiceAccountToken": false,
+                      "containers": [
+                        {
+                          "command": [
+                            "python",
+                            "-m",
+                            "fs2_speech.server"
+                          ],
+                          "env": [
+                            {
+                              "name": "FS2_SPEECH_PROFILE_JSON",
+                              "value": "{\"model\":\"nemotron-speech-en-0.6b\",\"chunk_size_ms\":560,\"strip_language_tags\":true,\"decoding\":\"greedy_batch\",\"beam_size\":4,\"precision\":\"float32\",\"confidence\":false,\"cuda_graphs\":false}"
+                            },
+                            {
+                              "name": "FS2_SPEECH_ARTIFACT_HOSTS",
+                              "valueFrom": {
+                                "configMapKeyRef": {
+                                  "key": "artifact-hosts",
+                                  "name": "fs2-speech-runtime-settings"
+                                }
+                              }
+                            },
+                            {
+                              "name": "OMP_NUM_THREADS",
+                              "value": "2"
+                            },
+                            {
+                              "name": "TORCHINDUCTOR_CACHE_DIR",
+                              "value": "/cache/inductor"
+                            },
+                            {
+                              "name": "TRITON_CACHE_DIR",
+                              "value": "/cache/triton"
+                            }
+                          ],
+                          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/en@sha256:288f6caf0c2feb3690c963969e4a26c45a38ca1338f4abe80570b24db91423d2",
+                          "imagePullPolicy": "IfNotPresent",
+                          "lifecycle": {
+                            "preStop": {
+                              "exec": {
+                                "command": [
+                                  "python",
+                                  "-c",
+                                  "import time,urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/drain', method='POST'), timeout=5).read(); time.sleep(5)"
+                                ]
+                              }
+                            }
+                          },
+                          "livenessProbe": {
+                            "failureThreshold": 4,
+                            "httpGet": {
+                              "path": "/healthz",
+                              "port": "http"
+                            },
+                            "periodSeconds": 15,
+                            "timeoutSeconds": 3
+                          },
+                          "name": "runtime",
+                          "ports": [
+                            {
+                              "containerPort": 8000,
+                              "name": "http"
+                            }
+                          ],
+                          "readinessProbe": {
+                            "httpGet": {
+                              "path": "/readyz",
+                              "port": "http"
+                            },
+                            "periodSeconds": 3,
+                            "timeoutSeconds": 2
+                          },
+                          "resources": {
+                            "limits": {
+                              "cpu": "4",
+                              "ephemeral-storage": "24Gi",
+                              "memory": "32Gi",
+                              "nvidia.com/gpu": "1"
+                            },
+                            "requests": {
+                              "cpu": "2",
+                              "ephemeral-storage": "8Gi",
+                              "memory": "16Gi",
+                              "nvidia.com/gpu": "1"
+                            }
+                          },
+                          "securityContext": {
+                            "allowPrivilegeEscalation": false,
+                            "capabilities": {
+                              "drop": [
+                                "ALL"
+                              ]
+                            }
+                          },
+                          "startupProbe": {
+                            "failureThreshold": 120,
+                            "httpGet": {
+                              "path": "/readyz",
+                              "port": "http"
+                            },
+                            "periodSeconds": 5,
+                            "timeoutSeconds": 3
+                          },
+                          "volumeMounts": [
+                            {
+                              "mountPath": "/cache",
+                              "name": "cache"
+                            },
+                            {
+                              "mountPath": "/tmp",
+                              "name": "tmp"
+                            },
+                            {
+                              "mountPath": "/dev/shm",
+                              "name": "shm"
+                            }
+                          ]
+                        }
+                      ],
+                      "nodeSelector": {
+                        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+                        "accelerator.fs2.nebius/pool-id": "h100-1x",
+                        "capacity.fs2.nebius/gpu-count": "1",
+                        "capacity.fs2.nebius/type": "preemptible",
+                        "local-nvme.fs2.nebius/eligible": "false",
+                        "snapshot.fs2.nebius/eligible": "false",
+                        "topology.fs2.nebius/scope": "standalone",
+                        "workload.fs2.nebius/gpu": "true"
+                      },
+                      "securityContext": {
+                        "fsGroup": 10001,
+                        "runAsGroup": 10001,
+                        "runAsNonRoot": true,
+                        "runAsUser": 10001
+                      },
+                      "terminationGracePeriodSeconds": 7230,
+                      "tolerations": [
+                        {
+                          "effect": "NoSchedule",
+                          "key": "dedicated",
+                          "operator": "Equal",
+                          "value": "fs2-inference"
+                        }
+                      ],
+                      "volumes": [
+                        {
+                          "emptyDir": {
+                            "sizeLimit": "8Gi"
+                          },
+                          "name": "cache"
+                        },
+                        {
+                          "emptyDir": {
+                            "sizeLimit": "2Gi"
+                          },
+                          "name": "tmp"
+                        },
+                        {
+                          "emptyDir": {
+                            "medium": "Memory",
+                            "sizeLimit": "1Gi"
+                          },
+                          "name": "shm"
+                        }
+                      ]
+                    }
+                  },
+                  "progressDeadlineSeconds": 7200
+                }
+              },
+              "digest": "sha256:f9afd381febbce67001f6c73f347961980e1a2297d997af58cb95a9cb5b11611",
+              "fieldManager": "fs2-model-controller",
+              "forceConflicts": false
+            },
+            {
+              "apiVersion": "apps/v1",
+              "kind": "Deployment",
+              "namespace": "fs2-models",
+              "name": "nemotron-speech-en-0-6b-hot-h100-reserved-8x",
+              "manifest": {
+                "apiVersion": "apps/v1",
+                "kind": "Deployment",
+                "metadata": {
+                  "labels": {
+                    "app.kubernetes.io/name": "nemotron-speech-en-0-6b",
+                    "app.kubernetes.io/part-of": "fs2-serve",
+                    "fs2-serve.nebius.ai/model-id": "nemotron-speech-en-0-6b",
+                    "app.kubernetes.io/managed-by": "fs2-model-controller",
+                    "app.kubernetes.io/component": "model-runtime",
+                    "fs2-serve.nebius.ai/model-deployment": "nemotron-speech-en-0-6b",
+                    "kueue.x-k8s.io/queue-name": "inference-models",
+                    "kueue.x-k8s.io/priority-class": "standard",
+                    "fs2-serve.nebius.ai/workload-role": "hot-h100-reserved-8x"
+                  },
+                  "name": "nemotron-speech-en-0-6b-hot-h100-reserved-8x",
+                  "namespace": "fs2-models",
+                  "annotations": {
+                    "fs2-serve.nebius.ai/spec-digest": "sha256:c3b586babfae71ca3c1aacba1982e6d79458ad59290a7e799de4cc24edc95447",
+                    "fs2-serve.nebius.ai/effective-hot-floor": "1",
+                    "fs2-serve.nebius.ai/workload-pool-ref": "h100-reserved-8x",
+                    "fs2-serve.nebius.ai/workload-role": "hot",
+                    "fs2-serve.nebius.ai/workload-segment-capacity": "1",
+                    "fs2-serve.nebius.ai/workload-segment-offset": "0"
+                  }
+                },
+                "spec": {
+                  "replicas": 1,
+                  "revisionHistoryLimit": 2,
+                  "selector": {
+                    "matchLabels": {
+                      "fs2-serve.nebius.ai/model-deployment": "nemotron-speech-en-0-6b",
+                      "fs2-serve.nebius.ai/workload-role": "hot-h100-reserved-8x"
+                    }
+                  },
+                  "strategy": {
+                    "type": "Recreate"
+                  },
+                  "template": {
+                    "metadata": {
+                      "labels": {
+                        "fs2-serve.nebius.ai/model-id": "nemotron-speech-en-0-6b",
+                        "app.kubernetes.io/managed-by": "fs2-model-controller",
+                        "app.kubernetes.io/part-of": "fs2-serve",
+                        "app.kubernetes.io/component": "model-runtime",
+                        "fs2-serve.nebius.ai/model-deployment": "nemotron-speech-en-0-6b",
+                        "fs2-serve.nebius.ai/workload-role": "hot-h100-reserved-8x"
+                      },
+                      "annotations": {
+                        "fs2-serve.nebius.ai/spec-digest": "sha256:c3b586babfae71ca3c1aacba1982e6d79458ad59290a7e799de4cc24edc95447",
+                        "fs2-serve.nebius.ai/effective-hot-floor": "1",
+                        "fs2-serve.nebius.ai/workload-pool-ref": "h100-reserved-8x",
+                        "fs2-serve.nebius.ai/workload-role": "hot",
+                        "fs2-serve.nebius.ai/workload-segment-capacity": "1",
+                        "fs2-serve.nebius.ai/workload-segment-offset": "0"
+                      }
+                    },
+                    "spec": {
+                      "automountServiceAccountToken": false,
+                      "containers": [
+                        {
+                          "command": [
+                            "python",
+                            "-m",
+                            "fs2_speech.server"
+                          ],
+                          "env": [
+                            {
+                              "name": "FS2_SPEECH_PROFILE_JSON",
+                              "value": "{\"model\":\"nemotron-speech-en-0.6b\",\"chunk_size_ms\":560,\"strip_language_tags\":true,\"decoding\":\"greedy_batch\",\"beam_size\":4,\"precision\":\"float32\",\"confidence\":false,\"cuda_graphs\":false}"
+                            },
+                            {
+                              "name": "FS2_SPEECH_ARTIFACT_HOSTS",
+                              "valueFrom": {
+                                "configMapKeyRef": {
+                                  "key": "artifact-hosts",
+                                  "name": "fs2-speech-runtime-settings"
+                                }
+                              }
+                            },
+                            {
+                              "name": "OMP_NUM_THREADS",
+                              "value": "2"
+                            },
+                            {
+                              "name": "TORCHINDUCTOR_CACHE_DIR",
+                              "value": "/cache/inductor"
+                            },
+                            {
+                              "name": "TRITON_CACHE_DIR",
+                              "value": "/cache/triton"
+                            }
+                          ],
+                          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/en@sha256:288f6caf0c2feb3690c963969e4a26c45a38ca1338f4abe80570b24db91423d2",
+                          "imagePullPolicy": "IfNotPresent",
+                          "lifecycle": {
+                            "preStop": {
+                              "exec": {
+                                "command": [
+                                  "python",
+                                  "-c",
+                                  "import time,urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/drain', method='POST'), timeout=5).read(); time.sleep(5)"
+                                ]
+                              }
+                            }
+                          },
+                          "livenessProbe": {
+                            "failureThreshold": 4,
+                            "httpGet": {
+                              "path": "/healthz",
+                              "port": "http"
+                            },
+                            "periodSeconds": 15,
+                            "timeoutSeconds": 3
+                          },
+                          "name": "runtime",
+                          "ports": [
+                            {
+                              "containerPort": 8000,
+                              "name": "http"
+                            }
+                          ],
+                          "readinessProbe": {
+                            "httpGet": {
+                              "path": "/readyz",
+                              "port": "http"
+                            },
+                            "periodSeconds": 3,
+                            "timeoutSeconds": 2
+                          },
+                          "resources": {
+                            "limits": {
+                              "cpu": "4",
+                              "ephemeral-storage": "24Gi",
+                              "memory": "32Gi",
+                              "nvidia.com/gpu": "1"
+                            },
+                            "requests": {
+                              "cpu": "2",
+                              "ephemeral-storage": "8Gi",
+                              "memory": "16Gi",
+                              "nvidia.com/gpu": "1"
+                            }
+                          },
+                          "securityContext": {
+                            "allowPrivilegeEscalation": false,
+                            "capabilities": {
+                              "drop": [
+                                "ALL"
+                              ]
+                            }
+                          },
+                          "startupProbe": {
+                            "failureThreshold": 120,
+                            "httpGet": {
+                              "path": "/readyz",
+                              "port": "http"
+                            },
+                            "periodSeconds": 5,
+                            "timeoutSeconds": 3
+                          },
+                          "volumeMounts": [
+                            {
+                              "mountPath": "/cache",
+                              "name": "cache"
+                            },
+                            {
+                              "mountPath": "/tmp",
+                              "name": "tmp"
+                            },
+                            {
+                              "mountPath": "/dev/shm",
+                              "name": "shm"
+                            }
+                          ]
+                        }
+                      ],
+                      "nodeSelector": {
+                        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+                        "accelerator.fs2.nebius/pool-id": "h100-reserved-8x",
+                        "capacity.fs2.nebius/gpu-count": "8",
+                        "capacity.fs2.nebius/source": "capacity-block",
+                        "capacity.fs2.nebius/type": "regular",
+                        "local-nvme.fs2.nebius/eligible": "false",
+                        "snapshot.fs2.nebius/eligible": "false",
+                        "topology.fs2.nebius/scope": "standalone",
+                        "workload.fs2.nebius/gpu": "true"
+                      },
+                      "securityContext": {
+                        "fsGroup": 10001,
+                        "runAsGroup": 10001,
+                        "runAsNonRoot": true,
+                        "runAsUser": 10001
+                      },
+                      "terminationGracePeriodSeconds": 7230,
+                      "tolerations": [
+                        {
+                          "effect": "NoSchedule",
+                          "key": "dedicated",
+                          "operator": "Equal",
+                          "value": "fs2-inference"
+                        }
+                      ],
+                      "volumes": [
+                        {
+                          "emptyDir": {
+                            "sizeLimit": "8Gi"
+                          },
+                          "name": "cache"
+                        },
+                        {
+                          "emptyDir": {
+                            "sizeLimit": "2Gi"
+                          },
+                          "name": "tmp"
+                        },
+                        {
+                          "emptyDir": {
+                            "medium": "Memory",
+                            "sizeLimit": "1Gi"
+                          },
+                          "name": "shm"
+                        }
+                      ]
+                    }
+                  },
+                  "progressDeadlineSeconds": 7200
+                }
+              },
+              "digest": "sha256:c54875a393f19456ff33ae273bac0c3fac337cc9554a5475440ecad9767689df",
+              "fieldManager": "fs2-model-controller",
+              "forceConflicts": false
+            },
+            {
+              "apiVersion": "keda.sh/v1alpha1",
+              "kind": "ScaledObject",
+              "namespace": "fs2-models",
+              "name": "fs2-model-nemotron-speech-en-0-6b-burst-h100-1x",
+              "manifest": {
+                "apiVersion": "keda.sh/v1alpha1",
+                "kind": "ScaledObject",
+                "metadata": {
+                  "name": "fs2-model-nemotron-speech-en-0-6b-burst-h100-1x",
+                  "namespace": "fs2-models",
+                  "labels": {
+                    "app.kubernetes.io/managed-by": "fs2-model-controller",
+                    "app.kubernetes.io/part-of": "fs2-serve",
+                    "app.kubernetes.io/component": "model-runtime",
+                    "fs2-serve.nebius.ai/model-deployment": "nemotron-speech-en-0-6b",
+                    "fs2-serve.nebius.ai/model-id": "nemotron-speech-en-0-6b",
+                    "fs2-serve.nebius.ai/workload-role": "burst-h100-1x"
+                  },
+                  "annotations": {
+                    "fs2-serve.nebius.ai/spec-digest": "sha256:c3b586babfae71ca3c1aacba1982e6d79458ad59290a7e799de4cc24edc95447",
+                    "fs2-serve.nebius.ai/effective-hot-floor": "1",
+                    "fs2-serve.nebius.ai/workload-pool-ref": "h100-1x",
+                    "fs2-serve.nebius.ai/workload-role": "burst",
+                    "fs2-serve.nebius.ai/workload-segment-capacity": "1",
+                    "fs2-serve.nebius.ai/workload-segment-offset": "1"
+                  }
+                },
+                "spec": {
+                  "scaleTargetRef": {
+                    "apiVersion": "apps/v1",
+                    "kind": "Deployment",
+                    "name": "nemotron-speech-en-0-6b-burst-h100-1x"
+                  },
+                  "pollingInterval": 5,
+                  "cooldownPeriod": 300,
+                  "minReplicaCount": 0,
+                  "maxReplicaCount": 1,
+                  "triggers": [
+                    {
+                      "type": "prometheus",
+                      "metricType": "AverageValue",
+                      "metadata": {
+                        "serverAddress": "http://fs2-r927c465c6d-monitoring-prometheus.fs2-observability.svc.cluster.local:9090",
+                        "metricName": "fs2_operation_demand_nemotron_speech_en_0_6b",
+                        "query": "clamp_max(clamp_min((sum(max by (model, state) (fs2_serve_operations{model=\"nemotron-speech-en-0-6b\",state=~\"queued|activating|running\"})) OR vector(0)) - 1, 0), 1)",
+                        "threshold": "1",
+                        "activationThreshold": "0",
+                        "ignoreNullValues": "false"
+                      }
+                    },
+                    {
+                      "type": "prometheus",
+                      "metricType": "AverageValue",
+                      "metadata": {
+                        "serverAddress": "http://fs2-r927c465c6d-monitoring-prometheus.fs2-observability.svc.cluster.local:9090",
+                        "metricName": "fs2_operation_demand_nemotron_speech_en_0_6b_startup",
+                        "query": "(sum((max by (namespace, deployment) (kube_deployment_spec_replicas{namespace=\"fs2-models\",deployment=\"nemotron-speech-en-0-6b-burst-h100-1x\"}) > 0) and on (namespace, deployment) ((max by (namespace, deployment) ((timestamp(kube_deployment_spec_replicas{namespace=\"fs2-models\",deployment=\"nemotron-speech-en-0-6b-burst-h100-1x\"}) and (idelta(kube_deployment_spec_replicas{namespace=\"fs2-models\",deployment=\"nemotron-speech-en-0-6b-burst-h100-1x\"}[2m]) > 0)) or max_over_time((timestamp(kube_deployment_spec_replicas{namespace=\"fs2-models\",deployment=\"nemotron-speech-en-0-6b-burst-h100-1x\"}) and (idelta(kube_deployment_spec_replicas{namespace=\"fs2-models\",deployment=\"nemotron-speech-en-0-6b-burst-h100-1x\"}[2m]) > 0))[900s:1s])) > (time() - 900)) or (max by (namespace, deployment) (kube_deployment_created{namespace=\"fs2-models\",deployment=\"nemotron-speech-en-0-6b-burst-h100-1x\"}) > (time() - 900))) and on () (count(max by (namespace, pod, uid) (kube_pod_status_phase{namespace=\"fs2-models\",phase=~\"Pending|Running\"} == 1) and on (namespace, pod, uid) (label_replace(max by (namespace, pod, uid, owner_name) (kube_pod_owner{namespace=\"fs2-models\",owner_kind=\"ReplicaSet\",owner_is_controller=\"true\"} == 1), \"replicaset\", \"$1\", \"owner_name\", \"(.+)\") and on (namespace, replicaset) (max by (namespace, replicaset) (kube_replicaset_owner{namespace=\"fs2-models\",owner_kind=\"Deployment\",owner_is_controller=\"true\",owner_name=\"nemotron-speech-en-0-6b-burst-h100-1x\"} == 1) and on (namespace, replicaset) max by (namespace, replicaset) (kube_replicaset_spec_replicas{namespace=\"fs2-models\"} > 0))) unless on (namespace, pod, uid) max by (namespace, pod, uid) (kube_pod_status_ready{namespace=\"fs2-models\",condition=\"true\"} == 1) unless on (namespace, pod, uid) max by (namespace, pod, uid) (kube_pod_deletion_timestamp{namespace=\"fs2-models\"})) > 0)) * 1) OR vector(0)",
+                        "threshold": "1",
+                        "activationThreshold": "0",
+                        "ignoreNullValues": "false"
+                      }
+                    }
+                  ]
+                }
+              },
+              "digest": "sha256:8cfb5e8cd1fc6e83df3ac35dfb1d68b55d560a558f3e031a065105f095f7f747",
+              "fieldManager": "fs2-model-controller",
+              "forceConflicts": false
+            },
+            {
+              "apiVersion": "v1",
+              "kind": "ConfigMap",
+              "namespace": "fs2-models",
+              "name": "fs2-model-publication-nemotron-speech-en-0-6b",
+              "manifest": {
+                "apiVersion": "v1",
+                "kind": "ConfigMap",
+                "metadata": {
+                  "name": "fs2-model-publication-nemotron-speech-en-0-6b",
+                  "namespace": "fs2-models",
+                  "labels": {
+                    "app.kubernetes.io/managed-by": "fs2-model-controller",
+                    "app.kubernetes.io/part-of": "fs2-serve",
+                    "app.kubernetes.io/component": "model-runtime",
+                    "fs2-serve.nebius.ai/model-deployment": "nemotron-speech-en-0-6b",
+                    "fs2-serve.nebius.ai/model-id": "nemotron-speech-en-0-6b",
+                    "fs2-serve.nebius.ai/component": "publication-intent"
+                  },
+                  "annotations": {
+                    "fs2-serve.nebius.ai/spec-digest": "sha256:c3b586babfae71ca3c1aacba1982e6d79458ad59290a7e799de4cc24edc95447",
+                    "fs2-serve.nebius.ai/effective-hot-floor": "1"
+                  }
+                },
+                "data": {
+                  "schema": "fs2-serve.nebius.ai/model-publication-intent/v1",
+                  "model_id": "nemotron-speech-en-0-6b",
+                  "tenant_id": "tenant-e00f3wdfzwfjgbcyfv",
+                  "openai": "false",
+                  "openai_aliases_json": "[]",
+                  "mcp": "true",
+                  "mcp_tool_name": "infer_nemotron_speech_en_0_6b",
+                  "policy_ref": "tenant-default.v1",
+                  "readiness_gate": "ModelDeployment/Ready=True"
+                }
+              },
+              "digest": "sha256:fa7df5a86303823471ecc6cbceefa72a5daa52cefcb038b9bf4b3d28197bd7ca",
+              "fieldManager": "fs2-model-controller",
+              "forceConflicts": false
+            },
+            {
+              "apiVersion": "v1",
+              "kind": "Service",
+              "namespace": "fs2-models",
+              "name": "nemotron-speech-en-0-6b",
+              "manifest": {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {
+                  "labels": {
+                    "app.kubernetes.io/name": "nemotron-speech-en-0-6b",
+                    "fs2-serve.nebius.ai/model-id": "nemotron-speech-en-0-6b",
+                    "app.kubernetes.io/managed-by": "fs2-model-controller",
+                    "app.kubernetes.io/part-of": "fs2-serve",
+                    "app.kubernetes.io/component": "model-runtime",
+                    "fs2-serve.nebius.ai/model-deployment": "nemotron-speech-en-0-6b"
+                  },
+                  "name": "nemotron-speech-en-0-6b",
+                  "namespace": "fs2-models",
+                  "annotations": {
+                    "fs2-serve.nebius.ai/spec-digest": "sha256:c3b586babfae71ca3c1aacba1982e6d79458ad59290a7e799de4cc24edc95447",
+                    "fs2-serve.nebius.ai/effective-hot-floor": "1"
+                  }
+                },
+                "spec": {
+                  "ports": [
+                    {
+                      "name": "http",
+                      "port": 8000,
+                      "targetPort": "http"
+                    }
+                  ],
+                  "selector": {
+                    "fs2-serve.nebius.ai/model-deployment": "nemotron-speech-en-0-6b"
+                  },
+                  "type": "ClusterIP"
+                }
+              },
+              "digest": "sha256:3d8fb9d7946580ed00e88d46c8cc49aad827d900e732d24b870150d4ce439731",
+              "fieldManager": "fs2-model-controller",
+              "forceConflicts": false
+            }
+          ],
+          "endpoint": {
+            "namespace": "fs2-models",
+            "serviceName": "nemotron-speech-en-0-6b",
+            "servicePort": 8000
+          }
+        },
+        "created_at": "2026-09-16T11:14:12.245155Z",
+        "expires_at": "2026-09-16T11:29:12.245155Z",
+        "mutation_supported": true,
+        "blocked_actions": []
+      },
+      "apply_http_status": 200,
+      "apply": {
+        "meta": {
+          "schema_version": "fs2.admin-api/v1",
+          "generated_at": "2026-09-16T11:14:12.498475Z",
+          "context": {
+            "project": "project-e00rene",
+            "cluster": "k8s-inference-h100",
+            "region": "eu-north1",
+            "from_at": "2026-09-16T10:14:12.498439Z",
+            "to_at": "2026-09-16T11:14:12.498439Z",
+            "timezone": "UTC"
+          },
+          "sources": [
+            {
+              "id": "postgresql",
+              "state": "available",
+              "observed_at": "2026-09-16T11:14:12.498475Z",
+              "age_seconds": 0.0,
+              "reason": null
+            }
+          ],
+          "warnings": []
+        },
+        "data": {
+          "revision": {
+            "namespace": "fs2-models",
+            "name": "nemotron-speech-en-0-6b",
+            "tenant_id": "tenant-e00f3wdfzwfjgbcyfv",
+            "revision": 1,
+            "etag": "sha256:c3b586babfae71ca3c1aacba1982e6d79458ad59290a7e799de4cc24edc95447",
+            "spec": {
+              "modelRef": "nemotron-speech-en-0-6b",
+              "app": null,
+              "tenantId": "tenant-e00f3wdfzwfjgbcyfv",
+              "lifecycle": {
+                "desiredState": "Enabled"
+              },
+              "artifact": {
+                "revision": "ebe59e5a817142986528bbbee5dba8db7b38ed50",
+                "manifestDigest": "sha256:e99e16f47b043778b8aa646f0baacbc8526bd4ade0b0ca0e365bc1164560b601",
+                "storageRef": null
+              },
+              "runtime": {
+                "profile": "custom",
+                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/en@sha256:288f6caf0c2feb3690c963969e4a26c45a38ca1338f4abe80570b24db91423d2",
+                "templateRef": {
+                  "name": "nemotron-speech-en-0-6b.legacy-v1",
+                  "digest": "sha256:1c98e13b2cadf872eb2b5b5640e45b64e5e82ffea12e171e9f8584f34bdc8b40"
+                }
+              },
+              "placement": {
+                "poolRefs": [
+                  "h100-1x",
+                  "h100-reserved-8x"
+                ],
+                "acceleratorsPerReplica": 1,
+                "topologyPolicy": "SingleNode"
+              },
+              "availability": {
+                "minReplicas": 1,
+                "maxReplicas": 2,
+                "idleSeconds": 300,
+                "targetQueueDepth": 1,
+                "pollingIntervalSeconds": 5,
+                "cooldownSeconds": 300,
+                "startupTimeoutSeconds": null,
+                "warmWindows": []
+              },
+              "cache": {
+                "tier": "Disabled",
+                "snapshotPreference": "Never",
+                "snapshotRef": null,
+                "mechanism": null
+              },
+              "queue": {
+                "localQueue": "inference-models",
+                "priorityClass": "standard",
+                "maxQueueSeconds": 7200
+              },
+              "rollout": {
+                "strategy": "Recreate",
+                "maxUnavailable": 1,
+                "maxSurge": 0,
+                "progressDeadlineSeconds": 7200
+              },
+              "exposure": {
+                "openAI": false,
+                "openAIAliases": [],
+                "mcp": true,
+                "mcpToolName": "infer_nemotron_speech_en_0_6b"
+              },
+              "policy": {
+                "visibility": "Tenant",
+                "policyRef": "tenant-default.v1",
+                "allowedPrincipalIds": [
+                  "rene"
+                ],
+                "ratePolicyRef": null
+              },
+              "adoption": {
+                "mode": "None",
+                "receiptRef": null
+              },
+              "fastStart": {
+                "mode": "Fixed",
+                "level": "Off",
+                "minimumLevel": null,
+                "maximumLevel": null,
+                "fallbackPolicy": "AllowLowerLevel"
+              }
+            },
+            "action": "create",
+            "created_at": "2026-09-16T11:14:12.469791Z",
+            "created_by": "bootstrap-admin",
+            "previous_revision": null
+          },
+          "idempotent_replay": false,
+          "projection": "applied",
+          "receipt": {
+            "namespace": "fs2-models",
+            "name": "nemotron-speech-en-0-6b",
+            "uid": "7d03ec94-52b1-42b3-b494-95ea8226ac7e",
+            "resource_version": "44336868",
+            "generation": 1,
+            "spec_digest": "sha256:c3b586babfae71ca3c1aacba1982e6d79458ad59290a7e799de4cc24edc95447"
+          },
+          "reason": null
+        }
+      }
+    },
+    {
+      "model": "nemotron-speech-multilingual-0-6b",
+      "preview": {
+        "schema_version": "fs2-serve.nebius.ai/model-deployment-render-preview/v1",
+        "preview_id": "6252e05c-3725-44bd-aaf1-7d877084f4d6",
+        "name": "nemotron-speech-multilingual-0-6b",
+        "namespace": "fs2-models",
+        "base_etag": null,
+        "proposed_etag": "sha256:56058a5a1cfac85ab6d76f71d95c2a211bd2a7de24802a84b5f209ee4b7809c1",
+        "decision": {
+          "disposition": "accepted",
+          "specDigest": "sha256:56058a5a1cfac85ab6d76f71d95c2a211bd2a7de24802a84b5f209ee4b7809c1",
+          "issues": [],
+          "terraformInputs": [],
+          "admittedPoolRef": "h100-reserved-8x",
+          "fastStart": {
+            "mode": "Fixed",
+            "fallbackPolicy": "AllowLowerLevel",
+            "requestedLevel": "Off",
+            "minimumLevel": null,
+            "maximumLevel": null,
+            "qualifiedLevel": "Off",
+            "assignedLevel": "Off",
+            "requestedTargetSeconds": null,
+            "targetSeconds": null,
+            "qualification": {
+              "state": "NoTarget",
+              "reason": "NoFastStartTarget",
+              "message": "assigned level Off has no startup-time target (h100-1x: no compatible model-start p95)"
+            },
+            "modelStart": null,
+            "capacityWait": null,
+            "endToEnd": null,
+            "selectedIdentityDigest": null,
+            "pools": [
+              {
+                "poolRef": "h100-1x",
+                "acceleratorClass": "nvidia-h100-sxm5-80gb",
+                "qualifiedLevel": "Off",
+                "reason": "NoCurrentRuntimeEvidence",
+                "mechanisms": [],
+                "selectedMechanism": null,
+                "selectedCompatibilityTupleDigest": null,
+                "selectedIdentityDigest": null,
+                "receiptDigests": [],
+                "modelStart": null,
+                "capacityWait": null,
+                "endToEnd": null,
+                "paths": [],
+                "retainedPaths": []
+              },
+              {
+                "poolRef": "h100-reserved-8x",
+                "acceleratorClass": "nvidia-h100-sxm5-80gb",
+                "qualifiedLevel": "Off",
+                "reason": "NoCurrentRuntimeEvidence",
+                "mechanisms": [],
+                "selectedMechanism": null,
+                "selectedCompatibilityTupleDigest": null,
+                "selectedIdentityDigest": null,
+                "receiptDigests": [],
+                "modelStart": null,
+                "capacityWait": null,
+                "endToEnd": null,
+                "paths": [],
+                "retainedPaths": []
+              }
+            ]
+          },
+          "fastStartMechanism": {
+            "mechanism": "conventional",
+            "source": "Default",
+            "renderable": true,
+            "reason": "ConventionalDefault"
+          }
+        },
+        "render": {
+          "renderer": "legacy-manifest-v1",
+          "specDigest": "sha256:56058a5a1cfac85ab6d76f71d95c2a211bd2a7de24802a84b5f209ee4b7809c1",
+          "renderDigest": "sha256:78937412b1be51748440579ae3173e759bf1dc7f1c8da26d236ea8cbba131bc0",
+          "resources": [
+            {
+              "apiVersion": "apps/v1",
+              "kind": "Deployment",
+              "namespace": "fs2-models",
+              "name": "nemotron-speech-multilingual-0-6b-burst-h100-1x",
+              "manifest": {
+                "apiVersion": "apps/v1",
+                "kind": "Deployment",
+                "metadata": {
+                  "labels": {
+                    "app.kubernetes.io/name": "nemotron-speech-multilingual-0-6b",
+                    "app.kubernetes.io/part-of": "fs2-serve",
+                    "fs2-serve.nebius.ai/model-id": "nemotron-speech-multilingual-0-6b",
+                    "app.kubernetes.io/managed-by": "fs2-model-controller",
+                    "app.kubernetes.io/component": "model-runtime",
+                    "fs2-serve.nebius.ai/model-deployment": "nemotron-speech-multilingual-0-6b",
+                    "kueue.x-k8s.io/queue-name": "inference-models",
+                    "kueue.x-k8s.io/priority-class": "standard",
+                    "fs2-serve.nebius.ai/workload-role": "burst-h100-1x"
+                  },
+                  "name": "nemotron-speech-multilingual-0-6b-burst-h100-1x",
+                  "namespace": "fs2-models",
+                  "annotations": {
+                    "fs2-serve.nebius.ai/spec-digest": "sha256:56058a5a1cfac85ab6d76f71d95c2a211bd2a7de24802a84b5f209ee4b7809c1",
+                    "fs2-serve.nebius.ai/effective-hot-floor": "1",
+                    "fs2-serve.nebius.ai/workload-pool-ref": "h100-1x",
+                    "fs2-serve.nebius.ai/workload-role": "burst",
+                    "fs2-serve.nebius.ai/workload-segment-capacity": "1",
+                    "fs2-serve.nebius.ai/workload-segment-offset": "1"
+                  }
+                },
+                "spec": {
+                  "revisionHistoryLimit": 2,
+                  "selector": {
+                    "matchLabels": {
+                      "fs2-serve.nebius.ai/model-deployment": "nemotron-speech-multilingual-0-6b",
+                      "fs2-serve.nebius.ai/workload-role": "burst-h100-1x"
+                    }
+                  },
+                  "strategy": {
+                    "type": "Recreate"
+                  },
+                  "template": {
+                    "metadata": {
+                      "labels": {
+                        "fs2-serve.nebius.ai/model-id": "nemotron-speech-multilingual-0-6b",
+                        "app.kubernetes.io/managed-by": "fs2-model-controller",
+                        "app.kubernetes.io/part-of": "fs2-serve",
+                        "app.kubernetes.io/component": "model-runtime",
+                        "fs2-serve.nebius.ai/model-deployment": "nemotron-speech-multilingual-0-6b",
+                        "fs2-serve.nebius.ai/workload-role": "burst-h100-1x"
+                      },
+                      "annotations": {
+                        "fs2-serve.nebius.ai/spec-digest": "sha256:56058a5a1cfac85ab6d76f71d95c2a211bd2a7de24802a84b5f209ee4b7809c1",
+                        "fs2-serve.nebius.ai/effective-hot-floor": "1",
+                        "fs2-serve.nebius.ai/workload-pool-ref": "h100-1x",
+                        "fs2-serve.nebius.ai/workload-role": "burst",
+                        "fs2-serve.nebius.ai/workload-segment-capacity": "1",
+                        "fs2-serve.nebius.ai/workload-segment-offset": "1"
+                      }
+                    },
+                    "spec": {
+                      "automountServiceAccountToken": false,
+                      "containers": [
+                        {
+                          "command": [
+                            "python",
+                            "-m",
+                            "fs2_speech.server"
+                          ],
+                          "env": [
+                            {
+                              "name": "FS2_SPEECH_PROFILE_JSON",
+                              "value": "{\"model\":\"nemotron-speech-multilingual-0.6b\",\"chunk_size_ms\":560,\"strip_language_tags\":true,\"decoding\":\"greedy_batch\",\"beam_size\":4,\"precision\":\"float32\",\"confidence\":false,\"cuda_graphs\":false}"
+                            },
+                            {
+                              "name": "FS2_SPEECH_ARTIFACT_HOSTS",
+                              "valueFrom": {
+                                "configMapKeyRef": {
+                                  "key": "artifact-hosts",
+                                  "name": "fs2-speech-runtime-settings"
+                                }
+                              }
+                            },
+                            {
+                              "name": "OMP_NUM_THREADS",
+                              "value": "2"
+                            },
+                            {
+                              "name": "TORCHINDUCTOR_CACHE_DIR",
+                              "value": "/cache/inductor"
+                            },
+                            {
+                              "name": "TRITON_CACHE_DIR",
+                              "value": "/cache/triton"
+                            }
+                          ],
+                          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/multilingual@sha256:628c1ffdb68c6e510de5a691432b4da9a6f64941ce5f35c57213ad8cea8b7205",
+                          "imagePullPolicy": "IfNotPresent",
+                          "lifecycle": {
+                            "preStop": {
+                              "exec": {
+                                "command": [
+                                  "python",
+                                  "-c",
+                                  "import time,urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/drain', method='POST'), timeout=5).read(); time.sleep(5)"
+                                ]
+                              }
+                            }
+                          },
+                          "livenessProbe": {
+                            "failureThreshold": 4,
+                            "httpGet": {
+                              "path": "/healthz",
+                              "port": "http"
+                            },
+                            "periodSeconds": 15,
+                            "timeoutSeconds": 3
+                          },
+                          "name": "runtime",
+                          "ports": [
+                            {
+                              "containerPort": 8000,
+                              "name": "http"
+                            }
+                          ],
+                          "readinessProbe": {
+                            "httpGet": {
+                              "path": "/readyz",
+                              "port": "http"
+                            },
+                            "periodSeconds": 3,
+                            "timeoutSeconds": 2
+                          },
+                          "resources": {
+                            "limits": {
+                              "cpu": "4",
+                              "ephemeral-storage": "24Gi",
+                              "memory": "32Gi",
+                              "nvidia.com/gpu": "1"
+                            },
+                            "requests": {
+                              "cpu": "2",
+                              "ephemeral-storage": "8Gi",
+                              "memory": "16Gi",
+                              "nvidia.com/gpu": "1"
+                            }
+                          },
+                          "securityContext": {
+                            "allowPrivilegeEscalation": false,
+                            "capabilities": {
+                              "drop": [
+                                "ALL"
+                              ]
+                            }
+                          },
+                          "startupProbe": {
+                            "failureThreshold": 120,
+                            "httpGet": {
+                              "path": "/readyz",
+                              "port": "http"
+                            },
+                            "periodSeconds": 5,
+                            "timeoutSeconds": 3
+                          },
+                          "volumeMounts": [
+                            {
+                              "mountPath": "/cache",
+                              "name": "cache"
+                            },
+                            {
+                              "mountPath": "/tmp",
+                              "name": "tmp"
+                            },
+                            {
+                              "mountPath": "/dev/shm",
+                              "name": "shm"
+                            }
+                          ]
+                        }
+                      ],
+                      "nodeSelector": {
+                        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+                        "accelerator.fs2.nebius/pool-id": "h100-1x",
+                        "capacity.fs2.nebius/gpu-count": "1",
+                        "capacity.fs2.nebius/type": "preemptible",
+                        "local-nvme.fs2.nebius/eligible": "false",
+                        "snapshot.fs2.nebius/eligible": "false",
+                        "topology.fs2.nebius/scope": "standalone",
+                        "workload.fs2.nebius/gpu": "true"
+                      },
+                      "securityContext": {
+                        "fsGroup": 10001,
+                        "runAsGroup": 10001,
+                        "runAsNonRoot": true,
+                        "runAsUser": 10001
+                      },
+                      "terminationGracePeriodSeconds": 7230,
+                      "tolerations": [
+                        {
+                          "effect": "NoSchedule",
+                          "key": "dedicated",
+                          "operator": "Equal",
+                          "value": "fs2-inference"
+                        }
+                      ],
+                      "volumes": [
+                        {
+                          "emptyDir": {
+                            "sizeLimit": "8Gi"
+                          },
+                          "name": "cache"
+                        },
+                        {
+                          "emptyDir": {
+                            "sizeLimit": "2Gi"
+                          },
+                          "name": "tmp"
+                        },
+                        {
+                          "emptyDir": {
+                            "medium": "Memory",
+                            "sizeLimit": "1Gi"
+                          },
+                          "name": "shm"
+                        }
+                      ]
+                    }
+                  },
+                  "progressDeadlineSeconds": 7200
+                }
+              },
+              "digest": "sha256:f838d66ffa9c875872d8a571e3261ec6861028050c65b5d0fbaa7c2951b74d3f",
+              "fieldManager": "fs2-model-controller",
+              "forceConflicts": false
+            },
+            {
+              "apiVersion": "apps/v1",
+              "kind": "Deployment",
+              "namespace": "fs2-models",
+              "name": "nemotron-speech-multilingual-0-6b-hot-h100-reserved-8x",
+              "manifest": {
+                "apiVersion": "apps/v1",
+                "kind": "Deployment",
+                "metadata": {
+                  "labels": {
+                    "app.kubernetes.io/name": "nemotron-speech-multilingual-0-6b",
+                    "app.kubernetes.io/part-of": "fs2-serve",
+                    "fs2-serve.nebius.ai/model-id": "nemotron-speech-multilingual-0-6b",
+                    "app.kubernetes.io/managed-by": "fs2-model-controller",
+                    "app.kubernetes.io/component": "model-runtime",
+                    "fs2-serve.nebius.ai/model-deployment": "nemotron-speech-multilingual-0-6b",
+                    "kueue.x-k8s.io/queue-name": "inference-models",
+                    "kueue.x-k8s.io/priority-class": "standard",
+                    "fs2-serve.nebius.ai/workload-role": "hot-h100-reserved-8x"
+                  },
+                  "name": "nemotron-speech-multilingual-0-6b-hot-h100-reserved-8x",
+                  "namespace": "fs2-models",
+                  "annotations": {
+                    "fs2-serve.nebius.ai/spec-digest": "sha256:56058a5a1cfac85ab6d76f71d95c2a211bd2a7de24802a84b5f209ee4b7809c1",
+                    "fs2-serve.nebius.ai/effective-hot-floor": "1",
+                    "fs2-serve.nebius.ai/workload-pool-ref": "h100-reserved-8x",
+                    "fs2-serve.nebius.ai/workload-role": "hot",
+                    "fs2-serve.nebius.ai/workload-segment-capacity": "1",
+                    "fs2-serve.nebius.ai/workload-segment-offset": "0"
+                  }
+                },
+                "spec": {
+                  "replicas": 1,
+                  "revisionHistoryLimit": 2,
+                  "selector": {
+                    "matchLabels": {
+                      "fs2-serve.nebius.ai/model-deployment": "nemotron-speech-multilingual-0-6b",
+                      "fs2-serve.nebius.ai/workload-role": "hot-h100-reserved-8x"
+                    }
+                  },
+                  "strategy": {
+                    "type": "Recreate"
+                  },
+                  "template": {
+                    "metadata": {
+                      "labels": {
+                        "fs2-serve.nebius.ai/model-id": "nemotron-speech-multilingual-0-6b",
+                        "app.kubernetes.io/managed-by": "fs2-model-controller",
+                        "app.kubernetes.io/part-of": "fs2-serve",
+                        "app.kubernetes.io/component": "model-runtime",
+                        "fs2-serve.nebius.ai/model-deployment": "nemotron-speech-multilingual-0-6b",
+                        "fs2-serve.nebius.ai/workload-role": "hot-h100-reserved-8x"
+                      },
+                      "annotations": {
+                        "fs2-serve.nebius.ai/spec-digest": "sha256:56058a5a1cfac85ab6d76f71d95c2a211bd2a7de24802a84b5f209ee4b7809c1",
+                        "fs2-serve.nebius.ai/effective-hot-floor": "1",
+                        "fs2-serve.nebius.ai/workload-pool-ref": "h100-reserved-8x",
+                        "fs2-serve.nebius.ai/workload-role": "hot",
+                        "fs2-serve.nebius.ai/workload-segment-capacity": "1",
+                        "fs2-serve.nebius.ai/workload-segment-offset": "0"
+                      }
+                    },
+                    "spec": {
+                      "automountServiceAccountToken": false,
+                      "containers": [
+                        {
+                          "command": [
+                            "python",
+                            "-m",
+                            "fs2_speech.server"
+                          ],
+                          "env": [
+                            {
+                              "name": "FS2_SPEECH_PROFILE_JSON",
+                              "value": "{\"model\":\"nemotron-speech-multilingual-0.6b\",\"chunk_size_ms\":560,\"strip_language_tags\":true,\"decoding\":\"greedy_batch\",\"beam_size\":4,\"precision\":\"float32\",\"confidence\":false,\"cuda_graphs\":false}"
+                            },
+                            {
+                              "name": "FS2_SPEECH_ARTIFACT_HOSTS",
+                              "valueFrom": {
+                                "configMapKeyRef": {
+                                  "key": "artifact-hosts",
+                                  "name": "fs2-speech-runtime-settings"
+                                }
+                              }
+                            },
+                            {
+                              "name": "OMP_NUM_THREADS",
+                              "value": "2"
+                            },
+                            {
+                              "name": "TORCHINDUCTOR_CACHE_DIR",
+                              "value": "/cache/inductor"
+                            },
+                            {
+                              "name": "TRITON_CACHE_DIR",
+                              "value": "/cache/triton"
+                            }
+                          ],
+                          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/multilingual@sha256:628c1ffdb68c6e510de5a691432b4da9a6f64941ce5f35c57213ad8cea8b7205",
+                          "imagePullPolicy": "IfNotPresent",
+                          "lifecycle": {
+                            "preStop": {
+                              "exec": {
+                                "command": [
+                                  "python",
+                                  "-c",
+                                  "import time,urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/drain', method='POST'), timeout=5).read(); time.sleep(5)"
+                                ]
+                              }
+                            }
+                          },
+                          "livenessProbe": {
+                            "failureThreshold": 4,
+                            "httpGet": {
+                              "path": "/healthz",
+                              "port": "http"
+                            },
+                            "periodSeconds": 15,
+                            "timeoutSeconds": 3
+                          },
+                          "name": "runtime",
+                          "ports": [
+                            {
+                              "containerPort": 8000,
+                              "name": "http"
+                            }
+                          ],
+                          "readinessProbe": {
+                            "httpGet": {
+                              "path": "/readyz",
+                              "port": "http"
+                            },
+                            "periodSeconds": 3,
+                            "timeoutSeconds": 2
+                          },
+                          "resources": {
+                            "limits": {
+                              "cpu": "4",
+                              "ephemeral-storage": "24Gi",
+                              "memory": "32Gi",
+                              "nvidia.com/gpu": "1"
+                            },
+                            "requests": {
+                              "cpu": "2",
+                              "ephemeral-storage": "8Gi",
+                              "memory": "16Gi",
+                              "nvidia.com/gpu": "1"
+                            }
+                          },
+                          "securityContext": {
+                            "allowPrivilegeEscalation": false,
+                            "capabilities": {
+                              "drop": [
+                                "ALL"
+                              ]
+                            }
+                          },
+                          "startupProbe": {
+                            "failureThreshold": 120,
+                            "httpGet": {
+                              "path": "/readyz",
+                              "port": "http"
+                            },
+                            "periodSeconds": 5,
+                            "timeoutSeconds": 3
+                          },
+                          "volumeMounts": [
+                            {
+                              "mountPath": "/cache",
+                              "name": "cache"
+                            },
+                            {
+                              "mountPath": "/tmp",
+                              "name": "tmp"
+                            },
+                            {
+                              "mountPath": "/dev/shm",
+                              "name": "shm"
+                            }
+                          ]
+                        }
+                      ],
+                      "nodeSelector": {
+                        "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+                        "accelerator.fs2.nebius/pool-id": "h100-reserved-8x",
+                        "capacity.fs2.nebius/gpu-count": "8",
+                        "capacity.fs2.nebius/source": "capacity-block",
+                        "capacity.fs2.nebius/type": "regular",
+                        "local-nvme.fs2.nebius/eligible": "false",
+                        "snapshot.fs2.nebius/eligible": "false",
+                        "topology.fs2.nebius/scope": "standalone",
+                        "workload.fs2.nebius/gpu": "true"
+                      },
+                      "securityContext": {
+                        "fsGroup": 10001,
+                        "runAsGroup": 10001,
+                        "runAsNonRoot": true,
+                        "runAsUser": 10001
+                      },
+                      "terminationGracePeriodSeconds": 7230,
+                      "tolerations": [
+                        {
+                          "effect": "NoSchedule",
+                          "key": "dedicated",
+                          "operator": "Equal",
+                          "value": "fs2-inference"
+                        }
+                      ],
+                      "volumes": [
+                        {
+                          "emptyDir": {
+                            "sizeLimit": "8Gi"
+                          },
+                          "name": "cache"
+                        },
+                        {
+                          "emptyDir": {
+                            "sizeLimit": "2Gi"
+                          },
+                          "name": "tmp"
+                        },
+                        {
+                          "emptyDir": {
+                            "medium": "Memory",
+                            "sizeLimit": "1Gi"
+                          },
+                          "name": "shm"
+                        }
+                      ]
+                    }
+                  },
+                  "progressDeadlineSeconds": 7200
+                }
+              },
+              "digest": "sha256:70dfadb11a0c6bf41794c46f5bff794c63bd2144f86f108c8f5338e60df14a33",
+              "fieldManager": "fs2-model-controller",
+              "forceConflicts": false
+            },
+            {
+              "apiVersion": "keda.sh/v1alpha1",
+              "kind": "ScaledObject",
+              "namespace": "fs2-models",
+              "name": "fs2-model-nemotron-speech-multilingual-0-6b-burst-h100-1x",
+              "manifest": {
+                "apiVersion": "keda.sh/v1alpha1",
+                "kind": "ScaledObject",
+                "metadata": {
+                  "name": "fs2-model-nemotron-speech-multilingual-0-6b-burst-h100-1x",
+                  "namespace": "fs2-models",
+                  "labels": {
+                    "app.kubernetes.io/managed-by": "fs2-model-controller",
+                    "app.kubernetes.io/part-of": "fs2-serve",
+                    "app.kubernetes.io/component": "model-runtime",
+                    "fs2-serve.nebius.ai/model-deployment": "nemotron-speech-multilingual-0-6b",
+                    "fs2-serve.nebius.ai/model-id": "nemotron-speech-multilingual-0-6b",
+                    "fs2-serve.nebius.ai/workload-role": "burst-h100-1x"
+                  },
+                  "annotations": {
+                    "fs2-serve.nebius.ai/spec-digest": "sha256:56058a5a1cfac85ab6d76f71d95c2a211bd2a7de24802a84b5f209ee4b7809c1",
+                    "fs2-serve.nebius.ai/effective-hot-floor": "1",
+                    "fs2-serve.nebius.ai/workload-pool-ref": "h100-1x",
+                    "fs2-serve.nebius.ai/workload-role": "burst",
+                    "fs2-serve.nebius.ai/workload-segment-capacity": "1",
+                    "fs2-serve.nebius.ai/workload-segment-offset": "1"
+                  }
+                },
+                "spec": {
+                  "scaleTargetRef": {
+                    "apiVersion": "apps/v1",
+                    "kind": "Deployment",
+                    "name": "nemotron-speech-multilingual-0-6b-burst-h100-1x"
+                  },
+                  "pollingInterval": 5,
+                  "cooldownPeriod": 300,
+                  "minReplicaCount": 0,
+                  "maxReplicaCount": 1,
+                  "triggers": [
+                    {
+                      "type": "prometheus",
+                      "metricType": "AverageValue",
+                      "metadata": {
+                        "serverAddress": "http://fs2-r927c465c6d-monitoring-prometheus.fs2-observability.svc.cluster.local:9090",
+                        "metricName": "fs2_operation_demand_nemotron_speech_multilingual_0_6b",
+                        "query": "clamp_max(clamp_min((sum(max by (model, state) (fs2_serve_operations{model=\"nemotron-speech-multilingual-0-6b\",state=~\"queued|activating|running\"})) OR vector(0)) - 1, 0), 1)",
+                        "threshold": "1",
+                        "activationThreshold": "0",
+                        "ignoreNullValues": "false"
+                      }
+                    },
+                    {
+                      "type": "prometheus",
+                      "metricType": "AverageValue",
+                      "metadata": {
+                        "serverAddress": "http://fs2-r927c465c6d-monitoring-prometheus.fs2-observability.svc.cluster.local:9090",
+                        "metricName": "fs2_operation_demand_nemotron_speech_multilingual_0_6b_startup",
+                        "query": "(sum((max by (namespace, deployment) (kube_deployment_spec_replicas{namespace=\"fs2-models\",deployment=\"nemotron-speech-multilingual-0-6b-burst-h100-1x\"}) > 0) and on (namespace, deployment) ((max by (namespace, deployment) ((timestamp(kube_deployment_spec_replicas{namespace=\"fs2-models\",deployment=\"nemotron-speech-multilingual-0-6b-burst-h100-1x\"}) and (idelta(kube_deployment_spec_replicas{namespace=\"fs2-models\",deployment=\"nemotron-speech-multilingual-0-6b-burst-h100-1x\"}[2m]) > 0)) or max_over_time((timestamp(kube_deployment_spec_replicas{namespace=\"fs2-models\",deployment=\"nemotron-speech-multilingual-0-6b-burst-h100-1x\"}) and (idelta(kube_deployment_spec_replicas{namespace=\"fs2-models\",deployment=\"nemotron-speech-multilingual-0-6b-burst-h100-1x\"}[2m]) > 0))[900s:1s])) > (time() - 900)) or (max by (namespace, deployment) (kube_deployment_created{namespace=\"fs2-models\",deployment=\"nemotron-speech-multilingual-0-6b-burst-h100-1x\"}) > (time() - 900))) and on () (count(max by (namespace, pod, uid) (kube_pod_status_phase{namespace=\"fs2-models\",phase=~\"Pending|Running\"} == 1) and on (namespace, pod, uid) (label_replace(max by (namespace, pod, uid, owner_name) (kube_pod_owner{namespace=\"fs2-models\",owner_kind=\"ReplicaSet\",owner_is_controller=\"true\"} == 1), \"replicaset\", \"$1\", \"owner_name\", \"(.+)\") and on (namespace, replicaset) (max by (namespace, replicaset) (kube_replicaset_owner{namespace=\"fs2-models\",owner_kind=\"Deployment\",owner_is_controller=\"true\",owner_name=\"nemotron-speech-multilingual-0-6b-burst-h100-1x\"} == 1) and on (namespace, replicaset) max by (namespace, replicaset) (kube_replicaset_spec_replicas{namespace=\"fs2-models\"} > 0))) unless on (namespace, pod, uid) max by (namespace, pod, uid) (kube_pod_status_ready{namespace=\"fs2-models\",condition=\"true\"} == 1) unless on (namespace, pod, uid) max by (namespace, pod, uid) (kube_pod_deletion_timestamp{namespace=\"fs2-models\"})) > 0)) * 1) OR vector(0)",
+                        "threshold": "1",
+                        "activationThreshold": "0",
+                        "ignoreNullValues": "false"
+                      }
+                    }
+                  ]
+                }
+              },
+              "digest": "sha256:19fddae5a3777b47acaf234b86940a499e9024f81fd1bc75c329aed1c7b15982",
+              "fieldManager": "fs2-model-controller",
+              "forceConflicts": false
+            },
+            {
+              "apiVersion": "v1",
+              "kind": "ConfigMap",
+              "namespace": "fs2-models",
+              "name": "fs2-model-publication-nemotron-speech-multilingual-0-6b",
+              "manifest": {
+                "apiVersion": "v1",
+                "kind": "ConfigMap",
+                "metadata": {
+                  "name": "fs2-model-publication-nemotron-speech-multilingual-0-6b",
+                  "namespace": "fs2-models",
+                  "labels": {
+                    "app.kubernetes.io/managed-by": "fs2-model-controller",
+                    "app.kubernetes.io/part-of": "fs2-serve",
+                    "app.kubernetes.io/component": "model-runtime",
+                    "fs2-serve.nebius.ai/model-deployment": "nemotron-speech-multilingual-0-6b",
+                    "fs2-serve.nebius.ai/model-id": "nemotron-speech-multilingual-0-6b",
+                    "fs2-serve.nebius.ai/component": "publication-intent"
+                  },
+                  "annotations": {
+                    "fs2-serve.nebius.ai/spec-digest": "sha256:56058a5a1cfac85ab6d76f71d95c2a211bd2a7de24802a84b5f209ee4b7809c1",
+                    "fs2-serve.nebius.ai/effective-hot-floor": "1"
+                  }
+                },
+                "data": {
+                  "schema": "fs2-serve.nebius.ai/model-publication-intent/v1",
+                  "model_id": "nemotron-speech-multilingual-0-6b",
+                  "tenant_id": "tenant-e00f3wdfzwfjgbcyfv",
+                  "openai": "false",
+                  "openai_aliases_json": "[]",
+                  "mcp": "true",
+                  "mcp_tool_name": "infer_nemotron_speech_multilingual_0_6b",
+                  "policy_ref": "tenant-default.v1",
+                  "readiness_gate": "ModelDeployment/Ready=True"
+                }
+              },
+              "digest": "sha256:9ea203c6711c5be97417c6bfa1622cb74b237b6658f97ff6a8e7418270c9a091",
+              "fieldManager": "fs2-model-controller",
+              "forceConflicts": false
+            },
+            {
+              "apiVersion": "v1",
+              "kind": "Service",
+              "namespace": "fs2-models",
+              "name": "nemotron-speech-multilingual-0-6b",
+              "manifest": {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {
+                  "labels": {
+                    "app.kubernetes.io/name": "nemotron-speech-multilingual-0-6b",
+                    "fs2-serve.nebius.ai/model-id": "nemotron-speech-multilingual-0-6b",
+                    "app.kubernetes.io/managed-by": "fs2-model-controller",
+                    "app.kubernetes.io/part-of": "fs2-serve",
+                    "app.kubernetes.io/component": "model-runtime",
+                    "fs2-serve.nebius.ai/model-deployment": "nemotron-speech-multilingual-0-6b"
+                  },
+                  "name": "nemotron-speech-multilingual-0-6b",
+                  "namespace": "fs2-models",
+                  "annotations": {
+                    "fs2-serve.nebius.ai/spec-digest": "sha256:56058a5a1cfac85ab6d76f71d95c2a211bd2a7de24802a84b5f209ee4b7809c1",
+                    "fs2-serve.nebius.ai/effective-hot-floor": "1"
+                  }
+                },
+                "spec": {
+                  "ports": [
+                    {
+                      "name": "http",
+                      "port": 8000,
+                      "targetPort": "http"
+                    }
+                  ],
+                  "selector": {
+                    "fs2-serve.nebius.ai/model-deployment": "nemotron-speech-multilingual-0-6b"
+                  },
+                  "type": "ClusterIP"
+                }
+              },
+              "digest": "sha256:9be37850ad7b239e53b573fd9189d170c30efe5ec5a615478337a2ba7d32d87e",
+              "fieldManager": "fs2-model-controller",
+              "forceConflicts": false
+            }
+          ],
+          "endpoint": {
+            "namespace": "fs2-models",
+            "serviceName": "nemotron-speech-multilingual-0-6b",
+            "servicePort": 8000
+          }
+        },
+        "created_at": "2026-09-16T11:14:12.605442Z",
+        "expires_at": "2026-09-16T11:29:12.605442Z",
+        "mutation_supported": true,
+        "blocked_actions": []
+      },
+      "apply_http_status": 200,
+      "apply": {
+        "meta": {
+          "schema_version": "fs2.admin-api/v1",
+          "generated_at": "2026-09-16T11:14:12.781601Z",
+          "context": {
+            "project": "project-e00rene",
+            "cluster": "k8s-inference-h100",
+            "region": "eu-north1",
+            "from_at": "2026-09-16T10:14:12.781561Z",
+            "to_at": "2026-09-16T11:14:12.781561Z",
+            "timezone": "UTC"
+          },
+          "sources": [
+            {
+              "id": "postgresql",
+              "state": "available",
+              "observed_at": "2026-09-16T11:14:12.781601Z",
+              "age_seconds": 0.0,
+              "reason": null
+            }
+          ],
+          "warnings": []
+        },
+        "data": {
+          "revision": {
+            "namespace": "fs2-models",
+            "name": "nemotron-speech-multilingual-0-6b",
+            "tenant_id": "tenant-e00f3wdfzwfjgbcyfv",
+            "revision": 1,
+            "etag": "sha256:56058a5a1cfac85ab6d76f71d95c2a211bd2a7de24802a84b5f209ee4b7809c1",
+            "spec": {
+              "modelRef": "nemotron-speech-multilingual-0-6b",
+              "app": null,
+              "tenantId": "tenant-e00f3wdfzwfjgbcyfv",
+              "lifecycle": {
+                "desiredState": "Enabled"
+              },
+              "artifact": {
+                "revision": "ea30d66debe3740a08b573244286791d423d6b3e",
+                "manifestDigest": "sha256:6fa1880f21800909855af0fa13a76b4fe042e33aae4c97b766bc3fa49dcdefd3",
+                "storageRef": null
+              },
+              "runtime": {
+                "profile": "custom",
+                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/multilingual@sha256:628c1ffdb68c6e510de5a691432b4da9a6f64941ce5f35c57213ad8cea8b7205",
+                "templateRef": {
+                  "name": "nemotron-speech-multilingual-0-6b.legacy-v1",
+                  "digest": "sha256:ecec8c6ac976b2aa35f8796a3662ed33a53bedb74cd4e7a9b9120752fc7feb54"
+                }
+              },
+              "placement": {
+                "poolRefs": [
+                  "h100-1x",
+                  "h100-reserved-8x"
+                ],
+                "acceleratorsPerReplica": 1,
+                "topologyPolicy": "SingleNode"
+              },
+              "availability": {
+                "minReplicas": 1,
+                "maxReplicas": 2,
+                "idleSeconds": 300,
+                "targetQueueDepth": 1,
+                "pollingIntervalSeconds": 5,
+                "cooldownSeconds": 300,
+                "startupTimeoutSeconds": null,
+                "warmWindows": []
+              },
+              "cache": {
+                "tier": "Disabled",
+                "snapshotPreference": "Never",
+                "snapshotRef": null,
+                "mechanism": null
+              },
+              "queue": {
+                "localQueue": "inference-models",
+                "priorityClass": "standard",
+                "maxQueueSeconds": 7200
+              },
+              "rollout": {
+                "strategy": "Recreate",
+                "maxUnavailable": 1,
+                "maxSurge": 0,
+                "progressDeadlineSeconds": 7200
+              },
+              "exposure": {
+                "openAI": false,
+                "openAIAliases": [],
+                "mcp": true,
+                "mcpToolName": "infer_nemotron_speech_multilingual_0_6b"
+              },
+              "policy": {
+                "visibility": "Tenant",
+                "policyRef": "tenant-default.v1",
+                "allowedPrincipalIds": [
+                  "rene"
+                ],
+                "ratePolicyRef": null
+              },
+              "adoption": {
+                "mode": "None",
+                "receiptRef": null
+              },
+              "fastStart": {
+                "mode": "Fixed",
+                "level": "Off",
+                "minimumLevel": null,
+                "maximumLevel": null,
+                "fallbackPolicy": "AllowLowerLevel"
+              }
+            },
+            "action": "create",
+            "created_at": "2026-09-16T11:14:12.727906Z",
+            "created_by": "bootstrap-admin",
+            "previous_revision": null
+          },
+          "idempotent_replay": false,
+          "projection": "applied",
+          "receipt": {
+            "namespace": "fs2-models",
+            "name": "nemotron-speech-multilingual-0-6b",
+            "uid": "52c3375f-079d-4a65-bcb4-7b3a542b3222",
+            "resource_version": "44336879",
+            "generation": 1,
+            "spec_digest": "sha256:56058a5a1cfac85ab6d76f71d95c2a211bd2a7de24802a84b5f209ee4b7809c1"
+          },
+          "reason": null
+        }
+      }
+    }
+  ],
+  "finished_at": "2026-09-16T11:14:12.832008+00:00"
+}
