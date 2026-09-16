@@ -22,8 +22,9 @@ async page => {
   await submit(page.getByRole('button', {name: 'Pause', exact: true}), path);
   await page.locator('#role').selectOption('patient');
   await submit(page.getByRole('button', {name: 'Take over', exact: true}), path);
+  await page.waitForFunction(() => document.querySelector('#run-status').textContent.startsWith('takeover'), null, {timeout: 45000});
   await page.getByRole('button', {name: 'Use microphone', exact: true}).click();
-  await page.waitForFunction(() => document.querySelector('#mic-status').textContent.startsWith('Recording'), null, {timeout: 30000});
+  await page.waitForFunction(() => document.querySelector('#mic-status').textContent.startsWith('Recording ·'), null, {timeout: 30000});
   // Fixed audio capture duration is the input fixture, not a page-readiness wait.
   await page.waitForTimeout(5000);
   await page.getByRole('button', {name: 'Finish recording', exact: true}).click();
