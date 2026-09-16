@@ -237,8 +237,11 @@ locals {
     data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.mode == "public"
   )
   control_plane_network_policy_transition_script = "${local.fs2_root}/components/control-plane/scripts/network-policy-transition.sh"
-  control_plane_chart_root                       = "${local.fs2_root}/charts/control-plane/fs2-serve-control-plane"
-  control_plane_chart_files                      = sort(fileset(local.control_plane_chart_root, "**"))
+  control_plane_network_policy_security_owner_kubeconfig = (
+    data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.security_owner_kubeconfig_path
+  )
+  control_plane_chart_root  = "${local.fs2_root}/charts/control-plane/fs2-serve-control-plane"
+  control_plane_chart_files = sort(fileset(local.control_plane_chart_root, "**"))
   control_plane_network_policy_transition_sha256 = sha256(join("\n", [
     filesha256(local.control_plane_network_policy_transition_script),
     filesha256("${local.fs2_root}/components/control-plane/scripts/network_policy_transition.py"),
@@ -268,6 +271,7 @@ resource "terraform_data" "control_plane_network_policy_transition_stage" {
         --release-namespace "$FS2_RELEASE_NAMESPACE" \
         --chart "$FS2_CHART" \
         --kubeconfig "$FS2_KUBECONFIG" \
+        --security-owner-kubeconfig "$FS2_SECURITY_OWNER_KUBECONFIG" \
         --context "$FS2_KUBE_CONTEXT" \
         --values "$FS2_BASE_VALUES" \
         --values-env FS2_CONTROL_PLANE_OVERRIDES \
@@ -282,6 +286,7 @@ resource "terraform_data" "control_plane_network_policy_transition_stage" {
       FS2_RELEASE_NAMESPACE             = "fs2-system"
       FS2_CHART                         = "${local.fs2_root}/charts/control-plane/fs2-serve-control-plane"
       FS2_KUBECONFIG                    = var.kubeconfig_path
+      FS2_SECURITY_OWNER_KUBECONFIG     = local.control_plane_network_policy_security_owner_kubeconfig
       FS2_KUBE_CONTEXT                  = var.kube_context
       FS2_BASE_VALUES                   = "${local.fs2_root}/charts/control-plane/control-plane.values.yaml"
       FS2_CONTROL_PLANE_OVERRIDES       = yamlencode(local.control_plane_overrides)
@@ -398,12 +403,13 @@ resource "terraform_data" "control_plane_network_policy_transition_complete" {
   triggers_replace = [local.control_plane_network_policy_transition_sha256]
 
   input = {
-    transition_script = local.control_plane_network_policy_transition_script
-    release           = local.control_plane_network_policy_release_name
-    release_namespace = "fs2-system"
-    chart             = local.control_plane_chart_root
-    kubeconfig        = var.kubeconfig_path
-    kube_context      = var.kube_context
+    transition_script         = local.control_plane_network_policy_transition_script
+    release                   = local.control_plane_network_policy_release_name
+    release_namespace         = "fs2-system"
+    chart                     = local.control_plane_chart_root
+    kubeconfig                = var.kubeconfig_path
+    security_owner_kubeconfig = local.control_plane_network_policy_security_owner_kubeconfig
+    kube_context              = var.kube_context
   }
 
   provisioner "local-exec" {
@@ -414,6 +420,7 @@ resource "terraform_data" "control_plane_network_policy_transition_complete" {
         --release-namespace "$FS2_RELEASE_NAMESPACE" \
         --chart "$FS2_CHART" \
         --kubeconfig "$FS2_KUBECONFIG" \
+        --security-owner-kubeconfig "$FS2_SECURITY_OWNER_KUBECONFIG" \
         --context "$FS2_KUBE_CONTEXT" \
         --values "$FS2_BASE_VALUES" \
         --values-env FS2_CONTROL_PLANE_OVERRIDES \
@@ -428,6 +435,7 @@ resource "terraform_data" "control_plane_network_policy_transition_complete" {
       FS2_RELEASE_NAMESPACE             = "fs2-system"
       FS2_CHART                         = "${local.fs2_root}/charts/control-plane/fs2-serve-control-plane"
       FS2_KUBECONFIG                    = var.kubeconfig_path
+      FS2_SECURITY_OWNER_KUBECONFIG     = local.control_plane_network_policy_security_owner_kubeconfig
       FS2_KUBE_CONTEXT                  = var.kube_context
       FS2_BASE_VALUES                   = "${local.fs2_root}/charts/control-plane/control-plane.values.yaml"
       FS2_CONTROL_PLANE_OVERRIDES       = yamlencode(local.control_plane_overrides)
@@ -448,15 +456,17 @@ resource "terraform_data" "control_plane_network_policy_transition_complete" {
         --release-namespace "$FS2_RELEASE_NAMESPACE" \
         --chart "$FS2_CHART" \
         --kubeconfig "$FS2_KUBECONFIG" \
+        --security-owner-kubeconfig "$FS2_SECURITY_OWNER_KUBECONFIG" \
         --context "$FS2_KUBE_CONTEXT"
     EOT
     environment = {
-      FS2_TRANSITION_SCRIPT = self.input.transition_script
-      FS2_RELEASE           = self.input.release
-      FS2_RELEASE_NAMESPACE = self.input.release_namespace
-      FS2_CHART             = self.input.chart
-      FS2_KUBECONFIG        = self.input.kubeconfig
-      FS2_KUBE_CONTEXT      = self.input.kube_context
+      FS2_TRANSITION_SCRIPT         = self.input.transition_script
+      FS2_RELEASE                   = self.input.release
+      FS2_RELEASE_NAMESPACE         = self.input.release_namespace
+      FS2_CHART                     = self.input.chart
+      FS2_KUBECONFIG                = self.input.kubeconfig
+      FS2_SECURITY_OWNER_KUBECONFIG = self.input.security_owner_kubeconfig
+      FS2_KUBE_CONTEXT              = self.input.kube_context
     }
   }
 

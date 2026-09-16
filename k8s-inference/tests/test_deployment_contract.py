@@ -3657,6 +3657,11 @@ def test_control_plane_release_uses_executable_network_policy_transition_boundar
     )
     assert 'command     = <<-EOT\n      "$FS2_TRANSITION_SCRIPT" prepare' in source
     assert 'command     = <<-EOT\n      "$FS2_TRANSITION_SCRIPT" complete' in source
+    assert (
+        source.count('--security-owner-kubeconfig "$FS2_SECURITY_OWNER_KUBECONFIG"')
+        == 3
+    )
+    assert "network_policy_boundary_contract.security_owner_kubeconfig_path" in source
     assert "depends_on = [helm_release.control_plane]" in source
     assert "--rollback-on-failure" not in source
     assert "--cleanup-on-fail" not in source

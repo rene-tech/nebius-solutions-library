@@ -786,31 +786,41 @@ Terraform `prevent_destroy` and an ownership label. Kubernetes deliberately
 does not invoke API-based admission for its own policy and binding resources,
 so this design does not claim self-protection. The admission policy and binding
 are applied with the separate security-owner kubeconfig, while a mandatory
-preflight proves the ordinary foundation/workload identity cannot update or
-delete either admission resource and cannot impersonate the security owner.
+preflight binds both kubeconfigs to the same API server and exact `kube-system`
+UID, then proves the ordinary foundation/workload identity cannot get, patch,
+update, delete, or collection-delete either exact admission resource, mint the
+retired transition-ServiceAccount token, or impersonate the security owner.
 Before foundation apply, provision the mode-0600
 `<run_root>/network-policy-security-owner-kubeconfig` for the exact configured
 external username. Its identity must be distinct from the ordinary run
 kubeconfig and independently authorized for the protected resources. The apply
-fails closed unless both positive owner permissions and negative ordinary
-permissions are proven; every transition repeats the negative admission-owner
-and impersonation checks before requesting its scoped ServiceAccount token.
+fails closed unless both exact named owner permissions and negative ordinary
+permissions are proven. Every transition repeats the cluster-identity,
+admission-owner, token-minting, and impersonation checks, then uses the separate
+security-owner kubeconfig directly for protected mutations. The retained
+transition ServiceAccount remains at its stable Terraform address solely to
+avoid deleting an existing object; token automount is disabled, no protected
+RoleBinding names it, and the ordinary rollout identity must not be able to
+mint its token. No rollout-mintable privileged token exists.
 Deletion is limited to the exact external security-owner identity after the
 specific object has a reviewed 64-hex decommission-receipt annotation. The
-ordinary transition ServiceAccount can only update the exact receipt, Lease and
-three boundary NetworkPolicies; it cannot delete them or alter the protected
-topology.
+security owner is the only admitted update identity; workload credentials have
+no protected-object mutation path.
 
 Before each existing public release, `stage` acquires and renews the 60-second
 namespaced Lease fence, reads the protected live-topology ConfigMap, renders the
 exact candidate and binds both permanent allows to the exact chart, complete
 render, NetworkPolicy render, effective value sources, release UID, successful
-deployed revision/status/history, deployed manifest and policy UID/spec hashes.
+deployed revision/status/history, deployed manifest, exact `helm get values
+--all` hash, Helm storage UID/resourceVersion/status and policy UID/spec hashes.
 Every patch has a resourceVersion precondition and is preceded by a fenced Lease
 renewal. Namespaced Pod discovery is server-paginated at 100 objects and fails
 closed after ten pages; both exact selectors must cover at least one Ready Pod.
-`stage` records that crash-safe candidate receipt before activating the external
-deny. `complete` is retry-safe and re-derives the exact deployed successor,
+Each operation first records a UID-bound intent phase before changing a guard,
+deny, rollback target, or destroy state, then records completion. Retries accept
+the intent phase and reconcile an object whose resourceVersion/spec changed but
+whose namespace/name/UID remains exactly receipt-bound. `complete` also resumes
+`bootstrap-guards-staging` and `guards-ready` after a crash. It re-derives the exact deployed successor,
 values, manifest, Helm-policy UIDs, permanent allows, Ready Pod coverage and
 active deny. A changed or failed/pending release cannot complete.
 
@@ -828,6 +838,7 @@ components/control-plane/scripts/network-policy-transition.sh stage \
   --release-namespace fs2-system \
   --chart charts/control-plane/fs2-serve-control-plane \
   --kubeconfig RUN_OWNED_KUBECONFIG \
+  --security-owner-kubeconfig RUN_OWNED_SECURITY_OWNER_KUBECONFIG \
   --values EXACT_BASE_VALUES \
   --values EXACT_CANDIDATE_VALUES
 
@@ -838,6 +849,7 @@ components/control-plane/scripts/network-policy-transition.sh rollback \
   --release-namespace fs2-system \
   --chart charts/control-plane/fs2-serve-control-plane \
   --kubeconfig RUN_OWNED_KUBECONFIG \
+  --security-owner-kubeconfig RUN_OWNED_SECURITY_OWNER_KUBECONFIG \
   --revision CAPTURED_PRE_ROLLOUT_REVISION \
   --values EXACT_BASE_VALUES \
   --values EXACT_CANDIDATE_VALUES
@@ -846,7 +858,8 @@ components/control-plane/scripts/network-policy-transition.sh rollback \
 `rollback` discovers the exact namespaces from protected live topology,
 acquires and renews the Lease fence, and accepts only the receipt's captured
 source revision when Helm history proves it is successful and stable, its
-manifest is exactly receipt-bound, and `helm get values --all` proves
+manifest, staged values hash, and staged plus post-upgrade Helm storage
+UID/resourceVersion/status are exactly receipt-bound, and `helm get values --all` proves
 `config.requestDebugEnabled=false`. It then relaxes the deny with a
 resourceVersion precondition, proves the relaxed selector selects zero Pods,
 and runs Helm while renewing the fence every 15 seconds. A retry revalidates the

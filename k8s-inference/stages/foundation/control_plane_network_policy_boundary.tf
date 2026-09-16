@@ -34,6 +34,7 @@ resource "terraform_data" "control_plane_network_policy_security_owner_preflight
     ordinary_kubeconfig       = abspath(var.kubeconfig_path)
     security_owner_kubeconfig = abspath(local.control_plane_network_policy_security_owner_kubeconfig_path)
     kube_context              = var.kube_context
+    kube_system_uid           = var.kube_system_uid
   }
 
   provisioner "local-exec" {
@@ -43,6 +44,13 @@ resource "terraform_data" "control_plane_network_policy_security_owner_preflight
       test -f "$FS2_SECURITY_KUBECONFIG"
       test "$(stat -c '%a' "$FS2_SECURITY_KUBECONFIG")" = "600"
       test "$FS2_ORDINARY_KUBECONFIG" != "$FS2_SECURITY_KUBECONFIG"
+      ordinary_server="$(kubectl --kubeconfig "$FS2_ORDINARY_KUBECONFIG" --context "$FS2_KUBE_CONTEXT" config view --minify --raw -o json | jq -er '.clusters | select(length == 1) | .[0].cluster.server')"
+      security_server="$(kubectl --kubeconfig "$FS2_SECURITY_KUBECONFIG" --context "$FS2_KUBE_CONTEXT" config view --minify --raw -o json | jq -er '.clusters | select(length == 1) | .[0].cluster.server')"
+      test "$ordinary_server" = "$security_server"
+      ordinary_kube_system_uid="$(kubectl --kubeconfig "$FS2_ORDINARY_KUBECONFIG" --context "$FS2_KUBE_CONTEXT" get namespace kube-system -o 'jsonpath={.metadata.uid}')"
+      security_kube_system_uid="$(kubectl --kubeconfig "$FS2_SECURITY_KUBECONFIG" --context "$FS2_KUBE_CONTEXT" get namespace kube-system -o 'jsonpath={.metadata.uid}')"
+      test "$ordinary_kube_system_uid" = "$FS2_KUBE_SYSTEM_UID"
+      test "$security_kube_system_uid" = "$FS2_KUBE_SYSTEM_UID"
       test "$(kubectl --kubeconfig "$FS2_SECURITY_KUBECONFIG" --context "$FS2_KUBE_CONTEXT" auth whoami -o json | jq -r '.status.userInfo.username')" = "$FS2_SECURITY_OWNER_USERNAME"
       test "$(kubectl --kubeconfig "$FS2_ORDINARY_KUBECONFIG" --context "$FS2_KUBE_CONTEXT" auth whoami -o json | jq -r '.status.userInfo.username')" != "$FS2_SECURITY_OWNER_USERNAME"
       ordinary_can() {
@@ -51,22 +59,24 @@ resource "terraform_data" "control_plane_network_policy_security_owner_preflight
       security_can() {
         kubectl --kubeconfig "$FS2_SECURITY_KUBECONFIG" --context "$FS2_KUBE_CONTEXT" auth can-i "$@"
       }
-      test "$(ordinary_can update validatingadmissionpolicies.admissionregistration.k8s.io)" = "no"
-      test "$(ordinary_can delete validatingadmissionpolicies.admissionregistration.k8s.io)" = "no"
-      test "$(ordinary_can update validatingadmissionpolicybindings.admissionregistration.k8s.io)" = "no"
-      test "$(ordinary_can delete validatingadmissionpolicybindings.admissionregistration.k8s.io)" = "no"
+      for resource in validatingadmissionpolicies.admissionregistration.k8s.io validatingadmissionpolicybindings.admissionregistration.k8s.io; do
+        for verb in get patch update delete; do
+          test "$(ordinary_can "$verb" "$resource/fs2-network-policy-boundary")" = "no"
+          test "$(security_can "$verb" "$resource/fs2-network-policy-boundary")" = "yes"
+        done
+        test "$(ordinary_can deletecollection "$resource")" = "no"
+        test "$(security_can deletecollection "$resource")" = "no"
+      done
       test "$(ordinary_can impersonate "users/$FS2_SECURITY_OWNER_USERNAME")" = "no"
+      test "$(ordinary_can create serviceaccounts/fs2-network-policy-transition --subresource=token --namespace fs2-system)" = "no"
       test "$(security_can create validatingadmissionpolicies.admissionregistration.k8s.io)" = "yes"
-      test "$(security_can update validatingadmissionpolicies.admissionregistration.k8s.io)" = "yes"
-      test "$(security_can delete validatingadmissionpolicies.admissionregistration.k8s.io)" = "yes"
       test "$(security_can create validatingadmissionpolicybindings.admissionregistration.k8s.io)" = "yes"
-      test "$(security_can update validatingadmissionpolicybindings.admissionregistration.k8s.io)" = "yes"
-      test "$(security_can delete validatingadmissionpolicybindings.admissionregistration.k8s.io)" = "yes"
     EOT
     environment = {
       FS2_ORDINARY_KUBECONFIG     = self.input.ordinary_kubeconfig
       FS2_SECURITY_KUBECONFIG     = self.input.security_owner_kubeconfig
       FS2_KUBE_CONTEXT            = self.input.kube_context
+      FS2_KUBE_SYSTEM_UID         = self.input.kube_system_uid
       FS2_SECURITY_OWNER_USERNAME = local.control_plane_network_policy_security_owner
     }
   }
@@ -74,6 +84,10 @@ resource "terraform_data" "control_plane_network_policy_security_owner_preflight
   lifecycle { prevent_destroy = true }
 }
 
+// Retain the pre-existing object at its stable Terraform address so this
+// hardening change cannot plan a deletion. It is deliberately inert: no
+// protected RoleBinding names it, token automount is disabled, and the
+// ordinary rollout identity must be unable to mint a token for it.
 resource "kubernetes_service_account_v1" "control_plane_network_policy_transition" {
   provider = kubernetes.network_policy_security_owner
 
@@ -319,6 +333,7 @@ resource "kubernetes_cluster_role_v1" "control_plane_network_policy_security_own
     api_groups = [""]
     resources  = ["namespaces"]
     resource_names = distinct([
+      "kube-system",
       "fs2-system",
       local.control_plane_network_policy_gateway_namespace,
       local.control_plane_network_policy_controller_namespace,
@@ -327,9 +342,8 @@ resource "kubernetes_cluster_role_v1" "control_plane_network_policy_security_own
   }
   rule {
     api_groups = [""]
-    resources  = ["serviceaccounts", "configmaps"]
+    resources  = ["configmaps"]
     resource_names = [
-      local.control_plane_network_policy_service_account,
       local.control_plane_network_policy_state_name,
       local.control_plane_network_policy_topology_name,
     ]
@@ -393,9 +407,9 @@ resource "kubernetes_role_binding_v1" "control_plane_network_policy_transition_s
     name      = kubernetes_role_v1.control_plane_network_policy_transition_state.metadata[0].name
   }
   subject {
-    kind      = "ServiceAccount"
-    name      = kubernetes_service_account_v1.control_plane_network_policy_transition.metadata[0].name
-    namespace = "fs2-system"
+    kind      = "User"
+    name      = local.control_plane_network_policy_security_owner
+    api_group = "rbac.authorization.k8s.io"
   }
 
   lifecycle { prevent_destroy = true }
@@ -453,9 +467,9 @@ resource "kubernetes_role_binding_v1" "control_plane_network_policy_transition_g
     name      = kubernetes_role_v1.control_plane_network_policy_transition_gateway.metadata[0].name
   }
   subject {
-    kind      = "ServiceAccount"
-    name      = kubernetes_service_account_v1.control_plane_network_policy_transition.metadata[0].name
-    namespace = "fs2-system"
+    kind      = "User"
+    name      = local.control_plane_network_policy_security_owner
+    api_group = "rbac.authorization.k8s.io"
   }
 
   lifecycle { prevent_destroy = true }
@@ -509,9 +523,9 @@ resource "kubernetes_role_binding_v1" "control_plane_network_policy_transition_c
     name      = kubernetes_role_v1.control_plane_network_policy_transition_controller.metadata[0].name
   }
   subject {
-    kind      = "ServiceAccount"
-    name      = kubernetes_service_account_v1.control_plane_network_policy_transition.metadata[0].name
-    namespace = "fs2-system"
+    kind      = "User"
+    name      = local.control_plane_network_policy_security_owner
+    api_group = "rbac.authorization.k8s.io"
   }
 
   lifecycle { prevent_destroy = true }
@@ -560,20 +574,13 @@ resource "kubernetes_manifest" "control_plane_network_policy_boundary_admission"
             request.operation != 'UPDATE' || (
               has(object.metadata.labels) &&
               object.metadata.labels['fs2.nebius.ai/network-policy-boundary'] == 'permanent' &&
-              (
-                request.userInfo.username == '${local.control_plane_network_policy_security_owner}' ||
-                (
-                  request.userInfo.username == 'system:serviceaccount:fs2-system:${local.control_plane_network_policy_service_account}' &&
-                  (
-                    (request.resource.group == 'networking.k8s.io' && request.resource.resource == 'networkpolicies' && 'fs2.nebius.ai/network-policy-role' in object.metadata.labels && object.metadata.labels['fs2.nebius.ai/network-policy-role'] == oldObject.metadata.labels['fs2.nebius.ai/network-policy-role']) ||
-                    (request.resource.group == 'coordination.k8s.io' && request.resource.resource == 'leases' && request.namespace == 'fs2-system' && request.name == '${local.control_plane_network_policy_state_name}') ||
-                    (request.resource.group == '' && request.resource.resource == 'configmaps' && request.namespace == 'fs2-system' && request.name == '${local.control_plane_network_policy_state_name}')
-                  )
-                )
-              )
+              request.userInfo.username == '${local.control_plane_network_policy_security_owner}' &&
+              (!('fs2.nebius.ai/network-policy-role' in oldObject.metadata.labels) ||
+               ('fs2.nebius.ai/network-policy-role' in object.metadata.labels &&
+                object.metadata.labels['fs2.nebius.ai/network-policy-role'] == oldObject.metadata.labels['fs2.nebius.ai/network-policy-role']))
             )
           CEL
-          message    = "permanent boundary updates require the exact transition identity and immutable ownership labels"
+          message    = "permanent boundary updates require the external security owner and immutable ownership labels"
           reason     = "Forbidden"
         },
       ]

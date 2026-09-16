@@ -131,18 +131,19 @@ resource "terraform_data" "cluster_contract" {
     precondition {
       condition = try(
         data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract == {
-          schema                  = "fs2-serve.nebius.ai/network-policy-boundary/v1"
-          owner_stage             = "foundation"
-          deletion_protected      = true
-          external_security_owner = true
-          mode                    = local.public_edge_enabled ? "public" : "internal-only"
-          gateway_namespace       = local.control_plane_network_policy_gateway_namespace
-          controller_namespace    = local.control_plane_network_policy_controller_namespace
-          service_account         = "fs2-network-policy-transition"
-          security_owner          = "fs2-network-policy-security-owner"
-          lease_name              = "fs2-network-policy-transition"
-          receipt_name            = "fs2-network-policy-transition"
-          topology_name           = "fs2-network-policy-boundary-topology"
+          schema                         = "fs2-serve.nebius.ai/network-policy-boundary/v1"
+          owner_stage                    = "foundation"
+          deletion_protected             = true
+          external_security_owner        = true
+          mode                           = local.public_edge_enabled ? "public" : "internal-only"
+          gateway_namespace              = local.control_plane_network_policy_gateway_namespace
+          controller_namespace           = local.control_plane_network_policy_controller_namespace
+          service_account                = "fs2-network-policy-transition"
+          security_owner                 = "fs2-network-policy-security-owner"
+          security_owner_kubeconfig_path = "${local.normalized_run_root}/network-policy-security-owner-kubeconfig"
+          lease_name                     = "fs2-network-policy-transition"
+          receipt_name                   = "fs2-network-policy-transition"
+          topology_name                  = "fs2-network-policy-boundary-topology"
           policy_names = {
             proxy_normal      = "fs2-serve-control-plane-public-envoy"
             proxy_guard       = "fs2-serve-control-plane-public-envoy-transition-guard"

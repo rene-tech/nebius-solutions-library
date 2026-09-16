@@ -41,6 +41,7 @@ CONTROLLER_SPEC = {
     "policyTypes": ["Ingress"],
     "ingress": [{"ports": [{"port": 18000, "protocol": "TCP"}]}],
 }
+DEPLOYED_VALUES = {"config": {"requestDebugEnabled": False}}
 
 
 def _candidate() -> Any:
@@ -68,6 +69,8 @@ def _candidate() -> Any:
             "revision": "138",
             "status": "deployed",
             "deployed_manifest_sha256": "e" * 64,
+            "deployed_values_sha256": TRANSITION.sha256_json(DEPLOYED_VALUES),
+            "request_debug_enabled": False,
             "identity_uid": "uid-helm-release-138",
             "storage": {
                 "name": "sh.helm.release.v1.test-release.v138",
@@ -173,24 +176,44 @@ def test_wrapper_delegates_to_state_machine_without_cluster_wide_access() -> Non
     assert 'exec python3 "${script_dir}/network_policy_transition.py" "$@"' in wrapper
     assert "--all-namespaces" not in source
     assert '"--namespace", namespace' in source
-    assert '"create",\n            "token"' in source
-    assert 'SERVICE_ACCOUNT = "fs2-network-policy-transition"' in source
+    assert '"create",\n            "token"' not in source
+    assert "SERVICE_ACCOUNT" not in source
+    assert 'parser.add_argument("--security-owner-kubeconfig", required=True)' in source
 
 
-def test_rollout_identity_must_not_own_or_impersonate_security_boundary() -> None:
+def test_rollout_identity_must_not_own_mint_or_impersonate_security_boundary(tmp_path: Any) -> None:
     transition = _bare_transition()
+    transition.kubeconfig = tmp_path / "ordinary"
+    transition.security_owner_kubeconfig = tmp_path / "security"
+    transition.kubeconfig.write_text("ordinary")
+    transition.security_owner_kubeconfig.write_text("security")
+    transition.security_owner_kubeconfig.chmod(0o600)
+    transition._cluster_identity = lambda _command: ("https://same-api", "kube-system-uid")
 
     topology = {"data": {"topology.json": json.dumps({"security_owner_username": "external-security-owner"})}}
 
     def denied(arguments: tuple[str, ...], _kwargs: dict[str, Any]) -> Any:
         if arguments[:2] == ("get", "configmap"):
             return _result(stdout=json.dumps(topology))
+        assert arguments[:2] == ("auth", "can-i")
         return _result(stdout="no\n")
 
+    def owner(arguments: tuple[str, ...], _kwargs: dict[str, Any]) -> Any:
+        if arguments[:2] == ("auth", "whoami"):
+            return _result(stdout=json.dumps({"status": {"userInfo": {"username": "external-security-owner"}}}))
+        if arguments[:3] == ("auth", "can-i", "deletecollection"):
+            return _result(stdout="no\n")
+        return _result(stdout="yes\n")
+
     transition.bootstrap_kubectl = FakeCommand(denied)
+    transition.security_owner_kubectl = FakeCommand(owner)
     transition.verify_external_iam_boundary()
-    assert len(transition.bootstrap_kubectl.calls) == 6
-    assert transition.bootstrap_kubectl.calls[-1][-1] == "users/external-security-owner"
+    assert any(
+        "patch" in call and any("/fs2-network-policy-boundary" in item for item in call)
+        for call in transition.bootstrap_kubectl.calls
+    )
+    assert any("deletecollection" in call for call in transition.bootstrap_kubectl.calls)
+    assert any("--subresource=token" in call for call in transition.bootstrap_kubectl.calls)
     assert all(call[:2] == ("auth", "can-i") for call in transition.bootstrap_kubectl.calls[1:])
 
     def allowed(arguments: tuple[str, ...], _kwargs: dict[str, Any]) -> Any:
@@ -199,7 +222,24 @@ def test_rollout_identity_must_not_own_or_impersonate_security_boundary() -> Non
         return _result(stdout="yes\n")
 
     transition.bootstrap_kubectl = FakeCommand(allowed)
+    transition.security_owner_kubectl = FakeCommand(owner)
     with pytest.raises(TRANSITION.TransitionError, match="external security boundary"):
+        transition.verify_external_iam_boundary()
+
+
+def test_external_security_owner_must_select_the_same_cluster(tmp_path: Any) -> None:
+    transition = _bare_transition()
+    transition.kubeconfig = tmp_path / "ordinary"
+    transition.security_owner_kubeconfig = tmp_path / "security"
+    transition.kubeconfig.write_text("ordinary")
+    transition.security_owner_kubeconfig.write_text("security")
+    transition.security_owner_kubeconfig.chmod(0o600)
+    transition.bootstrap_kubectl = FakeCommand(lambda *_args: _result())
+    transition.security_owner_kubectl = FakeCommand(lambda *_args: _result())
+    identities = iter((("https://api-one", "uid-one"), ("https://api-two", "uid-two")))
+    transition._cluster_identity = lambda _command: next(identities)
+
+    with pytest.raises(TRANSITION.TransitionError, match="different clusters"):
         transition.verify_external_iam_boundary()
 
 
@@ -272,7 +312,9 @@ def test_first_install_prepare_keeps_deny_relaxed_until_post_install_complete() 
 
     transition.prepare()
 
-    assert writes == [
+    assert [phase for phase, _kwargs in writes] == ["bootstrap-relaxing", "bootstrap-ready"]
+    assert writes[0][1]["extra"]["intent"]["operation"] == "relax-deny"
+    assert writes[1:] == [
         (
             "bootstrap-ready",
             {"extra": {"bootstrap": {"deny_proof": "relaxed-zero-selected-pods"}}},
@@ -292,6 +334,89 @@ def test_stage_rejects_a_different_candidate_while_prior_transition_is_in_flight
 
     with pytest.raises(TRANSITION.TransitionError, match="still in flight"):
         transition._stage_locked(candidate)
+
+
+def test_stage_persists_guard_and_deny_intents_before_each_policy_mutation() -> None:
+    transition = _bare_transition()
+    candidate = _candidate()
+    proxy = _boundary("public-envoy", candidate.proxy["guard_name"], candidate.proxy["namespace"], PROXY_SPEC)
+    controller = _boundary(
+        "envoy-controller",
+        candidate.controller["guard_name"],
+        candidate.controller["namespace"],
+        CONTROLLER_SPEC,
+    )
+    deny = _boundary(
+        "default-deny",
+        candidate.deny_name,
+        candidate.proxy["namespace"],
+        {"podSelector": {}, "policyTypes": ["Ingress"], "ingress": []},
+    )
+    transition.receipt = lambda: ({}, {"phase": "uninitialized"})
+    transition.boundary_objects = lambda _candidate: (
+        {"public-envoy": proxy, "envoy-controller": controller},
+        deny,
+    )
+    events: list[str] = []
+
+    def write(phase: str, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        events.append(f"receipt:{phase}")
+        return {}
+
+    transition.write_receipt = write
+    transition.patch_guard = lambda role, *_args: events.append(f"patch:{role}") or (
+        proxy if role == "public-envoy" else controller
+    )
+    transition.activate_deny = lambda _candidate: events.append("patch:deny-active")
+    transition._stage_locked(candidate)
+
+    assert events == [
+        "receipt:guards-staging",
+        "patch:public-envoy",
+        "patch:envoy-controller",
+        "receipt:guards-ready",
+        "patch:deny-active",
+        "receipt:staged",
+    ]
+
+
+def test_stage_resumes_partial_guard_mutation_from_uid_bound_intent() -> None:
+    transition = _bare_transition()
+    candidate = _candidate()
+    proxy = _boundary("public-envoy", candidate.proxy["guard_name"], candidate.proxy["namespace"], PROXY_SPEC)
+    controller = _boundary(
+        "envoy-controller",
+        candidate.controller["guard_name"],
+        candidate.controller["namespace"],
+        CONTROLLER_SPEC,
+    )
+    deny = _boundary("default-deny", candidate.deny_name, candidate.proxy["namespace"], {"podSelector": {}})
+    receipt = {
+        "phase": "guards-staging",
+        "candidate": candidate.as_dict(),
+        "boundary_objects": {
+            "public-envoy": TRANSITION.Transition._guard_receipt(proxy),
+            "envoy-controller": TRANSITION.Transition._guard_receipt(controller),
+            "default-deny": TRANSITION.Transition._guard_receipt(deny),
+        },
+    }
+    proxy["metadata"]["resourceVersion"] = "18"
+    proxy["spec"] = {**PROXY_SPEC, "egress": []}
+    transition.receipt = lambda: ({}, receipt)
+    transition.boundary_objects = lambda _candidate: (
+        {"public-envoy": proxy, "envoy-controller": controller},
+        deny,
+    )
+    patched: list[str] = []
+    transition.patch_guard = lambda role, *_args: patched.append(role) or (
+        proxy if role == "public-envoy" else controller
+    )
+    transition.write_receipt = lambda *_args, **_kwargs: {}
+    transition.activate_deny = lambda *_args: None
+
+    transition._stage_locked(candidate)
+
+    assert patched == ["public-envoy", "envoy-controller"]
 
 
 def test_bootstrap_complete_rebinds_ready_guards_before_activating_deny() -> None:
@@ -328,9 +453,15 @@ def test_bootstrap_complete_rebinds_ready_guards_before_activating_deny() -> Non
         candidate.deny_name: deny,
     }[name]
     transition.verify_receipt_boundaries = lambda receipt, _boundaries: verified_phases.append(receipt["phase"])
+    transition.verify_receipt_boundary_uids = lambda receipt, _boundaries: verified_phases.append(receipt["phase"])
     transition.verify_local_candidate = lambda _receipt: candidate
     deployed_release = {**candidate.release, "revision": "139"}
     transition.verify_deployed_target = lambda _candidate: deployed_release
+    transition.capture_rollback_source = lambda _candidate: {"bound": True}
+    transition.current_guards = lambda _candidate: {
+        "public-envoy": proxy,
+        "envoy-controller": controller,
+    }
 
     def patch(role: str, *_args: Any) -> dict[str, Any]:
         events.append(f"ready:{role}")
@@ -349,9 +480,57 @@ def test_bootstrap_complete_rebinds_ready_guards_before_activating_deny() -> Non
     transition.write_receipt = write
     transition.complete()
 
-    assert verified_phases == ["bootstrap-ready", "staged"]
+    assert verified_phases == ["bootstrap-ready", "bootstrap-guards-staging", "guards-ready", "staged"]
+    assert events[:2] == ["receipt:bootstrap-guards-staging", "ready:public-envoy"]
+    assert events.index("receipt:guards-ready") < events.index("deny:active")
     assert events.index("ready:public-envoy") < events.index("deny:active")
     assert events.index("ready:envoy-controller") < events.index("deny:active")
+    assert events[-1] == "receipt:active"
+
+
+def test_complete_resumes_durable_guards_ready_after_deny_activation_crash() -> None:
+    transition = _bare_transition()
+    candidate = _candidate()
+    proxy = _boundary("public-envoy", candidate.proxy["guard_name"], candidate.proxy["namespace"], PROXY_SPEC)
+    controller = _boundary(
+        "envoy-controller",
+        candidate.controller["guard_name"],
+        candidate.controller["namespace"],
+        CONTROLLER_SPEC,
+    )
+    deny = _boundary(
+        "default-deny",
+        candidate.deny_name,
+        candidate.proxy["namespace"],
+        {"podSelector": {}, "policyTypes": ["Ingress"], "ingress": []},
+    )
+    state = {"phase": "guards-ready"}
+    transition.lock = contextlib.nullcontext
+    transition.receipt = lambda: ({}, {"phase": state["phase"], "candidate": candidate.as_dict()})
+    transition.verify_local_candidate = lambda _receipt: candidate
+    transition.verify_deployed_target = lambda _candidate: {**candidate.release, "revision": "139"}
+    transition.capture_rollback_source = lambda _candidate: {"bound": True}
+    transition.current_guards = lambda _candidate: {
+        "public-envoy": proxy,
+        "envoy-controller": controller,
+    }
+    transition.get_policy = lambda *_args: deny
+    transition.verify_receipt_boundary_uids = lambda *_args: None
+    events: list[str] = []
+    transition.activate_deny = lambda _candidate: events.append("deny:active")
+    transition.verify_normal = lambda *_args: None
+    transition.verify_deny_active = lambda *_args: None
+    transition.verify_receipt_boundaries = lambda *_args: None
+
+    def write(phase: str, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        state["phase"] = phase
+        events.append(f"receipt:{phase}")
+        return {}
+
+    transition.write_receipt = write
+    transition.complete()
+
+    assert events[:2] == ["deny:active", "receipt:staged"]
     assert events[-1] == "receipt:active"
 
 
@@ -477,15 +656,52 @@ def test_release_storage_identity_is_exact_metadata_only() -> None:
     }
 
 
+def test_completed_receipt_binds_staged_and_post_upgrade_storage_rv_and_values() -> None:
+    transition = _bare_transition()
+    candidate = _candidate()
+    transition._yaml_documents = lambda _text: [{"manifest": "source"}]
+    candidate.release["deployed_manifest_sha256"] = TRANSITION.sha256_json([{"manifest": "source"}])
+
+    class Helm:
+        @staticmethod
+        def run(*arguments: str, **_kwargs: Any) -> Any:
+            if arguments[0] == "history":
+                return _result(
+                    stdout=json.dumps([{"revision": 138, "status": "superseded", "description": "Upgrade complete"}])
+                )
+            if arguments[:2] == ("get", "manifest"):
+                return _result(stdout="manifest")
+            if arguments[:2] == ("get", "values"):
+                return _result(stdout=json.dumps(DEPLOYED_VALUES))
+            raise AssertionError(arguments)
+
+    transition.helm = Helm()
+    transition._release_storage_identity = lambda *_args: {
+        **candidate.release["storage"],
+        "resource_version": "1391",
+        "status": "superseded",
+    }
+
+    bound = transition.capture_rollback_source(candidate)
+
+    assert bound is not None
+    assert bound["staged_storage"]["resource_version"] == "1380"
+    assert bound["current_storage"]["resource_version"] == "1391"
+    assert bound["target_values_sha256"] == candidate.release["deployed_values_sha256"]
+    assert bound["request_debug_enabled"] is False
+
+
 def test_rollback_rejects_arbitrary_revision_and_debug_enabled_target() -> None:
     transition = _bare_transition()
     candidate = _candidate()
     with pytest.raises(TRANSITION.TransitionError, match="receipt-bound stable source"):
-        transition._rollback_target(candidate, "7")
+        transition._rollback_target(candidate, "7", transition.staged_rollback_source(candidate))
 
     transition._yaml_documents = lambda _text: [{"kind": "ConfigMap"}]
     candidate.release["revision"] = "138"
     candidate.release["deployed_manifest_sha256"] = TRANSITION.sha256_json([{"kind": "ConfigMap"}])
+    candidate.release["deployed_values_sha256"] = TRANSITION.sha256_json({"config": {"requestDebugEnabled": True}})
+    candidate.release["request_debug_enabled"] = True
 
     class Helm:
         @staticmethod
@@ -511,7 +727,35 @@ def test_rollback_rejects_arbitrary_revision_and_debug_enabled_target() -> None:
     transition.helm = Helm()
     transition._release_storage_identity = lambda _revision, _status: candidate.release["storage"]
     with pytest.raises(TRANSITION.TransitionError, match="request debugging is enabled"):
-        transition._rollback_target(candidate, "138")
+        transition._rollback_target(candidate, "138", transition.staged_rollback_source(candidate))
+
+
+def test_rollback_requires_exact_staged_values_and_storage_resource_version() -> None:
+    transition = _bare_transition()
+    candidate = _candidate()
+    transition._yaml_documents = lambda _text: [{"manifest": "source"}]
+    candidate.release["deployed_manifest_sha256"] = TRANSITION.sha256_json([{"manifest": "source"}])
+    bound = transition.staged_rollback_source(candidate)
+    bound["current_storage"] = {**bound["current_storage"], "resource_version": "changed"}
+
+    class Helm:
+        @staticmethod
+        def run(*arguments: str, **_kwargs: Any) -> Any:
+            if arguments[0] == "history":
+                return _result(
+                    stdout=json.dumps([{"revision": 138, "status": "deployed", "description": "Install complete"}])
+                )
+            raise AssertionError(arguments)
+
+    transition.helm = Helm()
+    transition._release_storage_identity = lambda *_args: candidate.release["storage"]
+    with pytest.raises(TRANSITION.TransitionError, match="resourceVersion"):
+        transition._rollback_target(candidate, "138", bound)
+
+    exact = transition.staged_rollback_source(candidate)
+    exact["target_values_sha256"] = "f" * 64
+    with pytest.raises(TRANSITION.TransitionError, match="exact staged Helm values"):
+        transition._rollback_target(candidate, "138", exact)
 
 
 def test_live_topology_has_no_caller_rendered_disabled_bypass() -> None:
@@ -637,6 +881,8 @@ def test_receipt_binds_candidate_and_exact_boundary_uid_rv_spec() -> None:
     assert captured["candidate"]["values_sha256"] == "c" * 64
     assert captured["candidate"]["complete_render_sha256"] == "e" * 64
     assert captured["candidate"]["release"]["revision"] == "138"
+    assert captured["candidate"]["release"]["deployed_values_sha256"] == TRANSITION.sha256_json(DEPLOYED_VALUES)
+    assert captured["candidate"]["release"]["storage"]["resource_version"] == "1380"
     assert captured["candidate"]["topology"]["uid"] == "topology-uid"
     assert captured["receipt_object"] == {
         "namespace": "fs2-system",
@@ -666,6 +912,7 @@ def test_complete_is_idempotent_and_never_deletes_permanent_boundaries(
     )
     state = {"phase": "staged"}
     deployed_release = {**candidate.release, "revision": "139"}
+    rollback_source = {"bound": True}
     transition.render_candidate = lambda: candidate
     transition.lock = contextlib.nullcontext
     transition.receipt = lambda: (
@@ -674,10 +921,12 @@ def test_complete_is_idempotent_and_never_deletes_permanent_boundaries(
             "phase": state["phase"],
             "candidate": candidate.as_dict(),
             "deployed_release": deployed_release,
+            "rollback_source": rollback_source,
         },
     )
     transition.verify_local_candidate = lambda _receipt: candidate
     transition.verify_deployed_target = lambda _candidate: deployed_release
+    transition.capture_rollback_source = lambda _candidate: rollback_source
     transition.current_guards = lambda _candidate: {
         "public-envoy": proxy,
         "envoy-controller": controller,
@@ -734,7 +983,7 @@ def test_protected_policy_patches_are_server_dry_run_before_mutation() -> None:
 def test_rollback_failure_leaves_deny_relaxed_and_durable_prepared_receipt() -> None:
     transition = _bare_transition()
     candidate = _candidate()
-    state = {"phase": "staged", "manifest": "current", "deny": "active"}
+    state: dict[str, Any] = {"phase": "staged", "manifest": "current", "deny": "active", "extra": {}}
     writes: list[str] = []
     transition.render_candidate = lambda: candidate
     transition._target_manifest = lambda _revision: "target"
@@ -763,6 +1012,7 @@ def test_rollback_failure_leaves_deny_relaxed_and_durable_prepared_receipt() -> 
                 "envoy-controller": TRANSITION.Transition._guard_receipt(controller),
                 "default-deny": TRANSITION.Transition._guard_receipt(deny),
             },
+            **state["extra"],
         },
     )
 
@@ -777,7 +1027,7 @@ def test_rollback_failure_leaves_deny_relaxed_and_durable_prepared_receipt() -> 
     transition.get_optional_policy = lambda _name, _namespace: deny
     transition.verify_live_topology = lambda _candidate: None
     target_hash = TRANSITION.sha256_json([{"manifest": "target"}])
-    transition._rollback_target = lambda _candidate, _revision: {
+    transition._rollback_target = lambda _candidate, _revision, _bound_source: {
         "target_revision": "7",
         "target_manifest_sha256": target_hash,
         "target_values_sha256": "f" * 64,
@@ -785,6 +1035,7 @@ def test_rollback_failure_leaves_deny_relaxed_and_durable_prepared_receipt() -> 
     }
     transition._release_identity = lambda *_args, **_kwargs: {**candidate.release, "revision": "139"}
     transition._yaml_documents = lambda text: [{"manifest": text}]
+    transition._revalidate_rollback_target = lambda *_args: None
 
     def relax(_candidate: Any) -> str:
         state["deny"] = "relaxed"
@@ -792,9 +1043,10 @@ def test_rollback_failure_leaves_deny_relaxed_and_durable_prepared_receipt() -> 
 
     transition.relax_deny = relax
 
-    def write(phase: str, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
+    def write(phase: str, *_args: Any, **kwargs: Any) -> dict[str, Any]:
         writes.append(phase)
         state["phase"] = phase
+        state["extra"] = kwargs.get("extra", {})
         return {}
 
     transition.write_receipt = write
@@ -806,7 +1058,55 @@ def test_rollback_failure_leaves_deny_relaxed_and_durable_prepared_receipt() -> 
         transition.rollback()
 
     assert state["deny"] == "relaxed"
-    assert writes == ["rollback-prepared"]
+    assert writes == ["rollback-relaxing", "rollback-prepared"]
+
+
+def test_destroy_resumes_after_deny_mutation_before_commit_receipt() -> None:
+    transition = _bare_transition()
+    candidate = _candidate()
+    proxy = _boundary("public-envoy", candidate.proxy["guard_name"], candidate.proxy["namespace"], PROXY_SPEC)
+    controller = _boundary(
+        "envoy-controller",
+        candidate.controller["guard_name"],
+        candidate.controller["namespace"],
+        CONTROLLER_SPEC,
+    )
+    old_deny = _boundary(
+        "default-deny",
+        candidate.deny_name,
+        candidate.proxy["namespace"],
+        {"podSelector": {}, "policyTypes": ["Ingress"], "ingress": []},
+    )
+    live_deny = json.loads(json.dumps(old_deny))
+    live_deny["metadata"]["resourceVersion"] = "18"
+    live_deny["spec"] = {
+        "podSelector": {"matchLabels": TRANSITION.RELAXED_SELECTOR},
+        "policyTypes": ["Ingress"],
+        "ingress": [],
+    }
+    prior = {
+        "phase": "destroy-relaxing",
+        "candidate": candidate.as_dict(),
+        "boundary_objects": {
+            "public-envoy": TRANSITION.Transition._guard_receipt(proxy),
+            "envoy-controller": TRANSITION.Transition._guard_receipt(controller),
+            "default-deny": TRANSITION.Transition._guard_receipt(old_deny),
+        },
+    }
+    transition.lock = contextlib.nullcontext
+    transition.receipt = lambda: ({}, prior)
+    transition.verify_live_topology = lambda *_args: None
+    transition.boundary_objects = lambda _candidate: (
+        {"public-envoy": proxy, "envoy-controller": controller},
+        live_deny,
+    )
+    events: list[str] = []
+    transition.relax_deny = lambda _candidate: events.append("relax-idempotent") or "relaxed-zero-selected-pods"
+    transition.write_receipt = lambda phase, *_args, **_kwargs: events.append(f"receipt:{phase}") or {}
+
+    transition.destroy()
+
+    assert events == ["relax-idempotent", "receipt:destroy-prepared"]
 
 
 def test_foundation_security_owner_permanently_owns_boundary_outside_workloads() -> None:
@@ -827,20 +1127,29 @@ def test_foundation_security_owner_permanently_owns_boundary_outside_workloads()
         assert resource not in control_plane
     assert '"fs2.nebius.ai/network-policy-boundary" = "permanent"' in boundary
     assert "request.userInfo.username == '${local.control_plane_network_policy_security_owner}'" in boundary
-    assert "system:serviceaccount:fs2-system:${local.control_plane_network_policy_service_account}" in boundary
+    assert "system:serviceaccount:fs2-system" not in boundary
+    assert 'resource "kubernetes_service_account_v1" "control_plane_network_policy_transition"' in boundary
+    assert "automount_service_account_token = false" in boundary
+    assert 'kind      = "ServiceAccount"' not in boundary
     assert "decommission-receipt-sha256" in boundary
     assert boundary.count("prevent_destroy = true") >= 18
     assert boundary.count("provider = kubernetes.network_policy_security_owner") == 17
-    assert "ordinary_can delete validatingadmissionpolicybindings" in boundary
+    assert 'ordinary_can "$verb" "$resource/fs2-network-policy-boundary"' in boundary
+    assert 'ordinary_can deletecollection "$resource"' in boundary
+    assert 'security_can deletecollection "$resource"' in boundary
     assert 'ordinary_can impersonate "users/$FS2_SECURITY_OWNER_USERNAME"' in boundary
+    assert "serviceaccounts/fs2-network-policy-transition --subresource=token" in boundary
+    assert "get namespace kube-system -o 'jsonpath={.metadata.uid}'" in boundary
+    assert 'test "$ordinary_server" = "$security_server"' in boundary
     assert "auth whoami -o json" in boundary
-    assert "security_can delete validatingadmissionpolicybindings" in boundary
+    assert 'security_can "$verb" "$resource/fs2-network-policy-boundary"' in boundary
     assert 'operations  = ["UPDATE", "DELETE"]' in boundary
     assert "resource_names = [" in boundary
     assert 'resources  = ["pods"]' in boundary
     assert 'verbs      = ["get", "list"]' in boundary
     assert 'resources      = ["networkpolicies"]' in boundary
     assert 'resources      = ["validatingadmissionpolicies", "validatingadmissionpolicybindings"]' in boundary
+    assert 'kind      = "User"' in boundary
     deny_resource = boundary.split(
         'resource "kubernetes_network_policy_v1" "control_plane_envoy_default_deny"',
         maxsplit=1,
