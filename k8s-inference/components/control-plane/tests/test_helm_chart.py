@@ -1797,7 +1797,6 @@ def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -
     policies = {document["metadata"]["name"]: document for document in documents if document["kind"] == "NetworkPolicy"}
     assert set(policies) == {
         "fs2-serve-control-plane-runtime",
-        "fs2-serve-control-plane-envoy-default-deny",
         "fs2-serve-control-plane-public-envoy",
         "fs2-serve-control-plane-acme-solver",
         "fs2-serve-control-plane-envoy-controller-xds",
@@ -1886,13 +1885,11 @@ def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -
         "required_label": "kubernetes.io/metadata.name",
         "default_deny_policy_types": ["Ingress"],
     }
-    default_deny = policies["fs2-serve-control-plane-envoy-default-deny"]
-    assert default_deny["metadata"]["namespace"] == "envoy-gateway-system"
-    assert default_deny["spec"] == {
-        "podSelector": {},
-        "policyTypes": ["Ingress"],
-        "ingress": [],
-    }
+    assert contract["envoy_gateway"]["network_policy_transition"]["permanent_boundary_policies"] == [
+        "fs2-serve-control-plane-public-envoy-transition-guard",
+        "fs2-serve-control-plane-envoy-controller-xds-transition-guard",
+        "fs2-serve-control-plane-envoy-default-deny",
+    ]
     public_envoy_document = policies["fs2-serve-control-plane-public-envoy"]
     assert public_envoy_document["metadata"]["namespace"] == "envoy-gateway-system"
     public_envoy = public_envoy_document["spec"]
@@ -2007,21 +2004,28 @@ def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -
         "default": [],
     }
     assert contract["envoy_gateway"]["network_policy_transition"] == {
-        "release_boundary": "render-server-dry-run-apply-verify-two-guards-before-non-atomic-helm",
+        "release_boundary": "terraform-owned-permanent-allows-and-deny-with-lease-receipt-and-admission-protection",
         "automatic_rollback": False,
-        "rollout_document_order": [
+        "helm_owned_policies": [
             "fs2-serve-control-plane-public-envoy",
             "fs2-serve-control-plane-envoy-controller-xds",
+        ],
+        "permanent_boundary_policies": [
+            "fs2-serve-control-plane-public-envoy-transition-guard",
+            "fs2-serve-control-plane-envoy-controller-xds-transition-guard",
             "fs2-serve-control-plane-envoy-default-deny",
         ],
         "rollback_order": [
-            "stage-and-verify:public-envoy-transition-guard",
-            "stage-and-verify:envoy-controller-xds-transition-guard",
-            "relax-or-remove:fs2-serve-control-plane-envoy-default-deny",
+            "acquire:fs2-network-policy-transition-lease",
+            "verify:candidate-bound-permanent-allows-and-ready-pods",
+            "relax-and-prove-zero-selected-pods:fs2-serve-control-plane-envoy-default-deny",
             "helm-rollback:captured-revision",
-            "retain:both-transition-guards",
+            "rebind:permanent-allows-to-verified-rollback-specs",
+            "reactivate:fs2-serve-control-plane-envoy-default-deny",
         ],
-        "namespace_source": "rendered public-envoy transition guard metadata.namespace",
+        "namespace_source": "candidate public-envoy policy metadata.namespace",
+        "state": "namespaced-Lease-and-ConfigMap-receipt",
+        "mutation_identity": "system:serviceaccount:fs2-system:fs2-network-policy-transition",
     }
     assert contract["envoy_gateway"]["controller_selector"] == {
         "app.kubernetes.io/name": "gateway-helm",
@@ -2069,16 +2073,15 @@ def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -
     ]
 
 
-def test_public_envoy_allows_render_before_namespace_default_deny() -> None:
+def test_public_envoy_helm_render_excludes_external_boundary() -> None:
     documents = render()
     contract = json.loads((CONTROL_ROOT / "contracts" / "public-edge-artifact-observations.json").read_text())
     network_policy_names = [
         document["metadata"]["name"] for document in documents if document["kind"] == "NetworkPolicy"
     ]
-    expected_order = contract["envoy_gateway"]["network_policy_transition"]["rollout_document_order"]
-    first_allow = network_policy_names.index(expected_order[0])
-
-    assert network_policy_names[first_allow : first_allow + len(expected_order)] == expected_order
+    transition = contract["envoy_gateway"]["network_policy_transition"]
+    assert all(name in network_policy_names for name in transition["helm_owned_policies"])
+    assert not set(transition["permanent_boundary_policies"]) & set(network_policy_names)
 
 
 def test_public_envoy_rollback_relaxes_deny_before_helm_rollback() -> None:
@@ -2090,57 +2093,35 @@ def test_public_envoy_rollback_relaxes_deny_before_helm_rollback() -> None:
     stage = section.index("network-policy-transition.sh stage")
     rollback = section.index("network-policy-transition.sh rollback")
     assert stage < rollback
-    assert "discovers the\ngateway namespace" in section
     assert "Do not call `helm rollback` directly" in section
     assert "--rollback-on-failure" in section
     assert "--cleanup-on-fail" in section
     assert "kubectl -n envoy-gateway-system" not in section
 
-    transition = (CONTROL_ROOT / "scripts" / "network-policy-transition.sh").read_text()
-    relax = transition.index('patch networkpolicy "${deny_name}"')
-    verify_deny = transition.index("rollback-relaxed", relax)
-    verify_guards = transition.index('verify_guards "$(load_guards)"', verify_deny)
-    helm_rollback = transition.index('helm rollback "${release}" "${revision}"', verify_guards)
-    retain_guards = transition.index('verify_guards "$(load_guards)"', helm_rollback)
-    assert relax < verify_deny < verify_guards < helm_rollback < retain_guards
-    assert '--namespace "${gateway_namespace}"' in transition
+    transition = (CONTROL_ROOT / "scripts" / "network_policy_transition.py").read_text()
+    rollback_body = transition.split("    def rollback(self) -> None:", maxsplit=1)[1].split(
+        "    def destroy(self) -> None:", maxsplit=1
+    )[0]
+    relax = rollback_body.index("self.relax_deny(candidate)")
+    receipt = rollback_body.index('"rollback-prepared"', relax)
+    helm_rollback = rollback_body.index('"rollback",', receipt)
+    rebind = rollback_body.index('self.patch_guard("public-envoy"', helm_rollback)
+    activate = rollback_body.index("self.activate_deny(live_candidate)", rebind)
+    assert relax < receipt < helm_rollback < rebind < activate
+    assert 'candidate.proxy["namespace"]' in transition
 
 
-def test_public_envoy_transition_guards_duplicate_exact_allow_specs() -> None:
+def test_public_envoy_transition_boundaries_are_not_public_chart_values() -> None:
     gateway_namespace = "edge-gateway-system"
     documents = render(
         "--set-string",
         rf"networkPolicy.gateway.namespaceLabels.kubernetes\.io/metadata\.name={gateway_namespace}",
-        "--set",
-        "networkPolicy.transition.renderGuards=true",
     )
     policies = {document["metadata"]["name"]: document for document in documents if document["kind"] == "NetworkPolicy"}
-
-    pairs = (
-        (
-            "fs2-serve-control-plane-public-envoy",
-            "fs2-serve-control-plane-public-envoy-transition-guard",
-            "public-envoy",
-        ),
-        (
-            "fs2-serve-control-plane-envoy-controller-xds",
-            "fs2-serve-control-plane-envoy-controller-xds-transition-guard",
-            "envoy-controller",
-        ),
-    )
-    for normal_name, guard_name, role in pairs:
-        normal = policies[normal_name]
-        guard = policies[guard_name]
-        assert guard["spec"] == normal["spec"]
-        assert guard["metadata"]["namespace"] == normal["metadata"]["namespace"]
-        assert guard["metadata"]["labels"]["fs2.nebius.ai/network-policy-transition"] == "guard"
-        assert guard["metadata"]["labels"]["fs2.nebius.ai/network-policy-role"] == role
-        assert guard["metadata"]["annotations"]["fs2.nebius.ai/normal-policy-name"] == normal_name
-    assert policies[pairs[0][1]]["metadata"]["namespace"] == gateway_namespace
-    assert (
-        policies[pairs[0][1]]["metadata"]["annotations"]["fs2.nebius.ai/deny-policy-name"]
-        == "fs2-serve-control-plane-envoy-default-deny"
-    )
+    assert policies["fs2-serve-control-plane-public-envoy"]["metadata"]["namespace"] == gateway_namespace
+    assert not any("transition-guard" in name or name.endswith("default-deny") for name in policies)
+    schema = json.loads((CHART / "values.schema.json").read_text())
+    assert "transition" not in schema["properties"]["networkPolicy"]["properties"]
 
 
 def test_public_envoy_dns_selector_and_webhook_sources_are_cluster_configurable() -> None:
@@ -2471,11 +2452,8 @@ def test_public_envoy_policies_follow_the_gateway_namespace_label() -> None:
     )
     policies = {document["metadata"]["name"]: document for document in documents if document["kind"] == "NetworkPolicy"}
 
-    for name in (
-        "fs2-serve-control-plane-envoy-default-deny",
-        "fs2-serve-control-plane-public-envoy",
-    ):
-        assert policies[name]["metadata"]["namespace"] == gateway_namespace
+    assert policies["fs2-serve-control-plane-public-envoy"]["metadata"]["namespace"] == gateway_namespace
+    assert "fs2-serve-control-plane-envoy-default-deny" not in policies
     runtime = policies["fs2-serve-control-plane-runtime"]
     assert runtime["spec"]["ingress"][0]["from"][0]["namespaceSelector"] == {
         "matchLabels": {"kubernetes.io/metadata.name": gateway_namespace}
@@ -3150,10 +3128,13 @@ def test_foundation_default_deny_and_release_edge_flows_coexist_without_plaintex
         for document in documents
         if document["kind"] == "NetworkPolicy"
     }
-    assert ("envoy-gateway-system", "fs2-serve-control-plane-envoy-default-deny") in policies
+    assert ("envoy-gateway-system", "fs2-serve-control-plane-envoy-default-deny") not in policies
     assert ("envoy-gateway-system", "fs2-serve-control-plane-public-envoy") in policies
     assert ("fs2-system", "fs2-serve-control-plane-acme-solver") in policies
     assert ("envoy-gateway-system", "fs2-serve-control-plane-envoy-controller-xds") in policies
+    assert contract["envoy_gateway"]["network_policy_transition"]["release_boundary"] == (
+        "terraform-owned-permanent-allows-and-deny-with-lease-receipt-and-admission-protection"
+    )
 
     redirect = redirect_route(documents)
     application = application_route(documents)

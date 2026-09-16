@@ -62,21 +62,28 @@
     "metrics_port": 19001,
     "webhook_port": 9443,
     "network_policy_transition": {
-      "release_boundary": "render-server-dry-run-apply-verify-two-guards-before-non-atomic-helm",
+      "release_boundary": "terraform-owned-permanent-allows-and-deny-with-lease-receipt-and-admission-protection",
       "automatic_rollback": false,
-      "rollout_document_order": [
+      "helm_owned_policies": [
         "fs2-serve-control-plane-public-envoy",
-        "fs2-serve-control-plane-envoy-controller-xds",
+        "fs2-serve-control-plane-envoy-controller-xds"
+      ],
+      "permanent_boundary_policies": [
+        "fs2-serve-control-plane-public-envoy-transition-guard",
+        "fs2-serve-control-plane-envoy-controller-xds-transition-guard",
         "fs2-serve-control-plane-envoy-default-deny"
       ],
       "rollback_order": [
-        "stage-and-verify:public-envoy-transition-guard",
-        "stage-and-verify:envoy-controller-xds-transition-guard",
-        "relax-or-remove:fs2-serve-control-plane-envoy-default-deny",
+        "acquire:fs2-network-policy-transition-lease",
+        "verify:candidate-bound-permanent-allows-and-ready-pods",
+        "relax-and-prove-zero-selected-pods:fs2-serve-control-plane-envoy-default-deny",
         "helm-rollback:captured-revision",
-        "retain:both-transition-guards"
+        "rebind:permanent-allows-to-verified-rollback-specs",
+        "reactivate:fs2-serve-control-plane-envoy-default-deny"
       ],
-      "namespace_source": "rendered public-envoy transition guard metadata.namespace"
+      "namespace_source": "candidate public-envoy policy metadata.namespace",
+      "state": "namespaced-Lease-and-ConfigMap-receipt",
+      "mutation_identity": "system:serviceaccount:fs2-system:fs2-network-policy-transition"
     },
     "webhook_sources": {
       "value_source": "networkPolicy.envoyController.webhookSourceCidrs",

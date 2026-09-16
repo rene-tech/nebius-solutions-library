@@ -2003,7 +2003,6 @@
       "type": "object",
       "required": [
         "enabled",
-        "transition",
         "dns",
         "gateway",
         "gatewayBackends",
@@ -2023,18 +2022,6 @@
       "properties": {
         "enabled": {
           "type": "boolean"
-        },
-        "transition": {
-          "type": "object",
-          "required": [
-            "renderGuards"
-          ],
-          "properties": {
-            "renderGuards": {
-              "type": "boolean"
-            }
-          },
-          "additionalProperties": false
         },
         "dns": {
           "allOf": [

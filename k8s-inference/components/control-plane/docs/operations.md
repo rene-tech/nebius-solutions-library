@@ -776,23 +776,24 @@ labels; never broaden it to an entire namespace.
 
 ### Public-edge NetworkPolicy transition safety
 
-The rendered NetworkPolicy order remains part of the release contract: public
-proxy allow, selector-correct Envoy controller allow, then gateway-namespace
-default-deny. Helm object application is not transactional, so document order
-alone is insufficient. The workloads stage runs the executable transition
-boundary before each release: it renders duplicate, uniquely named guards from
-the exact candidate allow specs, passes a server-side dry run, applies and
-verifies both guards, and only then permits the non-atomic Helm release. After a
-successful release it removes the guards only after both ordinary allows have
-the same specs. Automatic Helm rollback and cleanup are disabled for this
-release so neither guard can disappear on a later failure.
+Helm owns only the ordinary public-proxy and Envoy-controller allows. Terraform
+permanently owns duplicate allow boundaries and the gateway-namespace deny, so
+a Helm rollback, replacement, uninstall, or failed cleanup cannot remove the
+last selected allow. A fail-closed admission policy permits updates or deletes
+of those three boundary objects only from the dedicated transition ServiceAccount.
 
-Use the same boundary for a manual or automated rollback. `stage` must complete
-using the exact candidate values before the upgrade. `rollback` discovers the
-gateway namespace and policy names from those rendered guards, makes the deny
-nonselecting, verifies that no Pod matches the relaxed selector and both guards
-remain, and only then invokes Helm. It retains the guards after rollback because
-an older revision may contain obsolete allow selectors.
+Before each existing public release, `stage` acquires the namespaced Lease,
+renders the exact candidate, binds both permanent allows to its chart, values,
+release and spec hashes, and verifies their Kubernetes UID and resourceVersion
+plus at least one selected Ready proxy and controller Pod. It records the
+crash-safe ConfigMap receipt before activating the external deny. `complete` is
+retry-safe: it verifies both Helm allows, permanent allows, Ready Pod coverage,
+candidate receipt, and active deny without deleting the permanent boundaries.
+Terraform invokes `prepare`: for an existing release it is exactly `stage`; for
+a first install it proves the external deny is nonselecting and records a
+`bootstrap-ready` receipt. Helm may then create the ordinary allows and Pods,
+after which `complete` performs the same exact Ready-Pod binding before it can
+activate the deny. The strict `stage` action never succeeds without Ready Pods.
 
 ```bash
 components/control-plane/scripts/network-policy-transition.sh stage \
@@ -815,10 +816,19 @@ components/control-plane/scripts/network-policy-transition.sh rollback \
   --values EXACT_CANDIDATE_VALUES
 ```
 
-Do not call `helm rollback` directly and do not add automatic rollback or
-cleanup flags to this release. If rollback fails, leave both guards present,
-diagnose the release, and reapply the reviewed candidate. Remove guards only
-with the helper's `complete` action after both exact ordinary allows verify.
+`rollback` discovers the exact namespace from the candidate, acquires the Lease,
+relaxes the deny, proves the relaxed selector selects zero Pods, and records the
+target manifest before calling Helm. A retry detects an already reached target,
+rebinds both permanent allows to the verified rollback specs, and reactivates
+the deny. Only a successful empty `--ignore-not-found` response is absence;
+authorization, timeout, and transport errors fail closed.
+
+Do not call `helm rollback` directly and do not add `--atomic`,
+`--rollback-on-failure`, or `--cleanup-on-fail`. Terraform destroy runs the
+helper's `destroy` phase before removing Helm, proving the deny is relaxed while
+the permanent allows remain. Reverse dependency order then removes Helm,
+admission protection, and finally the external boundaries. Targeted replacement
+or manual Helm uninstall cannot delete those objects; direct mutation is denied.
 
 The chart intentionally has invalid empty defaults for the immutable image and
 public/authorization URLs. Rendering requires exact non-placeholder values.

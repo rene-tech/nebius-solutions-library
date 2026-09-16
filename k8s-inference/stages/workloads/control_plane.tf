@@ -228,6 +228,8 @@ locals {
   control_plane_chart_files                      = sort(fileset(local.control_plane_chart_root, "**"))
   control_plane_network_policy_transition_sha256 = sha256(join("\n", [
     filesha256(local.control_plane_network_policy_transition_script),
+    filesha256("${local.fs2_root}/components/control-plane/scripts/network_policy_transition.py"),
+    filesha256("${local.fs2_root}/stages/workloads/control_plane_network_policy_boundary.tf"),
     filesha256("${local.fs2_root}/charts/control-plane/control-plane.values.yaml"),
     join("\n", [
       for path in local.control_plane_chart_files : "${path}:${filesha256("${local.control_plane_chart_root}/${path}")}"
@@ -241,12 +243,14 @@ locals {
 }
 
 resource "terraform_data" "control_plane_network_policy_transition_stage" {
+  count = local.public_edge_enabled ? 1 : 0
+
   triggers_replace = [local.control_plane_network_policy_transition_sha256]
 
   provisioner "local-exec" {
     interpreter = ["/bin/bash", "-c"]
     command     = <<-EOT
-      "$FS2_TRANSITION_SCRIPT" stage \
+      "$FS2_TRANSITION_SCRIPT" prepare \
         --release "$FS2_RELEASE" \
         --release-namespace "$FS2_RELEASE_NAMESPACE" \
         --chart "$FS2_CHART" \
@@ -254,7 +258,10 @@ resource "terraform_data" "control_plane_network_policy_transition_stage" {
         --context "$FS2_KUBE_CONTEXT" \
         --values "$FS2_BASE_VALUES" \
         --values-env FS2_CONTROL_PLANE_OVERRIDES \
-        --values-env FS2_ADMIN_CONTROL_PLANE_OVERRIDES
+        --values-env FS2_ADMIN_CONTROL_PLANE_OVERRIDES \
+        --values-env FS2_BOOTSTRAP_ACCESS_OVERRIDES \
+        --values-env FS2_SCIENTIFIC_ACCESS_OVERRIDES \
+        --values-env FS2_SCIENTIFIC_CHART_OVERRIDES
     EOT
     environment = {
       FS2_TRANSITION_SCRIPT             = local.control_plane_network_policy_transition_script
@@ -266,10 +273,16 @@ resource "terraform_data" "control_plane_network_policy_transition_stage" {
       FS2_BASE_VALUES                   = "${local.fs2_root}/charts/control-plane/control-plane.values.yaml"
       FS2_CONTROL_PLANE_OVERRIDES       = yamlencode(local.control_plane_overrides)
       FS2_ADMIN_CONTROL_PLANE_OVERRIDES = yamlencode(local.admin_control_plane_overrides)
+      FS2_BOOTSTRAP_ACCESS_OVERRIDES    = yamlencode(local.bootstrap_access_overrides)
+      FS2_SCIENTIFIC_ACCESS_OVERRIDES   = yamlencode(local.scientific_access_overrides)
+      FS2_SCIENTIFIC_CHART_OVERRIDES    = yamlencode(local.scientific_chart_overrides)
     }
   }
 
-  depends_on = [terraform_data.cluster_contract]
+  depends_on = [
+    terraform_data.cluster_contract,
+    kubernetes_manifest.control_plane_network_policy_boundary_admission_binding,
+  ]
 }
 
 resource "helm_release" "control_plane" {
@@ -277,9 +290,9 @@ resource "helm_release" "control_plane" {
   namespace        = "fs2-system"
   chart            = "${local.fs2_root}/charts/control-plane/fs2-serve-control-plane"
   create_namespace = false
-  # A failed atomic release could restore or remove an allow after the
-  # namespace deny has landed. The staged transition guards make failure safe;
-  # recovery must use network-policy-transition.sh rollback.
+  # Permanent Terraform-owned boundaries remain selected if Helm fails,
+  # is replaced, or is manually uninstalled. Recovery still uses the serialized
+  # transition state machine so the namespace deny is relaxed before rollback.
   atomic          = false
   cleanup_on_fail = false
   wait            = true
@@ -368,7 +381,18 @@ resource "helm_release" "control_plane" {
 }
 
 resource "terraform_data" "control_plane_network_policy_transition_complete" {
+  count = local.public_edge_enabled ? 1 : 0
+
   triggers_replace = [local.control_plane_network_policy_transition_sha256]
+
+  input = {
+    transition_script = local.control_plane_network_policy_transition_script
+    release           = local.control_plane_network_policy_release_name
+    release_namespace = "fs2-system"
+    chart             = local.control_plane_chart_root
+    kubeconfig        = var.kubeconfig_path
+    kube_context      = var.kube_context
+  }
 
   provisioner "local-exec" {
     interpreter = ["/bin/bash", "-c"]
@@ -381,7 +405,10 @@ resource "terraform_data" "control_plane_network_policy_transition_complete" {
         --context "$FS2_KUBE_CONTEXT" \
         --values "$FS2_BASE_VALUES" \
         --values-env FS2_CONTROL_PLANE_OVERRIDES \
-        --values-env FS2_ADMIN_CONTROL_PLANE_OVERRIDES
+        --values-env FS2_ADMIN_CONTROL_PLANE_OVERRIDES \
+        --values-env FS2_BOOTSTRAP_ACCESS_OVERRIDES \
+        --values-env FS2_SCIENTIFIC_ACCESS_OVERRIDES \
+        --values-env FS2_SCIENTIFIC_CHART_OVERRIDES
     EOT
     environment = {
       FS2_TRANSITION_SCRIPT             = local.control_plane_network_policy_transition_script
@@ -393,6 +420,31 @@ resource "terraform_data" "control_plane_network_policy_transition_complete" {
       FS2_BASE_VALUES                   = "${local.fs2_root}/charts/control-plane/control-plane.values.yaml"
       FS2_CONTROL_PLANE_OVERRIDES       = yamlencode(local.control_plane_overrides)
       FS2_ADMIN_CONTROL_PLANE_OVERRIDES = yamlencode(local.admin_control_plane_overrides)
+      FS2_BOOTSTRAP_ACCESS_OVERRIDES    = yamlencode(local.bootstrap_access_overrides)
+      FS2_SCIENTIFIC_ACCESS_OVERRIDES   = yamlencode(local.scientific_access_overrides)
+      FS2_SCIENTIFIC_CHART_OVERRIDES    = yamlencode(local.scientific_chart_overrides)
+    }
+  }
+
+  provisioner "local-exec" {
+    when        = destroy
+    on_failure  = fail
+    interpreter = ["/bin/bash", "-c"]
+    command     = <<-EOT
+      "$FS2_TRANSITION_SCRIPT" destroy \
+        --release "$FS2_RELEASE" \
+        --release-namespace "$FS2_RELEASE_NAMESPACE" \
+        --chart "$FS2_CHART" \
+        --kubeconfig "$FS2_KUBECONFIG" \
+        --context "$FS2_KUBE_CONTEXT"
+    EOT
+    environment = {
+      FS2_TRANSITION_SCRIPT = self.input.transition_script
+      FS2_RELEASE           = self.input.release
+      FS2_RELEASE_NAMESPACE = self.input.release_namespace
+      FS2_CHART             = self.input.chart
+      FS2_KUBECONFIG        = self.input.kubeconfig
+      FS2_KUBE_CONTEXT      = self.input.kube_context
     }
   }
 

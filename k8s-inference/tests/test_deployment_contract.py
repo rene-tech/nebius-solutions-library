@@ -3655,7 +3655,7 @@ def test_control_plane_release_uses_executable_network_policy_transition_boundar
     assert source.index('resource "terraform_data" "control_plane_network_policy_transition_stage"') < source.index(
         'resource "helm_release" "control_plane"'
     )
-    assert 'command     = <<-EOT\n      "$FS2_TRANSITION_SCRIPT" stage' in source
+    assert 'command     = <<-EOT\n      "$FS2_TRANSITION_SCRIPT" prepare' in source
     assert 'command     = <<-EOT\n      "$FS2_TRANSITION_SCRIPT" complete' in source
     assert "depends_on = [helm_release.control_plane]" in source
     assert "--rollback-on-failure" not in source
