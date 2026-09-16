@@ -217,10 +217,16 @@ resource "nebius_iam_v2_access_key" "scientific_artifacts" {
     }
   }
 
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
+  }
+
   # The bucket policy is the only thing that authorizes this key, so it must
   # exist before the key does; otherwise the key is briefly valid for an
   # identity with no scope at all.
   depends_on = [
+    terraform_data.credential_migration_gate,
     nebius_storage_v1_bucket.scientific_artifacts,
     nebius_storage_v1_bucket.scientific_artifacts_disposable,
   ]

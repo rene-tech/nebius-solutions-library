@@ -1,7 +1,17 @@
 resource "kubernetes_manifest" "model" {
   for_each = local.terraform_owned_model_manifests
 
-  manifest = each.value.manifest
+  manifest = each.value.manifest.kind == "Deployment" ? merge(each.value.manifest, {
+    spec = merge(each.value.manifest.spec, {
+      template = merge(each.value.manifest.spec.template, {
+        metadata = merge(try(each.value.manifest.spec.template.metadata, {}), {
+          annotations = merge(try(each.value.manifest.spec.template.metadata.annotations, {}), {
+            "fs2.nebius.ai/secret-rollout-sha256" = sha256(jsonencode({ registry = var.credential_generations.registry }))
+          })
+        })
+      })
+    })
+  }) : each.value.manifest
 
   # The manifest supplies a stable zero bootstrap. The ScaledObject establishes
   # the configured hot floor, then KEDA's generated HPA owns changes through

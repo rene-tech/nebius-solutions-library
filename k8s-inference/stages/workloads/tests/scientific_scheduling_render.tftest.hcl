@@ -13,14 +13,15 @@ mock_provider "helm" {}
 mock_provider "random" {}
 
 variables {
-  run_root        = "/tmp/fs2-modelexpress-test"
-  kubeconfig_path = "/tmp/fs2-modelexpress-test/kubeconfig"
-  run_id          = "mxtest01"
-  cluster_id      = "mk8scluster-modelexpresstest"
-  cluster_name    = "fs2-modelexpress-test"
-  kube_context    = "fs2-modelexpress-test"
-  kube_system_uid = "00000000-0000-0000-0000-000000000001"
-  project_id      = "project-modelexpresstest"
+  bootstrap_access_expires_at = "2099-01-01T00:00:00Z"
+  run_root                    = "/tmp/fs2-modelexpress-test"
+  kubeconfig_path             = "/tmp/fs2-modelexpress-test/kubeconfig"
+  run_id                      = "mxtest01"
+  cluster_id                  = "mk8scluster-modelexpresstest"
+  cluster_name                = "fs2-modelexpress-test"
+  kube_context                = "fs2-modelexpress-test"
+  kube_system_uid             = "00000000-0000-0000-0000-000000000001"
+  project_id                  = "project-modelexpresstest"
 
   # Synthetic per-node measurements, deliberately below nominal preset size.
   accelerator_node_schedulable_capacity = {
@@ -218,7 +219,8 @@ variables {
       }
     }
   }
-  nvcrio_dockerconfigjson = "{\"auths\":{}}"
+  nvcrio_dockerconfigjson            = "{\"auths\":{}}"
+  nvcrio_dockerconfigjson_configured = true
 
   # The reference-data plane, whose CPU ClusterQueue the licensed CPU lane
   # points at. Its pool is a 32 vCPU / 128 GB class node with conservative
@@ -780,4 +782,7 @@ run "warm_capacity_is_searched_before_burst_capacity" {
     )
     error_message = "AlphaFold 3's declared eligibility must keep the operator's warm-first order."
   }
+}
+mock_provider "external" {
+  mock_data "external" { defaults = { result = { status = "pass", receipt_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", expires_at = "2099-01-01T00:00:00Z" } } }
 }

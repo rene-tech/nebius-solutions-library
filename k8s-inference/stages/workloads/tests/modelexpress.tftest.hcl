@@ -3,14 +3,15 @@ mock_provider "kubernetes" {}
 mock_provider "random" {}
 
 variables {
-  run_root        = "/tmp/fs2-modelexpress-test"
-  kubeconfig_path = "/tmp/fs2-modelexpress-test/kubeconfig"
-  run_id          = "mxtest01"
-  cluster_id      = "mk8scluster-modelexpresstest"
-  cluster_name    = "fs2-modelexpress-test"
-  kube_context    = "fs2-modelexpress-test"
-  kube_system_uid = "00000000-0000-0000-0000-000000000001"
-  project_id      = "project-modelexpresstest"
+  bootstrap_access_expires_at = "2099-01-01T00:00:00Z"
+  run_root                    = "/tmp/fs2-modelexpress-test"
+  kubeconfig_path             = "/tmp/fs2-modelexpress-test/kubeconfig"
+  run_id                      = "mxtest01"
+  cluster_id                  = "mk8scluster-modelexpresstest"
+  cluster_name                = "fs2-modelexpress-test"
+  kube_context                = "fs2-modelexpress-test"
+  kube_system_uid             = "00000000-0000-0000-0000-000000000001"
+  project_id                  = "project-modelexpresstest"
 
   target_contract = {
     project_id                 = "project-modelexpresstest"
@@ -199,7 +200,8 @@ variables {
       }
     }
   }
-  nvcrio_dockerconfigjson = "{\"auths\":{}}"
+  nvcrio_dockerconfigjson            = "{\"auths\":{}}"
+  nvcrio_dockerconfigjson_configured = true
 }
 
 run "managed_default_cache_renders_without_storage_class" {
@@ -425,4 +427,7 @@ run "globally_disabled_creates_no_modelexpress_resources" {
     )
     error_message = "The globally disabled integration must plan no ModelExpress contract, namespace, credential, or Helm release."
   }
+}
+mock_provider "external" {
+  mock_data "external" { defaults = { result = { status = "pass", receipt_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", expires_at = "2099-01-01T00:00:00Z" } } }
 }

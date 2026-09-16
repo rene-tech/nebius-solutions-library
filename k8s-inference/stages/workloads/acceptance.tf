@@ -171,7 +171,7 @@ resource "kubernetes_job_v1" "reporting_datasource_acceptance" {
             name = "FS2_GRAFANA_USER"
             value_from {
               secret_key_ref {
-                name = data.kubernetes_secret_v1.grafana_admin.metadata[0].name
+                name = local.grafana_admin_secret_ref.name
                 key  = data.terraform_remote_state.foundation.outputs.grafana_admin_secret_ref.user_key
               }
             }
@@ -181,7 +181,7 @@ resource "kubernetes_job_v1" "reporting_datasource_acceptance" {
             name = "FS2_GRAFANA_PASSWORD"
             value_from {
               secret_key_ref {
-                name = data.kubernetes_secret_v1.grafana_admin.metadata[0].name
+                name = local.grafana_admin_secret_ref.name
                 key  = data.terraform_remote_state.foundation.outputs.grafana_admin_secret_ref.password_key
               }
             }

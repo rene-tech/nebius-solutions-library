@@ -63,9 +63,10 @@ mock_provider "nebius" {
 }
 
 variables {
-  project_id    = "project-syntheticlocal"
-  source_commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-  run_id        = "systest1"
+  project_id                  = "project-syntheticlocal"
+  source_commit               = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  run_id                      = "systest1"
+  control_plane_allowed_cidrs = ["192.0.2.1/32"]
 
   target_binding = {
     project_id          = "project-syntheticlocal"
@@ -111,7 +112,9 @@ run "system_nodes_honor_a_bounded_tfvars_override" {
 
   variables {
     system_pool = {
-      inotify_max_user_instances = 16384
+      node_count                             = 3
+      inotify_max_user_instances             = 16384
+      three_node_ha_cost_review_acknowledged = true
     }
   }
 
@@ -133,9 +136,24 @@ run "an_unsafe_low_inotify_ceiling_is_rejected" {
 
   variables {
     system_pool = {
-      inotify_max_user_instances = 128
+      node_count                             = 3
+      inotify_max_user_instances             = 128
+      three_node_ha_cost_review_acknowledged = true
     }
   }
 
   expect_failures = [var.system_pool]
+}
+
+run "a_universal_control_plane_allowlist_is_rejected" {
+  command = plan
+
+  variables {
+    control_plane_allowed_cidrs = ["0.0.0.0/0"]
+  }
+
+  expect_failures = [var.control_plane_allowed_cidrs]
+}
+mock_provider "external" {
+  mock_data "external" { defaults = { result = { status = "pass", receipt_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", expires_at = "2099-01-01T00:00:00Z" } } }
 }

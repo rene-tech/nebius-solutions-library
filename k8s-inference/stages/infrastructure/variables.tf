@@ -9,6 +9,32 @@ variable "nebius_profile" {
   }
 }
 
+variable "operator_handoff_generation" {
+  description = "Active provider-derived operator handoff lineage generation."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = floor(var.operator_handoff_generation) == var.operator_handoff_generation && var.operator_handoff_generation >= 1
+    error_message = "operator_handoff_generation must be a positive whole number."
+  }
+}
+
+variable "operator_handoff_generation_history" {
+  description = "Append-only operator handoff identity generations retained until predecessor revocation is proved."
+  type        = set(number)
+  default     = [1]
+
+  validation {
+    condition = (
+      length(var.operator_handoff_generation_history) >= 1 &&
+      var.operator_handoff_generation_history == toset(range(1, max(var.operator_handoff_generation_history...) + 1)) &&
+      contains(var.operator_handoff_generation_history, var.operator_handoff_generation)
+    )
+    error_message = "operator handoff history must be contiguous from 1 and contain the active generation."
+  }
+}
+
 variable "project_id" {
   description = "Exact target project ID, supplied through an external mode-0600 tfvars file. Without target_binding it must remain in the checked-in legacy target catalog."
   type        = string
@@ -226,13 +252,19 @@ variable "kubernetes_version" {
 }
 
 variable "control_plane_allowed_cidrs" {
-  description = "Optional public API allowlist. Empty relies on Nebius authentication during the short validation lifecycle."
+  description = "Required public API allowlist containing only operator and automation source networks."
   type        = list(string)
-  default     = []
 
   validation {
-    condition     = alltrue([for cidr in var.control_plane_allowed_cidrs : can(cidrhost(cidr, 0))])
-    error_message = "Every control-plane allowlist entry must be a valid CIDR."
+    condition = (
+      length(var.control_plane_allowed_cidrs) >= 1 &&
+      length(var.control_plane_allowed_cidrs) <= 8 &&
+      alltrue([
+        for cidr in var.control_plane_allowed_cidrs :
+        can(cidrhost(cidr, 0)) && cidr == "${cidrhost(cidr, 0)}/${strcontains(cidr, ":") ? 128 : 32}"
+      ])
+    )
+    error_message = "control_plane_allowed_cidrs must contain one to eight canonical /32 IPv4 or /128 IPv6 operator or automation egress addresses."
   }
 }
 

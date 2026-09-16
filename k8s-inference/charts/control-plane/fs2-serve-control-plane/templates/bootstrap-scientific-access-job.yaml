@@ -44,6 +44,8 @@ spec:
     metadata:
       labels:
         {{- include "fs2-serve.scientificAccessSelectorLabels" . | nindent 8 }}
+      annotations:
+        fs2.nebius.ai/secret-rollout-sha256: {{ dict "database" .Values.secretRollout.databaseGeneration "access" .Values.secretRollout.accessGeneration "payload" .Values.secretRollout.payloadGeneration "ledger" .Values.secretRollout.ledgerGeneration "pepper" .Values.secretRollout.pepperGeneration | toJson | sha256sum | quote }}
     spec:
       restartPolicy: Never
       serviceAccountName: {{ include "fs2-serve.serviceAccountName" (dict "root" . "component" "bootstrap") }}
@@ -88,6 +90,10 @@ spec:
               value: {{ .Values.scientificAccess.models | toJson | quote }}
             - name: FS2_BOOTSTRAP_ACCESS_MAX_CONCURRENCY
               value: {{ .Values.scientificAccess.maxConcurrency | quote }}
+            {{- if .Values.scientificAccess.expiresAt }}
+            - name: FS2_BOOTSTRAP_ACCESS_EXPIRES_AT
+              value: {{ .Values.scientificAccess.expiresAt | quote }}
+            {{- end }}
           volumeMounts:
             {{- include "fs2-serve.cryptoVolumeMounts" . | nindent 12 }}
             {{- include "fs2-serve.databaseCaVolumeMount" . | nindent 12 }}

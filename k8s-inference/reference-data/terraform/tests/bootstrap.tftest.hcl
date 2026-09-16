@@ -207,3 +207,6 @@ run "every_reference_policy_is_scoped_away_from_database_pods" {
     error_message = "Every reference-data policy must be namespaced to fs2-reference-data, so no selector can match a CloudNativePG pod in fs2-data."
   }
 }
+mock_provider "external" {
+  mock_data "external" { defaults = { result = { status = "pass", receipt_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", expires_at = "2099-01-01T00:00:00Z" } } }
+}

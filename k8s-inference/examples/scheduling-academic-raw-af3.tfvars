@@ -37,7 +37,8 @@ deployment = {
   cluster = {
     # Inside the Kueue and JobSet upstream-tested intersection, which enabling
     # scientific batch requires.
-    kubernetes_version = "1.34"
+    kubernetes_version          = "1.34"
+    control_plane_allowed_cidrs = ["192.0.2.1/32"] # Replace before deployment.
   }
 
   accelerator_pools = {
@@ -175,6 +176,12 @@ deployment = {
         nominal_memory = "96Gi"
       }
     }
+  }
+
+  secrets = {
+    # Every bootstrap PAT audience has a server-enforced expiry. Replace this
+    # example value with the reviewed rotation window before deployment.
+    bootstrap_access_expires_at = "2099-01-01T00:00:00Z"
   }
 
   edge = {

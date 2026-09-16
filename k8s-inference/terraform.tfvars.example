@@ -29,7 +29,8 @@ deployment = {
 
   cluster = {
     kubernetes_version          = "1.35"
-    control_plane_allowed_cidrs = []
+    # Replace the documentation address with exact operator/automation egress CIDRs.
+    control_plane_allowed_cidrs = ["192.0.2.1/32"]
     # Optional system_pool overrides belong here. The default 8192 avoids
     # exhausting registry-helper/controller inotify instances and is written
     # persistently only to system nodes.
@@ -574,6 +575,8 @@ deployment = {
     grafana_password_env  = "FS2_GRAFANA_ADMIN_PASSWORD"
     ngc_api_key_env       = "FS2_NGC_API_KEY"
     nvcr_dockerconfig_env = "FS2_NVCR_DOCKERCONFIGJSON"
+    # Replace with the reviewed, server-enforced expiry for generation 1.
+    bootstrap_access_expires_at = "2099-01-01T00:00:00Z"
   }
 
   acceptance = {

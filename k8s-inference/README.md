@@ -159,7 +159,11 @@ NEBIUS_PROFILE=sandbox ./inference-stack validate --var-file terraform.tfvars
 NEBIUS_PROFILE=sandbox ./inference-stack plan --var-file terraform.tfvars
 NEBIUS_PROFILE=sandbox ./inference-stack apply --var-file terraform.tfvars
 NEBIUS_PROFILE=sandbox ./inference-stack status --var-file terraform.tfvars
-NEBIUS_PROFILE=sandbox ./inference-stack output --var-file terraform.tfvars
+install -d -m 0700 /a/private/operator-handoff
+NEBIUS_PROFILE=sandbox ./inference-stack output --var-file terraform.tfvars \
+  --credential-kind general-access \
+  --credential-expires-in-seconds 3600 \
+  --credential-file /a/private/operator-handoff/general-access.json
 ```
 
 After a deployment, `apply` and `status` print all non-secret customer entry
@@ -188,50 +192,40 @@ address. An `internal-only` deployment emits loopback URLs instead; those are
 usable only while the run-scoped operator proxy from the workloads
 `port_forward_contract` is active.
 
-The explicit `inference-stack output` command is the credential handoff. It
-prints the sensitive `access_bundle`, including the admin URL and bootstrap
-token, MCP and `/v1` URLs plus their scoped PAT, Grafana URL and native-login
-credentials, cluster/project/region identity, and the kubeconfig command:
+The explicit `inference-stack output` command exports exactly one requested,
+scoped credential. Terraform exposes only a non-secret contract containing
+Secret references. The wrapper resolves the selected reference through the
+run-owned kubeconfig, requires a server-enforced PAT expiry no later than the
+requested handoff TTL, and writes both a mode-`0600` delivery file and a
+separate value-free audit receipt. Credential values are never printed to
+stdout:
 
 ```json
 {
-  "schema": "fs2-serve.nebius.ai/access-bundle/v1",
-  "cluster": {"project_id": "project-...", "region": "...", "cluster_id": "mk8scluster-..."},
-  "endpoints": {"admin_portal_url": "https://.../admin/", "mcp_url": "https://.../mcp", "inference_base_url": "https://.../v1", "grafana_url": "https://.../admin/observability/grafana"},
-  "credentials": {"admin_bootstrap_token": "<redacted>", "mcp_inference_token": "<redacted>", "inference_access_token": "<same scoped PAT>", "scientific_access_token": "<separate academic PAT or null>", "grafana": {"username": "<redacted>", "password": "<redacted>"}},
-  "mcp_access": {"tenant_id": "<cluster tenant>", "models": ["*"]},
-  "scientific_access": {"tenant_id": "<academic tenant>", "models": ["*"]},
-  "reference_data": {"filesystem_id": "computefilesystem-...", "bucket_id": "storagebucket-...", "bucket_name": "...", "cpu_pool_id": "mk8snodegroup-...", "status_service": "...", "pipeline": {"job_name": "..."}},
-  "reference_data_contract": {"storage": {"schema": "fs2-serve.nebius.ai/reference-data-storage/v1"}, "plane": {"schema": "fs2-serve.nebius.ai/reference-data-configuration/v1"}}
+  "schema": "fs2-serve.nebius.ai/scoped-credential-handoff/v1",
+  "kind": "general-access",
+  "credential": {"token": "<redacted>"},
+  "expires_at": "<server-enforced RFC3339 expiry>",
+  "endpoints": {"mcp_url": "https://.../mcp", "inference_base_url": "https://.../v1"}
 }
 ```
 
-`mcp_inference_token` remains for compatibility. `inference_access_token` is a
-clear alias of that same scoped PAT for OpenAI-compatible `/v1` clients. It
-always remains bound to the cluster tenant used by general serving. When
-`academic_assets.enabled` is true, Terraform additionally emits
-`scientific_access_token`, a distinct PAT bound to the configured academic
-tenant. Use that credential for academic scientific submissions; tenant
-enforcement is not weakened or shared between the two credentials. Other
-tenant credentials remain a live admin-console operation.
+`--credential-kind` accepts `general-access` or, when configured,
+`scientific-access`. The former remains bound to the serving tenant; the latter
+uses the distinct academic tenant and principal. Admin bootstrap and Grafana
+source credentials are excluded: a timestamp on a copied long-lived value is
+not expiry. Privileged access must instead use a provider- or service-enforced
+TTL session/token with an independently verified revocation.
 
-Open the emitted `admin_portal_url` and paste
-`credentials.admin_bootstrap_token` into the operator sign-in form. MCP clients
-use `credentials.mcp_inference_token` as a Bearer token, OpenAI-compatible
-clients use `credentials.inference_access_token`, academic scientific clients
-use `credentials.scientific_access_token`, and Grafana uses the emitted
-`credentials.grafana.username` and `credentials.grafana.password`. To print
-one value directly from the bundle:
+Read the selected PAT only from the protected file when it is needed:
 
 ```bash
-NEBIUS_PROFILE=sandbox ./inference-stack output --var-file terraform.tfvars \
-  | jq -r '.credentials.admin_bootstrap_token'
+jq -r '.credential.token' /a/private/operator-handoff/general-access.json
 ```
 
-Run it only in a private terminal and do not pipe its output to logs, CI
-artifacts, tickets, or shell history. The credentials necessarily live in the
-protected run-owned Terraform state; automatic `apply` and `status` output
-remain non-secret.
+Do not copy the file or its value into logs, CI artifacts, tickets, or shell
+history. Securely retire it at expiry and retain the value-free receipt.
+Automatic `apply`, `status`, and `output` stdout remain non-secret.
 
 The shipped example selects a shared public endpoint, so no foreground process
 or client-side port forwarding is required:
@@ -329,13 +323,15 @@ customer key can use those models when its model permissions include them.
 The admin token is deliberately not valid for `/mcp` or `/v1`.
 An intentionally revoked or expired Terraform bootstrap PAT stays inactive:
 the next Helm upgrade fails closed instead of silently reactivating it. Rotate
-the Terraform-owned token material before that upgrade by applying with both
-`-replace=random_id.bootstrap_access_token_id` and
-`-replace=random_password.bootstrap_access_token_secret` through the same
-protected workloads-stage workflow.
-Rotate the optional academic credential independently with
-`-replace=random_id.scientific_access_token_id[0]` and
-`-replace=random_password.scientific_access_token_secret[0]`.
+credentials through a reviewed, overlap-first change to the applicable
+`deployment.secrets.credential_generations` value. Payload, ledger, pepper,
+attestor, admin, access, database, registry, and Grafana generations are
+independent. Generation 1 retains the existing persisted resource addresses;
+later keyrings use new Secret names, retain every predecessor needed for reads,
+and trigger readiness-gated consumer rollouts from non-secret generation
+metadata. See [operator access and credential migration](docs/OPERATOR_ACCESS_HYGIENE.md)
+for the plan guard, encrypted-state retirement, scoped credential export, and
+rollback contract.
 
 The platform operator owns the Apps, model deployments, caches and shared
 capacity. Customers do not deploy or own a separate copy of a model. A customer
@@ -363,12 +359,19 @@ the location explicit:
   --run-root /a/private/k8s-inference-state-directory
 ```
 
-The wrapper creates the run directory with mode `0700` and generated contract,
-plan, state-input, and kubeconfig files with private permissions where it owns
-them. Secret values are passed through process environment only and never
-written to generated stage tfvars. Terraform state can still contain sensitive
-provider or resource data, so the whole run directory must be protected and
-backed up according to the operator's policy.
+The wrapper recursively enforces owner-only permissions every time it starts
+and finishes: directories are `0700`, regular data files are `0600`, and
+owner-executable files retain only their owner execute bits. It rejects any
+symlink below the run root instead of following it. Secret values are passed
+through process environment only and never written to generated stage tfvars.
+Legacy Terraform state can contain sensitive values. Keep it only during the
+generation-preserving migration, then move/rewrap it into encrypted,
+access-logged storage or securely retire it under the authoritative global
+manifest procedure. A plaintext copy is never a rollback artifact.
+
+The Kubernetes API allowlist, viewer-only operator handoff identity, state and
+plan hygiene, rotation generations, and staged verification procedure are
+documented in [Operator access hygiene](docs/OPERATOR_ACCESS_HYGIENE.md).
 
 ## Configuration
 

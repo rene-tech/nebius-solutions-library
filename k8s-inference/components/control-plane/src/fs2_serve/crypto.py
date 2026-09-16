@@ -69,6 +69,18 @@ class PayloadCipher:
             raise ValueError("invalid payload direction")
         return f"fs2-serve.payload/v1\0{operation_id}\0{tenant_id}\0{model_id}\0{direction}".encode()
 
+    @staticmethod
+    def customer_storage_aad(tenant_id: str, principal_id: str) -> bytes:
+        """Stable cross-release AAD contract for customer storage credentials.
+
+        SAI-08 consumers must call this method rather than reproducing bytes.
+        Changing the domain or field order would strand existing ciphertext.
+        """
+
+        if not tenant_id or not principal_id or "\0" in tenant_id or "\0" in principal_id:
+            raise ValueError("customer storage AAD identities must be non-empty and NUL-free")
+        return f"fs2.user-storage/v1\0{tenant_id}\0{principal_id}".encode()
+
     def encrypt(self, plaintext: bytes, *, aad: bytes) -> Ciphertext:
         nonce = os.urandom(12)
         value = AESGCM(self._keys[self.active_key_id]).encrypt(nonce, plaintext, aad)

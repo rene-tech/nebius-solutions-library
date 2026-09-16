@@ -579,7 +579,8 @@ async def build_runtime(settings: Settings) -> AppRuntime:
 
         canonical_catalog = augment_native_catalog(
             load_catalog(settings.catalog_dir, repo_root=settings.repo_root),
-            settings.catalog_dir, repo_root=settings.repo_root,
+            settings.catalog_dir,
+            repo_root=settings.repo_root,
         )
         configuration_repository = StoreConfigurationRepository(store)
         configuration_service = ConfigurationService(
@@ -710,6 +711,7 @@ async def bootstrap_access(settings: Settings) -> None:
                 models=settings.bootstrap_access_models,
                 max_concurrency=settings.bootstrap_access_max_concurrency,
                 name=settings.bootstrap_access_name,
+                expires_at=settings.bootstrap_access_expires_at,
             ),
             created_by="terraform-bootstrap",
         )

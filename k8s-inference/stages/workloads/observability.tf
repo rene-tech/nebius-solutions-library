@@ -197,8 +197,11 @@ resource "helm_release" "dcgm_exporter" {
     file("${path.module}/values/dcgm-exporter.yaml"),
     yamlencode({
       imagePullSecrets = [{ name = kubernetes_secret_v1.dcgm_exporter_nvcrio[0].metadata[0].name }]
-      arguments        = local.dcgm_cadence_profile.helmValues.arguments
-      config           = local.dcgm_cadence_profile.helmValues.config
+      podAnnotations = {
+        "fs2.nebius.ai/secret-rollout-sha256" = sha256(jsonencode({ registry = var.credential_generations.registry }))
+      }
+      arguments = local.dcgm_cadence_profile.helmValues.arguments
+      config    = local.dcgm_cadence_profile.helmValues.config
       serviceMonitor = merge(
         local.dcgm_cadence_profile.helmValues.serviceMonitor,
         { additionalLabels = { release = "fs2-${var.run_id}-monitoring" } },
