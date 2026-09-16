@@ -178,6 +178,7 @@ def gateway_network_policy(documents: list[dict]) -> dict:
 
 
 def test_customer_storage_credentials_are_isolated_and_egress_is_bounded() -> None:
+    generation = "g20260916190000-" + "4" * 12
     base = (
         "--set",
         "customerStorage.enabled=true",
@@ -195,6 +196,16 @@ def test_customer_storage_credentials_are_isolated_and_egress_is_bounded() -> No
         "customerStorage.kubernetesApiCidrs[0]=192.0.2.1/32",
         "--set-string",
         f"customerStorage.egressContractSha256={'4' * 64}",
+        "--set-string",
+        f"customerStorage.egressGeneration={generation}",
+        "--set-string",
+        f"customerStorage.egressContractConfigMapName=fs2-customer-storage-egress-contract-{generation}",
+        "--set-string",
+        f"customerStorage.egressTrustConfigMapName=fs2-customer-storage-egress-trust-{generation}",
+        "--set-string",
+        f"customerStorage.egressNetworkPolicyName=fs2-customer-storage-egress-{generation}",
+        "--set-string",
+        f"customerStorage.egressBoundaryPolicyName=fs2-customer-storage-egress-boundary-{generation}",
     )
     rejected = subprocess.run(  # noqa: S603 - fixed Helm binary and test-owned arguments
         render_command(*base),
@@ -208,7 +219,8 @@ def test_customer_storage_credentials_are_isolated_and_egress_is_bounded() -> No
     documents = render(*base, "--set-string", "customerStorage.egressCidrs[0]=198.51.100.10/32")
     named = {(item["kind"], item["metadata"]["name"]): item for item in documents}
     runtime = named[("Deployment", "fs2-serve-control-plane")]["spec"]["template"]["spec"]
-    storage = named[("Deployment", "fs2-serve-control-plane-storage-reconciler")]["spec"]["template"]["spec"]
+    storage_template = named[("Deployment", "fs2-serve-control-plane-storage-reconciler")]["spec"]["template"]
+    storage = storage_template["spec"]
     disclosure = named[("Deployment", "fs2-serve-control-plane-storage-disclosure")]["spec"]["template"]["spec"]
     runtime_text = json.dumps(runtime)
     storage_text = json.dumps(storage)
@@ -222,8 +234,17 @@ def test_customer_storage_credentials_are_isolated_and_egress_is_bounded() -> No
     assert "ledger-hmac-keyring" not in storage_text
     assert 'fs2-serve-database"' not in storage_text
     assert "verify-storage-egress" in storage_text
-    assert "fs2-customer-storage-egress-contract" in storage_text
-    assert "fs2-customer-storage-egress-trust" in storage_text
+    assert f"fs2-customer-storage-egress-contract-{generation}" in storage_text
+    assert f"fs2-customer-storage-egress-trust-{generation}" in storage_text
+    assert f"fs2-customer-storage-egress-{generation}" in storage_text
+    assert storage_template["metadata"]["annotations"]["fs2.nebius.ai/storage-egress-boundary"] == (
+        f"fs2-customer-storage-egress-boundary-{generation}"
+    )
+    assert storage_template["metadata"]["labels"]["fs2.nebius.ai/storage-egress-generation"] == generation
+    assert storage["initContainers"][0]["args"][-1] == f"fs2-customer-storage-egress-{generation}"
+    assert named[("Role", "fs2-serve-control-plane-storage-egress-readiness")]["rules"][0]["resourceNames"] == [
+        f"fs2-customer-storage-egress-{generation}"
+    ]
     assert "storage-resource" not in disclosure_text
     assert "storage-iam" not in disclosure_text
     assert "fs2-serve-database-storage-disclosure" in disclosure_text
@@ -232,22 +253,67 @@ def test_customer_storage_credentials_are_isolated_and_egress_is_bounded() -> No
     assert "name-keyring.json" not in disclosure_text
     assert "ledger-hmac-keyring" not in disclosure_text
 
-    precheck = named[("Job", "fs2-serve-control-plane-storage-egress-precheck")]
-    postcheck = named[("Job", "fs2-serve-control-plane-storage-egress-postcheck")]
-    assert "pre-rollback" in precheck["metadata"]["annotations"]["helm.sh/hook"]
-    assert "post-rollback" in postcheck["metadata"]["annotations"]["helm.sh/hook"]
-    assert "--kubernetes-network-policy" in postcheck["spec"]["template"]["spec"]["containers"][0]["args"]
+    assert ("Job", "fs2-serve-control-plane-storage-egress-precheck") not in named
+    assert ("Job", "fs2-serve-control-plane-storage-egress-postcheck") not in named
+    assert ("ConfigMap", "fs2-serve-control-plane-storage-egress-desired") not in named
+    assert not any(
+        "helm.sh/hook-delete-policy" in document.get("metadata", {}).get("annotations", {})
+        for document in documents
+        if "storage-egress" in document.get("metadata", {}).get("name", "")
+    )
 
     runtime_policy = named[("NetworkPolicy", "fs2-serve-control-plane-runtime")]
     assert all("to" in rule for rule in runtime_policy["spec"]["egress"])
-    storage_policy = named[("NetworkPolicy", "fs2-serve-control-plane-storage-reconciler")]
-    https = [rule for rule in storage_policy["spec"]["egress"] if rule["ports"][0]["port"] == 443]
-    assert https[0]["to"] == [{"ipBlock": {"cidr": "198.51.100.10/32"}}]
-    assert https[1]["to"] == [{"ipBlock": {"cidr": "192.0.2.1/32"}}]
-    assert all(rule["ports"] == [{"port": 443, "protocol": "TCP"}] for rule in https)
-    assert storage_policy["metadata"]["annotations"] == {
-        "fs2.nebius.ai/storage-egress-contract-sha256": "4" * 64
-    }
+    assert ("NetworkPolicy", f"fs2-customer-storage-egress-{generation}") not in named
+    assert ("NetworkPolicy", "fs2-serve-control-plane-storage-reconciler") not in named
+    assert storage["containers"][0]["name"] == "storage-reconciler"
+    assert storage["initContainers"][0]["name"] == "verify-storage-egress"
+
+    rotated_documents = render(
+        *base,
+        "--set-string",
+        "customerStorage.egressCidrs[0]=198.51.100.10/32",
+        "--set",
+        "secretRollout.storageGeneration=2",
+        "--set",
+        "customerStorage.cryptoSecretName=fs2-serve-storage-keyring-v2",
+    )
+    rotated = {(item["kind"], item["metadata"]["name"]): item for item in rotated_documents}
+    for component in ("storage-reconciler", "storage-disclosure"):
+        deployment = rotated[("Deployment", f"fs2-serve-control-plane-{component}")]
+        template = deployment["spec"]["template"]
+        assert "fs2-serve-storage-keyring-v2" in json.dumps(template["spec"]["volumes"])
+        assert template["metadata"]["annotations"]["fs2.nebius.ai/secret-rollout-sha256"]
+
+    mismatched_generation = subprocess.run(  # noqa: S603 - fixed Helm binary and adversarial values.
+        render_command(
+            *base,
+            "--set-string",
+            "customerStorage.egressCidrs[0]=198.51.100.10/32",
+            "--set",
+            "secretRollout.storageGeneration=2",
+        ),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert mismatched_generation.returncode != 0
+    assert "immutable secretRollout.storageGeneration identity" in mismatched_generation.stderr
+
+    mismatched_contract_generation = subprocess.run(  # noqa: S603 - fixed Helm binary and adversarial values.
+        render_command(
+            *base,
+            "--set-string",
+            "customerStorage.egressCidrs[0]=198.51.100.10/32",
+            "--set-string",
+            "customerStorage.egressGeneration=g20260916190000-555555555555",
+        ),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert mismatched_contract_generation.returncode != 0
+    assert "bound to the signed contract digest" in mismatched_contract_generation.stderr
 
     for values in (
         ("customerStorage.egressCidrs[0]=0.0.0.0/1", "customerStorage.egressCidrs[1]=128.0.0.0/1"),

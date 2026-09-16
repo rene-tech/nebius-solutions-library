@@ -25,11 +25,14 @@ only the public halves of expiring JWT keys. Private keys must be generated and
 rotated outside Terraform; they must never enter a plan or state file. The
 reconciler's HTTPS egress is derived from a signed, 24-hour provider endpoint
 resolution contract and rendered only as IPv4 `/32` and IPv6 `/128` host
-routes. Pre/post install, upgrade, and rollback hooks verify the signed bytes,
-freshness, live DNS, rendered routes, and live NetworkPolicy. The reconciler
-also has the same verifier as an init container, so skipping Helm hooks cannot
-start it with self-asserted or stale routes. Public runtime NetworkPolicies do
-not contain a customer-storage HTTPS exception.
+routes. A separately credentialed security-owner Terraform root owns the
+admission boundary and immutable, generation-named contract, trust, and
+NetworkPolicy objects. The ordinary workloads root and Helm release can only
+read and select that exact handoff. Contract rotations add a new generation;
+old generations remain intact and cannot be deleted by either root. The
+reconciler verifies the signed bytes, freshness, live DNS, and exact live
+NetworkPolicy before readiness. Public runtime NetworkPolicies do not contain a
+customer-storage HTTPS exception.
 
 New installations default to per-user buckets. The immutable layout and its
 emergency enabled switch are separate: an existing layout can be disabled and
@@ -37,9 +40,10 @@ reactivated without replacing a bucket, while changing `tenant` to `user`
 requires a data migration. Migration 0032 inventories historical tenant
 layouts with multiple principals, marks them `inventory_required`, and disables
 them. They are not represented as isolated until their object ownership has
-been mapped and migrated. Each bucket has versioning enabled, retains
-three noncurrent versions for 30 days, and aborts incomplete multipart uploads
-after seven days.
+been mapped and migrated. Each bucket has versioning enabled. The historical
+rules for expiring noncurrent versions after 30 days and aborting multipart
+uploads after seven days are present only as disabled rules. They must not be
+enabled without a separate customer-data retention and deletion authorization.
 
 New bucket names are opaque keyed identifiers; tenant and user slugs are not
 published through provider bucket listings. Existing bucket names remain
@@ -83,6 +87,7 @@ customer_storage = {
   iam_public_key_pem               = var.customer_storage_iam_public_key_pem
   auth_key_expires_at              = "2026-12-01T00:00:00Z"
   egress_contract_json             = file(var.customer_storage_egress_contract_file)
+  egress_boundary                  = var.customer_storage_egress_security_handoff
   key_ttl_days                     = 90
   rotation_window_days             = 14
 }
@@ -99,14 +104,27 @@ uv run --project components/control-plane python \
   > customer-storage-egress-contract.json
 ```
 
-Before planning, the security-owned bootstrap must install immutable Secret
-`fs2-system/fs2-customer-storage-egress-trust` with `public-key.pem`. Neither
-this Terraform stage nor the Helm release can create or replace that trust
-root. The Terraform external verifier reads that fixed Secret and rejects
-missing, mutable, empty, aggregate, arbitrary, expired, incorrectly signed, or
-DNS-stale sets. After rollout, run the same
-tool with `--contract`, `--public-key`, and a JSON copy of the live
-`NetworkPolicy` via `--network-policy`; equality and exact TCP/443 are required.
+Before planning workloads, a separately approved operator applies
+`security/customer-storage-egress-boundary` with a dedicated security-owner
+kubeconfig. Its append-only `current_handoff` output supplies the exact values
+above. Neither the workloads Terraform identity nor Helm owns the admission
+policy, binding, trust ConfigMap, contract ConfigMap, or NetworkPolicy. The
+workloads plan reads all five and rejects missing, mutable, empty, aggregate,
+arbitrary, expired, incorrectly signed, DNS-stale, or non-equal generations.
+After rollout, run the same verifier with `--contract`, `--public-key`, and a
+JSON copy of the live `NetworkPolicy` via `--network-policy`; equality and exact
+TCP/443 are required.
+
+Contract rotation is overlap-only: add a trust generation if needed, add a
+contract and NetworkPolicy generation, then point a later workload revision at
+the new handoff. Never remove an older map entry or use targeted replacement.
+Old pods keep their exact generation label and old security-owned policy;
+new pods select only the new policy. A rollback may reuse a retained generation
+only while its signed contract remains fresh. Otherwise the security owner must
+add a fresh contract/policy generation and the operator must deploy the prior
+application version with that new handoff. A raw rollback whose old contract is
+expired, or whose chart attempts to regain policy ownership, fails closed; it
+never deletes or recreates an immutable object.
 
 The two Secrets are supplied by the credential rotation system and each exposes
 only a `credentials.json` key to the reconciler. Do not manage their private

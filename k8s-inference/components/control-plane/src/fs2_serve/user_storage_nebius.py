@@ -58,11 +58,19 @@ class NebiusUserStorage:
 
     @staticmethod
     def lifecycle() -> storage.LifecycleConfiguration:
+        """Retain data while destructive customer lifecycle is unauthorized.
+
+        Keep the two historical rule identities in a disabled state so a
+        reconciliation turns an accidentally enabled rule off without deleting
+        the rule or any customer object/version. Enabling either rule requires
+        a separately reviewed retention authorization.
+        """
+
         return storage.LifecycleConfiguration(
             rules=[
                 storage.LifecycleRule(
                     id="expire-noncurrent-versions",
-                    status=storage.LifecycleRule__Status.ENABLED,
+                    status=storage.LifecycleRule__Status.DISABLED,
                     noncurrent_version_expiration=storage.LifecycleNoncurrentVersionExpiration(
                         newer_noncurrent_versions=3,
                         noncurrent_days=30,
@@ -70,7 +78,7 @@ class NebiusUserStorage:
                 ),
                 storage.LifecycleRule(
                     id="abort-incomplete-multipart-uploads",
-                    status=storage.LifecycleRule__Status.ENABLED,
+                    status=storage.LifecycleRule__Status.DISABLED,
                     abort_incomplete_multipart_upload=storage.LifecycleAbortIncompleteMultipartUpload(
                         days_after_initiation=7
                     ),

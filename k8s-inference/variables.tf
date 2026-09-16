@@ -534,8 +534,21 @@ variable "deployment" {
         resource_public_key_pem          = optional(string, "")
         iam_public_key_pem               = optional(string, "")
         auth_key_expires_at              = optional(string, "")
-        egress_cidrs                     = optional(set(string), [])
-        key_ttl_days                     = optional(number, 90)
+        egress_contract_json             = optional(string, "")
+        egress_boundary = optional(object({
+          schema                        = optional(string, "")
+          generation                    = optional(string, "")
+          contract_sha256               = optional(string, "")
+          contract_config_map_name      = optional(string, "")
+          trust_config_map_name         = optional(string, "")
+          network_policy_name           = optional(string, "")
+          boundary_policy_name          = optional(string, "")
+          security_owner_group          = optional(string, "")
+          security_owner_subject_sha256 = optional(string, "")
+          workloads_subject_sha256      = optional(string, "")
+        }), {})
+        key_ttl_days         = optional(number, 90)
+        rotation_window_days = optional(number, 14)
       }), {})
 
       scientific_artifacts = optional(object({
