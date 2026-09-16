@@ -38,7 +38,7 @@ async page => {
     check(said.state.transcript.some(t => t.role === role && t.human), `${role} typed message retained`);
   }
   const resumed = await submit(page.getByRole('button', {name: 'Resume model', exact: true}), path);
-  check(resumed.state.takeover_role === null, 'resume returns role to model');
+  check(resumed.state.takeover_role == null, 'resume returns role to model');
   const aborted = await submit(page.getByRole('button', {name: 'Abort', exact: true}), path);
   check(aborted.status === 'aborted' && aborted.state.intervened === true, 'abort and intervention label persisted');
   check(!aborted.state.benchmark_eligible, 'intervened run excluded from comparison');
