@@ -23,6 +23,11 @@ two workshop replicas, context `fs2-storage-h100`, namespace `fs2-system`.
   queued. No sampled team exceeded five. All jobs terminal at 303.320s; fetching
   all reports completed at 345.157s.
 - Mean per-call queue wait 18,123.052ms; mean total call latency 28,534.858ms.
+- Judge burst specifically: 60 Gemma calls, 1,232,695 total tokens, mean queue
+  66,091.314ms and total latency 70,432.141ms. All succeeded without 429/retries.
+  Qwen30B's 140 patient/clinician calls had mean queue 10,509.869ms; the five
+  other clinicians' 20 calls each had approximately 0–1ms mean queue. The shared
+  judge token budget therefore produced visible waiting instead of failures.
 - Missing/denied PAT checks returned 401/403. Cross-team detail/events/report
   returned 404. Repeating each create key returned the same six IDs and did not
   add hidden jobs to owner listings. A 20-profile gateway registration succeeded;
