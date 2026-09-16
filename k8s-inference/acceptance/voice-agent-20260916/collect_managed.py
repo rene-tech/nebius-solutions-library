@@ -44,6 +44,21 @@ def main(args):
         "fs2-voice-sortformer-r20260916",
     )["items"]
     events = get("events")["items"]
+    control_plane = json.loads(
+        subprocess.check_output(
+            [
+                *command[:5],
+                "-n",
+                "fs2-system",
+                "get",
+                "deployments",
+                "fs2-serve-control-plane",
+                "fs2-serve-control-plane-model-controller",
+                "-o",
+                "json",
+            ]
+        )
+    )["items"]
     autoscalers = {
         kind: [
             {
@@ -59,6 +74,14 @@ def main(args):
         for kind in ("horizontalpodautoscalers", "scaledobjects")
     }
     if args.require_stable:
+        for deployment in control_plane:
+            desired = deployment["spec"]["replicas"]
+            assert (
+                deployment["status"]["observedGeneration"]
+                == deployment["metadata"]["generation"]
+            )
+            assert deployment["status"].get("updatedReplicas") == desired
+            assert deployment["status"].get("availableReplicas") == desired
         for model in models:
             assert model["spec"]["availability"]["minReplicas"] == 1
             assert model["spec"]["availability"]["maxReplicas"] == 2
@@ -120,6 +143,17 @@ def main(args):
         "namespace": "fs2-models",
         "node_loss_tested": False,
         "stable_checks_passed": bool(args.require_stable),
+        "control_plane": [
+            {
+                "name": deployment["metadata"]["name"],
+                "image": deployment["spec"]["template"]["spec"]["containers"][0][
+                    "image"
+                ],
+                "generation": deployment["metadata"]["generation"],
+                "status": deployment["status"],
+            }
+            for deployment in control_plane
+        ],
         "autoscalers": autoscalers,
         "models": [
             {

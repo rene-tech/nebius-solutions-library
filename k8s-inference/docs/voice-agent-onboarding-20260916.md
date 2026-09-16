@@ -91,8 +91,9 @@ then uses the existing tenant-owned output artifact pipeline and measured audio
 duration accounting. Wrong-rate, malformed/truncated WAVs and HTTP200 JSON error
 bodies fail; non-Magpie native JSON and provider contracts are unchanged.
 Runtime/schema/speech-capacity/artifact regression suite: 96 passed, including
-16 new voice-native cases. Public requalification follows the manager's build;
-the earlier failed MCP operation is not counted as a success.
+16 new voice-native cases. Final public typed-MCP requalification passed after
+Helm138/CP image `sha256:d0b3b02e201d8dc34ca7368e8ad34fece02e15841595de8bb970748c3dc300d6`.
+The earlier failed MCP operation is not counted as a success.
 
 ## Evidence and limits
 
@@ -121,7 +122,7 @@ snapshots are not inferred from the L40S measurements.
 Initial full control-plane suite: 2031 passed, 102 skipped. Additional native/input
 catalog tests: 84 passed; registration/legacy profile tests: 15 passed;
 deployment storage/model coverage: 2 passed; resident runtime lifecycle: 13 passed.
-Final manager-owned integrated CP suite: 2101 passed, 102 skipped; scoped
+Manager-owned integrated CP137 suite: 2101 passed, 102 skipped; scoped
 controller/ownership regression suite: 54 passed. The manager updated the
 existing exact-route-set test to include `/v1/voice` without weakening its
 long-lived route timeout assertions.
@@ -179,6 +180,53 @@ workers and retained canonical Service selection. `public-parakeet-drain.json`
 then records graceful deletion of only the Pod serving one admitted session:
 that session finished, the sibling accepted and completed another, and the
 replacement became Ready. Actual node loss/cloud preemption was not tested.
+
+Final `public-final-results.json` rechecks both existing Nemotron Apps, all
+public voice streams and all three ordinary named native MCP tools. Magpie MCP
+returned a complete downloadable 3.157913832 s WAV whose hash and bytes were
+verified; its reported output-audio duration exactly matches the WAV. Parakeet
+and Sortformer MCP input accounting each matches the decoded 4.4581875 s fixture.
+All test keys were revoked. Direct Magpie first audio in this final sample was
+3.00 s. `public-magpie-concurrency.json` records Jason/Sofia distinct PCM hashes,
+complete matching durable WAVs and 4.42 s overlap between actual PCM deliveries
+(artifact-save time is excluded). `managed-magpie-two-replica-cohort.json`
+captures the two Ready managed Magpie workers and their canonical endpoints.
+
+`reverse-scale-results.json` records ordinary admin fixed2 → min1/max2 applies
+for all three Apps. Startup protection and the existing HPA stabilization
+window can retain two actual workers temporarily after the configured floor
+returns to one; no scaler was bypassed or manually forced. Prewarm event floors
+with ordinary admin controls, stagger changes and retain rolling-surge GPU
+headroom. These tests qualify two concurrent workers, not arbitrary attendee
+load. No node-group limit or cloud quota was changed.
+
+`managed-final-results.json` passed the strict scoped readiness check at
+18:04:31 UTC: final CP3/3 and controller2/2 on the same immutable image, all
+three Apps current-generation Ready, only Ready managed endpoints, no lingering
+handoff replica ownership or terminating rollout Pods, all preview replicas0,
+and readiness metrics1 for every live worker. Configured floors are min1/max2
+for all three; actual counts then were Magpie2 during normal stabilization,
+Parakeet1 and Sortformer1. Temporary preview Services are absent. This asserts
+the voice scope, not unrelated cluster health or the two pre-existing lost H100
+nodes. Further normal autoscaling is expected and does not mutate the release.
+
+Reproduce the final checks using the installed control-plane environment:
+
+```bash
+python acceptance/voice-agent-20260916/public_smoke.py \
+  --kubeconfig "$VOICE_KUBECONFIG" --context "$VOICE_CONTEXT" \
+  --origin "$VOICE_ORIGIN" --english synthetic-en.wav --german synthetic-de.wav \
+  --voice --mcp --output public-voice-results.json
+python acceptance/voice-agent-20260916/collect_managed.py \
+  --kubeconfig "$VOICE_KUBECONFIG" --context "$VOICE_CONTEXT" \
+  --prometheus "$VOICE_PROMETHEUS" --require-stable --output managed-voice-results.json
+```
+
+Set the task-specific variables to the authorized deployment. The first command
+creates/revokes a scoped short-lived test key and retains only synthetic
+artifacts/results; neither command prints credentials. Use the separate
+`public_concurrency.py` and `manage_apps.py` only for an approved scale/drain
+window, not as a background production monitor.
 
 Raw GPU samples and exact Pod/node/image/startup provenance are retained in
 `runtime-provenance.json` and three CSV files. GPU means include idle periods and

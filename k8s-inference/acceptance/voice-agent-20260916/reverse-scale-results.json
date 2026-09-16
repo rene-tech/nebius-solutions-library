@@ -1,0 +1,533 @@
+{
+  "scope": "Ordinary admin fixed-two to min-one/max-two reverse handoffs; actual stable counts captured separately.",
+  "models": [
+    {
+      "model": "parakeet-realtime-eou-120m-v1",
+      "previous_availability": {
+        "minReplicas": 2,
+        "maxReplicas": 2,
+        "idleSeconds": 300,
+        "targetQueueDepth": 1,
+        "pollingIntervalSeconds": 5,
+        "cooldownSeconds": 300,
+        "startupTimeoutSeconds": null,
+        "warmWindows": []
+      },
+      "configured_availability": {
+        "minReplicas": 1,
+        "maxReplicas": 2,
+        "idleSeconds": 300,
+        "targetQueueDepth": 1,
+        "pollingIntervalSeconds": 5,
+        "cooldownSeconds": 300,
+        "startupTimeoutSeconds": null,
+        "warmWindows": []
+      },
+      "preview_id": "a12f5f3e-9270-420b-ab53-14985f2a3a9c",
+      "base_etag": "sha256:c5ebec0319e06abf6a0b05120f478566d2767d29b9c9c92e6c3cb4a31fe467f2",
+      "proposed_etag": "sha256:5882d83e2aabdc8aff3bcfb7f05b3c95fd85984a7fcab2c502084adbd26359ad",
+      "decision": {
+        "disposition": "accepted",
+        "specDigest": "sha256:5882d83e2aabdc8aff3bcfb7f05b3c95fd85984a7fcab2c502084adbd26359ad",
+        "issues": [],
+        "terraformInputs": [],
+        "admittedPoolRef": "l40s-1x",
+        "fastStart": {
+          "mode": "Fixed",
+          "fallbackPolicy": "AllowLowerLevel",
+          "requestedLevel": "Off",
+          "minimumLevel": null,
+          "maximumLevel": null,
+          "qualifiedLevel": "Off",
+          "assignedLevel": "Off",
+          "requestedTargetSeconds": null,
+          "targetSeconds": null,
+          "qualification": {
+            "state": "NoTarget",
+            "reason": "NoFastStartTarget",
+            "message": "assigned level Off has no startup-time target (l40s-1x: no compatible model-start p95)"
+          },
+          "modelStart": null,
+          "capacityWait": null,
+          "endToEnd": null,
+          "selectedIdentityDigest": null,
+          "pools": [
+            {
+              "poolRef": "l40s-1x",
+              "acceleratorClass": "nvidia-l40s-48gb",
+              "qualifiedLevel": "Off",
+              "reason": "NoCurrentRuntimeEvidence",
+              "mechanisms": [],
+              "selectedMechanism": null,
+              "selectedCompatibilityTupleDigest": null,
+              "selectedIdentityDigest": null,
+              "receiptDigests": [],
+              "modelStart": null,
+              "capacityWait": null,
+              "endToEnd": null,
+              "paths": [],
+              "retainedPaths": []
+            }
+          ]
+        },
+        "fastStartMechanism": {
+          "mechanism": "conventional",
+          "source": "Default",
+          "renderable": true,
+          "reason": "ConventionalDefault"
+        }
+      },
+      "apply_status": 200,
+      "receipt": {
+        "namespace": "fs2-models",
+        "name": "parakeet-realtime-eou-120m-v1",
+        "uid": "d46ae1a2-d856-45c3-8a14-90e72418cee9",
+        "resource_version": "45374816",
+        "generation": 3,
+        "spec_digest": "sha256:5882d83e2aabdc8aff3bcfb7f05b3c95fd85984a7fcab2c502084adbd26359ad"
+      },
+      "revision": {
+        "namespace": "fs2-models",
+        "name": "parakeet-realtime-eou-120m-v1",
+        "tenant_id": "tenant-e00f3wdfzwfjgbcyfv",
+        "revision": 3,
+        "etag": "sha256:5882d83e2aabdc8aff3bcfb7f05b3c95fd85984a7fcab2c502084adbd26359ad",
+        "spec": {
+          "modelRef": "parakeet-realtime-eou-120m-v1",
+          "app": null,
+          "tenantId": "tenant-e00f3wdfzwfjgbcyfv",
+          "lifecycle": {
+            "desiredState": "Enabled"
+          },
+          "artifact": {
+            "revision": "a7e2b4629593dce0ec19f600e00e9904353fda2d",
+            "manifestDigest": "sha256:bf4fabc9cdddfdfebd741afb0f969b8e9021bce0549726caff48e35934c890d9",
+            "storageRef": null
+          },
+          "runtime": {
+            "profile": "custom",
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa",
+            "templateRef": {
+              "name": "parakeet-realtime-eou-120m-v1.legacy-v1",
+              "digest": "sha256:2d2f6958834633a8c5670b2cc87d0e5fe50137997e1a00728ffb2a581f9018b3"
+            }
+          },
+          "placement": {
+            "poolRefs": [
+              "l40s-1x"
+            ],
+            "acceleratorsPerReplica": 1,
+            "topologyPolicy": "SingleNode"
+          },
+          "availability": {
+            "minReplicas": 1,
+            "maxReplicas": 2,
+            "idleSeconds": 300,
+            "targetQueueDepth": 1,
+            "pollingIntervalSeconds": 5,
+            "cooldownSeconds": 300,
+            "startupTimeoutSeconds": null,
+            "warmWindows": []
+          },
+          "cache": {
+            "tier": "Disabled",
+            "snapshotPreference": "Never",
+            "snapshotRef": null,
+            "mechanism": null
+          },
+          "queue": {
+            "localQueue": "inference-models",
+            "priorityClass": "standard",
+            "maxQueueSeconds": 7200
+          },
+          "rollout": {
+            "strategy": "Rolling",
+            "maxUnavailable": 0,
+            "maxSurge": 1,
+            "progressDeadlineSeconds": 7200
+          },
+          "exposure": {
+            "openAI": false,
+            "openAIAliases": [],
+            "mcp": true,
+            "mcpToolName": "infer_parakeet_realtime_eou_120m_v1"
+          },
+          "policy": {
+            "visibility": "Tenant",
+            "policyRef": "tenant-default.v1",
+            "allowedPrincipalIds": [],
+            "ratePolicyRef": null
+          },
+          "adoption": {
+            "mode": "None",
+            "receiptRef": null
+          },
+          "fastStart": {
+            "mode": "Fixed",
+            "level": "Off",
+            "minimumLevel": null,
+            "maximumLevel": null,
+            "fallbackPolicy": "AllowLowerLevel"
+          }
+        },
+        "action": "update",
+        "created_at": "2026-09-16T17:47:08.095150Z",
+        "created_by": "bootstrap-admin",
+        "previous_revision": 2
+      },
+      "status": "applied"
+    },
+    {
+      "model": "diar-streaming-sortformer-4spk-v2-1",
+      "previous_availability": {
+        "minReplicas": 2,
+        "maxReplicas": 2,
+        "idleSeconds": 300,
+        "targetQueueDepth": 1,
+        "pollingIntervalSeconds": 5,
+        "cooldownSeconds": 300,
+        "startupTimeoutSeconds": null,
+        "warmWindows": []
+      },
+      "configured_availability": {
+        "minReplicas": 1,
+        "maxReplicas": 2,
+        "idleSeconds": 300,
+        "targetQueueDepth": 1,
+        "pollingIntervalSeconds": 5,
+        "cooldownSeconds": 300,
+        "startupTimeoutSeconds": null,
+        "warmWindows": []
+      },
+      "preview_id": "3b26ea06-3dce-4db1-8e33-71f66a322e6a",
+      "base_etag": "sha256:7c9665ced31ed8d555192a3c0c04236fd3e96f15d18f7e9296cfcf3d3f501fde",
+      "proposed_etag": "sha256:cb015dc838a60288ce25555526df385ae04de2c82df5bba0549eaa5b83de9c9c",
+      "decision": {
+        "disposition": "accepted",
+        "specDigest": "sha256:cb015dc838a60288ce25555526df385ae04de2c82df5bba0549eaa5b83de9c9c",
+        "issues": [],
+        "terraformInputs": [],
+        "admittedPoolRef": "l40s-1x",
+        "fastStart": {
+          "mode": "Fixed",
+          "fallbackPolicy": "AllowLowerLevel",
+          "requestedLevel": "Off",
+          "minimumLevel": null,
+          "maximumLevel": null,
+          "qualifiedLevel": "Off",
+          "assignedLevel": "Off",
+          "requestedTargetSeconds": null,
+          "targetSeconds": null,
+          "qualification": {
+            "state": "NoTarget",
+            "reason": "NoFastStartTarget",
+            "message": "assigned level Off has no startup-time target (l40s-1x: no compatible model-start p95)"
+          },
+          "modelStart": null,
+          "capacityWait": null,
+          "endToEnd": null,
+          "selectedIdentityDigest": null,
+          "pools": [
+            {
+              "poolRef": "l40s-1x",
+              "acceleratorClass": "nvidia-l40s-48gb",
+              "qualifiedLevel": "Off",
+              "reason": "NoCurrentRuntimeEvidence",
+              "mechanisms": [],
+              "selectedMechanism": null,
+              "selectedCompatibilityTupleDigest": null,
+              "selectedIdentityDigest": null,
+              "receiptDigests": [],
+              "modelStart": null,
+              "capacityWait": null,
+              "endToEnd": null,
+              "paths": [],
+              "retainedPaths": []
+            }
+          ]
+        },
+        "fastStartMechanism": {
+          "mechanism": "conventional",
+          "source": "Default",
+          "renderable": true,
+          "reason": "ConventionalDefault"
+        }
+      },
+      "apply_status": 200,
+      "receipt": {
+        "namespace": "fs2-models",
+        "name": "diar-streaming-sortformer-4spk-v2-1",
+        "uid": "68256880-33c3-4381-8ae5-e3f07011e933",
+        "resource_version": "45376591",
+        "generation": 3,
+        "spec_digest": "sha256:cb015dc838a60288ce25555526df385ae04de2c82df5bba0549eaa5b83de9c9c"
+      },
+      "revision": {
+        "namespace": "fs2-models",
+        "name": "diar-streaming-sortformer-4spk-v2-1",
+        "tenant_id": "tenant-e00f3wdfzwfjgbcyfv",
+        "revision": 3,
+        "etag": "sha256:cb015dc838a60288ce25555526df385ae04de2c82df5bba0549eaa5b83de9c9c",
+        "spec": {
+          "modelRef": "diar-streaming-sortformer-4spk-v2-1",
+          "app": null,
+          "tenantId": "tenant-e00f3wdfzwfjgbcyfv",
+          "lifecycle": {
+            "desiredState": "Enabled"
+          },
+          "artifact": {
+            "revision": "fafaab5faa1617a0ca52d38dd3dc4bd636800d3d",
+            "manifestDigest": "sha256:43c517f7fcf432ede6f00ac28eee93657b6c803806788bb5e3d37e4989fda99e",
+            "storageRef": null
+          },
+          "runtime": {
+            "profile": "custom",
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253",
+            "templateRef": {
+              "name": "diar-streaming-sortformer-4spk-v2-1.legacy-v1",
+              "digest": "sha256:ee9682644b685818ed79df34446659a8002362badb7f0f04cf5170410c9d8fe7"
+            }
+          },
+          "placement": {
+            "poolRefs": [
+              "l40s-1x"
+            ],
+            "acceleratorsPerReplica": 1,
+            "topologyPolicy": "SingleNode"
+          },
+          "availability": {
+            "minReplicas": 1,
+            "maxReplicas": 2,
+            "idleSeconds": 300,
+            "targetQueueDepth": 1,
+            "pollingIntervalSeconds": 5,
+            "cooldownSeconds": 300,
+            "startupTimeoutSeconds": null,
+            "warmWindows": []
+          },
+          "cache": {
+            "tier": "Disabled",
+            "snapshotPreference": "Never",
+            "snapshotRef": null,
+            "mechanism": null
+          },
+          "queue": {
+            "localQueue": "inference-models",
+            "priorityClass": "standard",
+            "maxQueueSeconds": 7200
+          },
+          "rollout": {
+            "strategy": "Rolling",
+            "maxUnavailable": 0,
+            "maxSurge": 1,
+            "progressDeadlineSeconds": 7200
+          },
+          "exposure": {
+            "openAI": false,
+            "openAIAliases": [],
+            "mcp": true,
+            "mcpToolName": "infer_diar_streaming_sortformer_4spk_v2_1"
+          },
+          "policy": {
+            "visibility": "Tenant",
+            "policyRef": "tenant-default.v1",
+            "allowedPrincipalIds": [],
+            "ratePolicyRef": null
+          },
+          "adoption": {
+            "mode": "None",
+            "receiptRef": null
+          },
+          "fastStart": {
+            "mode": "Fixed",
+            "level": "Off",
+            "minimumLevel": null,
+            "maximumLevel": null,
+            "fallbackPolicy": "AllowLowerLevel"
+          }
+        },
+        "action": "update",
+        "created_at": "2026-09-16T17:47:43.128402Z",
+        "created_by": "bootstrap-admin",
+        "previous_revision": 2
+      },
+      "status": "applied"
+    },
+    {
+      "model": "magpie-tts-multilingual-357m",
+      "previous_availability": {
+        "minReplicas": 2,
+        "maxReplicas": 2,
+        "idleSeconds": 300,
+        "targetQueueDepth": 1,
+        "pollingIntervalSeconds": 5,
+        "cooldownSeconds": 300,
+        "startupTimeoutSeconds": null,
+        "warmWindows": []
+      },
+      "configured_availability": {
+        "minReplicas": 1,
+        "maxReplicas": 2,
+        "idleSeconds": 300,
+        "targetQueueDepth": 1,
+        "pollingIntervalSeconds": 5,
+        "cooldownSeconds": 300,
+        "startupTimeoutSeconds": null,
+        "warmWindows": []
+      },
+      "preview_id": "a7976e06-24b9-40d4-8f1f-ac2867675b17",
+      "base_etag": "sha256:c9b1e71dbe6fb5d08384e0c58f68ce16817f2cc087f307ee21c683395a52dba9",
+      "proposed_etag": "sha256:3477e7530b0b292545dc3d535dc48b0679f0cefa18e66206ca2299093d6756ac",
+      "decision": {
+        "disposition": "accepted",
+        "specDigest": "sha256:3477e7530b0b292545dc3d535dc48b0679f0cefa18e66206ca2299093d6756ac",
+        "issues": [],
+        "terraformInputs": [],
+        "admittedPoolRef": "l40s-1x",
+        "fastStart": {
+          "mode": "Fixed",
+          "fallbackPolicy": "AllowLowerLevel",
+          "requestedLevel": "Off",
+          "minimumLevel": null,
+          "maximumLevel": null,
+          "qualifiedLevel": "Off",
+          "assignedLevel": "Off",
+          "requestedTargetSeconds": null,
+          "targetSeconds": null,
+          "qualification": {
+            "state": "NoTarget",
+            "reason": "NoFastStartTarget",
+            "message": "assigned level Off has no startup-time target (l40s-1x: no compatible model-start p95)"
+          },
+          "modelStart": null,
+          "capacityWait": null,
+          "endToEnd": null,
+          "selectedIdentityDigest": null,
+          "pools": [
+            {
+              "poolRef": "l40s-1x",
+              "acceleratorClass": "nvidia-l40s-48gb",
+              "qualifiedLevel": "Off",
+              "reason": "NoCurrentRuntimeEvidence",
+              "mechanisms": [],
+              "selectedMechanism": null,
+              "selectedCompatibilityTupleDigest": null,
+              "selectedIdentityDigest": null,
+              "receiptDigests": [],
+              "modelStart": null,
+              "capacityWait": null,
+              "endToEnd": null,
+              "paths": [],
+              "retainedPaths": []
+            }
+          ]
+        },
+        "fastStartMechanism": {
+          "mechanism": "conventional",
+          "source": "Default",
+          "renderable": true,
+          "reason": "ConventionalDefault"
+        }
+      },
+      "apply_status": 200,
+      "receipt": {
+        "namespace": "fs2-models",
+        "name": "magpie-tts-multilingual-357m",
+        "uid": "fb0a45dd-4507-4b5f-b599-6e9b49434a50",
+        "resource_version": "45415338",
+        "generation": 3,
+        "spec_digest": "sha256:3477e7530b0b292545dc3d535dc48b0679f0cefa18e66206ca2299093d6756ac"
+      },
+      "revision": {
+        "namespace": "fs2-models",
+        "name": "magpie-tts-multilingual-357m",
+        "tenant_id": "tenant-e00f3wdfzwfjgbcyfv",
+        "revision": 3,
+        "etag": "sha256:3477e7530b0b292545dc3d535dc48b0679f0cefa18e66206ca2299093d6756ac",
+        "spec": {
+          "modelRef": "magpie-tts-multilingual-357m",
+          "app": null,
+          "tenantId": "tenant-e00f3wdfzwfjgbcyfv",
+          "lifecycle": {
+            "desiredState": "Enabled"
+          },
+          "artifact": {
+            "revision": "19806879b16d3f2ccf28fb112b1bcd16a3c7923e",
+            "manifestDigest": "sha256:eac965fec8b4a4383a12918fd2729493211d126f53e77ef78db00d33db5f5cc1",
+            "storageRef": null
+          },
+          "runtime": {
+            "profile": "custom",
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:fc9db5fd5df87e819766297d90a4595664aec63e7dbfd6735b3f2053b4725ead",
+            "templateRef": {
+              "name": "magpie-tts-multilingual-357m.legacy-v1",
+              "digest": "sha256:687b113deacd65af5a5ae1748ae4bf17c15ca5939d12790a8a2ad2dca14f7040"
+            }
+          },
+          "placement": {
+            "poolRefs": [
+              "l40s-1x"
+            ],
+            "acceleratorsPerReplica": 1,
+            "topologyPolicy": "SingleNode"
+          },
+          "availability": {
+            "minReplicas": 1,
+            "maxReplicas": 2,
+            "idleSeconds": 300,
+            "targetQueueDepth": 1,
+            "pollingIntervalSeconds": 5,
+            "cooldownSeconds": 300,
+            "startupTimeoutSeconds": null,
+            "warmWindows": []
+          },
+          "cache": {
+            "tier": "Disabled",
+            "snapshotPreference": "Never",
+            "snapshotRef": null,
+            "mechanism": null
+          },
+          "queue": {
+            "localQueue": "inference-models",
+            "priorityClass": "standard",
+            "maxQueueSeconds": 7200
+          },
+          "rollout": {
+            "strategy": "Rolling",
+            "maxUnavailable": 0,
+            "maxSurge": 1,
+            "progressDeadlineSeconds": 7200
+          },
+          "exposure": {
+            "openAI": false,
+            "openAIAliases": [],
+            "mcp": true,
+            "mcpToolName": "infer_magpie_tts_multilingual_357m"
+          },
+          "policy": {
+            "visibility": "Tenant",
+            "policyRef": "tenant-default.v1",
+            "allowedPrincipalIds": [],
+            "ratePolicyRef": null
+          },
+          "adoption": {
+            "mode": "None",
+            "receiptRef": null
+          },
+          "fastStart": {
+            "mode": "Fixed",
+            "level": "Off",
+            "minimumLevel": null,
+            "maximumLevel": null,
+            "fallbackPolicy": "AllowLowerLevel"
+          }
+        },
+        "action": "update",
+        "created_at": "2026-09-16T18:02:00.080210Z",
+        "created_by": "bootstrap-admin",
+        "previous_revision": 2
+      },
+      "status": "applied"
+    }
+  ]
+}

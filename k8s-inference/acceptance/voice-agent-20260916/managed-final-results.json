@@ -1,0 +1,2013 @@
+{
+  "observed_at": "2026-09-16T18:04:31.122032+00:00",
+  "context": "fs2-storage-h100",
+  "namespace": "fs2-models",
+  "node_loss_tested": false,
+  "stable_checks_passed": true,
+  "control_plane": [
+    {
+      "name": "fs2-serve-control-plane",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:d0b3b02e201d8dc34ca7368e8ad34fece02e15841595de8bb970748c3dc300d6",
+      "generation": 249,
+      "status": {
+        "availableReplicas": 3,
+        "conditions": [
+          {
+            "lastTransitionTime": "2026-09-16T09:17:38Z",
+            "lastUpdateTime": "2026-09-16T09:17:38Z",
+            "message": "Deployment has minimum availability.",
+            "reason": "MinimumReplicasAvailable",
+            "status": "True",
+            "type": "Available"
+          },
+          {
+            "lastTransitionTime": "2026-09-07T09:35:44Z",
+            "lastUpdateTime": "2026-09-16T17:59:18Z",
+            "message": "ReplicaSet \"fs2-serve-control-plane-7d977fd686\" has successfully progressed.",
+            "reason": "NewReplicaSetAvailable",
+            "status": "True",
+            "type": "Progressing"
+          }
+        ],
+        "observedGeneration": 249,
+        "readyReplicas": 3,
+        "replicas": 3,
+        "terminatingReplicas": 0,
+        "updatedReplicas": 3
+      }
+    },
+    {
+      "name": "fs2-serve-control-plane-model-controller",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:d0b3b02e201d8dc34ca7368e8ad34fece02e15841595de8bb970748c3dc300d6",
+      "generation": 107,
+      "status": {
+        "availableReplicas": 2,
+        "conditions": [
+          {
+            "lastTransitionTime": "2026-09-16T17:32:41Z",
+            "lastUpdateTime": "2026-09-16T17:32:41Z",
+            "message": "Deployment has minimum availability.",
+            "reason": "MinimumReplicasAvailable",
+            "status": "True",
+            "type": "Available"
+          },
+          {
+            "lastTransitionTime": "2026-09-03T01:21:44Z",
+            "lastUpdateTime": "2026-09-16T17:58:24Z",
+            "message": "ReplicaSet \"fs2-serve-control-plane-model-controller-6fc64659dd\" has successfully progressed.",
+            "reason": "NewReplicaSetAvailable",
+            "status": "True",
+            "type": "Progressing"
+          }
+        ],
+        "observedGeneration": 107,
+        "readyReplicas": 2,
+        "replicas": 2,
+        "terminatingReplicas": 0,
+        "updatedReplicas": 2
+      }
+    }
+  ],
+  "autoscalers": {
+    "horizontalpodautoscalers": [
+      {
+        "name": "keda-hpa-fs2-model-diar-streaming-sortformer-4spk-v2-1",
+        "target": "diar-streaming-sortformer-4spk-v2-1",
+        "spec": {
+          "maxReplicas": 2,
+          "metrics": [
+            {
+              "external": {
+                "metric": {
+                  "name": "s0-prometheus",
+                  "selector": {
+                    "matchLabels": {
+                      "scaledobject.keda.sh/name": "fs2-model-diar-streaming-sortformer-4spk-v2-1"
+                    }
+                  }
+                },
+                "target": {
+                  "averageValue": "1",
+                  "type": "AverageValue"
+                }
+              },
+              "type": "External"
+            },
+            {
+              "external": {
+                "metric": {
+                  "name": "s1-prometheus",
+                  "selector": {
+                    "matchLabels": {
+                      "scaledobject.keda.sh/name": "fs2-model-diar-streaming-sortformer-4spk-v2-1"
+                    }
+                  }
+                },
+                "target": {
+                  "averageValue": "1",
+                  "type": "AverageValue"
+                }
+              },
+              "type": "External"
+            }
+          ],
+          "minReplicas": 1,
+          "scaleTargetRef": {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "name": "diar-streaming-sortformer-4spk-v2-1"
+          }
+        },
+        "status": {
+          "conditions": [
+            {
+              "lastTransitionTime": "2026-09-16T17:47:59Z",
+              "message": "recent recommendations were higher than current one, applying the highest recent recommendation",
+              "reason": "ScaleDownStabilized",
+              "status": "True",
+              "type": "AbleToScale"
+            },
+            {
+              "lastTransitionTime": "2026-09-16T17:47:59Z",
+              "message": "the HPA was able to successfully calculate a replica count from external metric s1-prometheus(&LabelSelector{MatchLabels:map[string]string{scaledobject.keda.sh/name: fs2-model-diar-streaming-sortformer-4spk-v2-1,},MatchExpressions:[]LabelSelectorRequirement{},})",
+              "reason": "ValidMetricFound",
+              "status": "True",
+              "type": "ScalingActive"
+            },
+            {
+              "lastTransitionTime": "2026-09-16T18:01:15Z",
+              "message": "the desired count is within the acceptable range",
+              "reason": "DesiredWithinRange",
+              "status": "False",
+              "type": "ScalingLimited"
+            }
+          ],
+          "currentMetrics": [
+            {
+              "external": {
+                "current": {
+                  "averageValue": "0"
+                },
+                "metric": {
+                  "name": "s0-prometheus",
+                  "selector": {
+                    "matchLabels": {
+                      "scaledobject.keda.sh/name": "fs2-model-diar-streaming-sortformer-4spk-v2-1"
+                    }
+                  }
+                }
+              },
+              "type": "External"
+            },
+            {
+              "external": {
+                "current": {
+                  "averageValue": "0"
+                },
+                "metric": {
+                  "name": "s1-prometheus",
+                  "selector": {
+                    "matchLabels": {
+                      "scaledobject.keda.sh/name": "fs2-model-diar-streaming-sortformer-4spk-v2-1"
+                    }
+                  }
+                }
+              },
+              "type": "External"
+            }
+          ],
+          "currentReplicas": 1,
+          "desiredReplicas": 1,
+          "lastScaleTime": "2026-09-16T17:59:44Z"
+        }
+      },
+      {
+        "name": "keda-hpa-fs2-model-magpie-tts-multilingual-357m",
+        "target": "magpie-tts-multilingual-357m",
+        "spec": {
+          "maxReplicas": 2,
+          "metrics": [
+            {
+              "external": {
+                "metric": {
+                  "name": "s0-prometheus",
+                  "selector": {
+                    "matchLabels": {
+                      "scaledobject.keda.sh/name": "fs2-model-magpie-tts-multilingual-357m"
+                    }
+                  }
+                },
+                "target": {
+                  "averageValue": "1",
+                  "type": "AverageValue"
+                }
+              },
+              "type": "External"
+            },
+            {
+              "external": {
+                "metric": {
+                  "name": "s1-prometheus",
+                  "selector": {
+                    "matchLabels": {
+                      "scaledobject.keda.sh/name": "fs2-model-magpie-tts-multilingual-357m"
+                    }
+                  }
+                },
+                "target": {
+                  "averageValue": "1",
+                  "type": "AverageValue"
+                }
+              },
+              "type": "External"
+            }
+          ],
+          "minReplicas": 1,
+          "scaleTargetRef": {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "name": "magpie-tts-multilingual-357m"
+          }
+        },
+        "status": {
+          "conditions": [
+            {
+              "lastTransitionTime": "2026-09-16T18:02:18Z",
+              "message": "recommended size matches current size",
+              "reason": "ReadyForNewScale",
+              "status": "True",
+              "type": "AbleToScale"
+            },
+            {
+              "lastTransitionTime": "2026-09-16T18:02:18Z",
+              "message": "the HPA was able to successfully calculate a replica count from external metric s1-prometheus(&LabelSelector{MatchLabels:map[string]string{scaledobject.keda.sh/name: fs2-model-magpie-tts-multilingual-357m,},MatchExpressions:[]LabelSelectorRequirement{},})",
+              "reason": "ValidMetricFound",
+              "status": "True",
+              "type": "ScalingActive"
+            },
+            {
+              "lastTransitionTime": "2026-09-16T18:02:18Z",
+              "message": "the desired count is within the acceptable range",
+              "reason": "DesiredWithinRange",
+              "status": "False",
+              "type": "ScalingLimited"
+            }
+          ],
+          "currentMetrics": [
+            {
+              "external": {
+                "current": {
+                  "averageValue": "0"
+                },
+                "metric": {
+                  "name": "s0-prometheus",
+                  "selector": {
+                    "matchLabels": {
+                      "scaledobject.keda.sh/name": "fs2-model-magpie-tts-multilingual-357m"
+                    }
+                  }
+                }
+              },
+              "type": "External"
+            },
+            {
+              "external": {
+                "current": {
+                  "averageValue": "1"
+                },
+                "metric": {
+                  "name": "s1-prometheus",
+                  "selector": {
+                    "matchLabels": {
+                      "scaledobject.keda.sh/name": "fs2-model-magpie-tts-multilingual-357m"
+                    }
+                  }
+                }
+              },
+              "type": "External"
+            }
+          ],
+          "currentReplicas": 2,
+          "desiredReplicas": 2,
+          "lastScaleTime": "2026-09-16T18:02:33Z"
+        }
+      },
+      {
+        "name": "keda-hpa-fs2-model-parakeet-realtime-eou-120m-v1",
+        "target": "parakeet-realtime-eou-120m-v1",
+        "spec": {
+          "maxReplicas": 2,
+          "metrics": [
+            {
+              "external": {
+                "metric": {
+                  "name": "s0-prometheus",
+                  "selector": {
+                    "matchLabels": {
+                      "scaledobject.keda.sh/name": "fs2-model-parakeet-realtime-eou-120m-v1"
+                    }
+                  }
+                },
+                "target": {
+                  "averageValue": "1",
+                  "type": "AverageValue"
+                }
+              },
+              "type": "External"
+            },
+            {
+              "external": {
+                "metric": {
+                  "name": "s1-prometheus",
+                  "selector": {
+                    "matchLabels": {
+                      "scaledobject.keda.sh/name": "fs2-model-parakeet-realtime-eou-120m-v1"
+                    }
+                  }
+                },
+                "target": {
+                  "averageValue": "1",
+                  "type": "AverageValue"
+                }
+              },
+              "type": "External"
+            }
+          ],
+          "minReplicas": 1,
+          "scaleTargetRef": {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "name": "parakeet-realtime-eou-120m-v1"
+          }
+        },
+        "status": {
+          "conditions": [
+            {
+              "lastTransitionTime": "2026-09-16T17:47:24Z",
+              "message": "recommended size matches current size",
+              "reason": "ReadyForNewScale",
+              "status": "True",
+              "type": "AbleToScale"
+            },
+            {
+              "lastTransitionTime": "2026-09-16T17:47:24Z",
+              "message": "the HPA was able to successfully calculate a replica count from external metric s1-prometheus(&LabelSelector{MatchLabels:map[string]string{scaledobject.keda.sh/name: fs2-model-parakeet-realtime-eou-120m-v1,},MatchExpressions:[]LabelSelectorRequirement{},})",
+              "reason": "ValidMetricFound",
+              "status": "True",
+              "type": "ScalingActive"
+            },
+            {
+              "lastTransitionTime": "2026-09-16T17:59:55Z",
+              "message": "the desired replica count is less than the minimum replica count",
+              "reason": "TooFewReplicas",
+              "status": "True",
+              "type": "ScalingLimited"
+            }
+          ],
+          "currentMetrics": [
+            {
+              "external": {
+                "current": {
+                  "averageValue": "0"
+                },
+                "metric": {
+                  "name": "s0-prometheus",
+                  "selector": {
+                    "matchLabels": {
+                      "scaledobject.keda.sh/name": "fs2-model-parakeet-realtime-eou-120m-v1"
+                    }
+                  }
+                }
+              },
+              "type": "External"
+            },
+            {
+              "external": {
+                "current": {
+                  "averageValue": "0"
+                },
+                "metric": {
+                  "name": "s1-prometheus",
+                  "selector": {
+                    "matchLabels": {
+                      "scaledobject.keda.sh/name": "fs2-model-parakeet-realtime-eou-120m-v1"
+                    }
+                  }
+                }
+              },
+              "type": "External"
+            }
+          ],
+          "currentReplicas": 1,
+          "desiredReplicas": 1,
+          "lastScaleTime": "2026-09-16T17:53:40Z"
+        }
+      }
+    ],
+    "scaledobjects": [
+      {
+        "name": "fs2-model-diar-streaming-sortformer-4spk-v2-1",
+        "target": "diar-streaming-sortformer-4spk-v2-1",
+        "spec": {
+          "cooldownPeriod": 300,
+          "maxReplicaCount": 2,
+          "minReplicaCount": 1,
+          "pollingInterval": 5,
+          "scaleTargetRef": {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "name": "diar-streaming-sortformer-4spk-v2-1"
+          },
+          "triggers": [
+            {
+              "metadata": {
+                "activationThreshold": "0",
+                "ignoreNullValues": "false",
+                "metricName": "fs2_operation_demand_diar_streaming_sortformer_4spk_v2_1",
+                "query": "sum(max by (model, state) (fs2_serve_operations{model=\"diar-streaming-sortformer-4spk-v2-1\",state=~\"queued|activating|running\"})) OR vector(0)",
+                "serverAddress": "http://fs2-r927c465c6d-monitoring-prometheus.fs2-observability.svc.cluster.local:9090",
+                "threshold": "1"
+              },
+              "metricType": "AverageValue",
+              "type": "prometheus"
+            },
+            {
+              "metadata": {
+                "activationThreshold": "0",
+                "ignoreNullValues": "false",
+                "metricName": "fs2_operation_demand_diar_streaming_sortformer_4spk_v2_1_startup",
+                "query": "(sum((max by (namespace, deployment) (kube_deployment_spec_replicas{namespace=\"fs2-models\",deployment=\"diar-streaming-sortformer-4spk-v2-1\"}) > 0) and on (namespace, deployment) ((max by (namespace, deployment) ((timestamp(kube_deployment_spec_replicas{namespace=\"fs2-models\",deployment=\"diar-streaming-sortformer-4spk-v2-1\"}) and (idelta(kube_deployment_spec_replicas{namespace=\"fs2-models\",deployment=\"diar-streaming-sortformer-4spk-v2-1\"}[2m]) > 0)) or max_over_time((timestamp(kube_deployment_spec_replicas{namespace=\"fs2-models\",deployment=\"diar-streaming-sortformer-4spk-v2-1\"}) and (idelta(kube_deployment_spec_replicas{namespace=\"fs2-models\",deployment=\"diar-streaming-sortformer-4spk-v2-1\"}[2m]) > 0))[900s:1s])) > (time() - 900)) or (max by (namespace, deployment) (kube_deployment_created{namespace=\"fs2-models\",deployment=\"diar-streaming-sortformer-4spk-v2-1\"}) > (time() - 900))) and on () (count(max by (namespace, pod, uid) (kube_pod_status_phase{namespace=\"fs2-models\",phase=~\"Pending|Running\"} == 1) and on (namespace, pod, uid) (label_replace(max by (namespace, pod, uid, owner_name) (kube_pod_owner{namespace=\"fs2-models\",owner_kind=\"ReplicaSet\",owner_is_controller=\"true\"} == 1), \"replicaset\", \"$1\", \"owner_name\", \"(.+)\") and on (namespace, replicaset) (max by (namespace, replicaset) (kube_replicaset_owner{namespace=\"fs2-models\",owner_kind=\"Deployment\",owner_is_controller=\"true\",owner_name=\"diar-streaming-sortformer-4spk-v2-1\"} == 1) and on (namespace, replicaset) max by (namespace, replicaset) (kube_replicaset_spec_replicas{namespace=\"fs2-models\"} > 0))) unless on (namespace, pod, uid) max by (namespace, pod, uid) (kube_pod_status_ready{namespace=\"fs2-models\",condition=\"true\"} == 1) unless on (namespace, pod, uid) max by (namespace, pod, uid) (kube_pod_deletion_timestamp{namespace=\"fs2-models\"})) > 0)) * 1) OR vector(0)",
+                "serverAddress": "http://fs2-r927c465c6d-monitoring-prometheus.fs2-observability.svc.cluster.local:9090",
+                "threshold": "1"
+              },
+              "metricType": "AverageValue",
+              "type": "prometheus"
+            }
+          ]
+        },
+        "status": {
+          "authenticationsTypes": "",
+          "conditions": [
+            {
+              "message": "ScaledObject is defined correctly and is ready for scaling",
+              "reason": "ScaledObjectReady",
+              "status": "True",
+              "type": "Ready"
+            },
+            {
+              "message": "Scaling is not performed because triggers are not active",
+              "reason": "ScalerNotActive",
+              "status": "False",
+              "type": "Active"
+            },
+            {
+              "message": "No fallbacks are active on this scaled object",
+              "reason": "NoFallbackFound",
+              "status": "False",
+              "type": "Fallback"
+            },
+            {
+              "status": "False",
+              "type": "Paused"
+            },
+            {
+              "message": "HPA is actively scaling",
+              "reason": "HPAActive",
+              "status": "True",
+              "type": "HPAActive"
+            }
+          ],
+          "externalMetricNames": [
+            "s0-prometheus",
+            "s1-prometheus"
+          ],
+          "hpaName": "keda-hpa-fs2-model-diar-streaming-sortformer-4spk-v2-1",
+          "lastActiveTime": "2026-09-16T18:01:39Z",
+          "originalReplicaCount": 2,
+          "scaleTargetGVKR": {
+            "group": "apps",
+            "kind": "Deployment",
+            "resource": "deployments",
+            "version": "v1"
+          },
+          "scaleTargetKind": "apps/v1.Deployment",
+          "triggersActivity": {
+            "s0-prometheus": {
+              "isActive": false
+            },
+            "s1-prometheus": {
+              "isActive": false
+            }
+          },
+          "triggersTypes": "prometheus"
+        }
+      },
+      {
+        "name": "fs2-model-magpie-tts-multilingual-357m",
+        "target": "magpie-tts-multilingual-357m",
+        "spec": {
+          "cooldownPeriod": 300,
+          "maxReplicaCount": 2,
+          "minReplicaCount": 1,
+          "pollingInterval": 5,
+          "scaleTargetRef": {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "name": "magpie-tts-multilingual-357m"
+          },
+          "triggers": [
+            {
+              "metadata": {
+                "activationThreshold": "0",
+                "ignoreNullValues": "false",
+                "metricName": "fs2_operation_demand_magpie_tts_multilingual_357m",
+                "query": "sum(max by (model, state) (fs2_serve_operations{model=\"magpie-tts-multilingual-357m\",state=~\"queued|activating|running\"})) OR vector(0)",
+                "serverAddress": "http://fs2-r927c465c6d-monitoring-prometheus.fs2-observability.svc.cluster.local:9090",
+                "threshold": "1"
+              },
+              "metricType": "AverageValue",
+              "type": "prometheus"
+            },
+            {
+              "metadata": {
+                "activationThreshold": "0",
+                "ignoreNullValues": "false",
+                "metricName": "fs2_operation_demand_magpie_tts_multilingual_357m_startup",
+                "query": "(sum((max by (namespace, deployment) (kube_deployment_spec_replicas{namespace=\"fs2-models\",deployment=\"magpie-tts-multilingual-357m\"}) > 0) and on (namespace, deployment) ((max by (namespace, deployment) ((timestamp(kube_deployment_spec_replicas{namespace=\"fs2-models\",deployment=\"magpie-tts-multilingual-357m\"}) and (idelta(kube_deployment_spec_replicas{namespace=\"fs2-models\",deployment=\"magpie-tts-multilingual-357m\"}[2m]) > 0)) or max_over_time((timestamp(kube_deployment_spec_replicas{namespace=\"fs2-models\",deployment=\"magpie-tts-multilingual-357m\"}) and (idelta(kube_deployment_spec_replicas{namespace=\"fs2-models\",deployment=\"magpie-tts-multilingual-357m\"}[2m]) > 0))[900s:1s])) > (time() - 900)) or (max by (namespace, deployment) (kube_deployment_created{namespace=\"fs2-models\",deployment=\"magpie-tts-multilingual-357m\"}) > (time() - 900))) and on () (count(max by (namespace, pod, uid) (kube_pod_status_phase{namespace=\"fs2-models\",phase=~\"Pending|Running\"} == 1) and on (namespace, pod, uid) (label_replace(max by (namespace, pod, uid, owner_name) (kube_pod_owner{namespace=\"fs2-models\",owner_kind=\"ReplicaSet\",owner_is_controller=\"true\"} == 1), \"replicaset\", \"$1\", \"owner_name\", \"(.+)\") and on (namespace, replicaset) (max by (namespace, replicaset) (kube_replicaset_owner{namespace=\"fs2-models\",owner_kind=\"Deployment\",owner_is_controller=\"true\",owner_name=\"magpie-tts-multilingual-357m\"} == 1) and on (namespace, replicaset) max by (namespace, replicaset) (kube_replicaset_spec_replicas{namespace=\"fs2-models\"} > 0))) unless on (namespace, pod, uid) max by (namespace, pod, uid) (kube_pod_status_ready{namespace=\"fs2-models\",condition=\"true\"} == 1) unless on (namespace, pod, uid) max by (namespace, pod, uid) (kube_pod_deletion_timestamp{namespace=\"fs2-models\"})) > 0)) * 1) OR vector(0)",
+                "serverAddress": "http://fs2-r927c465c6d-monitoring-prometheus.fs2-observability.svc.cluster.local:9090",
+                "threshold": "1"
+              },
+              "metricType": "AverageValue",
+              "type": "prometheus"
+            }
+          ]
+        },
+        "status": {
+          "authenticationsTypes": "",
+          "conditions": [
+            {
+              "message": "ScaledObject is defined correctly and is ready for scaling",
+              "reason": "ScaledObjectReady",
+              "status": "True",
+              "type": "Ready"
+            },
+            {
+              "message": "Scaling is not performed because triggers are not active",
+              "reason": "ScalerNotActive",
+              "status": "False",
+              "type": "Active"
+            },
+            {
+              "message": "No fallbacks are active on this scaled object",
+              "reason": "NoFallbackFound",
+              "status": "False",
+              "type": "Fallback"
+            },
+            {
+              "status": "False",
+              "type": "Paused"
+            },
+            {
+              "message": "HPA is actively scaling",
+              "reason": "HPAActive",
+              "status": "True",
+              "type": "HPAActive"
+            }
+          ],
+          "externalMetricNames": [
+            "s0-prometheus",
+            "s1-prometheus"
+          ],
+          "hpaName": "keda-hpa-fs2-model-magpie-tts-multilingual-357m",
+          "lastActiveTime": "2026-09-16T18:04:18Z",
+          "originalReplicaCount": 2,
+          "scaleTargetGVKR": {
+            "group": "apps",
+            "kind": "Deployment",
+            "resource": "deployments",
+            "version": "v1"
+          },
+          "scaleTargetKind": "apps/v1.Deployment",
+          "triggersActivity": {
+            "s0-prometheus": {
+              "isActive": false
+            },
+            "s1-prometheus": {
+              "isActive": false
+            }
+          },
+          "triggersTypes": "prometheus"
+        }
+      },
+      {
+        "name": "fs2-model-parakeet-realtime-eou-120m-v1",
+        "target": "parakeet-realtime-eou-120m-v1",
+        "spec": {
+          "cooldownPeriod": 300,
+          "maxReplicaCount": 2,
+          "minReplicaCount": 1,
+          "pollingInterval": 5,
+          "scaleTargetRef": {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "name": "parakeet-realtime-eou-120m-v1"
+          },
+          "triggers": [
+            {
+              "metadata": {
+                "activationThreshold": "0",
+                "ignoreNullValues": "false",
+                "metricName": "fs2_operation_demand_parakeet_realtime_eou_120m_v1",
+                "query": "sum(max by (model, state) (fs2_serve_operations{model=\"parakeet-realtime-eou-120m-v1\",state=~\"queued|activating|running\"})) OR vector(0)",
+                "serverAddress": "http://fs2-r927c465c6d-monitoring-prometheus.fs2-observability.svc.cluster.local:9090",
+                "threshold": "1"
+              },
+              "metricType": "AverageValue",
+              "type": "prometheus"
+            },
+            {
+              "metadata": {
+                "activationThreshold": "0",
+                "ignoreNullValues": "false",
+                "metricName": "fs2_operation_demand_parakeet_realtime_eou_120m_v1_startup",
+                "query": "(sum((max by (namespace, deployment) (kube_deployment_spec_replicas{namespace=\"fs2-models\",deployment=\"parakeet-realtime-eou-120m-v1\"}) > 0) and on (namespace, deployment) ((max by (namespace, deployment) ((timestamp(kube_deployment_spec_replicas{namespace=\"fs2-models\",deployment=\"parakeet-realtime-eou-120m-v1\"}) and (idelta(kube_deployment_spec_replicas{namespace=\"fs2-models\",deployment=\"parakeet-realtime-eou-120m-v1\"}[2m]) > 0)) or max_over_time((timestamp(kube_deployment_spec_replicas{namespace=\"fs2-models\",deployment=\"parakeet-realtime-eou-120m-v1\"}) and (idelta(kube_deployment_spec_replicas{namespace=\"fs2-models\",deployment=\"parakeet-realtime-eou-120m-v1\"}[2m]) > 0))[900s:1s])) > (time() - 900)) or (max by (namespace, deployment) (kube_deployment_created{namespace=\"fs2-models\",deployment=\"parakeet-realtime-eou-120m-v1\"}) > (time() - 900))) and on () (count(max by (namespace, pod, uid) (kube_pod_status_phase{namespace=\"fs2-models\",phase=~\"Pending|Running\"} == 1) and on (namespace, pod, uid) (label_replace(max by (namespace, pod, uid, owner_name) (kube_pod_owner{namespace=\"fs2-models\",owner_kind=\"ReplicaSet\",owner_is_controller=\"true\"} == 1), \"replicaset\", \"$1\", \"owner_name\", \"(.+)\") and on (namespace, replicaset) (max by (namespace, replicaset) (kube_replicaset_owner{namespace=\"fs2-models\",owner_kind=\"Deployment\",owner_is_controller=\"true\",owner_name=\"parakeet-realtime-eou-120m-v1\"} == 1) and on (namespace, replicaset) max by (namespace, replicaset) (kube_replicaset_spec_replicas{namespace=\"fs2-models\"} > 0))) unless on (namespace, pod, uid) max by (namespace, pod, uid) (kube_pod_status_ready{namespace=\"fs2-models\",condition=\"true\"} == 1) unless on (namespace, pod, uid) max by (namespace, pod, uid) (kube_pod_deletion_timestamp{namespace=\"fs2-models\"})) > 0)) * 1) OR vector(0)",
+                "serverAddress": "http://fs2-r927c465c6d-monitoring-prometheus.fs2-observability.svc.cluster.local:9090",
+                "threshold": "1"
+              },
+              "metricType": "AverageValue",
+              "type": "prometheus"
+            }
+          ]
+        },
+        "status": {
+          "authenticationsTypes": "",
+          "conditions": [
+            {
+              "message": "ScaledObject is defined correctly and is ready for scaling",
+              "reason": "ScaledObjectReady",
+              "status": "True",
+              "type": "Ready"
+            },
+            {
+              "message": "Scaling is not performed because triggers are not active",
+              "reason": "ScalerNotActive",
+              "status": "False",
+              "type": "Active"
+            },
+            {
+              "message": "No fallbacks are active on this scaled object",
+              "reason": "NoFallbackFound",
+              "status": "False",
+              "type": "Fallback"
+            },
+            {
+              "status": "False",
+              "type": "Paused"
+            },
+            {
+              "message": "HPA is actively scaling",
+              "reason": "HPAActive",
+              "status": "True",
+              "type": "HPAActive"
+            }
+          ],
+          "externalMetricNames": [
+            "s0-prometheus",
+            "s1-prometheus"
+          ],
+          "hpaName": "keda-hpa-fs2-model-parakeet-realtime-eou-120m-v1",
+          "lastActiveTime": "2026-09-16T18:03:15Z",
+          "originalReplicaCount": 2,
+          "scaleTargetGVKR": {
+            "group": "apps",
+            "kind": "Deployment",
+            "resource": "deployments",
+            "version": "v1"
+          },
+          "scaleTargetKind": "apps/v1.Deployment",
+          "triggersActivity": {
+            "s0-prometheus": {
+              "isActive": false
+            },
+            "s1-prometheus": {
+              "isActive": false
+            }
+          },
+          "triggersTypes": "prometheus"
+        }
+      }
+    ]
+  },
+  "models": [
+    {
+      "name": "magpie-tts-multilingual-357m",
+      "uid": "fb0a45dd-4507-4b5f-b599-6e9b49434a50",
+      "generation": 3,
+      "availability": {
+        "cooldownSeconds": 300,
+        "idleSeconds": 300,
+        "maxReplicas": 2,
+        "minReplicas": 1,
+        "pollingIntervalSeconds": 5,
+        "targetQueueDepth": 1,
+        "warmWindows": []
+      },
+      "snapshot_preference": "Never",
+      "observed_generation": 3,
+      "phase": "Ready",
+      "replicas": {
+        "admitted": 2,
+        "available": 2,
+        "desired": 2,
+        "localizing": 0,
+        "nodePending": 0,
+        "ready": 2,
+        "runtimeStarting": 0,
+        "warming": 0
+      }
+    },
+    {
+      "name": "parakeet-realtime-eou-120m-v1",
+      "uid": "d46ae1a2-d856-45c3-8a14-90e72418cee9",
+      "generation": 3,
+      "availability": {
+        "cooldownSeconds": 300,
+        "idleSeconds": 300,
+        "maxReplicas": 2,
+        "minReplicas": 1,
+        "pollingIntervalSeconds": 5,
+        "targetQueueDepth": 1,
+        "warmWindows": []
+      },
+      "snapshot_preference": "Never",
+      "observed_generation": 3,
+      "phase": "Ready",
+      "replicas": {
+        "admitted": 1,
+        "available": 1,
+        "desired": 1,
+        "localizing": 0,
+        "nodePending": 0,
+        "ready": 1,
+        "runtimeStarting": 0,
+        "warming": 0
+      }
+    },
+    {
+      "name": "diar-streaming-sortformer-4spk-v2-1",
+      "uid": "68256880-33c3-4381-8ae5-e3f07011e933",
+      "generation": 3,
+      "availability": {
+        "cooldownSeconds": 300,
+        "idleSeconds": 300,
+        "maxReplicas": 2,
+        "minReplicas": 1,
+        "pollingIntervalSeconds": 5,
+        "targetQueueDepth": 1,
+        "warmWindows": []
+      },
+      "snapshot_preference": "Never",
+      "observed_generation": 3,
+      "phase": "Ready",
+      "replicas": {
+        "admitted": 1,
+        "available": 1,
+        "desired": 1,
+        "localizing": 0,
+        "nodePending": 0,
+        "ready": 1,
+        "runtimeStarting": 0,
+        "warming": 0
+      }
+    }
+  ],
+  "deployments": [
+    {
+      "name": "magpie-tts-multilingual-357m",
+      "uid": "98a3652b-23dd-49a2-a800-9a18eddd45c0",
+      "strategy": {
+        "rollingUpdate": {
+          "maxSurge": 1,
+          "maxUnavailable": 0
+        },
+        "type": "RollingUpdate"
+      },
+      "replicas": 2,
+      "replica_field_managers": [],
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:fc9db5fd5df87e819766297d90a4595664aec63e7dbfd6735b3f2053b4725ead",
+      "status": {
+        "availableReplicas": 2,
+        "conditions": [
+          {
+            "lastTransitionTime": "2026-09-16T18:03:06Z",
+            "lastUpdateTime": "2026-09-16T18:03:06Z",
+            "message": "Deployment has minimum availability.",
+            "reason": "MinimumReplicasAvailable",
+            "status": "True",
+            "type": "Available"
+          },
+          {
+            "lastTransitionTime": "2026-09-16T17:12:59Z",
+            "lastUpdateTime": "2026-09-16T18:03:51Z",
+            "message": "ReplicaSet \"magpie-tts-multilingual-357m-9c9b4685d\" has successfully progressed.",
+            "reason": "NewReplicaSetAvailable",
+            "status": "True",
+            "type": "Progressing"
+          }
+        ],
+        "observedGeneration": 6,
+        "readyReplicas": 2,
+        "replicas": 2,
+        "terminatingReplicas": 0,
+        "updatedReplicas": 2
+      }
+    },
+    {
+      "name": "parakeet-realtime-eou-120m-v1",
+      "uid": "a9a7c01e-2773-4f80-b520-24808e8df7ea",
+      "strategy": {
+        "rollingUpdate": {
+          "maxSurge": 1,
+          "maxUnavailable": 0
+        },
+        "type": "RollingUpdate"
+      },
+      "replicas": 1,
+      "replica_field_managers": [],
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa",
+      "status": {
+        "availableReplicas": 1,
+        "conditions": [
+          {
+            "lastTransitionTime": "2026-09-16T17:48:10Z",
+            "lastUpdateTime": "2026-09-16T17:48:10Z",
+            "message": "Deployment has minimum availability.",
+            "reason": "MinimumReplicasAvailable",
+            "status": "True",
+            "type": "Available"
+          },
+          {
+            "lastTransitionTime": "2026-09-16T17:12:54Z",
+            "lastUpdateTime": "2026-09-16T17:48:54Z",
+            "message": "ReplicaSet \"parakeet-realtime-eou-120m-v1-6497d49575\" has successfully progressed.",
+            "reason": "NewReplicaSetAvailable",
+            "status": "True",
+            "type": "Progressing"
+          }
+        ],
+        "observedGeneration": 7,
+        "readyReplicas": 1,
+        "replicas": 1,
+        "terminatingReplicas": 0,
+        "updatedReplicas": 1
+      }
+    },
+    {
+      "name": "diar-streaming-sortformer-4spk-v2-1",
+      "uid": "37908cde-a07a-4ba1-9e23-c932ddefcfaa",
+      "strategy": {
+        "rollingUpdate": {
+          "maxSurge": 1,
+          "maxUnavailable": 0
+        },
+        "type": "RollingUpdate"
+      },
+      "replicas": 1,
+      "replica_field_managers": [],
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253",
+      "status": {
+        "availableReplicas": 1,
+        "conditions": [
+          {
+            "lastTransitionTime": "2026-09-16T17:48:44Z",
+            "lastUpdateTime": "2026-09-16T17:48:44Z",
+            "message": "Deployment has minimum availability.",
+            "reason": "MinimumReplicasAvailable",
+            "status": "True",
+            "type": "Available"
+          },
+          {
+            "lastTransitionTime": "2026-09-16T17:13:03Z",
+            "lastUpdateTime": "2026-09-16T17:51:52Z",
+            "message": "ReplicaSet \"diar-streaming-sortformer-4spk-v2-1-69bb89d789\" has successfully progressed.",
+            "reason": "NewReplicaSetAvailable",
+            "status": "True",
+            "type": "Progressing"
+          }
+        ],
+        "observedGeneration": 7,
+        "readyReplicas": 1,
+        "replicas": 1,
+        "terminatingReplicas": 0,
+        "updatedReplicas": 1
+      }
+    }
+  ],
+  "services": [
+    {
+      "name": "magpie-tts-multilingual-357m",
+      "uid": "5c6e50ae-52e3-4ea1-83a4-8a4bf22d0d40",
+      "cluster_ip": "10.5.173.104",
+      "selector": {
+        "app.kubernetes.io/name": "magpie-tts-multilingual-357m"
+      },
+      "owners": [
+        {
+          "apiVersion": "inference.fs2.nebius.ai/v1alpha1",
+          "blockOwnerDeletion": true,
+          "controller": true,
+          "kind": "ModelDeployment",
+          "name": "magpie-tts-multilingual-357m",
+          "uid": "fb0a45dd-4507-4b5f-b599-6e9b49434a50"
+        }
+      ]
+    },
+    {
+      "name": "parakeet-realtime-eou-120m-v1",
+      "uid": "7942da0a-1985-43be-92c1-9cfdc644ba18",
+      "cluster_ip": "10.5.171.27",
+      "selector": {
+        "app.kubernetes.io/name": "parakeet-realtime-eou-120m-v1"
+      },
+      "owners": [
+        {
+          "apiVersion": "inference.fs2.nebius.ai/v1alpha1",
+          "blockOwnerDeletion": true,
+          "controller": true,
+          "kind": "ModelDeployment",
+          "name": "parakeet-realtime-eou-120m-v1",
+          "uid": "d46ae1a2-d856-45c3-8a14-90e72418cee9"
+        }
+      ]
+    },
+    {
+      "name": "diar-streaming-sortformer-4spk-v2-1",
+      "uid": "28e547da-e960-43cd-b6f1-066493c608c8",
+      "cluster_ip": "10.5.226.1",
+      "selector": {
+        "app.kubernetes.io/name": "diar-streaming-sortformer-4spk-v2-1"
+      },
+      "owners": [
+        {
+          "apiVersion": "inference.fs2.nebius.ai/v1alpha1",
+          "blockOwnerDeletion": true,
+          "controller": true,
+          "kind": "ModelDeployment",
+          "name": "diar-streaming-sortformer-4spk-v2-1",
+          "uid": "68256880-33c3-4381-8ae5-e3f07011e933"
+        }
+      ]
+    }
+  ],
+  "endpoints": [
+    {
+      "service": "diar-streaming-sortformer-4spk-v2-1",
+      "endpoints": [
+        {
+          "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-fh8bj",
+          "conditions": {
+            "ready": true,
+            "serving": true,
+            "terminating": false
+          }
+        }
+      ]
+    },
+    {
+      "service": "magpie-tts-multilingual-357m",
+      "endpoints": [
+        {
+          "pod": "magpie-tts-multilingual-357m-9c9b4685d-7pbvv",
+          "conditions": {
+            "ready": true,
+            "serving": true,
+            "terminating": false
+          }
+        },
+        {
+          "pod": "magpie-tts-multilingual-357m-9c9b4685d-2fxx9",
+          "conditions": {
+            "ready": true,
+            "serving": true,
+            "terminating": false
+          }
+        }
+      ]
+    },
+    {
+      "service": "parakeet-realtime-eou-120m-v1",
+      "endpoints": [
+        {
+          "pod": "parakeet-realtime-eou-120m-v1-6497d49575-th628",
+          "conditions": {
+            "ready": true,
+            "serving": true,
+            "terminating": false
+          }
+        }
+      ]
+    }
+  ],
+  "pods": [
+    {
+      "name": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-fh8bj",
+      "uid": "ee208b3f-09ce-4786-8025-13235f8be47e",
+      "model": "diar-streaming-sortformer-4spk-v2-1",
+      "node": "computeinstance-e00r165maajnbg7wrr",
+      "created_at": "2026-09-16T17:51:01Z",
+      "started_at": "2026-09-16T17:51:21Z",
+      "ready_at": "2026-09-16T17:51:52Z",
+      "creation_to_ready_seconds": 51.0,
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253",
+      "image_pull_policy": "IfNotPresent",
+      "restarts": 0,
+      "gpu_request": "1"
+    },
+    {
+      "name": "magpie-tts-multilingual-357m-9c9b4685d-2fxx9",
+      "uid": "2786ec26-26ae-448f-9b19-2f3e73e0ee46",
+      "model": "magpie-tts-multilingual-357m",
+      "node": "computeinstance-e00krzha55t0sg3t56",
+      "created_at": "2026-09-16T18:03:06Z",
+      "started_at": "2026-09-16T18:03:07Z",
+      "ready_at": "2026-09-16T18:03:51Z",
+      "creation_to_ready_seconds": 45.0,
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:fc9db5fd5df87e819766297d90a4595664aec63e7dbfd6735b3f2053b4725ead",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:fc9db5fd5df87e819766297d90a4595664aec63e7dbfd6735b3f2053b4725ead",
+      "image_pull_policy": "IfNotPresent",
+      "restarts": 0,
+      "gpu_request": "1"
+    },
+    {
+      "name": "magpie-tts-multilingual-357m-9c9b4685d-7pbvv",
+      "uid": "73517ad4-7397-44b2-9e11-f6e9fa80b760",
+      "model": "magpie-tts-multilingual-357m",
+      "node": "computeinstance-e00zs7gf1mgdygk6jv",
+      "created_at": "2026-09-16T18:02:20Z",
+      "started_at": "2026-09-16T18:02:21Z",
+      "ready_at": "2026-09-16T18:03:06Z",
+      "creation_to_ready_seconds": 46.0,
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:fc9db5fd5df87e819766297d90a4595664aec63e7dbfd6735b3f2053b4725ead",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:fc9db5fd5df87e819766297d90a4595664aec63e7dbfd6735b3f2053b4725ead",
+      "image_pull_policy": "IfNotPresent",
+      "restarts": 0,
+      "gpu_request": "1"
+    },
+    {
+      "name": "parakeet-realtime-eou-120m-v1-6497d49575-th628",
+      "uid": "c0e1254f-210d-42e4-b608-b754465ccb95",
+      "model": "parakeet-realtime-eou-120m-v1",
+      "node": "computeinstance-e00vt3d3s01p9xsrwt",
+      "created_at": "2026-09-16T17:47:26Z",
+      "started_at": "2026-09-16T17:47:46Z",
+      "ready_at": "2026-09-16T17:48:16Z",
+      "creation_to_ready_seconds": 50.0,
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa",
+      "image_pull_policy": "IfNotPresent",
+      "restarts": 0,
+      "gpu_request": "1"
+    }
+  ],
+  "preview_deployments": [
+    {
+      "name": "fs2-voice-parakeet-r20260916",
+      "replicas": 0
+    },
+    {
+      "name": "fs2-voice-magpie-r20260916",
+      "replicas": 0
+    },
+    {
+      "name": "fs2-voice-sortformer-r20260916",
+      "replicas": 0
+    }
+  ],
+  "startup_events": [
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-2rff8",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T17:39:31Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-2rff8",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/diar-streaming-sortformer-4spk-v2-1-69bb89d789-2rff8 to computeinstance-e00krzha55t0sg3t56",
+      "at": "2026-09-16T17:39:31Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-2rff8",
+      "reason": "Pulled",
+      "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253\" already present on machine and can be accessed by the pod",
+      "at": "2026-09-16T17:39:32Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-2rff8",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T17:39:32Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-2rff8",
+      "reason": "Killing",
+      "message": "Stopping container voice",
+      "at": "2026-09-16T17:40:25Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-fh8bj",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T17:51:02Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-fh8bj",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/diar-streaming-sortformer-4spk-v2-1-69bb89d789-fh8bj to computeinstance-e00r165maajnbg7wrr",
+      "at": "2026-09-16T17:51:02Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-fh8bj",
+      "reason": "Pulled",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253\" in 18.341s (18.341s including waiting). Image size: 7304508947 bytes.",
+      "at": "2026-09-16T17:51:20Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-fh8bj",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T17:51:21Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-hpbxh",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T17:48:01Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-hpbxh",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/diar-streaming-sortformer-4spk-v2-1-69bb89d789-hpbxh to computeinstance-e00wn3q7jgzmftw1ya",
+      "at": "2026-09-16T17:48:01Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-hpbxh",
+      "reason": "Pulled",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253\" in 2m22.969s (2m22.97s including waiting). Image size: 7304508947 bytes.",
+      "at": "2026-09-16T17:50:24Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-hpbxh",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T17:50:25Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-hpbxh",
+      "reason": "Killing",
+      "message": "Stopping container voice",
+      "at": "2026-09-16T17:59:45Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-wwflx",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T17:13:04Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-wwflx",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/diar-streaming-sortformer-4spk-v2-1-69bb89d789-wwflx to computeinstance-e00vt3d3s01p9xsrwt",
+      "at": "2026-09-16T17:13:04Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-wwflx",
+      "reason": "Pulled",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253\" in 2m39.674s (2m39.674s including waiting). Image size: 7304508947 bytes.",
+      "at": "2026-09-16T17:15:44Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-wwflx",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T17:15:44Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-wwflx",
+      "reason": "Killing",
+      "message": "Stopping container voice",
+      "at": "2026-09-16T17:41:02Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-8vd9c",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T17:39:34Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-8vd9c",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/diar-streaming-sortformer-4spk-v2-1-b7d45646b-8vd9c to computeinstance-e00tfvy9gb2n0vm6h2",
+      "at": "2026-09-16T17:39:34Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-8vd9c",
+      "reason": "Pulled",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253\" in 22.105s (22.105s including waiting). Image size: 7304508947 bytes.",
+      "at": "2026-09-16T17:39:57Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-8vd9c",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T17:39:57Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-8vd9c",
+      "reason": "Killing",
+      "message": "Stopping container voice",
+      "at": "2026-09-16T17:51:52Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-czdsx",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T17:48:14Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-czdsx",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/diar-streaming-sortformer-4spk-v2-1-b7d45646b-czdsx to computeinstance-e00krzha55t0sg3t56",
+      "at": "2026-09-16T17:48:14Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-czdsx",
+      "reason": "Pulled",
+      "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253\" already present on machine and can be accessed by the pod",
+      "at": "2026-09-16T17:48:14Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-czdsx",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T17:48:15Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-czdsx",
+      "reason": "Killing",
+      "message": "Stopping container voice",
+      "at": "2026-09-16T17:51:01Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-lvnxg",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T17:40:25Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-lvnxg",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/diar-streaming-sortformer-4spk-v2-1-b7d45646b-lvnxg to computeinstance-e00krzha55t0sg3t56",
+      "at": "2026-09-16T17:40:31Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-lvnxg",
+      "reason": "Pulled",
+      "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253\" already present on machine and can be accessed by the pod",
+      "at": "2026-09-16T17:40:32Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-lvnxg",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T17:40:32Z"
+    },
+    {
+      "pod": "diar-streaming-sortformer-4spk-v2-1-b7d45646b-lvnxg",
+      "reason": "Killing",
+      "message": "Stopping container voice",
+      "at": "2026-09-16T17:48:01Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-54999f5fdf-7fnwp",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T17:55:48Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-54999f5fdf-7fnwp",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/magpie-tts-multilingual-357m-54999f5fdf-7fnwp to computeinstance-e00tfvy9gb2n0vm6h2",
+      "at": "2026-09-16T17:55:48Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-54999f5fdf-7fnwp",
+      "reason": "Pulled",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:fc9db5fd5df87e819766297d90a4595664aec63e7dbfd6735b3f2053b4725ead\" in 36.556s (36.556s including waiting). Image size: 8560615176 bytes.",
+      "at": "2026-09-16T17:56:26Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-54999f5fdf-7fnwp",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T17:56:26Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-54999f5fdf-7fnwp",
+      "reason": "Killing",
+      "message": "Stopping container voice",
+      "at": "2026-09-16T18:03:51Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-54999f5fdf-bwqk7",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T17:57:09Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-54999f5fdf-bwqk7",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/magpie-tts-multilingual-357m-54999f5fdf-bwqk7 to computeinstance-e00krzha55t0sg3t56",
+      "at": "2026-09-16T17:57:09Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-54999f5fdf-bwqk7",
+      "reason": "Pulled",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:fc9db5fd5df87e819766297d90a4595664aec63e7dbfd6735b3f2053b4725ead\" in 35.219s (35.219s including waiting). Image size: 8560615176 bytes.",
+      "at": "2026-09-16T17:57:45Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-54999f5fdf-bwqk7",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T17:57:45Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-54999f5fdf-bwqk7",
+      "reason": "Killing",
+      "message": "Stopping container voice",
+      "at": "2026-09-16T18:02:20Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-54999f5fdf-zcrmr",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T18:02:34Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-54999f5fdf-zcrmr",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/magpie-tts-multilingual-357m-54999f5fdf-zcrmr to computeinstance-e00dczh75qcnbj0bx8",
+      "at": "2026-09-16T18:02:34Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-54999f5fdf-zcrmr",
+      "reason": "Pulled",
+      "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:fc9db5fd5df87e819766297d90a4595664aec63e7dbfd6735b3f2053b4725ead\" already present on machine and can be accessed by the pod",
+      "at": "2026-09-16T18:02:34Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-54999f5fdf-zcrmr",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T18:02:34Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-54999f5fdf-zcrmr",
+      "reason": "Killing",
+      "message": "Stopping container voice",
+      "at": "2026-09-16T18:03:06Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-9c9b4685d-2fxx9",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T18:03:06Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-9c9b4685d-2fxx9",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/magpie-tts-multilingual-357m-9c9b4685d-2fxx9 to computeinstance-e00krzha55t0sg3t56",
+      "at": "2026-09-16T18:03:06Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-9c9b4685d-2fxx9",
+      "reason": "Pulled",
+      "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:fc9db5fd5df87e819766297d90a4595664aec63e7dbfd6735b3f2053b4725ead\" already present on machine and can be accessed by the pod",
+      "at": "2026-09-16T18:03:07Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-9c9b4685d-2fxx9",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T18:03:07Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-9c9b4685d-7pbvv",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T18:02:20Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-9c9b4685d-7pbvv",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/magpie-tts-multilingual-357m-9c9b4685d-7pbvv to computeinstance-e00zs7gf1mgdygk6jv",
+      "at": "2026-09-16T18:02:20Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-9c9b4685d-7pbvv",
+      "reason": "Pulled",
+      "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:fc9db5fd5df87e819766297d90a4595664aec63e7dbfd6735b3f2053b4725ead\" already present on machine and can be accessed by the pod",
+      "at": "2026-09-16T18:02:21Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-9c9b4685d-7pbvv",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T18:02:21Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-9c9b4685d-hcnj2",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T17:13:00Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-9c9b4685d-hcnj2",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/magpie-tts-multilingual-357m-9c9b4685d-hcnj2 to computeinstance-e00zs7gf1mgdygk6jv",
+      "at": "2026-09-16T17:13:00Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-9c9b4685d-hcnj2",
+      "reason": "Pulled",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:fc9db5fd5df87e819766297d90a4595664aec63e7dbfd6735b3f2053b4725ead\" in 2m52.105s (2m52.105s including waiting). Image size: 8560615176 bytes.",
+      "at": "2026-09-16T17:15:52Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-9c9b4685d-hcnj2",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T17:15:53Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-9c9b4685d-hcnj2",
+      "reason": "Killing",
+      "message": "Stopping container voice",
+      "at": "2026-09-16T17:58:29Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-9c9b4685d-kpmj7",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T17:55:45Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-9c9b4685d-kpmj7",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/magpie-tts-multilingual-357m-9c9b4685d-kpmj7 to computeinstance-e00dczh75qcnbj0bx8",
+      "at": "2026-09-16T17:55:45Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-9c9b4685d-kpmj7",
+      "reason": "Pulled",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:fc9db5fd5df87e819766297d90a4595664aec63e7dbfd6735b3f2053b4725ead\" in 37.986s (37.986s including waiting). Image size: 8560615176 bytes.",
+      "at": "2026-09-16T17:56:24Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-9c9b4685d-kpmj7",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T17:56:24Z"
+    },
+    {
+      "pod": "magpie-tts-multilingual-357m-9c9b4685d-kpmj7",
+      "reason": "Killing",
+      "message": "Stopping container voice",
+      "at": "2026-09-16T17:57:09Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-cfqj2",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T17:38:58Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-cfqj2",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/parakeet-realtime-eou-120m-v1-5d9755bc7c-cfqj2 to computeinstance-e00dczh75qcnbj0bx8",
+      "at": "2026-09-16T17:38:58Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-cfqj2",
+      "reason": "Pulled",
+      "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa\" already present on machine and can be accessed by the pod",
+      "at": "2026-09-16T17:38:59Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-cfqj2",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T17:38:59Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-cfqj2",
+      "reason": "Killing",
+      "message": "Stopping container voice",
+      "at": "2026-09-16T17:47:26Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-glcdz",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T17:34:24Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-glcdz",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/parakeet-realtime-eou-120m-v1-5d9755bc7c-glcdz to computeinstance-e00r165maajnbg7wrr",
+      "at": "2026-09-16T17:34:24Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-glcdz",
+      "reason": "Pulled",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa\" in 19.599s (19.599s including waiting). Image size: 7284242608 bytes.",
+      "at": "2026-09-16T17:34:44Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-glcdz",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T17:34:44Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-glcdz",
+      "reason": "Killing",
+      "message": "Stopping container voice",
+      "at": "2026-09-16T17:48:54Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-s6jdx",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T17:47:40Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-s6jdx",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/parakeet-realtime-eou-120m-v1-5d9755bc7c-s6jdx to computeinstance-e00dczh75qcnbj0bx8",
+      "at": "2026-09-16T17:47:40Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-s6jdx",
+      "reason": "Pulled",
+      "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa\" already present on machine and can be accessed by the pod",
+      "at": "2026-09-16T17:47:40Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-s6jdx",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T17:47:40Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-s6jdx",
+      "reason": "Killing",
+      "message": "Stopping container voice",
+      "at": "2026-09-16T17:48:16Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-slq4t",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T17:33:28Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-slq4t",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/parakeet-realtime-eou-120m-v1-5d9755bc7c-slq4t to computeinstance-e00krzha55t0sg3t56",
+      "at": "2026-09-16T17:33:28Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-slq4t",
+      "reason": "Pulled",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa\" in 23.497s (23.497s including waiting). Image size: 7284242608 bytes.",
+      "at": "2026-09-16T17:33:52Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-slq4t",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T17:33:52Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-5d9755bc7c-slq4t",
+      "reason": "Killing",
+      "message": "Stopping container voice",
+      "at": "2026-09-16T17:38:58Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-4m7rw",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T17:33:23Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-4m7rw",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/parakeet-realtime-eou-120m-v1-6497d49575-4m7rw to computeinstance-e00tfvy9gb2n0vm6h2",
+      "at": "2026-09-16T17:33:23Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-4m7rw",
+      "reason": "Pulled",
+      "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa\" already present on machine and can be accessed by the pod",
+      "at": "2026-09-16T17:33:23Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-4m7rw",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T17:33:24Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-4m7rw",
+      "reason": "Killing",
+      "message": "Stopping container voice",
+      "at": "2026-09-16T17:34:23Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-th628",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T17:47:26Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-th628",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/parakeet-realtime-eou-120m-v1-6497d49575-th628 to computeinstance-e00vt3d3s01p9xsrwt",
+      "at": "2026-09-16T17:47:26Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-th628",
+      "reason": "Pulled",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa\" in 19.789s (19.789s including waiting). Image size: 7284242608 bytes.",
+      "at": "2026-09-16T17:47:46Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-th628",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T17:47:46Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-vxbz6",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T17:12:54Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-vxbz6",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/parakeet-realtime-eou-120m-v1-6497d49575-vxbz6 to computeinstance-e00dczh75qcnbj0bx8",
+      "at": "2026-09-16T17:12:54Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-vxbz6",
+      "reason": "Pulled",
+      "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa\" in 2m32.049s (2m32.049s including waiting). Image size: 7284242608 bytes.",
+      "at": "2026-09-16T17:15:27Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-vxbz6",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T17:15:30Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-vxbz6",
+      "reason": "Killing",
+      "message": "Stopping container voice",
+      "at": "2026-09-16T17:35:14Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-x4qgm",
+      "reason": "Started",
+      "message": "Admitted by clusterQueue inference-accelerators",
+      "at": "2026-09-16T17:48:16Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-x4qgm",
+      "reason": "Scheduled",
+      "message": "Successfully assigned fs2-models/parakeet-realtime-eou-120m-v1-6497d49575-x4qgm to computeinstance-e00dczh75qcnbj0bx8",
+      "at": "2026-09-16T17:48:23Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-x4qgm",
+      "reason": "Pulled",
+      "message": "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa\" already present on machine and can be accessed by the pod",
+      "at": "2026-09-16T17:48:24Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-x4qgm",
+      "reason": "Started",
+      "message": "Container started",
+      "at": "2026-09-16T17:48:24Z"
+    },
+    {
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-x4qgm",
+      "reason": "Killing",
+      "message": "Stopping container voice",
+      "at": "2026-09-16T17:53:40Z"
+    }
+  ],
+  "metrics": {
+    "fs2_voice_ready": [
+      {
+        "metric": {
+          "__name__": "fs2_voice_ready",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "parakeet-realtime-eou-120m-v1",
+          "instance": "10.6.120.41:8000",
+          "job": "parakeet-realtime-eou-120m-v1",
+          "namespace": "fs2-models",
+          "pod": "parakeet-realtime-eou-120m-v1-6497d49575-th628",
+          "service": "parakeet-realtime-eou-120m-v1"
+        },
+        "value": [
+          1789581871.385,
+          "1"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_ready",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "diar-streaming-sortformer-4spk-v2-1",
+          "instance": "10.6.110.58:8000",
+          "job": "diar-streaming-sortformer-4spk-v2-1",
+          "namespace": "fs2-models",
+          "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-fh8bj",
+          "service": "diar-streaming-sortformer-4spk-v2-1"
+        },
+        "value": [
+          1789581871.385,
+          "1"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_ready",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "magpie-tts-multilingual-357m",
+          "instance": "10.6.91.139:8000",
+          "job": "magpie-tts-multilingual-357m",
+          "namespace": "fs2-models",
+          "pod": "magpie-tts-multilingual-357m-9c9b4685d-7pbvv",
+          "service": "magpie-tts-multilingual-357m"
+        },
+        "value": [
+          1789581871.385,
+          "1"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_ready",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "magpie-tts-multilingual-357m",
+          "instance": "10.6.88.232:8000",
+          "job": "magpie-tts-multilingual-357m",
+          "namespace": "fs2-models",
+          "pod": "magpie-tts-multilingual-357m-9c9b4685d-2fxx9",
+          "service": "magpie-tts-multilingual-357m"
+        },
+        "value": [
+          1789581871.385,
+          "1"
+        ]
+      }
+    ],
+    "fs2_voice_occupied": [
+      {
+        "metric": {
+          "__name__": "fs2_voice_occupied",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "parakeet-realtime-eou-120m-v1",
+          "instance": "10.6.120.41:8000",
+          "job": "parakeet-realtime-eou-120m-v1",
+          "namespace": "fs2-models",
+          "pod": "parakeet-realtime-eou-120m-v1-6497d49575-th628",
+          "service": "parakeet-realtime-eou-120m-v1"
+        },
+        "value": [
+          1789581871.479,
+          "0"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_occupied",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "diar-streaming-sortformer-4spk-v2-1",
+          "instance": "10.6.110.58:8000",
+          "job": "diar-streaming-sortformer-4spk-v2-1",
+          "namespace": "fs2-models",
+          "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-fh8bj",
+          "service": "diar-streaming-sortformer-4spk-v2-1"
+        },
+        "value": [
+          1789581871.479,
+          "0"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_occupied",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "magpie-tts-multilingual-357m",
+          "instance": "10.6.91.139:8000",
+          "job": "magpie-tts-multilingual-357m",
+          "namespace": "fs2-models",
+          "pod": "magpie-tts-multilingual-357m-9c9b4685d-7pbvv",
+          "service": "magpie-tts-multilingual-357m"
+        },
+        "value": [
+          1789581871.479,
+          "0"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_occupied",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "magpie-tts-multilingual-357m",
+          "instance": "10.6.88.232:8000",
+          "job": "magpie-tts-multilingual-357m",
+          "namespace": "fs2-models",
+          "pod": "magpie-tts-multilingual-357m-9c9b4685d-2fxx9",
+          "service": "magpie-tts-multilingual-357m"
+        },
+        "value": [
+          1789581871.479,
+          "0"
+        ]
+      }
+    ],
+    "fs2_voice_requests_total": [
+      {
+        "metric": {
+          "__name__": "fs2_voice_requests_total",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "parakeet-realtime-eou-120m-v1",
+          "instance": "10.6.120.41:8000",
+          "job": "parakeet-realtime-eou-120m-v1",
+          "namespace": "fs2-models",
+          "pod": "parakeet-realtime-eou-120m-v1-6497d49575-th628",
+          "service": "parakeet-realtime-eou-120m-v1",
+          "status": "completed"
+        },
+        "value": [
+          1789581871.573,
+          "6"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_requests_total",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "diar-streaming-sortformer-4spk-v2-1",
+          "instance": "10.6.110.58:8000",
+          "job": "diar-streaming-sortformer-4spk-v2-1",
+          "namespace": "fs2-models",
+          "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-fh8bj",
+          "service": "diar-streaming-sortformer-4spk-v2-1",
+          "status": "completed"
+        },
+        "value": [
+          1789581871.573,
+          "3"
+        ]
+      }
+    ],
+    "fs2_voice_audio_seconds_total": [
+      {
+        "metric": {
+          "__name__": "fs2_voice_audio_seconds_total",
+          "container": "voice",
+          "direction": "input",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "parakeet-realtime-eou-120m-v1",
+          "instance": "10.6.120.41:8000",
+          "job": "parakeet-realtime-eou-120m-v1",
+          "namespace": "fs2-models",
+          "pod": "parakeet-realtime-eou-120m-v1-6497d49575-th628",
+          "service": "parakeet-realtime-eou-120m-v1"
+        },
+        "value": [
+          1789581871.666,
+          "27.3847499999999"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_audio_seconds_total",
+          "container": "voice",
+          "direction": "input",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "diar-streaming-sortformer-4spk-v2-1",
+          "instance": "10.6.110.58:8000",
+          "job": "diar-streaming-sortformer-4spk-v2-1",
+          "namespace": "fs2-models",
+          "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-fh8bj",
+          "service": "diar-streaming-sortformer-4spk-v2-1"
+        },
+        "value": [
+          1789581871.666,
+          "15.374562500000007"
+        ]
+      }
+    ],
+    "fs2_voice_first_output_seconds_count": [
+      {
+        "metric": {
+          "__name__": "fs2_voice_first_output_seconds_count",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "parakeet-realtime-eou-120m-v1",
+          "instance": "10.6.120.41:8000",
+          "job": "parakeet-realtime-eou-120m-v1",
+          "namespace": "fs2-models",
+          "pod": "parakeet-realtime-eou-120m-v1-6497d49575-th628",
+          "service": "parakeet-realtime-eou-120m-v1"
+        },
+        "value": [
+          1789581871.759,
+          "4"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_first_output_seconds_count",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "diar-streaming-sortformer-4spk-v2-1",
+          "instance": "10.6.110.58:8000",
+          "job": "diar-streaming-sortformer-4spk-v2-1",
+          "namespace": "fs2-models",
+          "pod": "diar-streaming-sortformer-4spk-v2-1-69bb89d789-fh8bj",
+          "service": "diar-streaming-sortformer-4spk-v2-1"
+        },
+        "value": [
+          1789581871.759,
+          "2"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_first_output_seconds_count",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "magpie-tts-multilingual-357m",
+          "instance": "10.6.91.139:8000",
+          "job": "magpie-tts-multilingual-357m",
+          "namespace": "fs2-models",
+          "pod": "magpie-tts-multilingual-357m-9c9b4685d-7pbvv",
+          "service": "magpie-tts-multilingual-357m"
+        },
+        "value": [
+          1789581871.759,
+          "0"
+        ]
+      },
+      {
+        "metric": {
+          "__name__": "fs2_voice_first_output_seconds_count",
+          "container": "voice",
+          "endpoint": "http",
+          "fs2_serve_nebius_ai_model_id": "magpie-tts-multilingual-357m",
+          "instance": "10.6.88.232:8000",
+          "job": "magpie-tts-multilingual-357m",
+          "namespace": "fs2-models",
+          "pod": "magpie-tts-multilingual-357m-9c9b4685d-2fxx9",
+          "service": "magpie-tts-multilingual-357m"
+        },
+        "value": [
+          1789581871.759,
+          "0"
+        ]
+      }
+    ]
+  }
+}

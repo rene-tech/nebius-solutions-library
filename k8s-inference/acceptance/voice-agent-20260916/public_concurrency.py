@@ -49,6 +49,7 @@ async def synthesize(client, voice, on_first_output=None):
             if event["type"] == "audio.chunk":
                 first_output = "first_audio_monotonic" not in row
                 row.setdefault("first_audio_monotonic", time.monotonic())
+                row["last_audio_monotonic"] = time.monotonic()
                 pcm.extend(base64.b64decode(event["audio_base64"], validate=True))
                 if first_output and on_first_output is not None:
                     await on_first_output()
@@ -72,6 +73,7 @@ async def synthesize(client, voice, on_first_output=None):
         elapsed_seconds=row["done_monotonic"] - started,
         audio_seconds=len(pcm) / 44100,
         artifact=artifact,
+        pcm_sha256=hashlib.sha256(pcm).hexdigest(),
         stream_matches_durable_wav=True,
     )
     return row
@@ -130,12 +132,13 @@ async def measure(args, key):
         rows = await asyncio.gather(
             synthesize(client, "Sofia"), synthesize(client, "Jason")
         )
-    # One runtime serializes GPU work until its full output stream ends. Both
-    # first outputs before either completion therefore prove resident overlap.
-    overlap = min(row["done_monotonic"] for row in rows) - max(
+    # Compare PCM delivery, not the later durable-WAV completion: artifact
+    # persistence alone must not be mistaken for overlapping synthesis.
+    overlap = min(row["last_audio_monotonic"] for row in rows) - max(
         row["first_audio_monotonic"] for row in rows
     )
     assert overlap > 0, "requests completed but did not execute concurrently"
+    assert len({row["pcm_sha256"] for row in rows}) == 2
     return {"overlap_seconds": overlap, "measurements": rows}
 
 
