@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MindEval workshop · Nebius Scientific AI</title><link rel="stylesheet" href="/workshop/static/style.css"></head>
+<body>
+<header><a href="/" class="brand">nebius<span>Scientific AI</span></a><nav>MindEval workshop <span class="pill">Porto · 3 October</span></nav></header>
+<main>
+<section class="intro"><div><p class="eyebrow">BUILD · COMPARE · DISCUSS</p><h1>A conversation worth evaluating.</h1><p>Run a simulated consultation, change the clinician, and explore the difference. Every model, turn and intervention stays in the record.</p></div><div class="orbit" aria-hidden="true"><span>MindEval</span><small>on Nebius</small></div></section>
+<section id="login" class="panel"><h2>Join your team</h2><p>Use your Scientific AI workshop key.</p><form id="login-form"><label>API key<input id="key" type="password" autocomplete="off" required placeholder="Your team key"></label><button>Connect</button></form><p class="muted">Your key stays in this tab’s memory. Closing or reloading the tab requires signing in again; submitted runs remain on the server.</p></section>
+<div id="workspace" hidden>
+<div class="toolbar"><strong id="team"></strong><span id="limits"></span><button id="signout" class="secondary">Disconnect</button></div>
+<div class="columns">
+<section class="panel setup"><h2>New evaluation</h2><form id="create-form">
+<label>Evaluation mode<select id="mode"><option value="canonical">Text benchmark</option><option value="spoken">Spoken experience</option></select></label>
+<p id="mode-help" class="muted">Original MindEval dialogue and scoring. Untouched text runs can be compared together.</p>
+<label>Patient model<select id="patient" required></select></label><label>Clinician models<select id="clinicians" multiple size="6" required></select></label>
+<label>Patient profiles <span class="muted">Choose up to 20</span><select id="profiles" multiple size="7" required></select></label>
+<div class="row"><label>Rounds<input id="rounds" type="number" value="10" min="2" max="30"></label><label>Response tokens<input id="tokens" type="number" value="1024" min="64" max="8192" step="64"></label></div>
+<div id="voices" hidden><label>Patient voice<select id="patient-voice"><option>Sofia</option><option>Aria</option><option>Jason</option><option>John</option><option>Leo</option></select></label><label>Clinician voice<select id="clinician-voice"><option>Jason</option><option>John</option><option>Leo</option><option>Sofia</option><option>Aria</option></select></label></div>
+<button class="wide">Start evaluation</button><p class="muted" id="judge-info">Judge calibration loading…</p></form></section>
+<section class="panel run-list"><div class="row"><h2>Your runs</h2><button id="refresh" class="secondary">Refresh</button></div><div id="runs"><p>No runs yet.</p></div></section>
+</div>
+<section id="detail" class="panel" hidden><div class="row"><div><p class="eyebrow" id="run-status"></p><h2 id="run-title"></h2></div><button id="download" class="secondary">Download evidence</button></div><div id="run-labels"></div>
+<div class="controls"><button data-action="pause" class="secondary">Pause</button><button data-action="resume">Resume model</button><button data-action="abort" class="danger">Abort</button><label>Control role<select id="role"><option value="clinician">Clinician</option><option value="patient">Patient</option></select></label><button data-action="takeover" class="secondary">Take over</button></div>
+<form id="intervention-form"><label>Operator message<textarea id="message" rows="3" placeholder="A nudge for the model or your own message during takeover"></textarea></label><div class="controls"><button type="button" id="nudge" class="secondary">Send nudge</button><button type="submit">Speak as selected role</button><button type="button" id="microphone" class="secondary">Use microphone</button><button type="button" id="stop-microphone" hidden>Finish recording</button></div><p id="mic-status" aria-live="polite" class="muted"></p></form>
+<div class="conversation" id="transcript"></div><div id="scores"></div><details><summary>Run events</summary><pre id="events"></pre></details></section>
+<section class="panel"><h2>Comparison</h2><p class="muted">Only completed, untouched text benchmark runs enter the default comparison. Spoken and intervened runs remain visible in their own run reports.</p><div id="comparison"></div></section>
+</div>
+<p id="notice" role="status" aria-live="polite"></p>
+<footer>MindEval by Sword Health · Infrastructure by Nebius · Simulated workshop conversations</footer>
+</main><script type="module" src="/workshop/static/app.js"></script>
+</body></html>

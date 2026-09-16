@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling==1.29.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fs2-mindeval-workshop"
+version = "0.1.0"
+description = "Resumable MindEval workshop and human intervention service"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+  "asyncpg==0.30.0", "cryptography==50.0.1", "fastapi==0.141.1",
+  "httpx==0.28.1", "pydantic-settings==2.10.1", "uvicorn==0.35.0",
+  "websockets==15.0.1", "prometheus-client==0.22.1",
+]
+
+[project.scripts]
+fs2-workshop = "fs2_workshop.app:main"
+fs2-workshop-migrate = "fs2_workshop.store:migrate_main"
+
+[dependency-groups]
+dev = ["pytest==8.4.1", "pytest-asyncio==1.1.0", "respx==0.22.0", "ruff==0.12.11"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fs2_workshop"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
