@@ -1,5 +1,10 @@
 replicaCount: 2
 
+# Observational workshop classifiers. Empty endpoints report unavailable.
+mindguard:
+  model4bEndpoint: ""
+  model8bEndpoint: ""
+
 customerStorage:
   enabled: false
   projectId: ""

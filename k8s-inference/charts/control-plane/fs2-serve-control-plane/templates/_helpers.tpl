@@ -248,6 +248,14 @@ app.kubernetes.io/component: model-controller
 {{- end }}
 - name: FS2_PUBLIC_BASE_URL
   value: {{ .Values.config.publicBaseUrl | quote }}
+{{- with .Values.mindguard.model4bEndpoint }}
+- name: FS2_MINDGUARD_4B_ENDPOINT
+  value: {{ . | quote }}
+{{- end }}
+{{- with .Values.mindguard.model8bEndpoint }}
+- name: FS2_MINDGUARD_8B_ENDPOINT
+  value: {{ . | quote }}
+{{- end }}
 - name: FS2_PUBLIC_AUTHORITY_MODE
   value: {{ .Values.config.publicAuthorityMode | quote }}
 - name: FS2_AUTHORIZATION_SERVER_URL

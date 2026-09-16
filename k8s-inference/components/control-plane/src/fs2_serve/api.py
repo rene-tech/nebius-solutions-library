@@ -152,6 +152,8 @@ from .scientific_run_result import ArtifactRef
 from .settings import Settings
 from .speech_routes import speech_router
 from .speech_stream import speech_stream_router
+from .voice_routes import voice_router, voice_stream_router
+from .mindguard_routes import mindguard_router
 from .store import (
     BudgetExceededError,
     ConcurrencyExceededError,
@@ -1546,7 +1548,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         A stored allowlist is not an availability or license grant. Discovery
         and admission still check the current route, profile and tenant access.
         """
-        if model_id == "*":
+        if model_id in {"*", "mindeval", "mindguard-4b", "mindguard-8b"}:
             return model_id
         try:
             return runtime.registry.get(model_id, require_enabled=False).id
@@ -2224,6 +2226,17 @@ def create_app(runtime: AppRuntime) -> FastAPI:
 
     app.include_router(speech_stream_router(
         verifier=runtime.tokens.verify, registry=runtime.registry, admission=runtime.admission, store=runtime.store,
+    ))
+    app.include_router(voice_router(
+        principal=principal, registry=runtime.registry, admission=runtime.admission, store=runtime.store,
+    ))
+    app.include_router(voice_stream_router(
+        verifier=runtime.tokens.verify, registry=runtime.registry, admission=runtime.admission, store=runtime.store,
+    ))
+    app.include_router(mindguard_router(
+        principal=principal,
+        endpoints={"mindguard-4b": runtime.settings.mindguard_4b_endpoint,
+                   "mindguard-8b": runtime.settings.mindguard_8b_endpoint},
     ))
     app.include_router(speech_router(
         principal=principal, registry=runtime.registry, admission=runtime.admission,

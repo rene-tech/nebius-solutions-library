@@ -252,6 +252,8 @@ class Settings(BaseSettings):
     scientific_batch_lease_seconds: float = Field(default=30, ge=5, le=300)
     scientific_batch_api_timeout_seconds: float = Field(default=5, ge=0.5, le=30)
     public_base_url: str = Field(default="https://inference.example.invalid", min_length=1, max_length=2048)
+    mindguard_4b_endpoint: str | None = None
+    mindguard_8b_endpoint: str | None = None
     public_authority_mode: Literal["dns", "ip"] = "dns"
     authorization_server_url: str = "https://identity.example.invalid"
     max_request_bytes: int = Field(default=16 * 1024 * 1024, ge=1024, le=256 * 1024 * 1024)
