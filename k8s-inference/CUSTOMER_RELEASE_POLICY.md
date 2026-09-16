@@ -84,11 +84,14 @@ provenance gate (see `security/image-provenance/README.md`):
    ref; the wrapper enforces it on `apply` and offers a standalone
    `release-gate` command for Helm-only upgrades. Overrides require
    `--allow-unreleased-source` with a sanitized reason bound to a non-secret
-   tracking identifier plus a named approver. All gate evaluations and
-   exceptions are recorded in a hash-chained, tamper-evident history
-   (`release-source-history.jsonl`); anchors and receipts are write-once,
-   published atomically, and refuse moved or recreated tags, changed bundles,
-   or conflicting re-creation.
+   tracking identifier plus an approver from the reviewed, scoped, expiring
+   `security/image-provenance/release-approvers.json` allow-list (empty by
+   default: exceptions are impossible until the owner designates approvers).
+   All gate evaluations and exceptions are recorded in a hash-chained,
+   checkpointed, tamper-evident history (`release-source-history.jsonl`);
+   anchors are annotated-tag-only, content-addressed, and published without
+   replacement; receipts are write-once, published atomically, and fully
+   revalidated on every load.
 2. **Bound release receipt:** before signing, every digest gets a cosign-signed
    release receipt binding it to its source commit/tree, the durable anchor
    bundle, and validated SBOM evidence
@@ -97,13 +100,16 @@ provenance gate (see `security/image-provenance/README.md`):
 3. **Signed digests:** every published platform image digest is cosign-signed
    with the operator release key before it is deployed; a signature without a
    bound receipt is artifact presence, not provenance.
-4. **Admission allow-list:** the allow-list renders only from a signed,
+4. **Admission allow-list:** the allow-list renders only from a signed, fresh,
    complete release inventory enumerating live workloads, the Helm rollback
-   window, and frozen scientific-stage bindings, with every intentional
-   exclusion recorded as an audited drained removal; extras, missing entries,
-   and unreceipted digests abort rendering. The `fs2-image-provenance`
-   ValidatingAdmissionPolicy then refuses unpinned, foreign-registry, and
-   non-allow-listed platform images in the platform namespaces.
+   window, and frozen scientific-stage bindings with their observation
+   snapshots. An active-live image can never be drained out — it must be
+   receipted and signed, or the admission policy's match scope must be
+   changed by owner decision; drains apply only to audited non-live entries.
+   Extras, missing entries, stale inventories, and unreceipted digests abort
+   rendering. The `fs2-image-provenance` ValidatingAdmissionPolicy then
+   refuses unpinned, foreign-registry, and non-allow-listed platform images
+   in the platform namespaces.
 
 A release deployed from an unanchored or unsigned identity is not
 customer-ready regardless of its test results.
