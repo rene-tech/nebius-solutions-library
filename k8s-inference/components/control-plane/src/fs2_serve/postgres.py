@@ -161,6 +161,16 @@ REQUEST_DEBUG_RETENTION_PREFLIGHT_SQL: Final = """
            )::bigint AS expired_count
     FROM fs2_request_debug
 """
+
+# SHA-256 of the exact PL/pgSQL `prosrc` bodies versioned by immutable
+# migration 0037. Function OIDs survive CREATE OR REPLACE, so readiness must
+# bind behavior as well as catalog identity.
+SCIENTIFIC_BIND_ADMISSION_DIGEST_V0037_PROSRC_SHA256: Final = (
+    "1999dcc66b5b92afb7834cd4e2a4a93155990d3db57be0c55fdb4efd3f6acdd5"
+)
+SCIENTIFIC_CONSUME_ADMISSION_OUTBOX_V0037_PROSRC_SHA256: Final = (
+    "84371bcf5ab510f1d9bc33173c35ceec98bf3faa7694120fa52747ec191c6b81"
+)
 RETENTION_ELIGIBLE_CANDIDATES_SQL: Final = """
     SELECT candidate.id
     FROM unnest($1::uuid[]) WITH ORDINALITY AS candidate(id,ordinal)
@@ -980,21 +990,36 @@ class PostgresStore:
                             "WHERE t.tgname='fs2_scientific_consume_admission_outbox_trigger' "
                             "AND t.tgrelid='public.fs2_scientific_batches'::regclass "
                             "AND NOT t.tgisinternal AND t.tgenabled='O' "
-                            "AND p.proname='fs2_scientific_consume_admission_outbox' "
-                            "AND p.prosecdef "
-                            "AND p.proconfig @> ARRAY['search_path=pg_catalog, public'])"
+                            "AND t.tgtype=5 AND t.tgqual IS NULL AND t.tgnargs=0 "
+                            "AND t.tgfoid="
+                            "'public.fs2_scientific_consume_admission_outbox()'::regprocedure "
+                            "AND p.pronamespace='public'::regnamespace "
+                            "AND p.prokind='f' AND p.prosecdef "
+                            "AND p.prorettype='pg_catalog.trigger'::regtype AND p.pronargs=0 "
+                            "AND p.prolang=(SELECT oid FROM pg_catalog.pg_language WHERE lanname='plpgsql') "
+                            "AND p.provolatile='v' AND NOT p.proisstrict AND NOT p.proleakproof "
+                            "AND NOT p.proretset AND p.proparallel='u' "
+                            "AND p.proconfig=ARRAY['search_path=pg_catalog, public'] "
+                            "AND pg_catalog.encode(pg_catalog.sha256("
+                            "pg_catalog.convert_to(p.prosrc,'UTF8')),'hex')=$1)"
                             " AND EXISTS ("
                             "SELECT 1 FROM pg_trigger AS t "
                             "JOIN pg_proc AS p ON p.oid=t.tgfoid "
                             "WHERE t.tgname='fs2_scientific_bind_admission_digest_trigger' "
                             "AND t.tgrelid='public.fs2_scientific_admission_outbox'::regclass "
                             "AND NOT t.tgisinternal AND t.tgenabled='O' "
-                            "AND t.tgtype=7 "
+                            "AND t.tgtype=7 AND t.tgqual IS NULL AND t.tgnargs=0 "
                             "AND t.tgfoid="
                             "'public.fs2_scientific_bind_admission_digest()'::regprocedure "
+                            "AND p.pronamespace='public'::regnamespace "
                             "AND p.prokind='f' AND NOT p.prosecdef "
                             "AND p.prorettype='pg_catalog.trigger'::regtype AND p.pronargs=0 "
-                            "AND p.proconfig=ARRAY['search_path=pg_catalog, public'])"
+                            "AND p.prolang=(SELECT oid FROM pg_catalog.pg_language WHERE lanname='plpgsql') "
+                            "AND p.provolatile='v' AND NOT p.proisstrict AND NOT p.proleakproof "
+                            "AND NOT p.proretset AND p.proparallel='u' "
+                            "AND p.proconfig=ARRAY['search_path=pg_catalog, public'] "
+                            "AND pg_catalog.encode(pg_catalog.sha256("
+                            "pg_catalog.convert_to(p.prosrc,'UTF8')),'hex')=$2)"
                             " AND EXISTS ("
                             "SELECT 1 FROM pg_attribute "
                             "WHERE attrelid='public.fs2_scientific_admission_outbox'::regclass "
@@ -1067,7 +1092,9 @@ class PostgresStore:
                             "AND (privilege.grantee=0 OR privilege.grantee IN ("
                             "SELECT oid FROM pg_roles WHERE rolname IN ("
                             "'fs2_serve_reporting','fs2_serve_runtime',"
-                            "'fs2_serve_maintenance','fs2_serve_activation'))))"
+                            "'fs2_serve_maintenance','fs2_serve_activation'))))",
+                            SCIENTIFIC_CONSUME_ADMISSION_OUTBOX_V0037_PROSRC_SHA256,
+                            SCIENTIFIC_BIND_ADMISSION_DIGEST_V0037_PROSRC_SHA256,
                         )
                     if not runtime_privileges_ready:
                         raise RuntimeError("database schema runtime privileges are incomplete")

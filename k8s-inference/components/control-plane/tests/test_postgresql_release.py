@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import copy
+import hashlib
 import inspect
 import json
 import re
@@ -18,6 +19,8 @@ from fs2_serve.postgres import (
     RETENTION_ELIGIBLE_CANDIDATES_SQL,
     RETENTION_EXPIRY_SCAN_SQL,
     RETENTION_REVOKED_SCAN_SQL,
+    SCIENTIFIC_BIND_ADMISSION_DIGEST_V0037_PROSRC_SHA256,
+    SCIENTIFIC_CONSUME_ADMISSION_OUTBOX_V0037_PROSRC_SHA256,
     SCIENTIFIC_RUNTIME_UPDATE_COLUMNS,
     PostgresStore,
 )
@@ -100,6 +103,14 @@ def test_scientific_runtime_grants_converge_to_trigger_bound_completion() -> Non
 
     compatibility_sql = (MIGRATIONS / "0037_scientific_admission_rolling_compatibility.sql").read_text(encoding="utf-8")
     compatibility_normalized = " ".join(compatibility_sql.split())
+    function_bodies = re.findall(r"AS \$function\$(.*?)\$function\$;", compatibility_sql, flags=re.DOTALL)
+    assert len(function_bodies) == 2
+    assert hashlib.sha256(function_bodies[0].encode()).hexdigest() == (
+        SCIENTIFIC_BIND_ADMISSION_DIGEST_V0037_PROSRC_SHA256
+    )
+    assert hashlib.sha256(function_bodies[1].encode()).hexdigest() == (
+        SCIENTIFIC_CONSUME_ADMISSION_OUTBOX_V0037_PROSRC_SHA256
+    )
     assert "BEFORE INSERT ON fs2_scientific_admission_outbox" in compatibility_normalized
     assert "NEW.scheduling_digest := payload_scheduling_digest" in compatibility_normalized
     assert "ALTER COLUMN scheduling_digest DROP NOT NULL" not in compatibility_normalized
@@ -118,15 +129,25 @@ def test_scientific_runtime_grants_converge_to_trigger_bound_completion() -> Non
     assert wait_source.count("NOT has_table_privilege") >= 4
     assert wait_source.count("NOT has_function_privilege") == 2
     assert "fs2_scientific_consume_admission_outbox_trigger" in wait_source
+    assert "t.tgrelid='public.fs2_scientific_batches'::regclass" in wait_source
+    assert "t.tgtype=5 AND t.tgqual IS NULL AND t.tgnargs=0" in wait_source
+    assert "'public.fs2_scientific_consume_admission_outbox()'::regprocedure" in wait_source
     assert "fs2_scientific_bind_admission_digest_trigger" in wait_source
     assert "t.tgrelid='public.fs2_scientific_admission_outbox'::regclass" in wait_source
     assert "t.tgenabled='O'" in wait_source
-    assert "t.tgtype=7" in wait_source
+    assert "t.tgtype=7 AND t.tgqual IS NULL AND t.tgnargs=0" in wait_source
     assert "t.tgfoid=" in wait_source
     assert "'public.fs2_scientific_bind_admission_digest()'::regprocedure" in wait_source
     assert "p.prokind='f' AND NOT p.prosecdef" in wait_source
+    assert "p.prokind='f' AND p.prosecdef" in wait_source
     assert "p.prorettype='pg_catalog.trigger'::regtype AND p.pronargs=0" in wait_source
-    assert "p.proconfig=ARRAY['search_path=pg_catalog, public']" in wait_source
+    assert wait_source.count("p.prorettype='pg_catalog.trigger'::regtype AND p.pronargs=0") == 2
+    assert wait_source.count("p.proconfig=ARRAY['search_path=pg_catalog, public']") == 2
+    assert wait_source.count("p.provolatile='v' AND NOT p.proisstrict AND NOT p.proleakproof") == 2
+    assert wait_source.count("NOT p.proretset AND p.proparallel='u'") == 2
+    assert wait_source.count("pg_catalog.convert_to(p.prosrc,'UTF8')") == 2
+    assert "SCIENTIFIC_CONSUME_ADMISSION_OUTBOX_V0037_PROSRC_SHA256" in wait_source
+    assert "SCIENTIFIC_BIND_ADMISSION_DIGEST_V0037_PROSRC_SHA256" in wait_source
     assert "attname='scheduling_digest' AND attnotnull" in wait_source
     assert wait_source.count("fs2_scientific_batches','scheduling_digest','UPDATE'") == 2
     assert "SELECT,INSERT" not in wait_source

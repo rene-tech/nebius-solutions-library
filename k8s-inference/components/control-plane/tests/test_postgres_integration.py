@@ -5,6 +5,7 @@ import copy
 import hashlib
 import json
 import os
+import re
 import shutil
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -131,6 +132,32 @@ from fs2_serve.telemetry import Metrics
 ADMIN_TOKEN = "a" * 32
 INITIAL_RESOURCE_VERSION = "1"
 INITIAL_GENERATION = 1
+
+
+def _canonical_admission_trigger_function_sql(function_name: str) -> str:
+    migration = (CONTROL_ROOT / "migrations/0037_scientific_admission_rolling_compatibility.sql").read_text(
+        encoding="utf-8"
+    )
+    match = re.search(
+        rf"CREATE(?: OR REPLACE)? FUNCTION {re.escape(function_name)}\(\) RETURNS trigger.*?\$function\$;",
+        migration,
+        flags=re.DOTALL,
+    )
+    assert match is not None
+    return re.sub(
+        r"^CREATE(?: OR REPLACE)? FUNCTION ",
+        "CREATE OR REPLACE FUNCTION public.",
+        match.group(0),
+        count=1,
+    )
+
+
+CANONICAL_BIND_ADMISSION_DIGEST_FUNCTION_SQL = _canonical_admission_trigger_function_sql(
+    "fs2_scientific_bind_admission_digest"
+)
+CANONICAL_CONSUME_ADMISSION_OUTBOX_FUNCTION_SQL = _canonical_admission_trigger_function_sql(
+    "fs2_scientific_consume_admission_outbox"
+)
 
 
 def leader_identity(controller: str, resource_version: int) -> ActivationLeaderIdentity:
@@ -1017,8 +1044,39 @@ async def test_migration_and_schema_wait_entrypoints_need_only_database_credenti
             "EXECUTE FUNCTION public.fs2_scientific_consume_admission_outbox()",
         ),
         "ALTER FUNCTION public.fs2_scientific_bind_admission_digest() SET search_path=public",
+        (
+            "DROP TRIGGER fs2_scientific_bind_admission_digest_trigger "
+            "ON public.fs2_scientific_admission_outbox; "
+            "CREATE TRIGGER fs2_scientific_bind_admission_digest_trigger "
+            "BEFORE INSERT ON public.fs2_scientific_admission_outbox FOR EACH ROW WHEN (false) "
+            "EXECUTE FUNCTION public.fs2_scientific_bind_admission_digest()"
+        ),
+        (
+            "DROP TRIGGER fs2_scientific_bind_admission_digest_trigger "
+            "ON public.fs2_scientific_admission_outbox; "
+            "CREATE TRIGGER fs2_scientific_bind_admission_digest_trigger "
+            "BEFORE INSERT ON public.fs2_scientific_admission_outbox FOR EACH ROW "
+            "EXECUTE FUNCTION public.fs2_scientific_bind_admission_digest('unexpected')"
+        ),
+        (
+            "CREATE OR REPLACE FUNCTION public.fs2_scientific_bind_admission_digest() RETURNS trigger "
+            "LANGUAGE plpgsql SET search_path=pg_catalog, public "
+            "AS $function$ BEGIN RETURN NEW; END $function$"
+        ),
+        "ALTER FUNCTION public.fs2_scientific_bind_admission_digest() SECURITY DEFINER",
     ],
-    ids=("missing", "disabled", "statement-level", "wrong-table", "wrong-function", "search-path"),
+    ids=(
+        "missing",
+        "disabled",
+        "statement-level",
+        "wrong-table",
+        "wrong-function",
+        "search-path",
+        "when-clause",
+        "trigger-argument",
+        "function-body",
+        "security-mode",
+    ),
 )
 async def test_schema_wait_rejects_scientific_admission_digest_binder_drift(
     postgres_store: PostgresStore,
@@ -1036,17 +1094,118 @@ async def test_schema_wait_rejects_scientific_admission_digest_binder_drift(
             await PostgresStore.wait_for_schema(database_url, migrations_dir, timeout_seconds=1)
     finally:
         async with postgres_store.pool.acquire() as connection:
-            await connection.execute(
+            restore_sql = (
                 "DROP TRIGGER IF EXISTS fs2_scientific_bind_admission_digest_trigger "
                 "ON public.fs2_scientific_admission_outbox; "
                 "DROP TRIGGER IF EXISTS fs2_scientific_bind_admission_digest_trigger "
                 "ON public.fs2_scientific_batches; "
+                f"{CANONICAL_BIND_ADMISSION_DIGEST_FUNCTION_SQL}; "
                 "CREATE TRIGGER fs2_scientific_bind_admission_digest_trigger "
                 "BEFORE INSERT ON public.fs2_scientific_admission_outbox FOR EACH ROW "
-                "EXECUTE FUNCTION public.fs2_scientific_bind_admission_digest(); "
-                "ALTER FUNCTION public.fs2_scientific_bind_admission_digest() "
-                "SET search_path=pg_catalog, public"
+                "EXECUTE FUNCTION public.fs2_scientific_bind_admission_digest()"
             )
+            await connection.execute(restore_sql)
+    await PostgresStore.wait_for_schema(database_url, migrations_dir, timeout_seconds=1)
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "drift_sql",
+    [
+        "DROP TRIGGER fs2_scientific_consume_admission_outbox_trigger ON public.fs2_scientific_batches",
+        "ALTER TABLE public.fs2_scientific_batches DISABLE TRIGGER fs2_scientific_consume_admission_outbox_trigger",
+        (
+            "DROP TRIGGER fs2_scientific_consume_admission_outbox_trigger "
+            "ON public.fs2_scientific_batches; "
+            "CREATE TRIGGER fs2_scientific_consume_admission_outbox_trigger "
+            "BEFORE INSERT ON public.fs2_scientific_batches FOR EACH ROW "
+            "EXECUTE FUNCTION public.fs2_scientific_consume_admission_outbox()"
+        ),
+        (
+            "DROP TRIGGER fs2_scientific_consume_admission_outbox_trigger "
+            "ON public.fs2_scientific_batches; "
+            "CREATE TRIGGER fs2_scientific_consume_admission_outbox_trigger "
+            "AFTER INSERT ON public.fs2_scientific_batches FOR EACH STATEMENT "
+            "EXECUTE FUNCTION public.fs2_scientific_consume_admission_outbox()"
+        ),
+        (
+            "DROP TRIGGER fs2_scientific_consume_admission_outbox_trigger "
+            "ON public.fs2_scientific_batches; "
+            "CREATE TRIGGER fs2_scientific_consume_admission_outbox_trigger "
+            "AFTER INSERT ON public.fs2_scientific_admission_outbox FOR EACH ROW "
+            "EXECUTE FUNCTION public.fs2_scientific_consume_admission_outbox()"
+        ),
+        (
+            "DROP TRIGGER fs2_scientific_consume_admission_outbox_trigger "
+            "ON public.fs2_scientific_batches; "
+            "CREATE TRIGGER fs2_scientific_consume_admission_outbox_trigger "
+            "AFTER INSERT ON public.fs2_scientific_batches FOR EACH ROW "
+            "EXECUTE FUNCTION public.fs2_scientific_bind_admission_digest()"
+        ),
+        (
+            "DROP TRIGGER fs2_scientific_consume_admission_outbox_trigger "
+            "ON public.fs2_scientific_batches; "
+            "CREATE TRIGGER fs2_scientific_consume_admission_outbox_trigger "
+            "AFTER INSERT ON public.fs2_scientific_batches FOR EACH ROW WHEN (false) "
+            "EXECUTE FUNCTION public.fs2_scientific_consume_admission_outbox()"
+        ),
+        (
+            "DROP TRIGGER fs2_scientific_consume_admission_outbox_trigger "
+            "ON public.fs2_scientific_batches; "
+            "CREATE TRIGGER fs2_scientific_consume_admission_outbox_trigger "
+            "AFTER INSERT ON public.fs2_scientific_batches FOR EACH ROW "
+            "EXECUTE FUNCTION public.fs2_scientific_consume_admission_outbox('unexpected')"
+        ),
+        (
+            "CREATE OR REPLACE FUNCTION public.fs2_scientific_consume_admission_outbox() RETURNS trigger "
+            "LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog, public "
+            "AS $function$ BEGIN RETURN NEW; END $function$"
+        ),
+        "ALTER FUNCTION public.fs2_scientific_consume_admission_outbox() SET search_path=public",
+        "ALTER FUNCTION public.fs2_scientific_consume_admission_outbox() SECURITY INVOKER",
+    ],
+    ids=(
+        "missing",
+        "disabled",
+        "before-insert",
+        "statement-level",
+        "wrong-table",
+        "wrong-function",
+        "when-clause",
+        "trigger-argument",
+        "function-body",
+        "search-path",
+        "security-mode",
+    ),
+)
+async def test_schema_wait_rejects_scientific_admission_completion_drift(
+    postgres_store: PostgresStore,
+    drift_sql: str,
+) -> None:
+    """FS204/exact consumption cannot be replaced behind a valid ledger."""
+
+    database_url = os.environ["FS2_TEST_DATABASE_URL"]
+    migrations_dir = CONTROL_ROOT / "migrations"
+    await PostgresStore.wait_for_schema(database_url, migrations_dir, timeout_seconds=1)
+    try:
+        async with postgres_store.pool.acquire() as connection:
+            await connection.execute(drift_sql)
+        with pytest.raises(RuntimeError, match="database schema runtime privileges are incomplete"):
+            await PostgresStore.wait_for_schema(database_url, migrations_dir, timeout_seconds=1)
+    finally:
+        async with postgres_store.pool.acquire() as connection:
+            restore_sql = (
+                "DROP TRIGGER IF EXISTS fs2_scientific_consume_admission_outbox_trigger "
+                "ON public.fs2_scientific_batches; "
+                "DROP TRIGGER IF EXISTS fs2_scientific_consume_admission_outbox_trigger "
+                "ON public.fs2_scientific_admission_outbox; "
+                f"{CANONICAL_CONSUME_ADMISSION_OUTBOX_FUNCTION_SQL}; "
+                "CREATE TRIGGER fs2_scientific_consume_admission_outbox_trigger "
+                "AFTER INSERT ON public.fs2_scientific_batches FOR EACH ROW "
+                "EXECUTE FUNCTION public.fs2_scientific_consume_admission_outbox()"
+            )
+            await connection.execute(restore_sql)
     await PostgresStore.wait_for_schema(database_url, migrations_dir, timeout_seconds=1)
 
 

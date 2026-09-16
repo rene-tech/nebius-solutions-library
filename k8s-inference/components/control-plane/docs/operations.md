@@ -698,13 +698,21 @@ trigger in this release. A later additive contract migration may remove it only
 after rollout evidence proves every predecessor image is quiescent; that later
 contract step is outside this release.
 
-`wait-schema` fails closed unless that compatibility trigger is present on the
-admission outbox, ordinarily enabled, and bound as an exact row-level
-`BEFORE INSERT` trigger to `fs2_scientific_bind_admission_digest()`. It also
-attests the function's zero-argument trigger signature, invoker mode, and exact
-fixed `search_path=pg_catalog, public` configuration. A complete 37-row migration
-ledger therefore cannot make a dropped, disabled, retargeted, or drifted binder
-appear ready to predecessor writers.
+`wait-schema` fails closed unless both admission triggers exactly match the
+versioned `0037` contract. The compatibility binder must be an ordinarily
+enabled, unconditional, zero-argument, row-level `BEFORE INSERT` trigger on the
+admission outbox, bound to `fs2_scientific_bind_admission_digest()`. The
+completion guard must be an ordinarily enabled, unconditional, zero-argument,
+row-level `AFTER INSERT` trigger on scientific batches, bound to
+`fs2_scientific_consume_admission_outbox()`. Readiness attests each trigger's
+table, timing/event metadata, function OID and absence of a `WHEN` predicate,
+plus the function schema, trigger return type, zero-argument signature,
+security mode, PL/pgSQL attributes, exact fixed
+`search_path=pg_catalog, public`, and SHA-256 of the canonical `prosrc` body
+packaged by migration `0037`. A complete 37-row migration ledger therefore
+cannot conceal a conditional trigger or same-OID no-op `CREATE OR REPLACE`
+body, nor make a dropped, disabled, retargeted, or otherwise drifted admission
+guard appear ready.
 
 The future live gate is read-only before any maintenance execution. Using only
 the maintenance credential, capture the payload-free request-debug aggregate:
