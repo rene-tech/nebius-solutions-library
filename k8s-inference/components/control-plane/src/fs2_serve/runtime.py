@@ -23,14 +23,15 @@ from .request_debug import (
     DebugCapturePolicy,
     DebugExchange,
     DebugStore,
-    body_capture,
     body_credential_prefixes,
     bounded_body_capture,
+    capture_store_limit,
     credential_values,
     persist_debug_exchange,
     redact_headers,
     redact_query,
     redact_text,
+    suppressed_body,
 )
 
 
@@ -93,16 +94,20 @@ class _UpstreamCapture:
         self.endpoint = endpoint
         self.method = "POST"
         self.query_string = ""
-        self.request_body = request_body
+        self.maximum = maximum
+        self.debug_max_body_bytes = debug_max_body_bytes
+        # Store the debug cap plus a fixed overlap so neither a large upstream
+        # request nor response accumulates in memory; the observed counters still
+        # report the full length.
+        self.store_limit = capture_store_limit(debug_max_body_bytes) or maximum
+        # Bound the captured request to the same buffer as the response: never
+        # retain or scan the whole request body.
+        self.request_observed = len(request_body)
+        self.request_body = request_body[: self.store_limit]
         self.request_headers = list(request_headers.items())
         self.response_headers: list[tuple[str, str]] = []
         self.request_content_type: str | None = operation.request_content_type
         self.response_content_type: str | None = None
-        self.maximum = maximum
-        self.debug_max_body_bytes = debug_max_body_bytes
-        # Store at most twice the debug cap so a large upstream response never
-        # accumulates in memory; observed_bytes still counts the full length.
-        self.store_limit = 2 * debug_max_body_bytes if debug_max_body_bytes else maximum
         self.upstream_attempt = upstream_attempt
         self.started_at = datetime.now(UTC)
         self.completed_at: datetime | None = None
@@ -123,7 +128,9 @@ class _UpstreamCapture:
         self.request_headers = list(request.headers.multi_items())
         self.request_content_type = request.headers.get("content-type")
         try:
-            self.request_body = request.content
+            content = request.content
+            self.request_observed = len(content)
+            self.request_body = content[: self.store_limit]  # never retain the whole request body
         except httpx.RequestNotRead:
             pass  # Dispatch input is already bytes; never consume/resend a request stream.
         self.known_credentials.extend(credential_values(self.request_headers, self.query_string, self.request_body))
@@ -186,26 +193,35 @@ class _UpstreamCapture:
         # A credential in an unterminated request scalar is known only as a prefix;
         # redact it and any echoed suffix in both the request and the response.
         prefixes = body_credential_prefixes(self.request_body)
-        request = body_capture(
+        # The request is captured from a bounded head; report the true observed
+        # length and flag truncation when the tail beyond the buffer was discarded.
+        request = bounded_body_capture(
             self.request_body,
             self.request_content_type,
-            complete=True,
-            known_credentials=self.known_credentials,
+            True,
+            self.known_credentials,
             max_bytes=self.debug_max_body_bytes,
+            observed_bytes=self.request_observed,
             credential_prefixes=prefixes,
         )
         # observed_bytes counts bytes actually delivered by the existing decoded
         # HTTP body iterator, not wire/compressed bytes or advertised Content-Length.
         # The stored content is a bounded prefix, so report the true observed length
-        # and flag truncation when the tail beyond the buffer was discarded.
-        response = bounded_body_capture(
-            bytes(self.content),
-            self.response_content_type,
-            self.complete,
-            self.known_credentials,
-            max_bytes=self.debug_max_body_bytes,
-            observed_bytes=self.observed_bytes,
-            credential_prefixes=prefixes,
+        # and flag truncation when the tail beyond the buffer was discarded. Fail
+        # closed when the request had an uninspected tail: a credential we never saw
+        # there could be echoed in the response, so the response body is withheld.
+        response = (
+            suppressed_body(self.response_content_type, self.observed_bytes, self.complete)
+            if self.debug_max_body_bytes is not None and self.request_observed > self.store_limit
+            else bounded_body_capture(
+                bytes(self.content),
+                self.response_content_type,
+                self.complete,
+                self.known_credentials,
+                max_bytes=self.debug_max_body_bytes,
+                observed_bytes=self.observed_bytes,
+                credential_prefixes=prefixes,
+            )
         )
         return DebugExchange(
             id=uuid4(),

@@ -66,20 +66,42 @@ _AUTH_NAMES = frozenset(
         "xamzsecuritytoken",
         "signature",
         "sig",
+        "accesskeyid",
+        "secretaccesskey",
+        "awsaccesskeyid",
+        "awssecretaccesskey",
+        "sessiontoken",
+        "awssessiontoken",
+        "apitoken",
+        "privatekey",
+        "clientkey",
     }
 )
 _AUTH_TOKEN = re.compile(
     rb"(?:fs2_(?:pat|admin)_[A-Za-z0-9_-]{16,}|nvapi-[A-Za-z0-9_-]{16,}|hf_[A-Za-z0-9]{16,}"
+    rb"|(?:AKIA|ASIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ABIA|ACCA)[A-Z0-9]{16}"
     rb"|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)"
 )
 _AUTH_SCHEME = re.compile(rb"\b(?:Bearer|Basic)\s+[A-Za-z0-9+/_=.:-]+", re.IGNORECASE)
-_JSON_SCALAR = re.compile(rb'("(?:[^"\\]|\\.)*")(\s*:\s*)("(?:[^"\\]|\\.)*"|[^,}\]\s]+)')
+# Possessive quantifiers keep scalar redaction strictly linear in the input size.
+# A malformed/unterminated body could otherwise force catastrophic backtracking
+# and drive multi-MiB memory peaks on a bounded buffer.
+_JSON_SCALAR = re.compile(rb'("(?:[^"\\]|\\.)*+")(\s*:\s*)("(?:[^"\\]|\\.)*+"|[^,}\]\s]++)')
+# Single-quoted "JSON" (Python/JS repr style) never parses as JSON, so a sensitive
+# value there would otherwise survive; matched only on the malformed-body path.
+_JSON_SCALAR_SQ = re.compile(rb"('(?:[^'\\]|\\.)*+')(\s*:\s*)('(?:[^'\\]|\\.)*+'|[^,}\]\s]++)")
 # A sensitive scalar whose value is never terminated (a truncated/malformed body
 # ending mid-value). Captures the key and the partial value to end-of-buffer so
 # the value can still be collected as a credential and redacted from an echo.
-_JSON_UNTERMINATED = re.compile(rb'"([^"\\]{1,128})"\s*:\s*"((?:[^"\\]|\\.)*)\Z')
+_JSON_UNTERMINATED = re.compile(rb'"([^"\\]{1,128})"\s*:\s*"((?:[^"\\]|\\.)*+)\Z')
 # Cap on collected unterminated-value length so a huge body cannot blow up memory.
 _UNTERMINATED_VALUE_MAX = 4096
+# An unterminated scalar runs to end-of-buffer, so only the tail can hold one.
+# Bound the search window so scanning stays linear regardless of body size.
+_UNTERMINATED_SCAN = _UNTERMINATED_VALUE_MAX + 512
+# Overlap buffered beyond the store cap: enough to see and redact a credential
+# straddling the cap, but a fixed bound rather than a multiple of the payload.
+_CAPTURE_OVERLAP = 8192
 
 
 class DebugBody(StrictModel):
@@ -229,10 +251,64 @@ def _redact_json(value: Any) -> Any:
 
 def _redact_scalar(match: re.Match[bytes]) -> bytes:
     try:
+        # json.loads decodes escapes, so an escaped sensitive key still matches.
         name = json.loads(match[1])
     except (ValueError, UnicodeError):
         return match[0]
     return match[1] + match[2] + b'"[REDACTED]"' if _name(name) in _AUTH_NAMES else match[0]
+
+
+def _redact_scalar_sq(match: re.Match[bytes]) -> bytes:
+    """Single-quoted key/value redaction for repr-style (non-JSON) malformed bodies."""
+    name = match[1][1:-1].decode("latin-1")
+    return match[1] + match[2] + b"'[REDACTED]'" if _name(name) in _AUTH_NAMES else match[0]
+
+
+def _redact_form(raw: bytes) -> bytes:
+    """Remove sensitive values from an application/x-www-form-urlencoded body."""
+    parts = []
+    for part in raw.split(b"&"):
+        name, separator, _ = part.partition(b"=")
+        if separator and _name(unquote_plus(name.decode("latin-1"))) in _AUTH_NAMES | {"key"}:
+            parts.append(name + b"=" + REDACTED.encode())
+        else:
+            parts.append(part)
+    return b"&".join(parts)
+
+
+def _is_form(content_type: str | None) -> bool:
+    return content_type is not None and content_type.split(";", 1)[0].strip().lower() == (
+        "application/x-www-form-urlencoded"
+    )
+
+
+def capture_store_limit(max_body_bytes: int | None) -> int | None:
+    """Bytes to buffer for a capture: the store cap plus a bounded overlap.
+
+    The overlap lets a credential straddling the cap be seen and redacted before
+    truncation, while keeping the buffer a fixed size above the cap rather than a
+    multiple of the (unbounded) payload.
+    """
+    return None if max_body_bytes is None else max_body_bytes + _CAPTURE_OVERLAP
+
+
+def suppressed_body(content_type: str | None, observed_bytes: int, complete: bool) -> DebugBody:
+    """A fail-closed placeholder stored instead of a body that cannot be captured safely.
+
+    Used for a response whose matching request exceeded the inspection buffer: the
+    uninspected request tail could hold a credential we never saw, so echoing it
+    into storage cannot be ruled out. The true observed length and wire-completeness
+    are still reported; the body itself is withheld.
+    """
+    return DebugBody(
+        encoding="utf-8",
+        data=REDACTED,
+        content_type=content_type,
+        observed_bytes=observed_bytes,
+        complete=complete,
+        redacted=True,
+        truncated=True,
+    )
 
 
 def _redact_prefix_runs(raw: bytes, prefixes: Credentials) -> bytes:
@@ -281,6 +357,11 @@ def body_capture(
     # keep a credential as a partial prefix that full-body redaction would have
     # removed, and redaction (which can grow the body, e.g. a short value ->
     # "[REDACTED]") must not be able to push the stored copy back past the cap.
+    # Sanitization below is conservative and driven by key names and value
+    # formats, so a sensitive value is removed on its own merits even when it
+    # never appeared in the request (a response-only secret).
+    if _is_form(content_type):
+        raw = _redact_form(raw)
     # Parse regardless of Content-Type: malformed/mislabeled requests are the
     # reason debug capture exists. Preserve exact original bytes when unchanged.
     try:
@@ -289,8 +370,10 @@ def body_capture(
         if redacted_json != parsed:
             raw = json.dumps(redacted_json, ensure_ascii=False, separators=(",", ":")).encode()
     except (ValueError, UnicodeError, RecursionError):
-        # Also covers JSON inside SSE data lines and partial/malformed bodies.
+        # Also covers JSON inside SSE data lines and partial/malformed bodies,
+        # including single-quoted (repr-style) objects that never parse as JSON.
         raw = _JSON_SCALAR.sub(_redact_scalar, raw)
+        raw = _JSON_SCALAR_SQ.sub(_redact_scalar_sq, raw)
     known_credentials = tuple(known_credentials)
     credential_prefixes = tuple(credential_prefixes)
     raw = _redact_bytes(raw, known_credentials)
@@ -339,20 +422,16 @@ def bounded_body_capture(
     """Redact/cap a bounded prefix while reporting the true observed length.
 
     ``head`` is at most a bounded buffer (near the store cap); ``observed_bytes``
-    is the full number of wire bytes seen. If the tail beyond ``head`` was
-    discarded (``observed_bytes`` exceeds the buffer) the capture is NOT complete,
-    which triggers the trailing-partial-credential scrub on the buffer edge, and
-    the body is flagged truncated.
+    is the full number of wire bytes seen. ``complete`` reports wire-completeness
+    only (whether the body ended on the wire) and is kept independent of buffer
+    completeness, so a body that finished on the wire but was stored only as a
+    bounded prefix is reported ``complete=True, truncated=True``. When the tail
+    beyond ``head`` was discarded (``observed_bytes`` exceeds the buffer) the head
+    always exceeds the store cap, so ``body_capture`` truncates it and runs its
+    boundary scrub unconditionally; the body is additionally flagged truncated.
     """
     bounded = observed_bytes > len(head)
-    body = body_capture(
-        head,
-        content_type,
-        complete and not bounded,
-        known_credentials,
-        max_bytes,
-        credential_prefixes,
-    )
+    body = body_capture(head, content_type, complete, known_credentials, max_bytes, credential_prefixes)
     return body.model_copy(update={"observed_bytes": observed_bytes, "truncated": body.truncated or bounded})
 
 
@@ -409,7 +488,9 @@ def body_credential_prefixes(body: bytes | None) -> tuple[str, ...]:
     """
     if not body:
         return ()
-    tail = _JSON_UNTERMINATED.search(body)
+    # An unterminated scalar runs to end-of-buffer; searching only a bounded tail
+    # window keeps this linear regardless of how large the body is.
+    tail = _JSON_UNTERMINATED.search(body[-_UNTERMINATED_SCAN:])
     if tail is None or _name(tail[1].decode("latin-1")) not in _AUTH_NAMES:
         return ()
     partial = tail[2][:_UNTERMINATED_VALUE_MAX].decode("utf-8", "ignore")
@@ -673,14 +754,17 @@ class DebugCapturePolicy:
         """Cheap pre-buffer gate: could any exchange on this path be captured?
 
         Returns False when we can already prove nothing will be captured (policy
-        disabled/expired/unscoped, or a purely model-scoped policy whose path
-        model is known and out of scope) so the caller avoids buffering bytes.
+        disabled/expired/unscoped, or a model-scoped policy — with or without a
+        tenant scope — whose path names a model out of scope) so the caller avoids
+        buffering any bytes. A path with no named model (e.g. ``/mcp``) leaves the
+        model unknown until the body is read, so it stays admissible here and is
+        matched after the bounded body is available.
         """
         if not self.enabled or self.expires_at is None or now >= self.expires_at:
             return False
         if not self.tenants and not self.models:
             return False
-        if self.models and not self.tenants and path_model is not None and path_model not in self.models:
+        if self.models and path_model is not None and path_model not in self.models:
             return False
         return True
 
@@ -724,9 +808,9 @@ class DebugCaptureMiddleware:
         self.policy = policy or _DISABLED_POLICY
 
     def _store_limit(self) -> int | None:
-        # Buffer at most twice the store cap: enough to redact a credential
+        # Buffer the store cap plus a fixed overlap: enough to redact a credential
         # straddling the cap before truncation, but never the whole payload.
-        return None if self.max_body_bytes is None else 2 * self.max_body_bytes
+        return capture_store_limit(self.max_body_bytes)
 
     async def _resolve_principal(self, request_headers: list[tuple[bytes, bytes]]) -> Principal | None:
         """Best-effort read-only verify of the caller's bearer token. Never changes
@@ -875,6 +959,22 @@ class DebugCaptureMiddleware:
                     response_type = next(
                         (_text(value) for key, value in response_headers if key.lower() == b"content-type"), None
                     )
+                    # Fail closed: if the request had an uninspected tail beyond the
+                    # buffer, a credential we never saw could be echoed in the
+                    # response, so the response body is withheld rather than stored.
+                    response_body = (
+                        suppressed_body(response_type, response_observed, response_complete)
+                        if store_limit is not None and request_observed > store_limit
+                        else bounded_body_capture(
+                            bytes(response_parts),
+                            response_type,
+                            response_complete,
+                            known,
+                            max_bytes=self.max_body_bytes,
+                            observed_bytes=response_observed,
+                            credential_prefixes=prefixes,
+                        )
+                    )
                     exchange = DebugExchange(
                         id=uuid4(),
                         source="public",
@@ -904,15 +1004,7 @@ class DebugCaptureMiddleware:
                             observed_bytes=request_observed,
                             credential_prefixes=prefixes,
                         ),
-                        response_body=bounded_body_capture(
-                            bytes(response_parts),
-                            response_type,
-                            response_complete,
-                            known,
-                            max_bytes=self.max_body_bytes,
-                            observed_bytes=response_observed,
-                            credential_prefixes=prefixes,
-                        ),
+                        response_body=response_body,
                     )
                     await persist_debug_exchange(self.store, exchange, self.persist_timeout_seconds)
             except Exception as error:

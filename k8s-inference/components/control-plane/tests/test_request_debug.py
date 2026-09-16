@@ -16,10 +16,13 @@ from fs2_serve.request_debug import (
     DebugExchange,
     InMemoryDebugStore,
     body_capture,
+    bounded_body_capture,
+    capture_store_limit,
     credential_values,
     persist_debug_exchange,
     redact_headers,
     redact_query,
+    suppressed_body,
 )
 from fs2_serve.request_telemetry import (
     InMemoryRequestTelemetryStore,
@@ -376,6 +379,109 @@ def _stored_bytes(body):
     return body.data.encode() if body.encoding == "utf-8" else base64.b64decode(body.data)
 
 
+def _clean(raw, content_type="application/json", *, complete=True):
+    """body_capture with NO request-derived credentials, to prove a body is
+    sanitized purely on its own key/format merits (response-only secrets)."""
+    return _stored_bytes(body_capture(raw, content_type, complete))
+
+
+@pytest.mark.parametrize(
+    "raw,secret",
+    [
+        (b'{"secret_access_key":"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"}', b"wJalrXUtnFEMI"),
+        (b'{"access_key_id":"AKIAIOSFODNN7EXAMPLE"}', b"AKIAIOSFODNN7EXAMPLE"),
+        (b'{"api_key":"nvapi-0123456789abcdef0123456789abcdef"}', b"nvapi-0123456789"),
+        (b'{"password":"hunter2hunter2hunter2"}', b"hunter2hunter2"),
+        (b'{"data":{"nested":{"client_secret":"topsecretvalue123"}}}', b"topsecretvalue123"),
+        # Escaped sensitive key: "api_key" decodes to "api_key".
+        (b'{"api\\u005fkey":"nvapi-abcdefabcdefabcdefabcdef0000"}', b"nvapi-abcdef"),
+        # Truncated/malformed JSON still redacts by key on the fallback path.
+        (b'{"result":"ok","password":"leakedsecretvalue"', b"leakedsecretvalue"),
+        # Single-quoted repr-style object never parses as JSON.
+        (b"{'password': 'leakedsecretvalue'}", b"leakedsecretvalue"),
+    ],
+)
+def test_response_only_secret_sanitized_independent_of_request(raw, secret):
+    """SAI-01: a secret appearing only in the response is removed on its own merits."""
+    stored = _clean(raw)
+    assert secret not in stored and b"[REDACTED]" in stored
+
+
+def test_response_only_form_urlencoded_password_is_redacted():
+    """SAI-01: a form-encoded credential value is removed by key name."""
+    body = b"grant_type=password&username=alice&password=hunter2secretvalue&scope=read"
+    stored = _clean(body, "application/x-www-form-urlencoded")
+    assert b"hunter2secretvalue" not in stored
+    assert b"username=alice" in stored and b"grant_type=password" in stored
+
+
+def test_response_only_aws_access_key_id_format_is_redacted_without_a_key():
+    """SAI-01: a bare AWS access key id in free text is removed by format alone."""
+    body = b'{"detail":"key AKIAIOSFODNN7EXAMPLE is not authorized for boltz2"}'
+    stored = _clean(body)
+    assert b"AKIAIOSFODNN7EXAMPLE" not in stored and b"[REDACTED]" in stored
+
+
+def test_invalid_utf8_body_with_sensitive_key_is_redacted_and_stored_base64():
+    """SAI-01: an invalid-UTF-8 body is still key-redacted and stored losslessly."""
+    body = b'{"api_key":"nvapi-abcdefabcdefabcdefabcdef0000","blob":"\xff\xfe\x80"}'
+    debug = body_capture(body, "application/json", complete=True)
+    stored = _stored_bytes(debug)
+    assert debug.encoding == "base64"  # invalid UTF-8 -> base64 storage, no data loss
+    assert b"nvapi-abcdef" not in stored and b"[REDACTED]" in stored
+
+
+def test_sse_stream_passes_through_but_redacts_embedded_secret():
+    """SAI-01: server-sent events keep their framing while embedded secrets go."""
+    body = b'data: {"api_key":"nvapi-abcdefabcdefabcdefabcdef0000"}\n\ndata: [DONE]\n\n'
+    stored = _clean(body, "text/event-stream")
+    assert b"nvapi-abcdef" not in stored
+    assert stored.startswith(b"data: ") and b"[DONE]" in stored  # SSE framing preserved
+
+
+def test_bounded_capture_keeps_wire_complete_separate_from_truncation():
+    """SAI-01: wire-completeness and buffer-completeness are independent flags, so a
+    wire-complete but storage-truncated body is complete=True, truncated=True."""
+    head = b'{"result":"' + b"R" * 1000 + b'"}'
+    # Whole body fit in the buffer but exceeds the store cap: complete, truncated.
+    body = bounded_body_capture(head, "application/json", True, (), max_bytes=256, observed_bytes=len(head))
+    assert body.complete is True and body.truncated is True and body.observed_bytes == len(head)
+    # Tail beyond the buffer was discarded but the wire body ended: still complete.
+    discarded = bounded_body_capture(head, "application/json", True, (), max_bytes=256, observed_bytes=len(head) + 9999)
+    assert discarded.complete is True and discarded.truncated is True
+    assert discarded.observed_bytes == len(head) + 9999
+    # A body cut off on the wire is not complete.
+    partial = bounded_body_capture(head, "application/json", False, (), max_bytes=256, observed_bytes=len(head))
+    assert partial.complete is False and partial.truncated is True
+
+
+def test_redaction_stays_linear_on_pathological_buffer():
+    """SAI-01: redacting a full buffer of malformed/unterminated JSON is bounded in
+    time and memory (possessive scalars + bounded search; no catastrophic peak)."""
+    import time
+    import tracemalloc
+
+    cap = 128 * 1024
+    limit = capture_store_limit(cap)  # the largest body a production capture redacts
+    body = (b'{"password":"' + b'x"y":"' * (limit // 6))[:limit]  # many quotes + sensitive scalar
+    tracemalloc.start()
+    start = time.perf_counter()
+    debug = body_capture(body, "application/json", complete=False, max_bytes=cap)
+    elapsed = time.perf_counter() - start
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    assert elapsed < 2.0  # catastrophic backtracking would take far longer
+    assert peak < 16 * 1024 * 1024  # far below the tens-of-MiB backtracking peaks
+    assert len(_stored_bytes(debug)) <= cap
+
+
+def test_suppressed_body_marker_reports_true_length_and_is_flagged():
+    """SAI-01: the fail-closed placeholder withholds bytes but keeps metadata truthful."""
+    marker = suppressed_body("application/json", observed_bytes=1_000_000, complete=True)
+    assert marker.data == "[REDACTED]" and marker.redacted is True and marker.truncated is True
+    assert marker.observed_bytes == 1_000_000 and marker.complete is True
+
+
 async def test_middleware_caps_stored_body_size_but_reports_true_observed_bytes():
     big_response = b'{"result":"' + b"R" * 20000 + b'"}'
 
@@ -384,7 +490,9 @@ async def test_middleware_caps_stored_body_size_but_reports_true_observed_bytes(
         await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
         await send({"type": "http.response.body", "body": big_response, "more_body": False})
 
-    big_request = b'{"input":"' + b"Q" * 20000 + b'"}'
+    # The request fits inside the inspection buffer (cap + overlap), so it is fully
+    # inspected and the response is captured as a bounded prefix (not suppressed).
+    big_request = b'{"input":"' + b"Q" * 2000 + b'"}'
     store, _, _ = await capture(
         app,
         chunks=[{"type": "http.request", "body": big_request, "more_body": False}],
@@ -398,6 +506,9 @@ async def test_middleware_caps_stored_body_size_but_reports_true_observed_bytes(
     # observed_bytes still reports the full wire length, not the stored prefix.
     assert exchange.request_body.observed_bytes == len(big_request)
     assert exchange.response_body.observed_bytes == len(big_response)
+    # The response was truncated on the wire's terms: wire-complete but stored as a
+    # bounded prefix, so complete stays True while truncated is separately True.
+    assert exchange.response_body.complete is True and exchange.response_body.truncated is True
 
 
 def test_capture_policy_is_scoped_and_time_bounded():
@@ -405,17 +516,22 @@ def test_capture_policy_is_scoped_and_time_bounded():
     now = NOW
     future = now + timedelta(hours=1)
     # Disabled: never captures.
-    assert DebugCapturePolicy(enabled=False, models=frozenset({"m"}), expires_at=future).should_capture(
-        tenant_id="t", model_id="m", now=now
-    ) is False
+    assert (
+        DebugCapturePolicy(enabled=False, models=frozenset({"m"}), expires_at=future).should_capture(
+            tenant_id="t", model_id="m", now=now
+        )
+        is False
+    )
     # Enabled but unscoped: fail closed (there is no global capture switch).
-    assert DebugCapturePolicy(enabled=True, expires_at=future).should_capture(
-        tenant_id="t", model_id="m", now=now
-    ) is False
+    assert (
+        DebugCapturePolicy(enabled=True, expires_at=future).should_capture(tenant_id="t", model_id="m", now=now)
+        is False
+    )
     # Enabled and scoped but no expiry: fail closed (a bounded window is mandatory).
-    assert DebugCapturePolicy(enabled=True, models=frozenset({"m"})).should_capture(
-        tenant_id="t", model_id="m", now=now
-    ) is False
+    assert (
+        DebugCapturePolicy(enabled=True, models=frozenset({"m"})).should_capture(tenant_id="t", model_id="m", now=now)
+        is False
+    )
     # Tenant-scoped: only the allowlisted tenant, and never an unauthenticated request.
     tenant = DebugCapturePolicy(enabled=True, tenants=frozenset({"t1"}), expires_at=future)
     assert tenant.should_capture(tenant_id="t1", model_id="m", now=now) is True
@@ -536,7 +652,10 @@ async def test_middleware_bounds_memory_for_matched_large_streaming_bodies():
     assert exchange.response_body.observed_bytes == len(big_response)
     assert exchange.request_body.truncated and exchange.response_body.truncated
     assert len(_stored_bytes(exchange.request_body)) <= cap
-    assert len(_stored_bytes(exchange.response_body)) <= cap
+    # The request far exceeded the inspection buffer, so its uninspected tail could
+    # hold a credential we never saw: the response body is withheld, not stored.
+    assert _stored_bytes(exchange.response_body) == b"[REDACTED]"
+    assert exchange.response_body.redacted is True
 
 
 async def test_middleware_does_not_buffer_unmatched_large_response():
@@ -558,6 +677,62 @@ async def test_middleware_does_not_buffer_unmatched_large_response():
     )
     assert store.exchanges == {}
     assert outgoing[-1]["body"] == big  # response still streamed through unchanged
+
+
+@pytest.mark.parametrize("gap", [-4, 0, 64, 8192])
+async def test_middleware_suppresses_response_for_request_tail_credential(gap):
+    """SAI-01: an arbitrary credential at/after the inspection boundary in the request
+    must never be echoed into a stored response. The response body is withheld when
+    the request had any uninspected tail — whether the secret straddles the boundary
+    (gap<0), sits on it (gap==0) or lies wholly beyond it (gap>0)."""
+    cap = 512
+    limit = capture_store_limit(cap)
+    secret = "BOUNDARYSECRET0123456789ABCDEFGHIJKL"  # arbitrary, not a known key/format
+    # Pad so the secret begins `gap` bytes past the inspection boundary (limit).
+    pad = b"Q" * max(0, limit + gap)
+    big_request = b'{"pad":"' + pad + b'","k":"' + secret.encode() + b'"}'
+    echo = b'{"echo":"' + secret.encode() + b'"}'
+
+    async def app(scope, receive, send):
+        while (await receive()).get("more_body", False):
+            pass
+        await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
+        await send({"type": "http.response.body", "body": echo, "more_body": False})
+
+    store, _, _ = await capture(
+        app,
+        chunks=[{"type": "http.request", "body": big_request, "more_body": False}],
+        headers=[(b"content-type", b"application/json")],
+        max_body_bytes=cap,
+    )
+    (exchange,) = store.exchanges.values()
+    assert secret not in exchange.model_dump_json()  # nowhere in the stored row
+    assert _stored_bytes(exchange.response_body) == b"[REDACTED]"  # response withheld
+    assert exchange.response_body.observed_bytes == len(echo)  # true length still reported
+    assert exchange.response_body.complete is True and exchange.response_body.truncated is True
+
+
+async def test_middleware_captures_response_when_request_fits_the_buffer():
+    """SAI-01: the suppression backstop is not overbroad — a request within the buffer
+    is fully inspected, so a matching response is captured (and redacted) normally."""
+    secret = "nvapi-abcdefabcdefabcdefabcdef0000"
+    request = b'{"model":"boltz2","api_key":"' + secret.encode() + b'"}'
+    echo = b'{"echo":"' + secret.encode() + b'","detail":"ok"}'
+
+    async def app(scope, receive, send):
+        await receive()
+        await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
+        await send({"type": "http.response.body", "body": echo, "more_body": False})
+
+    store, _, _ = await capture(
+        app,
+        chunks=[{"type": "http.request", "body": request, "more_body": False}],
+        headers=[(b"content-type", b"application/json")],
+        max_body_bytes=64 * 1024,
+    )
+    (exchange,) = store.exchanges.values()
+    assert secret not in exchange.model_dump_json()  # echoed credential redacted
+    assert b"ok" in _stored_bytes(exchange.response_body)  # but the response body is kept
 
 
 async def test_middleware_redacts_credential_split_across_request_chunks():
@@ -608,6 +783,7 @@ async def test_unterminated_sensitive_scalar_is_redacted_in_request_and_echoed_r
 
 async def test_storage_credentials_endpoint_is_never_captured():
     """SAI-01/SAI-08: the storage-credentials disclosure is excluded from capture."""
+
     async def app(scope, receive, send):
         await receive()
         await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
@@ -654,7 +830,8 @@ async def test_unterminated_password_learned_as_prefix_redacts_full_echoed_value
     """SAI-01: when only a prefix of an unterminated password is buffered, a response
     echoing the full value must be fully redacted, not just its learned prefix."""
     secret = "PW" + "".join(f"{i % 10}" for i in range(90))  # 92-char secret
-    # Request buffer is bounded (store_limit = 2*cap), so only a prefix is learned.
+    # The value is unterminated (no closing quote), so it is learned only as a
+    # prefix; the stored request copy is additionally capped to max_body_bytes.
     request = b'{"model":"boltz2","password":"' + secret.encode()  # unterminated
 
     async def app(scope, receive, send):

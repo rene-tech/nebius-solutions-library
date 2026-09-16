@@ -41,21 +41,25 @@ when it stops:
   use of those Apps is recorded, including pre-admission rejections for the App.
   When both allowlists are set, an exchange must match both.
 - `request_debug_expires_at` — a required RFC3339 instant after which capture stops
-  even while enabled. It must be in the future and within
-  `request_debug_max_window_seconds` (default 7 days), or the control plane refuses
-  to start. There is no unbounded or "capture everything" mode.
+  even while enabled. To actually capture, set it in the future and within
+  `request_debug_max_window_seconds` (default 7 days). There is no unbounded or
+  "capture everything" mode.
 
-The control plane validates this at startup: an enabled policy that is unscoped, or
-whose expiry is missing/past/beyond the maximum window, fails fast rather than
-capturing broadly. Because capture is time-bounded, disable it before the expiry
-passes; leaving `request_debug_enabled = true` with a stale expiry captures nothing
-and will fail a subsequent restart.
+The control plane validates this at startup: an enabled policy that is unscoped, has
+no expiry at all, or sets an expiry beyond the maximum window fails fast rather than
+capturing broadly. A **past** expiry is deliberately allowed and is service-safe: it
+is treated as capture-off (the runtime gate fails closed), so a stale expiry never
+crash-loops the control plane and never widens capture. Because capture is
+time-bounded, an operator normally disables it before the expiry passes; if the
+expiry lapses first, capture simply stops and a later restart still succeeds with
+capture off.
 
 One more chart value bounds each retained record and is safe to leave at default:
 
 - `config.requestDebugMaxBodyBytes` (default `65536`) caps the stored size of each
   captured request/response body. Only a bounded, redacted prefix is kept, and the
-  middleware buffers at most twice this cap regardless of body size.
+  middleware buffers at most this cap plus a small fixed overlap (never a multiple of
+  the payload) regardless of body size.
 
 Retention/purge of captured exchanges (and of transport telemetry) is owned by the
 platform's central maintenance purge — its own retention settings, DELETE grants
@@ -134,10 +138,14 @@ encoding: utf-8 | base64
 data: retained text in that encoding
 content_type: observed value or null
 observed_bytes: number of body bytes actually observed before redaction
-complete: whether the observed capture reached a complete body
+complete: whether the body finished on the wire (wire-completeness only)
 redacted: whether sensitive content was replaced
 truncated: whether only a bounded prefix was stored (observed_bytes still full)
 ```
+
+`complete` and `truncated` are independent: a body that finished on the wire but was
+larger than the store cap is `complete=true, truncated=true` (do not read truncated
+as incomplete). A body cut off on the wire is `complete=false`.
 
 Nullable identities/statuses are not invented. A request without a durable
 operation shows **No operation**; an unavailable status is **Not observed**, not
@@ -154,6 +162,13 @@ HTTP 0 or success.
   public middleware does not drain it merely to fill a log. Interrupted, unread,
   failed or limit-exceeded streams remain explicitly partial/incomplete. An empty
   complete body is different from zero bytes retained from an unread body.
+- Fail-closed response withholding: when a request is larger than the inspection
+  buffer, its uninspected tail could contain a credential the capture never saw, so
+  the response body is **withheld** rather than stored (its bytes are replaced with
+  `[REDACTED]`, `redacted=true`, `truncated=true`), while `observed_bytes` still
+  reports the true response length. This prevents a credential in the unseen request
+  tail from being echoed back into storage. The request body itself is still stored
+  as a bounded, redacted prefix.
 - `observed_bytes` is not necessarily the displayed length after redaction or
   base64 encoding. Public counts describe observed application body chunks;
   upstream response counts describe the decoded HTTP body iterator, not compressed

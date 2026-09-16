@@ -449,3 +449,65 @@ async def test_upstream_bounded_response_does_not_store_a_boundary_credential(re
     assert exchange.response_body.truncated
     detail = exchange.model_dump_json()
     assert all(secret[:size] not in detail for size in range(8, len(secret) + 1))
+
+
+def _stored(body):
+    return body.data.encode() if body.encoding == "utf-8" else base64.b64decode(body.data)
+
+
+@pytest.mark.asyncio
+async def test_upstream_request_body_is_captured_bounded_not_whole(registry) -> None:
+    """SAI-01: a large upstream request is captured as a bounded prefix, never whole."""
+    cap = 64
+    big_request = b'{"input":"' + b"Q" * (100 * 1024) + b'"}'
+
+    async def handler(_request):
+        return httpx.Response(200, json={"choices": [{}]}, headers={"content-type": "application/json"})
+
+    sink = DebugSink()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        runtime_client = RuntimeClient(
+            activation_timeout_seconds=2,
+            runtime_timeout_seconds=2,
+            max_response_bytes=1 << 20,
+            client=client,
+            debug_store=sink,
+            debug_max_body_bytes=cap,
+            debug_capture_policy=_CAPTURE_POLICY,
+        )
+        await runtime_client.invoke(registry.get("qwen3-8b"), claimed(registry), big_request)
+    exchange = sink.exchanges[0]
+    assert exchange.request_body.observed_bytes == len(big_request)  # true length reported
+    assert exchange.request_body.truncated  # stored as a bounded prefix
+    assert len(_stored(exchange.request_body)) <= cap  # never the whole request body
+
+
+@pytest.mark.asyncio
+async def test_upstream_response_suppressed_when_request_tail_uninspected(registry) -> None:
+    """SAI-01: an arbitrary credential beyond the request inspection buffer must not be
+    echoed into a stored upstream response body."""
+    cap = 64
+    secret = "UPSTREAMTAILSECRET0123456789ABCDEF"
+    # The secret lies far past the inspection buffer (cap + overlap) in the request.
+    big_request = b'{"pad":"' + b"Q" * (cap + 8192 + 500) + b'","k":"' + secret.encode() + b'"}'
+    response_body = b'{"echo":"' + secret.encode() + b'"}'
+
+    async def handler(_request):
+        return httpx.Response(400, content=response_body, headers={"content-type": "application/json"})
+
+    sink = DebugSink()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        runtime_client = RuntimeClient(
+            activation_timeout_seconds=2,
+            runtime_timeout_seconds=2,
+            max_response_bytes=1 << 20,
+            client=client,
+            debug_store=sink,
+            debug_max_body_bytes=cap,
+            debug_capture_policy=_CAPTURE_POLICY,
+        )
+        await runtime_client.invoke(registry.get("qwen3-8b"), claimed(registry), big_request)
+    exchange = sink.exchanges[0]
+    assert secret not in exchange.model_dump_json()  # not echoed anywhere in the row
+    assert _stored(exchange.response_body) == b"[REDACTED]"  # response body withheld
+    assert exchange.response_body.observed_bytes == len(response_body)  # true length still reported
