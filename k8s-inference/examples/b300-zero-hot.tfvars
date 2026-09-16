@@ -9,7 +9,6 @@ deployment = {
 
   pod_security = {
     # Replace with the exact authenticated username used for the rollout.
-    exception_manager_usernames = ["replace-with-rollout-username"]
   }
 
   target = {

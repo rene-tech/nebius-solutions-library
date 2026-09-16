@@ -119,23 +119,7 @@ locals {
     "fs2-observability"
   )
 
-  pod_security_application_labels = var.pod_security_rollout_phase == "enforce" ? {
-    for namespace in toset([
-      "fs2-data",
-      "fs2-models",
-      "fs2-observability",
-      "fs2-system",
-      ]) : namespace => tomap({
-      "pod-security.kubernetes.io/enforce"         = "baseline"
-      "pod-security.kubernetes.io/enforce-version" = var.pod_security_version
-      "pod-security.kubernetes.io/audit"           = "restricted"
-      "pod-security.kubernetes.io/audit-version"   = var.pod_security_version
-      "pod-security.kubernetes.io/warn"            = "restricted"
-      "pod-security.kubernetes.io/warn-version"    = var.pod_security_version
-    })
-  } : tomap({})
-
-  pod_security_labels = merge(local.pod_security_application_labels, local.node_observability_exception_enabled ? {
+  pod_security_labels = local.node_observability_exception_enabled ? {
     "fs2-node-observability" = tomap({
       "pod-security.kubernetes.io/enforce"         = "privileged"
       "pod-security.kubernetes.io/enforce-version" = var.pod_security_version
@@ -144,7 +128,7 @@ locals {
       "pod-security.kubernetes.io/warn"            = "restricted"
       "pod-security.kubernetes.io/warn-version"    = var.pod_security_version
     })
-  } : tomap({}))
+  } : tomap({})
 
   pod_security_annotations = local.node_observability_exception_enabled ? {
     "fs2-node-observability" = tomap({

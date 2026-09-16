@@ -33,7 +33,7 @@ def _assert_pinned_psa_labels(source: str) -> None:
 
 def test_every_baseline_owner_pins_enforce_audit_and_warn_minor() -> None:
     for relative in (
-        "stages/foundation/locals.tf",
+        "stages/foundation/pod_security.tf",
         "stages/workloads/pod_security.tf",
         "modules/academic-assets/main.tf",
         "stages/workloads/modelexpress.tf",
@@ -61,10 +61,12 @@ def test_exception_namespace_has_enforceable_identity_and_content_admission() ->
     admission = _source("stages/foundation/pod_security_admission.tf")
     assert '"security.fs2.nebius.ai/host-agent-only" = "true"' in foundation
     assert re.search(r'"pod-security\.kubernetes\.io/enforce"\s*=\s*"privileged"', foundation)
-    assert "pod_security_exception_manager_usernames" in admission
+    assert "pod_security_exception_manager_usernames" not in admission
     assert "request.userInfo.username" in admission
     assert "Only the Kubernetes DaemonSet controller may create host-agent Pods" in admission
-    assert "Only an explicitly reviewed rollout identity" in admission
+    assert "exact reviewed image, command, service account" in admission
+    assert "fs2-pod-security-rollout-manager" in admission
+    assert 'resource "kubernetes_role_binding_v1" "pod_security_rollout_ledger"' in admission
     assert 'resources   = ["pods/ephemeralcontainers"]' in admission
     assert "Ephemeral containers are forbidden" in admission
     for name in (
@@ -78,6 +80,8 @@ def test_exception_namespace_has_enforceable_identity_and_content_admission() ->
 
 def test_rollout_gate_consumes_prior_signed_state_without_phase_skips() -> None:
     verifier = _source("scripts/verify_pod_security_receipts.py")
+    gate = _source("modules/pod-security-rollout-gate/main.tf")
+    admission = _source("stages/foundation/pod_security_admission.tf")
     expected = {
         "migrate-reference-data": "exception-ready",
         "cleanup-legacy-resources": "reference-data-ready",
@@ -87,11 +91,25 @@ def test_rollout_gate_consumes_prior_signed_state_without_phase_skips() -> None:
         "rollback-remove-exception": "host-agents-restored",
     }
     for phase, terminal in expected.items():
-        assert f'"{phase}": "{terminal}"' in verifier
+        assert f'"{phase}"' in verifier
+        assert f'"{terminal}"' in verifier
     assert "Ed25519 signature" in verifier
-    assert "prior-state digest" in verifier
-    assert "receipt sequence is not contiguous" in verifier
-    assert "receipt state chain skips or reverses" in verifier
+    assert "whole-bundle signature verification failed" in verifier
+    assert "prior_ledger_sha256" in verifier
+    assert "resourceVersion" in verifier
+    assert "_validate_live_observations" in verifier
+    assert "_validate_baseline_artifact" in verifier
+    assert "_validate_cleanup_result" in verifier
+    assert "--as=system:serviceaccount:fs2-system:fs2-pod-security-rollout-manager" in verifier
+    assert "downstream phase authorization was already consumed" in verifier
+    assert 'resource "kubernetes_config_map_v1" "ledger"' in gate
+    assert "prevent_destroy = true" in gate
+    assert "ignore_changes  = [data]" in gate
+    assert 'resource "terraform_data" "verified"' in gate
+    assert "baseline_artifact_path" in gate
+    assert 'data "external"' not in gate
+    assert 'operations  = ["UPDATE", "DELETE"]' in admission
+    assert "The monotonic pod-security rollout ledger may not be deleted" in admission
 
     reference = _source("reference-data/terraform/main.tf")
     for phase, terminal in expected.items():
@@ -146,6 +164,9 @@ def test_scientific_inventory_is_exact_nonempty_and_scanned_before_enforcement()
     assert "live fs2-bioir namespace inventory differs" in scanner
     assert '"reference_host_paths"' in scanner
     assert '"baseline_incompatible_objects"' in scanner
+    assert '"restricted_incompatible_objects"' in scanner
+    for kind in ("ReplicationController", "ReplicaSet", "JobSet", "ModelDeployment", "ScaledObject"):
+        assert f'"{kind}"' in scanner
     assert '"unauthorized_exception_objects"' in scanner
     assert 'resource "kubernetes_labels" "existing_scientific_pod_security"' in _source(
         "stages/workloads/pod_security.tf"
@@ -171,10 +192,11 @@ def test_dynamic_controller_has_zero_networkpolicy_serviceaccount_or_daemonset_a
     assert "networkPolicyResourceNames" not in _source("stages/workloads/control_plane.tf")
 
 
-def test_legacy_cleanup_is_uid_fenced_and_never_touches_finite_profiles() -> None:
+def test_legacy_cleanup_is_exactly_fenced_and_never_touches_finite_profiles() -> None:
     cleanup = _source("scripts/cleanup_sai07_legacy_resources.py")
     assert 'NAMESPACE = "fs2-models"' in cleanup
-    assert '"preconditions": {"uid": uid}' in cleanup
+    assert '"preconditions": {"uid": uid, "resourceVersion": resource_version}' in cleanup
+    assert "live_projection" in cleanup and '"object_sha256"' in cleanup
     assert "ServiceAccount" in cleanup and "DaemonSet" in cleanup and "NetworkPolicy" in cleanup
     assert 'item["name"].startswith("fs2-network-profile-")' in cleanup
     assert "Terraform-owned finite profile policies may never be cleaned" in cleanup

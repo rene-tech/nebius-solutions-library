@@ -170,16 +170,18 @@ variable "filesystem_claim" {
 variable "pod_security_rollout_verification" {
   description = "Output of the canonical signed rollout-gate module in the owning workloads stage."
   type = object({
-    phase            = string
-    terminal_state   = string
-    bundle_sha256    = optional(string)
-    transition_count = number
+    phase          = string
+    terminal_state = string
+    bundle_sha256  = optional(string)
+    sequence       = number
+    consumer       = string
   })
   default = {
-    phase            = "prepare"
-    terminal_state   = "unmanaged"
-    bundle_sha256    = null
-    transition_count = 0
+    phase          = "prepare"
+    terminal_state = "unmanaged"
+    bundle_sha256  = null
+    sequence       = 0
+    consumer       = "downstream"
   }
 }
 

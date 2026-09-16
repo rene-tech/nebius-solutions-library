@@ -58,16 +58,15 @@ variable "deployment" {
         "fs2-bioir-snapshot",
       ])
       receipt = optional(object({
-        bundle_path       = optional(string)
-        public_key_path   = optional(string)
-        public_key_sha256 = optional(string)
-        deployment_nonce  = optional(string)
+        bundle_path            = optional(string)
+        public_key_path        = optional(string)
+        public_key_sha256      = optional(string)
+        key_id                 = optional(string)
+        signer_identity        = optional(string)
+        deployment_nonce       = optional(string)
+        baseline_artifact_path = optional(string)
+        cleanup_result_path    = optional(string)
       }), {})
-      # Exact authenticated Kubernetes usernames allowed to create/update the
-      # four reviewed host-agent DaemonSets.  Namespace RBAC is additive, so
-      # the admission policy enforces this identity boundary even if a future
-      # cluster role is accidentally widened.
-      exception_manager_usernames = optional(set(string), [])
     }), {})
 
     accelerator_pool_capacity = optional(map(object({
@@ -756,32 +755,25 @@ variable "deployment" {
 
   validation {
     condition = (
-      var.deployment.pod_security.rollout_phase == "rollback-remove-exception" ||
-      try(
-        length(var.deployment.pod_security.exception_manager_usernames) > 0 &&
-        alltrue([
-          for username in var.deployment.pod_security.exception_manager_usernames :
-          length(username) <= 253 && can(regex("^[A-Za-z0-9][A-Za-z0-9:._@/-]*$", username))
-        ]),
-        false,
-      )
-    )
-    error_message = "Every phase that owns the host-agent exception namespace requires at least one exact bounded admission-manager username."
-  }
-
-  validation {
-    condition = (
       var.deployment.pod_security.rollout_phase == "prepare" || try(
         startswith(var.deployment.pod_security.receipt.bundle_path, "/") &&
         !strcontains(var.deployment.pod_security.receipt.bundle_path, "..") &&
         startswith(var.deployment.pod_security.receipt.public_key_path, "/") &&
         !strcontains(var.deployment.pod_security.receipt.public_key_path, "..") &&
         can(regex("^[a-f0-9]{64}$", var.deployment.pod_security.receipt.public_key_sha256)) &&
+        can(regex("^[A-Za-z0-9](?:[-A-Za-z0-9._:@/]{0,251}[A-Za-z0-9])?$", var.deployment.pod_security.receipt.key_id)) &&
+        can(regex("^[A-Za-z0-9](?:[-A-Za-z0-9._:@/]{0,251}[A-Za-z0-9])?$", var.deployment.pod_security.receipt.signer_identity)) &&
         can(regex("^[a-z0-9](?:[-a-z0-9.]{0,126}[a-z0-9])?$", var.deployment.pod_security.receipt.deployment_nonce)),
+        startswith(var.deployment.pod_security.receipt.baseline_artifact_path, "/") &&
+        !strcontains(var.deployment.pod_security.receipt.baseline_artifact_path, ".."),
+        var.deployment.pod_security.rollout_phase != "enforce" || (
+          startswith(var.deployment.pod_security.receipt.cleanup_result_path, "/") &&
+          !strcontains(var.deployment.pod_security.receipt.cleanup_result_path, "..")
+        ),
         false,
       )
     )
-    error_message = "Every phase after prepare requires absolute safe receipt/key paths, a reviewed key digest, and a bounded deployment nonce."
+    error_message = "Every phase after prepare requires absolute safe receipt/key/baseline paths, a reviewed key digest/ID/signer identity, and a bounded deployment nonce."
   }
 
   validation {

@@ -61,12 +61,16 @@ variable "pod_security_version" {
 }
 
 variable "pod_security_rollout_receipt" {
-  description = "Paths and reviewed Ed25519 public-key digest for the canonical rollout receipt chain."
+  description = "Whole-bundle receipt path plus the exact reviewed Ed25519 authority identity."
   type = object({
-    bundle_path       = optional(string)
-    public_key_path   = optional(string)
-    public_key_sha256 = optional(string)
-    deployment_nonce  = optional(string)
+    bundle_path            = optional(string)
+    public_key_path        = optional(string)
+    public_key_sha256      = optional(string)
+    key_id                 = optional(string)
+    signer_identity        = optional(string)
+    deployment_nonce       = optional(string)
+    baseline_artifact_path = optional(string)
+    cleanup_result_path    = optional(string)
   })
   default = {}
 }
@@ -85,23 +89,22 @@ variable "pod_security_dataset" {
   }
 }
 
-variable "pod_security_exception_manager_usernames" {
-  description = "Exact authenticated usernames allowed by admission to create or update reviewed exception DaemonSets."
-  type        = set(string)
-  default     = []
-
+variable "pod_security_host_agent_images" {
+  description = "Exact digest-qualified images admitted for the four exception DaemonSets."
+  type        = map(string)
   validation {
     condition = (
-      var.pod_security_rollout_phase == "rollback-remove-exception" ||
-      (
-        length(var.pod_security_exception_manager_usernames) > 0 &&
-        alltrue([
-          for username in var.pod_security_exception_manager_usernames :
-          length(username) <= 253 && can(regex("^[A-Za-z0-9][A-Za-z0-9:._@/-]*$", username))
-        ])
-      )
+      length(setsubtract(toset(keys(var.pod_security_host_agent_images)), toset([
+        "dcgm-exporter",
+        "node-exporter",
+        "otel-node",
+        "gpu-observer",
+        ]))) == 0 && length(keys(var.pod_security_host_agent_images)) == 4 && alltrue([
+        for image in values(var.pod_security_host_agent_images) :
+        can(regex("^[^[:space:]@]+@sha256:[a-f0-9]{64}$", image))
+      ])
     )
-    error_message = "The exception namespace requires at least one exact bounded admission-manager username."
+    error_message = "pod_security_host_agent_images must pin exactly four reviewed exception images by digest."
   }
 }
 

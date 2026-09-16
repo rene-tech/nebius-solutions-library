@@ -91,11 +91,27 @@ The StorageClass is post-rendered to `Retain`; the chart release and PVC use
 `prevent_destroy`; the storage handoff must prove deletion is forbidden and
 capacity is at least the 1611 GiB request.
 
-Every later phase requires an Ed25519-signed canonical receipt chain bound to
-the exact cluster, run, kube-system UID, deployment nonce, pinned PSA minor,
-five-namespace inventory, PVC UID/class, dataset/revision/tree, and retained
-filesystem identity/capacity. Transitions are short-lived, sequential, and
-hash-chain their signed predecessor. A digest-shaped string has no authority.
+Every later phase requires one short-lived v3 Ed25519 receipt whose single
+signature covers the complete canonical bundle: reviewed signer identity and
+key digest, cluster/run/kube-system UID, deployment nonce, exact prior and next
+state, phase, one-time nonce, expiry, pinned PSA minor, five-namespace
+inventory, PVC UID/class, dataset/revision/tree, retained filesystem, and live
+observations. Each present observation carries the exact Kubernetes UID,
+resourceVersion, and canonical object hash; absence observations carry no
+substitutable identity. Baseline gates additionally bind complete live list
+hashes for every relevant workload kind in every frozen namespace.
+
+Receipt verification is an apply-time operation, never a replayable Terraform
+data source. The foundation consumer re-reads every signed object and inventory
+from the selected API server immediately before an atomic ConfigMap
+resourceVersion compare-and-swap. The monotonic ledger is context- and
+authority-bound, deletion-protected, admission-limited to exact rollout
+identities, and stores the last receipt, nonce, sequence, state, and phase
+authorization. The workloads stage can consume that exact authorization once;
+owner or downstream replay, phase skipping, stale resourceVersions, spec/status
+drift, inventory omission, context substitution, and concurrent ledger updates
+all fail closed. A digest-shaped string or a valid signature without successful
+live reconciliation and ledger consumption has no authority.
 
 ## Model-controller ownership
 
@@ -132,7 +148,9 @@ kubectl get namespace \
 ```
 
 The rollout evidence must include the exact deployment inputs, CSI driver/class
-and claim UID, signed transition chain, DaemonSet readiness, exact namespace and
-object inventory, bounded legacy cleanup UIDs, admission-policy identity,
-negative privileged-Pod result, positive customer/App/inference checks, and the
-slot-time stable rollback revision with request debugging disabled.
+and claim UID, whole-bundle signature identity, pre/post ledger resourceVersion
+and sequence, one-time consumption result, DaemonSet readiness, exact namespace
+and live object/list hashes, bounded legacy cleanup UIDs, admission-policy
+identity, negative privileged-Pod result, positive customer/App/inference
+checks, and the slot-time stable rollback revision with request debugging
+disabled.

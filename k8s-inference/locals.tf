@@ -1055,18 +1055,27 @@ locals {
     pod_security_rollout_phase = var.deployment.pod_security.rollout_phase
     pod_security_version       = "v${join(".", slice(split(".", trimprefix(var.deployment.cluster.kubernetes_version, "v")), 0, 2))}"
     pod_security_rollout_receipt = {
-      bundle_path       = var.deployment.pod_security.receipt.bundle_path
-      public_key_path   = var.deployment.pod_security.receipt.public_key_path
-      public_key_sha256 = var.deployment.pod_security.receipt.public_key_sha256
-      deployment_nonce  = var.deployment.pod_security.receipt.deployment_nonce
+      bundle_path            = var.deployment.pod_security.receipt.bundle_path
+      public_key_path        = var.deployment.pod_security.receipt.public_key_path
+      public_key_sha256      = var.deployment.pod_security.receipt.public_key_sha256
+      key_id                 = var.deployment.pod_security.receipt.key_id
+      signer_identity        = var.deployment.pod_security.receipt.signer_identity
+      deployment_nonce       = var.deployment.pod_security.receipt.deployment_nonce
+      baseline_artifact_path = var.deployment.pod_security.receipt.baseline_artifact_path
+      cleanup_result_path    = var.deployment.pod_security.receipt.cleanup_result_path
     }
     pod_security_dataset = {
       id          = var.deployment.storage.reference_data.pipeline.bundle_id
       revision    = try(jsondecode(file("${path.module}/reference-data/source-catalog.json")).bundles[var.deployment.storage.reference_data.pipeline.bundle_id].revision, "")
       tree_sha256 = var.deployment.storage.reference_data.expected_tree_sha256 == null ? "" : var.deployment.storage.reference_data.expected_tree_sha256
     }
-    pod_security_exception_manager_usernames = sort(tolist(var.deployment.pod_security.exception_manager_usernames))
-    grafana_admin_secret_ref                 = var.deployment.secrets.grafana_admin_secret
+    pod_security_host_agent_images = {
+      dcgm-exporter = "nvcr.io/nvidia/k8s/dcgm-exporter@sha256:b4df763de9558e5b3f1f1d79bc65b772fcf65b8a9c3664ea7173e47153112b4a"
+      node-exporter = "quay.io/prometheus/node-exporter@sha256:8c9bac11973b94b59be88d6e11fee4429aa743c8846cdc75d65b18db33f6a106"
+      otel-node     = "ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-k8s@sha256:3a8f46e1ff33546d36ddd94ef8721c5807718e25825f3e3f6eb5d552fd24e422"
+      gpu-observer  = "${var.deployment.applications.control_plane.repository}@${var.deployment.applications.control_plane.digest}"
+    }
+    grafana_admin_secret_ref = var.deployment.secrets.grafana_admin_secret
     jobset = {
       enabled            = var.deployment.scientific_batch.enabled
       kubernetes_version = var.deployment.cluster.kubernetes_version
@@ -1137,12 +1146,15 @@ locals {
     pod_security_rollout_phase                  = var.deployment.pod_security.rollout_phase
     pod_security_version                        = "v${join(".", slice(split(".", trimprefix(var.deployment.cluster.kubernetes_version, "v")), 0, 2))}"
     pod_security_existing_scientific_namespaces = sort(tolist(var.deployment.pod_security.existing_scientific_namespaces))
-    pod_security_exception_manager_usernames    = sort(tolist(var.deployment.pod_security.exception_manager_usernames))
     pod_security_rollout_receipt = {
-      bundle_path       = var.deployment.pod_security.receipt.bundle_path
-      public_key_path   = var.deployment.pod_security.receipt.public_key_path
-      public_key_sha256 = var.deployment.pod_security.receipt.public_key_sha256
-      deployment_nonce  = var.deployment.pod_security.receipt.deployment_nonce
+      bundle_path            = var.deployment.pod_security.receipt.bundle_path
+      public_key_path        = var.deployment.pod_security.receipt.public_key_path
+      public_key_sha256      = var.deployment.pod_security.receipt.public_key_sha256
+      key_id                 = var.deployment.pod_security.receipt.key_id
+      signer_identity        = var.deployment.pod_security.receipt.signer_identity
+      deployment_nonce       = var.deployment.pod_security.receipt.deployment_nonce
+      baseline_artifact_path = var.deployment.pod_security.receipt.baseline_artifact_path
+      cleanup_result_path    = var.deployment.pod_security.receipt.cleanup_result_path
     }
     deployment_profile              = local.model_profile
     enabled_model_ids               = local.selected_model_ids

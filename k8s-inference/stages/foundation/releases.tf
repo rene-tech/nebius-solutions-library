@@ -480,6 +480,11 @@ resource "helm_release" "node_exporter_exception" {
 
   values = [yamlencode({
     fullnameOverride = "fs2-node-exporter"
+    image = {
+      repository = "prometheus/node-exporter"
+      tag        = "v1.12.1"
+      digest     = "sha256:8c9bac11973b94b59be88d6e11fee4429aa743c8846cdc75d65b18db33f6a106"
+    }
     serviceMonitor = {
       enabled          = true
       additionalLabels = { release = "fs2-${var.run_id}-monitoring" }

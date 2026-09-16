@@ -50,20 +50,18 @@ variable "pod_security_version" {
 }
 
 variable "pod_security_rollout_receipt" {
-  description = "Paths and reviewed Ed25519 public-key digest for the canonical rollout receipt chain."
+  description = "Whole-bundle receipt path plus the exact reviewed Ed25519 authority identity."
   type = object({
-    bundle_path       = optional(string)
-    public_key_path   = optional(string)
-    public_key_sha256 = optional(string)
-    deployment_nonce  = optional(string)
+    bundle_path            = optional(string)
+    public_key_path        = optional(string)
+    public_key_sha256      = optional(string)
+    key_id                 = optional(string)
+    signer_identity        = optional(string)
+    deployment_nonce       = optional(string)
+    baseline_artifact_path = optional(string)
+    cleanup_result_path    = optional(string)
   })
   default = {}
-}
-
-variable "pod_security_exception_manager_usernames" {
-  description = "Exact exception-namespace rollout usernames; included in the signed admission-contract identity."
-  type        = set(string)
-  default     = []
 }
 
 variable "pod_security_existing_scientific_namespaces" {

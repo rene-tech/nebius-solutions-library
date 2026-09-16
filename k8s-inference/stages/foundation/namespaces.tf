@@ -14,6 +14,5 @@ resource "kubernetes_namespace_v1" "platform" {
 
   depends_on = [
     terraform_data.cluster_contract,
-    terraform_data.pod_security_rollout_contract,
   ]
 }

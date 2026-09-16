@@ -102,10 +102,11 @@ run "exception_ready_gate_mounts_the_rwx_claim_before_baseline_enforcement" {
   variables {
     pod_security_rollout_phase = "migrate-reference-data"
     pod_security_rollout_verification = {
-      phase            = "migrate-reference-data"
-      terminal_state   = "exception-ready"
-      bundle_sha256    = sha256("unit-test-signed-exception-ready-bundle")
-      transition_count = 1
+      phase          = "migrate-reference-data"
+      terminal_state = "exception-ready"
+      bundle_sha256  = sha256("unit-test-signed-exception-ready-bundle")
+      sequence       = 1
+      consumer       = "downstream"
     }
   }
 
@@ -149,10 +150,11 @@ run "baseline_enforcement_refuses_a_non_baseline_ready_gate" {
   variables {
     pod_security_rollout_phase = "enforce"
     pod_security_rollout_verification = {
-      phase            = "enforce"
-      terminal_state   = "reference-data-ready"
-      bundle_sha256    = sha256("unit-test-incomplete-signed-bundle")
-      transition_count = 2
+      phase          = "enforce"
+      terminal_state = "reference-data-ready"
+      bundle_sha256  = sha256("unit-test-incomplete-signed-bundle")
+      sequence       = 2
+      consumer       = "downstream"
     }
   }
 
@@ -169,10 +171,11 @@ run "baseline_enforcement_follows_the_signed_baseline_ready_gate" {
   variables {
     pod_security_rollout_phase = "enforce"
     pod_security_rollout_verification = {
-      phase            = "enforce"
-      terminal_state   = "baseline-ready"
-      bundle_sha256    = sha256("unit-test-signed-baseline-ready-bundle")
-      transition_count = 4
+      phase          = "enforce"
+      terminal_state = "baseline-ready"
+      bundle_sha256  = sha256("unit-test-signed-baseline-ready-bundle")
+      sequence       = 3
+      consumer       = "downstream"
     }
   }
 

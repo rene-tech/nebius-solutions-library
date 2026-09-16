@@ -409,7 +409,8 @@ resource "terraform_data" "region_contract" {
           var.pod_security_rollout_verification.phase == var.pod_security_rollout_phase &&
           var.pod_security_rollout_verification.terminal_state == local.required_rollout_terminal[var.pod_security_rollout_phase] &&
           can(regex("^[a-f0-9]{64}$", var.pod_security_rollout_verification.bundle_sha256)) &&
-          var.pod_security_rollout_verification.transition_count >= 1
+          var.pod_security_rollout_verification.sequence >= 1 &&
+          var.pod_security_rollout_verification.consumer == "downstream"
         )
       )
       error_message = "Switching reference data or changing PSA state requires the exact phase output of the canonical signed rollout gate; digest-shaped strings are not authority."

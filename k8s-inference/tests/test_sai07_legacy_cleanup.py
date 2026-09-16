@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import hashlib
 
 import pytest
 
@@ -19,12 +20,34 @@ def manifest(objects: list[dict[str, str]]) -> dict[str, object]:
         "cluster_id": "mk8scluster-test",
         "run_id": "sai07test",
         "kube_system_uid": "kube-system-uid",
+        "baseline_artifact_sha256": "a" * 64,
+        "prior_inventory_sha256": "b" * 64,
         "objects": objects,
     }
 
 
 def item(kind: str, name: str = "legacy", uid: str = "uid-1") -> dict[str, str]:
-    return {"kind": kind, "namespace": "fs2-models", "name": name, "uid": uid}
+    api_version = {
+        "NetworkPolicy": "networking.k8s.io/v1",
+        "ServiceAccount": "v1",
+        "DaemonSet": "apps/v1",
+    }[kind]
+    return {
+        "api_version": api_version,
+        "kind": kind,
+        "namespace": "fs2-models",
+        "name": name,
+        "uid": uid,
+        "resource_version": "17",
+        "object_sha256": "c" * 64,
+    }
+
+
+def bind(candidate: dict[str, str], live: dict[str, object]) -> dict[str, str]:
+    result = dict(candidate)
+    result["resource_version"] = str(live["metadata"]["resourceVersion"])  # type: ignore[index]
+    result["object_sha256"] = hashlib.sha256(cleanup.canonical(cleanup.live_projection(live))).hexdigest()
+    return result
 
 
 def test_cleanup_scope_is_exact_and_bounded() -> None:
@@ -43,13 +66,18 @@ def test_uid_and_controller_labels_are_mandatory() -> None:
             "name": "model-a",
             "namespace": "fs2-models",
             "uid": "uid-1",
+            "resourceVersion": "17",
             "labels": {"app.kubernetes.io/managed-by": "fs2-model-controller"},
-        }
+        },
+        "apiVersion": "v1",
+        "kind": "ServiceAccount",
     }
+    candidate = bind(candidate, live)
     cleanup.validate_live(candidate, live)
-    with pytest.raises(cleanup.CleanupError, match="UID differs"):
+    with pytest.raises(cleanup.CleanupError, match="UID/resourceVersion/spec differs"):
         cleanup.validate_live({**candidate, "uid": "other"}, live)
     live["metadata"]["labels"] = {}
+    candidate = bind(candidate, live)
     with pytest.raises(cleanup.CleanupError, match="not a legacy"):
         cleanup.validate_live(candidate, live)
 
@@ -61,9 +89,13 @@ def test_finite_profile_network_policies_are_never_cleanup_candidates() -> None:
             "name": candidate["name"],
             "namespace": "fs2-models",
             "uid": candidate["uid"],
+            "resourceVersion": candidate["resource_version"],
             "labels": {"app.kubernetes.io/part-of": "fs2-serve"},
-        }
+        },
+        "apiVersion": "networking.k8s.io/v1",
+        "kind": "NetworkPolicy",
     }
+    candidate = bind(candidate, live)
     with pytest.raises(cleanup.CleanupError, match="may never be cleaned"):
         cleanup.validate_live(candidate, live)
 
@@ -71,3 +103,18 @@ def test_finite_profile_network_policies_are_never_cleanup_candidates() -> None:
 def test_delete_path_is_namespaced_and_kind_bounded() -> None:
     assert cleanup.path_for("ServiceAccount", "model/a") == "/api/v1/namespaces/fs2-models/serviceaccounts/model%2Fa"
     assert cleanup.path_for("NetworkPolicy", "old") == "/apis/networking.k8s.io/v1/namespaces/fs2-models/networkpolicies/old"
+
+
+def test_cleanup_contract_binds_resource_version_spec_and_result() -> None:
+    source = (ROOT / "scripts" / "cleanup_sai07_legacy_resources.py").read_text()
+    assert '"resourceVersion": resource_version' in source
+    assert 'hashlib.sha256(canonical(live_projection(live))).hexdigest()' in source
+    assert '"result_sha256"' in source
+    for controller in (
+        "StatefulSet",
+        "ReplicaSet",
+        "ReplicationController",
+        "CronJob",
+        "JobSet",
+    ):
+        assert controller in source
