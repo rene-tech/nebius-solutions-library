@@ -22,8 +22,11 @@ class RemoteFailure(Exception):
         super().__init__(message)
 
 
-async def json_call(client, method, url, token, *, body=None):
-    response = await client.request(method, url, headers={"Authorization": f"Bearer {token}"}, json=body)
+async def json_call(client, method, url, token, *, body=None, host=None):
+    headers = {"Authorization": f"Bearer {token}"}
+    if host:
+        headers["Host"] = host
+    response = await client.request(method, url, headers=headers, json=body)
     if not response.is_success:
         # Provider errors are recorded by gateway; don't accidentally retain
         # stack traces, headers or credentials from an intermediate proxy.
@@ -136,6 +139,7 @@ class Worker:
                         "POST",
                         self.settings.platform_url.rstrip("/") + "/v1/mindguard/assess",
                         token,
+                        host=urlsplit(self.settings.public_origin).netloc,
                         body={
                             "model": self.settings.mindguard_model,
                             "messages": judge_interaction(state),
@@ -151,6 +155,7 @@ class Worker:
                         "enforcement": "observe",
                         "error": {
                             "code": getattr(exc, "code", "transport_error"),
+                            "http_status": getattr(exc, "status", None),
                             "message": "Observation failed; no safety classification is available",
                         },
                     }

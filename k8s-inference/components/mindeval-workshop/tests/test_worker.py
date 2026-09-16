@@ -77,3 +77,35 @@ async def test_incomplete_tts_never_looks_successful(store):
             await Worker(store, SETTINGS, client).speak_and_listen(
                 "key", "words", "patient", {"language": "en", "patient_voice": "Sofia"}
             )
+
+
+@respx.mock
+@pytest.mark.parametrize("observer_status", [200, 421])
+async def test_observer_uses_operator_public_authority_and_retains_failure_status(store, observer_status):
+    row = await create(store, max_turns=2)
+    claimed = await store.claim("worker", 90, 5)
+    claimed["state"]["registration"] = {"run_id": str(row["id"])}
+    claimed["state"]["transcript"].extend(
+        [{"role": role, "content": "A turn"} for role in ["clinician", "patient", "clinician", "patient"]]
+    )
+    respx.post("http://gateway/v1/mindeval/judgments").respond(200, json={"judgment": {"axis": 3}, "overall_score": 3})
+
+    def observe(request):
+        assert request.headers["host"] == "workshop.example.test"
+        assert request.headers["authorization"].startswith("Bearer ")
+        return httpx.Response(observer_status, json={"status": "completed", "evaluated_user_turns": 3})
+
+    respx.post("http://platform/v1/mindguard/assess").mock(side_effect=observe)
+    settings = SETTINGS.model_copy(
+        update={"public_origin": "https://workshop.example.test", "mindguard_model": "mindguard-4b"}
+    )
+    async with httpx.AsyncClient() as client:
+        await Worker(store, settings, client).step(claimed)
+    final = await store.get(row["id"], IDENTITY)
+    assert final["status"] == "completed"
+    classification = final["state"]["classification"]
+    if observer_status == 200:
+        assert classification["status"] == "completed"
+    else:
+        assert classification["status"] == "unavailable"
+        assert classification["error"]["http_status"] == 421
