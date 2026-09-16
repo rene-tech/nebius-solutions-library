@@ -260,8 +260,16 @@ resource "kubernetes_secret_v1" "bootstrap_access_versioned" {
       "fs2.nebius.ai/credential-purpose"    = "bootstrap-mcp-inference"
       "fs2.nebius.ai/credential-generation" = each.key
     })
+    annotations = {
+      "fs2.nebius.ai/credential-class"      = "pat-bootstrap"
+      "fs2.nebius.ai/credential-generation" = each.key
+      "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
+        token = var.bootstrap_access_tokens[each.key]
+      }))
+    }
   }
 
+  immutable        = true
   type             = "Opaque"
   data_wo          = { token = lookup(var.bootstrap_access_tokens, each.key, null) }
   data_wo_revision = tonumber(each.key)
@@ -319,8 +327,16 @@ resource "kubernetes_secret_v1" "scientific_access_versioned" {
       "fs2.nebius.ai/credential-purpose"    = "academic-scientific-access"
       "fs2.nebius.ai/credential-generation" = each.key
     })
+    annotations = {
+      "fs2.nebius.ai/credential-class"      = "pat-scientific"
+      "fs2.nebius.ai/credential-generation" = each.key
+      "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
+        token = var.scientific_access_tokens[each.key]
+      }))
+    }
   }
 
+  immutable        = true
   type             = "Opaque"
   data_wo          = { token = lookup(var.scientific_access_tokens, each.key, null) }
   data_wo_revision = tonumber(each.key)
@@ -378,8 +394,16 @@ resource "kubernetes_secret_v1" "website_access_versioned" {
       "fs2.nebius.ai/credential-purpose"    = "scientific-ai-website-catalog"
       "fs2.nebius.ai/credential-generation" = each.key
     })
+    annotations = {
+      "fs2.nebius.ai/credential-class"      = "pat-website"
+      "fs2.nebius.ai/credential-generation" = each.key
+      "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
+        token = var.website_access_tokens[each.key]
+      }))
+    }
   }
 
+  immutable        = true
   type             = "Opaque"
   data_wo          = { token = lookup(var.website_access_tokens, each.key, null) }
   data_wo_revision = tonumber(each.key)

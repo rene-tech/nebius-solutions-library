@@ -242,6 +242,7 @@ app.kubernetes.io/component: model-controller
 {{- define "fs2-serve.runtimeEnv" -}}
 {{ include "fs2-serve.databaseEnv" . }}
 {{ include "fs2-serve.cryptoEnv" . }}
+{{ include "fs2-serve.storageCryptoEnv" . }}
 {{ include "fs2-serve.payloadEnv" . }}
 {{- include "fs2-serve.scientificArtifactsEnv" . }}
 - name: FS2_CATALOG_DIR
@@ -489,6 +490,7 @@ app.kubernetes.io/component: model-controller
 
 {{- define "fs2-serve.runtimeVolumeMounts" -}}
 {{ include "fs2-serve.cryptoVolumeMounts" . }}
+{{ include "fs2-serve.storageCryptoVolumeMounts" . }}
 {{- include "fs2-serve.scientificArtifactsVolumeMounts" . }}
 {{ include "fs2-serve.databaseCaVolumeMount" . }}
 {{- if eq .Values.catalog.delivery "pvc" }}
@@ -592,6 +594,7 @@ app.kubernetes.io/component: model-controller
 
 {{- define "fs2-serve.runtimeVolumes" -}}
 {{ include "fs2-serve.cryptoVolumes" . }}
+{{ include "fs2-serve.storageCryptoVolumes" . }}
 {{- include "fs2-serve.scientificArtifactsVolumes" . }}
 {{ include "fs2-serve.databaseCaVolume" (dict "secret" .Values.secrets.database) }}
 {{- if eq .Values.catalog.delivery "pvc" }}

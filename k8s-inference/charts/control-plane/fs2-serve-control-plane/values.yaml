@@ -362,6 +362,12 @@ secretRollout:
   storageGeneration: 1
   storageNameGeneration: 1
   artifactStoreGeneration: 1
+  # Populated only by the separate consumer-rollout phase after every Secret
+  # exists and its live UID/resourceVersion/content commitment is captured.
+  bindings: {}
+  bindingSha256: ""
+  readinessReceiptSha256: ""
+  rolloutStep: ""
 
 config:
   # Required public HTTPS origins; empty defaults fail validation.

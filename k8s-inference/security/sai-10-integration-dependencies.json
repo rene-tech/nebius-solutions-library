@@ -1,0 +1,26 @@
+{
+  "schema": "fs2-serve.nebius.ai/sai-10-integration-dependencies/v1",
+  "dependencies": {
+    "SAI-05": {
+      "status": "accepted-source-ancestor",
+      "commit": "324d26f06dc7ef2105231fac7ffef4f9e29e958a",
+      "tree": "75f4072f099de3e0d602338f3f2cd1afa38400fb"
+    },
+    "SAI-06": {
+      "status": "blocked-pending-independent-acceptance",
+      "commit": null,
+      "tree": null
+    },
+    "SAI-08": {
+      "status": "blocked-pending-independent-acceptance",
+      "commit": null,
+      "tree": null
+    },
+    "SAI-09": {
+      "status": "blocked-pending-independent-acceptance",
+      "commit": null,
+      "tree": null
+    }
+  },
+  "integration_authorized": false
+}

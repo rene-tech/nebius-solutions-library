@@ -1823,6 +1823,76 @@ variable "storage_name_keyrings_json" {
   default     = {}
 }
 
+variable "credential_consumer_bindings" {
+  description = "Value-free phase-two bindings keyed by Terraform Secret address. Every consumer rollout pins the created Secret name, UID, resourceVersion, generation and committed content hash."
+  type = map(object({
+    namespace             = string
+    name                  = string
+    uid                   = string
+    resource_version      = string
+    content_sha256        = string
+    authority_evidence_id = string
+    authority_observed_at = string
+    credential_class      = string
+    generation            = string
+    immutable             = string
+  }))
+  default = {}
+  validation {
+    condition = alltrue([
+      for address, binding in var.credential_consumer_bindings :
+      can(regex("^kubernetes_secret_v1\\.", address)) &&
+      length(binding.namespace) > 0 &&
+      length(binding.name) > 0 &&
+      length(binding.uid) > 0 &&
+      length(binding.resource_version) > 0 &&
+      can(regex("^[0-9a-f]{64}$", binding.content_sha256)) &&
+      length(binding.authority_evidence_id) > 0 &&
+      can(formatdate("YYYY-MM-DD'T'hh:mm:ssZ", binding.authority_observed_at)) &&
+      length(binding.credential_class) > 0 &&
+      can(regex("^[1-9][0-9]*$", binding.generation)) &&
+      contains(["true", "false"], binding.immutable)
+    ])
+    error_message = "Credential consumer bindings must contain exact value-free Secret identities and lowercase content SHA-256 values."
+  }
+}
+
+variable "credential_consumer_binding_sha256" {
+  description = "Canonical SHA-256 sealed by the saved-plan gate over credential_consumer_bindings."
+  type        = string
+  default     = ""
+  validation {
+    condition     = var.credential_consumer_binding_sha256 == "" || can(regex("^[0-9a-f]{64}$", var.credential_consumer_binding_sha256))
+    error_message = "credential_consumer_binding_sha256 must be empty or lowercase SHA-256."
+  }
+}
+
+variable "credential_consumer_readiness_receipt_sha256" {
+  description = "Hash of the append-only, provider-reconciled class-specific readiness receipt authorizing phase-two rollout."
+  type        = string
+  default     = ""
+  validation {
+    condition     = var.credential_consumer_readiness_receipt_sha256 == "" || can(regex("^[0-9a-f]{64}$", var.credential_consumer_readiness_receipt_sha256))
+    error_message = "credential_consumer_readiness_receipt_sha256 must be empty or lowercase SHA-256."
+  }
+}
+
+variable "credential_consumer_readiness_receipt_path" {
+  description = "Owner-only append-only authority receipt read by the saved-plan guard. It is never mounted into a Pod."
+  type        = string
+  default     = ""
+}
+
+variable "credential_consumer_rollout_step" {
+  description = "Ordered consumer cutover step. dual-read requires predecessor-ready evidence; current-write requires independently observed dual-read-ready evidence."
+  type        = string
+  default     = ""
+  validation {
+    condition     = contains(["", "dual-read", "current-write"], var.credential_consumer_rollout_step)
+    error_message = "credential_consumer_rollout_step must be empty, dual-read, or current-write."
+  }
+}
+
 variable "run_acceptance_job" {
   description = "Create a one-shot authenticated HTTPS /v1/models and MCP tools/list probe after the platform is Ready."
   type        = bool

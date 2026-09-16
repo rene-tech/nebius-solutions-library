@@ -160,3 +160,75 @@ class KeyedHasher:
         """
 
         return tuple((key_id, self.digest_for(key_id, value, context=context)) for key_id in sorted(self._keys))
+
+
+@dataclass(frozen=True)
+class CustomerStorageCrypto:
+    """One reviewed crypto boundary for every customer-storage consumer.
+
+    Cipher and deterministic-name generations remain independent. All stored
+    access-key envelopes derive AAD exclusively through
+    ``PayloadCipher.customer_storage_aad``; callers cannot supply ad-hoc AAD.
+    """
+
+    cipher: PayloadCipher
+    name_hasher: KeyedHasher
+
+    @classmethod
+    def from_files(cls, cipher_path: Path, name_path: Path) -> CustomerStorageCrypto:
+        return cls(
+            cipher=PayloadCipher.from_file(cipher_path),
+            name_hasher=KeyedHasher.from_file(name_path),
+        )
+
+    def encrypt_secret(self, plaintext: bytes, *, tenant_id: str, principal_id: str) -> Ciphertext:
+        return self.cipher.encrypt(
+            plaintext,
+            aad=PayloadCipher.customer_storage_aad(tenant_id, principal_id),
+        )
+
+    def decrypt_secret(self, envelope: Ciphertext, *, tenant_id: str, principal_id: str) -> bytes:
+        return self.cipher.decrypt(
+            envelope,
+            aad=PayloadCipher.customer_storage_aad(tenant_id, principal_id),
+        )
+
+    def migrate_secret(self, envelope: Ciphertext, *, tenant_id: str, principal_id: str) -> Ciphertext:
+        return self.encrypt_secret(
+            self.decrypt_secret(envelope, tenant_id=tenant_id, principal_id=principal_id),
+            tenant_id=tenant_id,
+            principal_id=principal_id,
+        )
+
+    def bucket_name_digest(self, *, project_id: str, tenant_id: str, principal_id: str) -> tuple[str, str]:
+        if any(
+            not isinstance(value, str) or not value or "\0" in value for value in (project_id, tenant_id, principal_id)
+        ):
+            raise ValueError("customer storage name identities must be non-empty and NUL-free")
+        return self.name_hasher.digest(
+            f"{project_id}\0{tenant_id}\0{principal_id}".encode(),
+            context="fs2.user-storage-bucket/v1",
+        )
+
+    def assert_runtime_contract(self) -> None:
+        """Fail startup unless both active write generations are usable."""
+
+        canary = self.encrypt_secret(
+            b"customer-storage-keyring-readiness",
+            tenant_id="runtime-contract",
+            principal_id="runtime-contract",
+        )
+        if (
+            self.decrypt_secret(
+                canary,
+                tenant_id="runtime-contract",
+                principal_id="runtime-contract",
+            )
+            != b"customer-storage-keyring-readiness"
+        ):
+            raise ValueError("customer storage cipher keyring failed readiness")
+        self.bucket_name_digest(
+            project_id="runtime-contract",
+            tenant_id="runtime-contract",
+            principal_id="runtime-contract",
+        )

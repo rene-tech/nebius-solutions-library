@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Issue, verify, receipt, and revoke a least-privilege operator handoff.
+"""Issue and verify an expiring least-privilege operator handoff.
 
-The private key and receipt stay in one owner-only directory. Command output is
-limited to non-secret status and resource identifiers; no Secret data is read.
+The private key and append-only receipts stay in one owner-only directory.
+Command output is limited to non-secret status and resource identifiers; no
+Secret data is read. Predecessor revocation is intentionally unavailable while
+the program-wide irreversible-action prohibition remains in force.
 """
 
 from __future__ import annotations
@@ -15,12 +17,19 @@ import json
 import os
 import stat
 import subprocess
-import tempfile
 from collections.abc import Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+
+from scripts.append_only_evidence import EvidenceError, append_event, latest_state
+
+
+FIXED_NEBIUS = "/usr/local/bin/nebius"
+FIXED_KUBECTL = "/snap/bin/kubectl"
+FIXED_OPENSSL = "/usr/bin/openssl"
+FIXED_ADMIN_PROFILE = "sandbox"
 
 
 class HandoffError(RuntimeError):
@@ -78,21 +87,23 @@ def private_directory(path: Path) -> Path:
 
 
 def private_json(path: Path, value: Any) -> None:
-    if path.exists() and path.is_symlink():
-        raise HandoffError("receipt path must not be a symlink")
-    temporary = path.with_name(f".{path.name}.tmp-{os.getpid()}")
-    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    """Append a full state snapshot to an immutable hash-chained stream."""
+
+    stream = f"operator-handoff:{path.name}"
+    event = (
+        value.get("phase")
+        or value.get("status")
+        or ("receipt-state" if path.name == "receipt.json" else "state")
+    )
     try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            json.dump(value, stream, indent=2, sort_keys=True)
-            stream.write("\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, path)
-        path.chmod(0o600)
-    finally:
-        if temporary.exists():
-            temporary.unlink()
+        append_event(
+            path.with_name(f"{path.name}.events"),
+            stream=stream,
+            event=event,
+            state=value,
+        )
+    except EvidenceError as error:
+        raise HandoffError(str(error)) from error
 
 
 @contextmanager
@@ -134,14 +145,17 @@ def run(
 
 def load_receipt(directory: Path) -> tuple[Path, dict[str, Any]]:
     receipt_path = directory / "receipt.json"
-    if receipt_path.is_symlink() or not receipt_path.is_file():
-        raise HandoffError("owner receipt is absent or unsafe")
-    if stat.S_IMODE(receipt_path.stat().st_mode) != 0o600:
-        raise HandoffError("owner receipt must be mode 0600")
-    value = json.loads(receipt_path.read_text(encoding="utf-8"))
+    stream_path = receipt_path.with_name(f"{receipt_path.name}.events")
+    try:
+        value = latest_state(
+            stream_path, stream=f"operator-handoff:{receipt_path.name}"
+        )
+    except EvidenceError as error:
+        raise HandoffError("owner receipt is absent or unsafe") from error
     if value.get("schema") not in {
         "fs2-serve.nebius.ai/operator-handoff/v2",
         "fs2-serve.nebius.ai/operator-handoff/v3",
+        "fs2-serve.nebius.ai/operator-handoff/v4",
     }:
         raise HandoffError("owner receipt has the wrong schema")
     return receipt_path, value
@@ -693,8 +707,8 @@ def _issue(args: argparse.Namespace) -> dict[str, Any]:
         for path in (
             private_key,
             public_key,
-            directory / "receipt.json",
-            journal_path,
+            directory / "receipt.json.events",
+            directory / "issuance.journal.json.events",
         )
     ):
         raise HandoffError("handoff directory already contains key or receipt material")
@@ -761,41 +775,47 @@ def _issue(args: argparse.Namespace) -> dict[str, Any]:
             "expires_at": expiry.isoformat().replace("+00:00", "Z"),
         },
     }
-    with tempfile.NamedTemporaryFile(
-        "w", dir=directory, encoding="utf-8", delete=False
-    ) as stream:
-        json.dump(request, stream)
-        request_path = Path(stream.name)
-    request_path.chmod(0o600)
+    request_sha256 = hashlib.sha256(
+        json.dumps(request, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    request_path = directory / f"issuance-request-{request_sha256}.json"
+    descriptor = os.open(
+        request_path,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+        0o600,
+    )
     try:
-        try:
-            result = run(
-                [
-                    args.nebius,
-                    "iam",
-                    "auth-public-key",
-                    "create",
-                    "--profile",
-                    args.admin_profile,
-                    "--file",
-                    str(request_path),
-                    "--format",
-                    "json",
-                ],
-                capture=True,
-            )
-            created = json.loads(result.stdout)
-        except BaseException:
-            journal["phase"] = "create-uncertain"
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            json.dump(request, stream, sort_keys=True)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        result = run(
+            [
+                args.nebius,
+                "iam",
+                "auth-public-key",
+                "create",
+                "--profile",
+                args.admin_profile,
+                "--file",
+                str(request_path),
+                "--format",
+                "json",
+            ],
+            capture=True,
+        )
+        created = json.loads(result.stdout)
+    except BaseException:
+        journal["phase"] = "create-uncertain"
+        journal["request_sha256"] = request_sha256
+        private_json(journal_path, journal)
+        reconciled = reconcile_issued_key(args, journal)
+        if reconciled is not None:
+            journal["public_key_id"] = reconciled["public_key_id"]
+            journal["phase"] = "provider-reconciled"
             private_json(journal_path, journal)
-            reconciled = reconcile_issued_key(args, journal)
-            if reconciled is not None:
-                journal["public_key_id"] = reconciled["public_key_id"]
-                journal["phase"] = "provider-reconciled"
-                private_json(journal_path, journal)
-            raise
-    finally:
-        request_path.unlink(missing_ok=True)
+        raise
     key_id = created.get("metadata", {}).get("id") or created.get("id")
     if not isinstance(key_id, str) or not key_id:
         raise HandoffError("Nebius did not return the authentication key ID")
@@ -825,34 +845,16 @@ def _issue(args: argparse.Namespace) -> dict[str, Any]:
                 "issued authentication key differs from provider inventory"
             )
     except HandoffError as error:
-        try:
-            run(
-                [
-                    args.nebius,
-                    "iam",
-                    "auth-public-key",
-                    "delete",
-                    "--profile",
-                    args.admin_profile,
-                    "--id",
-                    key_id,
-                ]
-            )
-            if key_id in read_auth_key_ids(args, args.project_id):
-                raise HandoffError(
-                    "unverified authentication key remains present after cleanup"
-                )
-            private_key.unlink(missing_ok=True)
-            public_key.unlink(missing_ok=True)
-        except HandoffError as cleanup_error:
-            raise HandoffError(
-                "issued authentication key did not prove its expiry and cleanup failed"
-            ) from cleanup_error
+        journal["phase"] = "verification-failed-resource-preserved"
+        journal["public_key_id"] = key_id
+        journal["verification_error"] = str(error)
+        private_json(journal_path, journal)
         raise HandoffError(
-            "issued authentication key did not prove provider-enforced expiry; it was revoked"
+            "issued authentication key failed verification; the append-only journal "
+            "preserves its exact identity and no cleanup or revocation was attempted"
         ) from error
     receipt = {
-        "schema": "fs2-serve.nebius.ai/operator-handoff/v3",
+        "schema": "fs2-serve.nebius.ai/operator-handoff/v4",
         "service_account_id": args.service_account_id,
         "project_id": args.project_id,
         "cluster_id": args.cluster_id,
@@ -870,8 +872,10 @@ def _issue(args: argparse.Namespace) -> dict[str, Any]:
         "predecessor": predecessor,
         "delivery": None,
         "verification": None,
-        "revocation_attempt": None,
-        "revoked_old_key": None,
+        "predecessor_retention": {
+            "public_key_id": predecessor["public_key_id"],
+            "status": "retained-no-irreversible-action",
+        },
     }
     private_json(directory / "receipt.json", receipt)
     journal["phase"] = "receipt-committed"
@@ -893,11 +897,13 @@ def reconcile_issue(args: argparse.Namespace) -> dict[str, Any]:
     directory = private_directory(args.directory)
     journal_path = directory / "issuance.journal.json"
     with handoff_lock(directory):
-        if journal_path.is_symlink() or not journal_path.is_file():
-            raise HandoffError("issuance journal is absent or unsafe")
-        if stat.S_IMODE(journal_path.stat().st_mode) != 0o600:
-            raise HandoffError("issuance journal must be mode 0600")
-        journal = json.loads(journal_path.read_text(encoding="utf-8"))
+        try:
+            journal = latest_state(
+                journal_path.with_name(f"{journal_path.name}.events"),
+                stream=f"operator-handoff:{journal_path.name}",
+            )
+        except EvidenceError as error:
+            raise HandoffError("issuance journal is absent or unsafe") from error
         if journal.get("schema") != "fs2-serve.nebius.ai/operator-handoff-issuance/v1":
             raise HandoffError("issuance journal has the wrong schema")
         reconciled = reconcile_issued_key(args, journal)
@@ -922,7 +928,7 @@ def prove_receipt_lineage(args: argparse.Namespace, receipt: dict[str, Any]) -> 
     lineage = receipt.get("lineage")
     if receipt.get(
         "schema"
-    ) != "fs2-serve.nebius.ai/operator-handoff/v3" or not isinstance(lineage, dict):
+    ) != "fs2-serve.nebius.ai/operator-handoff/v4" or not isinstance(lineage, dict):
         raise HandoffError("provider-derived handoff lineage is required")
     predecessor = lineage.get("predecessor")
     successor = lineage.get("successor")
@@ -988,6 +994,15 @@ def verify(args: argparse.Namespace) -> dict[str, Any]:
     approved = host_cidrs(args.approved_egress)
     private_key = directory / "private-key.pem"
     config, kubeconfig = directory / "nebius-config.yaml", directory / "kubeconfig"
+    if (
+        config.exists()
+        or config.is_symlink()
+        or kubeconfig.exists()
+        or kubeconfig.is_symlink()
+    ):
+        raise HandoffError(
+            "verification refuses to overwrite an existing provider config or kubeconfig"
+        )
     profile = "fs2-handoff-viewer"
     run(
         [
@@ -1122,120 +1137,9 @@ def verify(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def revoke_old(args: argparse.Namespace) -> dict[str, Any]:
-    directory = private_directory(args.directory)
-    receipt_path, receipt = load_receipt(directory)
-    if receipt["verification"] is None or receipt["delivery"] is None:
-        raise HandoffError(
-            "verified delivery is required before revoking the old handoff"
-        )
-    prove_receipt_lineage(args, receipt)
-    predecessor = receipt.get("predecessor")
-    if not isinstance(predecessor, dict):
-        raise HandoffError("receipt has no bound predecessor identity")
-    old_public_key_id = predecessor.get("public_key_id")
-    old_service_account_id = predecessor.get("service_account_id")
-    old_project_id = predecessor.get("project_id")
-    if not all(
-        isinstance(value, str) and value
-        for value in (old_public_key_id, old_service_account_id, old_project_id)
-    ):
-        raise HandoffError("receipt predecessor identity is incomplete")
-    if args.confirm_predecessor_public_key_id != old_public_key_id:
-        raise HandoffError("revocation confirmation differs from the bound predecessor")
-    if old_public_key_id == receipt["public_key_id"]:
-        raise HandoffError("refusing to revoke the newly verified handoff key")
-    revoked = receipt.get("revoked_old_key")
-    if isinstance(revoked, dict) and revoked.get("public_key_id") == old_public_key_id:
-        raise HandoffError("bound predecessor was already revoked")
-
-    attempt = receipt.get("revocation_attempt")
-    expected_predecessor = {
-        "public_key_id": old_public_key_id,
-        "service_account_id": old_service_account_id,
-        "project_id": old_project_id,
-    }
-    if attempt is None:
-        observed = read_auth_key(args, old_public_key_id)
-        require_binding(observed, **expected_predecessor)
-        receipt["revocation_attempt"] = {
-            **expected_predecessor,
-            "initiated_at": utc_now().isoformat().replace("+00:00", "Z"),
-        }
-        private_json(receipt_path, receipt)
-        predecessor_present = True
-    elif isinstance(attempt, dict) and all(
-        attempt.get(key) == value for key, value in expected_predecessor.items()
-    ):
-        predecessor_present = old_public_key_id in read_auth_key_ids(
-            args, old_project_id
-        )
-        if predecessor_present:
-            observed = read_auth_key(args, old_public_key_id)
-            require_binding(observed, **expected_predecessor)
-    else:
-        raise HandoffError("revocation attempt does not match the bound predecessor")
-
-    if predecessor_present:
-        run(
-            [
-                args.nebius,
-                "iam",
-                "auth-public-key",
-                "delete",
-                "--profile",
-                args.admin_profile,
-                "--id",
-                old_public_key_id,
-            ]
-        )
-    absence_get = run(
-        [
-            args.nebius,
-            "iam",
-            "auth-public-key",
-            "get",
-            "--profile",
-            args.admin_profile,
-            "--id",
-            old_public_key_id,
-            "--format",
-            "json",
-        ],
-        capture=True,
-        check=False,
-    )
-    require_authoritative_not_found(absence_get)
-    remaining_ids = read_auth_key_ids(args, old_project_id)
-    if old_public_key_id in remaining_ids:
-        raise HandoffError("revoked predecessor remains present in provider inventory")
-    if (
-        old_project_id == receipt["project_id"]
-        and receipt["public_key_id"] not in remaining_ids
-    ):
-        raise HandoffError(
-            "provider inventory does not contain the verified successor key"
-        )
-    receipt["revoked_old_key"] = {
-        "public_key_id": old_public_key_id,
-        "service_account_id": old_service_account_id,
-        "project_id": old_project_id,
-        "revoked_at": utc_now().isoformat().replace("+00:00", "Z"),
-        "post_delete_absence_verified": True,
-        "authoritative_get_absent": True,
-    }
-    receipt["revocation_attempt"] = None
-    private_json(receipt_path, receipt)
-    return {"status": "old-key-revoked", "public_key_id": old_public_key_id}
-
-
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--directory", type=Path, required=True)
-    parser.add_argument("--nebius", default="nebius")
-    parser.add_argument("--kubectl", default="kubectl")
-    parser.add_argument("--openssl", default="openssl")
-    parser.add_argument("--admin-profile", default="sandbox")
     subparsers = parser.add_subparsers(dest="command", required=True)
     issue_parser = subparsers.add_parser("issue")
     issue_parser.add_argument("--service-account-id", required=True)
@@ -1257,20 +1161,21 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     acknowledge_parser.add_argument("--recipient", required=True)
     verify_parser = subparsers.add_parser("verify")
     verify_parser.add_argument("--approved-egress", action="append", required=True)
-    revoke_parser = subparsers.add_parser("revoke-old")
-    revoke_parser.add_argument("--confirm-predecessor-public-key-id", required=True)
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     os.umask(0o077)
     args = parse_args(argv)
+    args.nebius = FIXED_NEBIUS
+    args.kubectl = FIXED_KUBECTL
+    args.openssl = FIXED_OPENSSL
+    args.admin_profile = FIXED_ADMIN_PROFILE
     handlers = {
         "issue": issue,
         "reconcile-issuance": reconcile_issue,
         "acknowledge-delivery": acknowledge,
         "verify": verify,
-        "revoke-old": revoke_old,
     }
     if args.command in {"issue", "reconcile-issuance"}:
         result = handlers[args.command](args)

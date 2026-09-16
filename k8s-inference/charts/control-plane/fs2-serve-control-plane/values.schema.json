@@ -1360,7 +1360,11 @@
         "attestorGeneration",
         "storageGeneration",
         "storageNameGeneration",
-        "artifactStoreGeneration"
+        "artifactStoreGeneration",
+        "bindings",
+        "bindingSha256",
+        "readinessReceiptSha256",
+        "rolloutStep"
       ],
       "properties": {
         "databaseGeneration": { "type": "integer", "minimum": 1 },
@@ -1372,7 +1376,30 @@
         "attestorGeneration": { "type": "integer", "minimum": 1 },
         "storageGeneration": { "type": "integer", "minimum": 1 },
         "storageNameGeneration": { "type": "integer", "minimum": 1 },
-        "artifactStoreGeneration": { "type": "integer", "minimum": 1 }
+        "artifactStoreGeneration": { "type": "integer", "minimum": 1 },
+        "bindings": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["namespace", "name", "uid", "resource_version", "content_sha256", "authority_evidence_id", "authority_observed_at", "credential_class", "generation", "immutable"],
+            "properties": {
+              "namespace": {"type": "string", "minLength": 1},
+              "name": {"type": "string", "minLength": 1},
+              "uid": {"type": "string", "minLength": 1},
+              "resource_version": {"type": "string", "minLength": 1},
+              "content_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+              "authority_evidence_id": {"type": "string", "minLength": 1},
+              "authority_observed_at": {"type": "string", "format": "date-time"},
+              "credential_class": {"type": "string", "minLength": 1},
+              "generation": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+              "immutable": {"enum": ["true", "false"]}
+            },
+            "additionalProperties": false
+          }
+        },
+        "bindingSha256": {"type": "string", "pattern": "^$|^[0-9a-f]{64}$"},
+        "readinessReceiptSha256": {"type": "string", "pattern": "^$|^[0-9a-f]{64}$"},
+        "rolloutStep": {"type": "string", "enum": ["", "dual-read", "current-write"]}
       },
       "additionalProperties": false
     },

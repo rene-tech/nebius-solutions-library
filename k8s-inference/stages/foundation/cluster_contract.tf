@@ -153,8 +153,17 @@ resource "kubernetes_secret_v1" "grafana_admin_versioned" {
     name      = "${var.grafana_admin_secret_ref.name}-v${each.key}"
     namespace = kubernetes_namespace_v1.platform["fs2-observability"].metadata[0].name
     labels    = merge(local.common_labels, { "fs2.nebius.ai/credential-generation" = each.key })
+    annotations = {
+      "fs2.nebius.ai/credential-class"      = "grafana-admin"
+      "fs2.nebius.ai/credential-generation" = each.key
+      "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
+        (var.grafana_admin_secret_ref.user_key)     = var.grafana_credentials[each.key].username
+        (var.grafana_admin_secret_ref.password_key) = var.grafana_credentials[each.key].password
+      }))
+    }
   }
 
+  immutable = true
   data_wo = {
     (var.grafana_admin_secret_ref.user_key)     = lookup(var.grafana_credentials, each.key, null).username
     (var.grafana_admin_secret_ref.password_key) = lookup(var.grafana_credentials, each.key, null).password

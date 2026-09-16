@@ -15,6 +15,61 @@ locals {
     "fs2_serve_restore_verifier",
     "fs2_serve_reporting",
   ]
+
+  # One source of truth feeds both the write-only Secret payload and its
+  # authority-verifiable commitment.  The commitment is over the exact
+  # decoded Kubernetes data map, not an approximate subset of inputs.
+  grafana_datasource_versioned_data = {
+    for generation in var.credential_generation_history.database : tostring(generation) => {
+      "datasource.yaml" = yamlencode({
+        apiVersion = 1
+        prune      = false
+        datasources = [
+          {
+            name      = "fs2-serve-reporting"
+            uid       = "fs2-serve-reporting"
+            type      = "postgres"
+            access    = "proxy"
+            orgId     = 1
+            url       = "fs2-control-db-rw.fs2-data.svc:5432"
+            user      = "${local.database_accounts["reporting"].username}_v${generation}"
+            isDefault = false
+            editable  = false
+            version   = generation
+            jsonData = {
+              database               = "fs2serve"
+              sslmode                = "verify-full"
+              tlsConfigurationMethod = "file-content"
+              tlsAuthWithCACert      = true
+              tlsSkipVerify          = false
+              maxOpenConns           = 10
+              maxIdleConns           = 2
+              maxIdleConnsAuto       = false
+              connMaxLifetime        = 300
+              postgresVersion        = 1800
+              timescaledb            = false
+            }
+            secureJsonData = {
+              password  = var.database_passwords[tostring(generation)]["reporting"]
+              tlsCACert = data.kubernetes_secret_v1.database_ca.data["ca.crt"]
+            }
+          },
+          {
+            name      = local.grafana_loki_datasource_uid
+            uid       = local.grafana_loki_datasource_uid
+            type      = "loki"
+            access    = "proxy"
+            orgId     = 1
+            url       = local.grafana_loki_datasource_url
+            isDefault = false
+            editable  = false
+            version   = generation
+            jsonData  = { maxLines = 1000 }
+          },
+        ]
+      })
+    } if generation > 1
+  }
 }
 
 resource "kubernetes_manifest" "control_database" {
@@ -178,9 +233,22 @@ resource "kubernetes_secret_v1" "database_consumer_versioned" {
       "fs2.nebius.ai/credential-purpose"    = each.value.consumer
       "fs2.nebius.ai/credential-generation" = tostring(each.value.generation)
     })
+    annotations = {
+      "fs2.nebius.ai/credential-class"      = "database-logins"
+      "fs2.nebius.ai/credential-generation" = tostring(each.value.generation)
+      "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
+        url = format(
+          "postgresql://%s:%s@fs2-control-db-rw.fs2-data.svc.cluster.local:5432/fs2serve?sslmode=verify-full&sslrootcert=/tls/ca.crt",
+          "${local.database_accounts[each.value.definition.account].username}_v${each.value.generation}",
+          urlencode(var.database_passwords[tostring(each.value.generation)][each.value.definition.account]),
+        )
+        "ca.crt" = data.kubernetes_secret_v1.database_ca.data["ca.crt"]
+      }))
+    }
   }
 
-  type = "Opaque"
+  immutable = true
+  type      = "Opaque"
   data_wo = {
     url = format(
       "postgresql://%s:%s@fs2-control-db-rw.fs2-data.svc.cluster.local:5432/fs2serve?sslmode=verify-full&sslrootcert=/tls/ca.crt",
@@ -274,7 +342,7 @@ resource "kubernetes_secret_v1" "grafana_datasource" {
 }
 
 resource "kubernetes_secret_v1" "grafana_datasource_versioned" {
-  for_each = toset([for generation in var.credential_generation_history.database : tostring(generation) if generation > 1])
+  for_each = local.grafana_datasource_versioned_data
 
   metadata {
     name      = "fs2-serve-postgres-grafana-datasource-v${each.key}"
@@ -285,58 +353,16 @@ resource "kubernetes_secret_v1" "grafana_datasource_versioned" {
       "fs2.nebius.ai/secret-delivery"       = "terraform-disposable-bootstrap"
       "fs2.nebius.ai/credential-generation" = each.key
     })
+    annotations = {
+      "fs2.nebius.ai/credential-class"      = "grafana-datasource"
+      "fs2.nebius.ai/credential-generation" = each.key
+      "fs2.nebius.ai/content-sha256"        = sha256(jsonencode(each.value))
+    }
   }
 
-  type = "Opaque"
-  data_wo = {
-    "datasource.yaml" = yamlencode({
-      apiVersion = 1
-      prune      = false
-      datasources = [
-        {
-          name      = "fs2-serve-reporting"
-          uid       = "fs2-serve-reporting"
-          type      = "postgres"
-          access    = "proxy"
-          orgId     = 1
-          url       = "fs2-control-db-rw.fs2-data.svc:5432"
-          user      = "${local.database_accounts["reporting"].username}_v${each.key}"
-          isDefault = false
-          editable  = false
-          version   = tonumber(each.key)
-          jsonData = {
-            database               = "fs2serve"
-            sslmode                = "verify-full"
-            tlsConfigurationMethod = "file-content"
-            tlsAuthWithCACert      = true
-            tlsSkipVerify          = false
-            maxOpenConns           = 10
-            maxIdleConns           = 2
-            maxIdleConnsAuto       = false
-            connMaxLifetime        = 300
-            postgresVersion        = 1800
-            timescaledb            = false
-          }
-          secureJsonData = {
-            password  = var.database_passwords[each.key]["reporting"]
-            tlsCACert = data.kubernetes_secret_v1.database_ca.data["ca.crt"]
-          }
-        },
-        {
-          name      = local.grafana_loki_datasource_uid
-          uid       = local.grafana_loki_datasource_uid
-          type      = "loki"
-          access    = "proxy"
-          orgId     = 1
-          url       = local.grafana_loki_datasource_url
-          isDefault = false
-          editable  = false
-          version   = tonumber(each.key)
-          jsonData  = { maxLines = 1000 }
-        },
-      ]
-    })
-  }
+  immutable        = true
+  type             = "Opaque"
+  data_wo          = each.value
   data_wo_revision = tonumber(each.key)
 
   lifecycle {

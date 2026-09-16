@@ -206,9 +206,18 @@ resource "kubernetes_secret_v1" "database_account_versioned" {
       "fs2.nebius.ai/credential-purpose"    = each.value.account
       "fs2.nebius.ai/credential-generation" = tostring(each.value.generation)
     })
+    annotations = {
+      "fs2.nebius.ai/credential-class"      = "database-logins"
+      "fs2.nebius.ai/credential-generation" = tostring(each.value.generation)
+      "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
+        username = each.value.username
+        password = var.database_passwords[tostring(each.value.generation)][each.value.account]
+      }))
+    }
   }
 
-  type = "kubernetes.io/basic-auth"
+  immutable = true
+  type      = "kubernetes.io/basic-auth"
   data_wo = {
     username = each.value.username
     password = var.database_passwords[tostring(each.value.generation)][each.value.account]
@@ -346,7 +355,15 @@ resource "kubernetes_secret_v1" "admin_versioned" {
     name      = "fs2-serve-admin-v${each.key}"
     namespace = "fs2-system"
     labels    = merge(local.common_labels, { "fs2.nebius.ai/credential-generation" = each.key })
+    annotations = {
+      "fs2.nebius.ai/credential-class"      = "admin-token"
+      "fs2.nebius.ai/credential-generation" = each.key
+      "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
+        token = var.admin_tokens[each.key]
+      }))
+    }
   }
+  immutable        = true
   type             = "Opaque"
   data_wo          = { token = lookup(var.admin_tokens, each.key, null) }
   data_wo_revision = tonumber(each.key)
@@ -372,7 +389,15 @@ resource "kubernetes_secret_v1" "payload_keyring_versioned" {
     name      = "fs2-serve-payload-keyring-v${each.key}"
     namespace = "fs2-system"
     labels    = merge(local.common_labels, { "fs2.nebius.ai/key-generation" = each.key })
+    annotations = {
+      "fs2.nebius.ai/credential-class"      = "payload-keyring"
+      "fs2.nebius.ai/credential-generation" = each.key
+      "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
+        "keyring.json" = var.payload_keyrings_json[each.key]
+      }))
+    }
   }
+  immutable        = true
   type             = "Opaque"
   data_wo          = { "keyring.json" = lookup(var.payload_keyrings_json, each.key, null) }
   data_wo_revision = tonumber(each.key)
@@ -402,7 +427,15 @@ resource "kubernetes_secret_v1" "ledger_keyring_versioned" {
     name      = "fs2-serve-ledger-hmac-keyring-v${each.key}"
     namespace = "fs2-system"
     labels    = merge(local.common_labels, { "fs2.nebius.ai/key-generation" = each.key })
+    annotations = {
+      "fs2.nebius.ai/credential-class"      = "ledger-keyring"
+      "fs2.nebius.ai/credential-generation" = each.key
+      "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
+        "keyring.json" = var.ledger_keyrings_json[each.key]
+      }))
+    }
   }
+  immutable        = true
   type             = "Opaque"
   data_wo          = { "keyring.json" = lookup(var.ledger_keyrings_json, each.key, null) }
   data_wo_revision = tonumber(each.key)
@@ -432,7 +465,15 @@ resource "kubernetes_secret_v1" "token_pepper_versioned" {
     name      = "fs2-serve-token-pepper-v${each.key}"
     namespace = "fs2-system"
     labels    = merge(local.common_labels, { "fs2.nebius.ai/key-generation" = each.key })
+    annotations = {
+      "fs2.nebius.ai/credential-class"      = "pat-pepper-keyring"
+      "fs2.nebius.ai/credential-generation" = each.key
+      "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
+        "keyring.json" = var.token_pepper_keyrings_json[each.key]
+      }))
+    }
   }
+  immutable        = true
   type             = "Opaque"
   data_wo          = { "keyring.json" = lookup(var.token_pepper_keyrings_json, each.key, null) }
   data_wo_revision = tonumber(each.key)
@@ -462,7 +503,15 @@ resource "kubernetes_secret_v1" "route_attestors_versioned" {
     name      = "fs2-serve-route-attestors-v${each.key}"
     namespace = "fs2-system"
     labels    = merge(local.common_labels, { "fs2.nebius.ai/key-generation" = each.key })
+    annotations = {
+      "fs2.nebius.ai/credential-class"      = "route-attestors"
+      "fs2.nebius.ai/credential-generation" = each.key
+      "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
+        "attestors.json" = var.route_attestors_sets_json[each.key]
+      }))
+    }
   }
+  immutable        = true
   type             = "Opaque"
   data_wo          = { "attestors.json" = lookup(var.route_attestors_sets_json, each.key, null) }
   data_wo_revision = tonumber(each.key)
@@ -492,7 +541,15 @@ resource "kubernetes_secret_v1" "storage_keyring_versioned" {
     name      = "fs2-serve-storage-keyring-v${each.key}"
     namespace = "fs2-system"
     labels    = merge(local.common_labels, { "fs2.nebius.ai/key-generation" = each.key })
+    annotations = {
+      "fs2.nebius.ai/credential-class"      = "customer-storage-cipher-keyring"
+      "fs2.nebius.ai/credential-generation" = each.key
+      "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
+        "keyring.json" = var.storage_keyrings_json[each.key]
+      }))
+    }
   }
+  immutable        = true
   type             = "Opaque"
   data_wo          = { "keyring.json" = lookup(var.storage_keyrings_json, each.key, null) }
   data_wo_revision = tonumber(each.key)
@@ -530,7 +587,15 @@ resource "kubernetes_secret_v1" "storage_name_keyring_versioned" {
     name      = "fs2-serve-storage-name-keyring-v${each.key}"
     namespace = "fs2-system"
     labels    = merge(local.common_labels, { "fs2.nebius.ai/key-generation" = each.key })
+    annotations = {
+      "fs2.nebius.ai/credential-class"      = "customer-storage-name-keyring"
+      "fs2.nebius.ai/credential-generation" = each.key
+      "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
+        "name-keyring.json" = var.storage_name_keyrings_json[each.key]
+      }))
+    }
   }
+  immutable        = true
   type             = "Opaque"
   data_wo          = { "name-keyring.json" = lookup(var.storage_name_keyrings_json, each.key, null) }
   data_wo_revision = tonumber(each.key)
@@ -592,7 +657,15 @@ resource "kubernetes_secret_v1" "ngc_api_key_versioned" {
     name      = "ngc-api-key-v${each.key}"
     namespace = "fs2-models"
     labels    = merge(local.common_labels, { "fs2.nebius.ai/credential-generation" = each.key })
+    annotations = {
+      "fs2.nebius.ai/credential-class"      = "registry-credentials"
+      "fs2.nebius.ai/credential-generation" = each.key
+      "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
+        NGC_API_KEY = var.registry_ngc_api_keys[each.key]
+      }))
+    }
   }
+  immutable        = true
   type             = "Opaque"
   data_wo          = { NGC_API_KEY = lookup(var.registry_ngc_api_keys, each.key, null) }
   data_wo_revision = tonumber(each.key)
@@ -638,7 +711,15 @@ resource "kubernetes_secret_v1" "nvcrio_cred_versioned" {
     name      = "nvcrio-cred-v${each.key}"
     namespace = "fs2-models"
     labels    = merge(local.common_labels, { "fs2.nebius.ai/credential-generation" = each.key })
+    annotations = {
+      "fs2.nebius.ai/credential-class"      = "registry-credentials"
+      "fs2.nebius.ai/credential-generation" = each.key
+      "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
+        ".dockerconfigjson" = var.registry_nvcrio_dockerconfigs[each.key]
+      }))
+    }
   }
+  immutable        = true
   type             = "kubernetes.io/dockerconfigjson"
   data_wo          = { ".dockerconfigjson" = lookup(var.registry_nvcrio_dockerconfigs, each.key, null) }
   data_wo_revision = tonumber(each.key)
@@ -684,7 +765,15 @@ resource "kubernetes_secret_v1" "dcgm_exporter_nvcrio_versioned" {
     name      = "fs2-dcgm-exporter-nvcrio-v${each.key}"
     namespace = "fs2-observability"
     labels    = merge(local.common_labels, { "fs2.nebius.ai/credential-generation" = each.key })
+    annotations = {
+      "fs2.nebius.ai/credential-class"      = "registry-credentials"
+      "fs2.nebius.ai/credential-generation" = each.key
+      "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
+        ".dockerconfigjson" = var.registry_nvcrio_dockerconfigs[each.key]
+      }))
+    }
   }
+  immutable        = true
   type             = "kubernetes.io/dockerconfigjson"
   data_wo          = { ".dockerconfigjson" = lookup(var.registry_nvcrio_dockerconfigs, each.key, null) }
   data_wo_revision = tonumber(each.key)

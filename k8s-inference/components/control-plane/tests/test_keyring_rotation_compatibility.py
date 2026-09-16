@@ -7,7 +7,7 @@ import pytest
 from cryptography.exceptions import InvalidTag
 
 from fs2_serve.auth import AuthenticationError, PepperRing, TokenService
-from fs2_serve.crypto import KeyedHasher, PayloadCipher
+from fs2_serve.crypto import CustomerStorageCrypto, KeyedHasher, PayloadCipher
 from fs2_serve.memory_store import MemoryStore
 from fs2_serve.models import Scope, TokenCreate
 from fs2_serve.request_debug import PostgresDebugStore
@@ -78,6 +78,45 @@ def test_storage_rotation_reads_preexisting_ciphertext_writes_current_and_rolls_
 
     rolled_forward = PayloadCipher(active_key_id="storage-v2", keys=keys)
     assert rolled_forward.decrypt(rollback_write, aad=aad) == b"rollback write"
+
+
+def test_runtime_customer_storage_boundary_uses_canonical_aad_for_old_new_and_rollback() -> None:
+    keys = {"storage-v1": b"o" * 32, "storage-v2": b"n" * 32}
+    names = {"storage-name-v1": b"a" * 32, "storage-name-v2": b"b" * 32}
+    before = CustomerStorageCrypto(
+        PayloadCipher(active_key_id="storage-v1", keys={"storage-v1": keys["storage-v1"]}),
+        KeyedHasher(
+            active_key_id="storage-name-v1",
+            keys={"storage-name-v1": names["storage-name-v1"]},
+        ),
+    )
+    existing = before.encrypt_secret(
+        b"preexisting customer credential",
+        tenant_id="tenant-a",
+        principal_id="principal-a",
+    )
+    rotating = CustomerStorageCrypto(
+        PayloadCipher(active_key_id="storage-v2", keys=keys),
+        KeyedHasher(active_key_id="storage-name-v2", keys=names),
+    )
+    assert rotating.decrypt_secret(
+        existing, tenant_id="tenant-a", principal_id="principal-a"
+    ) == b"preexisting customer credential"
+    migrated = rotating.migrate_secret(
+        existing, tenant_id="tenant-a", principal_id="principal-a"
+    )
+    assert migrated.key_id == "storage-v2"
+    rollback = CustomerStorageCrypto(
+        PayloadCipher(active_key_id="storage-v1", keys=keys),
+        KeyedHasher(active_key_id="storage-name-v1", keys=names),
+    )
+    assert rollback.decrypt_secret(
+        migrated, tenant_id="tenant-a", principal_id="principal-a"
+    ) == b"preexisting customer credential"
+    with pytest.raises(InvalidTag):
+        rotating.decrypt_secret(
+            existing, tenant_id="tenant-b", principal_id="principal-a"
+        )
 
 
 def test_customer_storage_aad_is_exact_stable_and_identity_bound() -> None:

@@ -18,6 +18,16 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REGISTRY = ROOT / "security/durable-credential-registry.json"
+DEFAULT_INTEGRATION_DEPENDENCIES = (
+    ROOT / "security/sai-10-integration-dependencies.json"
+)
+DEFAULT_CONSUMER_CONTRACTS = ROOT / "security/credential-consumer-contracts.json"
+PRODUCTION_AUTHORITY_COMMAND = (
+    "/usr/bin/python3",
+    str(ROOT / "scripts" / "credential_provider_adapter.py"),
+)
+PRODUCTION_TERRAFORM_COMMAND = "/snap/bin/terraform"
+CONTENT_COMMITMENT_SCHEME = "sha256-canonical-json-decoded-secret-data-v1"
 SENSITIVE_ARTIFACT_SUFFIXES = (".tfstate", ".tfplan", ".backup")
 SCOPED_CREDENTIAL_PREFIXES = (
     "access-bundle",
@@ -27,11 +37,30 @@ SCOPED_CREDENTIAL_PREFIXES = (
     "grafana",
     "scientific-access",
 )
-DISPOSITION_ACTIONS = frozenset({"encrypted-rewrap", "secure-retire"})
-AUTHORITATIVE_STATE_SCOPE_RELATIVE = Path(".local/state")
+DISPOSITION_ACTIONS = frozenset({"encrypted-rewrap"})
+AUTHORITATIVE_STATE_SCOPE_RELATIVE = Path(".")
 AUTHORITATIVE_STATE_ROOT_NAMES = (
-    "k8s-inference-dual-acceptance",
-    "nebius-k8s-inference",
+    ".local/state/k8s-inference-dual-acceptance",
+    ".local/state/nebius-k8s-inference",
+    "secure-handoff",
+)
+CREDENTIAL_RESOURCE_TYPES = frozenset(
+    {
+        "random_id",
+        "random_password",
+        "kubernetes_secret_v1",
+        "nebius_iam_v2_access_key",
+    }
+)
+REGISTRY_BASE_ADDRESS_PROBES = (
+    "[0]",
+    '["2"]',
+    '["payload"]',
+    '["ledger"]',
+    '["pepper"]',
+    '["attestor"]',
+    '["storage"]',
+    '["storage_name"]',
 )
 
 
@@ -44,6 +73,43 @@ def canonical_sha256(value: Any) -> str:
         value, sort_keys=True, separators=(",", ":"), ensure_ascii=True
     ).encode()
     return hashlib.sha256(encoded).hexdigest()
+
+
+def load_consumer_contracts(
+    path: Path = DEFAULT_CONSUMER_CONTRACTS,
+) -> dict[str, dict[str, Any]]:
+    if path.is_symlink() or not path.is_file():
+        raise GuardError("credential consumer contracts are absent or unsafe")
+    document = json.loads(path.read_text(encoding="utf-8"))
+    contracts = document.get("contracts") if isinstance(document, dict) else None
+    if (
+        document.get("schema") != "fs2-serve.nebius.ai/credential-consumer-contracts/v1"
+        or not isinstance(contracts, dict)
+        or len(contracts) != 21
+    ):
+        raise GuardError("credential consumer contract inventory is incomplete")
+    for credential_class, contract in contracts.items():
+        if (
+            not isinstance(credential_class, str)
+            or not credential_class
+            or not isinstance(contract, dict)
+            or set(contract) != {"adapter", "authority", "consumers", "readiness"}
+            or not all(
+                isinstance(contract[field], str) and contract[field]
+                for field in ("adapter", "authority", "readiness")
+            )
+            or not isinstance(contract["consumers"], list)
+            or not contract["consumers"]
+            or not all(
+                isinstance(consumer, str) and consumer
+                for consumer in contract["consumers"]
+            )
+            or len(contract["consumers"]) != len(set(contract["consumers"]))
+        ):
+            raise GuardError(
+                f"credential consumer contract is malformed: {credential_class}"
+            )
+    return contracts
 
 
 def utc_now() -> datetime:
@@ -319,6 +385,10 @@ def write_saved_plan_gate_receipt(
     """Seal the exact saved plan and live credential identities for apply."""
 
     registry = registry or load_registry()
+    if live_secret_document is not None:
+        raise GuardError(
+            "caller-supplied live Secret inventories are forbidden; use the fixed authority"
+        )
     if not 60 <= ttl_seconds <= 300:
         raise GuardError("saved-plan apply gate TTL must be between 60 and 300 seconds")
     planning_receipt = load_private_document(
@@ -361,7 +431,9 @@ def write_saved_plan_gate_receipt(
     )
     bindings = live_secret_bindings(
         prior_state,
-        live_secret_document,
+        live_secret_inventory_for_state(
+            prior_state, registry=registry, terraform_root=terraform_root
+        ),
         registry=registry,
         terraform_root=terraform_root,
     )
@@ -371,9 +443,13 @@ def write_saved_plan_gate_receipt(
         raise GuardError(
             "live Secret identity/content differs from its custody receipt"
         )
+    commitments = planned_secret_commitments(
+        plan_document, registry=registry, terraform_root=terraform_root
+    )
+    require_staged_secret_plan(plan_document, commitments=commitments)
     now = utc_now()
     receipt = {
-        "schema": "fs2-serve.nebius.ai/terraform-saved-plan-apply-gate/v3",
+        "schema": "fs2-serve.nebius.ai/terraform-saved-plan-apply-gate/v4",
         "terraform_root": terraform_root,
         "source_commit": source_commit,
         "registry_sha256": registry_sha256(registry),
@@ -381,6 +457,7 @@ def write_saved_plan_gate_receipt(
         "state_identity": planning_receipt["state_identity"],
         "address_fingerprints": fingerprints,
         "live_secret_bindings": bindings,
+        "planned_secret_commitments": commitments,
         "planning_receipt_sha256": file_sha256(planning_receipt_path),
         "saved_plan": saved_plan_identity(saved_plan),
         "plan_json_sha256": canonical_sha256(plan_document),
@@ -411,7 +488,7 @@ def validate_saved_plan_gate(
     receipt = load_private_document(receipt_path, label="saved-plan apply receipt")
     if (
         receipt.get("schema")
-        != "fs2-serve.nebius.ai/terraform-saved-plan-apply-gate/v3"
+        != "fs2-serve.nebius.ai/terraform-saved-plan-apply-gate/v4"
     ):
         raise GuardError("saved-plan apply receipt has the wrong schema")
     expected = {
@@ -462,6 +539,12 @@ def validate_saved_plan_gate(
         raise GuardError(
             "live Secret identity/content changed after plan authorization"
         )
+    commitments = planned_secret_commitments(
+        plan_document, registry=registry, terraform_root=terraform_root
+    )
+    if commitments != receipt.get("planned_secret_commitments"):
+        raise GuardError("planned Secret commitments changed after plan authorization")
+    require_staged_secret_plan(plan_document, commitments=commitments)
     return {
         "status": "pass",
         "receipt_sha256": file_sha256(receipt_path),
@@ -487,15 +570,61 @@ def command_json(command: Sequence[str], *, label: str) -> dict[str, Any]:
     return document
 
 
+def authority_json(request: dict[str, Any]) -> dict[str, Any]:
+    """Use the fixed kernel-authenticated authority; never a caller-selected CLI."""
+
+    try:
+        result = subprocess.run(
+            list(PRODUCTION_AUTHORITY_COMMAND),
+            input=json.dumps(request, sort_keys=True),
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        response = json.loads(result.stdout)
+    except (OSError, subprocess.CalledProcessError, json.JSONDecodeError) as error:
+        raise GuardError(
+            "production credential authority failed without authoritative JSON"
+        ) from error
+    if not isinstance(response, dict):
+        raise GuardError("production credential authority returned malformed JSON")
+    return response
+
+
+def verify_authority_attestation(document: dict[str, Any]) -> dict[str, Any]:
+    """Have the root authority verify a stored payload's durable attestation."""
+
+    claim = document.get("authorityAttestation")
+    if not isinstance(claim, dict):
+        raise GuardError("authority payload lacks a durable attestation")
+    attested = {
+        key: value for key, value in document.items() if key != "authorityAttestation"
+    }
+    result = authority_json(
+        {
+            "schema": "fs2-serve.nebius.ai/credential-provider-operation/v1",
+            "operation": "verify-attestation",
+            "attested_payload": attested,
+            "authority_attestation": claim,
+        }
+    )
+    if (
+        result.get("valid") is not True
+        or result.get("payload_sha256") != canonical_sha256(attested)
+        or result.get("configuration_sha256") != claim.get("configuration_sha256")
+    ):
+        raise GuardError("root authority rejected the stored attestation")
+    return attested
+
+
 def live_secret_inventory_for_receipt(
-    receipt: dict[str, Any], *, kubectl: str
+    receipt: dict[str, Any],
 ) -> dict[str, Any] | None:
     bindings = receipt.get("live_secret_bindings")
     if not isinstance(bindings, dict):
         raise GuardError("saved-plan apply receipt has malformed live Secret bindings")
     if not bindings:
         return None
-    items: list[dict[str, Any]] = []
     identities: set[tuple[str, str]] = set()
     for binding in bindings.values():
         if not isinstance(binding, dict):
@@ -508,22 +637,94 @@ def live_secret_inventory_for_receipt(
         if identity in identities:
             continue
         identities.add(identity)
-        items.append(
-            command_json(
-                [
-                    kubectl,
-                    "get",
-                    "secret",
-                    identity[1],
-                    "--namespace",
-                    identity[0],
-                    "--output",
-                    "json",
-                ],
-                label="live Secret verification",
-            )
-        )
+    response = authority_json(
+        {
+            "schema": "fs2-serve.nebius.ai/credential-provider-operation/v1",
+            "operation": "secret-bindings",
+            "content_commitment_scheme": CONTENT_COMMITMENT_SCHEME,
+            "identities": [
+                {"namespace": namespace, "name": name}
+                for namespace, name in sorted(identities)
+            ],
+            "metadata_only": True,
+            "required_annotations": [
+                "fs2.nebius.ai/content-sha256",
+                "fs2.nebius.ai/credential-class",
+                "fs2.nebius.ai/credential-generation",
+            ],
+        }
+    )
+    items = response.get("items")
+    if (
+        response.get("content_commitment_scheme") != CONTENT_COMMITMENT_SCHEME
+        or not isinstance(items, list)
+        or len(items) != len(identities)
+    ):
+        raise GuardError("production authority omitted a live Secret binding")
+    if response.get("data_fields_returned") not in (0, False):
+        raise GuardError("production authority returned forbidden Secret data")
     return {"items": items}
+
+
+def live_secret_inventory_for_state(
+    state_document: dict[str, Any],
+    *,
+    registry: dict[str, Any],
+    terraform_root: str,
+) -> dict[str, Any] | None:
+    """Ask the fixed authority for every protected Secret in exact state.
+
+    The operator never chooses a provider executable and never receives Secret
+    values.  The authority hashes the canonical decoded data map internally.
+    """
+
+    identities: set[tuple[str, str]] = set()
+    for resource in state_resources(state_document):
+        address = resource.get("address")
+        if not (
+            isinstance(address, str)
+            and address.startswith("kubernetes_secret_v1.")
+            and is_protected_address(
+                address, registry=registry, terraform_root=terraform_root
+            )
+        ):
+            continue
+        values = resource.get("values")
+        metadata = values.get("metadata") if isinstance(values, dict) else None
+        metadata = metadata[0] if isinstance(metadata, list) and metadata else metadata
+        if not isinstance(metadata, dict):
+            raise GuardError(f"protected Secret state lacks metadata: {address}")
+        identity = (metadata.get("namespace"), metadata.get("name"))
+        if not all(isinstance(value, str) and value for value in identity):
+            raise GuardError(f"protected Secret state lacks identity: {address}")
+        identities.add((str(identity[0]), str(identity[1])))
+    if not identities:
+        return None
+    response = authority_json(
+        {
+            "schema": "fs2-serve.nebius.ai/credential-provider-operation/v1",
+            "operation": "secret-bindings",
+            "content_commitment_scheme": CONTENT_COMMITMENT_SCHEME,
+            "identities": [
+                {"namespace": namespace, "name": name}
+                for namespace, name in sorted(identities)
+            ],
+            "metadata_only": True,
+            "required_annotations": [
+                "fs2.nebius.ai/content-sha256",
+                "fs2.nebius.ai/credential-class",
+                "fs2.nebius.ai/credential-generation",
+            ],
+        }
+    )
+    if (
+        response.get("content_commitment_scheme") != CONTENT_COMMITMENT_SCHEME
+        or response.get("data_fields_returned") not in (0, False)
+        or not isinstance(response.get("items"), list)
+        or len(response["items"]) != len(identities)
+    ):
+        raise GuardError("production authority omitted an exact Secret binding")
+    return {"items": response["items"]}
 
 
 def validate_saved_plan_gate_from_environment(
@@ -537,7 +738,7 @@ def validate_saved_plan_gate_from_environment(
 
     receipt_value = os.environ.get("FS2_TERRAFORM_APPLY_GATE_RECEIPT", "")
     plan_value = os.environ.get("FS2_TERRAFORM_SAVED_PLAN", "")
-    terraform = os.environ.get("FS2_TERRAFORM_EXECUTABLE", "terraform")
+    terraform = PRODUCTION_TERRAFORM_COMMAND
     if not receipt_value or not plan_value:
         raise GuardError(
             "apply requires the exact saved-plan receipt and plan in the execution environment"
@@ -559,9 +760,7 @@ def validate_saved_plan_gate_from_environment(
         [terraform, f"-chdir={terraform_configuration}", "state", "pull"],
         label="authoritative Terraform state inspection",
     )
-    live_document = live_secret_inventory_for_receipt(
-        receipt, kubectl=os.environ.get("FS2_KUBECTL_EXECUTABLE", "kubectl")
-    )
+    live_document = live_secret_inventory_for_receipt(receipt)
     return validate_saved_plan_gate(
         receipt_path=receipt_path,
         plan_document=plan_document,
@@ -651,6 +850,28 @@ def load_registry(path: Path = DEFAULT_REGISTRY) -> dict[str, Any]:
             compiled += 1
     if compiled == 0:
         raise GuardError("durable credential registry has no Terraform addresses")
+    for resource in resources:
+        matches = [
+            entry["id"]
+            for entry in credentials
+            if entry["terraform_root"] == resource["root"]
+            and any(
+                re.fullmatch(pattern, candidate)
+                for pattern in entry["address_regexes"]
+                for candidate in (
+                    resource["address"],
+                    *(
+                        resource["address"] + suffix
+                        for suffix in REGISTRY_BASE_ADDRESS_PROBES
+                    ),
+                )
+            )
+        ]
+        if not matches:
+            raise GuardError(
+                "every declared Terraform credential address must be protected by "
+                f"at least one class: {resource['root']}:{resource['address']}"
+            )
     return document
 
 
@@ -670,15 +891,129 @@ def protected_patterns(
     )
 
 
+def registry_resource_addresses(
+    registry: dict[str, Any], *, terraform_root: str
+) -> frozenset[str]:
+    return frozenset(
+        item["address"]
+        for item in registry["terraform_resource_addresses"]
+        if item["root"] == terraform_root
+    )
+
+
+def base_resource_address(address: Any) -> str | None:
+    """Return the declared Terraform resource address without an instance key."""
+
+    if not isinstance(address, str) or not address:
+        return None
+    return re.sub(r"\[[^\]]+\]$", "", address)
+
+
+def credential_resource_type(address: Any) -> str | None:
+    base = base_resource_address(address)
+    if base is None:
+        return None
+    resource = base.rsplit(".", 2)[-2:]
+    if len(resource) != 2 or resource[0] not in CREDENTIAL_RESOURCE_TYPES:
+        return None
+    return resource[0]
+
+
+def configuration_resource_addresses(document: Any) -> frozenset[str]:
+    """Collect declared addresses from the exact configuration embedded in a plan."""
+
+    if not isinstance(document, dict):
+        raise GuardError("Terraform plan has no embedded configuration")
+    root = document.get("root_module")
+    if not isinstance(root, dict):
+        raise GuardError("Terraform plan has no embedded root configuration")
+    addresses: set[str] = set()
+    pending = [root]
+    while pending:
+        module = pending.pop()
+        resources = module.get("resources", [])
+        if not isinstance(resources, list):
+            raise GuardError("Terraform plan configuration has malformed resources")
+        for resource in resources:
+            if not isinstance(resource, dict) or not isinstance(
+                resource.get("address"), str
+            ):
+                raise GuardError(
+                    "Terraform plan configuration has a malformed resource"
+                )
+            address = base_resource_address(resource["address"])
+            if address is None or address in addresses:
+                raise GuardError("Terraform plan configuration duplicates a resource")
+            addresses.add(address)
+        calls = module.get("module_calls", {})
+        if not isinstance(calls, dict):
+            raise GuardError("Terraform plan configuration has malformed module calls")
+        for call in calls.values():
+            nested = call.get("module") if isinstance(call, dict) else None
+            if isinstance(nested, dict):
+                pending.append(nested)
+    return frozenset(addresses)
+
+
+def enforce_registry_resource_inventory(
+    document: dict[str, Any], *, registry: dict[str, Any], terraform_root: str
+) -> frozenset[str]:
+    """Make the reviewed durable-address inventory normative, not documentary."""
+
+    declared = registry_resource_addresses(registry, terraform_root=terraform_root)
+    configured = configuration_resource_addresses(document.get("configuration"))
+    configured_credentials = frozenset(
+        address
+        for address in configured
+        if credential_resource_type(address) is not None
+    )
+    missing = declared - configured_credentials
+    unregistered = configured_credentials - declared
+    if missing or unregistered:
+        details: list[str] = []
+        if missing:
+            details.append("missing=" + ",".join(sorted(missing)))
+        if unregistered:
+            details.append("unregistered=" + ",".join(sorted(unregistered)))
+        raise GuardError(
+            "Terraform credential address inventory differs from the reviewed registry: "
+            + "; ".join(details)
+        )
+    unprotected = {
+        address
+        for address in configured_credentials
+        if not is_protected_address(
+            address, registry=registry, terraform_root=terraform_root
+        )
+    }
+    if unprotected:
+        raise GuardError(
+            "reviewed credential addresses lack exact class protection: "
+            + ",".join(sorted(unprotected))
+        )
+    return declared
+
+
 def is_protected_address(
     address: Any,
     *,
     registry: dict[str, Any] | None = None,
     terraform_root: str | None = None,
 ) -> bool:
-    return isinstance(address, str) and any(
-        pattern.fullmatch(address)
+    if not isinstance(address, str):
+        return False
+    candidates = (
+        (address,)
+        if "[" in address
+        else (
+            address,
+            *(address + suffix for suffix in REGISTRY_BASE_ADDRESS_PROBES),
+        )
+    )
+    return any(
+        pattern.fullmatch(candidate)
         for pattern in protected_patterns(registry, terraform_root=terraform_root)
+        for candidate in candidates
     )
 
 
@@ -739,25 +1074,14 @@ def plan_prior_fingerprints(
     registry: dict[str, Any] | None = None,
     terraform_root: str | None = None,
 ) -> dict[str, str]:
+    if not isinstance(document.get("prior_state"), dict):
+        raise GuardError("Terraform plan omits its authoritative prior state")
     prior = protected_state_fingerprints(
-        document.get("prior_state", {}),
+        document["prior_state"],
         registry=registry,
         terraform_root=terraform_root,
     )
-    if prior:
-        return prior
-    fallback: dict[str, str] = {}
-    for change in document.get("resource_changes", []):
-        address = change.get("address")
-        before = change.get("change", {}).get("before")
-        if (
-            is_protected_address(
-                address, registry=registry, terraform_root=terraform_root
-            )
-            and before is not None
-        ):
-            fallback[address] = canonical_sha256(before)
-    return dict(sorted(fallback.items()))
+    return prior
 
 
 def live_secret_bindings(
@@ -797,7 +1121,7 @@ def live_secret_bindings(
         if not isinstance(item, dict) or not isinstance(item.get("metadata"), dict):
             raise GuardError("live Secret inventory contains a malformed object")
         metadata = item["metadata"]
-        data = item.get("data")
+        annotations = metadata.get("annotations")
         identity = (metadata.get("namespace"), metadata.get("name"))
         if (
             not all(isinstance(value, str) and value for value in identity)
@@ -805,14 +1129,32 @@ def live_secret_bindings(
             or not metadata["uid"]
             or not isinstance(metadata.get("resourceVersion"), str)
             or not metadata["resourceVersion"]
-            or not isinstance(data, dict)
-            or not data
-            or not all(
-                isinstance(key, str) and isinstance(value, str)
-                for key, value in data.items()
-            )
         ):
-            raise GuardError("live Secret inventory lacks exact identity or data")
+            raise GuardError("live Secret inventory lacks exact identity")
+        declared_content = (
+            annotations.get("fs2.nebius.ai/content-sha256")
+            if isinstance(annotations, dict)
+            else None
+        )
+        authority_content = item.get("authorityContentSha256")
+        authority_evidence_id = item.get("authorityEvidenceId")
+        authority_observed_at = item.get("authorityObservedAt")
+        if item.get("data") is not None or item.get("stringData") is not None:
+            raise GuardError("live Secret authority returned forbidden Secret values")
+        if (
+            not isinstance(authority_content, str)
+            or re.fullmatch(r"[0-9a-f]{64}", authority_content) is None
+            or not isinstance(authority_evidence_id, str)
+            or not authority_evidence_id
+            or not isinstance(authority_observed_at, str)
+            or not authority_observed_at
+        ):
+            raise GuardError("live Secret lacks an authoritative content binding")
+        parse_timestamp(authority_observed_at)
+        if declared_content is not None and declared_content != authority_content:
+            raise GuardError(
+                "live Secret payload differs from its declared content commitment"
+            )
         if identity in live:
             raise GuardError("live Secret inventory contains a duplicate identity")
         live[identity] = {
@@ -820,7 +1162,20 @@ def live_secret_bindings(
             "name": identity[1],
             "uid": metadata["uid"],
             "resource_version": metadata["resourceVersion"],
-            "content_sha256": canonical_sha256(data),
+            "content_sha256": authority_content,
+            "authority_evidence_id": authority_evidence_id,
+            "authority_observed_at": authority_observed_at,
+            "credential_class": (
+                annotations.get("fs2.nebius.ai/credential-class", "legacy-generation-1")
+                if isinstance(annotations, dict)
+                else "legacy-generation-1"
+            ),
+            "generation": (
+                annotations.get("fs2.nebius.ai/credential-generation", "1")
+                if isinstance(annotations, dict)
+                else "1"
+            ),
+            "immutable": "true" if item.get("immutable") is True else "false",
         }
 
     bindings: dict[str, dict[str, str]] = {}
@@ -847,8 +1202,494 @@ def live_secret_bindings(
             raise GuardError(
                 f"live Secret UID/resourceVersion differs from Terraform state: {address}"
             )
+        if (
+            base_resource_address(address).endswith("_versioned")
+            and binding["immutable"] != "true"
+        ):
+            raise GuardError(f"versioned live Secret is not immutable: {address}")
         bindings[address] = binding
     return dict(sorted(bindings.items()))
+
+
+def _planned_secret_metadata(after: Any, *, address: str) -> dict[str, Any]:
+    if not isinstance(after, dict):
+        raise GuardError(f"planned Secret has no after-state: {address}")
+    metadata = after.get("metadata")
+    metadata = metadata[0] if isinstance(metadata, list) and metadata else metadata
+    if not isinstance(metadata, dict):
+        raise GuardError(f"planned Secret has no metadata: {address}")
+    annotations = metadata.get("annotations")
+    if not isinstance(annotations, dict):
+        raise GuardError(f"planned Secret has no custody annotations: {address}")
+    required = {
+        "fs2.nebius.ai/credential-generation",
+        "fs2.nebius.ai/content-sha256",
+        "fs2.nebius.ai/credential-class",
+    }
+    if not required.issubset(annotations):
+        raise GuardError(f"planned Secret lacks exact custody annotations: {address}")
+    generation = annotations["fs2.nebius.ai/credential-generation"]
+    content_sha256 = annotations["fs2.nebius.ai/content-sha256"]
+    credential_class = annotations["fs2.nebius.ai/credential-class"]
+    if (
+        not isinstance(generation, str)
+        or not generation.isdigit()
+        or int(generation) < 2
+        or not isinstance(content_sha256, str)
+        or re.fullmatch(r"[0-9a-f]{64}", content_sha256) is None
+        or not isinstance(credential_class, str)
+        or not credential_class
+        or after.get("immutable") is not True
+        or not isinstance(after.get("data_wo_revision"), int)
+        or after["data_wo_revision"] < 1
+        or not isinstance(metadata.get("name"), str)
+        or not metadata["name"]
+        or not isinstance(metadata.get("namespace"), str)
+        or not metadata["namespace"]
+    ):
+        raise GuardError(f"planned Secret custody commitment is malformed: {address}")
+    return {
+        "namespace": metadata["namespace"],
+        "name": metadata["name"],
+        "generation": generation,
+        "credential_class": credential_class,
+        "content_sha256": content_sha256,
+    }
+
+
+def planned_secret_commitments(
+    document: dict[str, Any], *, registry: dict[str, Any], terraform_root: str
+) -> dict[str, dict[str, Any]]:
+    """Bind every new immutable Secret before a Secret-only phase-one apply."""
+
+    commitments: dict[str, dict[str, Any]] = {}
+    for change in document.get("resource_changes", []):
+        if not isinstance(change, dict):
+            continue
+        address = change.get("address")
+        actions = change.get("change", {}).get("actions")
+        if (
+            actions == ["create"]
+            and isinstance(address, str)
+            and credential_resource_type(address) == "kubernetes_secret_v1"
+            and is_protected_address(
+                address, registry=registry, terraform_root=terraform_root
+            )
+        ):
+            commitments[address] = _planned_secret_metadata(
+                change.get("change", {}).get("after"), address=address
+            )
+    return dict(sorted(commitments.items()))
+
+
+def require_staged_secret_plan(
+    document: dict[str, Any], *, commitments: dict[str, dict[str, Any]]
+) -> None:
+    if not commitments:
+        return
+    variables = document.get("variables")
+    phase = (
+        variables.get("credential_migration_phase", {}).get("value")
+        if isinstance(variables, dict)
+        and isinstance(variables.get("credential_migration_phase"), dict)
+        else None
+    )
+    if phase != "secret-stage":
+        raise GuardError(
+            "new credential Secrets require credential_migration_phase=secret-stage"
+        )
+    allowed = set(commitments)
+    for change in document.get("resource_changes", []):
+        address = change.get("address") if isinstance(change, dict) else None
+        actions = (
+            change.get("change", {}).get("actions")
+            if isinstance(change, dict)
+            else None
+        )
+        if actions not in (["no-op"], ["read"], ["create"]):
+            raise GuardError("Secret staging plan contains a non-additive action")
+        if (
+            actions == ["create"]
+            and address not in allowed
+            and not (
+                isinstance(address, str)
+                and address.startswith(
+                    "terraform_data.credential_apply_gate_generation["
+                )
+            )
+        ):
+            raise GuardError(
+                "Secret staging plan must contain only reviewed immutable Secret creates"
+            )
+
+
+def plan_variable(document: dict[str, Any], name: str) -> Any:
+    variables = document.get("variables")
+    if not isinstance(variables, dict):
+        raise GuardError("Terraform plan has no exact input variable inventory")
+    item = variables.get(name)
+    if not isinstance(item, dict) or "value" not in item:
+        raise GuardError(f"Terraform plan omits required variable {name}")
+    return item["value"]
+
+
+def require_accepted_integration_dependencies(
+    path: Path = DEFAULT_INTEGRATION_DEPENDENCIES,
+) -> None:
+    if path.is_symlink() or not path.is_file():
+        raise GuardError("SAI integration dependency ledger is absent or unsafe")
+    document = json.loads(path.read_text(encoding="utf-8"))
+    dependencies = document.get("dependencies")
+    if document.get(
+        "schema"
+    ) != "fs2-serve.nebius.ai/sai-10-integration-dependencies/v1" or set(
+        dependencies or {}
+    ) != {"SAI-05", "SAI-06", "SAI-08", "SAI-09"}:
+        raise GuardError("SAI integration dependency ledger is malformed")
+    for ticket, value in dependencies.items():
+        if not isinstance(value, dict) or set(value) != {"status", "commit", "tree"}:
+            raise GuardError(f"SAI integration dependency is malformed: {ticket}")
+        if value["status"] not in {
+            "accepted-source-ancestor",
+            "blocked-pending-independent-acceptance",
+        }:
+            raise GuardError(f"SAI integration dependency has invalid status: {ticket}")
+        if value["status"] == "accepted-source-ancestor" and not all(
+            isinstance(value[field], str)
+            and re.fullmatch(r"[0-9a-f]{40}", value[field]) is not None
+            for field in ("commit", "tree")
+        ):
+            raise GuardError(
+                f"accepted SAI dependency lacks exact Git identity: {ticket}"
+            )
+    if document.get("integration_authorized") is not True or any(
+        value["status"] != "accepted-source-ancestor" for value in dependencies.values()
+    ):
+        raise GuardError(
+            "consumer rollout is blocked until SAI-05/06/08/09 are independently accepted and recorded"
+        )
+    for ticket, value in dependencies.items():
+        try:
+            ancestry = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(ROOT),
+                    "merge-base",
+                    "--is-ancestor",
+                    value["commit"],
+                    "HEAD",
+                ],
+                capture_output=True,
+                check=False,
+            )
+            tree = subprocess.run(
+                ["git", "-C", str(ROOT), "rev-parse", f"{value['commit']}^{{tree}}"],
+                text=True,
+                capture_output=True,
+                check=True,
+            ).stdout.strip()
+        except (OSError, subprocess.CalledProcessError) as error:
+            raise GuardError(
+                f"cannot verify accepted SAI dependency: {ticket}"
+            ) from error
+        if ancestry.returncode != 0 or tree != value["tree"]:
+            raise GuardError(
+                f"current source does not contain the exact accepted SAI dependency: {ticket}"
+            )
+
+
+def require_consumer_rollout_binding(
+    document: dict[str, Any],
+    *,
+    identity_receipt: dict[str, Any] | None,
+    terraform_root: str,
+) -> None:
+    phase = plan_variable(document, "credential_migration_phase")
+    if terraform_root != "workloads":
+        if phase == "consumer-rollout":
+            raise GuardError("consumer-rollout phase is owned by the workloads root")
+        return
+    bindings = plan_variable(document, "credential_consumer_bindings")
+    binding_sha256 = plan_variable(document, "credential_consumer_binding_sha256")
+    readiness_sha256 = plan_variable(
+        document, "credential_consumer_readiness_receipt_sha256"
+    )
+    readiness_path = plan_variable(
+        document, "credential_consumer_readiness_receipt_path"
+    )
+    rollout_step = plan_variable(document, "credential_consumer_rollout_step")
+    if phase != "consumer-rollout":
+        if (
+            bindings not in ({}, None)
+            or binding_sha256 not in ("", None)
+            or readiness_sha256 not in ("", None)
+            or readiness_path not in ("", None)
+            or rollout_step not in ("", None)
+        ):
+            raise GuardError(
+                "Secret bindings and readiness receipt are allowed only in consumer-rollout phase"
+            )
+        return
+    require_accepted_integration_dependencies()
+    if identity_receipt is None:
+        raise GuardError("consumer rollout requires the exact durable identity receipt")
+    expected = identity_receipt.get("live_secret_bindings")
+    if not isinstance(expected, dict) or not expected:
+        raise GuardError(
+            "consumer rollout identity receipt has no live Secret bindings"
+        )
+    if bindings != expected or binding_sha256 != canonical_sha256(expected):
+        raise GuardError(
+            "consumer rollout inputs differ from exact live Secret UID/resourceVersion/content bindings"
+        )
+    if (
+        not isinstance(readiness_sha256, str)
+        or re.fullmatch(r"[0-9a-f]{64}", readiness_sha256) is None
+    ):
+        raise GuardError("consumer rollout lacks a class-specific readiness receipt")
+    if rollout_step not in {"dual-read", "current-write"}:
+        raise GuardError("consumer rollout step must be dual-read or current-write")
+    if not isinstance(readiness_path, str) or not readiness_path:
+        raise GuardError("consumer rollout lacks its exact readiness receipt path")
+    validate_consumer_readiness_receipt(
+        Path(readiness_path),
+        expected_sha256=readiness_sha256,
+        expected_bindings_sha256=binding_sha256,
+        expected_phase=(
+            "predecessor-ready" if rollout_step == "dual-read" else "dual-read-ready"
+        ),
+    )
+    changed_consumers = 0
+    for change in document.get("resource_changes", []):
+        if not isinstance(change, dict):
+            continue
+        address = change.get("address")
+        actions = change.get("change", {}).get("actions")
+        if credential_resource_type(
+            address
+        ) == "kubernetes_secret_v1" and actions not in (
+            ["no-op"],
+            ["read"],
+        ):
+            raise GuardError(
+                "consumer rollout may not create or mutate credential Secrets"
+            )
+        if (
+            isinstance(address, str)
+            and (
+                address.startswith("helm_release.")
+                or address.startswith("kubernetes_deployment_v1.")
+                or address.startswith("kubernetes_stateful_set_v1.")
+            )
+            and actions not in (["no-op"], ["read"])
+        ):
+            changed_consumers += 1
+    if changed_consumers == 0:
+        raise GuardError("consumer-rollout plan changes no governed consumer")
+
+
+def validate_consumer_readiness_payload(
+    payload: Any,
+    *,
+    expected_bindings_sha256: str,
+    expected_phase: str,
+) -> dict[str, Any]:
+    contracts = load_consumer_contracts()
+    if (
+        not isinstance(payload, dict)
+        or set(payload)
+        != {
+            "schema",
+            "phase",
+            "contracts_sha256",
+            "bindings_sha256",
+            "evidence_id",
+            "observed_at",
+            "classes",
+            "authorityAttestation",
+        }
+        or payload.get("schema")
+        != "fs2-serve.nebius.ai/credential-consumer-readiness/v1"
+        or payload.get("phase") != expected_phase
+        or payload.get("contracts_sha256") != canonical_sha256(contracts)
+        or payload.get("bindings_sha256") != expected_bindings_sha256
+        or not isinstance(payload.get("evidence_id"), str)
+        or not payload["evidence_id"]
+        or not isinstance(payload.get("observed_at"), str)
+        or not isinstance(payload.get("classes"), dict)
+        or set(payload["classes"]) != set(contracts)
+    ):
+        raise GuardError(
+            "consumer readiness authority returned an incomplete inventory"
+        )
+    verify_authority_attestation(payload)
+    observed_at = parse_timestamp(payload["observed_at"])
+    now = utc_now()
+    if observed_at > now or now - observed_at > timedelta(minutes=15):
+        raise GuardError("consumer readiness inventory is stale or future-dated")
+    attested_at = parse_timestamp(payload["authorityAttestation"].get("issued_at"))
+    if attested_at > now or now - attested_at > timedelta(minutes=15):
+        raise GuardError("consumer readiness attestation is stale or future-dated")
+    evidence_ids: set[str] = set()
+    for credential_class, contract in contracts.items():
+        item = payload["classes"][credential_class]
+        if (
+            not isinstance(item, dict)
+            or set(item)
+            != {
+                "adapter",
+                "authority",
+                "consumers",
+                "readiness",
+                "ready",
+                "evidence_id",
+                "observed_at",
+                "live_bindings_sha256",
+            }
+            or item.get("adapter") != contract["adapter"]
+            or item.get("authority") != contract["authority"]
+            or item.get("consumers") != contract["consumers"]
+            or item.get("readiness") != contract["readiness"]
+            or item.get("ready") is not True
+            or item.get("live_bindings_sha256") != expected_bindings_sha256
+            or not isinstance(item.get("evidence_id"), str)
+            or not item["evidence_id"]
+            or item["evidence_id"] in evidence_ids
+            or not isinstance(item.get("observed_at"), str)
+        ):
+            raise GuardError(
+                f"consumer readiness is missing a class-specific adapter proof: {credential_class}"
+            )
+        item_observed_at = parse_timestamp(item["observed_at"])
+        if item_observed_at > now or now - item_observed_at > timedelta(minutes=15):
+            raise GuardError(
+                f"consumer readiness class evidence is stale: {credential_class}"
+            )
+        evidence_ids.add(item["evidence_id"])
+    return payload
+
+
+def write_consumer_readiness_receipt(
+    *, identity_receipt_path: Path, phase: str, path: Path
+) -> dict[str, Any]:
+    if phase not in {"predecessor-ready", "dual-read-ready", "current-write-ready"}:
+        raise GuardError("consumer readiness phase is invalid")
+    identity = load_identity_receipt(identity_receipt_path)
+    if identity is None:
+        raise GuardError("consumer readiness requires an exact identity receipt")
+    bindings = identity["live_secret_bindings"]
+    bindings_sha256 = canonical_sha256(bindings)
+    contracts = load_consumer_contracts()
+    payload = authority_json(
+        {
+            "schema": "fs2-serve.nebius.ai/credential-provider-operation/v1",
+            "operation": "consumer-readiness",
+            "phase": phase,
+            "contracts": contracts,
+            "contracts_sha256": canonical_sha256(contracts),
+            "live_bindings": bindings,
+            "bindings_sha256": bindings_sha256,
+            "metadata_only": True,
+        }
+    )
+    validate_consumer_readiness_payload(
+        payload,
+        expected_bindings_sha256=bindings_sha256,
+        expected_phase=phase,
+    )
+    receipt = {
+        "schema": "fs2-serve.nebius.ai/credential-consumer-readiness-receipt/v1",
+        "captured_at": utc_now().isoformat().replace("+00:00", "Z"),
+        "identity_receipt_sha256": file_sha256(identity_receipt_path),
+        "payload": payload,
+    }
+    write_private_json(path, receipt)
+    return receipt
+
+
+def validate_consumer_readiness_receipt(
+    path: Path,
+    *,
+    expected_sha256: str,
+    expected_bindings_sha256: str,
+    expected_phase: str,
+) -> dict[str, Any]:
+    if file_sha256(path) != expected_sha256:
+        raise GuardError("consumer readiness receipt hash differs from the plan")
+    receipt = load_private_document(path, label="consumer readiness receipt")
+    if (
+        not isinstance(receipt, dict)
+        or set(receipt)
+        != {"schema", "captured_at", "identity_receipt_sha256", "payload"}
+        or receipt.get("schema")
+        != "fs2-serve.nebius.ai/credential-consumer-readiness-receipt/v1"
+        or not isinstance(receipt.get("identity_receipt_sha256"), str)
+        or re.fullmatch(r"[0-9a-f]{64}", receipt["identity_receipt_sha256"]) is None
+    ):
+        raise GuardError("consumer readiness receipt is malformed")
+    parse_timestamp(receipt.get("captured_at"))
+    validate_consumer_readiness_payload(
+        receipt.get("payload"),
+        expected_bindings_sha256=expected_bindings_sha256,
+        expected_phase=expected_phase,
+    )
+    return receipt
+
+
+def require_additive_apply_gate_generation(document: dict[str, Any]) -> None:
+    """Require one new permanent gate instance in every saved plan.
+
+    This makes the execution-time provisioner unavoidable for direct saved-plan
+    apply without replacing or deleting an earlier gate generation.
+    """
+
+    current = plan_variable(document, "credential_migration_gate_receipt_sha256")
+    history = plan_variable(document, "credential_migration_gate_history")
+    if not isinstance(current, str) or re.fullmatch(r"[0-9a-f]{64}", current) is None:
+        raise GuardError("plan lacks the exact current apply-gate receipt hash")
+    if (
+        not isinstance(history, list)
+        or len(history) != len(set(history))
+        or any(
+            not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+            for digest in history
+        )
+        or current in history
+    ):
+        raise GuardError(
+            "apply-gate history is malformed or reuses the current receipt"
+        )
+    pattern = re.compile(
+        r'^terraform_data\.credential_apply_gate_generation\["([0-9a-f]{64})"\]$'
+    )
+    observed: dict[str, list[str]] = {}
+    for change in document.get("resource_changes", []):
+        if not isinstance(change, dict):
+            continue
+        address = change.get("address")
+        if not isinstance(address, str) or not address.startswith(
+            "terraform_data.credential_apply_gate_generation"
+        ):
+            continue
+        match = pattern.fullmatch(address)
+        actions = change.get("change", {}).get("actions")
+        if (
+            match is None
+            or change.get("previous_address") is not None
+            or actions not in (["no-op"], ["read"], ["create"])
+        ):
+            raise GuardError(
+                "apply-gate generation would move, update, replace or delete"
+            )
+        observed[match.group(1)] = actions
+    expected = set(history) | {current}
+    if set(observed) != expected or observed.get(current) != ["create"]:
+        raise GuardError(
+            "saved plan must retain every prior gate and create exactly its current gate"
+        )
+    if any(observed[digest] not in (["no-op"], ["read"]) for digest in history):
+        raise GuardError("saved plan would mutate a prior apply-gate generation")
 
 
 def write_identity_receipt(
@@ -876,6 +1717,10 @@ def write_identity_receipt(
     ):
         raise GuardError("source commit must be an exact lowercase Git SHA")
     registry = registry or load_registry()
+    if live_secret_document is not None:
+        raise GuardError(
+            "caller-supplied live Secret inventories are forbidden; use the fixed authority"
+        )
     fingerprints = protected_state_fingerprints(
         state_document, registry=registry, terraform_root=terraform_root
     )
@@ -883,7 +1728,9 @@ def write_identity_receipt(
         raise GuardError("state contains no protected generation-1 resources")
     secret_bindings = live_secret_bindings(
         state_document,
-        live_secret_document,
+        live_secret_inventory_for_state(
+            state_document, registry=registry, terraform_root=terraform_root
+        ),
         registry=registry,
         terraform_root=terraform_root,
     )
@@ -955,9 +1802,21 @@ def load_identity_receipt(
         )
         and isinstance(binding, dict)
         and set(binding)
-        == {"namespace", "name", "uid", "resource_version", "content_sha256"}
+        == {
+            "namespace",
+            "name",
+            "uid",
+            "resource_version",
+            "content_sha256",
+            "authority_evidence_id",
+            "authority_observed_at",
+            "credential_class",
+            "generation",
+            "immutable",
+        }
         and all(isinstance(binding[key], str) and binding[key] for key in binding)
         and len(binding["content_sha256"]) == 64
+        and binding["immutable"] in {"true", "false"}
         for address, binding in bindings.items()
     ):
         raise GuardError("identity receipt has malformed live Secret bindings")
@@ -981,6 +1840,11 @@ def inspect_plan(
     terraform_root: str | None = None,
 ) -> dict[str, int]:
     registry = registry or load_registry()
+    if terraform_root is None:
+        raise GuardError("Terraform root is required for credential plan inspection")
+    required_addresses = enforce_registry_resource_inventory(
+        document, registry=registry, terraform_root=terraform_root
+    )
     prior_fingerprints = plan_prior_fingerprints(
         document, registry=registry, terraform_root=terraform_root
     )
@@ -1020,10 +1884,35 @@ def inspect_plan(
         previous_protected = is_protected_address(
             previous_address, registry=registry, terraform_root=terraform_root
         )
+        base = base_resource_address(address)
+        previous_base = base_resource_address(previous_address)
+        credential_shaped = credential_resource_type(address) is not None
+        previous_credential_shaped = (
+            credential_resource_type(previous_address) is not None
+        )
+        if credential_shaped and base not in required_addresses:
+            raise GuardError(
+                f"plan contains an unregistered credential resource address: {address}"
+            )
+        if previous_credential_shaped and previous_base not in required_addresses:
+            raise GuardError(
+                "plan contains a credential moved from or deleted through an "
+                f"unregistered address: {previous_address}"
+            )
         if previous_address is not None and (protected or previous_protected):
             raise GuardError(
                 "plan would move a durable credential address: "
                 f"{previous_address} -> {address}"
+            )
+        if previous_address is not None and (
+            credential_shaped or previous_credential_shaped
+        ):
+            raise GuardError(
+                "plan moves a credential resource regardless of its current registry match"
+            )
+        if credential_shaped and not protected:
+            raise GuardError(
+                f"registry regexes do not protect declared credential address {address}"
             )
         if protected:
             seen_protected.add(address)
@@ -1035,6 +1924,19 @@ def inspect_plan(
             raise GuardError(
                 f"plan would recreate protected legacy address with recorded prior state {address}"
             )
+        if (
+            protected
+            and actions == ["create"]
+            and not (
+                isinstance(base, str)
+                and base.endswith("_versioned")
+                and address != base
+            )
+        ):
+            raise GuardError(
+                "only a new instance of a registered append-only *_versioned resource "
+                f"may be created; fixed address create refused: {address}"
+            )
         if protected and actions != ["no-op"]:
             protected_changes += 1
     omitted = set(prior_fingerprints) - seen_protected
@@ -1043,12 +1945,21 @@ def inspect_plan(
             "Terraform plan omitted protected prior-state addresses: "
             + ", ".join(sorted(omitted))
         )
+    commitments = planned_secret_commitments(
+        document, registry=registry, terraform_root=terraform_root
+    )
+    require_staged_secret_plan(document, commitments=commitments)
+    require_consumer_rollout_binding(
+        document,
+        identity_receipt=identity_receipt,
+        terraform_root=terraform_root,
+    )
+    require_additive_apply_gate_generation(document)
     return {
-        "protected_addresses": len(
-            protected_patterns(registry, terraform_root=terraform_root)
-        ),
+        "protected_addresses": len(required_addresses),
         "verified_identities": len(prior_fingerprints),
         "protected_changes": protected_changes,
+        "planned_secret_commitments": len(commitments),
     }
 
 
@@ -1194,7 +2105,7 @@ def inventory_run_root(root: Path) -> list[dict[str, Any]]:
 
 
 def authoritative_operator_state_root() -> Path:
-    """Return the non-overridable platform-state parent for the OS account."""
+    """Return the non-overridable home scope for every product state family."""
 
     try:
         owner_home = Path(pwd.getpwuid(os.geteuid()).pw_dir)
@@ -1202,7 +2113,7 @@ def authoritative_operator_state_root() -> Path:
         raise GuardError("effective OS account has no authoritative home") from error
     if not owner_home.is_absolute():
         raise GuardError("effective OS account has no absolute authoritative home")
-    return owner_home / AUTHORITATIVE_STATE_SCOPE_RELATIVE
+    return (owner_home / AUTHORITATIVE_STATE_SCOPE_RELATIVE).resolve()
 
 
 def require_authoritative_scope(root: Path) -> str:
@@ -1214,8 +2125,10 @@ def require_authoritative_scope(root: Path) -> str:
     if configured_path.resolve() != root.absolute().resolve():
         raise GuardError("requested run root is not the authoritative owner scope")
     metadata = configured_path.stat()
-    if metadata.st_uid != os.geteuid() or stat.S_IMODE(metadata.st_mode) & 0o077:
-        raise GuardError("authoritative owner scope must be owner-owned and owner-only")
+    if metadata.st_uid != os.geteuid():
+        raise GuardError(
+            "authoritative owner scope must be owned by the effective account"
+        )
     return hashlib.sha256(str(configured_path.resolve()).encode()).hexdigest()
 
 
@@ -1498,10 +2411,7 @@ def verify_disposition_provider_receipt(entry: dict[str, Any]) -> None:
         "verifier",
         "status",
     }
-    expected_status = {
-        "encrypted-rewrap": "rewrapped-and-verified",
-        "secure-retire": "securely-retired-and-verified",
-    }[entry["action"]]
+    expected_status = {"encrypted-rewrap": "rewrapped-and-verified"}[entry["action"]]
     if not isinstance(document, dict) or set(document) != required:
         raise GuardError("artifact disposition provider receipt is malformed")
     expected = {
@@ -1602,6 +2512,10 @@ def inspect_run_root(
     artifact_manifest: dict[str, Any] | None = None,
     disposition_receipt: dict[str, Any] | None = None,
 ) -> dict[str, int | str]:
+    if retired:
+        raise GuardError(
+            "local filesystem inventory is containment evidence only and cannot authorize retirement"
+        )
     authority_sha256 = require_authoritative_scope(root)
     inventory, scope_roots, metadata = _inventory_authoritative_scope(root)
     known = sum(item["classification"] == "known-sensitive" for item in inventory)
@@ -1671,6 +2585,274 @@ def inspect_run_root(
     }
 
 
+def authoritative_artifact_inventory() -> dict[str, Any]:
+    """Read the production authority's complete configured artifact inventory."""
+
+    document = authority_json(
+        {
+            "schema": "fs2-serve.nebius.ai/credential-provider-operation/v1",
+            "operation": "artifact-inventory",
+            "scope": "all-configured-product-operator-state",
+            "metadata_only": True,
+        }
+    )
+    required = {
+        "schema",
+        "scope",
+        "configuration_sha256",
+        "scope_registry_sha256",
+        "scope_count",
+        "evidence_id",
+        "observed_at",
+        "artifacts",
+        "authorityAttestation",
+    }
+    if (
+        set(document) != required
+        or document.get("schema")
+        != "fs2-serve.nebius.ai/authoritative-artifact-inventory/v1"
+        or document.get("scope") != "all-configured-product-operator-state"
+        or not all(
+            isinstance(document.get(field), str) and document[field]
+            for field in ("configuration_sha256", "evidence_id", "observed_at")
+        )
+        or re.fullmatch(r"[0-9a-f]{64}", document["configuration_sha256"]) is None
+        or re.fullmatch(r"[0-9a-f]{64}", document.get("scope_registry_sha256", ""))
+        is None
+        or not isinstance(document.get("scope_count"), int)
+        or document["scope_count"] < 1
+        or not isinstance(document.get("artifacts"), list)
+    ):
+        raise GuardError("production authority returned a malformed artifact inventory")
+    verify_authority_attestation(document)
+    if document["configuration_sha256"] != document["authorityAttestation"].get(
+        "configuration_sha256"
+    ):
+        raise GuardError("artifact inventory configuration is not authority-bound")
+    parse_timestamp(document["observed_at"])
+    artifact_fields = {
+        "artifact_id",
+        "path_sha256",
+        "sha256",
+        "classification",
+        "owner",
+        "purpose",
+        "expires_at",
+        "readers",
+        "storage",
+        "local_present",
+        "disposition",
+        "provider_version",
+        "audit_event_id",
+    }
+    identifiers: set[str] = set()
+    for item in document["artifacts"]:
+        if (
+            not isinstance(item, dict)
+            or set(item) != artifact_fields
+            or not all(
+                isinstance(item.get(field), str) and item[field]
+                for field in (
+                    "artifact_id",
+                    "owner",
+                    "purpose",
+                    "storage",
+                    "provider_version",
+                    "audit_event_id",
+                )
+            )
+            or any(
+                not isinstance(item.get(field), str)
+                or re.fullmatch(r"[0-9a-f]{64}", item[field]) is None
+                for field in ("path_sha256", "sha256")
+            )
+            or item.get("classification")
+            not in {
+                "terraform-state",
+                "terraform-plan",
+                "session-cookie",
+                "scoped-credential",
+                "unknown-sensitive",
+            }
+            or item.get("disposition")
+            not in {"retained-for-migration", "encrypted-rewrap"}
+            or not isinstance(item.get("local_present"), bool)
+            or not isinstance(item.get("readers"), list)
+            or not item["readers"]
+            or not all(isinstance(reader, str) and reader for reader in item["readers"])
+            or len(item["readers"]) != len(set(item["readers"]))
+            or item["artifact_id"] in identifiers
+        ):
+            raise GuardError("production artifact inventory has a malformed entry")
+        if not isinstance(item["expires_at"], str):
+            raise GuardError(
+                "production artifact inventory must give every artifact a bounded expiry"
+            )
+        parse_timestamp(item["expires_at"])
+        identifiers.add(item["artifact_id"])
+    return document
+
+
+def validate_stored_authoritative_artifact_inventory(document: Any) -> dict[str, Any]:
+    """Revalidate a stored authority payload without trusting its container."""
+
+    required = {
+        "schema",
+        "scope",
+        "configuration_sha256",
+        "scope_registry_sha256",
+        "scope_count",
+        "evidence_id",
+        "observed_at",
+        "artifacts",
+        "authorityAttestation",
+    }
+    if (
+        not isinstance(document, dict)
+        or set(document) != required
+        or document.get("schema")
+        != "fs2-serve.nebius.ai/authoritative-artifact-inventory/v1"
+        or document.get("scope") != "all-configured-product-operator-state"
+        or re.fullmatch(r"[0-9a-f]{64}", document.get("configuration_sha256", ""))
+        is None
+        or re.fullmatch(r"[0-9a-f]{64}", document.get("scope_registry_sha256", ""))
+        is None
+        or not isinstance(document.get("scope_count"), int)
+        or document["scope_count"] < 1
+        or not isinstance(document.get("evidence_id"), str)
+        or not document["evidence_id"]
+        or not isinstance(document.get("observed_at"), str)
+        or not isinstance(document.get("artifacts"), list)
+    ):
+        raise GuardError("stored authoritative artifact inventory is malformed")
+    verify_authority_attestation(document)
+    if document["configuration_sha256"] != document["authorityAttestation"].get(
+        "configuration_sha256"
+    ):
+        raise GuardError("stored artifact configuration is not authority-bound")
+    parse_timestamp(document["observed_at"])
+    fields = {
+        "artifact_id",
+        "path_sha256",
+        "sha256",
+        "classification",
+        "owner",
+        "purpose",
+        "expires_at",
+        "readers",
+        "storage",
+        "local_present",
+        "disposition",
+        "provider_version",
+        "audit_event_id",
+    }
+    identifiers: set[str] = set()
+    for item in document["artifacts"]:
+        if (
+            not isinstance(item, dict)
+            or set(item) != fields
+            or not all(
+                isinstance(item.get(field), str) and item[field]
+                for field in (
+                    "artifact_id",
+                    "owner",
+                    "purpose",
+                    "expires_at",
+                    "storage",
+                    "provider_version",
+                    "audit_event_id",
+                )
+            )
+            or any(
+                re.fullmatch(r"[0-9a-f]{64}", item.get(field, "")) is None
+                for field in ("path_sha256", "sha256")
+            )
+            or item.get("classification")
+            not in {
+                "terraform-state",
+                "terraform-plan",
+                "session-cookie",
+                "scoped-credential",
+                "unknown-sensitive",
+            }
+            or item.get("disposition")
+            not in {"retained-for-migration", "encrypted-rewrap"}
+            or not isinstance(item.get("local_present"), bool)
+            or not isinstance(item.get("readers"), list)
+            or not item["readers"]
+            or not all(isinstance(reader, str) and reader for reader in item["readers"])
+            or len(item["readers"]) != len(set(item["readers"]))
+            or item["artifact_id"] in identifiers
+        ):
+            raise GuardError("stored authoritative artifact entry is malformed")
+        parse_timestamp(item["expires_at"])
+        identifiers.add(item["artifact_id"])
+    return document
+
+
+def write_authoritative_artifact_manifest(path: Path) -> dict[str, Any]:
+    inventory = authoritative_artifact_inventory()
+    receipt = {
+        "schema": "fs2-serve.nebius.ai/authoritative-artifact-manifest/v1",
+        "captured_at": utc_now().isoformat().replace("+00:00", "Z"),
+        "inventory": inventory,
+    }
+    write_private_json(path, receipt)
+    return receipt
+
+
+def load_authoritative_artifact_manifest(path: Path) -> dict[str, Any]:
+    document = load_private_document(path, label="authoritative artifact manifest")
+    if (
+        not isinstance(document, dict)
+        or set(document) != {"schema", "captured_at", "inventory"}
+        or document.get("schema")
+        != "fs2-serve.nebius.ai/authoritative-artifact-manifest/v1"
+    ):
+        raise GuardError("authoritative artifact manifest has the wrong schema")
+    parse_timestamp(document["captured_at"])
+    validate_stored_authoritative_artifact_inventory(document["inventory"])
+    return document
+
+
+def inspect_authoritative_artifacts(
+    *, retired: bool, manifest: dict[str, Any] | None = None
+) -> dict[str, int | str]:
+    current = authoritative_artifact_inventory()
+    retained = [
+        item
+        for item in current["artifacts"]
+        if item["local_present"] or item["disposition"] != "encrypted-rewrap"
+    ]
+    if retired:
+        if manifest is None:
+            raise GuardError(
+                "retirement requires an authoritative pre-migration manifest"
+            )
+        previous = manifest.get("inventory")
+        if (
+            not isinstance(previous, dict)
+            or previous.get("scope") != current["scope"]
+            or previous.get("configuration_sha256") != current["configuration_sha256"]
+            or previous.get("scope_registry_sha256") != current["scope_registry_sha256"]
+            or previous.get("scope_count") != current["scope_count"]
+        ):
+            raise GuardError("artifact authority configuration changed after manifest")
+        previous_ids = {item["artifact_id"] for item in previous.get("artifacts", [])}
+        current_ids = {item["artifact_id"] for item in current["artifacts"]}
+        if previous_ids != current_ids:
+            raise GuardError("authoritative artifact inventory changed after manifest")
+        if retained:
+            raise GuardError(
+                "legacy plaintext retirement is blocked until every artifact is provider-verified encrypted-rewrap and absent locally"
+            )
+    return {
+        "phase": "retired" if retired else "migration",
+        "total_artifacts": len(current["artifacts"]),
+        "retained_artifacts": len(retained),
+    }
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -1692,11 +2874,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         choices=("infrastructure", "foundation", "workloads", "reference-data"),
         required=True,
     )
-    capture.add_argument("--live-secrets", type=Path)
     apply_gate = subparsers.add_parser("capture-apply-gate")
     apply_gate.add_argument("state_json", type=Path)
     apply_gate.add_argument("receipt", type=Path)
-    apply_gate.add_argument("--raw-state", type=Path, required=True)
+    apply_gate.add_argument(
+        "--raw-state",
+        type=Path,
+        help="Legacy owner-only input; omit to send state_document/raw_state_document as one stdin envelope.",
+    )
     apply_gate.add_argument("--identity-receipt", type=Path)
     apply_gate.add_argument("--terraform-configuration", type=Path, required=True)
     apply_gate.add_argument(
@@ -1714,9 +2899,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     saved_gate.add_argument("saved_plan", type=Path)
     saved_gate.add_argument("receipt", type=Path)
     saved_gate.add_argument("--planning-receipt", type=Path, required=True)
-    saved_gate.add_argument("--raw-state", type=Path, required=True)
+    saved_gate.add_argument(
+        "--raw-state",
+        type=Path,
+        help="Legacy owner-only input; omit to send plan_document/raw_state_document as one stdin envelope.",
+    )
     saved_gate.add_argument("--identity-receipt", type=Path)
-    saved_gate.add_argument("--live-secrets", type=Path)
     saved_gate.add_argument("--terraform-configuration", type=Path, required=True)
     saved_gate.add_argument(
         "--terraform-root",
@@ -1736,17 +2924,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     execution_gate.add_argument("--source-commit", required=True)
     execution_gate.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
     artifacts = subparsers.add_parser("capture-global-state")
-    artifacts.add_argument("path", type=Path)
     artifacts.add_argument("receipt", type=Path)
-    disposition = subparsers.add_parser("capture-disposition")
-    disposition.add_argument("manifest", type=Path)
-    disposition.add_argument("input", type=Path)
-    disposition.add_argument("receipt", type=Path)
     root = subparsers.add_parser("global-state")
-    root.add_argument("path", type=Path)
     root.add_argument("--retired", action="store_true")
     root.add_argument("--artifact-manifest", type=Path)
-    root.add_argument("--disposition-receipt", type=Path)
+    readiness = subparsers.add_parser("capture-consumer-readiness")
+    readiness.add_argument("identity_receipt", type=Path)
+    readiness.add_argument("receipt", type=Path)
+    readiness.add_argument(
+        "--phase",
+        choices=("predecessor-ready", "dual-read-ready", "current-write-ready"),
+        required=True,
+    )
     return parser.parse_args(argv)
 
 
@@ -1755,12 +2944,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "native-gate":
         query = json.loads(os.sys.stdin.read())
         terraform_configuration = Path(query.get("terraform_configuration", ""))
-        terraform = os.environ.get("FS2_TERRAFORM_EXECUTABLE", "terraform")
         result = validate_native_gate(
             query,
             authoritative_state_document=command_json(
                 [
-                    terraform,
+                    PRODUCTION_TERRAFORM_COMMAND,
                     f"-chdir={terraform_configuration}",
                     "state",
                     "pull",
@@ -1778,16 +2966,34 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     elif args.command == "capture-saved-plan-gate":
         registry = load_registry(args.registry)
-        plan_document = json.loads(
+        encoded = (
             os.sys.stdin.read()
             if str(args.plan_json) == "-"
             else args.plan_json.read_text(encoding="utf-8")
         )
+        supplied = json.loads(encoded)
+        if args.raw_state is None:
+            if not isinstance(supplied, dict) or set(supplied) != {
+                "plan_document",
+                "raw_state_document",
+            }:
+                raise GuardError(
+                    "saved-plan gate stdin envelope must contain exact plan_document and raw_state_document fields"
+                )
+            plan_document = supplied["plan_document"]
+            raw_state_document = supplied["raw_state_document"]
+        else:
+            plan_document = supplied
+            raw_state_document = load_private_document(
+                args.raw_state, label="raw Terraform state"
+            )
+        if not isinstance(plan_document, dict) or not isinstance(
+            raw_state_document, dict
+        ):
+            raise GuardError("saved-plan gate documents must be JSON objects")
         receipt = write_saved_plan_gate_receipt(
             plan_document=plan_document,
-            raw_state_document=load_private_document(
-                args.raw_state, label="raw Terraform state"
-            ),
+            raw_state_document=raw_state_document,
             saved_plan=args.saved_plan,
             planning_receipt_path=args.planning_receipt,
             identity_receipt=load_identity_receipt(
@@ -1795,11 +3001,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 registry=registry,
                 terraform_root=args.terraform_root,
             ),
-            live_secret_document=(
-                load_private_document(args.live_secrets, label="live Secret inventory")
-                if args.live_secrets is not None
-                else None
-            ),
+            live_secret_document=None,
             terraform_configuration=args.terraform_configuration,
             terraform_root=args.terraform_root,
             source_commit=args.source_commit,
@@ -1819,7 +3021,26 @@ def main(argv: Sequence[str] | None = None) -> int:
             if str(document_path) == "-"
             else document_path.read_text(encoding="utf-8")
         )
-        document = json.loads(encoded)
+        supplied = json.loads(encoded)
+        if args.command == "capture-apply-gate" and args.raw_state is None:
+            if not isinstance(supplied, dict) or set(supplied) != {
+                "state_document",
+                "raw_state_document",
+            }:
+                raise GuardError(
+                    "planning gate stdin envelope must contain exact state_document and raw_state_document fields"
+                )
+            document = supplied["state_document"]
+            raw_state_document = supplied["raw_state_document"]
+        else:
+            document = supplied
+            raw_state_document = (
+                load_private_document(args.raw_state, label="raw Terraform state")
+                if args.command == "capture-apply-gate"
+                else None
+            )
+        if not isinstance(document, dict):
+            raise GuardError("guard input document must be a JSON object")
         if args.command == "plan":
             registry = load_registry(args.registry)
             result = inspect_plan(
@@ -1834,18 +3055,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         elif args.command == "capture-state":
             registry = load_registry(args.registry)
-            live_document = (
-                load_private_document(args.live_secrets, label="live Secret inventory")
-                if args.live_secrets is not None
-                else None
-            )
             receipt = write_identity_receipt(
                 document,
                 args.receipt,
                 source_commit=args.source_commit,
                 registry=registry,
                 terraform_root=args.terraform_root,
-                live_secret_document=live_document,
+                live_secret_document=None,
             )
             result = {
                 "receipt": str(args.receipt.absolute()),
@@ -1856,9 +3072,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             registry = load_registry(args.registry)
             receipt = write_apply_gate_receipt(
                 state_document=document,
-                raw_state_document=load_private_document(
-                    args.raw_state, label="raw Terraform state"
-                ),
+                raw_state_document=raw_state_document,
                 identity_receipt=load_identity_receipt(
                     args.identity_receipt,
                     registry=registry,
@@ -1875,39 +3089,31 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "receipt": str(args.receipt.absolute()),
                 "expires_at": receipt["expires_at"],
             }
-    elif args.command == "capture-global-state":
-        receipt = write_artifact_manifest(args.path, args.receipt)
-        result = {
-            "receipt": str(args.receipt.absolute()),
-            "total_artifacts": len(receipt["artifacts"]),
-            "plaintext_artifacts": sum(
-                item["classification"] == "known-sensitive"
-                for item in receipt["artifacts"]
-            ),
-        }
-    elif args.command == "capture-disposition":
-        manifest = load_artifact_manifest(args.manifest)
-        receipt = write_disposition_receipt(
-            manifest,
-            load_private_document(args.input, label="artifact disposition input"),
-            args.receipt,
+    elif args.command == "capture-consumer-readiness":
+        receipt = write_consumer_readiness_receipt(
+            identity_receipt_path=args.identity_receipt,
+            phase=args.phase,
+            path=args.receipt,
         )
         result = {
             "receipt": str(args.receipt.absolute()),
-            "disposed_artifacts": len(receipt["artifacts"]),
+            "receipt_sha256": file_sha256(args.receipt),
+            "credential_classes": len(receipt["payload"]["classes"]),
+            "authority_evidence_id": receipt["payload"]["evidence_id"],
+        }
+    elif args.command == "capture-global-state":
+        receipt = write_authoritative_artifact_manifest(args.receipt)
+        result = {
+            "receipt": str(args.receipt.absolute()),
+            "total_artifacts": len(receipt["inventory"]["artifacts"]),
+            "authority_evidence_id": receipt["inventory"]["evidence_id"],
         }
     else:
-        result = inspect_run_root(
-            args.path,
+        result = inspect_authoritative_artifacts(
             retired=args.retired,
-            artifact_manifest=(
-                load_artifact_manifest(args.artifact_manifest)
+            manifest=(
+                load_authoritative_artifact_manifest(args.artifact_manifest)
                 if args.artifact_manifest is not None
-                else None
-            ),
-            disposition_receipt=(
-                load_disposition_receipt(args.disposition_receipt)
-                if args.disposition_receipt is not None
                 else None
             ),
         )

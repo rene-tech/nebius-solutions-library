@@ -61,7 +61,7 @@ from .configuration import (
     load_terraform_apply_receipt,
 )
 from .configuration_models import ConfigurationRevision, PlatformConfiguration
-from .crypto import KeyedHasher, PayloadCipher
+from .crypto import CustomerStorageCrypto, KeyedHasher, PayloadCipher
 from .entrypoint import SCIENTIFIC_COMPANION_COMMANDS
 from .federation import FederationRouter
 from .gpu_allocation_observer import KubernetesGpuAllocationPublisher, run_gpu_allocation_observer
@@ -111,6 +111,15 @@ def _keys(settings: Settings) -> tuple[PayloadCipher, KeyedHasher]:
         PayloadCipher.from_file(settings.payload_keyring_file),
         KeyedHasher.from_file(settings.ledger_hmac_keyring_file),
     )
+
+
+def _customer_storage_crypto(settings: Settings) -> CustomerStorageCrypto:
+    crypto = CustomerStorageCrypto.from_files(
+        settings.user_storage_keyring_file,
+        settings.user_storage_name_keyring_file,
+    )
+    crypto.assert_runtime_contract()
+    return crypto
 
 
 async def _store(settings: Settings) -> PostgresStore:
@@ -314,6 +323,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         secret_root=settings.federation_secret_dir,
     )
     store = await _store(settings)
+    customer_storage_crypto = _customer_storage_crypto(settings)
     artifact_repository = PostgresArtifactRepository(store.pool)
     artifact_service = _artifact_service(settings, artifact_repository)
     lifecycle = PostgresLifecycleRepository(store.pool)
@@ -611,6 +621,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         tokens=tokens,
         admission=admission,
         request_debug_store=request_debug_store,
+        customer_storage_crypto=customer_storage_crypto,
         metrics=metrics,
         admin_token=settings.admin_token(),
         operator_sessions=OperatorSessionService(

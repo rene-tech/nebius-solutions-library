@@ -517,6 +517,14 @@ resource "kubernetes_secret_v1" "object_storage_versioned" {
       "fs2.nebius.ai/credential-generation" = each.key
       "fs2.nebius.ai/credential-state"      = each.key == tostring(var.credential_generation) ? "current-write" : "retained-read"
     })
+    annotations = {
+      "fs2.nebius.ai/credential-class"      = "reference-data-s3-secret"
+      "fs2.nebius.ai/credential-generation" = each.key
+      "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
+        "access-key-id"     = each.value.access_key_id
+        "secret-access-key" = ephemeral.nebius_mysterybox_v1_secret_payload_entry.object_storage_versioned[each.key].data.string_value
+      }))
+    }
   }
   type      = "Opaque"
   immutable = true

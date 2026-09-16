@@ -44,6 +44,10 @@ locals {
       storageGeneration       = var.keyring_generations.storage.active
       storageNameGeneration   = var.keyring_generations.storage_name.active
       artifactStoreGeneration = var.scientific_artifacts.credential_generation
+      bindings                = var.credential_consumer_bindings
+      bindingSha256           = var.credential_consumer_binding_sha256
+      readinessReceiptSha256  = var.credential_consumer_readiness_receipt_sha256
+      rolloutStep             = var.credential_consumer_rollout_step
     }
     secrets = {
       database = {
@@ -301,6 +305,23 @@ resource "helm_release" "control_plane" {
   ]
 
   lifecycle {
+    precondition {
+      condition = var.credential_migration_phase == "consumer-rollout" ? (
+        length(var.credential_consumer_bindings) > 0 &&
+        var.credential_consumer_binding_sha256 == sha256(jsonencode(var.credential_consumer_bindings)) &&
+        can(regex("^[0-9a-f]{64}$", var.credential_consumer_readiness_receipt_sha256)) &&
+        length(var.credential_consumer_readiness_receipt_path) > 0 &&
+        contains(["dual-read", "current-write"], var.credential_consumer_rollout_step)
+        ) : (
+        length(var.credential_consumer_bindings) == 0 &&
+        var.credential_consumer_binding_sha256 == "" &&
+        var.credential_consumer_readiness_receipt_sha256 == "" &&
+        var.credential_consumer_readiness_receipt_path == "" &&
+        var.credential_consumer_rollout_step == ""
+      )
+      error_message = "Secret consumer changes require a separate consumer-rollout plan bound to exact live Secret identities and an append-only class-specific readiness receipt."
+    }
+
     precondition {
       condition = (
         local.observability_operator.schema == "fs2-serve.nebius.ai/observability-operator/v1" &&

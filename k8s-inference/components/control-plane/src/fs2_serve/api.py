@@ -79,6 +79,7 @@ from .capacity_summary import CapacitySummaryService
 from .capacity_summary_routes import capacity_summary_router
 from .configuration import ConfigurationService
 from .configuration_routes import configuration_router
+from .crypto import CustomerStorageCrypto
 from .lifecycle import (
     LifecycleAdminList,
     LifecycleRepository,
@@ -253,6 +254,7 @@ class AppRuntime:
     snapshot_capabilities: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     serving_snapshot_bundles: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     request_debug_store: DebugStore | None = None
+    customer_storage_crypto: CustomerStorageCrypto | None = None
 
     async def revalidate_routes(self) -> bool:
         if self.route_revalidator is not None and not await self.route_revalidator.refresh():

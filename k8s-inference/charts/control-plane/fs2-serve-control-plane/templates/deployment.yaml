@@ -38,6 +38,19 @@
 {{- if eq .Values.secrets.database.name .Values.secrets.migrationsDatabase.name }}
 {{- fail "secrets.database and secrets.migrationsDatabase must reference distinct DML and DDL credentials" }}
 {{- end }}
+{{- if gt (len .Values.secretRollout.bindings) 0 }}
+{{- if not (regexMatch "^[a-f0-9]{64}$" .Values.secretRollout.bindingSha256) }}
+{{- fail "secretRollout.bindingSha256 is required with exact Secret bindings" }}
+{{- end }}
+{{- if not (regexMatch "^[a-f0-9]{64}$" .Values.secretRollout.readinessReceiptSha256) }}
+{{- fail "secretRollout.readinessReceiptSha256 is required with exact Secret bindings" }}
+{{- end }}
+{{- if not (has .Values.secretRollout.rolloutStep (list "dual-read" "current-write")) }}
+{{- fail "secretRollout.rolloutStep must be dual-read or current-write with exact Secret bindings" }}
+{{- end }}
+{{- else if or .Values.secretRollout.bindingSha256 .Values.secretRollout.readinessReceiptSha256 .Values.secretRollout.rolloutStep }}
+{{- fail "Secret rollout receipt hashes must be empty when no exact bindings are supplied" }}
+{{- end }}
 {{- if and (eq .Values.catalog.delivery "pvc") (eq .Values.catalog.persistentVolumeClaimName .Values.catalog.evidencePersistentVolumeClaimName) }}
 {{- fail "catalog and qualification evidence require distinct read-only PVCs" }}
 {{- end }}
@@ -254,9 +267,29 @@ spec:
       labels:
         {{- include "fs2-serve.runtimeSelectorLabels" . | nindent 8 }}
       annotations:
+        {{- $secretUids := dict }}
+        {{- $secretResourceVersions := dict }}
+        {{- $secretContents := dict }}
+        {{- $secretAuthorityEvidence := dict }}
+        {{- $secretAuthorityObserved := dict }}
+        {{- range $address, $binding := .Values.secretRollout.bindings }}
+        {{- $_ := set $secretUids $address $binding.uid }}
+        {{- $_ := set $secretResourceVersions $address $binding.resource_version }}
+        {{- $_ := set $secretContents $address $binding.content_sha256 }}
+        {{- $_ := set $secretAuthorityEvidence $address $binding.authority_evidence_id }}
+        {{- $_ := set $secretAuthorityObserved $address $binding.authority_observed_at }}
+        {{- end }}
         fs2.nebius.ai/image-digest: {{ .Values.image.digest | quote }}
         fs2.nebius.ai/catalog-rollout-digest: {{ .Values.catalog.rolloutDigest | quote }}
-        fs2.nebius.ai/secret-rollout-sha256: {{ dict "database" .Values.secretRollout.databaseGeneration "admin" .Values.secretRollout.adminGeneration "payload" .Values.secretRollout.payloadGeneration "ledger" .Values.secretRollout.ledgerGeneration "pepper" .Values.secretRollout.pepperGeneration "attestor" .Values.secretRollout.attestorGeneration "storage" .Values.secretRollout.storageGeneration "storageName" .Values.secretRollout.storageNameGeneration "artifactStore" .Values.secretRollout.artifactStoreGeneration | toJson | sha256sum | quote }}
+        fs2.nebius.ai/secret-rollout-sha256: {{ dict "database" .Values.secretRollout.databaseGeneration "admin" .Values.secretRollout.adminGeneration "payload" .Values.secretRollout.payloadGeneration "ledger" .Values.secretRollout.ledgerGeneration "pepper" .Values.secretRollout.pepperGeneration "attestor" .Values.secretRollout.attestorGeneration "storage" .Values.secretRollout.storageGeneration "storageName" .Values.secretRollout.storageNameGeneration "artifactStore" .Values.secretRollout.artifactStoreGeneration "bindings" .Values.secretRollout.bindingSha256 "readiness" .Values.secretRollout.readinessReceiptSha256 "step" .Values.secretRollout.rolloutStep | toJson | sha256sum | quote }}
+        fs2.nebius.ai/secret-binding-sha256: {{ .Values.secretRollout.bindingSha256 | quote }}
+        fs2.nebius.ai/secret-uid-set-sha256: {{ $secretUids | toJson | sha256sum | quote }}
+        fs2.nebius.ai/secret-resource-version-set-sha256: {{ $secretResourceVersions | toJson | sha256sum | quote }}
+        fs2.nebius.ai/secret-content-set-sha256: {{ $secretContents | toJson | sha256sum | quote }}
+        fs2.nebius.ai/secret-authority-evidence-set-sha256: {{ $secretAuthorityEvidence | toJson | sha256sum | quote }}
+        fs2.nebius.ai/secret-authority-observed-set-sha256: {{ $secretAuthorityObserved | toJson | sha256sum | quote }}
+        fs2.nebius.ai/secret-readiness-receipt-sha256: {{ .Values.secretRollout.readinessReceiptSha256 | quote }}
+        fs2.nebius.ai/secret-rollout-step: {{ .Values.secretRollout.rolloutStep | quote }}
         {{- if .Values.adminReadAdapters.observability.enabled }}
         fs2.nebius.ai/admin-observability-config-sha256: {{ .Values.adminReadAdapters.observability | toJson | sha256sum | quote }}
         {{- end }}

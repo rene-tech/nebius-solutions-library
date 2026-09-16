@@ -196,7 +196,15 @@ resource "kubernetes_secret_v1" "modelexpress_nvcrio_versioned" {
     name      = "fs2-modelexpress-nvcrio-v${each.key}"
     namespace = var.model_express.namespace
     labels    = merge(local.common_labels, { "fs2.nebius.ai/credential-generation" = each.key })
+    annotations = {
+      "fs2.nebius.ai/credential-class"      = "registry-credentials"
+      "fs2.nebius.ai/credential-generation" = each.key
+      "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
+        ".dockerconfigjson" = var.registry_nvcrio_dockerconfigs[each.key]
+      }))
+    }
   }
+  immutable        = true
   type             = "kubernetes.io/dockerconfigjson"
   data_wo          = { ".dockerconfigjson" = lookup(var.registry_nvcrio_dockerconfigs, each.key, null) }
   data_wo_revision = tonumber(each.key)

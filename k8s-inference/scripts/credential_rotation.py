@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Crash-safe, provider-reconciled rotation for every durable credential class.
+"""Append-only, authority-reconciled rotation evidence for durable credentials.
 
-The provider adapter is an executable that accepts one JSON request on stdin
-and returns one JSON document on stdout. Secret material is supplied directly
-to that adapter (for example through its process environment); this controller
-records only provider IDs and SHA-256 fingerprints.
+The controller uses one fixed kernel-authenticated read-only authority client.
+It records provider IDs, fingerprints, exact consumer proofs, and durable
+authority attestations; it never handles credential values or mutates a
+provider credential.
 """
 
 from __future__ import annotations
@@ -24,8 +24,20 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from scripts.append_only_evidence import (
+    EvidenceError,
+    append_event,
+    latest_state,
+    load_stream,
+)
+
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REGISTRY = ROOT / "security/durable-credential-registry.json"
+DEFAULT_CONSUMER_CONTRACTS = ROOT / "security/credential-consumer-contracts.json"
+PRODUCTION_PROVIDER_COMMAND = (
+    "/usr/bin/python3",
+    str(ROOT / "scripts" / "credential_provider_adapter.py"),
+)
 
 
 class RotationError(RuntimeError):
@@ -56,26 +68,14 @@ def private_directory(path: Path) -> Path:
     return path
 
 
-def atomic_private_json(path: Path, value: Any) -> None:
-    if path.is_symlink():
-        raise RotationError("rotation journal path must not be a symlink")
-    temporary = path.with_name(f".{path.name}.tmp-{os.getpid()}")
-    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+def append_journal_state(path: Path, value: Any) -> None:
+    """Append one full state snapshot without replacing or deleting evidence."""
+
+    event = value.get("events", [{}])[-1].get("event", value.get("phase", "state"))
     try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            json.dump(value, stream, indent=2, sort_keys=True)
-            stream.write("\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, path)
-        path.chmod(0o600)
-        directory = os.open(path.parent, os.O_RDONLY)
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
-    finally:
-        temporary.unlink(missing_ok=True)
+        append_event(path, stream="credential-rotation", event=event, state=value)
+    except EvidenceError as error:
+        raise RotationError(str(error)) from error
 
 
 @contextmanager
@@ -124,6 +124,125 @@ def credential_policy(
     return policy
 
 
+def load_consumer_contracts(
+    path: Path, registry: dict[str, Any]
+) -> dict[str, dict[str, Any]]:
+    if path.is_symlink() or not path.is_file():
+        raise RotationError("credential consumer contracts are absent or unsafe")
+    document = json.loads(path.read_text(encoding="utf-8"))
+    if document.get("schema") != "fs2-serve.nebius.ai/credential-consumer-contracts/v1":
+        raise RotationError("credential consumer contracts have the wrong schema")
+    contracts = document.get("contracts")
+    expected = {item["id"] for item in registry["credentials"]}
+    if not isinstance(contracts, dict) or set(contracts) != expected:
+        raise RotationError(
+            "credential consumer contracts must cover every registered class exactly"
+        )
+    for credential_class, contract in contracts.items():
+        if (
+            not isinstance(contract, dict)
+            or set(contract) != {"adapter", "authority", "consumers", "readiness"}
+            or not all(
+                isinstance(contract.get(field), str) and contract[field]
+                for field in ("adapter", "authority", "readiness")
+            )
+            or not isinstance(contract.get("consumers"), list)
+            or not contract["consumers"]
+            or not all(
+                isinstance(consumer, str) and consumer
+                for consumer in contract["consumers"]
+            )
+            or len(contract["consumers"]) != len(set(contract["consumers"]))
+        ):
+            raise RotationError(
+                f"credential consumer contract is malformed for {credential_class}"
+            )
+    return contracts
+
+
+def require_consumer_readiness(
+    journal: dict[str, Any],
+    successor: dict[str, Any],
+    response: dict[str, Any],
+    *,
+    expected_write_id: str,
+) -> None:
+    """Verify one class-specific, provider-derived readiness statement."""
+
+    contract = journal["consumer_contract"]
+    expected = {
+        "schema": "fs2-serve.nebius.ai/credential-consumer-readiness/v1",
+        "credential_class": journal["credential_class"],
+        "adapter": contract["adapter"],
+        "authority": contract["authority"],
+        "consumers": contract["consumers"],
+        "readiness": contract["readiness"],
+        "predecessor_id": journal["predecessor"]["id"],
+        "successor_id": successor["id"],
+        "read_ids": [journal["predecessor"]["id"], successor["id"]],
+        "current_write_id": expected_write_id,
+        "ready": True,
+    }
+    if any(response.get(key) != value for key, value in expected.items()):
+        raise RotationError(
+            "provider did not prove the exact class-specific consumer contract"
+        )
+    if not all(
+        isinstance(response.get(field), str) and response[field]
+        for field in ("evidence_id", "observed_at")
+    ):
+        raise RotationError("consumer readiness lacks authoritative evidence identity")
+    bindings = response.get("secret_bindings")
+    if not isinstance(bindings, list):
+        raise RotationError("consumer readiness lacks Secret binding inventory")
+    if "kubernetes" in contract["authority"] and not bindings:
+        raise RotationError("Kubernetes consumer readiness has no live Secret binding")
+    bound_consumers: set[str] = set()
+    for binding in bindings:
+        required = {
+            "consumer",
+            "namespace",
+            "name",
+            "uid",
+            "resource_version",
+            "content_sha256",
+            "generation",
+            "immutable",
+            "available",
+        }
+        if (
+            not isinstance(binding, dict)
+            or set(binding) != required
+            or binding["consumer"] not in contract["consumers"]
+            or not all(
+                isinstance(binding[field], str) and binding[field]
+                for field in (
+                    "consumer",
+                    "namespace",
+                    "name",
+                    "uid",
+                    "resource_version",
+                )
+            )
+            or not isinstance(binding["content_sha256"], str)
+            or len(binding["content_sha256"]) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in binding["content_sha256"]
+            )
+            or not isinstance(binding["generation"], int)
+            or binding["generation"] < 1
+            or binding["immutable"] is not True
+            or binding["available"] is not True
+        ):
+            raise RotationError("consumer readiness has an invalid live binding")
+        bound_consumers.add(binding["consumer"])
+    if "kubernetes" in contract["authority"] and bound_consumers != set(
+        contract["consumers"]
+    ):
+        raise RotationError("consumer readiness omits a declared Kubernetes consumer")
+
+
 def provider_call(command: Sequence[str], request: dict[str, Any]) -> dict[str, Any]:
     if not command:
         raise RotationError("provider adapter command is empty")
@@ -140,6 +259,33 @@ def provider_call(command: Sequence[str], request: dict[str, Any]) -> dict[str, 
         raise RotationError("credential provider operation failed") from error
     if not isinstance(response, dict):
         raise RotationError("credential provider returned a malformed response")
+    if request.get("operation") != "verify-attestation":
+        claim = response.get("authorityAttestation")
+        attested = {
+            key: value
+            for key, value in response.items()
+            if key != "authorityAttestation"
+        }
+        if not isinstance(claim, dict):
+            raise RotationError(
+                "credential provider response is not authority-attested"
+            )
+        verification = provider_call(
+            command,
+            {
+                "schema": "fs2-serve.nebius.ai/credential-provider-operation/v1",
+                "operation": "verify-attestation",
+                "attested_payload": attested,
+                "authority_attestation": claim,
+            },
+        )
+        if (
+            verification.get("valid") is not True
+            or verification.get("payload_sha256") != canonical_sha256(attested)
+            or verification.get("configuration_sha256")
+            != claim.get("configuration_sha256")
+        ):
+            raise RotationError("credential provider attestation did not verify")
     return response
 
 
@@ -295,13 +441,11 @@ def require_lineage(
 
 
 def load_journal(path: Path) -> dict[str, Any]:
-    if path.is_symlink() or not path.is_file():
-        raise RotationError("rotation journal is absent or unsafe")
-    metadata = path.stat()
-    if metadata.st_uid != os.geteuid() or stat.S_IMODE(metadata.st_mode) != 0o600:
-        raise RotationError("rotation journal must be owner-owned mode 0600")
-    journal = json.loads(path.read_text(encoding="utf-8"))
-    if journal.get("schema") != "fs2-serve.nebius.ai/credential-rotation/v2":
+    try:
+        journal = latest_state(path, stream="credential-rotation")
+    except EvidenceError as error:
+        raise RotationError(str(error)) from error
+    if journal.get("schema") != "fs2-serve.nebius.ai/credential-rotation/v3":
         raise RotationError("rotation journal has the wrong schema")
     return journal
 
@@ -309,7 +453,7 @@ def load_journal(path: Path) -> dict[str, Any]:
 def operation_request(
     journal: dict[str, Any], operation: str, **extra: Any
 ) -> dict[str, Any]:
-    return {
+    request = {
         "schema": "fs2-serve.nebius.ai/credential-provider-operation/v1",
         "operation": operation,
         "operation_id": journal["operation_id"],
@@ -319,6 +463,10 @@ def operation_request(
         "purpose": journal["purpose"],
         **extra,
     }
+    if operation == "prove-consumers":
+        request["consumer_contract"] = journal["consumer_contract"]
+        request["consumer_contracts_sha256"] = journal["consumer_contracts_sha256"]
+    return request
 
 
 def reconcile_created(
@@ -362,13 +510,13 @@ def record_phase(
 
     journal["phase"] = phase
     journal["events"].append({"event": event, "recorded_at": utc_timestamp()})
-    atomic_private_json(journal_path, journal)
+    append_journal_state(journal_path, journal)
 
 
 def reconcile_pending_transition(
     journal: dict[str, Any], command: Sequence[str]
 ) -> str | None:
-    """Recover the exact phase after interruption without repeating mutation."""
+    """Recover a read-only proof phase after interruption."""
 
     successor = journal.get("successor")
     if not isinstance(successor, dict):
@@ -386,12 +534,13 @@ def reconcile_pending_transition(
                 expected_write_id=journal["predecessor"]["id"],
             ),
         )
-        if response == {
-            "dual_read": True,
-            "current_write_id": journal["predecessor"]["id"],
-        }:
-            return "dual-read"
-        raise RotationError("provider could not reconcile dual-read intent")
+        require_consumer_readiness(
+            journal,
+            successor,
+            response,
+            expected_write_id=journal["predecessor"]["id"],
+        )
+        return "dual-read"
     if phase == "switch-write-pending":
         response = provider_call(
             command,
@@ -404,70 +553,25 @@ def reconcile_pending_transition(
                 expected_write_id=successor["id"],
             ),
         )
-        if response == {"dual_read": True, "current_write_id": successor["id"]}:
-            return "current-write"
-        if response == {
-            "dual_read": True,
-            "current_write_id": journal["predecessor"]["id"],
-        }:
-            return None
-        raise RotationError("provider returned ambiguous write-cutover state")
-    if phase == "disable-pending":
-        identity = exact_identity(
-            provider_call(
-                command,
-                operation_request(
-                    journal,
-                    "get",
-                    credential_id=journal["predecessor"]["id"],
-                ),
-            )
+        require_consumer_readiness(
+            journal, successor, response, expected_write_id=successor["id"]
         )
-        require_lineage(
-            identity,
-            credential_class=journal["credential_class"],
-            owner_id=journal["owner_id"],
-            project_id=journal["project_id"],
-            purpose=journal["purpose"],
-            generation=journal["predecessor"]["generation"],
-            fingerprint=journal["predecessor"]["fingerprint"],
-            statuses={"active", "disabled"},
-        )
-        return "predecessor-disabled" if identity["status"] == "disabled" else None
-    if phase == "delete-pending":
-        absence = provider_call(
-            command,
-            operation_request(
-                journal,
-                "prove-absence",
-                credential_id=journal["predecessor"]["id"],
-                successor_id=successor["id"],
-            ),
-        )
-        if absence == {
-            "get_absent": True,
-            "list_absent": True,
-            "successor_active": True,
-        }:
-            return "predecessor-deleted"
-        if absence == {
-            "get_absent": False,
-            "list_absent": False,
-            "successor_active": True,
-        }:
-            return None
-        raise RotationError("provider returned ambiguous predecessor absence evidence")
+        return "current-write"
     return None
 
 
-def create(args: argparse.Namespace) -> dict[str, Any]:
+def adopt_successor(args: argparse.Namespace) -> dict[str, Any]:
+    """Adopt a separately staged provider credential; never create one here."""
     directory = private_directory(args.directory)
-    journal_path = directory / "journal.json"
+    journal_path = directory / "rotation.events"
     registry = load_registry(args.registry)
     policy = credential_policy(registry, args.credential_class)
+    contracts = load_consumer_contracts(args.consumer_contracts, registry)
     provider_identity = provider_command_identity(args.provider_command)
     with locked(directory):
-        if journal_path.exists():
+        if journal_path.exists() and load_stream(
+            journal_path, stream="credential-rotation"
+        ):
             raise RotationError("rotation journal already exists; reconcile it first")
         predecessor = exact_identity(
             provider_call(
@@ -499,7 +603,7 @@ def create(args: argparse.Namespace) -> dict[str, Any]:
                 "successor fingerprint must differ from the retained predecessor"
             )
         journal = {
-            "schema": "fs2-serve.nebius.ai/credential-rotation/v2",
+            "schema": "fs2-serve.nebius.ai/credential-rotation/v3",
             "operation_id": str(uuid.uuid4()),
             "credential_class": args.credential_class,
             "owner_id": args.owner_id,
@@ -507,43 +611,28 @@ def create(args: argparse.Namespace) -> dict[str, Any]:
             "purpose": policy["purpose"],
             "readers": policy["readers"],
             "registry_sha256": canonical_sha256(registry),
+            "consumer_contracts_sha256": canonical_sha256(
+                {
+                    "schema": "fs2-serve.nebius.ai/credential-consumer-contracts/v1",
+                    "contracts": contracts,
+                }
+            ),
+            "consumer_contract": contracts[args.credential_class],
             "provider_command": provider_identity,
             "predecessor": predecessor,
             "successor_generation": predecessor["generation"] + 1,
             "successor_fingerprint": args.successor_fingerprint,
             "successor": None,
-            "phase": "create-pending",
+            "phase": "adoption-pending",
             "created_at": utc_timestamp(),
             "events": [],
         }
-        atomic_private_json(journal_path, journal)
-        try:
-            created = exact_identity(
-                provider_call(
-                    args.provider_command,
-                    operation_request(
-                        journal,
-                        "create",
-                        generation=journal["successor_generation"],
-                        fingerprint=journal["successor_fingerprint"],
-                    ),
-                )
+        append_journal_state(journal_path, journal)
+        created = reconcile_created(journal, args.provider_command)
+        if created is None:
+            raise RotationError(
+                "the separately staged successor is absent from authoritative provider inventory"
             )
-        except BaseException:
-            journal["phase"] = "create-uncertain"
-            journal["events"].append(
-                {"event": "create-interrupted", "recorded_at": utc_timestamp()}
-            )
-            atomic_private_json(journal_path, journal)
-            reconciled = reconcile_created(journal, args.provider_command)
-            if reconciled is not None:
-                journal["successor"] = reconciled
-                journal["phase"] = "successor-active"
-                journal["events"].append(
-                    {"event": "create-reconciled", "recorded_at": utc_timestamp()}
-                )
-                atomic_private_json(journal_path, journal)
-            raise
         require_lineage(
             created,
             credential_class=args.credential_class,
@@ -563,24 +652,19 @@ def create(args: argparse.Namespace) -> dict[str, Any]:
         journal["successor"] = created
         journal["phase"] = "successor-active"
         journal["events"].append(
-            {"event": "successor-created", "recorded_at": utc_timestamp()}
+            {"event": "successor-adopted", "recorded_at": utc_timestamp()}
         )
-        atomic_private_json(journal_path, journal)
+        append_journal_state(journal_path, journal)
         return {"status": journal["phase"], "credential_id": created["id"]}
 
 
 def reconcile(args: argparse.Namespace) -> dict[str, Any]:
     directory = private_directory(args.directory)
-    journal_path = directory / "journal.json"
+    journal_path = directory / "rotation.events"
     with locked(directory):
         journal = load_journal(journal_path)
         require_provider_command(journal, args.provider_command)
-        if journal.get("phase") in {
-            "dual-read-pending",
-            "switch-write-pending",
-            "disable-pending",
-            "delete-pending",
-        }:
+        if journal.get("phase") in {"dual-read-pending", "switch-write-pending"}:
             recovered = reconcile_pending_transition(journal, args.provider_command)
             if recovered is None:
                 return {"status": journal["phase"]}
@@ -596,24 +680,24 @@ def reconcile(args: argparse.Namespace) -> dict[str, Any]:
             }
         successor = reconcile_created(journal, args.provider_command)
         if successor is None:
-            if journal["phase"] not in {"create-pending", "create-uncertain"}:
+            if journal["phase"] not in {"adoption-pending"}:
                 raise RotationError("recorded successor is absent from the provider")
             return {"status": "no-successor-created"}
         if journal.get("successor") not in (None, successor):
             raise RotationError("provider successor differs from the durable journal")
         journal["successor"] = successor
-        if journal["phase"] in {"create-pending", "create-uncertain"}:
+        if journal["phase"] in {"adoption-pending"}:
             journal["phase"] = "successor-active"
         journal["events"].append(
             {"event": "provider-reconciled", "recorded_at": utc_timestamp()}
         )
-        atomic_private_json(journal_path, journal)
+        append_journal_state(journal_path, journal)
         return {"status": journal["phase"], "credential_id": successor["id"]}
 
 
 def transition(args: argparse.Namespace) -> dict[str, Any]:
     directory = private_directory(args.directory)
-    journal_path = directory / "journal.json"
+    journal_path = directory / "rotation.events"
     with locked(directory):
         journal = load_journal(journal_path)
         require_provider_command(journal, args.provider_command)
@@ -622,9 +706,7 @@ def transition(args: argparse.Namespace) -> dict[str, Any]:
             raise RotationError("a provider-reconciled successor is required")
         pending_for_command = {
             "prove-dual-read": "dual-read-pending",
-            "switch-write": "switch-write-pending",
-            "disable-old": "disable-pending",
-            "delete-old": "delete-pending",
+            "prove-current-write": "switch-write-pending",
         }
         expected_pending = pending_for_command.get(args.command)
         if journal.get("phase") == expected_pending:
@@ -638,9 +720,7 @@ def transition(args: argparse.Namespace) -> dict[str, Any]:
                 )
                 return {"status": recovered, "credential_id": successor["id"]}
             retry_phases = {
-                "switch-write": "dual-read",
-                "disable-old": "current-write",
-                "delete-old": "predecessor-disabled",
+                "prove-current-write": "dual-read",
             }
             if args.command not in retry_phases:
                 raise RotationError("pending transition could not be reconciled")
@@ -660,15 +740,15 @@ def transition(args: argparse.Namespace) -> dict[str, Any]:
                     expected_write_id=journal["predecessor"]["id"],
                 ),
             )
-            if response != {
-                "dual_read": True,
-                "current_write_id": journal["predecessor"]["id"],
-            }:
-                raise RotationError(
-                    "provider did not prove dual-read/predecessor-write"
-                )
+            require_consumer_readiness(
+                journal,
+                successor,
+                response,
+                expected_write_id=journal["predecessor"]["id"],
+            )
+            journal["dual_read_evidence_sha256"] = canonical_sha256(response)
             record_phase(journal_path, journal, "dual-read", "prove-dual-read")
-        elif args.command == "switch-write":
+        elif args.command == "prove-current-write":
             if journal["phase"] != "dual-read":
                 raise RotationError("write cutover requires dual-read proof")
             record_phase(
@@ -678,225 +758,24 @@ def transition(args: argparse.Namespace) -> dict[str, Any]:
                 args.provider_command,
                 operation_request(
                     journal,
-                    "switch-write",
+                    "prove-consumers",
                     predecessor_id=journal["predecessor"]["id"],
                     successor_id=successor["id"],
+                    expected_read_ids=[journal["predecessor"]["id"], successor["id"]],
+                    expected_write_id=successor["id"],
                 ),
             )
-            if response != {"dual_read": True, "current_write_id": successor["id"]}:
-                raise RotationError("provider did not prove successor-only writes")
-            record_phase(journal_path, journal, "current-write", "switch-write")
-        elif args.command == "disable-old":
-            if journal["phase"] != "current-write":
-                raise RotationError(
-                    "predecessor disable requires successor write proof"
-                )
-            if journal["credential_class"] == "payload-keyring":
-                migration = provider_call(
-                    args.provider_command,
-                    operation_request(
-                        journal,
-                        "prove-ciphertext-migration",
-                        predecessor_id=journal["predecessor"]["id"],
-                        successor_id=successor["id"],
-                        aad_contract="fs2-serve.nebius.ai/payload-aad/v1",
-                    ),
-                )
-                required_counts = (
-                    "operation_ciphertexts",
-                    "request_debug_ciphertexts",
-                    "customer_storage_ciphertexts",
-                )
-                if (
-                    migration.get("aad_contract")
-                    != "fs2-serve.nebius.ai/payload-aad/v1"
-                    or migration.get("old_key_references") != 0
-                    or migration.get("current_write_id") != successor["id"]
-                    or not all(
-                        isinstance(migration.get(key), int) and migration[key] >= 1
-                        for key in required_counts
-                    )
-                ):
-                    raise RotationError(
-                        "payload predecessor cannot be disabled before deployed operation, request-debug and customer-storage migration proof"
-                    )
-                journal["payload_migration_evidence_sha256"] = canonical_sha256(
-                    migration
-                )
-            if journal["credential_class"] == "customer-storage-cipher-keyring":
-                migration = provider_call(
-                    args.provider_command,
-                    operation_request(
-                        journal,
-                        "prove-customer-storage-cipher-migration",
-                        predecessor_id=journal["predecessor"]["id"],
-                        successor_id=successor["id"],
-                        aad_contract="fs2.user-storage/v1",
-                    ),
-                )
-                if not (
-                    migration.get("aad_contract") == "fs2.user-storage/v1"
-                    and migration.get("old_key_references") == 0
-                    and migration.get("current_write_id") == successor["id"]
-                    and isinstance(migration.get("preexisting_ciphertexts"), int)
-                    and migration["preexisting_ciphertexts"] >= 1
-                    and isinstance(migration.get("successor_ciphertexts"), int)
-                    and migration["successor_ciphertexts"] >= 1
-                    and migration.get("old_generation_decrypt_verified") is True
-                    and migration.get("new_generation_decrypt_verified") is True
-                    and migration.get("rollback_decrypt_verified") is True
-                    and migration.get("tenant_principal_binding_verified") is True
-                ):
-                    raise RotationError(
-                        "customer-storage cipher predecessor cannot be disabled before exact-AAD old/new/rollback canaries and zero old-key references"
-                    )
-                journal["storage_cipher_migration_evidence_sha256"] = canonical_sha256(
-                    migration
-                )
-            if journal["credential_class"] == "customer-storage-name-keyring":
-                migration = provider_call(
-                    args.provider_command,
-                    operation_request(
-                        journal,
-                        "prove-customer-storage-name-migration",
-                        predecessor_id=journal["predecessor"]["id"],
-                        successor_id=successor["id"],
-                    ),
-                )
-                if not (
-                    migration.get("old_key_references") == 0
-                    and migration.get("current_write_id") == successor["id"]
-                    and isinstance(migration.get("preexisting_names"), int)
-                    and migration["preexisting_names"] >= 1
-                    and isinstance(migration.get("successor_names"), int)
-                    and migration["successor_names"] >= 1
-                    and migration.get("old_generation_verified") is True
-                    and migration.get("new_generation_verified") is True
-                    and migration.get("rollback_verified") is True
-                    and migration.get("collision_free") is True
-                ):
-                    raise RotationError(
-                        "customer-storage name predecessor cannot be disabled before old/new/rollback canaries and zero old-key references"
-                    )
-                journal["storage_name_migration_evidence_sha256"] = canonical_sha256(
-                    migration
-                )
-            if journal["credential_class"] in {
-                "pat-bootstrap",
-                "pat-scientific",
-                "pat-website",
-                "admin-token",
-            }:
-                continuity = provider_call(
-                    args.provider_command,
-                    operation_request(
-                        journal,
-                        "prove-auth-continuity",
-                        predecessor_id=journal["predecessor"]["id"],
-                        successor_id=successor["id"],
-                    ),
-                )
-                if continuity != {
-                    "predecessor_valid": True,
-                    "successor_valid": True,
-                    "current_write_id": successor["id"],
-                }:
-                    raise RotationError(
-                        "authentication predecessor cannot be disabled without overlap continuity proof"
-                    )
-                journal["auth_continuity_evidence_sha256"] = canonical_sha256(
-                    continuity
-                )
-            record_phase(
-                journal_path,
-                journal,
-                "disable-pending",
-                "disable-predecessor-intent",
+            require_consumer_readiness(
+                journal, successor, response, expected_write_id=successor["id"]
             )
-            response = provider_call(
-                args.provider_command,
-                operation_request(
-                    journal,
-                    "disable",
-                    credential_id=journal["predecessor"]["id"],
-                    successor_id=successor["id"],
-                ),
-            )
-            identity = exact_identity(response)
-            require_lineage(
-                identity,
-                credential_class=journal["credential_class"],
-                owner_id=journal["owner_id"],
-                project_id=journal["project_id"],
-                purpose=journal["purpose"],
-                generation=journal["predecessor"]["generation"],
-                fingerprint=journal["predecessor"]["fingerprint"],
-                statuses={"disabled"},
-            )
-            record_phase(
-                journal_path,
-                journal,
-                "predecessor-disabled",
-                "disable-old",
-            )
-        elif args.command == "delete-old":
-            if journal["phase"] != "predecessor-disabled":
-                raise RotationError("predecessor must be disabled before deletion")
-            if args.confirm_predecessor_id != journal["predecessor"]["id"]:
-                raise RotationError("deletion confirmation differs from predecessor")
-            proof = provider_call(
-                args.provider_command,
-                operation_request(
-                    journal,
-                    "prove-zero-readers",
-                    credential_id=journal["predecessor"]["id"],
-                    successor_id=successor["id"],
-                ),
-            )
-            if proof != {"reader_references": 0, "current_write_id": successor["id"]}:
-                raise RotationError("provider did not prove zero predecessor readers")
-            journal["zero_reader_evidence_sha256"] = canonical_sha256(proof)
-            record_phase(
-                journal_path,
-                journal,
-                "delete-pending",
-                "delete-predecessor-intent",
-            )
-            provider_call(
-                args.provider_command,
-                operation_request(
-                    journal,
-                    "delete",
-                    credential_id=journal["predecessor"]["id"],
-                ),
-            )
-            absence = provider_call(
-                args.provider_command,
-                operation_request(
-                    journal,
-                    "prove-absence",
-                    credential_id=journal["predecessor"]["id"],
-                    successor_id=successor["id"],
-                ),
-            )
-            if absence != {
-                "get_absent": True,
-                "list_absent": True,
-                "successor_active": True,
-            }:
-                raise RotationError("provider did not prove predecessor deletion")
-            record_phase(
-                journal_path,
-                journal,
-                "predecessor-deleted",
-                "delete-old",
-            )
+            journal["current_write_evidence_sha256"] = canonical_sha256(response)
+            record_phase(journal_path, journal, "current-write", "prove-current-write")
         else:
             raise RotationError("unsupported rotation transition")
         journal["events"].append(
             {"event": args.command, "recorded_at": utc_timestamp()}
         )
-        atomic_private_json(journal_path, journal)
+        append_journal_state(journal_path, journal)
         return {"status": journal["phase"], "credential_id": successor["id"]}
 
 
@@ -904,11 +783,14 @@ def audit_inventory(args: argparse.Namespace) -> dict[str, Any]:
     """Seal a provider-derived, value-free inventory for every credential class."""
 
     directory = private_directory(args.directory)
-    receipt_path = directory / "credential-inventory.receipt.json"
+    receipt_path = directory / "credential-inventory.events"
     registry = load_registry(args.registry)
+    contracts = load_consumer_contracts(args.consumer_contracts, registry)
     provider_identity = provider_command_identity(args.provider_command)
     with locked(directory):
-        if receipt_path.exists() or receipt_path.is_symlink():
+        if receipt_path.exists() and load_stream(
+            receipt_path, stream="credential-inventory"
+        ):
             raise RotationError("credential inventory receipt is write-once")
         response = provider_call(
             args.provider_command,
@@ -964,16 +846,32 @@ def audit_inventory(args: argparse.Namespace) -> dict[str, Any]:
             "schema": "fs2-serve.nebius.ai/credential-inventory/v1",
             "project_id": args.project_id,
             "registry_sha256": canonical_sha256(registry),
+            "consumer_contracts_sha256": canonical_sha256(
+                {
+                    "schema": "fs2-serve.nebius.ai/credential-consumer-contracts/v1",
+                    "contracts": contracts,
+                }
+            ),
             "provider_command": provider_identity,
+            "authority_attestation": response["authorityAttestation"],
             "audited_at": utc_timestamp(),
             "classes": dict(sorted(classes.items())),
         }
-        atomic_private_json(receipt_path, receipt)
+        try:
+            appended = append_event(
+                receipt_path,
+                stream="credential-inventory",
+                event="provider-inventory-audited",
+                state=receipt,
+            )
+        except EvidenceError as error:
+            raise RotationError(str(error)) from error
         return {
             "status": "inventory-audited",
             "credential_classes": len(classes),
             "credentials": len(items),
             "receipt": str(receipt_path),
+            "receipt_sha256": appended["sha256"],
         }
 
 
@@ -981,9 +879,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
-    parser.add_argument("--provider-command", action="append", required=True)
+    parser.add_argument(
+        "--consumer-contracts", type=Path, default=DEFAULT_CONSUMER_CONTRACTS
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
-    create_parser = subparsers.add_parser("create")
+    create_parser = subparsers.add_parser("adopt-successor")
     create_parser.add_argument("--credential-class", required=True)
     create_parser.add_argument("--owner-id", required=True)
     create_parser.add_argument("--project-id", required=True)
@@ -994,18 +894,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     inventory_parser = subparsers.add_parser("audit-inventory")
     inventory_parser.add_argument("--project-id", required=True)
     subparsers.add_parser("prove-dual-read")
-    subparsers.add_parser("switch-write")
-    subparsers.add_parser("disable-old")
-    delete_parser = subparsers.add_parser("delete-old")
-    delete_parser.add_argument("--confirm-predecessor-id", required=True)
+    subparsers.add_parser("prove-current-write")
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     os.umask(0o077)
     args = parse_args(argv)
+    args.provider_command = list(PRODUCTION_PROVIDER_COMMAND)
     handler = {
-        "create": create,
+        "adopt-successor": adopt_successor,
         "reconcile": reconcile,
         "audit-inventory": audit_inventory,
     }.get(args.command, transition)

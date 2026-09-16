@@ -336,10 +336,19 @@ resource "kubernetes_secret_v1" "scientific_artifact_store_versioned" {
     })
     annotations = {
       "fs2.nebius.ai/artifact-store-access-key-id" = var.scientific_artifacts.object_storage_access.generations[each.key].access_key_id
+      "fs2.nebius.ai/credential-class"             = "scientific-artifact-s3-secret"
+      "fs2.nebius.ai/credential-generation"        = each.key
+      "fs2.nebius.ai/content-sha256" = sha256(jsonencode({
+        (local.scientific_artifacts_secret_key) = jsonencode({
+          access_key_id     = var.scientific_artifacts.object_storage_access.generations[each.key].access_key_id
+          secret_access_key = ephemeral.nebius_mysterybox_v1_secret_payload_entry.scientific_artifacts_versioned[each.key].data.string_value
+        })
+      }))
     }
   }
 
-  type = "Opaque"
+  immutable = true
+  type      = "Opaque"
   data_wo = {
     (local.scientific_artifacts_secret_key) = jsonencode({
       access_key_id     = var.scientific_artifacts.object_storage_access.generations[each.key].access_key_id

@@ -1,5 +1,10 @@
 # Operator access and credential migration
 
+> **Superseded operational procedure.** This historical design record includes
+> irreversible transition examples that are not authorized. The canonical
+> additive/no-irreversible-action procedure is
+> `docs/OPERATOR_ACCESS_HYGIENE_V2.md`. Do not execute commands from this file.
+
 Operator handoff, durable-key rotation, and legacy-state retirement are gated
 migrations. A named credential generation is immutable: advance by creating a
 new generation, retain predecessors for reads, and never put new bytes behind
