@@ -44,6 +44,7 @@ locals {
     runtime          = "fs2_serve_runtime"
     maintenance      = "fs2_serve_maintenance"
     activation       = "fs2_serve_activation"
+    storage          = "fs2_serve_storage"
     restore_verifier = "fs2_serve_restore_verifier"
     reporting        = "fs2_serve_reporting"
     monitoring       = "pg_monitor"
@@ -53,6 +54,7 @@ locals {
     "fs2_serve_runtime",
     "fs2_serve_maintenance",
     "fs2_serve_activation",
+    "fs2_serve_storage",
     "fs2_serve_restore_verifier",
     "fs2_serve_reporting",
   ]

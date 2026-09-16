@@ -29,6 +29,33 @@
     "scientificArtifacts"
   ],
   "properties": {
+    "customerStorage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "projectId", "region", "defaultMode", "quotaBytes", "excludedTenants", "resourceCredentialsSecretName", "iamCredentialsSecretName", "resourceCredentialsGeneration", "iamCredentialsGeneration", "databaseSecretName", "cryptoSecretName", "egressCidrs", "egressContractSha256", "egressContractValidUntil", "egressContractEndpoints", "keyTtlDays", "rotationWindowDays", "actionTimeoutSeconds", "resources"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "projectId": {"type": "string"},
+        "region": {"type": "string"},
+        "defaultMode": {"enum": ["tenant", "user"]},
+        "quotaBytes": {"type": "integer", "minimum": 1},
+        "excludedTenants": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "resourceCredentialsSecretName": {"type": "string"},
+        "iamCredentialsSecretName": {"type": "string"},
+        "resourceCredentialsGeneration": {"type": "integer", "minimum": 1},
+        "iamCredentialsGeneration": {"type": "integer", "minimum": 1},
+        "databaseSecretName": {"type": "string", "minLength": 1},
+        "cryptoSecretName": {"type": "string", "minLength": 1},
+        "egressCidrs": {"type": "array", "maxItems": 32, "items": {"type": "string", "pattern": "^([0-9]{1,3}\\.){3}[0-9]{1,3}/32$|^[0-9A-Fa-f:]+/128$"}, "uniqueItems": true},
+        "egressContractSha256": {"type": "string", "pattern": "^$|^[a-f0-9]{64}$"},
+        "egressContractValidUntil": {"type": "string"},
+        "egressContractEndpoints": {"type": "array", "maxItems": 8, "items": {"type": "string", "format": "hostname"}, "uniqueItems": true},
+        "keyTtlDays": {"type": "integer", "minimum": 1, "maximum": 365},
+        "rotationWindowDays": {"type": "integer", "minimum": 1, "maximum": 364},
+        "actionTimeoutSeconds": {"type": "number", "minimum": 1, "maximum": 120},
+        "resources": {"type": "object"}
+      }
+    },
     "replicaCount": {
       "type": "integer",
       "minimum": 2
@@ -926,7 +953,8 @@
         "migration",
         "bootstrap",
         "controller",
-        "gpu-observer"
+        "gpu-observer",
+        "storage"
       ],
       "properties": {
         "runtime": {
@@ -945,6 +973,9 @@
           "$ref": "#/$defs/serviceAccount"
         },
         "gpu-observer": {
+          "$ref": "#/$defs/serviceAccount"
+        },
+        "storage": {
           "$ref": "#/$defs/serviceAccount"
         }
       },
@@ -1220,7 +1251,10 @@
         "payloadGeneration",
         "ledgerGeneration",
         "pepperGeneration",
-        "attestorGeneration"
+        "attestorGeneration",
+        "storageGeneration",
+        "storageResourceCredentialsGeneration",
+        "storageIamCredentialsGeneration"
       ],
       "properties": {
         "databaseGeneration": { "type": "integer", "minimum": 1 },
@@ -1229,7 +1263,10 @@
         "payloadGeneration": { "type": "integer", "minimum": 1 },
         "ledgerGeneration": { "type": "integer", "minimum": 1 },
         "pepperGeneration": { "type": "integer", "minimum": 1 },
-        "attestorGeneration": { "type": "integer", "minimum": 1 }
+        "attestorGeneration": { "type": "integer", "minimum": 1 },
+        "storageGeneration": { "type": "integer", "minimum": 1 },
+        "storageResourceCredentialsGeneration": { "type": "integer", "minimum": 1 },
+        "storageIamCredentialsGeneration": { "type": "integer", "minimum": 1 }
       },
       "additionalProperties": false
     },
@@ -1563,6 +1600,7 @@
         "runtimeDatabaseRole",
         "maintenanceDatabaseRole",
         "activationDatabaseRole",
+        "storageDatabaseRole",
         "releaseContract",
         "resources"
       ],
@@ -1596,6 +1634,12 @@
           "maxLength": 63,
           "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
         },
+        "storageDatabaseRole": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
         "releaseContract": {
           "type": "object",
           "required": [
@@ -1609,12 +1653,12 @@
           ],
           "properties": {
             "schema": {"const": "fs2-serve.nebius.ai/postgresql-release-contract/v1"},
-            "contractPayloadSha256": {"const": "bb2a18a8132b0e65356b1c4960b7893ff601240b4ccd899e5d53e00bf1aff11e"},
-            "migrationSetSha256": {"const": "9614eae993e7003ab3e4dd854bd4c5a7e7929e97256b6209899088c789af83d2"},
-            "migrationCount": {"const": 29},
+            "contractPayloadSha256": {"const": "5205ec0d72aed0ea4fedd819c5e94bee43fcb4f4bfb98d221d7fd27ee0880030"},
+            "migrationSetSha256": {"const": "ea736796a505c56573d4ebd248a0e1848f8ee0358159e32cf007ab06382da741"},
+            "migrationCount": {"const": 32},
             "firstMigrationVersion": {"const": "0001_initial.sql"},
-            "lastMigrationVersion": {"const": "0029_request_debug.sql"},
-            "namespaceRoleOwnershipSha256": {"const": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca"}
+            "lastMigrationVersion": {"const": "0032_user_storage_security.sql"},
+            "namespaceRoleOwnershipSha256": {"const": "02a91557f23468b3c943575a2295f8fdd710575ffd438e466a7df5214d5dc3b0"}
           },
           "additionalProperties": false
         },

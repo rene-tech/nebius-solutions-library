@@ -46,6 +46,7 @@ class Scope(StrEnum):
     OPERATIONS_ACKNOWLEDGE = "operations.acknowledge"
     TOKENS_MANAGE = "tokens.manage"
     AUDIT_READ = "audit.read"
+    STORAGE_CREDENTIALS = "storage.credentials"
     TENANT_ADMIN = "tenant.admin"
     USE_NONCLINICAL = "use.nonclinical"
     USE_NONCOMMERCIAL = "use.noncommercial"

@@ -34,13 +34,16 @@ locals {
       maxSurge       = var.control_plane_rollout.max_surge
     }
     secretRollout = {
-      databaseGeneration = var.credential_generations.database
-      adminGeneration    = var.credential_generations.admin
-      accessGeneration   = var.credential_generations.access
-      payloadGeneration  = var.keyring_generations.payload.active
-      ledgerGeneration   = var.keyring_generations.ledger.active
-      pepperGeneration   = var.keyring_generations.pepper.active
-      attestorGeneration = var.keyring_generations.attestor.active
+      databaseGeneration                   = var.credential_generations.database
+      adminGeneration                      = var.credential_generations.admin
+      accessGeneration                     = var.credential_generations.access
+      payloadGeneration                    = var.keyring_generations.payload.active
+      ledgerGeneration                     = var.keyring_generations.ledger.active
+      pepperGeneration                     = var.keyring_generations.pepper.active
+      attestorGeneration                   = var.keyring_generations.attestor.active
+      storageGeneration                    = var.keyring_generations.storage.active
+      storageResourceCredentialsGeneration = var.customer_storage.resource_credentials_generation
+      storageIamCredentialsGeneration      = var.customer_storage.iam_credentials_generation
     }
     secrets = {
       payloadKeyring = {
@@ -271,6 +274,7 @@ resource "helm_release" "control_plane" {
     yamlencode(local.bootstrap_access_overrides),
     yamlencode(local.scientific_access_overrides),
     yamlencode(local.scientific_chart_overrides),
+    yamlencode(local.customer_storage_chart_values),
   ]
 
   lifecycle {
@@ -312,6 +316,8 @@ resource "helm_release" "control_plane" {
     kubernetes_secret_v1.token_pepper,
     kubernetes_secret_v1.route_attestors,
     kubernetes_secret_v1.payload_keyring_versioned,
+    kubernetes_secret_v1.storage_keyring,
+    kubernetes_secret_v1.storage_keyring_versioned,
     kubernetes_secret_v1.ledger_keyring_versioned,
     kubernetes_secret_v1.token_pepper_versioned,
     kubernetes_secret_v1.route_attestors_versioned,

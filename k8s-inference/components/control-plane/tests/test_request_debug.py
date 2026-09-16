@@ -224,7 +224,10 @@ async def test_send_failure_preserves_observed_chunk_and_original_exception():
     assert exchange.disconnected and not exchange.response_body.complete and exchange.error_type == "OSError"
 
 
-@pytest.mark.parametrize("path", ["/admin/api/v1/keys", "/v1/tokens", "/v1/tokens/123", "/metrics"])
+@pytest.mark.parametrize(
+    "path",
+    ["/admin/api/v1/keys", "/v1/tokens", "/v1/tokens/123", "/v1/storage/credentials", "/metrics"],
+)
 async def test_admin_key_issuance_and_infrastructure_not_captured(path):
     async def app(scope, receive, send):
         await send({"type": "http.response.start", "status": 200})

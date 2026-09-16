@@ -24,6 +24,8 @@ LEGACY_ADDRESSES = frozenset(
         'random_password.key_material["ledger"]',
         'random_password.key_material["pepper"]',
         'random_password.key_material["attestor"]',
+        'random_password.key_material["storage"]',
+        'random_password.key_material["storage_name"]',
         "kubernetes_secret_v1.admin",
         "kubernetes_secret_v1.bootstrap_access",
         "kubernetes_secret_v1.scientific_access[0]",
@@ -31,6 +33,7 @@ LEGACY_ADDRESSES = frozenset(
         "kubernetes_secret_v1.ledger_keyring",
         "kubernetes_secret_v1.token_pepper",
         "kubernetes_secret_v1.route_attestors",
+        "kubernetes_secret_v1.storage_keyring",
     }
 )
 LEGACY_ADDRESS_PREFIXES = (
@@ -129,10 +132,10 @@ def write_identity_receipt(
     *,
     source_commit: str,
 ) -> dict[str, Any]:
-    path = path.absolute()
-    if path.exists() or path.is_symlink():
-        raise GuardError("identity receipt is write-once and already exists")
-    parent = path.parent
+    directory = path.absolute()
+    if directory.exists() and (directory.is_symlink() or not directory.is_dir()):
+        raise GuardError("identity receipt ledger must be a real directory")
+    parent = directory.parent
     if parent.is_symlink() or not parent.is_dir():
         raise GuardError("identity receipt parent must be a real directory")
     if (
@@ -140,6 +143,13 @@ def write_identity_receipt(
         or stat.S_IMODE(parent.stat().st_mode) & 0o077
     ):
         raise GuardError("identity receipt parent must be owner-owned and owner-only")
+    directory.mkdir(mode=0o700, exist_ok=True)
+    directory.chmod(0o700)
+    if (
+        directory.stat().st_uid != os.geteuid()
+        or stat.S_IMODE(directory.stat().st_mode) != 0o700
+    ):
+        raise GuardError("identity receipt ledger must be owner-owned mode 0700")
     if len(source_commit) != 40 or any(
         character not in "0123456789abcdef" for character in source_commit
     ):
@@ -147,8 +157,26 @@ def write_identity_receipt(
     fingerprints = protected_state_fingerprints(state_document)
     if not fingerprints:
         raise GuardError("state contains no protected generation-1 resources")
+    previous = load_identity_receipt(directory)
+    previous_fingerprints = (
+        previous["address_fingerprints"] if previous is not None else {}
+    )
+    if any(
+        fingerprints.get(address) != fingerprint
+        for address, fingerprint in previous_fingerprints.items()
+    ):
+        raise GuardError(
+            "new identity receipt would remove or change a protected predecessor"
+        )
+    if previous is not None and fingerprints == previous_fingerprints:
+        raise GuardError("identity receipt ledger already covers this exact state")
+    sequence = 1 if previous is None else previous["sequence"] + 1
     receipt = {
-        "schema": "fs2-serve.nebius.ai/fixed-v1-identity/v1",
+        "schema": "fs2-serve.nebius.ai/fixed-v1-identity/v2",
+        "sequence": sequence,
+        "previous_receipt_sha256": (
+            None if previous is None else canonical_sha256(previous)
+        ),
         "source_commit": source_commit,
         "captured_at": datetime.now(UTC)
         .replace(microsecond=0)
@@ -156,7 +184,9 @@ def write_identity_receipt(
         .replace("+00:00", "Z"),
         "address_fingerprints": fingerprints,
     }
-    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    receipt_hash = canonical_sha256(receipt)
+    receipt_path = directory / f"{sequence:06d}-{receipt_hash}.json"
+    descriptor = os.open(receipt_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
             json.dump(receipt, stream, indent=2, sort_keys=True)
@@ -164,31 +194,57 @@ def write_identity_receipt(
             stream.flush()
             os.fsync(stream.fileno())
     finally:
-        if path.exists():
-            path.chmod(0o600)
+        if receipt_path.exists():
+            receipt_path.chmod(0o600)
     return receipt
 
 
 def load_identity_receipt(path: Path | None) -> dict[str, Any] | None:
     if path is None or not path.exists():
         return None
-    if path.is_symlink() or not path.is_file():
-        raise GuardError("identity receipt must be a regular file")
-    if path.stat().st_uid != os.geteuid() or stat.S_IMODE(path.stat().st_mode) != 0o600:
-        raise GuardError("identity receipt must be owner-owned mode 0600")
-    receipt = json.loads(path.read_text(encoding="utf-8"))
-    if receipt.get("schema") != "fs2-serve.nebius.ai/fixed-v1-identity/v1":
-        raise GuardError("identity receipt has the wrong schema")
-    fingerprints = receipt.get("address_fingerprints")
-    if not isinstance(fingerprints, dict) or not all(
-        is_protected_address(address)
-        and isinstance(fingerprint, str)
-        and len(fingerprint) == 64
-        and all(character in "0123456789abcdef" for character in fingerprint)
-        for address, fingerprint in fingerprints.items()
-    ):
-        raise GuardError("identity receipt has malformed protected fingerprints")
-    return receipt
+    if path.is_symlink() or not path.is_dir():
+        raise GuardError("identity receipt ledger must be a real directory")
+    if path.stat().st_uid != os.geteuid() or stat.S_IMODE(path.stat().st_mode) != 0o700:
+        raise GuardError("identity receipt ledger must be owner-owned mode 0700")
+    entries = sorted(path.iterdir())
+    if not entries:
+        return None
+    previous: dict[str, Any] | None = None
+    for sequence, entry in enumerate(entries, start=1):
+        if entry.is_symlink() or not entry.is_file():
+            raise GuardError("identity receipt ledger contains a non-regular entry")
+        if (
+            entry.stat().st_uid != os.geteuid()
+            or stat.S_IMODE(entry.stat().st_mode) != 0o600
+        ):
+            raise GuardError("identity receipt must be owner-owned mode 0600")
+        receipt = json.loads(entry.read_text(encoding="utf-8"))
+        if (
+            receipt.get("schema") != "fs2-serve.nebius.ai/fixed-v1-identity/v2"
+            or receipt.get("sequence") != sequence
+            or receipt.get("previous_receipt_sha256")
+            != (None if previous is None else canonical_sha256(previous))
+        ):
+            raise GuardError("identity receipt ledger chain is invalid")
+        fingerprints = receipt.get("address_fingerprints")
+        if not isinstance(fingerprints, dict) or not all(
+            is_protected_address(address)
+            and isinstance(fingerprint, str)
+            and len(fingerprint) == 64
+            and all(character in "0123456789abcdef" for character in fingerprint)
+            for address, fingerprint in fingerprints.items()
+        ):
+            raise GuardError("identity receipt has malformed protected fingerprints")
+        if previous is not None and any(
+            fingerprints.get(address) != fingerprint
+            for address, fingerprint in previous["address_fingerprints"].items()
+        ):
+            raise GuardError("identity receipt ledger rewrites a predecessor identity")
+        expected_name = f"{sequence:06d}-{canonical_sha256(receipt)}.json"
+        if entry.name != expected_name:
+            raise GuardError("identity receipt filename differs from its content")
+        previous = receipt
+    return previous
 
 
 def inspect_plan(

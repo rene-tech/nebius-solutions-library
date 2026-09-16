@@ -1,5 +1,33 @@
 replicaCount: 2
 
+customerStorage:
+  enabled: false
+  projectId: ""
+  region: ""
+  defaultMode: user
+  quotaBytes: 5000000000
+  excludedTenants: []
+  resourceCredentialsSecretName: ""
+  iamCredentialsSecretName: ""
+  resourceCredentialsGeneration: 1
+  iamCredentialsGeneration: 1
+  databaseSecretName: fs2-serve-database-storage
+  cryptoSecretName: fs2-serve-storage-keyring
+  egressCidrs: []
+  egressContractSha256: ""
+  egressContractValidUntil: ""
+  egressContractEndpoints: []
+  keyTtlDays: 90
+  rotationWindowDays: 14
+  actionTimeoutSeconds: 30
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
 image:
   # Required immutable production repository and digest; empty defaults fail validation.
   repository: ""
@@ -222,6 +250,10 @@ serviceAccounts:
     create: true
     name: ""
     annotations: {}
+  storage:
+    create: true
+    name: ""
+    annotations: {}
 
 # Optional node-local attribution source. It reads only kubelet's device-plugin
 # checkpoint and publishes a bounded Pod UID -> GPU UUID observation onto model
@@ -328,6 +360,9 @@ secretRollout:
   ledgerGeneration: 1
   pepperGeneration: 1
   attestorGeneration: 1
+  storageGeneration: 1
+  storageResourceCredentialsGeneration: 1
+  storageIamCredentialsGeneration: 1
 
 config:
   # Required public HTTPS origins; empty defaults fail validation.
@@ -374,17 +409,18 @@ migration:
   runtimeDatabaseRole: fs2_serve_runtime
   maintenanceDatabaseRole: fs2_serve_maintenance
   activationDatabaseRole: fs2_serve_activation
+  storageDatabaseRole: fs2_serve_storage
   # Exact value-suppressed inputs emitted by `fs2-serve
   # postgresql-release-contract`. The migration Job publishes these annotations
   # for the final PostgreSQL release receipt; chart validation rejects drift.
   releaseContract:
     schema: fs2-serve.nebius.ai/postgresql-release-contract/v1
-    contractPayloadSha256: bb2a18a8132b0e65356b1c4960b7893ff601240b4ccd899e5d53e00bf1aff11e
-    migrationSetSha256: 9614eae993e7003ab3e4dd854bd4c5a7e7929e97256b6209899088c789af83d2
-    migrationCount: 29
+    contractPayloadSha256: 5205ec0d72aed0ea4fedd819c5e94bee43fcb4f4bfb98d221d7fd27ee0880030
+    migrationSetSha256: ea736796a505c56573d4ebd248a0e1848f8ee0358159e32cf007ab06382da741
+    migrationCount: 32
     firstMigrationVersion: 0001_initial.sql
-    lastMigrationVersion: 0029_request_debug.sql
-    namespaceRoleOwnershipSha256: 47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca
+    lastMigrationVersion: 0032_user_storage_security.sql
+    namespaceRoleOwnershipSha256: 02a91557f23468b3c943575a2295f8fdd710575ffd438e466a7df5214d5dc3b0
   resources:
     requests:
       cpu: 50m
@@ -421,7 +457,9 @@ networkPolicy:
     namespaceLabels:
       kubernetes.io/metadata.name: kube-system
     podLabels:
-      k8s-app: kube-dns
+      app.kubernetes.io/instance: coredns
+      app.kubernetes.io/name: coredns
+      k8s-app: coredns
     port: 53
   gateway:
     namespaceLabels:

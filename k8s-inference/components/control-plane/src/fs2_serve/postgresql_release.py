@@ -97,6 +97,9 @@ EXPECTED_MIGRATIONS: Final = (
     ("0027_inference_users.sql", "214e66821db3747db2ea7473bdfcafee47abc1de4d9206bc834e3d5532935337"),
     ("0028_request_telemetry.sql", "219810a23343e8aed0542ca6ea7ee48bcea5ef7eebfbddf0d32acb4590ab3104"),
     ("0029_request_debug.sql", "a02fe7eb59ea664c4cb4972158a59d52b5df22aa937eb83cd9a287939a90438a"),
+    ("0030_mcp_semantic_outcomes.sql", "25228cd592492009f0d8b6c43be64c5075e2c454f6407d078f8b4add7c98f3f3"),
+    ("0031_user_storage.sql", "c3c97b15e58ddc165a4c03c262a878189e2245293cf571e96eb4eaa516f23030"),
+    ("0032_user_storage_security.sql", "a58110d4bb1bd7c0766d6c493ab99678c452777c77ba37e2b07d78b83e960452"),
 )
 
 NAMESPACE_ROLE_OWNERSHIP: Final[dict[str, Any]] = {
@@ -163,6 +166,15 @@ NAMESPACE_ROLE_OWNERSHIP: Final[dict[str, Any]] = {
             "writer_owner": "postgresql-platform-release",
             "consumer_owners": ["fs2-serve-control-plane-gateway"],
         },
+        {
+            "purpose": "storage",
+            "namespace": "fs2-system",
+            "name": "fs2-serve-database-storage",
+            "key": "url",
+            "database_group_role": "fs2_serve_storage",
+            "writer_owner": "postgresql-platform-release",
+            "consumer_owners": ["fs2-serve-control-plane-storage-reconciler"],
+        },
     ],
     "database_group_roles": [
         {
@@ -186,6 +198,12 @@ NAMESPACE_ROLE_OWNERSHIP: Final[dict[str, Any]] = {
         {
             "purpose": "runtime",
             "name": "fs2_serve_runtime",
+            "login": False,
+            "creation_and_grant_owner": "fs2-serve-control-plane-migration",
+        },
+        {
+            "purpose": "storage",
+            "name": "fs2_serve_storage",
             "login": False,
             "creation_and_grant_owner": "fs2-serve-control-plane-migration",
         },

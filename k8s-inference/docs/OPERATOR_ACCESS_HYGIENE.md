@@ -63,27 +63,30 @@ contains a private key, bearer token, Kubernetes Secret, or customer payload.
 Generation 1 uses the existing Terraform resource addresses and exact stored
 bytes. It remains protected while those values are imported into encrypted,
 access-logged escrow. Do not plan a delete or replacement of these addresses.
-Before the next workloads plan, create one write-once, mode-0600 value-free
-identity receipt from the current state JSON inside the owner-only run root:
+Before the next workloads plan, append a mode-0600 value-free identity receipt
+from the current state JSON to the owner-only, mode-0700 receipt ledger:
 
 ```bash
 terraform -chdir=stages/workloads show -json "$RUN_ROOT/workloads.tfstate" | \
   scripts/secret_migration_guard.py capture-state - \
-    "$RUN_ROOT/fixed-v1-identity.receipt.json" \
+    "$RUN_ROOT/fixed-v1-identity.receipts" \
     --source-commit "$(git rev-parse HEAD)"
 ```
 
-The receipt contains only resource addresses and SHA-256 fingerprints. The
-wrapper requires it whenever protected state exists, compares every current v1
-source and Secret identity to it, rejects update/replacement/deletion, and runs
-the guard after every plan and again from the exact saved plan immediately
-before every workloads apply. For an independently generated plan, run the same
-guard explicitly:
+Each append-only receipt contains only resource addresses and SHA-256
+fingerprints and is hash-chained to its predecessor. Append a successor after
+an authorized plan creates a newly protected fixed-v1 resource; the ledger
+rejects removal or modification of every prior identity. The wrapper requires
+the ledger whenever protected state exists, compares every current v1 source
+and Secret identity to its latest receipt, rejects update/replacement/deletion,
+and runs the guard after every plan and again from the exact saved plan
+immediately before every workloads apply. For an independently generated plan,
+run the same guard explicitly:
 
 ```bash
 terraform show -json workloads.tfplan | \
 scripts/secret_migration_guard.py plan - \
-  --identity-receipt "$RUN_ROOT/fixed-v1-identity.receipt.json"
+  --identity-receipt "$RUN_ROOT/fixed-v1-identity.receipts"
 ```
 
 Payload AEAD, ledger HMAC, PAT pepper, and route-attestor generations advance
@@ -94,6 +97,7 @@ keyring through one of these environment variables:
 - `FS2_LEDGER_KEYRINGS_JSON`
 - `FS2_TOKEN_PEPPER_KEYRINGS_JSON`
 - `FS2_ROUTE_ATTESTOR_SETS_JSON`
+- `FS2_STORAGE_KEYRING_BUNDLES_JSON`
 
 Each environment value is a JSON object keyed by generation number. The first
 three documents must contain every immutable ID from `v1` through their own

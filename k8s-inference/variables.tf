@@ -522,6 +522,25 @@ variable "deployment" {
       # a separate bucket, identity and key from reference_data above: results
       # and immutable public inputs have different retention and different blast
       # radius, so neither store is ever widened to serve the other.
+      customer_buckets = optional(object({
+        enabled                          = optional(bool, false)
+        project_id                       = optional(string, "")
+        default_mode                     = optional(string, "user")
+        quota_bytes                      = optional(number, 5000000000)
+        excluded_tenants                 = optional(set(string), [])
+        resource_credentials_secret_name = optional(string, "")
+        iam_credentials_secret_name      = optional(string, "")
+        resource_public_key_pem          = optional(string, "")
+        iam_public_key_pem               = optional(string, "")
+        auth_key_expires_at              = optional(string, "")
+        egress_contract_json             = optional(string, "")
+        egress_contract_public_key_pem   = optional(string, "")
+        key_ttl_days                     = optional(number, 90)
+        rotation_window_days             = optional(number, 14)
+        resource_credentials_generation  = optional(number, 1)
+        iam_credentials_generation       = optional(number, 1)
+      }), {})
+
       scientific_artifacts = optional(object({
         enabled = optional(bool, false)
         lifecycle = optional(object({
@@ -738,6 +757,10 @@ variable "deployment" {
           retained = optional(set(number), [1])
         }), {})
         attestor = optional(object({
+          active   = optional(number, 1)
+          retained = optional(set(number), [1])
+        }), {})
+        storage = optional(object({
           active   = optional(number, 1)
           retained = optional(set(number), [1])
         }), {})

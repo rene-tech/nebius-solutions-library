@@ -362,7 +362,7 @@ def plan_json(
     guard_secret_migration_plan(
         result.stdout,
         identity_receipt=(
-            plan_path.parent / "fixed-v1-identity.receipt.json"
+            plan_path.parent / "fixed-v1-identity.receipts"
             if root == WORKLOADS_ROOT
             else None
         ),
@@ -408,7 +408,7 @@ def guard_saved_plan(
     guard_secret_migration_plan(
         result.stdout,
         identity_receipt=(
-            plan_path.parent / "fixed-v1-identity.receipt.json"
+            plan_path.parent / "fixed-v1-identity.receipts"
             if root == WORKLOADS_ROOT
             else None
         ),
@@ -1758,6 +1758,7 @@ def stage_environment(
             "ledger_keyrings_json": "FS2_LEDGER_KEYRINGS_JSON",
             "token_pepper_keyrings_json": "FS2_TOKEN_PEPPER_KEYRINGS_JSON",
             "route_attestors_sets_json": "FS2_ROUTE_ATTESTOR_SETS_JSON",
+            "storage_keyring_bundles_json": "FS2_STORAGE_KEYRING_BUNDLES_JSON",
         }.items():
             value = os.environ.get(environment_name)
             if value:

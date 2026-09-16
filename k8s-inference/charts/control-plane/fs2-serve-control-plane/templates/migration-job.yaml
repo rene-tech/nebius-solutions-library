@@ -30,6 +30,10 @@ spec:
         fs2.nebius.ai/secret-rollout-sha256: {{ dict "database" .Values.secretRollout.databaseGeneration | toJson | sha256sum | quote }}
     spec:
       restartPolicy: Never
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       serviceAccountName: {{ include "fs2-serve.serviceAccountName" (dict "root" . "component" "migration") }}
       automountServiceAccountToken: false
       enableServiceLinks: false

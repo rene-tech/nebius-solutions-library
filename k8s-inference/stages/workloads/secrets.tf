@@ -3,6 +3,7 @@ locals {
   active_ledger_keyring_name  = var.keyring_generations.ledger.active == 1 ? kubernetes_secret_v1.ledger_keyring.metadata[0].name : kubernetes_secret_v1.ledger_keyring_versioned[tostring(var.keyring_generations.ledger.active)].metadata[0].name
   active_token_pepper_name    = var.keyring_generations.pepper.active == 1 ? kubernetes_secret_v1.token_pepper.metadata[0].name : kubernetes_secret_v1.token_pepper_versioned[tostring(var.keyring_generations.pepper.active)].metadata[0].name
   active_route_attestors_name = var.keyring_generations.attestor.active == 1 ? kubernetes_secret_v1.route_attestors.metadata[0].name : kubernetes_secret_v1.route_attestors_versioned[tostring(var.keyring_generations.attestor.active)].metadata[0].name
+  active_storage_keyring_name = var.keyring_generations.storage.active == 1 ? kubernetes_secret_v1.storage_keyring.metadata[0].name : kubernetes_secret_v1.storage_keyring_versioned[tostring(var.keyring_generations.storage.active)].metadata[0].name
   active_admin_secret_name    = var.credential_generations.admin == 1 ? kubernetes_secret_v1.admin.metadata[0].name : kubernetes_secret_v1.admin_versioned[tostring(var.credential_generations.admin)].metadata[0].name
 
   database_accounts = {
@@ -17,6 +18,9 @@ locals {
     }
     activation = {
       username = "fs2_serve_activation_login"
+    }
+    storage = {
+      username = "fs2_serve_storage_login"
     }
     restore_verifier = {
       username = "fs2_serve_restore_verifier_login"
@@ -49,6 +53,11 @@ locals {
       namespace   = "fs2-system"
       secret_name = "fs2-serve-database-activation"
       account     = "activation"
+    }
+    storage = {
+      namespace   = "fs2-system"
+      secret_name = "fs2-serve-database-storage"
+      account     = "storage"
     }
     restore_verifier = {
       namespace   = "fs2-system"
@@ -107,7 +116,7 @@ resource "random_password" "database" {
 }
 
 resource "random_password" "key_material" {
-  for_each = toset(["payload", "ledger", "pepper", "attestor"])
+  for_each = toset(["payload", "ledger", "pepper", "attestor", "storage", "storage_name"])
 
   length  = 32
   special = false
@@ -194,6 +203,76 @@ resource "kubernetes_secret_v1" "payload_keyring" {
   lifecycle {
     prevent_destroy = true
   }
+  depends_on = [terraform_data.cluster_contract]
+}
+
+resource "kubernetes_secret_v1" "storage_keyring" {
+  metadata {
+    name      = "fs2-serve-storage-keyring"
+    namespace = "fs2-system"
+    labels    = local.common_labels
+  }
+  type = "Opaque"
+  data = {
+    # payload-v1 remains available only until the storage rotation/re-encryption
+    # inventory reports zero rows on that SAI-10 generation.
+    "keyring.json" = jsonencode({
+      active_key_id = "storage-v1"
+      keys = {
+        "payload-v1" = base64encode(random_password.key_material["payload"].result)
+        "storage-v1" = base64encode(random_password.key_material["storage"].result)
+      }
+    })
+    "name-keyring.json" = jsonencode({
+      active_key_id = "storage-name-v1"
+      keys          = { "storage-name-v1" = base64encode(random_password.key_material["storage_name"].result) }
+    })
+  }
+  lifecycle {
+    prevent_destroy = true
+  }
+  depends_on = [terraform_data.cluster_contract]
+}
+
+resource "kubernetes_secret_v1" "storage_keyring_versioned" {
+  for_each = toset([for generation in var.keyring_generations.storage.retained : tostring(generation) if generation > 1])
+
+  metadata {
+    name      = "fs2-serve-storage-keyring-v${each.key}"
+    namespace = "fs2-system"
+    labels    = merge(local.common_labels, { "fs2.nebius.ai/key-generation" = each.key })
+  }
+  type = "Opaque"
+  data_wo = {
+    "keyring.json"      = try(jsonencode(jsondecode(var.storage_keyring_bundles_json[each.key]).cipher), null)
+    "name-keyring.json" = try(jsonencode(jsondecode(var.storage_keyring_bundles_json[each.key]).names), null)
+  }
+  data_wo_revision = tonumber(each.key)
+
+  lifecycle {
+    precondition {
+      condition = (
+        lookup(var.storage_keyring_bundles_json, each.key, null) != null &&
+        try(jsondecode(var.storage_keyring_bundles_json[each.key]).cipher.active_key_id, "") == "storage-v${each.key}" &&
+        try(jsondecode(var.storage_keyring_bundles_json[each.key]).names.active_key_id, "") == "storage-name-v${each.key}" &&
+        try(jsondecode(var.storage_keyring_bundles_json[each.key]).cipher.keys["payload-v1"], "") == base64encode(random_password.key_material["payload"].result) &&
+        try(jsondecode(var.storage_keyring_bundles_json[each.key]).cipher.keys["storage-v1"], "") == base64encode(random_password.key_material["storage"].result) &&
+        try(jsondecode(var.storage_keyring_bundles_json[each.key]).names.keys["storage-name-v1"], "") == base64encode(random_password.key_material["storage_name"].result) &&
+        try(toset(keys(jsondecode(var.storage_keyring_bundles_json[each.key]).cipher.keys)), toset([])) == setunion(
+          toset(["payload-v1"]),
+          toset([
+            for generation in range(1, tonumber(each.key) + 1) : "storage-v${generation}"
+          ]),
+        ) &&
+        try(toset(keys(jsondecode(var.storage_keyring_bundles_json[each.key]).names.keys)), toset([])) == toset([
+          for generation in range(1, tonumber(each.key) + 1) : "storage-name-v${generation}"
+        ])
+      )
+      error_message = "Each storage keyring bundle must retain exact payload-v1, storage-v1, storage-name-v1, every storage generation, and every opaque-name generation while activating its immutable generation ID."
+    }
+    prevent_destroy = true
+  }
+
   depends_on = [terraform_data.cluster_contract]
 }
 

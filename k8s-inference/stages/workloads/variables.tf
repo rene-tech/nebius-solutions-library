@@ -1799,13 +1799,14 @@ variable "database_passwords" {
           "runtime",
           "maintenance",
           "activation",
+          "storage",
           "restore_verifier",
           "reporting",
           "monitoring",
         ]) && alltrue([for password in values(passwords) : length(password) >= 32])
       ])
     )
-    error_message = "database_passwords must contain exactly all seven accounts for every retained database generation greater than 1, with passwords of at least 32 characters."
+    error_message = "database_passwords must contain exactly all eight accounts for every retained database generation greater than 1, with passwords of at least 32 characters."
   }
 }
 
@@ -1831,6 +1832,7 @@ variable "keyring_generations" {
     ledger   = optional(object({ active = optional(number, 1), retained = optional(set(number), [1]) }), {})
     pepper   = optional(object({ active = optional(number, 1), retained = optional(set(number), [1]) }), {})
     attestor = optional(object({ active = optional(number, 1), retained = optional(set(number), [1]) }), {})
+    storage  = optional(object({ active = optional(number, 1), retained = optional(set(number), [1]) }), {})
   })
   default = {}
 
@@ -1873,6 +1875,14 @@ variable "token_pepper_keyrings_json" {
 
 variable "route_attestors_sets_json" {
   description = "Externally managed public attestor-set documents keyed by every retained generation greater than 1."
+  type        = map(string)
+  sensitive   = true
+  ephemeral   = true
+  default     = {}
+}
+
+variable "storage_keyring_bundles_json" {
+  description = "Externally escrowed storage cipher and opaque-name keyring bundles keyed by every retained storage generation greater than 1."
   type        = map(string)
   sensitive   = true
   ephemeral   = true

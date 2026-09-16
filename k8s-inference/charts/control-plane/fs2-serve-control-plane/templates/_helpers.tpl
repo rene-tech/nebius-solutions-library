@@ -50,6 +50,11 @@ app.kubernetes.io/component: admin-console
 app.kubernetes.io/component: maintenance
 {{- end -}}
 
+{{- define "fs2-serve.storageSelectorLabels" -}}
+{{ include "fs2-serve.selectorLabels" . }}
+app.kubernetes.io/component: storage-reconciler
+{{- end -}}
+
 {{- define "fs2-serve.migrationSelectorLabels" -}}
 {{ include "fs2-serve.selectorLabels" . }}
 app.kubernetes.io/component: migration
@@ -111,6 +116,14 @@ app.kubernetes.io/component: model-controller
     secretKeyRef:
       name: {{ .Values.secrets.maintenanceDatabase.name }}
       key: {{ .Values.secrets.maintenanceDatabase.key }}
+{{- end -}}
+
+{{- define "fs2-serve.storageDatabaseEnv" -}}
+- name: FS2_DATABASE_URL
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.customerStorage.databaseSecretName }}
+      key: url
 {{- end -}}
 
 {{- define "fs2-serve.scientificArtifactsEnv" -}}
@@ -190,6 +203,20 @@ app.kubernetes.io/component: model-controller
 {{ include "fs2-serve.cryptoEnv" . }}
 {{ include "fs2-serve.payloadEnv" . }}
 {{- include "fs2-serve.scientificArtifactsEnv" . }}
+{{- if .Values.customerStorage.enabled }}
+- name: FS2_USER_STORAGE_ENABLED
+  value: "true"
+- name: FS2_USER_STORAGE_PROJECT_ID
+  value: {{ required "customerStorage.projectId is required" .Values.customerStorage.projectId | quote }}
+- name: FS2_USER_STORAGE_REGION
+  value: {{ required "customerStorage.region is required" .Values.customerStorage.region | quote }}
+- name: FS2_USER_STORAGE_DEFAULT_MODE
+  value: {{ .Values.customerStorage.defaultMode | quote }}
+- name: FS2_USER_STORAGE_QUOTA_BYTES
+  value: {{ .Values.customerStorage.quotaBytes | int64 | quote }}
+- name: FS2_USER_STORAGE_EXCLUDED_TENANTS
+  value: {{ .Values.customerStorage.excludedTenants | toJson | quote }}
+{{- end }}
 - name: FS2_CATALOG_DIR
   value: {{ ternary .Values.catalog.imagePath "/etc/fs2-serve/catalog" (eq .Values.catalog.delivery "image") | quote }}
 {{- if eq .Values.catalog.delivery "image" }}
@@ -398,6 +425,43 @@ app.kubernetes.io/component: model-controller
   value: {{ .Values.migration.maintenanceDatabaseRole | quote }}
 - name: FS2_ACTIVATION_DATABASE_ROLE
   value: {{ .Values.migration.activationDatabaseRole | quote }}
+- name: FS2_STORAGE_DATABASE_ROLE
+  value: {{ .Values.migration.storageDatabaseRole | quote }}
+{{- end -}}
+
+{{- define "fs2-serve.storageCryptoEnv" -}}
+- name: FS2_USER_STORAGE_KEYRING_FILE
+  value: /var/run/secrets/fs2-serve/customer-storage-crypto/keyring.json
+- name: FS2_USER_STORAGE_NAME_KEYRING_FILE
+  value: /var/run/secrets/fs2-serve/customer-storage-crypto/name-keyring.json
+{{- end -}}
+
+{{- define "fs2-serve.storageCryptoVolumeMount" -}}
+- name: customer-storage-crypto
+  mountPath: /var/run/secrets/fs2-serve/customer-storage-crypto
+  readOnly: true
+{{- end -}}
+
+{{- define "fs2-serve.storageCryptoVolume" -}}
+- name: customer-storage-crypto
+  secret:
+    secretName: {{ .Values.customerStorage.cryptoSecretName }}
+    defaultMode: 0400
+    items:
+      - key: keyring.json
+        path: keyring.json
+      - key: name-keyring.json
+        path: name-keyring.json
+{{- end -}}
+
+{{- define "fs2-serve.storageCipherVolume" -}}
+- name: customer-storage-crypto
+  secret:
+    secretName: {{ .Values.customerStorage.cryptoSecretName }}
+    defaultMode: 0400
+    items:
+      - key: keyring.json
+        path: keyring.json
 {{- end -}}
 
 {{- define "fs2-serve.schemaWaitEnv" -}}
@@ -435,6 +499,9 @@ app.kubernetes.io/component: model-controller
 
 {{- define "fs2-serve.runtimeVolumeMounts" -}}
 {{ include "fs2-serve.cryptoVolumeMounts" . }}
+{{- if .Values.customerStorage.enabled }}
+{{ include "fs2-serve.storageCryptoVolumeMount" . }}
+{{- end }}
 {{- include "fs2-serve.scientificArtifactsVolumeMounts" . }}
 {{ include "fs2-serve.databaseCaVolumeMount" . }}
 {{- if eq .Values.catalog.delivery "pvc" }}
@@ -538,6 +605,9 @@ app.kubernetes.io/component: model-controller
 
 {{- define "fs2-serve.runtimeVolumes" -}}
 {{ include "fs2-serve.cryptoVolumes" . }}
+{{- if .Values.customerStorage.enabled }}
+{{ include "fs2-serve.storageCipherVolume" . }}
+{{- end }}
 {{- include "fs2-serve.scientificArtifactsVolumes" . }}
 {{ include "fs2-serve.databaseCaVolume" (dict "secret" .Values.secrets.database) }}
 {{- if eq .Values.catalog.delivery "pvc" }}

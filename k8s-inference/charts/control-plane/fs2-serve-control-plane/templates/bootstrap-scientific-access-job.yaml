@@ -48,6 +48,10 @@ spec:
         fs2.nebius.ai/secret-rollout-sha256: {{ dict "database" .Values.secretRollout.databaseGeneration "access" .Values.secretRollout.accessGeneration "payload" .Values.secretRollout.payloadGeneration "ledger" .Values.secretRollout.ledgerGeneration "pepper" .Values.secretRollout.pepperGeneration | toJson | sha256sum | quote }}
     spec:
       restartPolicy: Never
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       serviceAccountName: {{ include "fs2-serve.serviceAccountName" (dict "root" . "component" "bootstrap") }}
       automountServiceAccountToken: false
       enableServiceLinks: false

@@ -74,6 +74,7 @@ class OperatorAccessHygieneTests(unittest.TestCase):
             "payload_keyring": "payload-v1",
             "ledger_keyring": "ledger-v1",
             "token_pepper": "pepper-v1",
+            "storage_keyring": "storage-v1",
         }.items():
             self.assertIn(key_id, resources[name])
             self.assertIn("prevent_destroy = true", resources[name])
@@ -130,7 +131,7 @@ class OperatorAccessHygieneTests(unittest.TestCase):
     ) -> None:
         secrets = (ROOT / "stages/workloads/secrets.tf").read_text(encoding="utf-8")
         variables = (ROOT / "stages/workloads/variables.tf").read_text(encoding="utf-8")
-        for key_class in ("payload", "ledger", "pepper", "attestor"):
+        for key_class in ("payload", "ledger", "pepper", "attestor", "storage"):
             self.assertRegex(variables, rf"(?m)^\s*{key_class}\s+= optional\(object")
         self.assertNotIn("key_material = optional", variables)
         for resource, legacy_id in {
@@ -138,6 +139,7 @@ class OperatorAccessHygieneTests(unittest.TestCase):
             "ledger_keyring_versioned": "ledger-v1",
             "token_pepper_versioned": "pepper-v1",
             "route_attestors_versioned": "generation-1 public key",
+            "storage_keyring_versioned": "payload-v1",
         }.items():
             block = dict(hcl_blocks(secrets, "resource"))[resource]
             self.assertIn("data_wo", block)
@@ -146,6 +148,16 @@ class OperatorAccessHygieneTests(unittest.TestCase):
         self.assertIn("var.keyring_generations.payload.retained", secrets)
         self.assertIn("var.keyring_generations.ledger.retained", secrets)
         self.assertIn("var.keyring_generations.pepper.retained", secrets)
+        self.assertIn("var.keyring_generations.storage.retained", secrets)
+        storage = dict(hcl_blocks(secrets, "resource"))["storage_keyring_versioned"]
+        self.assertIn('toset(["payload-v1"])', storage)
+        self.assertIn('"storage-v${generation}"', storage)
+        self.assertIn('"storage-name-v${generation}"', storage)
+        self.assertGreaterEqual(storage.count("=="), 7)
+        self.assertIn(
+            '"storage_keyring_bundles_json": "FS2_STORAGE_KEYRING_BUNDLES_JSON"',
+            (ROOT / "inference-stack").read_text(encoding="utf-8"),
+        )
         self.assertGreaterEqual(secrets.count("prevent_destroy = true"), 9)
 
     def test_secret_consumers_have_nonsecret_generation_rollout_triggers(self) -> None:
@@ -162,6 +174,7 @@ class OperatorAccessHygieneTests(unittest.TestCase):
             "bootstrap-access-job.yaml",
             "bootstrap-scientific-access-job.yaml",
             "maintenance-cronjob.yaml",
+            "storage-reconciler-deployment.yaml",
         ):
             self.assertIn("fs2.nebius.ai/secret-rollout-sha256", templates[name], name)
         runtime = templates["deployment.yaml"]
@@ -172,6 +185,7 @@ class OperatorAccessHygieneTests(unittest.TestCase):
             "ledger",
             "pepper",
             "attestor",
+            "storage",
         ):
             self.assertIn(f'"{generation}" .Values.secretRollout.', runtime)
         bootstrap = templates["bootstrap-access-job.yaml"]
@@ -183,6 +197,15 @@ class OperatorAccessHygieneTests(unittest.TestCase):
         self.assertIn("atomic           = true", workloads)
         self.assertIn("wait             = true", workloads)
         self.assertIn("kubernetes_secret_v1.payload_keyring_versioned", workloads)
+        self.assertIn("kubernetes_secret_v1.storage_keyring_versioned", workloads)
+        storage = templates["storage-reconciler-deployment.yaml"]
+        for generation in (
+            "database",
+            "storage",
+            "resourceCredentials",
+            "iamCredentials",
+        ):
+            self.assertIn(f'"{generation}" .Values.secretRollout.', storage)
         foundation = (ROOT / "stages/foundation/releases.tf").read_text(
             encoding="utf-8"
         )
@@ -293,14 +316,18 @@ class OperatorAccessHygieneTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             root.chmod(0o700)
-            path = root / "fixed-v1-identity.receipt.json"
+            path = root / "fixed-v1-identity.receipts"
             receipt = GUARD.write_identity_receipt(
                 state,
                 path,
                 source_commit="a" * 40,
             )
-            self.assertNotIn(secret_value, path.read_text(encoding="utf-8"))
-            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+            entries = list(path.iterdir())
+            self.assertEqual(len(entries), 1)
+            self.assertNotIn(secret_value, entries[0].read_text(encoding="utf-8"))
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o700)
+            self.assertEqual(stat.S_IMODE(entries[0].stat().st_mode), 0o600)
+            self.assertEqual(GUARD.load_identity_receipt(path), receipt)
             result = GUARD.inspect_plan(plan, identity_receipt=receipt)
             self.assertEqual(result["verified_identities"], 1)
             with self.assertRaisesRegex(GUARD.GuardError, "require.*identity receipt"):
@@ -325,6 +352,37 @@ class OperatorAccessHygieneTests(unittest.TestCase):
 
             with self.assertRaisesRegex(GUARD.GuardError, "change inventory"):
                 GUARD.inspect_plan({"prior_state": state}, identity_receipt=receipt)
+
+            successor_state = json.loads(json.dumps(state))
+            successor_state["values"]["root_module"]["resources"].append(
+                {
+                    "address": 'random_password.key_material["storage"]',
+                    "values": {"id": "storage-v1", "result": "new-secret"},
+                }
+            )
+            successor = GUARD.write_identity_receipt(
+                successor_state,
+                path,
+                source_commit="b" * 40,
+            )
+            self.assertEqual(successor["sequence"], 2)
+            self.assertEqual(GUARD.load_identity_receipt(path), successor)
+            with self.assertRaisesRegex(GUARD.GuardError, "already covers"):
+                GUARD.write_identity_receipt(
+                    successor_state,
+                    path,
+                    source_commit="b" * 40,
+                )
+            rewritten = json.loads(json.dumps(successor_state))
+            rewritten["values"]["root_module"]["resources"][0]["values"]["result"] = (
+                "rewritten"
+            )
+            with self.assertRaisesRegex(GUARD.GuardError, "remove or change"):
+                GUARD.write_identity_receipt(
+                    rewritten,
+                    path,
+                    source_commit="c" * 40,
+                )
         for address in (
             "random_id.bootstrap_access_token_id",
             "random_id.scientific_access_token_id[0]",
@@ -334,6 +392,9 @@ class OperatorAccessHygieneTests(unittest.TestCase):
             "kubernetes_secret_v1.scientific_access[0]",
             'random_password.database["runtime"]',
             'kubernetes_secret_v1.database_account["runtime"]',
+            'random_password.key_material["storage"]',
+            'random_password.key_material["storage_name"]',
+            "kubernetes_secret_v1.storage_keyring",
         ):
             with self.subTest(address=address), self.assertRaises(GUARD.GuardError):
                 GUARD.inspect_plan(
@@ -349,7 +410,7 @@ class OperatorAccessHygieneTests(unittest.TestCase):
 
     def test_wrapper_guards_both_generated_and_saved_plans(self) -> None:
         source = (ROOT / "inference-stack").read_text(encoding="utf-8")
-        self.assertIn("fixed-v1-identity.receipt.json", source)
+        self.assertIn("fixed-v1-identity.receipts", source)
         self.assertIn(
             "guard_saved_plan(terraform, root, plan_path, environment)", source
         )
