@@ -84,6 +84,8 @@ variable "network_policy_boundary" {
     security_owner_username            = optional(string, "fs2-network-policy-security-owner")
     security_bootstrap_kubeconfig_path = optional(string)
     security_bootstrap_username        = optional(string, "fs2-network-policy-security-bootstrap")
+    identity_epoch                     = optional(string)
+    minimum_rollback_seconds           = optional(number, 7200)
     release_identity = optional(object({
       username   = string
       uid        = string
@@ -109,6 +111,26 @@ variable "network_policy_boundary" {
       username = string
       groups   = list(string)
     })), [])
+    security_subject_inventory = optional(object({
+      signed = object({
+        schema       = string
+        inventory_id = string
+        complete     = bool
+        cluster = object({
+          api_server_sha256 = string
+          kube_system_uid   = string
+        })
+        human_users = list(object({
+          username = string
+          groups   = list(string)
+        }))
+        human_groups  = list(string)
+        issued_at     = string
+        expires_at    = string
+        signer_key_id = string
+      })
+      signature = string
+    }))
     security_handoff_socket_path             = optional(string, "/run/fs2/network-policy-security.sock")
     security_handoff_server_public_key       = optional(string)
     security_handoff_client_public_key       = optional(string)
@@ -185,25 +207,23 @@ variable "network_policy_boundary" {
         var.network_policy_boundary.security_owner_identity.uid,
         var.network_policy_boundary.security_bootstrap_identity.uid,
       ])) == 3 &&
-      length(var.network_policy_boundary.denied_human_subjects) > 0 &&
-      length(var.network_policy_boundary.denied_human_subjects) == length(distinct([
-        for subject in var.network_policy_boundary.denied_human_subjects : subject.username
-      ])) &&
-      alltrue([
-        for subject in var.network_policy_boundary.denied_human_subjects :
-        can(regex("^[A-Za-z0-9:@._/-]{3,253}$", subject.username)) &&
-        length(subject.groups) > 0 &&
-        length(subject.groups) == length(distinct(subject.groups)) &&
-        alltrue([for group in subject.groups : can(regex("^[A-Za-z0-9:@._/-]{1,253}$", group))]) &&
-        !contains([
-          var.network_policy_boundary.release_identity.username,
-          var.network_policy_boundary.security_owner_identity.username,
-          var.network_policy_boundary.security_bootstrap_identity.username,
-        ], subject.username)
-      ]),
+      length(var.network_policy_boundary.denied_human_subjects) == 0 &&
+      var.network_policy_boundary.identity_epoch != null &&
+      can(regex("^[a-z0-9][a-z0-9-]{7,63}$", var.network_policy_boundary.identity_epoch)) &&
+      var.network_policy_boundary.minimum_rollback_seconds >= 3600 &&
+      floor(var.network_policy_boundary.minimum_rollback_seconds) == var.network_policy_boundary.minimum_rollback_seconds &&
+      var.network_policy_boundary.security_subject_inventory != null &&
+      var.network_policy_boundary.security_subject_inventory.signed.schema == "fs2-serve.nebius.ai/security-subject-inventory/v1" &&
+      var.network_policy_boundary.security_subject_inventory.signed.complete &&
+      var.network_policy_boundary.security_subject_inventory.signed.cluster.kube_system_uid == var.kube_system_uid &&
+      can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_inventory.signed.cluster.api_server_sha256)) &&
+      can(regex("^[0-9a-f]{64}$", var.network_policy_boundary.security_subject_inventory.signed.signer_key_id)) &&
+      can(regex("^[A-Za-z0-9_-]{86}$", var.network_policy_boundary.security_subject_inventory.signature)) &&
+      length(var.network_policy_boundary.security_subject_inventory.signed.human_users) > 0 &&
+      length(var.network_policy_boundary.security_subject_inventory.signed.human_groups) > 0,
       false,
     )
-    error_message = "Public boundary identities must be exact, unique, non-human, expiring whoami tuples; reviewed human subjects must be distinct and complete."
+    error_message = "Public boundary identities must be exact, unique and non-human, use a versioned epoch with at least one hour of rollback, and consume a complete signed security-owned subject inventory; caller-supplied denied_human_subjects are forbidden."
   }
 
   validation {
@@ -221,9 +241,28 @@ variable "network_policy_boundary" {
   validation {
     condition = (
       startswith(var.network_policy_boundary.security_handoff_socket_path, "/") &&
-      !strcontains(var.network_policy_boundary.security_handoff_socket_path, "..")
+      !strcontains(var.network_policy_boundary.security_handoff_socket_path, "..") &&
+      (
+        var.network_policy_boundary.mode != "public" ||
+        basename(dirname(var.network_policy_boundary.security_handoff_socket_path)) == var.network_policy_boundary.identity_epoch
+      )
     )
-    error_message = "The security handoff socket path must be absolute and traversal-free."
+    error_message = "The security handoff socket path must be absolute, traversal-free, and placed in the versioned identity-epoch directory for public boundaries."
+  }
+
+  validation {
+    condition = var.network_policy_boundary.mode != "public" || try(
+      alltrue([
+        for path in [
+          var.kubeconfig_path,
+          var.network_policy_boundary.security_owner_kubeconfig_path,
+          var.network_policy_boundary.security_bootstrap_kubeconfig_path,
+          var.network_policy_boundary.security_handoff_client_private_key_path,
+        ] : path != null && basename(dirname(path)) == var.network_policy_boundary.identity_epoch
+      ]),
+      false,
+    )
+    error_message = "Public release, security, bootstrap and handoff credentials must use immutable versioned files in the identity-epoch directory."
   }
 
   validation {

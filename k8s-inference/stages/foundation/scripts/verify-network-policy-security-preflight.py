@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import datetime as dt
 import hashlib
 import json
@@ -15,6 +16,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
 
 class PreflightError(RuntimeError):
     """The plan-time security boundary is not exact."""
@@ -22,6 +26,113 @@ class PreflightError(RuntimeError):
 
 def canonical(value: Any) -> str:
     return json.dumps(value, separators=(",", ":"), sort_keys=True)
+
+
+def decode_base64url(value: Any, *, size: int) -> bytes:
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", value):
+        raise PreflightError("security inventory contains invalid base64url data")
+    try:
+        decoded = base64.b64decode(value + "=" * (-len(value) % 4), altchars=b"-_", validate=True)
+    except (ValueError, binascii.Error) as error:
+        raise PreflightError("security inventory contains invalid base64url data") from error
+    if len(decoded) != size:
+        raise PreflightError("security inventory cryptographic length is invalid")
+    return decoded
+
+
+def verified_subject_inventory(
+    raw_inventory: str,
+    recovery_public_key: str,
+    *,
+    cluster: tuple[str, str],
+    rollback_valid_until: int,
+    forbidden_usernames: set[str],
+) -> tuple[list[dict[str, Any]], str]:
+    try:
+        envelope = json.loads(raw_inventory)
+    except json.JSONDecodeError as error:
+        raise PreflightError("security subject inventory is not valid JSON") from error
+    if not isinstance(envelope, dict) or set(envelope) != {"signed", "signature"}:
+        raise PreflightError("security subject inventory envelope is not exact")
+    signed = envelope.get("signed")
+    expected_fields = {
+        "schema",
+        "inventory_id",
+        "complete",
+        "cluster",
+        "human_users",
+        "human_groups",
+        "issued_at",
+        "expires_at",
+        "signer_key_id",
+    }
+    if not isinstance(signed, dict) or set(signed) != expected_fields:
+        raise PreflightError("security subject inventory fields are not exact")
+    key_id = hashlib.sha256(recovery_public_key.encode()).hexdigest()
+    try:
+        Ed25519PublicKey.from_public_bytes(decode_base64url(recovery_public_key, size=32)).verify(
+            decode_base64url(envelope.get("signature"), size=64),
+            canonical(signed).encode(),
+        )
+    except InvalidSignature as error:
+        raise PreflightError("security subject inventory signature is invalid") from error
+    expected_cluster = {
+        "api_server_sha256": hashlib.sha256(cluster[0].encode()).hexdigest(),
+        "kube_system_uid": cluster[1],
+    }
+    now = dt.datetime.now(dt.UTC)
+    issued = dt.datetime.fromisoformat(str(signed.get("issued_at", "")).replace("Z", "+00:00"))
+    expires = dt.datetime.fromisoformat(str(signed.get("expires_at", "")).replace("Z", "+00:00"))
+    users = signed.get("human_users")
+    groups = signed.get("human_groups")
+    if (
+        signed.get("schema") != "fs2-serve.nebius.ai/security-subject-inventory/v1"
+        or signed.get("complete") is not True
+        or not re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", str(signed.get("inventory_id", "")))
+        or signed.get("cluster") != expected_cluster
+        or signed.get("signer_key_id") != key_id
+        or issued.tzinfo is None
+        or expires.tzinfo is None
+        or issued.astimezone(dt.UTC) > now
+        or expires.astimezone(dt.UTC) <= now
+        or int(expires.timestamp()) < rollback_valid_until
+        or not isinstance(users, list)
+        or not users
+        or not isinstance(groups, list)
+        or not groups
+    ):
+        raise PreflightError("security subject inventory is incomplete, stale or for another cluster")
+    if len(groups) != len(set(groups)) or any(
+        not isinstance(group, str) or not re.fullmatch(r"[A-Za-z0-9:@._/-]{1,253}", group) for group in groups
+    ):
+        raise PreflightError("security subject group inventory is invalid")
+    normalized_users: list[dict[str, Any]] = []
+    for subject in users:
+        if (
+            not isinstance(subject, dict)
+            or set(subject) != {"username", "groups"}
+            or not re.fullmatch(r"[A-Za-z0-9:@._/-]{3,253}", str(subject.get("username", "")))
+            or subject.get("username") in forbidden_usernames
+            or not isinstance(subject.get("groups"), list)
+            or not subject["groups"]
+            or len(subject["groups"]) != len(set(subject["groups"]))
+            or any(
+                not isinstance(group, str) or not re.fullmatch(r"[A-Za-z0-9:@._/-]{1,253}", group)
+                for group in subject["groups"]
+            )
+        ):
+            raise PreflightError("security subject user inventory is invalid")
+        normalized_users.append({"username": subject["username"], "groups": sorted(subject["groups"])})
+    if len({subject["username"] for subject in normalized_users}) != len(normalized_users):
+        raise PreflightError("security subject user inventory contains duplicates")
+    group_subjects = [
+        {
+            "username": f"fs2-security-group-probe-{hashlib.sha256(group.encode()).hexdigest()[:12]}",
+            "groups": [group],
+        }
+        for group in sorted(groups)
+    ]
+    return normalized_users + group_subjects, hashlib.sha256(canonical(signed).encode()).hexdigest()
 
 
 def run(kubeconfig: Path, context: str, *arguments: str, input_text: str | None = None) -> str:
@@ -198,12 +309,17 @@ def parse_query() -> dict[str, Any]:
         "release_identity",
         "security_identity",
         "bootstrap_identity",
-        "denied_human_subjects",
+        "subject_inventory",
+        "recovery_public_key",
+        "minimum_rollback_seconds",
         "gateway_namespace",
         "controller_namespace",
         "security_owner_username",
         "security_bootstrap_username",
         "peer_uid",
+        "peer_gid",
+        "socket_path",
+        "identity_epoch",
     }
     if (
         not isinstance(query, dict)
@@ -229,6 +345,36 @@ def main() -> int:
             raise PreflightError("boundary kubeconfig paths are not distinct absolute paths")
         for path in paths.values():
             exact_file(path)
+        credential_hashes = {
+            role: hashlib.sha256(path.read_bytes()).hexdigest() for role, path in sorted(paths.items())
+        }
+        credential_set_sha256 = hashlib.sha256(canonical(credential_hashes).encode()).hexdigest()
+        if query["mode"] == "public":
+            socket_path = Path(query["socket_path"])
+            socket_parent = socket_path.parent
+            try:
+                socket_parent_metadata = socket_parent.lstat()
+            except OSError as error:
+                raise PreflightError("versioned security socket parent is unavailable") from error
+            try:
+                socket_path.lstat()
+            except FileNotFoundError:
+                pass
+            except OSError as error:
+                raise PreflightError("versioned security socket path cannot be inspected") from error
+            else:
+                raise PreflightError("versioned security socket path must be absent")
+            if (
+                not socket_path.is_absolute()
+                or socket_parent.name != query["identity_epoch"]
+                or not re.fullmatch(r"[a-z0-9][a-z0-9-]{7,63}", query["identity_epoch"])
+                or not stat.S_ISDIR(socket_parent_metadata.st_mode)
+                or stat.S_ISLNK(socket_parent_metadata.st_mode)
+                or socket_parent_metadata.st_uid != os.geteuid()
+                or socket_parent_metadata.st_gid != int(query["peer_gid"])
+                or stat.S_IMODE(socket_parent_metadata.st_mode) != 0o2710
+            ):
+                raise PreflightError("versioned security socket parent is not the exact setgid contract")
         clusters = {role: cluster_identity(path, query["context"]) for role, path in paths.items()}
         if len(set(clusters.values())) != 1 or next(iter(clusters.values()))[1] != query["kube_system_uid"]:
             raise PreflightError("boundary identities are not bound to the same reviewed cluster")
@@ -265,13 +411,32 @@ def main() -> int:
                     if (set(actual[left]["groups"]) & set(actual[right]["groups"])) - allowed_shared:
                         raise PreflightError("boundary identities share an unreviewed group")
             now = int(dt.datetime.now(dt.UTC).timestamp())
-            limits = {"release": 3600, "security": 3600, "bootstrap": 900}
+            limits = {"release": 28800, "security": 28800, "bootstrap": 900}
+            expiries: dict[str, int] = {}
             for role, value in expected.items():
                 configured = int(dt.datetime.fromisoformat(value["expires_at"].replace("Z", "+00:00")).timestamp())
+                expiries[role] = configured
                 if credential_expiry(paths[role], query["context"]) != configured:
                     raise PreflightError("configured identity expiry is not cryptographically bound")
                 if not now < configured <= now + limits[role]:
                     raise PreflightError("boundary credential lifetime exceeds its limit")
+            minimum_rollback_seconds = int(query["minimum_rollback_seconds"])
+            rollback_valid_until = min(expiries["release"], expiries["security"])
+            if (
+                minimum_rollback_seconds < 3600
+                or rollback_valid_until < expiries["bootstrap"] + minimum_rollback_seconds
+            ):
+                raise PreflightError("boundary credentials do not preserve the minimum post-bootstrap rollback window")
+            humans, inventory_sha256 = verified_subject_inventory(
+                query["subject_inventory"],
+                query["recovery_public_key"],
+                cluster=next(iter(clusters.values())),
+                rollback_valid_until=rollback_valid_until,
+                forbidden_usernames={value["username"] for value in actual.values()},
+            )
+        else:
+            humans = []
+            inventory_sha256 = hashlib.sha256(b"internal-only").hexdigest()
 
         release = paths["release"]
         security = paths["security"]
@@ -286,11 +451,15 @@ def main() -> int:
                 can_i(release, context, "no", verb, resource, "--resource-name=fs2-network-policy-boundary")
                 can_i(security, context, "no", verb, resource)
                 can_i(security, context, "yes", verb, resource, "--resource-name=fs2-network-policy-boundary")
+                can_i(bootstrap, context, "no", verb, resource)
+                can_i(bootstrap, context, "yes", verb, resource, "--resource-name=fs2-network-policy-boundary")
             can_i(release, context, "no", "delete", resource, "--resource-name=fs2-network-policy-boundary")
             can_i(security, context, "no", "delete", resource)
             can_i(security, context, "no", "delete", resource, "--resource-name=fs2-network-policy-boundary")
+            can_i(bootstrap, context, "no", "delete", resource, "--resource-name=fs2-network-policy-boundary")
             can_i(release, context, "no", "deletecollection", resource)
             can_i(security, context, "no", "deletecollection", resource)
+            can_i(bootstrap, context, "no", "deletecollection", resource)
             can_i(security, context, "no", "create", resource)
             can_i(bootstrap, context, "yes", "create", resource)
 
@@ -319,12 +488,25 @@ def main() -> int:
             for verb in ("patch", "update"):
                 can_i(release, context, "no", verb, resource, f"--resource-name={name}", "--namespace", namespace)
                 can_i(security, context, "no", verb, resource, "--namespace", namespace)
-                can_i(security, context, "yes", verb, resource, f"--resource-name={name}", "--namespace", namespace)
+                can_i(
+                    security,
+                    context,
+                    "no" if name == "fs2-network-policy-boundary-topology" else "yes",
+                    verb,
+                    resource,
+                    f"--resource-name={name}",
+                    "--namespace",
+                    namespace,
+                )
+                can_i(bootstrap, context, "no", verb, resource, "--namespace", namespace)
+                can_i(bootstrap, context, "yes", verb, resource, f"--resource-name={name}", "--namespace", namespace)
             for verb in ("delete", "deletecollection"):
                 arguments = (verb, resource, "--namespace", namespace)
                 can_i(security, context, "no", *arguments)
+                can_i(bootstrap, context, "no", *arguments)
             can_i(release, context, "no", "delete", resource, f"--resource-name={name}", "--namespace", namespace)
             can_i(security, context, "no", "delete", resource, f"--resource-name={name}", "--namespace", namespace)
+            can_i(bootstrap, context, "no", "delete", resource, f"--resource-name={name}", "--namespace", namespace)
 
         identities = (release, security, bootstrap)
         impersonation_targets = (
@@ -335,7 +517,10 @@ def main() -> int:
             ("groups.authentication.k8s.io", "system:authenticated"),
             ("groups.authentication.k8s.io", "system:serviceaccounts"),
             ("groups.authentication.k8s.io", "system:serviceaccounts:fs2-system"),
-            ("serviceaccounts", "system:serviceaccount:fs2-system:fs2-network-policy-transition"),
+            (
+                "serviceaccounts.authentication.k8s.io",
+                "system:serviceaccount:fs2-system:fs2-network-policy-transition",
+            ),
             ("uids.authentication.k8s.io", query["peer_uid"]),
             ("userextras.authentication.k8s.io", "scopes"),
         )
@@ -343,7 +528,7 @@ def main() -> int:
             for resource in (
                 "users.authentication.k8s.io",
                 "groups.authentication.k8s.io",
-                "serviceaccounts",
+                "serviceaccounts.authentication.k8s.io",
                 "uids.authentication.k8s.io",
                 "userextras.authentication.k8s.io",
             ):
@@ -366,12 +551,32 @@ def main() -> int:
                 "no",
                 "create",
                 "serviceaccounts",
+                "--subresource=token",
+                "--all-namespaces",
+            )
+            for namespace in {"fs2-system", query["gateway_namespace"], query["controller_namespace"]}:
+                can_i(
+                    identity,
+                    context,
+                    "no",
+                    "create",
+                    "serviceaccounts",
+                    "--subresource=token",
+                    "--namespace",
+                    namespace,
+                )
+            can_i(
+                identity,
+                context,
+                "no",
+                "create",
+                "serviceaccounts",
                 "--resource-name=fs2-network-policy-transition",
                 "--subresource=token",
                 "--namespace",
                 "fs2-system",
             )
-        for identity in (release, security):
+        for identity in (release, security, bootstrap):
             for verb in ("bind", "escalate"):
                 for resource in ("clusterroles.rbac.authorization.k8s.io", "roles.rbac.authorization.k8s.io"):
                     can_i(identity, context, "no", verb, resource)
@@ -399,22 +604,6 @@ def main() -> int:
                 can_i(identity, context, "no", "update", "namespaces/finalize", f"--resource-name={namespace}")
 
         can_i(bootstrap, context, "yes", "create", "subjectaccessreviews.authorization.k8s.io")
-        humans = json.loads(query["denied_human_subjects"])
-        if not isinstance(humans, list) or any(
-            not isinstance(subject, dict)
-            or set(subject) != {"username", "groups"}
-            or not re.fullmatch(r"[A-Za-z0-9:@._/-]{3,253}", str(subject.get("username", "")))
-            or not isinstance(subject.get("groups"), list)
-            or not subject["groups"]
-            or not all(
-                isinstance(group, str) and re.fullmatch(r"[A-Za-z0-9:@._/-]{1,253}", group)
-                for group in subject["groups"]
-            )
-            for subject in humans
-        ):
-            raise PreflightError("reviewed human-subject contract is invalid")
-        if query["mode"] == "public" and not humans:
-            raise PreflightError("public boundary has no reviewed human subjects")
         for subject in humans:
             for resource, name, namespace in namespaced:
                 if resource.startswith("networkpolicies."):
@@ -474,21 +663,22 @@ def main() -> int:
                     name=namespace,
                     subresource="finalize",
                 )
-            subject_denied(
-                bootstrap,
-                context,
-                subject,
-                verb="create",
-                group="",
-                resource="serviceaccounts",
-                namespace="fs2-system",
-                name="fs2-network-policy-transition",
-                subresource="token",
-            )
+            for namespace in ("", "fs2-system", query["gateway_namespace"], query["controller_namespace"]):
+                subject_denied(
+                    bootstrap,
+                    context,
+                    subject,
+                    verb="create",
+                    group="",
+                    resource="serviceaccounts",
+                    namespace=namespace,
+                    name="fs2-network-policy-transition",
+                    subresource="token",
+                )
             for group, resource in (
-                ("", "users"),
-                ("", "groups"),
-                ("", "serviceaccounts"),
+                ("authentication.k8s.io", "users"),
+                ("authentication.k8s.io", "groups"),
+                ("authentication.k8s.io", "serviceaccounts"),
                 ("authentication.k8s.io", "uids"),
                 ("authentication.k8s.io", "userextras"),
             ):
@@ -512,8 +702,22 @@ def main() -> int:
                     namespace="fs2-system",
                 )
 
-        digest = hashlib.sha256(canonical(query).encode()).hexdigest()
-        print(canonical({"verified": "true", "contract_sha256": digest}))
+        digest = hashlib.sha256(
+            canonical({"query": query, "credential_set_sha256": credential_set_sha256}).encode()
+        ).hexdigest()
+        print(
+            canonical(
+                {
+                    "verified": "true",
+                    "contract_sha256": digest,
+                    "subject_inventory_sha256": inventory_sha256,
+                    "credential_set_sha256": credential_set_sha256,
+                    "release_kubeconfig_sha256": credential_hashes["release"],
+                    "security_kubeconfig_sha256": credential_hashes["security"],
+                    "bootstrap_kubeconfig_sha256": credential_hashes["bootstrap"],
+                }
+            )
+        )
         return 0
     except (OSError, PreflightError, ValueError, json.JSONDecodeError) as error:
         print(f"network-policy security preflight failed closed: {error}", file=sys.stderr)

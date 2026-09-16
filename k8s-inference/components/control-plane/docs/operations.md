@@ -786,8 +786,11 @@ Terraform `prevent_destroy` and an ownership label. Kubernetes deliberately
 does not invoke API-based admission for its own policy and binding resources,
 so this design does not claim self-protection. Foundation creates the admission
 objects with a dedicated non-human bootstrap credential whose cryptographic
-expiry is at most 15 minutes. That credential is distinct from the release and
-runtime-enforcer credentials and is never passed to workloads; workload plan
+expiry is at most 15 minutes. Release and runtime-enforcer credentials are at
+most eight hours and their common validity must extend beyond bootstrap expiry
+by the configured rollback floor (two hours by default). The bootstrap
+credential is distinct from the release and runtime-enforcer credentials and is
+never passed to workloads; workload plan
 and the transition coordinator refuse to proceed until its recorded expiry has
 passed. The runtime security credential cannot create either admission object
 or use unnamed patch/update. A mandatory preflight binds all three kubeconfigs
@@ -795,9 +798,13 @@ to the same API server and exact `kube-system` UID, compares canonical full
 `whoami` username/UID/groups/extras with the configured expiring identities,
 and permits only the common authenticated/service-account baseline groups. It
 is a plan-time external data check, not a creation-only provisioner; every plan
-reruns it and binds its query hash into protected topology. Reviewed human
-subjects are checked through nonpersistent SubjectAccessReviews for protected
-mutation, namespace/finalize, token, impersonation and RBAC delegation denial.
+reruns it and binds its query hash into protected topology. A complete
+security-owned subject inventory is signed by the pinned recovery authority and
+bound to the API-server hash, `kube-system` UID and rollback window. Every
+enumerated human user and group is checked through nonpersistent
+SubjectAccessReviews for protected mutation, namespace/finalize, token,
+impersonation and RBAC delegation denial. Release-operator subject lists are not
+accepted.
 It proves the release identity cannot patch, update, delete,
 or collection-delete either admission resource, any permanent guard/deny,
 transition/parameter ConfigMap, or Lease; it also cannot mint the retained
@@ -821,8 +828,12 @@ plus exact `kube-system` UID. The coordinator has only its request-signing key
 and ordinary kubeconfig. The security-owner kubeconfig and response-signing key
 are mode 0400/0600, owned by a dedicated enforcer Unix UID, and held exclusively
 by `network-policy-security-enforcer.sh`; that UID must differ from the rollout
-peer UID. The socket parent is likewise enforcer-owned and is not group/world
-writable. The separate recovery-approval private key is never present in either
+peer UID. The versioned socket parent is precreated by external security
+automation. It is owned by the enforcer UID, grouped to the dedicated rollout
+GID, and has exact mode `02710`. The enforcer needs neither root nor
+`CAP_CHOWN`: a socket created in that setgid directory inherits the peer GID,
+and startup verifies its type, UID, GID and mode before listening. The parent is
+not group-writable. The separate recovery-approval private key is never present in either
 process. The enforcer
 checks `SO_PEERCRED` immediately after `accept` and before reading any bytes,
 rejects a supplementary-only GID, applies a five-second socket read deadline
@@ -838,8 +849,9 @@ transition ServiceAccount remains at its stable Terraform address solely to
 avoid deleting an existing object; token automount is disabled, no protected
 RoleBinding names it, and the ordinary rollout identity must not be able to
 mint its token. No rollout-mintable privileged token exists.
-Permanent boundary deletion is never admitted. The external security owner is
-the only update identity; workload credentials have no protected-object
+Permanent boundary deletion is never admitted. Updates require either the
+runtime security owner or the current short-lived bootstrap epoch; workload
+credentials have no protected-object
 mutation path. Incident recovery is reversible: separately approved signed automation may change
 the binding and its parameter ConfigMap from `Deny` to `Audit`+`Warn`, and may
 restore `Deny`. A short-lived recovery signature is bound to an exact SEC, INC,
@@ -857,6 +869,24 @@ parameter-first relaxation or binding-first re-enforcement order, rereads all
 live objects, records the exact new objects, and only then reports completion.
 A crash leaves resumable durable intent; the coordinator validates completion
 while it still holds the Lease.
+
+Identity rotation is versioned and additive. Before the current rollback window
+closes, security automation creates a new epoch directory plus new immutable
+kubeconfig/key paths, issues a new <=15-minute bootstrap credential and
+release/security credentials with a fresh rollback floor, and starts the new
+enforcer on the new socket. The plan hashes the exact three credential files;
+admission permits topology data or credential-hash changes only when the
+bootstrap identity advances the protected epoch. Same-epoch retries must retain
+byte-identical topology data and the prior credential hash. The coordinator and
+enforcer each rehash their own kubeconfig before accepting the protected
+contract, so in-place credential replacement fails closed. Foundation applies the signed epoch with the
+bootstrap identity. Protected topology then makes the prior enforcer fail closed
+because its recorded socket path and epoch no longer match. Workloads wait for
+bootstrap expiry before proceeding. Rotation never overwrites a credential file
+or socket and never removes an old boundary object.
+Foundation planning is therefore an explicit bootstrap/rotation phase, not part
+of the later workload plan. The workload phase consumes the sealed remote-state
+contract only after bootstrap expiry and while the full rollback floor remains.
 
 Before each existing public release, `stage` acquires and renews the 60-second
 namespaced Lease fence, reads the protected live-topology ConfigMap, renders the
@@ -884,11 +914,13 @@ zero Ready Pods. The public chart has no guard-disable value: applicability
 comes from protected live topology rather than caller-rendered booleans.
 
 ```bash
-# Run under the security-owned identity. Startup refuses to unlink or replace
-# an existing socket path. Launch the coordinator with EXACT_COORDINATOR_GID as
-# its effective/primary GID; supplementary membership is insufficient.
+# External security automation first creates /run/fs2/IDENTITY_EPOCH as
+# ENFORCER_UID:EXACT_COORDINATOR_GID mode 02710. Run under ENFORCER_UID without
+# root/CAP_CHOWN. Startup refuses to unlink or replace an existing socket path.
+# Launch the coordinator with EXACT_COORDINATOR_GID as its effective/primary
+# GID; supplementary membership is insufficient.
 components/control-plane/scripts/network-policy-security-enforcer.sh serve \
-  --socket /run/fs2/network-policy-security.sock \
+  --socket /run/fs2/IDENTITY_EPOCH/network-policy-security.sock \
   --security-kubeconfig SECURITY_OWNER_KUBECONFIG \
   --client-public-key PINNED_COORDINATOR_PUBLIC_KEY \
   --server-private-key SECURITY_OWNED_RESPONSE_PRIVATE_KEY \
@@ -903,7 +935,7 @@ components/control-plane/scripts/network-policy-transition.sh stage \
   --release-namespace fs2-system \
   --chart charts/control-plane/fs2-serve-control-plane \
   --kubeconfig RUN_OWNED_KUBECONFIG \
-  --security-handoff-socket /run/fs2/network-policy-security.sock \
+  --security-handoff-socket /run/fs2/IDENTITY_EPOCH/network-policy-security.sock \
   --security-handoff-server-public-key PINNED_ENFORCER_PUBLIC_KEY \
   --security-handoff-client-public-key PINNED_COORDINATOR_PUBLIC_KEY \
   --security-handoff-client-private-key COORDINATOR_REQUEST_PRIVATE_KEY \
@@ -917,7 +949,7 @@ components/control-plane/scripts/network-policy-transition.sh rollback \
   --release-namespace fs2-system \
   --chart charts/control-plane/fs2-serve-control-plane \
   --kubeconfig RUN_OWNED_KUBECONFIG \
-  --security-handoff-socket /run/fs2/network-policy-security.sock \
+  --security-handoff-socket /run/fs2/IDENTITY_EPOCH/network-policy-security.sock \
   --security-handoff-server-public-key PINNED_ENFORCER_PUBLIC_KEY \
   --security-handoff-client-public-key PINNED_COORDINATOR_PUBLIC_KEY \
   --security-handoff-client-private-key COORDINATOR_REQUEST_PRIVATE_KEY \
@@ -939,7 +971,7 @@ components/control-plane/scripts/network-policy-transition.sh recover-audit-warn
   --release-namespace fs2-system \
   --chart charts/control-plane/fs2-serve-control-plane \
   --kubeconfig RUN_OWNED_KUBECONFIG \
-  --security-handoff-socket /run/fs2/network-policy-security.sock \
+  --security-handoff-socket /run/fs2/IDENTITY_EPOCH/network-policy-security.sock \
   --security-handoff-server-public-key PINNED_ENFORCER_PUBLIC_KEY \
   --security-handoff-client-public-key PINNED_COORDINATOR_PUBLIC_KEY \
   --security-handoff-client-private-key COORDINATOR_REQUEST_PRIVATE_KEY \
@@ -957,7 +989,7 @@ components/control-plane/scripts/network-policy-transition.sh recover-deny \
   --release-namespace fs2-system \
   --chart charts/control-plane/fs2-serve-control-plane \
   --kubeconfig RUN_OWNED_KUBECONFIG \
-  --security-handoff-socket /run/fs2/network-policy-security.sock \
+  --security-handoff-socket /run/fs2/IDENTITY_EPOCH/network-policy-security.sock \
   --security-handoff-server-public-key PINNED_ENFORCER_PUBLIC_KEY \
   --security-handoff-client-public-key PINNED_COORDINATOR_PUBLIC_KEY \
   --security-handoff-client-private-key COORDINATOR_REQUEST_PRIVATE_KEY \

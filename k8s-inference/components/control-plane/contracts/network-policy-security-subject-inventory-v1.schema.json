@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/contracts/network-policy-security-subject-inventory-v1.schema.json",
+  "title": "Security-owned complete human subject inventory",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["signed", "signature"],
+  "properties": {
+    "signed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "inventory_id",
+        "complete",
+        "cluster",
+        "human_users",
+        "human_groups",
+        "issued_at",
+        "expires_at",
+        "signer_key_id"
+      ],
+      "properties": {
+        "schema": { "const": "fs2-serve.nebius.ai/security-subject-inventory/v1" },
+        "inventory_id": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{8,128}$" },
+        "complete": { "const": true },
+        "cluster": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["api_server_sha256", "kube_system_uid"],
+          "properties": {
+            "api_server_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "kube_system_uid": { "type": "string", "minLength": 20, "maxLength": 128 }
+          }
+        },
+        "human_users": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["username", "groups"],
+            "properties": {
+              "username": { "type": "string", "pattern": "^[A-Za-z0-9:@._/-]{3,253}$" },
+              "groups": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": { "type": "string", "pattern": "^[A-Za-z0-9:@._/-]{1,253}$" }
+              }
+            }
+          }
+        },
+        "human_groups": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[A-Za-z0-9:@._/-]{1,253}$" }
+        },
+        "issued_at": { "type": "string", "format": "date-time" },
+        "expires_at": { "type": "string", "format": "date-time" },
+        "signer_key_id": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" }
+  }
+}

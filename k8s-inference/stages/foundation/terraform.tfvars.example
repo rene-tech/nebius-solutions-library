@@ -9,15 +9,23 @@ kube_system_uid  = "00000000-0000-0000-0000-000000000000"
 project_id       = "project-REPLACE-WITH-EXACT-APPROVED-ID"
 
 # Public-edge releases also require a separate mode-0600, <=15-minute
-# bootstrap kubeconfig and a mode-0600, <=1-hour runtime-enforcer kubeconfig.
+# bootstrap kubeconfig plus release/runtime credentials no longer than eight
+# hours. Their common validity must extend beyond bootstrap expiry by
+# `minimum_rollback_seconds` (7200 by default).
 # Supply all three exact `kubectl auth whoami -o json` userInfo tuples (release,
 # security owner, bootstrap), including UID, sorted groups/extras and the
 # credential's cryptographically verified expiry, in the private tfvars file.
-# Include every reviewed human username/group subject in
-# `denied_human_subjects`; bootstrap performs explicit SubjectAccessReviews for
-# protected mutation, namespace/finalize, token, impersonation and delegation.
+# Supply the complete externally signed `security_subject_inventory`; an
+# operator-entered `denied_human_subjects` list is rejected. The inventory pins
+# this API-server hash and kube-system UID, names every human user/group, and is
+# valid through the rollback window. Bootstrap performs explicit
+# SubjectAccessReviews for protected mutation, namespace/finalize, token,
+# impersonation and delegation.
 # The bootstrap credential creates the permanent boundary but is expired before
 # workloads may plan; the runtime owner has only exact-name get/patch/update.
+# Every rotation uses a new `identity_epoch` and new immutable credential/key
+# files under that epoch directory. External security automation precreates the
+# socket parent as enforcer-UID:peer-GID mode 02710; no process needs CAP_CHOWN.
 
 # Pass the exact infra-disposable `target_contract` output. It is required and
 # authoritative for project, region, network, tenant, and source-registry

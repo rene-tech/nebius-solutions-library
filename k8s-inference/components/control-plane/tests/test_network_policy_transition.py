@@ -24,6 +24,9 @@ BOUNDARY_PREFLIGHT = (
     SOLUTION_ROOT / "stages" / "foundation" / "scripts" / "verify-network-policy-security-preflight.py"
 )
 HANDOFF_SCHEMA = CONTROL_ROOT / "contracts" / "network-policy-security-handoff-v2.schema.json"
+SUBJECT_INVENTORY_SCHEMA = (
+    CONTROL_ROOT / "contracts" / "network-policy-security-subject-inventory-v1.schema.json"
+)
 ENFORCER_SCRIPT = CONTROL_ROOT / "scripts" / "network_policy_security_enforcer.py"
 
 
@@ -37,6 +40,18 @@ def _load_transition_module() -> ModuleType:
 
 
 TRANSITION = _load_transition_module()
+
+
+def _load_preflight_module() -> ModuleType:
+    spec = importlib.util.spec_from_file_location("fs2_network_policy_security_preflight", BOUNDARY_PREFLIGHT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+PREFLIGHT = _load_preflight_module()
 
 PROXY_SPEC = {
     "podSelector": {"matchLabels": {"app.kubernetes.io/name": "envoy"}},
@@ -202,7 +217,8 @@ def test_wrapper_delegates_to_state_machine_without_cluster_wide_access() -> Non
     assert request_action == ["attest", "transition-mutation", "set-admission-recovery"]
     assert "delete" not in request_action
     assert "assert_security_owned_file(kubeconfig" in enforcer
-    assert "assert_security_owned_socket_parent(socket_path)" in enforcer
+    assert "assert_security_owned_socket_parent(socket_path, peer_gid=peer_gid)" in enforcer
+    assert "os.chown" not in enforcer
     assert "security enforcer and rollout peer must use distinct Unix UIDs" in enforcer
     assert 'arguments.extend([f"--type={patch_type}", "--patch", canonical(patch)])' in enforcer
     assert '"delete"' not in enforcer.split("class KubectlAPI:", maxsplit=1)[1].split(
@@ -311,7 +327,7 @@ def test_rollout_identity_cannot_mutate_any_protected_boundary() -> None:
 def test_signed_handoff_must_bind_the_same_cluster_identity() -> None:
     transition = _bare_transition()
     public_key = TRANSITION.base64.urlsafe_b64encode(b"p" * 32).decode().rstrip("=")
-    transition.security_handoff_socket = TRANSITION.Path("/run/fs2/security.sock")
+    transition.security_handoff_socket = TRANSITION.Path("/run/fs2/identity-epoch-001/security.sock")
     transition.security_handoff_server_public_key = public_key
     transition.security_handoff_client_public_key = public_key
     transition.security_handoff_client_private_key = TRANSITION.Path("/run/fs2/client.key")
@@ -332,7 +348,8 @@ def test_signed_handoff_must_bind_the_same_cluster_identity() -> None:
             "security_owner_username": "external-security-owner",
             "security_handoff": {
                 "schema": "fs2-serve.nebius.ai/network-policy-security-handoff/v2",
-                "socket_path": "/run/fs2/security.sock",
+                "socket_path": "/run/fs2/identity-epoch-001/security.sock",
+                "socket_directory_contract": "precreated-setgid-02710",
                 "server_public_key": public_key,
                 "server_public_key_sha256": TRANSITION.sha256_text(public_key),
                 "client_public_key": public_key,
@@ -343,16 +360,29 @@ def test_signed_handoff_must_bind_the_same_cluster_identity() -> None:
                 "peer_gid": TRANSITION.os.getegid(),
                 "peer_gid_contract": "effective-dedicated",
                 "identity_boundary": {
-                    "schema": "fs2-serve.nebius.ai/network-policy-identity-boundary/v1",
+                    "schema": "fs2-serve.nebius.ai/network-policy-identity-boundary/v2",
+                    "identity_epoch": "identity-epoch-001",
                     "release_user_info_sha256": TRANSITION.sha256_json(release_info),
                     "security_user_info_sha256": "d" * 64,
                     "bootstrap_user_info_sha256": "e" * 64,
-                    "denied_human_subjects_sha256": "f" * 64,
+                    "credential_set_sha256": "b" * 64,
+                    "release_kubeconfig_sha256": "c" * 64,
+                    "security_kubeconfig_sha256": "d" * 64,
+                    "bootstrap_kubeconfig_sha256": "e" * 64,
+                    "security_subject_inventory_sha256": "f" * 64,
                     "plan_preflight_verified": True,
                     "plan_preflight_sha256": "a" * 64,
-                    "release_expires_at": (dt.datetime.now(dt.UTC) + dt.timedelta(minutes=20)).isoformat(),
-                    "security_expires_at": (dt.datetime.now(dt.UTC) + dt.timedelta(minutes=20)).isoformat(),
+                    "release_expires_at": (dt.datetime.now(dt.UTC) + dt.timedelta(hours=3)).isoformat(),
+                    "security_expires_at": (dt.datetime.now(dt.UTC) + dt.timedelta(hours=3)).isoformat(),
                     "bootstrap_expires_at": (dt.datetime.now(dt.UTC) - dt.timedelta(minutes=1)).isoformat(),
+                    "rollback_valid_until": (dt.datetime.now(dt.UTC) + dt.timedelta(hours=2)).isoformat(),
+                    "minimum_rollback_seconds": 3600,
+                    "rotation_contract": {
+                        "mechanism": "versioned-foundation-epoch",
+                        "bootstrap_update_identity": "fs2-network-policy-security-bootstrap",
+                        "new_paths_required": True,
+                        "prior_epoch_stops_authorizing": True,
+                    },
                     "bootstrap_must_be_expired": True,
                     "permitted_shared_groups": ["system:authenticated", "system:serviceaccounts"],
                 },
@@ -1623,6 +1653,7 @@ def test_signed_recovery_is_reversible_audit_warn_or_deny_and_never_delete() -> 
 def test_foundation_security_owner_permanently_owns_boundary_outside_workloads() -> None:
     boundary = BOUNDARY_TERRAFORM.read_text()
     preflight = BOUNDARY_PREFLIGHT.read_text()
+    inventory_schema = json.loads(SUBJECT_INVENTORY_SCHEMA.read_text())
     control_plane = TERRAFORM.read_text()
 
     for resource in (
@@ -1639,7 +1670,8 @@ def test_foundation_security_owner_permanently_owns_boundary_outside_workloads()
         assert resource in boundary
         assert resource not in control_plane
     assert '"fs2.nebius.ai/network-policy-boundary" = "permanent"' in boundary
-    assert "request.userInfo.username == '${local.control_plane_network_policy_security_owner}'" in boundary
+    assert "request.userInfo.username in [" in boundary
+    assert "'${local.control_plane_network_policy_security_bootstrap}'" in boundary
     assert 'resource "kubernetes_service_account_v1" "control_plane_network_policy_transition"' in boundary
     assert "automount_service_account_token = false" in boundary
     assert 'kind      = "ServiceAccount"' not in boundary
@@ -1665,7 +1697,7 @@ def test_foundation_security_owner_permanently_owns_boundary_outside_workloads()
         "groups.authentication.k8s.io|system:authenticated",
         "groups.authentication.k8s.io|system:serviceaccounts",
         "users.authentication.k8s.io|fs2-network-policy-security-probe",
-        "serviceaccounts|fs2-system:fs2-network-policy-security-probe",
+        "serviceaccounts.authentication.k8s.io|fs2-system:fs2-network-policy-security-probe",
         "uids.authentication.k8s.io|00000000-0000-4000-8000-000000000000",
         "userextras.authentication.k8s.io|scopes",
         "userextras.authentication.k8s.io|fs2.nebius.ai/security-probe",
@@ -1684,22 +1716,38 @@ def test_foundation_security_owner_permanently_owns_boundary_outside_workloads()
     assert 'security_named_can update namespaces/finalize fs2-system' in boundary
     assert 'test "$(id -g)" = "$FS2_PEER_GID"' in boundary
     assert "SubjectAccessReview" in boundary
-    assert "FS2_DENIED_HUMAN_SUBJECTS" in boundary
+    assert "FS2_SECURITY_INVENTORY_SUBJECTS" in boundary
+    assert "security_subject_inventory" in boundary
+    assert '"fs2-serve.nebius.ai/network-policy-identity-boundary/v2"' in boundary
+    assert 'socket_directory_contract  = "precreated-setgid-02710"' in boundary
+    assert 'test "$(stat -c \'%a\' "$socket_parent")" = "2710"' in boundary
+    assert "FS2_MINIMUM_ROLLBACK_SECONDS" in boundary
+    assert "network-policy-credential-set-sha256" in boundary
+    assert "same-epoch updates must preserve exact data" in boundary
     assert "subject_denied" in boundary
     assert "credential_expiry_epoch" in boundary
     assert 'data "external" "control_plane_network_policy_security_preflight_v2"' in boundary
     assert "plan_preflight_sha256" in boundary
     assert "SubjectAccessReview" in preflight
     assert "credential_expiry" in preflight
+    assert "verified_subject_inventory" in preflight
+    assert "Ed25519PublicKey" in preflight
+    assert '"authentication.k8s.io", "serviceaccounts"' in preflight
+    assert '"--all-namespaces"' in preflight
     assert "--resource-name=fs2-network-policy-boundary" in preflight
     assert 'subresource="finalize"' in preflight
     assert "stat -c '%u' \"$FS2_SECURITY_KUBECONFIG\"" in boundary
     assert 'test "$(id -u)" != "$FS2_PEER_UID"' in boundary
     assert 'security_named_can "$verb" "$resource" fs2-network-policy-boundary' in boundary
     assert 'operations  = ["UPDATE", "DELETE"]' in boundary
+    assert 'resources   = ["namespaces/finalize"]' in boundary
+    assert "request.userInfo.username in [" in boundary
     assert 'validationActions = ["Deny"]' in boundary
     assert '["Audit", "Warn", "Deny"]' in boundary
     assert re.search(r"delete_allowed\s+= false", boundary)
+    assert inventory_schema["properties"]["signed"]["properties"]["complete"] == {"const": True}
+    assert inventory_schema["properties"]["signed"]["properties"]["cluster"]["additionalProperties"] is False
+    assert inventory_schema["properties"]["signature"]["pattern"] == "^[A-Za-z0-9_-]{86}$"
     assert 'verbs          = ["get", "patch", "update", "delete"]' not in boundary
     assert "resource_names = [" in boundary
     assert 'resources  = ["pods"]' not in boundary
@@ -1729,6 +1777,51 @@ def test_foundation_security_owner_permanently_owns_boundary_outside_workloads()
     assert "--security-handoff-client-private-key" in control_plane
     assert "stages/workloads/control_plane_network_policy_boundary.tf" not in control_plane
 
+
+def test_security_subject_inventory_is_signed_complete_cluster_bound_and_rollback_valid() -> None:
+    private_key = Ed25519PrivateKey.generate()
+    public_value = TRANSITION.base64.urlsafe_b64encode(private_key.public_key().public_bytes_raw()).decode().rstrip("=")
+    now = TRANSITION.dt.datetime.now(TRANSITION.dt.UTC)
+    cluster = ("https://reviewed-api.example.invalid", "kube-system-uid-000000000000")
+    signed = {
+        "schema": "fs2-serve.nebius.ai/security-subject-inventory/v1",
+        "inventory_id": "security-inventory-epoch-001",
+        "complete": True,
+        "cluster": {
+            "api_server_sha256": PREFLIGHT.hashlib.sha256(cluster[0].encode()).hexdigest(),
+            "kube_system_uid": cluster[1],
+        },
+        "human_users": [{"username": "reviewer@example.invalid", "groups": ["fs2-reviewers"]}],
+        "human_groups": ["fs2-platform-admins"],
+        "issued_at": (now - TRANSITION.dt.timedelta(minutes=1)).isoformat(),
+        "expires_at": (now + TRANSITION.dt.timedelta(hours=3)).isoformat(),
+        "signer_key_id": PREFLIGHT.hashlib.sha256(public_value.encode()).hexdigest(),
+    }
+    signature = TRANSITION.base64.urlsafe_b64encode(
+        private_key.sign(PREFLIGHT.canonical(signed).encode())
+    ).decode().rstrip("=")
+    envelope = PREFLIGHT.canonical({"signed": signed, "signature": signature})
+
+    subjects, inventory_hash = PREFLIGHT.verified_subject_inventory(
+        envelope,
+        public_value,
+        cluster=cluster,
+        rollback_valid_until=int((now + TRANSITION.dt.timedelta(hours=2)).timestamp()),
+        forbidden_usernames={"fs2-network-policy-release"},
+    )
+
+    assert subjects[0]["username"] == "reviewer@example.invalid"
+    assert subjects[1]["groups"] == ["fs2-platform-admins"]
+    assert inventory_hash == PREFLIGHT.hashlib.sha256(PREFLIGHT.canonical(signed).encode()).hexdigest()
+    tampered = PREFLIGHT.canonical({"signed": {**signed, "complete": False}, "signature": signature})
+    with pytest.raises(PREFLIGHT.PreflightError, match="signature"):
+        PREFLIGHT.verified_subject_inventory(
+            tampered,
+            public_value,
+            cluster=cluster,
+            rollback_valid_until=int((now + TRANSITION.dt.timedelta(hours=2)).timestamp()),
+            forbidden_usernames=set(),
+        )
 
 def test_manual_helm_uninstall_or_replace_cannot_delete_boundary_objects() -> None:
     template = (CHART / "templates" / "networkpolicy.yaml").read_text()

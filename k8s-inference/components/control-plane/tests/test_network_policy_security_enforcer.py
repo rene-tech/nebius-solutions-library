@@ -156,17 +156,32 @@ def _fixture() -> tuple[
             "peer_uid": 1001,
             "peer_gid": 1002,
             "peer_gid_contract": "effective-dedicated",
+            "socket_path": "/run/fs2/identity-epoch-001/security.sock",
+            "socket_directory_contract": "precreated-setgid-02710",
             "identity_boundary": {
-                "schema": "fs2-serve.nebius.ai/network-policy-identity-boundary/v1",
+                "schema": "fs2-serve.nebius.ai/network-policy-identity-boundary/v2",
+                "identity_epoch": "identity-epoch-001",
                 "release_user_info_sha256": "b" * 64,
                 "security_user_info_sha256": ENFORCER.sha256_json(SECURITY_USER_INFO),
                 "bootstrap_user_info_sha256": "c" * 64,
-                "denied_human_subjects_sha256": "d" * 64,
+                "credential_set_sha256": "a" * 64,
+                "release_kubeconfig_sha256": "b" * 64,
+                "security_kubeconfig_sha256": "c" * 64,
+                "bootstrap_kubeconfig_sha256": "e" * 64,
+                "security_subject_inventory_sha256": "d" * 64,
                 "plan_preflight_verified": True,
                 "plan_preflight_sha256": "e" * 64,
-                "release_expires_at": (now + dt.timedelta(minutes=30)).isoformat().replace("+00:00", "Z"),
-                "security_expires_at": (now + dt.timedelta(minutes=30)).isoformat().replace("+00:00", "Z"),
+                "release_expires_at": (now + dt.timedelta(hours=3)).isoformat().replace("+00:00", "Z"),
+                "security_expires_at": (now + dt.timedelta(hours=3)).isoformat().replace("+00:00", "Z"),
                 "bootstrap_expires_at": (now - dt.timedelta(seconds=1)).isoformat().replace("+00:00", "Z"),
+                "rollback_valid_until": (now + dt.timedelta(hours=2)).isoformat().replace("+00:00", "Z"),
+                "minimum_rollback_seconds": 3600,
+                "rotation_contract": {
+                    "mechanism": "versioned-foundation-epoch",
+                    "bootstrap_update_identity": "fs2-network-policy-security-bootstrap",
+                    "new_paths_required": True,
+                    "prior_epoch_stops_authorizing": True,
+                },
                 "bootstrap_must_be_expired": True,
                 "permitted_shared_groups": ["system:authenticated", "system:serviceaccounts"],
             },
@@ -272,6 +287,8 @@ def _fixture() -> tuple[
         expected_cluster=CLUSTER,
         expected_peer_uid=1001,
         expected_peer_gid=1002,
+        expected_socket_path=ENFORCER.Path("/run/fs2/identity-epoch-001/security.sock"),
+        security_kubeconfig_sha256="c" * 64,
     )
     return api, enforcer, client_key, server_key, recovery_key
 
@@ -453,6 +470,23 @@ def test_enforcer_rejects_a_peer_gid_shared_with_the_security_process(monkeypatc
                 "kube-system-uid-000000000000",
             ]
         )
+
+
+def test_socket_uses_precreated_setgid_parent_without_chown(monkeypatch: Any) -> None:
+    source = SCRIPT.read_text()
+    assert "os.chown" not in source
+    assert "precreated-setgid-02710" in source
+    assert "stat.S_IMODE(parent_stat.st_mode) != 0o2710" in source
+
+    parent = ENFORCER.Path("/run/fs2/identity-epoch-001")
+    metadata = type(
+        "Metadata",
+        (),
+        {"st_mode": ENFORCER.stat.S_IFDIR | 0o2710, "st_uid": 2000, "st_gid": 1002},
+    )()
+    monkeypatch.setattr(ENFORCER.os, "geteuid", lambda: 2000)
+    monkeypatch.setattr(ENFORCER.Path, "lstat", lambda path: metadata if path == parent else None)
+    ENFORCER.assert_security_owned_socket_parent(parent / "security.sock", peer_gid=1002)
 
 
 def test_enforcer_rejects_arbitrary_protected_patch_and_allows_exact_semantic_patch() -> None:

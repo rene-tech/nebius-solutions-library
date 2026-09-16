@@ -37,6 +37,26 @@ locals {
     "app.kubernetes.io/part-of"             = "fs2-serve"
     "fs2.nebius.ai/network-policy-boundary" = "permanent"
   }
+  control_plane_network_policy_inventory_subjects = var.network_policy_boundary.security_subject_inventory == null ? [] : concat(
+    var.network_policy_boundary.security_subject_inventory.signed.human_users,
+    [
+      for group in var.network_policy_boundary.security_subject_inventory.signed.human_groups : {
+        username = "fs2-security-group-probe-${substr(sha256(group), 0, 12)}"
+        groups   = [group]
+      }
+    ],
+  )
+  control_plane_network_policy_rollback_valid_until = (
+    var.network_policy_boundary.release_identity == null ||
+    var.network_policy_boundary.security_owner_identity == null
+    ) ? null : (
+    timecmp(
+      var.network_policy_boundary.release_identity.expires_at,
+      var.network_policy_boundary.security_owner_identity.expires_at,
+    ) <= 0 ?
+    var.network_policy_boundary.release_identity.expires_at :
+    var.network_policy_boundary.security_owner_identity.expires_at
+  )
   control_plane_network_policy_security_handoff = {
     schema                     = "fs2-serve.nebius.ai/network-policy-security-handoff/v2"
     socket_path                = var.network_policy_boundary.security_handoff_socket_path
@@ -50,8 +70,10 @@ locals {
     peer_uid                   = var.network_policy_boundary.security_handoff_peer_uid
     peer_gid                   = var.network_policy_boundary.security_handoff_peer_gid
     peer_gid_contract          = "effective-dedicated"
+    socket_directory_contract  = "precreated-setgid-02710"
     identity_boundary = {
-      schema = "fs2-serve.nebius.ai/network-policy-identity-boundary/v1"
+      schema         = "fs2-serve.nebius.ai/network-policy-identity-boundary/v2"
+      identity_epoch = var.network_policy_boundary.identity_epoch
       release_user_info_sha256 = var.network_policy_boundary.release_identity == null ? null : sha256(jsonencode({
         username = var.network_policy_boundary.release_identity.username
         uid      = var.network_policy_boundary.release_identity.uid
@@ -70,14 +92,32 @@ locals {
         groups   = sort(var.network_policy_boundary.security_bootstrap_identity.groups)
         extra    = { for key, values in var.network_policy_boundary.security_bootstrap_identity.extra : key => sort(values) }
       }))
-      release_expires_at           = var.network_policy_boundary.release_identity == null ? null : var.network_policy_boundary.release_identity.expires_at
-      security_expires_at          = var.network_policy_boundary.security_owner_identity == null ? null : var.network_policy_boundary.security_owner_identity.expires_at
-      bootstrap_expires_at         = var.network_policy_boundary.security_bootstrap_identity == null ? null : var.network_policy_boundary.security_bootstrap_identity.expires_at
-      bootstrap_must_be_expired    = true
-      permitted_shared_groups      = ["system:authenticated", "system:serviceaccounts"]
-      denied_human_subjects_sha256 = sha256(jsonencode(var.network_policy_boundary.denied_human_subjects))
-      plan_preflight_verified      = data.external.control_plane_network_policy_security_preflight_v2.result.verified == "true"
-      plan_preflight_sha256        = data.external.control_plane_network_policy_security_preflight_v2.result.contract_sha256
+      credential_set_sha256 = try(
+        data.external.control_plane_network_policy_security_preflight_v2.result.credential_set_sha256,
+        null,
+      )
+      release_kubeconfig_sha256   = try(data.external.control_plane_network_policy_security_preflight_v2.result.release_kubeconfig_sha256, null)
+      security_kubeconfig_sha256  = try(data.external.control_plane_network_policy_security_preflight_v2.result.security_kubeconfig_sha256, null)
+      bootstrap_kubeconfig_sha256 = try(data.external.control_plane_network_policy_security_preflight_v2.result.bootstrap_kubeconfig_sha256, null)
+      release_expires_at          = var.network_policy_boundary.release_identity == null ? null : var.network_policy_boundary.release_identity.expires_at
+      security_expires_at         = var.network_policy_boundary.security_owner_identity == null ? null : var.network_policy_boundary.security_owner_identity.expires_at
+      bootstrap_expires_at        = var.network_policy_boundary.security_bootstrap_identity == null ? null : var.network_policy_boundary.security_bootstrap_identity.expires_at
+      rollback_valid_until        = local.control_plane_network_policy_rollback_valid_until
+      minimum_rollback_seconds    = var.network_policy_boundary.minimum_rollback_seconds
+      bootstrap_must_be_expired   = true
+      permitted_shared_groups     = ["system:authenticated", "system:serviceaccounts"]
+      security_subject_inventory_sha256 = try(
+        data.external.control_plane_network_policy_security_preflight_v2.result.subject_inventory_sha256,
+        null,
+      )
+      plan_preflight_verified = data.external.control_plane_network_policy_security_preflight_v2.result.verified == "true"
+      plan_preflight_sha256   = data.external.control_plane_network_policy_security_preflight_v2.result.contract_sha256
+      rotation_contract = {
+        mechanism                     = "versioned-foundation-epoch"
+        bootstrap_update_identity     = local.control_plane_network_policy_security_bootstrap
+        new_paths_required            = true
+        prior_epoch_stops_authorizing = true
+      }
     }
     cluster = {
       api_server_sha256 = sha256(coalesce(local.selected_api_server, ""))
@@ -104,19 +144,29 @@ data "external" "control_plane_network_policy_security_preflight_v2" {
     release_identity            = jsonencode(var.network_policy_boundary.release_identity)
     security_identity           = jsonencode(var.network_policy_boundary.security_owner_identity)
     bootstrap_identity          = jsonencode(var.network_policy_boundary.security_bootstrap_identity)
-    denied_human_subjects       = jsonencode(var.network_policy_boundary.denied_human_subjects)
+    subject_inventory           = jsonencode(var.network_policy_boundary.security_subject_inventory)
+    recovery_public_key         = coalesce(var.network_policy_boundary.security_handoff_recovery_public_key, "")
+    minimum_rollback_seconds    = tostring(var.network_policy_boundary.minimum_rollback_seconds)
     gateway_namespace           = local.control_plane_network_policy_gateway_namespace
     controller_namespace        = local.control_plane_network_policy_controller_namespace
     security_owner_username     = local.control_plane_network_policy_security_owner
     security_bootstrap_username = local.control_plane_network_policy_security_bootstrap
     peer_uid                    = tostring(coalesce(var.network_policy_boundary.security_handoff_peer_uid, -1))
+    peer_gid                    = tostring(coalesce(var.network_policy_boundary.security_handoff_peer_gid, -1))
+    socket_path                 = var.network_policy_boundary.security_handoff_socket_path
+    identity_epoch              = coalesce(var.network_policy_boundary.identity_epoch, "unconfigured")
   }
 
   lifecycle {
     postcondition {
       condition = (
         self.result.verified == "true" &&
-        can(regex("^[0-9a-f]{64}$", self.result.contract_sha256))
+        can(regex("^[0-9a-f]{64}$", self.result.contract_sha256)) &&
+        can(regex("^[0-9a-f]{64}$", self.result.subject_inventory_sha256)) &&
+        can(regex("^[0-9a-f]{64}$", self.result.credential_set_sha256)) &&
+        can(regex("^[0-9a-f]{64}$", self.result.release_kubeconfig_sha256)) &&
+        can(regex("^[0-9a-f]{64}$", self.result.security_kubeconfig_sha256)) &&
+        can(regex("^[0-9a-f]{64}$", self.result.bootstrap_kubeconfig_sha256))
       )
       error_message = "The plan-time external security-boundary proof did not complete exactly."
     }
@@ -131,11 +181,14 @@ resource "terraform_data" "control_plane_network_policy_security_owner_preflight
     release_identity              = jsonencode(var.network_policy_boundary.release_identity)
     security_identity             = jsonencode(var.network_policy_boundary.security_owner_identity)
     bootstrap_identity            = jsonencode(var.network_policy_boundary.security_bootstrap_identity)
-    denied_human_subjects         = jsonencode(var.network_policy_boundary.denied_human_subjects)
+    inventory_subjects            = jsonencode(local.control_plane_network_policy_inventory_subjects)
     plan_preflight_sha256         = data.external.control_plane_network_policy_security_preflight_v2.result.contract_sha256
     client_private_key            = abspath(local.control_plane_network_policy_client_private_key_path)
     peer_uid                      = coalesce(var.network_policy_boundary.security_handoff_peer_uid, -1)
     peer_gid                      = coalesce(var.network_policy_boundary.security_handoff_peer_gid, -1)
+    socket_path                   = var.network_policy_boundary.security_handoff_socket_path
+    identity_epoch                = coalesce(var.network_policy_boundary.identity_epoch, "unconfigured")
+    minimum_rollback_seconds      = var.network_policy_boundary.minimum_rollback_seconds
     boundary_mode                 = var.network_policy_boundary.mode
     kube_context                  = var.kube_context
     kube_system_uid               = var.kube_system_uid
@@ -156,6 +209,13 @@ resource "terraform_data" "control_plane_network_policy_security_owner_preflight
       test "$FS2_SECURITY_KUBECONFIG" != "$FS2_SECURITY_BOOTSTRAP_KUBECONFIG"
       if test "$FS2_BOUNDARY_MODE" = public; then
         test "$(id -u)" != "$FS2_PEER_UID"
+        test "$(basename "$(dirname "$FS2_SOCKET_PATH")")" = "$FS2_IDENTITY_EPOCH"
+        test ! -e "$FS2_SOCKET_PATH"
+        socket_parent="$(dirname "$FS2_SOCKET_PATH")"
+        test -d "$socket_parent"
+        test "$(stat -c '%u' "$socket_parent")" = "$(id -u)"
+        test "$(stat -c '%g' "$socket_parent")" = "$FS2_PEER_GID"
+        test "$(stat -c '%a' "$socket_parent")" = "2710"
         test -f "$FS2_CLIENT_PRIVATE_KEY"
         case "$(stat -c '%a' "$FS2_CLIENT_PRIVATE_KEY")" in 400|600) ;; *) exit 1 ;; esac
         test "$(stat -c '%u' "$FS2_CLIENT_PRIVATE_KEY")" = "$FS2_PEER_UID"
@@ -223,9 +283,11 @@ resource "terraform_data" "control_plane_network_policy_security_owner_preflight
       release_expiry="$(date -u -d "$(jq -r .expires_at <<<"$FS2_RELEASE_IDENTITY")" +%s)"
       security_expiry="$(date -u -d "$(jq -r .expires_at <<<"$FS2_SECURITY_IDENTITY")" +%s)"
       bootstrap_expiry="$(date -u -d "$(jq -r .expires_at <<<"$FS2_BOOTSTRAP_IDENTITY")" +%s)"
-      test "$release_expiry" -gt "$now_epoch" && test "$release_expiry" -le "$((now_epoch + 3600))"
-      test "$security_expiry" -gt "$now_epoch" && test "$security_expiry" -le "$((now_epoch + 3600))"
+      test "$release_expiry" -gt "$now_epoch" && test "$release_expiry" -le "$((now_epoch + 28800))"
+      test "$security_expiry" -gt "$now_epoch" && test "$security_expiry" -le "$((now_epoch + 28800))"
       test "$bootstrap_expiry" -gt "$now_epoch" && test "$bootstrap_expiry" -le "$((now_epoch + 900))"
+      test "$release_expiry" -ge "$((bootstrap_expiry + FS2_MINIMUM_ROLLBACK_SECONDS))"
+      test "$security_expiry" -ge "$((bootstrap_expiry + FS2_MINIMUM_ROLLBACK_SECONDS))"
       test "$(credential_expiry_epoch "$FS2_ORDINARY_KUBECONFIG")" = "$release_expiry"
       test "$(credential_expiry_epoch "$FS2_SECURITY_KUBECONFIG")" = "$security_expiry"
       test "$(credential_expiry_epoch "$FS2_SECURITY_BOOTSTRAP_KUBECONFIG")" = "$bootstrap_expiry"
@@ -274,13 +336,17 @@ resource "terraform_data" "control_plane_network_policy_security_owner_preflight
         for verb in patch update; do
           test "$(ordinary_named_can "$verb" "$resource" fs2-network-policy-boundary)" = "no"
           test "$(security_named_can "$verb" "$resource" fs2-network-policy-boundary)" = "yes"
+          test "$(bootstrap_named_can "$verb" "$resource" fs2-network-policy-boundary)" = "yes"
           test "$(security_can "$verb" "$resource")" = "no"
+          test "$(bootstrap_can "$verb" "$resource")" = "no"
         done
         test "$(ordinary_named_can delete "$resource" fs2-network-policy-boundary)" = "no"
         test "$(security_named_can delete "$resource" fs2-network-policy-boundary)" = "no"
+        test "$(bootstrap_named_can delete "$resource" fs2-network-policy-boundary)" = "no"
         test "$(security_can delete "$resource")" = "no"
         test "$(ordinary_can deletecollection "$resource")" = "no"
         test "$(security_can deletecollection "$resource")" = "no"
+        test "$(bootstrap_can deletecollection "$resource")" = "no"
       done
       test "$(bootstrap_can create subjectaccessreviews.authorization.k8s.io)" = "yes"
       for resource in validatingadmissionpolicies.admissionregistration.k8s.io validatingadmissionpolicybindings.admissionregistration.k8s.io; do
@@ -290,16 +356,22 @@ resource "terraform_data" "control_plane_network_policy_security_owner_preflight
       while IFS='|' read -r namespace resource name; do
         test "$(ordinary_named_can get "$resource" "$name" --namespace "$namespace")" = "yes"
         test "$(security_named_can get "$resource" "$name" --namespace "$namespace")" = "yes"
+        security_update_expected=yes
+        if test "$name" = fs2-network-policy-boundary-topology; then security_update_expected=no; fi
         for verb in patch update; do
           test "$(ordinary_named_can "$verb" "$resource" "$name" --namespace "$namespace")" = "no"
-          test "$(security_named_can "$verb" "$resource" "$name" --namespace "$namespace")" = "yes"
+          test "$(security_named_can "$verb" "$resource" "$name" --namespace "$namespace")" = "$security_update_expected"
+          test "$(bootstrap_named_can "$verb" "$resource" "$name" --namespace "$namespace")" = "yes"
           test "$(security_can "$verb" "$resource" --namespace "$namespace")" = "no"
+          test "$(bootstrap_can "$verb" "$resource" --namespace "$namespace")" = "no"
         done
         test "$(ordinary_named_can delete "$resource" "$name" --namespace "$namespace")" = "no"
         test "$(security_named_can delete "$resource" "$name" --namespace "$namespace")" = "no"
+        test "$(bootstrap_named_can delete "$resource" "$name" --namespace "$namespace")" = "no"
         test "$(security_can delete "$resource" --namespace "$namespace")" = "no"
         test "$(ordinary_can deletecollection "$resource" --namespace "$namespace")" = "no"
         test "$(security_can deletecollection "$resource" --namespace "$namespace")" = "no"
+        test "$(bootstrap_can deletecollection "$resource" --namespace "$namespace")" = "no"
       done <<EOF
 $FS2_GATEWAY_NAMESPACE|networkpolicies.networking.k8s.io|fs2-serve-control-plane-public-envoy-transition-guard
 $FS2_GATEWAY_NAMESPACE|networkpolicies.networking.k8s.io|fs2-serve-control-plane-envoy-default-deny
@@ -309,7 +381,7 @@ fs2-system|configmaps|fs2-network-policy-boundary-topology
 fs2-system|configmaps|fs2-network-policy-boundary-parameters
 fs2-system|leases.coordination.k8s.io|fs2-network-policy-transition
 EOF
-      for resource in users.authentication.k8s.io groups.authentication.k8s.io serviceaccounts uids.authentication.k8s.io userextras.authentication.k8s.io; do
+      for resource in users.authentication.k8s.io groups.authentication.k8s.io serviceaccounts.authentication.k8s.io uids.authentication.k8s.io userextras.authentication.k8s.io; do
         test "$(ordinary_can impersonate "$resource")" = "no"
         test "$(security_can impersonate "$resource")" = "no"
         test "$(bootstrap_can impersonate "$resource")" = "no"
@@ -327,8 +399,8 @@ groups.authentication.k8s.io|system:authenticated
 groups.authentication.k8s.io|system:serviceaccounts
 groups.authentication.k8s.io|system:serviceaccounts:fs2-system
 groups.authentication.k8s.io|fs2-network-policy-security-probe
-serviceaccounts|system:serviceaccount:fs2-system:fs2-network-policy-transition
-serviceaccounts|fs2-system:fs2-network-policy-security-probe
+serviceaccounts.authentication.k8s.io|system:serviceaccount:fs2-system:fs2-network-policy-transition
+serviceaccounts.authentication.k8s.io|fs2-system:fs2-network-policy-security-probe
 uids.authentication.k8s.io|$FS2_PEER_UID
 uids.authentication.k8s.io|00000000-0000-4000-8000-000000000000
 userextras.authentication.k8s.io|scopes
@@ -340,25 +412,41 @@ EOF
       test "$(ordinary_can create serviceaccounts --subresource=token --namespace fs2-system)" = "no"
       test "$(security_can create serviceaccounts --subresource=token --namespace fs2-system)" = "no"
       test "$(bootstrap_can create serviceaccounts --subresource=token --namespace fs2-system)" = "no"
+      test "$(ordinary_can create serviceaccounts --subresource=token --all-namespaces)" = "no"
+      test "$(security_can create serviceaccounts --subresource=token --all-namespaces)" = "no"
+      test "$(bootstrap_can create serviceaccounts --subresource=token --all-namespaces)" = "no"
+      for namespace in fs2-system "$FS2_GATEWAY_NAMESPACE" "$FS2_CONTROLLER_NAMESPACE"; do
+        test "$(ordinary_can create serviceaccounts --subresource=token --namespace "$namespace")" = "no"
+        test "$(security_can create serviceaccounts --subresource=token --namespace "$namespace")" = "no"
+        test "$(bootstrap_can create serviceaccounts --subresource=token --namespace "$namespace")" = "no"
+      done
       for verb in update delete; do
         test "$(ordinary_can "$verb" namespaces)" = "no"
         test "$(security_can "$verb" namespaces)" = "no"
+        test "$(bootstrap_can "$verb" namespaces)" = "no"
         test "$(ordinary_named_can "$verb" namespaces fs2-system)" = "no"
         test "$(ordinary_named_can "$verb" namespaces "$FS2_GATEWAY_NAMESPACE")" = "no"
         test "$(ordinary_named_can "$verb" namespaces "$FS2_CONTROLLER_NAMESPACE")" = "no"
         test "$(security_named_can "$verb" namespaces fs2-system)" = "no"
         test "$(security_named_can "$verb" namespaces "$FS2_GATEWAY_NAMESPACE")" = "no"
         test "$(security_named_can "$verb" namespaces "$FS2_CONTROLLER_NAMESPACE")" = "no"
+        test "$(bootstrap_named_can "$verb" namespaces fs2-system)" = "no"
+        test "$(bootstrap_named_can "$verb" namespaces "$FS2_GATEWAY_NAMESPACE")" = "no"
+        test "$(bootstrap_named_can "$verb" namespaces "$FS2_CONTROLLER_NAMESPACE")" = "no"
       done
       test "$(ordinary_can update namespaces/finalize)" = "no"
       test "$(security_can update namespaces/finalize)" = "no"
+      test "$(bootstrap_can update namespaces/finalize)" = "no"
       test "$(ordinary_named_can update namespaces/finalize fs2-system)" = "no"
       test "$(ordinary_named_can update namespaces/finalize "$FS2_GATEWAY_NAMESPACE")" = "no"
       test "$(ordinary_named_can update namespaces/finalize "$FS2_CONTROLLER_NAMESPACE")" = "no"
       test "$(security_named_can update namespaces/finalize fs2-system)" = "no"
       test "$(security_named_can update namespaces/finalize "$FS2_GATEWAY_NAMESPACE")" = "no"
       test "$(security_named_can update namespaces/finalize "$FS2_CONTROLLER_NAMESPACE")" = "no"
-      jq -c '.[]' <<<"$FS2_DENIED_HUMAN_SUBJECTS" | while IFS= read -r subject; do
+      test "$(bootstrap_named_can update namespaces/finalize fs2-system)" = "no"
+      test "$(bootstrap_named_can update namespaces/finalize "$FS2_GATEWAY_NAMESPACE")" = "no"
+      test "$(bootstrap_named_can update namespaces/finalize "$FS2_CONTROLLER_NAMESPACE")" = "no"
+      jq -c '.[]' <<<"$FS2_SECURITY_INVENTORY_SUBJECTS" | while IFS= read -r subject; do
         human_user="$(jq -r .username <<<"$subject")"
         human_groups="$(jq -c '.groups | sort' <<<"$subject")"
         while IFS='|' read -r api_group resource namespace name; do
@@ -385,9 +473,9 @@ EOF
         while IFS='|' read -r api_group resource; do
           subject_denied "$human_user" "$human_groups" impersonate "$api_group" "$resource" "" "" ""
         done <<EOF
-|users
-|groups
-|serviceaccounts
+authentication.k8s.io|users
+authentication.k8s.io|groups
+authentication.k8s.io|serviceaccounts
 authentication.k8s.io|uids
 authentication.k8s.io|userextras
 EOF
@@ -410,6 +498,8 @@ EOF
         test "$(ordinary_can deletecollection "$resource" "$${namespace_args[@]}")" = "no"
         test "$(security_named_can bind "$resource" "$name" "$${namespace_args[@]}")" = "no"
         test "$(security_named_can escalate "$resource" "$name" "$${namespace_args[@]}")" = "no"
+        test "$(bootstrap_named_can bind "$resource" "$name" "$${namespace_args[@]}")" = "no"
+        test "$(bootstrap_named_can escalate "$resource" "$name" "$${namespace_args[@]}")" = "no"
       done <<EOF
 |clusterroles.rbac.authorization.k8s.io|$FS2_SECURITY_OWNER_USERNAME
 |clusterrolebindings.rbac.authorization.k8s.io|$FS2_SECURITY_OWNER_USERNAME
@@ -428,10 +518,13 @@ EOF
       FS2_RELEASE_IDENTITY              = self.input.release_identity
       FS2_SECURITY_IDENTITY             = self.input.security_identity
       FS2_BOOTSTRAP_IDENTITY            = self.input.bootstrap_identity
-      FS2_DENIED_HUMAN_SUBJECTS         = self.input.denied_human_subjects
+      FS2_SECURITY_INVENTORY_SUBJECTS   = self.input.inventory_subjects
       FS2_CLIENT_PRIVATE_KEY            = self.input.client_private_key
       FS2_PEER_UID                      = tostring(self.input.peer_uid)
       FS2_PEER_GID                      = tostring(self.input.peer_gid)
+      FS2_SOCKET_PATH                   = self.input.socket_path
+      FS2_IDENTITY_EPOCH                = self.input.identity_epoch
+      FS2_MINIMUM_ROLLBACK_SECONDS      = tostring(self.input.minimum_rollback_seconds)
       FS2_BOUNDARY_MODE                 = self.input.boundary_mode
       FS2_KUBE_CONTEXT                  = self.input.kube_context
       FS2_KUBE_SYSTEM_UID               = self.input.kube_system_uid
@@ -474,6 +567,10 @@ resource "kubernetes_config_map_v1" "control_plane_network_policy_topology" {
     name      = local.control_plane_network_policy_topology_name
     namespace = "fs2-system"
     labels    = local.control_plane_network_policy_boundary_labels
+    annotations = {
+      "fs2.nebius.ai/network-policy-identity-epoch"        = coalesce(var.network_policy_boundary.identity_epoch, "unconfigured")
+      "fs2.nebius.ai/network-policy-credential-set-sha256" = data.external.control_plane_network_policy_security_preflight_v2.result.credential_set_sha256
+    }
   }
   data = {
     "topology.json" = jsonencode({
@@ -498,14 +595,17 @@ resource "kubernetes_config_map_v1" "control_plane_network_policy_topology" {
           var.network_policy_boundary.security_handoff_recovery_public_key != null &&
           var.network_policy_boundary.security_handoff_peer_uid != null &&
           var.network_policy_boundary.security_handoff_peer_gid != null &&
+          var.network_policy_boundary.identity_epoch != null &&
+          var.network_policy_boundary.security_subject_inventory != null &&
           var.network_policy_boundary.security_owner_kubeconfig_path != null &&
           var.network_policy_boundary.security_bootstrap_kubeconfig_path != null &&
+          var.network_policy_boundary.security_handoff_client_private_key_path != null &&
           var.network_policy_boundary.release_identity != null &&
           var.network_policy_boundary.security_owner_identity != null &&
           var.network_policy_boundary.security_bootstrap_identity != null
         )
       )
-      error_message = "Public NetworkPolicy boundaries require pinned keys, dedicated runtime/bootstrap kubeconfigs, exact expiring whoami tuples, and the exact effective Unix peer UID/GID."
+      error_message = "Public NetworkPolicy boundaries require pinned keys, a signed complete subject inventory, a versioned identity epoch, dedicated runtime/bootstrap kubeconfigs, exact expiring whoami tuples, and the exact effective Unix peer UID/GID."
     }
   }
 
@@ -914,13 +1014,22 @@ resource "kubernetes_manifest" "control_plane_network_policy_boundary_admission"
         kind       = "ConfigMap"
       }
       matchConstraints = {
-        resourceRules = [{
-          apiGroups   = ["*"]
-          apiVersions = ["*"]
-          operations  = ["UPDATE", "DELETE"]
-          resources   = ["*"]
-          scope       = "*"
-        }]
+        resourceRules = [
+          {
+            apiGroups   = ["*"]
+            apiVersions = ["*"]
+            operations  = ["UPDATE", "DELETE"]
+            resources   = ["*"]
+            scope       = "*"
+          },
+          {
+            apiGroups   = [""]
+            apiVersions = ["v1"]
+            operations  = ["UPDATE"]
+            resources   = ["namespaces/finalize"]
+            scope       = "Cluster"
+          },
+        ]
       }
       matchConditions = [{
         name       = "permanent-boundary"
@@ -938,6 +1047,38 @@ resource "kubernetes_manifest" "control_plane_network_policy_boundary_admission"
           reason     = "Forbidden"
         },
         {
+          expression = <<-CEL
+            request.operation != 'UPDATE' ||
+            oldObject.apiVersion != 'v1' ||
+            oldObject.kind != 'ConfigMap' ||
+            oldObject.metadata.name != '${local.control_plane_network_policy_topology_name}' ||
+            (
+              has(oldObject.metadata.annotations) &&
+              'fs2.nebius.ai/network-policy-identity-epoch' in oldObject.metadata.annotations &&
+              'fs2.nebius.ai/network-policy-credential-set-sha256' in oldObject.metadata.annotations &&
+              has(object.metadata.annotations) &&
+              'fs2.nebius.ai/network-policy-identity-epoch' in object.metadata.annotations &&
+              'fs2.nebius.ai/network-policy-credential-set-sha256' in object.metadata.annotations &&
+              (
+                (
+                  object.metadata.annotations['fs2.nebius.ai/network-policy-identity-epoch'] ==
+                    oldObject.metadata.annotations['fs2.nebius.ai/network-policy-identity-epoch'] &&
+                  object.metadata.annotations['fs2.nebius.ai/network-policy-credential-set-sha256'] ==
+                    oldObject.metadata.annotations['fs2.nebius.ai/network-policy-credential-set-sha256'] &&
+                  object.data == oldObject.data
+                ) ||
+                (
+                  request.userInfo.username == '${local.control_plane_network_policy_security_bootstrap}' &&
+                  object.metadata.annotations['fs2.nebius.ai/network-policy-identity-epoch'] !=
+                    oldObject.metadata.annotations['fs2.nebius.ai/network-policy-identity-epoch']
+                )
+              )
+            )
+          CEL
+          message    = "protected topology credential changes require a new bootstrap-owned identity epoch; same-epoch updates must preserve exact data"
+          reason     = "Forbidden"
+        },
+        {
           expression = "request.operation != 'DELETE'"
           message    = "permanent boundary objects are never deleted"
           reason     = "Forbidden"
@@ -947,13 +1088,16 @@ resource "kubernetes_manifest" "control_plane_network_policy_boundary_admission"
             request.operation != 'UPDATE' || (
               has(object.metadata.labels) &&
               object.metadata.labels['fs2.nebius.ai/network-policy-boundary'] == 'permanent' &&
-              request.userInfo.username == '${local.control_plane_network_policy_security_owner}' &&
+              request.userInfo.username in [
+                '${local.control_plane_network_policy_security_owner}',
+                '${local.control_plane_network_policy_security_bootstrap}'
+              ] &&
               (!('fs2.nebius.ai/network-policy-role' in oldObject.metadata.labels) ||
                ('fs2.nebius.ai/network-policy-role' in object.metadata.labels &&
                 object.metadata.labels['fs2.nebius.ai/network-policy-role'] == oldObject.metadata.labels['fs2.nebius.ai/network-policy-role']))
             )
           CEL
-          message    = "permanent boundary updates require the external security owner and immutable ownership labels"
+          message    = "permanent boundary updates require the runtime security owner or current short-lived bootstrap epoch and immutable ownership labels"
           reason     = "Forbidden"
         },
       ]

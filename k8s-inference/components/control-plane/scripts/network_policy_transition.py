@@ -619,15 +619,22 @@ class Transition:
             or handoff_contract.get("peer_uid") != os.geteuid()
             or handoff_contract.get("peer_gid") != os.getegid()
             or handoff_contract.get("peer_gid_contract") != "effective-dedicated"
+            or handoff_contract.get("socket_directory_contract") != "precreated-setgid-02710"
             or handoff_contract.get("cluster") != cluster
             or handoff_contract.get("allowed_actions") != ["transition-mutation", "set-admission-recovery"]
             or handoff_contract.get("delete_allowed") is not False
             or handoff_contract.get("recovery_modes") != ["Audit", "Warn", "Deny"]
             or identity_boundary.get("schema")
-            != "fs2-serve.nebius.ai/network-policy-identity-boundary/v1"
+            != "fs2-serve.nebius.ai/network-policy-identity-boundary/v2"
+            or not re.fullmatch(r"[a-z0-9][a-z0-9-]{7,63}", str(identity_boundary.get("identity_epoch", "")))
+            or Path(str(handoff_contract.get("socket_path", ""))).parent.name
+            != identity_boundary.get("identity_epoch")
             or identity_boundary.get("release_user_info_sha256") != sha256_json(release_whoami)
+            or not re.fullmatch(r"[0-9a-f]{64}", str(identity_boundary.get("credential_set_sha256", "")))
+            or identity_boundary.get("release_kubeconfig_sha256")
+            != hashlib.sha256(self.kubeconfig.read_bytes()).hexdigest()
             or not re.fullmatch(
-                r"[0-9a-f]{64}", str(identity_boundary.get("denied_human_subjects_sha256", ""))
+                r"[0-9a-f]{64}", str(identity_boundary.get("security_subject_inventory_sha256", ""))
             )
             or identity_boundary.get("plan_preflight_verified") is not True
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity_boundary.get("plan_preflight_sha256", "")))
@@ -636,6 +643,17 @@ class Transition:
             > now
             or identity_instant(identity_boundary.get("release_expires_at"), field="release identity expires_at")
             <= now
+            or identity_instant(identity_boundary.get("rollback_valid_until"), field="rollback validity")
+            < now
+            + dt.timedelta(seconds=int(identity_boundary.get("minimum_rollback_seconds", 0)))
+            or int(identity_boundary.get("minimum_rollback_seconds", 0)) < 3600
+            or identity_boundary.get("rotation_contract")
+            != {
+                "mechanism": "versioned-foundation-epoch",
+                "bootstrap_update_identity": "fs2-network-policy-security-bootstrap",
+                "new_paths_required": True,
+                "prior_epoch_stops_authorizing": True,
+            }
         ):
             raise TransitionError("signed handoff does not match protected same-cluster topology")
         self.verify_external_iam_boundary(contract)
@@ -766,8 +784,11 @@ class Transition:
             ("groups.authentication.k8s.io", "system:serviceaccounts"),
             ("groups.authentication.k8s.io", f"system:serviceaccounts:{self.release_namespace}"),
             ("groups.authentication.k8s.io", "fs2-network-policy-security-probe"),
-            ("serviceaccounts", None),
-            ("serviceaccounts", f"{self.release_namespace}:fs2-network-policy-security-probe"),
+            ("serviceaccounts.authentication.k8s.io", None),
+            (
+                "serviceaccounts.authentication.k8s.io",
+                f"{self.release_namespace}:fs2-network-policy-security-probe",
+            ),
             ("uids.authentication.k8s.io", None),
             ("uids.authentication.k8s.io", str(topology.get("security_handoff", {}).get("peer_uid", ""))),
             ("uids.authentication.k8s.io", "00000000-0000-4000-8000-000000000000"),
@@ -776,7 +797,7 @@ class Transition:
             ("userextras.authentication.k8s.io", "fs2.nebius.ai/security-probe"),
             ("groups.authentication.k8s.io", "system:masters"),
             (
-                "serviceaccounts",
+                "serviceaccounts.authentication.k8s.io",
                 f"system:serviceaccount:{self.release_namespace}:fs2-network-policy-transition",
             ),
         )
@@ -850,6 +871,45 @@ class Transition:
             "--namespace",
             self.release_namespace,
         )
+        self._require_can_i(
+            self.bootstrap_kubectl,
+            "no",
+            "create",
+            "serviceaccounts",
+            "--subresource=token",
+            "--all-namespaces",
+        )
+        for namespace in {
+            self.release_namespace,
+            str(topology.get("gateway_namespace", "")),
+            str(topology.get("controller_namespace", "")),
+        }:
+            if not namespace:
+                raise TransitionError("protected topology has an incomplete namespace identity")
+            self._require_can_i(
+                self.bootstrap_kubectl,
+                "no",
+                "create",
+                "serviceaccounts",
+                "--subresource=token",
+                "--namespace",
+                namespace,
+            )
+            for verb in ("update", "delete"):
+                self._require_can_i(
+                    self.bootstrap_kubectl,
+                    "no",
+                    verb,
+                    "namespaces",
+                    f"--resource-name={namespace}",
+                )
+            self._require_can_i(
+                self.bootstrap_kubectl,
+                "no",
+                "update",
+                "namespaces/finalize",
+                f"--resource-name={namespace}",
+            )
 
     @property
     def guarded(self) -> Command | ProtectedCommand:

@@ -127,7 +127,7 @@ def assert_security_owned_file(path: Path, *, label: str) -> None:
         raise EnforcerError(f"{label} ownership or mode is unsafe")
 
 
-def assert_security_owned_socket_parent(path: Path) -> None:
+def assert_security_owned_socket_parent(path: Path, *, peer_gid: int) -> None:
     try:
         parent_stat = path.parent.lstat()
     except OSError as error:
@@ -136,9 +136,20 @@ def assert_security_owned_socket_parent(path: Path) -> None:
         not stat.S_ISDIR(parent_stat.st_mode)
         or stat.S_ISLNK(parent_stat.st_mode)
         or parent_stat.st_uid != os.geteuid()
-        or stat.S_IMODE(parent_stat.st_mode) & 0o022
+        or parent_stat.st_gid != peer_gid
+        or stat.S_IMODE(parent_stat.st_mode) != 0o2710
     ):
-        raise EnforcerError("security handoff socket parent ownership or mode is unsafe")
+        raise EnforcerError("security handoff socket parent must be an enforcer-owned peer-GID setgid 02710 directory")
+
+
+def assert_absent_socket_path(path: Path) -> None:
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return
+    except OSError as error:
+        raise EnforcerError("security handoff socket path cannot be inspected safely") from error
+    raise EnforcerError("security handoff socket path already exists")
 
 
 class KubernetesAPI(Protocol):
@@ -319,6 +330,8 @@ class SecurityEnforcer:
         expected_cluster: dict[str, str],
         expected_peer_uid: int,
         expected_peer_gid: int,
+        expected_socket_path: Path,
+        security_kubeconfig_sha256: str,
     ) -> None:
         self.api = api
         self.client_public_key = Ed25519PublicKey.from_public_bytes(
@@ -337,6 +350,8 @@ class SecurityEnforcer:
         self.expected_cluster = expected_cluster
         self.expected_peer_uid = expected_peer_uid
         self.expected_peer_gid = expected_peer_gid
+        self.expected_socket_path = expected_socket_path
+        self.security_kubeconfig_sha256 = security_kubeconfig_sha256
         self.seen_operations: set[str] = set()
 
     def _topology(self) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -468,17 +483,32 @@ class SecurityEnforcer:
             or handoff.get("peer_uid") != self.expected_peer_uid
             or handoff.get("peer_gid") != self.expected_peer_gid
             or handoff.get("peer_gid_contract") != "effective-dedicated"
+            or handoff.get("socket_path") != str(self.expected_socket_path)
+            or handoff.get("socket_directory_contract") != "precreated-setgid-02710"
             or handoff.get("cluster") != self.expected_cluster
             or handoff.get("allowed_actions") != ["transition-mutation", "set-admission-recovery"]
             or handoff.get("delete_allowed") is not False
-            or identity.get("schema") != "fs2-serve.nebius.ai/network-policy-identity-boundary/v1"
+            or identity.get("schema") != "fs2-serve.nebius.ai/network-policy-identity-boundary/v2"
+            or not re.fullmatch(r"[a-z0-9][a-z0-9-]{7,63}", str(identity.get("identity_epoch", "")))
+            or self.expected_socket_path.parent.name != identity.get("identity_epoch")
             or identity.get("security_user_info_sha256") != sha256_json(self.api.user_info())
-            or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("denied_human_subjects_sha256", "")))
+            or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("credential_set_sha256", "")))
+            or identity.get("security_kubeconfig_sha256") != self.security_kubeconfig_sha256
+            or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("security_subject_inventory_sha256", "")))
             or identity.get("plan_preflight_verified") is not True
             or not re.fullmatch(r"[0-9a-f]{64}", str(identity.get("plan_preflight_sha256", "")))
             or identity.get("bootstrap_must_be_expired") is not True
             or instant(identity.get("bootstrap_expires_at"), field="bootstrap identity expires_at") > now
             or instant(identity.get("security_expires_at"), field="security identity expires_at") <= now
+            or instant(identity.get("rollback_valid_until"), field="rollback validity") <= now
+            or int(identity.get("minimum_rollback_seconds", 0)) < 3600
+            or identity.get("rotation_contract")
+            != {
+                "mechanism": "versioned-foundation-epoch",
+                "bootstrap_update_identity": "fs2-network-policy-security-bootstrap",
+                "new_paths_required": True,
+                "prior_epoch_stops_authorizing": True,
+            }
         ):
             raise EnforcerError("live topology does not authorize this enforcer")
         return resource, contract
@@ -1289,13 +1319,23 @@ def serve_connection(connection: socket.socket, enforcer: SecurityEnforcer) -> N
 
 
 def serve(socket_path: Path, enforcer: SecurityEnforcer, *, peer_gid: int) -> None:
-    if not socket_path.is_absolute() or socket_path.exists():
-        raise EnforcerError("security handoff socket must be an absent absolute path")
-    assert_security_owned_socket_parent(socket_path)
+    if not socket_path.is_absolute():
+        raise EnforcerError("security handoff socket must be an absolute path")
+    assert_absent_socket_path(socket_path)
+    assert_security_owned_socket_parent(socket_path, peer_gid=peer_gid)
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
         listener.bind(str(socket_path))
-        os.chown(socket_path, -1, peer_gid)
+        socket_metadata = socket_path.lstat()
+        if (
+            not stat.S_ISSOCK(socket_metadata.st_mode)
+            or socket_metadata.st_uid != os.geteuid()
+            or socket_metadata.st_gid != peer_gid
+        ):
+            raise EnforcerError("security handoff socket did not inherit the exact setgid parent ownership")
         socket_path.chmod(0o660)
+        socket_metadata = socket_path.lstat()
+        if stat.S_IMODE(socket_metadata.st_mode) != 0o660:
+            raise EnforcerError("security handoff socket mode is not exact")
         listener.listen(16)
         while True:
             connection, _ = listener.accept()
@@ -1351,6 +1391,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         },
         expected_peer_uid=arguments.peer_uid,
         expected_peer_gid=arguments.peer_gid,
+        expected_socket_path=Path(arguments.socket),
+        security_kubeconfig_sha256=hashlib.sha256(Path(arguments.security_kubeconfig).read_bytes()).hexdigest(),
     )
     serve(Path(arguments.socket), enforcer, peer_gid=arguments.peer_gid)
     return 0
