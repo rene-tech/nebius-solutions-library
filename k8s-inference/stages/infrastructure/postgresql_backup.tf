@@ -8,9 +8,11 @@
 locals {
   postgresql_backup_root                        = "postgresql/v1"
   postgresql_backup_writer_path_scope           = "${local.postgresql_backup_root}/fs2-control-db/*"
+  postgresql_backup_restore_path_scope          = "${local.postgresql_backup_root}/fs2-control-db/*"
   postgresql_backup_inventory_path_scope        = "${local.postgresql_backup_root}/*"
   postgresql_backup_receipt_path_scope          = "${local.postgresql_backup_root}/restore-verification/success/*"
   postgresql_backup_writer_role                 = "storage.object-editor"
+  postgresql_backup_restore_roles               = ["storage.object-lister", "storage.object-viewer"]
   postgresql_backup_inventory_roles             = ["storage.object-lister", "storage.object-viewer"]
   postgresql_backup_receipt_role                = "storage.uploader"
   postgresql_backup_endpoint                    = "https://storage.${local.selected_target.region}.nebius.cloud"
@@ -75,6 +77,8 @@ resource "terraform_data" "postgresql_backup_contract" {
     object_root                       = local.postgresql_backup_root
     writer_role                       = local.postgresql_backup_writer_role
     writer_paths                      = [local.postgresql_backup_writer_path_scope]
+    restore_reader_roles              = local.postgresql_backup_restore_roles
+    restore_reader_paths              = [local.postgresql_backup_restore_path_scope]
     inventory_reader_roles            = local.postgresql_backup_inventory_roles
     inventory_reader_paths            = [local.postgresql_backup_inventory_path_scope]
     receipt_publisher_role            = local.postgresql_backup_receipt_role
@@ -153,6 +157,36 @@ resource "nebius_iam_v1_service_account" "postgresql_backup_inventory" {
   })
 }
 
+resource "nebius_iam_v1_service_account" "postgresql_backup_restore" {
+  count = var.postgresql_backup.enabled ? 1 : 0
+
+  parent_id   = var.project_id
+  name        = "${local.resource_name}-postgresql-backup-restore"
+  description = "Read-only CloudNativePG point-in-time restore identity"
+  labels = merge(local.common_labels, {
+    purpose   = "postgresql-backup-restore-reader"
+    retention = "durable"
+  })
+}
+
+resource "nebius_iam_v1_group" "postgresql_backup_restore_readers" {
+  count = var.postgresql_backup.enabled ? 1 : 0
+
+  parent_id = var.project_id
+  name      = "${local.resource_name}-postgresql-backup-restore-readers"
+  labels = merge(local.common_labels, {
+    purpose   = "postgresql-backup-restore-read"
+    retention = "durable"
+  })
+}
+
+resource "nebius_iam_v1_group_membership" "postgresql_backup_restore_reader" {
+  count = var.postgresql_backup.enabled ? 1 : 0
+
+  parent_id = nebius_iam_v1_group.postgresql_backup_restore_readers[0].id
+  member_id = nebius_iam_v1_service_account.postgresql_backup_restore[0].id
+}
+
 resource "nebius_iam_v1_group" "postgresql_backup_inventory_readers" {
   count = var.postgresql_backup.enabled ? 1 : 0
 
@@ -222,6 +256,11 @@ resource "nebius_storage_v1_bucket" "postgresql_backup" {
         roles    = [local.postgresql_backup_writer_role]
       },
       {
+        group_id = nebius_iam_v1_group.postgresql_backup_restore_readers[0].id
+        paths    = [local.postgresql_backup_restore_path_scope]
+        roles    = local.postgresql_backup_restore_roles
+      },
+      {
         group_id = nebius_iam_v1_group.postgresql_backup_inventory_readers[0].id
         paths    = [local.postgresql_backup_inventory_path_scope]
         roles    = local.postgresql_backup_inventory_roles
@@ -239,6 +278,7 @@ resource "nebius_storage_v1_bucket" "postgresql_backup" {
 
   depends_on = [
     nebius_iam_v1_group_membership.postgresql_backup_writer,
+    nebius_iam_v1_group_membership.postgresql_backup_restore_reader,
     nebius_iam_v1_group_membership.postgresql_backup_inventory_reader,
     nebius_iam_v1_group_membership.postgresql_restore_receipt_publisher,
   ]
@@ -282,6 +322,26 @@ resource "nebius_iam_v2_access_key" "postgresql_backup_inventory" {
   account = {
     service_account = {
       id = nebius_iam_v1_service_account.postgresql_backup_inventory[0].id
+    }
+  }
+
+  depends_on = [nebius_storage_v1_bucket.postgresql_backup]
+}
+
+resource "nebius_iam_v2_access_key" "postgresql_backup_restore" {
+  count = var.postgresql_backup.enabled ? 1 : 0
+
+  parent_id            = var.project_id
+  name                 = "${local.resource_name}-postgresql-backup-restore"
+  description          = "Read-only S3 key for CloudNativePG point-in-time recovery"
+  secret_delivery_mode = "MYSTERY_BOX"
+  labels = merge(local.common_labels, {
+    purpose   = "postgresql-backup-restore-read"
+    retention = "durable"
+  })
+  account = {
+    service_account = {
+      id = nebius_iam_v1_service_account.postgresql_backup_restore[0].id
     }
   }
 

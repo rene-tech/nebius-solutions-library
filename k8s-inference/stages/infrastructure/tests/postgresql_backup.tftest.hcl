@@ -114,6 +114,10 @@ run "backup_plane_is_versioned_retained_scoped_and_mysterybox_delivered" {
       nebius_iam_v1_group.postgresql_backup_writers,
       nebius_iam_v1_group_membership.postgresql_backup_writer,
       nebius_iam_v2_access_key.postgresql_backup,
+      nebius_iam_v1_service_account.postgresql_backup_restore,
+      nebius_iam_v1_group.postgresql_backup_restore_readers,
+      nebius_iam_v1_group_membership.postgresql_backup_restore_reader,
+      nebius_iam_v2_access_key.postgresql_backup_restore,
       nebius_iam_v1_service_account.postgresql_backup_inventory,
       nebius_iam_v1_group.postgresql_backup_inventory_readers,
       nebius_iam_v1_group_membership.postgresql_backup_inventory_reader,
@@ -139,12 +143,14 @@ run "backup_plane_is_versioned_retained_scoped_and_mysterybox_delivered" {
     condition = (
       join(",", nebius_storage_v1_bucket.postgresql_backup[0].bucket_policy.rules[0].paths) == "postgresql/v1/fs2-control-db/*" &&
       join(",", nebius_storage_v1_bucket.postgresql_backup[0].bucket_policy.rules[0].roles) == "storage.object-editor" &&
-      join(",", nebius_storage_v1_bucket.postgresql_backup[0].bucket_policy.rules[1].paths) == "postgresql/v1/*" &&
+      join(",", nebius_storage_v1_bucket.postgresql_backup[0].bucket_policy.rules[1].paths) == "postgresql/v1/fs2-control-db/*" &&
       join(",", nebius_storage_v1_bucket.postgresql_backup[0].bucket_policy.rules[1].roles) == "storage.object-lister,storage.object-viewer" &&
-      join(",", nebius_storage_v1_bucket.postgresql_backup[0].bucket_policy.rules[2].paths) == "postgresql/v1/restore-verification/success/*" &&
-      join(",", nebius_storage_v1_bucket.postgresql_backup[0].bucket_policy.rules[2].roles) == "storage.uploader"
+      join(",", nebius_storage_v1_bucket.postgresql_backup[0].bucket_policy.rules[2].paths) == "postgresql/v1/*" &&
+      join(",", nebius_storage_v1_bucket.postgresql_backup[0].bucket_policy.rules[2].roles) == "storage.object-lister,storage.object-viewer" &&
+      join(",", nebius_storage_v1_bucket.postgresql_backup[0].bucket_policy.rules[3].paths) == "postgresql/v1/restore-verification/success/*" &&
+      join(",", nebius_storage_v1_bucket.postgresql_backup[0].bucket_policy.rules[3].roles) == "storage.uploader"
     )
-    error_message = "PostgreSQL backup writing, inventory reading and receipt publishing must use distinct narrowly scoped roles."
+    error_message = "PostgreSQL backup writing, PITR reading, inventory reading and receipt publishing must use distinct narrowly scoped roles."
   }
 
   assert {
@@ -153,6 +159,7 @@ run "backup_plane_is_versioned_retained_scoped_and_mysterybox_delivered" {
       length(nebius_iam_v1_group.postgresql_backup_writers) == 1 &&
       length(nebius_iam_v1_group_membership.postgresql_backup_writer) == 1 &&
       nebius_iam_v2_access_key.postgresql_backup[0].secret_delivery_mode == "MYSTERY_BOX" &&
+      nebius_iam_v2_access_key.postgresql_backup_restore[0].secret_delivery_mode == "MYSTERY_BOX" &&
       nebius_iam_v2_access_key.postgresql_backup_inventory[0].secret_delivery_mode == "MYSTERY_BOX" &&
       nebius_iam_v2_access_key.postgresql_restore_receipt[0].secret_delivery_mode == "MYSTERY_BOX"
     )

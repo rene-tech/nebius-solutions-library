@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import base64
 import binascii
+import ctypes
 import fcntl
 import hashlib
 import json
@@ -71,6 +72,7 @@ def run(
     env: Mapping[str, str] | None = None,
     capture: bool = False,
     input_text: str | None = None,
+    pass_fds: Sequence[int] = (),
 ) -> subprocess.CompletedProcess[str]:
     print(f"+ {command_text(arguments)}", file=sys.stderr)
     try:
@@ -82,6 +84,7 @@ def run(
             check=True,
             stdout=subprocess.PIPE if capture else sys.stderr,
             stderr=subprocess.PIPE if capture else None,
+            pass_fds=tuple(pass_fds),
         )
     except FileNotFoundError as exc:
         raise DeploymentError(f"required executable not found: {arguments[0]}") from exc
@@ -335,20 +338,49 @@ def plan_changes_managed_resources_or_outputs(document: Mapping[str, Any]) -> bo
     return False
 
 
-def source_commit() -> str:
-    result = run(
-        ["git", "-C", str(REPOSITORY_ROOT), "rev-parse", "HEAD"],
+def verified_source_identity() -> tuple[str, str]:
+    """Return HEAD and tree only for an exact, clean source checkout.
+
+    Capacity approvals are release authorization. A tracked edit, staged edit,
+    ignored submodule drift or untracked file must not be able to supply code or
+    trust roots while the receipt continues to name the last committed tree.
+    """
+    environment = clean_environment()
+    status = run(
+        [
+            "git",
+            "-C",
+            str(REPOSITORY_ROOT),
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+            "--ignore-submodules=none",
+        ],
         capture=True,
-        env=clean_environment(),
+        env=environment,
     )
-    commit = result.stdout.strip()
-    if len(commit) != 40 or any(
-        character not in "0123456789abcdef" for character in commit
+    if status.stdout:
+        raise DeploymentError(
+            "SAI-06 requires an exact clean source checkout; tracked, staged, "
+            "submodule or untracked changes are present"
+        )
+    result = run(
+        ["git", "-C", str(REPOSITORY_ROOT), "rev-parse", "HEAD", "HEAD^{tree}"],
+        capture=True,
+        env=environment,
+    )
+    identities = result.stdout.splitlines()
+    if len(identities) != 2 or any(
+        not re.fullmatch(r"[0-9a-f]{40}", identity) for identity in identities
     ):
         raise DeploymentError(
-            "the source checkout does not have an exact Git commit identity"
+            "the source checkout does not have an exact Git commit and tree identity"
         )
-    return commit
+    return identities[0], identities[1]
+
+
+def source_commit() -> str:
+    return verified_source_identity()[0]
 
 
 def default_run_root(variable_file: Path) -> Path:
@@ -767,7 +799,7 @@ def _sai06_plan_allocation(
 
 
 def require_sai06_no_replacements(plan_document: Mapping[str, Any]) -> None:
-    """Reject any infrastructure replacement from the SAI-06 saved plan."""
+    """Reject replacements and deletes of the SAI-06 critical infrastructure."""
     replacements = sorted(
         str(change.get("address", ""))
         for change in plan_document.get("resource_changes", [])
@@ -780,6 +812,34 @@ def require_sai06_no_replacements(plan_document: Mapping[str, Any]) -> None:
         raise DeploymentError(
             "SAI-06 requires a no-replacement infrastructure plan; replacements: "
             + ", ".join(replacements)
+        )
+    critical_fragments = (
+        "nebius_mk8s_v1_cluster.",
+        "nebius_mk8s_v1_node_group.system",
+        "nebius_vpc_v1_allocation.gateway",
+        "nebius_storage_v1_bucket.postgresql_backup",
+        "postgresql_backup",
+        "postgresql_restore",
+        "kubernetes_persistent_volume_claim",
+        "kubernetes_manifest.control_database",
+        "helm_release.cloudnative_pg",
+        "helm_release.envoy_gateway",
+        "helm_release.control_plane",
+    )
+    destructive = sorted(
+        str(change.get("address", ""))
+        for change in plan_document.get("resource_changes", [])
+        if change.get("mode", "managed") == "managed"
+        and "delete" in change.get("change", {}).get("actions", [])
+        and any(
+            fragment in str(change.get("address", ""))
+            for fragment in critical_fragments
+        )
+    )
+    if destructive:
+        raise DeploymentError(
+            "SAI-06 rollout plan deletes critical cluster, storage, edge or "
+            "recovery resources: " + ", ".join(destructive)
         )
 
 
@@ -851,17 +911,7 @@ def sai06_capacity_projections(
 
 
 def source_tree() -> str:
-    result = run(
-        ["git", "-C", str(REPOSITORY_ROOT), "rev-parse", "HEAD^{tree}"],
-        capture=True,
-        env=clean_environment(),
-    )
-    tree = result.stdout.strip()
-    if not re.fullmatch(r"[0-9a-f]{40}", tree):
-        raise DeploymentError(
-            "the source checkout does not have an exact Git tree identity"
-        )
-    return tree
+    return verified_source_identity()[1]
 
 
 def write_sai06_capacity_approval_request(
@@ -873,6 +923,9 @@ def write_sai06_capacity_approval_request(
     capacity: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Seal the exact saved plan and live quota snapshot for offline signing."""
+    source_commit_value, source_tree_value = verified_source_identity()
+    if source_commit_value != commit:
+        raise DeploymentError("SAI-06 source commit changed while planning")
     request = {
         "schema": "fs2-serve.nebius.ai/sai06-capacity-approval-request/v2",
         "created_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
@@ -880,7 +933,7 @@ def write_sai06_capacity_approval_request(
         "project_id": contract["target"]["project_id"],
         "region": contract["target"]["region"],
         "source_commit": commit,
-        "source_tree": source_tree(),
+        "source_tree": source_tree_value,
         "infrastructure_plan_sha256": _secure_sha256_file(
             plan_path, label="SAI-06 infrastructure binary plan"
         ),
@@ -893,14 +946,29 @@ def write_sai06_capacity_approval_request(
     return request
 
 
-def _secure_json_file(
+def _secure_file_identity(value: os.stat_result) -> tuple[int, ...]:
+    """Identity fields that change for replacement and in-place mutation."""
+    return (
+        value.st_dev,
+        value.st_ino,
+        value.st_uid,
+        value.st_gid,
+        stat.S_IMODE(value.st_mode),
+        value.st_nlink,
+        value.st_size,
+        value.st_mtime_ns,
+        value.st_ctime_ns,
+    )
+
+
+def _secure_file_bytes(
     path: Path,
     *,
     label: str,
     private: bool,
     max_bytes: int = 1024 * 1024,
-) -> Any:
-    """Read JSON through stable descriptors without following any symlink."""
+) -> bytes:
+    """Read exact bytes through stable descriptors without following symlinks."""
     candidate = path.expanduser()
     if not candidate.is_absolute():
         candidate = Path.cwd() / candidate
@@ -951,23 +1019,26 @@ def _secure_json_file(
                     break
                 chunks.append(chunk)
                 remaining -= len(chunk)
+            payload = b"".join(chunks)
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            verification_chunks: list[bytes] = []
+            verification_remaining = before.st_size
+            while verification_remaining:
+                chunk = os.read(descriptor, min(verification_remaining, 65536))
+                if not chunk:
+                    break
+                verification_chunks.append(chunk)
+                verification_remaining -= len(chunk)
             after = os.fstat(descriptor)
             named = os.stat(parts[-1], dir_fd=directory_fd, follow_symlinks=False)
-            identity = lambda value: (  # noqa: E731 - compact immutable identity
-                value.st_dev,
-                value.st_ino,
-                value.st_uid,
-                value.st_gid,
-                stat.S_IMODE(value.st_mode),
-                value.st_nlink,
-                value.st_size,
-            )
-            if identity(before) != identity(after) or identity(before) != identity(
-                named
-            ):
+            if _secure_file_identity(before) != _secure_file_identity(
+                after
+            ) or _secure_file_identity(before) != _secure_file_identity(named):
                 raise DeploymentError(f"{label} changed while it was being read")
             if remaining != 0:
                 raise DeploymentError(f"{label} was truncated while it was being read")
+            if verification_remaining != 0 or b"".join(verification_chunks) != payload:
+                raise DeploymentError(f"{label} changed while it was being read")
         finally:
             os.close(descriptor)
     except OSError as error:
@@ -976,86 +1047,129 @@ def _secure_json_file(
         ) from error
     finally:
         os.close(directory_fd)
+    return payload
+
+
+def _secure_json_file(
+    path: Path,
+    *,
+    label: str,
+    private: bool,
+    max_bytes: int = 1024 * 1024,
+) -> Any:
+    """Read and decode JSON from one timestamp-pinned stable file snapshot."""
     try:
-        return json.loads(b"".join(chunks))
+        return json.loads(
+            _secure_file_bytes(
+                path,
+                label=label,
+                private=private,
+                max_bytes=max_bytes,
+            )
+        )
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise DeploymentError(f"{label} is not valid UTF-8 JSON") from error
 
 
 def _secure_sha256_file(path: Path, *, label: str) -> str:
-    """Hash a private regular file through a stable, non-following descriptor."""
-    candidate = path.expanduser()
-    if not candidate.is_absolute():
-        candidate = Path.cwd() / candidate
-    parts = candidate.parts
-    if (
-        not parts
-        or parts[0] != "/"
-        or any(part in {"", ".", ".."} for part in parts[1:])
-    ):
-        raise DeploymentError(f"{label} path must be an absolute canonical path")
-    directory_fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
-    try:
-        for component in parts[1:-1]:
-            next_fd = os.open(
-                component,
-                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
-                dir_fd=directory_fd,
-            )
-            os.close(directory_fd)
-            directory_fd = next_fd
-            directory_stat = os.fstat(directory_fd)
-            directory_mode = stat.S_IMODE(directory_stat.st_mode)
-            if directory_stat.st_uid not in {0, os.geteuid()}:
-                raise DeploymentError(
-                    f"{label} parent directory has an untrusted owner"
-                )
-            if directory_mode & 0o002 and not directory_mode & stat.S_ISVTX:
-                raise DeploymentError(f"{label} parent directory is replaceable")
-        descriptor = os.open(
-            parts[-1],
-            os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC,
-            dir_fd=directory_fd,
+    """Hash one timestamp-pinned private file snapshot."""
+    return hashlib.sha256(
+        _secure_file_bytes(
+            path,
+            label=label,
+            private=True,
+            max_bytes=256 * 1024 * 1024,
         )
-        try:
-            before = os.fstat(descriptor)
-            if (
-                not stat.S_ISREG(before.st_mode)
-                or before.st_nlink != 1
-                or before.st_uid not in {0, os.geteuid()}
-                or stat.S_IMODE(before.st_mode) != 0o600
-                or before.st_size <= 0
-            ):
-                raise DeploymentError(
-                    f"{label} must be an owner-trusted, mode-0600, singly linked regular file"
-                )
-            digest = hashlib.sha256()
-            while chunk := os.read(descriptor, 1024 * 1024):
-                digest.update(chunk)
-            after = os.fstat(descriptor)
-            named = os.stat(parts[-1], dir_fd=directory_fd, follow_symlinks=False)
-            identity = lambda value: (  # noqa: E731 - compact immutable identity
-                value.st_dev,
-                value.st_ino,
-                value.st_uid,
-                value.st_gid,
-                stat.S_IMODE(value.st_mode),
-                value.st_nlink,
-                value.st_size,
-            )
-            if identity(before) != identity(after) or identity(before) != identity(
-                named
-            ):
-                raise DeploymentError(f"{label} changed while it was being hashed")
-            return digest.hexdigest()
-        finally:
-            os.close(descriptor)
-    except OSError as error:
+    ).hexdigest()
+
+
+def _git_json_blob(commit: str, path: Path, *, label: str) -> Any:
+    """Read JSON from the exact Git blob named by the reviewed commit."""
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise DeploymentError(f"{label} source commit is malformed")
+    candidate = path if path.is_absolute() else REPOSITORY_ROOT / path
+    try:
+        relative_path = candidate.relative_to(REPOSITORY_ROOT)
+    except ValueError as error:
+        raise DeploymentError(f"{label} is outside the source repository") from error
+    if not relative_path.parts or any(
+        part in {"", ".", ".."} for part in relative_path.parts
+    ):
+        raise DeploymentError(f"{label} source path is not canonical")
+    relative = relative_path.as_posix()
+    listing = run(
+        ["git", "-C", str(REPOSITORY_ROOT), "ls-tree", commit, "--", relative],
+        capture=True,
+        env=clean_environment(),
+    ).stdout.strip()
+    match = re.fullmatch(r"(100644|100755) blob ([0-9a-f]{40})\t(.+)", listing)
+    if match is None or match.group(3) != relative:
         raise DeploymentError(
-            f"{label} cannot be opened safely: {error.strerror}"
+            f"{label} is not one regular file in the exact source tree"
+        )
+    raw = run(
+        ["git", "-C", str(REPOSITORY_ROOT), "cat-file", "blob", match.group(2)],
+        capture=True,
+        env=clean_environment(),
+    ).stdout
+    if not raw or len(raw.encode()) > 1024 * 1024:
+        raise DeploymentError(f"{label} Git blob has an invalid size")
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise DeploymentError(f"{label} Git blob is not valid JSON") from error
+
+
+@contextmanager
+def _sealed_plan_snapshot(path: Path, *, label: str) -> Iterator[tuple[int, str]]:
+    """Copy a timestamp-pinned plan into a write-sealed anonymous file."""
+    payload = _secure_file_bytes(
+        path,
+        label=label,
+        private=True,
+        max_bytes=256 * 1024 * 1024,
+    )
+    memfd_cloexec = getattr(os, "MFD_CLOEXEC", 0x0001)
+    memfd_allow_sealing = getattr(os, "MFD_ALLOW_SEALING", 0x0002)
+    try:
+        if hasattr(os, "memfd_create"):
+            descriptor = os.memfd_create(  # type: ignore[attr-defined]
+                "fs2-sai06-terraform-plan", memfd_cloexec | memfd_allow_sealing
+            )
+        else:
+            libc = ctypes.CDLL(None, use_errno=True)
+            memfd_create = libc.memfd_create
+            memfd_create.argtypes = [ctypes.c_char_p, ctypes.c_uint]
+            memfd_create.restype = ctypes.c_int
+            descriptor = memfd_create(
+                b"fs2-sai06-terraform-plan", memfd_cloexec | memfd_allow_sealing
+            )
+            if descriptor < 0:
+                error_number = ctypes.get_errno()
+                raise OSError(error_number, os.strerror(error_number))
+    except (AttributeError, OSError) as error:
+        raise DeploymentError(
+            "SAI-06 requires Linux sealed-memory plan support"
         ) from error
+    try:
+        offset = 0
+        while offset < len(payload):
+            offset += os.write(descriptor, payload[offset:])
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        f_add_seals = getattr(fcntl, "F_ADD_SEALS", 1033)
+        f_get_seals = getattr(fcntl, "F_GET_SEALS", 1034)
+        seals = (
+            getattr(fcntl, "F_SEAL_GROW", 0x0004)
+            | getattr(fcntl, "F_SEAL_SHRINK", 0x0002)
+            | getattr(fcntl, "F_SEAL_WRITE", 0x0008)
+            | getattr(fcntl, "F_SEAL_SEAL", 0x0001)
+        )
+        fcntl.fcntl(descriptor, f_add_seals, seals)
+        if fcntl.fcntl(descriptor, f_get_seals) != seals:
+            raise DeploymentError("SAI-06 Terraform plan sealing was incomplete")
+        yield descriptor, hashlib.sha256(payload).hexdigest()
     finally:
-        os.close(directory_fd)
+        os.close(descriptor)
 
 
 def validate_sai06_capacity_receipt(
@@ -1371,8 +1485,11 @@ def load_and_validate_sai06_capacity_approval(
     run_root: Path,
     contract: Mapping[str, Any],
     commit: str,
+    *,
+    plan_sha256: str,
+    plan_document: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Securely load and revalidate the request, trust store and signature."""
+    """Validate approval against one sealed plan and exact Git trust blob."""
     request = _secure_json_file(
         run_root / SAI06_APPROVAL_REQUEST_NAME,
         label="SAI-06 approval request",
@@ -1384,27 +1501,13 @@ def load_and_validate_sai06_capacity_approval(
     envelope = _secure_json_file(
         Path(receipt_path), label="SAI-06 signed approval", private=True
     )
-    trusted = _secure_json_file(
+    source_commit_value, source_tree_value = verified_source_identity()
+    if source_commit_value != commit:
+        raise DeploymentError("SAI-06 source commit changed before apply")
+    trusted = _git_json_blob(
+        commit,
         SAI06_TRUSTED_ISSUERS_PATH,
         label="SAI-06 trusted issuer registry",
-        private=False,
-    )
-    plan_path = run_root / "infrastructure-plan.tfplan"
-    plan_json_path = run_root / "infrastructure-plan.plan.json"
-    if (
-        not plan_path.is_file()
-        or plan_path.is_symlink()
-        or not plan_json_path.is_file()
-        or plan_json_path.is_symlink()
-    ):
-        raise DeploymentError(
-            "SAI-06 apply requires the exact previously saved infrastructure plan and JSON"
-        )
-    plan_document = _secure_json_file(
-        plan_json_path,
-        label="SAI-06 infrastructure plan JSON",
-        private=True,
-        max_bytes=128 * 1024 * 1024,
     )
     if not isinstance(request, Mapping):
         raise DeploymentError("SAI-06 approval request is malformed")
@@ -1412,10 +1515,8 @@ def load_and_validate_sai06_capacity_approval(
         "project_id": contract["target"]["project_id"],
         "region": contract["target"]["region"],
         "source_commit": commit,
-        "source_tree": source_tree(),
-        "infrastructure_plan_sha256": _secure_sha256_file(
-            plan_path, label="SAI-06 infrastructure binary plan"
-        ),
+        "source_tree": source_tree_value,
+        "infrastructure_plan_sha256": plan_sha256,
         "infrastructure_plan_json_sha256": canonical_sha256(plan_document),
         "capacity_plan_binding_sha256": sai06_capacity_plan_binding(contract),
     }
@@ -2672,6 +2773,16 @@ def infrastructure_outputs(
         if postgresql_backup_enabled
         else None
     )
+    postgresql_backup_restore_access = (
+        terraform_optional_json_output(
+            terraform,
+            INFRA_ROOT,
+            "postgresql_backup_restore_object_storage_access",
+            environment,
+        )
+        if postgresql_backup_enabled
+        else None
+    )
     postgresql_backup_receipt_access = (
         terraform_optional_json_output(
             terraform,
@@ -2729,6 +2840,7 @@ def infrastructure_outputs(
         "postgresql_backup_storage_contract": postgresql_backup_storage,
         "postgresql_backup_object_storage_access": postgresql_backup_access,
         "postgresql_backup_inventory_object_storage_access": postgresql_backup_inventory_access,
+        "postgresql_backup_restore_object_storage_access": postgresql_backup_restore_access,
         "postgresql_backup_receipt_object_storage_access": postgresql_backup_receipt_access,
         "postgresql_backup_lifecycle": postgresql_backup_lifecycle,
     }
@@ -2911,12 +3023,14 @@ def write_downstream_variables(
         inventory_access = dynamic.get(
             "postgresql_backup_inventory_object_storage_access"
         )
+        restore_access = dynamic.get("postgresql_backup_restore_object_storage_access")
         receipt_access = dynamic.get("postgresql_backup_receipt_object_storage_access")
         lifecycle = dynamic.get("postgresql_backup_lifecycle")
         if enabled and (
             not isinstance(storage_contract, Mapping)
             or not isinstance(object_access, Mapping)
             or not isinstance(inventory_access, Mapping)
+            or not isinstance(restore_access, Mapping)
             or not isinstance(receipt_access, Mapping)
             or not isinstance(lifecycle, Mapping)
         ):
@@ -2932,7 +3046,12 @@ def write_downstream_variables(
                 "secret_reference_id",
                 "resource_version",
             }
-            for access in (object_access, inventory_access, receipt_access)
+            for access in (
+                object_access,
+                inventory_access,
+                restore_access,
+                receipt_access,
+            )
         ):
             raise DeploymentError(
                 "the PostgreSQL backup access handoff must contain exactly the key's "
@@ -2945,6 +3064,7 @@ def write_downstream_variables(
             "storage_contract": storage_contract if enabled else None,
             "object_storage_access": object_access if enabled else None,
             "inventory_object_storage_access": inventory_access if enabled else None,
+            "restore_object_storage_access": restore_access if enabled else None,
             "receipt_object_storage_access": receipt_access if enabled else None,
         }
     general_cpu_lane = workloads.get("general_cpu_lane")
@@ -3145,10 +3265,123 @@ def apply_plan(
     root: Path,
     plan_path: Path,
     environment: Mapping[str, str],
+    expected_document: Mapping[str, Any] | None = None,
+) -> None:
+    # Every stage applies an anonymous write-sealed snapshot. The named plan is
+    # never reopened after this validation boundary, so a path swap during the
+    # apply subprocess cannot substitute another binary plan.
+    with _sealed_plan_snapshot(plan_path, label=f"{root.name} Terraform plan") as (
+        descriptor,
+        _digest,
+    ):
+        if expected_document is not None:
+            document = show_sealed_plan(terraform, root, descriptor, environment)
+            if canonical_sha256(document) != canonical_sha256(expected_document):
+                raise DeploymentError(
+                    f"{root.name} plan bytes no longer match the reviewed plan JSON"
+                )
+            final_document = show_sealed_plan(terraform, root, descriptor, environment)
+            if canonical_sha256(final_document) != canonical_sha256(document):
+                raise DeploymentError(
+                    f"sealed {root.name} plan changed immediately before apply"
+                )
+        apply_sealed_plan(terraform, root, descriptor, environment)
+
+
+def show_sealed_plan(
+    terraform: str,
+    root: Path,
+    descriptor: int,
+    environment: Mapping[str, str],
+) -> dict[str, Any]:
+    """Derive JSON from the same sealed plan descriptor that will be applied."""
+    result = run(
+        [
+            terraform,
+            f"-chdir={root}",
+            "show",
+            "-json",
+            f"/proc/self/fd/{descriptor}",
+        ],
+        env=environment,
+        capture=True,
+        pass_fds=(descriptor,),
+    )
+    try:
+        document = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise DeploymentError(
+            "Terraform returned malformed JSON for the sealed plan"
+        ) from error
+    if not isinstance(document, Mapping):
+        raise DeploymentError("Terraform returned a non-object sealed plan")
+    return dict(document)
+
+
+def apply_sealed_plan(
+    terraform: str,
+    root: Path,
+    descriptor: int,
+    environment: Mapping[str, str],
 ) -> None:
     run(
-        [terraform, f"-chdir={root}", "apply", "-input=false", str(plan_path)],
+        [
+            terraform,
+            f"-chdir={root}",
+            "apply",
+            "-input=false",
+            f"/proc/self/fd/{descriptor}",
+        ],
         env=environment,
+        pass_fds=(descriptor,),
+    )
+
+
+def apply_reviewed_plan(
+    terraform: str,
+    root: Path,
+    plan_path: Path,
+    expected_document: Mapping[str, Any],
+    environment: Mapping[str, str],
+    *,
+    enforce_sai06_rollout_safety: bool,
+) -> None:
+    """Apply only the sealed plan bytes represented by the reviewed JSON."""
+    with _sealed_plan_snapshot(
+        plan_path, label=f"{root.name} SAI-06 Terraform plan"
+    ) as (descriptor, _digest):
+        document = show_sealed_plan(terraform, root, descriptor, environment)
+        if enforce_sai06_rollout_safety:
+            require_sai06_no_replacements(document)
+        if canonical_sha256(document) != canonical_sha256(expected_document):
+            raise DeploymentError(
+                f"SAI-06 {root.name} plan bytes no longer match the reviewed plan JSON"
+            )
+        final_document = show_sealed_plan(terraform, root, descriptor, environment)
+        if enforce_sai06_rollout_safety:
+            require_sai06_no_replacements(final_document)
+        if canonical_sha256(final_document) != canonical_sha256(document):
+            raise DeploymentError(
+                f"SAI-06 sealed {root.name} plan changed immediately before apply"
+            )
+        apply_sealed_plan(terraform, root, descriptor, environment)
+
+
+def apply_reviewed_sai06_plan(
+    terraform: str,
+    root: Path,
+    plan_path: Path,
+    expected_document: Mapping[str, Any],
+    environment: Mapping[str, str],
+) -> None:
+    """Apply one SAI-06 rollout plan only if it retains every safety gate."""
+    apply_reviewed_plan(
+        terraform,
+        root,
+        plan_path,
+        expected_document,
+        environment,
+        enforce_sai06_rollout_safety=True,
     )
 
 
@@ -3528,11 +3761,7 @@ def apply_stack(
         .get("enabled")
         is True
     )
-    approval = (
-        load_and_validate_sai06_capacity_approval(args, run_root, contract, commit)
-        if postgresql_backup_enabled
-        else None
-    )
+    approval = None
     if postgresql_backup_enabled:
         plan_path = run_root / "infrastructure-plan.tfplan"
         state, _, _ = stage_paths(run_root, "infrastructure")
@@ -3540,6 +3769,33 @@ def apply_stack(
             run_root, "infrastructure", contract, include_secrets=True
         )
         terraform_init(args.terraform, INFRA_ROOT, state, environment)
+        with _sealed_plan_snapshot(
+            plan_path, label="SAI-06 infrastructure binary plan"
+        ) as (descriptor, plan_sha256):
+            plan_document = show_sealed_plan(
+                args.terraform, INFRA_ROOT, descriptor, environment
+            )
+            require_sai06_no_replacements(plan_document)
+            approval = load_and_validate_sai06_capacity_approval(
+                args,
+                run_root,
+                contract,
+                commit,
+                plan_sha256=plan_sha256,
+                plan_document=plan_document,
+            )
+            # Re-derive the JSON from the same immutable descriptor immediately
+            # before apply. Stored plan JSON is evidence only and is never an
+            # authorization input.
+            final_document = show_sealed_plan(
+                args.terraform, INFRA_ROOT, descriptor, environment
+            )
+            require_sai06_no_replacements(final_document)
+            if canonical_sha256(final_document) != canonical_sha256(plan_document):
+                raise DeploymentError(
+                    "SAI-06 sealed plan JSON changed between authorization and apply"
+                )
+            apply_sealed_plan(args.terraform, INFRA_ROOT, descriptor, environment)
     else:
         infrastructure_variables = write_infrastructure_variables(
             run_root, contract, commit, args.nebius_profile
@@ -3551,7 +3807,7 @@ def apply_stack(
             contract=contract,
             variable_file=infrastructure_variables,
         )
-    apply_plan(args.terraform, INFRA_ROOT, plan_path, environment)
+        apply_plan(args.terraform, INFRA_ROOT, plan_path, environment)
 
     dynamic = infrastructure_outputs(
         args.terraform,
@@ -3566,23 +3822,41 @@ def apply_stack(
         run_root, contract, dynamic
     )
 
-    plan_path, _, environment = plan_stage(
+    plan_path, foundation_plan, environment = plan_stage(
         args.terraform,
         run_root=run_root,
         stage="foundation",
         contract=contract,
         variable_file=foundation_variables,
     )
-    apply_plan(args.terraform, FOUNDATION_ROOT, plan_path, environment)
+    if postgresql_backup_enabled:
+        apply_reviewed_sai06_plan(
+            args.terraform,
+            FOUNDATION_ROOT,
+            plan_path,
+            foundation_plan,
+            environment,
+        )
+    else:
+        apply_plan(args.terraform, FOUNDATION_ROOT, plan_path, environment)
 
-    plan_path, _, environment = plan_stage(
+    plan_path, workloads_plan, environment = plan_stage(
         args.terraform,
         run_root=run_root,
         stage="workloads",
         contract=contract,
         variable_file=workloads_variables,
     )
-    apply_plan(args.terraform, WORKLOADS_ROOT, plan_path, environment)
+    if postgresql_backup_enabled:
+        apply_reviewed_sai06_plan(
+            args.terraform,
+            WORKLOADS_ROOT,
+            plan_path,
+            workloads_plan,
+            environment,
+        )
+    else:
+        apply_plan(args.terraform, WORKLOADS_ROOT, plan_path, environment)
 
     # Record the accepted root contract after all of its staged consumers converge.
     apply_plan(
@@ -3739,6 +4013,390 @@ def plan_stack(
     print("Planned all three existing states after upstream handoffs converged.")
 
 
+def _postgresql_retained_resource_id(value: object, *, label: str) -> str:
+    if not isinstance(value, str) or not re.fullmatch(r"[a-z][a-z0-9-]{7,}", value):
+        raise DeploymentError(
+            f"retained PostgreSQL backup {label} is missing or malformed; "
+            "no resource was changed"
+        )
+    return value
+
+
+def validate_postgresql_retained_boundary(
+    contract: Mapping[str, Any], dynamic: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Bind a partial destroy to the exact durable PostgreSQL boundary.
+
+    Merely having object-shaped Terraform outputs is not enough: a stale,
+    empty or cross-project output could otherwise permit workloads and CNPG
+    PVCs to be deleted before operators discover that no usable recovery
+    boundary remains.
+    """
+    try:
+        target = contract["target"]
+        configured = contract["stages"]["infrastructure"]["postgresql_backup"]
+        storage = dynamic["postgresql_backup_storage_contract"]
+        lifecycle = dynamic["postgresql_backup_lifecycle"]
+        object_storage = storage["object_storage"]
+        writer = storage["writer"]
+        restore_reader = storage["restore_reader"]
+        inventory_reader = storage["inventory_reader"]
+        receipt_publisher = storage["receipt_publisher"]
+        layout = storage["layout"]
+        retention = storage["retention"]
+        sizing = storage["sizing"]
+        storage_lifecycle = storage["lifecycle"]
+        resource_ids = lifecycle["resource_ids"]
+    except (KeyError, TypeError) as error:
+        raise DeploymentError(
+            "retained PostgreSQL backup outputs are incomplete; no resource was changed"
+        ) from error
+    if not all(
+        isinstance(value, Mapping)
+        for value in (
+            target,
+            configured,
+            storage,
+            lifecycle,
+            object_storage,
+            writer,
+            restore_reader,
+            inventory_reader,
+            receipt_publisher,
+            layout,
+            retention,
+            sizing,
+            storage_lifecycle,
+            resource_ids,
+        )
+    ):
+        raise DeploymentError(
+            "retained PostgreSQL backup outputs are malformed; no resource was changed"
+        )
+
+    project_id = target.get("project_id")
+    region = target.get("region")
+    bucket_config = configured.get("object_storage")
+    configured_lifecycle = configured.get("lifecycle")
+    if not isinstance(bucket_config, Mapping) or not isinstance(
+        configured_lifecycle, Mapping
+    ):
+        raise DeploymentError(
+            "retained PostgreSQL backup source contract is malformed; no resource was changed"
+        )
+    bucket_id = _postgresql_retained_resource_id(
+        object_storage.get("id"), label="bucket ID"
+    )
+    configured_retention_days = configured.get("retention_days")
+    if (
+        isinstance(configured_retention_days, bool)
+        or not isinstance(configured_retention_days, int)
+        or configured_retention_days < 1
+    ):
+        raise DeploymentError(
+            "retained PostgreSQL backup retention is malformed; no resource was changed"
+        )
+    expected_destination = f"s3://{bucket_config.get('bucket_name')}/postgresql/v1"
+    expected_noncurrent_days = configured_retention_days + 7
+    exact_values = (
+        (storage.get("schema"), "fs2-serve.nebius.ai/postgresql-backup-storage/v1"),
+        (lifecycle.get("schema"), "fs2-serve.nebius.ai/postgresql-backup-lifecycle/v1"),
+        (storage.get("project_id"), project_id),
+        (lifecycle.get("project_id"), project_id),
+        (storage.get("region"), region),
+        (lifecycle.get("region"), region),
+        (object_storage.get("name"), bucket_config.get("bucket_name")),
+        (object_storage.get("max_size_gib"), bucket_config.get("max_size_gib")),
+        (object_storage.get("versioning_policy"), "ENABLED"),
+        (object_storage.get("storage_class"), "STANDARD"),
+        (object_storage.get("addressing_style"), "path"),
+        (object_storage.get("verify_tls"), True),
+        (layout.get("root"), "postgresql/v1"),
+        (layout.get("destination_path"), expected_destination),
+        (layout.get("server_name"), "fs2-control-db"),
+        (retention.get("barman_retention_days"), configured_retention_days),
+        (retention.get("noncurrent_version_expiration_days"), expected_noncurrent_days),
+        (retention.get("current_object_expiration"), "cloudnative-pg-barman-owned"),
+        (lifecycle.get("retention_mode"), "retain"),
+        (lifecycle.get("status"), "managed-retained"),
+        (lifecycle.get("destroy_status"), "blocked-retained"),
+        (
+            lifecycle.get("destroy_completion"),
+            "full-stack-destroy-incomplete-postgresql-backup-retained",
+        ),
+        (
+            lifecycle.get("adoption_status"),
+            "ids-exported-for-explicit-state-adoption",
+        ),
+        (storage_lifecycle.get("retention_mode"), "retain"),
+        (storage_lifecycle.get("destroy_status"), "blocked-retained"),
+        (
+            storage_lifecycle.get("destroy_completion"),
+            "full-stack-destroy-incomplete-postgresql-backup-retained",
+        ),
+        (
+            storage_lifecycle.get("adoption_status"),
+            "ids-exported-for-explicit-state-adoption",
+        ),
+        (storage_lifecycle.get("retained_ids", {}).get("bucket"), bucket_id),
+        (resource_ids.get("bucket"), bucket_id),
+        (
+            configured_lifecycle.get("retention_mode"),
+            "retain",
+        ),
+    )
+    if any(actual != expected for actual, expected in exact_values):
+        raise DeploymentError(
+            "retained PostgreSQL backup contract does not match the exact project, "
+            "region, bucket, versioning, retention or destroy boundary; no resource "
+            "was changed"
+        )
+    if object_storage.get("endpoint") != f"https://storage.{region}.nebius.cloud":
+        raise DeploymentError(
+            "retained PostgreSQL backup endpoint is outside the target region; "
+            "no resource was changed"
+        )
+    if retention.get("lifecycle_rule_ids") != [
+        "abort-incomplete-multipart-uploads",
+        "expire-noncurrent-versions-after-recovery-window",
+    ]:
+        raise DeploymentError(
+            "retained PostgreSQL backup lifecycle rules are incomplete; no resource was changed"
+        )
+    if (
+        sizing.get("configured_capacity_gib") != object_storage.get("max_size_gib")
+        or not isinstance(sizing.get("required_capacity_gib"), int)
+        or sizing["required_capacity_gib"] > sizing["configured_capacity_gib"]
+        or sizing.get("capacity_cost_review_acknowledged") is not True
+        or sizing.get("live_capacity_preflight_required") is not True
+    ):
+        raise DeploymentError(
+            "retained PostgreSQL backup capacity boundary is not approved; no resource was changed"
+        )
+
+    identity_contracts = {
+        "service_account": writer.get("service_account_id"),
+        "group": writer.get("group_id"),
+        "restore_service_account": restore_reader.get("service_account_id"),
+        "restore_group": restore_reader.get("group_id"),
+        "inventory_service_account": inventory_reader.get("service_account_id"),
+        "inventory_group": inventory_reader.get("group_id"),
+        "receipt_service_account": receipt_publisher.get("service_account_id"),
+        "receipt_group": receipt_publisher.get("group_id"),
+    }
+    identity_roles = (
+        (writer.get("role"), "storage.object-editor"),
+        (writer.get("paths"), ["postgresql/v1/fs2-control-db/*"]),
+        (
+            restore_reader.get("roles"),
+            ["storage.object-lister", "storage.object-viewer"],
+        ),
+        (restore_reader.get("paths"), ["postgresql/v1/fs2-control-db/*"]),
+        (
+            inventory_reader.get("roles"),
+            ["storage.object-lister", "storage.object-viewer"],
+        ),
+        (inventory_reader.get("paths"), ["postgresql/v1/*"]),
+        (receipt_publisher.get("role"), "storage.uploader"),
+        (
+            receipt_publisher.get("paths"),
+            ["postgresql/v1/restore-verification/success/*"],
+        ),
+    )
+    if any(actual != expected for actual, expected in identity_roles) or any(
+        identity.get("secret_delivery") != "MYSTERY_BOX"
+        for identity in (writer, restore_reader, inventory_reader, receipt_publisher)
+    ):
+        raise DeploymentError(
+            "retained PostgreSQL backup identity scopes are not exact; no resource was changed"
+        )
+    for key, expected in identity_contracts.items():
+        value = _postgresql_retained_resource_id(resource_ids.get(key), label=key)
+        if value != expected:
+            raise DeploymentError(
+                "retained PostgreSQL lifecycle identity does not match its storage "
+                "contract; no resource was changed"
+            )
+    all_resource_ids = {
+        key: _postgresql_retained_resource_id(value, label=key)
+        for key, value in resource_ids.items()
+    }
+    required_resource_ids = {
+        "bucket",
+        "service_account",
+        "group",
+        "access_key",
+        "restore_service_account",
+        "restore_group",
+        "restore_access_key",
+        "inventory_service_account",
+        "inventory_group",
+        "inventory_access_key",
+        "receipt_service_account",
+        "receipt_group",
+        "receipt_access_key",
+    }
+    if set(all_resource_ids) != required_resource_ids or len(
+        set(all_resource_ids.values())
+    ) != len(all_resource_ids):
+        raise DeploymentError(
+            "retained PostgreSQL backup resource identity set is incomplete or "
+            "ambiguous; no resource was changed"
+        )
+    access_outputs = {
+        "access_key": dynamic.get("postgresql_backup_object_storage_access"),
+        "restore_access_key": dynamic.get(
+            "postgresql_backup_restore_object_storage_access"
+        ),
+        "inventory_access_key": dynamic.get(
+            "postgresql_backup_inventory_object_storage_access"
+        ),
+        "receipt_access_key": dynamic.get(
+            "postgresql_backup_receipt_object_storage_access"
+        ),
+    }
+    if any(not isinstance(value, Mapping) for value in access_outputs.values()) or any(
+        value.get("key_id") != all_resource_ids[key]
+        for key, value in access_outputs.items()
+    ):
+        raise DeploymentError(
+            "retained PostgreSQL backup access-key handoff does not match the "
+            "retained resource identities; no resource was changed"
+        )
+    return {
+        "schema": storage["schema"],
+        "project_id": project_id,
+        "region": region,
+        "bucket_id": bucket_id,
+        "bucket_name": object_storage["name"],
+        "retention_days": retention["barman_retention_days"],
+        "resource_ids_sha256": canonical_sha256(all_resource_ids),
+    }
+
+
+def _kubectl_json(
+    args: argparse.Namespace,
+    dynamic: Mapping[str, Any],
+    resource: str,
+    *,
+    name: str | None = None,
+    selector: str | None = None,
+) -> Any:
+    command = [
+        args.kubectl,
+        "--kubeconfig",
+        str(dynamic["kubeconfig_path"]),
+        "--context",
+        str(dynamic["kube_context"]),
+        "--namespace",
+        "fs2-data",
+        "get",
+        resource,
+    ]
+    if name is not None:
+        command.append(name)
+    if selector is not None:
+        command.extend(["--selector", selector])
+    command.extend(["--output", "json"])
+    result = run(command, capture=True, env=clean_environment())
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise DeploymentError(
+            f"live PostgreSQL recovery preflight returned malformed {resource} JSON; "
+            "no resource was changed"
+        ) from error
+
+
+def validate_postgresql_live_recovery_boundary(
+    args: argparse.Namespace,
+    contract: Mapping[str, Any],
+    dynamic: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Require a current base backup and healthy continuous WAL archive."""
+    cluster = _kubectl_json(
+        args, dynamic, "clusters.postgresql.cnpg.io", name="fs2-control-db"
+    )
+    schedule = _kubectl_json(
+        args,
+        dynamic,
+        "scheduledbackups.postgresql.cnpg.io",
+        name="fs2-control-db",
+    )
+    backups = _kubectl_json(
+        args,
+        dynamic,
+        "backups.postgresql.cnpg.io",
+        selector="cnpg.io/cluster=fs2-control-db",
+    )
+    if not all(isinstance(value, Mapping) for value in (cluster, schedule, backups)):
+        raise DeploymentError(
+            "live PostgreSQL recovery resources are malformed; no resource was changed"
+        )
+    cluster_status = cluster.get("status")
+    schedule_spec = schedule.get("spec")
+    schedule_status = schedule.get("status")
+    backup_items = backups.get("items")
+    configured_schedule = (
+        contract.get("stages", {})
+        .get("workloads", {})
+        .get("postgresql_backup", {})
+        .get("schedule")
+    )
+    if (
+        not isinstance(cluster_status, Mapping)
+        or not isinstance(schedule_spec, Mapping)
+        or not isinstance(schedule_status, Mapping)
+        or not isinstance(backup_items, list)
+        or not backup_items
+        or schedule_spec.get("suspend") is True
+        or schedule_spec.get("schedule") != configured_schedule
+        or not isinstance(schedule_status.get("lastCheckTime"), str)
+        or not cluster_status.get("firstRecoverabilityPoint")
+        or not cluster_status.get("lastSuccessfulBackup")
+        or not cluster_status.get("lastArchivedWal")
+    ):
+        raise DeploymentError(
+            "live PostgreSQL backup, schedule or recoverability point is not ready; "
+            "no resource was changed"
+        )
+    conditions = cluster_status.get("conditions")
+    continuous = next(
+        (
+            condition
+            for condition in conditions or []
+            if isinstance(condition, Mapping)
+            and condition.get("type") == "ContinuousArchiving"
+        ),
+        None,
+    )
+    completed = [
+        item
+        for item in backup_items
+        if isinstance(item, Mapping)
+        and isinstance(item.get("status"), Mapping)
+        and str(item["status"].get("phase", "")).lower() == "completed"
+    ]
+    if (
+        not isinstance(continuous, Mapping)
+        or continuous.get("status") != "True"
+        or not completed
+    ):
+        raise DeploymentError(
+            "live PostgreSQL base backup or continuous WAL archival is unhealthy; "
+            "no resource was changed"
+        )
+    return {
+        "cluster_uid": cluster.get("metadata", {}).get("uid"),
+        "first_recoverability_point": cluster_status["firstRecoverabilityPoint"],
+        "last_successful_backup": cluster_status["lastSuccessfulBackup"],
+        "last_archived_wal": cluster_status["lastArchivedWal"],
+        "completed_backup_count": len(completed),
+        "continuous_archiving": True,
+        "schedule_last_check_time": schedule_status["lastCheckTime"],
+    }
+
+
 def destroy_stack(
     args: argparse.Namespace,
     run_root: Path,
@@ -3849,6 +4507,9 @@ def destroy_stack(
                 "retained PostgreSQL backup storage is missing its lifecycle output; "
                 "no resource was changed"
             )
+        if postgresql_retained:
+            validate_postgresql_retained_boundary(contract, dynamic)
+            validate_postgresql_live_recovery_boundary(args, contract, dynamic)
     if resources["foundation"] or resources["workloads"]:
         if (
             cached_foundation.is_file()
@@ -3895,7 +4556,7 @@ def destroy_stack(
     if not retain_infrastructure:
         destroy_order += (("infrastructure", infrastructure_variables),)
 
-    planned_destroys: list[tuple[str, Path, dict[str, str]]] = []
+    planned_destroys: list[tuple[str, Path, dict[str, Any], dict[str, str]]] = []
     for stage, variable_file in destroy_order:
         if not resources[stage]:
             continue
@@ -3903,7 +4564,7 @@ def destroy_stack(
             raise DeploymentError(
                 f"cannot destroy {stage}: its generated private variable file is unavailable"
             )
-        plan_path, _, environment = plan_stage(
+        plan_path, document, environment = plan_stage(
             args.terraform,
             run_root=run_root,
             stage=stage,
@@ -3911,14 +4572,20 @@ def destroy_stack(
             variable_file=variable_file,
             destroy=True,
         )
-        planned_destroys.append((stage, plan_path, environment))
+        planned_destroys.append((stage, plan_path, document, environment))
 
     # Destructive application starts only after every eligible stage has a
     # complete saved plan. A late foundation/infrastructure planning failure
     # therefore cannot strand the public edge or database workloads offline.
     destroyed_stages: list[str] = []
-    for stage, plan_path, environment in planned_destroys:
-        apply_plan(args.terraform, stage_root(stage), plan_path, environment)
+    for stage, plan_path, document, environment in planned_destroys:
+        apply_plan(
+            args.terraform,
+            stage_root(stage),
+            plan_path,
+            environment,
+            document,
+        )
         destroyed_stages.append(stage)
 
     if retain_infrastructure:

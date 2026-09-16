@@ -74,6 +74,18 @@ the backup writer credential was reused by inventory and receipt workloads.
 This successor preserves `d1a939e7` as NO-GO evidence; it is never an apply
 input.
 
+Independent source review then rejected
+`71ecec4b27623e3d27ecbde63b18967d36bd90b7` / tree
+`d4283ce38046495fb2f62eb12d99b8bb52be68f3`. The retained HA, marker-based
+PITR, quota/delta, split monitoring/receipt identities and Envoy contracts were
+positive, but rollout remained forbidden: trust could come from a dirty
+worktree, same-size evidence mutation was not detected, Terraform reopened the
+named plan after review, pure critical deletes were allowed, retained outputs
+were only shape-checked, PITR reused the backup-writer key, inventory key
+rotation did not roll the exporter, and the mandatory cost acknowledgements
+broke unrelated CPU contract tests. This clean successor addresses those
+findings without merging the independently unreviewed SAI-10 branch.
+
 ## Implemented contract
 
 The root facade always provisions a distinct versioned backup bucket. There is
@@ -83,10 +95,13 @@ the only supported CloudNativePG schedule is the once-daily six-field cron
 daily capacity math. The bucket has
 `prevent_destroy`, keeps current backup/WAL objects under Barman retention, and
 expires only incomplete uploads and non-current versions outside the recovery
-window. Three distinct MysteryBox-delivered identities are mandatory:
+window. Four distinct MysteryBox-delivered identities are mandatory:
 
 - CloudNativePG alone receives `storage.object-editor` on
   `postgresql/v1/fs2-control-db/*` for base backup, WAL and Barman retention;
+- the temporary recovery Cluster receives a separate read-only key with only
+  `storage.object-lister` and `storage.object-viewer` on
+  `postgresql/v1/fs2-control-db/*`; it cannot alter, delete or forge backups;
 - the metrics validator receives only `storage.object-lister` and
   `storage.object-viewer` on `postgresql/v1/*` so it can inventory versions and
   content-validate a receipt but cannot upload or delete objects;
@@ -131,14 +146,23 @@ tree, binary-plan and plan-JSON SHA-256, raw quota-evidence SHA-256, current
 usage, numeric provider limits, existing and desired allocations, positive
 incremental deltas, projected use, and the effective SAI-06 contract digest.
 
-`apply` never replans infrastructure. It securely opens the request, plan JSON,
-approval envelope and checked-in issuer registry using directory-relative
-descriptors with `O_NOFOLLOW`; it verifies regular-file type, trusted owner,
-mode, one link and stable device/inode/size metadata before and after the read.
-It then verifies an Ed25519 signature from an enabled, checked-in trusted
-issuer, a maximum 24-hour validity window, the exact request/nonce, and both
-signed ceilings. The live provider query is repeated immediately before apply;
-any usage, limit or evidence change requires a new plan and signature.
+`apply` never replans infrastructure. It rejects any dirty, staged, submodule
+or untracked source state, resolves the issuer registry from the exact reviewed
+Git commit/tree blob, and securely snapshots the request and approval envelope
+using directory-relative descriptors with `O_NOFOLLOW`. Each file read pins
+owner, mode, link count, device, inode, size, mtime and ctime and compares two
+complete reads before returning immutable bytes, so an in-place same-size
+mutation is rejected. The binary Terraform plan is copied once into a Linux
+write-sealed anonymous file. Both `terraform show -json` checks and the final
+`terraform apply` use that same inherited descriptor; the named plan and stored
+JSON are never reopened as authorization inputs. Infrastructure, foundation and
+workload plans reject replacements and pure deletes of the cluster, system
+pool, public allocation, retained bucket/keys, PostgreSQL/CNPG resources,
+PVCs, Envoy/CNPG releases and the control-plane release. It then verifies an
+Ed25519 signature from an enabled committed issuer, a maximum 24-hour validity
+window, the exact request/nonce, and both signed ceilings. The live provider
+query is repeated immediately before apply; any usage, limit or evidence
+change requires a new plan and signature.
 
 Capacity uses the Terraform before/after values. A recurring no-op bucket
 contributes zero bytes instead of adding the full 12 TiB allocation a second
@@ -215,6 +239,9 @@ exposes total bytes, configured capacity, pressure, inventory health and the
 newest validated restore-verification completion time. It never exports keys,
 payloads or credentials. Warning/critical bucket thresholds
 are 80/90 percent, and restore verification is stale after seven days.
+The exporter Pod template is annotated with the exact inventory access-key
+identity, resource version and operator generation; a MysteryBox key rotation
+therefore creates a new ReplicaSet instead of leaving the old key resident.
 The current release uses CloudNativePG's in-core `barmanObjectStore`, so its
 native backup metrics remain populated even though CNPG has deprecated them in
 favor of plugin-specific metrics. Any later Barman CNPG-I migration must change
@@ -315,12 +342,18 @@ separately reviewed data-retirement procedure. Do not roll back by shrinking
 the system pool while the database or edge depends on three-node placement.
 
 `destroy` discovers that retained boundary before planning anything. It
-requires the retained PostgreSQL storage/lifecycle outputs, plans every
-eligible downstream destroy stage before applying the first deletion, omits
-the infrastructure stage, and writes a mode-0600 adoption receipt. If any
-workload, foundation or infrastructure destroy plan fails, zero destroy plans
-are applied. This provides a safe partial destroy instead of discovering
-`prevent_destroy` only after an outage.
+requires the exact schema, project, region, bucket ID/name/capacity,
+same-region endpoint, versioning, retention rules, destroy/adoption semantics,
+four identity scopes, all 13 retained resource IDs and matching access-key
+handoffs. It then performs read-only live checks for a completed CNPG Backup,
+the expected active ScheduledBackup, a non-null first recoverability point,
+the last successful backup and a healthy `ContinuousArchiving` condition.
+Only after those checks pass does it plan every eligible downstream destroy
+stage. It applies none until all plans exist, always omits the retained
+infrastructure stage, and writes a mode-0600 adoption receipt. Empty, stale,
+cross-project or malformed outputs and an unhealthy backup/WAL boundary cause
+zero plans and zero deletes. This provides a safe partial destroy instead of
+discovering `prevent_destroy` only after an outage.
 
 ## Current verification and cost state
 
@@ -341,20 +374,23 @@ approval. The source now refuses apply unless fresh numeric provider limits
 appear or an authenticated `capacity-owner` signs exact plan-bound numeric
 overrides.
 
-The source gate completed with these exact results:
+The current source gate results are:
 
 - root, infrastructure and workloads `terraform validate`: pass;
-- combined deployment/wrapper/SAI-06 Python suite: 154 passed plus 104
-  subtests; the focused SAI-06/wrapper subset: 77 passed plus 31 subtests. It
+- combined deployment/wrapper/SAI-06 Python suite: 162 passed; focused SAI-06
+  plus general-CPU regressions: 68 passed. The complete root suite improved
+  from the rejected candidate's 22 failures and 2 errors to 444 passed and the
+  same four unrelated baseline failures described below. The focused suite
   covers signed issuer verification,
   forgery/staleness/scope/insufficient-limit rejection, missing-limit owner
-  override, exact request/resource validation, safe descriptor loading,
-  compute/storage delta math, replacement rejection, all-plans-first destroy,
-  retained partial destroy, content-bound receipts, PITR, privilege denial, HA
-  and alerts;
-- infrastructure Terraform backup tests cover the three exact bucket-policy
-  identities plus retained/versioned sizing and negative lifecycle/capacity:
-  3 passed, 0 failed;
+  override, committed trust, clean-source enforcement, same-inode mutation,
+  sealed-plan path swapping/JSON divergence, exact request/resource validation,
+  compute/storage delta math, replacement and pure-delete rejection,
+  exact-output/live-recovery destroy gates, all-plans-first partial destroy,
+  content-bound receipts, PITR, privilege denial, HA and alerts;
+- the complete infrastructure Terraform suite passed 23/23. Its three focused
+  backup tests cover the four exact bucket-policy identities plus
+  retained/versioned sizing and negative lifecycle/capacity;
 - Helm lint with explicit immutable image/catalog identities and HTTPS origins
   passed. Public-edge regression assertions cover exact Envoy replica,
   anti-affinity and PDB settings; one-replica and disabled-PDB inputs are both
@@ -370,16 +406,17 @@ The source gate completed with these exact results:
   zero secrets.
 
 The broader current checkout is not represented as green. The workloads
-Terraform file containing the new PITR cases reported 8 passed, 1 failed and 2
-skipped. All three PITR cases passed; the failure is the pre-existing
-scientific-artifact bucket-reuse expectation being preempted by an unrelated
-Kueue CPU-admission precondition. It is retained rather than rewritten as
-promotion evidence. The unaccepted SAI-10 successor `851a15df2` remains
-deliberately unmerged and is not an ancestor of this SAI-06 candidate. A
-read-only merge-tree reports exactly five conflicts:
+Terraform file containing the new PITR and SAI-10-compatible rotation cases
+reported 9 passed, 1 failed and 2 skipped. All three PITR cases and the exact
+inventory-key-to-Pod-template rotation case passed; the failure is the
+pre-existing scientific-artifact bucket-reuse expectation being preempted by
+an unrelated Kueue CPU-admission precondition. It is retained rather than
+rewritten as promotion evidence. The unaccepted SAI-10 successor `851a15df2`
+remains deliberately unmerged and is not an ancestor of this SAI-06 candidate. A
+read-only merge-tree reports exactly six conflicts:
 `examples/scheduling-academic-raw-af3.tfvars`, `inference-stack`,
 `stages/infrastructure/tests/system_pool.tftest.hcl`,
-`terraform.tfvars.example`, and `variables.tf`. Reconciliation is forbidden
-until SAI-10 has an accepted clean successor; then it belongs in a separate
-integration commit with both suites rerun, never in either independently
-reviewed source lineage.
+`terraform.tfvars.example`, `tests/test_general_cpu_batch_pool.py`, and
+`variables.tf`. Reconciliation is forbidden until SAI-10 has an accepted clean
+successor; then it belongs in a separate integration commit with both suites
+rerun, never in either independently reviewed source lineage.

@@ -183,6 +183,19 @@ class GeneralCpuPoolTests(unittest.TestCase):
         deployment.setdefault("applications", TEST_APPLICATIONS)
         deployment.setdefault("schema_version", 1)
         deployment.setdefault("target", TEST_TARGET)
+        # These tests exercise general-CPU scheduling, not SAI-06 approval.
+        # Keep their otherwise-valid plans explicit about the effective
+        # profile-derived three-node system pool and retained backup capacity.
+        # Dedicated SAI-06 negative tests continue to prove both defaults fail
+        # closed when either acknowledgement is absent.
+        cluster = dict(deployment.get("cluster", {}))
+        cluster.setdefault("system_pool_cost_review_acknowledged", True)
+        deployment["cluster"] = cluster
+        storage = dict(deployment.get("storage", {}))
+        postgresql_backup = dict(storage.get("postgresql_backup", {}))
+        postgresql_backup.setdefault("capacity_cost_review_acknowledged", True)
+        storage["postgresql_backup"] = postgresql_backup
+        deployment["storage"] = storage
         # A CPU pool and the reference-data plane both budget cpu and memory,
         # which Kueue drops before admission unless core admission is on, so
         # the facade refuses either without it. Every fixture that declares
@@ -287,7 +300,9 @@ class GeneralCpuPoolTests(unittest.TestCase):
             "two slashes in a key": {"a.example.com/b/c": "true"},
             "underscore in a DNS prefix": {"a_b.example.com/pool": "true"},
             "a 254-character prefix": {
-                ".".join(["a" * 63, "a" * 63, "a" * 63, "a" * 62]) + "/" + "b" * 62: "true"
+                ".".join(["a" * 63, "a" * 63, "a" * 63, "a" * 62])
+                + "/"
+                + "b" * 62: "true"
             },
             "a space in a value": {"workload.fs2.nebius/general-cpu": "has space"},
         }
@@ -368,7 +383,9 @@ class GeneralCpuPoolTests(unittest.TestCase):
         self.assertEqual(lane["largest_node"]["cpu_millicores"], 7000)
 
     def test_a_fixed_pool_pins_one_node_count(self) -> None:
-        fixed = {key: value for key, value in SMALL_POOL.items() if key != "autoscaling"}
+        fixed = {
+            key: value for key, value in SMALL_POOL.items() if key != "autoscaling"
+        }
         fixed["fixed_nodes"] = 2
         fixed["capacity_type"] = "regular"
         outputs = self._outputs(
@@ -418,7 +435,9 @@ class GeneralCpuPoolTests(unittest.TestCase):
             re.compile("exactly one", re.IGNORECASE),
         )
 
-    def test_a_pool_too_small_for_a_bound_workload_is_refused_before_apply(self) -> None:
+    def test_a_pool_too_small_for_a_bound_workload_is_refused_before_apply(
+        self,
+    ) -> None:
         tiny = dict(SMALL_POOL)
         tiny["schedulable_capacity"] = {
             "cpu_millicores": 2000,
@@ -930,14 +949,10 @@ class GeneralCpuSourceTests(unittest.TestCase):
             ).read_text(encoding="utf-8")
         )
         entry = fixture["cpu_classes"]["general-cpu"]
-        self.assertEqual(
-            set(entry), set(self.contract["class_fields"]["required"])
-        )
+        self.assertEqual(set(entry), set(self.contract["class_fields"]["required"]))
         self.assertNotIn("pool_id", entry)
         self.assertEqual(entry["pool_resolution"]["mode"], "per-pool-flavor")
-        self.assertIn(
-            entry["pool_resolution"]["pool_id"], entry["eligible_pool_ids"]
-        )
+        self.assertIn(entry["pool_resolution"]["pool_id"], entry["eligible_pool_ids"])
         capacity = entry["schedulable_capacity"]
         self.assertEqual(capacity["cpu"], f"{capacity['cpu_millicores']}m")
         self.assertEqual(capacity["memory"], f"{capacity['memory_mib']}Mi")
@@ -950,18 +965,21 @@ class GeneralCpuSourceTests(unittest.TestCase):
         # The actual pool appears only inside pool_resolution.
         self.assertNotIn("pool_id         = local.class_pool_id", self.module)
         # This producer contributes its own class and never another owner's.
-        self.assertIn('local.enabled ? { "general-cpu" = local.general_cpu_class }', self.module)
+        self.assertIn(
+            'local.enabled ? { "general-cpu" = local.general_cpu_class }', self.module
+        )
         self.assertNotIn('"reference-data" =', self.module)
 
-    def test_bindcraft_aggregation_has_an_academic_cpu_class_over_general_backing(self) -> None:
+    def test_bindcraft_aggregation_has_an_academic_cpu_class_over_general_backing(
+        self,
+    ) -> None:
         general = self.contract["classes"]["general-cpu"]
         general_bound = {
             (entry["model_id"], entry["stage"]) for entry in general["bound_workloads"]
         }
         academic = self.contract["classes"]["academic-cpu"]
         academic_bound = {
-            (entry["model_id"], entry["stage"])
-            for entry in academic["bound_workloads"]
+            (entry["model_id"], entry["stage"]) for entry in academic["bound_workloads"]
         }
         self.assertEqual(academic_bound, {("bindcraft", "aggregation")})
         self.assertIn(("freebindcraft", "aggregation"), general_bound)
@@ -969,7 +987,8 @@ class GeneralCpuSourceTests(unittest.TestCase):
 
         reference = self.contract["classes"]["reference-data"]
         reference_bound = {
-            (entry["model_id"], entry["stage"]) for entry in reference["bound_workloads"]
+            (entry["model_id"], entry["stage"])
+            for entry in reference["bound_workloads"]
         }
         self.assertIn(("alphafold3", "raw-input"), reference_bound)
         # Neither class may claim the other's work.
@@ -978,7 +997,9 @@ class GeneralCpuSourceTests(unittest.TestCase):
         self.assertNotIn(("bindcraft", "aggregation"), reference_bound)
 
     def test_resolution_is_documented_as_fail_closed(self) -> None:
-        self.assertEqual(self.contract["consumer_contract"]["resolution"], "fail-closed")
+        self.assertEqual(
+            self.contract["consumer_contract"]["resolution"], "fail-closed"
+        )
         self.assertIsNone(self.contract["quota"]["cohort"])
         self.assertRegex(self.workloads, re.compile(r"cohort\s*=\s*null"))
 

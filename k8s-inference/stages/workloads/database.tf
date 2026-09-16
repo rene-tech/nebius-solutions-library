@@ -1,6 +1,7 @@
 locals {
   postgresql_image                        = "ghcr.io/cloudnative-pg/postgresql:18.4-system-trixie@sha256:42708a75345b7a48fdd9257b071830783a97fd228529196b6313187a7198e185"
   postgresql_backup_secret_name           = "fs2-control-db-backup"
+  postgresql_backup_restore_secret_name   = "fs2-control-db-backup-restore"
   postgresql_backup_inventory_secret_name = "fs2-control-db-backup-inventory"
   postgresql_restore_receipt_secret_name  = "fs2-control-db-restore-receipt"
   postgresql_backup_credential_identity = var.postgresql_backup.enabled ? join("|", [
@@ -22,6 +23,16 @@ locals {
   postgresql_backup_inventory_credential_revision = var.postgresql_backup.enabled ? (
     var.postgresql_backup.credential_generation * 16777216 +
     parseint(substr(sha256(local.postgresql_backup_inventory_credential_identity), 0, 6), 16)
+  ) : 0
+  postgresql_backup_restore_credential_identity = var.postgresql_backup.enabled ? join("|", [
+    var.postgresql_backup.restore_object_storage_access.key_id,
+    var.postgresql_backup.restore_object_storage_access.access_key_id,
+    var.postgresql_backup.restore_object_storage_access.secret_reference_id,
+    tostring(var.postgresql_backup.restore_object_storage_access.resource_version),
+  ]) : ""
+  postgresql_backup_restore_credential_revision = var.postgresql_backup.enabled ? (
+    var.postgresql_backup.credential_generation * 16777216 +
+    parseint(substr(sha256(local.postgresql_backup_restore_credential_identity), 0, 6), 16)
   ) : 0
   postgresql_restore_receipt_credential_identity = var.postgresql_backup.enabled ? join("|", [
     var.postgresql_backup.receipt_object_storage_access.key_id,
@@ -61,6 +72,25 @@ locals {
       maxParallel = 4
     }
   } : null
+  postgresql_restore_barman_object_store = var.postgresql_backup.enabled ? merge(
+    local.postgresql_backup_barman_object_store,
+    {
+      s3Credentials = {
+        accessKeyId = {
+          name = local.postgresql_backup_restore_secret_name
+          key  = "ACCESS_KEY_ID"
+        }
+        secretAccessKey = {
+          name = local.postgresql_backup_restore_secret_name
+          key  = "ACCESS_SECRET_KEY"
+        }
+        region = {
+          name = local.postgresql_backup_restore_secret_name
+          key  = "AWS_REGION"
+        }
+      }
+    },
+  ) : null
 
   database_role_memberships = {
     runtime          = "fs2_serve_runtime"
@@ -139,6 +169,36 @@ resource "kubernetes_secret_v1" "postgresql_backup_inventory" {
     AWS_REGION        = var.postgresql_backup.storage_contract.region
   }
   data_wo_revision = local.postgresql_backup_inventory_credential_revision
+}
+
+ephemeral "nebius_mysterybox_v1_secret_payload_entry" "postgresql_backup_restore" {
+  count = var.postgresql_backup.enabled && var.run_database_restore_verification_job ? 1 : 0
+
+  secret_id = var.postgresql_backup.restore_object_storage_access.secret_reference_id
+  key       = "secret"
+}
+
+resource "kubernetes_secret_v1" "postgresql_backup_restore" {
+  count = var.postgresql_backup.enabled && var.run_database_restore_verification_job ? 1 : 0
+
+  metadata {
+    name      = local.postgresql_backup_restore_secret_name
+    namespace = "fs2-data"
+    labels = merge(local.common_labels, {
+      "fs2.nebius.ai/credential-purpose" = "postgresql-backup-restore-reader"
+    })
+    annotations = {
+      "fs2.nebius.ai/postgresql-restore-credential-revision" = tostring(local.postgresql_backup_restore_credential_revision)
+    }
+  }
+
+  type = "Opaque"
+  data_wo = {
+    ACCESS_KEY_ID     = var.postgresql_backup.restore_object_storage_access.access_key_id
+    ACCESS_SECRET_KEY = ephemeral.nebius_mysterybox_v1_secret_payload_entry.postgresql_backup_restore[0].data.string_value
+    AWS_REGION        = var.postgresql_backup.storage_contract.region
+  }
+  data_wo_revision = local.postgresql_backup_restore_credential_revision
 }
 
 ephemeral "nebius_mysterybox_v1_secret_payload_entry" "postgresql_restore_receipt" {
@@ -559,7 +619,7 @@ resource "kubernetes_manifest" "database_restore_verification" {
       }
       externalClusters = [{
         name              = "fs2-control-db-backup-source"
-        barmanObjectStore = local.postgresql_backup_barman_object_store
+        barmanObjectStore = local.postgresql_restore_barman_object_store
       }]
       storage = {
         size         = var.deployment_profile == "full_catalog" ? "100Gi" : "32Gi"
@@ -601,6 +661,7 @@ resource "kubernetes_manifest" "database_restore_verification" {
     kubernetes_manifest.control_database_scheduled_backup,
     terraform_data.postgresql_backup_contract,
     terraform_data.postgresql_restore_verification_contract,
+    kubernetes_secret_v1.postgresql_backup_restore,
   ]
 }
 

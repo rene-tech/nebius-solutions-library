@@ -378,6 +378,13 @@ variable "postgresql_backup" {
         paths              = list(string)
         secret_delivery    = string
       })
+      restore_reader = object({
+        service_account_id = string
+        group_id           = string
+        roles              = list(string)
+        paths              = list(string)
+        secret_delivery    = string
+      })
       inventory_reader = object({
         service_account_id = string
         group_id           = string
@@ -440,6 +447,12 @@ variable "postgresql_backup" {
       secret_reference_id = string
       resource_version    = number
     }))
+    restore_object_storage_access = optional(object({
+      key_id              = string
+      access_key_id       = string
+      secret_reference_id = string
+      resource_version    = number
+    }))
     receipt_object_storage_access = optional(object({
       key_id              = string
       access_key_id       = string
@@ -455,6 +468,7 @@ variable "postgresql_backup" {
     storage_contract                = null
     object_storage_access           = null
     inventory_object_storage_access = null
+    restore_object_storage_access   = null
     receipt_object_storage_access   = null
   }
 
@@ -469,6 +483,9 @@ variable "postgresql_backup" {
         var.postgresql_backup.storage_contract.writer.role == "storage.object-editor" &&
         join(",", var.postgresql_backup.storage_contract.writer.paths) == "postgresql/v1/fs2-control-db/*" &&
         var.postgresql_backup.storage_contract.writer.secret_delivery == "MYSTERY_BOX" &&
+        join(",", var.postgresql_backup.storage_contract.restore_reader.roles) == "storage.object-lister,storage.object-viewer" &&
+        join(",", var.postgresql_backup.storage_contract.restore_reader.paths) == "postgresql/v1/fs2-control-db/*" &&
+        var.postgresql_backup.storage_contract.restore_reader.secret_delivery == "MYSTERY_BOX" &&
         join(",", var.postgresql_backup.storage_contract.inventory_reader.roles) == "storage.object-lister,storage.object-viewer" &&
         join(",", var.postgresql_backup.storage_contract.inventory_reader.paths) == "postgresql/v1/*" &&
         var.postgresql_backup.storage_contract.inventory_reader.secret_delivery == "MYSTERY_BOX" &&
@@ -500,7 +517,7 @@ variable "postgresql_backup" {
       ),
       false,
     )
-    error_message = "enabled postgresql_backup requires the exact retained bucket plus split MysteryBox writer, read-only inventory and upload-only receipt identities."
+    error_message = "enabled postgresql_backup requires the exact retained bucket plus split MysteryBox writer, read-only restore, read-only inventory and upload-only receipt identities."
   }
 
   validation {
@@ -516,6 +533,11 @@ variable "postgresql_backup" {
         can(regex("^[a-z][a-z0-9-]+$", var.postgresql_backup.inventory_object_storage_access.secret_reference_id)) &&
         can(regex("^[a-z][a-z0-9-]+$", var.postgresql_backup.inventory_object_storage_access.key_id)) &&
         var.postgresql_backup.inventory_object_storage_access.resource_version >= 0 &&
+        length(var.postgresql_backup.restore_object_storage_access.access_key_id) >= 8 &&
+        can(regex("^[A-Za-z0-9_-]+$", var.postgresql_backup.restore_object_storage_access.access_key_id)) &&
+        can(regex("^[a-z][a-z0-9-]+$", var.postgresql_backup.restore_object_storage_access.secret_reference_id)) &&
+        can(regex("^[a-z][a-z0-9-]+$", var.postgresql_backup.restore_object_storage_access.key_id)) &&
+        var.postgresql_backup.restore_object_storage_access.resource_version >= 0 &&
         length(var.postgresql_backup.receipt_object_storage_access.access_key_id) >= 8 &&
         can(regex("^[A-Za-z0-9_-]+$", var.postgresql_backup.receipt_object_storage_access.access_key_id)) &&
         can(regex("^[a-z][a-z0-9-]+$", var.postgresql_backup.receipt_object_storage_access.secret_reference_id)) &&

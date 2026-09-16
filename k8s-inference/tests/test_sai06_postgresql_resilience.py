@@ -6,6 +6,7 @@ import base64
 import hashlib
 import io
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -13,6 +14,7 @@ import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Callable
 from unittest import mock
 from contextlib import redirect_stdout
 
@@ -78,16 +80,29 @@ def _backup_handoff_inputs(run_root: Path) -> tuple[dict, dict]:
                 "name": "postgresql-backup-test",
             },
             "writer": {
+                "service_account_id": "serviceaccount-postgresql-writer",
+                "group_id": "group-postgresql-writer",
                 "role": "storage.object-editor",
                 "paths": ["postgresql/v1/fs2-control-db/*"],
                 "secret_delivery": "MYSTERY_BOX",
             },
+            "restore_reader": {
+                "service_account_id": "serviceaccount-postgresql-restore",
+                "group_id": "group-postgresql-restore",
+                "roles": ["storage.object-lister", "storage.object-viewer"],
+                "paths": ["postgresql/v1/fs2-control-db/*"],
+                "secret_delivery": "MYSTERY_BOX",
+            },
             "inventory_reader": {
+                "service_account_id": "serviceaccount-postgresql-inventory",
+                "group_id": "group-postgresql-inventory",
                 "roles": ["storage.object-lister", "storage.object-viewer"],
                 "paths": ["postgresql/v1/*"],
                 "secret_delivery": "MYSTERY_BOX",
             },
             "receipt_publisher": {
+                "service_account_id": "serviceaccount-postgresql-receipt",
+                "group_id": "group-postgresql-receipt",
                 "role": "storage.uploader",
                 "paths": ["postgresql/v1/restore-verification/success/*"],
                 "secret_delivery": "MYSTERY_BOX",
@@ -105,6 +120,12 @@ def _backup_handoff_inputs(run_root: Path) -> tuple[dict, dict]:
             "secret_reference_id": "mysterybox-postgresql-inventory-test",
             "resource_version": 1,
         },
+        "postgresql_backup_restore_object_storage_access": {
+            "key_id": "accesskey-postgresql-restore-test",
+            "access_key_id": "TESTPOSTGRESQLRESTORE",
+            "secret_reference_id": "mysterybox-postgresql-restore-test",
+            "resource_version": 1,
+        },
         "postgresql_backup_receipt_object_storage_access": {
             "key_id": "accesskey-postgresql-receipt-test",
             "access_key_id": "TESTPOSTGRESQLRECEIPT",
@@ -117,6 +138,146 @@ def _backup_handoff_inputs(run_root: Path) -> tuple[dict, dict]:
         },
     }
     return contract, dynamic
+
+
+def _retained_destroy_contract() -> dict:
+    return {
+        "target": {"project_id": "project-test", "region": "eu-north1"},
+        "stages": {
+            "infrastructure": {
+                "postgresql_backup": {
+                    "enabled": True,
+                    "retention_days": 30,
+                    "object_storage": {
+                        "bucket_name": "postgresql-backup-test",
+                        "max_size_gib": 12288,
+                    },
+                    "lifecycle": {"retention_mode": "retain"},
+                }
+            },
+            "workloads": {
+                "postgresql_backup": {
+                    "enabled": True,
+                    "schedule": "0 0 2 * * *",
+                }
+            },
+        },
+    }
+
+
+def _retained_destroy_dynamic(tmp_path: Path) -> dict:
+    resource_ids = {
+        "bucket": "storagebucket-postgresql-test",
+        "service_account": "serviceaccount-postgresql-writer",
+        "group": "group-postgresql-writer",
+        "access_key": "accesskey-postgresql-writer",
+        "restore_service_account": "serviceaccount-postgresql-restore",
+        "restore_group": "group-postgresql-restore",
+        "restore_access_key": "accesskey-postgresql-restore",
+        "inventory_service_account": "serviceaccount-postgresql-inventory",
+        "inventory_group": "group-postgresql-inventory",
+        "inventory_access_key": "accesskey-postgresql-inventory",
+        "receipt_service_account": "serviceaccount-postgresql-receipt",
+        "receipt_group": "group-postgresql-receipt",
+        "receipt_access_key": "accesskey-postgresql-receipt",
+    }
+    return {
+        "kubeconfig_path": str(tmp_path / "kubeconfig"),
+        "kube_context": "sai06-test",
+        "postgresql_backup_storage_contract": {
+            "schema": "fs2-serve.nebius.ai/postgresql-backup-storage/v1",
+            "project_id": "project-test",
+            "region": "eu-north1",
+            "object_storage": {
+                "id": resource_ids["bucket"],
+                "name": "postgresql-backup-test",
+                "endpoint": "https://storage.eu-north1.nebius.cloud",
+                "max_size_gib": 12288,
+                "versioning_policy": "ENABLED",
+                "storage_class": "STANDARD",
+                "addressing_style": "path",
+                "verify_tls": True,
+            },
+            "writer": {
+                "service_account_id": resource_ids["service_account"],
+                "group_id": resource_ids["group"],
+                "role": "storage.object-editor",
+                "paths": ["postgresql/v1/fs2-control-db/*"],
+                "secret_delivery": "MYSTERY_BOX",
+            },
+            "restore_reader": {
+                "service_account_id": resource_ids["restore_service_account"],
+                "group_id": resource_ids["restore_group"],
+                "roles": ["storage.object-lister", "storage.object-viewer"],
+                "paths": ["postgresql/v1/fs2-control-db/*"],
+                "secret_delivery": "MYSTERY_BOX",
+            },
+            "inventory_reader": {
+                "service_account_id": resource_ids["inventory_service_account"],
+                "group_id": resource_ids["inventory_group"],
+                "roles": ["storage.object-lister", "storage.object-viewer"],
+                "paths": ["postgresql/v1/*"],
+                "secret_delivery": "MYSTERY_BOX",
+            },
+            "receipt_publisher": {
+                "service_account_id": resource_ids["receipt_service_account"],
+                "group_id": resource_ids["receipt_group"],
+                "role": "storage.uploader",
+                "paths": ["postgresql/v1/restore-verification/success/*"],
+                "secret_delivery": "MYSTERY_BOX",
+            },
+            "layout": {
+                "root": "postgresql/v1",
+                "destination_path": "s3://postgresql-backup-test/postgresql/v1",
+                "server_name": "fs2-control-db",
+            },
+            "retention": {
+                "barman_retention_days": 30,
+                "noncurrent_version_expiration_days": 37,
+                "current_object_expiration": "cloudnative-pg-barman-owned",
+                "lifecycle_rule_ids": [
+                    "abort-incomplete-multipart-uploads",
+                    "expire-noncurrent-versions-after-recovery-window",
+                ],
+            },
+            "sizing": {
+                "configured_capacity_gib": 12288,
+                "required_capacity_gib": 11585,
+                "capacity_cost_review_acknowledged": True,
+                "live_capacity_preflight_required": True,
+            },
+            "lifecycle": {
+                "retention_mode": "retain",
+                "destroy_status": "blocked-retained",
+                "destroy_completion": "full-stack-destroy-incomplete-postgresql-backup-retained",
+                "adoption_status": "ids-exported-for-explicit-state-adoption",
+                "retained_ids": {"bucket": resource_ids["bucket"]},
+            },
+        },
+        "postgresql_backup_lifecycle": {
+            "schema": "fs2-serve.nebius.ai/postgresql-backup-lifecycle/v1",
+            "project_id": "project-test",
+            "region": "eu-north1",
+            "retention_mode": "retain",
+            "status": "managed-retained",
+            "destroy_status": "blocked-retained",
+            "destroy_completion": "full-stack-destroy-incomplete-postgresql-backup-retained",
+            "adoption_status": "ids-exported-for-explicit-state-adoption",
+            "resource_ids": resource_ids,
+        },
+        "postgresql_backup_object_storage_access": {
+            "key_id": resource_ids["access_key"]
+        },
+        "postgresql_backup_restore_object_storage_access": {
+            "key_id": resource_ids["restore_access_key"]
+        },
+        "postgresql_backup_inventory_object_storage_access": {
+            "key_id": resource_ids["inventory_access_key"]
+        },
+        "postgresql_backup_receipt_object_storage_access": {
+            "key_id": resource_ids["receipt_access_key"]
+        },
+    }
 
 
 def test_every_capacity_profile_has_three_system_nodes() -> None:
@@ -150,6 +311,10 @@ def test_postgresql_backup_is_versioned_retained_and_mysterybox_delivered() -> N
         in infrastructure
     )
     assert (
+        'postgresql_backup_restore_roles               = ["storage.object-lister", "storage.object-viewer"]'
+        in infrastructure
+    )
+    assert (
         'postgresql_backup_receipt_role                = "storage.uploader"'
         in infrastructure
     )
@@ -158,6 +323,7 @@ def test_postgresql_backup_is_versioned_retained_and_mysterybox_delivered() -> N
     assert 'output "postgresql_backup_storage_contract"' in outputs
     assert 'output "postgresql_backup_object_storage_access"' in outputs
     assert 'output "postgresql_backup_inventory_object_storage_access"' in outputs
+    assert 'output "postgresql_backup_restore_object_storage_access"' in outputs
     assert 'output "postgresql_backup_receipt_object_storage_access"' in outputs
 
 
@@ -413,6 +579,16 @@ def test_capacity_plan_rejects_any_resource_replacement() -> None:
     with pytest.raises(STACK.DeploymentError, match="no-replacement.*cluster.this"):
         STACK.require_sai06_no_replacements(replacement)
 
+    pure_delete = _plan_document()
+    pure_delete["resource_changes"].append(
+        {
+            "address": "nebius_storage_v1_bucket.postgresql_backup[0]",
+            "change": {"before": {}, "after": None, "actions": ["delete"]},
+        }
+    )
+    with pytest.raises(STACK.DeploymentError, match="deletes critical.*bucket"):
+        STACK.require_sai06_no_replacements(pure_delete)
+
 
 def test_signed_approval_rejects_missing_limits_without_owner_override() -> None:
     resources = STACK.sai06_capacity_projections(
@@ -517,13 +693,13 @@ def test_apply_loader_rejects_a_trusted_signature_for_the_wrong_project(
     envelope, trust = _signed_approval(request)
     STACK.private_json(tmp_path / STACK.SAI06_APPROVAL_REQUEST_NAME, request)
     receipt_path = tmp_path / "capacity-approval.json"
-    trust_path = tmp_path / "trusted-issuers.json"
     STACK.private_json(receipt_path, envelope)
-    STACK.private_json(trust_path, trust)
 
     with (
-        mock.patch.object(STACK, "SAI06_TRUSTED_ISSUERS_PATH", trust_path),
-        mock.patch.object(STACK, "source_tree", return_value="b" * 40),
+        mock.patch.object(
+            STACK, "verified_source_identity", return_value=("a" * 40, "b" * 40)
+        ),
+        mock.patch.object(STACK, "_git_json_blob", return_value=trust),
         pytest.raises(STACK.DeploymentError, match="project_id no longer matches"),
     ):
         STACK.load_and_validate_sai06_capacity_approval(
@@ -535,6 +711,8 @@ def test_apply_loader_rejects_a_trusted_signature_for_the_wrong_project(
             tmp_path,
             contract,
             "a" * 40,
+            plan_sha256=hashlib.sha256(b"exact-saved-plan").hexdigest(),
+            plan_document=plan_document,
         )
 
 
@@ -573,6 +751,192 @@ def test_secure_approval_loader_rejects_symlink_hardlink_and_permissive_mode(
         STACK._secure_sha256_file(plan_link, label="test plan")
 
 
+def test_secure_file_read_rejects_same_inode_same_size_mutation(
+    tmp_path: Path,
+) -> None:
+    approval = tmp_path / "approval.json"
+    approval.write_bytes(b'{"approved":true }')
+    approval.chmod(0o600)
+    original_read = STACK.os.read
+    mutated = False
+
+    def mutate_after_first_read(descriptor: int, size: int) -> bytes:
+        nonlocal mutated
+        payload = original_read(descriptor, size)
+        if not mutated and payload:
+            mutated = True
+            with approval.open("r+b", buffering=0) as stream:
+                stream.seek(0)
+                stream.write(b'{"approved":false}')
+                os.fsync(stream.fileno())
+        return payload
+
+    with (
+        mock.patch.object(STACK.os, "read", side_effect=mutate_after_first_read),
+        pytest.raises(STACK.DeploymentError, match="changed while it was being read"),
+    ):
+        STACK._secure_file_bytes(approval, label="test approval", private=True)
+
+
+def test_sealed_plan_survives_named_path_swap_and_rejects_writes(
+    tmp_path: Path,
+) -> None:
+    plan = tmp_path / "infrastructure-plan.tfplan"
+    original = b"reviewed-plan-binary"
+    plan.write_bytes(original)
+    plan.chmod(0o600)
+
+    with STACK._sealed_plan_snapshot(plan, label="test plan") as (descriptor, digest):
+        replacement = tmp_path / "replacement.tfplan"
+        replacement.write_bytes(b"attacker-plan-binary")
+        replacement.chmod(0o600)
+        replacement.replace(plan)
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        assert os.read(descriptor, len(original) + 1) == original
+        assert digest == hashlib.sha256(original).hexdigest()
+        with pytest.raises(OSError):
+            os.write(descriptor, b"x")
+
+
+def test_reviewed_plan_uses_one_sealed_descriptor_and_rejects_json_divergence(
+    tmp_path: Path,
+) -> None:
+    plan = tmp_path / "workloads-plan.tfplan"
+    plan.write_bytes(b"reviewed-workloads-plan")
+    plan.chmod(0o600)
+    reviewed = {"resource_changes": []}
+    descriptors: list[int] = []
+
+    def show(*args: object, **_kwargs: object) -> dict:
+        descriptors.append(int(args[2]))
+        return reviewed
+
+    def apply(*args: object, **_kwargs: object) -> None:
+        descriptors.append(int(args[2]))
+
+    with (
+        mock.patch.object(STACK, "show_sealed_plan", side_effect=show),
+        mock.patch.object(STACK, "apply_sealed_plan", side_effect=apply),
+    ):
+        STACK.apply_reviewed_sai06_plan(
+            "terraform",
+            tmp_path,
+            plan,
+            reviewed,
+            {},
+        )
+    assert len(descriptors) == 3
+    assert len(set(descriptors)) == 1
+
+    with (
+        mock.patch.object(
+            STACK,
+            "show_sealed_plan",
+            return_value={
+                "resource_changes": [
+                    {
+                        "address": "terraform_data.unreviewed",
+                        "change": {"actions": ["create"]},
+                    }
+                ]
+            },
+        ),
+        mock.patch.object(STACK, "apply_sealed_plan") as apply_plan,
+        pytest.raises(STACK.DeploymentError, match="no longer match"),
+    ):
+        STACK.apply_reviewed_sai06_plan(
+            "terraform",
+            tmp_path,
+            plan,
+            reviewed,
+            {},
+        )
+    apply_plan.assert_not_called()
+
+
+def test_destroy_apply_rederives_reviewed_json_from_the_same_sealed_plan(
+    tmp_path: Path,
+) -> None:
+    plan = tmp_path / "workloads-destroy.tfplan"
+    plan.write_bytes(b"reviewed-destroy-plan")
+    plan.chmod(0o600)
+    reviewed = {
+        "resource_changes": [
+            {
+                "address": "terraform_data.disposable",
+                "change": {"actions": ["delete"]},
+            }
+        ]
+    }
+    descriptors: list[int] = []
+
+    def show(*args: object, **_kwargs: object) -> dict:
+        descriptors.append(int(args[2]))
+        return reviewed
+
+    def apply(*args: object, **_kwargs: object) -> None:
+        descriptors.append(int(args[2]))
+
+    with (
+        mock.patch.object(STACK, "show_sealed_plan", side_effect=show),
+        mock.patch.object(STACK, "apply_sealed_plan", side_effect=apply),
+    ):
+        STACK.apply_plan(
+            "terraform",
+            tmp_path,
+            plan,
+            {},
+            reviewed,
+        )
+
+    assert len(descriptors) == 3
+    assert len(set(descriptors)) == 1
+
+
+def test_source_identity_rejects_dirty_tree_and_trust_comes_from_git_blob(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    subprocess.run(["git", "init", "-q", str(repository)], check=True)
+    subprocess.run(
+        ["git", "-C", str(repository), "config", "user.email", "sai06@example.invalid"],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repository), "config", "user.name", "SAI06 Test"],
+        check=True,
+    )
+    trust_path = repository / "trusted.json"
+    committed = {"schema": "trusted/v1", "issuers": [{"key": "reviewed"}]}
+    trust_path.write_text(json.dumps(committed), encoding="utf-8")
+    subprocess.run(["git", "-C", str(repository), "add", "trusted.json"], check=True)
+    subprocess.run(
+        ["git", "-C", str(repository), "commit", "-qm", "trusted issuer"],
+        check=True,
+    )
+    with (
+        mock.patch.object(STACK, "REPOSITORY_ROOT", repository),
+        mock.patch.object(STACK, "SAI06_TRUSTED_ISSUERS_PATH", trust_path),
+    ):
+        commit, tree = STACK.verified_source_identity()
+        assert re.fullmatch(r"[0-9a-f]{40}", tree)
+        trust_path.write_text(
+            json.dumps({"schema": "trusted/v1", "issuers": [{"key": "attacker"}]}),
+            encoding="utf-8",
+        )
+        assert STACK._git_json_blob(commit, trust_path, label="trust") == committed
+        with pytest.raises(STACK.DeploymentError, match="exact clean source"):
+            STACK.verified_source_identity()
+        subprocess.run(
+            ["git", "-C", str(repository), "checkout", "--", "trusted.json"],
+            check=True,
+        )
+        (repository / "untracked-key.json").write_text("{}", encoding="utf-8")
+        with pytest.raises(STACK.DeploymentError, match="exact clean source"):
+            STACK.verified_source_identity()
+
+
 def test_capacity_receipt_schema_is_strict_and_matches_runtime_resources() -> None:
     schema = json.loads(_text("docs/sai06-capacity-approval.schema.json"))
 
@@ -589,29 +953,8 @@ def test_capacity_receipt_schema_is_strict_and_matches_runtime_resources() -> No
 def test_destroy_preflights_all_plans_before_any_delete_and_retains_postgresql(
     tmp_path: Path,
 ) -> None:
-    configuration = {
-        "stages": {
-            "infrastructure": {
-                "postgresql_backup": {
-                    "enabled": True,
-                    "lifecycle": {"retention_mode": "retain"},
-                }
-            }
-        }
-    }
-    dynamic = {
-        "postgresql_backup_storage_contract": {
-            "schema": "fs2-serve.nebius.ai/postgresql-backup-storage/v1",
-            "object_storage": {
-                "id": "storagebucket-test",
-                "name": "postgresql-backup-test",
-            },
-        },
-        "postgresql_backup_lifecycle": {
-            "retention_mode": "retain",
-            "adoption_status": "ids-exported-for-explicit-state-adoption",
-        },
-    }
+    configuration = _retained_destroy_contract()
+    dynamic = _retained_destroy_dynamic(tmp_path)
     events: list[str] = []
 
     def plan(*_args: object, **kwargs: object) -> tuple[Path, dict, dict]:
@@ -632,6 +975,11 @@ def test_destroy_preflights_all_plans_before_any_delete_and_retains_postgresql(
             return_value=(tmp_path / "foundation.json", tmp_path / "workloads.json"),
         ),
         mock.patch.object(STACK, "workload_endpoint_outputs", return_value={}),
+        mock.patch.object(
+            STACK,
+            "validate_postgresql_live_recovery_boundary",
+            return_value={"continuous_archiving": True},
+        ) as live_recovery,
         mock.patch.object(STACK, "plan_stage", side_effect=plan),
         mock.patch.object(STACK, "apply_plan", side_effect=apply),
         mock.patch.object(STACK, "write_infrastructure_variables") as write_infra,
@@ -655,9 +1003,139 @@ def test_destroy_preflights_all_plans_before_any_delete_and_retains_postgresql(
         "apply:workloads",
         "apply:foundation",
     ]
+    live_recovery.assert_called_once()
     write_infra.assert_not_called()
     receipt = json.loads((tmp_path / "postgresql-backup-retention.json").read_text())
     assert receipt["postgresql_backup"]["lifecycle"]["retention_mode"] == "retain"
+
+
+@pytest.mark.parametrize(
+    ("mutator", "message"),
+    [
+        (
+            lambda dynamic: dynamic.update({"postgresql_backup_storage_contract": {}}),
+            "outputs are incomplete",
+        ),
+        (
+            lambda dynamic: dynamic.update({"postgresql_backup_lifecycle": {}}),
+            "outputs are incomplete",
+        ),
+        (
+            lambda dynamic: dynamic["postgresql_backup_storage_contract"][
+                "object_storage"
+            ].update({"versioning_policy": "DISABLED"}),
+            "does not match the exact",
+        ),
+        (
+            lambda dynamic: dynamic["postgresql_backup_lifecycle"].update(
+                {"project_id": "project-attacker"}
+            ),
+            "does not match the exact",
+        ),
+        (
+            lambda dynamic: dynamic["postgresql_backup_lifecycle"].update(
+                {"destroy_status": "eligible"}
+            ),
+            "does not match the exact",
+        ),
+    ],
+)
+def test_destroy_rejects_invalid_retained_postgresql_boundary_before_any_plan(
+    tmp_path: Path, mutator: Callable[[dict], None], message: str
+) -> None:
+    configuration = _retained_destroy_contract()
+    dynamic = _retained_destroy_dynamic(tmp_path)
+    mutator(dynamic)
+    with (
+        mock.patch.object(STACK, "state_has_resources", return_value=True),
+        mock.patch.object(STACK, "state_ready", return_value=True),
+        mock.patch.object(STACK, "infrastructure_outputs", return_value=dynamic),
+        mock.patch.object(STACK, "plan_stage") as plan_stage,
+        mock.patch.object(STACK, "apply_plan") as apply_plan,
+        pytest.raises(STACK.DeploymentError, match=message),
+    ):
+        STACK.destroy_stack(
+            SimpleNamespace(
+                terraform="terraform",
+                nebius="nebius",
+                nebius_profile="sandbox",
+                kubectl="kubectl",
+            ),
+            tmp_path,
+            configuration,
+            "a" * 40,
+        )
+    plan_stage.assert_not_called()
+    apply_plan.assert_not_called()
+
+
+def _live_recovery_documents() -> list[dict]:
+    return [
+        {
+            "metadata": {"uid": "11111111-2222-3333-4444-555555555555"},
+            "status": {
+                "firstRecoverabilityPoint": "2026-09-16T08:00:00Z",
+                "lastSuccessfulBackup": "2026-09-16T08:10:00Z",
+                "lastArchivedWal": "00000001000000000000000A",
+                "conditions": [{"type": "ContinuousArchiving", "status": "True"}],
+            },
+        },
+        {
+            "spec": {"schedule": "0 0 2 * * *", "suspend": False},
+            "status": {"lastCheckTime": "2026-09-16T08:20:00Z"},
+        },
+        {
+            "items": [
+                {
+                    "metadata": {"name": "fs2-control-db-20260916020000"},
+                    "status": {"phase": "completed"},
+                }
+            ]
+        },
+    ]
+
+
+def test_live_destroy_gate_requires_backup_wal_and_recoverability_point(
+    tmp_path: Path,
+) -> None:
+    args = SimpleNamespace(kubectl="kubectl")
+    contract = _retained_destroy_contract()
+    dynamic = _retained_destroy_dynamic(tmp_path)
+
+    def responses(documents: list[dict]) -> list[subprocess.CompletedProcess[str]]:
+        return [
+            subprocess.CompletedProcess(
+                ["kubectl"], 0, stdout=json.dumps(document), stderr=""
+            )
+            for document in documents
+        ]
+
+    with mock.patch.object(
+        STACK, "run", side_effect=responses(_live_recovery_documents())
+    ):
+        result = STACK.validate_postgresql_live_recovery_boundary(
+            args, contract, dynamic
+        )
+    assert result["completed_backup_count"] == 1
+    assert result["continuous_archiving"] is True
+
+    for mutate in (
+        lambda documents: documents[0]["status"].update(
+            {"firstRecoverabilityPoint": None}
+        ),
+        lambda documents: documents[0]["status"]["conditions"][0].update(
+            {"status": "False"}
+        ),
+        lambda documents: documents[0]["status"].update({"lastArchivedWal": None}),
+        lambda documents: documents[2].update({"items": []}),
+    ):
+        documents = _live_recovery_documents()
+        mutate(documents)
+        with (
+            mock.patch.object(STACK, "run", side_effect=responses(documents)),
+            pytest.raises(STACK.DeploymentError, match="no resource was changed"),
+        ):
+            STACK.validate_postgresql_live_recovery_boundary(args, contract, dynamic)
 
 
 def test_destroy_plan_failure_makes_zero_deletions(tmp_path: Path) -> None:
@@ -713,6 +1191,10 @@ def test_backup_handoff_is_exact_retained_and_secret_free(tmp_path: Path) -> Non
     assert (
         backup["inventory_object_storage_access"]
         == dynamic["postgresql_backup_inventory_object_storage_access"]
+    )
+    assert (
+        backup["restore_object_storage_access"]
+        == dynamic["postgresql_backup_restore_object_storage_access"]
     )
     assert (
         backup["receipt_object_storage_access"]
@@ -785,6 +1267,10 @@ def test_restore_verification_replays_wal_between_paired_markers() -> None:
     )
     _assert_hcl_assignment(database, "automount_service_account_token", "false")
     assert "to_regclass('public.fs2_schema_migrations')" in database
+    assert "local.postgresql_restore_barman_object_store" in database
+    assert "kubernetes_secret_v1.postgresql_backup_restore" in database
+    assert 'credential-purpose" = "postgresql-backup-restore-reader"' in database
+    assert "postgresql_backup_restore_credential_revision" in database
 
 
 def test_restore_verifier_is_marker_only_and_denied_sensitive_tables() -> None:
@@ -841,6 +1327,7 @@ def test_default_system_pool_requires_effective_node_and_backup_acknowledgements
 def test_backup_observability_is_executable_and_covers_every_sai06_signal() -> None:
     monitoring = _text("stages/workloads/postgresql_backup_monitoring.tf")
     metrics = _text("stages/workloads/scripts/postgresql_backup_metrics.py")
+    database = _text("stages/workloads/database.tf")
 
     assert 'kind       = "ServiceMonitor"' in monitoring
     assert 'kind       = "PrometheusRule"' in monitoring
@@ -864,6 +1351,18 @@ def test_backup_observability_is_executable_and_covers_every_sai06_signal() -> N
     assert "fs2_postgresql_backup_bucket_capacity_bytes" in metrics
     assert "fs2_postgresql_restore_last_success_timestamp_seconds" in metrics
     assert "restore-verification/success/" in monitoring
+    assert (
+        '"fs2.nebius.ai/postgresql-inventory-credential-revision" = '
+        "tostring(local.postgresql_backup_inventory_credential_revision)" in monitoring
+    )
+    for field in (
+        "inventory_object_storage_access.key_id",
+        "inventory_object_storage_access.access_key_id",
+        "inventory_object_storage_access.secret_reference_id",
+        "inventory_object_storage_access.resource_version",
+    ):
+        assert field in database
+    assert "var.postgresql_backup.credential_generation * 16777216" in database
 
 
 def test_backup_alert_promql_is_accepted_by_promtool(tmp_path: Path) -> None:

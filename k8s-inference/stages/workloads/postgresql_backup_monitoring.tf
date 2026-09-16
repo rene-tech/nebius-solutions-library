@@ -12,6 +12,29 @@ locals {
   })
 }
 
+resource "terraform_data" "postgresql_backup_inventory_rotation_contract" {
+  count = var.postgresql_backup.enabled ? 1 : 0
+
+  input = {
+    credential_generation      = var.postgresql_backup.credential_generation
+    credential_identity_sha256 = sha256(local.postgresql_backup_inventory_credential_identity)
+    credential_revision        = local.postgresql_backup_inventory_credential_revision
+    pod_template_annotation    = tostring(local.postgresql_backup_inventory_credential_revision)
+  }
+
+  lifecycle {
+    precondition {
+      condition = (
+        local.postgresql_backup_inventory_credential_revision >=
+        var.postgresql_backup.credential_generation * 16777216 &&
+        local.postgresql_backup_inventory_credential_revision <
+        (var.postgresql_backup.credential_generation + 1) * 16777216
+      )
+      error_message = "The PostgreSQL inventory exporter rotation revision must bind the operator generation and exact MysteryBox access-key identity."
+    }
+  }
+}
+
 resource "kubernetes_config_map_v1" "postgresql_backup_metrics" {
   count = var.postgresql_backup.enabled ? 1 : 0
 
@@ -43,7 +66,15 @@ resource "kubernetes_deployment_v1" "postgresql_backup_metrics" {
       }
     }
     template {
-      metadata { labels = local.postgresql_backup_metrics_labels }
+      metadata {
+        labels = local.postgresql_backup_metrics_labels
+        annotations = {
+          # data_wo Secret rotation does not alter a pod template by itself.
+          # Bind the exact cloud-key identity/generation so SAI-10 rotation
+          # deterministically rolls the long-running inventory reader.
+          "fs2.nebius.ai/postgresql-inventory-credential-revision" = tostring(local.postgresql_backup_inventory_credential_revision)
+        }
+      }
       spec {
         automount_service_account_token = false
         node_selector = {
@@ -164,6 +195,8 @@ resource "kubernetes_deployment_v1" "postgresql_backup_metrics" {
       }
     }
   }
+
+  depends_on = [terraform_data.postgresql_backup_inventory_rotation_contract]
 }
 
 resource "kubernetes_service_v1" "postgresql_backup_metrics" {

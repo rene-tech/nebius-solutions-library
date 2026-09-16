@@ -233,6 +233,13 @@ variables {
         paths              = ["postgresql/v1/fs2-control-db/*"]
         secret_delivery    = "MYSTERY_BOX"
       }
+      restore_reader = {
+        service_account_id = "serviceaccount-postgresqlrestoretest"
+        group_id           = "group-postgresqlrestoretest"
+        roles              = ["storage.object-lister", "storage.object-viewer"]
+        paths              = ["postgresql/v1/fs2-control-db/*"]
+        secret_delivery    = "MYSTERY_BOX"
+      }
       inventory_reader = {
         service_account_id = "serviceaccount-postgresqlinventorytest"
         group_id           = "group-postgresqlinventorytest"
@@ -294,6 +301,12 @@ variables {
       key_id              = "accesskey-postgresqlinventorytest"
       access_key_id       = "AJE000POSTGRESQLINVENTORY"
       secret_reference_id = "mysteryboxsecret-postgresqlinventorytest"
+      resource_version    = 0
+    }
+    restore_object_storage_access = {
+      key_id              = "accesskey-postgresqlrestoretest"
+      access_key_id       = "AJE000POSTGRESQLRESTORE"
+      secret_reference_id = "mysteryboxsecret-postgresqlrestoretest"
       resource_version    = 0
     }
     receipt_object_storage_access = {
@@ -376,6 +389,25 @@ run "pitr_cleanup_contract_is_bound_to_the_verified_marker_pair" {
       terraform_data.postgresql_pitr_marker_cleanup_contract[0].input.cleanup_scope == "exact marker A/B pair and marker-only table/grant"
     )
     error_message = "Cleanup must remain bound to the exact verified marker pair and target."
+  }
+}
+
+run "postgresql_inventory_key_rotation_is_bound_to_the_exporter_pod_template" {
+  command = plan
+
+  plan_options {
+    target = [terraform_data.postgresql_backup_inventory_rotation_contract]
+  }
+
+  assert {
+    condition = (
+      terraform_data.postgresql_backup_inventory_rotation_contract[0].input.credential_revision == local.postgresql_backup_inventory_credential_revision &&
+      terraform_data.postgresql_backup_inventory_rotation_contract[0].input.pod_template_annotation == tostring(local.postgresql_backup_inventory_credential_revision) &&
+      terraform_data.postgresql_backup_inventory_rotation_contract[0].input.credential_identity_sha256 == sha256(local.postgresql_backup_inventory_credential_identity) &&
+      terraform_data.postgresql_backup_inventory_rotation_contract[0].input.credential_revision >= 16777216 &&
+      terraform_data.postgresql_backup_inventory_rotation_contract[0].input.credential_revision < 33554432
+    )
+    error_message = "The exporter Pod template must bind the exact generation-plus-key identity so a SAI-10 MysteryBox key rotation creates a new ReplicaSet."
   }
 }
 
