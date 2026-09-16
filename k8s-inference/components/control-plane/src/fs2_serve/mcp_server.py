@@ -155,6 +155,63 @@ def _exception_chain(error: BaseException) -> tuple[BaseException, ...]:
     return tuple(values)
 
 
+# Fixed, server-origin MCP failure classification for the debug-capture structured signal.
+# These labels are the ONLY failure detail retained (never a raw exception, message, tool
+# argument, or response body), so an operator can distinguish failure kinds — even for an
+# operationless HTTP-200 MCP tool error — without any content channel.
+_CAT_INVALID = "invalid_request"  # invalid request / arguments
+_CAT_ROUTE = "route_unavailable"  # route or method unavailable
+_CAT_TOOL = "tool_execution_failure"  # semantic / tool execution failure
+_CAT_OUTPUT = "output_contract_failure"  # output-contract / wrong-output failure
+_CAT_INTERNAL = "internal_failure"  # internal / server failure
+_CAT_UNKNOWN = "unknown"  # fixed catch-all bucket
+# The error code is stored ONLY as a fixed, coarse BUCKET — never the raw or verbatim code,
+# and even reserved JSON-RPC codes are bucketed, not stored numerically: a protocol client
+# error, a protocol server error, a tool-level failure, or the catch-all unknown. No numeric,
+# app-defined, or free-text code is ever persisted.
+_CODE_JSONRPC_CLIENT = "jsonrpc_client"
+_CODE_JSONRPC_SERVER = "jsonrpc_server"
+_CODE_TOOL = "tool"
+
+
+# Fixed map from a known server-origin string code to a failure category.
+_TOOL_CODE_CATEGORY = {
+    "invalid_tool_arguments": _CAT_INVALID,
+    "not_found": _CAT_ROUTE,
+    "scientific_profile_unavailable": _CAT_ROUTE,
+    "route_unavailable": _CAT_ROUTE,
+    "operation_conflict": _CAT_TOOL,
+    "operation_has_no_result": _CAT_TOOL,
+    "budget_exceeded": _CAT_TOOL,
+    "rate_limit_reached": _CAT_TOOL,
+    "admission_limit_reached": _CAT_TOOL,
+    "internal_tool_error": _CAT_INTERNAL,
+}
+
+
+def _numeric_mcp_signal(code: object) -> tuple[str, str]:
+    """Map a JSON-RPC protocol error code to a fixed (category, coarse-bucket) pair. The raw
+    numeric code is never stored — even reserved codes are collapsed to a client/server bucket."""
+    if code == INVALID_PARAMS:
+        return _CAT_INVALID, _CODE_JSONRPC_CLIENT
+    if code == INTERNAL_ERROR:
+        return _CAT_INTERNAL, _CODE_JSONRPC_SERVER
+    if isinstance(code, int):
+        if code == -32601:  # method not found
+            return _CAT_ROUTE, _CODE_JSONRPC_CLIENT
+        if code in (-32700, -32600, -32602):  # parse / invalid request / invalid params
+            return _CAT_INVALID, _CODE_JSONRPC_CLIENT
+        if code == -32603 or -32099 <= code <= -32000:  # internal / server-defined range
+            return _CAT_INTERNAL, _CODE_JSONRPC_SERVER
+    return _CAT_UNKNOWN, _CAT_UNKNOWN
+
+
+def _observe_mcp_failure(category: str, code: str) -> None:
+    """Record the fixed failure classification (category enum + coarse code bucket) onto request
+    state (server-authoritative); no raw code, message, or content is ever recorded."""
+    observe_request_metadata(mcp_is_error=True, mcp_failure_category=category, mcp_error_code=code)
+
+
 def _tool_failure(params: CallToolRequestParams, error: Exception) -> CallToolResult:
     """Translate SDK-wrapped domain failures into one stable MCP result."""
 
@@ -165,6 +222,9 @@ def _tool_failure(params: CallToolRequestParams, error: Exception) -> CallToolRe
     code = "internal_tool_error"
     message = "The tool failed unexpectedly. Use request_id when contacting the platform operator."
     expected = False
+    # Fixed failure category; set explicitly for branches whose code string is variable
+    # (artifact/runtime codes), otherwise derived from the fixed code->category map below.
+    category: str | None = None
     if any(isinstance(item, ConcurrencyExceededError) for item in chain):
         code, message, retryable, retry_after, expected = (
             "admission_limit_reached",
@@ -198,6 +258,7 @@ def _tool_failure(params: CallToolRequestParams, error: Exception) -> CallToolRe
         code = artifact_error.code
         message = "The artifact request was rejected by the published upload or verification policy."
         expected = True
+        category = _CAT_OUTPUT  # output-contract / verification-policy failure (code is variable)
     elif next((item for item in chain if isinstance(item, RuntimeOperationError)), None) is not None:
         runtime_error = next(item for item in chain if isinstance(item, RuntimeOperationError))
         code = runtime_error.code
@@ -205,6 +266,8 @@ def _tool_failure(params: CallToolRequestParams, error: Exception) -> CallToolRe
         retry_after = 2 if retryable else None
         message = "The selected model runtime could not complete the request."
         expected = True
+        # A 5xx runtime is an internal/server failure; a 4xx is a tool-execution failure.
+        category = _CAT_INTERNAL if runtime_error.status_code >= 500 else _CAT_TOOL
     elif any(isinstance(item, ScientificProfileError) for item in chain):
         code, message, expected = (
             "scientific_profile_unavailable",
@@ -243,6 +306,11 @@ def _tool_failure(params: CallToolRequestParams, error: Exception) -> CallToolRe
         LOGGER.info("MCP tool %s rejected request_id=%s error_type=%s", params.name, request_id, code)
     else:
         LOGGER.exception("MCP tool %s failed request_id=%s", params.name, request_id, exc_info=error)
+    # Record the fixed, server-origin failure classification onto request state so a debug
+    # capture can distinguish this tool error (even inside an HTTP 200) without the body. The
+    # category is derived from the fixed code->category map; the stored code is the coarse
+    # tool bucket (never the raw/verbatim string code).
+    _observe_mcp_failure(category or _TOOL_CODE_CATEGORY.get(code, _CAT_UNKNOWN), _CODE_TOOL)
     return _tool_result(payload).model_copy(update={"is_error": True})
 
 
@@ -315,6 +383,7 @@ def _route_unavailable(principal: Principal) -> CallToolResult:
             separators=(",", ":"),
         ),
     )
+    _observe_mcp_failure(_CAT_ROUTE, _CODE_TOOL)
     return _tool_result(payload).model_copy(update={"is_error": True})
 
 
@@ -573,13 +642,21 @@ class MCPAuthorizationMiddleware:
                 allowed = CORE_TOOLS | _model_tool_names(self.runtime, principal)
                 return listing.model_copy(update={"tools": [tool for tool in listing.tools if tool.name in allowed]})
             return result
-        except MCPError:
+        except MCPError as error:
             if ctx.method == "tools/call":
-                observe_request_metadata(mcp_is_error=True)
+                # A protocol-level failure: classify from the fixed JSON-RPC code only.
+                raw_code = getattr(error, "code", None)
+                if raw_code is None:
+                    raw_code = getattr(getattr(error, "error", None), "code", None)
+                category, bucket = _numeric_mcp_signal(raw_code)
+                observe_request_metadata(mcp_is_error=True, mcp_failure_category=category, mcp_error_code=bucket)
             raise
         except Exception:
             if ctx.method == "tools/call":
-                observe_request_metadata(mcp_is_error=True)
+                # Collapsed to INVALID_PARAMS below, so classify as an invalid request (client bucket).
+                observe_request_metadata(
+                    mcp_is_error=True, mcp_failure_category=_CAT_INVALID, mcp_error_code=_CODE_JSONRPC_CLIENT
+                )
             # SDK validation/dispatch exceptions may embed the rejected payload.
             # Collapse every non-protocol failure before it can reach logs/traces.
             raise MCPError(code=INVALID_PARAMS, message="request validation failed") from None

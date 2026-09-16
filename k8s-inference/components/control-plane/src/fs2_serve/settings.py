@@ -274,13 +274,14 @@ class Settings(BaseSettings):
     request_debug_tenants: str = Field(default="", max_length=8192)
     request_debug_models: str = Field(default="", max_length=8192)
     request_debug_expires_at: AwareDatetime | None = None
-    # Owner-decided TTL: capture is bounded to at most 90 days (7,776,000s) going forward,
-    # enforced purely via the capture-expiry window (it stops NEW capture; it deletes no
-    # rows). The default and the ceiling are both 90 days, so an activation can only choose a
-    # SHORTER window, never a longer one. Row deletion/retention purge is owned by the central
-    # maintenance purge (a separate task) and is gated on a payload-free pre-rollout proof;
-    # this facility never deletes rows.
-    request_debug_max_window_seconds: int = Field(default=7776000, ge=300, le=7776000)
+    # Capture ACTIVATION window: how long a request_debug policy may stay enabled, capped
+    # SHORT at 7 days (604,800s) per owner decision. This is DISTINCT from record retention:
+    # the activation window only bounds/stops NEW capture (it deletes nothing); the 90-day
+    # RECORD-retention TTL (DEBUG_RETENTION_SECONDS in request_debug.py) governs how long
+    # captured rows live before the central maintenance purge deletes them (a separate task,
+    # gated on the payload-free preflight). Default and ceiling are both 7d, so an activation
+    # can only choose a SHORTER window, never a longer one.
+    request_debug_max_window_seconds: int = Field(default=604800, ge=300, le=604800)
     payload_ttl_seconds: int = Field(default=86400, ge=60, le=604800)
     scientific_artifacts_enabled: bool = False
     artifact_store_endpoint: str = Field(

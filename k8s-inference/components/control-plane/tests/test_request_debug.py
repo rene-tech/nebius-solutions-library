@@ -86,8 +86,8 @@ async def capture(
     state=None,
     model="boltz2",
     store=None,
-    resolver=None,
     tenant="tenant-a",
+    principal=None,
     telemetry_store=None,
     send_error=False,
     max_body_bytes=None,
@@ -95,36 +95,29 @@ async def capture(
 ):
     store = store or InMemoryDebugStore()
     incoming, outgoing = list(chunks), []
-    # A tenant scope is mandatory (no cross-tenant capture), so capture needs a resolvable
-    # in-scope tenant. Default to an authorized tenant-a principal (matching _TEST_POLICY),
-    # resolved from a bearer token injected below; tests that simulate a denied/out-of-scope/
-    # unauthenticated caller pass their own resolver/headers or tenant=None.
-    headers = list(headers)
-    if resolver is None and tenant is not None:
-
-        async def _default_resolver(_token: str) -> Principal:
-            return Principal(
-                token_id=uuid4(),
-                token_prefix="test-prefix",
-                principal_id="customer",
-                tenant_id=tenant,
-                models=frozenset({"boltz2"}),
-                scopes=frozenset(),
-            )
-
-        resolver = _default_resolver
-    if tenant is not None and not any(key.lower() == b"authorization" for key, _ in headers):
-        headers.append((b"authorization", b"Bearer test-token"))
-    # Attribution is server-authoritative from scope state (set by the real handler
-    # after authorization). Default to an authorized model so scoped capture matches;
-    # tests that simulate a denied/unattributed request pass their own state.
+    # Shared-principal reuse: the middleware reads the auth-resolved principal from scope
+    # state and NEVER re-verifies a bearer token. Seed the initial state with an authorized
+    # tenant-a principal by default (matching _TEST_POLICY); a test simulating a denied or
+    # unauthenticated caller passes tenant=None (no principal seeded) or its own principal=.
+    scope_state = {"model_id": model} if state is None else dict(state)
+    if principal is None and tenant is not None:
+        principal = Principal(
+            token_id=uuid4(),
+            token_prefix="test-prefix",
+            principal_id="customer",
+            tenant_id=tenant,
+            models=frozenset({"boltz2"}),
+            scopes=frozenset(),
+        )
+    if principal is not None:
+        scope_state["principal"] = principal
     scope = {
         "type": "http",
         "method": "POST",
         "path": path,
-        "headers": headers,
+        "headers": list(headers),
         "query_string": query,
-        "state": {"model_id": model} if state is None else state,
+        "state": scope_state,
     }
 
     async def receive():
@@ -140,7 +133,6 @@ async def capture(
     await DebugCaptureMiddleware(
         app,
         store=store,
-        principal_resolver=resolver,
         persist_timeout_seconds=0.05,
         max_body_bytes=max_body_bytes,
         policy=policy or _TEST_POLICY,
@@ -197,29 +189,25 @@ def test_query_headers_and_partial_known_credentials_are_redacted_without_changi
     assert body_capture(b"failure CUSTOM_SEC", "text/plain", False, known).data == "failure [REDACTED]"
 
 
-async def test_rejected_json_complete_capture_owner_fallback_and_credential_echo():
+async def test_rejected_json_complete_capture_reuses_principal_and_redacts_credential_echo():
     request = b'{"api_key":"BODY_SECRET","sequence":"ACDEFG",'
     response = b'{"detail":[{"input":"BODY_SECRET","msg":"invalid JSON"}]}'
     customer = owner()
-    resolutions = []
-
-    async def resolver(token):
-        resolutions.append(token)
-        return customer
 
     async def app(scope, receive, send):
         assert (await receive())["body"] == request  # Capture does not mutate model input.
         await send({"type": "http.response.start", "status": 422, "headers": [(b"content-type", b"application/json")]})
         await send({"type": "http.response.body", "body": response})
 
+    # The capture path reuses the auth-resolved principal from scope state (no re-verification).
     store, outgoing, _ = await capture(
         app,
         chunks=[{"type": "http.request", "body": request}],
-        resolver=resolver,
+        principal=customer,
         headers=[(b"authorization", b"Bearer ACCESS_SECRET")],
     )
     (exchange,) = store.exchanges.values()
-    assert outgoing[-1]["body"] == response and resolutions == ["ACCESS_SECRET"]
+    assert outgoing[-1]["body"] == response
     assert exchange.request_body.complete and exchange.response_body.complete and exchange.http_status == 422
     assert exchange.tenant_id == customer.tenant_id and exchange.token_id == customer.token_id
     assert exchange.operation_id is None and exchange.model_id == "boltz2"
@@ -228,18 +216,17 @@ async def test_rejected_json_complete_capture_owner_fallback_and_credential_echo
 
 
 async def test_unauthorized_request_with_no_resolvable_tenant_is_not_captured():
-    """SAI-01: a tenant scope is mandatory, so a request whose tenant cannot be resolved
-    (unauthenticated or an invalid token) is passed through untouched and NEVER captured —
-    no cross-tenant or unauthenticated capture — so a bad secret never reaches the store."""
+    """SAI-01: a tenant scope is mandatory and the capture path reuses the auth-resolved
+    principal (it never re-verifies the token). A request with NO resolved principal on scope
+    state (unauthenticated/denied) has no tenant and is NEVER captured — no cross-tenant or
+    unauthenticated capture — so a bad bearer secret never reaches the store."""
 
     async def app(scope, receive, send):
         await send({"type": "http.response.start", "status": 401})
         await send({"type": "http.response.body", "body": b"unauthorized"})
 
-    async def resolver(token):
-        raise ValueError("invalid secret must not be logged")
-
-    store, outgoing, _ = await capture(app, resolver=resolver, headers=[(b"authorization", b"Bearer BAD_SECRET")])
+    # tenant=None seeds no principal on scope state, simulating an unauthenticated/denied caller.
+    store, outgoing, _ = await capture(app, tenant=None, headers=[(b"authorization", b"Bearer BAD_SECRET")])
     # The upstream 401 is still delivered to the client, but nothing is captured and the
     # bad bearer secret never reaches the store.
     assert outgoing[0]["status"] == 401
@@ -613,26 +600,25 @@ def test_capture_policy_path_model_pre_gate():
 
 async def _authenticated_capture(policy, *, tenant):
     request = b'{"model":"boltz2","sequence":"ACDEFG"}'
-
-    async def resolver(token):
-        return Principal(
-            token_id=uuid4(),
-            token_prefix="p",
-            principal_id="researcher",
-            tenant_id=tenant,
-            models=frozenset({"boltz2"}),
-            scopes=frozenset(),
-        )
+    principal = Principal(
+        token_id=uuid4(),
+        token_prefix="p",
+        principal_id="researcher",
+        tenant_id=tenant,
+        models=frozenset({"boltz2"}),
+        scopes=frozenset(),
+    )
 
     async def app(scope, receive, send):
         await receive()
         await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
         await send({"type": "http.response.body", "body": b'{"ok":true}'})
 
+    # The capture path reuses this auth-resolved principal from scope state (no re-verification).
     store, _, _ = await capture(
         app,
         chunks=[{"type": "http.request", "body": request}],
-        resolver=resolver,
+        principal=principal,
         headers=[(b"authorization", b"Bearer T"), (b"content-type", b"application/json")],
         policy=policy,
     )
@@ -651,8 +637,9 @@ async def test_middleware_captures_only_the_allowlisted_tenant():
 async def test_middleware_records_nothing_when_policy_is_unscoped_or_disabled():
     for policy in (
         DebugCapturePolicy(enabled=True, expires_at=_FUTURE),  # enabled but unscoped
-        DebugCapturePolicy(enabled=False, models=frozenset({"boltz2"}), expires_at=_FUTURE),  # disabled
-        DebugCapturePolicy(enabled=True, models=frozenset({"boltz2"})),  # no expiry
+        DebugCapturePolicy(enabled=True, models=frozenset({"boltz2"}), expires_at=_FUTURE),  # model-only (no tenant)
+        DebugCapturePolicy(enabled=False, tenants=frozenset({"tenant-a"}), expires_at=_FUTURE),  # disabled
+        DebugCapturePolicy(enabled=True, tenants=frozenset({"tenant-a"})),  # no expiry
     ):
         store = await _authenticated_capture(policy, tenant="tenant-a")
         assert store.exchanges == {}
@@ -660,10 +647,32 @@ async def test_middleware_records_nothing_when_policy_is_unscoped_or_disabled():
 
 async def test_middleware_stops_capturing_after_expiry():
     policy = DebugCapturePolicy(
-        enabled=True, models=frozenset({"boltz2"}), expires_at=datetime.now(UTC) - timedelta(seconds=1)
+        enabled=True, tenants=frozenset({"tenant-a"}), expires_at=datetime.now(UTC) - timedelta(seconds=1)
     )
     store = await _authenticated_capture(policy, tenant="tenant-a")
     assert store.exchanges == {}
+
+
+async def test_capture_reuses_auth_resolved_principal_without_reverifying_the_token():
+    """SAI-01/SAI-17: the capture path must NOT re-verify the bearer token (which would repeat
+    the Argon2 password hash the auth stack already ran — a per-request degradation). It reuses
+    the principal the auth stack placed on scope state; the middleware exposes no token-
+    reverification path (no principal_resolver, no _resolve_principal)."""
+    import inspect
+
+    # Regression guard: no duplicate password-hash / token-reverification path exists.
+    assert "principal_resolver" not in inspect.signature(DebugCaptureMiddleware.__init__).parameters
+    assert not hasattr(DebugCaptureMiddleware, "_resolve_principal")
+
+    async def app(scope, receive, send):
+        await receive()
+        await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
+        await send({"type": "http.response.body", "body": b'{"ok":true}'})
+
+    # Capture happens purely from the state-provided principal (tenant-a); no resolver is used.
+    store, _, _ = await capture(app, chunks=[{"type": "http.request", "body": b'{"model":"boltz2"}'}])
+    (exchange,) = store.exchanges.values()
+    assert exchange.tenant_id == "tenant-a"
 
 
 async def test_middleware_bounds_memory_for_matched_large_streaming_bodies():
@@ -955,6 +964,35 @@ async def test_mcp_tool_error_signal_is_carried_without_storing_the_response_bod
     # The signal is never derived from the (withheld) response body.
     assert _stored_bytes(exchange.response_body) == b"[REDACTED]"
     assert "secret tool output" not in exchange.model_dump_json()
+
+
+async def test_mcp_failure_category_and_code_are_carried_from_dispatch_state_not_the_body():
+    """SAI-01/blocker-1: the fixed server-origin MCP failure classification (category enum +
+    bucketed code) set by the dispatch path is stored on the DETAIL exchange, so an
+    operationless HTTP-200 tool error is classifiable without the withheld response body."""
+    body = b'{"jsonrpc":"2.0","result":{"content":[{"text":"SEKRIT tool output"}],"isError":true}}'
+
+    async def app(scope, receive, send):
+        await receive()
+        await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
+        await send({"type": "http.response.body", "body": body, "more_body": False})
+
+    state: dict[str, object] = {
+        "model_id": "boltz2",
+        "mcp_is_error": True,
+        "mcp_failure_category": "tool_execution_failure",
+        "mcp_error_code": "tool",  # coarse bucket, never a raw/verbatim code
+    }
+    store, _, _ = await capture(
+        app, path="/mcp", chunks=[{"type": "http.request", "body": b'{"method":"tools/call"}'}], state=state
+    )
+    (exchange,) = store.exchanges.values()
+    assert exchange.mcp_is_error is True
+    assert exchange.mcp_failure_category == "tool_execution_failure"
+    assert exchange.mcp_error_code == "tool"
+    # Still classified without any response-content channel.
+    assert _stored_bytes(exchange.response_body) == b"[REDACTED]"
+    assert "SEKRIT tool output" not in exchange.model_dump_json()
 
 
 async def test_response_content_type_parameters_do_not_reach_the_stored_exchange():
@@ -1306,25 +1344,29 @@ def test_settings_build_scoped_bounded_capture_policy():
     assert policy.should_capture(tenant_id="other", model_id="qwen3-8b", now=now) is False
 
 
-def test_settings_capture_window_defaults_to_and_caps_at_ninety_days():
-    """SAI-01/owner TTL: the capture-expiry window defaults to and is capped at exactly 90
-    days (7,776,000s), so capture can only be enabled for <=90 days going forward."""
+def test_settings_activation_window_is_seven_days_distinct_from_ninety_day_retention():
+    """SAI-01/owner policy: the capture ACTIVATION window defaults to and is capped at 7 days
+    (604,800s) — how long a policy may be enabled — which is DISTINCT from the 90-day RECORD
+    retention TTL (DEBUG_RETENTION_SECONDS) used by the preflight/purge. Enabling for longer
+    than 7 days is rejected; the two constants are not conflated."""
     from pydantic import ValidationError
 
     from fs2_serve.request_debug import DEBUG_RETENTION_SECONDS
 
-    assert Settings().request_debug_max_window_seconds == DEBUG_RETENTION_SECONDS == 7_776_000
-    # An expiry beyond 90 days is rejected; one inside the window is accepted.
+    assert Settings().request_debug_max_window_seconds == 604_800  # 7-day activation window
+    assert DEBUG_RETENTION_SECONDS == 7_776_000  # 90-day record retention, tracked separately
+    assert Settings().request_debug_max_window_seconds != DEBUG_RETENTION_SECONDS
+    # An activation expiry beyond 7 days is rejected; one inside the window is accepted.
     with pytest.raises(ValidationError, match="max_window"):
         Settings(
             request_debug_enabled=True,
             request_debug_tenants="tenant-a",
-            request_debug_expires_at=_future_iso(24 * 91),
+            request_debug_expires_at=_future_iso(24 * 8),
         )
     ok = Settings(
         request_debug_enabled=True,
         request_debug_tenants="tenant-a",
-        request_debug_expires_at=_future_iso(24 * 89),
+        request_debug_expires_at=_future_iso(24 * 6),
     )
     assert ok.debug_capture_policy().enabled is True
 

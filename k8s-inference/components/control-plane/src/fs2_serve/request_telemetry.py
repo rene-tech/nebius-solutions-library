@@ -146,8 +146,15 @@ def observe_request_metadata(
     operation_id: UUID | None = None,
     mcp_tool: str | None = None,
     mcp_is_error: bool | None = None,
+    mcp_failure_category: str | None = None,
+    mcp_error_code: str | None = None,
 ) -> None:
-    """Called only at existing authentication/admission/result boundaries."""
+    """Called only at existing authentication/admission/result boundaries.
+
+    ``mcp_failure_category``/``mcp_error_code`` are fixed, server-origin classification
+    labels (never a raw exception, message, tool argument or body); they let a debug
+    capture distinguish MCP failure kinds without storing the response body.
+    """
 
     state = _STATE.get()
     if state is None:
@@ -161,6 +168,10 @@ def observe_request_metadata(
         state["operation_id"] = operation_id
     if mcp_is_error is not None:
         state["mcp_is_error"] = mcp_is_error
+    if mcp_failure_category is not None:
+        state["mcp_failure_category"] = mcp_failure_category
+    if mcp_error_code is not None:
+        state["mcp_error_code"] = mcp_error_code
 
 
 def observe_mcp_result(result: Any) -> None:

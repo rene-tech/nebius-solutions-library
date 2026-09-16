@@ -421,3 +421,51 @@ async def test_http_scientific_flat_manifest_and_legacy_wrapper_share_one_run(re
         assert len(repository.records) == 1
         status = _data(await client.call_tool("get_scientific_status", {"operation_id": submitted["operation"]["id"]}))
         assert status["batch"]["status"] == "queued"
+
+
+def test_mcp_failure_classifiers_are_fixed_categories_and_coarse_code_buckets():
+    """SAI-01/blocker-1: the MCP failure classifiers produce ONLY fixed, server-origin labels.
+    The six categories are the fixed enum; the code is a COARSE bucket (jsonrpc_client/
+    jsonrpc_server/tool/unknown) — even reserved JSON-RPC codes are bucketed, never verbatim,
+    and an unmapped protocol code falls to 'unknown'."""
+    from fs2_serve.mcp_server import (
+        _CAT_INTERNAL,
+        _CAT_INVALID,
+        _CAT_OUTPUT,
+        _CAT_ROUTE,
+        _CAT_TOOL,
+        _CAT_UNKNOWN,
+        _CODE_JSONRPC_CLIENT,
+        _CODE_JSONRPC_SERVER,
+        _CODE_TOOL,
+        _TOOL_CODE_CATEGORY,
+        _numeric_mcp_signal,
+    )
+
+    # The category enum is exactly the fixed six; the code buckets are exactly the fixed four.
+    assert {_CAT_INVALID, _CAT_ROUTE, _CAT_TOOL, _CAT_OUTPUT, _CAT_INTERNAL, _CAT_UNKNOWN} == {
+        "invalid_request",
+        "route_unavailable",
+        "tool_execution_failure",
+        "output_contract_failure",
+        "internal_failure",
+        "unknown",
+    }
+    assert {_CODE_JSONRPC_CLIENT, _CODE_JSONRPC_SERVER, _CODE_TOOL, _CAT_UNKNOWN} == {
+        "jsonrpc_client",
+        "jsonrpc_server",
+        "tool",
+        "unknown",
+    }
+    # The fixed string-code -> category map covers the four required tool categories.
+    assert _TOOL_CODE_CATEGORY["invalid_tool_arguments"] == _CAT_INVALID
+    assert _TOOL_CODE_CATEGORY["not_found"] == _CAT_ROUTE
+    assert _TOOL_CODE_CATEGORY["rate_limit_reached"] == _CAT_TOOL
+    assert _TOOL_CODE_CATEGORY["internal_tool_error"] == _CAT_INTERNAL
+    # Reserved JSON-RPC codes are BUCKETED (never verbatim): client vs server; else unknown.
+    assert _numeric_mcp_signal(-32602) == (_CAT_INVALID, _CODE_JSONRPC_CLIENT)  # invalid params
+    assert _numeric_mcp_signal(-32601) == (_CAT_ROUTE, _CODE_JSONRPC_CLIENT)  # method not found
+    assert _numeric_mcp_signal(-32603) == (_CAT_INTERNAL, _CODE_JSONRPC_SERVER)  # internal error
+    assert _numeric_mcp_signal(-32050) == (_CAT_INTERNAL, _CODE_JSONRPC_SERVER)  # server range
+    assert _numeric_mcp_signal(12345) == (_CAT_UNKNOWN, _CAT_UNKNOWN)
+    assert _numeric_mcp_signal(None) == (_CAT_UNKNOWN, _CAT_UNKNOWN)

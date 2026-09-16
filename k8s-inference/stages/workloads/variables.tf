@@ -1370,13 +1370,13 @@ variable "request_debug_enabled" {
 }
 
 variable "request_debug_tenants" {
-  description = "Comma-separated tenant IDs to scope request-debug capture to. Required (with or instead of models) when request_debug_enabled is true."
+  description = "Comma-separated tenant IDs to scope request-debug capture to. MANDATORY (non-empty) when request_debug_enabled is true; capture is always tenant-scoped and never spans tenants."
   type        = string
   default     = ""
 }
 
 variable "request_debug_models" {
-  description = "Comma-separated model (App) IDs to scope request-debug capture to. Required (with or instead of tenants) when request_debug_enabled is true."
+  description = "Comma-separated model (App) IDs that OPTIONALLY narrow request-debug capture WITHIN the mandatory tenant scope. Cannot be used alone; a tenant scope is always required."
   type        = string
   default     = ""
 }

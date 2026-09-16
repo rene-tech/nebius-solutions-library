@@ -49,9 +49,11 @@ when it stops:
   named tenant AND a named model (including pre-admission rejections for that App under a
   named tenant). It cannot be used alone.
 - `request_debug_expires_at` — a required RFC3339 instant after which capture stops
-  even while enabled. To actually capture, set it in the future and within
-  `request_debug_max_window_seconds` (default and ceiling 90 days = 7,776,000s). There is
-  no unbounded or "capture everything" mode.
+  even while enabled. To actually capture, set it in the future and within the capture
+  ACTIVATION window `request_debug_max_window_seconds` (default and ceiling **7 days** =
+  604,800s — how long capture may stay enabled). There is no unbounded or "capture
+  everything" mode. This activation window is DISTINCT from the 90-day record-retention TTL
+  (how long captured rows live before deletion — see "Completeness, storage and limits").
 
 The control plane validates this at startup: an enabled policy without a tenant scope, with
 no expiry at all, or with an expiry beyond the maximum window fails fast rather than
@@ -117,11 +119,19 @@ capture flags, not an executable HTML document. Handle these exports as customer
 data: keep them in approved private storage and never paste them into stdout,
 Loki, Git, tickets, chat or other unapproved destinations.
 
-An HTTP 200 on MCP does not establish tool success: the response body is not stored,
-so read the retained **`mcp_is_error`** signal (a server-authoritative boolean set from
-the dispatch result, not from the withheld body) to distinguish a tool error from
-success. Likewise, a public accepted response, an upstream 422, and a logical run's
-eventual failure are different observations, not conflicting rows.
+An HTTP 200 on MCP does not establish tool success: the response body is not stored, so
+read the retained **`mcp_is_error`** boolean and the fixed **`mcp_failure_category`** enum
+(with a bucketed **`mcp_error_code`**) — all set server-authoritatively from the dispatch
+result, never from the withheld body — to distinguish the failure kind. The category is one
+of a fixed set: `invalid_request` (invalid request/arguments), `route_unavailable` (route or
+method unavailable), `tool_execution_failure` (semantic/tool execution failure),
+`output_contract_failure` (output-contract/wrong-output failure), `internal_failure`
+(internal/server failure), or `unknown` (fixed catch-all). `mcp_error_code` is a fixed COARSE
+bucket — `jsonrpc_client`, `jsonrpc_server`, `tool`, or `unknown` — never a raw or verbatim
+code (even reserved JSON-RPC codes are bucketed, not stored numerically), so no raw exception,
+message, tool argument or body is ever stored. Likewise, a public accepted response, an
+upstream 422, and a logical run's eventual failure are different observations, not
+conflicting rows.
 
 ## Read-only admin API
 
@@ -147,11 +157,13 @@ resets cursor paging when its selected request window changes.
 List `data` is `{items: DebugExchangeSummary[], next_cursor: string | null}`.
 Summaries include identities, endpoint/method/status/error type, source, attempt
 numbers, observed byte counts and completeness/redaction flags. They intentionally
-omit bodies, headers, query strings, error-detail text and `mcp_is_error` (a
-detail-only field — open the exchange to see the MCP tool-error signal).
+omit bodies, headers, query strings, error-detail text and the MCP failure signal
+(`mcp_is_error` / `mcp_failure_category` / `mcp_error_code` are detail-only fields — open
+the exchange to see them).
 
 Detail `data` is one `DebugExchange`, adding `query_string`, header-pair lists,
-`error_detail`, `mcp_is_error` (the MCP tool-error-vs-success signal), `request_body`
+`error_detail`, `mcp_is_error` / `mcp_failure_category` / `mcp_error_code` (the fixed MCP
+failure signal), `request_body`
 and `response_body`. Each body contains:
 
 ```text

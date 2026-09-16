@@ -84,9 +84,11 @@ def request_debug_router(
         # cutoff). It exposes no payload and deletes nothing; it is the pre-rollout gate
         # that proves how many rows exceed the TTL before any (separately owned) purge.
         # ADMIN-gated and audited like a payload read even though it reveals no payload.
-        # Registered before /requests/{exchange_id} so the literal path wins.
-        identity, _ = await authorized_identity(request)
-        result = await store.retention_preflight(now=datetime.now(UTC))
+        # Registered before /requests/{exchange_id} so the literal path wins. The aggregate
+        # is scoped to the caller's authorized tenant (None for a global admin), so a
+        # tenant-scoped admin never sees cross-tenant counts/oldest metadata.
+        identity, tenant = await authorized_identity(request)
+        result = await store.retention_preflight(now=datetime.now(UTC), tenant_id=tenant)
         await access.record_read(
             identity,
             action="request.debug.read",

@@ -59,6 +59,15 @@ export interface DebugExchange extends Omit<
    * summary). Optional so exchanges captured before it existed still parse.
    */
   mcp_is_error?: boolean | null;
+  /**
+   * Fixed, server-origin MCP failure classification (never a raw exception/message/argument/
+   * body). Category is one of invalid_request / route_unavailable / tool_execution_failure /
+   * output_contract_failure / internal_failure / unknown; code is a coarse bucket
+   * (jsonrpc_client / jsonrpc_server / tool / unknown), never a raw or verbatim code.
+   * Detail-only, optional so older exchanges parse.
+   */
+  mcp_failure_category?: string | null;
+  mcp_error_code?: string | null;
   query_string: string;
   request_headers: [string, string][];
   response_headers: [string, string][];

@@ -8,8 +8,10 @@ carry an opaque secret — a string, a numeric value, an object key, or a
 binary/streaming payload — so no content allowlist can be trusted. The response body
 is withheld (a redaction marker); the debugging workflow is served by the captured
 request plus non-sensitive typed metadata set from server dispatch state — http_status,
-error_type, model/tool, ``mcp_is_error`` (MCP tool-error inside an HTTP 200) and timing —
-never by parsing the response bytes. Response headers keep only two structural NAMES
+error_type, model/tool, timing, and a fixed MCP failure signal (``mcp_is_error`` plus a
+server-origin ``mcp_failure_category`` enum and bucketed ``mcp_error_code``, so an MCP
+failure inside an HTTP 200 is classifiable without the body) — never by parsing the
+response bytes. Response headers keep only two structural NAMES
 (``content-type`` reduced to a bare, server-known MIME type; ``content-length`` value
 redacted); every other response header has BOTH its name and value redacted, so no
 arbitrary header name or value is stored. A request body over the store cap, or whose
@@ -37,7 +39,7 @@ import base64
 import json
 import logging
 import re
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, Protocol, TypeVar
@@ -178,12 +180,19 @@ class DebugExchange(DebugMetadata):
     request_body: DebugBody
     response_body: DebugBody
     error_detail: str | None = None
-    # Server-authoritative, non-sensitive structured signal: whether an MCP call returned a
-    # tool error (isError) inside an HTTP 200. Set from dispatch state (the same source
-    # request telemetry uses), never by parsing the response body, so a success vs. tool-error
-    # stays distinguishable while the body is withheld. Kept on the DETAIL exchange only (it
-    # rides in the encrypted payload) so it needs no new clear/summary column or DB migration.
+    # Server-authoritative, non-sensitive structured signals set from dispatch state (the same
+    # source request telemetry uses), never by parsing the response body, so an MCP failure
+    # stays distinguishable while the body is withheld. mcp_is_error is the success-vs-tool-error
+    # bool; mcp_failure_category is a FIXED server-origin enum (invalid_request / route_unavailable
+    # / tool_execution_failure / output_contract_failure / internal_failure / unknown); and
+    # mcp_error_code is a fixed COARSE bucket (jsonrpc_client / jsonrpc_server / tool / unknown)
+    # — never a raw or verbatim code (even reserved JSON-RPC codes are bucketed), and never a raw
+    # exception/message/argument/body. All three are kept on the
+    # DETAIL exchange only (they ride in the encrypted payload) so they need no new clear/summary
+    # column or DB migration.
     mcp_is_error: bool | None = None
+    mcp_failure_category: str | None = None
+    mcp_error_code: str | None = None
 
 
 class DebugExchangeSummary(DebugMetadata):
@@ -230,9 +239,12 @@ class RetentionPreflight(StrictModel):
 class DebugStore(Protocol):
     async def record(self, exchange: DebugExchange) -> None: ...
 
-    async def retention_preflight(self, *, now: datetime) -> RetentionPreflight:
+    async def retention_preflight(self, *, now: datetime, tenant_id: str | None = None) -> RetentionPreflight:
         """Payload-free aggregate proof of retention state at the FIXED 90-day cutoff;
-        deletes nothing. The cutoff is not caller-settable."""
+        deletes nothing. The cutoff is not caller-settable. ``tenant_id`` scopes the
+        aggregate to one tenant (a tenant-scoped admin's own rows); None aggregates across
+        all tenants (a global admin) — the caller passes its own authorized tenant so a
+        tenant-scoped admin never sees cross-tenant counts."""
         ...
 
     async def list(
@@ -757,10 +769,11 @@ class InMemoryDebugStore:
         row = self.exchanges.get(exchange_id)
         return row.model_copy(deep=True) if row and (tenant_id is None or row.tenant_id == tenant_id) else None
 
-    async def retention_preflight(self, *, now: datetime) -> RetentionPreflight:
-        # Cutoff is fixed at the 90-day TTL, never caller-supplied.
+    async def retention_preflight(self, *, now: datetime, tenant_id: str | None = None) -> RetentionPreflight:
+        # Cutoff is fixed at the 90-day TTL, never caller-supplied. tenant_id (when set)
+        # scopes the aggregate to that tenant so a tenant-scoped admin sees only its own rows.
         cutoff = now - timedelta(seconds=DEBUG_RETENTION_SECONDS)
-        started = [row.started_at for row in self.exchanges.values()]
+        started = [row.started_at for row in self.exchanges.values() if tenant_id is None or row.tenant_id == tenant_id]
         expired = sum(1 for timestamp in started if timestamp < cutoff)
         return RetentionPreflight(
             now=now,
@@ -853,17 +866,20 @@ class PostgresDebugStore:
         )
         return DebugExchange.model_validate_json(raw)
 
-    async def retention_preflight(self, *, now: datetime) -> RetentionPreflight:
+    async def retention_preflight(self, *, now: datetime, tenant_id: str | None = None) -> RetentionPreflight:
         # Payload-free: aggregates over the clear started_at column only. No ciphertext is
         # read or decrypted, and this SELECT deletes nothing — it is the proof produced before
         # any (separately owned, separately authorized) retention purge is allowed to run. The
-        # cutoff is fixed at the 90-day TTL, never caller-supplied.
+        # cutoff is fixed at the 90-day TTL, never caller-supplied. tenant_id (when set) scopes
+        # the aggregate to that tenant so a tenant-scoped admin never sees cross-tenant counts.
         cutoff = now - timedelta(seconds=DEBUG_RETENTION_SECONDS)
         async with self.pool.acquire() as connection:
             row = await connection.fetchrow(
                 "SELECT MIN(started_at) AS oldest, COUNT(*) AS total, "
-                "COUNT(*) FILTER (WHERE started_at < $1) AS expired FROM fs2_request_debug",
+                "COUNT(*) FILTER (WHERE started_at < $1) AS expired FROM fs2_request_debug "
+                "WHERE ($2::text IS NULL OR tenant_id=$2)",
                 cutoff,
+                tenant_id,
             )
         total = int(row["total"]) if row is not None else 0
         expired = int(row["expired"]) if row is not None else 0
@@ -983,8 +999,9 @@ class DebugCapturePolicy:
         Returns False when we can already prove nothing will be captured (policy
         disabled/expired/unscoped, or a model-narrowed policy whose path names a model out
         of scope) so the caller avoids buffering any bytes. The authenticated tenant is not
-        known here, so the mandatory tenant scope is enforced separately in
-        ``tenant_admissible``. A path with no named model (e.g. ``/mcp``) leaves the model
+        known here (the capture path never re-verifies the bearer token); the mandatory tenant
+        scope is enforced after the app runs, in ``should_capture``, from the auth-resolved
+        principal on scope state. A path with no named model (e.g. ``/mcp``) leaves the model
         unknown until the body is read, so it stays admissible here and is matched after the
         bounded body is available.
         """
@@ -993,21 +1010,6 @@ class DebugCapturePolicy:
         if not self.tenants:
             return False
         if self.models and path_model is not None and path_model not in self.models:
-            return False
-        return True
-
-    def tenant_admissible(self, tenant_id: str | None, now: datetime) -> bool:
-        """Pre-buffer gate on the authenticated tenant.
-
-        Returns False when the policy is disabled/expired/tenant-unscoped or the resolved
-        tenant is not in the mandatory tenant scope, so the public middleware can reject an
-        out-of-scope tenant from resolved identity BEFORE buffering any bytes.
-        """
-        if not self.enabled or self.expires_at is None or now >= self.expires_at:
-            return False
-        if not self.tenants:
-            return False
-        if tenant_id is None or tenant_id not in self.tenants:
             return False
         return True
 
@@ -1024,12 +1026,11 @@ class DebugCaptureMiddleware:
         *,
         store: DebugStore,
         persist_timeout_seconds: float = 2.0,
-        principal_resolver: Callable[[str], Awaitable[Principal]] | None = None,
         max_body_bytes: int | None = None,
         policy: DebugCapturePolicy | None = None,
     ) -> None:
         self.app, self.store = app, store
-        self.persist_timeout_seconds, self.principal_resolver = persist_timeout_seconds, principal_resolver
+        self.persist_timeout_seconds = persist_timeout_seconds
         self.max_body_bytes = max_body_bytes
         self.policy = policy or _DISABLED_POLICY
 
@@ -1037,21 +1038,6 @@ class DebugCaptureMiddleware:
         # Buffer the store cap plus a fixed overlap: enough to redact a credential
         # straddling the cap before truncation, but never the whole payload.
         return capture_store_limit(self.max_body_bytes)
-
-    async def _resolve_principal(self, request_headers: list[tuple[bytes, bytes]]) -> Principal | None:
-        """Best-effort read-only verify of the caller's bearer token. Never changes
-        the response or assigns an unverified owner; a failure yields no principal."""
-        if self.principal_resolver is None:
-            return None
-        authorization = next((value for key, value in request_headers if key.lower() == b"authorization"), b"")
-        if not authorization.lower().startswith(b"bearer "):
-            return None
-        try:
-            return await asyncio.wait_for(
-                self.principal_resolver(authorization[7:].decode("ascii")), timeout=self.persist_timeout_seconds
-            )
-        except Exception:
-            return None
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         path = scope.get("path", "")
@@ -1073,16 +1059,12 @@ class DebugCaptureMiddleware:
             await self.app(scope, receive, send)
             return
         request_headers = list(scope.get("headers", []))
-        # For a tenant-scoped policy, resolve the caller's tenant from its bearer
-        # token BEFORE buffering, so an out-of-scope tenant is never observed. An
-        # absent/unverifiable token has no tenant and is not admissible.
-        pre_resolved: Principal | None = None
-        if self.policy.tenants:
-            pre_resolved = await self._resolve_principal(request_headers)
-            tenant = pre_resolved.tenant_id if pre_resolved else None
-            if not self.policy.tenant_admissible(tenant, started_at):
-                await self.app(scope, receive, send)
-                return
+        # Tenant scope is enforced AFTER the app runs, from the auth-resolved principal on
+        # scope state — not by re-verifying the bearer token here. Re-verifying would repeat
+        # the Argon2 password hash the auth stack already performs (a per-request CPU
+        # degradation), so instead a path-admissible request buffers a bounded head and, in
+        # the finally below, is stored only when its resolved tenant is in scope; an
+        # out-of-scope or unauthenticated request buffers the bounded head and discards it.
         state = scope.setdefault("state", {})
         request_id = ensure_request_id(scope)
         store_limit = self._store_limit()
@@ -1148,11 +1130,14 @@ class DebugCaptureMiddleware:
             # client upload. The actual observed bytes and incomplete flag are
             # more truthful than fabricating an empty/complete request.
             try:
-                principal = state.get("principal")
-                if not isinstance(principal, Principal):
-                    principal = pre_resolved  # reuse any pre-buffer resolution
-                if principal is None:
-                    principal = await self._resolve_principal(request_headers)
+                # Shared-principal reuse: the capture path NEVER re-verifies the bearer
+                # token. It reuses the principal the normal auth stack already resolved onto
+                # scope state (api.py sets request.state.principal after tokens.verify), so a
+                # captured request pays the Argon2 password hash exactly once (the auth path),
+                # not twice. A request with no resolved principal (unauthenticated/denied) has
+                # no tenant and is not captured (fail closed) — no cross-tenant capture.
+                candidate = state.get("principal")
+                principal = candidate if isinstance(candidate, Principal) else None
                 # Model/tool attribution is server-authoritative ONLY: the trusted
                 # dispatch path sets state["model_id"]/["mcp_tool"] after authorization
                 # (api.py after admission; the MCP middleware after the token-policy/scope
@@ -1167,6 +1152,11 @@ class DebugCaptureMiddleware:
                 # inside an HTTP 200 stays distinguishable from success while the response
                 # body is withheld. Never derived from the response bytes.
                 mcp_is_error = state.get("mcp_is_error") if isinstance(state.get("mcp_is_error"), bool) else None
+                # Fixed server-origin failure classification (enum + bucketed code), set by the
+                # MCP dispatch path; never derived from the response bytes. _label rejects any
+                # non-string so only the fixed labels reach storage.
+                mcp_failure_category = _label(state.get("mcp_failure_category"))
+                mcp_error_code = _label(state.get("mcp_error_code"))
                 capture_tenant = principal.tenant_id if principal else None
                 # Scoped, time-bounded gate: only record exchanges the policy
                 # admits. An unscoped/expired/disabled policy records nothing.
@@ -1227,6 +1217,8 @@ class DebugCaptureMiddleware:
                             http_status=status,
                             error_type=error_type,
                             mcp_is_error=mcp_is_error,
+                            mcp_failure_category=mcp_failure_category,
+                            mcp_error_code=mcp_error_code,
                             disconnected=disconnected,
                             query_string=redact_query(query, known),
                             request_headers=redact_headers(request_headers, known),

@@ -101,9 +101,9 @@ export function DebugBodyView({
       </dl>
       {body.truncated ? (
         <p className="inline-notice">
-          The body was withheld and not stored — it exceeded the stored-size cap,
-          was an arbitrary/unstructured response, or its request exceeded the cap —
-          even though {body.observed_bytes.toLocaleString()} bytes were observed.
+          The body was withheld and not stored — a response body is never stored, and a
+          request body is withheld when it exceeds the stored-size cap — even though{" "}
+          {body.observed_bytes.toLocaleString()} bytes were observed.
         </p>
       ) : null}
       {!body.complete ? (
@@ -284,6 +284,15 @@ export function RequestDebugExchange({
                   : data.mcp_is_error
                     ? "Tool error (isError)"
                     : "Success"}
+              </dd>
+            </div>
+            <div>
+              <dt>MCP failure category</dt>
+              <dd>
+                {data.mcp_failure_category ?? "Not applicable"}
+                {data.mcp_error_code ? (
+                  <span className="secondary-line">code: {data.mcp_error_code}</span>
+                ) : null}
               </dd>
             </div>
             <div>

@@ -336,16 +336,20 @@ config:
   requestDebugMaxBodyBytes: "65536"
   # Retention/purge of captured exchanges is owned by the central platform
   # maintenance purge, not by this facility, so no retention value is set here.
-  # Scope + hard time-bound. Enabling requestDebug records nothing unless a tenant
-  # and/or model (App) scope is named AND requestDebugExpiresAt is a future instant
-  # within requestDebugMaxWindowSeconds. Settings validation rejects any other
-  # enabled configuration, so there is no global capture switch.
+  # Scope + hard time-bound. Enabling requestDebug records nothing unless a non-empty
+  # TENANT scope (requestDebugTenants) is named AND requestDebugExpiresAt is a future
+  # instant within requestDebugMaxWindowSeconds. A tenant scope is MANDATORY (capture never
+  # spans tenants); requestDebugModels only OPTIONALLY narrows within that tenant scope and
+  # cannot be used alone. Settings validation rejects any other enabled configuration, so
+  # there is no global capture switch.
   requestDebugTenants: ""
   requestDebugModels: ""
   # RFC3339 instant after which capture stops (e.g. "2026-09-20T00:00:00Z"); empty
   # means no expiry env is set (and an enabled policy would fail validation).
   requestDebugExpiresAt: ""
-  # Strict maximum capture window (seconds) the expiry may not exceed.
+  # Strict maximum capture ACTIVATION window (seconds) the expiry may not exceed: 7 days.
+  # This bounds how long capture may be enabled; it is DISTINCT from the 90-day record
+  # retention TTL (how long captured rows live before the central purge deletes them).
   requestDebugMaxWindowSeconds: "604800"
   payloadTtlSeconds: "86400"
   operationRetentionSeconds: "604800"
