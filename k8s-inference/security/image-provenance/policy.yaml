@@ -284,6 +284,16 @@ spec:
         operations: ["UPDATE", "DELETE"]
         resources: ["validatingadmissionpolicies", "validatingadmissionpolicybindings"]
         scope: Cluster
+      # Webhook-interference guard: mutating admission runs BEFORE validating
+      # admission, so an attacker-created MutatingWebhookConfiguration whose
+      # rules reach the protected surfaces (ConfigMaps, admissionregistration
+      # objects) could tamper legitimate security-principal writes mid-flight.
+      # Creating or changing such a webhook is itself a protected operation.
+      - apiGroups: ["admissionregistration.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
+        scope: Cluster
       - apiGroups: [""]
         apiVersions: ["v1"]
         operations: ["CREATE", "UPDATE", "DELETE"]
@@ -298,14 +308,29 @@ spec:
     - name: subject
       expression: >-
         object != null ? object : oldObject
+    - name: interferingWebhook
+      expression: >-
+        has(variables.subject.webhooks) &&
+        variables.subject.webhooks.exists(w,
+          has(w.rules) && w.rules.exists(rule,
+            (has(rule.apiGroups) && has(rule.resources) &&
+             rule.apiGroups.exists(g, g == '' || g == '*') &&
+             rule.resources.exists(res, res == 'configmaps' || res == '*'))
+            || (has(rule.apiGroups) &&
+                rule.apiGroups.exists(g,
+                  g == 'admissionregistration.k8s.io' || g == '*'))))
     - name: isProtected
       expression: >-
-        request.resource.group == 'admissionregistration.k8s.io'
+        ['validatingadmissionpolicies', 'validatingadmissionpolicybindings']
+        .exists(r, r == request.resource.resource)
         ? ['fs2-image-provenance', 'fs2-helm-release-governance',
            'fs2-provenance-guard'].exists(n, n == variables.subject.metadata.name)
-        : (variables.subject.metadata.namespace == 'fs2-system' &&
-           ['fs2-image-provenance-allowlist', 'fs2-security-guard-params']
-           .exists(n, n == variables.subject.metadata.name))
+        : (['mutatingwebhookconfigurations', 'validatingwebhookconfigurations']
+           .exists(r, r == request.resource.resource)
+           ? variables.interferingWebhook
+           : (variables.subject.metadata.namespace == 'fs2-system' &&
+              ['fs2-image-provenance-allowlist', 'fs2-security-guard-params']
+              .exists(n, n == variables.subject.metadata.name)))
   validations:
     - expression: >-
         !variables.isProtected ||

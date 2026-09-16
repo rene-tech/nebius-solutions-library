@@ -347,6 +347,32 @@ Existing Pods are never affected by the policies; only new admissions are.
   digest-pinned images from allow-listed registries (real isolated-kind
   admission tests prove the pinned injection is admitted and
   `evil.invalid/debug:latest` is denied; see tests/test_admission_kind.py).
+- Why a VAP can guard VAP deletion — and what it still cannot do. Admission
+  is orthogonal to authorization: the API server evaluates admission
+  policies on every matched request REGARDLESS of the caller's RBAC, so
+  cluster-admin is NOT exempt from the guard, and DELETE of
+  admissionregistration objects is an admission-evaluated request like any
+  other. The earlier kind evidence that "VAP deletion succeeds as
+  cluster-admin" was collected when NO policy matched VAP deletions — it
+  proved an unprotected surface, not an architectural exemption. An
+  in-cluster admission WEBHOOK would not be stronger: its
+  WebhookConfiguration is itself a deletable API object with the identical
+  self-protection recursion, plus availability failure modes. What a VAP
+  guard genuinely cannot stop, and what therefore remains of decision #4's
+  EXTERNAL boundary as named owner gates: (1) impersonation — admission
+  sees the effective user, so `impersonate` RBAC grants must not exist
+  (owner IAM); (2) API-server/infrastructure-level control — on managed
+  mk8s the apiserver flags are held by the PROVIDER, not cluster-admin,
+  which strengthens the boundary, and any provider-level attestation is an
+  owner item; (3) etcd-level access (provider-held); (4) out-of-band
+  WORM/detection anchoring of the acceptance-chain head and gate history.
+  Webhook interference (mutating admission runs BEFORE validating, so an
+  attacker-created MutatingWebhookConfiguration reaching the protected
+  surfaces could tamper legitimate security-principal writes mid-flight) is
+  closed in-cluster: creating or changing such a webhook is itself a
+  guard-protected operation. The guard's live behavior — including denial
+  of protected-object deletion by cluster-admin — is UNVERIFIED until the
+  kind ruling or the owner apply window; treat it as designed-not-proven.
 - Kind boundary evidence (2026-09-16): as the configured cluster-admin
   principal, a direct config-only Pod patch, mutation of the allow-list
   ConfigMap, deletion of the VAP objects, and a Helm release-Secret write

@@ -196,6 +196,14 @@ class PolicyManifestTest(unittest.TestCase):
                 )
         for operation in ("CREATE", "UPDATE", "DELETE"):
             self.assertIn(("", "configmaps", operation), matched)
+            for resource in (
+                "mutatingwebhookconfigurations",
+                "validatingwebhookconfigurations",
+            ):
+                self.assertIn(
+                    ("admissionregistration.k8s.io", resource, operation),
+                    matched,
+                )
         variables = {
             variable["name"]: variable["expression"]
             for variable in spec["variables"]
@@ -208,6 +216,12 @@ class PolicyManifestTest(unittest.TestCase):
             "fs2-security-guard-params",
         ):
             self.assertIn(name, variables["isProtected"])
+        # Mutating admission runs before validating admission: creating a
+        # webhook whose rules reach the protected surfaces is itself gated.
+        self.assertIn("mutatingwebhookconfigurations", variables["isProtected"])
+        self.assertIn("interferingWebhook", variables["isProtected"])
+        self.assertIn("admissionregistration.k8s.io", variables["interferingWebhook"])
+        self.assertIn("configmaps", variables["interferingWebhook"])
         expressions = [v["expression"] for v in spec["validations"]]
         self.assertIn("securityPrincipals.exists", expressions[0])
         self.assertIn("recovery-authorization", expressions[1])
