@@ -188,6 +188,39 @@ def test_viewer_and_operator_are_denied_request_debug_reads(registry, cipher, ha
             assert client.get(f"/admin/api/v1/requests/{row.id}").status_code == 403
 
 
+def test_retention_preflight_endpoint_is_admin_only_payload_free_and_audited(registry, cipher, hasher):
+    """SAI-01/owner TTL: the wired retention-preflight endpoint is ADMIN-gated, returns only
+    payload-free aggregates at the fixed 90-day cutoff (no body/header/payload), audits the
+    read, and deletes nothing. This is the pre-rollout proof gate, now live-callable."""
+    runtime = _runtime(registry, cipher, hasher)
+    store = InMemoryDebugStore()
+    runtime.request_debug_store = store
+    asyncio.run(store.record(_exchange(tenant="tenant-a")))  # one row well within 90 days
+    # VIEWER and OPERATOR are denied (same governance as payload reads).
+    for role in (OperatorRole.VIEWER, OperatorRole.OPERATOR):
+        identity = _create_principal(runtime, role=role, tenant_id="tenant-a", subject=f"{role.value}-ret")
+        with _client(runtime) as client:
+            client.cookies.set(ADMIN_SESSION_COOKIE, _principal_cookie(runtime, identity))
+            assert client.get("/admin/api/v1/requests/retention").status_code == 403
+    # ADMIN gets the payload-free preflight; the fixed 90-day cutoff is reported.
+    with _client(runtime) as client:
+        assert client.post("/admin/api/v1/session", headers=BOOTSTRAP_AUTH).status_code == 200
+        resp = client.get("/admin/api/v1/requests/retention")
+        assert resp.status_code == 200, resp.text
+        data = resp.json()["data"]
+        assert data["total"] == 1 and data["expired"] == 0 and data["within"] == 1
+        assert data["max_age_seconds"] == 7776000  # fixed 90-day cutoff, not caller-settable
+        assert "synthetic" not in resp.text  # no captured payload content in the aggregate
+    assert len(asyncio.run(store.list()).items) == 1  # producing the proof deletes nothing
+    events = asyncio.run(runtime.store.list_audit(limit=50))
+    reads = [
+        event
+        for event in events
+        if event.action == "request.debug.read" and event.outcome == "succeeded" and event.target_id == "preflight"
+    ]
+    assert len(reads) == 1, [(e.action, e.outcome, e.target_id) for e in events]
+
+
 def test_detail_read_emits_an_audit_event(registry, cipher, hasher):
     """SAI-01: every disclosure of a captured payload leaves an audit trail."""
     runtime = _runtime(registry, cipher, hasher)

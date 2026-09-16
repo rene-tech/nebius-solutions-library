@@ -896,6 +896,28 @@ def test_response_headers_redact_names_and_values_except_two_structural_headers(
         assert secret not in rendered
 
 
+def test_response_header_allowed_names_are_stored_canonically_not_as_caller_spelling():
+    """SAI-01: the header-name gate (`_name`) is lossy — it drops separators and case — so the
+    RAW name is itself an attacker channel even for an allowed header. An obfuscated/weird-cased
+    spelling that still normalizes to content-type/content-length must be stored under the
+    CANONICAL name, never the caller's bytes; no separator/casing pattern survives."""
+    pairs = [
+        (b"C_O_N_T_E_N_T_L_E_N_G_T_H", b"42"),  # underscore-obfuscated -> normalizes to contentlength
+        (b"cOnTeNt.TyPe", b"application/json"),  # weird case + dot -> normalizes to contenttype
+        (b"c-o-n-t-e-n-t-t-y-p-e", b"text/plain; charset=utf-8"),  # hyphen-spread
+    ]
+    result = redact_response_headers(pairs)
+    assert result == [
+        ("content-length", "[REDACTED]"),
+        ("content-type", "application/json"),
+        ("content-type", "text/plain"),
+    ]
+    rendered = repr(result)
+    # None of the caller's obfuscated spellings (which could carry attacker bytes) survive.
+    for spelling in ("C_O_N_T_E_N_T", "cOnTeNt", "TyPe", "c-o-n-t-e-n-t"):
+        assert spelling not in rendered
+
+
 def test_response_content_type_arbitrary_subtype_is_dropped_not_persisted():
     """SAI-01: a MIME-shaped but arbitrary/unknown subtype is NOT in the server-known
     allowlist, so it is dropped from both the header value and the withheld-body content_type

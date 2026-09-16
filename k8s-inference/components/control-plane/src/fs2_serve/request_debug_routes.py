@@ -1,6 +1,7 @@
 """Operator access to captured customer exchanges, including pre-admission errors."""
 
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -11,7 +12,7 @@ from .access_models import OperatorPrincipal, OperatorRole
 from .admin import AdminProblemError
 from .admin_models import AdminContext, AdminEnvelope
 from .apps import AppsService
-from .request_debug import DebugExchange, DebugExchangeList, DebugStore
+from .request_debug import DebugExchange, DebugExchangeList, DebugStore, RetentionPreflight
 
 
 def request_debug_router(
@@ -68,6 +69,30 @@ def request_debug_router(
             )
         except ValueError as error:
             raise AdminProblemError(400, "invalid_debug_cursor", "request log cursor is invalid") from error
+        return envelope(result, context)
+
+    @router.get(
+        "/requests/retention",
+        response_model=AdminEnvelope[RetentionPreflight],
+        responses=problem_responses,
+    )
+    async def retention(
+        request: Request,
+        context: Annotated[AdminContext, Depends(context_dependency)],
+    ) -> Any:
+        # Payload-free retention proof (oldest started_at + counts at the FIXED 90-day
+        # cutoff). It exposes no payload and deletes nothing; it is the pre-rollout gate
+        # that proves how many rows exceed the TTL before any (separately owned) purge.
+        # ADMIN-gated and audited like a payload read even though it reveals no payload.
+        # Registered before /requests/{exchange_id} so the literal path wins.
+        identity, _ = await authorized_identity(request)
+        result = await store.retention_preflight(now=datetime.now(UTC))
+        await access.record_read(
+            identity,
+            action="request.debug.read",
+            target_type="request_debug_retention",
+            target_id="preflight",
+        )
         return envelope(result, context)
 
     @router.get("/requests/{exchange_id}", response_model=AdminEnvelope[DebugExchange], responses=problem_responses)

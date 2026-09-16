@@ -24,7 +24,8 @@ deployment = {
   observability = {
     # Preserve the other existing observability settings.
     request_debug_enabled    = true
-    request_debug_models     = "boltz2"          # and/or request_debug_tenants
+    request_debug_tenants    = "tenant-a"        # REQUIRED: a tenant scope is mandatory
+    request_debug_models     = "boltz2"          # optional: narrows within the tenant scope
     request_debug_expires_at = "2026-09-20T00:00:00Z"
   }
 }
@@ -49,8 +50,8 @@ when it stops:
   named tenant). It cannot be used alone.
 - `request_debug_expires_at` — a required RFC3339 instant after which capture stops
   even while enabled. To actually capture, set it in the future and within
-  `request_debug_max_window_seconds` (default 7 days). There is no unbounded or
-  "capture everything" mode.
+  `request_debug_max_window_seconds` (default and ceiling 90 days = 7,776,000s). There is
+  no unbounded or "capture everything" mode.
 
 The control plane validates this at startup: an enabled policy without a tenant scope, with
 no expiry at all, or with an expiry beyond the maximum window fails fast rather than
@@ -134,6 +135,7 @@ audit event so every disclosure of a captured payload is recorded.
 | `/admin/api/v1/apps/{app_id}/requests` | This App's exchange summaries, including known-model pre-operation failures |
 | `/admin/api/v1/apps/{app_id}/requests/{exchange_id}` | One authorized full exchange bound to that App |
 | `/admin/api/v1/requests` | Authorized global summaries, including requests with no App attribution |
+| `/admin/api/v1/requests/retention` | Payload-free retention preflight (oldest `started_at`, total, and count over the fixed 90-day cutoff) — proves the eligible set before any purge; reveals no payload and deletes nothing |
 | `/admin/api/v1/requests/{exchange_id}` | One authorized full exchange |
 
 List queries accept `from`/`to` ISO timestamps, `limit` (1–200; UI uses 50), opaque

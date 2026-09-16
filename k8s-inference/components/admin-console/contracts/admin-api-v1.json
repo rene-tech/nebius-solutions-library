@@ -130,6 +130,7 @@
     {"method": "GET", "path": "/admin/api/v1/apps/{app_id}/logs", "success_status": 200, "data_schema": "AppLogs"},
     {"method": "GET", "path": "/admin/api/v1/apps/{app_id}/containers", "success_status": 200, "data_schema": "AppContainers"},
     {"method": "GET", "path": "/admin/api/v1/requests", "success_status": 200, "data_schema": "DebugExchangeList"},
+    {"method": "GET", "path": "/admin/api/v1/requests/retention", "success_status": 200, "data_schema": "RetentionPreflight"},
     {"method": "GET", "path": "/admin/api/v1/requests/{exchange_id}", "success_status": 200, "data_schema": "DebugExchange"},
     {"method": "GET", "path": "/admin/api/v1/apps/{app_id}/requests", "success_status": 200, "data_schema": "DebugExchangeList"},
     {"method": "GET", "path": "/admin/api/v1/apps/{app_id}/requests/{exchange_id}", "success_status": 200, "data_schema": "DebugExchange"},

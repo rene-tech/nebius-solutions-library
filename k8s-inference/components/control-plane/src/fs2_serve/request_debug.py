@@ -230,10 +230,9 @@ class RetentionPreflight(StrictModel):
 class DebugStore(Protocol):
     async def record(self, exchange: DebugExchange) -> None: ...
 
-    async def retention_preflight(
-        self, *, now: datetime, max_age_seconds: int = DEBUG_RETENTION_SECONDS
-    ) -> RetentionPreflight:
-        """Payload-free aggregate proof of retention state; deletes nothing."""
+    async def retention_preflight(self, *, now: datetime) -> RetentionPreflight:
+        """Payload-free aggregate proof of retention state at the FIXED 90-day cutoff;
+        deletes nothing. The cutoff is not caller-settable."""
         ...
 
     async def list(
@@ -365,22 +364,25 @@ def redact_response_headers(pairs: HeaderPairs) -> list[tuple[str, str]]:
 
     A response header is untrusted in BOTH its name and its value: an arbitrary NAME (e.g.
     ``X-OPAQUESECRET``) or an arbitrary VALUE (ETag, Content-Language, X-Request-Id, or a
-    numeric Content-Length whose digits encode data) can carry a secret. Only two header
-    names are retained, and only when the name normalizes exactly to a known structural
-    header — ``content-type`` (value reduced to a bare, server-known MIME type via
-    _safe_content_type, else redacted) and ``content-length`` (value ALWAYS redacted, since
-    a digit string can encode data and the true length is reported as observed_bytes). For
-    every other header BOTH the name and the value are redacted, so no arbitrary header name
-    or value is ever stored; the entry is kept only to preserve the header count.
+    numeric Content-Length whose digits encode data) can carry a secret. Only two headers are
+    retained, and only when the name normalizes to a known structural header — but the stored
+    name is the CANONICAL spelling, never the caller's: the normalization (``_name``) is lossy
+    (it drops separators and case), so the raw name is itself an attacker channel (e.g.
+    ``C_O_N_T_E_N_T_L_E_N_G_T_H`` or ``cOnTeNt.TyPe`` both normalize to a match while carrying
+    bytes). ``content-type`` keeps a bare, server-known MIME value (via _safe_content_type, else
+    redacted); ``content-length`` keeps its canonical name with the value ALWAYS redacted (a
+    digit string can encode data; the true length is reported as observed_bytes). For every
+    other header BOTH the name and value are redacted, so no arbitrary header name or value is
+    ever stored; the entry is kept only to preserve the header count.
     """
     result = []
     for raw_name, raw_value in pairs:
         name, value = _text(raw_name), _text(raw_value)
         normalized = _name(name)
         if normalized == "contenttype":
-            result.append((name, _safe_content_type(value) or REDACTED))
+            result.append(("content-type", _safe_content_type(value) or REDACTED))
         elif normalized == "contentlength":
-            result.append((name, REDACTED))
+            result.append(("content-length", REDACTED))
         else:
             result.append((REDACTED, REDACTED))
     return result
@@ -755,16 +757,15 @@ class InMemoryDebugStore:
         row = self.exchanges.get(exchange_id)
         return row.model_copy(deep=True) if row and (tenant_id is None or row.tenant_id == tenant_id) else None
 
-    async def retention_preflight(
-        self, *, now: datetime, max_age_seconds: int = DEBUG_RETENTION_SECONDS
-    ) -> RetentionPreflight:
-        cutoff = now - timedelta(seconds=max_age_seconds)
+    async def retention_preflight(self, *, now: datetime) -> RetentionPreflight:
+        # Cutoff is fixed at the 90-day TTL, never caller-supplied.
+        cutoff = now - timedelta(seconds=DEBUG_RETENTION_SECONDS)
         started = [row.started_at for row in self.exchanges.values()]
         expired = sum(1 for timestamp in started if timestamp < cutoff)
         return RetentionPreflight(
             now=now,
             cutoff=cutoff,
-            max_age_seconds=max_age_seconds,
+            max_age_seconds=DEBUG_RETENTION_SECONDS,
             oldest_started_at=min(started) if started else None,
             total=len(started),
             expired=expired,
@@ -852,13 +853,12 @@ class PostgresDebugStore:
         )
         return DebugExchange.model_validate_json(raw)
 
-    async def retention_preflight(
-        self, *, now: datetime, max_age_seconds: int = DEBUG_RETENTION_SECONDS
-    ) -> RetentionPreflight:
+    async def retention_preflight(self, *, now: datetime) -> RetentionPreflight:
         # Payload-free: aggregates over the clear started_at column only. No ciphertext is
         # read or decrypted, and this SELECT deletes nothing — it is the proof produced before
-        # any (separately owned, separately authorized) retention purge is allowed to run.
-        cutoff = now - timedelta(seconds=max_age_seconds)
+        # any (separately owned, separately authorized) retention purge is allowed to run. The
+        # cutoff is fixed at the 90-day TTL, never caller-supplied.
+        cutoff = now - timedelta(seconds=DEBUG_RETENTION_SECONDS)
         async with self.pool.acquire() as connection:
             row = await connection.fetchrow(
                 "SELECT MIN(started_at) AS oldest, COUNT(*) AS total, "
@@ -870,7 +870,7 @@ class PostgresDebugStore:
         return RetentionPreflight(
             now=now,
             cutoff=cutoff,
-            max_age_seconds=max_age_seconds,
+            max_age_seconds=DEBUG_RETENTION_SECONDS,
             oldest_started_at=row["oldest"] if row is not None else None,
             total=total,
             expired=expired,
