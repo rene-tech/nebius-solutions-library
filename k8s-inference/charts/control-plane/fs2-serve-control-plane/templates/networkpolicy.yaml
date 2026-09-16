@@ -229,7 +229,29 @@ spec:
         - port: {{ . }}
           protocol: TCP
         {{- end }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $network.metrics.namespaceLabels | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $network.metrics.podLabels | nindent 14 }}
+      ports:
+        - port: {{ $network.envoyController.metricsPort }}
+          protocol: TCP
   egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $network.dns.namespaceLabels | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $network.dns.podLabels | nindent 14 }}
+      ports:
+        - port: {{ $network.dns.port }}
+          protocol: UDP
+        - port: {{ $network.dns.port }}
+          protocol: TCP
     - to:
         - namespaceSelector:
             matchLabels:
@@ -272,6 +294,18 @@ spec:
       ports:
         - port: {{ $network.envoyController.port }}
           protocol: TCP
+    {{- range $network.gatewayBackends }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml .namespaceLabels | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .podLabels | nindent 14 }}
+      ports:
+        - port: {{ .port }}
+          protocol: TCP
+    {{- end }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -333,6 +367,24 @@ spec:
               {{- toYaml $network.gateway.podLabels | nindent 14 }}
       ports:
         - port: {{ $network.envoyController.port }}
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $network.metrics.namespaceLabels | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $network.metrics.podLabels | nindent 14 }}
+      ports:
+        - port: {{ $network.envoyController.metricsPort }}
+          protocol: TCP
+    - from:
+        {{- range $network.envoyController.webhookSourceCidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - port: {{ $network.envoyController.webhookPort }}
           protocol: TCP
 {{- end }}
 ---

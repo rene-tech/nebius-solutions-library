@@ -58,7 +58,67 @@
       "app.kubernetes.io/name": "gateway-helm",
       "control-plane": "envoy-gateway"
     },
-    "xds_port": 18000
+    "xds_port": 18000,
+    "metrics_port": 19001,
+    "webhook_port": 9443,
+    "dns_peer": {
+      "namespace_labels": {
+        "kubernetes.io/metadata.name": "kube-system"
+      },
+      "pod_labels": {
+        "app.kubernetes.io/instance": "coredns",
+        "app.kubernetes.io/name": "coredns",
+        "k8s-app": "coredns"
+      },
+      "port": 53,
+      "protocols": [
+        "UDP",
+        "TCP"
+      ]
+    },
+    "route_discovery_method": "Gateway-attached HTTPRoute backendRefs resolved through Service targetPorts and selected Pod ports",
+    "route_backend_flows": {
+      "grafana": {
+        "namespace_labels": {
+          "kubernetes.io/metadata.name": "fs2-observability"
+        },
+        "pod_labels": {
+          "app.kubernetes.io/name": "grafana"
+        },
+        "service_port": 80,
+        "pod_port": 3000
+      },
+      "mindeval_gateway": {
+        "namespace_labels": {
+          "kubernetes.io/metadata.name": "fs2-system"
+        },
+        "pod_labels": {
+          "app.kubernetes.io/name": "fs2-mindeval-gateway"
+        },
+        "service_port": 8080,
+        "pod_port": 8080
+      },
+      "mindeval_workshop": {
+        "namespace_labels": {
+          "kubernetes.io/metadata.name": "fs2-system"
+        },
+        "pod_labels": {
+          "app.kubernetes.io/name": "fs2-mindeval-workshop"
+        },
+        "service_port": 8080,
+        "pod_port": 8080
+      },
+      "scientific_ai_website": {
+        "namespace_labels": {
+          "kubernetes.io/metadata.name": "fs2-system"
+        },
+        "pod_labels": {
+          "app.kubernetes.io/name": "scientific-ai-website"
+        },
+        "service_port": 80,
+        "pod_port": 4321
+      }
+    }
   },
   "cert_manager": {
     "version": "v1.21.1",

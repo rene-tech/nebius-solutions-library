@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -34,6 +35,7 @@ TEST_HTTPS_NODE_PORT = 32633
 TEST_CATALOG_ROLLOUT_DIGEST = "sha256:" + "3" * 64
 HELM = shutil.which("helm")
 assert HELM is not None, "helm is required for chart tests"
+KUBECTL = shutil.which("kubectl")
 POSTGRESQL_CONTRACT = json.loads((CONTROL_ROOT / "contracts" / "postgresql-release-contract.json").read_text())
 POSTGRESQL_ANNOTATIONS = {
     "fs2.nebius.ai/postgresql-contract-schema": POSTGRESQL_CONTRACT["schema"],
@@ -449,9 +451,7 @@ def test_admin_console_renders_digest_bound_workload_route_and_network_boundary(
         == "admin-console"
     )
     assert admin_egress["ports"] == [{"port": 8080, "protocol": "TCP"}]
-    assert admin_egress["to"][0]["namespaceSelector"] == {
-        "matchLabels": {"kubernetes.io/metadata.name": "fs2-system"}
-    }
+    assert admin_egress["to"][0]["namespaceSelector"] == {"matchLabels": {"kubernetes.io/metadata.name": "fs2-system"}}
     assert all(document["kind"] != "Secret" for document in documents)
 
 
@@ -1817,7 +1817,13 @@ def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -
     egress_by_port = {tuple(port["port"] for port in rule["ports"]): rule["to"][0] for rule in runtime["egress"]}
     assert egress_by_port[(53, 53)] == {
         "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "kube-system"}},
-        "podSelector": {"matchLabels": {"k8s-app": "kube-dns"}},
+        "podSelector": {
+            "matchLabels": {
+                "app.kubernetes.io/instance": "coredns",
+                "app.kubernetes.io/name": "coredns",
+                "k8s-app": "coredns",
+            }
+        },
     }
     assert egress_by_port[(5432,)] == {
         "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "fs2-data"}},
@@ -1885,27 +1891,100 @@ def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -
                 {"port": 10080, "protocol": "TCP"},
                 {"port": 10443, "protocol": "TCP"},
             ],
-        }
+        },
+        {
+            "from": [
+                {
+                    "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "fs2-observability"}},
+                    "podSelector": {"matchLabels": {"app.kubernetes.io/name": "prometheus"}},
+                }
+            ],
+            "ports": [{"port": 19001, "protocol": "TCP"}],
+        },
     ]
-    public_egress = {tuple(port["port"] for port in rule["ports"]): rule["to"][0] for rule in public_envoy["egress"]}
-    assert public_egress[(8080,)] == {
-        "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "fs2-system"}},
-        "podSelector": {
-            "matchLabels": {
-                "app.kubernetes.io/component": "gateway",
-                "app.kubernetes.io/instance": "fs2-serve",
-                "app.kubernetes.io/name": "fs2-serve-control-plane",
-            }
+
+    def has_egress(*, namespace: str, labels: dict[str, str], ports: list[dict[str, object]]) -> bool:
+        expected_peer = {
+            "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": namespace}},
+            "podSelector": {"matchLabels": labels},
         }
-    }
+        return any(rule["to"] == [expected_peer] and rule["ports"] == ports for rule in public_envoy["egress"])
+
+    assert has_egress(
+        namespace="kube-system",
+        labels={
+            "app.kubernetes.io/instance": "coredns",
+            "app.kubernetes.io/name": "coredns",
+            "k8s-app": "coredns",
+        },
+        ports=[{"port": 53, "protocol": "UDP"}, {"port": 53, "protocol": "TCP"}],
+    )
+    assert has_egress(
+        namespace="fs2-system",
+        labels={
+            "app.kubernetes.io/component": "gateway",
+            "app.kubernetes.io/instance": "fs2-serve",
+            "app.kubernetes.io/name": "fs2-serve-control-plane",
+        },
+        ports=[{"port": 8080, "protocol": "TCP"}],
+    )
     solver_selector = contract["cert_manager"]["http01_solver_selector"]
-    assert public_egress[(8089,)] == {
-        "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "fs2-system"}},
-        "podSelector": {"matchLabels": solver_selector},
+    assert has_egress(
+        namespace="fs2-system",
+        labels=solver_selector,
+        ports=[{"port": 8089, "protocol": "TCP"}],
+    )
+    assert has_egress(
+        namespace="envoy-gateway-system",
+        labels=contract["envoy_gateway"]["controller_selector"],
+        ports=[{"port": 18000, "protocol": "TCP"}],
+    )
+    for backend in contract["envoy_gateway"]["route_backend_flows"].values():
+        assert has_egress(
+            namespace=backend["namespace_labels"]["kubernetes.io/metadata.name"],
+            labels=backend["pod_labels"],
+            ports=[{"port": backend["pod_port"], "protocol": "TCP"}],
+        )
+    assert len(public_envoy["egress"]) == 8
+
+    assert contract["envoy_gateway"]["route_backend_flows"] == {
+        "grafana": {
+            "namespace_labels": {"kubernetes.io/metadata.name": "fs2-observability"},
+            "pod_labels": {"app.kubernetes.io/name": "grafana"},
+            "service_port": 80,
+            "pod_port": 3000,
+        },
+        "mindeval_gateway": {
+            "namespace_labels": {"kubernetes.io/metadata.name": "fs2-system"},
+            "pod_labels": {"app.kubernetes.io/name": "fs2-mindeval-gateway"},
+            "service_port": 8080,
+            "pod_port": 8080,
+        },
+        "mindeval_workshop": {
+            "namespace_labels": {"kubernetes.io/metadata.name": "fs2-system"},
+            "pod_labels": {"app.kubernetes.io/name": "fs2-mindeval-workshop"},
+            "service_port": 8080,
+            "pod_port": 8080,
+        },
+        "scientific_ai_website": {
+            "namespace_labels": {"kubernetes.io/metadata.name": "fs2-system"},
+            "pod_labels": {"app.kubernetes.io/name": "scientific-ai-website"},
+            "service_port": 80,
+            "pod_port": 4321,
+        },
     }
-    assert public_egress[(18000,)] == {
-        "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "envoy-gateway-system"}},
-        "podSelector": {"matchLabels": contract["envoy_gateway"]["controller_selector"]},
+    assert contract["envoy_gateway"]["route_discovery_method"] == (
+        "Gateway-attached HTTPRoute backendRefs resolved through Service targetPorts and selected Pod ports"
+    )
+    assert contract["envoy_gateway"]["dns_peer"] == {
+        "namespace_labels": {"kubernetes.io/metadata.name": "kube-system"},
+        "pod_labels": {
+            "app.kubernetes.io/instance": "coredns",
+            "app.kubernetes.io/name": "coredns",
+            "k8s-app": "coredns",
+        },
+        "port": 53,
+        "protocols": ["UDP", "TCP"],
     }
     assert contract["envoy_gateway"]["controller_selector"] == {
         "app.kubernetes.io/name": "gateway-helm",
@@ -1936,8 +2015,234 @@ def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -
                 }
             ],
             "ports": [{"port": 18000, "protocol": "TCP"}],
+        },
+        {
+            "from": [
+                {
+                    "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "fs2-observability"}},
+                    "podSelector": {"matchLabels": {"app.kubernetes.io/name": "prometheus"}},
+                }
+            ],
+            "ports": [{"port": 19001, "protocol": "TCP"}],
+        },
+        {
+            "from": [{"ipBlock": {"cidr": "0.0.0.0/0"}}],
+            "ports": [{"port": 9443, "protocol": "TCP"}],
+        },
+    ]
+
+
+def test_public_envoy_dns_selector_and_webhook_sources_are_cluster_configurable() -> None:
+    documents = render(
+        "--set-string",
+        r"networkPolicy.dns.podLabels.k8s-app=cluster-dns",
+        "--set-string",
+        r"networkPolicy.dns.podLabels.app\.kubernetes\.io/name=cluster-dns",
+        "--set-string",
+        r"networkPolicy.dns.podLabels.app\.kubernetes\.io/instance=cluster-dns",
+        "--set-string",
+        "networkPolicy.envoyController.webhookSourceCidrs[0]=192.0.2.10/32",
+    )
+    policies = {document["metadata"]["name"]: document for document in documents if document["kind"] == "NetworkPolicy"}
+    public_envoy = policies["fs2-serve-control-plane-public-envoy"]["spec"]
+    dns_rule = next(
+        rule
+        for rule in public_envoy["egress"]
+        if rule["ports"] == [{"port": 53, "protocol": "UDP"}, {"port": 53, "protocol": "TCP"}]
+    )
+    assert dns_rule["to"] == [
+        {
+            "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "kube-system"}},
+            "podSelector": {
+                "matchLabels": {
+                    "app.kubernetes.io/instance": "cluster-dns",
+                    "app.kubernetes.io/name": "cluster-dns",
+                    "k8s-app": "cluster-dns",
+                }
+            },
         }
     ]
+    controller = policies["fs2-serve-control-plane-envoy-controller-xds"]["spec"]
+    webhook_rule = next(rule for rule in controller["ingress"] if rule["ports"][0]["port"] == 9443)
+    assert webhook_rule["from"] == [{"ipBlock": {"cidr": "192.0.2.10/32"}}]
+
+
+@pytest.mark.skipif(
+    os.environ.get("FS2_LIVE_GATEWAY_ROUTE_DISCOVERY") != "1",
+    reason="opt-in read-only verification against the selected Kubernetes context",
+)
+def test_public_envoy_policy_covers_discovered_live_gateway_flows() -> None:
+    """Resolve live DNS, Envoy ports, and attached HTTPRoute backends."""
+
+    assert os.environ.get("KUBECONFIG"), "live discovery requires an explicit KUBECONFIG"
+    assert KUBECTL is not None, "live discovery requires kubectl"
+
+    def get_json(*arguments: str) -> dict:
+        result = subprocess.run(  # noqa: S603 - fixed kubectl binary and read-only arguments
+            [KUBECTL, "get", *arguments, "-o", "json"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return json.loads(result.stdout)
+
+    routes = get_json("httproutes.gateway.networking.k8s.io", "-A")["items"]
+    services = get_json("services", "-A")["items"]
+    pods = get_json("pods", "-A")["items"]
+    namespaces = {
+        item["metadata"]["name"]: item["metadata"].get("labels", {}) for item in get_json("namespaces")["items"]
+    }
+
+    live_render_command = render_command(*admin_console_values())
+    live_render_command[2] = "fs2-serve-control-plane"
+    rendered = subprocess.run(  # noqa: S603 - fixed Helm binary and test-owned arguments
+        live_render_command,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    documents = [document for document in yaml.safe_load_all(rendered.stdout) if document]
+    public_envoy = next(
+        document["spec"]
+        for document in documents
+        if document["kind"] == "NetworkPolicy"
+        and document["metadata"]["name"] == "fs2-serve-control-plane-public-envoy"
+    )
+    controller_policy = next(
+        document["spec"]
+        for document in documents
+        if document["kind"] == "NetworkPolicy"
+        and document["metadata"]["name"] == "fs2-serve-control-plane-envoy-controller-xds"
+    )
+
+    dns_service = next(
+        service
+        for service in services
+        if service["metadata"]["namespace"] == "kube-system"
+        and {(port["port"], port["protocol"]) for port in service["spec"]["ports"]} >= {(53, "UDP"), (53, "TCP")}
+    )
+    dns_selector = dns_service["spec"]["selector"]
+    dns_pods = [
+        pod
+        for pod in pods
+        if pod["metadata"]["namespace"] == "kube-system"
+        and all(pod["metadata"].get("labels", {}).get(key) == value for key, value in dns_selector.items())
+    ]
+    assert dns_pods
+    dns_rule = next(
+        rule
+        for rule in public_envoy["egress"]
+        if {(port["port"], port["protocol"]) for port in rule["ports"]} == {(53, "UDP"), (53, "TCP")}
+    )
+    assert len(dns_rule["to"]) == 1
+    dns_peer = dns_rule["to"][0]
+    assert all(
+        namespaces["kube-system"].get(key) == value
+        for key, value in dns_peer["namespaceSelector"]["matchLabels"].items()
+    )
+    assert all(
+        all(
+            pod["metadata"]["labels"].get(key) == value for key, value in dns_peer["podSelector"]["matchLabels"].items()
+        )
+        for pod in dns_pods
+    )
+
+    controller_pods = [pod for pod in pods if pod["metadata"].get("labels", {}).get("control-plane") == "envoy-gateway"]
+    proxy_pods = [
+        pod
+        for pod in pods
+        if pod["metadata"].get("labels", {}).get("app.kubernetes.io/component") == "proxy"
+        and pod["metadata"].get("labels", {}).get("app.kubernetes.io/managed-by") == "envoy-gateway"
+    ]
+    assert controller_pods and proxy_pods
+    controller_ports = {
+        port["containerPort"]
+        for pod in controller_pods
+        for container in pod["spec"]["containers"]
+        for port in container.get("ports", [])
+    }
+    proxy_ports = {
+        port["containerPort"]
+        for pod in proxy_pods
+        for container in pod["spec"]["containers"]
+        for port in container.get("ports", [])
+    }
+    assert {18000, 19001, 9443} <= controller_ports
+    assert 19001 in proxy_ports
+    assert {port["port"] for rule in controller_policy["ingress"] for port in rule["ports"]} == {
+        18000,
+        19001,
+        9443,
+    }
+    assert any(port["port"] == 19001 for rule in public_envoy["ingress"] for port in rule["ports"])
+    webhooks = get_json("mutatingwebhookconfigurations.admissionregistration.k8s.io")["items"]
+    assert any(
+        webhook.get("clientConfig", {}).get("service", {}).get("namespace") == "envoy-gateway-system"
+        and webhook["clientConfig"]["service"].get("name") == "envoy-gateway"
+        and webhook["clientConfig"]["service"].get("port") == 9443
+        for configuration in webhooks
+        for webhook in configuration.get("webhooks", [])
+    )
+
+    service_index = {(item["metadata"]["namespace"], item["metadata"]["name"]): item for item in services}
+    discovered: list[tuple[str, str, int, list[dict]]] = []
+    for route in routes:
+        route_namespace = route["metadata"]["namespace"]
+        attached_to_public = any(
+            reference.get("name") == "public" and reference.get("namespace", route_namespace) == "fs2-system"
+            for reference in route["spec"].get("parentRefs", [])
+        )
+        if not attached_to_public:
+            continue
+        for rule in route["spec"].get("rules", []):
+            for backend in rule.get("backendRefs", []):
+                assert backend.get("kind", "Service") == "Service"
+                backend_namespace = backend.get("namespace", route_namespace)
+                service = service_index[(backend_namespace, backend["name"])]
+                service_port = next(port for port in service["spec"]["ports"] if port["port"] == backend["port"])
+                selector = service["spec"].get("selector", {})
+                selected_pods = [
+                    pod
+                    for pod in pods
+                    if pod["metadata"]["namespace"] == backend_namespace
+                    and selector
+                    and all(pod["metadata"].get("labels", {}).get(key) == value for key, value in selector.items())
+                ]
+                assert selected_pods, f"route backend {backend_namespace}/{backend['name']} selects no Pods"
+                target_port = service_port.get("targetPort", service_port["port"])
+                if isinstance(target_port, str):
+                    named_ports = {
+                        port["containerPort"]
+                        for pod in selected_pods
+                        for container in pod["spec"]["containers"]
+                        for port in container.get("ports", [])
+                        if port.get("name") == target_port
+                    }
+                    assert len(named_ports) == 1
+                    target_port = named_ports.pop()
+                discovered.append((backend_namespace, backend["name"], target_port, selected_pods))
+
+    assert discovered, "no Service backends were attached to the public Gateway"
+    for backend_namespace, backend_name, target_port, selected_pods in discovered:
+        matching_rules = []
+        for rule in public_envoy["egress"]:
+            if {port["port"] for port in rule["ports"]} != {target_port}:
+                continue
+            for peer in rule["to"]:
+                namespace_labels = peer.get("namespaceSelector", {}).get("matchLabels", {})
+                pod_labels = peer.get("podSelector", {}).get("matchLabels", {})
+                if not namespace_labels or not pod_labels:
+                    continue
+                if not all(namespaces[backend_namespace].get(key) == value for key, value in namespace_labels.items()):
+                    continue
+                if all(
+                    all(pod["metadata"].get("labels", {}).get(key) == value for key, value in pod_labels.items())
+                    for pod in selected_pods
+                ):
+                    matching_rules.append(rule)
+        assert len(matching_rules) == 1, (
+            f"route backend {backend_namespace}/{backend_name}:{target_port} must have exactly one selected egress rule"
+        )
 
 
 def test_public_envoy_policies_follow_the_gateway_namespace_label() -> None:
@@ -1946,11 +2251,7 @@ def test_public_envoy_policies_follow_the_gateway_namespace_label() -> None:
         "--set-string",
         rf"networkPolicy.gateway.namespaceLabels.kubernetes\.io/metadata\.name={gateway_namespace}",
     )
-    policies = {
-        document["metadata"]["name"]: document
-        for document in documents
-        if document["kind"] == "NetworkPolicy"
-    }
+    policies = {document["metadata"]["name"]: document for document in documents if document["kind"] == "NetworkPolicy"}
 
     for name in (
         "fs2-serve-control-plane-envoy-default-deny",

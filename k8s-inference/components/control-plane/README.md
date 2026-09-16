@@ -52,11 +52,21 @@ rollout, acceptance, and rollback.
 The edge NetworkPolicies render an ingress default-deny and the public proxy
 policy into the namespace named by
 `networkPolicy.gateway.namespaceLabels["kubernetes.io/metadata.name"]`. The
-proxy policy restricts ingress to target ports 10080/10443 and egress to the
-control plane on 8080, the cert-manager solver on 8089, and Envoy xDS on 18000;
-an enabled admin console adds only its 8080 peer. Every cross-namespace peer
-combines a namespace selector with the exact pod selector. The control-plane
-release namespace still depends on the foundation default-deny boundary.
+proxy policy restricts public ingress to target ports 10080/10443 and permits
+Prometheus to scrape only port 19001. Its egress is limited to the configured
+CoreDNS selector on TCP/UDP 53, the control plane and optional admin console on
+8080, the cert-manager solver on 8089, Envoy xDS on 18000, and the configured
+Gateway route backend selectors on their resolved Pod ports. The default
+backend set covers the website, both MindEval services, and Grafana without
+admitting their entire namespaces.
+
+Controller ingress admits only proxy xDS on 18000, Prometheus metrics on
+19001, and managed API-server webhook calls on 9443. The webhook source CIDRs
+are cluster-configurable because managed API servers are not namespace-scoped;
+installations with stable provider ranges should narrow the compatibility
+default. Every pod-originated cross-namespace flow combines a namespace
+selector with an exact pod selector. The control-plane release namespace still
+depends on the foundation default-deny boundary.
 Exact controller artifact digests and the
 reconciled artifact observations are in
 `contracts/public-edge-artifact-observations.json`. Those observations are
