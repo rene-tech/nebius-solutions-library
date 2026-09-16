@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import logging
 import re
 import time
+import wave
 from collections.abc import AsyncIterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import UTC, datetime
@@ -549,6 +551,25 @@ class RuntimeClient:
         raise RuntimeProtocolError("runtime protocol is invalid")
 
     @staticmethod
+    def _magpie_wave_usage(body: bytes, content_type: str) -> ReportedUsage:
+        """Validate the pinned local Magpie native contract, not arbitrary binary."""
+        if (content_type != "audio/wav" or len(body) < 44 or body[:4] != b"RIFF"
+                or body[8:12] != b"WAVE" or int.from_bytes(body[4:8], "little") + 8 != len(body)):
+            raise RuntimeProtocolError("Magpie response is not a complete WAV")
+        try:
+            with wave.open(io.BytesIO(body), "rb") as audio:
+                frames = audio.getnframes()
+                if (audio.getcomptype() != "NONE" or audio.getnchannels() != 1
+                        or audio.getsampwidth() != 2 or audio.getframerate() != 22050 or frames <= 0
+                        or len(audio.readframes(frames + 1)) != frames * 2):
+                    raise RuntimeProtocolError("Magpie WAV format or frame count is invalid")
+        except (wave.Error, EOFError):
+            raise RuntimeProtocolError("Magpie WAV decoding failed") from None
+        return ReportedUsage(modalities=[ModalityUsage(
+            modality="audio", direction="output", unit="seconds", amount=frames / 22050,
+        )])
+
+    @staticmethod
     def _reported_usage(protocol: str, body: bytes, *, speech: bool = False) -> ReportedUsage | None:
         """Extract optional OpenAI token totals without making usage part of protocol validity."""
 
@@ -602,7 +623,12 @@ class RuntimeClient:
             model.dynamic_policy.publication.source_model_ref if model.dynamic_policy is not None else model.id
         )
         speech = (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
-                  and source_model in {"nemotron-speech-en-0-6b", "nemotron-speech-multilingual-0-6b"})
+                  and source_model in {
+                      "nemotron-speech-en-0-6b", "nemotron-speech-multilingual-0-6b",
+                      "parakeet-realtime-eou-120m-v1", "diar-streaming-sortformer-4spk-v2-1",
+                      "magpie-tts-multilingual-357m",
+                  })
+        magpie = speech and source_model == "magpie-tts-multilingual-357m"
         if speech:
             # A retry after explicit pre-admission busy must be able to select
             # another Service endpoint instead of sticking to a busy socket.
@@ -688,7 +714,12 @@ class RuntimeClient:
                         raise RuntimeProtocolError("runtime response exceeded configured maximum")
                 if isinstance(capture, _UpstreamCapture):
                     capture.finished()
-                semantic = self._semantic_outcome(operation.protocol, bytes(content))
+                if magpie:
+                    usage = self._magpie_wave_usage(bytes(content), content_type)
+                    semantic = "protocol_valid"
+                else:
+                    semantic = self._semantic_outcome(operation.protocol, bytes(content))
+                    usage = self._reported_usage(operation.protocol, bytes(content), speech=speech)
                 runtime, lifecycle = await self._trusted_runtime_observation(operation, model)
                 return RuntimeResult(
                     status_code=response.status_code,
@@ -697,7 +728,7 @@ class RuntimeClient:
                     elapsed_seconds=time.monotonic() - started,
                     runtime=runtime,
                     semantic_outcome=semantic,
-                    usage=self._reported_usage(operation.protocol, bytes(content), speech=speech),
+                    usage=usage,
                     lifecycle=lifecycle,
                 )
         except asyncio.CancelledError:
