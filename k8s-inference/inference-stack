@@ -706,34 +706,43 @@ RELEASE_KEY_SHA256 = (
 # an attacker repointing `origin` at their own repository must never be able
 # to "confirm" their refs. Changing the canonical remote = owner review.
 RELEASE_REMOTE_URL = "https://github.com/rene-tech/nebius-solutions-library.git"
+# Remote-verification execution is pinned end to end IN REVIEWED SOURCE: the
+# exact git binary (never PATH lookup) and, when an egress proxy or private
+# CA is ever required, explicit pinned values (empty = direct egress and the
+# system CA store). Changing any of these = owner review.
+RELEASE_GIT_BINARY = "/usr/bin/git"
+RELEASE_REMOTE_PROXY = ""
+RELEASE_REMOTE_CA_BUNDLE = ""
 
 
 def _isolated_git_environment() -> dict[str, str]:
-    """Environment for remote-verification git calls: no config, no rewrite.
+    """Minimal ALLOWLISTED environment for remote-verification git calls.
 
-    `git ls-remote <url>` still loads system/global/local config and the
-    GIT_CONFIG_* environment, so `url.<attacker>.insteadOf = <pinned-url>`
-    (or an injected env config) would silently REDIRECT the pinned URL to an
-    attacker remote. Remote verification therefore runs with every git
-    config source disabled and all inherited GIT_* variables stripped; the
-    call also runs OUTSIDE any repository (`git -C /`), so repo-local config
-    cannot apply either.
+    A denylist over the inherited environment is bypassable (PATH pointing
+    at a fake git, LD_PRELOAD/LD_LIBRARY_PATH interposition, proxy/TLS
+    variables diverting or terminating the connection, GIT_CONFIG_*
+    injecting `url.*.insteadOf` rewrites). Verification therefore runs the
+    SOURCE-PINNED binary with an environment built FROM SCRATCH: fixed
+    system PATH, every git config source disabled, no prompts, and proxy/CA
+    only from the pinned constants — nothing is inherited. The call also
+    runs OUTSIDE any repository (`git -C /`), so repo-local config cannot
+    apply either.
     """
     environment = {
-        key: value
-        for key, value in clean_environment().items()
-        if not key.startswith("GIT_") and not key.startswith("XDG_")
+        "PATH": "/usr/bin:/bin",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_SYSTEM": "/dev/null",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_COUNT": "0",
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_ASKPASS": "/bin/true",
+        "HOME": "/nonexistent",
+        "XDG_CONFIG_HOME": "/nonexistent",
     }
-    environment.update(
-        {
-            "GIT_CONFIG_NOSYSTEM": "1",
-            "GIT_CONFIG_SYSTEM": "/dev/null",
-            "GIT_CONFIG_GLOBAL": "/dev/null",
-            "GIT_CONFIG_COUNT": "0",
-            "GIT_TERMINAL_PROMPT": "0",
-            "GIT_ASKPASS": "/bin/true",
-        }
-    )
+    if RELEASE_REMOTE_PROXY:
+        environment["HTTPS_PROXY"] = RELEASE_REMOTE_PROXY
+    if RELEASE_REMOTE_CA_BUNDLE:
+        environment["GIT_SSL_CAINFO"] = RELEASE_REMOTE_CA_BUNDLE
     return environment
 
 
@@ -768,7 +777,7 @@ def _remote_verified_branches(root: Path, branch_refs: Sequence[str]) -> list[st
     if not branch_refs:
         return []
     listing = run(
-        ["git", "-C", "/", "ls-remote", "--heads", RELEASE_REMOTE_URL],
+        [RELEASE_GIT_BINARY, "-C", "/", "ls-remote", "--heads", RELEASE_REMOTE_URL],
         capture=True,
         env=_isolated_git_environment(),
     )
@@ -799,7 +808,7 @@ def _remote_verified_tags(root: Path, tag_refs: Sequence[str]) -> list[str]:
     if not tag_refs:
         return []
     listing = run(
-        ["git", "-C", "/", "ls-remote", "--tags", RELEASE_REMOTE_URL],
+        [RELEASE_GIT_BINARY, "-C", "/", "ls-remote", "--tags", RELEASE_REMOTE_URL],
         capture=True,
         env=_isolated_git_environment(),
     )

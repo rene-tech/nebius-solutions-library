@@ -647,8 +647,12 @@ def default_scope_fixture(key_sha256: str) -> dict:
         "deploy_principals": [AUTOMATION_PRINCIPAL],
         "security_principals": [SECURITY_PRINCIPAL],
         "verification_key_sha256": key_sha256,
-        "frozen_bindings": [],
         "iam_exempt_subjects": [],
+        "provider_attested_masters": False,
+        "stage_binding_authority": {
+            "namespace": "fs2-system",
+            "workload": "deployment/fs2-serve-control-plane",
+        },
         "policy_sha256": hashlib.sha256(POLICY_PATH.read_bytes()).hexdigest(),
     }
 
@@ -764,7 +768,7 @@ def write_inventory_fixture(
                 ],
             },
             "frozen_scientific_bindings": source(
-                frozen or [], "configmap/fs2-system/frozen-{}"
+                frozen or [], "batch/fixture-{}/rev/1"
             ),
         },
         "drained_removals": drained or [],
@@ -866,7 +870,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
             images if images is not None else [self.REFERENCE_A, self.REFERENCE_B]
         )
         helm = list(helm_images or [])
-        frozen = dict(frozen_objects or {})
+        frozen_refs = list(frozen_objects or [])
         controllers = list(controller_images or [])
         documents = load_policy_documents()
         by_name = {
@@ -959,14 +963,20 @@ class VerifiedAllowlistTest(unittest.TestCase):
                             "data": {"security-principals": SECURITY_PRINCIPAL},
                         }
                     )
-                if name in frozen:
-                    return json.dumps(
-                        {
-                            "metadata": {"name": name},
-                            "data": {"refs": " ".join(frozen[name])},
-                        }
-                    )
                 raise subprocess.CalledProcessError(1, command)
+            if command[:3] == ["kubectl", "get", "serviceaccount"]:
+                return json.dumps({"metadata": {"name": command[3]}})
+            if command[:3] == ["kubectl", "get", "secrets"]:
+                return json.dumps({"items": []})
+            if command[:2] == ["kubectl", "exec"]:
+                # The AUTHORITATIVE frozen source: control-plane PostgreSQL
+                # stage bindings, dumped read-only inside the workload.
+                return json.dumps(
+                    [
+                        [f"fixture-{index}", 1, ref]
+                        for index, ref in enumerate(frozen_refs)
+                    ]
+                )
             if command[:3] == ["kubectl", "get", "clusterroles"]:
                 return json.dumps({"items": list(cluster_roles or [])})
             if command[:3] == ["kubectl", "get", "clusterrolebindings"]:
@@ -975,22 +985,6 @@ class VerifiedAllowlistTest(unittest.TestCase):
                 return json.dumps({"items": []})
             if command[:3] == ["kubectl", "get", "rolebindings"]:
                 return json.dumps({"items": []})
-            if command[:3] == ["kubectl", "get", "configmaps"]:
-                # Content-based discovery scans EVERY ConfigMap; no label.
-                namespace = command[command.index("-n") + 1]
-                if namespace != "fs2-system":
-                    return json.dumps({"items": []})
-                return json.dumps(
-                    {
-                        "items": [
-                            {
-                                "metadata": {"name": name},
-                                "data": {"refs": " ".join(refs)},
-                            }
-                            for name, refs in sorted(frozen.items())
-                        ]
-                    }
-                )
             if command[:2] == ["kubectl", "get"] and command[2] in (
                 "deployments",
                 "daemonsets",
@@ -1171,55 +1165,26 @@ class VerifiedAllowlistTest(unittest.TestCase):
         with self.assertRaisesRegex(TOOL.ProvenanceError, "Helm history"):
             self.render(live_runner=self.live_runner(helm_images=[rollback]))
 
-    def test_unlabeled_owner_pinned_frozen_binding_cannot_vanish(self) -> None:
-        # The label is an opt-in marker with no authority: removing it must
-        # never silently drop an owner-pinned binding from coverage. The
-        # pinned resource is fetched DIRECTLY; omitting its refs refuses.
+    def test_omitted_database_stage_binding_fails_closed(self) -> None:
+        # The DATABASE is the authority: a frozen stage binding present in
+        # fs2_scientific_batches must appear in the signed inventory; a
+        # signer cannot omit it, and no ConfigMap state can stand in for it.
         frozen_ref = PLATFORM_PREFIX + "frozen-stage@sha256:" + "c" * 64
-        pinned_scope = dict(
-            self.scope, frozen_bindings=["configmap/fs2-system/frozen-0"]
-        )
-        scope_path = write_scope_fixture(
-            self.run_root, pinned_scope, name="pinned-frozen-scope.json"
-        )
-        omitting_inventory = write_inventory_fixture(
-            self.run_root,
-            [self.REFERENCE_A, self.REFERENCE_B],
-            scope=pinned_scope,
-            name="frozen-omitting.json",
-        )
-
-        # Discovery is CONTENT-based and label-independent: the (unlabeled)
-        # binding is found by the plain ConfigMap scan AND by the owner pin,
-        # so the signer's omission refuses either way.
-        unlabeled_runner = self.live_runner(
-            frozen_objects={"frozen-0": [frozen_ref]}
-        )
-
         with self.assertRaisesRegex(
-            TOOL.ProvenanceError, "frozen_scientific_bindings refs"
+            TOOL.ProvenanceError, "authoritative database"
         ):
-            self.render(
-                inventory=omitting_inventory,
-                scope_path=scope_path,
-                live_runner=unlabeled_runner,
-            )
+            self.render(live_runner=self.live_runner(frozen_objects=[frozen_ref]))
 
-    def test_missing_owner_pinned_frozen_binding_fails_closed(self) -> None:
-        pinned_scope = dict(
-            self.scope, frozen_bindings=["configmap/fs2-system/frozen-0"]
-        )
-        scope_path = write_scope_fixture(
-            self.run_root, pinned_scope, name="missing-frozen-scope.json"
-        )
-        inventory = write_inventory_fixture(
-            self.run_root,
-            [self.REFERENCE_A, self.REFERENCE_B],
-            scope=pinned_scope,
-            name="frozen-missing.json",
-        )
-        with self.assertRaisesRegex(TOOL.ProvenanceError, "owner-pinned frozen"):
-            self.render(inventory=inventory, scope_path=scope_path)
+    def test_unreachable_stage_binding_database_fails_closed(self) -> None:
+        import subprocess as sp
+
+        def dead_database_runner(command):
+            if command[:2] == ["kubectl", "exec"]:
+                raise sp.CalledProcessError(1, command)
+            return self.live_runner()(command)
+
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "fails closed"):
+            self.render(live_runner=dead_database_runner)
 
     def test_drifted_live_helm_governance_refuses_rendering(self) -> None:
         import copy
@@ -1262,8 +1227,9 @@ class VerifiedAllowlistTest(unittest.TestCase):
             self.render(live_runner=tampered_params_runner)
 
     def test_forged_frozen_binding_fails_closed(self) -> None:
-        # Frozen refs must be present in the exact live resources their
-        # signed identities name; a forged ref or an empty resource refuses.
+        # A recorded frozen ref the DATABASE does not carry is forged
+        # coverage and refuses; the same inventory renders once the database
+        # actually contains the binding.
         phantom = PLATFORM_PREFIX + "frozen-stage@sha256:" + "c" * 64
         inventory = write_inventory_fixture(
             self.run_root,
@@ -1277,9 +1243,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
         ):
             self.render(
                 inventory=inventory,
-                live_runner=self.live_runner(
-                    frozen_objects={"frozen-0": ["unrelated"]}
-                ),
+                live_runner=self.live_runner(frozen_objects=[]),
             )
         # The same inventory renders once the live resource actually carries
         # the recorded reference.
@@ -1320,9 +1284,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
             key_path="release.key",
             verifier=authority_checking_verifier,
             capture=routing_capture,
-            live_runner=self.live_runner(
-                frozen_objects={"frozen-0": [frozen_ref]}
-            ),
+            live_runner=self.live_runner(frozen_objects=[frozen_ref]),
         )
         self.assertIn(
             frozen_ref.rsplit("@", 1)[1], manifest["data"]["platform-digests"]
@@ -1702,7 +1664,11 @@ class VerifiedAllowlistTest(unittest.TestCase):
         def write_recovery(name: str, **overrides) -> Path:
             document = {
                 "schema": TOOL.RECOVERY_SCHEMA,
+                "cluster": "fixture-cluster",
                 "target": "fs2-image-provenance",
+                "target_uid": "0f0e0d0c-0b0a-4948-8767-060504030201",
+                "target_resource_version": "12345",
+                "prior_actions": ["Deny", "Audit"],
                 "actions": ["Audit", "Warn"],
                 "reason": "incident:INC-77 emergency observation window",
                 "issued_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -1761,6 +1727,22 @@ class VerifiedAllowlistTest(unittest.TestCase):
         with self.assertRaisesRegex(TOOL.ProvenanceError, "at most"):
             TOOL.load_recovery_authorization(
                 unbounded, self._tmp.name, recovery_verifier
+            )
+        unfenced = write_recovery("unfenced.json", target_resource_version="")
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "resourceVersion"):
+            TOOL.load_recovery_authorization(
+                unfenced, self._tmp.name, recovery_verifier
+            )
+        # Single-use: once consumed through the chained ledger, the same
+        # signed document never authorizes again.
+        single = write_recovery("single-use.json")
+        _, single_sha = TOOL.load_recovery_authorization(
+            single, self._tmp.name, recovery_verifier, run_root=self.run_root
+        )
+        TOOL._record_consumed(self.run_root, single_sha, "recovery")
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "SINGLE-USE"):
+            TOOL.load_recovery_authorization(
+                single, self._tmp.name, recovery_verifier, run_root=self.run_root
             )
 
     def test_human_deploy_principal_in_scope_is_refused(self) -> None:
@@ -1852,8 +1834,41 @@ class VerifiedAllowlistTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(TOOL.ProvenanceError, "identity boundary"):
             self.render(live_runner=violating_runner)
-        # An owner-SIGNED exemption (bootstrap subjects) permits it.
-        exempt_scope = dict(self.scope, iam_exempt_subjects=["User:mallory"])
+        # A HUMAN exemption cannot even be signed: the scope refuses it, so
+        # a wildcard cluster-admin user can never be exempted into validity.
+        human_exempt = dict(self.scope, iam_exempt_subjects=["User:mallory"])
+        human_scope_path = write_scope_fixture(
+            self.run_root, human_exempt, name="human-exempt-scope.json"
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "NEVER exemptible"):
+            self.render(scope_path=human_scope_path)
+        # Only enumerated bootstrap identities / kube-system controller
+        # ServiceAccounts are exemptible.
+        controller_role = {
+            "metadata": {"name": "controller-impersonator"},
+            "rules": [
+                {
+                    "apiGroups": [""],
+                    "resources": ["serviceaccounts"],
+                    "verbs": ["impersonate"],
+                }
+            ],
+        }
+        controller_binding = {
+            "metadata": {"name": "kube-controller"},
+            "roleRef": {"kind": "ClusterRole", "name": "controller-impersonator"},
+            "subjects": [
+                {
+                    "kind": "ServiceAccount",
+                    "namespace": "kube-system",
+                    "name": "namespace-controller",
+                }
+            ],
+        }
+        exempt_scope = dict(
+            self.scope,
+            iam_exempt_subjects=["ServiceAccount:kube-system:namespace-controller"],
+        )
         scope_path = write_scope_fixture(
             self.run_root, exempt_scope, name="exempt-scope.json"
         )
@@ -1866,8 +1881,54 @@ class VerifiedAllowlistTest(unittest.TestCase):
         self.render(
             inventory=inventory,
             scope_path=scope_path,
-            live_runner=violating_runner,
+            live_runner=self.live_runner(
+                cluster_roles=[controller_role],
+                cluster_role_bindings=[controller_binding],
+            ),
         )
+
+    def test_bootstrap_masters_requires_provider_attestation(self) -> None:
+        # The single bootstrap cluster-admin binding to Group:system:masters
+        # is tolerated ONLY under the owner's provider attestation; the group
+        # itself can never be an iam exemption.
+        masters_binding = {
+            "metadata": {"name": "cluster-admin"},
+            "roleRef": {"kind": "ClusterRole", "name": "cluster-admin"},
+            "subjects": [{"kind": "Group", "name": "system:masters"}],
+        }
+        admin_role = {
+            "metadata": {"name": "cluster-admin"},
+            "rules": [
+                {"apiGroups": ["*"], "resources": ["*"], "verbs": ["*"]}
+            ],
+        }
+        runner = self.live_runner(
+            cluster_roles=[admin_role],
+            cluster_role_bindings=[masters_binding],
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "identity boundary"):
+            self.render(live_runner=runner)
+        attested = dict(self.scope, provider_attested_masters=True)
+        scope_path = write_scope_fixture(
+            self.run_root, attested, name="attested-scope.json"
+        )
+        inventory = write_inventory_fixture(
+            self.run_root,
+            [self.REFERENCE_A, self.REFERENCE_B],
+            scope=attested,
+            name="attested-inventory.json",
+        )
+        self.render(
+            inventory=inventory, scope_path=scope_path, live_runner=runner
+        )
+        masters_exempt = dict(
+            self.scope, iam_exempt_subjects=["Group:system:masters"]
+        )
+        masters_scope = write_scope_fixture(
+            self.run_root, masters_exempt, name="masters-exempt-scope.json"
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "NEVER exemptible"):
+            self.render(scope_path=masters_scope)
 
     def test_wildcard_grant_to_humans_is_a_violation(self) -> None:
         # A cluster-admin-shaped wildcard grant to a non-exempt human trips
@@ -1922,7 +1983,11 @@ class VerifiedAllowlistTest(unittest.TestCase):
         ):
             document = {
                 "schema": TOOL.RECOVERY_SCHEMA,
+                "cluster": "fixture-cluster",
                 "target": "fs2-image-provenance",
+                "target_uid": "0f0e0d0c-0b0a-4948-8767-060504030201",
+                "target_resource_version": "12345",
+                "prior_actions": ["Deny", "Audit"],
                 "actions": actions,
                 "reason": "incident:INC-5 subset probe",
                 "issued_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),

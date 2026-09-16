@@ -128,9 +128,11 @@ bump — in order:
    rollback window re-derived from `helm list --all` with explicit
    `--offset` pagination (helm caps pages at 256 and `--max 0` is NOT
    unlimited) plus `helm history --max 10000`/`helm get manifest` per
-   revision, and frozen bindings ENUMERATED authoritatively — every
-   ConfigMap labeled `security.fs2.nebius.ai/frozen-binding=true` in the
-   scope namespaces, never a signer-chosen resource list; every source's
+   revision, and frozen bindings verified against their TRUE authority —
+   the control plane's PostgreSQL stage bindings
+   (`fs2_scientific_batches.state->'adapter_execution'->'stage_bindings'`),
+   dumped read-only inside the scope-pinned control-plane workload, never a
+   signer-chosen resource list or a swappable ConfigMap; every source's
    refs AND resource identities must equal the observation, the scope's
    `cluster` pins the kube-system namespace UID (server-assigned and
    immutable, unlike the client-editable kubeconfig cluster name), and the
@@ -402,31 +404,61 @@ policies; only new admissions are.
   which refuses to render against a missing, weakened, or drifted object,
   and the live guard-params content must equal the owner-signed scope. The
   IDENTITY side of the external boundary is ENFORCED read-only at every
-  render: `_assert_iam_boundary` walks live (Cluster)RoleBindings and
-  refuses while any non-exempt subject (outside the scope's
-  `security_principals` and owner-signed `iam_exempt_subjects`) holds a
-  forbidden identity path — admission-configuration write/delete,
+  render — and RE-AUDITED at the end of the render, shrinking the TOCTOU
+  window: `_assert_iam_boundary` walks live (Cluster)RoleBindings across the
+  scope AND security namespaces and refuses while any non-exempt subject
+  holds a forbidden identity path — admission-configuration writes over the
+  WILDCARD resource set (every current and future admission kind),
   impersonation of users/groups/serviceaccounts/uids/extras, ServiceAccount
-  token minting, RBAC bind/escalate, or protected-namespace secrets access —
-  so rendering stays impossible until the owner executes the IAM closure at
-  the authorized window and re-opens on any later regression.
-  `reconcile-boundary` is the security-owned runbook command: it plans
-  re-application of drifted objects, reports identity-path violations, and
-  emits the annotated recovery patch; `--execute` refuses outside an
-  authorized rollout window. Remote verification is redirect-proof: the
-  wrapper's ls-remote runs config-isolated (`GIT_CONFIG_*` disabled, outside
-  any repository), so `url.*.insteadOf` rewrites and repo/global config
-  cannot divert the source-pinned URL. Frozen-binding discovery is
-  CONTENT-BASED across every ConfigMap in the scope namespaces — the
-  `frozen-binding` label is an optional hint, never the mechanism, so a new
-  or unlabeled binding is discovered the moment it carries a platform
-  reference, on top of the owner-pinned must-exist list. Crash remnants
-  cannot wedge recovery: content-addressed/signature-verified stores
-  tolerate the nlink=2 debris a SIGKILL between link(2) and staging cleanup
-  leaves behind (the remnant is never deleted; the bytes are still verified
-  against their hash/signature), and an orphaned acceptance-head signature
-  is VERIFIED over the deterministic payload and adopted rather than
-  re-signed (real ECDSA is randomized).
+  token minting, RBAC bind/escalate, protected-namespace secrets access,
+  pods/exec-attach-ephemeral runtime credential theft, CSR
+  create/approve/sign identity minting, and workload/ServiceAccount writes
+  in the security identity's namespaces. Exemptions are NOT owner-arbitrary:
+  only enumerated Kubernetes bootstrap identities and kube-system controller
+  ServiceAccounts are exemptible, Group:system:masters never is, and the
+  single bootstrap cluster-admin binding is tolerated only under the
+  explicit `provider_attested_masters` attestation. The security principals
+  themselves are verified LIVE: each ServiceAccount must exist and carry no
+  long-lived token Secret (TokenRequest-only, so "short-lived automation
+  identity" is checked against the cluster, not asserted). External
+  (provider-console/etcd/node) paths are outside the RBAC surface and stay
+  named owner-attestation items. `reconcile-boundary` is the security-owned
+  runbook command: it plans re-application of drifted objects, reports
+  identity-path violations, prints the canonical PLAN-SHA256, and emits the
+  UID/resourceVersion-fenced annotated recovery patch; `--execute` is not an
+  environment flag — it requires the caller's AUTHENTICATED identity to be a
+  scope security principal, an OWNER-SIGNED single-use rollout authorization
+  pinning the exact plan hash and cluster UID (consumed through a chained
+  ledger), zero identity-path violations, and it writes chained
+  intent/complete journal records with a post-check that the applied state
+  equals the authorized intent. Recovery authorizations (schema v2) pin the
+  cluster UID, the target object's UID, resourceVersion, and prior actions,
+  are single-use, and the emitted patch carries the UID/resourceVersion
+  preconditions so the API server itself refuses replay against moved
+  state. Remote verification is pinned END TO END, allowlist-style: the
+  SOURCE-PINNED git binary (`/usr/bin/git`, never a PATH lookup) runs
+  outside any repository with an environment built FROM SCRATCH (fixed
+  system PATH; every git config source disabled; proxy/CA only from pinned
+  constants) — so `url.*.insteadOf` rewrites, PATH/LD_PRELOAD interposition,
+  and ambient proxy/TLS variables are all inert. Frozen bindings are
+  verified against their TRUE authority: the control plane's PostgreSQL
+  state (`fs2_scientific_batches.state->'adapter_execution'->
+  'stage_bindings'`, protected by a database immutability trigger). The
+  collector executes a READ-ONLY SELECT inside the owner-scope-pinned
+  control-plane workload (its own asyncpg + DATABASE_URL; credentials never
+  leave the pod) and the signed source's refs and `batch/<id>/rev/<n>`
+  identities must equal the database enumeration exactly — ConfigMaps are
+  at most a materialization, and a same-name ConfigMap swap changes nothing
+  the database did not record. Crash remnants cannot wedge recovery and are
+  DISTINGUISHABLE from attacker links: receipt publication writes a chained
+  DURABLE journal intent (exact byte hashes + staging path) before the
+  mkdir claim, staging is never deleted, hardlinked receipt files are
+  accepted ONLY when the journal accounts for their exact bytes, and a
+  SIGKILLed publication is ROLLED FORWARD from its own journaled staging on
+  the next attempt; content-addressed stores (acceptance heads, SBOM
+  evidence, bundles) carry their accounting in their names and signatures,
+  and an orphaned head signature is VERIFIED over the deterministic payload
+  and adopted rather than re-signed (real ECDSA is randomized).
 - Kind boundary evidence (2026-09-16): as the configured cluster-admin
   principal, a direct config-only Pod patch, mutation of the allow-list
   ConfigMap, deletion of the VAP objects, and a Helm release-Secret write
