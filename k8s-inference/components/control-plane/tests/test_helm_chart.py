@@ -32,6 +32,9 @@ TEST_ACME_EMAIL = "edge-owner@unit.test"
 TEST_HTTP_NODE_PORT = 31425
 TEST_HTTPS_NODE_PORT = 32633
 TEST_CATALOG_ROLLOUT_DIGEST = "sha256:" + "3" * 64
+TEST_SCHEMA_COMPATIBILITY_DIGEST = "sha256:" + "4" * 64
+TEST_SCHEMA_COMPATIBILITY_COMMIT = "d" * 40
+TEST_SCHEMA_COMPATIBILITY_TREE = "e" * 40
 HELM = shutil.which("helm")
 assert HELM is not None, "helm is required for chart tests"
 POSTGRESQL_CONTRACT = json.loads((CONTROL_ROOT / "contracts" / "postgresql-release-contract.json").read_text())
@@ -1694,7 +1697,6 @@ def test_migration_job_is_the_only_ddl_credential_consumer_and_has_no_runtime_se
             },
         }
     ]
-
     other_workloads = [
         next(document for document in documents if document["kind"] == "Deployment")["spec"]["template"]["spec"],
         next(document for document in documents if document["kind"] == "CronJob")["spec"]["jobTemplate"]["spec"][
@@ -1702,6 +1704,77 @@ def test_migration_job_is_the_only_ddl_credential_consumer_and_has_no_runtime_se
         ]["spec"],
     ]
     assert "fs2-serve-database-migrations" not in json.dumps(other_workloads)
+
+
+def test_forward_rollback_keeps_current_schema_and_maintenance_image() -> None:
+    documents = render(
+        "--set",
+        f"image.digest=sha256:{'5' * 64}",
+        "--set",
+        "rollbackCompatibility.enabled=true",
+        "--set",
+        f"rollbackCompatibility.schemaImageDigest={TEST_SCHEMA_COMPATIBILITY_DIGEST}",
+        "--set",
+        f"rollbackCompatibility.sourceCommit={TEST_SCHEMA_COMPATIBILITY_COMMIT}",
+        "--set",
+        f"rollbackCompatibility.sourceTree={TEST_SCHEMA_COMPATIBILITY_TREE}",
+        "--set",
+        "config.requestDebugEnabled=false",
+    )
+    runtime_image = f"{TEST_REPOSITORY}@sha256:{'5' * 64}"
+    schema_image = f"{TEST_REPOSITORY}@{TEST_SCHEMA_COMPATIBILITY_DIGEST}"
+    deployment = gateway_deployment(documents)
+    pod = deployment["spec"]["template"]
+    assert pod["spec"]["containers"][0]["image"] == runtime_image
+    assert pod["spec"]["initContainers"][0]["image"] == schema_image
+    assert (
+        pod["metadata"]["annotations"]
+        | {
+            "fs2.nebius.ai/schema-compatibility-image-digest": TEST_SCHEMA_COMPATIBILITY_DIGEST,
+            "fs2.nebius.ai/schema-compatibility-source-commit": TEST_SCHEMA_COMPATIBILITY_COMMIT,
+            "fs2.nebius.ai/schema-compatibility-source-tree": TEST_SCHEMA_COMPATIBILITY_TREE,
+        }
+        == pod["metadata"]["annotations"]
+    )
+    maintenance = next(document for document in documents if document["kind"] == "CronJob")
+    assert maintenance["spec"]["jobTemplate"]["spec"]["template"]["spec"]["containers"][0]["image"] == schema_image
+    migration = next(document for document in documents if document["kind"] == "Job")
+    assert migration["spec"]["template"]["spec"]["containers"][0]["image"] == schema_image
+    assert migration["metadata"]["annotations"] == POSTGRESQL_ANNOTATIONS | {
+        "fs2.nebius.ai/schema-compatibility-image-digest": TEST_SCHEMA_COMPATIBILITY_DIGEST,
+        "fs2.nebius.ai/schema-compatibility-source-commit": TEST_SCHEMA_COMPATIBILITY_COMMIT,
+        "fs2.nebius.ai/schema-compatibility-source-tree": TEST_SCHEMA_COMPATIBILITY_TREE,
+    }
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected"),
+    [
+        (("--set", f"rollbackCompatibility.schemaImageDigest={TEST_DIGEST}"), "distinct current schema image"),
+        (("--set", "config.requestDebugEnabled=true"), "requestDebugEnabled"),
+        (("--set", "maintenance.enabled=false"), "maintenance"),
+    ],
+)
+def test_forward_rollback_fails_closed_on_an_unsafe_image_or_setting(extra: tuple[str, str], expected: str) -> None:
+    command = render_command(
+        "--set",
+        "rollbackCompatibility.enabled=true",
+        "--set",
+        f"rollbackCompatibility.schemaImageDigest={TEST_SCHEMA_COMPATIBILITY_DIGEST}",
+        "--set",
+        f"rollbackCompatibility.sourceCommit={TEST_SCHEMA_COMPATIBILITY_COMMIT}",
+        "--set",
+        f"rollbackCompatibility.sourceTree={TEST_SCHEMA_COMPATIBILITY_TREE}",
+        *extra,
+    )
+    result = subprocess.run(  # noqa: S603 - fixed Helm binary and bounded adversarial values.
+        command,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert expected in result.stderr
 
 
 def test_exact_helm4_lifecycle_uses_digest_registry_and_typed_release_values() -> None:

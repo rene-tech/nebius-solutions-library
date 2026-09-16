@@ -20,9 +20,12 @@ from .federation import FederationRouter, FederationTransportError
 from .models import ClaimedOperation, ReportedUsage, RuntimeIdentity, RuntimeLifecycleObservation, RuntimeResult
 from .registry import OperationalModel, ProbeSpec
 from .request_debug import (
+    DebugCapturePolicy,
     DebugExchange,
     DebugStore,
     body_capture,
+    body_credential_prefixes,
+    bounded_body_capture,
     credential_values,
     persist_debug_exchange,
     redact_headers,
@@ -84,6 +87,7 @@ class _UpstreamCapture:
         request_headers: dict[str, str],
         maximum: int,
         upstream_attempt: int,
+        debug_max_body_bytes: int | None = None,
     ) -> None:
         self.operation = operation
         self.endpoint = endpoint
@@ -95,6 +99,10 @@ class _UpstreamCapture:
         self.request_content_type: str | None = operation.request_content_type
         self.response_content_type: str | None = None
         self.maximum = maximum
+        self.debug_max_body_bytes = debug_max_body_bytes
+        # Store at most twice the debug cap so a large upstream response never
+        # accumulates in memory; observed_bytes still counts the full length.
+        self.store_limit = 2 * debug_max_body_bytes if debug_max_body_bytes else maximum
         self.upstream_attempt = upstream_attempt
         self.started_at = datetime.now(UTC)
         self.completed_at: datetime | None = None
@@ -130,8 +138,9 @@ class _UpstreamCapture:
     def observe(self, chunk: bytes) -> None:
         self.read_started = True
         self.observed_bytes += len(chunk)
-        remaining = max(0, self.maximum - len(self.content))
-        self.content.extend(chunk[:remaining])
+        remaining = max(0, self.store_limit - len(self.content))
+        if remaining:
+            self.content.extend(chunk[:remaining])
         if self.observed_bytes > self.maximum:
             self.error_type = "ResponseBodyLimitExceeded"
             self.error_detail = f"debug response capture exceeded configured maximum of {self.maximum} bytes"
@@ -174,18 +183,30 @@ class _UpstreamCapture:
             self.failed(error)
 
     def exchange(self) -> DebugExchange:
+        # A credential in an unterminated request scalar is known only as a prefix;
+        # redact it and any echoed suffix in both the request and the response.
+        prefixes = body_credential_prefixes(self.request_body)
         request = body_capture(
-            self.request_body, self.request_content_type, complete=True, known_credentials=self.known_credentials
-        )
-        response = body_capture(
-            bytes(self.content),
-            self.response_content_type,
-            complete=self.complete,
+            self.request_body,
+            self.request_content_type,
+            complete=True,
             known_credentials=self.known_credentials,
+            max_bytes=self.debug_max_body_bytes,
+            credential_prefixes=prefixes,
         )
         # observed_bytes counts bytes actually delivered by the existing decoded
         # HTTP body iterator, not wire/compressed bytes or advertised Content-Length.
-        response = response.model_copy(update={"observed_bytes": self.observed_bytes})
+        # The stored content is a bounded prefix, so report the true observed length
+        # and flag truncation when the tail beyond the buffer was discarded.
+        response = bounded_body_capture(
+            bytes(self.content),
+            self.response_content_type,
+            self.complete,
+            self.known_credentials,
+            max_bytes=self.debug_max_body_bytes,
+            observed_bytes=self.observed_bytes,
+            credential_prefixes=prefixes,
+        )
         return DebugExchange(
             id=uuid4(),
             source="upstream",
@@ -274,6 +295,8 @@ class RuntimeClient:
         metadata_provider: RuntimeMetadataProvider | None = None,
         federation: FederationRouter | None = None,
         debug_store: DebugStore | None = None,
+        debug_max_body_bytes: int | None = None,
+        debug_capture_policy: DebugCapturePolicy | None = None,
     ) -> None:
         self.activation_timeout_seconds = activation_timeout_seconds
         self.runtime_timeout_seconds = runtime_timeout_seconds
@@ -283,6 +306,10 @@ class RuntimeClient:
         self.metadata_provider = metadata_provider or NullRuntimeMetadataProvider()
         self.federation = federation or FederationRouter({})
         self.debug_store = debug_store
+        self.debug_max_body_bytes = debug_max_body_bytes
+        # Fail-closed default: capture nothing unless production injects a scoped,
+        # time-bounded policy from settings.
+        self.debug_capture_policy = debug_capture_policy or DebugCapturePolicy()
 
     @asynccontextmanager
     async def _debug_stream(
@@ -294,8 +321,23 @@ class RuntimeClient:
         headers: dict[str, str],
         upstream_attempt: int,
     ) -> AsyncIterator[httpx.Response]:
+        # Gate on tenant/model scope BEFORE wrapping or buffering: the operation's
+        # tenant and model are known up front, so an unmatched exchange is never
+        # observed, drained or held in memory at all.
+        if self.debug_store is None or not self.debug_capture_policy.should_capture(
+            tenant_id=operation.tenant_id, model_id=operation.model_id, now=datetime.now(UTC)
+        ):
+            async with stream as response:
+                yield response
+            return
         capture = _UpstreamCapture(
-            operation, endpoint, request_body, headers, self.max_response_bytes, upstream_attempt
+            operation,
+            endpoint,
+            request_body,
+            headers,
+            self.max_response_bytes,
+            upstream_attempt,
+            self.debug_max_body_bytes,
         )
         try:
             async with stream as response:
@@ -312,17 +354,16 @@ class RuntimeClient:
             capture.failed(error)
             raise
         finally:
-            if self.debug_store is not None:
-                try:
-                    await persist_debug_exchange(self.debug_store, capture.exchange())
-                except Exception as error:
-                    # Debug serialization/storage failures must not replace an
-                    # inference result. Never put payloads or exception text in logs.
-                    _LOGGER.warning(
-                        "upstream debug capture failed operation_id=%s error_type=%s",
-                        operation.id,
-                        type(error).__name__,
-                    )
+            try:
+                await persist_debug_exchange(self.debug_store, capture.exchange())
+            except Exception as error:
+                # Debug serialization/storage failures must not replace an
+                # inference result. Never put payloads or exception text in logs.
+                _LOGGER.warning(
+                    "upstream debug capture failed operation_id=%s error_type=%s",
+                    operation.id,
+                    type(error).__name__,
+                )
 
     async def close(self) -> None:
         actions = [self.federation.close()]

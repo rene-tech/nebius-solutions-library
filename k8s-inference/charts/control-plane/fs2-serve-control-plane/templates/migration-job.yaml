@@ -13,6 +13,11 @@ metadata:
     fs2.nebius.ai/postgresql-first-migration: {{ .Values.migration.releaseContract.firstMigrationVersion | quote }}
     fs2.nebius.ai/postgresql-last-migration: {{ .Values.migration.releaseContract.lastMigrationVersion | quote }}
     fs2.nebius.ai/postgresql-namespace-role-sha256: {{ .Values.migration.releaseContract.namespaceRoleOwnershipSha256 | quote }}
+  {{- if .Values.rollbackCompatibility.enabled }}
+    fs2.nebius.ai/schema-compatibility-image-digest: {{ .Values.rollbackCompatibility.schemaImageDigest | quote }}
+    fs2.nebius.ai/schema-compatibility-source-commit: {{ .Values.rollbackCompatibility.sourceCommit | quote }}
+    fs2.nebius.ai/schema-compatibility-source-tree: {{ .Values.rollbackCompatibility.sourceTree | quote }}
+  {{- end }}
   {{- if .Release.IsUpgrade }}
     "helm.sh/hook": pre-upgrade
     "helm.sh/hook-weight": "-5"
@@ -46,7 +51,7 @@ spec:
       {{- end }}
       containers:
         - name: migrate
-          image: {{ include "fs2-serve.image" . }}
+          image: {{ include "fs2-serve.schemaCompatibleImage" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args: ["migrate"]
           env:

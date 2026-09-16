@@ -1364,7 +1364,7 @@ variable "enable_cold_start_keepers" {
 }
 
 variable "request_debug_enabled" {
-  description = "Capture complete public and upstream exchanges for operator debugging; authentication secrets are excluded."
+  description = "Capture public and upstream exchanges for operator debugging; requires a scope and a bounded expiry or the control plane refuses to start."
   type        = bool
   default     = false
 }
@@ -1389,6 +1389,24 @@ variable "retention_max_batches" {
     condition     = floor(var.retention_max_batches) == var.retention_max_batches && var.retention_max_batches >= 1 && var.retention_max_batches <= 100
     error_message = "retention_max_batches must be an integer from 1 through 100."
   }
+}
+
+variable "request_debug_tenants" {
+  description = "Comma-separated tenant IDs to scope request-debug capture to. Required (with or instead of models) when request_debug_enabled is true."
+  type        = string
+  default     = ""
+}
+
+variable "request_debug_models" {
+  description = "Comma-separated model (App) IDs to scope request-debug capture to. Required (with or instead of tenants) when request_debug_enabled is true."
+  type        = string
+  default     = ""
+}
+
+variable "request_debug_expires_at" {
+  description = "RFC3339 instant after which request-debug capture stops. Required and bounded when request_debug_enabled is true; empty disables capture."
+  type        = string
+  default     = ""
 }
 
 variable "enable_dcgm_cold_start_campaign" {

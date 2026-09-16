@@ -6,14 +6,16 @@ import ipaddress
 import json
 import re
 from collections.abc import Mapping
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal
 from urllib.parse import SplitResult, urlsplit
 
-from pydantic import Field, model_validator
+from pydantic import AwareDatetime, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .models import ModelId, Scope
+from .request_debug import DebugCapturePolicy
 
 _PUBLIC_HOST_MAX_LENGTH = 253
 _PUBLIC_URL_MAX_LENGTH = 2048
@@ -248,8 +250,26 @@ class Settings(BaseSettings):
     max_request_bytes: int = Field(default=16 * 1024 * 1024, ge=1024, le=256 * 1024 * 1024)
     max_response_bytes: int = Field(default=128 * 1024 * 1024, ge=1024, le=1024 * 1024 * 1024)
     # Opt-in full customer transport/upstream capture for evaluation debugging.
-    # Existing body-size limits apply; authentication secrets are never retained.
+    # Off by default: enabling it captures complete customer payloads, so it must
+    # stay a deliberate, time-bounded operator choice rather than a standing state.
     request_debug_enabled: bool = False
+    # Hard ceiling on the stored size of each captured request/response body. This
+    # is intentionally far below max_response_bytes: debug capture keeps only a
+    # bounded, redacted prefix, never the whole multi-megabyte payload. A truncated
+    # body is flagged so operators know they are looking at a prefix.
+    request_debug_max_body_bytes: int = Field(default=64 * 1024, ge=1024, le=8 * 1024 * 1024)
+    # Retention/purge of captured debug exchanges is owned by the central platform
+    # maintenance purge (its own retention setting, DELETE grant and schedule), not
+    # by this capture facility, so no retention knob is defined here.
+    # Scope + time-bound for capture. There is no global capture switch: enabling
+    # request_debug records nothing unless a tenant and/or model (App) scope is
+    # named AND request_debug_expires_at is a future instant within the strict
+    # maximum window below. Settings validation rejects an enabled policy that is
+    # unscoped or lacks a bounded future expiry.
+    request_debug_tenants: str = Field(default="", max_length=8192)
+    request_debug_models: str = Field(default="", max_length=8192)
+    request_debug_expires_at: AwareDatetime | None = None
+    request_debug_max_window_seconds: int = Field(default=604800, ge=300, le=2592000)
     payload_ttl_seconds: int = Field(default=86400, ge=60, le=604800)
     scientific_artifacts_enabled: bool = False
     artifact_store_endpoint: str = Field(
@@ -385,6 +405,23 @@ class Settings(BaseSettings):
                 raise ValueError("artifact_inline_content_max_bytes cannot exceed max_request_bytes")
             if self.artifact_inline_content_max_bytes > self.artifact_max_bytes:
                 raise ValueError("artifact_inline_content_max_bytes cannot exceed artifact_max_bytes")
+        if self.request_debug_enabled:
+            # Capture must be scoped and bounded to a maximum window. These reject
+            # genuine misconfigurations (no scope, no expiry, or an unbounded
+            # window) at startup. A PAST expiry is intentionally NOT rejected: an
+            # elapsed window normalizes to capture-off at runtime (should_capture
+            # fails closed) so a stale expiry never crash-loops the control plane.
+            # To actually capture, the expiry must be in the future (enforced at
+            # runtime), which is what "new activation requires a future expiry" means.
+            tenants = [item for item in self.request_debug_tenants.split(",") if item.strip()]
+            models = [item for item in self.request_debug_models.split(",") if item.strip()]
+            if not tenants and not models:
+                raise ValueError("request_debug_enabled requires request_debug_tenants and/or request_debug_models")
+            if self.request_debug_expires_at is None:
+                raise ValueError("request_debug_enabled requires a bounded request_debug_expires_at")
+            horizon = datetime.now(UTC) + timedelta(seconds=self.request_debug_max_window_seconds)
+            if self.request_debug_expires_at > horizon:
+                raise ValueError("request_debug_expires_at exceeds request_debug_max_window_seconds")
         database_roles = {
             self.reporting_database_role,
             self.runtime_database_role,
@@ -479,6 +516,21 @@ class Settings(BaseSettings):
         """Return the exact media-type allowlist accepted for scientific bytes."""
 
         return frozenset(item.strip().lower() for item in self.artifact_media_types.split(",") if item.strip())
+
+    def debug_capture_policy(self) -> DebugCapturePolicy:
+        """Build the scoped, time-bounded request-debug capture policy from env.
+
+        Enabling capture records nothing unless a tenant and/or model scope is
+        named and request_debug_expires_at is a bounded future instant; the
+        policy itself fail-closes on any missing piece.
+        """
+
+        return DebugCapturePolicy(
+            enabled=self.request_debug_enabled,
+            tenants=frozenset(item.strip() for item in self.request_debug_tenants.split(",") if item.strip()),
+            models=frozenset(item.strip() for item in self.request_debug_models.split(",") if item.strip()),
+            expires_at=self.request_debug_expires_at,
+        )
 
     def artifact_store_credentials(self) -> tuple[str, str]:
         """Read the object-store key pair from its mounted secret, not from env."""

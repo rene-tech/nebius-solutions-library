@@ -57,8 +57,16 @@
 {{- if or (ne .Values.migration.runtimeDatabaseRole "fs2_serve_runtime") (ne .Values.migration.reportingDatabaseRole "fs2_serve_reporting") (ne .Values.migration.maintenanceDatabaseRole "fs2_serve_maintenance") (ne .Values.migration.activationDatabaseRole "fs2_serve_activation") }}
 {{- fail "database group roles must match the canonical PostgreSQL release contract" }}
 {{- end }}
-{{- if or (ne .Values.migration.releaseContract.schema "fs2-serve.nebius.ai/postgresql-release-contract/v1") (ne .Values.migration.releaseContract.contractPayloadSha256 "43bbf2923f7ec6fb45bd72cac8e11f13273352f0b5c7510f2f8197f3835a0043") (ne .Values.migration.releaseContract.migrationSetSha256 "7508bd84cfbc732524a23402019736abf1bf54bf0ed8a3cca91fbc07904f9f3b") (ne (int .Values.migration.releaseContract.migrationCount) 30) (ne .Values.migration.releaseContract.firstMigrationVersion "0001_initial.sql") (ne .Values.migration.releaseContract.lastMigrationVersion "0030_scientific_retention_authority.sql") (ne .Values.migration.releaseContract.namespaceRoleOwnershipSha256 "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca") }}
+{{- if or (ne .Values.migration.releaseContract.schema "fs2-serve.nebius.ai/postgresql-release-contract/v1") (ne .Values.migration.releaseContract.contractPayloadSha256 "341f4571cc5daf91ddf66dc768e40a20742b81c0bd33b490d9ba140a66877db9") (ne .Values.migration.releaseContract.migrationSetSha256 "271954790fc6df4c524096ac5f5c5f8429fb38df732172dd662c172fbc2f76ae") (ne (int .Values.migration.releaseContract.migrationCount) 31) (ne .Values.migration.releaseContract.firstMigrationVersion "0001_initial.sql") (ne .Values.migration.releaseContract.lastMigrationVersion "0031_retention_scan_hardening.sql") (ne .Values.migration.releaseContract.namespaceRoleOwnershipSha256 "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca") }}
 {{- fail "migration release receipt inputs must match the canonical PostgreSQL contract" }}
+{{- end }}
+{{- if .Values.rollbackCompatibility.enabled }}
+{{- if eq .Values.rollbackCompatibility.schemaImageDigest .Values.image.digest }}
+{{- fail "rollback compatibility requires a distinct current schema image digest, not the reverted gateway digest" }}
+{{- end }}
+{{- if .Values.config.requestDebugEnabled }}
+{{- fail "rollback compatibility requires requestDebugEnabled=false" }}
+{{- end }}
 {{- end }}
 {{- if ne .Values.httpRoute.authorityMode .Values.config.publicAuthorityMode }}
 {{- fail "httpRoute.authorityMode must equal config.publicAuthorityMode" }}
@@ -250,6 +258,11 @@ spec:
       annotations:
         fs2.nebius.ai/image-digest: {{ .Values.image.digest | quote }}
         fs2.nebius.ai/catalog-rollout-digest: {{ .Values.catalog.rolloutDigest | quote }}
+        {{- if .Values.rollbackCompatibility.enabled }}
+        fs2.nebius.ai/schema-compatibility-image-digest: {{ .Values.rollbackCompatibility.schemaImageDigest | quote }}
+        fs2.nebius.ai/schema-compatibility-source-commit: {{ .Values.rollbackCompatibility.sourceCommit | quote }}
+        fs2.nebius.ai/schema-compatibility-source-tree: {{ .Values.rollbackCompatibility.sourceTree | quote }}
+        {{- end }}
         {{- if .Values.adminReadAdapters.observability.enabled }}
         fs2.nebius.ai/admin-observability-config-sha256: {{ .Values.adminReadAdapters.observability | toJson | sha256sum | quote }}
         {{- end }}
@@ -277,7 +290,7 @@ spec:
       {{- end }}
       initContainers:
         - name: wait-schema
-          image: {{ include "fs2-serve.image" . }}
+          image: {{ include "fs2-serve.schemaCompatibleImage" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args: ["wait-schema"]
           env:

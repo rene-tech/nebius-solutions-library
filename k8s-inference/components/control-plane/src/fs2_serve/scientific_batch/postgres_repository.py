@@ -218,6 +218,19 @@ class PostgresScientificBatchRepository:
                             AND operation.status IN ('succeeded','failed','cancelled')
                             AND (batch.state->>'result_published')::boolean=false
                         )
+                        OR (
+                            -- A process can persist terminal publication and
+                            -- die before its finally block releases the lease.
+                            -- Reclaim only that expired, still-owned shape so
+                            -- reconciliation can idempotently clear it; normal
+                            -- released terminal rows remain outside the queue.
+                            batch.status IN ('succeeded','failed','cancelled')
+                            AND operation.status IN ('succeeded','failed','cancelled')
+                            AND (batch.state->>'result_published')::boolean=true
+                            AND batch.controller_id IS NOT NULL
+                            AND batch.lease_expires_at IS NOT NULL
+                            AND batch.lease_expires_at<=clock_timestamp()
+                        )
                     )
                       AND fs2_scientific_retention_unclaimed(batch.operation_id)
                       AND (batch.lease_expires_at IS NULL OR batch.lease_expires_at<=clock_timestamp())

@@ -153,6 +153,13 @@ verify both the effective and login database identities are members of that
 configured maintenance role; caller-settable PostgreSQL settings provide no
 authority.
 
+The admission outbox is the deliberate narrow exception: it is a bounded,
+single-row-per-operation crash-recovery handoff rather than provenance. Runtime
+may delete an outbox row only after the corresponding batch has been durably
+materialized. Tests enumerate the immutable attempt, artifact, result, event,
+batch, claim, and ledger tables and require that runtime has no DELETE privilege
+on any of them; retention remains their sole deletion owner.
+
 Object deletion runs before the durable rows are removed and is idempotent, so
 an interrupted purge converges on the next pass instead of leaving metadata
 pointing at bytes that are already gone. The ledger survives the purge it

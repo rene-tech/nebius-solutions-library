@@ -85,6 +85,14 @@ app.kubernetes.io/component: model-controller
 {{- printf "%s@%s" .Values.image.repository .Values.image.digest -}}
 {{- end -}}
 
+{{- define "fs2-serve.schemaCompatibleImage" -}}
+{{- if .Values.rollbackCompatibility.enabled -}}
+{{- printf "%s@%s" .Values.image.repository .Values.rollbackCompatibility.schemaImageDigest -}}
+{{- else -}}
+{{- include "fs2-serve.image" . -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "fs2-serve.adminConsoleImage" -}}
 {{- printf "%s@%s" .Values.adminConsole.image.repository .Values.adminConsole.image.digest -}}
 {{- end -}}
@@ -254,6 +262,18 @@ app.kubernetes.io/component: model-controller
   value: {{ .Values.config.maxResponseBytes | quote }}
 - name: FS2_REQUEST_DEBUG_ENABLED
   value: {{ .Values.config.requestDebugEnabled | quote }}
+- name: FS2_REQUEST_DEBUG_MAX_BODY_BYTES
+  value: {{ .Values.config.requestDebugMaxBodyBytes | quote }}
+- name: FS2_REQUEST_DEBUG_TENANTS
+  value: {{ .Values.config.requestDebugTenants | quote }}
+- name: FS2_REQUEST_DEBUG_MODELS
+  value: {{ .Values.config.requestDebugModels | quote }}
+- name: FS2_REQUEST_DEBUG_MAX_WINDOW_SECONDS
+  value: {{ .Values.config.requestDebugMaxWindowSeconds | quote }}
+{{- if .Values.config.requestDebugExpiresAt }}
+- name: FS2_REQUEST_DEBUG_EXPIRES_AT
+  value: {{ .Values.config.requestDebugExpiresAt | quote }}
+{{- end }}
 - name: FS2_SYNC_WAIT_SECONDS
   value: {{ .Values.config.syncWaitSeconds | quote }}
 - name: FS2_MAX_SYNC_WAIT_SECONDS

@@ -598,6 +598,11 @@ class PostgresStore:
             for table, columns in SCIENTIFIC_RUNTIME_UPDATE_COLUMNS.items():
                 await connection.execute(f"GRANT UPDATE ({','.join(columns)}) ON {table} TO {quoted_runtime}")
             await connection.execute(f"GRANT SELECT,INSERT ON fs2_scientific_batch_events TO {quoted_runtime}")
+            # The admission outbox is a bounded one-row crash-recovery handoff,
+            # not immutable scientific provenance. Runtime deletes that row
+            # only after the corresponding batch is durably materialized.
+            # Immutable attempts/artifacts/results/events/claims/ledger retain
+            # no runtime DELETE grant and are purged only by maintenance.
             await connection.execute(
                 f"GRANT SELECT,INSERT,UPDATE,DELETE ON fs2_scientific_admission_outbox TO {quoted_runtime}"
             )

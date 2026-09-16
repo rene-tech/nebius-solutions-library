@@ -37,9 +37,9 @@ def test_committed_postgresql_contract_is_exact_emitted_release_receipt_input() 
     receipt = committed["required_release_receipt_inputs"]
     assert receipt == {
         "first_migration_version": "0001_initial.sql",
-        "last_migration_version": "0030_scientific_retention_authority.sql",
-        "migration_count": 30,
-        "migration_set_sha256": "7508bd84cfbc732524a23402019736abf1bf54bf0ed8a3cca91fbc07904f9f3b",
+        "last_migration_version": "0031_retention_scan_hardening.sql",
+        "migration_count": 31,
+        "migration_set_sha256": "271954790fc6df4c524096ac5f5c5f8429fb38df732172dd662c172fbc2f76ae",
         "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca",
     }
     migrations = committed["migration_set"]["ordered_migrations"]
@@ -73,6 +73,22 @@ def test_scientific_runtime_grant_repairs_are_additive_and_readiness_checked() -
     assert wait_source.count("fs2_scientific_batches','scheduling_digest','UPDATE'") == 2
     assert "SELECT,INSERT" not in wait_source
     assert "database schema runtime privileges are incomplete" in wait_source
+
+
+def test_retention_scan_hardening_is_versioned_and_future_functions_fail_closed() -> None:
+    source = (MIGRATIONS / "0031_retention_scan_hardening.sql").read_text(encoding="utf-8")
+    normalized = " ".join(source.split())
+    for index in (
+        "fs2_operations_retention_idx",
+        "fs2_tokens_revoked_retention_idx",
+        "fs2_tokens_expiry_retention_idx",
+        "fs2_audit_retention_idx",
+        "fs2_request_telemetry_retention_idx",
+        "fs2_scientific_stage_attempts_retention_idx",
+        "fs2_scientific_artifacts_retention_idx",
+    ):
+        assert f"CREATE INDEX {index}" in normalized
+    assert "ALTER DEFAULT PRIVILEGES REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC" in normalized
 
 
 def _updated_columns(source: str, table: str) -> set[str]:

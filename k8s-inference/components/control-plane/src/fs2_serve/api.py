@@ -615,7 +615,13 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         allowed_origins=allowed_origins,
     )
     if runtime.settings.request_debug_enabled:
-        app.add_middleware(DebugCaptureMiddleware, store=debug_store, principal_resolver=runtime.tokens.verify)
+        app.add_middleware(
+            DebugCaptureMiddleware,
+            store=debug_store,
+            principal_resolver=runtime.tokens.verify,
+            max_body_bytes=runtime.settings.request_debug_max_body_bytes,
+            policy=runtime.settings.debug_capture_policy(),
+        )
 
     @app.middleware("http")
     async def access_log(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:

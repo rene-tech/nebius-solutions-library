@@ -1,32 +1,70 @@
-# Preproduction request debug logging
+# Request debug logging
 
-Implementation and offline tests are available; **deployment and live acceptance
-are not yet claimed here**. This is an opt-in operator debugging facility, separate
-from ordinary logs, usage counters and logical run history.
+This is an opt-in operator debugging facility, separate from ordinary logs, usage
+counters and logical run history. It is **off by default** and, when enabled, is
+governed: each stored body is capped to a redacted prefix, captures are deleted by
+the platform's central retention purge, and reading a captured exchange requires an
+ADMIN operator and is audited. Enable it deliberately for a bounded window rather
+than leaving it on as a standing state.
 
 ## Enable capture
 
-Set `deployment.observability.request_debug_enabled = true` in the existing
-deployment configuration, preserving its other fields:
+There is **no global capture switch**. Enabling `request_debug_enabled` without a
+tenant/model scope and a bounded future expiry is rejected at startup, so capture
+is always scoped and self-closing. A minimal activation names a scope and an
+expiry within the maximum window:
 
 ```hcl
 deployment = {
   # Preserve the rest of the existing deployment configuration.
   observability = {
     # Preserve the other existing observability settings.
-    request_debug_enabled = true
+    request_debug_enabled    = true
+    request_debug_models     = "boltz2"          # and/or request_debug_tenants
+    request_debug_expires_at = "2026-09-20T00:00:00Z"
   }
 }
 ```
 
 The default is `false`. Enable it through the normal reviewed Terraform/release
-workflow; it is not a browser setting. No additional customer key or permission
-is required. Existing admin session, operator-role and tenant restrictions govern
-reading captures. Customer API keys do not gain access to the admin debug API.
+workflow for a bounded window; it is not a browser setting, and it should be
+disabled again once the investigation is complete. Reading a captured exchange
+requires an **ADMIN** operator (tenant scoping still applies); customer API keys
+do not gain access to the admin debug API.
 
-Capture covers observed public `/v1/` HTTP exchanges and `/mcp` traffic, including
-validation failures and requests rejected before an operation exists. Token
-management endpoints are excluded. Admin/debug endpoints are not themselves
+**Enabling capture alone records nothing** — you must name what to capture and
+when it stops:
+
+- `request_debug_tenants` — comma-separated tenant IDs to capture. Only the named
+  tenants are recorded; unauthenticated/rejected requests (no tenant) are not.
+- `request_debug_models` — comma-separated model (App) IDs to capture. All tenants'
+  use of those Apps is recorded, including pre-admission rejections for the App.
+  When both allowlists are set, an exchange must match both.
+- `request_debug_expires_at` — a required RFC3339 instant after which capture stops
+  even while enabled. It must be in the future and within
+  `request_debug_max_window_seconds` (default 7 days), or the control plane refuses
+  to start. There is no unbounded or "capture everything" mode.
+
+The control plane validates this at startup: an enabled policy that is unscoped, or
+whose expiry is missing/past/beyond the maximum window, fails fast rather than
+capturing broadly. Because capture is time-bounded, disable it before the expiry
+passes; leaving `request_debug_enabled = true` with a stale expiry captures nothing
+and will fail a subsequent restart.
+
+One more chart value bounds each retained record and is safe to leave at default:
+
+- `config.requestDebugMaxBodyBytes` (default `65536`) caps the stored size of each
+  captured request/response body. Only a bounded, redacted prefix is kept, and the
+  middleware buffers at most twice this cap regardless of body size.
+
+Retention/purge of captured exchanges (and of transport telemetry) is owned by the
+platform's central maintenance purge — its own retention settings, DELETE grants
+and schedule — not by this capture facility.
+
+Capture covers observed public `/v1/` HTTP exchanges and `/mcp` traffic that the
+policy admits, including validation failures and requests rejected before an
+operation exists. Token management endpoints (and the storage-credentials
+endpoint) are excluded. Admin/debug endpoints are not themselves
 captured. Actual dispatched model HTTP exchanges are recorded separately as
 `upstream`, including individual federation HTTP attempts. This is not a recording
 of every internal Python call, GPU kernel, or scientific stage's internal network
@@ -65,8 +103,10 @@ logical run's eventual failure are different observations, not conflicting rows.
 
 ## Read-only admin API
 
-Paths below are relative to the same authenticated admin origin. Responses use
-the existing `AdminEnvelope` with `data` and contextual `meta`.
+Paths below are relative to the same authenticated admin origin and require an
+ADMIN operator session. Responses use the existing `AdminEnvelope` with `data` and
+contextual `meta`. Each `Inspect` of a full exchange emits a `request.debug.read`
+audit event so every disclosure of a captured payload is recorded.
 
 | GET endpoint | Result |
 | --- | --- |
@@ -96,6 +136,7 @@ content_type: observed value or null
 observed_bytes: number of body bytes actually observed before redaction
 complete: whether the observed capture reached a complete body
 redacted: whether sensitive content was replaced
+truncated: whether only a bounded prefix was stored (observed_bytes still full)
 ```
 
 Nullable identities/statuses are not invented. A request without a durable
@@ -104,11 +145,11 @@ HTTP 0 or success.
 
 ## Completeness, storage and limits
 
-- Capture retains the complete **observed** body when the stream completes within
-  applicable limits. It does not bypass existing endpoint validation, upload or
-  runtime response bounds. An oversized upstream response may retain only its
-  bounded prefix and report incomplete capture. This is not an unlimited packet
-  recorder or a new model payload-size allowance.
+- Each stored body is capped at `requestDebugMaxBodyBytes`. A body larger than the
+  cap is stored as a bounded, redacted prefix with `truncated=true`, while
+  `observed_bytes` still reports the full length seen on the wire. Capture does not
+  bypass existing endpoint validation, upload or runtime response bounds, and it is
+  not an unlimited packet recorder or a new model payload-size allowance.
 - A rejected request body may never have been consumed by the application. The
   public middleware does not drain it merely to fill a log. Interrupted, unread,
   failed or limit-exceeded streams remain explicitly partial/incomplete. An empty
@@ -137,12 +178,17 @@ HTTP 0 or success.
   transactions. Its configurable batch size and maximum batch count drain up to
   10,000 rows per run by default. A remaining backlog fails the Job so the
   maintenance alert reports non-convergence. Payload-free request telemetry has
-  one 90-day retention value (`7776000` seconds). Disabling capture stops new
-  writes but does not bypass either purge.
-- Any application/chart rollback must explicitly preserve
-  `request_debug_enabled=false`; do not rely on values retained by an older Helm
-  revision. Keep maintenance enabled during rollback so existing captures still
-  expire.
+  one 90-day retention value (`7776000` seconds). This central maintenance path
+  is the sole purge owner; the capture facility defines no DELETE grant,
+  retention setting, or competing schedule. Its maintenance credential can read
+  no captured payload, header, query, or ciphertext column. Disabling capture
+  stops new writes but does not bypass or accelerate either TTL purge.
+- Any application rollback must use the current chart's forward-compatible
+  rollback lane and explicitly preserve `request_debug_enabled=false`; do not
+  use a raw Helm rollback or a pre-current-schema maintenance/init image. Keep
+  central maintenance enabled so existing captures still expire. The exact
+  schema-image and verification procedure is in the control-plane operations
+  guide.
 
 ## Verification status
 

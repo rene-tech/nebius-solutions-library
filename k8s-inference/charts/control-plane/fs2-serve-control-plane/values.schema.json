@@ -3,6 +3,7 @@
   "type": "object",
   "required": [
     "image",
+    "rollbackCompatibility",
     "adminConsole",
     "adminConfiguration",
     "modelController",
@@ -67,6 +68,33 @@
           "items": {
             "type": "string"
           }
+        }
+      },
+      "additionalProperties": false
+    },
+    "rollbackCompatibility": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "schemaImageDigest",
+        "sourceCommit",
+        "sourceTree"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "schemaImageDigest": {
+          "type": "string",
+          "pattern": "^$|^sha256:[a-f0-9]{64}$"
+        },
+        "sourceCommit": {
+          "type": "string",
+          "pattern": "^$|^[a-f0-9]{40}$"
+        },
+        "sourceTree": {
+          "type": "string",
+          "pattern": "^$|^[a-f0-9]{40}$"
         }
       },
       "additionalProperties": false
@@ -1584,11 +1612,11 @@
           ],
           "properties": {
             "schema": {"const": "fs2-serve.nebius.ai/postgresql-release-contract/v1"},
-            "contractPayloadSha256": {"const": "43bbf2923f7ec6fb45bd72cac8e11f13273352f0b5c7510f2f8197f3835a0043"},
-            "migrationSetSha256": {"const": "7508bd84cfbc732524a23402019736abf1bf54bf0ed8a3cca91fbc07904f9f3b"},
-            "migrationCount": {"const": 30},
+            "contractPayloadSha256": {"const": "341f4571cc5daf91ddf66dc768e40a20742b81c0bd33b490d9ba140a66877db9"},
+            "migrationSetSha256": {"const": "271954790fc6df4c524096ac5f5c5f8429fb38df732172dd662c172fbc2f76ae"},
+            "migrationCount": {"const": 31},
             "firstMigrationVersion": {"const": "0001_initial.sql"},
-            "lastMigrationVersion": {"const": "0030_scientific_retention_authority.sql"},
+            "lastMigrationVersion": {"const": "0031_retention_scan_hardening.sql"},
             "namespaceRoleOwnershipSha256": {"const": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca"}
           },
           "additionalProperties": false
@@ -2846,6 +2874,59 @@
             "required": [
               "enabled"
             ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "rollbackCompatibility": {
+            "properties": {
+              "enabled": {
+                "const": true
+              }
+            },
+            "required": [
+              "enabled"
+            ]
+          }
+        },
+        "required": [
+          "rollbackCompatibility"
+        ]
+      },
+      "then": {
+        "properties": {
+          "rollbackCompatibility": {
+            "properties": {
+              "schemaImageDigest": {
+                "pattern": "^sha256:[a-f0-9]{64}$",
+                "not": {
+                  "const": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+                }
+              },
+              "sourceCommit": {
+                "pattern": "^[a-f0-9]{40}$"
+              },
+              "sourceTree": {
+                "pattern": "^[a-f0-9]{40}$"
+              }
+            }
+          },
+          "config": {
+            "properties": {
+              "requestDebugEnabled": {
+                "const": false
+              }
+            }
+          },
+          "maintenance": {
+            "properties": {
+              "enabled": {
+                "const": true
+              }
+            }
           }
         }
       }

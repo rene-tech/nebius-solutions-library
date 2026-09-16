@@ -6,6 +6,13 @@ export interface DebugBody {
   observed_bytes: number;
   complete: boolean;
   redacted: boolean;
+  /**
+   * True when only a bounded prefix was stored because the body exceeded the
+   * capture size cap. `observed_bytes` still reports the full wire length, so a
+   * body can be wire-complete yet storage-truncated. Optional so exchanges
+   * captured before this field existed still parse.
+   */
+  truncated?: boolean;
 }
 
 export interface DebugExchangeSummary {

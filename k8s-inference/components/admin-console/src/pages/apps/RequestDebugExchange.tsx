@@ -84,13 +84,27 @@ export function DebugBodyView({
         </div>
         <div>
           <dt>Capture</dt>
-          <dd>{body.complete ? "Complete" : "Partial / incomplete"}</dd>
+          <dd>
+            {body.truncated
+              ? body.complete
+                ? "Complete on the wire; stored copy truncated"
+                : "Partial / incomplete; stored copy truncated"
+              : body.complete
+                ? "Complete"
+                : "Partial / incomplete"}
+          </dd>
         </div>
         <div>
           <dt>Redaction</dt>
           <dd>{body.redacted ? "Redacted" : "Not redacted"}</dd>
         </div>
       </dl>
+      {body.truncated ? (
+        <p className="inline-notice">
+          Only a bounded prefix was stored; the stored copy is truncated even
+          though {body.observed_bytes.toLocaleString()} bytes were observed.
+        </p>
+      ) : null}
       {!body.complete ? (
         <p className="inline-notice">
           Only observed bytes are shown; this is not a complete body.

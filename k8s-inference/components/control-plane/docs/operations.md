@@ -348,7 +348,7 @@ fs2-serve postgresql-release-contract
 ```
 
 The emitter verifies that the migration directory contains exactly the ordered
-`0001` through `0030` set, no missing/extra/renamed/symlinked file, and the
+`0001` through `0031` set, no missing/extra/renamed/symlinked file, and the
 contracted SHA-256 for every file. The migrator and `wait-schema` use the same
 validator. They also require the applied migration ledger to be an exact
 ordered prefix while an upgrade is running and the exact full set before a
@@ -356,13 +356,13 @@ runtime becomes ready; extra or reordered database rows fail closed.
 
 The required final release-receipt inputs are the ordered full-manifest
 migration-set SHA-256
-`7508bd84cfbc732524a23402019736abf1bf54bf0ed8a3cca91fbc07904f9f3b`,
-count `30`, first version `0001_initial.sql`, last version
-`0030_scientific_retention_authority.sql`,
+`271954790fc6df4c524096ac5f5c5f8429fb38df732172dd662c172fbc2f76ae`,
+count `31`, first version `0001_initial.sql`, last version
+`0031_retention_scan_hardening.sql`,
 and namespace/role ownership SHA-256
 `47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca`.
 The whole logical contract payload is SHA-256
-`43bbf2923f7ec6fb45bd72cac8e11f13273352f0b5c7510f2f8197f3835a0043`.
+`341f4571cc5daf91ddf66dc768e40a20742b81c0bd33b490d9ba140a66877db9`.
 The migration Job emits the payload, ordered-set digest, count, first/last
 version, and namespace/role digest as annotations. A later additive migration
 updates this one manifest contract; Helm and PostgreSQL code must not
@@ -674,12 +674,38 @@ stage submits each maintenance Job through a namespace-local CPU queue before
 Kueue allows its Pod to start; reusable chart installs remain queue-independent
 unless `maintenance.queueName` is configured.
 
-Rollback has a security invariant: preserve `config.requestDebugEnabled=false`
-explicitly while selecting any earlier image or chart revision. A raw Helm
-rollback can reuse an older release's enabled value, so prepare a reviewed
-rollback values file with capture disabled and verify the rendered Deployment
-before applying it. Retention maintenance remains enabled during rollback so
-already-retained rows continue to age out.
+PostgreSQL migrations are forward-only. After migration `0030` (and every
+successor, including retention scan hardening in `0031`), a raw Helm rollback
+is forbidden: an image packaged only through `0029` rejects the extra applied
+migration in `wait-schema`, and its maintenance command does not contain the
+corrected FK-safe retention path. Use the current chart as a forward
+rollback instead. Set the gateway `image.digest` to the recorded prior runtime
+digest, enable `rollbackCompatibility`, and set
+`rollbackCompatibility.schemaImageDigest` to an immutable image built from the
+accepted source that packages the exact current migration contract. That image
+remains on the migration Job, `wait-schema` init container, and maintenance
+CronJob while only the serving container runs the prior runtime digest. The
+chart requires the two digests to differ and records the schema image digest,
+source commit, and source tree on the rendered workloads.
+
+Before applying a forward rollback, execute `fs2-serve
+postgresql-release-contract` in the schema-compatible image and compare its
+payload/migration-set digests and last migration to the current chart contract.
+Render the current chart and verify the serving container uses the prior digest,
+all three schema/maintenance consumers use the compatible digest, maintenance
+is enabled, and `config.requestDebugEnabled=false`. Apply that rendered current
+chart with `helm upgrade --wait --wait-for-jobs --rollback-on-failure`; never use
+`helm rollback` across a migration boundary. Afterward, verify schema readiness,
+a succeeded bounded maintenance Job, the customer smoke matrix, and the three
+schema-compatibility provenance annotations. To exit rollback, deploy a newer
+accepted gateway digest with `rollbackCompatibility.enabled=false`; migrations
+are not reversed.
+
+Rollback always has the additional security invariant that request capture
+remains explicitly disabled. Do not rely on values retained by an older release
+or select a binary that predates the currently applied migration set for schema
+wait or maintenance. Existing retained rows must continue to age out through
+the sole central maintenance owner.
 
 Payload AEAD, ledger HMAC, PAT pepper, and public route-attestor material are
 separate Secret objects and projected only into consumers that need them.

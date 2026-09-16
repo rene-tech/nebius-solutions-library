@@ -38,7 +38,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: maintenance
-              image: {{ include "fs2-serve.image" . }}
+              image: {{ include "fs2-serve.schemaCompatibleImage" . }}
               imagePullPolicy: {{ .Values.image.pullPolicy }}
               args: ["maintenance"]
               env:

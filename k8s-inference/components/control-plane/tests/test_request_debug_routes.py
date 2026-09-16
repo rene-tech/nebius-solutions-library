@@ -1,7 +1,7 @@
 """Mounted operator request logs preserve payloads without changing inference."""
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from test_admin_access_api import BOOTSTRAP_AUTH, _client, _create_principal, _principal_cookie, _runtime
@@ -45,6 +45,9 @@ def test_capture_is_opt_in_and_admin_traffic_is_not_captured(registry, cipher, h
 def test_malformed_authenticated_payload_is_captured_without_a_run_or_auth_secret(registry, cipher, hasher):
     runtime = _runtime(registry, cipher, hasher)
     runtime.settings.request_debug_enabled = True
+    # Capture is scoped + time-bounded: opt into the tenant and a bounded window.
+    runtime.settings.request_debug_tenants = "debug-tenant"
+    runtime.settings.request_debug_expires_at = datetime.now(UTC) + timedelta(hours=1)
     token = asyncio.run(
         runtime.tokens.issue(
             TokenCreate(
@@ -110,14 +113,14 @@ def test_app_operation_filters_and_full_error_detail(registry, cipher, hasher):
         assert len(client.get("/admin/api/v1/requests").json()["data"]["items"]) == 3
 
 
-def test_tenant_operator_can_only_read_own_captures(registry, cipher, hasher):
+def test_tenant_admin_can_only_read_own_captures(registry, cipher, hasher):
     runtime = _runtime(registry, cipher, hasher)
     store = InMemoryDebugStore()
     runtime.request_debug_store = store
     rows = [_exchange(tenant=value) for value in ("tenant-a", "tenant-b", None)]
     for row in rows:
         asyncio.run(store.record(row))
-    identity = _create_principal(runtime, role=OperatorRole.VIEWER, tenant_id="tenant-a", subject="tenant-observer")
+    identity = _create_principal(runtime, role=OperatorRole.ADMIN, tenant_id="tenant-a", subject="tenant-admin")
     with _client(runtime) as client:
         client.cookies.set(ADMIN_SESSION_COOKIE, _principal_cookie(runtime, identity))
         listing = client.get("/admin/api/v1/requests")
@@ -126,3 +129,37 @@ def test_tenant_operator_can_only_read_own_captures(registry, cipher, hasher):
         assert client.get(f"/admin/api/v1/requests/{rows[0].id}").status_code == 200
         for row in rows[1:]:
             assert client.get(f"/admin/api/v1/requests/{row.id}").status_code == 404
+
+
+def test_viewer_and_operator_are_denied_request_debug_reads(registry, cipher, hasher):
+    """SAI-01: captured customer payloads must not be readable by low roles."""
+    runtime = _runtime(registry, cipher, hasher)
+    store = InMemoryDebugStore()
+    runtime.request_debug_store = store
+    row = _exchange(tenant="tenant-a")
+    asyncio.run(store.record(row))
+    for role in (OperatorRole.VIEWER, OperatorRole.OPERATOR):
+        identity = _create_principal(runtime, role=role, tenant_id="tenant-a", subject=f"{role.value}-user")
+        with _client(runtime) as client:
+            client.cookies.set(ADMIN_SESSION_COOKIE, _principal_cookie(runtime, identity))
+            assert client.get("/admin/api/v1/requests").status_code == 403
+            assert client.get(f"/admin/api/v1/requests/{row.id}").status_code == 403
+
+
+def test_detail_read_emits_an_audit_event(registry, cipher, hasher):
+    """SAI-01: every disclosure of a captured payload leaves an audit trail."""
+    runtime = _runtime(registry, cipher, hasher)
+    store = InMemoryDebugStore()
+    runtime.request_debug_store = store
+    row = _exchange(tenant="tenant-a")
+    asyncio.run(store.record(row))
+    with _client(runtime) as client:
+        assert client.post("/admin/api/v1/session", headers=BOOTSTRAP_AUTH).status_code == 200
+        assert client.get(f"/admin/api/v1/requests/{row.id}").status_code == 200
+    events = asyncio.run(runtime.store.list_audit(limit=50))
+    reads = [
+        event
+        for event in events
+        if event.action == "request.debug.read" and event.outcome == "succeeded" and event.target_id == str(row.id)
+    ]
+    assert len(reads) == 1, [(e.action, e.outcome, e.target_id) for e in events]

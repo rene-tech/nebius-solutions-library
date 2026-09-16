@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -21,6 +21,7 @@ from scientific_batch_fakes import FakeScientificBatchCluster
 from fs2_serve.crypto import KeyedHasher, PayloadCipher
 from fs2_serve.models import AdmissionRequest, OperationStatus, Principal, Scope, TokenCreate
 from fs2_serve.postgres import PostgresStore
+from fs2_serve.scientific_artifacts import PostgresArtifactRepository
 from fs2_serve.scientific_batch.codec import state_from_value
 from fs2_serve.scientific_batch.controller import ScientificBatchController
 from fs2_serve.scientific_batch.models import (
@@ -499,6 +500,83 @@ async def test_real_postgres_terminal_result_publication_is_durable_and_exactly_
 
 @pytest.mark.postgres
 @pytest.mark.asyncio
+async def test_real_postgres_recovers_terminal_publication_crash_and_makes_retention_purgeable(
+    store: PostgresStore,
+) -> None:
+    principal = await principal_of(store)
+    operation_id, batches = await admit_batch(store, principal, idempotency_key="scientific-terminal-crash-0001")
+    controller = controller_for(batches, FakeScientificBatchCluster(), controller_id="controller-before-crash")
+    assert await controller.reconcile_once() == operation_id
+    await batches.request_cancel(operation_id, tenant_id=TENANT, actor=principal.principal_id)
+    assert await controller.reconcile_once() == operation_id
+
+    terminal = await batches.get(operation_id, tenant_id=TENANT)
+    assert terminal.status is BatchStatus.CANCELLED and terminal.result_published is True
+
+    # Model the exact persisted crash shape: publication committed, then the
+    # process died before ScientificBatchController.finally released its lease.
+    async with store.pool.acquire() as connection:
+        await connection.execute(
+            "UPDATE fs2_scientific_batches SET controller_id='controller-before-crash',"
+            "fencing_token=fencing_token+1,"
+            "lease_expires_at=clock_timestamp()-interval '1 second' WHERE operation_id=$1",
+            operation_id,
+        )
+
+    # A new controller reclaims only this expired terminal-owned shape, performs
+    # no duplicate publication or workload mutation, and releases it. Repeating
+    # reconciliation is a no-op.
+    restarted = controller_for(batches, FakeScientificBatchCluster(), controller_id="controller-after-crash")
+    assert await restarted.reconcile_once() == operation_id
+    assert await restarted.reconcile_once() is None
+    async with store.pool.acquire() as connection:
+        ownership = await connection.fetchrow(
+            "SELECT controller_id,lease_expires_at FROM fs2_scientific_batches WHERE operation_id=$1",
+            operation_id,
+        )
+        assert ownership is not None
+        assert ownership["controller_id"] is None and ownership["lease_expires_at"] is None
+        await connection.execute(
+            "UPDATE fs2_scientific_stage_attempts "
+            "SET status='cancelled',completed_at=clock_timestamp() "
+            "WHERE operation_id=$1 AND status='running'",
+            operation_id,
+        )
+
+    # Once normal active-work fences are clear, the central maintenance owner
+    # can claim and purge the incomplete terminal flow exactly once.
+    retention = PostgresArtifactRepository(store.pool)
+    claims = await retention.claim_expired(
+        now=datetime.now(UTC) + timedelta(days=2),
+        retention=timedelta(0),
+        limit=10,
+    )
+    assert [candidate.operation_id for candidate in claims] == [operation_id]
+    await retention.purge_operation(claims[0], now=datetime.now(UTC) + timedelta(days=2))
+    assert (
+        await retention.claim_expired(
+            now=datetime.now(UTC) + timedelta(days=2),
+            retention=timedelta(0),
+            limit=10,
+        )
+        == []
+    )
+    async with store.pool.acquire() as connection:
+        assert not await connection.fetchval(
+            "SELECT EXISTS(SELECT 1 FROM fs2_scientific_batches WHERE operation_id=$1)",
+            operation_id,
+        )
+        assert (
+            await connection.fetchval(
+                "SELECT count(*) FROM fs2_scientific_retention_ledger WHERE operation_id=$1",
+                operation_id,
+            )
+            == 1
+        )
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
 @pytest.mark.parametrize("kind", ["pending", "active"])
 async def test_real_postgres_retires_an_open_legacy_row_without_running_it(
     store: PostgresStore,
@@ -570,12 +648,16 @@ async def test_real_postgres_pending_admission_replay_keeps_frozen_startup_polic
     # case reach the atomic factory while the accepted outbox stays pending.
     principal = await principal_of(store, max_concurrency=2)
     admission = AdmissionRequest(
-        model_id="rfdiffusion", operation="generate-backbone", protocol="scientific-batch-v1",
-        idempotency_key="scientific-startup-replay-0001", request_body=b'{"input":"original"}',
+        model_id="rfdiffusion",
+        operation="generate-backbone",
+        protocol="scientific-batch-v1",
+        idempotency_key="scientific-startup-replay-0001",
+        request_body=b'{"input":"original"}',
     )
     accepted_payload = {"startup_policy": {"backend": "cuda-criu", "bundle_id": "accepted-bundle"}}
-    arguments = dict(principal=principal, admission=admission, model_revision="2" * 40,
-                     reserved_gpu_seconds=0, max_attempts=1)
+    arguments = dict(
+        principal=principal, admission=admission, model_revision="2" * 40, reserved_gpu_seconds=0, max_attempts=1
+    )
     operation = await store.append_operation(**arguments, scientific_admission_factory=lambda _: accepted_payload)
     original = await store.get_scientific_admission(operation.id)
     assert original is not None and original.payload == accepted_payload
@@ -587,13 +669,18 @@ async def test_real_postgres_pending_admission_replay_keeps_frozen_startup_polic
     assert replay.id == operation.id and replay.reused
     assert await store.get_scientific_admission(operation.id) == original
     with pytest.raises(ConflictError, match="different request"):
-        await store.append_operation(**{
-            **arguments, "admission": admission.model_copy(update={"request_body": b'{"input":"different"}'})
-        }, scientific_admission_factory=removed_policy)
+        await store.append_operation(
+            **{**arguments, "admission": admission.model_copy(update={"request_body": b'{"input":"different"}'})},
+            scientific_admission_factory=removed_policy,
+        )
     with pytest.raises(ValueError, match="no longer offered"):
-        await store.append_operation(**{
-            **arguments, "admission": admission.model_copy(update={"idempotency_key": "scientific-startup-new-0002"})
-        }, scientific_admission_factory=removed_policy)
+        await store.append_operation(
+            **{
+                **arguments,
+                "admission": admission.model_copy(update={"idempotency_key": "scientific-startup-new-0002"}),
+            },
+            scientific_admission_factory=removed_policy,
+        )
     async with store.pool.acquire() as connection:
         assert await connection.fetchval("SELECT count(*) FROM fs2_operations") == 1
         assert await connection.fetchval("SELECT count(*) FROM fs2_scientific_admission_outbox") == 1

@@ -868,6 +868,61 @@ async def test_migration_and_schema_wait_entrypoints_need_only_database_credenti
         PostgresStore.migrate_database(database_url, migrations_dir),
     )
     await PostgresStore.wait_for_schema(database_url, migrations_dir, timeout_seconds=1)
+    async with postgres_store.pool.acquire() as connection:
+        indexes = {
+            str(row["indexname"])
+            for row in await connection.fetch(
+                "SELECT indexname FROM pg_indexes WHERE schemaname='public' AND indexname LIKE '%retention_idx'"
+            )
+        }
+        assert {
+            "fs2_operations_retention_idx",
+            "fs2_tokens_revoked_retention_idx",
+            "fs2_tokens_expiry_retention_idx",
+            "fs2_audit_retention_idx",
+            "fs2_request_telemetry_retention_idx",
+            "fs2_scientific_stage_attempts_retention_idx",
+            "fs2_scientific_artifacts_retention_idx",
+        } <= indexes
+
+        # The migration owner creates future schema functions without the
+        # PostgreSQL default PUBLIC EXECUTE grant. Keep this probe transactional
+        # so the test leaves no function behind.
+        transaction = connection.transaction()
+        await transaction.start()
+        await connection.execute("CREATE FUNCTION fs2_future_acl_probe() RETURNS integer LANGUAGE sql AS 'SELECT 1'")
+        assert not await connection.fetchval(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM pg_proc p,
+                     LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) acl
+                WHERE p.oid='fs2_future_acl_probe()'::regprocedure
+                  AND acl.grantee=0 AND acl.privilege_type='EXECUTE'
+            )
+            """
+        )
+        await transaction.rollback()
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+async def test_applied_retention_migration_rejects_a_pre_0030_schema_image(
+    postgres_store: PostgresStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = os.environ["FS2_TEST_DATABASE_URL"]
+    migrations_dir = CONTROL_ROOT / "migrations"
+    current_manifest = PostgresStore._migration_manifest(migrations_dir)
+    assert current_manifest[28][0].name == "0029_request_debug.sql"
+    assert current_manifest[29][0].name == "0030_scientific_retention_authority.sql"
+
+    # This is the migration manifest embedded in the previously deployed image.
+    # Once 0030+ is applied, its exact-prefix check rejects the database, which
+    # is why rollback must retain a current schema/wait/maintenance image.
+    monkeypatch.setattr(PostgresStore, "_migration_manifest", staticmethod(lambda _: current_manifest[:29]))
+    with pytest.raises(RuntimeError, match="missing, extra, or reordered"):
+        await PostgresStore.wait_for_schema(database_url, migrations_dir, timeout_seconds=1)
 
 
 @pytest.mark.postgres

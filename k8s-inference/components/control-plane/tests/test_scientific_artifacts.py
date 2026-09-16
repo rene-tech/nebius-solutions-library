@@ -1399,12 +1399,20 @@ async def test_postgres_terminal_result_fences_writes_and_retention_purges(
             "fs2_scientific_stage_commit_attempts",
             "fs2_scientific_run_results",
             "fs2_scientific_artifact_events",
+            "fs2_scientific_batches",
+            "fs2_scientific_batch_events",
+            "fs2_scientific_retention_claims",
             "fs2_scientific_retention_ledger",
         ):
             assert not await connection.fetchval(
                 "SELECT has_table_privilege(current_user,$1,'DELETE')",
                 table,
             )
+        # The bounded one-row admission handoff is not immutable provenance:
+        # runtime consumes it only after durable batch materialization.
+        assert await connection.fetchval(
+            "SELECT has_table_privilege(current_user,'fs2_scientific_admission_outbox','DELETE')"
+        )
         assert await connection.fetchval(
             "SELECT has_table_privilege(current_user,'fs2_scientific_stage_attempts','INSERT')"
         )
