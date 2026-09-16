@@ -86,6 +86,7 @@ from .lifecycle import (
     NullLifecycleRepository,
     api_key_id_hash,
 )
+from .mindguard_routes import mindguard_router
 from .model_deployment_admin import ModelDeploymentReadService, model_deployment_read_router
 from .model_deployment_bridge import ModelDeploymentRuntimeBridge
 from .model_deployment_mutation import ModelDeploymentMutationService, model_deployment_mutation_router
@@ -152,8 +153,6 @@ from .scientific_run_result import ArtifactRef
 from .settings import Settings
 from .speech_routes import speech_router
 from .speech_stream import speech_stream_router
-from .voice_routes import voice_router, voice_stream_router
-from .mindguard_routes import mindguard_router
 from .store import (
     BudgetExceededError,
     ConcurrencyExceededError,
@@ -168,6 +167,7 @@ from .user_repository import MemoryUserRepository, PostgresUserRepository
 from .user_routes import user_router
 from .user_storage_routes import user_storage_router
 from .users import UserService
+from .voice_routes import voice_router, voice_stream_router
 
 LOGGER = logging.getLogger("fs2_serve.access")
 SCIENTIFIC_LOGGER = logging.getLogger("fs2_serve.scientific_batch")
