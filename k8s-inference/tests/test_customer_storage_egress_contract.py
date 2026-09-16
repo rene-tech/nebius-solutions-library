@@ -154,7 +154,7 @@ def test_separate_security_owner_is_append_only_and_credential_isolated() -> Non
     assert 'resource "kubernetes_network_policy_v1" "contract"' in source
     assert 'failurePolicy = "Fail"' in source
     assert 'operations  = ["CREATE", "UPDATE", "DELETE"]' in source
-    assert "expression = \"request.operation != 'DELETE'\"" in source
+    assert "expression = \"request.operation == 'CREATE'\"" in source
     assert "request.userInfo.groups.exists" in source
     assert "security-owner-subject-sha256" in source
     assert "workloads-subject-sha256" in source
@@ -170,10 +170,18 @@ def test_separate_security_owner_is_append_only_and_credential_isolated() -> Non
         "bind-clusterroles",
         "escalate-clusterroles",
         "create-clusterrolebindings",
+        "secrets",
+        "pods/exec",
+        "pods/attach",
+        "pods/ephemeralcontainers",
+        "certificatesigningrequests",
+        "approve-certificate-signing-requests",
+        "serviceaccounts",
+        "deployments.apps",
     ):
         assert probe in identity
     assert "security-owner credential can mutate or delete" in identity
-    assert source.count("prevent_destroy = true") == 5
+    assert source.count("prevent_destroy = true") >= 6
     assert "for_each = var.contract_generations" in source
     assert "for_each = var.trust_generations" in source
     assert "for_each = local.boundary_policy_names" in source
@@ -200,10 +208,21 @@ def test_provider_authority_is_external_content_bound_and_non_destructive() -> N
     assert 'destination_ports = [5432]' in source
     assert 'destination_cidrs = ["0.0.0.0/0"]' not in source
     assert source.count("prevent_destroy = true") == 6
-    assert "/etc/fs2-security/customer-storage-egress-authority.json" in verifier
+    assert "/etc/fs2-security-ro/authority/customer-storage-egress-authority.json" in verifier
+    assert "/var/lib/fs2-security-checkpoints-ro/customer-storage-egress-prior-head.json" in verifier
     assert "O_NOFOLLOW" in verifier
     assert "before.st_uid != 0" in verifier
+    assert "ST_RDONLY" in verifier
     assert "approved_manifest_sha256" in verifier
+    assert "parent_manifest_sha256" in verifier
+    assert "live_custody_sha256" in verifier
+    assert "workloads_state_lineage" in verifier
+    assert 'NEBIUS_TERRAFORM_PROVIDER_VERSION = "0.5.232"' in verifier
+    assert "kubernetes_rbac_inventory_receipt" in verifier
+    assert "cluster_access_principal_ids" in verifier
+    assert 'mutating_principal_ids") != [registry["authority_group_id"]]' in verifier
+    assert "boundary_policy_sha256" in verifier
+    assert "nebius_terraform_provider_version" in verifier
     assert "predecessor_sha256" in verifier
     assert "predecessor_compatibility_sha256" in verifier
     assert "generation[-12:] != content_digest[:12]" in verifier
@@ -214,15 +233,47 @@ def test_provider_authority_is_external_content_bound_and_non_destructive() -> N
     assert 'item["role"] == "admin"' in identity_verifier
     assert "MAX_KEY_LIFETIME = timedelta(days=90)" in identity_verifier
     assert "state" in readme and "omitting" in readme
-    assert retention.count("removed {") == 3
-    assert retention.count("destroy = false") == 3
+    assert "removed {" not in retention
+    assert retention.count("prevent_destroy = true") == 3
+    assert retention.count("ignore_changes  = all") == 3
+    assert 'resource "kubernetes_config_map_v1" "customer_storage_egress_contract"' in retention
+    assert 'resource "kubernetes_manifest" "customer_storage_egress_admission_policy"' in retention
     assert "destroy = true" not in retention
     plan_gate = (Path(__file__).parents[1] / "security/verify_additive_plan.py").read_text(
         encoding="utf-8"
     )
     assert "SAFE_ACTIONS" in plan_gate
-    assert '("forget",)' in plan_gate
+    assert '("forget",)' not in plan_gate
     assert "non-additive Terraform action is forbidden" in plan_gate
+
+
+def test_integration_dependencies_and_remote_state_fail_closed() -> None:
+    verifier = (
+        Path(__file__).parents[1] / "security/verify_sai08_integration_dependencies.py"
+    ).read_text(encoding="utf-8")
+    dependencies = json.loads(
+        (Path(__file__).parents[1] / "security/sai-08-integration-dependencies.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    authority_versions = (
+        Path(__file__).parents[1]
+        / "security/customer-storage-egress-authority/versions.tf"
+    ).read_text(encoding="utf-8")
+    boundary_versions = (
+        Path(__file__).parents[1]
+        / "security/customer-storage-egress-boundary/versions.tf"
+    ).read_text(encoding="utf-8")
+
+    assert dependencies["status"] == "blocked"
+    assert all(value is None for value in dependencies["dependencies"].values())
+    assert 'os.environ.get("HELM_DRIVER") != "configmap"' in verifier
+    assert '"show", "-s", "--format=%T"' in verifier
+    assert '"merge-base", "--is-ancestor"' in verifier
+    assert "kubernetes_rbac_inventory_receipt_sha256" in verifier
+    assert 'backend "s3" {}' in authority_versions
+    assert 'version = "= 0.5.232"' in authority_versions
+    assert 'backend "s3" {}' in boundary_versions
 
 
 def test_v2_chart_is_additive_selector_safe_and_effective_policy_gated() -> None:
@@ -240,12 +291,23 @@ def test_v2_chart_is_additive_selector_safe_and_effective_policy_gated() -> None
     assert "helm.sh/resource-policy: keep" in template
     assert "nodeSelector:" in template and "tolerations:" in template
     assert "acceptedSai10Commit" in values
+    assert "acceptedSai10Tree" in values
+    assert "priorHeadReceiptSha256" in values
     assert "predecessor-deployment-uid" in template
     assert "predecessor-receipt-sha256" in template
     assert "predecessorCompatibilitySha256" in values
     assert "rollout:" in values
     assert "rollout generation must be content-bound" in template
     assert "each additive rollout requires its exact generation-named Helm release" in template
+    assert 'resource "helm_release" "storage_reconciler_v2"' in (
+        SECURITY_ROOT / "main.tf"
+    ).read_text(encoding="utf-8")
+    assert "kind: Role\n" not in template
+    assert "kind: RoleBinding\n" not in template
+    boundary = (SECURITY_ROOT / "main.tf").read_text(encoding="utf-8")
+    assert 'resource "kubernetes_role_v1" "reconciler_inventory"' in boundary
+    assert 'resource "kubernetes_role_binding_v1" "reconciler_inventory"' in boundary
+    assert "boundary_policy_sha256 = sha256(jsonencode(local.boundary_policy_spec))" in boundary
     assert "type: Recreate" not in template
     assert "fixed predecessor" in readme
     assert "storage-egress-generation" not in legacy_helpers.split(
@@ -288,7 +350,9 @@ def test_predecessor_vap_compatibility_is_signed_and_selector_disjoint() -> None
     assert "var.provider_authority.predecessor_compatibility_sha256" in boundary
     assert "predecessor_compatibility_sha256" in authority
     assert "receipt_sha256" in output
-    assert "oldObject.spec.podSelector.matchLabels['app.kubernetes.io/component'] == 'storage-reconciler-v2'" in boundary
+    assert "v2_selector_matches_old_object_cel" in boundary
+    assert "term.operator == 'NotIn'" in boundary
+    assert "request.operation == 'CREATE'" in boundary
     assert "!has(oldObject.spec.podSelector.matchLabels)" not in boundary
     assert "from verify_owner_identity import _kubectl" in capture
     assert "storage-reconciler-v2" in capture
@@ -453,6 +517,7 @@ def test_effective_union_rejects_any_broad_selecting_policy(signed_contract):
         "app.kubernetes.io/instance": "fs2-serve-control-plane",
         "app.kubernetes.io/component": "storage-reconciler-v2",
         "fs2.nebius.ai/storage-egress-generation": "g20260916180000-aaaaaaaaaaaa",
+        "fs2.nebius.ai/storage-rollout-generation": "r20260916180000-bbbbbbbbbbbb",
     }
     canonical_rules = contract_module._canonical_egress_rules(
         contract["cidrs"], ["192.0.2.1/32"]
@@ -460,7 +525,13 @@ def test_effective_union_rejects_any_broad_selecting_policy(signed_contract):
     exact = {
         "metadata": {"name": "fs2-customer-storage-egress-generation"},
         "spec": {
-            "podSelector": {"matchLabels": labels},
+            "podSelector": {
+                "matchLabels": {
+                    key: value
+                    for key, value in labels.items()
+                    if key != "fs2.nebius.ai/storage-rollout-generation"
+                }
+            },
             "policyTypes": ["Ingress", "Egress"],
             "egress": canonical_rules,
         },
@@ -499,6 +570,7 @@ def test_effective_union_requires_one_exact_generation_selector(signed_contract)
         "app.kubernetes.io/instance": "fs2-serve-control-plane",
         "app.kubernetes.io/component": "storage-reconciler-v2",
         "fs2.nebius.ai/storage-egress-generation": "g20260916180000-aaaaaaaaaaaa",
+        "fs2.nebius.ai/storage-rollout-generation": "r20260916180000-bbbbbbbbbbbb",
     }
     rules = contract_module._canonical_egress_rules(contract["cidrs"], ["192.0.2.1/32"])
     overmatching = {
@@ -514,6 +586,68 @@ def test_effective_union_requires_one_exact_generation_selector(signed_contract)
         contract_module.verify_effective_network_policies(
             [overmatching], labels, contract["cidrs"], ["192.0.2.1/32"]
         )
+
+
+def test_notin_selector_matches_missing_key_and_cannot_hide_broad_egress(
+    signed_contract,
+):
+    _, contract = signed_contract
+    labels = {
+        "app.kubernetes.io/name": "fs2-serve-control-plane",
+        "app.kubernetes.io/instance": "fs2-serve-control-plane",
+        "app.kubernetes.io/component": "storage-reconciler-v2",
+        "fs2.nebius.ai/storage-egress-generation": "g20260916180000-aaaaaaaaaaaa",
+        "fs2.nebius.ai/storage-rollout-generation": "r20260916180000-bbbbbbbbbbbb",
+    }
+    rules = contract_module._canonical_egress_rules(contract["cidrs"], ["192.0.2.1/32"])
+    exact = {
+        "spec": {
+            "podSelector": {
+                "matchLabels": {
+                    key: value
+                    for key, value in labels.items()
+                    if key != "fs2.nebius.ai/storage-rollout-generation"
+                }
+            },
+            "policyTypes": ["Ingress", "Egress"],
+            "egress": rules,
+        }
+    }
+    negative = {
+        "spec": {
+            "podSelector": {
+                "matchExpressions": [
+                    {"key": "unrelated-key", "operator": "NotIn", "values": ["blocked"]}
+                ]
+            },
+            "policyTypes": ["Egress"],
+            "egress": [
+                {
+                    "to": [{"ipBlock": {"cidr": "0.0.0.0/1"}}],
+                    "ports": [{"port": 443, "protocol": "TCP"}],
+                }
+            ],
+        }
+    }
+
+    assert contract_module._selector_matches(
+        negative["spec"]["podSelector"], labels
+    )
+    with pytest.raises(ValueError, match="widens"):
+        contract_module.verify_effective_network_policies(
+            [exact, negative], labels, contract["cidrs"], ["192.0.2.1/32"]
+        )
+
+    excludes = {
+        "matchExpressions": [
+            {
+                "key": "app.kubernetes.io/component",
+                "operator": "NotIn",
+                "values": ["storage-reconciler-v2"],
+            }
+        ]
+    }
+    assert not contract_module._selector_matches(excludes, labels)
 
 
 def cli_inputs(tmp_path: Path, *, observed_at: datetime | None = None):

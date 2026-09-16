@@ -206,24 +206,18 @@ class NebiusUserStorage:
             # unreviewed group, principal, role, or path grant.
             bucket.spec.bucket_policy = policy
             needs_update = True
-        managed_lifecycle = self.lifecycle()
-        managed_ids = {rule.id for rule in managed_lifecycle.rules}
         current_lifecycle = bucket.spec.lifecycle_configuration
         current_rules_repr = repr(current_lifecycle.rules)
         # No customer-object deletion policy is authorized. Preserve every
-        # discovered rule and all of its provider-specific fields, but force
-        # it disabled. This is intentionally broader than the two historical
-        # rule IDs: an operator-created or provider-created expiry rule must
-        # never survive reconciliation merely because its name is unfamiliar.
-        desired_rules = []
+        # discovered rule, including the historical managed IDs, in its exact
+        # provider-returned order and with every provider-specific field
+        # unchanged. Only the status is allowed to move to DISABLED. Missing
+        # historical rules are not synthesized for an existing bucket: doing
+        # so would replace an observed lifecycle contract rather than preserve
+        # it under the no-delete/no-replacement custody rule.
         for rule in current_lifecycle.rules:
-            if rule.id in managed_ids:
-                continue
             rule.status = storage.LifecycleRule__Status.DISABLED
-            desired_rules.append(rule)
-        desired_rules.extend(managed_lifecycle.rules)
-        if current_rules_repr != repr(desired_rules):
-            current_lifecycle.rules = desired_rules
+        if current_rules_repr != repr(current_lifecycle.rules):
             bucket.spec.lifecycle_configuration = current_lifecycle
             needs_update = True
         if needs_update:
@@ -258,8 +252,15 @@ class NebiusUserStorage:
             if not page_token:
                 break
         expected = [item for item in memberships if item.spec.member_id == account_id]
+        unexpected = [item for item in memberships if item.spec.member_id != account_id]
         if len(expected) > 1:
             raise RuntimeError("customer storage IAM group has duplicate expected memberships")
+        if unexpected:
+            # Membership deletion is deliberately not an automatic recovery
+            # action. Fail before adding or enabling anything so the owner can
+            # preserve and review the exact unexpected membership identities
+            # under a separately authorized remediation.
+            raise RuntimeError("customer storage IAM group has unexpected memberships")
         if not expected:
             await self._operation(
                 self.memberships.create(
@@ -269,11 +270,6 @@ class NebiusUserStorage:
                     )
                 )
             )
-        for unexpected in memberships:
-            if unexpected.spec.member_id != account_id:
-                await self._operation(
-                    self.memberships.delete(iam.DeleteGroupMembershipRequest(id=unexpected.metadata.id))
-                )
 
     async def key_state(self, key_id: str) -> str:
         key = await self.keys.get(keys.GetAccessKeyRequest(id=key_id))

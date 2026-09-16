@@ -401,7 +401,10 @@ def _selector_matches(selector: dict[str, Any], labels: dict[str, str]) -> bool:
         if operator == "In":
             matches = present and labels[key] in values and bool(values)
         elif operator == "NotIn":
-            matches = present and labels[key] not in values and bool(values)
+            # Kubernetes set-based NotIn also matches objects where the key is
+            # absent. Treating absence as false would miss broad negative
+            # selectors and understate the effective egress union.
+            matches = (not present or labels[key] not in values) and bool(values)
         elif operator == "Exists":
             matches = present and not values
         elif operator == "DoesNotExist":
@@ -475,6 +478,20 @@ def verify_effective_network_policies(
 
     if not policies or not pod_labels:
         raise ValueError("effective NetworkPolicy verification needs policies and pod labels")
+    required_label_keys = {
+        "app.kubernetes.io/name",
+        "app.kubernetes.io/instance",
+        "app.kubernetes.io/component",
+        "fs2.nebius.ai/storage-egress-generation",
+        "fs2.nebius.ai/storage-rollout-generation",
+    }
+    if set(pod_labels) != required_label_keys:
+        raise ValueError("effective NetworkPolicy verification needs the complete v2 Pod labels")
+    canonical_selector_labels = {
+        key: value
+        for key, value in pod_labels.items()
+        if key != "fs2.nebius.ai/storage-rollout-generation"
+    }
     canonical = _canonical_egress_rules(expected_cidrs, expected_kubernetes_api_cidrs)
     canonical_by_digest = {_canonical(rule): rule for rule in canonical}
     effective: dict[bytes, dict[str, Any]] = {}
@@ -490,7 +507,7 @@ def verify_effective_network_policies(
         if not _selector_matches(selector, pod_labels):
             continue
         selected += 1
-        if selector == {"matchLabels": pod_labels}:
+        if selector == {"matchLabels": canonical_selector_labels}:
             exact_selector += 1
         policy_types = spec.get("policyTypes", [])
         rules = spec.get("egress", [])

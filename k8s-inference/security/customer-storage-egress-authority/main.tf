@@ -41,12 +41,17 @@ locals {
 resource "terraform_data" "external_authority" {
   input = {
     manifest_sha256                 = data.external.authority.result.manifest_sha256
+    prior_head_receipt_sha256       = data.external.authority.result.prior_head_receipt_sha256
     authority_project_id            = data.external.authority.result.authority_project_id
     authority_service_account_id    = data.external.authority.result.authority_service_account_id
     authority_group_id              = data.external.authority.result.authority_group_id
     workloads_service_account_id    = data.external.authority.result.workloads_service_account_id
-    release_service_accounts_sha256 = data.external.authority.result.release_service_account_ids_sha256
-    human_principals_sha256         = data.external.authority.result.human_principal_ids_sha256
+    kubernetes_identity_inventory   = data.external.authority.result.kubernetes_identity_inventory_sha256
+    kubernetes_rbac_inventory       = data.external.authority.result.kubernetes_rbac_inventory_sha256
+    kubernetes_rbac_receipt         = data.external.authority.result.kubernetes_rbac_inventory_receipt_sha256
+    accepted_sai10_commit           = data.external.authority.result.accepted_sai10_commit
+    accepted_sai10_tree             = data.external.authority.result.accepted_sai10_tree
+    sai10_review_receipt_sha256     = data.external.authority.result.sai10_independent_review_receipt_sha256
     provider_identity_sha256        = data.external.provider_identity.result.provider_identity_sha256
   }
 
@@ -62,6 +67,14 @@ resource "terraform_data" "external_authority" {
     precondition {
       condition     = local.authority.authority_project_id == data.external.authority.result.authority_project_id
       error_message = "The provider authority project differs from the root-owned approval registry."
+    }
+    precondition {
+      condition = (
+        local.authority.accepted_custody.sai10_commit == data.external.authority.result.accepted_sai10_commit &&
+        local.authority.accepted_custody.sai10_tree == data.external.authority.result.accepted_sai10_tree &&
+        local.authority.accepted_custody.independent_review_receipt_sha256 == data.external.authority.result.sai10_independent_review_receipt_sha256
+      )
+      error_message = "The provider authority manifest does not carry the externally accepted SAI-10 custody."
     }
   }
 }

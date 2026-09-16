@@ -8,7 +8,12 @@ authority:
   schema: ""
   generation: ""
   manifestSha256: ""
+  priorHeadReceiptSha256: ""
+  iamInventoryReceiptSha256: ""
+  rbacInventoryReceiptSha256: ""
   predecessorCompatibilitySha256: ""
+  boundaryPolicySha256: ""
+  releaseValuesSha256: ""
   providerIdentitySha256: ""
   securityGroupId: ""
   nodeGroupId: ""
@@ -45,6 +50,7 @@ predecessor:
 
 custody:
   acceptedSai10Commit: ""
+  acceptedSai10Tree: ""
   independentReviewReceiptSha256: ""
 
 storage:

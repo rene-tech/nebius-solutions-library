@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 MAX_KUBECONFIG_BYTES = 1024 * 1024
-MAX_OUTPUT_BYTES = 64 * 1024
+MAX_OUTPUT_BYTES = 8 * 1024 * 1024
 
 
 def _open_regular_nofollow(path: Path) -> tuple[int, os.stat_result]:
@@ -38,14 +38,19 @@ def _open_regular_nofollow(path: Path) -> tuple[int, os.stat_result]:
     finally:
         os.close(directory_fd)
     metadata = os.fstat(descriptor)
+    filesystem = os.fstatvfs(descriptor)
     if (
         not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_uid != 0
         or metadata.st_size <= 0
         or metadata.st_size > MAX_KUBECONFIG_BYTES
         or metadata.st_mode & 0o077
+        or not filesystem.f_flag & getattr(os, "ST_RDONLY", 1)
     ):
         os.close(descriptor)
-        raise ValueError("kubeconfig must be a bounded owner-only regular file")
+        raise ValueError(
+            "kubeconfig must be a bounded root-owned private file on a read-only filesystem"
+        )
     return descriptor, metadata
 
 
@@ -85,6 +90,31 @@ def _kubectl(path: Path, context: str, *arguments: str) -> str:
         os.close(descriptor)
 
 
+def _credential_sha256(path: Path) -> str:
+    descriptor, before = _open_regular_nofollow(path)
+    try:
+        payload = b""
+        while len(payload) <= MAX_KUBECONFIG_BYTES:
+            chunk = os.read(
+                descriptor,
+                min(65536, MAX_KUBECONFIG_BYTES + 1 - len(payload)),
+            )
+            if not chunk:
+                break
+            payload += chunk
+        after = os.fstat(descriptor)
+        if (
+            len(payload) > MAX_KUBECONFIG_BYTES
+            or len(payload) != before.st_size
+            or (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
+            != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+        ):
+            raise ValueError("kubeconfig changed during its descriptor-bound digest")
+        return hashlib.sha256(payload).hexdigest()
+    finally:
+        os.close(descriptor)
+
+
 def _identity(path: Path, context: str) -> dict[str, Any]:
     try:
         response = json.loads(_kubectl(path, context, "auth", "whoami", "-o", "json"))
@@ -104,8 +134,63 @@ def _can_i(path: Path, context: str, *arguments: str) -> bool:
     return _kubectl(path, context, "auth", "can-i", *arguments) == "yes"
 
 
+def _rbac_inventory_sha256(path: Path, context: str) -> str:
+    """Hash every live RBAC object, including subjects and exact resource versions."""
+
+    inventory: list[dict[str, Any]] = []
+    for resource, namespaced in (
+        ("roles.rbac.authorization.k8s.io", True),
+        ("rolebindings.rbac.authorization.k8s.io", True),
+        ("clusterroles.rbac.authorization.k8s.io", False),
+        ("clusterrolebindings.rbac.authorization.k8s.io", False),
+    ):
+        arguments = ["get", resource]
+        if namespaced:
+            arguments.append("--all-namespaces")
+        arguments.extend(("-o", "json"))
+        try:
+            response = json.loads(_kubectl(path, context, *arguments))
+            items = response["items"]
+        except (KeyError, TypeError, json.JSONDecodeError) as exc:
+            raise ValueError("Kubernetes RBAC inventory response is invalid") from exc
+        if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
+            raise ValueError("Kubernetes RBAC inventory items are invalid")
+        for item in items:
+            metadata = item.get("metadata", {})
+            projection = {
+                "apiVersion": item.get("apiVersion"),
+                "kind": item.get("kind"),
+                "metadata": {
+                    "name": metadata.get("name"),
+                    "namespace": metadata.get("namespace", ""),
+                    "uid": metadata.get("uid"),
+                    "resourceVersion": metadata.get("resourceVersion"),
+                },
+            }
+            for field in ("aggregationRule", "roleRef", "rules", "subjects"):
+                if field in item:
+                    projection[field] = item[field]
+            if any(
+                not isinstance(projection["metadata"].get(field), str)
+                or not projection["metadata"][field]
+                for field in ("name", "uid", "resourceVersion")
+            ):
+                raise ValueError("Kubernetes RBAC inventory metadata is incomplete")
+            inventory.append(projection)
+    inventory.sort(
+        key=lambda item: (
+            str(item["kind"]),
+            item["metadata"]["namespace"],
+            item["metadata"]["name"],
+        )
+    )
+    return hashlib.sha256(
+        json.dumps(inventory, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
 def _dangerous_permissions(path: Path, context: str) -> list[str]:
-    probes = {
+    probes: dict[str, tuple[str, ...]] = {
         "impersonate-users": ("impersonate", "users.authentication.k8s.io"),
         "impersonate-groups": ("impersonate", "groups.authentication.k8s.io"),
         "impersonate-serviceaccounts": (
@@ -139,6 +224,114 @@ def _dangerous_permissions(path: Path, context: str) -> list[str]:
             "--all-namespaces",
         ),
     }
+    resource_verbs = {
+        "secrets": (
+            "get",
+            "list",
+            "watch",
+            "create",
+            "update",
+            "patch",
+            "delete",
+            "deletecollection",
+        ),
+        "pods/exec": ("create",),
+        "pods/attach": ("create",),
+        "pods/portforward": ("create",),
+        "pods/ephemeralcontainers": ("update", "patch"),
+        "serviceaccounts": ("create", "update", "patch", "delete", "deletecollection"),
+        "deployments.apps": ("create", "update", "patch", "delete", "deletecollection"),
+        "networkpolicies.networking.k8s.io": (
+            "update",
+            "patch",
+            "delete",
+            "deletecollection",
+        ),
+        "configmaps": ("create", "update", "patch", "delete", "deletecollection"),
+        "roles.rbac.authorization.k8s.io": (
+            "create",
+            "update",
+            "patch",
+            "delete",
+            "deletecollection",
+        ),
+        "rolebindings.rbac.authorization.k8s.io": (
+            "create",
+            "update",
+            "patch",
+            "delete",
+            "deletecollection",
+        ),
+        "clusterroles.rbac.authorization.k8s.io": (
+            "create",
+            "update",
+            "patch",
+            "delete",
+            "deletecollection",
+        ),
+        "clusterrolebindings.rbac.authorization.k8s.io": (
+            "create",
+            "update",
+            "patch",
+            "delete",
+            "deletecollection",
+        ),
+        "validatingadmissionpolicies.admissionregistration.k8s.io": (
+            "create",
+            "update",
+            "patch",
+            "delete",
+            "deletecollection",
+        ),
+        "validatingadmissionpolicybindings.admissionregistration.k8s.io": (
+            "create",
+            "update",
+            "patch",
+            "delete",
+            "deletecollection",
+        ),
+        "validatingwebhookconfigurations.admissionregistration.k8s.io": (
+            "create",
+            "update",
+            "patch",
+            "delete",
+            "deletecollection",
+        ),
+        "mutatingwebhookconfigurations.admissionregistration.k8s.io": (
+            "create",
+            "update",
+            "patch",
+            "delete",
+            "deletecollection",
+        ),
+        "certificatesigningrequests.certificates.k8s.io": (
+            "create",
+            "update",
+            "patch",
+            "delete",
+            "deletecollection",
+        ),
+    }
+    for resource, verbs in resource_verbs.items():
+        scope = (
+            ()
+            if resource.startswith(
+                ("cluster", "validating", "mutating", "certificate")
+            )
+            else ("--all-namespaces",)
+        )
+        for verb in verbs:
+            probes[f"{verb}-{resource}"] = (verb, resource, *scope)
+    probes.update(
+        {
+            "approve-certificate-signing-requests": (
+                "approve",
+                "certificatesigningrequests/approval.certificates.k8s.io",
+            ),
+            "sign-kubernetes-signers": ("sign", "signers.certificates.k8s.io"),
+            "approve-kubernetes-signers": ("approve", "signers.certificates.k8s.io"),
+        }
+    )
     return [name for name, arguments in probes.items() if _can_i(path, context, *arguments)]
 
 
@@ -166,6 +359,16 @@ def _protected_permissions(
             names["network_policy"],
             namespace,
         ),
+        "release-role": (
+            "roles.rbac.authorization.k8s.io",
+            names["release_role"],
+            namespace,
+        ),
+        "release-binding": (
+            "rolebindings.rbac.authorization.k8s.io",
+            names["release_role"],
+            namespace,
+        ),
     }
     result: dict[str, bool] = {}
     for label, (resource, name, resource_namespace) in resources.items():
@@ -180,91 +383,145 @@ def _protected_permissions(
 
 
 def verify(query: dict[str, str]) -> dict[str, str]:
-    owner_path = Path(query["security_owner_kubeconfig_path"])
-    workloads_path = Path(query["workloads_kubeconfig_path"])
-    owner = _identity(owner_path, query["security_owner_kube_context"])
-    workloads = _identity(workloads_path, query["workloads_kube_context"])
     owner_group = query["security_owner_group"]
     names = json.loads(query["protected_names_json"])
-    other_identities = json.loads(query["non_owner_identities_json"])
-    if not isinstance(names, dict) or not isinstance(other_identities, dict):
+    declared_identities = json.loads(query["identity_inventory_json"])
+    if not isinstance(names, dict) or not isinstance(declared_identities, dict):
         raise ValueError("identity inventory or protected names are invalid")
-
-    if owner["username"] == workloads["username"]:
-        raise ValueError("security-owner and workloads subjects must differ")
-    if owner_group not in owner["groups"]:
-        raise ValueError("security-owner credential lacks the dedicated owner group")
-    if owner_group in workloads["groups"]:
-        raise ValueError("workloads credential is a member of the security-owner group")
-    owner_permissions = _protected_permissions(
-        owner_path, query["security_owner_kube_context"], names
-    )
-    if not all(value for key, value in owner_permissions.items() if key.startswith("create:")):
-        raise ValueError("security-owner credential cannot add every protected object")
-    if any(value for key, value in owner_permissions.items() if not key.startswith("create:")):
-        raise ValueError("security-owner credential can mutate or delete an existing generation")
-    if _dangerous_permissions(owner_path, query["security_owner_kube_context"]):
-        raise ValueError("security-owner credential has impersonation, token, bind or escalation authority")
-
-    checked_nonowners: list[dict[str, str]] = []
-    candidates: dict[str, dict[str, str]] = {
-        "workloads": {
-            "path": query["workloads_kubeconfig_path"],
-            "context": query["workloads_kube_context"],
-            "username": workloads["username"],
-        }
-    }
-    for name, item in other_identities.items():
+    checked: list[dict[str, str]] = []
+    categories: list[str] = []
+    for name, item in declared_identities.items():
         if (
             not isinstance(name, str)
-            or name == "workloads"
             or not isinstance(item, dict)
-            or set(item) != {"kubeconfig_path", "kube_context", "username", "category"}
+            or set(item)
+            != {
+                "kubeconfig_path",
+                "kube_context",
+                "username",
+                "category",
+                "credential_sha256",
+                "provider_principal_id",
+            }
             or any(not isinstance(value, str) or not value for value in item.values())
-            or item["category"] not in {"release", "human", "break-glass", "other"}
+            or item["category"]
+            not in {"owner", "workloads", "release", "human", "break-glass", "other"}
         ):
-            raise ValueError("non-owner identity inventory is malformed")
-        candidates[name] = {
-            "path": item["kubeconfig_path"],
-            "context": item["kube_context"],
-            "username": item["username"],
-            "category": item["category"],
-        }
-    for name, candidate in candidates.items():
-        path = Path(candidate["path"])
-        context = candidate["context"]
+            raise ValueError("Kubernetes identity inventory is malformed")
+        path = Path(item["kubeconfig_path"])
+        context = item["kube_context"]
+        if _credential_sha256(path) != item["credential_sha256"]:
+            raise ValueError(f"{name} credential bytes differ from the signed inventory")
         identity = _identity(path, context)
-        if identity["username"] != candidate["username"]:
+        if identity["username"] != item["username"]:
             raise ValueError(f"{name} identity differs from its declared username")
-        if owner_group in identity["groups"] or identity["username"] == owner["username"]:
-            raise ValueError(f"{name} identity aliases the security owner")
         protected = _protected_permissions(path, context, names)
-        forbidden = {
-            key: value
-            for key, value in protected.items()
-            if not key.startswith("create:")
-            or key in {"create:policy", "create:binding"}
-        }
-        if any(forbidden.values()):
-            raise ValueError(f"{name} identity can mutate a protected generation")
         dangerous = _dangerous_permissions(path, context)
+        if item["category"] == "owner":
+            if owner_group not in identity["groups"]:
+                raise ValueError("security-owner credential lacks the dedicated owner group")
+            if not all(
+                value for key, value in protected.items() if key.startswith("create:")
+            ):
+                raise ValueError("security-owner credential cannot add every protected object")
+            if any(
+                value
+                for key, value in protected.items()
+                if key.startswith(("update:", "delete:"))
+            ):
+                raise ValueError(
+                    "security-owner credential can update or delete an existing generation"
+                )
+        else:
+            if owner_group in identity["groups"]:
+                raise ValueError(f"{name} identity aliases the security-owner group")
+            admission_mediated = {
+                "create:contract",
+                "create:trust",
+                "create:network-policy",
+            }
+            if item["category"] == "release":
+                # Helm's ConfigMap driver updates only its own release record.
+                # The already-active boundary denies this identity updates to
+                # either immutable public contract generation.
+                admission_mediated.update(
+                    {
+                        "update:contract",
+                        "patch:contract",
+                        "update:trust",
+                        "patch:trust",
+                    }
+                )
+            forbidden = {
+                key: value
+                for key, value in protected.items()
+                if key not in admission_mediated
+            }
+            if any(forbidden.values()):
+                raise ValueError(f"{name} identity can mutate a protected generation")
+        if item["category"] == "owner":
+            owner_create_or_apply = {
+                "create-rolebindings",
+                "create-configmaps",
+                "create-roles.rbac.authorization.k8s.io",
+                "create-rolebindings.rbac.authorization.k8s.io",
+                "create-validatingadmissionpolicies.admissionregistration.k8s.io",
+                "patch-validatingadmissionpolicies.admissionregistration.k8s.io",
+                "create-validatingadmissionpolicybindings.admissionregistration.k8s.io",
+                "patch-validatingadmissionpolicybindings.admissionregistration.k8s.io",
+            }
+            dangerous = [
+                permission
+                for permission in dangerous
+                if permission not in owner_create_or_apply
+            ]
+        elif item["category"] == "release":
+            release_read_create = {
+                "create-serviceaccounts",
+                "create-deployments.apps",
+                "create-configmaps",
+                "update-configmaps",
+                "patch-configmaps",
+            }
+            dangerous = [permission for permission in dangerous if permission not in release_read_create]
         if dangerous:
-            raise ValueError(f"{name} identity has delegation authority: {dangerous[0]}")
-        if name != "workloads":
-            checked_nonowners.append(
-                {"category": candidate["category"], "username": identity["username"]}
-            )
+            raise ValueError(f"{name} identity has dangerous authority: {dangerous[0]}")
+        categories.append(item["category"])
+        checked.append(
+            {
+                "name": name,
+                "category": item["category"],
+                "username": identity["username"],
+                "credential_sha256": item["credential_sha256"],
+                "provider_principal_id": item["provider_principal_id"],
+            }
+        )
 
-    checked_nonowners.sort(key=lambda item: (item["category"], item["username"]))
-    if {item["category"] for item in checked_nonowners} != {
-        "release",
-        "human",
-        "break-glass",
-        "other",
-    } or len({item["username"] for item in checked_nonowners}) != len(
-        checked_nonowners
+    required_categories = {"owner", "workloads", "release", "human", "break-glass", "other"}
+    if (
+        set(categories) != required_categories
+        or categories.count("owner") != 1
+        or categories.count("workloads") != 1
+        or len({item["username"] for item in checked}) != len(checked)
+        or len({item["credential_sha256"] for item in checked}) != len(checked)
+        or len({item["provider_principal_id"] for item in checked}) != len(checked)
     ):
-        raise ValueError("non-owner identity categories or subjects are incomplete")
+        raise ValueError("Kubernetes identity inventory is not exhaustive and disjoint")
+
+    checked.sort(key=lambda item: item["name"])
+    owner = next(item for item in checked if item["category"] == "owner")
+    workloads = next(item for item in checked if item["category"] == "workloads")
+    owner_declaration = next(
+        item
+        for item in declared_identities.values()
+        if item["category"] == "owner"
+    )
+    rbac_inventory_sha256 = _rbac_inventory_sha256(
+        Path(owner_declaration["kubeconfig_path"]),
+        owner_declaration["kube_context"],
+    )
+    if rbac_inventory_sha256 != query["expected_rbac_inventory_sha256"]:
+        raise ValueError("live cluster RBAC inventory differs from the signed receipt")
 
     return {
         "authorized": "true",
@@ -274,9 +531,10 @@ def verify(query: dict[str, str]) -> dict[str, str]:
         "workloads_subject_sha256": hashlib.sha256(
             workloads["username"].encode()
         ).hexdigest(),
-        "non_owner_inventory_sha256": hashlib.sha256(
-            json.dumps(checked_nonowners, sort_keys=True, separators=(",", ":")).encode()
+        "identity_inventory_sha256": hashlib.sha256(
+            json.dumps(checked, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest(),
+        "rbac_inventory_sha256": rbac_inventory_sha256,
     }
 
 
