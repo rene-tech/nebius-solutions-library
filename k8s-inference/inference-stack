@@ -4791,18 +4791,33 @@ def _live_utc(value: object, label: str, *, now: datetime) -> datetime:
 def _postgresql_primary_archiver_evidence(
     args: argparse.Namespace,
     dynamic: Mapping[str, Any],
-    cluster_status: Mapping[str, Any],
+    cluster: Mapping[str, Any],
     *,
     backup_wal: str,
     backup_completed_at: datetime,
     now: datetime,
 ) -> dict[str, Any]:
     """Read WAL archival progress from the current CNPG primary's real metrics."""
+    cluster_metadata = cluster.get("metadata")
+    cluster_status = cluster.get("status")
+    if not isinstance(cluster_metadata, Mapping) or not isinstance(
+        cluster_status, Mapping
+    ):
+        raise DeploymentError(
+            "live PostgreSQL Cluster identity or status is malformed; no resource "
+            "was changed"
+        )
+    cluster_uid = cluster_metadata.get("uid")
     primary = cluster_status.get("currentPrimary")
     timeline = cluster_status.get("timelineID")
+    primary_timestamp_raw = cluster_status.get("currentPrimaryTimestamp")
     if (
         not re.fullmatch(r"[0-9A-F]{24}", backup_wal)
         or int(backup_wal, 16) == 0
+        or not re.fullmatch(
+            r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            str(cluster_uid),
+        )
         or not isinstance(primary, str)
         or not re.fullmatch(r"fs2-control-db-[1-9][0-9]*", primary)
         or not isinstance(timeline, int)
@@ -4814,6 +4829,9 @@ def _postgresql_primary_archiver_evidence(
             "live PostgreSQL selected Backup WAL, current primary or timeline is "
             "malformed; no resource was changed"
         )
+    primary_timestamp = _live_utc(
+        primary_timestamp_raw, "current primary timestamp", now=now
+    )
     metrics = _kubectl_raw(
         args,
         dynamic,
@@ -4822,19 +4840,21 @@ def _postgresql_primary_archiver_evidence(
     archived_count = _prometheus_scalar(
         metrics, "cnpg_pg_stat_archiver_archived_count"
     )
-    archived_at_epoch = _prometheus_scalar(
-        metrics, "cnpg_pg_stat_archiver_last_archived_time"
-    )
-    archived_wal_start_lsn = _prometheus_scalar(
-        metrics, "cnpg_pg_stat_archiver_last_archived_wal_start_lsn"
+    archived_wal_labels = _prometheus_info_labels(
+        metrics, "cnpg_fs2_pg_stat_archiver_identity_identity"
     )
     in_recovery = _prometheus_scalar(metrics, "cnpg_pg_replication_in_recovery")
+    current_wal = archived_wal_labels.get("last_archived_wal", "")
+    archived_at_raw = archived_wal_labels.get("last_archived_time_seconds", "")
     if (
         not archived_count.is_integer()
         or archived_count < 1
-        or not archived_wal_start_lsn.is_integer()
-        or archived_wal_start_lsn < 1
-        or archived_wal_start_lsn > (1 << 53) - 1
+        or set(archived_wal_labels)
+        != {"last_archived_wal", "last_archived_time_seconds"}
+        or not re.fullmatch(r"[0-9A-F]{24}", current_wal)
+        or int(current_wal, 16) == 0
+        or int(current_wal[:8], 16) != timeline
+        or not re.fullmatch(r"[1-9][0-9]{9,}", archived_at_raw)
         or in_recovery != 0
     ):
         raise DeploymentError(
@@ -4842,26 +4862,53 @@ def _postgresql_primary_archiver_evidence(
             "no resource was changed"
         )
     try:
-        archived_at = datetime.fromtimestamp(archived_at_epoch, UTC)
+        archived_at = datetime.fromtimestamp(int(archived_at_raw), UTC)
     except (OverflowError, OSError, ValueError) as error:
         raise DeploymentError(
             "live PostgreSQL primary archive timestamp is invalid; no resource was "
             "changed"
         ) from error
-    current_wal = f"{timeline:08X}{int(archived_wal_start_lsn):016X}"
     if (
         archived_at > now + timedelta(minutes=5)
         or now - archived_at > timedelta(minutes=10)
         or archived_at < backup_completed_at
-        or timeline < int(backup_wal[:8], 16)
-        or int(current_wal[8:], 16) <= int(backup_wal[8:], 16)
+        or archived_at <= primary_timestamp
+        or int(current_wal, 16) <= int(backup_wal, 16)
     ):
         raise DeploymentError(
             "live PostgreSQL primary WAL archive has not advanced recently beyond "
             "the selected Backup; no resource was changed"
         )
+    rechecked_cluster = _kubectl_json(
+        args, dynamic, "clusters.postgresql.cnpg.io", name="fs2-control-db"
+    )
+    rechecked_metadata = (
+        rechecked_cluster.get("metadata")
+        if isinstance(rechecked_cluster, Mapping)
+        else None
+    )
+    rechecked_status = (
+        rechecked_cluster.get("status")
+        if isinstance(rechecked_cluster, Mapping)
+        else None
+    )
+    if (
+        not isinstance(rechecked_metadata, Mapping)
+        or not isinstance(rechecked_status, Mapping)
+        or rechecked_metadata.get("uid") != cluster_uid
+        or rechecked_status.get("currentPrimary") != primary
+        or rechecked_status.get("timelineID") != timeline
+        or rechecked_status.get("currentPrimaryTimestamp")
+        != primary_timestamp_raw
+    ):
+        raise DeploymentError(
+            "live PostgreSQL Cluster UID, current primary or timeline changed while "
+            "WAL evidence was collected; no resource was changed"
+        )
     return {
+        "cluster_uid": cluster_uid,
         "current_primary": primary,
+        "current_primary_timestamp": primary_timestamp_raw,
         "timeline_id": timeline,
         "archived_count": int(archived_count),
         "in_recovery": False,
@@ -5050,7 +5097,7 @@ def validate_postgresql_live_recovery_boundary(
     archiver = _postgresql_primary_archiver_evidence(
         args,
         dynamic,
-        cluster_status,
+        cluster,
         backup_wal=backup_wal,
         backup_completed_at=selected_time,
         now=current,

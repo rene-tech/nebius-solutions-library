@@ -232,6 +232,59 @@ resource "kubernetes_secret_v1" "postgresql_restore_receipt" {
   data_wo_revision = local.postgresql_restore_receipt_credential_revision
 }
 
+# CNPG's predefined last_archived_wal_start_lsn metric deliberately exposes
+# only the rightmost 16 hexadecimal digits of the WAL name. That is not enough
+# to prove the timeline after a primary promotion. Export the complete WAL file
+# name as a label from pg_stat_archiver on the primary only. The query reads a
+# PostgreSQL statistics view and cannot access application tables.
+resource "kubernetes_config_map_v1" "postgresql_archiver_identity_queries" {
+  metadata {
+    name      = "fs2-postgresql-archiver-identity-queries"
+    namespace = "fs2-data"
+    labels = merge(local.common_labels, {
+      "app.kubernetes.io/component" = "postgresql-archiver-observability"
+      "cnpg.io/reload"              = ""
+    })
+  }
+
+  data = {
+    "queries" = yamlencode({
+      fs2_pg_stat_archiver_identity = {
+        primary = true
+        query   = <<-SQL
+          SELECT
+            COALESCE(last_archived_wal, '') AS last_archived_wal,
+            COALESCE(EXTRACT(EPOCH FROM last_archived_time)::bigint::text, '') AS last_archived_time_seconds,
+            1 AS identity
+          FROM pg_catalog.pg_stat_archiver
+        SQL
+        metrics = [
+          {
+            last_archived_wal = {
+              usage       = "LABEL"
+              description = "Complete archived WAL file name including timeline"
+            }
+          },
+          {
+            last_archived_time_seconds = {
+              usage       = "LABEL"
+              description = "Archive timestamp paired with the complete WAL identity"
+            }
+          },
+          {
+            identity = {
+              usage       = "GAUGE"
+              description = "Primary-only full archived WAL identity record"
+            }
+          },
+        ]
+      }
+    })
+  }
+
+  depends_on = [terraform_data.cluster_contract]
+}
+
 resource "kubernetes_manifest" "control_database" {
   manifest = {
     apiVersion = "postgresql.cnpg.io/v1"
@@ -305,7 +358,13 @@ resource "kubernetes_manifest" "control_database" {
           "capacity.fs2.nebius/pool"   = "system"
         }
       }
-      monitoring = { enablePodMonitor = true }
+      monitoring = {
+        enablePodMonitor = true
+        customQueriesConfigMap = [{
+          name = kubernetes_config_map_v1.postgresql_archiver_identity_queries.metadata[0].name
+          key  = "queries"
+        }]
+      }
       }, var.postgresql_backup.enabled ? {
       backup = {
         barmanObjectStore = local.postgresql_backup_barman_object_store
@@ -339,6 +398,7 @@ resource "kubernetes_manifest" "control_database" {
   depends_on = [
     kubernetes_secret_v1.database_account,
     kubernetes_secret_v1.postgresql_backup,
+    kubernetes_config_map_v1.postgresql_archiver_identity_queries,
   ]
 }
 
