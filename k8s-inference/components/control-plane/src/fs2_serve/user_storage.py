@@ -68,7 +68,6 @@ class UserStorageService:
             if (
                 bucket is None
                 or bucket["quota_bytes"] != policy.quota_bytes
-                or bucket["bucket_name"] != self.provider.bucket_name(user.tenant_id, owner)
             ):
                 bucket = await self.provider.ensure_bucket(
                     user.tenant_id, owner, policy.quota_bytes, existing=bucket,

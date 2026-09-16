@@ -144,9 +144,11 @@ class NebiusUserStorage:
         if existing is not None and existing["group_id"] != group.metadata.id:
             raise ValueError("existing bucket IAM group identity changed")
         # Preserve unrelated bucket settings and use resource-version checking.
-        if bucket.spec.max_size_bytes != quota or bucket.metadata.name != readable_name:
+        # Nebius bucket names are immutable (verified against the live API).
+        # Existing names require an explicit data migration, never replacement
+        # as a side effect of reconciliation or a byte-quota change.
+        if bucket.spec.max_size_bytes != quota:
             bucket.spec.max_size_bytes = quota
-            bucket.metadata.name = readable_name
             await self._operation(
                 self.buckets.update(
                     storage.UpdateBucketRequest(

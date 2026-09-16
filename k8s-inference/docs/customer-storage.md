@@ -111,14 +111,16 @@ by that quota (limit 10). Do not describe all tenants or private-user mode as
 live-qualified yet. See the [acceptance and resume report](../acceptance/customer-storage-20260916/README.md).
 # Bucket naming
 
-New and reconciled customer buckets use `fs2-<tenant>-<optional-user>-<id>`.
+New customer buckets use `fs2-<tenant>-<optional-user>-<id>`.
 Shared tenant mode omits the user component; private-user mode includes it.
 Names are lower-case S3-safe slugs, capped at 63 characters, with a deterministic
 16-hex identity suffix to distinguish similar or truncated names across projects.
-The controller updates legacy bucket names in place, preserving bucket IDs,
-objects, IAM groups and each user's S3 credentials. Clients should discover the
-current name from `/v1/storage`; cached URLs containing a previous name must be
-refreshed after a naming change. No customer bucket is deleted or recreated.
+Nebius rejects changing existing names (`metadata.name: name is immutable`,
+verified live on 2026-09-16). The controller preserves legacy buckets and their
+objects, IAM groups and user credentials. Converting existing buckets requires
+an explicit copy/verify/switch migration after policy quota is available; that
+migration remains pending. Clients should discover the current name from
+`/v1/storage`. No customer bucket is deleted or recreated by reconciliation.
 
 Bucket count and bucket access-policy count are separate Nebius quotas. On
 2026-09-16 eu-north1 reported 278/400 buckets but 10/10 IAM storage access

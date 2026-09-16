@@ -45,7 +45,7 @@ def test_bucket_names_are_bounded_and_slug_collisions_are_disambiguated():
     assert provider.bucket_name("tenant", "alice") != old
 
 
-async def test_existing_bucket_rename_preserves_id_policy_quota_and_iam_identity():
+async def test_existing_bucket_quota_change_preserves_immutable_name_and_iam_identity():
     provider = naming_provider()
     legacy = provider.name("bucket", "kopra", "")
     bucket = storage.Bucket(
@@ -58,20 +58,20 @@ async def test_existing_bucket_rename_preserves_id_policy_quota_and_iam_identity
     provider._operation = AsyncMock(return_value="bucket-same")
     provider.buckets = SimpleNamespace(get=AsyncMock(return_value=bucket), update=Mock())
     result = await provider.ensure_bucket(
-        "kopra", "", 5_000_000_000, existing={"bucket_id": "bucket-same", "group_id": "group-same"},
+        "kopra", "", 6_000_000_000, existing={"bucket_id": "bucket-same", "group_id": "group-same"},
     )
     request = provider.buckets.update.call_args.args[0]
     assert request.metadata.id == "bucket-same"
     assert request.metadata.resource_version == 7
     assert request.metadata.labels["fs2-storage-owner"] == legacy
-    assert request.metadata.name == provider.bucket_name("kopra", "")
-    assert request.spec.max_size_bytes == 5_000_000_000
+    assert request.metadata.name == legacy
+    assert request.spec.max_size_bytes == 6_000_000_000
     assert result["bucket_id"] == "bucket-same"
     assert result["group_id"] == "group-same"
-    # A crash between cloud rename and DB update adopts the same identity.
+    # A crash between cloud quota update and DB update adopts the same identity.
     provider.buckets.update.reset_mock()
     await provider.ensure_bucket(
-        "kopra", "", 5_000_000_000, existing={"bucket_id": "bucket-same", "group_id": "group-same"},
+        "kopra", "", 6_000_000_000, existing={"bucket_id": "bucket-same", "group_id": "group-same"},
     )
     provider.buckets.update.assert_not_called()
 

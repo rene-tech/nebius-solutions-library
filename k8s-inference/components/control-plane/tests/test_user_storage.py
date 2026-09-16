@@ -184,7 +184,7 @@ async def test_quota_update_preserves_identity_and_mode_change_requires_migratio
         await env.service.configure("customer-a", StoragePolicy(mode="user"))
 
 
-async def test_naming_migration_preserves_bucket_identity_and_user_credentials(env):
+async def test_naming_change_does_not_replace_existing_bucket_or_credentials(env):
     await env.service.ensure(user())
     old = dict(env.repository.buckets["customer-a", ""])
     env.provider.bucket_name = lambda tenant, owner: "fs2-customer-a-identity"
@@ -192,7 +192,8 @@ async def test_naming_migration_preserves_bucket_identity_and_user_credentials(e
     current = env.repository.buckets["customer-a", ""]
     assert current["bucket_id"] == old["bucket_id"]
     assert current["group_id"] == old["group_id"]
-    assert current["bucket_name"] == "fs2-customer-a-identity"
+    assert current["bucket_name"] == old["bucket_name"]
+    assert len(env.provider.bucket_calls) == 1
     assert len(env.provider.key_calls) == 1
 
 
