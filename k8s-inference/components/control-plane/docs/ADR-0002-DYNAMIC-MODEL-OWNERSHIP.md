@@ -77,25 +77,26 @@ decides where or when a pod runs.
    `fs2-model-controller-fixed-scale`, and an `autoscaling/v1` `Scale` body
    containing only identity/precondition metadata and `.spec.replicas`; a full
    rendered Deployment is never forced. Kubernetes retains co-owners when a
-   manager applies an unchanged value. For that otherwise irreparable exact
-   same-value/co-owner state, the controller skips generic SSA and performs a
-   resourceVersion-pinned one-replica upward ownership pulse followed by an
-   immediate non-forcing return to the desired value. Both pulse writes are
-   scale-only and repeat the cross-object fences; every other handoff uses one
-   scale write. While that dedicated manager owns the field, ordinary
+   manager applies an unchanged value. The controller makes **no write** for
+   that exact same-value/co-owner state and reports that manual ownership
+   migration is required. A replica pulse is forbidden: it would start a
+   zero-replica workload, exceed an admitted fixed maximum or pool capacity,
+   and could remain after a process crash. Every automatic exceptional handoff
+   therefore writes the exact admitted desired value once. While the dedicated
+   manager owns the field, ordinary
    full-object reconciliation stays non-forcing and omits only
    `.spec.replicas`; it continues applying the complete remaining Deployment.
    Later fixed replica changes use the same `/scale` manager with
    `force=false`. After every exceptional write the controller again performs
    complete paginated all-targetRef HPA/ScaledObject scans, revalidates the CR,
    and re-reads exact Deployment identity, owner, deletion, replicas, and
-   exclusive field ownership. A scaler or CR race triggers a pinned,
-   non-forcing scale-only compensation to the pre-handoff count; a concurrent
-   scale writer makes that compensation conflict rather than overwrite it.
+   exclusive field ownership. A scaler or CR race fails closed without a
+   compensating replica write: an old replica count is not authorization after
+   the ModelDeployment changes, and compensation could fight the new scaler.
    The controller Role can create ScaledObjects but cannot create or mutate
    HPAs, and every controller-originated ScaledObject transition is serialized
    by the same Lease. Foreign writers remain outside that trust boundary, so
-   complete pre/post scans and conflict-safe compensation are mandatory. A
+   complete pre/post scans are mandatory. A
    fixed-to-autoscaled transition first writes zero through
    that manager without force, creates the ScaledObject, and waits until the
    exact KEDA/HPA pair has taken replica ownership and the target has one exact
@@ -105,9 +106,13 @@ decides where or when a pod runs.
    Deployment UID, exact ModelDeployment controller owner, no deletion marker,
    exact replicas, and one exclusive intended controller replica owner. Every
    other state remains fail-closed. Kubernetes offers no transaction spanning
-   collection reads and a replica write, so pre/post checks close the observable
-   windows, compensation restores the pre-handoff count when a late scaler is
-   seen, and the next reconcile refuses another handoff while any scaler exists.
+   collection reads and a replica write, so a durable receipt makes the guard
+   continuous: every later fixed reconcile with that receipt repeats complete
+   unlabeled/foreign HPA and ScaledObject targetRef scans before any fixed-scale
+   write, including after a crash between the exceptional write and postcheck.
+   A late scaler leaves the admitted desired count as the only controller write;
+   the postcheck and every retry fail closed while the scaler exists, so the
+   controller neither ignores nor fights it.
 3. A reconcile reads the object again after every write. Status advances only
    from observed generation, resource UID, readiness, cache, admission, and
    route observations.
@@ -139,17 +144,20 @@ not folded into one reconcile because each security claim must survive a fresh
 API observation: first persist exact scaler identity before deletion; then
 observe ScaledObject deletion and generated-HPA garbage collection; then try
 ordinary non-forcing SSA; and only on its exact singleton replicas conflict run
-the two complete autoscaler scans and scale-only takeover. A dedicated fixed
+the repeated complete autoscaler scans and scale-only takeover. A dedicated fixed
 scale phase is also required so later fixed changes do not put replicas back
 into generic full-object SSA, while the reverse phase waits for KEDA/HPA to
 retake ownership.
 
-Steady autoscaled and fixed reconciles do not run namespace-wide autoscaler
-lists, receipt writes, or exceptional scale writes. Their controller-level
-sequence remains two ModelDeployment reads, two ordinary discoveries, and the
-existing conditional status projection. A normal object apply remains exactly
-one target GET, one Lease check, one `force=false` patch, and one read-back.
-Tests lock both baselines and the transition-only call paths.
+Steady autoscaled and never-autoscaled fixed reconciles do not run namespace-wide
+autoscaler lists, receipt writes, or exceptional scale writes; their existing
+API-call baseline is unchanged. Receipt-backed fixed Deployments deliberately
+add one complete HPA list, one complete ScaledObject list, an exact
+ModelDeployment read and an exact Deployment read on each reconcile. Those
+bounded reads are the durable crash/late-scaler guard and perform no write.
+Normal object apply remains one target GET, one Lease check, one `force=false`
+patch, and one read-back. Tests lock the unchanged baseline and the narrowly
+receipt-scoped guard path.
 
 ### Binary rollback boundary
 
