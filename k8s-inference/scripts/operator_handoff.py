@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Issue and verify an expiring least-privilege operator handoff.
+"""Acknowledge and verify an externally issued least-privilege handoff.
 
 The private key and append-only receipts stay in one owner-only directory.
 Command output is limited to non-secret status and resource identifiers; no
-Secret data is read. Predecessor revocation is intentionally unavailable while
-the program-wide irreversible-action prohibition remains in force.
+Secret data is read. This executable has no issuance, profile creation,
+credential creation, revocation, or cleanup command.
 """
 
 from __future__ import annotations
@@ -30,6 +30,10 @@ FIXED_NEBIUS = "/usr/local/bin/nebius"
 FIXED_KUBECTL = "/snap/bin/kubectl"
 FIXED_OPENSSL = "/usr/bin/openssl"
 FIXED_ADMIN_PROFILE = "sandbox"
+PRODUCTION_AUTHORITY_COMMAND = (
+    "/usr/bin/python3",
+    str(Path(__file__).resolve().parent / "credential_provider_adapter.py"),
+)
 
 
 class HandoffError(RuntimeError):
@@ -75,12 +79,10 @@ def host_cidrs(values: Sequence[str]) -> list[str]:
 
 def private_directory(path: Path) -> Path:
     path = path.absolute()
-    if path.exists() and (path.is_symlink() or not path.is_dir()):
+    if not path.exists() or path.is_symlink() or not path.is_dir():
         raise HandoffError("handoff directory must be a real directory")
     if any(parent.is_symlink() for parent in (path, *path.parents)):
         raise HandoffError("handoff directory path must not contain a symlink")
-    path.mkdir(parents=True, exist_ok=True, mode=0o700)
-    path.chmod(0o700)
     if path.stat().st_uid != os.geteuid() or stat.S_IMODE(path.stat().st_mode) != 0o700:
         raise HandoffError("handoff directory must be owner-owned mode 0700")
     return path
@@ -129,6 +131,11 @@ def run(
     capture: bool = False,
     check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
+    lowered = tuple(value.lower() for value in arguments)
+    if arguments and arguments[0] == FIXED_NEBIUS and any(
+        verb in lowered for verb in ("create", "delete", "revoke", "update", "set")
+    ):
+        raise HandoffError("operator handoff tool forbids Nebius mutation commands")
     try:
         return subprocess.run(
             list(arguments),
@@ -141,6 +148,25 @@ def run(
         raise HandoffError(
             f"handoff command failed: {arguments[0]} {arguments[1]}"
         ) from exc
+
+
+def authority_json(request: dict[str, Any]) -> dict[str, Any]:
+    """Call the fixed read-only authority; no caller command or profile exists."""
+
+    try:
+        completed = subprocess.run(
+            list(PRODUCTION_AUTHORITY_COMMAND),
+            input=json.dumps(request, sort_keys=True),
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        document = json.loads(completed.stdout)
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as error:
+        raise HandoffError("operator handoff authority did not return evidence") from error
+    if not isinstance(document, dict):
+        raise HandoffError("operator handoff authority returned malformed evidence")
+    return document
 
 
 def load_receipt(directory: Path) -> tuple[Path, dict[str, Any]]:
@@ -535,6 +561,15 @@ def negative_authorization_probes() -> dict[str, list[str]]:
             probes[f"{verb}_{resource}"] = [verb, resource]
     for resource in ("pods/exec", "pods/attach", "pods/portforward"):
         probes[f"create_{resource}"] = ["create", resource, "--all-namespaces"]
+    probes["create_serviceaccounts_token"] = [
+        "create",
+        "serviceaccounts/token",
+        "--all-namespaces",
+    ]
+    probes["create_tokenreviews"] = [
+        "create",
+        "tokenreviews.authentication.k8s.io",
+    ]
     probes["escalate_roles"] = [
         "escalate",
         "roles.rbac.authorization.k8s.io",
@@ -663,6 +698,13 @@ def reconcile_issued_key(
 
 
 def _issue(args: argparse.Namespace) -> dict[str, Any]:
+    raise HandoffError(
+        "disabled legacy implementation: this read-only executable cannot issue credentials"
+    )
+
+    # Preserved only as historical source context until a separately reviewed
+    # issuance service lands. The unconditional refusal above and the absence
+    # of an issue CLI route make the block non-executable.
     directory = private_directory(args.directory)
     journal_path = directory / "issuance.journal.json"
     expiry = timestamp(args.expires_at)
@@ -888,12 +930,17 @@ def _issue(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def issue(args: argparse.Namespace) -> dict[str, Any]:
-    directory = private_directory(args.directory)
-    with handoff_lock(directory):
-        return _issue(args)
+    raise HandoffError(
+        "credential issuance is outside this read-only tool; use the separately "
+        "reviewed, externally journaled issuance service"
+    )
 
 
 def reconcile_issue(args: argparse.Namespace) -> dict[str, Any]:
+    raise HandoffError(
+        "disabled legacy implementation: this read-only executable cannot reconcile issuance"
+    )
+
     directory = private_directory(args.directory)
     journal_path = directory / "issuance.journal.json"
     with handoff_lock(directory):
@@ -982,6 +1029,86 @@ def verify(args: argparse.Namespace) -> dict[str, Any]:
         raise HandoffError("delivery must be acknowledged before verification")
     if timestamp(receipt["expires_at"]) <= utc_now():
         raise HandoffError("handoff credential is expired")
+    evidence = authority_json(
+        {
+            "operation": "viewer-handoff-inventory",
+            "key_id": receipt["public_key_id"],
+        }
+    )
+    denials = evidence.get("denials")
+    inventory = evidence.get("inventory")
+    provider_lineage = evidence.get("provider_lineage")
+    if not isinstance(provider_lineage, dict):
+        raise HandoffError("provider did not return the exact handoff lineage")
+    handoff_id = hashlib.sha256(
+        json.dumps(
+            provider_lineage, sort_keys=True, separators=(",", ":")
+        ).encode()
+    ).hexdigest()
+    successor = receipt.get("lineage", {}).get("successor")
+    if not isinstance(successor, dict):
+        raise HandoffError("issuance receipt lacks a successor lineage")
+    expected_provider_lineage = {
+        "project_id": receipt["project_id"],
+        "cluster_id": receipt["cluster_id"],
+        "lineage_id": successor["lineage_id"],
+        "generation": successor["generation"],
+        "service_account_id": successor["service_account_id"],
+        "group_id": successor["group_id"],
+        "role": "viewer",
+        "key_id": receipt["public_key_id"],
+        "expires_at": receipt["expires_at"],
+        "public_key_sha256": receipt.get("public_key_sha256"),
+    }
+    if any(
+        provider_lineage.get(key) != value
+        for key, value in expected_provider_lineage.items()
+    ):
+        raise HandoffError("issuance receipt differs from provider-derived viewer lineage")
+    if (
+        evidence.get("handoff_id") != handoff_id
+        or evidence.get("key_id") != receipt["public_key_id"]
+        or not isinstance(denials, dict)
+        or denials.get("create_pods") is not True
+        or denials.get("get_secrets") is not True
+        or denials.get("create_serviceaccount_tokens") is not True
+        or denials.get("create_tokenreviews") is not True
+        or not all(value is True for value in denials.values())
+        or not isinstance(inventory, dict)
+        or inventory.get("allowed") is not True
+        or not isinstance(evidence.get("allowed_cidrs"), list)
+        or not evidence["allowed_cidrs"]
+        or not isinstance(evidence.get("externalEvidence"), dict)
+    ):
+        raise HandoffError("provider did not prove the complete viewer boundary")
+    receipt["verification"] = {
+        "verified_at": utc_now().isoformat().replace("+00:00", "Z"),
+        "inventory_allowed": True,
+        "create_pods_denied": True,
+        "read_secrets_denied": True,
+        "service_account_token_denied": True,
+        "token_review_denied": True,
+        "negative_probe_count": len(denials),
+        "approved_egress_cidrs": evidence["allowed_cidrs"],
+        "provider_expiry_verified": True,
+        "external_evidence_sha256": hashlib.sha256(
+            json.dumps(
+                evidence["externalEvidence"],
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest(),
+    }
+    private_json(receipt_path, receipt)
+    return {
+        "status": "verified-read-only",
+        "public_key_id": receipt["public_key_id"],
+        "expires_at": receipt["expires_at"],
+    }
+
+    # Legacy direct-provider verification remains unreachable for receipt
+    # compatibility only.  All executable verification uses the fixed root
+    # authority above and cannot create a profile, kubeconfig, or cloud key.
     prove_receipt_lineage(args, receipt)
     issued = read_auth_key(args, receipt["public_key_id"])
     require_binding(
@@ -1141,26 +1268,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--directory", type=Path, required=True)
     subparsers = parser.add_subparsers(dest="command", required=True)
-    issue_parser = subparsers.add_parser("issue")
-    issue_parser.add_argument("--service-account-id", required=True)
-    issue_parser.add_argument("--viewer-group-id", required=True)
-    issue_parser.add_argument("--project-id", required=True)
-    issue_parser.add_argument("--cluster-id", required=True)
-    issue_parser.add_argument("--expires-at", required=True)
-    issue_parser.add_argument("--lineage-id", required=True)
-    issue_parser.add_argument("--generation", type=int, required=True)
-    issue_parser.add_argument("--predecessor-public-key-id", required=True)
-    issue_parser.add_argument("--predecessor-service-account-id", required=True)
-    issue_parser.add_argument("--predecessor-group-id", required=True)
-    issue_parser.add_argument("--predecessor-project-id", required=True)
-    issue_parser.add_argument("--predecessor-generation", type=int, required=True)
-    issue_parser.add_argument("--predecessor-role", required=True)
-    issue_parser.add_argument("--name", default="fs2-operator-handoff")
-    subparsers.add_parser("reconcile-issuance")
     acknowledge_parser = subparsers.add_parser("acknowledge-delivery")
     acknowledge_parser.add_argument("--recipient", required=True)
-    verify_parser = subparsers.add_parser("verify")
-    verify_parser.add_argument("--approved-egress", action="append", required=True)
+    subparsers.add_parser("verify")
     return parser.parse_args(argv)
 
 
@@ -1172,17 +1282,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     args.openssl = FIXED_OPENSSL
     args.admin_profile = FIXED_ADMIN_PROFILE
     handlers = {
-        "issue": issue,
-        "reconcile-issuance": reconcile_issue,
         "acknowledge-delivery": acknowledge,
         "verify": verify,
     }
-    if args.command in {"issue", "reconcile-issuance"}:
+    directory = private_directory(args.directory)
+    with handoff_lock(directory):
         result = handlers[args.command](args)
-    else:
-        directory = private_directory(args.directory)
-        with handoff_lock(directory):
-            result = handlers[args.command](args)
     print(json.dumps(result, sort_keys=True))
     return 0
 

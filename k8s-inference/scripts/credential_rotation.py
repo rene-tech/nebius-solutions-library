@@ -24,6 +24,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from credential_evidence import EvidenceVerificationError, verify_evidence_envelope
+from credential_provider_adapter import load_client_policy
+
 from scripts.append_only_evidence import (
     EvidenceError,
     append_event,
@@ -171,7 +174,7 @@ def require_consumer_readiness(
 
     contract = journal["consumer_contract"]
     expected = {
-        "schema": "fs2-serve.nebius.ai/credential-consumer-readiness/v1",
+        "schema": "fs2-serve.nebius.ai/credential-consumer-readiness/v2",
         "credential_class": journal["credential_class"],
         "adapter": contract["adapter"],
         "authority": contract["authority"],
@@ -187,28 +190,21 @@ def require_consumer_readiness(
         raise RotationError(
             "provider did not prove the exact class-specific consumer contract"
         )
-    if not all(
-        isinstance(response.get(field), str) and response[field]
-        for field in ("evidence_id", "observed_at")
-    ):
+    if not isinstance(response.get("observed_at"), str) or not response["observed_at"]:
         raise RotationError("consumer readiness lacks authoritative evidence identity")
-    bindings = response.get("secret_bindings")
+    bindings = response.get("consumer_bindings")
     if not isinstance(bindings, list):
-        raise RotationError("consumer readiness lacks Secret binding inventory")
-    if "kubernetes" in contract["authority"] and not bindings:
-        raise RotationError("Kubernetes consumer readiness has no live Secret binding")
+        raise RotationError("consumer readiness lacks exact consumer bindings")
     bound_consumers: set[str] = set()
     for binding in bindings:
         required = {
             "consumer",
-            "namespace",
-            "name",
-            "uid",
-            "resource_version",
-            "content_sha256",
+            "consumer_identity",
+            "credential_identity",
             "generation",
-            "immutable",
-            "available",
+            "ready",
+            "observed_at",
+            "readiness_evidence_sha256",
         }
         if (
             not isinstance(binding, dict)
@@ -218,29 +214,24 @@ def require_consumer_readiness(
                 isinstance(binding[field], str) and binding[field]
                 for field in (
                     "consumer",
-                    "namespace",
-                    "name",
-                    "uid",
-                    "resource_version",
+                    "consumer_identity",
+                    "credential_identity",
+                    "observed_at",
+                    "readiness_evidence_sha256",
                 )
             )
-            or not isinstance(binding["content_sha256"], str)
-            or len(binding["content_sha256"]) != 64
+            or len(binding["readiness_evidence_sha256"]) != 64
             or any(
                 character not in "0123456789abcdef"
-                for character in binding["content_sha256"]
+                for character in binding["readiness_evidence_sha256"]
             )
-            or not isinstance(binding["generation"], int)
-            or binding["generation"] < 1
-            or binding["immutable"] is not True
-            or binding["available"] is not True
+            or binding["generation"] != successor["generation"]
+            or binding["ready"] is not True
         ):
             raise RotationError("consumer readiness has an invalid live binding")
         bound_consumers.add(binding["consumer"])
-    if "kubernetes" in contract["authority"] and bound_consumers != set(
-        contract["consumers"]
-    ):
-        raise RotationError("consumer readiness omits a declared Kubernetes consumer")
+    if bound_consumers != set(contract["consumers"]):
+        raise RotationError("consumer readiness omits a declared exact consumer")
 
 
 def provider_call(command: Sequence[str], request: dict[str, Any]) -> dict[str, Any]:
@@ -259,41 +250,47 @@ def provider_call(command: Sequence[str], request: dict[str, Any]) -> dict[str, 
         raise RotationError("credential provider operation failed") from error
     if not isinstance(response, dict):
         raise RotationError("credential provider returned a malformed response")
-    if request.get("operation") != "verify-attestation":
-        claim = response.get("authorityAttestation")
-        attested = {
+    proof = response.get("externalEvidence")
+    observation = response.get("authorityObservation")
+    if not isinstance(proof, dict) or not isinstance(observation, dict):
+        raise RotationError("credential provider response lacks external evidence")
+    payload = {
+        **observation,
+        "result": {
             key: value
             for key, value in response.items()
-            if key != "authorityAttestation"
-        }
-        if not isinstance(claim, dict):
-            raise RotationError(
-                "credential provider response is not authority-attested"
-            )
-        verification = provider_call(
-            command,
-            {
-                "schema": "fs2-serve.nebius.ai/credential-provider-operation/v1",
-                "operation": "verify-attestation",
-                "attested_payload": attested,
-                "authority_attestation": claim,
-            },
+            if key not in {"externalEvidence", "authorityObservation"}
+        },
+    }
+    claim = proof.get("claim")
+    if not isinstance(claim, dict):
+        raise RotationError("credential provider external claim is absent")
+    try:
+        policy = load_client_policy()
+        verify_evidence_envelope(
+            {**proof, "payload": payload},
+            expected_operation=str(request.get("operation", "")),
+            expected_request_sha256=str(claim.get("request_sha256", "")),
+            expected_nonce=str(claim.get("request_nonce", "")),
+            evidence_public_key_sha256=policy["evidence_public_key_sha256"],
+            anchor_public_key_sha256=policy["anchor_public_key_sha256"],
         )
-        if (
-            verification.get("valid") is not True
-            or verification.get("payload_sha256") != canonical_sha256(attested)
-            or verification.get("configuration_sha256")
-            != claim.get("configuration_sha256")
-        ):
-            raise RotationError("credential provider attestation did not verify")
+    except (EvidenceVerificationError, RuntimeError) as error:
+        raise RotationError("credential provider external evidence failed") from error
     return response
 
 
 def provider_command_identity(command: Sequence[str]) -> dict[str, Any]:
     """Bind every phase to one exact, non-writable provider adapter binary."""
 
-    if not command:
-        raise RotationError("provider adapter command is empty")
+    if tuple(command) != PRODUCTION_PROVIDER_COMMAND:
+        raise RotationError("provider adapter must be the fixed production command")
+    if (
+        len(command) != 2
+        or not all(Path(value).is_absolute() for value in command)
+        or any(value.startswith("-") for value in command)
+    ):
+        raise RotationError("provider adapter may not use relative or inline arguments")
     resolved = shutil.which(command[0])
     if resolved is None:
         raise RotationError("provider adapter executable cannot be resolved")
@@ -453,26 +450,22 @@ def load_journal(path: Path) -> dict[str, Any]:
 def operation_request(
     journal: dict[str, Any], operation: str, **extra: Any
 ) -> dict[str, Any]:
-    request = {
-        "schema": "fs2-serve.nebius.ai/credential-provider-operation/v1",
-        "operation": operation,
-        "operation_id": journal["operation_id"],
-        "credential_class": journal["credential_class"],
-        "owner_id": journal["owner_id"],
-        "project_id": journal["project_id"],
-        "purpose": journal["purpose"],
-        **extra,
-    }
-    if operation == "prove-consumers":
-        request["consumer_contract"] = journal["consumer_contract"]
-        request["consumer_contracts_sha256"] = journal["consumer_contracts_sha256"]
-    return request
+    if operation == "credential-inventory":
+        return {"operation": operation}
+    if operation == "consumer-readiness":
+        return {
+            "operation": operation,
+            "credential_class": journal["credential_class"],
+            "generation": journal["successor_generation"],
+            "phase": extra["phase"],
+        }
+    raise RotationError("rotation requested an unreviewed authority operation")
 
 
 def reconcile_created(
     journal: dict[str, Any], command: Sequence[str]
 ) -> dict[str, Any] | None:
-    response = provider_call(command, operation_request(journal, "list-operation"))
+    response = provider_call(command, operation_request(journal, "credential-inventory"))
     items = response.get("items")
     if not isinstance(items, list):
         raise RotationError("provider reconciliation returned no complete inventory")
@@ -527,11 +520,8 @@ def reconcile_pending_transition(
             command,
             operation_request(
                 journal,
-                "prove-consumers",
-                predecessor_id=journal["predecessor"]["id"],
-                successor_id=successor["id"],
-                expected_read_ids=[journal["predecessor"]["id"], successor["id"]],
-                expected_write_id=journal["predecessor"]["id"],
+                "consumer-readiness",
+                phase="dual-read-ready",
             ),
         )
         require_consumer_readiness(
@@ -546,11 +536,8 @@ def reconcile_pending_transition(
             command,
             operation_request(
                 journal,
-                "prove-consumers",
-                predecessor_id=journal["predecessor"]["id"],
-                successor_id=successor["id"],
-                expected_read_ids=[journal["predecessor"]["id"], successor["id"]],
-                expected_write_id=successor["id"],
+                "consumer-readiness",
+                phase="current-write-ready",
             ),
         )
         require_consumer_readiness(
@@ -573,21 +560,24 @@ def adopt_successor(args: argparse.Namespace) -> dict[str, Any]:
             journal_path, stream="credential-rotation"
         ):
             raise RotationError("rotation journal already exists; reconcile it first")
-        predecessor = exact_identity(
-            provider_call(
-                args.provider_command,
-                {
-                    "schema": "fs2-serve.nebius.ai/credential-provider-operation/v1",
-                    "operation": "get",
-                    "credential_id": args.predecessor_id,
-                },
-            )
+        inventory = provider_call(
+            args.provider_command, {"operation": "credential-inventory"}
         )
+        predecessor_matches = [
+            exact_identity(item)
+            for item in inventory.get("items", [])
+            if isinstance(item, dict) and item.get("id") == args.predecessor_id
+        ]
+        if len(predecessor_matches) != 1:
+            raise RotationError(
+                "authoritative inventory did not return one exact predecessor"
+            )
+        predecessor = predecessor_matches[0]
         require_lineage(
             predecessor,
             credential_class=args.credential_class,
-            owner_id=args.owner_id,
-            project_id=args.project_id,
+            owner_id=predecessor["owner_id"],
+            project_id=predecessor["project_id"],
             purpose=policy["purpose"],
             generation=args.predecessor_generation,
             statuses={"active"},
@@ -606,8 +596,8 @@ def adopt_successor(args: argparse.Namespace) -> dict[str, Any]:
             "schema": "fs2-serve.nebius.ai/credential-rotation/v3",
             "operation_id": str(uuid.uuid4()),
             "credential_class": args.credential_class,
-            "owner_id": args.owner_id,
-            "project_id": args.project_id,
+            "owner_id": predecessor["owner_id"],
+            "project_id": predecessor["project_id"],
             "purpose": policy["purpose"],
             "readers": policy["readers"],
             "registry_sha256": canonical_sha256(registry),
@@ -733,11 +723,8 @@ def transition(args: argparse.Namespace) -> dict[str, Any]:
                 args.provider_command,
                 operation_request(
                     journal,
-                    "prove-consumers",
-                    predecessor_id=journal["predecessor"]["id"],
-                    successor_id=successor["id"],
-                    expected_read_ids=[journal["predecessor"]["id"], successor["id"]],
-                    expected_write_id=journal["predecessor"]["id"],
+                    "consumer-readiness",
+                    phase="dual-read-ready",
                 ),
             )
             require_consumer_readiness(
@@ -758,11 +745,8 @@ def transition(args: argparse.Namespace) -> dict[str, Any]:
                 args.provider_command,
                 operation_request(
                     journal,
-                    "prove-consumers",
-                    predecessor_id=journal["predecessor"]["id"],
-                    successor_id=successor["id"],
-                    expected_read_ids=[journal["predecessor"]["id"], successor["id"]],
-                    expected_write_id=successor["id"],
+                    "consumer-readiness",
+                    phase="current-write-ready",
                 ),
             )
             require_consumer_readiness(
@@ -794,11 +778,7 @@ def audit_inventory(args: argparse.Namespace) -> dict[str, Any]:
             raise RotationError("credential inventory receipt is write-once")
         response = provider_call(
             args.provider_command,
-            {
-                "schema": "fs2-serve.nebius.ai/credential-provider-operation/v1",
-                "operation": "inventory",
-                "project_id": args.project_id,
-            },
+            {"operation": "credential-inventory"},
         )
         raw_items = response.get("items")
         if not isinstance(raw_items, list):
@@ -809,6 +789,10 @@ def audit_inventory(args: argparse.Namespace) -> dict[str, Any]:
         if len(ids) != len(set(ids)) or len(fingerprints) != len(set(fingerprints)):
             raise RotationError("provider inventory reuses an ID or fingerprint")
 
+        projects = {item["project_id"] for item in items}
+        if len(projects) != 1:
+            raise RotationError("provider inventory spans multiple projects")
+        project_id = next(iter(projects))
         classes: dict[str, list[dict[str, Any]]] = {}
         for policy in registry["credentials"]:
             credential_class = policy["id"]
@@ -822,7 +806,7 @@ def audit_inventory(args: argparse.Namespace) -> dict[str, Any]:
             owners = {item["owner_id"] for item in matches}
             generations = sorted(item["generation"] for item in matches)
             if (
-                any(item["project_id"] != args.project_id for item in matches)
+                any(item["project_id"] != project_id for item in matches)
                 or any(item["purpose"] != policy["purpose"] for item in matches)
                 or len(owners) != 1
                 or generations != list(range(1, max(generations) + 1))
@@ -844,7 +828,7 @@ def audit_inventory(args: argparse.Namespace) -> dict[str, Any]:
             )
         receipt = {
             "schema": "fs2-serve.nebius.ai/credential-inventory/v1",
-            "project_id": args.project_id,
+            "project_id": project_id,
             "registry_sha256": canonical_sha256(registry),
             "consumer_contracts_sha256": canonical_sha256(
                 {
@@ -853,7 +837,8 @@ def audit_inventory(args: argparse.Namespace) -> dict[str, Any]:
                 }
             ),
             "provider_command": provider_identity,
-            "authority_attestation": response["authorityAttestation"],
+            "external_evidence": response["externalEvidence"],
+            "authority_observation": response["authorityObservation"],
             "audited_at": utc_timestamp(),
             "classes": dict(sorted(classes.items())),
         }
@@ -885,14 +870,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     subparsers = parser.add_subparsers(dest="command", required=True)
     create_parser = subparsers.add_parser("adopt-successor")
     create_parser.add_argument("--credential-class", required=True)
-    create_parser.add_argument("--owner-id", required=True)
-    create_parser.add_argument("--project-id", required=True)
     create_parser.add_argument("--predecessor-id", required=True)
     create_parser.add_argument("--predecessor-generation", type=int, required=True)
     create_parser.add_argument("--successor-fingerprint", required=True)
     subparsers.add_parser("reconcile")
-    inventory_parser = subparsers.add_parser("audit-inventory")
-    inventory_parser.add_argument("--project-id", required=True)
+    subparsers.add_parser("audit-inventory")
     subparsers.add_parser("prove-dual-read")
     subparsers.add_parser("prove-current-write")
     return parser.parse_args(argv)

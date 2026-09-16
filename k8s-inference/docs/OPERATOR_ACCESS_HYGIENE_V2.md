@@ -12,10 +12,12 @@ data, and predecessor credentials remain retained.
 authority. It runs as root on a fixed Unix socket, authenticates clients with
 kernel peer credentials, and loads provider commands only from a root-owned
 mode-0600 configuration. Every executable or absolute command file is pinned by
-SHA-256. Responses carry a root-only HMAC attestation that the authority must
-re-verify before a stored receipt can gate rollout or retirement. The service
-exposes read operations only and writes a dense, write-once, hash-chained audit
-stream. The client cannot select a provider,
+SHA-256. Responses carry a detached Ed25519 producer signature and an
+independent mTLS evidence-log anchor; clients verify both pinned public keys,
+freshness, nonce, request digest, payload digest, sequence, checkpoint, and
+retention without a producer-side verify RPC. The service exposes read
+operations only and writes one lifetime, crash-recoverable, write-once,
+hash-chained audit stream. The client cannot select a provider,
 profile, project, kubeconfig, state root, or evidence file.
 
 The authority is a mandatory deployment prerequisite. If its configuration,
@@ -25,7 +27,7 @@ blocked. Do not replace it with JSON fixtures or an operator-selected command.
 
 ## Unbypassable Terraform gate
 
-`security/durable-credential-registry.json` registers all 52 durable Terraform
+`security/durable-credential-registry.json` registers all 60 durable Terraform
 resource addresses across the four roots. The guard requires the plan's exact
 embedded configuration to equal that inventory and requires every address to
 match at least one credential class (the imported combined storage Secret is
@@ -34,9 +36,15 @@ resources, `previous_address`, moved blocks, missing prior-state addresses,
 fixed-generation creates, and any update/replace/delete action. A state `mv` or
 `rm` followed by an escaped delete or fixed-ID create therefore fails closed.
 
-Planning and saved-plan state are sent to the guard in one in-memory JSON
-envelope. The wrapper does not create then remove temporary state or Secret
-files. A saved-plan receipt binds:
+The production authority does not accept a state path. It runs `terraform state
+pull` from each fixed, root-owned configuration and exact workspace, refuses to
+start unless that private deployment configuration declares a `remote` or `s3`
+backend, and binds the returned lineage, serial, and canonical state digest.
+The checked-in local-backend roots therefore cannot be admitted until a
+separately reviewed, non-destructive backend migration is authorized. Planning
+and saved-plan state are sent to the guard in
+one in-memory JSON envelope. The wrapper does not create then remove temporary
+state or Secret files. A saved-plan receipt binds:
 
 - exact backend lineage, serial, Terraform version, and raw state hash;
 - exact plan bytes, canonical plan JSON, configuration, registry, source commit,
@@ -121,12 +129,14 @@ even after that proof.
 
 ## Viewer handoff and CIDRs
 
-A handoff key must have provider-enforced expiry. Issuance binds predecessor and
-successor to adjacent provider-derived lineage generations, service accounts,
-project, groups, exact roles, key fingerprint, and expiry. Interrupted issuance
-is reconciled by exact provider inventory and recorded in an append-only stream;
-the resource is preserved. Delivery has a recipient, key ID, expiry, and
-write-once receipt.
+A handoff key must have provider-enforced expiry. This repository's handoff tool
+cannot issue a key or create a provider profile: it only acknowledges an
+externally issued receipt and asks the fixed authority to derive the key's
+project, service account, group, sole membership, exact viewer permit, lineage,
+generation, public-key fingerprint, and expiry from complete provider
+inventory. Delivery has a recipient, key ID, expiry, and write-once receipt.
+Issuance stays blocked until a separately reviewed externally journaled service
+exists.
 
 Verification permits inventory and comprehensively rejects mutation,
 escalation, impersonation, exec/attach/port-forward, and Secret
@@ -175,9 +185,14 @@ authorized; containment must not be reported as retirement.
 ## Integration, rollback, and current stop condition
 
 `security/sai-10-integration-dependencies.json` makes consumer rollout fail
-closed until SAI-05, SAI-06, SAI-08, and SAI-09 are exact independently
-accepted commit/tree ancestors. Pending dependencies and lack of deployed
-authority/live evidence mean no integration or live rollout is authorized.
+closed until every dependency is an exact independently accepted commit/tree
+ancestor. SAI-06 `8b48f3467f49bc523146dd86da56c36ef29ca951` / tree
+`3081ba082ebb5ee2db8b92b3e8b01a79fa7dd30d` has static SOURCE GO only; its four
+PostgreSQL backup keys and four Secret consumers are recorded as a pending
+integration surface, not as present resources. SAI-08 and SAI-09 still have no
+accepted source successor recorded here. None of SAI-06/08/09 is integration or
+live accepted. Pending dependencies and lack of deployed authority/live
+evidence mean no integration or live rollout is authorized.
 
 Rollback is forward-only: add a new immutable bundle that selects a previously
 verified retained writer while retaining every admitted read key. Never restore

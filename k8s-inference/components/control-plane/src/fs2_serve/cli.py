@@ -62,6 +62,11 @@ from .configuration import (
 )
 from .configuration_models import ConfigurationRevision, PlatformConfiguration
 from .crypto import CustomerStorageCrypto, KeyedHasher, PayloadCipher
+from .customer_storage_credentials import (
+    CustomerStorageCredentialDisclosure,
+    CustomerStorageCredentialReconciler,
+    PostgresCustomerStorageCredentialRepository,
+)
 from .entrypoint import SCIENTIFIC_COMPANION_COMMANDS
 from .federation import FederationRouter
 from .gpu_allocation_observer import KubernetesGpuAllocationPublisher, run_gpu_allocation_observer
@@ -323,7 +328,20 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         secret_root=settings.federation_secret_dir,
     )
     store = await _store(settings)
-    customer_storage_crypto = _customer_storage_crypto(settings)
+    customer_storage_crypto: CustomerStorageCrypto | None = None
+    customer_storage_reconciler: CustomerStorageCredentialReconciler | None = None
+    customer_storage_disclosure: CustomerStorageCredentialDisclosure | None = None
+    if settings.customer_storage_credentials_enabled:
+        customer_storage_crypto = _customer_storage_crypto(settings)
+        customer_storage_repository = PostgresCustomerStorageCredentialRepository(
+            store.pool, customer_storage_crypto
+        )
+        customer_storage_reconciler = CustomerStorageCredentialReconciler(
+            customer_storage_repository
+        )
+        customer_storage_disclosure = CustomerStorageCredentialDisclosure(
+            customer_storage_repository
+        )
     artifact_repository = PostgresArtifactRepository(store.pool)
     artifact_service = _artifact_service(settings, artifact_repository)
     lifecycle = PostgresLifecycleRepository(store.pool)
@@ -622,6 +640,8 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         admission=admission,
         request_debug_store=request_debug_store,
         customer_storage_crypto=customer_storage_crypto,
+        customer_storage_reconciler=customer_storage_reconciler,
+        customer_storage_disclosure=customer_storage_disclosure,
         metrics=metrics,
         admin_token=settings.admin_token(),
         operator_sessions=OperatorSessionService(

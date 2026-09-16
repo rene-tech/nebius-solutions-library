@@ -471,7 +471,7 @@ class PostgresStore:
                     f"fs2_scientific_run_results,fs2_scientific_artifact_events,"
                     f"fs2_scientific_retention_ledger,fs2_scientific_batches,"
                     f"fs2_scientific_batch_events,fs2_scientific_admission_outbox,"
-                    f"fs2_scientific_model_policies,"
+                    f"fs2_scientific_model_policies,fs2_customer_storage_credential_generations,"
                     f"fs2_reporting_model_usage,fs2_reporting_principal_usage,"
                     f"fs2_reporting_terminal_totals,fs2_activation_intents,fs2_activation_events,"
                     f"fs2_activation_target_state,fs2_activation_controller_status,"
@@ -539,6 +539,9 @@ class PostgresStore:
             )
             await connection.execute(
                 f"GRANT SELECT,INSERT ON fs2_request_telemetry,fs2_request_debug TO {quoted_runtime}"
+            )
+            await connection.execute(
+                f"GRANT SELECT,INSERT ON fs2_customer_storage_credential_generations TO {quoted_runtime}"
             )
             # Scientific artifact provenance. Rows are append-only for the
             # runtime role: the only permitted updates are the two documented

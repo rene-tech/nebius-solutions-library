@@ -16,6 +16,9 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from credential_evidence import EvidenceVerificationError, verify_evidence_envelope
+from credential_provider_adapter import load_client_policy
+
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REGISTRY = ROOT / "security/durable-credential-registry.json"
 DEFAULT_INTEGRATION_DEPENDENCIES = (
@@ -49,6 +52,10 @@ CREDENTIAL_RESOURCE_TYPES = frozenset(
         "random_id",
         "random_password",
         "kubernetes_secret_v1",
+        "nebius_iam_v1_access_permit",
+        "nebius_iam_v1_group",
+        "nebius_iam_v1_group_membership",
+        "nebius_iam_v1_service_account",
         "nebius_iam_v2_access_key",
     }
 )
@@ -258,6 +265,28 @@ def write_apply_gate_receipt(
         state_document, registry=registry, terraform_root=terraform_root
     )
     state_identity = terraform_state_identity(raw_state_document)
+    custody = authority_json({"operation": "custody-snapshot"})
+    verify_external_evidence(custody)
+    if custody.get("registry_sha256") != registry_sha256(registry):
+        raise GuardError("local durable registry differs from root authority policy")
+    authority_states = custody.get("terraform_states")
+    if not isinstance(authority_states, list):
+        raise GuardError("credential authority omitted Terraform custody")
+    matching_states = [
+        item
+        for item in authority_states
+        if isinstance(item, dict)
+        and item.get("root") == terraform_root
+        and item.get("lineage") == state_identity["lineage"]
+        and item.get("serial") == state_identity["serial"]
+        and item.get("state_json_sha256") == state_identity["raw_state_sha256"]
+        and item.get("configuration_sha256")
+        == configuration_sha256(terraform_configuration)
+    ]
+    if len(matching_states) != 1:
+        raise GuardError(
+            "local Terraform state does not match the authority-owned state lineage"
+        )
     if fingerprints:
         if identity_receipt is None:
             raise GuardError("durable state requires an exact identity receipt")
@@ -272,6 +301,9 @@ def write_apply_gate_receipt(
         "configuration_sha256": configuration_sha256(terraform_configuration),
         "state_fingerprints_sha256": canonical_sha256(fingerprints),
         "state_identity": state_identity,
+        "authority_state": matching_states[0],
+        "custody_evidence_sha256": canonical_sha256(custody["externalEvidence"]),
+        "custody_evidence_id": custody["externalEvidence"]["claim"]["evidence_id"],
         "issued_at": now.isoformat().replace("+00:00", "Z"),
         "expires_at": (now.replace(microsecond=0) + timedelta(seconds=ttl_seconds))
         .isoformat()
@@ -332,6 +364,31 @@ def validate_native_gate(
         raise GuardError(
             "Terraform gate receipt differs from the authoritative backend state"
         )
+    authority_state = receipt.get("authority_state")
+    if (
+        not isinstance(authority_state, dict)
+        or re.fullmatch(r"[0-9a-f]{64}", receipt.get("custody_evidence_sha256", ""))
+        is None
+        or not isinstance(receipt.get("custody_evidence_id"), str)
+        or not receipt["custody_evidence_id"]
+    ):
+        raise GuardError("Terraform gate receipt lacks authority-owned custody")
+    custody = authority_json({"operation": "custody-snapshot"})
+    verify_external_evidence(custody)
+    if custody.get("registry_sha256") != registry_sha256(registry):
+        raise GuardError("local durable registry differs from root authority policy")
+    current_matches = [
+        item
+        for item in custody.get("terraform_states", [])
+        if isinstance(item, dict)
+        and item.get("root") == query["terraform_root"]
+        and item.get("lineage") == state_identity["lineage"]
+        and item.get("serial") == state_identity["serial"]
+        and item.get("state_json_sha256") == state_identity["raw_state_sha256"]
+        and item.get("configuration_sha256") == expected["configuration_sha256"]
+    ]
+    if current_matches != [authority_state]:
+        raise GuardError("authority-owned Terraform state changed after gate issuance")
     issued_at = parse_timestamp(receipt.get("issued_at"))
     expires_at = parse_timestamp(receipt.get("expires_at"))
     now = utc_now()
@@ -447,6 +504,32 @@ def write_saved_plan_gate_receipt(
         plan_document, registry=registry, terraform_root=terraform_root
     )
     require_staged_secret_plan(plan_document, commitments=commitments)
+    phase = plan_variable(plan_document, "credential_migration_phase")
+    admission: dict[str, Any] | None = None
+    if phase in {"secret-stage", "consumer-rollout"}:
+        admission = authority_json(
+            {"operation": "planned-generation-admission", "phase": phase}
+        )
+        verify_external_evidence(admission)
+        authority_plans = admission.get("plans")
+        if (
+            admission.get("phase") != phase
+            or admission.get("registry_sha256") != registry_sha256(registry)
+            or not isinstance(authority_plans, list)
+            or saved_plan_identity(saved_plan)["sha256"]
+            not in {
+                item.get("plan_sha256")
+                for item in authority_plans
+                if isinstance(item, dict)
+            }
+        ):
+            raise GuardError("authority did not bind the exact staged saved plan")
+        if phase == "consumer-rollout" and not admission.get(
+            "post_create_secret_bindings"
+        ):
+            raise GuardError(
+                "consumer rollout lacks provider-observed post-create Secret bindings"
+            )
     now = utc_now()
     receipt = {
         "schema": "fs2-serve.nebius.ai/terraform-saved-plan-apply-gate/v4",
@@ -458,6 +541,7 @@ def write_saved_plan_gate_receipt(
         "address_fingerprints": fingerprints,
         "live_secret_bindings": bindings,
         "planned_secret_commitments": commitments,
+        "planned_generation_admission": admission,
         "planning_receipt_sha256": file_sha256(planning_receipt_path),
         "saved_plan": saved_plan_identity(saved_plan),
         "plan_json_sha256": canonical_sha256(plan_document),
@@ -507,6 +591,37 @@ def validate_saved_plan_gate(
         raise GuardError(
             "saved-plan apply receipt differs from the authoritative backend state"
         )
+    phase = plan_variable(plan_document, "credential_migration_phase")
+    stored_admission = receipt.get("planned_generation_admission")
+    if phase in {"secret-stage", "consumer-rollout"}:
+        if not isinstance(stored_admission, dict):
+            raise GuardError("saved-plan receipt lacks staged provider admission")
+        verify_external_evidence(stored_admission)
+        fresh_admission = authority_json(
+            {"operation": "planned-generation-admission", "phase": phase}
+        )
+        verify_external_evidence(fresh_admission)
+        plan_sha256 = saved_plan_identity(saved_plan)["sha256"]
+        for admission in (stored_admission, fresh_admission):
+            if (
+                admission.get("phase") != phase
+                or admission.get("registry_sha256") != registry_sha256(registry)
+                or plan_sha256
+                not in {
+                    item.get("plan_sha256")
+                    for item in admission.get("plans", [])
+                    if isinstance(item, dict)
+                }
+            ):
+                raise GuardError("staged provider admission differs from the saved plan")
+        if phase == "consumer-rollout" and not fresh_admission.get(
+            "post_create_secret_bindings"
+        ):
+            raise GuardError(
+                "provider did not re-observe post-create Secrets at apply time"
+            )
+    elif stored_admission is not None:
+        raise GuardError("steady saved plan unexpectedly carries staged admission")
     issued_at = parse_timestamp(receipt.get("issued_at"))
     expires_at = parse_timestamp(receipt.get("expires_at"))
     now = utc_now()
@@ -591,30 +706,38 @@ def authority_json(request: dict[str, Any]) -> dict[str, Any]:
     return response
 
 
-def verify_authority_attestation(document: dict[str, Any]) -> dict[str, Any]:
-    """Have the root authority verify a stored payload's durable attestation."""
+def verify_external_evidence(document: dict[str, Any]) -> dict[str, Any]:
+    """Verify a stored observation without asking its producer to trust itself."""
 
-    claim = document.get("authorityAttestation")
-    if not isinstance(claim, dict):
-        raise GuardError("authority payload lacks a durable attestation")
-    attested = {
-        key: value for key, value in document.items() if key != "authorityAttestation"
+    proof = document.get("externalEvidence")
+    observation = document.get("authorityObservation")
+    if not isinstance(proof, dict) or not isinstance(observation, dict):
+        raise GuardError("authority payload lacks externally anchored evidence")
+    result = {
+        key: value
+        for key, value in document.items()
+        if key not in {"externalEvidence", "authorityObservation"}
     }
-    result = authority_json(
-        {
-            "schema": "fs2-serve.nebius.ai/credential-provider-operation/v1",
-            "operation": "verify-attestation",
-            "attested_payload": attested,
-            "authority_attestation": claim,
-        }
-    )
-    if (
-        result.get("valid") is not True
-        or result.get("payload_sha256") != canonical_sha256(attested)
-        or result.get("configuration_sha256") != claim.get("configuration_sha256")
-    ):
-        raise GuardError("root authority rejected the stored attestation")
-    return attested
+    payload = {**observation, "result": result}
+    envelope = {**proof, "payload": payload}
+    claim = proof.get("claim")
+    if not isinstance(claim, dict):
+        raise GuardError("external evidence claim is absent")
+    try:
+        policy = load_client_policy()
+        verified = verify_evidence_envelope(
+            envelope,
+            expected_operation=str(claim.get("operation", "")),
+            expected_request_sha256=str(claim.get("request_sha256", "")),
+            expected_nonce=str(claim.get("request_nonce", "")),
+            evidence_public_key_sha256=policy["evidence_public_key_sha256"],
+            anchor_public_key_sha256=policy["anchor_public_key_sha256"],
+        )
+    except (EvidenceVerificationError, RuntimeError) as error:
+        raise GuardError("external evidence verification failed") from error
+    if verified != payload:
+        raise GuardError("external evidence payload differs from stored observation")
+    return result
 
 
 def live_secret_inventory_for_receipt(
@@ -637,33 +760,24 @@ def live_secret_inventory_for_receipt(
         if identity in identities:
             continue
         identities.add(identity)
-    response = authority_json(
-        {
-            "schema": "fs2-serve.nebius.ai/credential-provider-operation/v1",
-            "operation": "secret-bindings",
-            "content_commitment_scheme": CONTENT_COMMITMENT_SCHEME,
-            "identities": [
-                {"namespace": namespace, "name": name}
-                for namespace, name in sorted(identities)
-            ],
-            "metadata_only": True,
-            "required_annotations": [
-                "fs2.nebius.ai/content-sha256",
-                "fs2.nebius.ai/credential-class",
-                "fs2.nebius.ai/credential-generation",
-            ],
-        }
-    )
-    items = response.get("items")
-    if (
-        response.get("content_commitment_scheme") != CONTENT_COMMITMENT_SCHEME
-        or not isinstance(items, list)
-        or len(items) != len(identities)
-    ):
+    response = authority_json({"operation": "custody-snapshot"})
+    verify_external_evidence(response)
+    if response.get("registry_sha256") != receipt.get("registry_sha256"):
+        raise GuardError("production authority registry differs from the apply receipt")
+    items = response.get("kubernetes_secrets")
+    if not isinstance(items, list):
+        raise GuardError("production authority omitted the global Secret inventory")
+    selected = [
+        item
+        for item in items
+        if isinstance(item, dict)
+        and isinstance(item.get("metadata"), dict)
+        and (item["metadata"].get("namespace"), item["metadata"].get("name"))
+        in identities
+    ]
+    if len(selected) != len(identities):
         raise GuardError("production authority omitted a live Secret binding")
-    if response.get("data_fields_returned") not in (0, False):
-        raise GuardError("production authority returned forbidden Secret data")
-    return {"items": items}
+    return {"items": selected}
 
 
 def live_secret_inventory_for_state(
@@ -700,31 +814,24 @@ def live_secret_inventory_for_state(
         identities.add((str(identity[0]), str(identity[1])))
     if not identities:
         return None
-    response = authority_json(
-        {
-            "schema": "fs2-serve.nebius.ai/credential-provider-operation/v1",
-            "operation": "secret-bindings",
-            "content_commitment_scheme": CONTENT_COMMITMENT_SCHEME,
-            "identities": [
-                {"namespace": namespace, "name": name}
-                for namespace, name in sorted(identities)
-            ],
-            "metadata_only": True,
-            "required_annotations": [
-                "fs2.nebius.ai/content-sha256",
-                "fs2.nebius.ai/credential-class",
-                "fs2.nebius.ai/credential-generation",
-            ],
-        }
-    )
-    if (
-        response.get("content_commitment_scheme") != CONTENT_COMMITMENT_SCHEME
-        or response.get("data_fields_returned") not in (0, False)
-        or not isinstance(response.get("items"), list)
-        or len(response["items"]) != len(identities)
-    ):
+    response = authority_json({"operation": "custody-snapshot"})
+    verify_external_evidence(response)
+    if response.get("registry_sha256") != registry_sha256(registry):
+        raise GuardError("local durable registry differs from root authority policy")
+    all_items = response.get("kubernetes_secrets")
+    if not isinstance(all_items, list):
+        raise GuardError("production authority omitted the global Secret inventory")
+    selected = [
+        item
+        for item in all_items
+        if isinstance(item, dict)
+        and isinstance(item.get("metadata"), dict)
+        and (item["metadata"].get("namespace"), item["metadata"].get("name"))
+        in identities
+    ]
+    if len(selected) != len(identities):
         raise GuardError("production authority omitted an exact Secret binding")
-    return {"items": response["items"]}
+    return {"items": selected}
 
 
 def validate_saved_plan_gate_from_environment(
@@ -1347,14 +1454,23 @@ def require_accepted_integration_dependencies(
     ) != {"SAI-05", "SAI-06", "SAI-08", "SAI-09"}:
         raise GuardError("SAI integration dependency ledger is malformed")
     for ticket, value in dependencies.items():
-        if not isinstance(value, dict) or set(value) != {"status", "commit", "tree"}:
+        expected_fields = {"status", "commit", "tree"}
+        if ticket == "SAI-06":
+            expected_fields.add("required_credential_addresses")
+        if ticket == "SAI-08":
+            expected_fields.add("required_semantics")
+        if not isinstance(value, dict) or set(value) != expected_fields:
             raise GuardError(f"SAI integration dependency is malformed: {ticket}")
         if value["status"] not in {
             "accepted-source-ancestor",
+            "static-source-go-integration-live-unaccepted",
             "blocked-pending-independent-acceptance",
         }:
             raise GuardError(f"SAI integration dependency has invalid status: {ticket}")
-        if value["status"] == "accepted-source-ancestor" and not all(
+        if value["status"] in {
+            "accepted-source-ancestor",
+            "static-source-go-integration-live-unaccepted",
+        } and not all(
             isinstance(value[field], str)
             and re.fullmatch(r"[0-9a-f]{40}", value[field]) is not None
             for field in ("commit", "tree")
@@ -1362,11 +1478,36 @@ def require_accepted_integration_dependencies(
             raise GuardError(
                 f"accepted SAI dependency lacks exact Git identity: {ticket}"
             )
+        if ticket == "SAI-06":
+            addresses = value["required_credential_addresses"]
+            if (
+                not isinstance(addresses, dict)
+                or set(addresses) != {"infrastructure", "workloads"}
+                or any(
+                    not isinstance(items, list)
+                    or not items
+                    or len(items) != len(set(items))
+                    or not all(isinstance(item, str) and item for item in items)
+                    for items in addresses.values()
+                )
+            ):
+                raise GuardError("SAI-06 pending credential surface is malformed")
+        if ticket == "SAI-08":
+            semantics = value["required_semantics"]
+            if (
+                not isinstance(semantics, list)
+                or len(semantics) < 5
+                or len(semantics) != len(set(semantics))
+                or not all(isinstance(item, str) and item for item in semantics)
+            ):
+                raise GuardError("SAI-08 semantic integration contract is malformed")
     if document.get("integration_authorized") is not True or any(
         value["status"] != "accepted-source-ancestor" for value in dependencies.values()
     ):
         raise GuardError(
-            "consumer rollout is blocked until SAI-05/06/08/09 are independently accepted and recorded"
+            "consumer rollout is blocked: SAI-06 has static SOURCE GO only, "
+            "SAI-08/09 lack accepted source successors, and semantic integration "
+            "authorization is not recorded"
         )
     for ticket, value in dependencies.items():
         try:
@@ -1499,74 +1640,95 @@ def validate_consumer_readiness_payload(
     if (
         not isinstance(payload, dict)
         or set(payload)
-        != {
-            "schema",
-            "phase",
-            "contracts_sha256",
-            "bindings_sha256",
-            "evidence_id",
-            "observed_at",
-            "classes",
-            "authorityAttestation",
-        }
+        != {"schema", "phase", "contracts_sha256", "bindings_sha256", "classes"}
         or payload.get("schema")
-        != "fs2-serve.nebius.ai/credential-consumer-readiness/v1"
+        != "fs2-serve.nebius.ai/credential-consumer-readiness/v2"
         or payload.get("phase") != expected_phase
         or payload.get("contracts_sha256") != canonical_sha256(contracts)
         or payload.get("bindings_sha256") != expected_bindings_sha256
-        or not isinstance(payload.get("evidence_id"), str)
-        or not payload["evidence_id"]
-        or not isinstance(payload.get("observed_at"), str)
         or not isinstance(payload.get("classes"), dict)
         or set(payload["classes"]) != set(contracts)
     ):
         raise GuardError(
             "consumer readiness authority returned an incomplete inventory"
         )
-    verify_authority_attestation(payload)
-    observed_at = parse_timestamp(payload["observed_at"])
     now = utc_now()
-    if observed_at > now or now - observed_at > timedelta(minutes=15):
-        raise GuardError("consumer readiness inventory is stale or future-dated")
-    attested_at = parse_timestamp(payload["authorityAttestation"].get("issued_at"))
-    if attested_at > now or now - attested_at > timedelta(minutes=15):
-        raise GuardError("consumer readiness attestation is stale or future-dated")
     evidence_ids: set[str] = set()
     for credential_class, contract in contracts.items():
         item = payload["classes"][credential_class]
         if (
             not isinstance(item, dict)
-            or set(item)
-            != {
-                "adapter",
-                "authority",
-                "consumers",
-                "readiness",
-                "ready",
-                "evidence_id",
-                "observed_at",
-                "live_bindings_sha256",
-            }
+            or not isinstance(item.get("externalEvidence"), dict)
+            or not isinstance(item.get("authorityObservation"), dict)
             or item.get("adapter") != contract["adapter"]
             or item.get("authority") != contract["authority"]
             or item.get("consumers") != contract["consumers"]
             or item.get("readiness") != contract["readiness"]
             or item.get("ready") is not True
-            or item.get("live_bindings_sha256") != expected_bindings_sha256
-            or not isinstance(item.get("evidence_id"), str)
-            or not item["evidence_id"]
-            or item["evidence_id"] in evidence_ids
+            or not isinstance(item.get("generation"), int)
+            or item["generation"] < 1
+            or not isinstance(item.get("consumer_bindings"), list)
             or not isinstance(item.get("observed_at"), str)
         ):
             raise GuardError(
                 f"consumer readiness is missing a class-specific adapter proof: {credential_class}"
             )
+        verify_external_evidence(item)
+        evidence_id = item["externalEvidence"].get("claim", {}).get("evidence_id")
+        if not isinstance(evidence_id, str) or evidence_id in evidence_ids:
+            raise GuardError("consumer readiness reuses or omits external evidence")
+        evidence_ids.add(evidence_id)
+        bindings = item["consumer_bindings"]
+        if (
+            len(bindings) != len(contract["consumers"])
+            or {binding.get("consumer") for binding in bindings if isinstance(binding, dict)}
+            != set(contract["consumers"])
+        ):
+            raise GuardError(
+                f"consumer readiness omits an exact consumer: {credential_class}"
+            )
+        for binding in bindings:
+            if (
+                not isinstance(binding, dict)
+                or set(binding)
+                != {
+                    "consumer",
+                    "consumer_identity",
+                    "credential_identity",
+                    "generation",
+                    "ready",
+                    "observed_at",
+                    "readiness_evidence_sha256",
+                }
+                or binding.get("generation") != item["generation"]
+                or binding.get("ready") is not True
+                or not all(
+                    isinstance(binding.get(field), str) and binding[field]
+                    for field in (
+                        "consumer_identity",
+                        "credential_identity",
+                        "observed_at",
+                        "readiness_evidence_sha256",
+                    )
+                )
+                or re.fullmatch(
+                    r"[0-9a-f]{64}", binding["readiness_evidence_sha256"]
+                )
+                is None
+            ):
+                raise GuardError(
+                    f"consumer readiness binding is incomplete: {credential_class}"
+                )
+            binding_time = parse_timestamp(binding["observed_at"])
+            if binding_time > now or now - binding_time > timedelta(minutes=5):
+                raise GuardError(
+                    f"consumer readiness binding is stale: {credential_class}"
+                )
         item_observed_at = parse_timestamp(item["observed_at"])
         if item_observed_at > now or now - item_observed_at > timedelta(minutes=15):
             raise GuardError(
                 f"consumer readiness class evidence is stale: {credential_class}"
             )
-        evidence_ids.add(item["evidence_id"])
     return payload
 
 
@@ -1581,18 +1743,33 @@ def write_consumer_readiness_receipt(
     bindings = identity["live_secret_bindings"]
     bindings_sha256 = canonical_sha256(bindings)
     contracts = load_consumer_contracts()
-    payload = authority_json(
-        {
-            "schema": "fs2-serve.nebius.ai/credential-provider-operation/v1",
-            "operation": "consumer-readiness",
-            "phase": phase,
-            "contracts": contracts,
-            "contracts_sha256": canonical_sha256(contracts),
-            "live_bindings": bindings,
-            "bindings_sha256": bindings_sha256,
-            "metadata_only": True,
-        }
-    )
+    inventory = authority_json({"operation": "credential-inventory"})
+    verify_external_evidence(inventory)
+    if inventory.get("registry_sha256") != identity.get("registry_sha256"):
+        raise GuardError("consumer inventory registry differs from custody identity")
+    generations = inventory.get("classes")
+    if not isinstance(generations, dict) or set(generations) != set(contracts):
+        raise GuardError("credential inventory omits a registered class")
+    classes: dict[str, Any] = {}
+    for credential_class in sorted(contracts):
+        generation = generations[credential_class].get("current_generation")
+        if not isinstance(generation, int) or generation < 1:
+            raise GuardError(f"credential generation is absent: {credential_class}")
+        classes[credential_class] = authority_json(
+            {
+                "operation": "consumer-readiness",
+                "credential_class": credential_class,
+                "generation": generation,
+                "phase": phase,
+            }
+        )
+    payload = {
+        "schema": "fs2-serve.nebius.ai/credential-consumer-readiness/v2",
+        "phase": phase,
+        "contracts_sha256": canonical_sha256(contracts),
+        "bindings_sha256": bindings_sha256,
+        "classes": classes,
+    }
     validate_consumer_readiness_payload(
         payload,
         expected_bindings_sha256=bindings_sha256,
@@ -2588,14 +2765,7 @@ def inspect_run_root(
 def authoritative_artifact_inventory() -> dict[str, Any]:
     """Read the production authority's complete configured artifact inventory."""
 
-    document = authority_json(
-        {
-            "schema": "fs2-serve.nebius.ai/credential-provider-operation/v1",
-            "operation": "artifact-inventory",
-            "scope": "all-configured-product-operator-state",
-            "metadata_only": True,
-        }
-    )
+    document = authority_json({"operation": "artifact-inventory"})
     required = {
         "schema",
         "scope",
@@ -2605,7 +2775,8 @@ def authoritative_artifact_inventory() -> dict[str, Any]:
         "evidence_id",
         "observed_at",
         "artifacts",
-        "authorityAttestation",
+        "authorityObservation",
+        "externalEvidence",
     }
     if (
         set(document) != required
@@ -2624,11 +2795,7 @@ def authoritative_artifact_inventory() -> dict[str, Any]:
         or not isinstance(document.get("artifacts"), list)
     ):
         raise GuardError("production authority returned a malformed artifact inventory")
-    verify_authority_attestation(document)
-    if document["configuration_sha256"] != document["authorityAttestation"].get(
-        "configuration_sha256"
-    ):
-        raise GuardError("artifact inventory configuration is not authority-bound")
+    verify_external_evidence(document)
     parse_timestamp(document["observed_at"])
     artifact_fields = {
         "artifact_id",
@@ -2705,7 +2872,8 @@ def validate_stored_authoritative_artifact_inventory(document: Any) -> dict[str,
         "evidence_id",
         "observed_at",
         "artifacts",
-        "authorityAttestation",
+        "authorityObservation",
+        "externalEvidence",
     }
     if (
         not isinstance(document, dict)
@@ -2725,11 +2893,7 @@ def validate_stored_authoritative_artifact_inventory(document: Any) -> dict[str,
         or not isinstance(document.get("artifacts"), list)
     ):
         raise GuardError("stored authoritative artifact inventory is malformed")
-    verify_authority_attestation(document)
-    if document["configuration_sha256"] != document["authorityAttestation"].get(
-        "configuration_sha256"
-    ):
-        raise GuardError("stored artifact configuration is not authority-bound")
+    verify_external_evidence(document)
     parse_timestamp(document["observed_at"])
     fields = {
         "artifact_id",

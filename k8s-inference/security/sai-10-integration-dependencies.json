@@ -7,14 +7,35 @@
       "tree": "75f4072f099de3e0d602338f3f2cd1afa38400fb"
     },
     "SAI-06": {
-      "status": "blocked-pending-independent-acceptance",
-      "commit": null,
-      "tree": null
+      "status": "static-source-go-integration-live-unaccepted",
+      "commit": "8b48f3467f49bc523146dd86da56c36ef29ca951",
+      "tree": "3081ba082ebb5ee2db8b92b3e8b01a79fa7dd30d",
+      "required_credential_addresses": {
+        "infrastructure": [
+          "nebius_iam_v2_access_key.postgresql_backup",
+          "nebius_iam_v2_access_key.postgresql_backup_inventory",
+          "nebius_iam_v2_access_key.postgresql_backup_restore",
+          "nebius_iam_v2_access_key.postgresql_restore_receipt"
+        ],
+        "workloads": [
+          "kubernetes_secret_v1.postgresql_backup",
+          "kubernetes_secret_v1.postgresql_backup_inventory",
+          "kubernetes_secret_v1.postgresql_backup_restore",
+          "kubernetes_secret_v1.postgresql_restore_receipt"
+        ]
+      }
     },
     "SAI-08": {
       "status": "blocked-pending-independent-acceptance",
       "commit": null,
-      "tree": null
+      "tree": null,
+      "required_semantics": [
+        "all-reconciler-disclosure-read-write-migration-paths-use-PayloadCipher.customer_storage_aad",
+        "storage-and-storage-name-have-independent-versioned-write-only-keyrings",
+        "old-and-new-generation-decrypt-rotate-rollback-preserve-tenant-and-principal-binding",
+        "provider-observed-ciphertext-usage-is-zero-before-retirement",
+        "deployed-customer-storage-and-request-debug-ciphertext-compatibility-is-proven"
+      ]
     },
     "SAI-09": {
       "status": "blocked-pending-independent-acceptance",

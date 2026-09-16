@@ -41,7 +41,7 @@ variable "credential_migration_phase" {
 }
 
 data "external" "credential_migration_gate" {
-  program = ["python3", "${path.module}/../../scripts/secret_migration_guard.py", "native-gate", "--registry", "${path.module}/../../security/durable-credential-registry.json"]
+  program = ["/usr/bin/python3", "/opt/fs2/k8s-inference/scripts/secret_migration_guard.py", "native-gate"]
   query = {
     receipt_path            = var.credential_migration_gate_receipt_path
     terraform_configuration = path.module
@@ -72,7 +72,7 @@ resource "terraform_data" "credential_apply_gate_generation" {
   input    = each.key
 
   provisioner "local-exec" {
-    command = "python3 ${path.module}/../../scripts/secret_migration_guard.py apply-saved-plan-gate --terraform-configuration ${path.module} --terraform-root reference-data --source-commit ${var.credential_migration_gate_source_commit} --registry ${path.module}/../../security/durable-credential-registry.json"
+    command = "/usr/bin/python3 /opt/fs2/k8s-inference/scripts/secret_migration_guard.py apply-saved-plan-gate --terraform-configuration ${path.module} --terraform-root reference-data --source-commit ${var.credential_migration_gate_source_commit}"
   }
 
   lifecycle {

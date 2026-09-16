@@ -74,6 +74,7 @@ class Settings(BaseSettings):
     ledger_hmac_keyring_file: Path = Path("/var/run/secrets/fs2-serve/ledger-hmac-keyring.json")
     user_storage_keyring_file: Path = Path("/var/run/secrets/fs2-serve/customer-storage-cipher/keyring.json")
     user_storage_name_keyring_file: Path = Path("/var/run/secrets/fs2-serve/customer-storage-name/name-keyring.json")
+    customer_storage_credentials_enabled: bool = False
     route_attestors_file: Path | None = Path("/var/run/secrets/fs2-serve/attestors/route-attestors.json")
     admin_token_file: Path = Path("/var/run/secrets/fs2-serve/admin-token")
     bootstrap_access_token_file: Path = Path("/var/run/secrets/fs2-serve/bootstrap-access-token")
