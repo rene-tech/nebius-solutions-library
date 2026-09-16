@@ -11,5 +11,8 @@ resource "kubernetes_namespace_v1" "platform" {
     annotations = lookup(local.pod_security_annotations, each.value, {})
   }
 
-  depends_on = [terraform_data.cluster_contract]
+  depends_on = [
+    terraform_data.cluster_contract,
+    terraform_data.pod_security_rollout_contract,
+  ]
 }

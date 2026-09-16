@@ -1,3 +1,9 @@
+variable "pod_security_enforcement_enabled" {
+  description = "Add baseline enforcement only after host-integrated workloads have moved and been verified."
+  type        = bool
+  default     = false
+}
+
 variable "academic_assets" {
   description = <<-EOT
     Tenant-private delivery of licensed academic assets.

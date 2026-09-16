@@ -64,10 +64,6 @@ modelController:
   modelNamespace: fs2-models
   systemNamespace: fs2-system
   leaseName: fs2-model-controller
-  # Collection creates cannot be name-scoped by Kubernetes RBAC. Existing
-  # controller-owned policies may be patched/deleted only when an operator
-  # supplies their exact names here.
-  networkPolicyResourceNames: []
   infrastructureEnvelopeConfigMapName: ""
   infrastructureEnvelopeKey: infrastructure-envelope.json
   rendererBundlesConfigMapName: ""

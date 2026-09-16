@@ -54,6 +54,12 @@ locals {
     "fs2.nebius.ai/runtime-mountable"   = "false"
     "fs2.nebius.ai/retention"           = var.academic_assets.legacy_quarantine_claim.retain ? "retain-rejected-artifact-archive" : "disposable-acceptance-copy"
   }
+
+  pod_security_labels = var.pod_security_enforcement_enabled ? {
+    "pod-security.kubernetes.io/enforce" = "baseline"
+    "pod-security.kubernetes.io/audit"   = "restricted"
+    "pod-security.kubernetes.io/warn"    = "restricted"
+  } : {}
 }
 
 resource "kubernetes_namespace_v1" "academic_assets" {
@@ -61,12 +67,11 @@ resource "kubernetes_namespace_v1" "academic_assets" {
 
   metadata {
     name = var.academic_assets.namespace
-    labels = merge(local.common_labels, {
-      "kubernetes.io/metadata.name"        = var.academic_assets.namespace
-      "pod-security.kubernetes.io/enforce" = "baseline"
-      "pod-security.kubernetes.io/audit"   = "restricted"
-      "pod-security.kubernetes.io/warn"    = "restricted"
-    })
+    labels = merge(
+      local.common_labels,
+      { "kubernetes.io/metadata.name" = var.academic_assets.namespace },
+      local.pod_security_labels,
+    )
   }
 
   lifecycle {

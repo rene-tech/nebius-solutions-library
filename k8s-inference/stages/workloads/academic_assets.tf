@@ -105,7 +105,8 @@ locals {
 module "academic_assets" {
   source = "../../modules/academic-assets"
 
-  academic_assets = var.academic_assets
+  academic_assets                  = var.academic_assets
+  pod_security_enforcement_enabled = var.pod_security_rollout_phase == "enforce"
 }
 
 # Publishes what the chart will receive, so the projection is assertable without

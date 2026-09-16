@@ -43,6 +43,7 @@ from fs2_serve.model_deployment_bridge import _normalize_keys
 from fs2_serve.model_deployment_controller import (
     RESOURCE_ENDPOINTS,
     BoundedKeyQueue,
+    ControllerError,
     ControllerHealth,
     Discovery,
     FenceLostError,
@@ -65,7 +66,7 @@ def test_controller_discovery_excludes_operator_owned_resource_kinds() -> None:
     assert ("v1", "ServiceAccount") not in RESOURCE_ENDPOINTS
     assert ("apps/v1", "DaemonSet") not in RESOURCE_ENDPOINTS
     assert ("apps/v1", "Deployment") in RESOURCE_ENDPOINTS
-    assert ("networking.k8s.io/v1", "NetworkPolicy") in RESOURCE_ENDPOINTS
+    assert ("networking.k8s.io/v1", "NetworkPolicy") not in RESOURCE_ENDPOINTS
 
 
 class FakePrometheusReader:
@@ -1587,6 +1588,61 @@ async def test_http_writer_uses_non_forcing_ssa_resource_version_and_read_after_
     result = await client.apply_resource(desired, owner_uid="cr-uid-1", fence=fence())
     assert result.observed.uid == "service-uid"
     assert [request.method for request in requests] == ["GET", "GET", "PATCH", "GET"]
+    await http.aclose()
+
+
+@pytest.mark.asyncio
+async def test_http_writer_rejects_network_policy_before_any_api_request(tmp_path: Path) -> None:
+    token = tmp_path / "token"
+    token.write_text("projected-service-account-token")
+    policy_name = "fs2-runtime-app-example-burst-pool-a"
+    manifest = {
+        "apiVersion": "networking.k8s.io/v1",
+        "kind": "NetworkPolicy",
+        "metadata": {
+            "name": policy_name,
+            "namespace": "fs2-models",
+            "ownerReferences": [
+                {
+                    "apiVersion": "inference.fs2.nebius.ai/v1alpha1",
+                    "kind": "ModelDeployment",
+                    "name": "app-example",
+                    "uid": "cr-uid-1",
+                    "controller": True,
+                    "blockOwnerDeletion": True,
+                }
+            ],
+        },
+        "spec": {
+            "podSelector": {"matchLabels": {"fs2-serve.nebius.ai/model-deployment": "app-example"}},
+            "policyTypes": ["Ingress", "Egress"],
+        },
+    }
+    desired = RenderedResource(
+        apiVersion="networking.k8s.io/v1",
+        kind="NetworkPolicy",
+        namespace="fs2-models",
+        name=policy_name,
+        manifest=manifest,
+        digest=canonical_digest(manifest),
+    )
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        raise AssertionError("NetworkPolicy rejection must occur before Kubernetes I/O")
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.invalid")
+    client = HttpKubernetesModelClient(
+        base_url="https://kubernetes.invalid",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        writes_enabled=True,
+        client=http,
+    )
+    with pytest.raises(ControllerError, match="outside the writer allowlist"):
+        await client.apply_resource(desired, owner_uid="cr-uid-1", fence=fence())
+    assert requests == []
     await http.aclose()
 
 

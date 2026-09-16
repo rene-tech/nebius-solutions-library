@@ -144,12 +144,15 @@ resource "kubernetes_namespace_v1" "modelexpress" {
 
   metadata {
     name = var.model_express.namespace
-    labels = merge(local.common_labels, {
-      "kubernetes.io/metadata.name"        = var.model_express.namespace
-      "pod-security.kubernetes.io/enforce" = "baseline"
-      "pod-security.kubernetes.io/audit"   = "restricted"
-      "pod-security.kubernetes.io/warn"    = "restricted"
-    })
+    labels = merge(
+      local.common_labels,
+      { "kubernetes.io/metadata.name" = var.model_express.namespace },
+      var.pod_security_rollout_phase == "enforce" ? {
+        "pod-security.kubernetes.io/enforce" = "baseline"
+        "pod-security.kubernetes.io/audit"   = "restricted"
+        "pod-security.kubernetes.io/warn"    = "restricted"
+      } : {},
+    )
   }
 
   depends_on = [terraform_data.cluster_contract, terraform_data.modelexpress_contract]

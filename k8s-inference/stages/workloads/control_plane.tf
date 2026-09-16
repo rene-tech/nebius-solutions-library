@@ -171,13 +171,12 @@ locals {
     # ledger. This is GPU-model agnostic and schedules only on Nebius GPU nodes.
     runtimeAttribution = {
       enabled            = true
-      daemonSetNamespace = local.node_observability_namespace
+      daemonSetNamespace = local.gpu_observer_namespace
       namespaces         = local.runtime_attribution_namespaces
     }
     modelController = {
       enabled                             = var.model_controller.enabled
       writesEnabled                       = var.model_controller.writes_enabled
-      networkPolicyResourceNames          = local.model_controller_network_policy_resource_names
       infrastructureEnvelopeConfigMapName = local.model_controller_envelope_name
       rendererBundlesConfigMapName        = local.model_controller_bundles_name
       prometheusServerAddress             = local.prometheus_server_address

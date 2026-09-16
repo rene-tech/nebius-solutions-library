@@ -1,4 +1,6 @@
 locals {
+  csi_storage_enabled = var.pod_security_rollout_phase != "prepare"
+  runtime_mount_path  = "/reference-data"
   # The private plane label always admits the reference-data namespace itself.
   # Any additional namespace is named explicitly, so the selector stays a
   # closed list rather than an open label match.
@@ -44,7 +46,7 @@ locals {
     "--root", "/reference-data",
     "--object-store-prefix", "s3://${var.object_bucket_name}/reference-data",
     "--placement", "/etc/fs2-placement/placement.json",
-    "--host-root", var.shared_filesystem_host_path,
+    "--host-root", local.csi_storage_enabled ? local.runtime_mount_path : var.shared_filesystem_host_path,
   ]
   pipeline_resources = {
     requests = {
@@ -199,7 +201,7 @@ locals {
   # The single public handoff a runtime, controller or Terraform stage binds.
   handoff_contract = {
     schema                     = "fs2-serve.nebius.ai/reference-data-terminal-receipt/v1"
-    host_root                  = var.shared_filesystem_host_path
+    host_root                  = local.csi_storage_enabled ? local.runtime_mount_path : var.shared_filesystem_host_path
     mount_path                 = "/reference-data"
     receipt_sub_path           = "receipts/${var.pipeline.bundle_id}/${local.selected_bundle.revision}.json"
     status_sub_path            = "status/${var.pipeline.bundle_id}.json"
@@ -223,6 +225,21 @@ locals {
     bundle_id = var.pipeline.bundle_id
     catalog   = local.source_catalog_sha256
   })), 0, 12)}"
+  reference_data_volumes = concat(
+    local.csi_storage_enabled ? [{
+      name = "reference-data"
+      persistentVolumeClaim = {
+        claimName = var.filesystem_claim.name
+      }
+    }] : [],
+    local.csi_storage_enabled ? [] : [{
+      name = "reference-data"
+      hostPath = {
+        path = var.shared_filesystem_host_path
+        type = "Directory"
+      }
+    }],
+  )
   pipeline_pod_template = {
     metadata = {
       labels = merge(local.common_labels, {
@@ -288,14 +305,7 @@ locals {
           { name = "work", mountPath = "/work" },
         ]
       }]
-      volumes = [
-        {
-          name = "reference-data"
-          hostPath = {
-            path = var.shared_filesystem_host_path
-            type = "Directory"
-          }
-        },
+      volumes = concat(local.reference_data_volumes, [
         {
           name = "tools"
           configMap = {
@@ -323,7 +333,7 @@ locals {
             sizeLimit = var.pipeline.ephemeral_storage
           }
         },
-      ]
+      ])
     }
   }
   # This secret-free value is the complete rendered Job input contract. The
@@ -363,7 +373,7 @@ locals {
   object_bucket_name  = var.object_bucket_name
   object_endpoint     = "https://storage.${var.object_storage_region}.nebius.cloud"
   object_prefix       = "s3://${local.object_bucket_name}/reference-data"
-  filesystem_file_uri = "file://${var.shared_filesystem_host_path}"
+  filesystem_file_uri = "file://${local.csi_storage_enabled ? local.runtime_mount_path : var.shared_filesystem_host_path}"
 }
 
 resource "terraform_data" "region_contract" {
@@ -378,11 +388,27 @@ resource "terraform_data" "region_contract" {
     pipeline_pod_template = local.pipeline_pod_template
     handoff_contract      = local.handoff_contract
     raw_input_capacity    = local.raw_input_capacity
+    csi_migration_receipt = var.csi_migration_receipt
+    csi_readiness_receipt = var.csi_readiness_receipt_sha256
   }
   lifecycle {
     precondition {
       condition     = var.cluster_region == var.object_storage_region
       error_message = "reference data, object storage, shared filesystem and preprocessing must stay in the cluster region."
+    }
+    precondition {
+      condition = (
+        var.pod_security_rollout_phase == "prepare" ||
+        var.csi_migration_receipt != null
+      )
+      error_message = "Switching reference data to CSI requires a verified source/target content-identity migration receipt."
+    }
+    precondition {
+      condition = (
+        var.pod_security_rollout_phase != "enforce" ||
+        var.csi_readiness_receipt_sha256 != null
+      )
+      error_message = "Baseline enforcement requires a readiness receipt captured after the CSI-mounted status and read-only application probes pass."
     }
     precondition {
       condition = (
@@ -440,16 +466,36 @@ resource "kubernetes_namespace_v1" "reference_data" {
     labels = merge(local.common_labels, {
       "kubernetes.io/metadata.name"        = var.namespace
       "reference-data.fs2.nebius.ai/plane" = "private"
-      "pod-security.kubernetes.io/enforce" = "privileged"
+      "pod-security.kubernetes.io/enforce" = var.pod_security_rollout_phase == "enforce" ? "baseline" : "privileged"
       "pod-security.kubernetes.io/audit"   = "restricted"
       "pod-security.kubernetes.io/warn"    = "restricted"
     })
-    annotations = {
+    annotations = var.pod_security_rollout_phase == "prepare" ? {
       "security.fs2.nebius.ai/pod-security-exception" = "reference-data-host-path"
-    }
+      } : var.pod_security_rollout_phase == "migrate-reference-data" ? {
+      "security.fs2.nebius.ai/pod-security-exception" = "reference-data-csi-verification"
+    } : {}
   }
 
   depends_on = [terraform_data.region_contract]
+}
+
+resource "kubernetes_persistent_volume_claim_v1" "reference_data" {
+  metadata {
+    name      = var.filesystem_claim.name
+    namespace = kubernetes_namespace_v1.reference_data.metadata[0].name
+    labels    = merge(local.common_labels, { "app.kubernetes.io/component" = "reference-data-storage" })
+  }
+
+  spec {
+    access_modes       = ["ReadWriteMany"]
+    storage_class_name = var.filesystem_claim.storage_class
+    resources {
+      requests = { storage = "${var.filesystem_claim.size_gib}Gi" }
+    }
+  }
+
+  wait_until_bound = false
 }
 
 resource "kubernetes_service_account_v1" "reference_data" {
@@ -783,6 +829,7 @@ resource "kubernetes_manifest" "pipeline" {
   ]
 
   depends_on = [
+    kubernetes_persistent_volume_claim_v1.reference_data,
     kubernetes_manifest.local_queue,
     kubernetes_network_policy_v1.public_source_staging,
   ]
@@ -908,11 +955,24 @@ resource "kubernetes_deployment_v1" "status" {
             mount_path = "/tmp"
           }
         }
-        volume {
-          name = "reference-data"
-          host_path {
-            path = var.shared_filesystem_host_path
-            type = "Directory"
+        dynamic "volume" {
+          for_each = local.csi_storage_enabled ? [] : [true]
+          content {
+            name = "reference-data"
+            host_path {
+              path = var.shared_filesystem_host_path
+              type = "Directory"
+            }
+          }
+        }
+        dynamic "volume" {
+          for_each = local.csi_storage_enabled ? [true] : []
+          content {
+            name = "reference-data"
+            persistent_volume_claim {
+              claim_name = kubernetes_persistent_volume_claim_v1.reference_data.metadata[0].name
+              read_only  = false
+            }
           }
         }
         volume {

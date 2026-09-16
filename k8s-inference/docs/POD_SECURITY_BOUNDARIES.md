@@ -2,69 +2,104 @@
 
 FS2 applies Kubernetes Pod Security Admission (PSA) at namespace boundaries.
 Application namespaces enforce the `baseline` Pod Security Standard and report
-`restricted` violations in both audit records and admission warnings.
+`restricted` violations in audit records and admission warnings. Host-integrated
+node agents use one explicitly annotated exception namespace.
 
-| Namespace owner | Enforcement | Purpose |
+| Namespace owner | Enforced state | Purpose |
 | --- | --- | --- |
 | Foundation: `fs2-system`, `fs2-data`, `fs2-models`, `fs2-observability` | `baseline`; `warn`/`audit=restricted` | Platform, database, model runtime, and namespaced observability workloads |
-| Academic-assets module | `baseline`; `warn`/`audit=restricted` | Scientific jobs using private RWX claims |
+| Academic-assets and existing scientific namespaces named in deployment inputs | `baseline`; `warn`/`audit=restricted` | Scientific jobs and retained scientific namespaces |
 | Workloads ModelExpress namespace | `baseline`; `warn`/`audit=restricted` | Optional ModelExpress control service |
+| Reference-data module | `baseline`; `warn`/`audit=restricted` after CSI verification | Reference-data staging and status services on the RWX claim |
 | Foundation: `fs2-node-observability` | `privileged`; `warn`/`audit=restricted` | Host-integrated, operator-owned node agents only |
-| Reference-data module | `privileged`; `warn`/`audit=restricted` | Temporary host-path compatibility boundary |
 
-The two `privileged` namespaces are explicit exceptions, not general workload
-destinations. They carry a `security.fs2.nebius.ai/pod-security-exception`
-annotation, are created by Terraform, and do not receive customer or model
-runtime service accounts.
+The node-observability namespace is not a general workload destination. It has
+no customer or model runtime service account. Adding a workload requires a
+reviewed host-integration requirement, a digest-pinned image, bounded resources,
+and a restricted-warning review.
 
-## Node-agent exception
+## Ordered rollout
 
-The GPU allocation observer, DCGM exporter, node log collector, and Prometheus
-node exporter require host integration that the Baseline policy forbids. They
-run in `fs2-node-observability`; the application-facing observability services
-remain in the baseline-enforced `fs2-observability` namespace. ServiceMonitor
-discovery explicitly includes the node-agent namespace.
+`deployment.pod_security.rollout_phase` makes admission changes separable from
+workload movement. Advance only after the checks for the current phase pass:
 
-Adding another workload to this exception namespace requires a reviewed
-host-integration requirement, a digest-pinned image, a dedicated service
-account, bounded resources, and a restricted-warning review. Ordinary
-Deployments, Jobs, model runtimes, and scientific jobs must not use it.
+1. `prepare`: create `fs2-node-observability`, move the GPU observer, DCGM
+   exporter, node telemetry collector, and Prometheus node exporter into it,
+   and create the reference-data RWX claim. Application namespaces remain
+   unlabeled. Verify every moved DaemonSet has its desired number of Ready pods
+   and bind that evidence through `host_agent_readiness_receipt_sha256`.
+2. Copy the retained reference-data tree to `fs2-reference-data-rwx`, mounted
+   with `ReadWriteMany` from `csi-mounted-fs-path-sc`. Record a non-secret
+   migration receipt whose source and target tree SHA-256 values are equal.
+3. `migrate-reference-data`: switch the stager and status Deployment to the RWX
+   claim while reference data retains its temporary verification boundary.
+   Verify the claim is Bound, status is Ready, and a read-only application probe
+   can access the expected published data. Seal those results and supply their
+   digest through `csi_readiness_receipt_sha256`.
+4. `enforce`: apply `baseline` enforcement and restricted warn/audit labels to
+   the foundation, reference-data, academic, ModelExpress, and explicitly listed
+   existing scientific namespaces. A privileged Pod submitted to `fs2-models`
+   must be rejected. Follow the negative probe with model-controller,
+   scientific-job, database, telemetry, and inference smoke tests.
 
-## Reference-data exception
+The existing-scientific-namespace input is a complete inventory, not a prefix
+selector. A retained namespace must be added explicitly before `enforce`.
 
-Reference-data staging currently mounts the retained shared data tree through
-a node path. Its dedicated namespace therefore remains an explicit exception
-until the existing bytes can be adopted through the RWX CSI class without a
-copy, replacement, or path change. The exit gate is a reviewed no-replacement
-Terraform plan, a read-only content identity check before and after the mount
-change, and successful status plus scientific preprocessing probes. Only then
-may the namespace move to `enforce=baseline`.
+## Ordered rollback
+
+Rollback is also phased; do not delete the exception namespace while an agent
+still uses it:
+
+1. `rollback-restore-host-agents`: remove application-namespace baseline
+   enforcement and restore node agents to `fs2-observability` and `fs2-system`.
+   The exception namespace remains present. Verify every restored DaemonSet is
+   Ready and observability discovery still reaches it, then bind that evidence
+   through `host_agent_restore_receipt_sha256`.
+2. `rollback-remove-exception`: keep the agents in their restored namespaces
+   and remove `fs2-node-observability` only after the first rollback phase has
+   passed. The verified reference-data CSI claim remains in use; restoring the
+   legacy host path is a separate, explicitly reviewed storage rollback.
+
+Use the previously captured Terraform plans and Helm revision for application
+rollback. Never jump directly from `enforce` to
+`rollback-remove-exception`.
+
+## Reference-data CSI gate
+
+`prepare` retains the legacy read-only host path while creating the RWX claim.
+Every later phase refuses to plan without a migration receipt bound to the
+claim and equal source/target content identities. `migrate-reference-data`
+switches consumers to the claim before `enforce` changes PSA; `enforce` also
+refuses to plan without the post-switch readiness/access receipt. This makes
+the storage transition observable and reversible without combining it with
+the admission boundary.
 
 ## Model-controller ownership
 
-The dynamic model controller does not own ServiceAccounts or DaemonSets:
+The dynamic model controller does not own ServiceAccounts or DaemonSets.
+Dynamic Deployments use the dedicated, non-token-mounted `fs2-model-runtime`
+ServiceAccount provisioned by Terraform, and host-memory-residency declarations
+are not published while the controller lacks DaemonSet authority.
 
-- Dynamic Deployments use the dedicated, non-token-mounted
-  `fs2-model-runtime` ServiceAccount provisioned by Terraform. Render bundles
-  exclude ServiceAccounts. Previously controller-owned per-model accounts are
-  no longer referenced and remain only until Kubernetes garbage-collects them
-  with their existing ModelDeployment owner.
-- Host-memory-residency declarations are not published to the dynamic
-  controller while it lacks DaemonSet authority. Regional-cache and
-  GPU-resident mechanisms retain their existing qualification paths.
-- The controller can read and create NetworkPolicies. Patching or deleting an
-  existing policy requires its exact name in
-  `modelController.networkPolicyResourceNames`; Kubernetes cannot apply
-  `resourceNames` to collection-level create requests.
+The controller has no NetworkPolicy API endpoint and its Role has no
+`networkpolicies` rule. It therefore cannot get, list, watch, create, patch, or
+delete policy objects. Runtime isolation is supplied by a finite set of
+Terraform-owned profiles selected by immutable
+`fs2-serve.nebius.ai/network-profile` Pod labels. Standard profiles are bound
+to exact service ports; ModelExpress profiles are bound to an exact reviewed
+qualification and pool. Runtime App UUIDs are never policy object identities.
 
-This preserves controller-rendered policy creation while preventing the
-controller from changing or deleting unrelated namespace policies.
+The profile contract is shared with the runtime-isolation implementation and
+must be integrated as one reviewed lineage. Arbitrary App creation, update,
+stale-workload cleanup, and finalizer cleanup must continue using only the
+Deployment, Service, and ScaledObject permissions. Integration verification
+must prove all six NetworkPolicy verbs are denied to the controller service
+account while those App lifecycle paths remain functional.
 
-## Rollout and rollback
+## Verification
 
-Apply the foundation namespace and node-agent placement changes before rolling
-the workloads/control-plane release. Confirm all node agents are Ready in the
-exception namespace, then confirm application namespaces show `baseline` in:
+After `enforce`, inspect the namespace labels and exercise both negative and
+positive paths:
 
 ```bash
 kubectl get namespace \
@@ -73,12 +108,6 @@ kubectl get namespace \
   -L pod-security.kubernetes.io/audit
 ```
 
-A privileged test Pod submitted to `fs2-models` must be rejected. Follow that
-negative probe with model-controller, scientific-job, database, telemetry, and
-inference smoke tests.
-
-Rollback uses the previously captured foundation/workloads plans and control
-plane Helm revision. Restore node agents to their former namespaces before
-removing the exception namespace. Do not remove PSA labels as a shortcut for a
-workload regression; either correct the workload or execute the complete,
-recorded rollback.
+The rollout evidence must include the exact deployment inputs, CSI class and
+claim, migration receipt digest, DaemonSet readiness, namespace inventory,
+negative privileged-Pod result, and application smoke-test results.

@@ -1880,18 +1880,6 @@ def _modelexpress_transfer_identity(
     return f"fs2:sha256:{digest_hex}", label
 
 
-def _modelexpress_peer_ports(accelerators_per_replica: int) -> list[dict[str, Any]]:
-    """Pin and allow the bounded upstream v0.5.1 per-device listener ranges."""
-
-    ports: list[dict[str, Any]] = []
-    for base_port in (5555, 6555):
-        item: dict[str, Any] = {"protocol": "TCP", "port": base_port}
-        if accelerators_per_replica > 1:
-            item["endPort"] = base_port + accelerators_per_replica - 1
-        ports.append(item)
-    return ports
-
-
 def _metric_name(model_ref: str) -> str:
     suffix = re.sub(r"[^A-Za-z0-9_:]", "_", model_ref)
     return f"fs2_operation_demand_{suffix}"
@@ -2324,104 +2312,6 @@ def _configure_modelexpress_container(
     return transfer_group
 
 
-def _modelexpress_network_policy(
-    *,
-    context: RenderContext,
-    qualification: ModelExpressQualification,
-    segment_identity: str,
-    workload_name: str,
-    transfer_group: str,
-    accelerators_per_replica: int,
-    service_port: int,
-    labels: Mapping[str, str],
-    annotations: Mapping[str, str],
-    owner_references: Sequence[Mapping[str, Any]],
-) -> dict[str, Any]:
-    """Permit only this exact transfer group to reach its peer listeners.
-
-    The policy is additive to the Terraform-owned runtime policy.  The exact
-    transfer-group selector prevents old revisions or another model from
-    becoming a source, while the coordinator rule is limited to the configured
-    namespace and Pod labels.
-    """
-
-    runtime_selector = {
-        MODEL_DEPLOYMENT_LABEL: bounded_label_value(context.name),
-        WORKLOAD_ROLE_LABEL: segment_identity,
-        MODEL_EXPRESS_TRANSFER_GROUP_LABEL: transfer_group,
-    }
-    peer_selector = {
-        MODEL_EXPRESS_TRANSFER_GROUP_LABEL: transfer_group,
-    }
-    coordinator_port = int(qualification.endpoint.rsplit(":", 1)[1])
-    coordinator_peers: list[dict[str, Any]]
-    if qualification.coordinator_network_type == "pod-selector":
-        assert qualification.coordinator_namespace is not None
-        coordinator_peers = [
-            {
-                "namespaceSelector": {
-                    "matchLabels": {
-                        "kubernetes.io/metadata.name": qualification.coordinator_namespace,
-                    }
-                },
-                "podSelector": {
-                    "matchLabels": dict(qualification.coordinator_pod_labels),
-                },
-            }
-        ]
-    else:
-        coordinator_peers = [{"ipBlock": {"cidr": cidr}} for cidr in qualification.coordinator_cidrs]
-
-    manifest: dict[str, Any] = {
-        "apiVersion": "networking.k8s.io/v1",
-        "kind": "NetworkPolicy",
-        "metadata": {
-            "name": _derived_name("fs2-modelexpress-", workload_name),
-            "namespace": context.namespace,
-            "labels": {**labels, WORKLOAD_ROLE_LABEL: segment_identity},
-            "annotations": dict(annotations),
-        },
-        "spec": {
-            "podSelector": {"matchLabels": runtime_selector},
-            "policyTypes": ["Ingress", "Egress"],
-            "ingress": [
-                {
-                    "from": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "fs2-system"}}}],
-                    "ports": [{"protocol": "TCP", "port": service_port}],
-                },
-                {
-                    "from": [{"podSelector": {"matchLabels": peer_selector}}],
-                    "ports": _modelexpress_peer_ports(accelerators_per_replica),
-                },
-            ],
-            "egress": [
-                {
-                    "to": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "kube-system"}}}],
-                    "ports": [
-                        {"protocol": "UDP", "port": 53},
-                        {"protocol": "TCP", "port": 53},
-                    ],
-                },
-                {
-                    "to": [{"podSelector": {"matchLabels": peer_selector}}],
-                    "ports": _modelexpress_peer_ports(accelerators_per_replica),
-                },
-                {
-                    "to": [{"ipBlock": {"cidr": "0.0.0.0/0"}}],
-                    "ports": [{"protocol": "TCP", "port": 443}],
-                },
-                {
-                    "to": coordinator_peers,
-                    "ports": [{"protocol": "TCP", "port": coordinator_port}],
-                },
-            ],
-        },
-    }
-    if owner_references:
-        manifest["metadata"]["ownerReferences"] = [dict(item) for item in owner_references]
-    return manifest
-
-
 def _validate_serving_snapshot_selection(
     spec: ModelDeploymentSpec,
     bundle: ServingSnapshotBundle,
@@ -2845,22 +2735,6 @@ class LegacyManifestRenderer:
             else:
                 deployment_spec["replicas"] = segment.fixed_replicas
             rendered.append(workload)
-
-            if context.model_express is not None and transfer_group is not None:
-                rendered.append(
-                    _modelexpress_network_policy(
-                        context=context,
-                        qualification=context.model_express,
-                        segment_identity=segment_identity,
-                        workload_name=workload_name,
-                        transfer_group=transfer_group,
-                        accelerators_per_replica=spec.placement.accelerators_per_replica,
-                        service_port=bundle.primary_service_port,
-                        labels=labels,
-                        annotations=annotations,
-                        owner_references=owner_references,
-                    )
-                )
 
             if not segment.autoscaled:
                 continue

@@ -2176,7 +2176,7 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn(
             'if mechanism != "hostMemoryResidency"', controller_source
         )
-        self.assertIn(
+        self.assertNotIn(
             "model_controller_network_policy_resource_names", controller_source
         )
         self.assertIn(
@@ -2497,8 +2497,10 @@ class DeploymentContractTests(unittest.TestCase):
         foundation_locals = (
             DEPLOY_ROOT / "stages/foundation/locals.tf"
         ).read_text(encoding="utf-8")
-        namespace_block_start = foundation_locals.index("namespaces = toset([")
-        namespace_block_end = foundation_locals.index("])", namespace_block_start)
+        namespace_block_start = foundation_locals.index("namespaces = toset(concat([")
+        namespace_block_end = foundation_locals.index(
+            "], local.node_observability_exception_enabled", namespace_block_start
+        )
         foundation_namespaces = set(
             re.findall(
                 r'"([a-z0-9-]+)"',

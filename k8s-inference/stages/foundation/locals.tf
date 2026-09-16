@@ -105,40 +105,58 @@ locals {
     "fs2.nebius.ai/run-id"         = var.run_id
   }
 
-  pod_security_labels = {
-    for namespace, enforce in {
-      "fs2-data"               = "baseline"
-      "fs2-models"             = "baseline"
-      "fs2-observability"      = "baseline"
-      "fs2-system"             = "baseline"
-      "fs2-node-observability" = "privileged"
-      } : namespace => {
-      "pod-security.kubernetes.io/enforce" = enforce
+  node_agents_use_exception_namespace = contains([
+    "prepare",
+    "migrate-reference-data",
+    "enforce",
+  ], var.pod_security_rollout_phase)
+  node_observability_exception_enabled = var.pod_security_rollout_phase != "rollback-remove-exception"
+  node_observability_namespace = (
+    local.node_agents_use_exception_namespace ?
+    "fs2-node-observability" :
+    "fs2-observability"
+  )
+
+  pod_security_application_labels = var.pod_security_rollout_phase == "enforce" ? {
+    for namespace in toset([
+      "fs2-data",
+      "fs2-models",
+      "fs2-observability",
+      "fs2-system",
+      ]) : namespace => tomap({
+      "pod-security.kubernetes.io/enforce" = "baseline"
       "pod-security.kubernetes.io/audit"   = "restricted"
       "pod-security.kubernetes.io/warn"    = "restricted"
-    }
-  }
+    })
+  } : tomap({})
 
-  pod_security_annotations = {
-    "fs2-node-observability" = {
+  pod_security_labels = merge(local.pod_security_application_labels, local.node_observability_exception_enabled ? {
+    "fs2-node-observability" = tomap({
+      "pod-security.kubernetes.io/enforce" = "privileged"
+      "pod-security.kubernetes.io/audit"   = "restricted"
+      "pod-security.kubernetes.io/warn"    = "restricted"
+    })
+  } : tomap({}))
+
+  pod_security_annotations = local.node_observability_exception_enabled ? {
+    "fs2-node-observability" = tomap({
       "security.fs2.nebius.ai/pod-security-exception" = "node-observability-host-integration"
-    }
-  }
+    })
+  } : tomap({})
 
-  namespaces = toset([
+  namespaces = toset(concat([
     "cert-manager",
     "cnpg-system",
     "envoy-gateway-system",
     "fs2-data",
     "fs2-models",
-    "fs2-node-observability",
     "fs2-observability",
     "fs2-system",
     "kserve",
     "keda",
     "kueue-system",
     "jobset-system",
-  ])
+  ], local.node_observability_exception_enabled ? ["fs2-node-observability"] : []))
 
   chart_versions = {
     cert_manager          = "v1.21.1"

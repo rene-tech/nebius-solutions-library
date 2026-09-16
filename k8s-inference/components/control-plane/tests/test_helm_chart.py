@@ -883,7 +883,6 @@ def test_activation_controller_is_owned_by_the_separate_child_and_absent_from_th
 
 
 def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> None:
-    mutable_policy_names = ["fs2-modelexpress-qwen3-8b", "fs2-runtime-qwen3-8b"]
     documents = render(
         "--set",
         "modelController.enabled=true",
@@ -895,8 +894,6 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
         "modelController.infrastructureEnvelopeConfigMapName=fs2-model-envelope",
         "--set",
         "modelController.rendererBundlesConfigMapName=fs2-model-bundles",
-        "--set-json",
-        "modelController.networkPolicyResourceNames=" + json.dumps(mutable_policy_names),
         "--set",
         "adminReadAdapters.capacity.enabled=true",
         "--set",
@@ -913,6 +910,7 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
     assert environment["FS2_MODEL_CONTROLLER_ENABLED"]["value"] == "true"
     assert environment["FS2_MODEL_CONTROLLER_WRITES_ENABLED"]["value"] == "true"
     assert environment["FS2_MODEL_CONTROLLER_HOLDER_IDENTITY"]["value"] == "$(POD_NAMESPACE)/$(POD_NAME):$(POD_UID)"
+    assert "FS2_MODEL_CONTROLLER_NETWORK_POLICY_RESOURCE_NAMES_BY_DEPLOYMENT" not in environment
     assert environment["FS2_ADMIN_CAPACITY_ENABLED"]["value"] == "true"
     assert environment["FS2_ADMIN_KUBERNETES_API_URL"]["value"] == "https://kubernetes.default.svc"
     assert environment["FS2_ADMIN_KUBERNETES_TOKEN_FILE"]["value"] == "/var/run/secrets/fs2-model-controller/token"
@@ -950,17 +948,7 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
     } in model_role["rules"]
     assert not any("daemonsets" in rule["resources"] for rule in model_role["rules"])
     assert not any("serviceaccounts" in rule["resources"] for rule in model_role["rules"])
-    network_policy_rules = [rule for rule in model_role["rules"] if rule["resources"] == ["networkpolicies"]]
-    assert {tuple(rule["verbs"]) for rule in network_policy_rules} == {
-        ("get", "list", "watch"),
-        ("create",),
-        ("patch", "delete"),
-    }
-    mutable_rule = next(rule for rule in network_policy_rules if rule["verbs"] == ["patch", "delete"])
-    assert mutable_rule["resourceNames"] == sorted(mutable_policy_names)
-    assert all(
-        "resourceNames" in rule or not ({"patch", "delete"} & set(rule["verbs"])) for rule in network_policy_rules
-    )
+    assert not any("networkpolicies" in rule["resources"] for rule in model_role["rules"])
     assert not any(
         document["kind"] in {"ClusterRole", "ClusterRoleBinding"} and "model-controller" in document["metadata"]["name"]
         for document in documents

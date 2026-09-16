@@ -304,7 +304,7 @@ resource "helm_release" "monitoring" {
     yamlencode({
       fullnameOverride = "fs2-${var.run_id}-monitoring"
       "prometheus-node-exporter" = {
-        namespaceOverride = kubernetes_namespace_v1.platform["fs2-node-observability"].metadata[0].name
+        namespaceOverride = kubernetes_namespace_v1.platform[local.node_observability_namespace].metadata[0].name
       }
       alertmanager = {
         enabled = var.alertmanager.enabled
@@ -421,9 +421,8 @@ resource "helm_release" "monitoring" {
             matchExpressions = [{
               key      = "kubernetes.io/metadata.name"
               operator = "In"
-              values = [
+              values = concat([
                 "fs2-observability",
-                "fs2-node-observability",
                 "fs2-reference-data",
                 "fs2-system",
                 "fs2-models",
@@ -432,16 +431,15 @@ resource "helm_release" "monitoring" {
                 "kube-system",
                 "kueue-system",
                 "keda",
-              ]
+              ], local.node_observability_exception_enabled ? ["fs2-node-observability"] : [])
             }]
           }
           podMonitorNamespaceSelector = {
             matchExpressions = [{
               key      = "kubernetes.io/metadata.name"
               operator = "In"
-              values = [
+              values = concat([
                 "fs2-observability",
-                "fs2-node-observability",
                 "fs2-system",
                 "fs2-models",
                 "fs2-data",
@@ -449,7 +447,7 @@ resource "helm_release" "monitoring" {
                 "kube-system",
                 "kueue-system",
                 "keda",
-              ]
+              ], local.node_observability_exception_enabled ? ["fs2-node-observability"] : [])
             }]
           }
         }
@@ -529,7 +527,7 @@ resource "helm_release" "otel_gateway" {
 
 resource "helm_release" "otel_node" {
   name             = "fs2-${var.run_id}-otel-node"
-  namespace        = kubernetes_namespace_v1.platform["fs2-node-observability"].metadata[0].name
+  namespace        = kubernetes_namespace_v1.platform[local.node_observability_namespace].metadata[0].name
   repository       = "https://open-telemetry.github.io/opentelemetry-helm-charts"
   chart            = "opentelemetry-collector"
   version          = local.chart_versions.opentelemetry

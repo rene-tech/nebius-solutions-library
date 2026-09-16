@@ -20,7 +20,15 @@ module "reference_data" {
 
   namespace                   = var.reference_data.namespace
   shared_filesystem_host_path = try(var.reference_data.storage_contract.filesystem.host_path, "/mnt/fs2-reference-data/data")
-  cpu_pool                    = var.reference_data.storage_contract.cpu_pool
+  pod_security_rollout_phase  = var.pod_security_rollout_phase
+  filesystem_claim = {
+    name          = "fs2-reference-data-rwx"
+    storage_class = "csi-mounted-fs-path-sc"
+    size_gib      = try(var.reference_data.storage_contract.filesystem.size_gib, 2048)
+  }
+  csi_migration_receipt        = var.reference_data.csi_migration_receipt
+  csi_readiness_receipt_sha256 = var.reference_data.csi_readiness_receipt_sha256
+  cpu_pool                     = var.reference_data.storage_contract.cpu_pool
   # The reference CPU ClusterQueue must admit every namespace to which this
   # stage publishes a LocalQueue. That includes both licensed raw-data stages
   # and model-owned preprocessing stages in the scientific workload namespace.

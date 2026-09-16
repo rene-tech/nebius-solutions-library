@@ -1090,37 +1090,6 @@ locals {
       resources            = local.model_controller_bundle_resources[model_id]
     }
   ]
-  # The controller may only mutate policies whose complete names are known to
-  # this reviewed deployment. Include the single-pool identity and every
-  # possible hot/burst pool segment; the renderer uses the same 253-character
-  # name bound and twelve-character SHA-256 suffix.
-  model_controller_network_policy_workload_names = sort(distinct(flatten([
-    for model_id in local.model_controller_dynamic_model_ids : (
-      length(local.model_controller_qualified_pool_ids[model_id]) == 1 ?
-      [local.profile_contract.model_autoscaling_targets[model_id].deployment] :
-      flatten([
-        for pool_id in local.model_controller_qualified_pool_ids[model_id] : [
-          for role in ["hot", "burst"] : (
-            length("${local.profile_contract.model_autoscaling_targets[model_id].deployment}-${role}-${pool_id}") <= 253 ?
-            "${local.profile_contract.model_autoscaling_targets[model_id].deployment}-${role}-${pool_id}" :
-            "${substr("${local.profile_contract.model_autoscaling_targets[model_id].deployment}-${role}-${pool_id}", 0, 240)}-${substr(sha256("${local.profile_contract.model_autoscaling_targets[model_id].deployment}-${role}-${pool_id}"), 0, 12)}"
-          )
-        ]
-      ])
-    )
-  ])))
-  model_controller_network_policy_name_candidates = flatten([
-    for workload_name in local.model_controller_network_policy_workload_names : [
-      "fs2-runtime-${workload_name}",
-      "fs2-modelexpress-${workload_name}",
-    ]
-  ])
-  model_controller_network_policy_resource_names = sort(distinct([
-    for candidate in local.model_controller_network_policy_name_candidates : (
-      length(candidate) <= 253 ? candidate :
-      "${substr(candidate, 0, 240)}-${substr(sha256(candidate), 0, 12)}"
-    )
-  ]))
   model_controller_cpu_configuration = {
     for model_id in local.managed_cpu_model_ids : model_id => {
       cpuResources = {
@@ -1402,7 +1371,6 @@ resource "terraform_data" "model_controller_contract" {
     envelope_sha256          = sha256(local.model_controller_envelope_json)
     renderer_bundles_sha256  = sha256(local.model_controller_bundles_json)
     bootstrap_model_ids      = sort(tolist(var.model_controller.bootstrap_model_ids))
-    network_policy_names     = local.model_controller_network_policy_resource_names
     expected_handoff_receipt = local.model_controller_expected_handoff_receipt
     accepted_handoff_receipt = var.model_controller.handoff_receipt
     modelexpress_resources   = local.modelexpress_resource_counts
@@ -1438,7 +1406,6 @@ resource "terraform_data" "model_controller_contract" {
         length(local.model_controller_dynamic_model_ids) > 0 &&
         length(local.model_controller_envelope_json) <= 900000 &&
         length(local.model_controller_bundles_json) <= 900000 &&
-        length(local.model_controller_network_policy_resource_names) <= 256 &&
         alltrue([for resources in values(local.model_controller_bundle_resources) : length(resources) > 0]) &&
         alltrue([for model_id in local.model_controller_dynamic_model_ids :
           length(local.model_controller_qualified_pool_ids[model_id]) > 0 &&

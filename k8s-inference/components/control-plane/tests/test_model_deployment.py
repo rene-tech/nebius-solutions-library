@@ -799,35 +799,8 @@ def test_renderer_injects_exact_modelexpress_vllm_client_without_claiming_a_leve
     assert not any(port.get("name") == "mx-metrics" for port in container.get("ports", []))
     assert pod["metadata"]["labels"]["fs2-serve.nebius.ai/modelexpress"] == "enabled"
     assert pod["metadata"]["annotations"]["fs2-serve.nebius.ai/modelexpress-config-digest"] == digest("9")
-    transfer_group = pod["metadata"]["labels"]["fs2-serve.nebius.ai/modelexpress-transfer-group"]
-    policy = next(item.manifest for item in plan.resources if item.kind == "NetworkPolicy")
-    assert policy["metadata"]["ownerReferences"][0]["uid"] == "cr-uid-1"
-    policy_selector = policy["spec"]["podSelector"]["matchLabels"]
-    assert policy_selector["fs2-serve.nebius.ai/modelexpress-transfer-group"] == transfer_group
-    assert policy["spec"]["ingress"][0] == {
-        "from": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "fs2-system"}}}],
-        "ports": [{"protocol": "TCP", "port": 8000}],
-    }
-    assert policy["spec"]["ingress"][1]["from"][0]["podSelector"]["matchLabels"] == {
-        "fs2-serve.nebius.ai/modelexpress-transfer-group": transfer_group
-    }
-    assert policy["spec"]["ingress"][1]["ports"] == [
-        {"protocol": "TCP", "port": 5555},
-        {"protocol": "TCP", "port": 6555},
-    ]
-    assert policy["spec"]["egress"][0]["ports"] == [
-        {"protocol": "UDP", "port": 53},
-        {"protocol": "TCP", "port": 53},
-    ]
-    assert policy["spec"]["egress"][2] == {
-        "to": [{"ipBlock": {"cidr": "0.0.0.0/0"}}],
-        "ports": [{"protocol": "TCP", "port": 443}],
-    }
-    assert policy["spec"]["egress"][3]["to"][0] == {
-        "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "fs2-modelexpress"}},
-        "podSelector": {"matchLabels": {"fs2-serve.nebius.ai/component": "modelexpress-server"}},
-    }
-    assert policy["spec"]["egress"][3]["ports"] == [{"protocol": "TCP", "port": 8001}]
+    assert pod["metadata"]["labels"]["fs2-serve.nebius.ai/modelexpress-transfer-group"]
+    assert not any(item.kind == "NetworkPolicy" for item in plan.resources)
     assert not any(item.kind == "NetworkPolicy" for item in baseline.resources)
     baseline_deployment = next(item.manifest for item in baseline.resources if item.kind == "Deployment")
     baseline_pod_labels = baseline_deployment["spec"]["template"]["metadata"]["labels"]
@@ -887,11 +860,7 @@ def test_renderer_requests_only_the_explicit_modelexpress_rdma_resource() -> Non
     assert environment["MX_RDMA_NIC_PIN"] == "auto"
     assert environment["UCX_RNDV_SCHEME"] == "get_zcopy"
     assert environment["UCX_RNDV_THRESH"] == "0"
-    policy = next(item.manifest for item in plan.resources if item.kind == "NetworkPolicy")
-    assert policy["spec"]["ingress"][1]["ports"] == [
-        {"protocol": "TCP", "port": 5555, "endPort": 5558},
-        {"protocol": "TCP", "port": 6555, "endPort": 6558},
-    ]
+    assert not any(item.kind == "NetworkPolicy" for item in plan.resources)
 
     with pytest.raises(ValidationError, match="requires one qualified extended resource"):
         ModelExpressPoolTransport(mode="nixl-rdma", rdma_resource_name=None)
@@ -937,7 +906,7 @@ def test_modelexpress_same_accelerator_hot_and_burst_share_only_compatible_trans
         for item in deployments
     }
     assert len(transfer_groups) == 1
-    assert len([item for item in plan.resources if item.kind == "NetworkPolicy"]) == len(deployments)
+    assert not any(item.kind == "NetworkPolicy" for item in plan.resources)
 
     incompatible_backend = compatible.model_copy(
         update={
@@ -980,10 +949,10 @@ def test_modelexpress_two_pool_binding_allows_a_one_pool_placement_subset() -> N
 
     deployment = next(item.manifest for item in plan.resources if item.kind == "Deployment")
     assert deployment["spec"]["template"]["spec"]["nodeSelector"] == {"accelerator.fs2.nebius/pool-id": "reserved-h100"}
-    assert any(item.kind == "NetworkPolicy" for item in plan.resources)
+    assert not any(item.kind == "NetworkPolicy" for item in plan.resources)
 
 
-def test_actual_qwen_two_pool_render_preserves_inference_dns_https_and_modelexpress_flows() -> None:
+def test_actual_qwen_two_pool_render_leaves_network_policy_profiles_outside_the_controller() -> None:
     source_documents = [item for item in yaml.safe_load_all(QWEN_MANIFEST.read_text()) if item]
     source_policy = next(item for item in source_documents if item["kind"] == "NetworkPolicy")
     bundle_resources = [
@@ -1040,8 +1009,8 @@ def test_actual_qwen_two_pool_render_preserves_inference_dns_https_and_modelexpr
     service = next(item.manifest for item in plan.resources if item.kind == "Service")
     assert service["spec"]["selector"] == {"fs2-serve.nebius.ai/model-deployment": "qwen3-8b-live"}
     deployments = [item.manifest for item in plan.resources if item.kind == "Deployment"]
-    policies = [item.manifest for item in plan.resources if item.kind == "NetworkPolicy"]
-    assert len(deployments) == 2 and len(policies) == 2
+    assert len(deployments) == 2
+    assert not any(item.kind == "NetworkPolicy" for item in plan.resources)
     assert all(
         deployment["spec"]["template"]["spec"]["serviceAccountName"] == "fs2-model-runtime"
         and deployment["spec"]["template"]["spec"]["automountServiceAccountToken"] is False
@@ -1051,20 +1020,8 @@ def test_actual_qwen_two_pool_render_preserves_inference_dns_https_and_modelexpr
     assert all(
         "app.kubernetes.io/instance" not in item["spec"]["template"]["metadata"]["labels"] for item in deployments
     )
-    for policy in policies:
-        assert policy["spec"]["ingress"][0]["ports"] == [{"protocol": "TCP", "port": 8000}]
-        assert policy["spec"]["egress"][0]["ports"] == [
-            {"protocol": "UDP", "port": 53},
-            {"protocol": "TCP", "port": 53},
-        ]
-        assert policy["spec"]["egress"][2] == {
-            "to": [{"ipBlock": {"cidr": "0.0.0.0/0"}}],
-            "ports": [{"protocol": "TCP", "port": 443}],
-        }
-        assert policy["spec"]["egress"][3]["ports"] == [{"protocol": "TCP", "port": 8001}]
-
-    # The source NetworkPolicy remains Terraform-owned and byte-equivalent;
-    # only the controller-generated additive policies target derived segments.
+    # The source profile remains byte-equivalent and outside the controller's
+    # rendered bundle. The SAI-03 integration owns its finite-policy migration.
     assert source_policy == next(
         item for item in yaml.safe_load_all(QWEN_MANIFEST.read_text()) if item and item["kind"] == "NetworkPolicy"
     )
@@ -1087,7 +1044,7 @@ def test_modelexpress_rejects_mixed_accelerators_and_non_vllm_runtime() -> None:
         ModelQualification.model_validate(qualification_payload)
 
 
-def test_modelexpress_external_coordinator_requires_and_renders_an_explicit_cidr_route() -> None:
+def test_modelexpress_external_coordinator_requires_an_explicit_cidr_route_without_rendering_a_policy() -> None:
     configured = modelexpress_qualification("pool-a").model_copy(
         update={
             "deployment_mode": "external",
@@ -1111,11 +1068,8 @@ def test_modelexpress_external_coordinator_requires_and_renders_an_explicit_cidr
         prometheus_server_address="http://prometheus:9090",
         model_express=configured,
     )
-    policy = next(item.manifest for item in renderer().render(spec, context).resources if item.kind == "NetworkPolicy")
-    assert policy["spec"]["egress"][3] == {
-        "to": [{"ipBlock": {"cidr": "192.0.2.0/24"}}],
-        "ports": [{"protocol": "TCP", "port": 8443}],
-    }
+    plan = renderer().render(spec, context)
+    assert not any(item.kind == "NetworkPolicy" for item in plan.resources)
 
     invalid = configured.model_dump(mode="json", by_alias=True)
     invalid["coordinatorCidrs"] = []
@@ -1466,7 +1420,7 @@ def test_reconcile_rejects_foreign_collision_and_cleans_only_proven_owned_stale_
     assert repair.target_generation == 1
 
 
-def test_reconcile_prunes_owned_modelexpress_policy_when_integration_is_disabled() -> None:
+def test_reconcile_never_manages_networkpolicies_when_modelexpress_is_disabled() -> None:
     spec = model_spec().model_copy(
         update={"placement": model_spec().placement.model_copy(update={"pool_refs": ["pool-a"]})}
     )
@@ -1504,9 +1458,9 @@ def test_reconcile_prunes_owned_modelexpress_policy_when_integration_is_disabled
         observed=observed,
         discovery_complete=True,
     )
-    stale_policies = [item.identity for item in observed if item.kind == "NetworkPolicy"]
     assert plan.action is ReconcileAction.APPLY
-    assert stale_policies and set(stale_policies).issubset(plan.delete_resource_identities)
+    assert not any(item.kind == "NetworkPolicy" for item in accelerated.resources)
+    assert not any("NetworkPolicy" in identity for identity in plan.delete_resource_identities)
 
 
 def test_delete_is_a_drain_backstop_and_finalizer_requires_complete_empty_discovery() -> None:

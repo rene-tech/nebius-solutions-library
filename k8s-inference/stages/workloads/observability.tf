@@ -1,5 +1,19 @@
 locals {
-  node_observability_namespace = "fs2-node-observability"
+  node_agents_use_exception_namespace = contains([
+    "prepare",
+    "migrate-reference-data",
+    "enforce",
+  ], var.pod_security_rollout_phase)
+  node_observability_namespace = (
+    local.node_agents_use_exception_namespace ?
+    "fs2-node-observability" :
+    "fs2-observability"
+  )
+  gpu_observer_namespace = (
+    local.node_agents_use_exception_namespace ?
+    "fs2-node-observability" :
+    "fs2-system"
+  )
   # The foundation contract exposes either the fresh run-scoped Grafana
   # Service or the retained Service override. Both share the same Helm release
   # prefix as Loki, so this keeps the selector exact without a topology flag or

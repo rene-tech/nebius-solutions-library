@@ -29,22 +29,6 @@ rules:
   - apiGroups: ["keda.sh"]
     resources: ["scaledobjects"]
     verbs: ["get", "list", "watch", "create", "patch", "delete"]
-  - apiGroups: ["networking.k8s.io"]
-    resources: ["networkpolicies"]
-    verbs: ["get", "list", "watch"]
-  # Kubernetes authorizes create on the collection URL, so resourceNames
-  # cannot constrain it. Creation remains available for the runtime policies;
-  # mutation of an existing policy is a separate, exact-name capability.
-  - apiGroups: ["networking.k8s.io"]
-    resources: ["networkpolicies"]
-    verbs: ["create"]
-  {{- with .Values.modelController.networkPolicyResourceNames }}
-  - apiGroups: ["networking.k8s.io"]
-    resources: ["networkpolicies"]
-    resourceNames:
-      {{- toYaml (sortAlpha (uniq .)) | nindent 6 }}
-    verbs: ["patch", "delete"]
-  {{- end }}
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["create", "patch"]

@@ -391,20 +391,6 @@ run "declared_mechanisms_reach_the_model_qualification" {
 
   assert {
     condition = (
-      length(local.model_controller_network_policy_resource_names) > 0 &&
-      alltrue([
-        for name in local.model_controller_network_policy_resource_names :
-        length(name) <= 253 && (
-          startswith(name, "fs2-runtime-") ||
-          startswith(name, "fs2-modelexpress-")
-        )
-      ])
-    )
-    error_message = "The chart must receive the complete bounded allowlist for controller-owned NetworkPolicy names."
-  }
-
-  assert {
-    condition = (
       local.model_controller_envelope.residencyHolderImage ==
       "${var.control_plane_image.repository}@${var.control_plane_image.digest}"
     )

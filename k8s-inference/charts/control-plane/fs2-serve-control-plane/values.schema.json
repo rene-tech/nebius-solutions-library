@@ -625,7 +625,6 @@
         "modelNamespace",
         "systemNamespace",
         "leaseName",
-        "networkPolicyResourceNames",
         "infrastructureEnvelopeConfigMapName",
         "infrastructureEnvelopeKey",
         "rendererBundlesConfigMapName",
@@ -665,14 +664,6 @@
         },
         "leaseName": {
           "$ref": "#/$defs/dnsName"
-        },
-        "networkPolicyResourceNames": {
-          "type": "array",
-          "maxItems": 256,
-          "uniqueItems": true,
-          "items": {
-            "$ref": "#/$defs/dnsName"
-          }
         },
         "infrastructureEnvelopeConfigMapName": {
           "type": "string",
