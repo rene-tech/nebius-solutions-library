@@ -1,0 +1,22 @@
+{
+  "scope": "one complete automatic microphone Finish browser test on Terraform-deployed r10",
+  "image_digest": "sha256:987feef5dc66883351dfae377878f02e233dca5af96004a7453662f0ab6c3392",
+  "namespace": "fs2-system", "deployment": "fs2-mindeval-workshop",
+  "observed_updated_replicas_before_test": 2, "observed_available_replicas_before_test": 2, "observed_ready_replicas_before_test": 2,
+  "isolated_session": "mindeval-auto-finish-mindguard",
+  "fixture_sha256": "5fc2ec9dddc07fc857990c2746adbf9bc4ce3529464d73616ebef5ffaec0de49",
+  "fixture_sample_rate_hz": 16000, "fixture_channels": 1, "fixture_seconds": 5.461375,
+  "run_id": "22a81a02-4b15-4a49-b1d7-00b80e7aea52",
+  "script": "tests/browser-auto-finish.js", "script_changed_for_r10": false,
+  "whole_script_passed": true, "default_unchecked_verified": true, "finish_button_clicks": 0,
+  "live_finish_source": "silero_vad_silence", "model_eou_observed": false,
+  "model_eob_observed": false, "backchannel_candidate_observed": false, "automatic_backchannel_speech": false,
+  "cleanup_status": "aborted", "isolated_browser_closed": true,
+  "runtime_changes_for_test": false,
+  "limitations": [
+    "Synthetic fake microphone, not physical/noisy-room microphone quality.",
+    "Capture began partway through Chromium's repeating fixture; retained text 'starts at n' is not transcript-accuracy evidence.",
+    "This capture exercised real CPU Silero silence fallback, not Parakeet model EOU/EOB.",
+    "No automatic backchannel speech, canonical consultation or clinician-quality claim."
+  ]
+}

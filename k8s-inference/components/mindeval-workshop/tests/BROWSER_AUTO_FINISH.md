@@ -58,3 +58,13 @@ the final short transcript (`at n`) is not a word-accuracy qualification. Neithe
 capture exercised EOB/backchannel candidates or automatic backchannel speech.
 These are intervened spoken experiences, not canonical consultations or clinician
 quality evidence.
+
+The same complete script passed unchanged on Terraform-deployed r10 image
+`987feef5dc66883351dfae377878f02e233dca5af96004a7453662f0ab6c3392`
+at 18:26:20 UTC, after two updated/available/ready replicas were independently
+verified. Run `22a81a02-4b15-4a49-b1d7-00b80e7aea52` used actual Silero silence
+fallback, retained a 69,676-byte WAV decoded as 2.176 seconds, and was aborted; the
+isolated browser was closed. `r10-final-result.json`, `r10-verification.json` and
+`auto-finish-r10.png` preserve the non-secret evidence and synthetic-fixture
+limitations. This automatic-microphone check does not replace the separate r10
+continuous spoken-playback acceptance.
