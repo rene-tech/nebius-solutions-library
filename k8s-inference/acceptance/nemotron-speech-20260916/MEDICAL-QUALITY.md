@@ -1,5 +1,11 @@
 # Full medical-consultation diagnostic — 2026-09-16
 
+**Subsequent report-generation evaluation:** [English/German report quality](REPORT-QUALITY.md)
+contains seven full ASR-based drafts, English human-reference controls and
+paired German excerpt notes. That later experiment does not change these ASR
+scores or constitute clinical validation; historical statements below describe
+what had been performed at the time of this cohort.
+
 These are measured direct-runtime results, **not public API acceptance or
 clinical qualification**. All five files supplied in
 `/home/tux/demo-assets/medical-speech-en-de-20260916/README.md` were decoded in

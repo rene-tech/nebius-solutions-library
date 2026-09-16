@@ -1,0 +1,1105 @@
+{
+  "created_at": "2026-09-16T13:41:29.515366+00:00",
+  "generation_model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+  "review_model": "openai/gpt-oss-120b",
+  "base_url": "https://api.tokenfactory.nebius.com/v1",
+  "temperature": 0,
+  "source_summary_sha256": "f49c045a8b411c9d1e1d99e016c4994ba0d2765898a5105e81bc604fa4711faf",
+  "multimed_selection": "30 evenly spaced indices floor(i*1090/29), plus explicit missing-output row193",
+  "german_english_only": "not applicable; English ASR is not German-capable",
+  "cases": {
+    "en-01": {
+      "language": "English",
+      "kind": "consultation",
+      "human_reference": "Hello? Hi. Um, should we start? Yeah, okay. <UNSURE>Hello how</UNSURE> um. Good morning sir, how can I help you this morning? Hello, how are you? <UNSURE>Oh</UNSURE> <UNSURE>hey</UNSURE>, um, I've just had some diarrhea for the last three days, um, and it's been affecting me I need to stay close to the toilet. And, um, yeah, it's been affecting my day-to-day activities. <UNIN/> Sorry to hear that. Um, and and when you say diarrhea, what'd you mean by diarrhea? Do you mean you're going to the toilet more often? Or are your stools more loose? Yeah, so it's like loose and watery stool, going to the toilet quite often, uh and like some pain in my, like, lower stomach? <UNIN/> Okay. And how many times a day are you going, let's say, in the last couple of days? <UNSURE>Um</UNSURE>, probably like six or seven times a day? Yeah. Six, seven times a day. And you <UNIN/> mention it's mainly watery. Have you noticed any other things, like blood in your stools? No, no blood, yeah, just watery and loose stool. Okay. And you mentioned you've had some pain in your tummy as well. <UNIN/> Whereabouts is the pain, exactly? Yep. So <UNIN/> in my lower abdomen, so, uh, like, um...yeah, just to one side. One side. <UNSURE>And</UNSURE> what side is that? Uh, on the left side. Left side. Okay, and can you describe the pain to me? Yeah, it feels, um, like a cramp, like a muscular cramp, and, um, yeah i feel a bit uh weak and shaky. Okay. And is the pain, is that, is it there all the time, or does it come and go? Uh, it comes and goes. <UNSURE>Come</UNSURE> and go. Does the pain move anywhere else, for example towards your back? Uh...no, just maybe my stomach. Okay, fine. And you mentioned you've been feeling quite weak and shaky as well. What do you mean by shaky? Do you mean you've been having, uh have you been feeling feverish, for example? <UNSURE>Yeah</UNSURE>. Um, yeah, it doesn't feel like -- yeah, it just <UNSURE>makes</UNSURE> me feel weak. I haven't had a fever, um, at the moment, but I did notice um a temperature when the symptoms started, so, um, yeah around about three or four days ago. <UNIN/> <UNSURE>You</UNSURE> measure your temperature then? Yeah, I <UNSURE>uh</UNSURE> I didn't mention my temperature, no, but I felt, um, just a bit hot. <UNSURE>And</UNSURE>, <UNSURE>y'know</UNSURE>. Okay. Okay. Any other symptoms like sweating, or um, night <UNSURE>sweats</UNSURE>? No? And, uh, any vomiting at all? Uh, no. Yeah, so um, I vomited at the start of the symptoms but now um I've stopped vomiting. <UNSURE>You</UNSURE> stopped vomiting, okay. And was your vomit, I know it's not <UNSURE>a nice thing</UNSURE> to talk about, but was it just normal food colour <UNIN/> Yeah. And there was no blood in your vomit, is that right? Yeah, yeah, just normal vomit, yeah. No no <UNSURE>blood</UNSURE>, no. Yeah. No, okay. Um, and um, any any other symptoms at all? So you mentioned tummy pain, you mentioned diarrhea, you mentioned your vomiting, uh, anything else that comes to mind? Yep. Um, I had a loss of appetite, um, so I haven't been eating as much, but I've been able to hold down fluids. <UNIN/> Okay. Okay, so you're drinking fluids. Um, what kind of foods have you managed to eat, <UNSURE>if</UNSURE> anything? Yep. Um, just soups, and, uh, yeah, light foods. Like smoothies and, yeah, liquid foods mainly. Okay. Fine. Um, and sir <UNIN/> <UNSURE>these</UNSURE> started three days ago the symptoms. <UNSURE>Are you</UNSURE> aware of any triggers which may have caused the <UNSURE>symptoms</UNSURE> uh to kick on. So <UNSURE>for</UNSURE> example, <UNSURE>think like</UNSURE> takeaway foods or eating out or <UNSURE>being</UNSURE> around other people <UNSURE>with</UNSURE> similar symptoms. <UNIN/> Yeah, so I had takeaway about four days ago, um, <UNSURE>uh</UNSURE>, but other than that I've, yeah, been, uh, eating normally. Nothing unusual here. <UNSURE>Okay</UNSURE>. Do you remember <UNSURE>where</UNSURE> you ate? Um, yeah, I <UNIN/> ate at a Chinese restaurant with friends. Yeah. Okay. Anyone else unwell with similar <UNSURE>symptoms</UNSURE>? Um, so no one else in the family, so <UNIN/> a wife and two kids and one, um, child was vomiting, but they haven't got diarrhea. There's no one with the same symptoms. Okay, okay. Fine. Um, alright. And uh, in terms of your <UNIN/>, your overall health, are you normally <UNSURE>fit and</UNSURE> well? Or, uh Um, yeah, I mean, other than um athsma, um I use an inhaler, everything uh else is fine. Okay. And, is your asthma well-controlled? Uh, yeah, that's fine. I just, yeah, use an inhaler, and uh that's under control. Fine. And you don't have any other tummy problem, bowel problems I should be aware of? No. No, okay. Um, and <UNIN/> apart from the inhalers, do you take any other medications? Uh, no, no other medications. <UNSURE>Okay</UNSURE>, fine. And in terms of just your day to day life, you said it's been affecting your life, um, in what way has it been affecting your life? Yeah. Uh, so, I need to stay close to the toilet 'cause I go quite frequently during the these past three days. Um, yeah, other than that, it's uh, yeah, the main concern. Okay. Yeah. And have you, are you currently working at the moment? <UNIN/> Uh, <UNSURE>yes</UNSURE>, yeah. I I work, er. Um, I'm an accountant. <UNSURE>Would, would</UNSURE> work. Okay. Have you been going into work the last three days, or <UNSURE>have you</UNSURE> been at home? Uh, yeah, I've been going to work. Yeah. Yeah, it's been quite difficult. <UNIN/> <UNSURE>okay</UNSURE>. That must be difficult for you then. <UNIN/> <UNSURE>fine</UNSURE>. And you said, you mentioned you live with your wife and two children, is that right? Yes, yeah. <UNSURE>Right</UNSURE>, alright. Um, just <UNSURE>a</UNSURE> couple of other question we need to ask, <UNSURE>sir</UNSURE>. Um, do you smoke at all? Uh, no, I don't smoke. And do you drink much in the way of alcohol? Uh, no, I I don't drink alcohol, no. <UNIN/> Okay. <UNIN/> so um, er normally at this stage I like to um, examine you if that's okay, but um, um, but but having listened to your story, sir, I think uh, um, just to recap <UNIN/> for the last three days you've been having loose stool, diarrhea, a bit of tummy pain uh mainly on the left-hand side, um and <UNIN/> vomiting and <UNSURE>fever and</UNSURE> you're quite weak and lethargic um, you mentioned you had this Chinese takeaway as <UNSURE>little as</UNSURE> three days ago and I wondered whether that might be the cause of your problems. Yeah. <UNIN/> Okay. Um, it seems like you may have something, uh, called gastroenteritis, which essentially just a tummy bug or infection of your <UNSURE>uh</UNSURE> of your tummy. <UNIN/> Uh, mainly caused by viruses but there can be a possibility of bacteria uh causing <UNSURE>its</UNSURE> symptoms. Um. Yeah. Yeah. At this stage, uh, what, what we'd recommend is just what we <UNSURE>say</UNSURE> conservative management. So, um, I don't think you need anything like antibiotics. It's really just, um, making sure you're well hydrated, so drinking fluids. <UNIN/> Mm-hmm. Um, <UNIN/> there are things like Dioralyte you can get from the pharmacy, which uh it's um it helps helps replenish your minerals and vitamins. Okay. Um, and if you are having vomiting diarrhea I <UNSURE>would say</UNSURE> recommend <UNSURE>that</UNSURE> in the first, you know, first couple of days. Yep. <UNIN/> If you are feeling feverish and weak, <UNSURE>eh</UNSURE> taking some paracetamol, uh, <UNIN/> two tablets up to four times a day for the first few days can also help. <UNSURE>Yep</UNSURE>. I <UNSURE>will</UNSURE> certainly advise you to take some time <UNSURE>off</UNSURE> work, <UNSURE>actually</UNSURE> I know you're quite keen to work but I would say the next two, two to three days as <UNSURE>the infection</UNSURE> clears from your system to take some time off and rest. Okay. Yeah. Um, <UNSURE>I'll admit</UNSURE> if your symptoms haven't got better, you know, in in three to four days, <UNSURE>I'd</UNSURE> like to come and see you again. <UNIN/> Okay, <UNSURE>sure</UNSURE>. Because if it is ongoing then we have to wonder whether something else <UNSURE>caused</UNSURE> your symptoms. Yep. <UNSURE>Uh</UNSURE>, and we may need to do further <UNSURE>tests</UNSURE> like um taking a sample of your stool so we can test that. <UNIN/> Um, etcetera etcetera. Yep, sure, yep. How's that sound? That sounds great, yeah. Yeah. <UNIN/> Do you have any questions for me? Um, no, no further questions, <UNSURE>no</UNSURE>. Okay, and is uh is the treatment plan clear? Uh, <UNSURE>yes</UNSURE>, yeah, that's that's very clear. Thank you. Great. Well, I wish you all the best. Okay, thank you. Bye. <UNIN/> Thank you. <UNSURE>Bye bye</UNSURE>.",
+      "reference_provenance": {
+        "files": [
+          {
+            "path": "references/en/day1_consultation01_doctor.TextGrid",
+            "sha256": "a727b4f53fd0c21750405fa683a0079585d9cf3cf763d3ced51bde9673a3eb04"
+          },
+          {
+            "path": "references/en/day1_consultation01_patient.TextGrid",
+            "sha256": "7082e1abf185b30a82d57d585b999d4f11263e006359249aeffbad1061bfd0bd"
+          }
+        ],
+        "overlapping_adjacent_turns": 65
+      },
+      "clinician_note": "3/7 hx of diarrhea, mainly watery. No blood in stool. Opening bowels x6/day. Associated LLQ pain - crampy, intermittent, nil radiation.  Also vomiting - mainly bilous. No blood in vomit. Fever on first day, nil since. Has been feeling lethargic and weak since. \n\nTakeaway 4/7 ago - Chinese restaurant. Wife and children also unwell with vomiting, but no diarrhea. No other unwell contacts. \n\nPMH: Asthma\nDH: Inhalers\nSH: works as an accountant. Lives with wife and children. Affecting his ADLs as has to be near toilet often. \nNil smoking/etOH hx\n\nImp: gastroenteritis \n\nPlan:\nConservative management - rest, push fluids, paracetamol if feverish. Recommend OTC diarolyte. To review in 3-5d if symptoms not improving. To see earlier if feeling more unwell. \n"
+    },
+    "en-02": {
+      "language": "English",
+      "kind": "consultation",
+      "human_reference": "Hello? Hello. Can you hear me well? Uh uh yes. I think. It's a bit better. It's a bit, it's a bit, it's not very clear. But <UNIN/> let's continue anyway. OK. Uh, OK. Let's start again. So how can I help you sir? Yes. So, it's been a few days now. I have like a sore, and a red skin. It's kind of, it's really itchy, and it's like super annoying. So I'd like to find something quick to solve it. OK. No, no problem. I'm happy to help. Um whereabouts in your skin is it affected? Uh, mostly like my chest, my, my hands, my arms. Like, like really, it's it's super annoying. Like it's itching a lot, like all the time. And I can't even sleep at night. <UNIN/> I really need something quickly to, to solve it. Because even at work I, I can, when I'm in a meeting and I have to, like uh think about my work, I can't focus, I can't actually focus on my work. It's really annoying because I can't actually think about, uh, what I have to say. I'm always like, uh, disturbed by this disease. Yeah. <INAUDIBLE_SPEECH/> No no, OK. <INAUDIBLE_SPEECH/> I'm <UNSURE>certain </UNSURE> this is obviously affecting you. And uh we'll try our very best to get get this sorted out for you. Um, have you had anything like this before in the past? Um so yes. Uh earlier I was like prescribed for my eczema. OK. And <INAUDIBLE_SPEECH/> they gave me like some cream, and something to, uh when I like <UNIN/> shower, when I was in the shower, had to put something. But um OK. Did it help? Um I mean, at that time yes. That's, those symptoms, like these symptoms appear like, when the symptoms appeared again, I tried those and it didn't work. I've tried a few things. Like I bought a, a steroid cream at the pharmacy last night. But it apparently didn't help, because it's still itching a lot today. Uh, yeah. <UNSURE>OK</UNSURE>. OK. Do you remember the name of the cream you bought? A steroid cream. OK, steroid, OK. <UNIN/> um <UNIN/> would you say these symptoms are very similar to your eczema symptoms, or different? Um <UNIN/> it's much more like itchy. And my eczema was more like only in the arm. But now it's <UNIN/> also on the chest. And in the on the, on the hands as well. OK. Like <UNSURE>pretty</UNSURE>, yeah when, like I like, for instance hiking, during the weekend. And <INAUDIBLE_SPEECH/> I am, I can't really do it anymore, because it's like very <UNIN/> like I wanted to do that last weekend. And because super painful, and I I have to take like showers every day to be able to, cannot uh ease this itching part, which is very very annoying. Yes. No. <UNIN/> Well OK. That's <UNIN/> so you mentioned the itchiness. Um you also mentioned it's been quite sore. Yeah. Um have you, have you noticed any uh bleeding or discharge from your skins? <UNIN/>. OK. No. Um so my skin is a bit cracked in some parts, like kind of cracked, if you see what I mean. But uh, yeah. OK. You've not, haven't uh seen any other uh pus or blood, coming out of your skin. No. No. And you mentioned it all started three days ago. Are you, four days ago. Are you aware of any triggers, or anything that you may have done, that may have caused your symptoms to start? Four days ago. So for example, have you changed your uh shower gel, any clothing? Have you been around anyone else? No I <UNIN/>. It's actually like, it's really annoying, because I'm thinking about, <UNIN/> maybe I should change something. Because I I haven't, and I don't understand <UNIN/> I cannot, um afraid of asking people around me because it's cannot you know um, I don't feel really comfortable asking about these questions. It's kind of intimate that. So I <INAUDIBLE_SPEECH/> your help now. Mm. Mm. No no, OK. That's OK. Um Fine, so just to resummarize. For the last four days, you've had very itchy skin, very sore skin all over your body, mainly your chest. And did you also mention your arms and legs as well? <UNSURE>Yeah</UNSURE>. Uh, no. Just the chest, hands and like, like inside the elbows. Yeah. <INAUDIBLE_SPEECH/> OK. <UNIN/> anything on your face at all? Am I what? On your face? On my face? No. No, OK. And apart from this, any other symptoms have you noticed? For example, have you noticed any temperature or fevers? No. <UNIN/> just very itchy. Nothing else. Itchy. OK. So your, your bowels are working OK? Your chest is OK? No cough, no breathing difficulties? No. You're passing urine OK. I I think so. OK, alright. Um It's always good to know. So, I mean, do you have any ideas as to what could be causing your symptoms? Any what? Any ideas, as to what could be causing your symptoms? Um <UNIN/> so I had eczema before. So maybe it's <UNSURE>disease</UNSURE>, but it seems like more uh, like uh my eczema was only on the arms. So, I'm I'm not sure. I I really have no idea. <INAUDIBLE_SPEECH/> OK. That's OK. So um, normally at this stage I like to examine you. Um To see the rash itself, to see exactly what type of rash it is. But from what you've told me, you mentioned it's, you've got some dry skin and some, uh cracked skin as well. Uh and has been very itchy. And so would your um Yeah. Uh your your background of eczema. Um <UNSURE>So</UNSURE> Sorry to say, there's a couple of questions I wanted to ask you, which I completely forgot, my apologies. Um, apart from the eczema, do you have any other medical problems I should be aware of? Uh, no. I just had asthma in the past. But not anymore. OK. Not anymore, OK. And do you take any regular medications at the moment? Uh no. No, OK. Do you have any allergies to anything? I <UNIN/> like some <UNIN/>, sorry? Yeah? <UNIN/> sorry I said do you have any allergies to anything? <INAUDIBLE_SPEECH/> Hello? Hello? Yes. <UNIN/> can you hear me? That's alright I think it <UNIN/>. Uh do you have any allergies at all? Ohh, allergies. Uh, no. No, OK. Um and tell me about your um uh your situation at home. Who do you live with? Uh so, I live with a few flatmates. I'm a, so you know I'm thirty one. Uh I, yeah I'm I have a full time job. And so I'm living with a few people to save money. OK. And what do you do for work? Uh I work uh at a pharmaceutical company. So it's been a, it's been a few years now. Uh it's uh, it's kind of interesting. We're working I'm a, like a kind of project manager. Uh I mean, do you want to, to know more about it? OK. Uh no no no that's <UNIN/>, that's absolutely fine. Um just a couple of questions I want to ask you, which can sometimes affect your symptoms, is, do you smoke at all? No. No. And do you drink much in the way of alcohol? <INAUDIBLE_SPEECH/> Uh you know, <UNIN/> once in a while I can, I like hanging out with people once in a while. So yeah I'd say a few, a few beers per week. Something like this. Nothing, nothing crazy. I used to drink a lot more when I was younger. But it's been, it's been a while. <UNIN/> OK. OK. OK I've got to say, at this stage I've got to say <UNIN/> this sound quality is not uh great. But I will continue because we've come this far. Um So um, based on everything you mentioned <UNSURE>Sarah </UNSURE>, <UNIN/> I do wonder whether this is a flare-up of your eczema. Um <INAUDIBLE_SPEECH/> The reason being that you said it was quite itchy. Um it's mainly affecting your chest and your back. Um and uh, having looked at your skin, uh the the the rash does appear quite familiar. Um you mentioned <UNIN/> using steroid creams, yesterday. <INAUDIBLE_SPEECH/> Um from the pharmacy. I wonder whether giving you a stronger prescription of a <UNIN/> of a steroid may be beneficial. Uh, which I'm happy to prescribe to you today. As well as, I'm going to give you something, some emollients, which helps to moisturize the skin. OK. OK. Um which <UNIN/> use in the bath and shower. And it's definitely worth um using that for the first seven to ten days. OK. Uh before we make the decision on whether it's working or not. OK. Um it's also worth um using antihistamines, which you can sometimes buy over counter. Things like Loratadine or Piriton, which can help the itchiness of your skin. OK. And uh, um it's also worth keeping a diary of any triggers which are affecting your symptoms, anything you wear or anything you use, in terms of shower gels or soap. Because if that's causing your symptoms, then we need to have a discussion about an eczema CU. OK. Yes, I have tried antihistamines, uh lately, but it didn't really help. Ohh, could you say that again, sorry? I have tried uh antihistamines, but uh but it didn't really help. OK. <UNIN/> OK. So it's something for you to think about. <UNIN/> you can get different types of antihistamines. I can give you something a little bit stronger today as well. Um, something like Fexofenadine, which I can give to you today. It's definitely worth trying, and it's not going to do you any harm. OK. Um but I <UNIN/> think using the steroids and the emollients, um on a regular basis Uh over the next week to ten days, should hopefully <UNIN/> control your symptoms. But do come back and see me next week, if things don't get better. That sounds good. OK? Um do you have any questions for me? Uh, no that's it. Thank you very much. Bye. Thank you as well. Bye. OK. Well I wish you all the best. Thank you. Have a good day.",
+      "reference_provenance": {
+        "files": [
+          {
+            "path": "references/en/day1_consultation02_doctor.TextGrid",
+            "sha256": "4a33e030a4670936754821469855e63cb3263b1575da098cacd1158b48684277"
+          },
+          {
+            "path": "references/en/day1_consultation02_patient.TextGrid",
+            "sha256": "61ae00734844852f9fd70df574b02aa79b3da4b654464bd0d70191266a5f78fa"
+          }
+        ],
+        "overlapping_adjacent_turns": 47
+      },
+      "clinician_note": "4/7 hx of dry itchy skin, mainly on chest and back. Skin is also sore and cracked. No bleeding or discharge. No spread elsewhere. Not aware of any triggers. Used steroid cream OTC last night with minimal effect. Pt has also tried antihistamines. \nSystemically well otherwise - no fevers, no vomiting, no SOB/cough. No bowel sx. \n\nPMH: Eczema, Asthma \nDHx: Nil regular\nNKDA\nSH: lives with flatmates, works as a pharmaceutical manager. Non-smoker, social EtOH. \nICE: pt thinks might be related to eczema. No concerns\n\nImp: flare up of eczema\n\nPlan:\n1.\tSteroid cream - Betnovate BD\n2.\tEmollients - cetraben - use up to QDS\n3.\tTrial antihistamines\n4.\tKeep trigger diary \n5.\tReview in 10-14d if symptoms no better, or earlier if any concerns/worsening sx\n"
+    },
+    "de-herzrasen": {
+      "language": "German",
+      "kind": "consultation",
+      "human_reference": null,
+      "excluded_narration": "Sie arbeiten als Vertretung des Hausarztes in der Praxis von Doktor Berg. Der Patient Jens Mager stellt sich heute mit Herzbeschwerden bei Ihnen vor. Vor der körperlichen Untersuchung möchten Sie mit ihm eingespräch führen. ",
+      "boundary_method": "Conservative transcript-text marker; not audio adjudicated"
+    },
+    "de-grippaler-infekt": {
+      "language": "German",
+      "kind": "consultation",
+      "human_reference": null,
+      "excluded_narration": "Sie arbeiten als Vertretung des Hausarztes in der Praxis von Doktor Berg. Der Patient Jonas Neu stellt sich heute mit Symptomen eines gripalen Infekts bei Ihnen vor. Vor der körperlichen Untersuchung möchten Sie mit ihm ein Gespräch über seine aktuellen Beschwerden führen. ",
+      "boundary_method": "Conservative transcript-text marker; not audio adjudicated"
+    },
+    "de-polyarthritis": {
+      "language": "German",
+      "kind": "consultation",
+      "human_reference": null,
+      "excluded_narration": "Die Patientin Frau Miriam Klein klagt seit mehreren Wochen über bestehende Gelenkschmerzen, Schwellungen und Morgensteifigkeit in den FingernGestern wurde sie in ihrer Hausarztpraxis diesbezüglich untersucht. Auch wurde Blut abgenommen. Die Laborwerte sprechen im Kontext der Anamnese mit an Sicherheit grenzender Wahrscheinlichkeit für das Vorliegen einer chronischen Polyatritis. Heute kommt die Patientin, um über das Ergebnis der Laboruntersuchungen zu sprechenIhre Aufgabe ist es der Patientin die schlechte Nachricht zu übermitteln, dass sie an Gelenkräume erkrankt ist ",
+      "boundary_method": "Conservative transcript-text marker; not audio adjudicated"
+    },
+    "multimed-0000": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "nicht nur HIV sein, Maßnahmen ergreift, um den Ausbruch einer Erkrankung zu verhindern oder, ich sage es etwas zurückhaltender, ihren Verlauf abzumildern! Das machen Sie",
+      "sample_group": "systematic_sample",
+      "audio_sha256": "733c8fc54418d4750bd802e4f5beba27b07a7d51718595adecdfddde24e0ae50",
+      "source_index": 0
+    },
+    "multimed-0037": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "Sie sind jetzt im Krankenhaus, Herr Müller … Ich werde Sie jetzt untersuchen und der Herr Fuchs neben mir wird Ihnen den Blutdruck messen … Er hat ja vorhin nur gelallt. Jetzt hat",
+      "sample_group": "systematic_sample",
+      "audio_sha256": "6108f470b693bea52dbc7697b5c4df7b5886989c406c687e8f6b8f4ea8a8a02b",
+      "source_index": 37
+    },
+    "multimed-0075": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "Aber er hat wahnsinnig geblutet und dann noch der Sprung? Das kann man doch gar nicht überleben. Oder? Herr Doktor, wird er überleben? Ich fühle mich so schuldig …",
+      "sample_group": "systematic_sample",
+      "audio_sha256": "f3e74643530840907e5b2c31b6dc3792c388ce23deec8e7802ba725996941bfe",
+      "source_index": 75
+    },
+    "multimed-0112": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "Das passiert ganz oft, dass du denkst, du kannst das nicht. Und dann ist das wie so eine Blockade in deinem Kopf. Sobald du aber anfängst, es zu machen, funktioniert es.",
+      "sample_group": "systematic_sample",
+      "audio_sha256": "532d7daa582f607773c374f3a022578cb9c48fffc4fa77da4a3bce19bf9bce5d",
+      "source_index": 112
+    },
+    "multimed-0150": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "wirklich notwendig ist. Schließlich wollen Sie ja auch diesen Blasenkatheter wieder loswerden. So, was liegt für heute noch an? Die Oberärztin möchte, dass wir die komplette Tumordiagnostik durchführen, bevor Herr Trabitz entlassen wird.",
+      "sample_group": "systematic_sample",
+      "audio_sha256": "15eb61e09ade62f968983f98eb79d97f86dec93037a6d37600ed53bf477bb719",
+      "source_index": 150
+    },
+    "multimed-0187": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "der oben kurz angesprochenen Grundbedingungen erfüllen, werden Sie als potentieller Partner des Unternehmen-Weltladen ausgewählt und bekommen Zugang zu unserem umfangreichen Informationspool.",
+      "sample_group": "systematic_sample",
+      "audio_sha256": "57dcfb6c92d66254bb24d6f098f7534e9d465d5a172a966b05033a2b2fe840fa",
+      "source_index": 187
+    },
+    "multimed-0193": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "96, 110, 96. * Musik * Hallihallo. (Frau) Emily, falsches Zimmer.",
+      "sample_group": "missing_output_challenge",
+      "audio_sha256": "476ddedbd48ab113371175a659dc2931ee25926364c961e47d415a9b9bed5b42",
+      "source_index": 193
+    },
+    "multimed-0225": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "Welt ihrer Leidenschaft nachgehen der Musik. Bad Arolsen, eine Kleinstadt in Nordhessen, nordwestlich von Kassel, hat rund 15.500 Einwohner. Umso erstaunlicher, dass hier",
+      "sample_group": "systematic_sample",
+      "audio_sha256": "0046ee52825013bf7830a0b2a404c1aac0cf4f3fca57b04d04d1472938f6e124",
+      "source_index": 225
+    },
+    "multimed-0263": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "Der Roboter ist nie krank, braucht keinen Urlaub, hat keine Familie, für die er sorgen muss und arbeitet präziser und gleichmäßiger als sein menschlicher Kollege. Der Mensch wird",
+      "sample_group": "systematic_sample",
+      "audio_sha256": "3e82698bfd898de2f2d75f644f11b12590c6054ba6ac72d8599861ace13064a8",
+      "source_index": 263
+    },
+    "multimed-0300": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "Wie ist Ihre Einschätzung bezüglich seiner Alkoholabhängigkeit? Er gibt an, seit einem Jahr fast nichts mehr zu trinken. Und er wirkt auf mich psychisch sehr geordnet und glaubwürdig. Darüber hinaus hat der Patient keine Vorerkrankungen. Vielleicht",
+      "sample_group": "systematic_sample",
+      "audio_sha256": "12d589edea71119c453c7c9d35d3afbad639e27958dc64331ae5ce1373cbbf29",
+      "source_index": 300
+    },
+    "multimed-0338": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "Frau Menzel, Sie sind am 14. März 1963 geboren, ist das richtig? Ja, das stimmt. Und ich wohne im Hüttenweg 23 und nicht Hüterweg.",
+      "sample_group": "systematic_sample",
+      "audio_sha256": "0207328d81a33cd472ecf963dd05e9ba7e28c6682488d995b6ee18832848dca6",
+      "source_index": 338
+    },
+    "multimed-0375": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "setzt die Fettverbrennung ein, eine halbe Stunde täglich ist mindestens anzustreben. Sie sind ja selbst ein Spätberufener in Laufdingen?",
+      "sample_group": "systematic_sample",
+      "audio_sha256": "24285e5ad8bec21b28183930c00290a9fa7a672de15b5ec859b26b15b838b154",
+      "source_index": 375
+    },
+    "multimed-0413": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "Ja, da ist in der letzten Zeit einiges dazugekommen. Wieso? Nach dem Tod meiner Frau, da ging es mir gar nicht gut. Und da konnte ich überhaupt nicht mehr schlafen. Und es ging mit mir nur noch bergab …",
+      "sample_group": "systematic_sample",
+      "audio_sha256": "a6a0cb2543d062797d33fb6f2c81acfe52098699a462dc0000a136f9ddd400ef",
+      "source_index": 413
+    },
+    "multimed-0451": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "Sie studiert Pflegemanagement. Ich weiß, wenn ich abends schlafen gehe, kann ich mit einem guten Gewissen schlafen.",
+      "sample_group": "systematic_sample",
+      "audio_sha256": "09206d21e39da39a8eb5b4976abf770fa55eeb8873874f4b2b3c0f0e33de500c",
+      "source_index": 451
+    },
+    "multimed-0488": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "oder Bären die geplante Untersuchung vorspielen … … das dürfte wohl kaum das Jahresbudget sprengen. Frau Dierhof, Sie möchten noch etwas einwenden? Nein, nein. Ich möchte auf einen weiteren Punkt",
+      "sample_group": "systematic_sample",
+      "audio_sha256": "e5c629b041e19d4b93313a7f6f7e888de76b0eeb96a58c1bb89f3ac1029fd919",
+      "source_index": 488
+    },
+    "multimed-0526": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "Gastroenteritis. Seit gestern leichte Verwirrtheit und Tachykardie. Klinisch typische Zeichen der Dehydration, Oligurie, Elektrolyte im Normbereich bei erhöhtem Hämatokrit von 53 % … Und Frau Steffen, was hätten Sie vorgeschlagen?",
+      "sample_group": "systematic_sample",
+      "audio_sha256": "c361235aae6bcc2f8fc90217a1b8371d14e2cc2480ae1739be5996ff80f669db",
+      "source_index": 526
+    },
+    "multimed-0563": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "haben in unseren büroräumen jetzt über 30 grad das ist nicht akzeptabel schicken sie bitte umgehend einen techniker der das in ordnung bringt das muss heute noch erledigt werden bis 17 uhr bin",
+      "sample_group": "systematic_sample",
+      "audio_sha256": "10c6bdd3219200d4342b9aeb6ccffc5561c73dd5ceb1e93b3976c6d720455d40",
+      "source_index": 563
+    },
+    "multimed-0601": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "Wir wollen ja morgen früh nach Spanien. Und wegen der Bauchschmerzen. Also, die hat er schon öfter, bevor wir losfahren, wissen Sie … Morgen besuchen wir erst Oma und",
+      "sample_group": "systematic_sample",
+      "audio_sha256": "55626205bc3f5903c50996ca8fc296f7347c471a4cfb17692780cee1e6480354",
+      "source_index": 601
+    },
+    "multimed-0638": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "auch in der Notaufnahme, wenn Sie zum Beispiel gegen Tetanus impfen! Es sollte auch klar sein, dass eine solche Prophylaxe nicht zu 100 Prozent wirkt! So, bevor wir später auf die Details eingehen, nun der zweite Fall:",
+      "sample_group": "systematic_sample",
+      "audio_sha256": "a58575b5398aabefaef92c8b70d6bf53d4ba55e9739e51396aba09a657a990a0",
+      "source_index": 638
+    },
+    "multimed-0676": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "zur firma das heißt sie dürfen mit ihrer chipkarte die haupteingangstür und alle türen zu den bereichen in denen sie arbeiten öffnen zum beispiel sie frau und mann sind assistentin der",
+      "sample_group": "systematic_sample",
+      "audio_sha256": "92df0b55da7019fa398b645522ca5cbc787a563ab4ebe75b48d9ee76aa95828a",
+      "source_index": 676
+    },
+    "multimed-0714": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "zuführen, die er von selbst nicht oder nicht in genügend von selbst produziert. Das heißt, dass man seinen Körper künstlich manipuliert und das hat in den allermeisten Fällen eine negative",
+      "sample_group": "systematic_sample",
+      "audio_sha256": "0b500dc0826a913a75c5428c9d0790f226d9a0b19f76fd9d0c58c7ae876e0d98",
+      "source_index": 714
+    },
+    "multimed-0751": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "Dann können Schmerzen **ziehend** sein. Ziehende Schmerzen — so, als würde jemand an eurem Körperteil ziehen oder euch auseinanderziehen.",
+      "sample_group": "systematic_sample",
+      "audio_sha256": "b54685aac064dd1c7c7ee02a01ac3fe9ba26c54f444037baa48a22acf031b670",
+      "source_index": 751
+    },
+    "multimed-0789": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "normal gewesen, aber dann zum Mittagessen nicht mehr erschienen. Eine Pflegekraft habe sie sehr unruhig und aggressiv im Bett vorgefunden. Bei der Aufnahme war",
+      "sample_group": "systematic_sample",
+      "audio_sha256": "7467bfd5f34786b7c3f5e115e1942d7f6a5251e2524ba0769cb6ac42437f493b",
+      "source_index": 789
+    },
+    "multimed-0826": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "woher ich komme. Und leider Universitäten in Simbabwe sind ein bisschen teuer. Aber trotzdem, jetzt ist eine neue Umgebung und so,",
+      "sample_group": "systematic_sample",
+      "audio_sha256": "2235be49b9c73724c10059509121b68d1cfb6fa608973f893ab004c6dc01ca89",
+      "source_index": 826
+    },
+    "multimed-0864": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "sondern diesen teil vorher auch trainieren ja jetzt spreche ich über angemessene kleidung für das vorstellungsgespräch denn auch die kleiderwahl ist davon abhängig wo man sich bewirbt angemessen",
+      "sample_group": "systematic_sample",
+      "audio_sha256": "7bd03c1e0aeb7c1aac88e1d8e174d7dff0ace434e0b927c111cb144ac84213ff",
+      "source_index": 864
+    },
+    "multimed-0902": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "dank dann kommen wir zur eigentlichen prüfung zu teil 1 a herr gül fangen sie bitte an hier sind zwei themen zur auswahl suchen sie sich ein thema aus und sprechen sie darüber er danke [Musik] ich",
+      "sample_group": "systematic_sample",
+      "audio_sha256": "e5a35a5822e5ada96d273bd99e3cc2d6944331da446c4be4aa73b4376ac35b11",
+      "source_index": 902
+    },
+    "multimed-0939": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "Dementsprechend müssen wir das Bett hochfahren oder hochpumpen. Nicht erschrecken, wir machen jetzt Oberkörper ein Stück runter. Alles klar? - Ja.",
+      "sample_group": "systematic_sample",
+      "audio_sha256": "28767f821ff854e606d3365518c4b54cd5eef783681e8977dfbbacf94ab552ae",
+      "source_index": 939
+    },
+    "multimed-0977": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "Ich meine ja auch meine Igel, die ich kenne. Du schaffst das niemals! Doch! Das will ich sehen, ob du das schaffst! So, guck hier! Super, da kann ich",
+      "sample_group": "systematic_sample",
+      "audio_sha256": "0839e7ae62187b9b9ee7183d21dd974dbe83593dcf22264edfff7c93582eed1b",
+      "source_index": 977
+    },
+    "multimed-1014": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "hilfe von kollegen die noch nicht da sind oder schon weg sind da bin ich mir nicht so sicher es kann auch sein dass ich allein im büro mehr stress habe das ist doch toll dann kannst du arbeiten und",
+      "sample_group": "systematic_sample",
+      "audio_sha256": "9cd0b487090df57e5f65314ccaeb726aca854f15c8cb04fe14132122ce083fac",
+      "source_index": 1014
+    },
+    "multimed-1052": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "Muss ich ja! Alles Gute, Herr Trabitz. So, und das ist der Herr … Die junge Frau kenn ich! Das ist die Frau Steffens. Die hat heute Morgen bei Ihnen Blut abgenommen.",
+      "sample_group": "systematic_sample",
+      "audio_sha256": "a411087e591c4625b0363912b64d4b222cb144fc596dc970321b74c498dece6f",
+      "source_index": 1052
+    },
+    "multimed-1090": {
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "human_reference": "130 zu 90. Ihr Blutdruck ist leicht erhöht. Wir überprüfen noch Ihre Blutwerte.",
+      "sample_group": "systematic_sample",
+      "audio_sha256": "1ae7d2fe1e5f8efcb7a25996d7b18b5bbf9ea7dd362812184648a9b7246900df",
+      "source_index": 1090
+    }
+  },
+  "inputs": [
+    {
+      "id": "en-01-reference",
+      "case": "en-01",
+      "source": "human_reference",
+      "text": "Hello? Hi. Um, should we start? Yeah, okay. <UNSURE>Hello how</UNSURE> um. Good morning sir, how can I help you this morning? Hello, how are you? <UNSURE>Oh</UNSURE> <UNSURE>hey</UNSURE>, um, I've just had some diarrhea for the last three days, um, and it's been affecting me I need to stay close to the toilet. And, um, yeah, it's been affecting my day-to-day activities. <UNIN/> Sorry to hear that. Um, and and when you say diarrhea, what'd you mean by diarrhea? Do you mean you're going to the toilet more often? Or are your stools more loose? Yeah, so it's like loose and watery stool, going to the toilet quite often, uh and like some pain in my, like, lower stomach? <UNIN/> Okay. And how many times a day are you going, let's say, in the last couple of days? <UNSURE>Um</UNSURE>, probably like six or seven times a day? Yeah. Six, seven times a day. And you <UNIN/> mention it's mainly watery. Have you noticed any other things, like blood in your stools? No, no blood, yeah, just watery and loose stool. Okay. And you mentioned you've had some pain in your tummy as well. <UNIN/> Whereabouts is the pain, exactly? Yep. So <UNIN/> in my lower abdomen, so, uh, like, um...yeah, just to one side. One side. <UNSURE>And</UNSURE> what side is that? Uh, on the left side. Left side. Okay, and can you describe the pain to me? Yeah, it feels, um, like a cramp, like a muscular cramp, and, um, yeah i feel a bit uh weak and shaky. Okay. And is the pain, is that, is it there all the time, or does it come and go? Uh, it comes and goes. <UNSURE>Come</UNSURE> and go. Does the pain move anywhere else, for example towards your back? Uh...no, just maybe my stomach. Okay, fine. And you mentioned you've been feeling quite weak and shaky as well. What do you mean by shaky? Do you mean you've been having, uh have you been feeling feverish, for example? <UNSURE>Yeah</UNSURE>. Um, yeah, it doesn't feel like -- yeah, it just <UNSURE>makes</UNSURE> me feel weak. I haven't had a fever, um, at the moment, but I did notice um a temperature when the symptoms started, so, um, yeah around about three or four days ago. <UNIN/> <UNSURE>You</UNSURE> measure your temperature then? Yeah, I <UNSURE>uh</UNSURE> I didn't mention my temperature, no, but I felt, um, just a bit hot. <UNSURE>And</UNSURE>, <UNSURE>y'know</UNSURE>. Okay. Okay. Any other symptoms like sweating, or um, night <UNSURE>sweats</UNSURE>? No? And, uh, any vomiting at all? Uh, no. Yeah, so um, I vomited at the start of the symptoms but now um I've stopped vomiting. <UNSURE>You</UNSURE> stopped vomiting, okay. And was your vomit, I know it's not <UNSURE>a nice thing</UNSURE> to talk about, but was it just normal food colour <UNIN/> Yeah. And there was no blood in your vomit, is that right? Yeah, yeah, just normal vomit, yeah. No no <UNSURE>blood</UNSURE>, no. Yeah. No, okay. Um, and um, any any other symptoms at all? So you mentioned tummy pain, you mentioned diarrhea, you mentioned your vomiting, uh, anything else that comes to mind? Yep. Um, I had a loss of appetite, um, so I haven't been eating as much, but I've been able to hold down fluids. <UNIN/> Okay. Okay, so you're drinking fluids. Um, what kind of foods have you managed to eat, <UNSURE>if</UNSURE> anything? Yep. Um, just soups, and, uh, yeah, light foods. Like smoothies and, yeah, liquid foods mainly. Okay. Fine. Um, and sir <UNIN/> <UNSURE>these</UNSURE> started three days ago the symptoms. <UNSURE>Are you</UNSURE> aware of any triggers which may have caused the <UNSURE>symptoms</UNSURE> uh to kick on. So <UNSURE>for</UNSURE> example, <UNSURE>think like</UNSURE> takeaway foods or eating out or <UNSURE>being</UNSURE> around other people <UNSURE>with</UNSURE> similar symptoms. <UNIN/> Yeah, so I had takeaway about four days ago, um, <UNSURE>uh</UNSURE>, but other than that I've, yeah, been, uh, eating normally. Nothing unusual here. <UNSURE>Okay</UNSURE>. Do you remember <UNSURE>where</UNSURE> you ate? Um, yeah, I <UNIN/> ate at a Chinese restaurant with friends. Yeah. Okay. Anyone else unwell with similar <UNSURE>symptoms</UNSURE>? Um, so no one else in the family, so <UNIN/> a wife and two kids and one, um, child was vomiting, but they haven't got diarrhea. There's no one with the same symptoms. Okay, okay. Fine. Um, alright. And uh, in terms of your <UNIN/>, your overall health, are you normally <UNSURE>fit and</UNSURE> well? Or, uh Um, yeah, I mean, other than um athsma, um I use an inhaler, everything uh else is fine. Okay. And, is your asthma well-controlled? Uh, yeah, that's fine. I just, yeah, use an inhaler, and uh that's under control. Fine. And you don't have any other tummy problem, bowel problems I should be aware of? No. No, okay. Um, and <UNIN/> apart from the inhalers, do you take any other medications? Uh, no, no other medications. <UNSURE>Okay</UNSURE>, fine. And in terms of just your day to day life, you said it's been affecting your life, um, in what way has it been affecting your life? Yeah. Uh, so, I need to stay close to the toilet 'cause I go quite frequently during the these past three days. Um, yeah, other than that, it's uh, yeah, the main concern. Okay. Yeah. And have you, are you currently working at the moment? <UNIN/> Uh, <UNSURE>yes</UNSURE>, yeah. I I work, er. Um, I'm an accountant. <UNSURE>Would, would</UNSURE> work. Okay. Have you been going into work the last three days, or <UNSURE>have you</UNSURE> been at home? Uh, yeah, I've been going to work. Yeah. Yeah, it's been quite difficult. <UNIN/> <UNSURE>okay</UNSURE>. That must be difficult for you then. <UNIN/> <UNSURE>fine</UNSURE>. And you said, you mentioned you live with your wife and two children, is that right? Yes, yeah. <UNSURE>Right</UNSURE>, alright. Um, just <UNSURE>a</UNSURE> couple of other question we need to ask, <UNSURE>sir</UNSURE>. Um, do you smoke at all? Uh, no, I don't smoke. And do you drink much in the way of alcohol? Uh, no, I I don't drink alcohol, no. <UNIN/> Okay. <UNIN/> so um, er normally at this stage I like to um, examine you if that's okay, but um, um, but but having listened to your story, sir, I think uh, um, just to recap <UNIN/> for the last three days you've been having loose stool, diarrhea, a bit of tummy pain uh mainly on the left-hand side, um and <UNIN/> vomiting and <UNSURE>fever and</UNSURE> you're quite weak and lethargic um, you mentioned you had this Chinese takeaway as <UNSURE>little as</UNSURE> three days ago and I wondered whether that might be the cause of your problems. Yeah. <UNIN/> Okay. Um, it seems like you may have something, uh, called gastroenteritis, which essentially just a tummy bug or infection of your <UNSURE>uh</UNSURE> of your tummy. <UNIN/> Uh, mainly caused by viruses but there can be a possibility of bacteria uh causing <UNSURE>its</UNSURE> symptoms. Um. Yeah. Yeah. At this stage, uh, what, what we'd recommend is just what we <UNSURE>say</UNSURE> conservative management. So, um, I don't think you need anything like antibiotics. It's really just, um, making sure you're well hydrated, so drinking fluids. <UNIN/> Mm-hmm. Um, <UNIN/> there are things like Dioralyte you can get from the pharmacy, which uh it's um it helps helps replenish your minerals and vitamins. Okay. Um, and if you are having vomiting diarrhea I <UNSURE>would say</UNSURE> recommend <UNSURE>that</UNSURE> in the first, you know, first couple of days. Yep. <UNIN/> If you are feeling feverish and weak, <UNSURE>eh</UNSURE> taking some paracetamol, uh, <UNIN/> two tablets up to four times a day for the first few days can also help. <UNSURE>Yep</UNSURE>. I <UNSURE>will</UNSURE> certainly advise you to take some time <UNSURE>off</UNSURE> work, <UNSURE>actually</UNSURE> I know you're quite keen to work but I would say the next two, two to three days as <UNSURE>the infection</UNSURE> clears from your system to take some time off and rest. Okay. Yeah. Um, <UNSURE>I'll admit</UNSURE> if your symptoms haven't got better, you know, in in three to four days, <UNSURE>I'd</UNSURE> like to come and see you again. <UNIN/> Okay, <UNSURE>sure</UNSURE>. Because if it is ongoing then we have to wonder whether something else <UNSURE>caused</UNSURE> your symptoms. Yep. <UNSURE>Uh</UNSURE>, and we may need to do further <UNSURE>tests</UNSURE> like um taking a sample of your stool so we can test that. <UNIN/> Um, etcetera etcetera. Yep, sure, yep. How's that sound? That sounds great, yeah. Yeah. <UNIN/> Do you have any questions for me? Um, no, no further questions, <UNSURE>no</UNSURE>. Okay, and is uh is the treatment plan clear? Uh, <UNSURE>yes</UNSURE>, yeah, that's that's very clear. Thank you. Great. Well, I wish you all the best. Okay, thank you. Bye. <UNIN/> Thank you. <UNSURE>Bye bye</UNSURE>.",
+      "language": "English",
+      "kind": "consultation",
+      "text_sha256": "338d64a489f1fbc035fb5b953baaa087b286e7db04081f036791995fa871d2c1"
+    },
+    {
+      "id": "en-02-reference",
+      "case": "en-02",
+      "source": "human_reference",
+      "text": "Hello? Hello. Can you hear me well? Uh uh yes. I think. It's a bit better. It's a bit, it's a bit, it's not very clear. But <UNIN/> let's continue anyway. OK. Uh, OK. Let's start again. So how can I help you sir? Yes. So, it's been a few days now. I have like a sore, and a red skin. It's kind of, it's really itchy, and it's like super annoying. So I'd like to find something quick to solve it. OK. No, no problem. I'm happy to help. Um whereabouts in your skin is it affected? Uh, mostly like my chest, my, my hands, my arms. Like, like really, it's it's super annoying. Like it's itching a lot, like all the time. And I can't even sleep at night. <UNIN/> I really need something quickly to, to solve it. Because even at work I, I can, when I'm in a meeting and I have to, like uh think about my work, I can't focus, I can't actually focus on my work. It's really annoying because I can't actually think about, uh, what I have to say. I'm always like, uh, disturbed by this disease. Yeah. <INAUDIBLE_SPEECH/> No no, OK. <INAUDIBLE_SPEECH/> I'm <UNSURE>certain </UNSURE> this is obviously affecting you. And uh we'll try our very best to get get this sorted out for you. Um, have you had anything like this before in the past? Um so yes. Uh earlier I was like prescribed for my eczema. OK. And <INAUDIBLE_SPEECH/> they gave me like some cream, and something to, uh when I like <UNIN/> shower, when I was in the shower, had to put something. But um OK. Did it help? Um I mean, at that time yes. That's, those symptoms, like these symptoms appear like, when the symptoms appeared again, I tried those and it didn't work. I've tried a few things. Like I bought a, a steroid cream at the pharmacy last night. But it apparently didn't help, because it's still itching a lot today. Uh, yeah. <UNSURE>OK</UNSURE>. OK. Do you remember the name of the cream you bought? A steroid cream. OK, steroid, OK. <UNIN/> um <UNIN/> would you say these symptoms are very similar to your eczema symptoms, or different? Um <UNIN/> it's much more like itchy. And my eczema was more like only in the arm. But now it's <UNIN/> also on the chest. And in the on the, on the hands as well. OK. Like <UNSURE>pretty</UNSURE>, yeah when, like I like, for instance hiking, during the weekend. And <INAUDIBLE_SPEECH/> I am, I can't really do it anymore, because it's like very <UNIN/> like I wanted to do that last weekend. And because super painful, and I I have to take like showers every day to be able to, cannot uh ease this itching part, which is very very annoying. Yes. No. <UNIN/> Well OK. That's <UNIN/> so you mentioned the itchiness. Um you also mentioned it's been quite sore. Yeah. Um have you, have you noticed any uh bleeding or discharge from your skins? <UNIN/>. OK. No. Um so my skin is a bit cracked in some parts, like kind of cracked, if you see what I mean. But uh, yeah. OK. You've not, haven't uh seen any other uh pus or blood, coming out of your skin. No. No. And you mentioned it all started three days ago. Are you, four days ago. Are you aware of any triggers, or anything that you may have done, that may have caused your symptoms to start? Four days ago. So for example, have you changed your uh shower gel, any clothing? Have you been around anyone else? No I <UNIN/>. It's actually like, it's really annoying, because I'm thinking about, <UNIN/> maybe I should change something. Because I I haven't, and I don't understand <UNIN/> I cannot, um afraid of asking people around me because it's cannot you know um, I don't feel really comfortable asking about these questions. It's kind of intimate that. So I <INAUDIBLE_SPEECH/> your help now. Mm. Mm. No no, OK. That's OK. Um Fine, so just to resummarize. For the last four days, you've had very itchy skin, very sore skin all over your body, mainly your chest. And did you also mention your arms and legs as well? <UNSURE>Yeah</UNSURE>. Uh, no. Just the chest, hands and like, like inside the elbows. Yeah. <INAUDIBLE_SPEECH/> OK. <UNIN/> anything on your face at all? Am I what? On your face? On my face? No. No, OK. And apart from this, any other symptoms have you noticed? For example, have you noticed any temperature or fevers? No. <UNIN/> just very itchy. Nothing else. Itchy. OK. So your, your bowels are working OK? Your chest is OK? No cough, no breathing difficulties? No. You're passing urine OK. I I think so. OK, alright. Um It's always good to know. So, I mean, do you have any ideas as to what could be causing your symptoms? Any what? Any ideas, as to what could be causing your symptoms? Um <UNIN/> so I had eczema before. So maybe it's <UNSURE>disease</UNSURE>, but it seems like more uh, like uh my eczema was only on the arms. So, I'm I'm not sure. I I really have no idea. <INAUDIBLE_SPEECH/> OK. That's OK. So um, normally at this stage I like to examine you. Um To see the rash itself, to see exactly what type of rash it is. But from what you've told me, you mentioned it's, you've got some dry skin and some, uh cracked skin as well. Uh and has been very itchy. And so would your um Yeah. Uh your your background of eczema. Um <UNSURE>So</UNSURE> Sorry to say, there's a couple of questions I wanted to ask you, which I completely forgot, my apologies. Um, apart from the eczema, do you have any other medical problems I should be aware of? Uh, no. I just had asthma in the past. But not anymore. OK. Not anymore, OK. And do you take any regular medications at the moment? Uh no. No, OK. Do you have any allergies to anything? I <UNIN/> like some <UNIN/>, sorry? Yeah? <UNIN/> sorry I said do you have any allergies to anything? <INAUDIBLE_SPEECH/> Hello? Hello? Yes. <UNIN/> can you hear me? That's alright I think it <UNIN/>. Uh do you have any allergies at all? Ohh, allergies. Uh, no. No, OK. Um and tell me about your um uh your situation at home. Who do you live with? Uh so, I live with a few flatmates. I'm a, so you know I'm thirty one. Uh I, yeah I'm I have a full time job. And so I'm living with a few people to save money. OK. And what do you do for work? Uh I work uh at a pharmaceutical company. So it's been a, it's been a few years now. Uh it's uh, it's kind of interesting. We're working I'm a, like a kind of project manager. Uh I mean, do you want to, to know more about it? OK. Uh no no no that's <UNIN/>, that's absolutely fine. Um just a couple of questions I want to ask you, which can sometimes affect your symptoms, is, do you smoke at all? No. No. And do you drink much in the way of alcohol? <INAUDIBLE_SPEECH/> Uh you know, <UNIN/> once in a while I can, I like hanging out with people once in a while. So yeah I'd say a few, a few beers per week. Something like this. Nothing, nothing crazy. I used to drink a lot more when I was younger. But it's been, it's been a while. <UNIN/> OK. OK. OK I've got to say, at this stage I've got to say <UNIN/> this sound quality is not uh great. But I will continue because we've come this far. Um So um, based on everything you mentioned <UNSURE>Sarah </UNSURE>, <UNIN/> I do wonder whether this is a flare-up of your eczema. Um <INAUDIBLE_SPEECH/> The reason being that you said it was quite itchy. Um it's mainly affecting your chest and your back. Um and uh, having looked at your skin, uh the the the rash does appear quite familiar. Um you mentioned <UNIN/> using steroid creams, yesterday. <INAUDIBLE_SPEECH/> Um from the pharmacy. I wonder whether giving you a stronger prescription of a <UNIN/> of a steroid may be beneficial. Uh, which I'm happy to prescribe to you today. As well as, I'm going to give you something, some emollients, which helps to moisturize the skin. OK. OK. Um which <UNIN/> use in the bath and shower. And it's definitely worth um using that for the first seven to ten days. OK. Uh before we make the decision on whether it's working or not. OK. Um it's also worth um using antihistamines, which you can sometimes buy over counter. Things like Loratadine or Piriton, which can help the itchiness of your skin. OK. And uh, um it's also worth keeping a diary of any triggers which are affecting your symptoms, anything you wear or anything you use, in terms of shower gels or soap. Because if that's causing your symptoms, then we need to have a discussion about an eczema CU. OK. Yes, I have tried antihistamines, uh lately, but it didn't really help. Ohh, could you say that again, sorry? I have tried uh antihistamines, but uh but it didn't really help. OK. <UNIN/> OK. So it's something for you to think about. <UNIN/> you can get different types of antihistamines. I can give you something a little bit stronger today as well. Um, something like Fexofenadine, which I can give to you today. It's definitely worth trying, and it's not going to do you any harm. OK. Um but I <UNIN/> think using the steroids and the emollients, um on a regular basis Uh over the next week to ten days, should hopefully <UNIN/> control your symptoms. But do come back and see me next week, if things don't get better. That sounds good. OK? Um do you have any questions for me? Uh, no that's it. Thank you very much. Bye. Thank you as well. Bye. OK. Well I wish you all the best. Thank you. Have a good day.",
+      "language": "English",
+      "kind": "consultation",
+      "text_sha256": "19b90c548e60063dd466285f7bb78183d9313939a9a5f4f445bafc2d6c979099"
+    },
+    {
+      "id": "en-01-en",
+      "case": "en-01",
+      "source": "nemotron-speech-en-0.6b",
+      "text": "Hello hello yeah, okay hello how can I help you this morning hi um I've just had some um diarrhea for the last three days um and it's been affecting me I need to stay close to the toilet and um yeah it's been affecting my day to day activities sorry to hear that um and when you say diarrhea what do you mean by diarrhea do you mean you're going to the toilet more often or are your stools more loose Yeah so it's like loose and watery stool going to the toilet quite often um and like some pain in my like lower stomach okay and how many times a day are you going let's say over the last couple of days probably like six seven times a day six seven times a day and you may mention is mainly water tree have you noticed any other things like blood in your stools no no blood Yeah just watery and loose stool okay and you mentioned you've had some pain in your tummy as well Yeah whereabouts is a pain exactly so it's like in my lower abdomen so uh like um yeah just to one side one side and what side is that uh on the left side left side okay and can you describe the pain to me Yeah it feels um like uh cramp uh like a muscular cramp and um yeah I feel a bit weak and shaky okay and there's a pain is that is it there all the time or does it come and go uh it comes and goes and goes a pain move anywhere else for example towards your back um no just mainly my stomach okay fine and you mentioned you've been feeling quite weak and shaky as well would you mean by shaky do you mean you've been having uh are you been feeling feverish for example um yeah it doesn't feel like uh yeah I just mainly feel weaker I haven't had a fever um at the moment but I did notice um a temperature when the symptom started so um yeah around about three or four days ago you measure your temperature then yeah I didn't measure my temperature no but I felt um just a bit hot okay okay any other symptoms like sweating or um no and uh any vomiting at all Yeah so um I vomited at the start of the symptoms but now um I've stopped vomiting stop vomiting okay and was your vomit I know it's not nice thing to talk about but was it just normal food colour yeah yeah just normal vomit yeah and there was no blood in your vomit is that right no blood no no okay um and um any other symptoms at all you mentioned tummy pain you mentioned diarrhea you mentioned the vomiting anything else that comes to mind um I had a loss of appetite um so I haven't been eating as much um but I've been able to hold down fluids okay so you're drinking fluids what kind of foods have you managed to eat anything um just soups and uh yeah light foods like smoothies and yeah liquid foods mainly okay fine um and so you start just three days ago the symptoms are you aware of any triggers which may have caused your symptoms to uh to kick on So for example take away food or eating out or being around other people who would similar symptoms Yeah so I had takeaway about four days ago um uh but other than that I've yeah been uh eating normally I think unusual Yeah do you remember where you ate um yeah I ate at a Chinese restaurant with friends okay anyone else on well with similar symptoms um so no one else in the family so I uh wife and two kids and one um child was vomiting but they haven't got diarrhea there's no one with the same symptoms okay okay fine um right and uh in terms of your your overall health are you normally fitting well or um yeah I mean other than um asthma um I use an inhaler everything uh else is fine okay and did your asthma well controlled uh yeah that's fine just yeah you send inhaler and uh that's under control fine and you don't have any other tummy problem bowel problems I should be aware of no no okay um in t ap apart from the inhalers do you take any other medications uh no no other medications okay fine and in terms of just your your day to day life you said it's been affecting your life um in what way has it been affecting your life uh sorry I need to stay close to the toilet cause I go quite frequently during the these past three days okay um yeah other than that it's uh yeah the main concern and have you are you currently working at the moment uh yeah I I work work um I'm an accountant okay have you been going into work the last three days or have you been at home uh yeah I've been going to work okay that must be difficult for you then yeah it's been quite difficult and you say you mentioned you live with a wife and two children is that right Yes all right um just couple of other questions we need to ask so um do you smoke at all uh no I don't smoke and do you drink much in the web alcohol no I I don't drink alcohol no okay so um uh normally at this stage I like to um examine you if that's okay but um um but but but but but but but but but but but but but but but but but but but but but having listened to your stories uh I think um just to recap the for the last three days you've been having loose dull diarrhea a bit of tummy pain mainly on the left hand side uh um and vomiting and being generally quite weak and lethargic you mentioned you having this Chinese takeaway as well three days ago and I wonder whether that might be the cause of your problems okay um it seems like you may have something uh called gastroenteritis which essentially just uh tummy bug or infection of your of your tummy mainly caused by viruses but it can be uh possibility of bacteria uh causing your symptoms at this stage uh what what we'd recommend is just what we say conservative management so I don't think you need anything like antibiotics is really just um making sure you're well hydrated so drinking fluids um there are things like dire light you can get from the pharmacy which uh it's um it helps replenish some of your minerals and vitamins and if you are having vomiting and diarrhea I would certainly recommend that and first you know first couple of days yeah if you are feeling feverish and weak taking some paracetamol two tablets up to four times a day for the first few days can also help I would certainly advise you to take some time work actually I know you're quite keen to work but um I would say next two two to three days um clears from your system take some time off and rest um you know if your symptoms haven't got better you know in in three to four days I'd like to come back and see you again because if it is ongoing then we have to wonder whether there's something else causing symptoms and we may need to do further tests like um taking a sample of your store so we can test that um et cetera et cetera yeah sure yeah how's that sound that sounds great Yeah yeah do you have any questions for me um no further questions okay is is is the treatment plan clear uh yeah yeah that's that's very clear thank you great well I wish you all the best okay thank you thank you bye",
+      "language": "English",
+      "kind": "consultation",
+      "asr_wer": 0.17829457364341086,
+      "original_text_sha256": "e511be3353a9cdad1d2d2f10e7000ec7b9f2986e01ed3785f10723d99e3ffbee",
+      "excluded_narration": "",
+      "text_sha256": "e511be3353a9cdad1d2d2f10e7000ec7b9f2986e01ed3785f10723d99e3ffbee"
+    },
+    {
+      "id": "en-02-en",
+      "case": "en-02",
+      "source": "nemotron-speech-en-0.6b",
+      "text": "Hello hello, can you hear me wellUh yes, I think it's a bit better. So it's a bit it's a bit it's not very clear but let let's continue anyway okay let's start again. So how can I help you sirYes so it's been uh few days now I have like a saw and a red skin it's kind of it's really itchy and it's like super annoying so I like to find something quick to solve it no problems I'm happy to help um whereabouts in your skin is it affected uh mostly like my chest my my hands my arms like I creates it's super annoying like it's itching a lot like all the time and I can't even sleep at night like I really need something quickly to to solve it because even at work I like um when I'm in the meeting and I have to like uh think about my work and focus like actually focus on my work it's really annoying because I can't actually think about uh what I have to say I'm always like uh disturbed by this disease no no okay sadness is obviously affecting you and uh we'll try our very best to get get us sort out for you have you had anything like this before in the past um so yes earlier I was like prescribed for my eczema okay and they gave me like some cream and something to uh when I like was chaot when I was in the shower had to put something okay but um did it help and I mean at that time yes but the symptoms like these symptoms are uh like when these symptoms appeared again I tried those and it didn't work I've tried a few things like I bought like a steroid cream at the pharmacy last night but it apparently didn't help because it's still itching a lot today okay uh yeah do you remember the name of the cream you bought uh stirrid cream okay steroid okay uh okay um do would you say do symptoms are very similar to your eczema symptoms or different um it's much more like itchy and my eczema was more like only in the arm and now it's al also on the chest and in the and the on the hands as well like I like for instance hiking during the weekends and I um I can't really do it anymore because it's like very like like I want it to the that last weekend it was super painful and I have to take like showers every day to be able to kind of ease this itching part which is very very annoying no well okay that's okay so you mentioned the itchiness um you also mentioned it's been quite sore um have you have you noticed any uh bleeding or discharge from your skin no um so my skin is a bit cracked in some parts like kind of cracked if you see what I mean okay but uh yeah I have not any other uh pus or blood coming out of your skin no no and you mentioned it all started three days ago are you four days ago four days ago are you aware of any triggers so anything that you may have done that may have caused your symptoms to start so for example have you changed your uh shower gel any clothing have you been around anyone no it's actually like it's very annoying because I'm thinking about may maybe I should change something because I I haven't and I don't understand and I'm kind of um afraid of asking people around me because it's kind of you know um I don't feel really comfortable asking about these questions it's kind of intimate and so I no okay that's okay fine so just to resummarize for the last four days you've had very itchy skin very sore skin all over your body, mainly your chest and did you also mention your arms and legs as well just the chest hands and like like inside the elbows okay and anything on your face at all in my what on your face oh on my face no no okay and apart from this any other symptoms have you noticed for example have you noticed any temperature or fevers no just itching itching nothing else okay so your your bowels are working okay you're chest is okay no cough no breathing difficulties no you're passing urine okay uh I think so okay all right um it's always good to know so I mean do you have any ideas as to what could be causing your symptoms any what any ideas as to what could be causing your symptoms um I um so I had eczema before so maybe it's this but it seems like more uh like uh my eczema was only on the arm so I'm I'm not sure I I really have no idea okay that's okay so um normally at this stage I like to examine you um to see the rash itself and see exactly what type of rash it is but from what you've told me you mention it's you've got some dry skin and some uh cracked skin as well uh and it's been very itchy and so with your um your your background of eczema um sorry couple of questions I wanted to ask you which I completely forgot my apologies um apart from the eczema do you have any other medical problems I should be aware of uh no I just had asthma in the past but okay not anymore not anymore okay and do you take any regular medications at the moment uh no okay do you have any allergies to anything sorry sorry hello hello yes can you hear me uh sorry I think it cra uh do you have any allergies at all? Oh, allergies uh no no okay um and tell me about your um your situation at home who do you live with um so um I live with a few flatmates I'm uh so you know I'm thirty one uh I yeah I'm I have a full time job and so I'm living with a few people to save money okay and what do you do for workUh, I work uh at a pharmaceutical company so it's been uh it's been a few years now uh it's uh it's kind of interesting we're working I'm a like a kind of project manager I mean do you want to to know more about it no no no that's absolutely fine just couple of questions I want to ask you which can sometimes affect your symptoms is do you smoke at allNo, no, and do you drink much in a way of alcoholUh you know once in a while I can I like hanging out with people once in a while so yeah I'd say a few a few beers per week something like this nothing nothing crazy I used to drink a lot more when I was younger but it's been it's been a while okay okay I gotta say at this stage I've got to say the sound quality is not uh great but I will continue because we've come this far um so um based on everything you mentioned sir I I do wonder whether this is a flare up of your eczema um the reason being that you said it's quite itchy um it's manufacturing your chest and your back and uh the having looked at your skin uh the the rash does appear quite familiar you mentioned using steroid creams yesterday um from the pharmacy I wonder whether giving you stronger prescription of a of a steroid may be beneficial which I'm happy to prescribe to you today as well as I'm gonna give you something some ammoience which helps to moisturise the skin um which you use in the bath and shower and it's definitely worth um using that for the first seven to ten days uh before we make a decision on whether it's working or not it's also worth um using antihistamines which you can sometimes buy over the counter things like latidine or puritan which can help the itchiness of your skin and uh um it's also worth keeping a diary of any triggers which are affecting your symptoms anything you wear or anything you use in terms of shower gels or soap because if that's causing your symptoms then we need to have a discussion about that next time I see you okay just I I have tried antihistamines uh lately but it didn't really help oh could you say again sorry I have tried the antihistamines okay uh but it didn't really help again okay so it's something for you to think about you you can get different type of antistamines I can give you something a little bit stronger today as well something like fetcophenidine which I can give to you today it's definitely worth trying it it's not gonna do you any harm but I certainly think using the steroids and the emollients um on a regular basis um over the next week to ten days should hopefully control your symptoms but do come back and see me next week if things don't get better that sounds good okay um do you have any questions for me no that's it okay well I wish you all the best thank you very much have a good day bye bye",
+      "language": "English",
+      "kind": "consultation",
+      "asr_wer": 0.16457211250748055,
+      "original_text_sha256": "55df8269840d18d24e07948b08d07accee5ce50e3d8e960d0dde14b641c99834",
+      "excluded_narration": "",
+      "text_sha256": "55df8269840d18d24e07948b08d07accee5ce50e3d8e960d0dde14b641c99834"
+    },
+    {
+      "id": "en-01-multi",
+      "case": "en-01",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "Hello hello stop yep okay hello how can I help you this morning I've just had some um diarrhea for the last three days and it's been affecting me I need to stay close to the toilet and um yeah it's been affecting my day to day activities sorry to hear that um and when you say diarrhea what do you mean by diarrhea do you mean you're going to the toilet more often or are your stools more loose yeah so it's like loose and watery stool going to the toilet quite often like some pain in my like lower stomach and how many times a day are you going let's say over the last couple of days probably like six seven times a day six seven times a day and you may mention it's mainly water tree have you noticed any other things like blood in your stalls no no blood yeah just watery and loose stall okay and you mentioned you've had some pain in your tummy as well whereabouts is the pain exactly in my lower abdomen so uh like uh yeah just to one side one side and what side is that uh on the left side left side okay and can you describe the pain to me yeah it feels um like a cramp uh like a muscular cramp and um yeah i feel a bit weak and shaky okay and there's a pain is that is it there all the time or does it come and go uh it comes and goes and go does a pain move anywhere else for example towards your back um no just mainly my stomach okay and you mentioned you've been feeling quite weak and shaky as well would you mean by shaky do you mean you've been having uh you've been feeling feverish for example um yeah it doesn't feel like uh yeah I just make me feel weak I haven't had a fever at the moment but I did notice um a temperature when the symptoms started so um yeah around about three or four days ago you measure your temperature then yeah I didn't imagine my temperature node but I felt um just a bit hot okay any other symptoms like sweating or um no and uh any vomiting at all yeah so um a vomited at the start of the symptoms but now um I've stopped vomiting you stopped vomiting okay and was your vomits I know it's not nice to talk about but was it just normal food colour yeah yeah just normal vomit yeah and there was no blood in your vomits is that right no okay and um any other symptoms at all so you mentioned Tommy Payne you mentioned diarrhea you mentioned the vomiting anything else that comes to mind um I had a loss of appetite so I haven't been eating as much but I've been able to halt down fluids okay so you're drinking fluids what kind of foods have you managed to eat anything just soups and uh yeah like foods like smoothies and yeah liquid foods mainly okay fine um and so you start just three days ago at Simpsons are you aware of any triggers which may have caused your Simpsons to uh to kick on so for example things like take away foods or eating out or beating around other people who would sing the symptoms yeah so I had takeaway about four days ago but other than that I've yeah been uh eating normally unusual yeah do you remember where you eat um yeah i ate uh Chinese restaurant with friends okay anyone else on well with similar symptoms um so no one else in the family side wife and two kids and one um child was vomiting but they haven't got diarrhea there's no one with the same symptoms right and uh in terms of your overall health are you normally fishing well or um yeah i mean other than um asthma uh using inhaler everything uh else is fine okay and did you ask a well controlled uh yeah that's fine uh just yeah you send inhaler and uh that's under control fine and you don't have any other tummy problem bowel problems I should be aware of no no okay um in apart from the inhalers do you take any other medications uh no other medications okay fine and in terms of just your your day to day life you said he's been affecting your life um yeah in what way has it been affecting your life uh so i need to stay close to the toilet because I go quite frequently during these past three days other than that it's uh yeah the main concern and have you are you currently working at the moment yeah i i work uh work um I'm in accountants okay have you been going into work the last three days or have you been at home uh yeah I've been going to work that must be difficult for you then yeah it's been quite difficult and you say you mentioned you live with a wife and two children is that right yes yeah alright um just a couple of other questions we need to ask so um do you smoke at all uh no i don't smoke and do you drink much of the web alcohol uh no i don't drink alcohol though okay so um uh normally at this stage I like to uh examine you if that's okay but um but but but but but but but but but but but but but but but but but but but but but haven't listened to your stories uh i think um just to recap for last three days you've been having loose or diarrhea bit of tummy pain mainly on the left hand side uh and vomiting and things generally quite weak and lethargic um you mentioned you're having this Chinese takeaway as well three days ago and I wonder whether that might be the cause of your problems okay it seems like you may have something uh called gastroenteritis which essentially just uh tummy bug or infection of your of your tummy uh mainly caused by viruses but they can be uh possibility of bacteria uh. causing symptoms at this stage uh what what we'd recommend is just what we say conservative management so uh I don't think you need anything like antibiotics is really just um making sure you're wealth hydrated so drinking fluids um uh there are things like dirolite you can get from the pharmacy which uh it's um it helps replenish some of your minerals and vitamins okay um and if you are having vomiting and diary i would certainly recommend that on a first you know first couple of days yeah if you are feeling feverish and weak taking some paracetamol uh two tables up to four times a day for the first few days can also help I would certainly advise you to take some time of work actually I know you're quite keen to work um I would say next two to three days um clears from your system just take some time off and rest um you know if your simples haven't got better you know in in three to four days I'll right to come back and see me again because if it is ongoing then we have to wonder whether there's something else causing symptoms and we may need to do further tests like um taking a sample of your store so we can test that um et cetera et cetera yep sure yeah how's that sound that sounds great yeah yeah do you have any questions for me um no further questions is a treatment plan clear uh yeah that's that's very cool thank you great well i wish you all the best okay thank you thank you",
+      "language": "English",
+      "kind": "consultation",
+      "asr_wer": 0.21634954193093728,
+      "original_text_sha256": "d0a201cbeaf4c97efe2f7f730c35eef543601c003147985ec198ecb1d1727ccf",
+      "excluded_narration": "",
+      "text_sha256": "d0a201cbeaf4c97efe2f7f730c35eef543601c003147985ec198ecb1d1727ccf"
+    },
+    {
+      "id": "en-02-multi",
+      "case": "en-02",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "Hello and you hear me well yes I think it's a bit better it's a bit it's not very clear but let's let's continue anyway okay let's start again so how can I help you sir yes so it's been uh a few days now I have like a sore and a red skin it's kind of it's really itchy and it's like super annoying so I like to find something quick to solve it no problems I'm happy to help um whereabouts in your skin is it affected uh mostly like my chest my my hands my arms like agree it's it's super annoying like it's itching a lot like all the time and I can't even sleep at night like I really need something quickly to to solve it because even at work I like um when I'm in the meeting and I have to like uh think about my work and focus like actually focus on my work it's really annoying because I can't actually think about uh what I have to say I'm always like uh disturbed by this disease and this is obviously affecting you and uh we'll try very best to get get a sorted out for you um have you had anything like this before in the past um so yes uh earlier I was like prescribed for my eczema and they gave me like some cream and something to uh when I like was charged uh when I was in the shower had to put something okay but um did it help i mean at that time yes but the symptoms like these symptoms are like when the symptoms appeared again I tried those and they didn't work I've tried a few things like I bought like a sterile cream at the pharmacy last night but it apparently didn't help because it's still itching a lot today do you remember the name of the creamy you bought steward cream okay steroid okay uh it's okay um do would you say these symptoms are very similar to your eczema symptoms or different it's much more like itchy and magzema was more like only in the arms and now it's also on the chest and in the in the on the hands as well like i like for instance hiking during the weekends and i um i can't really do it anymore because it's like very like like i want it to that last weekend and it was super painful and i have to take like showers every day to be able to kind of uh ease this itching part which is very very annoying no well okay that's okay so you mentioned the itchiness you also mentioned it's been quite sore have you noticed any uh bleeding or discharge from your skins no um so my skin is a bit cracked in some parts like kind of cracked if you see what I mean okay but uh yeah I'm looking uh any other uh pass or blood coming out of your skin and you mentioned it all started three days ago days ago are you aware of any triggers or anything that you may have done that may have caused your symptoms to start so for example have you changed your uh shower gel, any clothingHave you been around anyone else it's actually like it's very annoying because I'm thinking about maybe I should chain something because I haven't and I don't understand and I'm kind of um afraid of asking people around me because it's kind of you know um I don't feel really comfortable asking about these questions it's kind of intimate and so I really head now okay that's okay so just to resummarize for the last four days you've had very itchy skin, very sore skin all over your body, men your chest. And did you also mention your arms and legs as well uh no just the chest and like like inside the airbows okay anything on your face at all in my what on your face oh on my face? No, okay, and apart from this, any other symptoms have you noticed? For example, have you noticed any temperature or feversNos are itching itching nothing yet so you're bowels are working okay your chest is okay no cough, no breathing difficulties you're passing urine okay uh I think so okay all right it's always good to know so I mean do you have any ideas as to what could be causing your symptoms anyways any ideas as to what could be causing your symptoms um I um so I had eczema before so maybe it's this but it seems like more uh like uh my eczema was only on the arm so I'm not sure I I really have no idea okay no ok so um normally at this stage I like to examine you um to see the rash itself and see exactly what type of rash it is but from what you've told me you mention it's you've got some dry skin and some uh crack skin as well uh and it's been very itchy and so with your um uh your background of eczema um sorry to say there's a couple of questions I want to ask you which are completely forgot my apologies um apart from the eczema do you have any other medical problems I should be aware of uh no I just had asthma in the past but okay not anymore not anymore okay and do you take any regular medications at the moment uh no okay do you have any allergies to anything sorry things can you hear me uh sorry I think it cry uh do you have any allergies at all allergies uh no no okay um and tell me about your um uh your situation at home who do you live with a few flatmates so you know I'm thirty one uh i yeah a full time job and so i'm leaving with a few people to save money okay and what do you do for work uh i work uh at a pharmaceutical company so it's been uh it's been a few years now uh it's uh it's kind of interesting we're working a like a kind of project manager uh i mean do you want to to know more about it uh no no that's absolutely that's absolutely fine um just a couple of questions I want to ask you which can sometimes affect your symptoms is do you smoke at all no and do you drink much in a way of alcohol uh you know once in a while uh i can i highlight hanging out with people once in a while so yeah say a few a few bars per week something like this nothing nothing crazy i used to drink a lot more when i was younger but it's been it's been a while okay I was gonna say at this stage I've got to say the sound quality is not uh great but I will continue because we've come this far based on everything you mentioned sir i i do wonder whether this is a flare up of your eczema um the reason being that you said it's quite itchy um it's many affecting your chest and your back um and uh having looked at your skin uh the the rash does pick quite familiar um you mentioned you using sterile creams yesterday um from the pharmacy i wonder whether giving you stronger prescription of a steroid maybe beneficial uh which I'm happy to prescribe to you today as well as I'm going to give you something some ammolians which helps to moisturize the skin use in the bath and shower and it's definitely worth uh using that for the first seven to ten days uh before we make a decision on whether it's working or not um it's also worth um using antihistamines which you can sometimes buy over counter things like loratidine or piritin which can help with the itchiness of your skin and uh it's also worth kiffing a diary of any triggers which are affecting your symptoms anything you wear or anything you use in terms of shower gels or soap because if that's causing your symptoms then we need to have a discussion about our next time I see you okay just I have to ride entimines uh lately but it didn't really help could you say again sorry I have tried the anti histamines okay uh but it didn't okay so it's something for you to think about you can get different type of ancestamines I can give you something a little bit stronger today as well something like fexapenide which I can give to you today it's definitely worth trying it it's not going to do you any harm but I certainly think using the steroids and the ammolions um a regular basis over the next week to ten days should hopefully control your symptoms but do come back and see me next week if things don't get better that sounds good any questions for me uh no that's it okay well I wish you all the best thank you very much have a good day bye",
+      "language": "English",
+      "kind": "consultation",
+      "asr_wer": 0.19030520646319568,
+      "original_text_sha256": "6f6197c08ae22f067c8a5b27da823b74fa4bdaf738c9f1631dc767a14346cbad",
+      "excluded_narration": "",
+      "text_sha256": "6f6197c08ae22f067c8a5b27da823b74fa4bdaf738c9f1631dc767a14346cbad"
+    },
+    {
+      "id": "de-herzrasen-multi",
+      "case": "de-herzrasen",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "Was führt Sie herIch habe seit einer Weile immer Herzrasen und zwar total heftig, also das pumpt wie verrückt und und und ein ganzer Brustkorb zittert, das fühlt sich auch nicht so gut an, als müsste das irgendwie gegen ein Widerstand irgendwie kämpfen und und jetzt nicht wenn ich gerannt bin oder so. Ich sitze auf dem Sofa und plötzlich gebe das los, also so bisschen bringt unangenehm in der Tat, also in Ruhe pocht ihr Herz wie gegen einen Widerstand und und heftig sehr sehr schnell. Ja, haben Sie mal gemessenJa hundertsechzig Schläge pro MinuteSeit wann sagen Sie sechs Wochen vielleicht, ich kann es nicht genau sagen, aber so seit einer Weile fällt mir das auf, also auch abends, wenn ich verso einzuschlafen oder so plötzlich nehme ich das richtig wahr, dass auch sonst eine gewisse Unruhe in ihnen steckt. Es kann sein, es ist mir, ich habe ja irgendwie schon ersi oder ist das auch neu das ist eher neu, auch eher neu. Eher, ich glaube schon hatten Sie nie Idee, was dahinter stecken könnteIch weiß nicht einmal mein Opa hatte drei Herzinfarkte und und wo ich mich natürlich fragte, ob das irgendwie erblich sein kann oder so und erst am dritten leider auch verstorben dann ich hatte auch mal eine depressive Episode vor ein paar Jahren, da hat ne aber war Trennung und alles Mögliche so und und das hatten ganz konkreten Grund und es wurde behandelt und es ging auch wieder weg und seitdem gab es das nie, aber ich habe mich gewundert eben oder habe mich das gefragt, weil ich auch emotional irgendwie seltsam unterwegs bin gerade. Seltsam unterwegs heißt dünn häufig gereiztalso ganz ganz wenig Kapazität für irgendwie Stress oder so emotional so ein bisschen von der Rolle damals hat sich irgendwas verändert vor sechs Wochen, was sie nicht so richtig benennen können und was sich auch anders anfühlt als die Depression vor einigen Jahren und sie haben sich Sorge um ihr Herz gemachtsonst irgendwelche IdeenOkay, also um ihr Herz sollten wir uns kümmern und möglichst eine Erklärung finden, wie es mit Ihrem Schlaf schlechtIch weiß nicht, wann ich es letzte Mal mehr als fünf Stunden ein Stück geschlafen habe und ich schwitze auch absurd viel nachts. Ich kann mein T Shirt morgens ausbringen, damit die Wohnung putzenwie ist der Appetit? Gut, gut, ich hab ich habe viel Hunger und das GewichtEs sind vier Kilo weg in den letzten sechs Wochen, obwohl sie viel Appetit und vier Kilo sind für mich eine ganze Menge ehrlich gesagtJa vielleicht erzählen Sie mir noch zwei, drei Dinge aus Ihrem sonstigen Leben, wenn Sie mögenWas machen Sie genau beruflich? Ich studiere Maschinenbau, ich habe gerade Prüfungsphase, muss ich ein bisschen mehr machen als sonst, aber es ist nicht hier wirklich dranmatisch verdiene mir ein bisschen was neben mir dazu, bisschen Autoschrauben oder Fahrräder oder so, was was mich eher entspannt als stresst mit meiner Freundin läuft alles prima, also eigentlich alles super Sexualität alles gutOkay, ich höre raus vor sechs Wochen fangen plötzlich diese Beschwerden an Herzklopfen viel Appetit trotzdem Gewichtsabnahme, Schlafstörungnächtliches, vor allen Dingen nächtliches Schwitzen, eine große Unruhe, die auf mit einer Wesensveränderung irgendwie einhergeht, ohne dass sie so wirklich eine Erklärung finden in ihrem Leben, wo alles sonst ganz rund läuft im Moment Studium, Arbeit, BeziehungDa gibt es eigentlich nichts, wo Sie jetzt spontan sagen würden. Das erklärt das anders als damals, als Sie diese depressive Episode hatten, dann haben Sie die Sorge, dass mit dem Herzen das nicht stimmen könnte, weil in der Familie diese Beschwerden vorgekommen sind, vor allen Dingen bei ihrem Großvater, so dass ich Ihnen jetzt vorschlagen möchte, dass wir eine sorgfältige körperliche Untersuchung machen, das machen wir gleich hinten im Nachbarzimmer und dabei insbesondere auf ihr Herz schauen. Die Beschwerden, die sich schildern, lassen mich eine Schilddrüsenüberfunktion denken, deswegen würde ich Ihnen gerne Blut abnehmen, um zu klären, ob mit der Schilddröse alles in Ordnung ist, wenn das so wäre, könnte man das gut behandeln, bis wir uns das nächste Mal sehen in einigen Tagen können Sie ja nochmal ein bisschen schauen, ob Ihnen sonst noch was einfällt, und dann würden wir in zwei, drei Tagen uns nochmal wiedersehen und die Laborwerte besprechen und jetzt aber zuerst uns nebenan nochmal für eine Untersuchung sehen. Wenn Sie damit einverstanden, das klingt nach einem Plan. Ja schöndann bis gleich",
+      "language": "German",
+      "kind": "consultation",
+      "asr_wer": null,
+      "original_text_sha256": "e25ccaaf89ecc261b0a98cb289f3d446229bd92f01d08cecbaf9d9a88cca885c",
+      "excluded_narration": "Sie arbeiten als Vertretung des Hausarztes in der Praxis von Doktor Berg. Der Patient Jens Mager stellt sich heute mit Herzbeschwerden bei Ihnen vor. Vor der körperlichen Untersuchung möchten Sie mit ihm eingespräch führen. ",
+      "text_sha256": "0ab628e06b63bb428edb44d6b2b855b9f3a3a60b1a679acc0886798a48e73472"
+    },
+    {
+      "id": "de-grippaler-infekt-multi",
+      "case": "de-grippaler-infekt",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "Hallo, was führt Sie herIch bin seit drei Monaten erkältet mitten im Sommer, und zwar heftig mein Kopf tut dauernd weh meine Nasennebenhöhlen sind eigentlich ständig zu ab und zu, denke ich, dass ich Fieber habe und das nervt ohne Ende. Ich habe da auch keine Zeit zu kurz gesagt, das muss aufhören und deswegen bin ich hier seit drei Monaten in Fekt. Ja das nervt, das nervt Sie haben weder Lust noch Zeit dazu, haben Sie gesagtWomit würden Sie Ihre Zeit lieber verbringenAlso ich verbringe meine Zeit momentan überwiegend mit Arbeiten. Das tue ich auch trotzdem, aber es bremst mich natürlich so ein bisschen aus. Ich bin nicht so leistungsfähig, ich bin auch nicht so motiviert wie sonst, habe mühemorgens in die Gänge zu kommen Ja, ist halt nicht so toll richtig ausgebremst. Ja, was heißt ausgebremst? Ich funktioniere schon, aber unter Schmerzen sozusagen, also ich nehme ab und zu ein bisschen Iboprofen um das zu lindern, aber ich versuche halt nicht zu übertreiben, weil ich weiß, dass ja auch belastet den Körper. Haben Sie die Idee, wie es dazu kam Ja ich habe in der Besprechung gesessen den ganzen Tag, wo zwei Leuten zu heiß war und deswegen musste den ganzen Tag die Klimaanlage voll laufen und alle anderen haben gefroren mitunter ich und nur mit einem T Shirt an und eigentlich ging es da los. Ja also klassisch erkältetWas ich spüre ist, dass da schon relativ viel Druck ist bei Ihnen. Ja was heißt Druck, ich habe halt, ich bin halt gerade an einem Projekt, das geht nur in sechs Monat, man hatte geht das, wir sind jetzt gut halb durch und erzählt halt jeder Tag, ne da machen wir auch Überstunden und das muss halt laufen, das ist die Zeit des E knapp bemessen und das muss halt durchgezogen werden einfach eine Projekt, wo arbeiten die in der Forschung an der freien Uni Berlin. Da ist viel Druck. Der Vertrag dauert so lange wie das Projekt und danach kommt dann hoffentlich der nächste. Von daher ja also es geht quasi von halbem Jahr zu halben Jahr immer. Also sie haben die klassischen Symptome einer typischen Präpareninfektion beschrieben mit Nasennebenhöhlen beschwerden, halschmerzen, Kopf, Schmerzen abgeschlagenheit, die sich jetzt lange hinziehen und auch ziemlich typisch begonnen habenwas ich jetzt nicht gehört habe, ist, dass Sie zwischendrin mal irgendwie eine Pause gemacht haben. Sie sprechen von Ebo Prophäen und anderen Hilfsmitteln, aber Pause wann also ich arbeite jetzt nicht jedes Wochenende durch oder so, aber unsere Arbeitstage dauernd zehn elf Stunden manchmal auch noch mit Unterlagen danach sichten und soAlso für Pause ist gerade nicht so wirklich Platzalso ich habe die Hoffnung, sie würden mir halt was geben, was irgendwie aufräumten Antibiotikum oder wenigstens was die Symptome lindert. Ibuprofen hilft einigermaßen, aber wie gesagt, ich will das halt auch nicht da entnehmen. Jaalso ich möchte Sie natürlich gleich auf jeden Fall noch untersuchenAber wenn ich das finde, was ich erwarte, dann haben Sie ein jetzt sehr lange sich hinziehenden viralen Infektwo außer Ruhe und Schonung eigentlich kein Kraut gegen Gewachsen istDie Antibiotika schaden mehr als dass sie nützen, weil die natürlich nur gegen bakterielle Infekte helfenUnd das eigentliche, worum es geht, nämlich dem Körper Ruhe zu verschaffenwird natürlich durch die Tablette sowieso nicht gelöst. Ja, aber das Meter Ruhe klappt halt im Moment nichtwas würde passieren Naja, erstmal ist das Zeit, die dann einfach fehlt, wie gesagt hier ist eh sehr knapp gemessen. Zweitensich will meinen nächsten Vertrag kriegen und ehrlich gesagt, ich habe auch schon lange nicht mehr gehört, dass man sich wegen Erkältung krank schreiben lässt, dass er scheint mir doch ein bisschen übertrieben einfach Ja also ich habe ja nicht irgendwie die Masern oder so und ich habe eine Erkältung die anderen in ihrem Jobden scheint gerade nix zu fehlenWie sieht es denn sonst in ihrem Leben aus? Also ich habe jetzt viel über die Arbeit gehört über diesen Infekte einiges erfahrenDas tun Sie sonst so, wie leben Sie sonst so? Meine Freundin wohnt hier, das heißt Wochenendes ab und zu dann hierher fahren es natürlich auch ein bisschen eng für zwei Tage dann. Ich glaube es auch jetzt nicht dauernd, aber zu viel anderen komme ich gerade nicht, also Hobby Solar Sport so ist jetzt gerade nicht die Gelegenheit und auch nicht die Energie für vorhanden brauchen Sie nehmen wir an, das Einzige, was ich Ihnen wirklich guten Gewissensempfehlen könnte wäre, sie krank zu schreiben für zwei, drei Tage um sich zu schonen ganz ungünstigAlso das einzige meinen SieJa man kann natürlich symptomatisch viel tun, wie sie es ja auch schon machen mit Ibopoffee, das beseitigt halt die Symptome und der Körper kriegt halt, dass das er braucht, nämlich Ruhe nichtTja und das ist das ist schon was, was ich spür an kann, dass sie sehrdass da sehr viel Spannung ist und einfach Druck und ich sehe das oftdass dann irgendwann einfach zu viel ist natürlich auch schwierig verstehe, was Sie sagen, aber es ist irgendwie das einzige, was ich mir im Prinzip nicht leisten kannDeswegen bin ich jetzt ein bisschen in einer Zwickmühle da. Ja, das ist ein Dilemma, neAlso ihn leuchtet aber schon ein, was ich ihnen empfehle theoretisch ja, was würden Sie Ihrem besten Freund empfehlen bei bei anderen Leuten ist es immer anders, ne, ja ich gebe zu, ich würde sagen, dass ich krank schreiben auch mit dem Quatsch, wenn ihre Freundin versuche das nicht so sehr zu thematisieren, ehrlich gesagt, aber deckt jetzt auch nicht den Eindruck, als ob sie das total gut findet, wie es mir geht. Tjajetzt spüre ich außer diesem gewissen Druck, den ich ja schon erwähnt habe, auch noch eine gewisse Hilflosigkeit Jawas könnten Ihrer Meinung nach gute Auswege sein aus diesem DilemmaVielleicht muss ich das mal versuchen zu klären damit ihrem Themen oder mit meinem Profil zu tun, der sehr lange gehtder klassisch angefangen hat und nicht vergehen willUnd Sie wünschen sich eine Lösung und ich schlage Ihnen vorsich mal ein bisschen rauszunehmen, weil ich den Eindruck habe, dass es vor allen Dingen mit diesem Stress zu tun hatUnd es ist für wichtig halte, dass sie sich sozusagen dieser Herausforderung stellen. Sie merken, es ist ein bisschen schwierig und wollen sich jetzt auch nicht krank schreiben lassen, höre ich raus. Aber nehmen vielleicht die Idee mit mal zu gucken, was geht die Frage wäre ja auch, wie lang muss ich krank geschrieben sein, dass das weggehtJa man würde mit einigen wenigen Tagen anfangenMit dem Wochenende hätten Sie dann ja jetzt von heute ausgerechnet fast eine Woche fünf Tage sich zu erholen und mal zu gucken, wie sie ein bisschen den Druck aus dem System nehmenkönnten mal telefonierenGut, dann würden wir jetzt die Anukündigkeit untersuchung noch vornehmen und treffen uns dann gleich vorne an der Liege.",
+      "language": "German",
+      "kind": "consultation",
+      "asr_wer": null,
+      "original_text_sha256": "a8b4c72f18824a6a232f2b05f02a5c927989eb823746f246fa8451fa2e24954b",
+      "excluded_narration": "Sie arbeiten als Vertretung des Hausarztes in der Praxis von Doktor Berg. Der Patient Jonas Neu stellt sich heute mit Symptomen eines gripalen Infekts bei Ihnen vor. Vor der körperlichen Untersuchung möchten Sie mit ihm ein Gespräch über seine aktuellen Beschwerden führen. ",
+      "text_sha256": "edb344fda437e6b39bd3a59ab5b0d680fb20365dd8628487ff1b14ebd752870a"
+    },
+    {
+      "id": "de-polyarthritis-multi",
+      "case": "de-polyarthritis",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "Guten Tag von Kleinnehmen Sie auf Platz, Frau Klein wie geht es hin? Soweit ganz gut heute Morgen war es nochmal so ein bisschenda habe ich dann Ipophäen genommen und jetzt ist besser. Diese Schmerzen, die sie seit ein paar Wochen. Genau, weswegen ich gekommen bin. Richtig. Ich glaube wir hatten uns heute für abredet, um die Ergebnisse der Blutuntersuchung zu bestehen. Genau nicht genau. Ich würde auch gerne haben Sie selber eine Idee, wo die Schmerzen hier kommen Ich habe es gedacht, es geben vom Volleyball oder so, sondern irgendwie leichte Prellung oder irgendwie sonst nixIch habe tatsächlich eine nicht so gute Nachhalt für sieDie Laborwerte, die wir abgenommen haben, sprechen dafür, dass bei Ihnen einen Rollenmar vorliegt, ein Gelenkrolmar weiß nicht, ob Sie davon schon mal was gehört habenJa doch schon, also meine Großtante hatte Räume. Genauaber das ist jetzt sicher, dass die Laborwehrte sind eindeutig dafür, ich denke, dass wenn der weiteren Behandlung nochmal einen Rheumatologen hinzuziehen würden, aber ich gehe jetzt erstmal davon aus, dass das tatsächlich räume ist, was Sie haben Geht jetzt ein bisschen plötzlich. Das habe ich jetzt gar nichtHabe ich gar nicht so erwartet. Das nervig sie sagten, dass ihre Großtante das hatte Ja später im Rollstuhl weiß irgendwie viel sie von Rollen wissen, ob es ihn helfen würde, wenn ich ihn dazu ein bisschen sage, das ist nicht immer bei jedem gleichAber trotzdem endet er dann so, oder wir sind ein bisschen zu erzählenDas ist tatsächlich so, dass es bei verschiedenen Menschen ganz unterschiedlich laufen kann Und das was sie bei ihrer Großtante gesehen haben, muss nicht das sein, was bei ihnen auftritt. Das ist überhaupt nicht vorhersagbar. Das ist vorstellbar, dass eine erbliche Komponente da ist, wenn das in der Familie war, aber das heißt überhaupt nicht, dass dann auch die Verläufe immer gleich sind Das heißt ja dann schon, dass ich jetzt schwere Medikamente nehmen muss oder hier läuft das ab. Ja schwere Medikamente, also es gibt Medikamente, mit denen man heute die diese Erkrankung sehr gut häufig, sehr gut kontrollieren kann, so dass sie nicht fortschreitet und dass diese Gelenkserstörung gar nicht erst auftreten. Und die sind dann, da muss man, da muss man filmiert gucken, die sind nicht für jeden gut verträglich. Das bedeutet, dass sie häufiger in die Praxis kommen müssen, als sie das gewohnt sind. Auf der anderen Seite viele Patienten vertragen ja auch gut, ohne dass Nebenwirkung auftreten. Mein Beruf in Zukunft, also ich bin SportlehrerinDas kann ich ja dann irgendwann nicht mehr ausüben oder wie ist das? Kann man so nicht sagen ein SchockJa schon mich gerade bei mir passieren konnte. Sie fragen sich, was ihr falsch gemacht habenwir wissen gar nicht, warum rollen aber jemanden auftrittWir wissen nichts, was jemand falsch machen könnteAlso ich will jetzt nicht mal sagen, Sie haben nicht falsch gemacht, weil von der Erkrankung so wenig verstanden, sie tritt auf und wir wissen nicht warum sie bei dem einen Auftritt, wenn dem anderen nichtUnd wir können eben auch nicht die schwere Vorhersagen und darum nein, das heißt nicht, dass sie berufenfähig werden, sondern es heißt, dass für sie ein Risiko besteht. Deswegen Berufen fähig zu werden. Es gibt Sportlehrerinnen, die Räume kriegen und trotzdem ist zur Rente arbeiten können. Ihre Medikamente gut vertragen und wo es nicht so gelenkt zerstörungen kommtIch kann mir das nur nicht versprechen. Also trotz Medikamente kann es auch anders verlaufenes geht in den noch durch den Kopf Das Mögliche ist gerade so alles glaube so mein Gefühl für dieses Gespräch wäre, dass war, dass man bei dieser Information belassen und ich mit Ihnen überlegen würde, zu welchem Rheumatologen Sie gerne gehen möchten und dass wir dann erstmal abwarten, was dir empfiehlt und wir dann sehr gerne auch mit mir nochmal über Nebenwirkungen sprechen können Muss man jetzt einfach abwartenwas hielten die davon, wenn wir uns noch ein zweites Mal zusammensetzen und so konkrete Schritte zu planen, dass das erstmal so ein bisschen Sacken kann Ich merke, wie unerwartet sie das getroffen hat Sprechen können, der darf natürlich gerne mitkommen und dass wir dann so ein bisschen in die konkreten Planungen reingehen. Ich möchte das heute nicht überfrachten. Das gut kommen auch bestimmt wieder neue Fragen. Genau. Ja, dann gucken Sie einfach in der Woche einfach nächste Woche, wie Sie möchten, sehe zu, dass sie schnell einen Termin am Rhematologen kriegen, aber ich würde es heute erstmal gerne dabei belasten. Alles gut",
+      "language": "German",
+      "kind": "consultation",
+      "asr_wer": null,
+      "original_text_sha256": "795c23e4381192c128f4ee864a445479f3045c58c3940c8a68569341efb2fd1c",
+      "excluded_narration": "Die Patientin Frau Miriam Klein klagt seit mehreren Wochen über bestehende Gelenkschmerzen, Schwellungen und Morgensteifigkeit in den FingernGestern wurde sie in ihrer Hausarztpraxis diesbezüglich untersucht. Auch wurde Blut abgenommen. Die Laborwerte sprechen im Kontext der Anamnese mit an Sicherheit grenzender Wahrscheinlichkeit für das Vorliegen einer chronischen Polyatritis. Heute kommt die Patientin, um über das Ergebnis der Laboruntersuchungen zu sprechenIhre Aufgabe ist es der Patientin die schlechte Nachricht zu übermitteln, dass sie an Gelenkräume erkrankt ist ",
+      "text_sha256": "d5e7856d5daee37a117b87e7d56441cb99f20b1af109641e796bbc4e6942a03d"
+    },
+    {
+      "id": "multimed-0000-reference",
+      "case": "multimed-0000",
+      "source": "human_reference",
+      "text": "nicht nur HIV sein, Maßnahmen ergreift, um den Ausbruch einer Erkrankung zu verhindern oder, ich sage es etwas zurückhaltender, ihren Verlauf abzumildern! Das machen Sie",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": null,
+      "text_sha256": "45a774926340e11784eee1a2d0b80aa826c1a9c3d0f051704834fe7d7ac0d222"
+    },
+    {
+      "id": "multimed-0000-multi",
+      "case": "multimed-0000",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "nur HV sein, Maßnahmen ergreift, um den Ausbruch einer Erkrankung zu verhindern oder ich sage es etwas zurückhaltende, ihren Verlauf abzumildern. Das machen Sie",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": 0.12,
+      "text_sha256": "ecf9a586ece9c373ba38d721cc9301ddc05e66e8d4b3aa28179dadc63f0c267f"
+    },
+    {
+      "id": "multimed-0037-reference",
+      "case": "multimed-0037",
+      "source": "human_reference",
+      "text": "Sie sind jetzt im Krankenhaus, Herr Müller … Ich werde Sie jetzt untersuchen und der Herr Fuchs neben mir wird Ihnen den Blutdruck messen … Er hat ja vorhin nur gelallt. Jetzt hat",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": null,
+      "text_sha256": "224bf04888a85a636cacc2e419dc9ea1b5d08a38692c4acfd8b744e7294363aa"
+    },
+    {
+      "id": "multimed-0037-multi",
+      "case": "multimed-0037",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "Sie sind jetzt im Krankenhaus, Herr Müller. Ich werde Sie jetzt untersuchen und der Herr Fuchs neben mir wird Ihnen den Blutdruck messen. Er hat ja vorhin nur geleilt. Jetzt hat",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": 0.03225806451612903,
+      "text_sha256": "bbdc49f83cfbd37a51d245c304f75788f6f12a0856e6fb5774c9e74907e00c35"
+    },
+    {
+      "id": "multimed-0075-reference",
+      "case": "multimed-0075",
+      "source": "human_reference",
+      "text": "Aber er hat wahnsinnig geblutet und dann noch der Sprung? Das kann man doch gar nicht überleben. Oder? Herr Doktor, wird er überleben? Ich fühle mich so schuldig …",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": null,
+      "text_sha256": "e988936441d150f84c7078e010f7ca79f7e3f3cbf3d5eef968e782d8726e37f0"
+    },
+    {
+      "id": "multimed-0075-multi",
+      "case": "multimed-0075",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "Aber er hat wahnsinnig geblutet und dann noch der SprungDas kann man doch gar nicht überleben, oder Herr Doktor, wird er überleben. Ich fühle mich so schuldig",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": 0.07142857142857142,
+      "text_sha256": "de2b05e0acb35d2f437c85ceb9f00116e727f36a00eba555962c367f9e443298"
+    },
+    {
+      "id": "multimed-0112-reference",
+      "case": "multimed-0112",
+      "source": "human_reference",
+      "text": "Das passiert ganz oft, dass du denkst, du kannst das nicht. Und dann ist das wie so eine Blockade in deinem Kopf. Sobald du aber anfängst, es zu machen, funktioniert es.",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": null,
+      "text_sha256": "5469c494c46f5842cdff032fb2bb449ce240153a695f796bb0c80ede75b37a5b"
+    },
+    {
+      "id": "multimed-0112-multi",
+      "case": "multimed-0112",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "das macht, also es passiert irgendwie ganz oft, dass du dann denkst, du kannst das nicht und dann ist es wie so eine sage ich mal wie so eine Blockade in deinem Kopf oder so. Und sobald du aber anfängst es zu machen, dann funktioniert es do",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": 0.5483870967741935,
+      "text_sha256": "820ae8fa40b9cadf03aa3c57c9e008b5e865a45d27da0901ea9526898c64945b"
+    },
+    {
+      "id": "multimed-0150-reference",
+      "case": "multimed-0150",
+      "source": "human_reference",
+      "text": "wirklich notwendig ist. Schließlich wollen Sie ja auch diesen Blasenkatheter wieder loswerden. So, was liegt für heute noch an? Die Oberärztin möchte, dass wir die komplette Tumordiagnostik durchführen, bevor Herr Trabitz entlassen wird.",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": null,
+      "text_sha256": "a8aa2c7a8e1f701afbaef51bd3e7c39ed61a82073193611f3d1ce1c0674c7a69"
+    },
+    {
+      "id": "multimed-0150-multi",
+      "case": "multimed-0150",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "notwendig ist. Schließlich wollen Sie ja auch diesen Blasenkathäter wieder loswerden. So was liegt für heute noch an? Die Oberärztin möchte, dass wir die komplette Tumordiagnostik durchführen, bevor Herr Trabitz entlassen wird.",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": 0.06060606060606061,
+      "text_sha256": "6e052be8abc0e60839d30a69a0635ffa790e1d12d666f912bbff7a118f9423f2"
+    },
+    {
+      "id": "multimed-0187-reference",
+      "case": "multimed-0187",
+      "source": "human_reference",
+      "text": "der oben kurz angesprochenen Grundbedingungen erfüllen, werden Sie als potentieller Partner des Unternehmen-Weltladen ausgewählt und bekommen Zugang zu unserem umfangreichen Informationspool.",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": null,
+      "text_sha256": "9442a61234801dd32f6e666733027086b52d1fbd775d1aa04d885c8504400ec9"
+    },
+    {
+      "id": "multimed-0187-multi",
+      "case": "multimed-0187",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "der oben kurz angesprochenen Grundbedingungen erfüllen. Werden Sie als potenzieller Partner des Unternehmen Weltladen ausgewählt und bekommen Zugang zu unserem umfangreichen Informationspunkt?",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": 0.09090909090909091,
+      "text_sha256": "a815764283baea159ffd47ded894592e2189b02cab0e01a34d4e9e2f21ab5903"
+    },
+    {
+      "id": "multimed-0193-reference",
+      "case": "multimed-0193",
+      "source": "human_reference",
+      "text": "96, 110, 96. * Musik * Hallihallo. (Frau) Emily, falsches Zimmer.",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "missing_output_challenge",
+      "asr_wer": null,
+      "text_sha256": "210718ce332b18150565f5bc6a0edd942d6de031a34b75bd9b4b9175e3dcd2c4"
+    },
+    {
+      "id": "multimed-0193-multi",
+      "case": "multimed-0193",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "missing_output_challenge",
+      "asr_wer": 1.0,
+      "text_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "id": "multimed-0225-reference",
+      "case": "multimed-0225",
+      "source": "human_reference",
+      "text": "Welt ihrer Leidenschaft nachgehen der Musik. Bad Arolsen, eine Kleinstadt in Nordhessen, nordwestlich von Kassel, hat rund 15.500 Einwohner. Umso erstaunlicher, dass hier",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": null,
+      "text_sha256": "dc2e7f873c15e5ec303fc00100d5efd0f5e9f0c10d58235e74937fabdcd34d2c"
+    },
+    {
+      "id": "multimed-0225-multi",
+      "case": "multimed-0225",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "ihrer Leidenschaft nachgehen, der Musik Bad Arolsen, eine Kleinstadt in Nordhessen, nordwestlich von Kassel, hat rund fünfzehntausendfünfhundert Einwohner. Umso erstaunlicher, dass",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": 0.16666666666666666,
+      "text_sha256": "356a59e26afc9ff1a91184906e5d2ca9b6201d33373209dcb6a19259896440ab"
+    },
+    {
+      "id": "multimed-0263-reference",
+      "case": "multimed-0263",
+      "source": "human_reference",
+      "text": "Der Roboter ist nie krank, braucht keinen Urlaub, hat keine Familie, für die er sorgen muss und arbeitet präziser und gleichmäßiger als sein menschlicher Kollege. Der Mensch wird",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": null,
+      "text_sha256": "04211f68f794c008c392aeace9edadef14720f8cfd28c07f0dfc7a907e178126"
+    },
+    {
+      "id": "multimed-0263-multi",
+      "case": "multimed-0263",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "Der Roboter ist nie krank, braucht keinen Urlaub, hat keine Familie für die er sorgen muß und arbeitet präziser und gleichmäßiger als sein menschlicher Kollege. Der Mensch",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": 0.07142857142857142,
+      "text_sha256": "0107f1aa9512708be6345d35c71d7c74ca20fc35236ae41341cdfc314795925d"
+    },
+    {
+      "id": "multimed-0300-reference",
+      "case": "multimed-0300",
+      "source": "human_reference",
+      "text": "Wie ist Ihre Einschätzung bezüglich seiner Alkoholabhängigkeit? Er gibt an, seit einem Jahr fast nichts mehr zu trinken. Und er wirkt auf mich psychisch sehr geordnet und glaubwürdig. Darüber hinaus hat der Patient keine Vorerkrankungen. Vielleicht",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": null,
+      "text_sha256": "7f7330df1f8bb4622af3ae142b61b27007065ac606ccb190291845e0232787cf"
+    },
+    {
+      "id": "multimed-0300-multi",
+      "case": "multimed-0300",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "ist Ihre Einschätzung bezüglich seiner AlkoholabhängigkeitEr gibt an seit einem Jahr fast nichts mehr zu trinken und er wirkt auf mich psychisch sehr geordnet und glaubwürdigDarüber hinaus hat der Patient keine Vorerkrankungen. Vielleicht",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": 0.1388888888888889,
+      "text_sha256": "17f1587a1603a574e5681e13e0385df648fc186399e56d7288a4a6d83d6f2aec"
+    },
+    {
+      "id": "multimed-0338-reference",
+      "case": "multimed-0338",
+      "source": "human_reference",
+      "text": "Frau Menzel, Sie sind am 14. März 1963 geboren, ist das richtig? Ja, das stimmt. Und ich wohne im Hüttenweg 23 und nicht Hüterweg.",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": null,
+      "text_sha256": "51cd5cc10dc5d4b3315998bb9f0ccb177cbd46b5ccbd7d1c293036a614fc36bb"
+    },
+    {
+      "id": "multimed-0338-multi",
+      "case": "multimed-0338",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "Frau Menzel, Sie sind am vierzehnten März geboren. Ist das richtig? Ja, das stimmt. Und ich wohne im Hüttenweg dreiundzwanzig und nicht Hüterweg.",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": 0.125,
+      "text_sha256": "75f8253a749d4b86c199c64e430560cdb2e4ef4e8bbc32973064898ce7896446"
+    },
+    {
+      "id": "multimed-0375-reference",
+      "case": "multimed-0375",
+      "source": "human_reference",
+      "text": "setzt die Fettverbrennung ein, eine halbe Stunde täglich ist mindestens anzustreben. Sie sind ja selbst ein Spätberufener in Laufdingen?",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": null,
+      "text_sha256": "6568b78bf413870ce09939c3bef74d25cd8cf58835aba404456ba6bfbd06c2a3"
+    },
+    {
+      "id": "multimed-0375-multi",
+      "case": "multimed-0375",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "setzt die Fettverbrennung einer halbe Stunde täglich ist mindestens anzustreben. Sie sind ja selbst ein Spätberufener in Laufdingen",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": 0.10526315789473684,
+      "text_sha256": "c6cbebe84152abb7bbcfbed1184e11473db50436064c7a28225a624c30447dcc"
+    },
+    {
+      "id": "multimed-0413-reference",
+      "case": "multimed-0413",
+      "source": "human_reference",
+      "text": "Ja, da ist in der letzten Zeit einiges dazugekommen. Wieso? Nach dem Tod meiner Frau, da ging es mir gar nicht gut. Und da konnte ich überhaupt nicht mehr schlafen. Und es ging mit mir nur noch bergab …",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": null,
+      "text_sha256": "b99871c16f723b9e5bb48665cb9b8ffe4adac627a3105e3d4b250170ff46aeec"
+    },
+    {
+      "id": "multimed-0413-multi",
+      "case": "multimed-0413",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "Ja, da ist in der letzten Zeit einiges dazugekommen. Nach dem Tod meiner Frau, da ging es mir gar nicht gutUnd da konnte ich überhaupt nicht mehr schlafenUnd es ging mit mir nur noch bergab.",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": 0.13157894736842105,
+      "text_sha256": "287938f8a0c8450f849e4c08ac50270f2861a9226cdbcb55a8a790e12a384be3"
+    },
+    {
+      "id": "multimed-0451-reference",
+      "case": "multimed-0451",
+      "source": "human_reference",
+      "text": "Sie studiert Pflegemanagement. Ich weiß, wenn ich abends schlafen gehe, kann ich mit einem guten Gewissen schlafen.",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": null,
+      "text_sha256": "ac756def39f3c7d2dd6d8f5eb338b122372921c15800772a4552f4853ebf8326"
+    },
+    {
+      "id": "multimed-0451-multi",
+      "case": "multimed-0451",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "studierten Pflegemanagement. Ich weiß, wenn ich abends schlafen gehe, kann ich mit einem guten Gewissen schlafen.",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": 0.11764705882352941,
+      "text_sha256": "c4f51a4e37c341a47fb2f6f81ac721b8a4f06da2573c054ca86a7489e057890e"
+    },
+    {
+      "id": "multimed-0488-reference",
+      "case": "multimed-0488",
+      "source": "human_reference",
+      "text": "oder Bären die geplante Untersuchung vorspielen … … das dürfte wohl kaum das Jahresbudget sprengen. Frau Dierhof, Sie möchten noch etwas einwenden? Nein, nein. Ich möchte auf einen weiteren Punkt",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": null,
+      "text_sha256": "c37220faff1247cbce1ec561976df880823b9241625ababd71c807bbf315ef12"
+    },
+    {
+      "id": "multimed-0488-multi",
+      "case": "multimed-0488",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "oder Bären. Die geplante Untersuchung vorspielen. Das dürfte wohl kaum das Jahresbudget springen. Frau Dierhoff, Sie möchten noch etwas einwenden. Nein, nein, ich möchte auf einen weiteren",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": 0.10714285714285714,
+      "text_sha256": "9790933eaae3477e3eba41130b1ab345ca67c64545579005e72aadc8ae825be3"
+    },
+    {
+      "id": "multimed-0526-reference",
+      "case": "multimed-0526",
+      "source": "human_reference",
+      "text": "Gastroenteritis. Seit gestern leichte Verwirrtheit und Tachykardie. Klinisch typische Zeichen der Dehydration, Oligurie, Elektrolyte im Normbereich bei erhöhtem Hämatokrit von 53 % … Und Frau Steffen, was hätten Sie vorgeschlagen?",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": null,
+      "text_sha256": "200c403f6f3c3f079f4d998b31e1595ab4a4b6133d2de6d6d7b375cb14707b55"
+    },
+    {
+      "id": "multimed-0526-multi",
+      "case": "multimed-0526",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "Gastroenteritis. Seit gestern leichte Verwirrtheit und Tarykadie klinisch typische Zeichen der Dehydration, Aligorie, Elektrolyte im Normbereich bei erhöhtem Hematokrit von drei und fünfzig ProzentUnd Frau Steffen, was hätten Sie vorgeschaut?",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": 0.25,
+      "text_sha256": "5d6967445b426b8996bc602bd93c444eae2b3e11e561d153ab31a5e3e0e48aac"
+    },
+    {
+      "id": "multimed-0563-reference",
+      "case": "multimed-0563",
+      "source": "human_reference",
+      "text": "haben in unseren büroräumen jetzt über 30 grad das ist nicht akzeptabel schicken sie bitte umgehend einen techniker der das in ordnung bringt das muss heute noch erledigt werden bis 17 uhr bin",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": null,
+      "text_sha256": "8c2c819b45166096f2d42b533fc0b5f507053c6bb99978619454de91f41ad99d"
+    },
+    {
+      "id": "multimed-0563-multi",
+      "case": "multimed-0563",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "Haben in unseren Büroräumen jetzt über dreißig Grad. Das ist nicht akzeptabel. Schicken Sie bitte umgehend einen Techniker, der das in Ordnung bringt. Das muss heute noch erledigt werden. Bis siebzehn Uhr Uhr Uhr",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": 0.12121212121212122,
+      "text_sha256": "62d283bdd3e4a449bf32a3e50959fe452c1bfb4e5b7007e288060cc019c8d419"
+    },
+    {
+      "id": "multimed-0601-reference",
+      "case": "multimed-0601",
+      "source": "human_reference",
+      "text": "Wir wollen ja morgen früh nach Spanien. Und wegen der Bauchschmerzen. Also, die hat er schon öfter, bevor wir losfahren, wissen Sie … Morgen besuchen wir erst Oma und",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": null,
+      "text_sha256": "bfe96bfb3296868f82f6657ea5094fe57bc564117068b433b41b358b5f558ade"
+    },
+    {
+      "id": "multimed-0601-multi",
+      "case": "multimed-0601",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "Wir wollen ja morgen früh nach Spanien. Und wegen der Bauchschmerzen, also die hat ja schon öfter, bevor wir losfahren, wissen Sie morgen besuchen wir erst O",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": 0.10714285714285714,
+      "text_sha256": "4c5b91bde3733d3712520a030dd8f74a0adaf55d16e851e5cc0416e708942c52"
+    },
+    {
+      "id": "multimed-0638-reference",
+      "case": "multimed-0638",
+      "source": "human_reference",
+      "text": "auch in der Notaufnahme, wenn Sie zum Beispiel gegen Tetanus impfen! Es sollte auch klar sein, dass eine solche Prophylaxe nicht zu 100 Prozent wirkt! So, bevor wir später auf die Details eingehen, nun der zweite Fall:",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": null,
+      "text_sha256": "d65e280edd4c9c18bb14e40cee59689c7b274c80ede4aaf167a1fc438debeb52"
+    },
+    {
+      "id": "multimed-0638-multi",
+      "case": "multimed-0638",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "in der Notaufnahme, wenn Sie zum Beispiel gegen Tetanus impfen. Es sollte auch klar sein, dass eine solche Prophylaxe nicht zu hundert Prozent wirkt.",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": 0.3783783783783784,
+      "text_sha256": "0f62b9207332215b6e9d0d801ce31eb7e61c260ff423ea2cb6474d05f8296078"
+    },
+    {
+      "id": "multimed-0676-reference",
+      "case": "multimed-0676",
+      "source": "human_reference",
+      "text": "zur firma das heißt sie dürfen mit ihrer chipkarte die haupteingangstür und alle türen zu den bereichen in denen sie arbeiten öffnen zum beispiel sie frau und mann sind assistentin der",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": null,
+      "text_sha256": "2e94059bf037a6a91756516c6f7386829e1246c236b17a432b7c20afc2841283"
+    },
+    {
+      "id": "multimed-0676-multi",
+      "case": "multimed-0676",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "zur Firma, das heißt, Sie dürfen mit Ihrer Chipkarte die Haupteingangstür und alle Türen zu den Bereichen, in denen sie arbeiten, öffnenZum Beispiel Sie, Frau Zündmann, sind Assistenten der",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": 0.16129032258064516,
+      "text_sha256": "092e9455e4e32a3bf7b960785d19af7621c1f47abccc372f6e757605f903cd6b"
+    },
+    {
+      "id": "multimed-0714-reference",
+      "case": "multimed-0714",
+      "source": "human_reference",
+      "text": "zuführen, die er von selbst nicht oder nicht in genügend von selbst produziert. Das heißt, dass man seinen Körper künstlich manipuliert und das hat in den allermeisten Fällen eine negative",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": null,
+      "text_sha256": "fa882baa16ed9c788a38096d8f29dafdc1bfae33e8dffa31976e007b30f8442d"
+    },
+    {
+      "id": "multimed-0714-multi",
+      "case": "multimed-0714",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "die er von selbst nicht oder nicht genügend von selbst produziert. Das heißt, dass man seinen Körper künstlich manipuliert und das hat in den allermeisten Fällen eine negative",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": 0.06666666666666667,
+      "text_sha256": "aca1f13b994853f07712d08a81ac74a81b3a43473bbd34241b63d7cc63f4ae89"
+    },
+    {
+      "id": "multimed-0751-reference",
+      "case": "multimed-0751",
+      "source": "human_reference",
+      "text": "Dann können Schmerzen **ziehend** sein. Ziehende Schmerzen — so, als würde jemand an eurem Körperteil ziehen oder euch auseinanderziehen.",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": null,
+      "text_sha256": "4c57f819f9b0511bbe13a8f0ec80c73b172923ef1a56360782bf9d60ecf3adbc"
+    },
+    {
+      "id": "multimed-0751-multi",
+      "case": "multimed-0751",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "Dann können Schmerzen ziehend sein. Ziehende Schmerzen, so als würde jemand an eurem Körperteil ziehen oder euch auseinanderziehen.",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": 0.0,
+      "text_sha256": "e5adde9d9c1327d3ccd2938ecc2af56b6b7e9ab55c9b1475d041f0b6295a6d36"
+    },
+    {
+      "id": "multimed-0789-reference",
+      "case": "multimed-0789",
+      "source": "human_reference",
+      "text": "normal gewesen, aber dann zum Mittagessen nicht mehr erschienen. Eine Pflegekraft habe sie sehr unruhig und aggressiv im Bett vorgefunden. Bei der Aufnahme war",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": null,
+      "text_sha256": "7143fd5e154f76a016389cb3197b40a102cccc0aada480a5ea38019e59cf2154"
+    },
+    {
+      "id": "multimed-0789-multi",
+      "case": "multimed-0789",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "normal gewesen, aber dann zum Mittagessen nicht mehr erschienen. Eine Pflegekraft habe sie sehr unruhig und aggressiv im Bett vorgefunden. Bei der Aufnahme",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": 0.041666666666666664,
+      "text_sha256": "22134f9f7d27e3ce9c3a88307da31dffd88060266f7cd0ab866e406ccde12f87"
+    },
+    {
+      "id": "multimed-0826-reference",
+      "case": "multimed-0826",
+      "source": "human_reference",
+      "text": "woher ich komme. Und leider Universitäten in Simbabwe sind ein bisschen teuer. Aber trotzdem, jetzt ist eine neue Umgebung und so,",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": null,
+      "text_sha256": "addd572576aa2beb6a1c4dec6b45bd3cda7f285585a1d1b584e8412cfc5411fa"
+    },
+    {
+      "id": "multimed-0826-multi",
+      "case": "multimed-0826",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "wie ich kumme und leider diese investiert in Zimbabwe ist ein bisschen teuer, aber trotzdem jetzt ist ein neue Umgebung und so.",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": 0.3333333333333333,
+      "text_sha256": "bd58e5b7dc39eb2acb498263e72ca59d845d24ccd53c8ab064f3261ea2546be9"
+    },
+    {
+      "id": "multimed-0864-reference",
+      "case": "multimed-0864",
+      "source": "human_reference",
+      "text": "sondern diesen teil vorher auch trainieren ja jetzt spreche ich über angemessene kleidung für das vorstellungsgespräch denn auch die kleiderwahl ist davon abhängig wo man sich bewirbt angemessen",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": null,
+      "text_sha256": "7476c9341b80cff80829fb6792744eec728d4b8cadbbad4c3ec6f16f60273ffb"
+    },
+    {
+      "id": "multimed-0864-multi",
+      "case": "multimed-0864",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "Sondern diesen Teil vorher auch trainieren. Ja jetzt spreche ich über angemessene Kleidung für das Vorstellungsgespräch, denn auch die Kleiderwahl ist davon abhängig, wo man sich bewirbt.",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": 0.03571428571428571,
+      "text_sha256": "2ff436023c7595e4e77abe9bfd25100b14dae3015de7a9d10bba52d2911a8177"
+    },
+    {
+      "id": "multimed-0902-reference",
+      "case": "multimed-0902",
+      "source": "human_reference",
+      "text": "dank dann kommen wir zur eigentlichen prüfung zu teil 1 a herr gül fangen sie bitte an hier sind zwei themen zur auswahl suchen sie sich ein thema aus und sprechen sie darüber er danke [Musik] ich",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": null,
+      "text_sha256": "d214c70d56e3b110d5e62506eeaa7932f5d1302265fee6b1513be4d931e31159"
+    },
+    {
+      "id": "multimed-0902-multi",
+      "case": "multimed-0902",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "dann kommen wir zur eigentlichen Prüfung zu Teil eins A Herr Gühl, fangen Sie bitte an. Hier sind zwei Themen zur Auswahl suchen Sie sich ein Thema aus und sprechen Sie darüberJa, danke",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": 0.1891891891891892,
+      "text_sha256": "ab652446ba11f503f9b42ca334d6a4de9ae14ce102dbac54dfabfe7c06017688"
+    },
+    {
+      "id": "multimed-0939-reference",
+      "case": "multimed-0939",
+      "source": "human_reference",
+      "text": "Dementsprechend müssen wir das Bett hochfahren oder hochpumpen. Nicht erschrecken, wir machen jetzt Oberkörper ein Stück runter. Alles klar? - Ja.",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": null,
+      "text_sha256": "8b103e32963012b3cd3d5ff008af073a23089342a88a209cf15e8ded00404b29"
+    },
+    {
+      "id": "multimed-0939-multi",
+      "case": "multimed-0939",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "Dementsprechend müssen wir das Bett entweder hoch sein oder nicht public. Noch welche Allergie und weniger schrecken, wir machen jetzt Obergörter, diese Stückchen runter und haben irgendwas am ersten vier Segment alles klar.",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": 1.1,
+      "text_sha256": "91222d2e1ca703549e2be272ca040edb50696addcb099f428338f52da32572b7"
+    },
+    {
+      "id": "multimed-0977-reference",
+      "case": "multimed-0977",
+      "source": "human_reference",
+      "text": "Ich meine ja auch meine Igel, die ich kenne. Du schaffst das niemals! Doch! Das will ich sehen, ob du das schaffst! So, guck hier! Super, da kann ich",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": null,
+      "text_sha256": "69752154b2f35384383c9a467bcf5dec99f950d73979bafaec5b51bb24f5a0a5"
+    },
+    {
+      "id": "multimed-0977-multi",
+      "case": "multimed-0977",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "Ich meine ja auch meine Igel, die ich kenne. Du schaffst es niemals doch das will ich sehen, ob du da schaffst. So Kukia super, da kann ich ja",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": 0.1724137931034483,
+      "text_sha256": "b30cdeac376799a32f431fd2303095d621bf755b6e9633801dab9a0ca0b4ef9f"
+    },
+    {
+      "id": "multimed-1014-reference",
+      "case": "multimed-1014",
+      "source": "human_reference",
+      "text": "hilfe von kollegen die noch nicht da sind oder schon weg sind da bin ich mir nicht so sicher es kann auch sein dass ich allein im büro mehr stress habe das ist doch toll dann kannst du arbeiten und",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": null,
+      "text_sha256": "5a3490858f176b800f48a7358cb3c3cb703e013de577100d2a1f828a4f4ea00f"
+    },
+    {
+      "id": "multimed-1014-multi",
+      "case": "multimed-1014",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "Hilfe von Kollegen, die noch nicht da sind oder schon weg sindDa bin ich mir nicht so sicher, es kann auch sein, dass ich allein im Büro mehr Stress habeDas ist doch toll, dann kannst du arbeiten und",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": 0.1,
+      "text_sha256": "ef33bb7a3396d8e9932f6cc5249fe6d7bc935c5b751991de772eed0cbdae16bc"
+    },
+    {
+      "id": "multimed-1052-reference",
+      "case": "multimed-1052",
+      "source": "human_reference",
+      "text": "Muss ich ja! Alles Gute, Herr Trabitz. So, und das ist der Herr … Die junge Frau kenn ich! Das ist die Frau Steffens. Die hat heute Morgen bei Ihnen Blut abgenommen.",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": null,
+      "text_sha256": "d1da8509838f5dfdc3c924535ac20c3e121b37e4cb0155b62b64d2a46eb9df1b"
+    },
+    {
+      "id": "multimed-1052-multi",
+      "case": "multimed-1052",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "Muss ich ja alles Guterabitz so und das ist der Herr, die junge Frau kenne ich. Das ist die Frau Steffens, die hat heute morgen bei Ihnen Blut",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": 0.16129032258064516,
+      "text_sha256": "74663cca66e7aa2c0c30e5636c20acf4a2f1ac188b311724db7d5e3df2578f10"
+    },
+    {
+      "id": "multimed-1090-reference",
+      "case": "multimed-1090",
+      "source": "human_reference",
+      "text": "130 zu 90. Ihr Blutdruck ist leicht erhöht. Wir überprüfen noch Ihre Blutwerte.",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": null,
+      "text_sha256": "3013c297d37d76344bbe564e126f524e3596916e26a7aaa948bd6fe76ccee0f4"
+    },
+    {
+      "id": "multimed-1090-multi",
+      "case": "multimed-1090",
+      "source": "nemotron-speech-multilingual-0.6b",
+      "text": "hundertdreißig zu neunzig. Hm Ihr Blutdruck ist leicht erhöhtWir überprüfen noch ihre Blutwerte",
+      "language": "German",
+      "kind": "isolated_excerpt",
+      "sample_group": "systematic_sample",
+      "asr_wer": 0.38461538461538464,
+      "text_sha256": "2fee206283abe4ca86649c8dfafa3099d910e190fbfd43bb5465f9b391ef3612"
+    }
+  ]
+}

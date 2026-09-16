@@ -1,5 +1,10 @@
 # German medical transcription benchmark — 2026-09-16
 
+**Subsequent downstream evaluation:** [report quality](REPORT-QUALITY.md)
+compares separate ASR/reference-generated notes on 30 fixed systematic clips
+plus a missing-output challenge. It also identifies nonmedical content in this
+corpus; the aggregate ASR score below is not a clinical fact-accuracy score.
+
 The multilingual Nemotron model achieved **16.94% word error rate (WER)** and
 **8.88% character error rate (CER)** on the complete available MultiMed German
 test split. It processed approximately 3.8 hours of audio in 12.43 minutes of

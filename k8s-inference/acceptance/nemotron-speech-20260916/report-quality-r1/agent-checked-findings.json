@@ -1,0 +1,116 @@
+{
+  "review_type": "Agent text-to-text inspection, not clinician adjudication or listening review",
+  "selection": "Illustrative confirmed discrepancies; not an exhaustive error count or preregistered severity score",
+  "findings": [
+    {
+      "input_id": "en-01-en",
+      "basis": "human transcript and ASR transcript",
+      "issue": "Unsupported clinical reassurance",
+      "report_quote": "No signs of severe infection or dehydration requiring immediate intervention.",
+      "explanation": "The conversation establishes tolerating fluids and a conservative plan, not an examination or explicit exclusion of severe infection/dehydration.",
+      "origin": "summarizer"
+    },
+    {
+      "input_id": "en-01-multi",
+      "basis": "human transcript and ASR transcript",
+      "issue": "Unasked travel history becomes a negative finding",
+      "report_quote": "No travel history, smoking, or alcohol use.",
+      "explanation": "Smoking and alcohol were discussed; travel was not. Not mentioned is not the same as denied.",
+      "origin": "summarizer"
+    },
+    {
+      "input_id": "en-02-en",
+      "basis": "human transcript and ASR transcript",
+      "issue": "Adds an undocumented differential diagnosis",
+      "report_quote": "Differential includes allergic contact dermatitis or other dermatitis, but eczema flare favored based on history.",
+      "explanation": "The clinician discusses a possible eczema flare and possible triggers, not this differential diagnosis. Plausibility does not make this a documented clinical assessment.",
+      "origin": "summarizer"
+    },
+    {
+      "input_id": "en-02-en",
+      "basis": "human transcript and ASR transcript",
+      "issue": "Invents an explanation for examination limitations",
+      "report_quote": "Not physically examined due to remote consultation; assessment based on patient description.",
+      "explanation": "Remote consultation is not established by the supplied transcript. The clinician says 'having looked at your skin', so this contradiction/ambiguity should be retained rather than resolved by guessing.",
+      "origin": "summarizer"
+    },
+    {
+      "input_id": "en-02-multi",
+      "basis": "human transcript and ASR transcript",
+      "issue": "Invents why a differential was not explored",
+      "report_quote": "Differential not fully explored due to remote consultation and poor audio quality.",
+      "explanation": "Poor audio is stated; neither remote setting nor a causal explanation for the clinician's differential is established.",
+      "origin": "summarizer"
+    },
+    {
+      "input_id": "de-herzrasen-multi",
+      "basis": "ASR only; no human reference",
+      "issue": "Invented timing of prior depression",
+      "report_quote": "Vor etwa sechs Jahren depressive Episode nach Trennung",
+      "source_quote": "eine depressive Episode vor ein paar Jahren",
+      "explanation": "The ASR says a few years ago, not six. Six weeks refers to the current symptoms. This is a downstream fidelity error without needing to assume that the audio transcription is correct.",
+      "origin": "summarizer"
+    },
+    {
+      "input_id": "de-grippaler-infekt-multi",
+      "basis": "ASR only; no human reference",
+      "issue": "Conditional pre-examination assessment becomes established exclusion",
+      "report_quote": "Kein Hinweis auf bakterielle Superinfektion.",
+      "source_quote": "wenn ich das finde, was ich erwarte, dann haben Sie",
+      "explanation": "The clinician says examination is still to follow and frames the expected viral explanation conditionally. No bacterial-superinfection exclusion was established.",
+      "origin": "summarizer"
+    },
+    {
+      "input_id": "de-grippaler-infekt-multi",
+      "basis": "ASR only; no human reference",
+      "issue": "Misstates employment timeline",
+      "report_quote": "mit befristetem Vertrag, das in sechs Monaten endet.",
+      "source_quote": "wir sind jetzt gut halb durch",
+      "explanation": "The project lasts six months and is already about halfway through; six months remaining is not supported.",
+      "origin": "summarizer"
+    },
+    {
+      "input_id": "de-polyarthritis-multi",
+      "basis": "ASR only; no human reference",
+      "issue": "Specific disease label silently reconstructed from corrupted rheumatology terms",
+      "report_quote": "In der Familie (Großtante) ist eine rheumatoide Arthritis bekannt.",
+      "source_quote": "meine Großtante hatte Räume",
+      "explanation": "Dialogue context strongly suggests rheumatism, but the ASR does not establish the great-aunt's exact disease subtype. Rheumatoid arthritis is plausible, not independently verified. The model should retain that uncertainty.",
+      "origin": "both; exact audio correctness unknown"
+    },
+    {
+      "input_id": "multimed-0338-multi",
+      "basis": "human transcript",
+      "issue": "Birth year lost in ASR and absent from report",
+      "report_quote": "Geburtsdatum: 14. März (bestätigt durch Patientin)",
+      "source_quote": "14. März 1963 geboren",
+      "explanation": "ASR preserved the day/month but dropped 1963. The report does not invent a year, but the missing year should be made explicit when used as a patient identification field.",
+      "origin": "asr"
+    },
+    {
+      "input_id": "multimed-0526-multi",
+      "basis": "human transcript",
+      "issue": "Oliguria omitted",
+      "report_quote": "",
+      "source_quote": "Dehydration, Oligurie, Elektrolyte im Normbereich",
+      "explanation": "ASR changed Oligurie to Aligorie. The ASR-based note omits the concept; the reference-based control preserves it. Tachycardia and hematocrit 53% remain, so the general case is recognizable while a potentially important finding disappears.",
+      "origin": "asr information corruption followed by summarizer omission"
+    },
+    {
+      "input_id": "en-01-reference",
+      "basis": "human transcript",
+      "issue": "Control also adds an unsupported qualifier",
+      "report_quote": "possibly post-infectious",
+      "explanation": "The conversation discusses gastroenteritis possibly caused by viruses or bacteria, not a post-infectious condition. Perfect reference input does not eliminate downstream additions.",
+      "origin": "summarizer"
+    }
+  ],
+  "reference_note_conflicts": [
+    "English consultation01 clinician note says bilious vomiting; transcript says normal food-coloured vomit.",
+    "Consultation01 note says wife and children unwell; dialogue identifies one vomiting child and no identical household illness.",
+    "Consultation01 note says review in 3-5 days; spoken plan says 3-4 days.",
+    "Consultation02 note lists Betnovate BD and Cetraben QDS; those names/doses are not in the transcript, which discusses unspecified stronger steroid/emollient and fexofenadine.",
+    "Consultation02 note says review 10-14 days; spoken plan says next week if not improving.",
+    "Consultation02 patient corrects distribution to chest/hands/inside elbows; clinician later says chest/back. Both source inconsistency and note mismatch must be preserved rather than selecting a convenient gold answer."
+  ]
+}

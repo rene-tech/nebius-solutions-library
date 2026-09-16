@@ -1,0 +1,3 @@
+ENTWURF
+
+Auszug: Die Person darf mit ihrer Chipkarte die Haupteingangstür und alle Türen zu den Bereichen öffnen, in denen sie arbeitet. Beispiel: Frau und Mann sind Assistentin des...
