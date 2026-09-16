@@ -1,0 +1,21 @@
+# Model-specific image: regional OCI storage owns both runtime and pinned weights.
+# Build with exact BASE_IMAGE digest and the source pins from contracts.py.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+ARG MODEL_REPOSITORY
+ARG MODEL_REVISION
+ARG MODEL_FILENAME
+ARG MODEL_SHA256
+ADD --checksum=sha256:${MODEL_SHA256} \
+    https://huggingface.co/nvidia/${MODEL_REPOSITORY}/resolve/${MODEL_REVISION}/${MODEL_FILENAME} \
+    /opt/fs2-speech-checkpoint/${MODEL_FILENAME}
+RUN mkdir -p /opt/fs2-speech-hf/hub/models--nvidia--${MODEL_REPOSITORY}/snapshots/${MODEL_REVISION} \
+    && ln -s /opt/fs2-speech-checkpoint/${MODEL_FILENAME} \
+       /opt/fs2-speech-hf/hub/models--nvidia--${MODEL_REPOSITORY}/snapshots/${MODEL_REVISION}/${MODEL_FILENAME} \
+    && chmod -R a+rX /opt/fs2-speech-checkpoint /opt/fs2-speech-hf
+ENV HF_HOME=/opt/fs2-speech-hf HF_HUB_OFFLINE=1
+LABEL ai.fs2.model.repository="nvidia/${MODEL_REPOSITORY}" \
+      ai.fs2.model.revision=${MODEL_REVISION} \
+      ai.fs2.model.sha256=${MODEL_SHA256}
+USER 10001

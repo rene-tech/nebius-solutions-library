@@ -16,6 +16,7 @@ from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, gene
 from .audio import AudioInputError, DownloadAudio, download_audio, transcribe_file
 from .contracts import MODELS, RuntimeProfile, SpeechOptions, StrictContract
 from .nemo_runtime import NeMoRuntime
+from .probe import FIXTURE
 from .stream import run_stream
 
 LOG = logging.getLogger(__name__)
@@ -49,12 +50,12 @@ def create_app(runtime, profile: RuntimeProfile, *, allowed_hosts: frozenset[str
                 with tempfile.TemporaryDirectory(prefix="fs2-speech-warm-") as directory:
                     path = Path(directory) / "warm.wav"
                     process = await asyncio.create_subprocess_exec(
-                        "espeak-ng", "-w", str(path), "Speech recognition is ready.",
+                        "espeak-ng", "-v", "en-us", "-s", "145", "-w", str(path), FIXTURE,
                         stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
                     )
                     if await process.wait() != 0:
                         raise RuntimeError("warmup_fixture_failed")
-                    options = SpeechOptions(model=profile.model, chunk_size_ms=profile.chunk_size_ms,
+                    options = SpeechOptions(model=profile.model, language="en-US", chunk_size_ms=profile.chunk_size_ms,
                                             strip_language_tags=profile.strip_language_tags)
                     result = await transcribe_file(runtime, path, options)
                     if not result["text"].strip():

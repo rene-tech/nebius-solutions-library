@@ -20,6 +20,10 @@ RUN python -m pip install --no-cache-dir --no-deps . \
     && useradd --uid 10001 --create-home speech \
     && mkdir -p /cache/huggingface /cache/numba && chown -R speech:speech /cache
 USER 10001
+# Forked Inductor compile workers inherit unusable CUDA mappings. In-process
+# compilation avoids those children; fresh-process snapshot restore is tested
+# separately. This changes compilation parallelism, not model math.
+ENV TORCHINDUCTOR_COMPILE_THREADS=1
 ARG SOURCE_REVISION
 LABEL org.opencontainers.image.source="https://github.com/rene-tech/nebius-solutions-library" \
       org.opencontainers.image.revision=$SOURCE_REVISION
