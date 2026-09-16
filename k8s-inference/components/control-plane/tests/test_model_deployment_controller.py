@@ -63,6 +63,8 @@ from fs2_serve.model_deployment_controller import (
     PostgresActiveOperations,
     PrometheusActiveOperations,
     ResourceSnapshot,
+    ScaleGateReleaseAuthorization,
+    ScaleGateScalerCheckpoint,
     ScaleGateTargetIdentity,
     ScaleGateTombstone,
     ScaleHandoffReceipt,
@@ -75,9 +77,11 @@ from fs2_serve.model_deployment_controller import (
     _encoded_scale_gate_tombstone_value,
     _encoded_scale_gate_value,
     _field_manager_conflicts,
+    _fixed_scale_handoff_targets,
     _model_deletion_fence,
     _model_write_fence,
     _scale_gate_allowance_value,
+    _scale_gate_authorization,
     _scale_gate_companion_keys,
     _scale_gate_target,
     _scale_gate_target_key,
@@ -663,7 +667,9 @@ class FakeApi(ModelControllerApi):
         owner_uid: str,
         model_generation: int,
         model_fence: ModelWriteFence,
+        fence: LeaseFence,
     ) -> bool:
+        await self.assert_fence(fence)
         self.calls.append(("fixed-scale-guard", resource.name))
         assert current.observed.controller_owner_uid == owner_uid
         assert model_generation >= 1
@@ -727,12 +733,43 @@ class FakeApi(ModelControllerApi):
         owner_uid: str,
         model_fence: ModelWriteFence,
         fence: LeaseFence,
-    ) -> None:
+    ) -> ScaleGateReleaseAuthorization:
         await self.assert_fence(fence)
         self.calls.append(("release-scale-gate", resource.name))
         assert scaler.kind == "ScaledObject"
         assert current.observed.controller_owner_uid == owner_uid
         assert model_fence == _model_write_fence(self.model, model_fence.key)
+        return ScaleGateReleaseAuthorization(
+            version=2,
+            deploymentUID=current.observed.uid,
+            modelUID=owner_uid,
+            modelResourceVersion=model_fence.resource_version,
+            modelGeneration=model_fence.generation,
+            modelSpecDigest=model_fence.spec_digest,
+            scalerAPIVersion=scaler.api_version,
+            scalerKind=scaler.kind,
+            scalerNamespace=scaler.namespace,
+            scalerName=scaler.name,
+            desiredScalerDigest=scaler.digest,
+            phase="prepared",
+        )
+
+    async def apply_autoscaler_resource(
+        self,
+        resource: RenderedResource,
+        *,
+        target: RenderedResource,
+        authorization: ScaleGateReleaseAuthorization,
+        owner_uid: str,
+        model_fence: ModelWriteFence,
+        fence: LeaseFence,
+    ) -> ResourceSnapshot:
+        await self.assert_fence(fence)
+        assert target.kind == "Deployment"
+        assert authorization.desired_scaler_digest == resource.digest
+        assert model_fence == _model_write_fence(self.model, model_fence.key)
+        self.calls.append(("apply-autoscaler", resource.name))
+        return await self.apply_resource(resource, owner_uid=owner_uid, fence=fence)
 
     async def prepare_scale_gate_deletion(
         self,
@@ -2568,7 +2605,10 @@ def _test_gate_key(resource: RenderedResource) -> str:
     return _scale_gate_target_key(_scale_gate_target(resource))
 
 
-def _test_gate_value(resource: RenderedResource, receipt: ScaleHandoffReceipt | ScaleInitializationReceipt) -> str:
+def _test_gate_value(
+    resource: RenderedResource,
+    receipt: ScaleHandoffReceipt | ScaleInitializationReceipt | ScaleGateReleaseAuthorization,
+) -> str:
     return _encoded_scale_gate_value(_scale_gate_target(resource), receipt)
 
 
@@ -3543,7 +3583,8 @@ async def test_http_autoscaled_gate_stays_closed_and_allows_only_the_exact_scale
         ),
     )
     scaler, target = next((scaler, target) for scaler, target in _autoscaler_pairs(render))
-    model_fence = _handoff_model_fence()
+    live_model = _handoff_model()
+    model_fence = _model_write_fence(live_model, ModelKey(namespace="fs2-models", name="qwen-live"))
     receipt = ScaleHandoffReceipt(
         version=1,
         deploymentUID="deployment-uid",
@@ -3627,7 +3668,7 @@ async def test_http_autoscaled_gate_stays_closed_and_allows_only_the_exact_scale
         if request.url.path.endswith("/leases/fs2-model-controller"):
             return _lease_response()
         if request.url.path.endswith("/modeldeployments/qwen-live"):
-            return httpx.Response(200, json=_handoff_model())
+            return httpx.Response(200, json=live_model)
         if request.url.path.endswith(f"/configmaps/{SCALE_GATE_CONFIG_MAP}"):
             if request.method == "PATCH":
                 gate_patches.append(json.loads(request.content))
@@ -3661,7 +3702,7 @@ async def test_http_autoscaled_gate_stays_closed_and_allows_only_the_exact_scale
         client=http,
     )
     current_snapshot = _snapshot(current, target)
-    await client.release_scale_gate(
+    authorization = await client.release_scale_gate(
         target,
         scaler=scaler,
         current=current_snapshot,
@@ -3671,7 +3712,7 @@ async def test_http_autoscaled_gate_stays_closed_and_allows_only_the_exact_scale
     )
     target_identity = _scale_gate_target(target)
     so_key, hpa_key = _scale_gate_companion_keys(target_identity)
-    assert _TEST_SCALE_GATES[_test_gate_key(target)] == _test_gate_value(target, receipt)
+    assert _TEST_SCALE_GATES[_test_gate_key(target)] == _test_gate_value(target, authorization)
     assert _TEST_SCALE_GATES[so_key] == _scale_gate_allowance_value(
         target_identity,
         api_version="keda.sh/v1alpha1",
@@ -3683,7 +3724,7 @@ async def test_http_autoscaled_gate_stays_closed_and_allows_only_the_exact_scale
     assert hpa_key not in _TEST_SCALE_GATES
 
     phase = "scaler"
-    await client.release_scale_gate(
+    authorization = await client.release_scale_gate(
         target,
         scaler=scaler,
         current=current_snapshot,
@@ -3703,7 +3744,7 @@ async def test_http_autoscaled_gate_stays_closed_and_allows_only_the_exact_scale
     phase = "complete"
     before_steady = len(gate_patches)
     requests.clear()
-    await client.release_scale_gate(
+    authorization = await client.release_scale_gate(
         target,
         scaler=scaler,
         current=current_snapshot,
@@ -3716,6 +3757,31 @@ async def test_http_autoscaled_gate_stays_closed_and_allows_only_the_exact_scale
     assert sum(path.endswith("/scaledobjects") and method == "GET" for method, path in requests) == 1
     assert sum(path.endswith(f"/configmaps/{SCALE_GATE_CONFIG_MAP}") for _, path in requests) == 2
     assert not any(method == "PATCH" for method, _ in requests)
+
+    # A live owned scaler may legitimately lag the new rendered spec. The
+    # gate authorizes that exact old tuple to the desired digest; it does not
+    # require the update to have happened before permission exists.
+    new_scaler_manifest = copy.deepcopy(scaler.manifest)
+    new_scaler_manifest["spec"]["maxReplicaCount"] += 1
+    new_scaler = scaler.model_copy(
+        update={"manifest": new_scaler_manifest, "digest": canonical_digest(new_scaler_manifest)}
+    )
+    live_model = model_object(generation=3)
+    live_model["spec"]["availability"]["maxReplicas"] += 1
+    new_model_fence = _model_write_fence(live_model, ModelKey(namespace="fs2-models", name="qwen-live"))
+    phase = "scaler"
+    authorization = await client.release_scale_gate(
+        target,
+        scaler=new_scaler,
+        current=current_snapshot,
+        owner_uid="cr-uid-1",
+        model_fence=new_model_fence,
+        fence=fence(),
+    )
+    assert authorization.phase == "prepared"
+    assert authorization.prior_scaler is not None
+    assert authorization.prior_scaler.digest != authorization.desired_scaler_digest
+    live_model = _handoff_model()
 
     interrupted = ScaleHandoffReceipt(
         version=1,
@@ -3751,7 +3817,7 @@ async def test_http_autoscaled_gate_stays_closed_and_allows_only_the_exact_scale
 
     _TEST_SCALE_GATES.clear()
     _TEST_SCALE_GATES[_test_gate_key(target)] = _test_gate_value(target, interrupted)
-    await client.release_scale_gate(
+    authorization = await client.release_scale_gate(
         target,
         scaler=scaler,
         current=current_snapshot,
@@ -3760,7 +3826,7 @@ async def test_http_autoscaled_gate_stays_closed_and_allows_only_the_exact_scale
         fence=fence(),
     )
     assert len(gate_patches) == recovery_patch_count + 1
-    assert _TEST_SCALE_GATES[_test_gate_key(target)] == _test_gate_value(target, receipt)
+    assert _TEST_SCALE_GATES[_test_gate_key(target)] == _test_gate_value(target, authorization)
     assert _TEST_SCALE_GATES[so_key] == _scale_gate_allowance_value(
         target_identity,
         api_version="keda.sh/v1alpha1",
@@ -3898,7 +3964,7 @@ async def test_http_post_delete_handoff_reversal_releases_only_the_exact_scaler_
         writes_enabled=True,
         client=http,
     )
-    await client.release_scale_gate(
+    authorization = await client.release_scale_gate(
         target,
         scaler=scaler,
         current=_snapshot(current, target),
@@ -3910,7 +3976,7 @@ async def test_http_post_delete_handoff_reversal_releases_only_the_exact_scaler_
     target_identity = _scale_gate_target(target)
     so_key, hpa_key = _scale_gate_companion_keys(target_identity)
     assert _TEST_SCALE_GATES == {
-        _test_gate_key(target): _test_gate_value(target, receipt),
+        _test_gate_key(target): _test_gate_value(target, authorization),
         so_key: _scale_gate_allowance_value(
             target_identity,
             api_version=scaler.api_version,
@@ -6243,3 +6309,312 @@ def test_a_configured_mechanism_is_reported_without_claiming_a_level() -> None:
     assert mechanisms["gpu-resident"]["reason"] == "PromotionControllerNotInstalled"
     assert mechanisms["gpu-resident"]["selected"] is False
     assert mechanisms["gpu-resident"].get("configDigest") is None
+
+
+@pytest.mark.asyncio
+async def test_fixed_generation_closes_crashed_older_autoscaler_allowance_without_workload_write(
+    tmp_path: Path,
+) -> None:
+    """gen2 fixed -> gen3 autoscaled crash -> gen4 fixed is resumable."""
+
+    token = tmp_path / "token"
+    token.write_text("projected-service-account-token")
+    desired, current, _ = _fixed_scale_http_fixture()
+    model = model_object(generation=4)
+    model_fence = _model_write_fence(model, ModelKey(namespace="fs2-models", name="qwen-live"))
+    authorization = ScaleGateReleaseAuthorization(
+        version=2,
+        deploymentUID="deployment-uid",
+        modelUID="cr-uid-1",
+        modelResourceVersion="3",
+        modelGeneration=3,
+        modelSpecDigest=f"sha256:{'3' * 64}",
+        scalerAPIVersion="keda.sh/v1alpha1",
+        scalerKind="ScaledObject",
+        scalerNamespace="fs2-models",
+        scalerName="qwen-live-autoscaler",
+        desiredScalerDigest=f"sha256:{'4' * 64}",
+        phase="prepared",
+    )
+    target = _scale_gate_target(desired)
+    target_key = _scale_gate_target_key(target)
+    so_key, hpa_key = _scale_gate_companion_keys(target)
+    _TEST_SCALE_GATES.update(
+        {
+            target_key: _test_gate_value(desired, authorization),
+            so_key: _scale_gate_allowance_value(
+                target,
+                api_version="keda.sh/v1alpha1",
+                kind="ScaledObject",
+                namespace="fs2-models",
+                name="qwen-live-autoscaler",
+                owner_uid="cr-uid-1",
+            ),
+            hpa_key: "crashed-before-scaler-created",
+        }
+    )
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path.endswith("/leases/fs2-model-controller"):
+            return _lease_response()
+        if request.url.path.endswith("/modeldeployments/qwen-live"):
+            return httpx.Response(200, json=model)
+        if (response := _scale_gate_response(request)) is not None:
+            return response
+        if request.method == "GET" and request.url.path.endswith(
+            ("/horizontalpodautoscalers", "/scaledobjects")
+        ):
+            return httpx.Response(200, json={"metadata": {}, "items": []})
+        if request.url.path.endswith(f"/deployments/{desired.name}"):
+            return httpx.Response(200, json=current)
+        return httpx.Response(404, json={"kind": "Status", "reason": "NotFound"})
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.invalid")
+    client = HttpKubernetesModelClient(
+        base_url="https://kubernetes.invalid",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        writes_enabled=True,
+        client=http,
+    )
+    assert await client.fixed_scale_guard_clear(
+        desired,
+        current=_snapshot(current, desired),
+        owner_uid="cr-uid-1",
+        model_generation=4,
+        model_fence=model_fence,
+        fence=fence(),
+    )
+    assert set(_TEST_SCALE_GATES) == {target_key}
+    closed = _scale_gate_authorization(_TEST_SCALE_GATES[target_key], target)
+    assert isinstance(closed, ScaleGateReleaseAuthorization)
+    assert closed.phase == "closed"
+    assert closed.model_generation == 4
+    assert closed.model_resource_version == model_fence.resource_version
+    assert closed.model_spec_digest == model_fence.spec_digest
+    base_render = renderer().render(
+        model_spec(),
+        RenderContext(
+            name="qwen-live",
+            namespace="fs2-models",
+            uid="cr-uid-1",
+            generation=4,
+            pool=envelope().pools["pool-b"],
+            eligible_pools=[envelope().pools[pool_ref] for pool_ref in model_spec().placement.pool_refs],
+            prometheus_server_address="http://prometheus:9090",
+        ),
+    )
+    fixed_render = base_render.model_copy(update={"resources": [desired]})
+    assert _fixed_scale_handoff_targets(
+        fixed_render,
+        Discovery(resources=[_snapshot(current, desired)], complete=True),
+        "cr-uid-1",
+        4,
+    ) == [(desired, _snapshot(current, desired))]
+    assert not any(
+        request.method in {"PATCH", "POST", "DELETE"}
+        and not request.url.path.endswith(f"/configmaps/{SCALE_GATE_CONFIG_MAP}")
+        and request.url.params.get("dryRun") != "All"
+        for request in requests
+    )
+    assert not any(request.url.path.endswith("/scale") for request in requests)
+    await http.aclose()
+
+
+@pytest.mark.asyncio
+async def test_scaledobject_apply_fences_cr_change_at_the_mutating_boundary(tmp_path: Path) -> None:
+    token = tmp_path / "token"
+    token.write_text("projected-service-account-token")
+    render = renderer().render(
+        model_spec(),
+        RenderContext(
+            name="qwen-live",
+            namespace="fs2-models",
+            uid="cr-uid-1",
+            generation=2,
+            pool=envelope().pools["pool-b"],
+            eligible_pools=[envelope().pools[pool_ref] for pool_ref in model_spec().placement.pool_refs],
+            prometheus_server_address="http://prometheus:9090",
+        ),
+    )
+    scaler, target_resource = next(iter(_autoscaler_pairs(render)))
+    model = _handoff_model()
+    model_fence = _model_write_fence(model, ModelKey(namespace="fs2-models", name="qwen-live"))
+    authorization = ScaleGateReleaseAuthorization(
+        version=2,
+        deploymentUID="deployment-uid",
+        modelUID="cr-uid-1",
+        modelResourceVersion=model_fence.resource_version,
+        modelGeneration=model_fence.generation,
+        modelSpecDigest=model_fence.spec_digest,
+        scalerAPIVersion=scaler.api_version,
+        scalerKind=scaler.kind,
+        scalerNamespace=scaler.namespace,
+        scalerName=scaler.name,
+        desiredScalerDigest=scaler.digest,
+        phase="prepared",
+    )
+    _TEST_SCALE_GATES[_test_gate_key(target_resource)] = _test_gate_value(target_resource, authorization)
+    deployment = copy.deepcopy(target_resource.manifest)
+    deployment["spec"]["replicas"] = 0
+    deployment["metadata"].update(
+        {"uid": "deployment-uid", "resourceVersion": "20", "generation": 1, "managedFields": []}
+    )
+    writes: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/leases/fs2-model-controller"):
+            return _lease_response()
+        if request.url.path.endswith("/modeldeployments/qwen-live"):
+            raced = copy.deepcopy(model)
+            raced["metadata"].update({"resourceVersion": "3", "generation": 3})
+            raced["spec"]["tenantId"] = "raced"
+            return httpx.Response(200, json=raced)
+        if (response := _scale_gate_response(request)) is not None:
+            return response
+        if request.url.path.endswith(f"/deployments/{target_resource.name}"):
+            return httpx.Response(200, json=deployment)
+        if request.url.path.endswith(f"/scaledobjects/{scaler.name}"):
+            return httpx.Response(404, json={"kind": "Status", "reason": "NotFound"})
+        if request.method in {"PATCH", "POST", "DELETE"}:
+            writes.append(request)
+        return httpx.Response(404, json={"kind": "Status", "reason": "NotFound"})
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.invalid")
+    client = HttpKubernetesModelClient(
+        base_url="https://kubernetes.invalid",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        writes_enabled=True,
+        client=http,
+    )
+    with pytest.raises(KubernetesConflictError, match="ModelDeployment changed"):
+        await client.apply_autoscaler_resource(
+            scaler,
+            target=target_resource,
+            authorization=authorization,
+            owner_uid="cr-uid-1",
+            model_fence=model_fence,
+            fence=fence(),
+        )
+    assert writes == []
+    await http.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("resume_after_apply", [False, True], ids=["old-to-desired", "crash-after-apply"])
+async def test_scaledobject_update_authorizes_exact_old_to_desired_once_and_records_postcondition(
+    tmp_path: Path,
+    resume_after_apply: bool,
+) -> None:
+    token = tmp_path / "token"
+    token.write_text("projected-service-account-token")
+    render = renderer().render(
+        model_spec(),
+        RenderContext(
+            name="qwen-live",
+            namespace="fs2-models",
+            uid="cr-uid-1",
+            generation=2,
+            pool=envelope().pools["pool-b"],
+            eligible_pools=[envelope().pools[pool_ref] for pool_ref in model_spec().placement.pool_refs],
+            prometheus_server_address="http://prometheus:9090",
+        ),
+    )
+    scaler, target_resource = next(iter(_autoscaler_pairs(render)))
+    old = copy.deepcopy(scaler.manifest)
+    old["spec"]["maxReplicaCount"] = old["spec"]["maxReplicaCount"] + 1
+    old["metadata"].update(
+        {
+            "uid": "scaler-uid",
+            "resourceVersion": "31",
+            "generation": 7,
+            "managedFields": [{"manager": FIELD_MANAGER, "apiVersion": "keda.sh/v1alpha1"}],
+        }
+    )
+    prior_snapshot = _snapshot(old, scaler)
+    model = _handoff_model()
+    model_fence = _model_write_fence(model, ModelKey(namespace="fs2-models", name="qwen-live"))
+    authorization = ScaleGateReleaseAuthorization(
+        version=2,
+        deploymentUID="deployment-uid",
+        modelUID="cr-uid-1",
+        modelResourceVersion=model_fence.resource_version,
+        modelGeneration=model_fence.generation,
+        modelSpecDigest=model_fence.spec_digest,
+        scalerAPIVersion=scaler.api_version,
+        scalerKind=scaler.kind,
+        scalerNamespace=scaler.namespace,
+        scalerName=scaler.name,
+        desiredScalerDigest=scaler.digest,
+        priorScaler=ScaleGateScalerCheckpoint(
+            uid=prior_snapshot.observed.uid,
+            resourceVersion=prior_snapshot.resource_version,
+            generation=prior_snapshot.generation,
+            digest=prior_snapshot.observed.digest,
+        ),
+        phase="prepared",
+    )
+    _TEST_SCALE_GATES[_test_gate_key(target_resource)] = _test_gate_value(target_resource, authorization)
+    deployment = copy.deepcopy(target_resource.manifest)
+    deployment["spec"]["replicas"] = 0
+    deployment["metadata"].update(
+        {"uid": "deployment-uid", "resourceVersion": "20", "generation": 1, "managedFields": []}
+    )
+    desired_live = copy.deepcopy(scaler.manifest)
+    desired_live["metadata"].update(
+        {
+            "uid": "scaler-uid",
+            "resourceVersion": "32",
+            "generation": 8,
+            "managedFields": [{"manager": FIELD_MANAGER, "apiVersion": "keda.sh/v1alpha1"}],
+        }
+    )
+    applied = resume_after_apply
+    scaler_patches: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal applied
+        if request.url.path.endswith("/leases/fs2-model-controller"):
+            return _lease_response()
+        if request.url.path.endswith("/modeldeployments/qwen-live"):
+            return httpx.Response(200, json=model)
+        if (response := _scale_gate_response(request)) is not None:
+            return response
+        if request.url.path.endswith(f"/deployments/{target_resource.name}"):
+            return httpx.Response(200, json=deployment)
+        if request.url.path.endswith(f"/scaledobjects/{scaler.name}"):
+            if request.method == "PATCH":
+                scaler_patches.append(request)
+                applied = True
+            return httpx.Response(200, json=desired_live if applied else old)
+        return httpx.Response(404, json={"kind": "Status", "reason": "NotFound"})
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.invalid")
+    client = HttpKubernetesModelClient(
+        base_url="https://kubernetes.invalid",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        writes_enabled=True,
+        client=http,
+    )
+    result = await client.apply_autoscaler_resource(
+        scaler,
+        target=target_resource,
+        authorization=authorization,
+        owner_uid="cr-uid-1",
+        model_fence=model_fence,
+        fence=fence(),
+    )
+    assert result.observed.digest == scaler.digest
+    assert len(scaler_patches) == (0 if resume_after_apply else 1)
+    if scaler_patches:
+        assert json.loads(scaler_patches[0].content)["metadata"]["resourceVersion"] == "31"
+    assert not any(request.url.path.endswith("/scale") for request in scaler_patches)
+    retained = _scale_gate_authorization(_TEST_SCALE_GATES[_test_gate_key(target_resource)], _scale_gate_target(target_resource))
+    assert isinstance(retained, ScaleGateReleaseAuthorization)
+    assert retained.phase == "applied"
+    assert retained.applied_scaler is not None and retained.applied_scaler.digest == scaler.digest
+    await http.aclose()

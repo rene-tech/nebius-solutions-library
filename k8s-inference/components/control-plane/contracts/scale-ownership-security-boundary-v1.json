@@ -47,7 +47,15 @@
     "model_controller": {
       "resource": "v1/namespaces/fs2-models/configmaps/fs2-model-controller-scale-gates",
       "verbs": ["get", "patch"],
-      "mutation_scope": "data keys for exact receipt, targeter allowance, and tombstone state only"
+      "mutation_scope": "data keys for exact receipt, targeter allowance, and tombstone state only",
+      "autoscaler_transition_record": {
+        "model_fence": ["uid", "resourceVersion", "generation", "specDigest"],
+        "scaler_fence": ["uid", "resourceVersion", "generation", "projectedManifestDigest"],
+        "phases": ["prepared", "applied", "closed"],
+        "prepared_semantics": "authorize exactly absent-or-recorded-old to desired digest once",
+        "applied_semantics": "read-only durable postcondition; no further ScaledObject mutation",
+        "fixed_reversal": "a newer exact fixed generation persists a closed record and removes every older allowance before any fixed write"
+      }
     },
     "keda_operator": {
       "protected_resource_verbs": []
