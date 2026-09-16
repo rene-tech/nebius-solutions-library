@@ -1,0 +1,9 @@
+{
+  "fixture": "fs2-voice-replica-probe-94be7106",
+  "scope": "paused Deployment; no scheduled Pods or GPUs",
+  "cleaned_up": true,
+  "fixed": {"replicas": 2, "managers": ["fs2-model-controller"]},
+  "autoscaled": {"replicas": 1, "managers": ["keda"]},
+  "status": "passed",
+  "pods_created": 0
+}

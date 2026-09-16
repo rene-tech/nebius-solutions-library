@@ -95,6 +95,7 @@ if TYPE_CHECKING:
 
 LOGGER = logging.getLogger(__name__)
 STATUS_FIELD_MANAGER = "fs2-model-controller-status"
+REPLICA_HANDOFF_FIELD_MANAGER = "fs2-model-controller-replica-handoff"
 FENCE_ANNOTATION = "inference.fs2.nebius.ai/fence-token"
 CONTROLLER_LABEL = "app.kubernetes.io/component=model-controller"
 
@@ -803,6 +804,7 @@ class HttpKubernetesModelClient:
             current_owner = _controller_owner_uid(current)
             if current_owner not in {None, owner_uid}:
                 raise KubernetesConflictError("resource has a foreign controller owner")
+            current = await self._reclaim_fixed_replicas(resource, current, owner_uid=owner_uid, fence=fence)
             manifest.setdefault("metadata", {})["resourceVersion"] = _required_metadata(current, "resourceVersion")
         await self.assert_fence(fence)
         response = await self._request(
@@ -820,7 +822,106 @@ class HttpKubernetesModelClient:
             raise ControllerError("applied resource failed read-after-write UID verification")
         if _controller_owner_uid(reread) != owner_uid:
             raise KubernetesConflictError("applied resource did not retain the exact controller owner")
+        if REPLICA_HANDOFF_FIELD_MANAGER in _replica_field_managers(reread):
+            if FIELD_MANAGER not in _replica_field_managers(reread):
+                raise ControllerError("replica handoff cannot relinquish the only replica owner")
+            await self.assert_fence(fence)
+            # The full apply now shares replicas. This identity-only apply
+            # releases the temporary manager without dropping the replica count.
+            await self._request(
+                "PATCH",
+                endpoint.item(resource.namespace, resource.name),
+                params={"fieldManager": REPLICA_HANDOFF_FIELD_MANAGER, "force": "false", "fieldValidation": "Strict"},
+                content_type="application/apply-patch+yaml",
+                content=json.dumps(self._replica_handoff_manifest(resource, reread)).encode(),
+            )
+            released = await self._get_resource(resource.api_version, resource.kind, resource.namespace, resource.name)
+            if (
+                released is None
+                or _required_metadata(released, "uid") != _required_metadata(reread, "uid")
+                or _controller_owner_uid(released) != owner_uid
+                or _mapping(released.get("spec")).get("replicas") != _mapping(reread.get("spec")).get("replicas")
+                or REPLICA_HANDOFF_FIELD_MANAGER in _replica_field_managers(released)
+            ):
+                raise ControllerError("temporary replica ownership release failed verification")
+            reread = released
         return _snapshot(reread, resource)
+
+    @staticmethod
+    def _replica_handoff_manifest(resource: RenderedResource, current: Mapping[str, Any]) -> dict[str, Any]:
+        return {
+            "apiVersion": resource.api_version,
+            "kind": resource.kind,
+            "metadata": {
+                "name": resource.name,
+                "namespace": resource.namespace,
+                "uid": _required_metadata(current, "uid"),
+                "resourceVersion": _required_metadata(current, "resourceVersion"),
+            },
+        }
+
+    async def _reclaim_fixed_replicas(
+        self,
+        resource: RenderedResource,
+        current: dict[str, Any],
+        *,
+        owner_uid: str,
+        fence: LeaseFence,
+    ) -> dict[str, Any]:
+        """Reclaim only replicas from a removed autoscaler through a temporary manager.
+
+        Deleting an HPA does not remove its managedFields entry. A fixed floor
+        must reclaim only replicas, never force ownership of the whole template.
+        Autoscaled manifests omit replicas and therefore never enter this path.
+        """
+        desired = _mapping(resource.manifest.get("spec")).get("replicas")
+        managers = set(_replica_field_managers(current))
+        autoscalers = {"keda", "horizontal-pod-autoscaler", REPLICA_HANDOFF_FIELD_MANAGER}
+        if (
+            (resource.api_version, resource.kind) != ("apps/v1", "Deployment")
+            or not isinstance(desired, int)
+            or isinstance(desired, bool)
+            or desired == _mapping(current.get("spec")).get("replicas")
+            or not managers.intersection(autoscalers)
+        ):
+            return current
+        if _controller_owner_uid(current) != owner_uid or managers - autoscalers - {FIELD_MANAGER}:
+            raise KubernetesConflictError("fixed replica handoff has unknown resource or field ownership")
+        # Fresh full-namespace reads also catch an HPA whose ScaledObject was
+        # already deleted, and foreign autoscalers targeting the same workload.
+        for endpoint in (RESOURCE_ENDPOINTS[("keda.sh/v1alpha1", "ScaledObject")], HPA_ENDPOINT):
+            response = await self._request("GET", endpoint.collection(resource.namespace), params={"limit": "500"})
+            body = response.json()
+            items = body.get("items")
+            if not isinstance(items, list) or _metadata(body).get("continue"):
+                raise ControllerError("fixed replica handoff autoscaler inventory is incomplete")
+            for item in items:
+                if not isinstance(item, Mapping):
+                    raise ControllerError("fixed replica handoff autoscaler inventory is invalid")
+                target = _mapping(_mapping(item.get("spec")).get("scaleTargetRef"))
+                if target.get("name") == resource.name and target.get("kind", "Deployment") == "Deployment":
+                    raise ControllerError("fixed replica handoff waits for autoscaler and HPA removal")
+        manifest = self._replica_handoff_manifest(resource, current)
+        manifest["spec"] = {"replicas": desired}
+        await self.assert_fence(fence)
+        endpoint = self._endpoint(resource.api_version, resource.kind)
+        await self._request(
+            "PATCH",
+            endpoint.item(resource.namespace, resource.name),
+            params={"fieldManager": REPLICA_HANDOFF_FIELD_MANAGER, "force": "true", "fieldValidation": "Strict"},
+            content_type="application/apply-patch+yaml",
+            content=json.dumps(manifest).encode(),
+        )
+        reread = await self._get_resource(resource.api_version, resource.kind, resource.namespace, resource.name)
+        if (
+            reread is None
+            or _required_metadata(reread, "uid") != _required_metadata(current, "uid")
+            or _controller_owner_uid(reread) != owner_uid
+            or _mapping(reread.get("spec")).get("replicas") != desired
+            or REPLICA_HANDOFF_FIELD_MANAGER not in _replica_field_managers(reread)
+        ):
+            raise ControllerError("fixed replica handoff failed read-after-write ownership verification")
+        return reread
 
     @staticmethod
     def _parse_identity(identity: str) -> tuple[str, str, str, str]:
