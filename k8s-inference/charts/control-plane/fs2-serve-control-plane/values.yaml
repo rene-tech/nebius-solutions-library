@@ -64,6 +64,10 @@ modelController:
   modelNamespace: fs2-models
   systemNamespace: fs2-system
   leaseName: fs2-model-controller
+  # Collection creates cannot be name-scoped by Kubernetes RBAC. Existing
+  # controller-owned policies may be patched/deleted only when an operator
+  # supplies their exact names here.
+  networkPolicyResourceNames: []
   infrastructureEnvelopeConfigMapName: ""
   infrastructureEnvelopeKey: infrastructure-envelope.json
   rendererBundlesConfigMapName: ""
@@ -226,6 +230,9 @@ serviceAccounts:
 # Pods. Terraform enables it alongside the Kubernetes lifecycle reader.
 runtimeAttribution:
   enabled: false
+  # Host-integrated observers live outside baseline-enforced application
+  # namespaces. This namespace is Terraform-owned and explicitly audited.
+  daemonSetNamespace: fs2-node-observability
   # `modelNamespace` is retained as the fallback for older values files.
   # New callers pass the complete, bounded namespace set through `namespaces`.
   modelNamespace: fs2-models

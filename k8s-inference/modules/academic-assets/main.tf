@@ -62,7 +62,10 @@ resource "kubernetes_namespace_v1" "academic_assets" {
   metadata {
     name = var.academic_assets.namespace
     labels = merge(local.common_labels, {
-      "kubernetes.io/metadata.name" = var.academic_assets.namespace
+      "kubernetes.io/metadata.name"        = var.academic_assets.namespace
+      "pod-security.kubernetes.io/enforce" = "baseline"
+      "pod-security.kubernetes.io/audit"   = "restricted"
+      "pod-security.kubernetes.io/warn"    = "restricted"
     })
   }
 

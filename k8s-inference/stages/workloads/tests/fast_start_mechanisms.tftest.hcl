@@ -376,19 +376,31 @@ run "declared_mechanisms_reach_the_model_qualification" {
   }
 
   assert {
-    condition = alltrue([
-      for mechanism in ["regionalCache", "hostMemoryResidency", "gpuResident"] :
-      contains(keys(local.model_controller_qualifications["qwen3-8b"]), mechanism)
-    ])
-    error_message = "Every declared mechanism must reach the published model qualification."
+    condition = (
+      contains(keys(local.model_controller_qualifications["qwen3-8b"]), "regionalCache") &&
+      contains(keys(local.model_controller_qualifications["qwen3-8b"]), "gpuResident") &&
+      !contains(keys(local.model_controller_qualifications["qwen3-8b"]), "hostMemoryResidency")
+    )
+    error_message = "Only mechanisms that fit the controller's namespaced RBAC boundary may reach its published qualification."
+  }
+
+  assert {
+    condition     = local.model_controller_qualifications["qwen3-8b"].gpuResident.minimumHotReplicas == 1
+    error_message = "The envelope must carry the retained mechanism's declared hot-floor dependency."
   }
 
   assert {
     condition = (
-      local.model_controller_qualifications["qwen3-8b"].hostMemoryResidency.reservedBytes == 19327352832 &&
-      local.model_controller_qualifications["qwen3-8b"].gpuResident.minimumHotReplicas == 1
+      length(local.model_controller_network_policy_resource_names) > 0 &&
+      alltrue([
+        for name in local.model_controller_network_policy_resource_names :
+        length(name) <= 253 && (
+          startswith(name, "fs2-runtime-") ||
+          startswith(name, "fs2-modelexpress-")
+        )
+      ])
     )
-    error_message = "The envelope must carry each mechanism's declared price and hot-floor dependency."
+    error_message = "The chart must receive the complete bounded allowlist for controller-owned NetworkPolicy names."
   }
 
   assert {

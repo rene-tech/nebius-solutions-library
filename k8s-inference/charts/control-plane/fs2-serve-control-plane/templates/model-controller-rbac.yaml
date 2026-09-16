@@ -15,13 +15,13 @@ rules:
     resources: ["modeldeployments/status", "modeldeployments/finalizers"]
     verbs: ["get", "patch", "update"]
   - apiGroups: [""]
-    resources: ["configmaps", "persistentvolumeclaims", "services", "serviceaccounts"]
+    resources: ["configmaps", "persistentvolumeclaims", "services"]
     verbs: ["get", "list", "watch", "create", "patch", "delete"]
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["apps"]
-    resources: ["daemonsets", "deployments"]
+    resources: ["deployments"]
     verbs: ["get", "list", "watch", "create", "patch", "delete"]
   - apiGroups: ["autoscaling"]
     resources: ["horizontalpodautoscalers"]
@@ -31,7 +31,20 @@ rules:
     verbs: ["get", "list", "watch", "create", "patch", "delete"]
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
-    verbs: ["get", "list", "watch", "create", "patch", "delete"]
+    verbs: ["get", "list", "watch"]
+  # Kubernetes authorizes create on the collection URL, so resourceNames
+  # cannot constrain it. Creation remains available for the runtime policies;
+  # mutation of an existing policy is a separate, exact-name capability.
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["create"]
+  {{- with .Values.modelController.networkPolicyResourceNames }}
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    resourceNames:
+      {{- toYaml (sortAlpha (uniq .)) | nindent 6 }}
+    verbs: ["patch", "delete"]
+  {{- end }}
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["create", "patch"]

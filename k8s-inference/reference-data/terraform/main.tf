@@ -440,7 +440,13 @@ resource "kubernetes_namespace_v1" "reference_data" {
     labels = merge(local.common_labels, {
       "kubernetes.io/metadata.name"        = var.namespace
       "reference-data.fs2.nebius.ai/plane" = "private"
+      "pod-security.kubernetes.io/enforce" = "privileged"
+      "pod-security.kubernetes.io/audit"   = "restricted"
+      "pod-security.kubernetes.io/warn"    = "restricted"
     })
+    annotations = {
+      "security.fs2.nebius.ai/pod-security-exception" = "reference-data-host-path"
+    }
   }
 
   depends_on = [terraform_data.region_contract]

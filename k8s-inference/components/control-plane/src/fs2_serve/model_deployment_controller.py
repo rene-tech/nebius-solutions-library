@@ -289,8 +289,6 @@ RESOURCE_ENDPOINTS = {
     ("v1", "ConfigMap"): ResourceEndpoint("v1", "ConfigMap", "configmaps"),
     ("v1", "PersistentVolumeClaim"): ResourceEndpoint("v1", "PersistentVolumeClaim", "persistentvolumeclaims"),
     ("v1", "Service"): ResourceEndpoint("v1", "Service", "services"),
-    ("v1", "ServiceAccount"): ResourceEndpoint("v1", "ServiceAccount", "serviceaccounts"),
-    ("apps/v1", "DaemonSet"): ResourceEndpoint("apps/v1", "DaemonSet", "daemonsets"),
     ("apps/v1", "Deployment"): ResourceEndpoint("apps/v1", "Deployment", "deployments"),
     ("keda.sh/v1alpha1", "ScaledObject"): ResourceEndpoint("keda.sh/v1alpha1", "ScaledObject", "scaledobjects"),
     ("networking.k8s.io/v1", "NetworkPolicy"): ResourceEndpoint(

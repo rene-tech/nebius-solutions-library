@@ -1,3 +1,19 @@
+resource "kubernetes_service_account_v1" "model_runtime" {
+  count = var.model_controller.enabled ? 1 : 0
+
+  metadata {
+    name      = "fs2-model-runtime"
+    namespace = "fs2-models"
+    labels = merge(local.common_labels, {
+      "app.kubernetes.io/component" = "model-runtime"
+    })
+  }
+
+  automount_service_account_token = false
+
+  depends_on = [terraform_data.cluster_contract]
+}
+
 resource "kubernetes_manifest" "model" {
   for_each = local.terraform_owned_model_manifests
 

@@ -203,7 +203,7 @@ resource "kubernetes_secret_v1" "dcgm_exporter_nvcrio" {
 
   metadata {
     name      = "fs2-dcgm-exporter-nvcrio"
-    namespace = "fs2-observability"
+    namespace = local.node_observability_namespace
     labels    = local.common_labels
   }
   type = "kubernetes.io/dockerconfigjson"

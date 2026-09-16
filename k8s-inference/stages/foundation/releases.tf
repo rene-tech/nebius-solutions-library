@@ -303,6 +303,9 @@ resource "helm_release" "monitoring" {
   values = [
     yamlencode({
       fullnameOverride = "fs2-${var.run_id}-monitoring"
+      "prometheus-node-exporter" = {
+        namespaceOverride = kubernetes_namespace_v1.platform["fs2-node-observability"].metadata[0].name
+      }
       alertmanager = {
         enabled = var.alertmanager.enabled
         # This default receiver deliberately sends nothing outside the cluster.
@@ -420,6 +423,7 @@ resource "helm_release" "monitoring" {
               operator = "In"
               values = [
                 "fs2-observability",
+                "fs2-node-observability",
                 "fs2-reference-data",
                 "fs2-system",
                 "fs2-models",
@@ -437,6 +441,7 @@ resource "helm_release" "monitoring" {
               operator = "In"
               values = [
                 "fs2-observability",
+                "fs2-node-observability",
                 "fs2-system",
                 "fs2-models",
                 "fs2-data",
@@ -524,7 +529,7 @@ resource "helm_release" "otel_gateway" {
 
 resource "helm_release" "otel_node" {
   name             = "fs2-${var.run_id}-otel-node"
-  namespace        = kubernetes_namespace_v1.platform["fs2-observability"].metadata[0].name
+  namespace        = kubernetes_namespace_v1.platform["fs2-node-observability"].metadata[0].name
   repository       = "https://open-telemetry.github.io/opentelemetry-helm-charts"
   chart            = "opentelemetry-collector"
   version          = local.chart_versions.opentelemetry

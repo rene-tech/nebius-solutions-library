@@ -299,6 +299,14 @@ def test_gpu_allocation_observer_is_opt_in_and_has_exact_node_local_contract() -
     pod_spec = daemonset["spec"]["template"]["spec"]
     container = pod_spec["containers"][0]
     assert daemonset["metadata"]["name"] == "fs2-serve-control-plane-gpu-observer"
+    assert daemonset["metadata"]["namespace"] == "fs2-node-observability"
+    observer_account = next(
+        document
+        for document in documents
+        if document["kind"] == "ServiceAccount"
+        and document["metadata"]["name"] == "fs2-serve-control-plane-gpu-observer"
+    )
+    assert observer_account["metadata"]["namespace"] == "fs2-node-observability"
     assert pod_spec["nodeSelector"] == {"nebius.com/gpu": "true"}
     assert container["args"] == ["gpu-allocation-observer"]
     environment = {item["name"]: item.get("value") for item in container["env"]}
@@ -328,6 +336,9 @@ def test_gpu_allocation_observer_is_opt_in_and_has_exact_node_local_contract() -
         if document["kind"] == "RoleBinding" and document["metadata"]["name"] == daemonset["metadata"]["name"]
     ]
     assert {binding["metadata"]["namespace"] for binding in bindings} == {"fs2-models", "fs2-academic-poc"}
+    assert {subject["namespace"] for binding in bindings for subject in binding["subjects"]} == {
+        "fs2-node-observability"
+    }
 
     legacy_documents = render(
         "--set",
@@ -872,6 +883,7 @@ def test_activation_controller_is_owned_by_the_separate_child_and_absent_from_th
 
 
 def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> None:
+    mutable_policy_names = ["fs2-modelexpress-qwen3-8b", "fs2-runtime-qwen3-8b"]
     documents = render(
         "--set",
         "modelController.enabled=true",
@@ -883,6 +895,8 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
         "modelController.infrastructureEnvelopeConfigMapName=fs2-model-envelope",
         "--set",
         "modelController.rendererBundlesConfigMapName=fs2-model-bundles",
+        "--set-json",
+        "modelController.networkPolicyResourceNames=" + json.dumps(mutable_policy_names),
         "--set",
         "adminReadAdapters.capacity.enabled=true",
         "--set",
@@ -931,9 +945,22 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
     } in model_role["rules"]
     assert {
         "apiGroups": ["apps"],
-        "resources": ["daemonsets", "deployments"],
+        "resources": ["deployments"],
         "verbs": ["get", "list", "watch", "create", "patch", "delete"],
     } in model_role["rules"]
+    assert not any("daemonsets" in rule["resources"] for rule in model_role["rules"])
+    assert not any("serviceaccounts" in rule["resources"] for rule in model_role["rules"])
+    network_policy_rules = [rule for rule in model_role["rules"] if rule["resources"] == ["networkpolicies"]]
+    assert {tuple(rule["verbs"]) for rule in network_policy_rules} == {
+        ("get", "list", "watch"),
+        ("create",),
+        ("patch", "delete"),
+    }
+    mutable_rule = next(rule for rule in network_policy_rules if rule["verbs"] == ["patch", "delete"])
+    assert mutable_rule["resourceNames"] == sorted(mutable_policy_names)
+    assert all(
+        "resourceNames" in rule or not ({"patch", "delete"} & set(rule["verbs"])) for rule in network_policy_rules
+    )
     assert not any(
         document["kind"] in {"ClusterRole", "ClusterRoleBinding"} and "model-controller" in document["metadata"]["name"]
         for document in documents

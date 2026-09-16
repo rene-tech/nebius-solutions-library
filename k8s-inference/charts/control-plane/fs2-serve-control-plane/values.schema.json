@@ -625,6 +625,7 @@
         "modelNamespace",
         "systemNamespace",
         "leaseName",
+        "networkPolicyResourceNames",
         "infrastructureEnvelopeConfigMapName",
         "infrastructureEnvelopeKey",
         "rendererBundlesConfigMapName",
@@ -664,6 +665,14 @@
         },
         "leaseName": {
           "$ref": "#/$defs/dnsName"
+        },
+        "networkPolicyResourceNames": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/dnsName"
+          }
         },
         "infrastructureEnvelopeConfigMapName": {
           "type": "string",
@@ -943,6 +952,7 @@
       "type": "object",
       "required": [
         "enabled",
+        "daemonSetNamespace",
         "modelNamespace",
         "namespaces",
         "kubernetesApiUrl",
@@ -955,6 +965,9 @@
       ],
       "properties": {
         "enabled": {"type": "boolean"},
+        "daemonSetNamespace": {
+          "const": "fs2-node-observability"
+        },
         "modelNamespace": {"$ref": "#/$defs/dnsName"},
         "namespaces": {
           "type": "array",

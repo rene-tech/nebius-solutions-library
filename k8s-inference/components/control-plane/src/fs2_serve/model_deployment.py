@@ -1806,10 +1806,10 @@ _ALLOWED_TEMPLATE_GVKS = frozenset(
         ("v1", "ConfigMap"),
         ("v1", "PersistentVolumeClaim"),
         ("v1", "Service"),
-        ("v1", "ServiceAccount"),
         ("apps/v1", "Deployment"),
     }
 )
+MODEL_RUNTIME_SERVICE_ACCOUNT = "fs2-model-runtime"
 
 
 def _resource_identity(manifest: Mapping[str, Any]) -> tuple[str, str, str, str]:
@@ -2581,13 +2581,20 @@ class LegacyManifestRenderer:
                 metadata["ownerReferences"] = owner_references
             manifest.pop("status", None)
 
+            if kind == "Deployment":
+                deployment_spec = manifest.get("spec")
+                if not isinstance(deployment_spec, dict):
+                    raise ValueError("Deployment spec is missing")
+                pod_spec = deployment_spec.get("template", {}).get("spec")
+                if not isinstance(pod_spec, dict):
+                    raise ValueError("Deployment Pod spec is missing")
+                pod_spec["serviceAccountName"] = MODEL_RUNTIME_SERVICE_ACCOUNT
+                pod_spec["automountServiceAccountToken"] = False
+
             if kind == "Deployment" and name == bundle.primary_workload_name:
                 if primary_found:
                     raise ValueError("legacy template has more than one primary workload")
                 primary_found = True
-                deployment_spec = manifest.get("spec")
-                if not isinstance(deployment_spec, dict):
-                    raise ValueError("primary Deployment spec is missing")
                 deployment_spec["progressDeadlineSeconds"] = spec.rollout.progress_deadline_seconds
                 deployment_spec["strategy"] = (
                     {
@@ -2600,9 +2607,6 @@ class LegacyManifestRenderer:
                     if spec.rollout.strategy is RolloutStrategy.ROLLING
                     else {"type": "Recreate"}
                 )
-                pod_spec = deployment_spec.get("template", {}).get("spec")
-                if not isinstance(pod_spec, dict):
-                    raise ValueError("primary Deployment Pod spec is missing")
                 pod_metadata = deployment_spec.get("template", {}).get("metadata")
                 if not isinstance(pod_metadata, dict):
                     raise ValueError("primary Deployment Pod metadata is missing")

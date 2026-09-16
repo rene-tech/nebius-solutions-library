@@ -993,7 +993,6 @@ def test_actual_qwen_two_pool_render_preserves_inference_dns_https_and_modelexpr
         in {
             ("v1", "ConfigMap"),
             ("v1", "Service"),
-            ("v1", "ServiceAccount"),
             ("apps/v1", "Deployment"),
         }
     ]
@@ -1043,6 +1042,12 @@ def test_actual_qwen_two_pool_render_preserves_inference_dns_https_and_modelexpr
     deployments = [item.manifest for item in plan.resources if item.kind == "Deployment"]
     policies = [item.manifest for item in plan.resources if item.kind == "NetworkPolicy"]
     assert len(deployments) == 2 and len(policies) == 2
+    assert all(
+        deployment["spec"]["template"]["spec"]["serviceAccountName"] == "fs2-model-runtime"
+        and deployment["spec"]["template"]["spec"]["automountServiceAccountToken"] is False
+        for deployment in deployments
+    )
+    assert not any(item.kind == "ServiceAccount" for item in plan.resources)
     assert all(
         "app.kubernetes.io/instance" not in item["spec"]["template"]["metadata"]["labels"] for item in deployments
     )

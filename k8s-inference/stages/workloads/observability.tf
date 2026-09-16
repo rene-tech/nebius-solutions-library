@@ -1,4 +1,5 @@
 locals {
+  node_observability_namespace = "fs2-node-observability"
   # The foundation contract exposes either the fresh run-scoped Grafana
   # Service or the retained Service override. Both share the same Helm release
   # prefix as Loki, so this keeps the selector exact without a topology flag or
@@ -181,7 +182,7 @@ resource "helm_release" "dcgm_exporter" {
   count = var.deployment_profile == "full_catalog" ? 1 : 0
 
   name             = "fs2-dcgm-exporter"
-  namespace        = "fs2-observability"
+  namespace        = local.node_observability_namespace
   repository       = "https://nvidia.github.io/dcgm-exporter/helm-charts"
   chart            = "dcgm-exporter"
   version          = "4.8.3"

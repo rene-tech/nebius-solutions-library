@@ -143,8 +143,13 @@ resource "kubernetes_namespace_v1" "modelexpress" {
   count = local.modelexpress_resource_counts.namespace
 
   metadata {
-    name   = var.model_express.namespace
-    labels = local.common_labels
+    name = var.model_express.namespace
+    labels = merge(local.common_labels, {
+      "kubernetes.io/metadata.name"        = var.model_express.namespace
+      "pod-security.kubernetes.io/enforce" = "baseline"
+      "pod-security.kubernetes.io/audit"   = "restricted"
+      "pod-security.kubernetes.io/warn"    = "restricted"
+    })
   }
 
   depends_on = [terraform_data.cluster_contract, terraform_data.modelexpress_contract]

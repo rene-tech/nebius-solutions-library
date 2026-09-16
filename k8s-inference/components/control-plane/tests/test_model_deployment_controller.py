@@ -41,6 +41,7 @@ from fs2_serve.model_deployment import (
 )
 from fs2_serve.model_deployment_bridge import _normalize_keys
 from fs2_serve.model_deployment_controller import (
+    RESOURCE_ENDPOINTS,
     BoundedKeyQueue,
     ControllerHealth,
     Discovery,
@@ -58,6 +59,13 @@ from fs2_serve.model_deployment_controller import (
     build_status,
 )
 from fs2_serve.model_deployment_records import ModelDeploymentObservedStatus
+
+
+def test_controller_discovery_excludes_operator_owned_resource_kinds() -> None:
+    assert ("v1", "ServiceAccount") not in RESOURCE_ENDPOINTS
+    assert ("apps/v1", "DaemonSet") not in RESOURCE_ENDPOINTS
+    assert ("apps/v1", "Deployment") in RESOURCE_ENDPOINTS
+    assert ("networking.k8s.io/v1", "NetworkPolicy") in RESOURCE_ENDPOINTS
 
 
 class FakePrometheusReader:
