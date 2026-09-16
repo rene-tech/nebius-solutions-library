@@ -63,8 +63,9 @@ bump — in order:
 2. Build and publish the image; record the publish receipt in the run root.
 3. Create the bound release receipt (resolves the exact linux/amd64 manifest
    and hash-verified config, proves the tag object and ancestry in a
-   bundle-restored clone, validates the in-toto SPDX statement, signs the
-   receipt, verifies the signature, and publishes atomically):
+   bundle-restored clone, validates the in-toto SPDX statement, retains the
+   statement/SBOM bytes content-addressed under `release-sboms/`, signs the
+   receipt, verifies the signature, and publishes no-replace):
    `python3 security/image-provenance/provenance.py receipt --image
    <repo>@sha256:<digest> --run-root <run> --repository <checkout>
    --anchor-tag <tag> --key <cosign.key> --public-key
@@ -75,30 +76,47 @@ bump — in order:
    <cosign.key> --public-key security/image-provenance/cosign.pub --run-root
    <run> <repo>@sha256:<digest>`.
 5. Assemble and sign the **complete inventory**
-   (`fs2-serve.nebius.ai/release-inventory/v2`): enumerate the current live
+   (`fs2-serve.nebius.ai/release-inventory/v3`): enumerate the current live
    workloads in the matched namespaces, the Helm rollback window
    (`helm history` digests), and frozen scientific-stage bindings as its three
-   `sources`, each with `observed_at` and the `resource_ids` it was read
-   from, plus the `cluster` identity and a `captured_at` timestamp (the
-   renderer refuses stale or future-dated inventories; default freshness
-   bound 24h, `--max-inventory-age-hours`). Drains can only remove **non-live**
-   references: a drained image must be absent from `live_workloads` and
-   present in a non-live source, with a reason bound to a tracking identifier
-   — **an active image can never be drained**; owner scope decisions about
-   live sibling programs belong in the admission policy's match scope, never
-   in the inventory. `platform_images` must equal the source union minus the
-   audited drains, which the renderer proves. Sign it: `cosign sign-blob
+   `sources`, each with `observed_at` and the unique, structured
+   `resource_ids` it was read from, plus the `cluster` identity, a
+   `captured_at` timestamp, and the exact admission `scope` (cluster,
+   namespaces, registry prefixes, platform repository prefix, deploy
+   principals, verification-key SHA-256). Freshness is strictly bounded:
+   future-dating beyond the 5-minute clock-skew bound is refused for
+   `captured_at` AND every `observed_at`; the past bound defaults to 24h and
+   `--max-inventory-age-hours` must be finite and within (0, 168] — nan/inf
+   are refused. Drains can only remove **non-live** references: a drained
+   image must be absent from `live_workloads` and present in a non-live
+   source, with a reason bound to a tracking identifier — **an active image
+   can never be drained**; owner scope decisions about live sibling programs
+   belong in the admission policy's match scope, never in the inventory.
+   `platform_images` must equal the source union minus the audited drains,
+   which the renderer proves. Sign it: `cosign sign-blob
    --key <cosign.key> --use-signing-config=false --tlog-upload=false --yes
    --output-file inventory.json.sig inventory.json`. The renderer refuses to
    run without it and renders **only** the inventory set — extras, missing
    entries, and unreceipted or unsigned digests all abort:
    `provenance.py render-allowlist --public-key … --run-root <run>
-   --inventory inventory.json --registry-prefix …
+   --inventory inventory.json --scope
+   security/image-provenance/release-scope.json --registry-prefix …
    --platform-repository-prefix … --deploy-principal <user>` (optional
    `--image` arguments must equal the inventory exactly and exist only as a
-   cross-check). Assembly of the inventory from the live cluster remains an
-   acceptance-gate step; the renderer proves its internal consistency,
-   freshness, and coverage, not the honesty of the enumeration itself.
+   cross-check). **Admission scope is never caller-chosen**: the committed,
+   owner-reviewed `release-scope.json` is the single authority; it ships
+   EMPTY, so rendering fails closed until the owner populates and reviews the
+   exact scope. The signed inventory's `scope` must equal it exactly (a
+   signer cannot substitute their own coverage), every CLI argument must
+   equal it (a mistyped platform prefix cannot bypass platform-digest
+   gating), the pinned key hash must equal its recorded key identity, every
+   inventory reference must lie under its registry prefixes, and the
+   ConfigMap renders FROM its values. The remaining residual is collector
+   authenticity: the tooling cannot prove from source that the signer
+   enumerated the cluster honestly, so the owner populating
+   `release-scope.json` is also ratifying the collection procedure (an
+   authenticated authoritative collector remains an owner infrastructure
+   item, and rendering stays impossible until that owner sign-off exists).
 6. Run the gate (`release-gate`, also automatic inside `apply`), deploy, then
    `provenance.py verify --public-key security/image-provenance/cosign.pub
    <ref>`.
@@ -140,7 +158,17 @@ what an earlier release proved:
   it parses, and then **fully revalidates** the bindings against the bundle:
   tag object, anchor commit, source-commit ancestry, and source tree are
   re-proven in a fresh clone, and the SBOM subject must equal the recorded
-  linux/amd64 manifest. Bundle git operations (`list-heads`, restore clones)
+  linux/amd64 manifest. Loads also re-prove REGISTRY content and retained
+  evidence: the top/amd64/config bytes are re-fetched and byte-hash-verified
+  against the recorded digests, the hash-verified config labels must equal
+  the receipted source commit/tree, the attestation manifest and statement
+  are re-selected and re-hash-verified with every recorded field compared,
+  and the content-addressed statement/SBOM bytes retained under
+  `release-sboms/` (published no-replace via link(2)) must byte-match; a
+  standalone SPDX document is re-shape-validated and re-bound to the exact
+  digest on every load. Recorded digest strings alone never authorize
+  anything, on load, idempotent re-create, sign, or allow-list paths. Bundle
+  git operations (`list-heads`, restore clones)
   never touch the mutable published pathname: the bundle is read once through
   the anomaly-checked reader, hash-verified, and git consumes a private
   snapshot of exactly those verified bytes, at creation, at load, and in the
@@ -172,7 +200,13 @@ what an earlier release proved:
   is read exactly once through the same O_NOFOLLOW/fstat-checked reader (the
   parsed bytes are the hashed bytes), and public inputs — the committed
   verification key, standalone SBOMs — are refused when group/other-writable
-  (chmod them 0644 after checkout under a group-writable umask). Allow-list
+  (chmod them 0644 after checkout under a group-writable umask). Every
+  evidence read walks EVERY path component from the root dirfd with
+  openat(O_NOFOLLOW|O_DIRECTORY): a symlink at any ancestor, an
+  other-writable or foreign-group-writable non-sticky ancestor, a
+  foreign-owned ancestor, '.'/'..' components, and a device change (mount)
+  inside the caller-owned tree are all refused — in provenance.py and in the
+  wrapper's anchor-store/bundle reads alike. Allow-list
   rendering pins ONE verification-key identity: the key bytes are read once
   into a private scratch copy used for every signature check and recorded in
   the ConfigMap annotation, and the recorded inventory hash is computed over

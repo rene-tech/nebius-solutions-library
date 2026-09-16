@@ -105,13 +105,22 @@ provenance gate (see `security/image-provenance/README.md`):
 4. **Admission allow-list:** the allow-list renders only from a signed, fresh,
    complete release inventory enumerating live workloads, the Helm rollback
    window, and frozen scientific-stage bindings with their observation
-   snapshots. An active-live image can never be drained out — it must be
-   receipted and signed, or the admission policy's match scope must be
-   changed by owner decision; drains apply only to audited non-live entries.
-   Extras, missing entries, stale inventories, and unreceipted digests abort
-   rendering. The `fs2-image-provenance` ValidatingAdmissionPolicy then
-   refuses unpinned, foreign-registry, and non-allow-listed platform images
-   in the platform namespaces.
+   snapshots, bound to the committed owner-approved release scope
+   (`security/image-provenance/release-scope.json` — ships EMPTY, so
+   rendering fails closed until the owner ratifies the exact cluster,
+   namespaces, prefixes, principals, and key identity; the signed inventory
+   and every CLI argument must equal it exactly). An active-live image can
+   never be drained out — it must be receipted and signed, or the admission
+   policy's match scope must be changed by owner decision; drains apply only
+   to audited non-live entries. Extras, missing entries, stale or
+   future-dated inventories (finite bounded freshness only), and unreceipted
+   digests abort rendering; every receipt is re-proven against the registry
+   and its retained content-addressed SBOM evidence at render time. The
+   `fs2-image-provenance` ValidatingAdmissionPolicy then refuses unpinned,
+   foreign-registry, and non-allow-listed platform images in the platform
+   namespaces — including ephemeral containers injected via `kubectl debug`
+   (pods/ephemeralcontainers is matched; debugging stays available with
+   digest-pinned images from allow-listed registries).
 
 A release deployed from an unanchored or unsigned identity is not
 customer-ready regardless of its test results.

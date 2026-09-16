@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import stat as stat_module
@@ -128,26 +129,104 @@ def receipt_path(run_root: Path, digest: str) -> Path:
     )
 
 
-def _read_evidence_bytes(path: Path, private: bool = True) -> bytes:
-    """Read evidence via dirfd + O_NOFOLLOW and refuse filesystem anomalies.
+def _open_evidence_descriptor(path: Path) -> int:
+    """Open evidence by walking EVERY path component from the root dirfd.
 
-    The directory and the file are both opened without following symlinks, and
-    the OPEN DESCRIPTOR is fstat-checked: it must be a regular file with link
-    count 1, owned by the caller; private evidence must have no group/other
-    access, public inputs (e.g. the committed verification key) must at least
-    not be group/other writable. The bytes returned are read from that
-    descriptor exactly once, so what is verified is what is parsed and hashed.
+    Each ancestor is opened with openat(O_NOFOLLOW|O_DIRECTORY) relative to
+    its parent's descriptor, so a symlink at ANY component — not only the
+    final parent — is refused, as are '.'/'..' components. Every ancestor
+    must be a real directory owned by the caller or root and must not be
+    writable by others, nor by a group other than the caller's own primary
+    group (the user-private-group idiom), unless it is sticky like /tmp.
+    Once the walk enters a caller-owned directory, a device change (a mount
+    grafted into the evidence tree) is refused. The returned FILE descriptor
+    is opened O_NOFOLLOW from the final validated directory descriptor; the
+    caller fstat-checks its own invariants on it.
     """
-    parent_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    resolved = path if path.is_absolute() else Path(os.getcwd()) / path
+    parts = resolved.parts
+    dir_fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
     try:
+        device = os.fstat(dir_fd).st_dev
+        inside_caller_tree = False
+        for component in parts[1:-1]:
+            if component in (".", ".."):
+                raise ProvenanceError(
+                    f"evidence path must not contain '.' or '..': {path}"
+                )
+            try:
+                next_fd = os.open(
+                    component,
+                    os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                    dir_fd=dir_fd,
+                )
+            except OSError as error:
+                raise ProvenanceError(
+                    "cannot open evidence path component safely (symlink, "
+                    f"missing, or not a directory): {component!r} in {path}"
+                ) from error
+            os.close(dir_fd)
+            dir_fd = next_fd
+            status = os.fstat(dir_fd)
+            if not stat_module.S_ISDIR(status.st_mode):
+                raise ProvenanceError(
+                    f"evidence path component is not a directory: "
+                    f"{component!r} in {path}"
+                )
+            if status.st_uid not in (0, os.getuid()):
+                raise ProvenanceError(
+                    f"evidence path ancestor has a foreign owner: "
+                    f"{component!r} in {path}"
+                )
+            sticky = bool(status.st_mode & stat_module.S_ISVTX)
+            if status.st_mode & 0o002 and not sticky:
+                raise ProvenanceError(
+                    f"evidence path ancestor is other-writable: "
+                    f"{component!r} in {path}"
+                )
+            if (
+                status.st_mode & 0o020
+                and not sticky
+                and status.st_gid != os.getgid()
+            ):
+                raise ProvenanceError(
+                    "evidence path ancestor is writable by a foreign group: "
+                    f"{component!r} in {path}"
+                )
+            if inside_caller_tree and status.st_dev != device:
+                raise ProvenanceError(
+                    "evidence path crosses a mount inside the caller-owned "
+                    f"tree: {component!r} in {path}"
+                )
+            device = status.st_dev
+            if status.st_uid == os.getuid():
+                inside_caller_tree = True
+        if parts[-1] in (".", ".."):
+            raise ProvenanceError(
+                f"evidence path must not contain '.' or '..': {path}"
+            )
         try:
-            fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent_fd)
+            return os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW, dir_fd=dir_fd)
         except OSError as error:
             raise ProvenanceError(
                 f"cannot open evidence file safely (symlink or missing): {path}"
             ) from error
     finally:
-        os.close(parent_fd)
+        os.close(dir_fd)
+
+
+def _read_evidence_bytes(path: Path, private: bool = True) -> bytes:
+    """Read evidence via a secure component walk and refuse anomalies.
+
+    Every path component down to the file is opened without following
+    symlinks and validated (see _open_evidence_descriptor), and the OPEN
+    DESCRIPTOR is fstat-checked: it must be a regular file with link count 1,
+    owned by the caller; private evidence must have no group/other access,
+    public inputs (e.g. the committed verification key) must at least not be
+    group/other writable. The bytes returned are read from that descriptor
+    exactly once, so what is verified is what is parsed and hashed.
+    """
+    fd = _open_evidence_descriptor(path)
     try:
         status = os.fstat(fd)
         if not stat_module.S_ISREG(status.st_mode):
@@ -479,6 +558,7 @@ def _validated_attestation_evidence(
         "slsa_layer_digest": slsa_layer_digest,
         "spdx_sha256": None,
         "spdx_subject_digest": None,
+        "_evidence_bytes": statement_text.encode("utf-8"),
     }
 
 
@@ -634,6 +714,7 @@ def _validated_spdx_document(digest: str, sbom_path: Path) -> dict:
         "slsa_layer_digest": None,
         "spdx_sha256": hashlib.sha256(sbom_bytes).hexdigest(),
         "spdx_subject_digest": digest,
+        "_evidence_bytes": sbom_bytes,
     }
 
 
@@ -684,6 +765,67 @@ def _verified_bundle_snapshot(
         snapshot.write_bytes(bundle_bytes)
         snapshot.chmod(0o600)
         yield snapshot
+
+
+def _retained_sbom_path(run_root: Path, sha256_hex: str, suffix: str) -> Path:
+    return run_root / "release-sboms" / f"{sha256_hex}{suffix}"
+
+
+def _retain_sbom_evidence(
+    run_root: Path, sha256_hex: str, payload: bytes, suffix: str
+) -> Path:
+    """Retain content-addressed SBOM/statement bytes, no-replace, verified.
+
+    The bytes are staged 0600 on the same filesystem, fsynced, published with
+    link(2) (no-replace: a pre-existing file is never overwritten), and the
+    published winner is re-read through the anomaly-checked reader and must
+    byte-match both its content address and the payload.
+    """
+    directory = run_root / "release-sboms"
+    directory.mkdir(mode=0o700, exist_ok=True)
+    if directory.is_symlink():
+        raise ProvenanceError(f"SBOM evidence store is a symlink: {directory}")
+    final = _retained_sbom_path(run_root, sha256_hex, suffix)
+    with tempfile.TemporaryDirectory(dir=directory) as staging:
+        candidate = Path(staging) / "candidate"
+        candidate.write_bytes(payload)
+        candidate.chmod(0o600)
+        _fsync_file(candidate)
+        try:
+            os.link(candidate, final)
+        except FileExistsError:
+            pass
+        else:
+            _fsync_dir(directory)
+    published = _read_evidence_bytes(final)
+    if (
+        hashlib.sha256(published).hexdigest() != sha256_hex
+        or published != payload
+    ):
+        raise ProvenanceError(
+            f"retained SBOM evidence at {final} does not match its content "
+            "address; investigate the tamper before trusting or replacing it"
+        )
+    return final
+
+
+def _reproven_sbom_evidence(
+    run_root: Path, sha256_hex: str, suffix: str, context: str
+) -> bytes:
+    """Read retained content-addressed SBOM evidence and re-prove its hash."""
+    retained = _retained_sbom_path(run_root, sha256_hex, suffix)
+    if not retained.is_file() or retained.is_symlink():
+        raise ProvenanceError(
+            f"retained SBOM evidence for {context} is missing: {retained}; a "
+            "receipt without its content-addressed evidence authorizes nothing"
+        )
+    payload = _read_evidence_bytes(retained)
+    if hashlib.sha256(payload).hexdigest() != sha256_hex:
+        raise ProvenanceError(
+            f"retained SBOM evidence for {context} no longer matches its "
+            f"content address: {retained}"
+        )
+    return payload
 
 
 def create_release_receipt(
@@ -839,6 +981,16 @@ def create_release_receipt(
             f"image {reference} carries no validated in-toto SPDX attestation "
             "and no --sbom document was provided; generate an SPDX SBOM first"
         )
+    evidence_bytes = sbom_evidence.pop("_evidence_bytes")
+    if sbom_evidence.get("statement_sha256"):
+        _retain_sbom_evidence(
+            run_root, sbom_evidence["statement_sha256"], evidence_bytes,
+            ".intoto.json",
+        )
+    else:
+        _retain_sbom_evidence(
+            run_root, sbom_evidence["spdx_sha256"], evidence_bytes, ".spdx.json"
+        )
 
     receipt = {
         "schema": RECEIPT_SCHEMA,
@@ -917,7 +1069,7 @@ def _existing_receipt_or_conflict(
             f"existing receipt for {reference} is unreadable; receipts are "
             "immutable — refusing to overwrite"
         ) from error
-    validate_receipt_binding(existing, reference, run_root)
+    validate_receipt_binding(existing, reference, run_root, capture)
     comparable_existing = {k: v for k, v in existing.items() if k != "created_at"}
     comparable_new = {k: v for k, v in receipt.items() if k != "created_at"}
     if comparable_existing != comparable_new:
@@ -1052,7 +1204,9 @@ def receipt_verify_blob_command(
     ]
 
 
-def validate_receipt_binding(receipt: dict, reference: str, run_root: Path) -> None:
+def validate_receipt_binding(
+    receipt: dict, reference: str, run_root: Path, capture=_run_capture
+) -> None:
     """Refuse signing/allow-listing unless the receipt fully binds the digest.
 
     Nothing recorded is taken on faith: the digest identity, the SBOM subject
@@ -1060,7 +1214,12 @@ def validate_receipt_binding(receipt: dict, reference: str, run_root: Path) -> N
     hash-matches, still carries the anchor tag at its recorded target), and —
     via a fresh clone restored from the bundle — the tag object, the anchor
     commit, the source-commit ancestry, and the source tree are all
-    re-proven on every load.
+    re-proven on every load. Registry content is re-proven too: the top,
+    linux/amd64, and config bytes, source labels, and — for attestation
+    receipts — the attestation manifest and statement are re-fetched and
+    hash-verified against the recorded digests, and the retained
+    content-addressed SBOM/statement evidence must byte-match; recorded
+    digest strings alone never authorize anything.
     """
     reference = validate_digest_reference(reference)
     digest = reference.rsplit("@", 1)[1]
@@ -1197,6 +1356,77 @@ def validate_receipt_binding(receipt: dict, reference: str, run_root: Path) -> N
             "manifest) or a subject-checked SPDX document"
         )
 
+    # Registry re-proof: the recorded digests must still name the exact
+    # content the registry serves, re-fetched and byte-hash-verified now.
+    top, live_amd64, live_config, labels = _resolve_amd64_image(
+        reference, capture
+    )
+    if live_amd64 != amd64_digest or live_config != config_digest:
+        raise ProvenanceError(
+            f"registry re-proof failed for {reference}: the index now "
+            f"resolves to manifest {live_amd64} / config {live_config}, not "
+            f"the receipted {amd64_digest} / {config_digest}"
+        )
+    if (
+        labels.get("org.opencontainers.image.revision") != source["commit"]
+        or labels.get("ai.nebius.fs2-serve.source-tree") != source["tree"]
+    ):
+        raise ProvenanceError(
+            f"registry re-proof failed for {reference}: the hash-verified "
+            "config labels no longer match the receipted source commit/tree"
+        )
+    if attestation_bound:
+        evidence = _validated_attestation_evidence(
+            reference, top, live_amd64, capture
+        )
+        if evidence is None:
+            raise ProvenanceError(
+                f"registry re-proof failed for {reference}: the receipted "
+                "attestation evidence is no longer present in the index"
+            )
+        for field in (
+            "attestation_manifest_digest",
+            "subject_manifest_digest",
+            "spdx_layer_digest",
+            "statement_sha256",
+        ):
+            if str(sbom.get(field) or "") != str(evidence.get(field) or ""):
+                raise ProvenanceError(
+                    f"registry re-proof failed for {reference}: re-validated "
+                    f"attestation {field} {evidence.get(field)!r} does not "
+                    f"equal the receipted {sbom.get(field)!r}"
+                )
+        retained = _reproven_sbom_evidence(
+            run_root, statement_sha, ".intoto.json", reference
+        )
+        if retained != evidence["_evidence_bytes"]:
+            raise ProvenanceError(
+                f"retained statement evidence for {reference} does not "
+                "byte-match the re-fetched registry statement"
+            )
+    else:
+        document_bytes = _reproven_sbom_evidence(
+            run_root, spdx, ".spdx.json", reference
+        )
+        try:
+            document = json.loads(document_bytes)
+        except json.JSONDecodeError as error:
+            raise ProvenanceError(
+                f"retained SPDX evidence for {reference} is not valid JSON"
+            ) from error
+        described = _validate_spdx_shape(
+            document, f"retained SPDX evidence for {reference}"
+        )
+        digest_hex = digest.split(":", 1)[1]
+        if not any(
+            _package_names_exact_digest(package, digest_hex)
+            for package in described
+        ):
+            raise ProvenanceError(
+                f"retained SPDX evidence for {reference} no longer binds the "
+                "digest as an exact SHA256 checksum or subject locator"
+            )
+
 
 def _assert_receipt_tree_safe(run_root: Path, final_dir: Path) -> None:
     """Refuse symlinks at every component of the receipt publication path."""
@@ -1217,6 +1447,7 @@ def load_bound_receipt(
     reference: str,
     public_key_path: str,
     verifier=None,
+    capture=_run_capture,
 ) -> dict:
     """Load a receipt, verify its cosign signature, then verify its bindings.
 
@@ -1253,11 +1484,12 @@ def load_bound_receipt(
         receipt = json.loads(receipt_bytes)
     except json.JSONDecodeError as error:
         raise ProvenanceError(f"unreadable release receipt at {path}") from error
-    validate_receipt_binding(receipt, reference, run_root)
+    validate_receipt_binding(receipt, reference, run_root, capture)
     return receipt
 
 
-INVENTORY_SCHEMA = "fs2-serve.nebius.ai/release-inventory/v2"
+INVENTORY_SCHEMA = "fs2-serve.nebius.ai/release-inventory/v3"
+SCOPE_SCHEMA = "fs2-serve.nebius.ai/release-scope/v1"
 INVENTORY_SOURCES = (
     "live_workloads",
     "helm_rollback_window",
@@ -1268,7 +1500,20 @@ DRAIN_REASON_PATTERN = re.compile(
     r"( [\x20-\x7e]{1,160})?$"
 )
 INVENTORY_MAX_AGE_HOURS = 24
+INVENTORY_MAX_AGE_HOURS_LIMIT = 168
 _CLOCK_SKEW_SECONDS = 300
+CLUSTER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{1,127}$")
+RESOURCE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9/._:-]{0,255}$")
+NAMESPACE_PATTERN = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
+PRINCIPAL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9@:/._-]{0,255}$")
+SCOPE_FIELDS = (
+    "cluster",
+    "namespaces",
+    "registry_prefixes",
+    "platform_repository_prefix",
+    "deploy_principals",
+    "verification_key_sha256",
+)
 
 
 def _parse_rfc3339(value: str, context: str) -> datetime:
@@ -1279,6 +1524,105 @@ def _parse_rfc3339(value: str, context: str) -> datetime:
     if parsed.tzinfo is None:
         raise ProvenanceError(f"{context} timestamp {value!r} lacks a timezone")
     return parsed
+
+
+def _validated_scope(value, context: str) -> dict:
+    """Validate an exact admission scope object; refuse anything loose."""
+    if not isinstance(value, dict) or set(value) != set(SCOPE_FIELDS):
+        raise ProvenanceError(
+            f"{context} must be an object with exactly these fields: "
+            + ", ".join(SCOPE_FIELDS)
+        )
+    if not CLUSTER_PATTERN.match(str(value.get("cluster", ""))):
+        raise ProvenanceError(f"{context} has an invalid cluster identity")
+    namespaces = value.get("namespaces")
+    if (
+        not isinstance(namespaces, list)
+        or not namespaces
+        or len(set(namespaces)) != len(namespaces)
+        or not all(
+            isinstance(item, str) and NAMESPACE_PATTERN.match(item)
+            for item in namespaces
+        )
+    ):
+        raise ProvenanceError(
+            f"{context} needs a non-empty list of unique valid namespaces"
+        )
+    prefixes = value.get("registry_prefixes")
+    if (
+        not isinstance(prefixes, list)
+        or not prefixes
+        or len(set(prefixes)) != len(prefixes)
+        or not all(
+            isinstance(item, str) and item and item.endswith("/")
+            for item in prefixes
+        )
+    ):
+        raise ProvenanceError(
+            f"{context} needs a non-empty list of unique registry prefixes "
+            "ending with '/'"
+        )
+    platform_prefix = value.get("platform_repository_prefix")
+    if (
+        not isinstance(platform_prefix, str)
+        or not platform_prefix.endswith("/")
+        or not any(platform_prefix.startswith(prefix) for prefix in prefixes)
+    ):
+        raise ProvenanceError(
+            f"{context} platform_repository_prefix must end with '/' and lie "
+            "under one of the allowed registry prefixes"
+        )
+    principals = value.get("deploy_principals")
+    if (
+        not isinstance(principals, list)
+        or len(set(principals)) != len(principals)
+        or not all(
+            isinstance(item, str) and PRINCIPAL_PATTERN.match(item)
+            for item in principals
+        )
+    ):
+        raise ProvenanceError(
+            f"{context} needs a list of unique valid deploy principals"
+        )
+    if not SHA256_PATTERN.match(str(value.get("verification_key_sha256", ""))):
+        raise ProvenanceError(
+            f"{context} needs the exact SHA-256 of the verification key"
+        )
+    return value
+
+
+def load_owner_scope(scope_path: Path) -> dict:
+    """Load the committed owner-approved admission scope, fail-closed.
+
+    Allow-list rendering is impossible until the owner commits the exact
+    scope (cluster, namespaces, prefixes, principals, key identity) through
+    review: an absent, empty, or malformed scope refuses rendering, so a
+    signer can never substitute their own coverage decisions.
+    """
+    if not scope_path.is_file() or scope_path.is_symlink():
+        raise ProvenanceError(
+            f"missing owner-approved release scope: {scope_path}; allow-list "
+            "rendering fails closed until the owner commits the exact "
+            "admission scope"
+        )
+    try:
+        document = json.loads(_read_evidence_bytes(scope_path, private=False))
+    except json.JSONDecodeError as error:
+        raise ProvenanceError(
+            f"owner release scope is malformed and fails closed: {scope_path}"
+        ) from error
+    if not isinstance(document, dict) or document.get("schema") != SCOPE_SCHEMA:
+        raise ProvenanceError(
+            f"{scope_path} is not a {SCOPE_SCHEMA} document"
+        )
+    scope = document.get("scope")
+    if scope is None:
+        raise ProvenanceError(
+            f"owner release scope at {scope_path} is EMPTY: allow-list "
+            "rendering fails closed until the owner populates and reviews the "
+            "exact admission scope"
+        )
+    return _validated_scope(scope, f"owner release scope {scope_path}")
 
 
 def load_signed_inventory(
@@ -1305,6 +1649,17 @@ def load_signed_inventory(
     policy's match scope, never in inventory falsification. platform_images
     must equal the source union minus those audited non-live drains.
     """
+    if (
+        not isinstance(max_age_hours, (int, float))
+        or isinstance(max_age_hours, bool)
+        or not math.isfinite(max_age_hours)
+        or not 0 < float(max_age_hours) <= INVENTORY_MAX_AGE_HOURS_LIMIT
+    ):
+        raise ProvenanceError(
+            "max inventory age must be a finite number of hours in "
+            f"(0, {INVENTORY_MAX_AGE_HOURS_LIMIT}]; got {max_age_hours!r}"
+        )
+    max_age_hours = float(max_age_hours)
     signature = inventory_path.parent / (inventory_path.name + ".sig")
     if (
         inventory_path.is_symlink()
@@ -1340,9 +1695,17 @@ def load_signed_inventory(
         raise ProvenanceError(
             f"{inventory_path} is not a {INVENTORY_SCHEMA} document"
         )
-    if not str(inventory.get("cluster", "")).strip():
+    if not CLUSTER_PATTERN.match(str(inventory.get("cluster", ""))):
         raise ProvenanceError(
-            f"{inventory_path} lacks the cluster identity it was captured from"
+            f"{inventory_path} lacks an exact valid cluster identity"
+        )
+    scope = _validated_scope(
+        inventory.get("scope"), f"{inventory_path} scope"
+    )
+    if scope["cluster"] != inventory["cluster"]:
+        raise ProvenanceError(
+            f"{inventory_path} scope cluster {scope['cluster']!r} does not "
+            f"equal the captured cluster {inventory['cluster']!r}"
         )
     now = datetime.now(UTC)
     captured_at = _parse_rfc3339(
@@ -1372,16 +1735,32 @@ def load_signed_inventory(
         observed_at = _parse_rfc3339(
             source.get("observed_at", ""), f"{inventory_path} source {name}"
         )
-        if abs((now - observed_at).total_seconds()) > max_age_hours * 3600:
+        observed_age = (now - observed_at).total_seconds()
+        if observed_age < -_CLOCK_SKEW_SECONDS:
             raise ProvenanceError(
-                f"{inventory_path} source {name} observation is stale or "
-                "future-dated"
+                f"{inventory_path} source {name} observation is future-dated "
+                f"beyond the {_CLOCK_SKEW_SECONDS}s clock-skew bound"
+            )
+        if observed_age > max_age_hours * 3600:
+            raise ProvenanceError(
+                f"{inventory_path} source {name} observation is stale"
             )
         resource_ids = source.get("resource_ids")
         if not isinstance(resource_ids, list) or (refs and not resource_ids):
             raise ProvenanceError(
                 f"{inventory_path} source {name} lacks the resource identities "
                 "its refs were observed on"
+            )
+        if (
+            len(set(map(str, resource_ids))) != len(resource_ids)
+            or not all(
+                isinstance(item, str) and RESOURCE_ID_PATTERN.match(item)
+                for item in resource_ids
+            )
+        ):
+            raise ProvenanceError(
+                f"{inventory_path} source {name} resource identities must be "
+                "unique, non-empty, structured strings"
             )
         per_source[name] = {
             validate_digest_reference(str(reference)) for reference in refs
@@ -1441,28 +1820,68 @@ def verified_allowlist(
     platform_repository_prefix: str,
     receipts_root: Path,
     inventory_path: Path,
+    scope_path: Path,
     deploy_principals: Sequence[str] = (),
     verifier=None,
     max_age_hours: float = INVENTORY_MAX_AGE_HOURS,
+    capture=_run_capture,
 ) -> dict:
-    """Render the allow-list only from the signed, complete inventory.
+    """Render the allow-list only from the signed inventory + owner scope.
 
     The reference set comes from the verified inventory — never from an
     arbitrary operator-chosen subset. If explicit --image references are also
     given they must equal the inventory set exactly (extras and missing are
     both refused). Every inventory digest must then carry a bound release
-    receipt and a valid cosign signature, so the ConfigMap can never drift
-    ahead of the release evidence or silently drop coverage.
+    receipt — fully re-proven against the registry and retained SBOM
+    evidence — and a valid cosign signature, so the ConfigMap can never
+    drift ahead of the release evidence or silently drop coverage.
+
+    Admission scope is never caller-chosen: the committed, owner-reviewed
+    release-scope document is the single authority for cluster, namespaces,
+    registry prefixes, platform repository prefix, deploy principals, and
+    the verification-key identity. The SIGNED inventory must carry exactly
+    that scope (a signer cannot substitute their own coverage), the CLI
+    arguments must equal it (a mistyped prefix cannot bypass platform-digest
+    gating), the pinned key hash must equal its recorded key identity, and
+    the ConfigMap renders FROM the owner scope values.
 
     The verification key is read exactly once and pinned: every signature
     check and the recorded key annotation refer to that single identity. The
     recorded inventory annotation is the hash of the bytes that were verified
     and parsed — never a re-read of the mutable pathname.
     """
+    owner_scope = load_owner_scope(Path(scope_path))
     with _PinnedPublicKey(public_key_path) as pinned:
+        if pinned.sha256 != owner_scope["verification_key_sha256"]:
+            raise ProvenanceError(
+                "verification key does not match the owner-approved scope: "
+                f"pinned key sha256 {pinned.sha256} != scope key "
+                f"{owner_scope['verification_key_sha256']}"
+            )
         inventory, inventory_sha256 = load_signed_inventory(
             inventory_path, pinned.path, verifier, max_age_hours
         )
+        if inventory["scope"] != owner_scope:
+            raise ProvenanceError(
+                f"{inventory_path} scope does not equal the owner-approved "
+                "release scope exactly; a signed inventory for a different "
+                "scope never renders an allow-list"
+            )
+        if sorted(registry_prefixes) != sorted(owner_scope["registry_prefixes"]):
+            raise ProvenanceError(
+                "--registry-prefix arguments must equal the owner-approved "
+                f"scope exactly: {sorted(owner_scope['registry_prefixes'])}"
+            )
+        if platform_repository_prefix != owner_scope["platform_repository_prefix"]:
+            raise ProvenanceError(
+                "--platform-repository-prefix must equal the owner-approved "
+                f"scope exactly: {owner_scope['platform_repository_prefix']!r}"
+            )
+        if sorted(deploy_principals) != sorted(owner_scope["deploy_principals"]):
+            raise ProvenanceError(
+                "--deploy-principal arguments must equal the owner-approved "
+                f"scope exactly: {sorted(owner_scope['deploy_principals'])}"
+            )
         inventory_references = sorted(
             validate_digest_reference(str(ref))
             for ref in inventory["platform_images"]
@@ -1482,7 +1901,16 @@ def verified_allowlist(
         )
         digests = []
         for reference in inventory_references:
-            load_bound_receipt(receipts_root, reference, pinned.path, verifier)
+            if not reference.startswith(
+                tuple(owner_scope["registry_prefixes"])
+            ):
+                raise ProvenanceError(
+                    f"inventory reference {reference} lies outside the "
+                    "owner-approved registry prefixes; refusing to render"
+                )
+            load_bound_receipt(
+                receipts_root, reference, pinned.path, verifier, capture
+            )
             try:
                 run_verifier(cosign_verify_command(pinned.path, reference))
             except subprocess.CalledProcessError as error:
@@ -1492,13 +1920,22 @@ def verified_allowlist(
                 ) from error
             digests.append(reference.rsplit("@", 1)[1])
         manifest = render_allowlist(
-            registry_prefixes, platform_repository_prefix, digests, deploy_principals
+            owner_scope["registry_prefixes"],
+            owner_scope["platform_repository_prefix"],
+            digests,
+            owner_scope["deploy_principals"],
         )
         annotations = manifest["metadata"].setdefault("annotations", {})
         annotations["security.fs2.nebius.ai/verified-with-key-sha256"] = (
             pinned.sha256
         )
         annotations["security.fs2.nebius.ai/inventory-sha256"] = inventory_sha256
+        annotations["security.fs2.nebius.ai/scope-cluster"] = owner_scope[
+            "cluster"
+        ]
+        annotations["security.fs2.nebius.ai/scope-namespaces"] = ",".join(
+            owner_scope["namespaces"]
+        )
     return manifest
 
 
@@ -1599,7 +2036,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--max-inventory-age-hours",
         type=float,
         default=INVENTORY_MAX_AGE_HOURS,
-        help="refuse inventories captured longer ago than this (freshness bound)",
+        help=(
+            "refuse inventories captured longer ago than this (finite, "
+            f"0 < hours <= {INVENTORY_MAX_AGE_HOURS_LIMIT}; nan/inf refused)"
+        ),
+    )
+    render.add_argument(
+        "--scope",
+        required=True,
+        type=Path,
+        help=(
+            "committed owner-approved release-scope JSON; rendering fails "
+            "closed when it is absent or empty, and the signed inventory, "
+            "CLI arguments, and key identity must all equal it exactly"
+        ),
     )
 
     receipt = subcommands.add_parser(
@@ -1672,6 +2122,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.platform_repository_prefix,
             args.run_root,
             args.inventory,
+            args.scope,
             args.deploy_principal,
             max_age_hours=args.max_inventory_age_hours,
         )

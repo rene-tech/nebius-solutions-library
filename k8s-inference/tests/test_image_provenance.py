@@ -87,6 +87,7 @@ class PolicyManifestTest(unittest.TestCase):
             matched,
             {
                 ("", "pods"),
+                ("", "pods/ephemeralcontainers"),
                 ("apps", "deployments"),
                 ("apps", "daemonsets"),
                 ("apps", "statefulsets"),
@@ -96,6 +97,21 @@ class PolicyManifestTest(unittest.TestCase):
         )
         for rule in rules:
             self.assertEqual(sorted(rule["operations"]), ["CREATE", "UPDATE"])
+
+    def test_policy_governs_kubectl_debug_ephemeral_injection(self) -> None:
+        # kubectl debug writes the pods/ephemeralcontainers subresource; the
+        # policy must match it so an injected mutable/foreign debug image is
+        # denied while a pinned allow-listed one still works (debugging is
+        # governed, never disabled).
+        rules = self.policy["spec"]["matchConstraints"]["resourceRules"]
+        pods_rule = next(
+            rule for rule in rules if "pods" in rule["resources"]
+        )
+        self.assertIn("pods/ephemeralcontainers", pods_rule["resources"])
+        variables = {
+            v["name"]: v["expression"] for v in self.policy["spec"]["variables"]
+        }
+        self.assertIn("ephemeralContainers", variables["images"])
 
     def test_policy_fails_closed_and_validates_all_container_kinds(self) -> None:
         spec = self.policy["spec"]
@@ -345,6 +361,229 @@ def write_signed_receipt_fixture(
 
 NOOP_VERIFIER = lambda command: None  # noqa: E731 - injected in place of cosign
 
+def fixture_statement(
+    statement_subject_hex: str, subject_name: str = "pkg:docker/fixture-image"
+) -> dict:
+    return {
+        "_type": "https://in-toto.io/Statement/v0.1",
+        "predicateType": "https://spdx.dev/Document",
+        "subject": [
+            {"name": subject_name, "digest": {"sha256": statement_subject_hex}}
+        ],
+        "predicate": {
+            "spdxVersion": "SPDX-2.3",
+            "SPDXID": "SPDXRef-DOCUMENT",
+            "dataLicense": "CC0-1.0",
+            "name": "sbom",
+            "documentNamespace": "https://example.invalid/spdxdocs/fixture",
+            "creationInfo": {
+                "created": "2026-09-16T00:00:00Z",
+                "creators": ["Tool: fixture"],
+            },
+            "packages": [
+                {
+                    "SPDXID": "SPDXRef-Package-fixture",
+                    "name": "fixture-root",
+                    "downloadLocation": "NOASSERTION",
+                }
+            ],
+            "relationships": [
+                {
+                    "spdxElementId": "SPDXRef-DOCUMENT",
+                    "relationshipType": "DESCRIBES",
+                    "relatedSpdxElement": "SPDXRef-Package-fixture",
+                }
+            ],
+        },
+    }
+
+
+def build_crane_fixture(
+    anchor_fixture: dict,
+    repository: str = "control-plane",
+    revision: str | None = None,
+    spdx_predicate: str = "https://spdx.dev/Document",
+    statement_subject_hex: str | None = None,
+    tree_label: str | object = "fixture-tree",
+    statement_mutator=None,
+    statement_text_override: str | None = None,
+    statement_layer_digest: str | None = None,
+    amd64_platforms: int = 1,
+    attestation_subject: str | None = None,
+    config_architecture: str = "amd64",
+    duplicate_amd64_attestation: bool = False,
+    duplicate_spdx_layer: bool = False,
+    include_attestation: bool = True,
+):
+    """Build a deterministic multi-platform image fixture, bottom-up.
+
+    Every digest is computed from the exact bytes the capture serves, so the
+    registry re-proof performed at load time verifies REAL content addresses,
+    exactly like production crane fetches.
+    """
+    import hashlib
+    from types import SimpleNamespace
+
+    ns = SimpleNamespace()
+
+    def sha(text: str) -> str:
+        return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    revision = revision or anchor_fixture["head"]
+    if tree_label == "fixture-tree":
+        tree_label = anchor_fixture["tree"]
+    labels = {
+        "org.opencontainers.image.revision": revision,
+        # Distinguishes repositories so their content addresses differ, as
+        # different images do in a real registry.
+        "ai.nebius.fs2-serve.fixture-repository": repository,
+    }
+    if tree_label is not None:
+        labels["ai.nebius.fs2-serve.source-tree"] = tree_label
+    config_text = json.dumps(
+        {
+            "architecture": config_architecture,
+            "os": "linux",
+            "config": {"Labels": labels},
+        }
+    )
+    config_digest = sha(config_text)
+    amd64_manifest_text = json.dumps(
+        {"schemaVersion": 2, "config": {"digest": config_digest}, "layers": []}
+    )
+    amd64_digest = sha(amd64_manifest_text)
+    ns.expected_amd64_digest = amd64_digest
+    ns.expected_config_digest = config_digest
+
+    if statement_text_override is not None:
+        statement_text = statement_text_override
+    else:
+        statement = fixture_statement(
+            statement_subject_hex or amd64_digest.split(":", 1)[1]
+        )
+        if statement_mutator is not None:
+            statement_mutator(statement)
+        statement_text = json.dumps(statement)
+    if statement_layer_digest is None:
+        statement_layer_digest = sha(statement_text)
+    ns.expected_spdx_layer_digest = statement_layer_digest
+    attestation_layers = [
+        {
+            "mediaType": "application/vnd.in-toto+json",
+            "digest": statement_layer_digest,
+            "annotations": {"in-toto.io/predicate-type": spdx_predicate},
+        },
+        {
+            "mediaType": "application/vnd.in-toto+json",
+            "digest": "sha256:" + "d" * 64,
+            "annotations": {
+                "in-toto.io/predicate-type": "https://slsa.dev/provenance/v0.2"
+            },
+        },
+    ]
+    if duplicate_spdx_layer:
+        attestation_layers.append(dict(attestation_layers[0]))
+    attestation_manifest_text = json.dumps({"layers": attestation_layers})
+    attestation_digest = sha(attestation_manifest_text)
+    arm64_digest = "sha256:" + "b" * 64
+    entries = []
+    for _ in range(amd64_platforms):
+        entries.append(
+            {
+                "digest": amd64_digest,
+                "platform": {"architecture": "amd64", "os": "linux"},
+            }
+        )
+    entries.append(
+        {
+            "digest": arm64_digest,
+            "platform": {"architecture": "arm64", "os": "linux"},
+        }
+    )
+    if include_attestation:
+        entries.append(
+            {
+                "digest": attestation_digest,
+                "annotations": {
+                    "vnd.docker.reference.type": "attestation-manifest",
+                    "vnd.docker.reference.digest": attestation_subject or amd64_digest,
+                },
+            }
+        )
+        if duplicate_amd64_attestation:
+            entries.append(dict(entries[-1]))
+        entries.append(
+            {
+                "digest": "sha256:" + "c" * 64,
+                "annotations": {
+                    "vnd.docker.reference.type": "attestation-manifest",
+                    "vnd.docker.reference.digest": arm64_digest,
+                },
+            }
+        )
+    index_text = json.dumps({"schemaVersion": 2, "manifests": entries})
+    # The top manifest is content-addressed too: the fixture reference
+    # digest is the hash of the exact index bytes served.
+    ns.reference = PLATFORM_PREFIX + repository + "@" + sha(index_text)
+
+    def capture(command):
+        if command[:2] == ["crane", "manifest"]:
+            target = command[2]
+            if target == ns.reference:
+                return index_text
+            if target.endswith("@" + amd64_digest):
+                return amd64_manifest_text
+            if target.endswith("@" + attestation_digest):
+                return attestation_manifest_text
+            raise AssertionError(f"unexpected manifest fetch: {target}")
+        if command[:2] == ["crane", "blob"]:
+            target = command[2]
+            if target.endswith("@" + config_digest):
+                return config_text
+            if target.endswith("@" + statement_layer_digest):
+                return statement_text
+            raise AssertionError(f"unexpected blob fetch: {target}")
+        if command[:2] == ["cosign", "sign-blob"]:
+            assert "--tlog-upload=false" in command
+            assert "--use-signing-config=false" in command
+            Path(command[command.index("--output-file") + 1]).write_text("sig\n")
+            return ""
+        if command[:2] == ["cosign", "verify-blob"]:
+            assert "--insecure-ignore-tlog=true" in command
+            return ""
+        raise AssertionError(f"unexpected command: {command}")
+
+    ns.capture = capture
+    return ns
+
+
+def default_scope_fixture(key_sha256: str) -> dict:
+    return {
+        "cluster": "fixture-cluster",
+        "namespaces": ["fs2-models", "fs2-system"],
+        "registry_prefixes": [REGISTRY_PREFIX],
+        "platform_repository_prefix": PLATFORM_PREFIX,
+        "deploy_principals": ["deployer"],
+        "verification_key_sha256": key_sha256,
+    }
+
+
+def write_scope_fixture(base: Path, scope: dict | None, name: str = "release-scope.json") -> Path:
+    path = base / name
+    path.write_text(
+        json.dumps({"schema": TOOL.SCOPE_SCHEMA, "scope": scope}), encoding="utf-8"
+    )
+    path.chmod(0o644)
+    return path
+
+
+TEST_KEY_CONTENT = "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----\n"
+
+
+def no_registry_capture(command):
+    raise AssertionError(f"unexpected registry/tool access: {command}")
+
+
 
 def write_inventory_fixture(
     base: Path,
@@ -356,8 +595,11 @@ def write_inventory_fixture(
     schema: str | None = None,
     sign: bool = True,
     captured_at: str | None = None,
+    observed_at: str | None = None,
+    scope: dict | None = None,
     name: str = "inventory.json",
 ) -> Path:
+    import hashlib as fixture_hashlib
     from datetime import UTC, datetime
 
     now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -365,7 +607,7 @@ def write_inventory_fixture(
     def source(refs: list[str]) -> dict:
         return {
             "refs": refs,
-            "observed_at": now,
+            "observed_at": observed_at or now,
             "resource_ids": [f"fixture-resource-{i}" for i in range(len(refs))],
         }
 
@@ -373,6 +615,10 @@ def write_inventory_fixture(
         "schema": schema or TOOL.INVENTORY_SCHEMA,
         "cluster": "fixture-cluster",
         "captured_at": captured_at or now,
+        "scope": scope
+        or default_scope_fixture(
+            fixture_hashlib.sha256(TEST_KEY_CONTENT.encode("utf-8")).hexdigest()
+        ),
         "sources": {
             "live_workloads": source(live if live is not None else platform_images),
             "helm_rollback_window": source(helm or []),
@@ -392,38 +638,81 @@ def write_inventory_fixture(
 
 
 class VerifiedAllowlistTest(unittest.TestCase):
-    """Allow-listing renders only the signed complete inventory, receipted."""
+    """Allow-listing renders only the signed complete inventory, receipted.
 
-    REFERENCE_A = PLATFORM_PREFIX + "control-plane@" + DIGEST_A
-    REFERENCE_B = PLATFORM_PREFIX + "admin-console@" + DIGEST_B
+    The receipts behind the two references are REAL: created bottom-up
+    through create_release_receipt against deterministic content-addressed
+    crane fixtures, so the full registry + retained-SBOM re-proof that runs
+    on every allow-list load is exercised, never bypassed with invented
+    digests.
+    """
 
     def setUp(self) -> None:
+        import hashlib as h
         import tempfile
 
         self._tmp = tempfile.NamedTemporaryFile("w", suffix=".pub", delete=False)
-        self._tmp.write("-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----\n")
+        self._tmp.write(TEST_KEY_CONTENT)
         self._tmp.close()
         self.addCleanup(lambda: Path(self._tmp.name).unlink(missing_ok=True))
+        self.key_sha256 = h.sha256(TEST_KEY_CONTENT.encode("utf-8")).hexdigest()
         self._run_root_holder = tempfile.TemporaryDirectory()
         self.addCleanup(self._run_root_holder.cleanup)
         self.run_root = Path(self._run_root_holder.name)
         self.fixture = build_anchor_fixture(self.run_root)
-        write_signed_receipt_fixture(self.run_root, self.REFERENCE_A, self.fixture)
-        write_signed_receipt_fixture(self.run_root, self.REFERENCE_B, self.fixture)
+        self.fx_a = build_crane_fixture(self.fixture, repository="control-plane")
+        self.fx_b = build_crane_fixture(self.fixture, repository="admin-console")
+        self.REFERENCE_A = self.fx_a.reference
+        self.REFERENCE_B = self.fx_b.reference
+        self.DIGEST_A = self.REFERENCE_A.rsplit("@", 1)[1]
+        self.DIGEST_B = self.REFERENCE_B.rsplit("@", 1)[1]
+        for built in (self.fx_a, self.fx_b):
+            TOOL.create_release_receipt(
+                built.reference,
+                self.run_root,
+                self.fixture["repo"],
+                "deploy/fixture",
+                "release.key",
+                "release.pub",
+                None,
+                capture=built.capture,
+            )
+        self.scope = default_scope_fixture(self.key_sha256)
+        self.scope_path = write_scope_fixture(self.run_root, self.scope)
         self.inventory = write_inventory_fixture(
             self.run_root, [self.REFERENCE_A, self.REFERENCE_B]
         )
 
-    def render(self, references=(), verifier=NOOP_VERIFIER, inventory=None):
+    def capture(self, command):
+        text = " ".join(str(part) for part in command)
+        if "admin-console" in text:
+            return self.fx_b.capture(command)
+        return self.fx_a.capture(command)
+
+    def expected_digests(self) -> str:
+        return "\n".join(sorted([self.DIGEST_A, self.DIGEST_B]))
+
+    def render(
+        self,
+        references=(),
+        verifier=NOOP_VERIFIER,
+        inventory=None,
+        scope_path=None,
+        registry_prefixes=None,
+        platform_prefix=PLATFORM_PREFIX,
+        deploy_principals=("deployer",),
+    ):
         return TOOL.verified_allowlist(
             self._tmp.name,
             list(references),
-            [REGISTRY_PREFIX],
-            PLATFORM_PREFIX,
+            list(registry_prefixes or [REGISTRY_PREFIX]),
+            platform_prefix,
             self.run_root,
             inventory or self.inventory,
-            deploy_principals=["deployer"],
+            scope_path or self.scope_path,
+            deploy_principals=list(deploy_principals),
             verifier=verifier,
+            capture=self.capture,
         )
 
     def test_inventory_references_are_verified_before_rendering(self) -> None:
@@ -434,7 +723,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
         # Inventory signature, then per reference: receipt sig + image sig.
         self.assertEqual(len(verified), 5)
         self.assertEqual(
-            manifest["data"]["platform-digests"], f"{DIGEST_A}\n{DIGEST_B}"
+            manifest["data"]["platform-digests"], self.expected_digests()
         )
         annotations = manifest["metadata"]["annotations"]
         self.assertIn("security.fs2.nebius.ai/verified-with-key-sha256", annotations)
@@ -475,6 +764,94 @@ class VerifiedAllowlistTest(unittest.TestCase):
         self.assertNotEqual(key_paths[0], self._tmp.name)
         self.assertEqual(key_contents, {key_bytes})
 
+    def test_nonfinite_or_unbounded_max_age_is_refused(self) -> None:
+        for bad in (float("nan"), float("inf"), float("-inf"), 0, -3, 10**6, True):
+            with self.assertRaisesRegex(TOOL.ProvenanceError, "finite"):
+                TOOL.load_signed_inventory(
+                    self.inventory, self._tmp.name, NOOP_VERIFIER, bad
+                )
+
+    def test_future_observed_at_beyond_clock_skew_is_refused(self) -> None:
+        from datetime import UTC, datetime, timedelta
+
+        future = (datetime.now(UTC) + timedelta(hours=1)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        inventory = write_inventory_fixture(
+            self.run_root,
+            [self.REFERENCE_A, self.REFERENCE_B],
+            observed_at=future,
+            name="future-observed.json",
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "future-dated"):
+            self.render(inventory=inventory)
+
+    def test_duplicate_or_invalid_resource_ids_are_refused(self) -> None:
+        for resource_ids, pattern in (
+            (["duplicate", "duplicate"], "unique"),
+            ([""], "unique, non-empty, structured"),
+            ([{"kind": "Deployment"}], "unique, non-empty, structured"),
+        ):
+            inventory = write_inventory_fixture(
+                self.run_root,
+                [self.REFERENCE_A, self.REFERENCE_B],
+                name="bad-resources.json",
+            )
+            document = json.loads(inventory.read_text(encoding="utf-8"))
+            document["sources"]["live_workloads"]["resource_ids"] = resource_ids
+            inventory.write_text(json.dumps(document), encoding="utf-8")
+            with self.assertRaisesRegex(TOOL.ProvenanceError, pattern):
+                self.render(inventory=inventory)
+
+    def test_missing_or_empty_owner_scope_fails_closed(self) -> None:
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "fails closed"):
+            self.render(scope_path=self.run_root / "no-such-scope.json")
+        empty = write_scope_fixture(self.run_root, None, name="empty-scope.json")
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "EMPTY"):
+            self.render(scope_path=empty)
+
+    def test_scope_mismatches_are_refused(self) -> None:
+        # Signer-substituted scope: the signed inventory names a different
+        # cluster than the owner-approved scope.
+        foreign_scope = dict(self.scope, cluster="other-cluster")
+        inventory = write_inventory_fixture(
+            self.run_root,
+            [self.REFERENCE_A, self.REFERENCE_B],
+            scope=foreign_scope,
+            name="foreign-scope-inventory.json",
+        )
+        document = json.loads(inventory.read_text(encoding="utf-8"))
+        document["cluster"] = "other-cluster"
+        inventory.write_text(json.dumps(document), encoding="utf-8")
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "owner-approved"):
+            self.render(inventory=inventory)
+        # Key identity: the pinned verification key must be the one the
+        # owner scope names.
+        wrong_key_scope = write_scope_fixture(
+            self.run_root,
+            dict(self.scope, verification_key_sha256="f" * 64),
+            name="wrong-key-scope.json",
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "verification key"):
+            self.render(scope_path=wrong_key_scope)
+        # CLI principals must equal the scope exactly.
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "--deploy-principal"):
+            self.render(deploy_principals=["someone-else"])
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "--registry-prefix"):
+            self.render(registry_prefixes=["cr.other.invalid/"])
+
+    def test_nonmatching_platform_prefix_cannot_bypass_platform_digests(
+        self,
+    ) -> None:
+        # The demonstrated bypass: a CLI-chosen unrelated prefix would make
+        # every real platform image a "non-platform" image, emptying the
+        # platform-digests gate. The prefix now comes from the owner scope
+        # and a mismatched CLI value refuses to render.
+        with self.assertRaisesRegex(
+            TOOL.ProvenanceError, "--platform-repository-prefix"
+        ):
+            self.render(platform_prefix=REGISTRY_PREFIX + "unrelated/")
+
     def test_explicit_references_must_equal_the_inventory_exactly(self) -> None:
         with self.assertRaisesRegex(TOOL.ProvenanceError, "equal the signed inventory"):
             self.render(references=[self.REFERENCE_A])
@@ -483,7 +860,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
             self.render(references=[self.REFERENCE_A, self.REFERENCE_B, extra])
         manifest = self.render(references=[self.REFERENCE_B, self.REFERENCE_A])
         self.assertEqual(
-            manifest["data"]["platform-digests"], f"{DIGEST_A}\n{DIGEST_B}"
+            manifest["data"]["platform-digests"], self.expected_digests()
         )
 
     def test_unsigned_or_missing_inventory_is_refused(self) -> None:
@@ -536,7 +913,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
             ],
         )
         manifest = self.render(inventory=audited)
-        self.assertEqual(manifest["data"]["platform-digests"], DIGEST_A)
+        self.assertEqual(manifest["data"]["platform-digests"], self.DIGEST_A)
 
     def test_an_active_live_image_can_never_be_drained(self) -> None:
         # The MindEval-bypass class: a running digest must be receipted or the
@@ -617,12 +994,16 @@ class ReceiptBindingTest(unittest.TestCase):
         self.run_root = Path(self._holder.name)
         self.fixture = build_anchor_fixture(self.run_root)
 
-    def load(self, reference: str | None = None):
+    def load(self, reference: str | None = None, capture=None):
+        # The default capture refuses ALL registry access: refusal tests must
+        # fail BEFORE the registry re-proof; successful loads pass the same
+        # deterministic crane fixture that created the receipt.
         return TOOL.load_bound_receipt(
             self.run_root,
             reference or self.REFERENCE,
             self.PUBLIC_KEY,
             verifier=NOOP_VERIFIER,
+            capture=capture or no_registry_capture,
         )
 
     def create(self, capture, sbom=None):
@@ -642,17 +1023,23 @@ class ReceiptBindingTest(unittest.TestCase):
         return self.reference.rsplit("@", 1)[1]
 
     def test_bound_receipt_loads(self) -> None:
-        write_signed_receipt_fixture(self.run_root, self.REFERENCE, self.fixture)
-        self.assertEqual(self.load()["digest"], DIGEST_A)
+        # A real created receipt survives the FULL reload proof: signature,
+        # bundle re-proof, registry re-fetch, and retained-statement identity.
+        capture = self.crane_capture(self.fixture["head"])
+        self.create(capture)
+        loaded = self.load(self.reference, capture)
+        self.assertEqual(loaded["digest"], self.created_digest())
 
     def test_receipt_signature_is_verified_before_anything_else(self) -> None:
-        write_signed_receipt_fixture(self.run_root, self.REFERENCE, self.fixture)
+        capture = self.crane_capture(self.fixture["head"])
+        self.create(capture)
         commands: list[list[str]] = []
         TOOL.load_bound_receipt(
             self.run_root,
-            self.REFERENCE,
+            self.reference,
             "release.pub",
             verifier=lambda command: commands.append(list(command)),
+            capture=capture,
         )
         self.assertEqual(commands[0][:2], ["cosign", "verify-blob"])
         self.assertIn("--insecure-ignore-tlog=true", commands[0])
@@ -774,182 +1161,110 @@ class ReceiptBindingTest(unittest.TestCase):
         with self.assertRaisesRegex(TOOL.ProvenanceError, "does not carry"):
             self.load()
 
-    def fixture_statement(
-        self, statement_subject_hex: str, subject_name: str = "pkg:docker/fixture-image"
-    ) -> dict:
-        statement = {
-            "_type": "https://in-toto.io/Statement/v0.1",
-            "predicateType": "https://spdx.dev/Document",
-            "subject": [
-                {"name": subject_name, "digest": {"sha256": statement_subject_hex}}
-            ],
-            "predicate": {
-                "spdxVersion": "SPDX-2.3",
-                "SPDXID": "SPDXRef-DOCUMENT",
-                "dataLicense": "CC0-1.0",
-                "name": "sbom",
-                "documentNamespace": "https://example.invalid/spdxdocs/fixture",
-                "creationInfo": {
-                    "created": "2026-09-16T00:00:00Z",
-                    "creators": ["Tool: fixture"],
-                },
-                "packages": [
-                    {
-                        "SPDXID": "SPDXRef-Package-fixture",
-                        "name": "fixture-root",
-                        "downloadLocation": "NOASSERTION",
-                    }
-                ],
-                "relationships": [
-                    {
-                        "spdxElementId": "SPDXRef-DOCUMENT",
-                        "relationshipType": "DESCRIBES",
-                        "relatedSpdxElement": "SPDXRef-Package-fixture",
-                    }
-                ],
-            },
-        }
-        return statement
+    def crane_capture(self, revision, **parameters):
+        built = build_crane_fixture(self.fixture, revision=revision, **parameters)
+        self.reference = built.reference
+        self.expected_amd64_digest = built.expected_amd64_digest
+        self.expected_config_digest = built.expected_config_digest
+        self.expected_spdx_layer_digest = built.expected_spdx_layer_digest
+        return built.capture
 
-    def crane_capture(
-        self,
-        revision: str,
-        spdx_predicate: str = "https://spdx.dev/Document",
-        statement_subject_hex: str | None = None,
-        tree_label: str | object = "fixture-tree",
-        statement_mutator=None,
-        statement_text_override: str | None = None,
-        statement_layer_digest: str | None = None,
-        amd64_platforms: int = 1,
-        attestation_subject: str | None = None,
-        config_architecture: str = "amd64",
-        duplicate_amd64_attestation: bool = False,
-        duplicate_spdx_layer: bool = False,
-    ):
-        """Build a deterministic multi-platform image fixture, bottom-up."""
-        import hashlib
-
-        def sha(text: str) -> str:
-            return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-        if tree_label == "fixture-tree":
-            tree_label = self.fixture["tree"]
-        labels = {"org.opencontainers.image.revision": revision}
-        if tree_label is not None:
-            labels["ai.nebius.fs2-serve.source-tree"] = tree_label
-        config_text = json.dumps(
-            {
-                "architecture": config_architecture,
-                "os": "linux",
-                "config": {"Labels": labels},
-            }
+    def test_registry_reproof_refuses_swapped_registry_content(self) -> None:
+        # Recorded digest strings never authorize anything: if the registry
+        # serves different bytes for the same reference at load time, the
+        # top-manifest byte hash fails and the receipt refuses to load.
+        capture = self.crane_capture(self.fixture["head"])
+        self.create(capture)
+        reference = self.reference
+        other = build_crane_fixture(
+            self.fixture, repository="control-plane", config_architecture="arm64"
         )
-        config_digest = sha(config_text)
-        amd64_manifest_text = json.dumps(
-            {"schemaVersion": 2, "config": {"digest": config_digest}, "layers": []}
-        )
-        amd64_digest = sha(amd64_manifest_text)
-        self.expected_amd64_digest = amd64_digest
-        self.expected_config_digest = config_digest
 
-        if statement_text_override is not None:
-            statement_text = statement_text_override
-        else:
-            statement = self.fixture_statement(
-                statement_subject_hex or amd64_digest.split(":", 1)[1]
-            )
-            if statement_mutator is not None:
-                statement_mutator(statement)
-            statement_text = json.dumps(statement)
-        if statement_layer_digest is None:
-            statement_layer_digest = sha(statement_text)
-        self.expected_spdx_layer_digest = statement_layer_digest
-        attestation_layers = [
-            {
-                "mediaType": "application/vnd.in-toto+json",
-                "digest": statement_layer_digest,
-                "annotations": {"in-toto.io/predicate-type": spdx_predicate},
+        def swapped_registry(command):
+            adapted = [
+                str(part).replace(reference, other.reference) for part in command
+            ]
+            return other.capture(adapted)
+
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "hashes to"):
+            self.load(reference, swapped_registry)
+
+    def test_missing_retained_statement_evidence_is_refused(self) -> None:
+        capture = self.crane_capture(self.fixture["head"])
+        receipt = self.create(capture)
+        retained = TOOL._retained_sbom_path(
+            self.run_root, receipt["sbom"]["statement_sha256"], ".intoto.json"
+        )
+        retained.unlink()
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "missing"):
+            self.load(self.reference, capture)
+
+    def test_tampered_retained_statement_evidence_is_refused(self) -> None:
+        capture = self.crane_capture(self.fixture["head"])
+        receipt = self.create(capture)
+        retained = TOOL._retained_sbom_path(
+            self.run_root, receipt["sbom"]["statement_sha256"], ".intoto.json"
+        )
+        retained.write_bytes(b'{"tampered": true}')
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "content address"):
+            self.load(self.reference, capture)
+
+    def standalone_sbom_for(self, digest: str) -> Path:
+        digest_hex = digest.split(":", 1)[1]
+        document = {
+            "spdxVersion": "SPDX-2.3",
+            "SPDXID": "SPDXRef-DOCUMENT",
+            "dataLicense": "CC0-1.0",
+            "name": "standalone-sbom",
+            "documentNamespace": "https://example.invalid/spdxdocs/standalone",
+            "creationInfo": {
+                "created": "2026-09-16T00:00:00Z",
+                "creators": ["Tool: fixture"],
             },
-            {
-                "mediaType": "application/vnd.in-toto+json",
-                "digest": "sha256:" + "d" * 64,
-                "annotations": {
-                    "in-toto.io/predicate-type": "https://slsa.dev/provenance/v0.2"
-                },
-            },
-        ]
-        if duplicate_spdx_layer:
-            attestation_layers.append(dict(attestation_layers[0]))
-        attestation_manifest_text = json.dumps({"layers": attestation_layers})
-        attestation_digest = sha(attestation_manifest_text)
-        arm64_digest = "sha256:" + "b" * 64
-        entries = []
-        for _ in range(amd64_platforms):
-            entries.append(
+            "packages": [
                 {
-                    "digest": amd64_digest,
-                    "platform": {"architecture": "amd64", "os": "linux"},
+                    "SPDXID": "SPDXRef-Package-image",
+                    "name": "fixture-image",
+                    "downloadLocation": "NOASSERTION",
+                    "checksums": [
+                        {"algorithm": "SHA256", "checksumValue": digest_hex}
+                    ],
                 }
-            )
-        entries.append(
-            {
-                "digest": arm64_digest,
-                "platform": {"architecture": "arm64", "os": "linux"},
-            }
-        )
-        entries.append(
-            {
-                "digest": attestation_digest,
-                "annotations": {
-                    "vnd.docker.reference.type": "attestation-manifest",
-                    "vnd.docker.reference.digest": attestation_subject or amd64_digest,
-                },
-            }
-        )
-        if duplicate_amd64_attestation:
-            entries.append(dict(entries[-1]))
-        entries.append(
-            {
-                "digest": "sha256:" + "c" * 64,
-                "annotations": {
-                    "vnd.docker.reference.type": "attestation-manifest",
-                    "vnd.docker.reference.digest": arm64_digest,
-                },
-            }
-        )
-        index_text = json.dumps({"schemaVersion": 2, "manifests": entries})
-        # The top manifest is content-addressed too: the fixture reference
-        # digest is the hash of the exact index bytes served.
-        self.reference = PLATFORM_PREFIX + "control-plane@" + sha(index_text)
+            ],
+            "relationships": [
+                {
+                    "spdxElementId": "SPDXRef-DOCUMENT",
+                    "relationshipType": "DESCRIBES",
+                    "relatedSpdxElement": "SPDXRef-Package-image",
+                }
+            ],
+        }
+        sbom = self.run_root / "standalone.spdx.json"
+        sbom.write_text(json.dumps(document), encoding="utf-8")
+        sbom.chmod(0o644)
+        return sbom
 
-        def capture(command):
-            if command[:2] == ["crane", "manifest"]:
-                target = command[2]
-                if target == self.reference:
-                    return index_text
-                if target.endswith("@" + amd64_digest):
-                    return amd64_manifest_text
-                if target.endswith("@" + attestation_digest):
-                    return attestation_manifest_text
-                raise AssertionError(f"unexpected manifest fetch: {target}")
-            if command[:2] == ["crane", "blob"]:
-                target = command[2]
-                if target.endswith("@" + config_digest):
-                    return config_text
-                if target.endswith("@" + statement_layer_digest):
-                    return statement_text
-                raise AssertionError(f"unexpected blob fetch: {target}")
-            if command[:2] == ["cosign", "sign-blob"]:
-                self.assertIn("--tlog-upload=false", command)
-                self.assertIn("--use-signing-config=false", command)
-                Path(command[command.index("--output-file") + 1]).write_text("sig\n")
-                return ""
-            if command[:2] == ["cosign", "verify-blob"]:
-                self.assertIn("--insecure-ignore-tlog=true", command)
-                return ""
-            raise AssertionError(f"unexpected command: {command}")
-
-        return capture
+    def test_standalone_receipt_retains_and_reproves_the_sbom(self) -> None:
+        # Standalone receipts keep content-addressed SBOM bytes in the run
+        # root; every load re-reads them, re-proves the hash, and re-validates
+        # shape + exact digest binding. Missing or tampered bytes refuse.
+        capture = self.crane_capture(
+            self.fixture["head"], include_attestation=False
+        )
+        sbom = self.standalone_sbom_for(self.reference.rsplit("@", 1)[1])
+        receipt = self.create(capture, sbom=sbom)
+        retained = TOOL._retained_sbom_path(
+            self.run_root, receipt["sbom"]["spdx_sha256"], ".spdx.json"
+        )
+        self.assertTrue(retained.is_file())
+        loaded = self.load(self.reference, capture)
+        self.assertEqual(loaded["sbom"]["spdx_sha256"], receipt["sbom"]["spdx_sha256"])
+        retained.write_bytes(b'{"tampered": true}')
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "content address"):
+            self.load(self.reference, capture)
+        retained.unlink()
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "missing"):
+            self.load(self.reference, capture)
 
     def test_create_receipt_binds_source_anchor_sbom_and_signs_it(self) -> None:
         receipt = self.create(self.crane_capture(self.fixture["head"]))
@@ -974,7 +1289,7 @@ class ReceiptBindingTest(unittest.TestCase):
             self.expected_spdx_layer_digest,
         )
         self.assertEqual(receipt["sbom"]["slsa_layer_digest"], "sha256:" + "d" * 64)
-        loaded = self.load(self.reference)
+        loaded = self.load(self.reference, self.crane_capture(self.fixture["head"]))
         self.assertEqual(loaded["anchor"]["tag"], "refs/tags/deploy/fixture")
 
     def test_receipt_recreation_is_idempotent_and_preserves_bytes(self) -> None:
@@ -1116,6 +1431,40 @@ class ReceiptBindingTest(unittest.TestCase):
             ):
                 self.fail("swapped bundle bytes must never yield a snapshot")
         bundle.write_bytes(original)
+
+    def test_symlinked_ancestor_directory_is_refused(self) -> None:
+        # O_NOFOLLOW on the final parent alone is not enough: EVERY component
+        # is opened without following symlinks from a trusted root dirfd.
+        real_dir = self.run_root / "real-sboms"
+        real_dir.mkdir()
+        doc = real_dir / "doc.spdx.json"
+        doc.write_text("{}", encoding="utf-8")
+        doc.chmod(0o644)
+        linked_dir = self.run_root / "linked-sboms"
+        linked_dir.symlink_to(real_dir)
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "component safely"):
+            TOOL._validated_spdx_document(DIGEST_A, linked_dir / "doc.spdx.json")
+
+    def test_other_writable_ancestor_directory_is_refused(self) -> None:
+        # A mode-0777 parent lets any user swap the evidence via rename; the
+        # walk refuses it even though the file itself passes its own checks.
+        path = write_signed_receipt_fixture(
+            self.run_root, self.REFERENCE, self.fixture
+        )
+        path.parent.chmod(0o777)
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "other-writable"):
+            self.load()
+        path.parent.chmod(0o700)
+
+    def test_hardlinked_standalone_spdx_is_refused(self) -> None:
+        digest_hex = DIGEST_A.split(":", 1)[1]
+        sbom = self.run_root / "hardlinked.spdx.json"
+        sbom.write_text(json.dumps({"spdxVersion": "SPDX-2.3"}), encoding="utf-8")
+        sbom.chmod(0o644)
+        os.link(sbom, self.run_root / "hardlink-alias.json")
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "link count"):
+            TOOL._validated_spdx_document(DIGEST_A, sbom)
+        assert digest_hex  # identity is irrelevant: the anomaly refuses first
 
     def test_standalone_spdx_is_read_once_and_anomaly_checked(self) -> None:
         import hashlib as h

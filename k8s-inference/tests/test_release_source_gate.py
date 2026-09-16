@@ -389,6 +389,27 @@ class ReleaseSourceGateTest(unittest.TestCase):
         with self.assertRaisesRegex(STACK.DeploymentError, "fails closed"):
             STACK.release_source_state(commit, self.run_root, self.checkout)
 
+    def test_anchor_evidence_ancestor_anomalies_fail_closed(self) -> None:
+        # Every ancestor component is walked with O_NOFOLLOW and validated:
+        # an other-writable run root or a symlinked ancestor is refused.
+        commit = self.add_unpushed_commit()
+        git(self.checkout, "tag", "-a", "-m", "anchor", "deploy/walk", commit)
+        receipt = STACK.create_release_anchor(
+            self.run_root, "deploy/walk", repository_root=self.checkout
+        )
+        self.run_root.chmod(0o777)
+        with self.assertRaisesRegex(STACK.DeploymentError, "other-writable"):
+            STACK.release_source_state(commit, self.run_root, self.checkout)
+        self.run_root.chmod(0o700)
+        bundle = Path(receipt["bundle_path"])
+        linked_dir = self.run_root / "linked-anchors"
+        linked_dir.symlink_to(bundle.parent)
+        with self.assertRaisesRegex(STACK.DeploymentError, "component safely"):
+            with STACK._verified_bundle_snapshot(
+                self.run_root, linked_dir / bundle.name, receipt["sha256"]
+            ):
+                self.fail("symlinked ancestor must never yield a snapshot")
+
     def test_anomalous_anchor_store_fails_closed(self) -> None:
         # A group/other-accessible store is an anomaly, not an empty store.
         commit = self.add_unpushed_commit()

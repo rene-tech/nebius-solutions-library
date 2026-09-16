@@ -5,7 +5,9 @@
 # namespaces (fs2-system, fs2-models):
 #
 #   1. Every container, init container, and ephemeral-container image must be
-#      digest-pinned (…@sha256:<64 hex>). Mutable tags are refused.
+#      digest-pinned (…@sha256:<64 hex>). Mutable tags are refused — including
+#      ephemeral containers injected through the pods/ephemeralcontainers
+#      subresource by `kubectl debug`.
 #   2. Every image must come from an allow-listed registry prefix.
 #   3. Platform application images (control plane, admin console, website —
 #      anything under the platform repository prefix) must additionally use a
@@ -35,8 +37,18 @@
 #   - parameterNotFoundAction Deny: a deleted allow-list ConfigMap fails
 #     closed. Operational consequence: Pod churn in the matched namespaces
 #     stalls until the ConfigMap is restored from the run-root receipt.
-#   - The pods/ephemeralcontainers subresource is intentionally not matched so
-#     cluster-admin `kubectl debug` support workflows keep working.
+#   - The pods/ephemeralcontainers subresource IS matched: `kubectl debug`
+#     injection is admission-governed like any other image. Debugging stays
+#     available through the governed workflow below; it is never disabled.
+#
+# Governed debugging (kubectl debug keeps working, with pinned images):
+#   kubectl -n fs2-system debug <pod> -it #     --image=<allow-listed-registry>/fs2-tools/debug@sha256:<digest>
+#   The debug image must be digest-pinned and come from an allow-listed
+#   registry prefix; host debug tooling OUTSIDE the platform repository
+#   prefix (e.g. an fs2-tools repository) so it needs no release allow-list
+#   entry, or receipt+sign+inventory it like a platform image if it must
+#   live under the platform prefix. Mutable tags (`:latest`) and foreign
+#   registries (e.g. evil.invalid/debug:latest) are denied at injection.
 #
 # Rollback (non-destructive first — keep the policies and audit trail):
 #   kubectl patch validatingadmissionpolicybinding fs2-image-provenance \
@@ -62,7 +74,7 @@ spec:
       - apiGroups: [""]
         apiVersions: ["v1"]
         operations: ["CREATE", "UPDATE"]
-        resources: ["pods"]
+        resources: ["pods", "pods/ephemeralcontainers"]
         scope: Namespaced
       - apiGroups: ["apps"]
         apiVersions: ["v1"]

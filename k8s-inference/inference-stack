@@ -611,10 +611,92 @@ def _remote_verified_tags(root: Path, tag_refs: Sequence[str]) -> list[str]:
     return verified
 
 
+def _open_evidence_descriptor(path: Path) -> int:
+    """Open evidence by walking EVERY path component from the root dirfd.
+
+    Each ancestor is opened with openat(O_NOFOLLOW|O_DIRECTORY) relative to
+    its parent's descriptor, so a symlink at ANY component — not only the
+    final parent — is refused, as are '.'/'..' components. Every ancestor
+    must be a real directory owned by the caller or root and must not be
+    writable by others, nor by a group other than the caller's own primary
+    group (the user-private-group idiom), unless it is sticky like /tmp.
+    Once the walk enters a caller-owned directory, a device change (a mount
+    grafted into the evidence tree) is refused.
+    """
+    resolved = path if path.is_absolute() else Path(os.getcwd()) / path
+    parts = resolved.parts
+    dir_fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        device = os.fstat(dir_fd).st_dev
+        inside_caller_tree = False
+        for component in parts[1:-1]:
+            if component in (".", ".."):
+                raise DeploymentError(
+                    f"evidence path must not contain '.' or '..': {path}"
+                )
+            try:
+                next_fd = os.open(
+                    component,
+                    os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                    dir_fd=dir_fd,
+                )
+            except OSError as exc:
+                raise DeploymentError(
+                    "cannot open evidence path component safely (symlink, "
+                    f"missing, or not a directory): {component!r} in {path}"
+                ) from exc
+            os.close(dir_fd)
+            dir_fd = next_fd
+            status = os.fstat(dir_fd)
+            if not stat.S_ISDIR(status.st_mode):
+                raise DeploymentError(
+                    f"evidence path component is not a directory: "
+                    f"{component!r} in {path}"
+                )
+            if status.st_uid not in (0, os.getuid()):
+                raise DeploymentError(
+                    f"evidence path ancestor has a foreign owner: "
+                    f"{component!r} in {path}"
+                )
+            sticky = bool(status.st_mode & stat.S_ISVTX)
+            if status.st_mode & 0o002 and not sticky:
+                raise DeploymentError(
+                    f"evidence path ancestor is other-writable: "
+                    f"{component!r} in {path}"
+                )
+            if (
+                status.st_mode & 0o020
+                and not sticky
+                and status.st_gid != os.getgid()
+            ):
+                raise DeploymentError(
+                    "evidence path ancestor is writable by a foreign group: "
+                    f"{component!r} in {path}"
+                )
+            if inside_caller_tree and status.st_dev != device:
+                raise DeploymentError(
+                    "evidence path crosses a mount inside the caller-owned "
+                    f"tree: {component!r} in {path}"
+                )
+            device = status.st_dev
+            if status.st_uid == os.getuid():
+                inside_caller_tree = True
+        if parts[-1] in (".", ".."):
+            raise DeploymentError(
+                f"evidence path must not contain '.' or '..': {path}"
+            )
+        try:
+            return os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW, dir_fd=dir_fd)
+        except OSError as exc:
+            raise DeploymentError(
+                f"cannot open evidence file safely (symlink or missing): {path}"
+            ) from exc
+    finally:
+        os.close(dir_fd)
+
+
 def _sha256_file(path: Path) -> str:
-    if path.is_symlink():
-        raise DeploymentError(f"evidence file must not be a symlink: {path}")
-    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    descriptor = _open_evidence_descriptor(path)
     digest = hashlib.sha256()
     with os.fdopen(descriptor, "rb") as handle:
         for chunk in iter(lambda: handle.read(1 << 20), b""):
@@ -636,12 +718,7 @@ def _read_release_anchors(run_root: Path) -> dict[str, Any]:
     # DESCRIPTOR is fstat-checked; a malformed or anomalous store fails
     # closed: silently treating it as empty would let corruption erase
     # recorded release evidence.
-    try:
-        descriptor = os.open(store, os.O_RDONLY | os.O_NOFOLLOW)
-    except OSError as exc:
-        raise DeploymentError(
-            f"cannot open anchor store safely (symlink or missing): {store}"
-        ) from exc
+    descriptor = _open_evidence_descriptor(store)
     with os.fdopen(descriptor, "rb") as handle:
         status = os.fstat(handle.fileno())
         if (
@@ -696,15 +773,18 @@ def _verified_bundle_snapshot(
     pathname swap between hashing and git use cannot make the verified bytes
     differ from the bytes git consumes.
     """
-    if bundle.is_symlink():
-        raise DeploymentError(f"evidence file must not be a symlink: {bundle}")
-    try:
-        descriptor = os.open(bundle, os.O_RDONLY | os.O_NOFOLLOW)
-    except OSError as exc:
-        raise DeploymentError(
-            f"cannot open anchor bundle safely (symlink or missing): {bundle}"
-        ) from exc
+    descriptor = _open_evidence_descriptor(bundle)
     with os.fdopen(descriptor, "rb") as handle:
+        status = os.fstat(handle.fileno())
+        if (
+            not stat.S_ISREG(status.st_mode)
+            or status.st_nlink != 1
+            or status.st_uid != os.getuid()
+        ):
+            raise DeploymentError(
+                f"anchor bundle is anomalous (non-regular, hardlinked, or "
+                f"foreign-owned) and fails closed: {bundle}"
+            )
         data = handle.read()
     if hashlib.sha256(data).hexdigest() != expected_sha256:
         raise DeploymentError(
