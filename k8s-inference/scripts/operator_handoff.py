@@ -80,11 +80,16 @@ def private_json(path: Path, value: Any) -> None:
             temporary.unlink()
 
 
-def run(arguments: Sequence[str], *, capture: bool = False) -> subprocess.CompletedProcess[str]:
+def run(
+    arguments: Sequence[str],
+    *,
+    capture: bool = False,
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(
             list(arguments),
-            check=True,
+            check=check,
             text=True,
             stdout=subprocess.PIPE if capture else subprocess.DEVNULL,
             stderr=subprocess.PIPE,
@@ -203,8 +208,14 @@ def verify(args: argparse.Namespace) -> dict[str, Any]:
         "create_pods": ["create", "pods", "--all-namespaces"],
         "read_secrets": ["get", "secrets", "--all-namespaces"],
     }.items():
-        result = run([args.kubectl, "--kubeconfig", str(kubeconfig), "auth", "can-i", *request], capture=True)
-        denials[label] = result.stdout.strip().lower() == "no"
+        result = run(
+            [args.kubectl, "--kubeconfig", str(kubeconfig), "auth", "can-i", *request],
+            capture=True,
+            check=False,
+        )
+        if result.returncode not in {0, 1}:
+            raise HandoffError("viewer authorization probe failed")
+        denials[label] = result.returncode == 1 and result.stdout.strip().lower() == "no"
     if not all(denials.values()):
         raise HandoffError("viewer handoff has forbidden pod-create or Secret-read access")
 

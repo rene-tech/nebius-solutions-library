@@ -226,7 +226,7 @@ class OperatorAccessHygieneTests(unittest.TestCase):
                 approved_egress=["192.0.2.8/32"],
             )
 
-            def fake_run(command, *, capture=False):
+            def fake_run(command, *, capture=False, check=True):
                 if command[1:3] == ["profile", "create"]:
                     config = Path(command[command.index("--config") + 1])
                     config.write_text("test-config", encoding="utf-8")
@@ -234,7 +234,8 @@ class OperatorAccessHygieneTests(unittest.TestCase):
                     kubeconfig = Path(command[command.index("--kubeconfig") + 1])
                     kubeconfig.write_text("test-kubeconfig", encoding="utf-8")
                 if command[0] == "kubectl-test" and "auth" in command:
-                    return subprocess.CompletedProcess(command, 0, stdout="no\n")
+                    self.assertFalse(check)
+                    return subprocess.CompletedProcess(command, 1, stdout="no\n")
                 if command[0] == "kubectl-test":
                     return subprocess.CompletedProcess(command, 0, stdout="namespace/default\n")
                 if command[:5] == ["nebius-test", "mk8s", "v1", "cluster", "get"]:
@@ -265,7 +266,7 @@ class OperatorAccessHygieneTests(unittest.TestCase):
             })
             args = argparse.Namespace(directory=root, nebius="nebius-test", kubectl="kubectl-test", approved_egress=["192.0.2.8/32"])
 
-            def fake_run(command, *, capture=False):
+            def fake_run(command, *, capture=False, check=True):
                 if command[1:3] == ["profile", "create"]:
                     config = Path(command[command.index("--config") + 1])
                     config.write_text("test-config", encoding="utf-8")
@@ -273,7 +274,8 @@ class OperatorAccessHygieneTests(unittest.TestCase):
                     path = Path(command[command.index("--kubeconfig") + 1])
                     path.write_text("test-kubeconfig", encoding="utf-8")
                 if command[0] == "kubectl-test" and "auth" in command:
-                    return subprocess.CompletedProcess(command, 0, stdout="no\n")
+                    self.assertFalse(check)
+                    return subprocess.CompletedProcess(command, 1, stdout="no\n")
                 if command[0] == "kubectl-test":
                     return subprocess.CompletedProcess(command, 0, stdout="namespace/default\n")
                 if command[:5] == ["nebius-test", "mk8s", "v1", "cluster", "get"]:
