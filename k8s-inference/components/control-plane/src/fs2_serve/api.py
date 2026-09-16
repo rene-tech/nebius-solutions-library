@@ -617,19 +617,20 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         admin_access,
         app_catalog=user_app_catalog,
     )
+    storage_disclosure: Any = None
     runtime.tokens.principal_policy = users_service.constrain_principal
     if runtime.settings.user_storage_enabled:
-        from .crypto import PayloadCipher
         from .user_storage import UserStorageService
+        from .user_storage_disclosure import StorageDisclosureClient
         from .user_storage_models import StoragePolicy
         from .user_storage_repository import PostgresUserStorageRepository
 
         settings = runtime.settings
         if pool is None:
             raise ValueError("customer storage requires PostgreSQL")
-        storage_cipher = PayloadCipher.from_file(settings.user_storage_keyring_file)
+        storage_disclosure = StorageDisclosureClient(settings.user_storage_disclosure_url)
         users_service.storage = UserStorageService(
-            PostgresUserStorageRepository(pool, storage_cipher),
+            PostgresUserStorageRepository(pool, None),
             None,
             users_service.repository,
             default=StoragePolicy(
@@ -2384,11 +2385,11 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     app.include_router(
         user_storage_router(
             service=users_service.storage,
+            disclosure=storage_disclosure,
             users=users_service,
             operator=operator,
             principal=principal,
             envelope=access_envelope,
-            audit=runtime.store,
             problem_responses=admin_problem_responses,
         )
     )

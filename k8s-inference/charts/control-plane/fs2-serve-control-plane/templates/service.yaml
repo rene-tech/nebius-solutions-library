@@ -39,3 +39,22 @@ spec:
       targetPort: http
       protocol: TCP
 {{- end }}
+{{- if .Values.customerStorage.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-storage-disclosure
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: storage-disclosure
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "fs2-serve.storageDisclosureSelectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.customerStorage.disclosure.port }}
+      targetPort: http
+      protocol: TCP
+{{- end }}

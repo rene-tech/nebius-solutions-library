@@ -34,7 +34,7 @@
     "customerStorage": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["enabled", "projectId", "region", "defaultMode", "quotaBytes", "excludedTenants", "resourceCredentialsSecretName", "iamCredentialsSecretName", "databaseSecretName", "cryptoSecretName", "egressCidrs", "egressContractSha256", "egressContractValidUntil", "egressContractEndpoints", "keyTtlDays", "rotationWindowDays", "actionTimeoutSeconds", "resources"],
+      "required": ["enabled", "projectId", "region", "defaultMode", "quotaBytes", "excludedTenants", "resourceCredentialsSecretName", "iamCredentialsSecretName", "databaseSecretName", "disclosureDatabaseSecretName", "cryptoSecretName", "egressCidrs", "keyTtlDays", "rotationWindowDays", "actionTimeoutSeconds", "disclosure", "resources"],
       "properties": {
         "enabled": {"type": "boolean"},
         "projectId": {"type": "string"},
@@ -45,14 +45,22 @@
         "resourceCredentialsSecretName": {"type": "string"},
         "iamCredentialsSecretName": {"type": "string"},
         "databaseSecretName": {"type": "string", "minLength": 1},
+        "disclosureDatabaseSecretName": {"type": "string", "minLength": 1},
         "cryptoSecretName": {"type": "string", "minLength": 1},
         "egressCidrs": {"type": "array", "maxItems": 32, "items": {"type": "string", "pattern": "^([0-9]{1,3}\\.){3}[0-9]{1,3}/32$|^[0-9A-Fa-f:]+/128$"}, "uniqueItems": true},
-        "egressContractSha256": {"type": "string", "pattern": "^$|^[a-f0-9]{64}$"},
-        "egressContractValidUntil": {"type": "string"},
-        "egressContractEndpoints": {"type": "array", "maxItems": 8, "items": {"type": "string", "format": "hostname"}, "uniqueItems": true},
         "keyTtlDays": {"type": "integer", "minimum": 1, "maximum": 365},
         "rotationWindowDays": {"type": "integer", "minimum": 1, "maximum": 364},
         "actionTimeoutSeconds": {"type": "number", "minimum": 1, "maximum": 120},
+        "disclosure": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["port", "replicaCount", "resources"],
+          "properties": {
+            "port": {"type": "integer", "const": 8082},
+            "replicaCount": {"type": "integer", "minimum": 2},
+            "resources": {"type": "object"}
+          }
+        },
         "resources": {"type": "object"}
       }
     },
@@ -1082,7 +1090,8 @@
         "bootstrap",
         "controller",
         "gpu-observer",
-        "storage"
+        "storage",
+        "storage-disclosure"
       ],
       "properties": {
         "runtime": {
@@ -1104,6 +1113,9 @@
           "$ref": "#/$defs/serviceAccount"
         },
         "storage": {
+          "$ref": "#/$defs/serviceAccount"
+        },
+        "storage-disclosure": {
           "$ref": "#/$defs/serviceAccount"
         }
       },
@@ -1772,6 +1784,7 @@
         "maintenanceDatabaseRole",
         "activationDatabaseRole",
         "storageDatabaseRole",
+        "storageDisclosureDatabaseRole",
         "releaseContract",
         "resources"
       ],
@@ -1811,6 +1824,12 @@
           "maxLength": 63,
           "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
         },
+        "storageDisclosureDatabaseRole": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
         "releaseContract": {
           "type": "object",
           "required": [
@@ -1824,12 +1843,12 @@
           ],
           "properties": {
             "schema": {"const": "fs2-serve.nebius.ai/postgresql-release-contract/v1"},
-            "contractPayloadSha256": {"const": "5205ec0d72aed0ea4fedd819c5e94bee43fcb4f4bfb98d221d7fd27ee0880030"},
-            "migrationSetSha256": {"const": "ea736796a505c56573d4ebd248a0e1848f8ee0358159e32cf007ab06382da741"},
-            "migrationCount": {"const": 32},
+            "contractPayloadSha256": {"const": "0da3740a81b1d47a00f4d0c2dac19100b865f1c301fba1049359a2e6751c22a0"},
+            "migrationSetSha256": {"const": "b373527f03412686bec4a18b8126b1a5eba6b6b7f1eac2e0082d7c5833ba158c"},
+            "migrationCount": {"const": 33},
             "firstMigrationVersion": {"const": "0001_initial.sql"},
-            "lastMigrationVersion": {"const": "0032_user_storage_security.sql"},
-            "namespaceRoleOwnershipSha256": {"const": "02a91557f23468b3c943575a2295f8fdd710575ffd438e466a7df5214d5dc3b0"}
+            "lastMigrationVersion": {"const": "0033_storage_disclosure_boundary.sql"},
+            "namespaceRoleOwnershipSha256": {"const": "79bd52934dfe16d890f021222ed0d76784facbcb4d01883aa96f52e4f3bc0aa4"}
           },
           "additionalProperties": false
         },

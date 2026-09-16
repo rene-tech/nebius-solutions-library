@@ -71,6 +71,15 @@ spec:
       ports:
         - port: {{ $network.database.port }}
           protocol: TCP
+    {{- if .Values.customerStorage.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "fs2-serve.storageDisclosureSelectorLabels" . | nindent 14 }}
+      ports:
+        - port: {{ .Values.customerStorage.disclosure.port }}
+          protocol: TCP
+    {{- end }}
     - to:
         - namespaceSelector:
             matchLabels:
@@ -502,6 +511,50 @@ spec:
           protocol: TCP
 {{- end }}
 {{- if .Values.customerStorage.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-storage-disclosure
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: storage-disclosure
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "fs2-serve.storageDisclosureSelectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "fs2-serve.runtimeSelectorLabels" . | nindent 14 }}
+      ports:
+        - port: {{ .Values.customerStorage.disclosure.port }}
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $network.dns.namespaceLabels | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $network.dns.podLabels | nindent 14 }}
+      ports:
+        - port: {{ $network.dns.port }}
+          protocol: UDP
+        - port: {{ $network.dns.port }}
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $network.database.namespaceLabels | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $network.database.podLabels | nindent 14 }}
+      ports:
+        - port: {{ $network.database.port }}
+          protocol: TCP
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

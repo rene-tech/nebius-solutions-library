@@ -28,6 +28,7 @@ def test_wheel_installs_control_plane_and_canonical_catalog_packages() -> None:
     assert wheel["packages"] == ["src/fs2_serve"]
     assert wheel["force-include"] == {
         "../../catalog/runtime/fs2_serve_catalog": "fs2_serve_catalog",
+        "../../stages/workloads/scripts/customer_storage_egress_contract.py": "fs2_serve/storage_egress_contract.py",
         "migrations": "fs2_serve/migrations",
     }
 
@@ -56,6 +57,7 @@ def test_container_imports_installed_packages_without_pythonpath_or_source_shado
         assert runtime_build_tool in dockerfile
     assert "'libcrypto3=3.5.8-r0'" in dockerfile
     assert "'libssl3=3.5.8-r0'" in dockerfile
+    assert "'libuuid=2.41.6-r1'" in dockerfile
     assert "'sqlite-libs=3.53.4-r0'" in dockerfile
     assert "k8s-inference/components/control-plane/uv.lock" in dockerfile
     assert ".venv/bin/fs2-serve --help >/dev/null" in dockerfile
@@ -72,6 +74,7 @@ def test_container_imports_installed_packages_without_pythonpath_or_source_shado
     assert dockerignore.startswith("#") and "\n**\n" in dockerignore
     assert "!k8s-inference/components/control-plane/uv.lock" in dockerignore
     assert "!k8s-inference/components/control-plane/src/**" in dockerignore
+    assert "!k8s-inference/stages/workloads/scripts/customer_storage_egress_contract.py" in dockerignore
     assert "!k8s-inference/catalog/runtime/fs2_serve_catalog/**" in dockerignore
     assert "!k8s-inference/catalog/runtime/pyproject.toml" in dockerignore
     assert "!k8s-inference/catalog/runtime/uv.lock" in dockerignore
@@ -115,6 +118,7 @@ def test_docker_engine_applies_the_dockerfile_specific_root_context_policy(tmp_p
     context = tmp_path / "repository"
     control = context / "k8s-inference" / "components" / "control-plane"
     catalog = context / "k8s-inference" / "catalog" / "runtime" / "fs2_serve_catalog"
+    egress_verifier = context / "k8s-inference/stages/workloads/scripts/customer_storage_egress_contract.py"
     (control / "src/fs2_serve/runtime_qualifications").mkdir(parents=True)
     (control / "migrations").mkdir()
     (control / "contracts").mkdir()
@@ -129,6 +133,7 @@ def test_docker_engine_applies_the_dockerfile_specific_root_context_policy(tmp_p
         control / "src/fs2_serve/runtime_qualifications/h100-qwen-cosmos-20260902.json": "{}\n",
         control / "migrations" / "0001.sql": "SELECT 1;\n",
         control / "contracts" / "contract.json": "{}\n",
+        egress_verifier: "SCHEMA = 'fixture'\n",
         catalog / "__init__.py": "\n",
     }
     repository_root = CONTROL_ROOT.parents[2]
@@ -194,6 +199,11 @@ def test_docker_engine_applies_the_dockerfile_specific_root_context_policy(tmp_p
     expected = {path.relative_to(context) for path in allowed}
     assert actual == expected
     build_policy = runpy.run_path(str(CONTROL_ROOT / "scripts/build_image.py"))
+    egress_relative = egress_verifier.relative_to(context)
+    assert any(
+        egress_relative == admitted or admitted in egress_relative.parents
+        for admitted in build_policy["CONTEXT_INPUTS"]
+    )
     for source in native_inputs:
         relative = source.relative_to(repository_root)
         assert (output / relative).read_bytes() == source.read_bytes()
@@ -275,6 +285,7 @@ def test_default_migration_path_resolves_the_source_tree_and_runtime_has_no_ddl(
         "0030_mcp_semantic_outcomes.sql",
         "0031_user_storage.sql",
         "0032_user_storage_security.sql",
+        "0033_storage_disclosure_boundary.sql",
     ]
     assert hashlib.sha256((migration_dir / "0005_terminal_accounting.sql").read_bytes()).hexdigest() == (
         "fedb6789a4839d42645c5ffb6905ce46525c213d81f15d9d987eacc109614197"
@@ -321,8 +332,8 @@ def test_default_migration_path_resolves_the_source_tree_and_runtime_has_no_ddl(
     assert "Settings.model_fields['migrations_dir'].default" in dockerfile
     release_contract = json.loads((CONTROL_ROOT / "contracts/postgresql-release-contract.json").read_text())
     receipt = release_contract["required_release_receipt_inputs"]
-    assert receipt["migration_count"] == 32
-    assert receipt["last_migration_version"] == "0032_user_storage_security.sql"
+    assert receipt["migration_count"] == 33
+    assert receipt["last_migration_version"] == "0033_storage_disclosure_boundary.sql"
     assert "validate_migration_set(migration_dir)" in dockerfile
     assert "build_postgresql_release_contract(migration_dir)" in dockerfile
     assert "len(manifest) == len(EXPECTED_MIGRATIONS) == receipt['migration_count']" in dockerfile
@@ -379,6 +390,7 @@ def test_clean_wheel_imports_catalog_without_repository_pythonpath(tmp_path: Pat
         )
         assert (wheel_archive.getinfo(receipt_name).external_attr >> 16) & 0o004
         assert "fs2_serve/__init__.py" in names
+        assert "fs2_serve/storage_egress_contract.py" in names
         assert "fs2_serve_catalog/__init__.py" in names
         assert "fs2_serve/activation_controller.py" not in names
         assert "fs2_serve/kubernetes_activation.py" not in names
@@ -418,6 +430,7 @@ def test_clean_wheel_imports_catalog_without_repository_pythonpath(tmp_path: Pat
             "fs2_serve/migrations/0030_mcp_semantic_outcomes.sql",
             "fs2_serve/migrations/0031_user_storage.sql",
             "fs2_serve/migrations/0032_user_storage_security.sql",
+            "fs2_serve/migrations/0033_storage_disclosure_boundary.sql",
         ]
         entry_point_files = [name for name in names if name.endswith(".dist-info/entry_points.txt")]
         assert len(entry_point_files) == 1
@@ -455,7 +468,8 @@ def test_clean_wheel_imports_catalog_without_repository_pythonpath(tmp_path: Pat
     )
     assert (
         "{serve,maintenance,migrate,wait-schema,bootstrap-access,validate,postgresql-release-contract,"
-        "model-controller,gpu-allocation-observer,storage-reconciler,scientific-materialize,scientific-materialize-many,"
+        "model-controller,gpu-allocation-observer,storage-reconciler,storage-disclosure,"
+        "scientific-materialize,scientific-materialize-many,"
         "scientific-collect,"
         "scientific-prepare-workspace,"
         "scientific-verify-runtime-artifacts}" in completed.stdout
@@ -486,7 +500,7 @@ def test_clean_wheel_imports_catalog_without_repository_pythonpath(tmp_path: Pat
                 "assert pathlib.Path(fs2_serve_catalog.__file__).resolve().is_relative_to(root);"
                 "migration_dir=Settings.model_fields['migrations_dir'].default;"
                 "assert migration_dir.parent == pathlib.Path(fs2_serve.__file__).resolve().parent;"
-                "assert len(list(migration_dir.glob('[0-9][0-9][0-9][0-9]_*.sql'))) == 32;"
+                "assert len(list(migration_dir.glob('[0-9][0-9][0-9][0-9]_*.sql'))) == 33;"
                 "assert Registry and load_gateway_catalog"
             ),
         ],

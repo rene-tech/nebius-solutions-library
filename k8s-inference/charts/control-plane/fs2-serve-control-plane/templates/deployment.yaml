@@ -8,8 +8,8 @@
 {{- if eq (len .Values.customerStorage.egressCidrs) 0 }}
 {{- fail "customerStorage.egressCidrs requires at least one bounded Nebius API destination" }}
 {{- end }}
-{{- if or (not (regexMatch "^[a-f0-9]{64}$" .Values.customerStorage.egressContractSha256)) (eq (len .Values.customerStorage.egressContractEndpoints) 0) (not .Values.customerStorage.egressContractValidUntil) }}
-{{- fail "customerStorage requires signed egress contract identity, endpoints, and validity" }}
+{{- if eq (len .Values.networkPolicy.kubernetesApiCidrs) 0 }}
+{{- fail "customerStorage rollout verification requires exact Kubernetes API CIDRs" }}
 {{- end }}
 {{- if or (not .Values.customerStorage.resourceCredentialsSecretName) (not .Values.customerStorage.iamCredentialsSecretName) }}
 {{- fail "customerStorage requires split resource and IAM credential Secrets" }}
@@ -85,17 +85,17 @@
 {{- if and (eq .Values.catalog.delivery "image") (ne .Values.catalog.imagePath "/opt/fs2/catalog") }}
 {{- fail "image-delivered catalog path must be /opt/fs2/catalog" }}
 {{- end }}
-{{- $databaseRoles := list .Values.migration.runtimeDatabaseRole .Values.migration.reportingDatabaseRole .Values.migration.maintenanceDatabaseRole .Values.migration.activationDatabaseRole .Values.migration.storageDatabaseRole }}
+{{- $databaseRoles := list .Values.migration.runtimeDatabaseRole .Values.migration.reportingDatabaseRole .Values.migration.maintenanceDatabaseRole .Values.migration.activationDatabaseRole .Values.migration.storageDatabaseRole .Values.migration.storageDisclosureDatabaseRole }}
 {{- if ne (len $databaseRoles) (len (uniq $databaseRoles)) }}
-{{- fail "migration runtime, reporting, maintenance, activation, and storage database roles must differ" }}
+{{- fail "migration runtime, reporting, maintenance, activation, storage, and storage disclosure database roles must differ" }}
 {{- end }}
-{{- if or (ne .Values.migration.runtimeDatabaseRole "fs2_serve_runtime") (ne .Values.migration.reportingDatabaseRole "fs2_serve_reporting") (ne .Values.migration.maintenanceDatabaseRole "fs2_serve_maintenance") (ne .Values.migration.activationDatabaseRole "fs2_serve_activation") (ne .Values.migration.storageDatabaseRole "fs2_serve_storage") }}
+{{- if or (ne .Values.migration.runtimeDatabaseRole "fs2_serve_runtime") (ne .Values.migration.reportingDatabaseRole "fs2_serve_reporting") (ne .Values.migration.maintenanceDatabaseRole "fs2_serve_maintenance") (ne .Values.migration.activationDatabaseRole "fs2_serve_activation") (ne .Values.migration.storageDatabaseRole "fs2_serve_storage") (ne .Values.migration.storageDisclosureDatabaseRole "fs2_serve_storage_disclosure") }}
 {{- fail "database group roles must match the canonical PostgreSQL release contract" }}
 {{- end }}
-{{- if and .Values.customerStorage.enabled (or (ne .Values.customerStorage.databaseSecretName "fs2-serve-database-storage") (ne .Values.customerStorage.cryptoSecretName "fs2-serve-storage-keyring")) }}
+{{- if and .Values.customerStorage.enabled (or (ne .Values.customerStorage.databaseSecretName "fs2-serve-database-storage") (ne .Values.customerStorage.disclosureDatabaseSecretName "fs2-serve-database-storage-disclosure") (ne .Values.customerStorage.cryptoSecretName "fs2-serve-storage-keyring")) }}
 {{- fail "customer storage database and crypto Secrets must match the least-privilege release contract" }}
 {{- end }}
-{{- if or (ne .Values.migration.releaseContract.schema "fs2-serve.nebius.ai/postgresql-release-contract/v1") (ne .Values.migration.releaseContract.contractPayloadSha256 "5205ec0d72aed0ea4fedd819c5e94bee43fcb4f4bfb98d221d7fd27ee0880030") (ne .Values.migration.releaseContract.migrationSetSha256 "ea736796a505c56573d4ebd248a0e1848f8ee0358159e32cf007ab06382da741") (ne (int .Values.migration.releaseContract.migrationCount) 32) (ne .Values.migration.releaseContract.firstMigrationVersion "0001_initial.sql") (ne .Values.migration.releaseContract.lastMigrationVersion "0032_user_storage_security.sql") (ne .Values.migration.releaseContract.namespaceRoleOwnershipSha256 "02a91557f23468b3c943575a2295f8fdd710575ffd438e466a7df5214d5dc3b0") }}
+{{- if or (ne .Values.migration.releaseContract.schema "fs2-serve.nebius.ai/postgresql-release-contract/v1") (ne .Values.migration.releaseContract.contractPayloadSha256 "0da3740a81b1d47a00f4d0c2dac19100b865f1c301fba1049359a2e6751c22a0") (ne .Values.migration.releaseContract.migrationSetSha256 "b373527f03412686bec4a18b8126b1a5eba6b6b7f1eac2e0082d7c5833ba158c") (ne (int .Values.migration.releaseContract.migrationCount) 33) (ne .Values.migration.releaseContract.firstMigrationVersion "0001_initial.sql") (ne .Values.migration.releaseContract.lastMigrationVersion "0033_storage_disclosure_boundary.sql") (ne .Values.migration.releaseContract.namespaceRoleOwnershipSha256 "79bd52934dfe16d890f021222ed0d76784facbcb4d01883aa96f52e4f3bc0aa4") }}
 {{- fail "migration release receipt inputs must match the canonical PostgreSQL contract" }}
 {{- end }}
 {{- if ne .Values.httpRoute.authorityMode .Values.config.publicAuthorityMode }}

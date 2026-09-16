@@ -90,6 +90,11 @@ class Settings(BaseSettings):
     user_storage_key_ttl_days: int = Field(default=90, ge=1, le=365)
     user_storage_rotation_window_days: int = Field(default=14, ge=1, le=364)
     user_storage_action_timeout_seconds: float = Field(default=30, ge=1, le=120)
+    user_storage_disclosure_url: str = Field(
+        default="http://fs2-serve-control-plane-storage-disclosure:8082",
+        min_length=8,
+        max_length=256,
+    )
     route_attestors_file: Path | None = Path("/var/run/secrets/fs2-serve/attestors/route-attestors.json")
     admin_token_file: Path = Path("/var/run/secrets/fs2-serve/admin-token")
     bootstrap_access_token_file: Path = Path("/var/run/secrets/fs2-serve/bootstrap-access-token")
@@ -324,6 +329,12 @@ class Settings(BaseSettings):
     storage_database_role: str = Field(
         default="fs2_serve_storage", min_length=1, max_length=63, pattern=r"^[A-Za-z_][A-Za-z0-9_]*$"
     )
+    storage_disclosure_database_role: str = Field(
+        default="fs2_serve_storage_disclosure",
+        min_length=1,
+        max_length=63,
+        pattern=r"^[A-Za-z_][A-Za-z0-9_]*$",
+    )
     sync_wait_seconds: float = Field(default=2.0, ge=0, le=30)
     max_sync_wait_seconds: float = Field(default=30.0, ge=0, le=120)
     max_sync_waiters: int = Field(default=32, ge=1, le=1024)
@@ -386,6 +397,13 @@ class Settings(BaseSettings):
             raise ValueError("sync_wait_seconds cannot exceed max_sync_wait_seconds")
         if self.user_storage_rotation_window_days >= self.user_storage_key_ttl_days:
             raise ValueError("user storage rotation window must be shorter than the key TTL")
+        disclosure = urlsplit(self.user_storage_disclosure_url)
+        if disclosure.scheme != "http" or disclosure.hostname is None or disclosure.path not in {"", "/"}:
+            raise ValueError("user storage disclosure URL must be an internal HTTP authority")
+        if not self.allow_non_cluster_urls and not disclosure.hostname.endswith(
+            ("-storage-disclosure", ".svc", ".svc.cluster.local")
+        ):
+            raise ValueError("user storage disclosure URL must target the cluster service")
         if self.wait_poll_initial_seconds > self.wait_poll_max_seconds:
             raise ValueError("wait_poll_initial_seconds cannot exceed wait_poll_max_seconds")
         if self.max_sync_waiters < self.worker_concurrency:
@@ -411,9 +429,13 @@ class Settings(BaseSettings):
             self.maintenance_database_role,
             self.activation_database_role,
             self.storage_database_role,
+            self.storage_disclosure_database_role,
         }
-        if len(database_roles) != 5:
-            raise ValueError("reporting, runtime, maintenance, activation, and storage database roles must differ")
+        if len(database_roles) != 6:
+            raise ValueError(
+                "reporting, runtime, maintenance, activation, storage, and storage disclosure "
+                "database roles must differ"
+            )
         context_identity = (self.admin_context_project, self.admin_context_cluster, self.admin_context_region)
         if any(value is not None for value in context_identity) and not all(
             value is not None for value in context_identity

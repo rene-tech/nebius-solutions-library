@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from cryptography.exceptions import InvalidTag
@@ -70,6 +70,9 @@ class Repository:
     async def reencrypt_if_needed(self, tenant, principal):
         return False
 
+    async def bind_user_identity(self, tenant, principal):
+        return None
+
     async def save_credential(self, tenant, principal, owner, value):
         provider_state = value.get("provider_state", "INACTIVE")
         predecessor = value.get("previous_access_key_resource_id")
@@ -86,6 +89,8 @@ class Repository:
             "previous_access_key_resource_id": predecessor,
             "rotation_started_at": None,
             "disclosure_consumed_at": None,
+            "policy_suspension_requested": False,
+            "current_action_id": None,
             "version": 0,
         }
 
@@ -106,9 +111,21 @@ class Repository:
             enabled=enabled,
             desired_enabled=credential["desired_enabled"] if expected_action == "suspend" else enabled,
             requested_action=None,
+            current_action_id=None,
             revoked_at=None if enabled else datetime.now(UTC) if revoked else credential["revoked_at"],
             version=credential["version"] + 1,
         )
+
+    async def record_inactive_preserving_rotation(self, tenant, principal, *, expected_version):
+        credential = self.credentials[tenant, principal]
+        if (
+            credential["version"] != expected_version
+            or credential["requested_action"] != "rotate"
+            or credential["desired_enabled"]
+        ):
+            raise ConflictError("CAS")
+        credential["enabled"] = False
+        credential["version"] += 1
 
     async def request_suspended(self, tenant, principal):
         credential = self.credentials[tenant, principal]
@@ -117,7 +134,17 @@ class Repository:
             credential["requested_at"] = datetime.now(UTC)
             credential["version"] += 1
 
-    async def request_action(self, tenant, principal, action):
+    async def request_action(
+        self,
+        tenant,
+        principal,
+        action,
+        *,
+        token_id=None,
+        operator_session_id=None,
+        idempotency_key=None,
+    ):
+        del token_id, operator_session_id, idempotency_key
         credential = self.credentials[tenant, principal]
         if credential["requested_action"] is not None:
             raise ConflictError("pending")
@@ -125,7 +152,9 @@ class Repository:
         credential["desired_enabled"] = action == "rotate"
         credential["requested_at"] = datetime.now(UTC)
         credential["rotation_started_at"] = datetime.now(UTC) if action == "rotate" else None
+        credential["current_action_id"] = uuid4()
         credential["version"] += 1
+        return credential["current_action_id"]
 
     async def request_rotation_if_due(self, tenant, principal, cutoff):
         credential = self.credentials[tenant, principal]
@@ -189,10 +218,85 @@ class Repository:
         credential["previous_access_key_resource_id"] = None
         credential["rotation_started_at"] = None
         credential["requested_action"] = None if credential["desired_enabled"] else "disable"
+        credential["current_action_id"] = None
         credential["version"] += 1
 
+    async def request_tenant_suspension(self, tenant):
+        for (row_tenant, _), credential in self.credentials.items():
+            if row_tenant == tenant:
+                credential["policy_suspension_requested"] = True
+                if credential["requested_action"] not in {"rotate", "revoke"} and credential["enabled"]:
+                    credential["requested_action"] = "suspend"
+                credential["version"] += 1
+
+    async def complete_policy_suspension(self, tenant, principal, *, expected_version):
+        credential = self.credentials[tenant, principal]
+        if credential["version"] != expected_version or not credential["policy_suspension_requested"]:
+            raise ConflictError("CAS")
+        credential["enabled"] = False
+        credential["policy_suspension_requested"] = False
+        if credential["requested_action"] == "suspend":
+            credential["requested_action"] = None
+        credential["version"] += 1
+
+    async def request_tenant_resume(self, tenant):
+        for (row_tenant, _), credential in self.credentials.items():
+            if row_tenant == tenant:
+                credential["policy_suspension_requested"] = False
+                if (
+                    credential["desired_enabled"]
+                    and not credential["enabled"]
+                    and credential["revoked_at"] is None
+                    and credential["requested_action"] not in {"rotate", "revoke"}
+                ):
+                    credential["requested_action"] = "enable"
+                credential["version"] += 1
+
+    async def wait_tenant_suspended(self, tenant, *, timeout):
+        async with asyncio.timeout(timeout):
+            while any(
+                row_tenant == tenant and (row["enabled"] or row["policy_suspension_requested"])
+                for (row_tenant, _), row in self.credentials.items()
+            ):
+                await asyncio.sleep(0.01)
+
+    async def wait_tenant_resumed(self, tenant, *, timeout):
+        async with asyncio.timeout(timeout):
+            while any(
+                row_tenant == tenant
+                and row["desired_enabled"]
+                and row["revoked_at"] is None
+                and (not row["enabled"] or row["requested_action"] is not None)
+                for (row_tenant, _), row in self.credentials.items()
+            ):
+                await asyncio.sleep(0.01)
+
+    async def wait_action(self, action_id, *, timeout):
+        async with asyncio.timeout(timeout):
+            while any(row["current_action_id"] == action_id for row in self.credentials.values()):
+                await asyncio.sleep(0.01)
+
+    async def wait_enabled(self, tenant, principal, *, enabled, timeout):
+        async with asyncio.timeout(timeout):
+            while True:
+                row = self.credentials.get((tenant, principal))
+                if row is None or (
+                    row["enabled"] == enabled
+                    and row["desired_enabled"] == enabled
+                    and (row["requested_action"] is None or (not enabled and row["requested_action"] == "rotate"))
+                ):
+                    return
+                await asyncio.sleep(0.01)
+
     async def pending_principals(self):
-        return [key for key, value in self.credentials.items() if value["requested_action"] is not None]
+        return [
+            key
+            for key, value in self.credentials.items()
+            if value["requested_action"] is not None
+            or value["policy_suspension_requested"]
+            or not value["enabled"]
+            or value["revoked_at"] is not None
+        ]
 
     async def view(self, tenant, principal, policy):
         credential = await self.credential(tenant, principal)
@@ -306,6 +410,14 @@ def env():
     users = SimpleNamespace(list=AsyncMock(return_value=[]))
     service = UserStorageService(repository, provider, users, excluded_tenants=("stockholm",))
     return SimpleNamespace(repository=repository, provider=provider, service=service, users=users)
+
+
+async def configure_with_reconcile(env, policy, *owners):
+    transition = asyncio.create_task(env.service.configure("customer-a", policy))
+    await asyncio.sleep(0)
+    for configured_owner in owners or (user(),):
+        await env.service.ensure(configured_owner)
+    return await transition
 
 
 async def test_default_private_buckets_separate_user_keys_concurrent_and_idempotent(env):
@@ -531,7 +643,7 @@ async def test_disabled_policy_fail_closes_pending_rotation_without_reactivating
     credential = env.repository.credentials["customer-a", "alice"]
     old_id = credential["access_key_resource_id"]
     await env.repository.request_action("customer-a", "alice", "rotate")
-    await env.service.configure("customer-a", StoragePolicy(mode="disabled"))
+    await configure_with_reconcile(env, StoragePolicy(mode="disabled"))
 
     await env.service.ensure(user())
 
@@ -539,6 +651,23 @@ async def test_disabled_policy_fail_closes_pending_rotation_without_reactivating
     assert credential["access_key_resource_id"] == old_id
     assert env.provider.states[old_id] == "INACTIVE"
     assert env.provider.rotation_count == 0
+
+
+async def test_disabled_user_preserves_pending_rotation_without_reactivating(env):
+    await env.service.ensure(user())
+    credential = env.repository.credentials["customer-a", "alice"]
+    old_id = credential["access_key_resource_id"]
+    await env.repository.request_action("customer-a", "alice", "rotate")
+    enabled_call_count = len(env.provider.enabled_calls)
+
+    await env.service.ensure(user(enabled=False))
+
+    assert credential["requested_action"] == "rotate"
+    assert credential["desired_enabled"] is False
+    assert credential["access_key_resource_id"] == old_id
+    assert env.provider.states[old_id] == "INACTIVE"
+    assert env.provider.rotation_count == 0
+    assert (old_id, True) not in env.provider.enabled_calls[enabled_call_count:]
 
 
 async def test_disabled_and_revoked_users_are_never_reactivated_by_expiry(env):
@@ -561,21 +690,64 @@ async def test_disabled_and_revoked_users_are_never_reactivated_by_expiry(env):
         await env.repository.request_enabled("customer-a", "alice", True)
 
 
+@pytest.mark.parametrize("off_state", ["user-disabled", "revoked", "tenant-disabled", "excluded"])
+async def test_provider_reactivation_drift_is_repaired_for_every_effective_off_state(env, off_state):
+    await env.service.ensure(user())
+    credential = env.repository.credentials["customer-a", "alice"]
+    key_id = credential["access_key_resource_id"]
+    reconcile_user = user()
+
+    if off_state == "user-disabled":
+        reconcile_user = user(enabled=False)
+        await env.service.ensure(reconcile_user)
+    elif off_state == "revoked":
+        await env.repository.request_action("customer-a", "alice", "revoke")
+        await env.service.ensure(reconcile_user)
+    elif off_state == "tenant-disabled":
+        await configure_with_reconcile(env, StoragePolicy(mode="disabled"))
+    else:
+        env.service.excluded_tenants = frozenset({"customer-a"})
+        await env.service.ensure(reconcile_user)
+
+    assert env.provider.states[key_id] == "INACTIVE"
+    env.provider.states[key_id] = "ACTIVE"  # external provider drift
+    calls = len(env.provider.enabled_calls)
+    await env.service.ensure(reconcile_user)
+    assert env.provider.states[key_id] == "INACTIVE"
+    assert env.provider.enabled_calls[calls:] == [(key_id, False)]
+
+
 async def test_policy_disable_and_reactivate_preserves_layout_and_identity(env):
     await env.service.ensure(user())
     credential = env.repository.credentials["customer-a", "alice"]
     key_id = credential["access_key_resource_id"]
     bucket_id = env.repository.buckets["customer-a", "alice"]["bucket_id"]
 
-    await env.service.configure("customer-a", StoragePolicy(mode="disabled"))
+    await configure_with_reconcile(env, StoragePolicy(mode="disabled"))
     await env.service.ensure(user())
     assert env.provider.states[key_id] == "INACTIVE"
     assert credential["desired_enabled"] is True
 
-    await env.service.configure("customer-a", StoragePolicy(mode="user"))
+    await configure_with_reconcile(env, StoragePolicy(mode="user"))
     await env.service.ensure(user())
     assert env.provider.states[key_id] == "ACTIVE"
     assert env.repository.buckets["customer-a", "alice"]["bucket_id"] == bucket_id
+
+
+async def test_tenant_disable_provider_failure_returns_failure_with_durable_pending_state(env):
+    await env.service.ensure(user())
+    env.service.action_timeout_seconds = 0.05
+    env.provider.set_enabled = AsyncMock(side_effect=RuntimeError("provider unavailable"))
+    transition = asyncio.create_task(env.service.configure("customer-a", StoragePolicy(mode="disabled")))
+    await asyncio.sleep(0)
+    with pytest.raises(RuntimeError, match="provider unavailable"):
+        await env.service.ensure(user())
+    with pytest.raises(RuntimeError, match="did not complete"):
+        await transition
+    credential = env.repository.credentials["customer-a", "alice"]
+    assert (await env.service.policy("customer-a")).mode == "disabled"
+    assert credential["policy_suspension_requested"]
+    assert credential["requested_action"] == "suspend"
 
 
 async def test_disclosure_is_consumable_and_rotation_issues_one_new_claim(env):
@@ -646,7 +818,7 @@ async def test_credentials_are_encrypted_and_bound_to_owner(cipher):
     await repository.save_credential("customer-a", "alice", "", value)
     args = pool.execute.call_args.args
     assert value["secret_access_key"] not in repr(args)
-    envelope = Ciphertext(*args[7:10])
+    envelope = Ciphertext(*args[8:11])
     assert cipher.decrypt(envelope, aad=repository.aad("customer-a", "alice")).decode() == value["secret_access_key"]
     with pytest.raises(InvalidTag):
         cipher.decrypt(envelope, aad=repository.aad("customer-b", "alice"))
@@ -675,29 +847,31 @@ def test_storage_policy_defaults_to_per_user_isolation():
 async def test_credentials_require_explicit_scope_and_commit_redacted_audit(env):
     from fs2_serve.user_storage_routes import user_storage_router
 
-    env.repository.disclose = AsyncMock(
-        return_value=StorageCredentials(
-            bucket_name="bucket-a",
-            endpoint="https://storage.example.test",
-            region="test",
-            access_key_id="public-id",
-            secret_access_key="sensitive-fixture",
-            expires_at=datetime(2026, 12, 1, tzinfo=UTC),
-        )
+    disclosure = SimpleNamespace(
+        disclose_user=AsyncMock(
+            return_value=StorageCredentials(
+                bucket_name="bucket-a",
+                endpoint="https://storage.example.test",
+                region="test",
+                access_key_id="public-id",
+                secret_access_key="sensitive-fixture",
+                expires_at=datetime(2026, 12, 1, tzinfo=UTC),
+            )
+        ),
+        disclose_admin=AsyncMock(),
     )
     env.service.policy = AsyncMock(return_value=StoragePolicy())
     users = SimpleNamespace(
         repository=SimpleNamespace(configured=AsyncMock(return_value=None)),
         access=SimpleNamespace(),
     )
-    audit = SimpleNamespace(append_audit_event=AsyncMock())
     router = user_storage_router(
         service=env.service,
+        disclosure=disclosure,
         users=users,
         operator=lambda: None,
         principal=lambda: None,
         envelope=lambda value: value,
-        audit=audit,
         problem_responses={},
     )
     endpoint = next(route.endpoint for route in router.routes if route.path == "/v1/storage/credentials")
@@ -710,22 +884,25 @@ async def test_credentials_require_explicit_scope_and_commit_redacted_audit(env)
         models=frozenset({"*"}),
     )
     with pytest.raises(PermissionError, match="storage.credentials"):
-        await endpoint(identity)
-    env.repository.disclose.assert_not_awaited()
-    audit.append_audit_event.assert_not_awaited()
+        await endpoint(identity, "Bearer fixture")
+    disclosure.disclose_user.assert_not_awaited()
 
-    response = await endpoint(identity.model_copy(update={"scopes": frozenset({Scope.STORAGE_CREDENTIALS})}))
+    response = await endpoint(
+        identity.model_copy(update={"scopes": frozenset({Scope.STORAGE_CREDENTIALS})}),
+        "Bearer fixture",
+    )
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
-    call = env.repository.disclose.call_args
-    assert call.kwargs == {"actor": "alice", "token_id": identity.token_id}
-    audit.append_audit_event.assert_not_awaited()
+    disclosure.disclose_user.assert_awaited_once_with("Bearer fixture")
 
 
 async def test_public_and_admin_replay_denials_are_audited(env):
     from fs2_serve.user_storage_routes import user_storage_router
 
-    env.repository.disclose = AsyncMock(side_effect=ConflictError("already consumed"))
+    disclosure = SimpleNamespace(
+        disclose_user=AsyncMock(side_effect=ConflictError("already consumed")),
+        disclose_admin=AsyncMock(side_effect=ConflictError("already consumed")),
+    )
     env.service.policy = AsyncMock(return_value=StoragePolicy())
     selected = user()
     users = SimpleNamespace(
@@ -733,14 +910,13 @@ async def test_public_and_admin_replay_denials_are_audited(env):
         _get=AsyncMock(return_value=selected),
         access=SimpleNamespace(),
     )
-    audit = SimpleNamespace(append_audit_event=AsyncMock())
     router = user_storage_router(
         service=env.service,
+        disclosure=disclosure,
         users=users,
         operator=lambda: None,
         principal=lambda: None,
         envelope=lambda value: value,
-        audit=audit,
         problem_responses={},
     )
     public = next(route.endpoint for route in router.routes if route.path == "/v1/storage/credentials")
@@ -756,16 +932,13 @@ async def test_public_and_admin_replay_denials_are_audited(env):
         models=frozenset({"*"}),
     )
     with pytest.raises(ConflictError, match="consumed"):
-        await public(identity)
-    assert env.repository.disclose.call_args.kwargs == {"actor": "alice", "token_id": identity.token_id}
-    audit.append_audit_event.assert_not_awaited()
+        await public(identity, "Bearer fixture")
+    disclosure.disclose_user.assert_awaited_once_with("Bearer fixture")
 
-    env.repository.disclose.reset_mock(side_effect=True)
-    env.repository.disclose.side_effect = ConflictError("already consumed")
+    cookie = "fs2_admin_00000000000000000000000000000042_" + "x" * 32
     with pytest.raises(ConflictError, match="consumed"):
-        await admin(selected.id, SimpleNamespace(subject="operator-a"))
-    assert env.repository.disclose.call_args.kwargs == {"actor": "operator-a", "token_id": None}
-    audit.append_audit_event.assert_not_awaited()
+        await admin(selected.id, SimpleNamespace(subject="operator-a"), cookie)
+    disclosure.disclose_admin.assert_awaited_once_with(cookie, selected.id)
 
 
 def test_storage_deployment_contract_isolated_from_public_runtime():

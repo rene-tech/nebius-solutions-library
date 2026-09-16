@@ -6,12 +6,13 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import Any, Literal
-from uuid import UUID
+from typing import Any, Literal, cast
+from uuid import UUID, uuid4
 
 from .crypto import Ciphertext, PayloadCipher
 from .store import ConflictError
-from .user_storage_models import StorageCredentials, StoragePolicy, UserStorage
+from .user_models import owner_id
+from .user_storage_models import StoragePolicy, UserStorage
 
 
 class PostgresUserStorageRepository:
@@ -113,7 +114,8 @@ class PostgresUserStorageRepository:
             """SELECT tenant_id,principal_id,owner_key,service_account_id,
             access_key_resource_id,access_key_id,expires_at,enabled,desired_enabled,revoked_at,
             requested_action,requested_at,replacement_access_key_resource_id,
-            previous_access_key_resource_id,rotation_started_at,disclosure_consumed_at,version
+            previous_access_key_resource_id,rotation_started_at,disclosure_consumed_at,
+            policy_suspension_requested,current_action_id,version
             FROM fs2_user_storage WHERE tenant_id=$1 AND principal_id=$2""",
             tenant,
             principal,
@@ -184,6 +186,26 @@ class PostgresUserStorageRepository:
             raise ConflictError("storage encryption generation lost its compare-and-swap")
         return True
 
+    async def bind_user_identity(self, tenant: str, principal: str) -> None:
+        """Persist the server-derived admin route identity for DB authorization."""
+
+        identity = owner_id(tenant, principal)
+        updated = await self.pool.execute(
+            """UPDATE fs2_user_storage SET inference_user_id=$3,version=version+1,updated_at=now()
+            WHERE tenant_id=$1 AND principal_id=$2
+            AND inference_user_id IS NULL""",
+            tenant,
+            principal,
+            identity,
+        )
+        current = await self.pool.fetchval(
+            "SELECT inference_user_id FROM fs2_user_storage WHERE tenant_id=$1 AND principal_id=$2",
+            tenant,
+            principal,
+        )
+        if updated == "UPDATE 0" and current is not None and current != identity:
+            raise ConflictError("storage owner route identity changed")
+
     async def save_credential(self, tenant: str, principal: str, owner: str, value: dict[str, Any]) -> None:
         """Persist a new/adopted key before any controller-initiated activation."""
 
@@ -198,14 +220,15 @@ class PostgresUserStorageRepository:
         action = "rotate" if predecessor is not None else None if enabled else "enable"
         await self.pool.execute(
             """INSERT INTO fs2_user_storage
-            (tenant_id,principal_id,owner_key,service_account_id,access_key_resource_id,access_key_id,
+            (tenant_id,principal_id,inference_user_id,owner_key,service_account_id,access_key_resource_id,access_key_id,
              secret_key_id,secret_nonce,secret_ciphertext,expires_at,enabled,desired_enabled,
              requested_action,requested_at,previous_access_key_resource_id,rotation_started_at)
-            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true,$12,
-                   CASE WHEN $12='rotate' THEN now() ELSE NULL END,$13,
-                   CASE WHEN $12='rotate' THEN now() ELSE NULL END)""",
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true,$13,
+                   CASE WHEN $13='rotate' THEN now() ELSE NULL END,$14,
+                   CASE WHEN $13='rotate' THEN now() ELSE NULL END)""",
             tenant,
             principal,
+            owner_id(tenant, principal),
             owner,
             value["service_account_id"],
             value["access_key_resource_id"],
@@ -281,64 +304,169 @@ class PostgresUserStorageRepository:
         if updated == "UPDATE 0":
             raise ConflictError("storage credential rotation lost its promotion compare-and-swap")
 
-    async def complete_rotation(self, tenant: str, principal: str, *, expected_version: int) -> None:
-        """Clear the predecessor only after provider deactivation succeeds."""
-
-        updated = await self.pool.execute(
-            """UPDATE fs2_user_storage SET previous_access_key_resource_id=NULL,
-            rotation_started_at=NULL,
-            requested_action=CASE WHEN desired_enabled THEN NULL ELSE 'disable' END,
-            requested_at=CASE WHEN desired_enabled THEN NULL ELSE now() END,
-            version=version+1,updated_at=now()
-            WHERE tenant_id=$1 AND principal_id=$2 AND version=$3
-            AND requested_action='rotate' AND previous_access_key_resource_id IS NOT NULL""",
-            tenant,
-            principal,
-            expected_version,
-        )
-        if updated == "UPDATE 0":
-            raise ConflictError("storage credential rotation lost its completion compare-and-swap")
-
-    async def request_action(self, tenant: str, principal: str, action: str) -> None:
-        if action not in {"rotate", "revoke"}:
-            raise ValueError("unsupported storage credential action")
-        updated = await self.pool.execute(
-            """UPDATE fs2_user_storage SET requested_action=$3,requested_at=now(),
-            desired_enabled=CASE WHEN $3='rotate' THEN true ELSE false END,
-            rotation_started_at=CASE WHEN $3='rotate' THEN now() ELSE rotation_started_at END,
-            version=version+1,updated_at=now()
-            WHERE tenant_id=$1 AND principal_id=$2 AND requested_action IS NULL""",
+    @staticmethod
+    async def _complete_durable_action(
+        connection: Any,
+        *,
+        action_id: UUID | None,
+        tenant: str,
+        principal: str,
+        action: str,
+    ) -> None:
+        if action_id is None:
+            return
+        row = await connection.fetchrow(
+            """SELECT actor,token_id,status FROM fs2_storage_actions
+            WHERE id=$1 AND tenant_id=$2 AND principal_id=$3 AND action=$4 FOR UPDATE""",
+            action_id,
             tenant,
             principal,
             action,
         )
+        if row is None:
+            raise ConflictError("storage action outbox identity changed")
+        if row["status"] == "succeeded":
+            return
+        audit_id = await connection.fetchval(
+            """INSERT INTO fs2_audit_events
+            (actor,tenant_id,token_id,action,target_type,target_id,outcome,detail)
+            VALUES($1,$2,$3,$4,'user_storage',$5,'succeeded',
+                   jsonb_build_object('action_id',$6::text)) RETURNING id""",
+            row["actor"],
+            tenant,
+            row["token_id"],
+            f"storage.credentials.{action}",
+            principal,
+            str(action_id),
+        )
+        updated = await connection.execute(
+            """UPDATE fs2_storage_actions SET status='succeeded',completed_at=clock_timestamp(),
+            audit_event_id=$2 WHERE id=$1 AND status='requested'""",
+            action_id,
+            audit_id,
+        )
         if updated == "UPDATE 0":
-            raise ConflictError("storage credentials are not ready or another action is pending")
+            raise ConflictError("storage action terminal outcome lost its compare-and-swap")
 
-    async def request_rotation_if_due(self, tenant: str, principal: str, cutoff: datetime) -> bool:
-        updated = await self.pool.execute(
-            """UPDATE fs2_user_storage SET requested_action='rotate',requested_at=now(),
-            rotation_started_at=now(),version=version+1,updated_at=now()
-            WHERE tenant_id=$1 AND principal_id=$2 AND requested_action IS NULL
-            AND enabled AND desired_enabled AND revoked_at IS NULL AND expires_at <= $3""",
+    async def complete_rotation(self, tenant: str, principal: str, *, expected_version: int) -> None:
+        """Atomically clear a finished rotation and publish its terminal audit."""
+
+        async with self.pool.acquire() as connection, connection.transaction():
+            current = await connection.fetchrow(
+                """SELECT current_action_id FROM fs2_user_storage
+                WHERE tenant_id=$1 AND principal_id=$2 AND version=$3
+                AND requested_action='rotate' AND previous_access_key_resource_id IS NOT NULL
+                FOR UPDATE""",
+                tenant,
+                principal,
+                expected_version,
+            )
+            if current is None:
+                raise ConflictError("storage credential rotation lost its completion compare-and-swap")
+            updated = await connection.execute(
+                """UPDATE fs2_user_storage SET previous_access_key_resource_id=NULL,
+                rotation_started_at=NULL,
+                requested_action=CASE WHEN desired_enabled THEN NULL ELSE 'disable' END,
+                requested_at=CASE WHEN desired_enabled THEN NULL ELSE clock_timestamp() END,
+                current_action_id=NULL,version=version+1,updated_at=clock_timestamp()
+                WHERE tenant_id=$1 AND principal_id=$2 AND version=$3
+                AND requested_action='rotate'""",
+                tenant,
+                principal,
+                expected_version,
+            )
+            if updated == "UPDATE 0":
+                raise ConflictError("storage credential rotation lost its completion compare-and-swap")
+            await self._complete_durable_action(
+                connection,
+                action_id=current["current_action_id"],
+                tenant=tenant,
+                principal=principal,
+                action="rotate",
+            )
+
+    async def request_action(
+        self,
+        tenant: str,
+        principal: str,
+        action: str,
+        *,
+        token_id: UUID | None,
+        operator_session_id: UUID | None,
+        idempotency_key: UUID,
+    ) -> UUID:
+        if action not in {"rotate", "revoke"}:
+            raise ValueError("unsupported storage credential action")
+        action_id = await self.pool.fetchval(
+            "SELECT fs2_request_user_storage_action($1,$2,$3,$4,$5,$6)",
             tenant,
             principal,
+            action,
+            token_id,
+            operator_session_id,
+            idempotency_key,
+        )
+        if action_id is None:
+            raise ConflictError("storage action identity is invalid or another action is pending")
+        return cast(UUID, action_id)
+
+    async def _request_system_action(
+        self,
+        tenant: str,
+        principal: str,
+        action: str,
+        predicate: str,
+        *predicate_args: Any,
+    ) -> bool:
+        action_id = uuid4()
+        idempotency_key = uuid4()
+        async with self.pool.acquire() as connection, connection.transaction():
+            await connection.execute(
+                """INSERT INTO fs2_storage_actions
+                (id,tenant_id,principal_id,action,actor,idempotency_key)
+                VALUES($1,$2,$3,$4,'storage-reconciler',$5)""",
+                action_id,
+                tenant,
+                principal,
+                action,
+                idempotency_key,
+            )
+            updated = await connection.execute(
+                f"""UPDATE fs2_user_storage SET requested_action=$3,requested_at=clock_timestamp(),
+                desired_enabled=CASE WHEN $3='rotate' THEN true ELSE false END,
+                rotation_started_at=CASE WHEN $3='rotate' THEN clock_timestamp() ELSE rotation_started_at END,
+                current_action_id=$4,version=version+1,updated_at=clock_timestamp()
+                WHERE tenant_id=$1 AND principal_id=$2 AND requested_action IS NULL
+                AND current_action_id IS NULL AND {predicate}""",  # noqa: S608 - fixed internal predicates
+                tenant,
+                principal,
+                action,
+                action_id,
+                *predicate_args,
+            )
+            if updated == "UPDATE 0":
+                await connection.execute("DELETE FROM fs2_storage_actions WHERE id=$1", action_id)
+                return False
+        return True
+
+    async def request_rotation_if_due(self, tenant: str, principal: str, cutoff: datetime) -> bool:
+        return await self._request_system_action(
+            tenant,
+            principal,
+            "rotate",
+            "enabled AND desired_enabled AND revoked_at IS NULL AND expires_at <= $5",
             cutoff,
         )
-        return updated != "UPDATE 0"
 
     async def request_rotation_for_provider_state(self, tenant: str, principal: str) -> bool:
         """CAS a repair rotation when DB-enabled provider state is unusable."""
 
-        updated = await self.pool.execute(
-            """UPDATE fs2_user_storage SET requested_action='rotate',requested_at=now(),
-            rotation_started_at=now(),version=version+1,updated_at=now()
-            WHERE tenant_id=$1 AND principal_id=$2 AND requested_action IS NULL
-            AND enabled AND desired_enabled AND revoked_at IS NULL""",
+        return await self._request_system_action(
             tenant,
             principal,
+            "rotate",
+            "enabled AND desired_enabled AND revoked_at IS NULL",
         )
-        return updated != "UPDATE 0"
 
     async def complete_action(
         self,
@@ -352,22 +480,63 @@ class PostgresUserStorageRepository:
     ) -> None:
         if expected_action not in {"enable", "disable", "revoke", "suspend"}:
             raise ValueError("unsupported storage credential completion")
+        async with self.pool.acquire() as connection, connection.transaction():
+            current = await connection.fetchrow(
+                """SELECT current_action_id FROM fs2_user_storage
+                WHERE tenant_id=$1 AND principal_id=$2 AND version=$3 AND requested_action=$4
+                FOR UPDATE""",
+                tenant,
+                principal,
+                expected_version,
+                expected_action,
+            )
+            if current is None:
+                raise ConflictError("storage credential action lost its completion compare-and-swap")
+            updated = await connection.execute(
+                """UPDATE fs2_user_storage SET enabled=$5,
+                desired_enabled=CASE WHEN $4='suspend' THEN desired_enabled ELSE $5 END,
+                revoked_at=CASE WHEN $5 THEN NULL WHEN $6 THEN clock_timestamp() ELSE revoked_at END,
+                requested_action=NULL,requested_at=NULL,current_action_id=NULL,
+                version=version+1,updated_at=clock_timestamp()
+                WHERE tenant_id=$1 AND principal_id=$2 AND version=$3 AND requested_action=$4""",
+                tenant,
+                principal,
+                expected_version,
+                expected_action,
+                enabled,
+                revoked,
+            )
+            if updated == "UPDATE 0":
+                raise ConflictError("storage credential action lost its completion compare-and-swap")
+            if expected_action in {"rotate", "revoke"}:
+                await self._complete_durable_action(
+                    connection,
+                    action_id=current["current_action_id"],
+                    tenant=tenant,
+                    principal=principal,
+                    action=expected_action,
+                )
+
+    async def record_inactive_preserving_rotation(
+        self,
+        tenant: str,
+        principal: str,
+        *,
+        expected_version: int,
+    ) -> None:
+        """Record a verified provider-off state without consuming rotate intent."""
+
         updated = await self.pool.execute(
-            """UPDATE fs2_user_storage SET enabled=$5,
-            desired_enabled=CASE WHEN $4='suspend' THEN desired_enabled ELSE $5 END,
-            revoked_at=CASE WHEN $5 THEN NULL WHEN $6 THEN now() ELSE revoked_at END,
-            requested_action=NULL,requested_at=NULL,
-            version=version+1,updated_at=now()
-            WHERE tenant_id=$1 AND principal_id=$2 AND version=$3 AND requested_action=$4""",
+            """UPDATE fs2_user_storage SET enabled=false,version=version+1,
+            updated_at=clock_timestamp()
+            WHERE tenant_id=$1 AND principal_id=$2 AND version=$3
+            AND requested_action='rotate' AND NOT desired_enabled""",
             tenant,
             principal,
             expected_version,
-            expected_action,
-            enabled,
-            revoked,
         )
         if updated == "UPDATE 0":
-            raise ConflictError("storage credential action lost its completion compare-and-swap")
+            raise ConflictError("storage disable lost its pending-rotation compare-and-swap")
 
     async def request_suspended(self, tenant: str, principal: str) -> None:
         """Disable provider access without overwriting the user's desired state."""
@@ -379,6 +548,72 @@ class PostgresUserStorageRepository:
             tenant,
             principal,
         )
+
+    async def request_tenant_suspension(self, tenant: str) -> None:
+        await self.pool.execute(
+            """UPDATE fs2_user_storage SET policy_suspension_requested=true,
+            requested_action=CASE
+              WHEN requested_action IN ('rotate','revoke') THEN requested_action
+              WHEN enabled THEN 'suspend' ELSE requested_action END,
+            requested_at=CASE
+              WHEN requested_action IN ('rotate','revoke') THEN requested_at
+              WHEN enabled THEN clock_timestamp() ELSE requested_at END,
+            version=version+1,updated_at=clock_timestamp()
+            WHERE tenant_id=$1""",
+            tenant,
+        )
+
+    async def complete_policy_suspension(self, tenant: str, principal: str, *, expected_version: int) -> None:
+        updated = await self.pool.execute(
+            """UPDATE fs2_user_storage SET enabled=false,
+            policy_suspension_requested=false,
+            requested_action=CASE WHEN requested_action='suspend' THEN NULL ELSE requested_action END,
+            requested_at=CASE WHEN requested_action='suspend' THEN NULL ELSE requested_at END,
+            version=version+1,updated_at=clock_timestamp()
+            WHERE tenant_id=$1 AND principal_id=$2 AND version=$3
+            AND policy_suspension_requested""",
+            tenant,
+            principal,
+            expected_version,
+        )
+        if updated == "UPDATE 0":
+            raise ConflictError("tenant storage suspension lost its compare-and-swap")
+
+    async def request_tenant_resume(self, tenant: str) -> None:
+        await self.pool.execute(
+            """UPDATE fs2_user_storage SET policy_suspension_requested=false,
+            requested_action=CASE
+              WHEN requested_action IN ('rotate','revoke') THEN requested_action
+              WHEN desired_enabled AND NOT enabled AND revoked_at IS NULL THEN 'enable'
+              ELSE requested_action END,
+            requested_at=CASE
+              WHEN requested_action IN ('rotate','revoke') THEN requested_at
+              WHEN desired_enabled AND NOT enabled AND revoked_at IS NULL THEN clock_timestamp()
+              ELSE requested_at END,
+            version=version+1,updated_at=clock_timestamp()
+            WHERE tenant_id=$1""",
+            tenant,
+        )
+
+    async def wait_tenant_suspended(self, tenant: str, *, timeout: float) -> None:
+        async with asyncio.timeout(timeout):
+            while await self.pool.fetchval(
+                """SELECT EXISTS(SELECT 1 FROM fs2_user_storage
+                WHERE tenant_id=$1 AND (enabled OR policy_suspension_requested))""",
+                tenant,
+            ):
+                await asyncio.sleep(0.1)
+
+    async def wait_tenant_resumed(self, tenant: str, *, timeout: float) -> None:
+        async with asyncio.timeout(timeout):
+            while await self.pool.fetchval(
+                """SELECT EXISTS(SELECT 1 FROM fs2_user_storage
+                WHERE tenant_id=$1 AND (policy_suspension_requested OR
+                  (desired_enabled AND revoked_at IS NULL AND
+                   (NOT enabled OR requested_action IS NOT NULL))))""",
+                tenant,
+            ):
+                await asyncio.sleep(0.1)
 
     async def request_enabled(self, tenant: str, principal: str, enabled: bool) -> None:
         updated = await self.pool.execute(
@@ -403,22 +638,19 @@ class PostgresUserStorageRepository:
         rows = await self.pool.fetch(
             """SELECT tenant_id,principal_id FROM fs2_user_storage
             WHERE requested_action IS NOT NULL OR desired_enabled <> enabled
+               OR policy_suspension_requested OR NOT enabled OR revoked_at IS NOT NULL
             ORDER BY requested_at NULLS LAST,tenant_id,principal_id"""
         )
         return [(str(row["tenant_id"]), str(row["principal_id"])) for row in rows]
 
-    async def wait_action(self, tenant: str, principal: str, *, timeout: float) -> None:
+    async def wait_action(self, action_id: UUID, *, timeout: float) -> None:
         async with asyncio.timeout(timeout):
             while True:
-                value = await self.credential(tenant, principal)
-                if value is None:
-                    raise ConflictError("storage credentials are not ready")
-                if (
-                    value["requested_action"] is None
-                    and value["replacement_access_key_resource_id"] is None
-                    and value["previous_access_key_resource_id"] is None
-                ):
+                status = await self.pool.fetchval("SELECT fs2_storage_action_status($1)", action_id)
+                if status == "succeeded":
                     return
+                if status != "requested":
+                    raise ConflictError("storage action is unavailable")
                 await asyncio.sleep(0.1)
 
     async def payload_key_usage(self) -> dict[str, int]:
@@ -441,7 +673,8 @@ class PostgresUserStorageRepository:
                 if value is None or (
                     value["enabled"] == enabled
                     and value["desired_enabled"] == enabled
-                    and value["requested_action"] is None
+                    and (value["requested_action"] is None or (not enabled and value["requested_action"] == "rotate"))
+                    and not value["policy_suspension_requested"]
                 ):
                     return
                 await asyncio.sleep(0.1)
@@ -474,38 +707,4 @@ class PostgresUserStorageRepository:
             region=bucket["region"],
             access_key_id=credential["access_key_id"],
             expires_at=credential["expires_at"],
-        )
-
-    async def disclose(
-        self,
-        tenant: str,
-        principal: str,
-        *,
-        actor: str,
-        token_id: UUID | None,
-    ) -> StorageCredentials:
-        value = await self.pool.fetchrow(
-            "SELECT * FROM fs2_consume_user_storage_disclosure($1,$2,$3,$4)",
-            tenant,
-            principal,
-            actor,
-            token_id,
-        )
-        if value is None:
-            raise ConflictError("storage credential disclosure is unavailable or already consumed")
-        secret = (
-            self._cipher()
-            .decrypt(
-                Ciphertext(value["secret_key_id"], value["secret_nonce"], value["secret_ciphertext"]),
-                aad=self.aad(tenant, principal),
-            )
-            .decode()
-        )
-        return StorageCredentials(
-            bucket_name=value["bucket_name"],
-            endpoint=value["endpoint"],
-            region=value["region"],
-            access_key_id=value["access_key_id"],
-            secret_access_key=secret,
-            expires_at=value["expires_at"],
         )

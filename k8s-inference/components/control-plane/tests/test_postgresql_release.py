@@ -37,10 +37,10 @@ def test_committed_postgresql_contract_is_exact_emitted_release_receipt_input() 
     receipt = committed["required_release_receipt_inputs"]
     assert receipt == {
         "first_migration_version": "0001_initial.sql",
-        "last_migration_version": "0032_user_storage_security.sql",
-        "migration_count": 32,
-        "migration_set_sha256": "ea736796a505c56573d4ebd248a0e1848f8ee0358159e32cf007ab06382da741",
-        "namespace_role_ownership_sha256": "02a91557f23468b3c943575a2295f8fdd710575ffd438e466a7df5214d5dc3b0",
+        "last_migration_version": "0033_storage_disclosure_boundary.sql",
+        "migration_count": 33,
+        "migration_set_sha256": "b373527f03412686bec4a18b8126b1a5eba6b6b7f1eac2e0082d7c5833ba158c",
+        "namespace_role_ownership_sha256": "79bd52934dfe16d890f021222ed0d76784facbcb4d01883aa96f52e4f3bc0aa4",
     }
     migrations = committed["migration_set"]["ordered_migrations"]
     assert len(migrations) == receipt["migration_count"]
@@ -73,7 +73,8 @@ def test_scientific_runtime_grant_repairs_are_additive_and_readiness_checked() -
     assert wait_source.count("fs2_scientific_batches','scheduling_digest','UPDATE'") == 2
     assert "SELECT,INSERT" not in wait_source
     assert "database schema runtime privileges are incomplete" in wait_source
-    assert "fs2_consume_user_storage_disclosure(text,text,text,uuid)" in wait_source
+    assert "fs2_request_user_storage_action(text,text,text,uuid,uuid,uuid)" in wait_source
+    assert "fs2_consume_storage_disclosure(uuid)" in wait_source
     assert "fs2_user_storage','secret_ciphertext','SELECT'" in wait_source
     assert "fs2_serve_storage" in wait_source
     assert "fs2_operations','SELECT'" in wait_source
@@ -206,6 +207,7 @@ def test_namespace_secret_and_role_ownership_is_one_closed_cross_lane_contract()
         "reporting": ("fs2-observability", "fs2-serve-database-reporting", "url"),
         "runtime": ("fs2-system", "fs2-serve-database", "url"),
         "storage": ("fs2-system", "fs2-serve-database-storage", "url"),
+        "storage-disclosure": ("fs2-system", "fs2-serve-database-storage-disclosure", "url"),
     }
     assert {role["name"] for role in ownership["database_group_roles"]} == {
         "fs2_serve_activation",
@@ -213,9 +215,11 @@ def test_namespace_secret_and_role_ownership_is_one_closed_cross_lane_contract()
         "fs2_serve_reporting",
         "fs2_serve_runtime",
         "fs2_serve_storage",
+        "fs2_serve_storage_disclosure",
     }
     assert all(not role["login"] for role in ownership["database_group_roles"])
     assert secrets["runtime"]["consumer_owners"] == ["fs2-serve-control-plane-gateway"]
     assert secrets["maintenance"]["consumer_owners"] == ["fs2-serve-control-plane-maintenance"]
     assert secrets["storage"]["consumer_owners"] == ["fs2-serve-control-plane-storage-reconciler"]
+    assert secrets["storage-disclosure"]["consumer_owners"] == ["fs2-serve-control-plane-storage-disclosure"]
     assert ownership["schema_migration_owner"]["ownership"] == "sole-ddl-and-grant-owner"

@@ -759,6 +759,38 @@ async def reconcile_user_storage(settings: Settings) -> None:
         await pool.close()
 
 
+async def serve_storage_disclosure(settings: Settings) -> None:
+    """Run the only process allowed to decrypt customer-storage envelopes."""
+
+    from .user_storage_disclosure import PostgresStorageDisclosureRepository, create_storage_disclosure_app
+
+    if not settings.user_storage_enabled:
+        raise RuntimeError("storage-disclosure requires customer storage")
+    pool = await PostgresStore._connect_pool(
+        settings.database_url,
+        min_size=1,
+        max_size=4,
+        application_name="fs2-customer-storage-disclosure",
+    )
+    repository = PostgresStorageDisclosureRepository(
+        pool,
+        PayloadCipher.from_file(settings.user_storage_keyring_file),
+        PepperRing.from_file(settings.token_pepper_file),
+    )
+    server = uvicorn.Server(
+        uvicorn.Config(
+            create_storage_disclosure_app(repository),
+            host=settings.host,
+            port=8082,
+            log_level=settings.log_level.lower(),
+        )
+    )
+    try:
+        await server.serve()
+    finally:
+        await pool.close()
+
+
 async def migrate(settings: Settings) -> None:
     await PostgresStore.migrate_database(
         settings.database_url,
@@ -768,6 +800,7 @@ async def migrate(settings: Settings) -> None:
         settings.maintenance_database_role,
         settings.activation_database_role,
         settings.storage_database_role,
+        settings.storage_disclosure_database_role,
     )
 
 
@@ -857,6 +890,7 @@ def main() -> None:
             "model-controller",
             "gpu-allocation-observer",
             "storage-reconciler",
+            "storage-disclosure",
             "scientific-materialize",
             "scientific-materialize-many",
             "scientific-collect",
@@ -883,6 +917,7 @@ def main() -> None:
             "model-controller": run_model_controller,
             "gpu-allocation-observer": observe_gpu_allocations,
             "storage-reconciler": reconcile_user_storage,
+            "storage-disclosure": serve_storage_disclosure,
         }[args.command]
         asyncio.run(action(settings))
 

@@ -110,12 +110,16 @@ class UserService:
             raise ValueError("enabled cannot be null")
         if "app_ids" in changes:
             await self._validate_apps(request.app_ids)
-        if self.storage is not None and "enabled" in changes and changes["enabled"] != user.enabled:
-            # A disable is committed to the cloud key before the user record is
-            # changed, so a disabled owner can never retain an active S3 key.
-            await self.storage.set_enabled(user.tenant_id, user.principal_id, bool(changes["enabled"]))
         changes.update(updated_at=datetime.now(UTC), source="configured")
-        return await self.repository.save(InferenceUser.model_validate({**user.model_dump(), **changes}))
+        updated = InferenceUser.model_validate({**user.model_dump(), **changes})
+        if self.storage is not None and "enabled" in changes:
+            # Commit user policy and the durable provider action atomically.
+            # A timeout leaves an honest pending transition that a retry can
+            # await; it never rolls either half back to a split-brain state.
+            saved = await self.repository.save_with_storage_state(updated)
+            await self.storage.wait_enabled(saved.tenant_id, saved.principal_id, saved.enabled)
+            return saved
+        return await self.repository.save(updated)
 
     async def issue_key(
         self, identity: OperatorPrincipal, user_id: UUID, request: AdminApiKeyCreate

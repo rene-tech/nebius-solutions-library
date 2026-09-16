@@ -25,6 +25,7 @@ CONTEXT_INPUTS = (
     CONTROL_REL / "src",
     CONTROL_REL / "migrations",
     CONTROL_REL / "contracts",
+    SOLUTION_REL / "stages/workloads/scripts/customer_storage_egress_contract.py",
     CATALOG_REL / "fs2_serve_catalog",
     CATALOG_REL / "pyproject.toml",
     CATALOG_REL / "uv.lock",

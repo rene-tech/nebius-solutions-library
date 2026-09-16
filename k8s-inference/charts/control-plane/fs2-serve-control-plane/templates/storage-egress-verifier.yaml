@@ -1,0 +1,224 @@
+{{- if .Values.customerStorage.enabled }}
+{{- $hooks := "pre-install,pre-upgrade,pre-rollback,post-install,post-upgrade,post-rollback" }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-storage-egress-verifier
+  annotations:
+    helm.sh/hook: {{ $hooks | quote }}
+    helm.sh/hook-weight: "-30"
+    helm.sh/hook-delete-policy: before-hook-creation
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: storage-egress-verifier
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-storage-egress-verifier
+  annotations:
+    helm.sh/hook: {{ $hooks | quote }}
+    helm.sh/hook-weight: "-30"
+    helm.sh/hook-delete-policy: before-hook-creation
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: storage-egress-verifier
+rules:
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    resourceNames: [{{ printf "%s-storage-reconciler" (include "fs2-serve.fullname" .) | quote }}]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-storage-egress-verifier
+  annotations:
+    helm.sh/hook: {{ $hooks | quote }}
+    helm.sh/hook-weight: "-30"
+    helm.sh/hook-delete-policy: before-hook-creation
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: storage-egress-verifier
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "fs2-serve.fullname" . }}-storage-egress-verifier
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "fs2-serve.fullname" . }}-storage-egress-verifier
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-storage-egress-desired
+  annotations:
+    helm.sh/hook: {{ $hooks | quote }}
+    helm.sh/hook-weight: "-20"
+    helm.sh/hook-delete-policy: before-hook-creation
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: storage-egress-verifier
+immutable: true
+data:
+  cidrs.json: {{ .Values.customerStorage.egressCidrs | toJson | quote }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-storage-egress-verifier
+  annotations:
+    helm.sh/hook: {{ $hooks | quote }}
+    helm.sh/hook-weight: "-30"
+    helm.sh/hook-delete-policy: before-hook-creation
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: storage-egress-verifier
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "fs2-serve.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: storage-egress-verifier
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.dns.namespaceLabels | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.dns.podLabels | nindent 14 }}
+      ports:
+        - port: {{ .Values.networkPolicy.dns.port }}
+          protocol: UDP
+        - port: {{ .Values.networkPolicy.dns.port }}
+          protocol: TCP
+    - to:
+        {{- range .Values.networkPolicy.kubernetesApiCidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - port: 443
+          protocol: TCP
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-storage-egress-precheck
+  annotations:
+    helm.sh/hook: "pre-install,pre-upgrade,pre-rollback"
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: storage-egress-verifier
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 90
+  template:
+    metadata:
+      labels:
+        {{- include "fs2-serve.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: storage-egress-verifier
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "fs2-serve.fullname" . }}-storage-egress-verifier
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: verify
+          image: {{ include "fs2-serve.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "-m", "fs2_serve.storage_egress_contract"]
+          args:
+            - --contract
+            - /verify/contract.json
+            - --public-key
+            - /verify/public-key.pem
+            - --expected-cidrs
+            - /verify/cidrs.json
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: contract, mountPath: /verify/contract.json, subPath: contract.json, readOnly: true}
+            - {name: trust, mountPath: /verify/public-key.pem, subPath: public-key.pem, readOnly: true}
+            - {name: desired, mountPath: /verify/cidrs.json, subPath: cidrs.json, readOnly: true}
+      volumes:
+        - name: contract
+          configMap: {name: fs2-customer-storage-egress-contract}
+        - name: trust
+          secret: {secretName: fs2-customer-storage-egress-trust}
+        - name: desired
+          configMap: {name: {{ include "fs2-serve.fullname" . }}-storage-egress-desired}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-storage-egress-postcheck
+  annotations:
+    helm.sh/hook: "post-install,post-upgrade,post-rollback"
+    helm.sh/hook-weight: "10"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: storage-egress-verifier
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 90
+  template:
+    metadata:
+      labels:
+        {{- include "fs2-serve.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: storage-egress-verifier
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "fs2-serve.fullname" . }}-storage-egress-verifier
+      automountServiceAccountToken: true
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: verify
+          image: {{ include "fs2-serve.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "-m", "fs2_serve.storage_egress_contract"]
+          args:
+            - --contract
+            - /verify/contract.json
+            - --public-key
+            - /verify/public-key.pem
+            - --expected-cidrs
+            - /verify/cidrs.json
+            - --kubernetes-network-policy
+            - {{ .Release.Namespace | quote }}
+            - {{ printf "%s-storage-reconciler" (include "fs2-serve.fullname" .) | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: contract, mountPath: /verify/contract.json, subPath: contract.json, readOnly: true}
+            - {name: trust, mountPath: /verify/public-key.pem, subPath: public-key.pem, readOnly: true}
+            - {name: desired, mountPath: /verify/cidrs.json, subPath: cidrs.json, readOnly: true}
+      volumes:
+        - name: contract
+          configMap: {name: fs2-customer-storage-egress-contract}
+        - name: trust
+          secret: {secretName: fs2-customer-storage-egress-trust}
+        - name: desired
+          configMap: {name: {{ include "fs2-serve.fullname" . }}-storage-egress-desired}
+{{- end }}

@@ -55,6 +55,11 @@ app.kubernetes.io/component: maintenance
 app.kubernetes.io/component: storage-reconciler
 {{- end -}}
 
+{{- define "fs2-serve.storageDisclosureSelectorLabels" -}}
+{{ include "fs2-serve.selectorLabels" . }}
+app.kubernetes.io/component: storage-disclosure
+{{- end -}}
+
 {{- define "fs2-serve.migrationSelectorLabels" -}}
 {{ include "fs2-serve.selectorLabels" . }}
 app.kubernetes.io/component: migration
@@ -128,6 +133,14 @@ app.kubernetes.io/component: model-controller
   valueFrom:
     secretKeyRef:
       name: {{ .Values.customerStorage.databaseSecretName }}
+      key: url
+{{- end -}}
+
+{{- define "fs2-serve.storageDisclosureDatabaseEnv" -}}
+- name: FS2_DATABASE_URL
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.customerStorage.disclosureDatabaseSecretName }}
       key: url
 {{- end -}}
 
@@ -275,6 +288,8 @@ app.kubernetes.io/component: model-controller
   value: {{ .Values.customerStorage.quotaBytes | int64 | quote }}
 - name: FS2_USER_STORAGE_EXCLUDED_TENANTS
   value: {{ .Values.customerStorage.excludedTenants | toJson | quote }}
+- name: FS2_USER_STORAGE_DISCLOSURE_URL
+  value: {{ printf "http://%s-storage-disclosure:%v" (include "fs2-serve.fullname" .) .Values.customerStorage.disclosure.port | quote }}
 {{- end }}
 - name: FS2_CATALOG_DIR
   value: {{ ternary .Values.catalog.imagePath "/etc/fs2-serve/catalog" (eq .Values.catalog.delivery "image") | quote }}
@@ -486,6 +501,8 @@ app.kubernetes.io/component: model-controller
   value: {{ .Values.migration.activationDatabaseRole | quote }}
 - name: FS2_STORAGE_DATABASE_ROLE
   value: {{ .Values.migration.storageDatabaseRole | quote }}
+- name: FS2_STORAGE_DISCLOSURE_DATABASE_ROLE
+  value: {{ .Values.migration.storageDisclosureDatabaseRole | quote }}
 {{- end -}}
 
 {{- define "fs2-serve.storageCryptoEnv" -}}
@@ -523,6 +540,12 @@ app.kubernetes.io/component: model-controller
         path: keyring.json
 {{- end -}}
 
+{{- define "fs2-serve.storageCipherVolumeMount" -}}
+- name: customer-storage-crypto
+  mountPath: /var/run/secrets/fs2-serve/customer-storage-crypto
+  readOnly: true
+{{- end -}}
+
 {{- define "fs2-serve.schemaWaitEnv" -}}
 {{ include "fs2-serve.databaseEnv" . }}
 - name: FS2_SCHEMA_WAIT_SECONDS
@@ -558,12 +581,6 @@ app.kubernetes.io/component: model-controller
 
 {{- define "fs2-serve.runtimeVolumeMounts" -}}
 {{ include "fs2-serve.cryptoVolumeMounts" . }}
-{{- if .Values.customerStorageCredentials.enabled }}
-{{ include "fs2-serve.storageCryptoVolumeMounts" . }}
-{{- end }}
-{{- if .Values.customerStorage.enabled }}
-{{ include "fs2-serve.storageCryptoVolumeMount" . }}
-{{- end }}
 {{- include "fs2-serve.scientificArtifactsVolumeMounts" . }}
 {{ include "fs2-serve.databaseCaVolumeMount" . }}
 {{- if eq .Values.catalog.delivery "pvc" }}
@@ -667,12 +684,6 @@ app.kubernetes.io/component: model-controller
 
 {{- define "fs2-serve.runtimeVolumes" -}}
 {{ include "fs2-serve.cryptoVolumes" . }}
-{{- if .Values.customerStorageCredentials.enabled }}
-{{ include "fs2-serve.storageCryptoVolumes" . }}
-{{- end }}
-{{- if .Values.customerStorage.enabled }}
-{{ include "fs2-serve.storageCipherVolume" . }}
-{{- end }}
 {{- include "fs2-serve.scientificArtifactsVolumes" . }}
 {{ include "fs2-serve.databaseCaVolume" (dict "secret" .Values.secrets.database) }}
 {{- if eq .Values.catalog.delivery "pvc" }}

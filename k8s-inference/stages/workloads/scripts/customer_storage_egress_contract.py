@@ -10,11 +10,17 @@ import importlib
 import importlib.metadata
 import ipaddress
 import json
+import os
 import socket
+import ssl
+import stat
 import sys
+import urllib.error
+import urllib.request
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
@@ -68,12 +74,74 @@ SDK_SERVICES = (
 ENDPOINTS = tuple(sorted({f"{item[3]}.api.nebius.cloud" for item in SDK_SERVICES}))
 MAX_CIDRS = 32
 MAX_VALIDITY = timedelta(hours=24)
+MAX_FILE_BYTES = 1024 * 1024
 
 
 def _canonical(value: object) -> bytes:
-    return json.dumps(
-        value, sort_keys=True, separators=(",", ":"), ensure_ascii=True
-    ).encode()
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+
+
+def safe_read(path: Path, *, maximum: int = MAX_FILE_BYTES) -> bytes:
+    """Read one immutable regular file through descriptor-relative nofollow IO."""
+
+    absolute = Path(os.path.abspath(os.fspath(path)))
+    parts = absolute.parts[1:]
+    if not parts or any(part in {"", ".", ".."} for part in parts):
+        raise ValueError("contract input path is invalid")
+    directory_fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for component in parts[:-1]:
+            next_fd = os.open(
+                component,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                dir_fd=directory_fd,
+            )
+            os.close(directory_fd)
+            directory_fd = next_fd
+        file_fd = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_fd)
+        try:
+            before = os.fstat(file_fd)
+            if not stat.S_ISREG(before.st_mode) or before.st_size <= 0 or before.st_size > maximum:
+                raise ValueError("contract input must be a bounded non-empty regular file")
+            chunks: list[bytes] = []
+            remaining = maximum + 1
+            while remaining:
+                chunk = os.read(file_fd, min(65536, remaining))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                remaining -= len(chunk)
+            payload = b"".join(chunks)
+            after = os.fstat(file_fd)
+            if (
+                len(payload) > maximum
+                or before.st_dev != after.st_dev
+                or before.st_ino != after.st_ino
+                or before.st_size != after.st_size
+                or before.st_mtime_ns != after.st_mtime_ns
+                or len(payload) != before.st_size
+            ):
+                raise ValueError("contract input changed during its descriptor-bound read")
+            return payload
+        finally:
+            os.close(file_fd)
+    finally:
+        os.close(directory_fd)
+
+
+def _json_bytes(payload: bytes, label: str) -> Any:
+    def reject_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        value: dict[str, Any] = {}
+        for key, item in pairs:
+            if key in value:
+                raise ValueError(f"{label} contains a duplicate field")
+            value[key] = item
+        return value
+
+    try:
+        return json.loads(payload, object_pairs_hook=reject_duplicates)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"{label} is not valid JSON") from exc
 
 
 def _timestamp(value: str) -> datetime:
@@ -94,10 +162,7 @@ def provider_sdk_services() -> list[dict[str, str]]:
     services: list[dict[str, str]] = []
     for module_name, class_name, service_name, api_service_name in SDK_SERVICES:
         client = getattr(importlib.import_module(module_name), class_name)
-        if (
-            client.__service_name__ != service_name
-            or client.__api_service_name__ != api_service_name
-        ):
+        if client.__service_name__ != service_name or client.__api_service_name__ != api_service_name:
             raise ValueError("the Nebius SDK service route metadata differs")
         services.append(
             {
@@ -132,19 +197,13 @@ def resolve_endpoints(
         }
         if not addresses:
             raise ValueError(f"provider endpoint did not resolve: {endpoint}")
-        resolved[endpoint] = sorted(
-            addresses, key=lambda item: (ipaddress.ip_address(item).version, item)
-        )
+        resolved[endpoint] = sorted(addresses, key=lambda item: (ipaddress.ip_address(item).version, item))
     return resolved
 
 
 def _host_cidrs(resolutions: dict[str, list[str]]) -> list[str]:
     cidrs = {
-        str(
-            ipaddress.ip_network(
-                f"{address}/{32 if ipaddress.ip_address(address).version == 4 else 128}"
-            )
-        )
+        str(ipaddress.ip_network(f"{address}/{32 if ipaddress.ip_address(address).version == 4 else 128}"))
         for addresses in resolutions.values()
         for address in addresses
     }
@@ -211,9 +270,7 @@ def verify_contract(
         or contract["endpoints"] != list(ENDPOINTS)
     ):
         raise ValueError("egress contract provider or SDK identity differs")
-    if not isinstance(contract["resolutions"], dict) or set(
-        contract["resolutions"]
-    ) != set(ENDPOINTS):
+    if not isinstance(contract["resolutions"], dict) or set(contract["resolutions"]) != set(ENDPOINTS):
         raise ValueError("egress contract endpoint set differs")
     expected_cidrs = _host_cidrs(contract["resolutions"])
     if contract["cidrs"] != expected_cidrs:
@@ -225,11 +282,7 @@ def verify_contract(
         raise ValueError("egress contract is not currently valid")
     if valid_until - observed > MAX_VALIDITY or valid_until <= observed:
         raise ValueError("egress contract lifetime exceeds its bound")
-    body = {
-        key: value
-        for key, value in contract.items()
-        if key not in {"payload_sha256", "signature"}
-    }
+    body = {key: value for key, value in contract.items() if key not in {"payload_sha256", "signature"}}
     payload = _canonical(body)
     digest = hashlib.sha256(payload).hexdigest()
     if contract["payload_sha256"] != digest:
@@ -241,9 +294,7 @@ def verify_contract(
         raise ValueError("egress contract signature is invalid") from exc
     live = resolve_endpoints(resolver)
     if live != contract["resolutions"] or _host_cidrs(live) != contract["cidrs"]:
-        raise ValueError(
-            "live Nebius endpoint resolution differs from the signed contract"
-        )
+        raise ValueError("live Nebius endpoint resolution differs from the signed contract")
     return {
         "cidrs_json": json.dumps(contract["cidrs"], separators=(",", ":")),
         "endpoints_json": json.dumps(contract["endpoints"], separators=(",", ":")),
@@ -255,9 +306,7 @@ def verify_contract(
 def verify_network_policy(policy: dict[str, Any], expected_cidrs: list[str]) -> None:
     rules = policy.get("spec", {}).get("egress", [])
     if not rules or any(not rule.get("to") for rule in rules):
-        raise ValueError(
-            "every live customer-storage egress rule must have explicit destinations"
-        )
+        raise ValueError("every live customer-storage egress rule must have explicit destinations")
     https_rules = []
     for rule in rules:
         ports = rule.get("ports", [])
@@ -269,9 +318,7 @@ def verify_network_policy(policy: dict[str, Any], expected_cidrs: list[str]) -> 
     if rule.get("ports") != [{"port": 443, "protocol": "TCP"}]:
         raise ValueError("customer storage egress must be exact TCP/443")
     peers = rule.get("to", [])
-    if any(
-        set(peer) != {"ipBlock"} or set(peer["ipBlock"]) != {"cidr"} for peer in peers
-    ):
+    if any(set(peer) != {"ipBlock"} or set(peer["ipBlock"]) != {"cidr"} for peer in peers):
         raise ValueError("customer storage HTTPS peers must be exact IP blocks")
     cidrs = [peer["ipBlock"]["cidr"] for peer in peers]
     if sorted(cidrs) != sorted(expected_cidrs) or len(cidrs) != len(set(cidrs)):
@@ -279,17 +326,43 @@ def verify_network_policy(policy: dict[str, Any], expected_cidrs: list[str]) -> 
 
 
 def _private_key(path: Path) -> Ed25519PrivateKey:
-    value = serialization.load_pem_private_key(path.read_bytes(), password=None)
+    value = serialization.load_pem_private_key(safe_read(path, maximum=16 * 1024), password=None)
     if not isinstance(value, Ed25519PrivateKey):
         raise ValueError("contract signing key must be Ed25519")
     return value
 
 
-def _public_key(value: str) -> Ed25519PublicKey:
-    key = serialization.load_pem_public_key(value.encode())
+def _public_key(value: bytes | str) -> Ed25519PublicKey:
+    key = serialization.load_pem_public_key(value.encode() if isinstance(value, str) else value)
     if not isinstance(key, Ed25519PublicKey):
         raise ValueError("contract verification key must be Ed25519")
     return key
+
+
+def _cluster_network_policy(namespace: str, name: str) -> dict[str, Any]:
+    host = os.environ.get("KUBERNETES_SERVICE_HOST")
+    port = os.environ.get("KUBERNETES_SERVICE_PORT_HTTPS", "443")
+    if host is None:
+        raise ValueError("in-cluster Kubernetes API identity is unavailable")
+    token = Path("/var/run/secrets/kubernetes.io/serviceaccount/token").read_text(encoding="ascii")
+    ca = Path("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt").read_text(encoding="ascii")
+    context = ssl.create_default_context(cadata=ca)
+    url = f"https://{host}:{port}/apis/networking.k8s.io/v1/namespaces/{namespace}/networkpolicies/{name}"
+    request = urllib.request.Request(  # noqa: S310 - exact in-cluster HTTPS authority
+        url,
+        headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, context=context, timeout=10) as response:  # noqa: S310
+            payload = response.read(MAX_FILE_BYTES + 1)
+    except (OSError, urllib.error.URLError) as exc:
+        raise ValueError("live NetworkPolicy could not be read") from exc
+    if len(payload) > MAX_FILE_BYTES:
+        raise ValueError("live NetworkPolicy response exceeds its bound")
+    policy = _json_bytes(payload, "live NetworkPolicy")
+    if not isinstance(policy, dict):
+        raise ValueError("live NetworkPolicy must be an object")
+    return policy
 
 
 def main() -> int:
@@ -299,6 +372,8 @@ def main() -> int:
     parser.add_argument("--contract", type=Path)
     parser.add_argument("--public-key", type=Path)
     parser.add_argument("--network-policy", type=Path)
+    parser.add_argument("--expected-cidrs", type=Path)
+    parser.add_argument("--kubernetes-network-policy", nargs=2, metavar=("NAMESPACE", "NAME"))
     parser.add_argument("--terraform-external", action="store_true")
     args = parser.parse_args()
     try:
@@ -321,13 +396,23 @@ def main() -> int:
             return 0
         if args.contract is None or args.public_key is None:
             raise ValueError("--contract and --public-key are required")
-        contract = json.loads(args.contract.read_text(encoding="utf-8"))
-        result = verify_contract(
-            contract, _public_key(args.public_key.read_text(encoding="utf-8"))
-        )
+        contract_payload = safe_read(args.contract)
+        contract = _json_bytes(contract_payload, "egress contract")
+        if not isinstance(contract, dict):
+            raise ValueError("egress contract must be an object")
+        result = verify_contract(contract, _public_key(safe_read(args.public_key, maximum=16 * 1024)))
+        if args.expected_cidrs is not None:
+            expected = _json_bytes(safe_read(args.expected_cidrs, maximum=64 * 1024), "expected CIDRs")
+            if expected != contract["cidrs"]:
+                raise ValueError("rendered egress CIDRs do not equal the signed contract")
         if args.network_policy is not None:
             verify_network_policy(
-                json.loads(args.network_policy.read_text(encoding="utf-8")),
+                _json_bytes(safe_read(args.network_policy), "live NetworkPolicy"),
+                contract["cidrs"],
+            )
+        if args.kubernetes_network_policy is not None:
+            verify_network_policy(
+                _cluster_network_policy(*args.kubernetes_network_policy),
                 contract["cidrs"],
             )
         print(json.dumps(result, sort_keys=True))
