@@ -134,6 +134,15 @@ resource "kubernetes_manifest" "control_database" {
               name = kubernetes_secret_v1.database_account[account].metadata[0].name
             }
             inRoles = [group]
+          }],
+          [for identity in values(local.database_versioned_accounts) : {
+            name   = identity.username
+            ensure = "present"
+            login  = true
+            passwordSecret = {
+              name = kubernetes_secret_v1.database_account_versioned["${identity.generation}:${identity.account}"].metadata[0].name
+            }
+            inRoles = [local.database_role_memberships[identity.account]]
           }]
         )
       }
@@ -149,7 +158,10 @@ resource "kubernetes_manifest" "control_database" {
           idle_in_transaction_session_timeout = "60s"
           statement_timeout                   = "60s"
         }
-        pg_hba = [for account in values(local.database_accounts) : "hostssl fs2serve ${account.username} all scram-sha-256"]
+        pg_hba = concat(
+          [for account in values(local.database_accounts) : "hostssl fs2serve ${account.username} all scram-sha-256"],
+          [for identity in values(local.database_versioned_accounts) : "hostssl fs2serve ${identity.username} all scram-sha-256"],
+        )
       }
       resources = {
         requests = { cpu = "1", memory = "2Gi" }
@@ -198,6 +210,7 @@ resource "kubernetes_manifest" "control_database" {
 
   depends_on = [
     kubernetes_secret_v1.database_account,
+    kubernetes_secret_v1.database_account_versioned,
     kubernetes_secret_v1.postgresql_backup,
   ]
 }
@@ -838,17 +851,27 @@ resource "kubernetes_secret_v1" "database_consumer" {
     name      = each.value.secret_name
     namespace = each.value.namespace
     labels    = merge(local.common_labels, { "fs2.nebius.ai/credential-purpose" = each.key })
+    annotations = {
+      "fs2.nebius.ai/credential-generation" = tostring(var.credential_generations.database)
+    }
   }
 
   type = "Opaque"
-  data = {
+  data_wo = {
     url = format(
       "postgresql://%s:%s@fs2-control-db-rw.fs2-data.svc.cluster.local:5432/fs2serve?sslmode=verify-full&sslrootcert=/tls/ca.crt",
-      local.database_accounts[each.value.account].username,
-      urlencode(random_password.database[each.value.account].result),
+      local.active_database_usernames[each.value.account],
+      urlencode(local.active_database_passwords[each.value.account]),
     )
     "ca.crt" = data.kubernetes_secret_v1.database_ca.data["ca.crt"]
   }
+  data_wo_revision = var.credential_generations.database
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [kubernetes_manifest.control_database]
 }
 
 resource "kubernetes_secret_v1" "grafana_datasource" {
@@ -860,10 +883,13 @@ resource "kubernetes_secret_v1" "grafana_datasource" {
       "fs2.nebius.ai/credential-purpose" = "reporting-datasource"
       "fs2.nebius.ai/secret-delivery"    = "terraform-disposable-bootstrap"
     })
+    annotations = {
+      "fs2.nebius.ai/credential-generation" = tostring(var.credential_generations.database)
+    }
   }
 
   type = "Opaque"
-  data = {
+  data_wo = {
     "datasource.yaml" = yamlencode({
       apiVersion = 1
       prune      = false
@@ -875,7 +901,7 @@ resource "kubernetes_secret_v1" "grafana_datasource" {
           access    = "proxy"
           orgId     = 1
           url       = "fs2-control-db-rw.fs2-data.svc:5432"
-          user      = local.database_accounts["reporting"].username
+          user      = local.active_database_usernames["reporting"]
           isDefault = false
           editable  = false
           version   = 1
@@ -893,7 +919,7 @@ resource "kubernetes_secret_v1" "grafana_datasource" {
             timescaledb            = false
           }
           secureJsonData = {
-            password  = random_password.database["reporting"].result
+            password  = local.active_database_passwords["reporting"]
             tlsCACert = data.kubernetes_secret_v1.database_ca.data["ca.crt"]
           }
         },
@@ -914,4 +940,11 @@ resource "kubernetes_secret_v1" "grafana_datasource" {
       ]
     })
   }
+  data_wo_revision = var.credential_generations.database
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [kubernetes_manifest.control_database]
 }

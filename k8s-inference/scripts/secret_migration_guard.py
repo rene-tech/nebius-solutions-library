@@ -26,6 +26,10 @@ LEGACY_ADDRESSES = frozenset(
         "kubernetes_secret_v1.route_attestors",
     }
 )
+LEGACY_ADDRESS_PREFIXES = (
+    'random_password.database["',
+    'kubernetes_secret_v1.database_account["',
+)
 SENSITIVE_ARTIFACT_SUFFIXES = (".tfstate", ".tfplan", ".backup")
 
 
@@ -38,9 +42,12 @@ def inspect_plan(document: dict[str, Any]) -> dict[str, int]:
     for change in document.get("resource_changes", []):
         address = change.get("address")
         actions = change.get("change", {}).get("actions", [])
-        if address in LEGACY_ADDRESSES and any(action in {"delete", "replace"} for action in actions):
+        protected = address in LEGACY_ADDRESSES or (
+            isinstance(address, str) and address.startswith(LEGACY_ADDRESS_PREFIXES)
+        )
+        if protected and any(action in {"delete", "replace"} for action in actions):
             raise GuardError(f"plan would replace or delete protected legacy address {address}")
-        if address in LEGACY_ADDRESSES and actions != ["no-op"]:
+        if protected and actions != ["no-op"]:
             protected_changes += 1
     return {"protected_addresses": len(LEGACY_ADDRESSES), "protected_changes": protected_changes}
 

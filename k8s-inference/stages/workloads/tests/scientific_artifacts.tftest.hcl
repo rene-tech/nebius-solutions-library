@@ -676,6 +676,14 @@ run "a_store_that_reuses_the_reference_data_bucket_is_refused" {
   }
 
   variables {
+    scheduling = {
+      core_pool_capacity = {
+        nebius-b300-preemptible-1x = {
+          cpu_millicores = 22000
+          memory_mib     = 339968
+        }
+      }
+    }
     scientific_artifacts = {
       enabled               = true
       handle_ttl_seconds    = 600

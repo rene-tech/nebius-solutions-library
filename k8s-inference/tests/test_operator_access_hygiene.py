@@ -68,6 +68,35 @@ class OperatorAccessHygieneTests(unittest.TestCase):
             self.assertNotIn("data_wo", resources[name])
         self.assertIn("prevent_destroy = true", resources["route_attestors"])
         self.assertIn("prevent_destroy = true", resources["admin"])
+        self.assertIn("prevent_destroy = true", resources["database"])
+        self.assertIn("prevent_destroy = true", resources["database_account"])
+
+    def test_database_rotation_adds_logins_before_switching_write_only_consumers(self) -> None:
+        secrets = (ROOT / "stages/workloads/secrets.tf").read_text(encoding="utf-8")
+        database = (ROOT / "stages/workloads/database.tf").read_text(encoding="utf-8")
+        variables = (ROOT / "stages/workloads/variables.tf").read_text(encoding="utf-8")
+        wrapper = (ROOT / "inference-stack").read_text(encoding="utf-8")
+        resources = dict(hcl_blocks(secrets + "\n" + database, "resource"))
+
+        versioned = resources["database_account_versioned"]
+        self.assertIn("var.credential_generation_history.database", secrets)
+        self.assertIn("data_wo", versioned)
+        self.assertIn("data_wo_revision", versioned)
+        self.assertIn("prevent_destroy = true", versioned)
+        self.assertIn("database_passwords", variables)
+        self.assertIn("ephemeral   = true", variables)
+        self.assertIn('"database_passwords": "FS2_DATABASE_PASSWORDS_JSON"', wrapper)
+
+        cluster = resources["control_database"]
+        self.assertIn("local.database_versioned_accounts", cluster)
+        self.assertIn("kubernetes_secret_v1.database_account_versioned", cluster)
+        self.assertIn("local.database_role_memberships[identity.account]", cluster)
+        consumers = resources["database_consumer"]
+        self.assertIn("data_wo", consumers)
+        self.assertIn("data_wo_revision = var.credential_generations.database", consumers)
+        self.assertIn("depends_on = [kubernetes_manifest.control_database]", consumers)
+        self.assertIn("local.active_database_usernames", consumers)
+        self.assertIn("local.active_database_passwords", consumers)
 
     def test_key_classes_rotate_independently_with_retained_v1_and_write_only_delivery(self) -> None:
         secrets = (ROOT / "stages/workloads/secrets.tf").read_text(encoding="utf-8")
@@ -145,6 +174,12 @@ class OperatorAccessHygieneTests(unittest.TestCase):
         for actions in (["delete"], ["delete", "create"], ["replace"]):
             with self.subTest(actions=actions), self.assertRaises(GUARD.GuardError):
                 GUARD.inspect_plan({"resource_changes": [{"address": "random_password.admin_token", "change": {"actions": actions}}]})
+        for address in (
+            'random_password.database["runtime"]',
+            'kubernetes_secret_v1.database_account["runtime"]',
+        ):
+            with self.subTest(address=address), self.assertRaises(GUARD.GuardError):
+                GUARD.inspect_plan({"resource_changes": [{"address": address, "change": {"actions": ["delete", "create"]}}]})
 
     def test_retirement_canary_requires_no_plaintext_plan_or_state(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

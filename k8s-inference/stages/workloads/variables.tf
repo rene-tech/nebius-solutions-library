@@ -1779,6 +1779,36 @@ variable "scientific_access_tokens" {
   default     = {}
 }
 
+variable "database_passwords" {
+  description = "Externally escrowed per-account database passwords keyed by every retained database generation greater than 1."
+  type        = map(map(string))
+  sensitive   = true
+  ephemeral   = true
+  default     = {}
+
+  validation {
+    condition = (
+      toset(keys(var.database_passwords)) == toset([
+        for generation in var.credential_generation_history.database : tostring(generation)
+        if generation > 1
+      ]) &&
+      alltrue([
+        for passwords in values(var.database_passwords) :
+        toset(keys(passwords)) == toset([
+          "owner",
+          "runtime",
+          "maintenance",
+          "activation",
+          "restore_verifier",
+          "reporting",
+          "monitoring",
+        ]) && alltrue([for password in values(passwords) : length(password) >= 32])
+      ])
+    )
+    error_message = "database_passwords must contain exactly all seven accounts for every retained database generation greater than 1, with passwords of at least 32 characters."
+  }
+}
+
 variable "bootstrap_access_expires_at" {
   description = "Future RFC3339 expiry applied to rotated general and scientific bootstrap PATs."
   type        = string

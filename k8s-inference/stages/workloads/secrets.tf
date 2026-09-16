@@ -68,6 +68,31 @@ locals {
       account     = "monitoring"
     }
   }
+
+  database_versioned_accounts = {
+    for pair in setproduct(
+      setsubtract(var.credential_generation_history.database, toset([1])),
+      toset(keys(local.database_accounts)),
+      ) : "${pair[0]}:${pair[1]}" => {
+      generation = pair[0]
+      account    = pair[1]
+      username   = "${local.database_accounts[pair[1]].username}_v${pair[0]}"
+    }
+  }
+  active_database_usernames = {
+    for account, definition in local.database_accounts : account => (
+      var.credential_generations.database == 1 ?
+      definition.username :
+      "${definition.username}_v${var.credential_generations.database}"
+    )
+  }
+  active_database_passwords = {
+    for account in keys(local.database_accounts) : account => (
+      var.credential_generations.database == 1 ?
+      random_password.database[account].result :
+      var.database_passwords[tostring(var.credential_generations.database)][account]
+    )
+  }
 }
 
 resource "random_password" "database" {
@@ -75,6 +100,10 @@ resource "random_password" "database" {
 
   length  = 40
   special = false
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "random_password" "key_material" {
@@ -105,6 +134,40 @@ resource "kubernetes_secret_v1" "database_account" {
   data = {
     username = each.value.username
     password = random_password.database[each.key].result
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [terraform_data.cluster_contract]
+}
+
+resource "kubernetes_secret_v1" "database_account_versioned" {
+  for_each = local.database_versioned_accounts
+
+  metadata {
+    name = each.value.account == "owner" ? (
+      "fs2-control-db-owner-v${each.value.generation}"
+      ) : (
+      "fs2-control-db-${replace(each.value.account, "_", "-")}-v${each.value.generation}"
+    )
+    namespace = "fs2-data"
+    labels = merge(local.common_labels, {
+      "fs2.nebius.ai/credential-purpose"    = each.value.account
+      "fs2.nebius.ai/credential-generation" = tostring(each.value.generation)
+    })
+  }
+
+  type = "kubernetes.io/basic-auth"
+  data_wo = {
+    username = each.value.username
+    password = var.database_passwords[tostring(each.value.generation)][each.value.account]
+  }
+  data_wo_revision = each.value.generation
+
+  lifecycle {
+    prevent_destroy = true
   }
 
   depends_on = [terraform_data.cluster_contract]

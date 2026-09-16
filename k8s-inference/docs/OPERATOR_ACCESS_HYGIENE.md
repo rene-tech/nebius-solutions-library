@@ -84,6 +84,16 @@ the acceptance overlap, then revoke the predecessor through the audited admin
 API. Admin-token cutover is readiness-gated; its predecessor is retained for
 rollback evidence but must not be reactivated after confirmed disclosure.
 
+Database credentials use a distinct overlap contract. Supply
+`FS2_DATABASE_PASSWORDS_JSON` as a JSON object keyed by every retained
+generation greater than one; each generation contains `owner`, `runtime`,
+`maintenance`, `activation`, `restore_verifier`, `reporting`, and `monitoring`
+passwords. A generation creates new login roles and immutable account Secrets
+while generation 1 remains untouched. CloudNativePG must first report the
+expanded role set healthy; only then are the write-only consumer Secrets
+updated and the generation-triggered Helm rollout allowed to proceed. The old
+login remains valid during the readiness window and rollback.
+
 The runtime already uses the envelope key ID for payload decryption, the
 stored HMAC key ID for ledger replay, and the stored pepper ID for PAT
 verification. New writes use only the active key. Route attestations remain
@@ -147,8 +157,11 @@ Rotate one class at a time. Create the new versioned Secret/keyring, run
 pre-existing-data canaries, then update consumers and wait for readiness. For
 PATs, prove old and new tokens during overlap and explicitly revoke the old
 token only after the new token succeeds. For database credentials, provision a
-new login/Secret, prove it, then roll consumers; do not mutate the password
-behind a mounted fixed Secret.
+new login/Secret, wait for the three-instance database to become healthy, prove
+the new login, then roll write-only consumer Secrets and wait for every
+generation-annotated workload; do not mutate the password behind a mounted
+fixed Secret. Retire a superseded login only in a later reviewed generation
+after rollback and connection-drain evidence exists.
 
 Rollback switches consumers to the last verified Secret and application
 revision. It never deletes a historical key generation, restores permissive

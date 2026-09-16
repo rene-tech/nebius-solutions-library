@@ -1661,6 +1661,7 @@ def stage_environment(
             "admin_tokens": "FS2_ADMIN_TOKENS_JSON",
             "bootstrap_access_tokens": "FS2_BOOTSTRAP_ACCESS_TOKENS_JSON",
             "scientific_access_tokens": "FS2_SCIENTIFIC_ACCESS_TOKENS_JSON",
+            "database_passwords": "FS2_DATABASE_PASSWORDS_JSON",
             "payload_keyrings_json": "FS2_PAYLOAD_KEYRINGS_JSON",
             "ledger_keyrings_json": "FS2_LEDGER_KEYRINGS_JSON",
             "token_pepper_keyrings_json": "FS2_TOKEN_PEPPER_KEYRINGS_JSON",
