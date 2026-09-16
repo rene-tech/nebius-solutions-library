@@ -59,6 +59,7 @@ packages = ["src/fs2_serve"]
 [tool.hatch.build.targets.wheel.force-include]
 "../../catalog/runtime/fs2_serve_catalog" = "fs2_serve_catalog"
 "migrations" = "fs2_serve/migrations"
+"../../stages/workloads/scripts/customer_storage_egress_contract.py" = "fs2_serve/storage_egress_contract.py"
 
 [tool.pytest.ini_options]
 addopts = "--strict-config --strict-markers"

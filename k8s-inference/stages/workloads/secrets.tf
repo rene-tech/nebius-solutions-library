@@ -15,6 +15,9 @@ locals {
     storage = {
       username = "fs2_serve_storage_login"
     }
+    storage_disclosure = {
+      username = "fs2_serve_storage_disclosure_login"
+    }
     restore_verifier = {
       username = "fs2_serve_restore_verifier_login"
     }
@@ -51,6 +54,11 @@ locals {
       namespace   = "fs2-system"
       secret_name = "fs2-serve-database-storage"
       account     = "storage"
+    }
+    storage_disclosure = {
+      namespace   = "fs2-system"
+      secret_name = "fs2-serve-database-storage-disclosure"
+      account     = "storage_disclosure"
     }
     restore_verifier = {
       namespace   = "fs2-system"

@@ -10,14 +10,22 @@ customerStorage:
   resourceCredentialsSecretName: ""
   iamCredentialsSecretName: ""
   databaseSecretName: fs2-serve-database-storage
+  disclosureDatabaseSecretName: fs2-serve-database-storage-disclosure
   cryptoSecretName: fs2-serve-storage-keyring
   egressCidrs: []
-  egressContractSha256: ""
-  egressContractValidUntil: ""
-  egressContractEndpoints: []
   keyTtlDays: 90
   rotationWindowDays: 14
   actionTimeoutSeconds: 30
+  disclosure:
+    port: 8082
+    replicaCount: 2
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
   resources:
     requests:
       cpu: 50m
@@ -250,6 +258,10 @@ serviceAccounts:
     create: true
     name: ""
     annotations: {}
+  storage-disclosure:
+    create: true
+    name: ""
+    annotations: {}
 
 # Optional node-local attribution source. It reads only kubelet's device-plugin
 # checkpoint and publishes a bounded Pod UID -> GPU UUID observation onto model
@@ -390,17 +402,18 @@ migration:
   maintenanceDatabaseRole: fs2_serve_maintenance
   activationDatabaseRole: fs2_serve_activation
   storageDatabaseRole: fs2_serve_storage
+  storageDisclosureDatabaseRole: fs2_serve_storage_disclosure
   # Exact value-suppressed inputs emitted by `fs2-serve
   # postgresql-release-contract`. The migration Job publishes these annotations
   # for the final PostgreSQL release receipt; chart validation rejects drift.
   releaseContract:
     schema: fs2-serve.nebius.ai/postgresql-release-contract/v1
-    contractPayloadSha256: 5205ec0d72aed0ea4fedd819c5e94bee43fcb4f4bfb98d221d7fd27ee0880030
-    migrationSetSha256: ea736796a505c56573d4ebd248a0e1848f8ee0358159e32cf007ab06382da741
-    migrationCount: 32
+    contractPayloadSha256: 0da3740a81b1d47a00f4d0c2dac19100b865f1c301fba1049359a2e6751c22a0
+    migrationSetSha256: b373527f03412686bec4a18b8126b1a5eba6b6b7f1eac2e0082d7c5833ba158c
+    migrationCount: 33
     firstMigrationVersion: 0001_initial.sql
-    lastMigrationVersion: 0032_user_storage_security.sql
-    namespaceRoleOwnershipSha256: 02a91557f23468b3c943575a2295f8fdd710575ffd438e466a7df5214d5dc3b0
+    lastMigrationVersion: 0033_storage_disclosure_boundary.sql
+    namespaceRoleOwnershipSha256: 79bd52934dfe16d890f021222ed0d76784facbcb4d01883aa96f52e4f3bc0aa4
   resources:
     requests:
       cpu: 50m

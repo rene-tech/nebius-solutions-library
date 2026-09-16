@@ -190,11 +190,7 @@ def test_customer_storage_credentials_are_isolated_and_egress_is_bounded() -> No
         "--set",
         "customerStorage.iamCredentialsSecretName=storage-iam",
         "--set",
-        "customerStorage.egressContractSha256=" + "a" * 64,
-        "--set",
-        "customerStorage.egressContractValidUntil=2026-09-17T00:00:00Z",
-        "--set",
-        "customerStorage.egressContractEndpoints[0]=cpl.iam.api.nebius.cloud",
+        "networkPolicy.kubernetesApiCidrs[0]=192.0.2.1/32",
     )
     rejected = subprocess.run(  # noqa: S603 - fixed Helm binary and test-owned arguments
         render_command(*base),
@@ -209,8 +205,10 @@ def test_customer_storage_credentials_are_isolated_and_egress_is_bounded() -> No
     named = {(item["kind"], item["metadata"]["name"]): item for item in documents}
     runtime = named[("Deployment", "fs2-serve-control-plane")]["spec"]["template"]["spec"]
     storage = named[("Deployment", "fs2-serve-control-plane-storage-reconciler")]["spec"]["template"]["spec"]
+    disclosure = named[("Deployment", "fs2-serve-control-plane-storage-disclosure")]["spec"]["template"]["spec"]
     runtime_text = json.dumps(runtime)
     storage_text = json.dumps(storage)
+    disclosure_text = json.dumps(disclosure)
     assert "storage-resource" not in runtime_text
     assert "storage-iam" not in runtime_text
     assert "storage-resource" in storage_text
@@ -219,6 +217,22 @@ def test_customer_storage_credentials_are_isolated_and_egress_is_bounded() -> No
     assert "fs2-serve-storage-keyring" in storage_text
     assert "ledger-hmac-keyring" not in storage_text
     assert 'fs2-serve-database"' not in storage_text
+    assert "verify-storage-egress" in storage_text
+    assert "fs2-customer-storage-egress-contract" in storage_text
+    assert "fs2-customer-storage-egress-trust" in storage_text
+    assert "storage-resource" not in disclosure_text
+    assert "storage-iam" not in disclosure_text
+    assert "fs2-serve-database-storage-disclosure" in disclosure_text
+    assert "fs2-serve-storage-keyring" in disclosure_text
+    assert "keyring.json" in disclosure_text
+    assert "name-keyring.json" not in disclosure_text
+    assert "ledger-hmac-keyring" not in disclosure_text
+
+    precheck = named[("Job", "fs2-serve-control-plane-storage-egress-precheck")]
+    postcheck = named[("Job", "fs2-serve-control-plane-storage-egress-postcheck")]
+    assert "pre-rollback" in precheck["metadata"]["annotations"]["helm.sh/hook"]
+    assert "post-rollback" in postcheck["metadata"]["annotations"]["helm.sh/hook"]
+    assert "--kubernetes-network-policy" in postcheck["spec"]["template"]["spec"]["containers"][0]["args"]
 
     runtime_policy = named[("NetworkPolicy", "fs2-serve-control-plane-runtime")]
     assert all("to" in rule for rule in runtime_policy["spec"]["egress"])
@@ -1743,6 +1757,7 @@ def test_migration_job_is_the_only_ddl_credential_consumer_and_has_no_runtime_se
         "FS2_MAINTENANCE_DATABASE_ROLE",
         "FS2_ACTIVATION_DATABASE_ROLE",
         "FS2_STORAGE_DATABASE_ROLE",
+        "FS2_STORAGE_DISCLOSURE_DATABASE_ROLE",
     }
     assert container["env"][0]["valueFrom"]["secretKeyRef"] == {
         "name": "fs2-serve-database-migrations",

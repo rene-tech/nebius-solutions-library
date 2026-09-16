@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 from datetime import timedelta
 from math import ceil
 from typing import Any, Protocol
@@ -72,6 +73,7 @@ class UserRepository(Protocol):
     async def list(self, tenant_id: str | None) -> list[InferenceUser]: ...
     async def configured(self, tenant_id: str, principal_id: str) -> InferenceUser | None: ...
     async def save(self, user: InferenceUser, *, create: bool = False) -> InferenceUser: ...
+    async def save_with_storage_state(self, user: InferenceUser) -> InferenceUser: ...
     async def usage(self, tenant_id: str, principal_id: str, context: AdminContext) -> UserUsage: ...
 
 
@@ -92,7 +94,7 @@ class PostgresUserRepository:
         )
         return self._user(row) if row else None
 
-    async def keys(self, tenant_id: str, principal_id: str) -> list[TokenView]:
+    async def keys(self, tenant_id: str, principal_id: str) -> builtins.list[TokenView]:
         from .postgres import PostgresStore
 
         rows = await self.pool.fetch(
@@ -170,6 +172,73 @@ class PostgresUserRepository:
             )
         except asyncpg.UniqueViolationError as exc:
             raise ConflictError("inference owner already exists") from exc
+        return self._user(row)
+
+    async def save_with_storage_state(self, user: InferenceUser) -> InferenceUser:
+        """Commit owner state and storage intent under the reconciler's lock.
+
+        Provider mutation remains asynchronous, but no reconciler can observe a
+        new owner state paired with the old desired storage state. Pending
+        rotate/revoke actions retain precedence; enable after revoke fails
+        closed until an explicit credential rotation is requested.
+        """
+
+        import asyncpg
+
+        async with self.pool.acquire() as connection, connection.transaction():
+            await connection.execute("SELECT pg_advisory_xact_lock(hashtextextended($1,31))", user.tenant_id)
+            current = await connection.fetchrow(
+                """SELECT id,enabled FROM fs2_inference_users
+                WHERE tenant_id=$1 AND principal_id=$2 FOR UPDATE""",
+                user.tenant_id,
+                user.principal_id,
+            )
+            if current is None or current["id"] != user.id:
+                raise ConflictError("inference owner changed during storage transition")
+            credential = await connection.fetchrow(
+                """SELECT requested_action,revoked_at,enabled,desired_enabled
+                FROM fs2_user_storage WHERE tenant_id=$1 AND principal_id=$2 FOR UPDATE""",
+                user.tenant_id,
+                user.principal_id,
+            )
+            if user.enabled and credential is not None and credential["revoked_at"] is not None:
+                raise ConflictError("revoked storage credentials require explicit rotation before user enable")
+            try:
+                row = await connection.fetchrow(
+                    """UPDATE fs2_inference_users SET
+                    display_name=$3,kind=$4,team=$5,enabled=$6,academic_eligible=$7,
+                    app_ids=$8,updated_at=$9
+                    WHERE tenant_id=$1 AND principal_id=$2 RETURNING *""",
+                    user.tenant_id,
+                    user.principal_id,
+                    user.display_name,
+                    user.kind,
+                    user.team,
+                    user.enabled,
+                    user.academic_eligible,
+                    user.app_ids,
+                    user.updated_at,
+                )
+            except asyncpg.UniqueViolationError as exc:  # pragma: no cover - row is locked by exact identity
+                raise ConflictError("inference owner changed during storage transition") from exc
+            if credential is not None:
+                action = credential["requested_action"]
+                if action not in {"rotate", "revoke"}:
+                    action = None if credential["enabled"] == user.enabled else "enable" if user.enabled else "disable"
+                await connection.execute(
+                    """UPDATE fs2_user_storage SET desired_enabled=$3,
+                    requested_action=$4,
+                    requested_at=CASE
+                      WHEN requested_action IN ('rotate','revoke') THEN requested_at
+                      WHEN $4::text IS NULL THEN NULL ELSE clock_timestamp() END,
+                    version=version+1,updated_at=clock_timestamp()
+                    WHERE tenant_id=$1 AND principal_id=$2""",
+                    user.tenant_id,
+                    user.principal_id,
+                    user.enabled,
+                    action,
+                )
+        assert row is not None
         return self._user(row)
 
     async def usage(self, tenant_id: str, principal_id: str, context: AdminContext) -> UserUsage:
@@ -271,7 +340,7 @@ class StorageUserRepository:
         )
         return [self._user(row) for row in rows]
 
-    async def keys(self, tenant_id: str, principal_id: str) -> list[TokenView]:
+    async def keys(self, tenant_id: str, principal_id: str) -> builtins.list[TokenView]:
         del tenant_id, principal_id
         return []
 
@@ -327,6 +396,9 @@ class MemoryUserRepository:
             raise ConflictError("inference owner already exists")
         self.users[key] = user.model_copy(update={"source": "configured"})
         return self.users[key]
+
+    async def save_with_storage_state(self, user: InferenceUser) -> InferenceUser:
+        return await self.save(user)
 
     async def usage(self, tenant_id: str, principal_id: str, context: AdminContext) -> UserUsage:
         values = [

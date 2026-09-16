@@ -12,7 +12,6 @@ variable "customer_storage" {
     iam_public_key_pem               = optional(string, "")
     auth_key_expires_at              = optional(string, "")
     egress_contract_json             = optional(string, "")
-    egress_contract_public_key_pem   = optional(string, "")
     key_ttl_days                     = optional(number, 90)
     rotation_window_days             = optional(number, 14)
   })
@@ -37,7 +36,6 @@ variable "customer_storage" {
         timecmp(var.customer_storage.auth_key_expires_at, plantimestamp()) > 0 &&
         timecmp(var.customer_storage.auth_key_expires_at, timeadd(plantimestamp(), "2160h")) <= 0 &&
         var.customer_storage.egress_contract_json != "" &&
-        var.customer_storage.egress_contract_public_key_pem != "" &&
         var.customer_storage.key_ttl_days >= 1 && var.customer_storage.key_ttl_days <= 365 &&
         var.customer_storage.rotation_window_days >= 1 &&
         var.customer_storage.rotation_window_days < var.customer_storage.key_ttl_days
@@ -52,8 +50,42 @@ data "external" "customer_storage_egress" {
   program = ["python3", "${path.module}/scripts/customer_storage_egress_contract.py", "--terraform-external"]
   query = {
     contract_json  = var.customer_storage.egress_contract_json
-    public_key_pem = var.customer_storage.egress_contract_public_key_pem
+    public_key_pem = data.kubernetes_secret_v1.customer_storage_egress_trust[0].data["public-key.pem"]
   }
+}
+
+# This trust root is intentionally outside the Helm release and workloads
+# state. A security-owned bootstrap installs the immutable public key before a
+# plan; a chart caller cannot self-assert a replacement key beside its policy.
+data "kubernetes_secret_v1" "customer_storage_egress_trust" {
+  count = var.customer_storage.enabled ? 1 : 0
+
+  metadata {
+    name      = "fs2-customer-storage-egress-trust"
+    namespace = "fs2-system"
+  }
+  lifecycle {
+    postcondition {
+      condition     = self.immutable == true && try(self.data["public-key.pem"], "") != ""
+      error_message = "Customer-storage egress trust must be a pre-existing immutable Secret with public-key.pem."
+    }
+  }
+  depends_on = [terraform_data.cluster_contract]
+}
+
+resource "kubernetes_config_map_v1" "customer_storage_egress_contract" {
+  count = var.customer_storage.enabled ? 1 : 0
+
+  metadata {
+    name      = "fs2-customer-storage-egress-contract"
+    namespace = "fs2-system"
+    labels    = local.common_labels
+  }
+  immutable = true
+  data = {
+    "contract.json" = var.customer_storage.egress_contract_json
+  }
+  depends_on = [terraform_data.cluster_contract]
 }
 
 module "customer_storage_provisioner" {
@@ -78,11 +110,9 @@ locals {
       resourceCredentialsSecretName = var.customer_storage.resource_credentials_secret_name
       iamCredentialsSecretName      = var.customer_storage.iam_credentials_secret_name
       databaseSecretName            = "fs2-serve-database-storage"
+      disclosureDatabaseSecretName  = "fs2-serve-database-storage-disclosure"
       cryptoSecretName              = "fs2-serve-storage-keyring"
       egressCidrs                   = var.customer_storage.enabled ? jsondecode(data.external.customer_storage_egress[0].result.cidrs_json) : []
-      egressContractSha256          = var.customer_storage.enabled ? data.external.customer_storage_egress[0].result.contract_sha256 : ""
-      egressContractValidUntil      = var.customer_storage.enabled ? data.external.customer_storage_egress[0].result.valid_until : ""
-      egressContractEndpoints       = var.customer_storage.enabled ? jsondecode(data.external.customer_storage_egress[0].result.endpoints_json) : []
       keyTtlDays                    = var.customer_storage.key_ttl_days
       rotationWindowDays            = var.customer_storage.rotation_window_days
     }

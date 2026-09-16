@@ -1,12 +1,13 @@
 locals {
   database_role_memberships = {
-    runtime          = "fs2_serve_runtime"
-    maintenance      = "fs2_serve_maintenance"
-    activation       = "fs2_serve_activation"
-    storage          = "fs2_serve_storage"
-    restore_verifier = "fs2_serve_restore_verifier"
-    reporting        = "fs2_serve_reporting"
-    monitoring       = "pg_monitor"
+    runtime            = "fs2_serve_runtime"
+    maintenance        = "fs2_serve_maintenance"
+    activation         = "fs2_serve_activation"
+    storage            = "fs2_serve_storage"
+    storage_disclosure = "fs2_serve_storage_disclosure"
+    restore_verifier   = "fs2_serve_restore_verifier"
+    reporting          = "fs2_serve_reporting"
+    monitoring         = "pg_monitor"
   }
 
   database_group_roles = [
@@ -14,6 +15,7 @@ locals {
     "fs2_serve_maintenance",
     "fs2_serve_activation",
     "fs2_serve_storage",
+    "fs2_serve_storage_disclosure",
     "fs2_serve_restore_verifier",
     "fs2_serve_reporting",
   ]

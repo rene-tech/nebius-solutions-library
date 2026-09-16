@@ -8,8 +8,11 @@ it does not send credentials to model runtimes or MCP tools.
 
 The public control-plane pods contain no cloud provisioning credential. A
 single, non-serving `storage-reconciler` Deployment consumes durable requests
-from PostgreSQL and is the only workload that mounts two cloud identities, the
-dedicated `fs2_serve_storage` database login, and the storage key ring:
+from PostgreSQL and is the only workload that mounts two cloud identities and
+the dedicated `fs2_serve_storage` database login. A separate
+`storage-disclosure` Deployment mounts only the storage envelope key ring, the
+token/session pepper generations, and the execute-only
+`fs2_serve_storage_disclosure` database login:
 
 - a project-scoped `editor` creates buckets, service accounts, and expiring S3
   access keys;
@@ -22,8 +25,11 @@ only the public halves of expiring JWT keys. Private keys must be generated and
 rotated outside Terraform; they must never enter a plan or state file. The
 reconciler's HTTPS egress is derived from a signed, 24-hour provider endpoint
 resolution contract and rendered only as IPv4 `/32` and IPv6 `/128` host
-routes. Public runtime NetworkPolicies do not contain a customer-storage HTTPS
-exception.
+routes. Pre/post install, upgrade, and rollback hooks verify the signed bytes,
+freshness, live DNS, rendered routes, and live NetworkPolicy. The reconciler
+also has the same verifier as an init container, so skipping Helm hooks cannot
+start it with self-asserted or stale routes. Public runtime NetworkPolicies do
+not contain a customer-storage HTTPS exception.
 
 New installations default to per-user buckets. The immutable layout and its
 emergency enabled switch are separate: an existing layout can be disabled and
@@ -40,21 +46,23 @@ published through provider bucket listings. Existing bucket names remain
 unchanged because reconciliation never renames or replaces a data bucket.
 
 Customer S3 secrets are AES-GCM encrypted in PostgreSQL with AAD bound to the
-tenant and principal. The gateway database role cannot select the encrypted
-columns; a security-definer function atomically consumes one exact
-tenant/principal disclosure. The reconciler has no access to operations, audit,
-token, result, or request-debug tables and does not mount the platform ledger
-key. Retain old PayloadCipher generations in the storage-only key ring until
+tenant and principal. The gateway has neither the storage envelope key nor
+permission to select encrypted columns or execute the disclosure consumer. It
+forwards the raw authenticated credential to the narrow disclosure service;
+PostgreSQL derives the live token/session actor, tenant, principal and admin
+target from durable rows, creates a short-lived entitlement, atomically
+consumes it once, and writes the redacted audit event in the same transaction.
+The reconciler has no access to operations, token, result, or request-debug
+tables and has only insert access to the audit outbox. Retain old PayloadCipher
+generations in the storage-only key ring until
 `payload_key_usage()` reports zero storage rows for them; reconciliation
 re-encrypts current and staged envelopes under the active storage generation
 with a row-version compare-and-swap.
 
-The gateway necessarily handles plaintext for the single HTTP response and can
-invoke the exact-row disclosure function. It therefore is not claimed to
-protect a credential from arbitrary gateway code executing during that
-authorized disclosure. The narrowed database grants prevent bulk ciphertext
-selection, and consumable disclosure bounds replay; moving plaintext handling
-to a separately authenticated broker would be a distinct architecture change.
+The gateway necessarily proxies the single no-store response, but arbitrary
+gateway code cannot enumerate or decrypt database envelopes. A disclosure
+requires a still-live raw PAT with `storage.credentials`, or a still-live admin
+cookie whose retained pepper generation matches the database-bound session.
 
 ## Configuration
 
@@ -75,7 +83,6 @@ customer_storage = {
   iam_public_key_pem               = var.customer_storage_iam_public_key_pem
   auth_key_expires_at              = "2026-12-01T00:00:00Z"
   egress_contract_json             = file(var.customer_storage_egress_contract_file)
-  egress_contract_public_key_pem   = file(var.customer_storage_egress_public_key_file)
   key_ttl_days                     = 90
   rotation_window_days             = 14
 }
@@ -92,8 +99,12 @@ uv run --project components/control-plane python \
   > customer-storage-egress-contract.json
 ```
 
-The Terraform external verifier rejects missing, empty, aggregate, arbitrary,
-expired, incorrectly signed, or DNS-stale sets. After rollout, run the same
+Before planning, the security-owned bootstrap must install immutable Secret
+`fs2-system/fs2-customer-storage-egress-trust` with `public-key.pem`. Neither
+this Terraform stage nor the Helm release can create or replace that trust
+root. The Terraform external verifier reads that fixed Secret and rejects
+missing, mutable, empty, aggregate, arbitrary, expired, incorrectly signed, or
+DNS-stale sets. After rollout, run the same
 tool with `--contract`, `--public-key`, and a JSON copy of the live
 `NetworkPolicy` via `--network-policy`; equality and exact TCP/443 are required.
 
@@ -136,11 +147,15 @@ token defaults. Metadata remains available from `GET /v1/storage`.
   `/admin/api/v1/users/{user_id}/storage/credentials` and require `admin`.
 
 Every successful disclosure and replay denial, plus every API-requested
-rotation and revoke, appends a redacted audit row. The row contains actor,
-tenant, target, action, and outcome, never an access key or secret. Disabling a
-user waits for credential deactivation before committing the disabled user
-record. The reconciler also repairs bucket-policy and group-membership drift to
-one exact per-user editor.
+rotation and revoke, appends a redacted audit row. Rotation/revoke authority,
+idempotency key, requested action and audit intent are committed together; the
+reconciler fences the cloud transition and terminal audit in the durable action
+outbox. The row contains actor, tenant, target, action, and outcome, never an
+access key or secret. User state and desired storage state commit atomically,
+then the API waits for provider convergence. Tenant emergency disable reports
+success only after every retained current, staged, or predecessor key is
+provider-inactive. The reconciler also repairs inverse key drift, bucket-policy
+drift, and group-membership drift to one exact per-user editor.
 
 ## Release and historical-data gate
 
@@ -165,13 +180,14 @@ and the following preconditions are recorded:
    only then mark the migration ready. If no safe mapping exists, the tenant
    remains disabled; this repository makes no cross-principal-isolation claim
    for the retained shared bucket.
-5. Roll out migration 0032 and one reconciler first. Wait until all historical
+5. Roll out migrations 0032 and 0033 and one reconciler first. Wait until all historical
    active rows complete `rotate`, disabled rows complete `revoke`, every
    predecessor provider resource is `INACTIVE`, every replacement is `ACTIVE`
    with bounded expiry, and no owner has two active keys beyond one observed
    reconciliation cutover. Keep old PayloadCipher generations until storage
    generation usage is zero.
-6. Roll out gateway pods only after the database privilege checks pass. Verify
+6. Roll out the disclosure service and gateway pods only after the database
+   privilege checks pass. Verify
    landing/catalog, scoped PAT denial and one-time disclosure, rotation/revoke,
    storage access, tenant-filtered admin access, and the complete enable,
    capture, view, export, purge, and disable request-debug workflow.
@@ -196,7 +212,7 @@ and the following preconditions are recorded:
 6. Rotate both provisioner JWT keys before expiry, update the two external
    Secrets, restart only the reconciler, and verify no public pod mounts them.
 
-Rollback is application rollback only while keeping migration 0032, the narrow
+Rollback is application rollback only while keeping migrations 0032 and 0033, the narrow
 database grants, deactivated predecessor keys, and split project IAM in place.
 Never reactivate an old admin/public key or restore a revision that mounts cloud
 credentials into the public runtime. Existing buckets and encrypted user

@@ -21,6 +21,7 @@ COPY k8s-inference/components/control-plane/pyproject.toml k8s-inference/compone
 COPY k8s-inference/components/control-plane/src ./src
 COPY k8s-inference/components/control-plane/migrations ./migrations
 COPY k8s-inference/components/control-plane/contracts ./contracts
+COPY k8s-inference/stages/workloads/scripts/customer_storage_egress_contract.py /workspace/k8s-inference/stages/workloads/scripts/customer_storage_egress_contract.py
 COPY k8s-inference/catalog/runtime /workspace/k8s-inference/catalog/runtime
 
 # The canonical catalog is a nested immutable tree and cannot be represented by
@@ -59,11 +60,12 @@ ENV PATH="/workspace/k8s-inference/components/control-plane/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1
 
 # The digest-bound Python base predates these Alpine security fixes. Install
-# only the three exact packages; do not run apk upgrade or select a floating
+# only the four exact packages; do not run apk upgrade or select a floating
 # version during an application build.
 RUN apk add --no-cache \
     'libcrypto3=3.5.8-r0' \
     'libssl3=3.5.8-r0' \
+    'libuuid=2.41.6-r1' \
     'sqlite-libs=3.53.4-r0' \
     && rm -rf \
         /usr/local/bin/pip \
@@ -119,6 +121,6 @@ LABEL org.opencontainers.image.source="https://github.com/rene-tech/nebius-solut
     ai.nebius.fs2-serve.uv-base.digest="sha256:240fb85ab0f263ef12f492d8476aa3a2e4e1e333f7d67fbdd923d00a506a516a"
 
 USER 65532:65532
-EXPOSE 8080 8081
+EXPOSE 8080 8081 8082
 ENTRYPOINT ["fs2-serve"]
 CMD ["serve"]

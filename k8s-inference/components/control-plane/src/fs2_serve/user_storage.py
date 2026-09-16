@@ -7,7 +7,8 @@ import logging
 import time
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
+from uuid import UUID
 
 from .store import ConflictError
 from .user_models import InferenceUser, owner_id
@@ -52,13 +53,24 @@ class UserStorageService:
             raise ConflictError("tenant is explicitly excluded from bucket provisioning")
         async with self.repository.tenant_lock(tenant):
             await self.repository.set_policy(tenant, policy, self.default)
+            if policy.mode == "disabled":
+                await self.repository.request_tenant_suspension(tenant)
+            else:
+                await self.repository.request_tenant_resume(tenant)
+        try:
+            if policy.mode == "disabled":
+                await self.repository.wait_tenant_suspended(tenant, timeout=self.action_timeout_seconds)
+            else:
+                await self.repository.wait_tenant_resumed(tenant, timeout=self.action_timeout_seconds)
+        except TimeoutError:
+            raise RuntimeError("storage reconciler did not complete the tenant policy transition") from None
         return await self.policy(tenant)
 
     async def view(self, tenant: str, principal: str) -> UserStorage:
         return UserStorage.model_validate(await self.repository.view(tenant, principal, await self.policy(tenant)))
 
     async def _provider_state(self, resource_id: str) -> str:
-        state = await self.provider.key_state(resource_id)
+        state = cast(str, await self.provider.key_state(resource_id))
         if state not in {_ACTIVE, *_INACTIVE}:
             raise RuntimeError("provider returned an indeterminate storage-key state")
         return state
@@ -76,6 +88,17 @@ class UserStorageService:
             raise RuntimeError("storage key activation did not reach ACTIVE")
         if not enabled and observed not in _INACTIVE:
             raise RuntimeError("storage key deactivation did not reach a fail-closed state")
+
+    async def _ensure_all_inactive(self, credential: dict[str, Any]) -> None:
+        """Repair inverse provider drift for every key retained by the state machine."""
+
+        for resource_id in {
+            credential["access_key_resource_id"],
+            credential["replacement_access_key_resource_id"],
+            credential["previous_access_key_resource_id"],
+        }:
+            if resource_id is not None:
+                await self._set_provider_state(resource_id, False)
 
     async def _rotation_step(
         self,
@@ -105,7 +128,7 @@ class UserStorageService:
                 principal,
                 expected_version=credential["version"],
             )
-            return await self.repository.credential(tenant, principal)
+            return cast(dict[str, Any], await self.repository.credential(tenant, principal))
 
         if replacement is None:
             value = await self.provider.prepare_rotation(
@@ -122,7 +145,7 @@ class UserStorageService:
                 value,
                 expected_version=credential["version"],
             )
-            return await self.repository.credential(tenant, principal)
+            return cast(dict[str, Any], await self.repository.credential(tenant, principal))
 
         state = await self._provider_state(replacement)
         if state in {"EXPIRED", "DELETING", "DELETED"}:
@@ -142,7 +165,7 @@ class UserStorageService:
             with suppress(Exception):
                 await self.provider.set_enabled(replacement, False)
             raise
-        return await self.repository.credential(tenant, principal)
+        return cast(dict[str, Any], await self.repository.credential(tenant, principal))
 
     async def _finish_pending(
         self,
@@ -178,15 +201,27 @@ class UserStorageService:
                     with suppress(Exception):
                         await self.provider.set_enabled(credential["access_key_resource_id"], False)
                 raise
-            return await self.repository.credential(user.tenant_id, user.principal_id)
+            return cast(
+                dict[str, Any],
+                await self.repository.credential(user.tenant_id, user.principal_id),
+            )
         raise RuntimeError("storage credential transition exceeded its bounded reconciliation steps")
 
     async def ensure(self, user: InferenceUser) -> None:
         if self.provider is None:
             raise RuntimeError("customer storage cloud operations are isolated to the reconciler")
         async with self.repository.tenant_lock(user.tenant_id):
+            configured_reader = getattr(self.users, "configured", None)
+            configured = (
+                await configured_reader(user.tenant_id, user.principal_id) if configured_reader is not None else None
+            )
+            if configured is not None:
+                user = configured
             policy = await self.policy(user.tenant_id)
             credential = await self.repository.credential(user.tenant_id, user.principal_id)
+            if credential:
+                await self.repository.bind_user_identity(user.tenant_id, user.principal_id)
+                credential = await self.repository.credential(user.tenant_id, user.principal_id)
             if credential and await self.repository.reencrypt_if_needed(user.tenant_id, user.principal_id):
                 credential = await self.repository.credential(user.tenant_id, user.principal_id)
 
@@ -202,6 +237,49 @@ class UserStorageService:
                 owner = credential["owner_key"]
             bucket = await self.repository.bucket(user.tenant_id, owner)
 
+            if credential and (credential["policy_suspension_requested"] or policy.mode == "disabled"):
+                await self._ensure_all_inactive(credential)
+                if credential["policy_suspension_requested"]:
+                    await self.repository.complete_policy_suspension(
+                        user.tenant_id,
+                        user.principal_id,
+                        expected_version=credential["version"],
+                    )
+                elif credential["requested_action"] == "suspend":
+                    await self.repository.complete_action(
+                        user.tenant_id,
+                        user.principal_id,
+                        expected_action="suspend",
+                        enabled=False,
+                        expected_version=credential["version"],
+                    )
+                return
+
+            if credential and not user.enabled:
+                # Provider safety outranks a previously queued rotation. Keep
+                # that durable intent for a future re-enable, but never
+                # activate a replacement while the authoritative user row is
+                # disabled. Off-state actions can finish after every retained
+                # provider key is observed inactive.
+                await self._ensure_all_inactive(credential)
+                action = credential["requested_action"]
+                if action == "rotate" and credential["enabled"]:
+                    await self.repository.record_inactive_preserving_rotation(
+                        user.tenant_id,
+                        user.principal_id,
+                        expected_version=credential["version"],
+                    )
+                elif action in {"enable", "disable", "revoke", "suspend"}:
+                    await self.repository.complete_action(
+                        user.tenant_id,
+                        user.principal_id,
+                        expected_action=action,
+                        enabled=False,
+                        revoked=action == "revoke",
+                        expected_version=credential["version"],
+                    )
+                return
+
             # Pending actions always precede serial user inventory and policy
             # drift checks. A disabled/revoked owner is never auto-rotated.
             if credential and credential["requested_action"] is not None:
@@ -212,13 +290,7 @@ class UserStorageService:
                     # fail closed while a tenant policy or legacy-layout gate
                     # is disabled. Any already staged/current/predecessor key
                     # is inactive before reconciliation pauses.
-                    for resource_id in {
-                        credential["access_key_resource_id"],
-                        credential["replacement_access_key_resource_id"],
-                        credential["previous_access_key_resource_id"],
-                    }:
-                        if resource_id is not None:
-                            await self._set_provider_state(resource_id, False)
+                    await self._ensure_all_inactive(credential)
                     return
                 credential = await self._finish_pending(user, credential, bucket)
                 if credential["requested_action"] is not None:
@@ -263,6 +335,8 @@ class UserStorageService:
                 and (credential is None or credential["revoked_at"] is None)
             )
             if not enabled:
+                if credential is not None:
+                    await self._ensure_all_inactive(credential)
                 return
             if credential is None and time.monotonic() < self.provisioning_retry_at:
                 return
@@ -359,18 +433,48 @@ class UserStorageService:
             raise RuntimeError("customer storage reconciler requires cloud credentials")
         self.task = asyncio.create_task(self._run(), name="customer-storage")
 
-    async def rotate(self, tenant: str, principal: str) -> UserStorage:
-        await self.repository.request_action(tenant, principal, "rotate")
+    async def rotate(
+        self,
+        tenant: str,
+        principal: str,
+        *,
+        token_id: UUID | None,
+        operator_session_id: UUID | None,
+        idempotency_key: UUID,
+    ) -> UserStorage:
+        action_id = await self.repository.request_action(
+            tenant,
+            principal,
+            "rotate",
+            token_id=token_id,
+            operator_session_id=operator_session_id,
+            idempotency_key=idempotency_key,
+        )
         try:
-            await self.repository.wait_action(tenant, principal, timeout=self.action_timeout_seconds)
+            await self.repository.wait_action(action_id, timeout=self.action_timeout_seconds)
         except TimeoutError:
             raise RuntimeError("storage reconciler did not complete credential rotation") from None
         return await self.view(tenant, principal)
 
-    async def revoke(self, tenant: str, principal: str) -> UserStorage:
-        await self.repository.request_action(tenant, principal, "revoke")
+    async def revoke(
+        self,
+        tenant: str,
+        principal: str,
+        *,
+        token_id: UUID | None,
+        operator_session_id: UUID | None,
+        idempotency_key: UUID,
+    ) -> UserStorage:
+        action_id = await self.repository.request_action(
+            tenant,
+            principal,
+            "revoke",
+            token_id=token_id,
+            operator_session_id=operator_session_id,
+            idempotency_key=idempotency_key,
+        )
         try:
-            await self.repository.wait_action(tenant, principal, timeout=self.action_timeout_seconds)
+            await self.repository.wait_action(action_id, timeout=self.action_timeout_seconds)
         except TimeoutError:
             raise RuntimeError("storage reconciler did not complete credential revocation") from None
         return await self.view(tenant, principal)
@@ -388,6 +492,19 @@ class UserStorageService:
             )
         except TimeoutError:
             raise RuntimeError("storage reconciler did not apply the user state") from None
+
+    async def wait_enabled(self, tenant: str, principal: str, enabled: bool) -> None:
+        if await self.repository.credential(tenant, principal) is None:
+            return
+        try:
+            await self.repository.wait_enabled(
+                tenant,
+                principal,
+                enabled=enabled,
+                timeout=self.action_timeout_seconds,
+            )
+        except TimeoutError:
+            raise RuntimeError("storage reconciler did not apply the durable user state") from None
 
     async def _run(self) -> None:
         while True:

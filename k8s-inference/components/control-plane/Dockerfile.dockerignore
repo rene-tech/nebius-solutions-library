@@ -18,6 +18,13 @@ k8s-inference/components/control-plane/*
 !k8s-inference/components/control-plane/migrations/**
 !k8s-inference/components/control-plane/contracts/
 !k8s-inference/components/control-plane/contracts/**
+!k8s-inference/stages/
+k8s-inference/stages/*
+!k8s-inference/stages/workloads/
+k8s-inference/stages/workloads/*
+!k8s-inference/stages/workloads/scripts/
+k8s-inference/stages/workloads/scripts/*
+!k8s-inference/stages/workloads/scripts/customer_storage_egress_contract.py
 !k8s-inference/catalog/
 k8s-inference/catalog/*
 !k8s-inference/catalog/runtime/

@@ -1,6 +1,6 @@
 {
   "canonicalization": "utf8-json-sort-keys-no-whitespace",
-  "contract_payload_sha256": "5205ec0d72aed0ea4fedd819c5e94bee43fcb4f4bfb98d221d7fd27ee0880030",
+  "contract_payload_sha256": "0da3740a81b1d47a00f4d0c2dac19100b865f1c301fba1049359a2e6751c22a0",
   "migration_set": {
     "algorithm": "sha256",
     "ordered_migrations": [
@@ -163,9 +163,14 @@
         "ordinal": 32,
         "sha256": "a58110d4bb1bd7c0766d6c493ab99678c452777c77ba37e2b07d78b83e960452",
         "version": "0032_user_storage_security.sql"
+      },
+      {
+        "ordinal": 33,
+        "sha256": "4dfe0755299a004747705ef6900428eeb5e503cec3be9b267af175a55a405918",
+        "version": "0033_storage_disclosure_boundary.sql"
       }
     ],
-    "sha256": "ea736796a505c56573d4ebd248a0e1848f8ee0358159e32cf007ab06382da741"
+    "sha256": "b373527f03412686bec4a18b8126b1a5eba6b6b7f1eac2e0082d7c5833ba158c"
   },
   "namespace_role_ownership": {
     "credential_secrets": [
@@ -235,6 +240,17 @@
         "namespace": "fs2-system",
         "purpose": "storage",
         "writer_owner": "postgresql-platform-release"
+      },
+      {
+        "consumer_owners": [
+          "fs2-serve-control-plane-storage-disclosure"
+        ],
+        "database_group_role": "fs2_serve_storage_disclosure",
+        "key": "url",
+        "name": "fs2-serve-database-storage-disclosure",
+        "namespace": "fs2-system",
+        "purpose": "storage-disclosure",
+        "writer_owner": "postgresql-platform-release"
       }
     ],
     "database": {
@@ -276,6 +292,12 @@
         "login": false,
         "name": "fs2_serve_storage",
         "purpose": "storage"
+      },
+      {
+        "creation_and_grant_owner": "fs2-serve-control-plane-migration",
+        "login": false,
+        "name": "fs2_serve_storage_disclosure",
+        "purpose": "storage-disclosure"
       }
     ],
     "ownership_rules": [
@@ -292,13 +314,13 @@
       "service_account_name": "fs2-serve-control-plane-migration"
     }
   },
-  "namespace_role_ownership_sha256": "02a91557f23468b3c943575a2295f8fdd710575ffd438e466a7df5214d5dc3b0",
+  "namespace_role_ownership_sha256": "79bd52934dfe16d890f021222ed0d76784facbcb4d01883aa96f52e4f3bc0aa4",
   "required_release_receipt_inputs": {
     "first_migration_version": "0001_initial.sql",
-    "last_migration_version": "0032_user_storage_security.sql",
-    "migration_count": 32,
-    "migration_set_sha256": "ea736796a505c56573d4ebd248a0e1848f8ee0358159e32cf007ab06382da741",
-    "namespace_role_ownership_sha256": "02a91557f23468b3c943575a2295f8fdd710575ffd438e466a7df5214d5dc3b0"
+    "last_migration_version": "0033_storage_disclosure_boundary.sql",
+    "migration_count": 33,
+    "migration_set_sha256": "b373527f03412686bec4a18b8126b1a5eba6b6b7f1eac2e0082d7c5833ba158c",
+    "namespace_role_ownership_sha256": "79bd52934dfe16d890f021222ed0d76784facbcb4d01883aa96f52e4f3bc0aa4"
   },
   "schema": "fs2-serve.nebius.ai/postgresql-release-contract/v1"
 }
