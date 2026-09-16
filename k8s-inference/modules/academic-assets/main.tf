@@ -73,6 +73,26 @@ resource "kubernetes_namespace_v1" "academic_assets" {
   }
 }
 
+# Scientific Jobs opt in to their exact control-plane/object-store egress
+# policies. Everything else in the licensed-assets namespace is isolated by
+# default in both directions, including ad-hoc Pods and stale workload labels.
+resource "kubernetes_network_policy_v1" "academic_default_deny" {
+  count = local.enabled ? 1 : 0
+
+  metadata {
+    name      = "default-deny"
+    namespace = var.academic_assets.namespace
+    labels    = local.common_labels
+  }
+
+  spec {
+    pod_selector {}
+    policy_types = ["Ingress", "Egress"]
+  }
+
+  depends_on = [kubernetes_namespace_v1.academic_assets]
+}
+
 # --- runtime claim: retained -------------------------------------------------
 # Holds verified licensed bytes on a long-lived cluster. Destroying or replacing
 # it would discard content that cannot simply be re-downloaded on demand, so the

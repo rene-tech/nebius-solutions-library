@@ -390,17 +390,48 @@ def _metadata(record: ModelRecord, capability: BackendCapability) -> dict[str, A
 def render_runtime_network_policy(
     record: ModelRecord, *, namespace: str
 ) -> dict[str, Any]:
-    """Render the exact deny-all egress policy required for mounted-content startup."""
+    """Render the runtime boundary for one exact catalog model."""
 
-    if record.model_id not in MOUNTED_CONTENT_MODELS:
-        raise CatalogError("runtime deny-egress policy is reviewed only for mounted-content models")
     if namespace != "fs2-models":
         raise CatalogError("model runtime NetworkPolicy is owned only in fs2-models")
+    mounted_content = record.model_id in MOUNTED_CONTENT_MODELS
+    egress = []
+    if not mounted_content:
+        egress = [
+            {
+                "to": [
+                    {
+                        "namespaceSelector": {
+                            "matchLabels": {
+                                "kubernetes.io/metadata.name": "kube-system"
+                            }
+                        },
+                        "podSelector": {
+                            "matchExpressions": [
+                                {
+                                    "key": "k8s-app",
+                                    "operator": "In",
+                                    "values": ["coredns", "kube-dns"],
+                                }
+                            ]
+                        },
+                    }
+                ],
+                "ports": [
+                    {"protocol": "UDP", "port": 53},
+                    {"protocol": "TCP", "port": 53},
+                ],
+            }
+        ]
     return {
         "apiVersion": "networking.k8s.io/v1",
         "kind": "NetworkPolicy",
         "metadata": {
-            "name": f"{record.model_id}-runtime-deny-egress",
+            "name": (
+                f"{record.model_id}-runtime-deny-egress"
+                if mounted_content
+                else f"{record.model_id}-runtime"
+            ),
             "namespace": namespace,
             "labels": {
                 "app.kubernetes.io/part-of": "fs2-serve",
@@ -416,8 +447,29 @@ def render_runtime_network_policy(
             "podSelector": {
                 "matchLabels": {"fs2-serve.nebius.ai/model-id": record.model_id}
             },
-            "policyTypes": ["Egress"],
-            "egress": [],
+            "policyTypes": ["Ingress", "Egress"],
+            "ingress": [
+                {
+                    "from": [
+                        {
+                            "namespaceSelector": {
+                                "matchLabels": {
+                                    "kubernetes.io/metadata.name": "fs2-system"
+                                }
+                            },
+                            "podSelector": {
+                                "matchLabels": {
+                                    "app.kubernetes.io/name": "fs2-serve-control-plane",
+                                    "app.kubernetes.io/instance": "fs2-serve-control-plane",
+                                    "app.kubernetes.io/component": "gateway",
+                                }
+                            },
+                        }
+                    ],
+                    "ports": [{"protocol": "TCP", "port": 8000}],
+                }
+            ],
+            "egress": egress,
         },
     }
 
@@ -481,9 +533,11 @@ def render_native_http_workload(
             "ports": [{"name": "http", "port": 8000, "targetPort": "http"}],
         },
     }
-    items = [deployment, service]
-    if record.model_id in MOUNTED_CONTENT_MODELS:
-        items.append(render_runtime_network_policy(record, namespace=namespace))
+    items = [
+        deployment,
+        service,
+        render_runtime_network_policy(record, namespace=namespace),
+    ]
     return {"apiVersion": "v1", "kind": "List", "items": items}
 
 

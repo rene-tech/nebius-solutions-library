@@ -222,6 +222,35 @@ run "disabled_academic_config_is_projected_as_disabled" {
   }
 }
 
+run "model_namespace_is_default_denied_after_catalog_runtime_allow_policies" {
+  command = plan
+
+  plan_options {
+    target = [
+      kubernetes_network_policy_v1.model_runtime_bootstrap,
+      kubernetes_network_policy_v1.model_namespace_default_deny,
+    ]
+  }
+
+  assert {
+    condition = (
+      kubernetes_network_policy_v1.model_namespace_default_deny.metadata[0].name == "default-deny" &&
+      kubernetes_network_policy_v1.model_namespace_default_deny.metadata[0].namespace == "fs2-models" &&
+      toset(kubernetes_network_policy_v1.model_namespace_default_deny.spec[0].policy_types) == toset(["Ingress", "Egress"])
+    )
+    error_message = "fs2-models must have one Terraform-owned ingress-and-egress default deny."
+  }
+
+  assert {
+    condition = (
+      kubernetes_network_policy_v1.model_runtime_bootstrap["qwen3-8b"].metadata[0].namespace == "fs2-models" &&
+      kubernetes_network_policy_v1.model_runtime_bootstrap["qwen3-8b"].spec[0].pod_selector[0].match_labels["fs2-serve.nebius.ai/model-id"] == "qwen3-8b" &&
+      toset(kubernetes_network_policy_v1.model_runtime_bootstrap["qwen3-8b"].spec[0].policy_types) == toset(["Ingress", "Egress"])
+    )
+    error_message = "Every selected catalog runtime needs a Terraform bootstrap policy before default deny."
+  }
+}
+
 run "enabled_academic_config_reaches_the_chart" {
   command = plan
 

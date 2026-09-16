@@ -37,7 +37,9 @@ def canonical_bytes(value: object) -> bytes:
 def documents(name: str) -> list[dict[str, object]]:
     return [
         item
-        for item in yaml.safe_load_all((MANIFEST_ROOT / name).read_text(encoding="utf-8"))
+        for item in yaml.safe_load_all(
+            (MANIFEST_ROOT / name).read_text(encoding="utf-8")
+        )
         if item is not None
     ]
 
@@ -51,6 +53,47 @@ def localization_config(name: str) -> dict[str, object]:
 
 
 class SharedCacheLocalizationTests(unittest.TestCase):
+    def test_static_runtime_policies_allow_only_gateway_ingress_and_cluster_dns(
+        self,
+    ) -> None:
+        expected_ports = {"qwen3-8b.yaml": 8000, "cosmos3-nano.yaml": 8080}
+        for filename, service_port in expected_ports.items():
+            policy = next(
+                item for item in documents(filename) if item["kind"] == "NetworkPolicy"
+            )
+            model_id = filename.removesuffix(".yaml")
+            self.assertEqual(
+                {
+                    "app.kubernetes.io/component": "model-runtime",
+                    "fs2-serve.nebius.ai/model-id": model_id,
+                },
+                policy["spec"]["podSelector"]["matchLabels"],
+            )
+            self.assertEqual(["Ingress", "Egress"], policy["spec"]["policyTypes"])
+            self.assertEqual(
+                {
+                    "app.kubernetes.io/name": "fs2-serve-control-plane",
+                    "app.kubernetes.io/instance": "fs2-serve-control-plane",
+                    "app.kubernetes.io/component": "gateway",
+                },
+                policy["spec"]["ingress"][0]["from"][0]["podSelector"]["matchLabels"],
+            )
+            self.assertEqual(
+                [{"port": service_port, "protocol": "TCP"}],
+                policy["spec"]["ingress"][0]["ports"],
+            )
+            self.assertEqual(
+                [
+                    {
+                        "key": "k8s-app",
+                        "operator": "In",
+                        "values": ["coredns", "kube-dns"],
+                    }
+                ],
+                policy["spec"]["egress"][0]["to"][0]["podSelector"]["matchExpressions"],
+            )
+            self.assertNotIn("ipBlock", json.dumps(policy["spec"]))
+
     def test_qwen_and_cosmos_bind_exact_content_addresses(self) -> None:
         expected = {
             "qwen3-8b.yaml": {
@@ -99,10 +142,14 @@ class SharedCacheLocalizationTests(unittest.TestCase):
                 model["total_size_bytes"], sum(item["size"] for item in model["files"])
             )
 
-            deployment = next(item for item in resources if item["kind"] == "Deployment")
+            deployment = next(
+                item for item in resources if item["kind"] == "Deployment"
+            )
             pod = deployment["spec"]["template"]["spec"]
             localizer = next(
-                item for item in pod["initContainers"] if item["name"] == "localize-model"
+                item
+                for item in pod["initContainers"]
+                if item["name"] == "localize-model"
             )
             runtime = pod["containers"][0]
             content_path = (
@@ -145,7 +192,9 @@ class SharedCacheLocalizationTests(unittest.TestCase):
         )
         self.assertEqual(evidence["source"]["revision"], lock["revision"])
         self.assertEqual(evidence["content"]["digest"], lock["content_digest"])
-        self.assertEqual(evidence["content"]["expanded_bytes"], lock["total_size_bytes"])
+        self.assertEqual(
+            evidence["content"]["expanded_bytes"], lock["total_size_bytes"]
+        )
         self.assertEqual(
             evidence["content"]["files"],
             [
@@ -223,8 +272,9 @@ class SharedCacheLocalizationTests(unittest.TestCase):
                 "FS2_CACHE_LOCK_TIMEOUT_SECONDS": "5",
             }
             namespace: dict[str, object] = {"__name__": "localizer_under_test"}
-            with patch.dict(os.environ, environment, clear=False), patch.dict(
-                sys.modules, {"huggingface_hub": fake_huggingface}
+            with (
+                patch.dict(os.environ, environment, clear=False),
+                patch.dict(sys.modules, {"huggingface_hub": fake_huggingface}),
             ):
                 exec(script, namespace)
                 namespace["print"] = lambda *_args, **_kwargs: None
@@ -245,9 +295,7 @@ class SharedCacheLocalizationTests(unittest.TestCase):
                 self.assertEqual([], errors)
                 self.assertEqual(1, calls)
 
-                content_root = (
-                    root / "cache" / "fixture" / "sha256" / content_digest
-                )
+                content_root = root / "cache" / "fixture" / "sha256" / content_digest
                 self.assertFalse((content_root / "payload" / ".cache").exists())
                 receipt = json.loads(
                     (content_root / "localization-receipt.json").read_text(

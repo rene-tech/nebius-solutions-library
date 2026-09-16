@@ -72,6 +72,16 @@ run "retained_selects_only_the_guarded_claim" {
     condition     = length(kubernetes_persistent_volume_claim_v1.academic_assets_legacy_disposable) == 0
     error_message = "The two quarantine lifecycles must be mutually exclusive."
   }
+
+  assert {
+    condition = (
+      length(kubernetes_network_policy_v1.academic_default_deny) == 1 &&
+      kubernetes_network_policy_v1.academic_default_deny[0].metadata[0].name == "default-deny" &&
+      kubernetes_network_policy_v1.academic_default_deny[0].metadata[0].namespace == "fs2-academic-poc" &&
+      toset(kubernetes_network_policy_v1.academic_default_deny[0].spec[0].policy_types) == toset(["Ingress", "Egress"])
+    )
+    error_message = "An enabled academic namespace must be Terraform-owned and default-denied in both directions."
+  }
 }
 
 run "retained_outputs_coalesce_the_selected_identity" {
@@ -188,6 +198,7 @@ run "disabled_creates_nothing" {
       length(kubernetes_namespace_v1.academic_assets) == 0 &&
       length(kubernetes_persistent_volume_claim_v1.academic_assets_runtime_retained) == 0 &&
       length(kubernetes_persistent_volume_claim_v1.academic_assets_runtime_disposable) == 0 &&
+      length(kubernetes_network_policy_v1.academic_default_deny) == 0 &&
       length(kubernetes_network_policy_v1.academic_offline_validation) == 0
     )
     error_message = "Disabling the feature must create no academic resources at all."
@@ -215,5 +226,13 @@ run "delivery_invariants_are_reported_to_consumers" {
   assert {
     condition     = output.academic_assets.legacy_quarantine_claim.mountable == false
     error_message = "The quarantine claim is never runtime mountable."
+  }
+
+  assert {
+    condition = (
+      output.academic_assets.default_deny_enforced == true &&
+      output.managed_addresses.default_deny_policy == "kubernetes_network_policy_v1.academic_default_deny[0]"
+    )
+    error_message = "Consumers and adoption tooling must see the Terraform-owned namespace boundary."
   }
 }

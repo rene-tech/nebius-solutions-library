@@ -2324,97 +2324,126 @@ def _configure_modelexpress_container(
     return transfer_group
 
 
-def _modelexpress_network_policy(
+def _runtime_network_policy(
     *,
     context: RenderContext,
-    qualification: ModelExpressQualification,
+    qualification: ModelExpressQualification | None,
     segment_identity: str,
     workload_name: str,
-    transfer_group: str,
+    transfer_group: str | None,
     accelerators_per_replica: int,
     service_port: int,
+    runtime_selector: Mapping[str, str],
     labels: Mapping[str, str],
     annotations: Mapping[str, str],
     owner_references: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
-    """Permit only this exact transfer group to reach its peer listeners.
+    """Isolate one rendered runtime and add only qualified ModelExpress flows.
 
-    The policy is additive to the Terraform-owned runtime policy.  The exact
-    transfer-group selector prevents old revisions or another model from
-    becoming a source, while the coordinator rule is limited to the configured
-    namespace and Pod labels.
+    Every runtime accepts serving traffic only from the canonical control-plane
+    gateway Pods and can resolve DNS only through cluster DNS. ModelExpress is
+    an optional, narrowly qualified exception for same-group peer listeners and
+    its exact coordinator; it never grants general Internet egress.
     """
 
-    runtime_selector = {
-        MODEL_DEPLOYMENT_LABEL: bounded_label_value(context.name),
-        WORKLOAD_ROLE_LABEL: segment_identity,
-        MODEL_EXPRESS_TRANSFER_GROUP_LABEL: transfer_group,
-    }
-    peer_selector = {
-        MODEL_EXPRESS_TRANSFER_GROUP_LABEL: transfer_group,
-    }
-    coordinator_port = int(qualification.endpoint.rsplit(":", 1)[1])
-    coordinator_peers: list[dict[str, Any]]
-    if qualification.coordinator_network_type == "pod-selector":
-        assert qualification.coordinator_namespace is not None
-        coordinator_peers = [
+    ingress: list[dict[str, Any]] = [
+        {
+            "from": [
+                {
+                    "namespaceSelector": {
+                        "matchLabels": {"kubernetes.io/metadata.name": "fs2-system"},
+                    },
+                    "podSelector": {
+                        "matchLabels": {
+                            "app.kubernetes.io/name": "fs2-serve-control-plane",
+                            "app.kubernetes.io/instance": "fs2-serve-control-plane",
+                            "app.kubernetes.io/component": "gateway",
+                        }
+                    },
+                }
+            ],
+            "ports": [{"protocol": "TCP", "port": service_port}],
+        }
+    ]
+    egress: list[dict[str, Any]] = [
+        {
+            "to": [
+                {
+                    "namespaceSelector": {
+                        "matchLabels": {"kubernetes.io/metadata.name": "kube-system"},
+                    },
+                    "podSelector": {
+                        "matchExpressions": [
+                            {
+                                "key": "k8s-app",
+                                "operator": "In",
+                                "values": ["coredns", "kube-dns"],
+                            }
+                        ]
+                    },
+                }
+            ],
+            "ports": [
+                {"protocol": "UDP", "port": 53},
+                {"protocol": "TCP", "port": 53},
+            ],
+        }
+    ]
+
+    if qualification is not None:
+        if transfer_group is None:
+            raise ValueError("ModelExpress runtime policy requires an exact transfer group")
+        peer_selector = {MODEL_EXPRESS_TRANSFER_GROUP_LABEL: transfer_group}
+        ingress.append(
             {
-                "namespaceSelector": {
-                    "matchLabels": {
-                        "kubernetes.io/metadata.name": qualification.coordinator_namespace,
-                    }
-                },
-                "podSelector": {
-                    "matchLabels": dict(qualification.coordinator_pod_labels),
-                },
+                "from": [{"podSelector": {"matchLabels": peer_selector}}],
+                "ports": _modelexpress_peer_ports(accelerators_per_replica),
             }
-        ]
-    else:
-        coordinator_peers = [{"ipBlock": {"cidr": cidr}} for cidr in qualification.coordinator_cidrs]
+        )
+        egress.append(
+            {
+                "to": [{"podSelector": {"matchLabels": peer_selector}}],
+                "ports": _modelexpress_peer_ports(accelerators_per_replica),
+            }
+        )
+        coordinator_port = int(qualification.endpoint.rsplit(":", 1)[1])
+        if qualification.coordinator_network_type == "pod-selector":
+            assert qualification.coordinator_namespace is not None
+            coordinator_peers: list[dict[str, Any]] = [
+                {
+                    "namespaceSelector": {
+                        "matchLabels": {
+                            "kubernetes.io/metadata.name": qualification.coordinator_namespace,
+                        }
+                    },
+                    "podSelector": {
+                        "matchLabels": dict(qualification.coordinator_pod_labels),
+                    },
+                }
+            ]
+        else:
+            coordinator_peers = [{"ipBlock": {"cidr": cidr}} for cidr in qualification.coordinator_cidrs]
+        egress.append(
+            {
+                "to": coordinator_peers,
+                "ports": [{"protocol": "TCP", "port": coordinator_port}],
+            }
+        )
 
     manifest: dict[str, Any] = {
         "apiVersion": "networking.k8s.io/v1",
         "kind": "NetworkPolicy",
         "metadata": {
-            "name": _derived_name("fs2-modelexpress-", workload_name),
+            "name": _derived_name("fs2-runtime-", workload_name),
             "namespace": context.namespace,
             "labels": {**labels, WORKLOAD_ROLE_LABEL: segment_identity},
             "annotations": dict(annotations),
         },
         "spec": {
-            "podSelector": {"matchLabels": runtime_selector},
+            "podSelector": {"matchLabels": dict(runtime_selector)},
             "policyTypes": ["Ingress", "Egress"],
-            "ingress": [
-                {
-                    "from": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "fs2-system"}}}],
-                    "ports": [{"protocol": "TCP", "port": service_port}],
-                },
-                {
-                    "from": [{"podSelector": {"matchLabels": peer_selector}}],
-                    "ports": _modelexpress_peer_ports(accelerators_per_replica),
-                },
-            ],
-            "egress": [
-                {
-                    "to": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "kube-system"}}}],
-                    "ports": [
-                        {"protocol": "UDP", "port": 53},
-                        {"protocol": "TCP", "port": 53},
-                    ],
-                },
-                {
-                    "to": [{"podSelector": {"matchLabels": peer_selector}}],
-                    "ports": _modelexpress_peer_ports(accelerators_per_replica),
-                },
-                {
-                    "to": [{"ipBlock": {"cidr": "0.0.0.0/0"}}],
-                    "ports": [{"protocol": "TCP", "port": 443}],
-                },
-                {
-                    "to": coordinator_peers,
-                    "ports": [{"protocol": "TCP", "port": coordinator_port}],
-                },
-            ],
+            "ingress": ingress,
+            "egress": egress,
         },
     }
     if owner_references:
@@ -2842,21 +2871,28 @@ class LegacyManifestRenderer:
                 deployment_spec["replicas"] = segment.fixed_replicas
             rendered.append(workload)
 
-            if context.model_express is not None and transfer_group is not None:
-                rendered.append(
-                    _modelexpress_network_policy(
-                        context=context,
-                        qualification=context.model_express,
-                        segment_identity=segment_identity,
-                        workload_name=workload_name,
-                        transfer_group=transfer_group,
-                        accelerators_per_replica=spec.placement.accelerators_per_replica,
-                        service_port=bundle.primary_service_port,
-                        labels=labels,
-                        annotations=annotations,
-                        owner_references=owner_references,
-                    )
+            policy_selector = {
+                MODEL_DEPLOYMENT_LABEL: bounded_label_value(context.name),
+            }
+            for selector_label in (WORKLOAD_ROLE_LABEL, MODEL_EXPRESS_TRANSFER_GROUP_LABEL):
+                selector_value = pod_metadata.get("labels", {}).get(selector_label)
+                if selector_value is not None:
+                    policy_selector[selector_label] = selector_value
+            rendered.append(
+                _runtime_network_policy(
+                    context=context,
+                    qualification=context.model_express,
+                    segment_identity=segment_identity,
+                    workload_name=workload_name,
+                    transfer_group=transfer_group,
+                    accelerators_per_replica=spec.placement.accelerators_per_replica,
+                    service_port=bundle.primary_service_port,
+                    runtime_selector=policy_selector,
+                    labels=labels,
+                    annotations=annotations,
+                    owner_references=owner_references,
                 )
+            )
 
             if not segment.autoscaled:
                 continue

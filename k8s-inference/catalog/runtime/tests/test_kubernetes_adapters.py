@@ -1054,7 +1054,13 @@ class KubernetesAdapterTests(unittest.TestCase):
             offline_env,
         )
         self.assertEqual([], native["items"][2]["spec"]["egress"])
-        self.assertEqual(["Egress"], native["items"][2]["spec"]["policyTypes"])
+        self.assertEqual(["Ingress", "Egress"], native["items"][2]["spec"]["policyTypes"])
+        self.assertEqual(
+            "gateway",
+            native["items"][2]["spec"]["ingress"][0]["from"][0]["podSelector"][
+                "matchLabels"
+            ]["app.kubernetes.io/component"],
+        )
         kserve = render_kserve_standard_workload(
             cxr,
             prerequisites=self.prerequisites,
@@ -1472,6 +1478,37 @@ class KubernetesAdapterTests(unittest.TestCase):
         pod = workload["items"][0]["spec"]["template"]["spec"]
         self.assertNotIn("imagePullSecrets", pod)
         self.assertNotIn("hostPath", json.dumps(pod))
+
+        sdxl = self.catalog.model("sdxl")
+        sdxl_workload = render_native_http_workload(
+            sdxl,
+            prerequisites=self.prerequisites,
+            namespace="fs2-models",
+            artifact_uri=(
+                "sfs://fs2-cache/mnt/fs2-serve-cache/models/sdxl/sha256/"
+                + self.digest("sdxl-content")
+            ),
+            backend_capability=self.capability(sdxl, storage_mode="sfs-pvc"),
+        )
+        policy = sdxl_workload["items"][-1]
+        self.assertEqual("NetworkPolicy", policy["kind"])
+        self.assertEqual(["Ingress", "Egress"], policy["spec"]["policyTypes"])
+        self.assertEqual(
+            {
+                "app.kubernetes.io/name": "fs2-serve-control-plane",
+                "app.kubernetes.io/instance": "fs2-serve-control-plane",
+                "app.kubernetes.io/component": "gateway",
+            },
+            policy["spec"]["ingress"][0]["from"][0]["podSelector"]["matchLabels"],
+        )
+        self.assertEqual(
+            [
+                {"protocol": "UDP", "port": 53},
+                {"protocol": "TCP", "port": 53},
+            ],
+            policy["spec"]["egress"][0]["ports"],
+        )
+        self.assertNotIn("0.0.0.0/0", json.dumps(policy))
         with self.assertRaisesRegex(CatalogError, "SM103-incompatible"):
             self.capability(
                 self.catalog.model("evo2-40b"), storage_mode="sfs-pvc"

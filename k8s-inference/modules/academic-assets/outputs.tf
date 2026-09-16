@@ -59,6 +59,7 @@ output "academic_assets" {
     }
 
     offline_validation_egress_denied = length(kubernetes_network_policy_v1.academic_offline_validation) > 0
+    default_deny_enforced            = length(kubernetes_network_policy_v1.academic_default_deny) > 0
 
     # A consuming pod reads licensed bytes by joining the asset group; it never
     # needs to run as the staging uid and the bytes are never world-readable.
@@ -122,6 +123,7 @@ output "managed_addresses" {
     runtime_claim       = local.runtime_address
     legacy_claim        = local.legacy_address
     network_policy      = length(kubernetes_network_policy_v1.academic_offline_validation) > 0 ? "kubernetes_network_policy_v1.academic_offline_validation[0]" : null
+    default_deny_policy = local.enabled ? "kubernetes_network_policy_v1.academic_default_deny[0]" : null
     local_queue         = local.execution_enabled ? "kubernetes_manifest.academic_local_queue[\"${var.academic_assets.execution.local_queue}\"]" : null
     local_queue_binding = local.execution_enabled ? "terraform_data.academic_local_queue_binding[\"${var.academic_assets.execution.local_queue}\"]" : null
     module_prefix       = "module.academic_assets"
