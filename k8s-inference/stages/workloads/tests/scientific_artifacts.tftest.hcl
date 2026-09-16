@@ -276,6 +276,30 @@ variables {
   }
 }
 
+run "rejects_reused_pat_id_across_retained_generations" {
+  command = plan
+
+  plan_options {
+    target = [kubernetes_secret_v1.bootstrap_access_versioned]
+  }
+
+  variables {
+    credential_generations = {
+      access = 3
+    }
+    credential_generation_history = {
+      access = [1, 2, 3]
+    }
+    bootstrap_access_tokens = {
+      "2" = "fs2_pat_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      "3" = "fs2_pat_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+    }
+    bootstrap_access_expires_at = "2099-01-01T00:00:00Z"
+  }
+
+  expect_failures = [kubernetes_secret_v1.bootstrap_access_versioned]
+}
+
 run "pitr_marker_contract_binds_exact_completed_backup" {
   command = plan
 

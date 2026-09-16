@@ -126,6 +126,7 @@ output "access_bundle" {
       scopes          = local.bootstrap_access_scopes
       models          = local.bootstrap_access_models
       max_concurrency = 32
+      expires_at      = var.bootstrap_access_expires_at
     }
     scientific_access = local.scientific_access_enabled ? {
       principal_id    = local.scientific_access_principal
@@ -133,6 +134,7 @@ output "access_bundle" {
       scopes          = local.scientific_access_scopes
       models          = local.scientific_access_models
       max_concurrency = 32
+      expires_at      = var.bootstrap_access_expires_at
     } : null
     reference_data = var.reference_data.enabled ? {
       lifecycle      = var.reference_data.storage_contract.lifecycle

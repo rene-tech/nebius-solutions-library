@@ -41,6 +41,7 @@ POOL_PROFILES_PATH = (
     SOLUTION_ROOT / "catalog" / "profiles" / "accelerator-pool-profiles.json"
 )
 INTERNAL_EDGE_PROXY = WORKLOADS_ROOT / "scripts" / "internal_edge_proxy.py"
+SECRET_MIGRATION_GUARD = SOLUTION_ROOT / "scripts" / "secret_migration_guard.py"
 STAGE_COMPLETION_OUTPUTS = {
     "infrastructure": "accelerator_pool_contract",
     "foundation": "cluster_contract",
@@ -163,6 +164,7 @@ def clean_environment() -> dict[str, str]:
 # older binary they are silently unknown attributes, which would put credential
 # material back into state, so the whole flow refuses to run below 1.11.
 MINIMUM_TERRAFORM_VERSION = (1, 11, 0)
+PAT_TOKEN_PATTERN = re.compile(r"^fs2_pat_([0-9a-f]{32})_[A-Za-z0-9_-]{32,}$")
 
 
 def require_terraform_version(terraform: str) -> tuple[int, int, int]:
@@ -196,6 +198,40 @@ def terraform_environment(run_root: Path, stage: str) -> dict[str, str]:
     environment["TF_DATA_DIR"] = str(data_directory)
     environment["TF_IN_AUTOMATION"] = "1"
     return environment
+
+
+def validate_versioned_access_pat_ids(
+    bootstrap_tokens_json: str | None,
+    scientific_tokens_json: str | None,
+) -> None:
+    """Reject PAT identity reuse before any Terraform plan can consume it."""
+
+    identifiers: list[str] = []
+    for audience, encoded in (
+        ("general", bootstrap_tokens_json),
+        ("scientific", scientific_tokens_json),
+    ):
+        if not encoded:
+            continue
+        try:
+            tokens = json.loads(encoded)
+        except json.JSONDecodeError as error:
+            raise DeploymentError(f"{audience} access token map is not valid JSON") from error
+        if not isinstance(tokens, dict):
+            raise DeploymentError(f"{audience} access token map must be a JSON object")
+        for generation, token in tokens.items():
+            if not isinstance(generation, str) or not generation.isdecimal() or int(generation) <= 1:
+                raise DeploymentError(
+                    f"{audience} access token map keys must be generations greater than 1"
+                )
+            match = PAT_TOKEN_PATTERN.fullmatch(token) if isinstance(token, str) else None
+            if match is None:
+                raise DeploymentError(
+                    f"{audience} access generation {generation} is not a valid PAT"
+                )
+            identifiers.append(match.group(1))
+    if len(identifiers) != len(set(identifiers)):
+        raise DeploymentError("PAT IDs must be unique across every generation and audience")
 
 
 def terraform_init(
@@ -323,8 +359,60 @@ def plan_json(
         env=environment,
         capture=True,
     )
+    guard_secret_migration_plan(
+        result.stdout,
+        identity_receipt=(
+            plan_path.parent / "fixed-v1-identity.receipt.json"
+            if root == WORKLOADS_ROOT
+            else None
+        ),
+    )
     private_text(json_path, result.stdout)
     return json.loads(result.stdout)
+
+
+def guard_secret_migration_plan(
+    encoded_plan: str,
+    *,
+    identity_receipt: Path | None = None,
+) -> None:
+    """Apply the fail-closed legacy-generation guard without writing more JSON."""
+
+    if SECRET_MIGRATION_GUARD.is_symlink() or not SECRET_MIGRATION_GUARD.is_file():
+        raise DeploymentError("secret migration guard is absent or unsafe")
+    arguments = [sys.executable, str(SECRET_MIGRATION_GUARD), "plan", "-"]
+    if identity_receipt is not None:
+        arguments.extend(["--identity-receipt", str(identity_receipt)])
+    run(
+        arguments,
+        capture=True,
+        input_text=encoded_plan,
+    )
+
+
+def guard_saved_plan(
+    terraform: str,
+    root: Path,
+    plan_path: Path,
+    environment: Mapping[str, str],
+) -> None:
+    """Reinspect the exact saved plan immediately before Terraform applies it."""
+
+    if plan_path.is_symlink() or not plan_path.is_file():
+        raise DeploymentError(f"saved plan is absent or unsafe: {plan_path}")
+    result = run(
+        [terraform, f"-chdir={root}", "show", "-json", str(plan_path)],
+        env=environment,
+        capture=True,
+    )
+    guard_secret_migration_plan(
+        result.stdout,
+        identity_receipt=(
+            plan_path.parent / "fixed-v1-identity.receipt.json"
+            if root == WORKLOADS_ROOT
+            else None
+        ),
+    )
 
 
 def planned_output(document: Mapping[str, Any], name: str) -> Any:
@@ -1655,6 +1743,10 @@ def stage_environment(
             environment["TF_VAR_ngc_api_key"] = ngc_key
         if docker_config:
             environment["TF_VAR_nvcrio_dockerconfigjson"] = docker_config
+        validate_versioned_access_pat_ids(
+            os.environ.get("FS2_BOOTSTRAP_ACCESS_TOKENS_JSON"),
+            os.environ.get("FS2_SCIENTIFIC_ACCESS_TOKENS_JSON"),
+        )
         # Rotation keyrings are supplied by an encrypted external handoff. They
         # bypass the root facade so their bytes never enter generated tfvars.
         for variable_name, environment_name in {
@@ -2345,6 +2437,7 @@ def apply_plan(
     plan_path: Path,
     environment: Mapping[str, str],
 ) -> None:
+    guard_saved_plan(terraform, root, plan_path, environment)
     run(
         [terraform, f"-chdir={root}", "apply", "-input=false", str(plan_path)],
         env=environment,
@@ -2832,9 +2925,13 @@ def scoped_credential_handoff(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Resolve exactly one requested credential and a value-free audit receipt."""
 
-    if kind in {"admin", "grafana"} and not allow_privileged:
+    if kind in {"admin", "grafana"}:
+        if not allow_privileged:
+            raise DeploymentError(
+                "admin and grafana exports require --allow-privileged-credential"
+            )
         raise DeploymentError(
-            "admin and grafana exports require --allow-privileged-credential"
+            "long-lived admin and Grafana credentials cannot be exported as expiring handoffs; mint a server-enforced TTL session or service-account token"
         )
     if not 300 <= expires_in_seconds <= 86400:
         raise DeploymentError("credential handoff expiry must be 300-86400 seconds")
@@ -2877,7 +2974,30 @@ def scoped_credential_handoff(
         keys=keys,
     )
     issued_at = datetime.now(UTC).replace(microsecond=0)
-    expires_at = issued_at + timedelta(seconds=expires_in_seconds)
+    policy_name = "mcp_access" if kind == "general-access" else "scientific_access"
+    policy = access.get(policy_name)
+    enforced_expiry = policy.get("expires_at") if isinstance(policy, Mapping) else None
+    if not isinstance(enforced_expiry, str):
+        raise DeploymentError(
+            f"the requested {kind} PAT has no server-enforced expiry and cannot be exported"
+        )
+    try:
+        parsed_expiry = datetime.fromisoformat(enforced_expiry.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise DeploymentError(
+            f"the requested {kind} PAT has a malformed server-enforced expiry"
+        ) from error
+    if parsed_expiry.tzinfo is None:
+        raise DeploymentError(
+            f"the requested {kind} PAT expiry must include a timezone"
+        )
+    expires_at = parsed_expiry.astimezone(UTC).replace(microsecond=0)
+    if expires_at <= issued_at:
+        raise DeploymentError(f"the requested {kind} PAT is expired")
+    if expires_at > issued_at + timedelta(seconds=expires_in_seconds):
+        raise DeploymentError(
+            f"the requested {kind} PAT outlives the requested handoff TTL; rotate it with a bounded server-enforced expiry first"
+        )
     credential: dict[str, str]
     if kind == "grafana":
         credential = {

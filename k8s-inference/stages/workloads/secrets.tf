@@ -111,11 +111,19 @@ resource "random_password" "key_material" {
 
   length  = 32
   special = false
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "random_password" "admin_token" {
   length  = 48
   special = false
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "kubernetes_secret_v1" "database_account" {

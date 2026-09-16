@@ -27,7 +27,10 @@ plan or state file. Use `scripts/operator_handoff.py` from an owner-only host:
 scripts/operator_handoff.py --directory "$HANDOFF_DIR" issue \
   --service-account-id "$SERVICE_ACCOUNT_ID" \
   --project-id "$PROJECT_ID" --cluster-id "$CLUSTER_ID" \
-  --expires-at 2026-10-01T00:00:00Z
+  --expires-at 2026-10-01T00:00:00Z \
+  --predecessor-public-key-id "$OLD_PUBLIC_KEY_ID" \
+  --predecessor-service-account-id "$OLD_SERVICE_ACCOUNT_ID" \
+  --predecessor-project-id "$OLD_PROJECT_ID"
 
 scripts/operator_handoff.py --directory "$HANDOFF_DIR" \
   acknowledge-delivery --recipient "$RECIPIENT_ID"
@@ -36,25 +39,51 @@ scripts/operator_handoff.py --directory "$HANDOFF_DIR" verify \
   --approved-egress 192.0.2.8/32
 
 scripts/operator_handoff.py --directory "$HANDOFF_DIR" \
-  revoke-old --old-public-key-id "$OLD_PUBLIC_KEY_ID"
+  revoke-old --confirm-predecessor-public-key-id "$OLD_PUBLIC_KEY_ID"
 ```
 
 The verifier requires successful namespace inventory, denial of pod creation,
 denial of Secret reads, and exact equality between live and approved API CIDRs.
-The old handoff key cannot be revoked until delivery and verification are both
-recorded. The receipt records key ID and expiry; it never contains a private
-key, bearer token, Kubernetes Secret, or customer payload.
+Issuance reads the predecessor from Nebius and binds its key ID, service
+account, and project into the receipt. It also reads the new key back and
+requires the provider's expiry to equal the requested instant; if that proof
+fails, the new key is immediately revoked and no receipt is written. The old
+handoff key cannot be revoked until delivery and verification are recorded.
+`revoke-old` accepts the bound predecessor ID only as an explicit confirmation:
+it revalidates the receipt-bound identity, deletes exactly that key, then proves
+both authoritative `get` absence and absence from the complete project
+inventory while retaining the verified successor. Repeating the operation or
+supplying a different ID fails without another delete. Verification parses the
+complete SelfSubjectRulesReview and rejects every mutation/escalation verb and
+every Secret read rule, in addition to explicit negative probes. The receipt never
+contains a private key, bearer token, Kubernetes Secret, or customer payload.
 
 ## Immutable generations and keyrings
 
 Generation 1 uses the existing Terraform resource addresses and exact stored
 bytes. It remains protected while those values are imported into encrypted,
 access-logged escrow. Do not plan a delete or replacement of these addresses.
-Run the plan guard on the JSON form of every migration plan:
+Before the next workloads plan, create one write-once, mode-0600 value-free
+identity receipt from the current state JSON inside the owner-only run root:
 
 ```bash
-terraform show -json workloads.tfplan > "$PRIVATE_PLAN_JSON"
-scripts/secret_migration_guard.py plan "$PRIVATE_PLAN_JSON"
+terraform -chdir=stages/workloads show -json "$RUN_ROOT/workloads.tfstate" | \
+  scripts/secret_migration_guard.py capture-state - \
+    "$RUN_ROOT/fixed-v1-identity.receipt.json" \
+    --source-commit "$(git rev-parse HEAD)"
+```
+
+The receipt contains only resource addresses and SHA-256 fingerprints. The
+wrapper requires it whenever protected state exists, compares every current v1
+source and Secret identity to it, rejects update/replacement/deletion, and runs
+the guard after every plan and again from the exact saved plan immediately
+before every workloads apply. For an independently generated plan, run the same
+guard explicitly:
+
+```bash
+terraform show -json workloads.tfplan | \
+scripts/secret_migration_guard.py plan - \
+  --identity-receipt "$RUN_ROOT/fixed-v1-identity.receipt.json"
 ```
 
 Payload AEAD, ledger HMAC, PAT pepper, and route-attestor generations advance
@@ -83,6 +112,28 @@ PAT ID; it does not rewrite the generation-1 Secret. Keep both PATs active for
 the acceptance overlap, then revoke the predecessor through the audited admin
 API. Admin-token cutover is readiness-gated; its predecessor is retained for
 rollback evidence but must not be reactivated after confirmed disclosure.
+All later PAT IDs must be unique across every generation and both general and
+scientific audiences, and must differ from both fixed generation-1 IDs. The
+wrapper rejects duplicate external IDs before planning and Terraform rechecks
+the complete set against the persisted v1 resources.
+
+Before cutover, create a private mode-0600 token map containing generation 1
+and every retained generation by audience. Create its value-free receipt, then
+prove both old and new against a semantic authenticated endpoint:
+
+```bash
+scripts/pat_rotation_guard.py map --tokens-file "$PAT_MAP" \
+  --receipt "$PAT_MAPPING_RECEIPT"
+scripts/pat_rotation_guard.py prove-overlap --tokens-file "$PAT_MAP" \
+  --mapping-receipt "$PAT_MAPPING_RECEIPT" --audience general \
+  --old-generation 1 --new-generation 2 --endpoint "$MODELS_ENDPOINT" \
+  --receipt "$PAT_OVERLAP_RECEIPT"
+```
+
+After the audited admin API revokes generation 1, run `prove-revocation` with
+the same arguments and a new receipt. It requires old `401/403` and new
+semantic success. Receipts contain PAT IDs, SHA-256 fingerprints, response
+hashes, and status only—never token values or bodies.
 
 Database credentials use a distinct overlap contract. Supply
 `FS2_DATABASE_PASSWORDS_JSON` as a JSON object keyed by every retained
@@ -120,11 +171,14 @@ There is no aggregate credential export. `output` requires one explicit kind:
   --credential-file "$HANDOFF_DIR/general-access.json"
 ```
 
-Available kinds are `general-access`, `scientific-access`, `admin`, and
-`grafana`. Admin and Grafana are excluded by default and additionally require
-`--allow-privileged-credential`. The wrapper reads only the selected live
-Secret, writes a mode-0600 expiring delivery file, and writes a separate
-mode-0600 value-free receipt. It prints only receipt metadata.
+Only `general-access` and `scientific-access` can be delivered, and only when
+the PAT has a server-enforced expiry no later than the requested handoff TTL.
+The wrapper reads only that selected live Secret, writes a mode-0600 delivery
+file, and writes a separate mode-0600 value-free receipt. It prints only receipt
+metadata. Admin and Grafana source credentials are never copied: their apparent
+file expiry would not expire the underlying credential. A future privileged
+handoff must mint a server-enforced TTL admin session or Grafana service-account
+token with independently verified revocation.
 
 ## Legacy state retirement
 
@@ -140,16 +194,23 @@ encrypted, access-logged state/escrow target:
    workflow and verify the remote object version/audit event;
 2. prove a no-op plan against the remote state and run the protected-address
    plan guard;
-3. retain the encrypted version needed for rollback and securely retire every
-   local state, backup, plan, plan JSON, and expired credential handoff;
+3. capture the exact pre-retirement inventory outside the run root, retain the
+   encrypted version needed for rollback, and securely retire every
+   local state, backup, `*.tfplan`, `*.plan.json`, admin-cookie, scoped
+   credential export, expired credential handoff, and unknown artifact;
 4. run the absence canary:
 
    ```bash
-   scripts/secret_migration_guard.py run-root "$RUN_ROOT" --retired
+   scripts/secret_migration_guard.py capture-run-root "$RUN_ROOT" \
+     "$ENCRYPTED_RECEIPT_DIR/run-root-artifacts.receipt.json"
+   scripts/secret_migration_guard.py run-root "$RUN_ROOT" --retired \
+     --artifact-manifest "$ENCRYPTED_RECEIPT_DIR/run-root-artifacts.receipt.json"
    ```
 
-During migration, omit `--retired`; the guard reports the count without
-reading or printing file content.
+The manifest is value-free and binds every known and unknown file by relative
+path and SHA-256. Retirement succeeds only when the local run root contains
+zero files. During migration, omit `--retired`; the guard reports known,
+unknown, and total counts without printing file content.
 
 ## Ordered rollout and rollback
 

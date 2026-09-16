@@ -15,6 +15,7 @@ import tempfile
 import unittest
 from argparse import Namespace
 from contextlib import redirect_stdout
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest import mock
 
@@ -1628,6 +1629,9 @@ class InferenceStackTests(unittest.TestCase):
     def test_scoped_export_reads_only_the_requested_general_credential(self) -> None:
         access_contract = complete_access_bundle()
         access_contract["schema"] = "fs2-serve.nebius.ai/access-bundle-contract/v2"
+        access_contract["mcp_access"]["expires_at"] = (
+            datetime.now(UTC) + timedelta(minutes=30)
+        ).replace(microsecond=0).isoformat().replace("+00:00", "Z")
         del access_contract["credentials"]
         access_contract["credential_secret_refs"] = {
             "admin": {"namespace": "fs2-system", "name": "admin-secret", "key": "token"},

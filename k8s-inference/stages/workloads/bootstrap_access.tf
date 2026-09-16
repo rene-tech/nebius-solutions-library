@@ -65,6 +65,24 @@ locals {
       expiresAt      = var.bootstrap_access_expires_at
     }
   }
+
+  # A rotation is independently revocable only when every generation and
+  # audience has a different PAT ID. The v1 IDs remain fixed and protected;
+  # later generations are append-only external inputs.
+  bootstrap_access_versioned_pat_ids = [
+    for generation in var.credential_generation_history.access :
+    try(regex("^fs2_pat_([0-9a-f]{32})_[A-Za-z0-9_-]{32,}$", var.bootstrap_access_tokens[tostring(generation)])[0], "")
+    if generation > 1
+  ]
+  scientific_access_versioned_pat_ids = local.scientific_access_enabled ? [
+    for generation in var.credential_generation_history.access :
+    try(regex("^fs2_pat_([0-9a-f]{32})_[A-Za-z0-9_-]{32,}$", var.scientific_access_tokens[tostring(generation)])[0], "")
+    if generation > 1
+  ] : []
+  all_versioned_access_pat_ids = concat(
+    local.bootstrap_access_versioned_pat_ids,
+    local.scientific_access_versioned_pat_ids,
+  )
 }
 
 resource "random_id" "bootstrap_access_token_id" {
@@ -72,6 +90,10 @@ resource "random_id" "bootstrap_access_token_id" {
   keepers = {
     cluster_id = var.cluster_id
     tenant_id  = local.bootstrap_access_tenant_id
+  }
+
+  lifecycle {
+    prevent_destroy = true
   }
 }
 
@@ -82,6 +104,11 @@ resource "random_password" "bootstrap_access_token_secret" {
     cluster_id = var.cluster_id
     tenant_id  = local.bootstrap_access_tenant_id
   }
+
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "random_id" "scientific_access_token_id" {
@@ -90,6 +117,11 @@ resource "random_id" "scientific_access_token_id" {
   keepers = {
     cluster_id = var.cluster_id
     tenant_id  = local.scientific_access_tenant_id
+  }
+
+
+  lifecycle {
+    prevent_destroy = true
   }
 }
 
@@ -100,6 +132,11 @@ resource "random_password" "scientific_access_token_secret" {
   keepers = {
     cluster_id = var.cluster_id
     tenant_id  = local.scientific_access_tenant_id
+  }
+
+
+  lifecycle {
+    prevent_destroy = true
   }
 }
 
@@ -115,6 +152,10 @@ resource "kubernetes_secret_v1" "bootstrap_access" {
   type = "Opaque"
   data = {
     token = local.bootstrap_access_token
+  }
+
+  lifecycle {
+    prevent_destroy = true
   }
 
   depends_on = [terraform_data.cluster_contract]
@@ -138,8 +179,13 @@ resource "kubernetes_secret_v1" "bootstrap_access_versioned" {
 
   lifecycle {
     precondition {
-      condition     = try(can(regex("^fs2_pat_[0-9a-f]{32}_[A-Za-z0-9_-]{32,}$", var.bootstrap_access_tokens[each.key])), false)
-      error_message = "Every retained general access generation greater than 1 requires a distinct externally escrowed PAT."
+      condition = (
+        try(can(regex("^fs2_pat_[0-9a-f]{32}_[A-Za-z0-9_-]{32,}$", var.bootstrap_access_tokens[each.key])), false) &&
+        length(local.all_versioned_access_pat_ids) == length(toset(local.all_versioned_access_pat_ids)) &&
+        !contains(local.all_versioned_access_pat_ids, random_id.bootstrap_access_token_id.hex) &&
+        (local.scientific_access_enabled ? !contains(local.all_versioned_access_pat_ids, random_id.scientific_access_token_id[0].hex) : true)
+      )
+      error_message = "Every retained access generation and audience requires a unique externally escrowed PAT ID that differs from both immutable generation-1 IDs."
     }
     prevent_destroy = true
   }
@@ -159,6 +205,10 @@ resource "kubernetes_secret_v1" "scientific_access" {
   type = "Opaque"
   data = {
     token = local.scientific_access_token
+  }
+
+  lifecycle {
+    prevent_destroy = true
   }
 
   depends_on = [terraform_data.cluster_contract]
@@ -184,8 +234,13 @@ resource "kubernetes_secret_v1" "scientific_access_versioned" {
 
   lifecycle {
     precondition {
-      condition     = try(can(regex("^fs2_pat_[0-9a-f]{32}_[A-Za-z0-9_-]{32,}$", var.scientific_access_tokens[each.key])), false)
-      error_message = "Every retained scientific access generation greater than 1 requires a distinct externally escrowed PAT."
+      condition = (
+        try(can(regex("^fs2_pat_[0-9a-f]{32}_[A-Za-z0-9_-]{32,}$", var.scientific_access_tokens[each.key])), false) &&
+        length(local.all_versioned_access_pat_ids) == length(toset(local.all_versioned_access_pat_ids)) &&
+        !contains(local.all_versioned_access_pat_ids, random_id.bootstrap_access_token_id.hex) &&
+        !contains(local.all_versioned_access_pat_ids, random_id.scientific_access_token_id[0].hex)
+      )
+      error_message = "Every retained access generation and audience requires a unique externally escrowed PAT ID that differs from both immutable generation-1 IDs."
     }
     prevent_destroy = true
   }
