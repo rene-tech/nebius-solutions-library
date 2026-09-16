@@ -44,6 +44,11 @@ from fs2_serve.model_deployment_controller import (
     FIXED_SCALE_FIELD_MANAGER,
     SCALE_GATE_CONFIG_MAP,
     SCALE_GATE_DENIAL_MESSAGE,
+    SCALE_GATE_HPA_NAME_PREFIX,
+    SCALE_GATE_HPA_OWNER_PREFIX,
+    SCALE_GATE_SCALED_OBJECT_NAME_PREFIX,
+    SCALE_GATE_SCALED_OBJECT_OWNER_PREFIX,
+    SCALE_GATE_TARGET_PREFIX,
     SCALE_HANDOFF_RECEIPT_ANNOTATION,
     SCALE_HANDOFF_RECEIPT_FIELD_MANAGER,
     SCALE_INITIALIZATION_RECEIPT_ANNOTATION,
@@ -63,13 +68,18 @@ from fs2_serve.model_deployment_controller import (
     PostgresActiveOperations,
     PrometheusActiveOperations,
     ResourceSnapshot,
+    ScaleGateTombstone,
     ScaleHandoffReceipt,
     ScaleHandoffScaler,
     ScaleInitializationReceipt,
     _autoscaler_handoff_complete,
+    _autoscaler_pairs,
     _controller_fixed_scale_updates,
     _field_manager_conflicts,
+    _model_deletion_fence,
     _model_write_fence,
+    _scale_gate_companion_keys,
+    _scale_gate_target_key,
     _snapshot,
     _without_deployment_replicas,
     build_status,
@@ -681,6 +691,7 @@ class FakeApi(ModelControllerApi):
         self,
         resource: RenderedResource,
         *,
+        scaler: RenderedResource,
         current: ResourceSnapshot,
         owner_uid: str,
         model_fence: ModelWriteFence,
@@ -688,9 +699,36 @@ class FakeApi(ModelControllerApi):
     ) -> None:
         await self.assert_fence(fence)
         self.calls.append(("release-scale-gate", resource.name))
+        assert scaler.kind == "ScaledObject"
         assert current.observed.controller_owner_uid == owner_uid
-        assert current.desired_replicas == 0
         assert model_fence == _model_write_fence(self.model, model_fence.key)
+
+    async def prepare_scale_gate_deletion(
+        self,
+        resource: RenderedResource,
+        *,
+        current: ResourceSnapshot,
+        owner_uid: str,
+        model_fence: ModelWriteFence,
+        fence: LeaseFence,
+    ) -> None:
+        await self.assert_fence(fence)
+        self.calls.append(("scale-gate-tombstone", resource.name))
+        assert current.observed.controller_owner_uid == owner_uid
+        assert model_fence == _model_deletion_fence(self.model, model_fence.key)
+
+    async def confirm_scale_gate_tombstone(
+        self,
+        resource: RenderedResource,
+        *,
+        owner_uid: str,
+        model_fence: ModelWriteFence,
+        fence: LeaseFence,
+    ) -> None:
+        await self.assert_fence(fence)
+        self.calls.append(("scale-gate-tombstone-confirmed", resource.name))
+        assert owner_uid == self.model["metadata"]["uid"]
+        assert model_fence == _model_deletion_fence(self.model, model_fence.key)
 
     async def record_scale_handoff_receipt(
         self,
@@ -700,10 +738,12 @@ class FakeApi(ModelControllerApi):
         scaler: ResourceSnapshot,
         owner_uid: str,
         model_generation: int,
+        model_fence: ModelWriteFence,
         fence: LeaseFence,
     ) -> ResourceSnapshot:
         await self.assert_fence(fence)
         self.calls.append(("scale-handoff-receipt", resource.name))
+        assert model_fence == _model_write_fence(self.model, model_fence.key)
         receipt = ScaleHandoffReceipt(
             version=1,
             deploymentUID=current.observed.uid,
@@ -885,7 +925,14 @@ async def test_controller_adds_finalizer_before_apply_then_observes_exact_endpoi
     api.calls.clear()
     steady = await subject.reconcile(key, fence())
     assert steady.action == "noop"
-    assert [action for action, _ in api.calls] == ["get", "discover", "get", "discover", "status"]
+    assert [action for action, _ in api.calls] == [
+        "get",
+        "discover",
+        "release-scale-gate",
+        "get",
+        "discover",
+        "status",
+    ]
 
 
 @pytest.mark.asyncio
@@ -2447,6 +2494,13 @@ def _scale_gate_response(request: httpx.Request) -> httpx.Response | None:
     return None
 
 
+def test_scale_gate_target_receipts_cannot_alias_dotted_companion_keys() -> None:
+    victim = "victim"
+    for companion in _scale_gate_companion_keys(victim):
+        assert _scale_gate_target_key(companion) != companion
+        assert _scale_gate_target_key(companion) not in _scale_gate_companion_keys(victim)
+
+
 def _field_conflict_status(
     *,
     manager: str = "keda",
@@ -2962,6 +3016,537 @@ async def test_http_initialization_acquires_scale_only_ownership_before_unpausin
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("checkpoint", ["receipt", "gate", "zero", "desired", "before-unpause"])
+async def test_http_paused_initialization_rebinds_an_old_cr_revision_at_every_checkpoint(
+    tmp_path: Path, checkpoint: str
+) -> None:
+    token = tmp_path / "token"
+    token.write_text("projected-service-account-token")
+    desired, _, _ = _fixed_scale_http_fixture()
+    model_fence = _handoff_model_fence()
+    old_receipt = ScaleInitializationReceipt(
+        version=1,
+        deploymentUID="deployment-uid",
+        modelUID="cr-uid-1",
+        modelGeneration=1,
+        modelSpecDigest=f"sha256:{'0' * 64}",
+        desiredReplicas=1,
+        targetMode="fixed",
+    )
+    expected = ScaleInitializationReceipt(
+        version=1,
+        deploymentUID="deployment-uid",
+        modelUID="cr-uid-1",
+        modelGeneration=2,
+        modelSpecDigest=model_fence.spec_digest,
+        desiredReplicas=2,
+        targetMode="fixed",
+    )
+    paused = copy.deepcopy(desired.manifest)
+    paused["spec"].update({"paused": True, "replicas": 1})
+    paused["metadata"].update(
+        {
+            "uid": "deployment-uid",
+            "resourceVersion": "11",
+            "generation": 1,
+            "annotations": {
+                **paused["metadata"].get("annotations", {}),
+                SCALE_INITIALIZATION_RECEIPT_ANNOTATION: old_receipt.annotation_value(),
+            },
+            "managedFields": [
+                {
+                    "manager": FIELD_MANAGER,
+                    "operation": "Apply",
+                    "apiVersion": "apps/v1",
+                    "fieldsV1": {"f:spec": {"f:paused": {}, "f:template": {}}},
+                },
+                {
+                    "manager": SCALE_HANDOFF_RECEIPT_FIELD_MANAGER,
+                    "operation": "Apply",
+                    "apiVersion": "apps/v1",
+                    "fieldsV1": {"f:metadata": {"f:annotations": {f"f:{SCALE_INITIALIZATION_RECEIPT_ANNOTATION}": {}}}},
+                },
+            ],
+        }
+    )
+    if checkpoint in {"zero", "desired", "before-unpause"}:
+        paused = _fixed_scale_owned_body(
+            paused,
+            replicas=0 if checkpoint == "zero" else 2,
+            resource_version="11",
+        )
+    rebound = copy.deepcopy(paused)
+    rebound["metadata"]["resourceVersion"] = "12"
+    rebound["metadata"]["annotations"][SCALE_INITIALIZATION_RECEIPT_ANNOTATION] = expected.annotation_value()
+    fixed = _fixed_scale_owned_body(rebound, replicas=2, resource_version="13")
+    initialized = copy.deepcopy(fixed)
+    initialized["metadata"]["resourceVersion"] = "14"
+    initialized["spec"].pop("paused")
+    state = "paused"
+    postcheck_model_reads = 0
+    patches: list[httpx.Request] = []
+    _TEST_SCALE_GATES.clear()
+    if checkpoint != "receipt":
+        _TEST_SCALE_GATES[f"{SCALE_GATE_TARGET_PREFIX}{desired.name}"] = old_receipt.annotation_value()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal postcheck_model_reads, state
+        if request.url.path.endswith("/leases/fs2-model-controller"):
+            return _lease_response()
+        if request.url.path.endswith("/modeldeployments/qwen-live"):
+            model = _handoff_model()
+            if checkpoint == "before-unpause" and state == "rebound":
+                postcheck_model_reads += 1
+                if postcheck_model_reads == 2:
+                    model["metadata"].update({"generation": 3, "resourceVersion": "3"})
+                    model["spec"]["tenantId"] = "tenant-raced"
+            return httpx.Response(200, json=model)
+        if (response := _handoff_model_response(request)) is not None:
+            return response
+        if request.method == "GET" and request.url.path.endswith(("/horizontalpodautoscalers", "/scaledobjects")):
+            return httpx.Response(200, json={"metadata": {}, "items": []})
+        if request.method == "PATCH":
+            patches.append(request)
+            body = json.loads(request.content)
+            if request.url.path.endswith("/scale"):
+                assert state == "rebound"
+                assert body["spec"] == {"replicas": 2}
+                if request.url.params.get("dryRun") == "All":
+                    assert checkpoint in {"receipt", "gate"}
+                    return httpx.Response(
+                        409,
+                        json=_field_conflict_status(
+                            manager="before-first-apply",
+                            conflict_api_version="autoscaling/v1",
+                        ),
+                    )
+                state = "fixed"
+                return httpx.Response(200, json={"apiVersion": "autoscaling/v1", "kind": "Scale"})
+            if request.url.params["fieldManager"] == SCALE_HANDOFF_RECEIPT_FIELD_MANAGER:
+                assert state == "paused"
+                assert set(body) == {"apiVersion", "kind", "metadata"}
+                assert paused["spec"]["paused"] is True
+                state = "rebound"
+                return httpx.Response(200, json=rebound)
+            assert request.url.params["fieldManager"] == FIELD_MANAGER
+            assert "replicas" not in body["spec"]
+            assert state in {"rebound", "fixed"}
+            state = "initialized"
+            return httpx.Response(200, json=initialized)
+        return httpx.Response(
+            200,
+            json={"paused": paused, "rebound": rebound, "fixed": fixed, "initialized": initialized}[state],
+        )
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.invalid")
+    client = HttpKubernetesModelClient(
+        base_url="https://kubernetes.invalid",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        writes_enabled=True,
+        client=http,
+    )
+    if checkpoint == "before-unpause":
+        with pytest.raises(KubernetesConflictError, match="ModelDeployment changed"):
+            await client.initialize_deployment_scale(
+                desired,
+                replicas=2,
+                target_mode="fixed",
+                owner_uid="cr-uid-1",
+                model_fence=model_fence,
+                fence=fence(),
+            )
+        assert state == "rebound" and postcheck_model_reads == 2
+        assert not any(
+            request.url.params.get("fieldManager") == FIELD_MANAGER
+            for request in patches
+            if not request.url.path.endswith("/scale")
+        )
+        await http.aclose()
+        return
+    result = await client.initialize_deployment_scale(
+        desired,
+        replicas=2,
+        target_mode="fixed",
+        owner_uid="cr-uid-1",
+        model_fence=model_fence,
+        fence=fence(),
+    )
+    assert state == "initialized" and result.desired_replicas == 2
+    assert _TEST_SCALE_GATES == {f"{SCALE_GATE_TARGET_PREFIX}{desired.name}": expected.annotation_value()}
+    receipt_patches = [
+        request
+        for request in patches
+        if not request.url.path.endswith("/scale")
+        and request.url.params.get("fieldManager") == SCALE_HANDOFF_RECEIPT_FIELD_MANAGER
+    ]
+    assert len(receipt_patches) == 1
+    await http.aclose()
+
+
+@pytest.mark.asyncio
+async def test_http_autoscaled_gate_stays_closed_and_allows_only_the_exact_scaler_chain(tmp_path: Path) -> None:
+    token = tmp_path / "token"
+    token.write_text("projected-service-account-token")
+    render = renderer().render(
+        model_spec(),
+        RenderContext(
+            name="qwen-live",
+            namespace="fs2-models",
+            uid="cr-uid-1",
+            generation=2,
+            pool=envelope().pools["pool-b"],
+            eligible_pools=[envelope().pools[pool_ref] for pool_ref in model_spec().placement.pool_refs],
+            prometheus_server_address="http://prometheus:9090",
+        ),
+    )
+    scaler, target = next((scaler, target) for scaler, target in _autoscaler_pairs(render))
+    model_fence = _handoff_model_fence()
+    receipt = ScaleHandoffReceipt(
+        version=1,
+        deploymentUID="deployment-uid",
+        modelUID="cr-uid-1",
+        modelGeneration=2,
+        scaler=ScaleHandoffScaler(
+            apiVersion="keda.sh/v1alpha1",
+            kind="ScaledObject",
+            namespace=target.namespace,
+            name=scaler.name,
+            uid="previous-scaler-uid",
+            generation=1,
+        ),
+    )
+    current = copy.deepcopy(target.manifest)
+    current["spec"]["replicas"] = 0
+    current["metadata"].update(
+        {
+            "uid": "deployment-uid",
+            "resourceVersion": "21",
+            "generation": 1,
+            "annotations": {
+                **current["metadata"].get("annotations", {}),
+                SCALE_HANDOFF_RECEIPT_ANNOTATION: receipt.annotation_value(),
+            },
+            "managedFields": [
+                {
+                    "manager": FIXED_SCALE_FIELD_MANAGER,
+                    "operation": "Apply",
+                    "apiVersion": "apps/v1",
+                    "subresource": "scale",
+                    "fieldsV1": {"f:spec": {"f:replicas": {}}},
+                },
+                {
+                    "manager": SCALE_HANDOFF_RECEIPT_FIELD_MANAGER,
+                    "operation": "Apply",
+                    "apiVersion": "apps/v1",
+                    "fieldsV1": {"f:metadata": {"f:annotations": {f"f:{SCALE_HANDOFF_RECEIPT_ANNOTATION}": {}}}},
+                },
+            ],
+        }
+    )
+    live_scaler = copy.deepcopy(scaler.manifest)
+    live_scaler["metadata"].update(
+        {
+            "uid": "scaler-uid",
+            "resourceVersion": "31",
+            "generation": 1,
+            "managedFields": [{"manager": FIELD_MANAGER, "apiVersion": "keda.sh/v1alpha1"}],
+        }
+    )
+    live_hpa: dict[str, Any] = {
+        "apiVersion": "autoscaling/v2",
+        "kind": "HorizontalPodAutoscaler",
+        "metadata": {
+            "name": f"keda-hpa-{scaler.name}",
+            "namespace": target.namespace,
+            "uid": "hpa-uid",
+            "resourceVersion": "41",
+            "ownerReferences": [
+                {
+                    "apiVersion": "keda.sh/v1alpha1",
+                    "kind": "ScaledObject",
+                    "name": scaler.name,
+                    "uid": "scaler-uid",
+                    "controller": True,
+                }
+            ],
+        },
+        "spec": {"scaleTargetRef": copy.deepcopy(scaler.manifest["spec"]["scaleTargetRef"])},
+    }
+    phase = "absent"
+    foreign = False
+    gate_patches: list[dict[str, Any]] = []
+    requests: list[tuple[str, str]] = []
+    _TEST_SCALE_GATES.clear()
+    _TEST_SCALE_GATES[f"{SCALE_GATE_TARGET_PREFIX}{target.name}"] = receipt.annotation_value()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append((request.method, request.url.path))
+        if request.url.path.endswith("/leases/fs2-model-controller"):
+            return _lease_response()
+        if request.url.path.endswith("/modeldeployments/qwen-live"):
+            return httpx.Response(200, json=_handoff_model())
+        if request.url.path.endswith(f"/configmaps/{SCALE_GATE_CONFIG_MAP}"):
+            if request.method == "PATCH":
+                gate_patches.append(json.loads(request.content))
+            response = _scale_gate_response(request)
+            assert response is not None
+            return response
+        if request.method == "POST" and request.url.path.endswith("/scaledobjects"):
+            response = _scale_gate_response(request)
+            assert response is not None
+            return response
+        if request.method == "GET" and request.url.path.endswith("/scaledobjects"):
+            return httpx.Response(
+                200,
+                json={"metadata": {}, "items": [] if phase == "absent" else [live_scaler]},
+            )
+        if request.method == "GET" and request.url.path.endswith("/horizontalpodautoscalers"):
+            items = [] if phase != "complete" else [live_hpa]
+            if foreign:
+                unexpected = copy.deepcopy(live_hpa)
+                unexpected["metadata"].update({"name": "foreign-hpa", "uid": "foreign-hpa-uid"})
+                items.append(unexpected)
+            return httpx.Response(200, json={"metadata": {}, "items": items})
+        return httpx.Response(200, json=current)
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.invalid")
+    client = HttpKubernetesModelClient(
+        base_url="https://kubernetes.invalid",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        writes_enabled=True,
+        client=http,
+    )
+    current_snapshot = _snapshot(current, target)
+    await client.release_scale_gate(
+        target,
+        scaler=scaler,
+        current=current_snapshot,
+        owner_uid="cr-uid-1",
+        model_fence=model_fence,
+        fence=fence(),
+    )
+    assert _TEST_SCALE_GATES[f"{SCALE_GATE_TARGET_PREFIX}{target.name}"] == receipt.annotation_value()
+    assert _TEST_SCALE_GATES[f"{SCALE_GATE_SCALED_OBJECT_NAME_PREFIX}{target.name}"] == scaler.name
+    assert _TEST_SCALE_GATES[f"{SCALE_GATE_SCALED_OBJECT_OWNER_PREFIX}{target.name}"] == "cr-uid-1"
+    assert f"{SCALE_GATE_HPA_NAME_PREFIX}{target.name}" not in _TEST_SCALE_GATES
+
+    phase = "scaler"
+    await client.release_scale_gate(
+        target,
+        scaler=scaler,
+        current=current_snapshot,
+        owner_uid="cr-uid-1",
+        model_fence=model_fence,
+        fence=fence(),
+    )
+    assert _TEST_SCALE_GATES[f"{SCALE_GATE_HPA_NAME_PREFIX}{target.name}"] == f"keda-hpa-{scaler.name}"
+    assert _TEST_SCALE_GATES[f"{SCALE_GATE_HPA_OWNER_PREFIX}{target.name}"] == "scaler-uid"
+
+    phase = "complete"
+    before_steady = len(gate_patches)
+    requests.clear()
+    await client.release_scale_gate(
+        target,
+        scaler=scaler,
+        current=current_snapshot,
+        owner_uid="cr-uid-1",
+        model_fence=model_fence,
+        fence=fence(),
+    )
+    assert len(gate_patches) == before_steady
+    assert sum(path.endswith("/horizontalpodautoscalers") for _, path in requests) == 1
+    assert sum(path.endswith("/scaledobjects") and method == "GET" for method, path in requests) == 1
+    assert sum(path.endswith(f"/configmaps/{SCALE_GATE_CONFIG_MAP}") for _, path in requests) == 2
+    assert not any(method == "PATCH" for method, _ in requests)
+    foreign = True
+    with pytest.raises(KubernetesConflictError, match="unexpected HPA"):
+        await client.release_scale_gate(
+            target,
+            scaler=scaler,
+            current=current_snapshot,
+            owner_uid="cr-uid-1",
+            model_fence=model_fence,
+            fence=fence(),
+        )
+    assert len(gate_patches) == before_steady
+    await http.aclose()
+
+
+@pytest.mark.asyncio
+async def test_http_deletion_tombstone_survives_retry_and_is_replaced_without_opening_the_name(
+    tmp_path: Path,
+) -> None:
+    token = tmp_path / "token"
+    token.write_text("projected-service-account-token")
+    desired, current, _ = _fixed_scale_http_fixture()
+    receipt = ScaleHandoffReceipt.model_validate_json(
+        current["metadata"]["annotations"][SCALE_HANDOFF_RECEIPT_ANNOTATION]
+    )
+    deleting_model = _handoff_model()
+    deleting_model["metadata"]["deletionTimestamp"] = "2026-09-16T20:00:00Z"
+    deletion_fence = _model_deletion_fence(
+        deleting_model,
+        ModelKey(namespace="fs2-models", name="qwen-live"),
+    )
+    tombstone = ScaleGateTombstone(
+        version=1,
+        deploymentUID="deployment-uid",
+        modelUID="cr-uid-1",
+    )
+    phase = "existing"
+    live_model = deleting_model
+    gate_patches: list[dict[str, Any]] = []
+    _TEST_SCALE_GATES.clear()
+    _TEST_SCALE_GATES.update(
+        {
+            f"{SCALE_GATE_TARGET_PREFIX}{desired.name}": receipt.annotation_value(),
+            f"{SCALE_GATE_SCALED_OBJECT_NAME_PREFIX}{desired.name}": "qwen-live-autoscaler",
+            f"{SCALE_GATE_SCALED_OBJECT_OWNER_PREFIX}{desired.name}": "cr-uid-1",
+            f"{SCALE_GATE_HPA_NAME_PREFIX}{desired.name}": "keda-hpa-qwen-live-autoscaler",
+            f"{SCALE_GATE_HPA_OWNER_PREFIX}{desired.name}": "scaled-object-uid",
+        }
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/leases/fs2-model-controller"):
+            return _lease_response()
+        if request.url.path.endswith("/modeldeployments/qwen-live"):
+            return httpx.Response(200, json=live_model)
+        if request.url.path.endswith(f"/configmaps/{SCALE_GATE_CONFIG_MAP}"):
+            if request.method == "PATCH":
+                gate_patches.append(json.loads(request.content))
+            response = _scale_gate_response(request)
+            assert response is not None
+            return response
+        if request.method == "POST" and request.url.path.endswith("/scaledobjects"):
+            response = _scale_gate_response(request)
+            assert response is not None
+            return response
+        if request.method == "GET" and request.url.path.endswith(("/horizontalpodautoscalers", "/scaledobjects")):
+            return httpx.Response(200, json={"metadata": {}, "items": []})
+        if request.url.path.endswith(f"/deployments/{desired.name}"):
+            if phase == "absent":
+                return httpx.Response(404, json={"kind": "Status", "reason": "NotFound"})
+            if phase == "replacement":
+                replacement = copy.deepcopy(current)
+                replacement["metadata"]["uid"] = "replacement-deployment-uid"
+                replacement["metadata"]["ownerReferences"][0]["uid"] = "replacement-model-uid"
+                replacement["spec"]["paused"] = True
+                return httpx.Response(200, json=replacement)
+            return httpx.Response(200, json=current)
+        return httpx.Response(404, json={"kind": "Status", "reason": "NotFound"})
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://kubernetes.invalid")
+    client = HttpKubernetesModelClient(
+        base_url="https://kubernetes.invalid",
+        token_file=token,
+        ca_file=tmp_path / "ca.crt",
+        writes_enabled=True,
+        client=http,
+    )
+    current_snapshot = _snapshot(current, desired)
+    await client.prepare_scale_gate_deletion(
+        desired,
+        current=current_snapshot,
+        owner_uid="cr-uid-1",
+        model_fence=deletion_fence,
+        fence=fence(),
+    )
+    assert _TEST_SCALE_GATES == {f"{SCALE_GATE_TARGET_PREFIX}{desired.name}": tombstone.annotation_value()}
+    patch_count = len(gate_patches)
+    await client.prepare_scale_gate_deletion(
+        desired,
+        current=current_snapshot,
+        owner_uid="cr-uid-1",
+        model_fence=deletion_fence,
+        fence=fence(),
+    )
+    assert len(gate_patches) == patch_count
+    phase = "absent"
+    await client.confirm_scale_gate_tombstone(
+        desired,
+        owner_uid="cr-uid-1",
+        model_fence=deletion_fence,
+        fence=fence(),
+    )
+    assert _TEST_SCALE_GATES == {f"{SCALE_GATE_TARGET_PREFIX}{desired.name}": tombstone.annotation_value()}
+
+    aborted_model = model_object(generation=1, deleting=True)
+    aborted_model["metadata"]["uid"] = "aborted-model-uid"
+    aborted_fence = _model_deletion_fence(
+        aborted_model,
+        ModelKey(namespace="fs2-models", name="qwen-live"),
+    )
+    aborted_manifest = copy.deepcopy(desired.manifest)
+    aborted_manifest["metadata"]["ownerReferences"][0]["uid"] = "aborted-model-uid"
+    aborted_resource = desired.model_copy(update={"manifest": aborted_manifest})
+    paused_without_receipt = copy.deepcopy(aborted_manifest)
+    paused_without_receipt["spec"].update({"paused": True, "replicas": 1})
+    paused_without_receipt["metadata"].update(
+        {
+            "uid": "aborted-deployment-uid",
+            "resourceVersion": "51",
+            "generation": 1,
+            "annotations": {},
+            "managedFields": [
+                {
+                    "manager": FIELD_MANAGER,
+                    "operation": "Apply",
+                    "apiVersion": "apps/v1",
+                    "fieldsV1": {"f:spec": {"f:paused": {}, "f:template": {}}},
+                }
+            ],
+        }
+    )
+    live_model = aborted_model
+    await client.prepare_scale_gate_deletion(
+        aborted_resource,
+        current=_snapshot(paused_without_receipt, aborted_resource),
+        owner_uid="aborted-model-uid",
+        model_fence=aborted_fence,
+        fence=fence(),
+    )
+    aborted_tombstone = ScaleGateTombstone(
+        version=1,
+        deploymentUID="aborted-deployment-uid",
+        modelUID="aborted-model-uid",
+    )
+    assert _TEST_SCALE_GATES == {f"{SCALE_GATE_TARGET_PREFIX}{desired.name}": aborted_tombstone.annotation_value()}
+
+    replacement_model = model_object(generation=1)
+    replacement_model["metadata"]["uid"] = "replacement-model-uid"
+    replacement_fence = _model_write_fence(
+        replacement_model,
+        ModelKey(namespace="fs2-models", name="qwen-live"),
+    )
+    replacement_manifest = copy.deepcopy(desired.manifest)
+    replacement_manifest["metadata"]["ownerReferences"][0]["uid"] = "replacement-model-uid"
+    replacement_resource = desired.model_copy(update={"manifest": replacement_manifest})
+    replacement_receipt = ScaleInitializationReceipt(
+        version=1,
+        deploymentUID="replacement-deployment-uid",
+        modelUID="replacement-model-uid",
+        modelGeneration=1,
+        modelSpecDigest=replacement_fence.spec_digest,
+        desiredReplicas=2,
+        targetMode="fixed",
+    )
+    live_model = replacement_model
+    phase = "replacement"
+    await client._ensure_scale_gate(
+        replacement_resource,
+        receipt=replacement_receipt,
+        model_fence=replacement_fence,
+        fence=fence(),
+    )
+    assert _TEST_SCALE_GATES == {f"{SCALE_GATE_TARGET_PREFIX}{desired.name}": replacement_receipt.annotation_value()}
+    assert all(patch["data"].get(f"{SCALE_GATE_TARGET_PREFIX}{desired.name}") is not None for patch in gate_patches)
+    await http.aclose()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("receipt_state", ["absent", "stale"])
 async def test_http_records_or_refreshes_a_minimal_controller_owned_transition_receipt_before_scaler_deletion(
     tmp_path: Path, receipt_state: str
@@ -3017,11 +3602,51 @@ async def test_http_records_or_refreshes_a_minimal_controller_owned_transition_r
     )
     patches: list[httpx.Request] = []
     wrote = False
+    gate_data: dict[str, str] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
         nonlocal wrote
         if request.url.path.endswith("/leases/fs2-model-controller"):
             return _lease_response()
+        if request.url.path.endswith("/modeldeployments/qwen-live"):
+            return httpx.Response(200, json=_handoff_model())
+        if request.url.path.endswith(f"/configmaps/{SCALE_GATE_CONFIG_MAP}"):
+            if request.method == "PATCH":
+                for name, value in json.loads(request.content).get("data", {}).items():
+                    if value is None:
+                        gate_data.pop(name, None)
+                    else:
+                        gate_data[name] = value
+            return httpx.Response(
+                200,
+                json={
+                    "apiVersion": "v1",
+                    "kind": "ConfigMap",
+                    "metadata": {
+                        "name": SCALE_GATE_CONFIG_MAP,
+                        "namespace": "fs2-models",
+                        "uid": "gate-uid",
+                        "resourceVersion": "91",
+                    },
+                    "data": copy.deepcopy(gate_data),
+                },
+            )
+        if request.method == "POST" and request.url.path.endswith("/scaledobjects"):
+            return httpx.Response(
+                403,
+                json={
+                    "apiVersion": "v1",
+                    "kind": "Status",
+                    "status": "Failure",
+                    "reason": "Forbidden",
+                    "message": SCALE_GATE_DENIAL_MESSAGE,
+                    "code": 403,
+                },
+            )
+        if request.method == "GET" and request.url.path.endswith("/horizontalpodautoscalers"):
+            return httpx.Response(200, json={"items": [], "metadata": {}})
+        if request.method == "GET" and request.url.path.endswith("/scaledobjects"):
+            return httpx.Response(200, json={"items": [scaler], "metadata": {}})
         if request.method == "PATCH":
             patches.append(request)
             body = json.loads(request.content)
@@ -3049,6 +3674,7 @@ async def test_http_records_or_refreshes_a_minimal_controller_owned_transition_r
         scaler=_snapshot(scaler),
         owner_uid="cr-uid-1",
         model_generation=2,
+        model_fence=_handoff_model_fence(),
         fence=fence(),
     )
     assert (
@@ -3651,7 +4277,9 @@ async def test_http_scaler_appearing_after_force_fails_closed_without_stale_comp
     token.write_text("projected-service-account-token")
     desired, current, _ = _fixed_scale_http_fixture()
     fixed = _fixed_scale_owned_body(current, replicas=2, resource_version="12")
-    _TEST_SCALE_GATES[desired.name] = current["metadata"]["annotations"][SCALE_HANDOFF_RECEIPT_ANNOTATION]
+    _TEST_SCALE_GATES[f"{SCALE_GATE_TARGET_PREFIX}{desired.name}"] = current["metadata"]["annotations"][
+        SCALE_HANDOFF_RECEIPT_ANNOTATION
+    ]
     patches: list[httpx.Request] = []
     hpa_scans = 0
     state = "initial"
@@ -3730,7 +4358,9 @@ async def test_http_model_change_after_force_never_restores_replica_value_from_s
     token.write_text("projected-service-account-token")
     desired, current, _ = _fixed_scale_http_fixture()
     fixed = _fixed_scale_owned_body(current, replicas=2, resource_version="12")
-    _TEST_SCALE_GATES[desired.name] = current["metadata"]["annotations"][SCALE_HANDOFF_RECEIPT_ANNOTATION]
+    _TEST_SCALE_GATES[f"{SCALE_GATE_TARGET_PREFIX}{desired.name}"] = current["metadata"]["annotations"][
+        SCALE_HANDOFF_RECEIPT_ANNOTATION
+    ]
     patches: list[httpx.Request] = []
     model_reads = 0
     forced = False

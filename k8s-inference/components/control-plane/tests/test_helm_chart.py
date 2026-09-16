@@ -35,6 +35,9 @@ TEST_CATALOG_ROLLOUT_DIGEST = "sha256:" + "3" * 64
 HELM = shutil.which("helm")
 assert HELM is not None, "helm is required for chart tests"
 POSTGRESQL_CONTRACT = json.loads((CONTROL_ROOT / "contracts" / "postgresql-release-contract.json").read_text())
+SCALE_OWNERSHIP_SECURITY_BOUNDARY = json.loads(
+    (CONTROL_ROOT / "contracts" / "scale-ownership-security-boundary-v1.json").read_text()
+)
 POSTGRESQL_ANNOTATIONS = {
     "fs2.nebius.ai/postgresql-contract-schema": POSTGRESQL_CONTRACT["schema"],
     "fs2.nebius.ai/postgresql-contract-payload-sha256": POSTGRESQL_CONTRACT["contract_payload_sha256"],
@@ -871,6 +874,30 @@ def test_activation_controller_is_owned_by_the_separate_child_and_absent_from_th
         assert forbidden not in rendered
 
 
+def test_scale_ownership_security_boundary_is_external_signed_and_non_destructive() -> None:
+    contract = SCALE_OWNERSHIP_SECURITY_BOUNDARY
+    assert contract["schema"] == "fs2.scale-ownership-security-boundary/v1"
+    assert contract["status"] == "external-release-prerequisite"
+    assert len(contract["protected_resources"]) == 6
+    assert contract["normal_release_boundary"] == {
+        "mutating_verbs": [],
+        "delete_verbs": [],
+        "impersonate_security_owner": False,
+    }
+    assert contract["runtime_writers"]["model_controller"]["verbs"] == ["get", "patch"]
+    assert contract["runtime_writers"]["keda_operator"]["protected_resource_verbs"] == []
+    handoff = contract["security_automation_handoff"]
+    assert {"immutable bundle digest", "detached signature", "bounded expiry"}.issubset(handoff["required"])
+    assert handoff["replay_allowed"] is False
+    assert contract["recovery"] == {
+        "temporary_validation_actions": ["Audit", "Warn"],
+        "requires_signed_handoff": True,
+        "must_restore": ["Deny"],
+        "delete_protected_resources": False,
+    }
+    assert contract["release_gate"].startswith("NO-GO")
+
+
 def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> None:
     documents = render(
         "--set",
@@ -1002,13 +1029,16 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
     assert scale_gate["metadata"]["annotations"] == {"helm.sh/resource-policy": "keep"}
     gate_policy = named[("ValidatingAdmissionPolicy", "fs2-serve-control-plane-model-controller-scale-gates")]
     assert gate_policy["spec"]["paramKind"] == {"apiVersion": "v1", "kind": "ConfigMap"}
-    assert gate_policy["spec"]["validations"] == [
-        {
-            "expression": "!has(params.data) || !(object.spec.scaleTargetRef.name in params.data)",
-            "message": "fixed-scale gate blocks autoscaler targetRef creation",
-            "reason": "Forbidden",
-        }
-    ]
+    gate_validation = gate_policy["spec"]["validations"][0]
+    assert gate_validation["message"] == "fixed-scale gate blocks autoscaler targetRef creation"
+    assert gate_validation["reason"] == "Forbidden"
+    gate_expression = gate_validation["expression"]
+    assert "!(('target.' + object.spec.scaleTargetRef.name) in params.data)" in gate_expression
+    assert "scaledobject-name." in gate_expression and "scaledobject-owner." in gate_expression
+    assert "hpa-name." in gate_expression and "hpa-owner." in gate_expression
+    assert "ownerReferences.filter" in gate_expression
+    assert "system:serviceaccount:fs2-system:fs2-serve-control-plane-controller" in gate_expression
+    assert "system:serviceaccount:keda:keda-operator" in gate_expression
     assert not any("admission-protector" in name for _, name in named)
     network = named[("NetworkPolicy", "fs2-serve-control-plane-model-controller")]
     egress = network["spec"]["egress"]

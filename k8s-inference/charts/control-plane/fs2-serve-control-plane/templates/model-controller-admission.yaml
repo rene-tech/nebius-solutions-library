@@ -153,7 +153,37 @@ spec:
         resources: ["scaledobjects"]
         scope: Namespaced
   validations:
-    - expression: "!has(params.data) || !(object.spec.scaleTargetRef.name in params.data)"
+    - expression: >-
+        !has(params.data) ||
+        !(('target.' + object.spec.scaleTargetRef.name) in params.data) ||
+        (
+          object.kind == 'ScaledObject' &&
+          request.userInfo.username == 'system:serviceaccount:{{ .Release.Namespace }}:{{ include "fs2-serve.serviceAccountName" (dict "root" . "component" "controller") }}' &&
+          ('scaledobject-name.' + object.spec.scaleTargetRef.name) in params.data &&
+          ('scaledobject-owner.' + object.spec.scaleTargetRef.name) in params.data &&
+          object.metadata.name == params.data['scaledobject-name.' + object.spec.scaleTargetRef.name] &&
+          has(object.metadata.ownerReferences) &&
+          object.metadata.ownerReferences.filter(r, has(r.controller) && r.controller).size() == 1 &&
+          object.metadata.ownerReferences.exists(r,
+            has(r.controller) && r.controller &&
+            r.apiVersion == 'inference.fs2.nebius.ai/v1alpha1' &&
+            r.kind == 'ModelDeployment' &&
+            r.uid == params.data['scaledobject-owner.' + object.spec.scaleTargetRef.name])
+        ) ||
+        (
+          object.kind == 'HorizontalPodAutoscaler' &&
+          request.userInfo.username == '{{ required "modelController.admission.kedaServiceAccountUsername is required when admission is enabled" .Values.modelController.admission.kedaServiceAccountUsername }}' &&
+          ('hpa-name.' + object.spec.scaleTargetRef.name) in params.data &&
+          ('hpa-owner.' + object.spec.scaleTargetRef.name) in params.data &&
+          object.metadata.name == params.data['hpa-name.' + object.spec.scaleTargetRef.name] &&
+          has(object.metadata.ownerReferences) &&
+          object.metadata.ownerReferences.filter(r, has(r.controller) && r.controller).size() == 1 &&
+          object.metadata.ownerReferences.exists(r,
+            has(r.controller) && r.controller &&
+            r.apiVersion == 'keda.sh/v1alpha1' &&
+            r.kind == 'ScaledObject' &&
+            r.uid == params.data['hpa-owner.' + object.spec.scaleTargetRef.name])
+        )
       message: fixed-scale gate blocks autoscaler targetRef creation
       reason: Forbidden
 ---

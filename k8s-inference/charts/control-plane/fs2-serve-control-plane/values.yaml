@@ -87,6 +87,10 @@ modelController:
     # policies, bindings, and parameter ConfigMaps from update or deletion;
     # Kubernetes admission policies cannot protect their own deletion.
     enabled: false
+    # Exact Kubernetes username used by the KEDA operator when it creates the
+    # one admitted HPA. Keep this aligned with the externally owned KEDA RBAC
+    # boundary; no other caller can use an autoscaler gate allowance.
+    kedaServiceAccountUsername: system:serviceaccount:keda:keda-operator
     # Additional immutable digest references explicitly approved by the
     # release owner for binary rollback. The current chart image is always
     # included automatically.

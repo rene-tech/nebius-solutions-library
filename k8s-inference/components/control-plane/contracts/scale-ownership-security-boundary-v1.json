@@ -1,0 +1,46 @@
+{
+  "schema": "fs2.scale-ownership-security-boundary/v1",
+  "status": "external-release-prerequisite",
+  "security_owner": "system:serviceaccount:fs2-security:fs2-admission-owner",
+  "protected_resources": [
+    "admissionregistration.k8s.io/validatingadmissionpolicies/fs2-serve-control-plane-model-controller-release",
+    "admissionregistration.k8s.io/validatingadmissionpolicies/fs2-serve-control-plane-model-controller-scale-gates",
+    "admissionregistration.k8s.io/validatingadmissionpolicybindings/fs2-serve-control-plane-model-controller-release",
+    "admissionregistration.k8s.io/validatingadmissionpolicybindings/fs2-serve-control-plane-model-controller-scale-gates",
+    "v1/namespaces/fs2-system/configmaps/fs2-serve-control-plane-model-controller-release-images",
+    "v1/namespaces/fs2-models/configmaps/fs2-model-controller-scale-gates"
+  ],
+  "normal_release_boundary": {
+    "mutating_verbs": [],
+    "delete_verbs": [],
+    "impersonate_security_owner": false
+  },
+  "runtime_writers": {
+    "model_controller": {
+      "resource": "v1/namespaces/fs2-models/configmaps/fs2-model-controller-scale-gates",
+      "verbs": ["get", "patch"],
+      "mutation_scope": "data keys for exact receipt, targeter allowance, and tombstone state only"
+    },
+    "keda_operator": {
+      "protected_resource_verbs": []
+    }
+  },
+  "security_automation_handoff": {
+    "required": [
+      "immutable bundle digest",
+      "detached signature",
+      "review ticket",
+      "approver identity",
+      "bounded expiry"
+    ],
+    "mutation_scope": "the six protected resources only",
+    "replay_allowed": false
+  },
+  "recovery": {
+    "temporary_validation_actions": ["Audit", "Warn"],
+    "requires_signed_handoff": true,
+    "must_restore": ["Deny"],
+    "delete_protected_resources": false
+  },
+  "release_gate": "NO-GO until an external security owner enforces this contract and supplies retained authorization evidence"
+}
