@@ -619,14 +619,18 @@ deployment = {
     prepare_database_restore_marker = false
     verify_database_restore         = false
     cleanup_database_restore_marker = false
-    # PITR acceptance is deliberately two separate applies after a successful
-    # Backup. First set prepare=true with the exact Backup name/time and a new
-    # non-sensitive marker ID; capture FS2_PITR_TARGET_TIME from the Job log.
-    # Then set prepare=false, verify=true, and supply that target time. After a
-    # passing recovery, set verify=false, cleanup=true with the same identity;
-    # finally clear every field and apply once more to remove the cleanup Job.
+    # PITR acceptance is deliberately serialized after a successful Backup.
+    # Bind prepare to the current source Cluster UID and exact Backup
+    # name/UID/completion/end-WAL plus a new non-sensitive marker ID; capture
+    # FS2_PITR_TARGET_TIME from the Job log. Verification and any separately
+    # authorized cleanup additionally require a current archived WAL strictly
+    # later than the Backup end-WAL. Never infer these values from names.
+    # database_restore_source_cluster_uid = "11111111-2222-3333-4444-555555555555"
     # database_restore_source_backup_name = "fs2-control-db-20260916020000"
+    # database_restore_source_backup_uid  = "66666666-7777-8888-9999-aaaaaaaaaaaa"
     # database_restore_source_backup_time = "2026-09-16T02:05:00Z"
+    # database_restore_source_backup_wal  = "000000010000000000000009"
+    # database_restore_verified_wal       = "00000001000000000000000A"
     # database_restore_marker_id          = "sai06-20260916-a1b2c3d4"
     # database_restore_target_time        = "2026-09-16T03:00:00.000000Z"
   }

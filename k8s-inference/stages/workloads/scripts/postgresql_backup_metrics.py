@@ -12,7 +12,7 @@ from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Lock
-from typing import Any
+from typing import Any, cast
 
 RESTORE_RECEIPT_PREFIX = "restore-verification/success/"
 RECEIPT_FIELDS = {
@@ -30,9 +30,14 @@ RECEIPT_SUBJECT_FIELDS = {
     "bucket_name",
     "server_name",
     "source_commit",
+    "source_tree",
     "run_id",
+    "source_cluster_uid",
     "source_backup_name",
+    "source_backup_uid",
     "source_backup_time",
+    "source_backup_wal",
+    "verified_wal",
     "marker_id",
     "target_time",
     "publisher_access_key_id",
@@ -74,7 +79,7 @@ def validate_restore_receipt(
     server_name: str,
     publisher_access_key_id: str,
     now: datetime | None = None,
-) -> float:
+) -> dict[str, str | float]:
     """Validate exact receipt content and its content-addressed immutable key."""
     if len(body) == 0 or len(body) > 8192:
         raise ValueError("restore receipt has an invalid size")
@@ -103,9 +108,33 @@ def validate_restore_receipt(
         or subject["publisher_access_key_id"] != publisher_access_key_id
     ):
         raise ValueError("restore receipt scope is invalid")
-    if not re.fullmatch(
-        r"[0-9a-f]{40}", str(subject["source_commit"])
-    ) or not re.fullmatch(r"[0-9a-f]{64}", str(document["nonce"])):
+    if (
+        not re.fullmatch(r"[0-9a-f]{40}", str(subject["source_commit"]))
+        or not re.fullmatch(r"[0-9a-f]{40}", str(subject["source_tree"]))
+        or not re.fullmatch(
+            r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            str(subject["source_cluster_uid"]),
+        )
+        or not re.fullmatch(
+            r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            str(subject["source_backup_uid"]),
+        )
+        or not re.fullmatch(r"[a-z][a-z0-9]{5,11}", str(subject["run_id"]))
+        or not re.fullmatch(
+            r"[a-z0-9][a-z0-9-]{7,62}", str(subject["source_backup_name"])
+        )
+        or not re.fullmatch(
+            r"[a-z0-9][a-z0-9-]{7,62}", str(subject["marker_id"])
+        )
+        or not re.fullmatch(
+            r"[0-9A-F]{24}", str(subject["source_backup_wal"])
+        )
+        or not re.fullmatch(r"[0-9A-F]{24}", str(subject["verified_wal"]))
+        or int(str(subject["source_backup_wal"]), 16) == 0
+        or int(str(subject["verified_wal"]), 16)
+        <= int(str(subject["source_backup_wal"]), 16)
+        or not re.fullmatch(r"[0-9a-f]{64}", str(document["nonce"]))
+    ):
         raise ValueError("restore receipt source or nonce is invalid")
     canonical_subject = json.dumps(
         subject, sort_keys=True, separators=(",", ":")
@@ -120,13 +149,27 @@ def validate_restore_receipt(
     current = (now or datetime.now(UTC)).astimezone(UTC)
     if completed > current + timedelta(minutes=5):
         raise ValueError("restore receipt completion is in the future")
-    if valid_until <= current or valid_until > completed + timedelta(days=9):
+    if (
+        current - completed > timedelta(hours=36)
+        or valid_until <= current
+        or valid_until > completed + timedelta(hours=36)
+    ):
         raise ValueError("restore receipt is expired or overlong")
     source_backup_time = _utc(subject["source_backup_time"])
     target_time = _utc(subject["target_time"])
     if not source_backup_time < target_time <= completed:
         raise ValueError("restore receipt PITR time ordering is invalid")
-    return completed.timestamp()
+    return {
+        "completed_timestamp_seconds": completed.timestamp(),
+        "cluster_uid": str(subject["source_cluster_uid"]),
+        "backup_name": str(subject["source_backup_name"]),
+        "backup_uid": str(subject["source_backup_uid"]),
+        "source_commit": str(subject["source_commit"]),
+        "source_tree": str(subject["source_tree"]),
+        "run_id": str(subject["run_id"]),
+        "source_backup_wal": str(subject["source_backup_wal"]),
+        "verified_wal": str(subject["verified_wal"]),
+    }
 
 
 def summarize_versions(
@@ -171,7 +214,7 @@ def summarize_versions(
 
 
 def render_metrics(
-    summary: Mapping[str, int | float],
+    summary: Mapping[str, Any],
     *,
     scrape_success: bool,
     last_success_timestamp: float,
@@ -202,6 +245,28 @@ def render_metrics(
     for name, value in values.items():
         metric_type = "counter" if name.endswith("_total") else "gauge"
         lines.extend((f"# TYPE {name} {metric_type}", f"{name} {value}"))
+    receipt_labels = summary.get("restore_receipt_labels")
+    if isinstance(receipt_labels, Mapping):
+        label_names = (
+            "backup_name",
+            "backup_uid",
+            "cluster_uid",
+            "run_id",
+            "source_backup_wal",
+            "source_commit",
+            "source_tree",
+            "verified_wal",
+        )
+        if set(receipt_labels) == set(label_names):
+            labels = ",".join(
+                f'{name}="{receipt_labels[name]}"' for name in label_names
+            )
+            lines.extend(
+                (
+                    "# TYPE fs2_postgresql_restore_receipt_info gauge",
+                    f"fs2_postgresql_restore_receipt_info{{{labels}}} 1",
+                )
+            )
     return "\n".join(lines) + "\n"
 
 
@@ -224,7 +289,7 @@ class Inventory:
     def __init__(self) -> None:
         self._lock = Lock()
         self._client: Any | None = None
-        self._summary: dict[str, int | float] = {
+        self._summary: dict[str, Any] = {
             "capacity_bytes": int(os.environ["BUCKET_CAPACITY_BYTES"])
         }
         self._last_attempt = 0.0
@@ -246,10 +311,13 @@ class Inventory:
                             Prefix=os.environ["S3_PREFIX"],
                         )
                     )
-                    self._summary = summarize_versions(
-                        pages,
-                        prefix=os.environ["S3_PREFIX"],
-                        capacity_bytes=int(os.environ["BUCKET_CAPACITY_BYTES"]),
+                    self._summary = cast(
+                        dict[str, Any],
+                        summarize_versions(
+                            pages,
+                            prefix=os.environ["S3_PREFIX"],
+                            capacity_bytes=int(os.environ["BUCKET_CAPACITY_BYTES"]),
+                        ),
                     )
                     receipt_key = newest_restore_receipt_key(
                         pages, prefix=os.environ["S3_PREFIX"]
@@ -259,20 +327,34 @@ class Inventory:
                             Bucket=os.environ["S3_BUCKET"], Key=receipt_key
                         )
                         body = response["Body"].read(8193)
-                        self._summary["restore_last_success_timestamp_seconds"] = (
-                            validate_restore_receipt(
-                                receipt_key,
-                                body,
-                                prefix=os.environ["S3_PREFIX"],
-                                project_id=os.environ["PROJECT_ID"],
-                                region=os.environ["AWS_REGION"],
-                                bucket_name=os.environ["S3_BUCKET"],
-                                server_name=os.environ["SERVER_NAME"],
-                                publisher_access_key_id=os.environ[
-                                    "RECEIPT_PUBLISHER_ACCESS_KEY_ID"
-                                ],
-                            )
+                        receipt = validate_restore_receipt(
+                            receipt_key,
+                            body,
+                            prefix=os.environ["S3_PREFIX"],
+                            project_id=os.environ["PROJECT_ID"],
+                            region=os.environ["AWS_REGION"],
+                            bucket_name=os.environ["S3_BUCKET"],
+                            server_name=os.environ["SERVER_NAME"],
+                            publisher_access_key_id=os.environ[
+                                "RECEIPT_PUBLISHER_ACCESS_KEY_ID"
+                            ],
                         )
+                        self._summary["restore_last_success_timestamp_seconds"] = (
+                            float(receipt["completed_timestamp_seconds"])
+                        )
+                        self._summary["restore_receipt_labels"] = {
+                            name: str(receipt[name])
+                            for name in (
+                                "backup_name",
+                                "backup_uid",
+                                "cluster_uid",
+                                "run_id",
+                                "source_backup_wal",
+                                "source_commit",
+                                "source_tree",
+                                "verified_wal",
+                            )
+                        }
                     self._last_success = now
                     self._success = True
                 except Exception:  # the failure is exported, never logged with secrets

@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib.util
 import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -76,9 +76,14 @@ def test_restore_receipt_is_content_addressed_scoped_and_fresh() -> None:
         "bucket_name": "fs2-postgresql-backup",
         "server_name": "fs2-control-db",
         "source_commit": "a" * 40,
+        "source_tree": "c" * 40,
         "run_id": "r20260916",
+        "source_cluster_uid": "11111111-2222-3333-4444-555555555555",
         "source_backup_name": "backup-20260916",
+        "source_backup_uid": "66666666-7777-8888-9999-aaaaaaaaaaaa",
         "source_backup_time": "2026-09-16T02:00:00Z",
+        "source_backup_wal": "000000010000000000000009",
+        "verified_wal": "00000001000000000000000A",
         "marker_id": "sai06-20260916-a1b2c3d4",
         "target_time": "2026-09-16T02:30:00Z",
         "publisher_access_key_id": "AJE000POSTGRESQLRECEIPT",
@@ -93,7 +98,7 @@ def test_restore_receipt_is_content_addressed_scoped_and_fresh() -> None:
         "verification_binding_sha256": binding,
         "nonce": "b" * 64,
         "completed_at": "2026-09-16T03:00:00Z",
-        "valid_until": "2026-09-24T03:00:00Z",
+        "valid_until": "2026-09-17T03:00:00Z",
     }
     body = json.dumps(receipt, sort_keys=True, separators=(",", ":")).encode()
     key = (
@@ -101,20 +106,22 @@ def test_restore_receipt_is_content_addressed_scoped_and_fresh() -> None:
         + hashlib.sha256(body).hexdigest()
         + ".json"
     )
-    assert (
-        METRICS.validate_restore_receipt(
-            key,
-            body,
-            prefix="postgresql/v1/",
-            project_id="project-e00rene",
-            region="eu-north1",
-            bucket_name="fs2-postgresql-backup",
-            server_name="fs2-control-db",
-            publisher_access_key_id="AJE000POSTGRESQLRECEIPT",
-            now=completed,
-        )
-        == completed.timestamp()
+    validated = METRICS.validate_restore_receipt(
+        key,
+        body,
+        prefix="postgresql/v1/",
+        project_id="project-e00rene",
+        region="eu-north1",
+        bucket_name="fs2-postgresql-backup",
+        server_name="fs2-control-db",
+        publisher_access_key_id="AJE000POSTGRESQLRECEIPT",
+        now=completed,
     )
+    assert validated["completed_timestamp_seconds"] == completed.timestamp()
+    assert validated["cluster_uid"] == subject["source_cluster_uid"]
+    assert validated["backup_uid"] == subject["source_backup_uid"]
+    assert validated["source_backup_wal"] == subject["source_backup_wal"]
+    assert validated["verified_wal"] == subject["verified_wal"]
 
     forged = json.loads(body)
     forged["subject"]["project_id"] = "project-attacker"
@@ -132,6 +139,51 @@ def test_restore_receipt_is_content_addressed_scoped_and_fresh() -> None:
             now=completed,
         )
 
+    for field, value in (
+        ("source_backup_wal", "000000000000000000000000"),
+        ("verified_wal", "000000010000000000000009"),
+    ):
+        invalid = json.loads(body)
+        invalid["subject"][field] = value
+        invalid["verification_binding_sha256"] = hashlib.sha256(
+            json.dumps(
+                invalid["subject"], sort_keys=True, separators=(",", ":")
+            ).encode()
+        ).hexdigest()
+        invalid_body = json.dumps(
+            invalid, sort_keys=True, separators=(",", ":")
+        ).encode()
+        invalid_key = (
+            "postgresql/v1/restore-verification/success/"
+            + hashlib.sha256(invalid_body).hexdigest()
+            + ".json"
+        )
+        with pytest.raises(ValueError, match="source|nonce"):
+            METRICS.validate_restore_receipt(
+                invalid_key,
+                invalid_body,
+                prefix="postgresql/v1/",
+                project_id="project-e00rene",
+                region="eu-north1",
+                bucket_name="fs2-postgresql-backup",
+                server_name="fs2-control-db",
+                publisher_access_key_id="AJE000POSTGRESQLRECEIPT",
+                now=completed,
+            )
+
+    with pytest.raises(ValueError, match="expired|overlong"):
+        METRICS.validate_restore_receipt(
+            key,
+            body,
+            prefix="postgresql/v1/",
+            project_id="project-e00rene",
+            region="eu-north1",
+            bucket_name="fs2-postgresql-backup",
+            server_name="fs2-control-db",
+            publisher_access_key_id="AJE000POSTGRESQLRECEIPT",
+            now=completed + timedelta(hours=37),
+        )
+
 
 def test_metrics_output_is_numeric_and_never_contains_object_keys() -> None:
     summary = {
@@ -143,6 +195,16 @@ def test_metrics_output_is_numeric_and_never_contains_object_keys() -> None:
         "version_count": 3,
         "delete_marker_count": 1,
         "restore_last_success_timestamp_seconds": 1_789_527_600.0,
+        "restore_receipt_labels": {
+            "backup_name": "backup-20260916",
+            "backup_uid": "66666666-7777-8888-9999-aaaaaaaaaaaa",
+            "cluster_uid": "11111111-2222-3333-4444-555555555555",
+            "run_id": "r20260916",
+            "source_backup_wal": "000000010000000000000009",
+            "source_commit": "a" * 40,
+            "source_tree": "c" * 40,
+            "verified_wal": "00000001000000000000000A",
+        },
     }
 
     rendered = METRICS.render_metrics(
@@ -155,5 +217,6 @@ def test_metrics_output_is_numeric_and_never_contains_object_keys() -> None:
     assert "fs2_postgresql_backup_bucket_usage_bytes 196" in rendered
     assert "fs2_postgresql_backup_bucket_scrape_success 1" in rendered
     assert "fs2_postgresql_restore_last_success_timestamp_seconds" in rendered
+    assert "fs2_postgresql_restore_receipt_info" in rendered
     assert "postgresql/v1" not in rendered
     assert "sai06-20260916" not in rendered

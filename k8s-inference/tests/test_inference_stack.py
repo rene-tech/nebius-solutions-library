@@ -1169,6 +1169,8 @@ class InferenceStackTests(unittest.TestCase):
                 contract(),
                 "c" * 40,
                 {"stage": "configuration"},
+                STACK.DEPLOY_ROOT,
+                "d" * 40,
             )
 
         self.assertEqual(planned_stages, ["infrastructure", "foundation", "workloads"])
@@ -1864,7 +1866,14 @@ class InferenceStackTests(unittest.TestCase):
                     mock.patch.object(STACK, "mirror_selected_images") as mirror_images,
                     redirect_stdout(io.StringIO()),
                 ):
-                    STACK.plan_stack(arguments(), run_root, contract(), "d" * 40)
+                    STACK.plan_stack(
+                        arguments(),
+                        run_root,
+                        contract(),
+                        "d" * 40,
+                        STACK.DEPLOY_ROOT,
+                        "e" * 40,
+                    )
                 self.assertEqual(
                     [call.kwargs["stage"] for call in plan_stage.call_args_list],
                     expected_stages,
@@ -1932,7 +1941,14 @@ class InferenceStackTests(unittest.TestCase):
                         ) as mirror_images,
                         redirect_stdout(io.StringIO()),
                     ):
-                        STACK.plan_stack(arguments(), run_root, contract(), "d" * 40)
+                        STACK.plan_stack(
+                            arguments(),
+                            run_root,
+                            contract(),
+                            "d" * 40,
+                            STACK.DEPLOY_ROOT,
+                            "e" * 40,
+                        )
                 self.assertEqual(
                     [call.kwargs["stage"] for call in plan_stage.call_args_list],
                     ["infrastructure"],
@@ -1998,7 +2014,14 @@ class InferenceStackTests(unittest.TestCase):
                     mock.patch.object(STACK, "mirror_selected_images") as mirror_images,
                     redirect_stdout(io.StringIO()),
                 ):
-                    STACK.plan_stack(arguments(), run_root, contract(), "d" * 40)
+                    STACK.plan_stack(
+                        arguments(),
+                        run_root,
+                        contract(),
+                        "d" * 40,
+                        STACK.DEPLOY_ROOT,
+                        "e" * 40,
+                    )
                 self.assertEqual(
                     [call.kwargs["stage"] for call in plan_stage.call_args_list],
                     ["infrastructure", "foundation"],
@@ -2451,6 +2474,8 @@ class InferenceStackTests(unittest.TestCase):
                 configuration,
                 "a" * 40,
                 {"stage": "configuration"},
+                STACK.DEPLOY_ROOT,
+                "b" * 40,
             )
         self.assertEqual(
             [call.kwargs["stage"] for call in plan_stage.call_args_list],
@@ -2537,7 +2562,14 @@ class InferenceStackTests(unittest.TestCase):
             mock.patch.object(STACK, "mirror_selected_images") as mirror_images,
             redirect_stdout(io.StringIO()),
         ):
-            STACK.plan_stack(arguments(), run_root, contract(), "f" * 40)
+            STACK.plan_stack(
+                arguments(),
+                run_root,
+                contract(),
+                "f" * 40,
+                STACK.DEPLOY_ROOT,
+                "a" * 40,
+            )
         self.assertEqual(
             [call.kwargs["stage"] for call in plan_stage.call_args_list],
             ["infrastructure"],

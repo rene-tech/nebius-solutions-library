@@ -721,8 +721,12 @@ variable "deployment" {
       prepare_database_restore_marker     = optional(bool, false)
       verify_database_restore             = optional(bool, false)
       cleanup_database_restore_marker     = optional(bool, false)
+      database_restore_source_cluster_uid = optional(string)
       database_restore_source_backup_name = optional(string)
+      database_restore_source_backup_uid  = optional(string)
       database_restore_source_backup_time = optional(string)
+      database_restore_source_backup_wal  = optional(string)
+      database_restore_verified_wal       = optional(string)
       database_restore_marker_id          = optional(string)
       database_restore_target_time        = optional(string)
     }), {})
@@ -1154,8 +1158,12 @@ variable "deployment" {
         (var.deployment.acceptance.verify_database_restore ? 1 : 0) +
         (var.deployment.acceptance.cleanup_database_restore_marker ? 1 : 0)
         ) == 0 ? (
+        var.deployment.acceptance.database_restore_source_cluster_uid == null &&
         var.deployment.acceptance.database_restore_source_backup_name == null &&
+        var.deployment.acceptance.database_restore_source_backup_uid == null &&
         var.deployment.acceptance.database_restore_source_backup_time == null &&
+        var.deployment.acceptance.database_restore_source_backup_wal == null &&
+        var.deployment.acceptance.database_restore_verified_wal == null &&
         var.deployment.acceptance.database_restore_marker_id == null &&
         var.deployment.acceptance.database_restore_target_time == null
         ) : (
@@ -1164,21 +1172,30 @@ variable "deployment" {
           (var.deployment.acceptance.verify_database_restore ? 1 : 0) +
           (var.deployment.acceptance.cleanup_database_restore_marker ? 1 : 0)
         ) == 1 &&
+        can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", var.deployment.acceptance.database_restore_source_cluster_uid)) &&
         can(regex("^[a-z0-9][a-z0-9-]{7,62}$", var.deployment.acceptance.database_restore_source_backup_name)) &&
+        can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", var.deployment.acceptance.database_restore_source_backup_uid)) &&
         can(timecmp(var.deployment.acceptance.database_restore_source_backup_time, "1970-01-01T00:00:00Z")) &&
+        can(regex("^[0-9A-F]{24}$", var.deployment.acceptance.database_restore_source_backup_wal)) &&
+        var.deployment.acceptance.database_restore_source_backup_wal != "000000000000000000000000" &&
         can(regex("^[a-z0-9][a-z0-9-]{7,62}$", var.deployment.acceptance.database_restore_marker_id)) &&
         (
           var.deployment.acceptance.prepare_database_restore_marker ?
-          var.deployment.acceptance.database_restore_target_time == null :
+          (
+            var.deployment.acceptance.database_restore_target_time == null &&
+            var.deployment.acceptance.database_restore_verified_wal == null
+          ) :
           (
             can(timecmp(var.deployment.acceptance.database_restore_target_time, var.deployment.acceptance.database_restore_source_backup_time)) &&
-            timecmp(var.deployment.acceptance.database_restore_target_time, var.deployment.acceptance.database_restore_source_backup_time) > 0
+            timecmp(var.deployment.acceptance.database_restore_target_time, var.deployment.acceptance.database_restore_source_backup_time) > 0 &&
+            can(regex("^[0-9A-F]{24}$", var.deployment.acceptance.database_restore_verified_wal)) &&
+            parseint(var.deployment.acceptance.database_restore_verified_wal, 16) > parseint(var.deployment.acceptance.database_restore_source_backup_wal, 16)
           )
         )
       ),
       false,
     )
-    error_message = "database restore acceptance is a serialized prepare, verify, then cleanup flow: exactly one phase requires an exact completed Backup name/time and safe marker ID; verify and cleanup additionally require the later RFC3339 PITR target captured between marker A and marker B."
+    error_message = "database restore acceptance is a serialized prepare, verify, then cleanup flow: exactly one phase requires the current source Cluster UID, exact completed Backup name/UID/time/nonzero WAL and safe marker ID; verify and cleanup additionally require the later RFC3339 PITR target plus a strictly advancing verified WAL."
   }
 
   validation {

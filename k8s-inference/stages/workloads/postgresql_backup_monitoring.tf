@@ -322,10 +322,10 @@ resource "kubernetes_manifest" "postgresql_backup_prometheus_rule" {
           },
           {
             alert       = "Fs2PostgresqlRestoreVerificationStale"
-            expr        = "(max(fs2_postgresql_restore_last_success_timestamp_seconds{namespace=\"fs2-data\"}) == 0) or absent(fs2_postgresql_restore_last_success_timestamp_seconds{namespace=\"fs2-data\"}) or (time() - max(fs2_postgresql_restore_last_success_timestamp_seconds{namespace=\"fs2-data\"}) > 604800)"
+            expr        = "(max(fs2_postgresql_restore_last_success_timestamp_seconds{namespace=\"fs2-data\"}) == 0) or absent(fs2_postgresql_restore_last_success_timestamp_seconds{namespace=\"fs2-data\"}) or (time() - max(fs2_postgresql_restore_last_success_timestamp_seconds{namespace=\"fs2-data\"}) > 129600)"
             for         = "15m"
             labels      = { severity = "critical" }
-            annotations = { summary = "No successful payload-free PITR verification receipt exists within seven days" }
+            annotations = { summary = "No successful payload-free PITR verification receipt exists within 36 hours" }
           },
         ]
       }]

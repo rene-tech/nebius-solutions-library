@@ -181,6 +181,7 @@ def _retained_destroy_dynamic(tmp_path: Path) -> dict:
         "receipt_access_key": "accesskey-postgresql-receipt",
     }
     return {
+        "run_id": "sai06test",
         "kubeconfig_path": str(tmp_path / "kubeconfig"),
         "kube_context": "sai06-test",
         "postgresql_backup_storage_contract": {
@@ -1016,7 +1017,10 @@ def test_sai06_plans_from_exact_git_object_not_mutable_worktree(
         check=True,
     )
     files = {
+        "k8s-inference/main.tf": "reviewed-root\n",
         "k8s-inference/stages/infrastructure/main.tf": "reviewed-source\n",
+        "k8s-inference/stages/foundation/main.tf": "reviewed-foundation\n",
+        "k8s-inference/stages/workloads/main.tf": "reviewed-workloads\n",
         "k8s-inference/catalog/profiles/approved-targets.json": "{}\n",
         "modules/device-plugin/main.tf": "reviewed-device\n",
         "modules/gpu-operator/main.tf": "reviewed-gpu\n",
@@ -1048,6 +1052,20 @@ def test_sai06_plans_from_exact_git_object_not_mutable_worktree(
             assert extracted.stat().st_mode & 0o222 == 0
             snapshot_parent = solution_root.parent
         assert not snapshot_parent.exists()
+
+
+def test_main_binds_root_and_every_stage_to_prevalidated_exact_source() -> None:
+    stack = _text("inference-stack")
+
+    source_index = stack.index("source_identity = verified_source_identity()")
+    configuration_index = stack.index("contract, configuration_environment = validate_configuration(")
+    assert source_index < configuration_index
+    assert "root_override=source_root" in stack
+    assert 'approved_roots = ("k8s-inference", "modules")' in stack
+    assert 'source_root / "stages" / "foundation"' in stack
+    assert 'source_root / "stages" / "workloads"' in stack
+    assert "source_identity=(commit, source_tree)" in stack
+    assert "source_tree=source_identity[1]" in stack
 
 
 def test_capacity_receipt_schema_is_strict_and_matches_runtime_resources() -> None:
@@ -1108,6 +1126,8 @@ def test_destroy_preflights_all_plans_before_any_delete_and_retains_postgresql(
             tmp_path,
             configuration,
             "a" * 40,
+            source_root=ROOT,
+            source_tree="b" * 40,
         )
 
     assert events == [
@@ -1116,7 +1136,7 @@ def test_destroy_preflights_all_plans_before_any_delete_and_retains_postgresql(
         "apply:workloads",
         "apply:foundation",
     ]
-    live_recovery.assert_called_once()
+    assert live_recovery.call_count == 2
     write_infra.assert_not_called()
     receipt = json.loads((tmp_path / "postgresql-backup-retention.json").read_text())
     assert receipt["postgresql_backup"]["lifecycle"]["retention_mode"] == "retain"
@@ -1177,6 +1197,8 @@ def test_destroy_rejects_invalid_retained_postgresql_boundary_before_any_plan(
             tmp_path,
             configuration,
             "a" * 40,
+            source_root=ROOT,
+            source_tree="b" * 40,
         )
     plan_stage.assert_not_called()
     apply_plan.assert_not_called()
@@ -1213,6 +1235,7 @@ def _live_recovery_documents() -> list[dict]:
                     "metadata": {
                         "name": "fs2-control-db-20260916020000",
                         "namespace": "fs2-data",
+                        "uid": "66666666-7777-8888-9999-aaaaaaaaaaaa",
                         "ownerReferences": [
                             {
                                 "apiVersion": "postgresql.cnpg.io/v1",
@@ -1227,6 +1250,7 @@ def _live_recovery_documents() -> list[dict]:
                     "status": {
                         "phase": "completed",
                         "stoppedAt": "2026-09-16T08:10:00Z",
+                        "endWal": "000000010000000000000009",
                     },
                 }
             ]
@@ -1278,6 +1302,16 @@ def _inventory_evidence() -> dict:
         "restore_last_success": "2026-09-16T08:30:00Z",
         "usage_bytes": 1024,
         "object_versions": 2,
+        "receipt_binding": {
+            "backup_name": "fs2-control-db-20260916020000",
+            "backup_uid": "66666666-7777-8888-9999-aaaaaaaaaaaa",
+            "cluster_uid": "11111111-2222-3333-4444-555555555555",
+            "run_id": "sai06test",
+            "source_backup_wal": "000000010000000000000009",
+            "source_commit": "a" * 40,
+            "source_tree": "b" * 40,
+            "verified_wal": "00000001000000000000000A",
+        },
         "metrics_sha256": "f" * 64,
     }
 
@@ -1303,13 +1337,31 @@ def test_live_destroy_gate_requires_backup_wal_and_recoverability_point(
         ),
         mock.patch.object(
             STACK, "_postgresql_inventory_evidence", return_value=_inventory_evidence()
-        ),
+        ) as inventory,
     ):
         result = STACK.validate_postgresql_live_recovery_boundary(
-            args, contract, dynamic, now=now
+            args,
+            contract,
+            dynamic,
+            source_commit="a" * 40,
+            source_tree="b" * 40,
+            now=now,
         )
     assert result["completed_backup_count"] == 1
     assert result["continuous_archiving"] is True
+    assert result["selected_backup_uid"] == "66666666-7777-8888-9999-aaaaaaaaaaaa"
+    inventory.assert_called_once()
+    inventory_kwargs = inventory.call_args.kwargs
+    assert inventory_kwargs["receipt_binding"] == {
+        "backup_name": "fs2-control-db-20260916020000",
+        "backup_uid": "66666666-7777-8888-9999-aaaaaaaaaaaa",
+        "cluster_uid": "11111111-2222-3333-4444-555555555555",
+        "run_id": "sai06test",
+        "source_backup_wal": "000000010000000000000009",
+        "source_commit": "a" * 40,
+        "source_tree": "b" * 40,
+    }
+    assert inventory_kwargs["current_wal"] == "00000001000000000000000A"
 
     for mutate in (
         lambda documents: documents[0]["metadata"].update({"uid": None}),
@@ -1321,6 +1373,15 @@ def test_live_destroy_gate_requires_backup_wal_and_recoverability_point(
         ),
         lambda documents: documents[0]["status"].update(
             {"lastArchivedWal": "arbitrary-wal"}
+        ),
+        lambda documents: documents[0]["status"].update(
+            {"lastArchivedWal": "000000000000000000000000"}
+        ),
+        lambda documents: documents[2]["items"][0]["status"].update(
+            {"endWal": "00000001000000000000000A"}
+        ),
+        lambda documents: documents[2]["items"][0]["metadata"].update(
+            {"uid": None}
         ),
         lambda documents: documents[2]["items"][0]["metadata"][
             "ownerReferences"
@@ -1343,7 +1404,12 @@ def test_live_destroy_gate_requires_backup_wal_and_recoverability_point(
             pytest.raises(STACK.DeploymentError, match="no resource was changed"),
         ):
             STACK.validate_postgresql_live_recovery_boundary(
-                args, contract, dynamic, now=now
+                args,
+                contract,
+                dynamic,
+                source_commit="a" * 40,
+                source_tree="b" * 40,
+                now=now,
             )
 
 
@@ -1403,7 +1469,12 @@ def test_destroy_gate_requires_fresh_object_version_inventory(tmp_path: Path) ->
         "restore": datetime(2026, 9, 16, 8, 30, tzinfo=UTC).timestamp(),
     }
 
-    def metrics(*, versions: int = 2, inventory: float | None = None) -> str:
+    def metrics(
+        *,
+        versions: int = 2,
+        inventory: float | None = None,
+        restore: float | None = None,
+    ) -> str:
         values = {
             "fs2_postgresql_backup_bucket_scrape_success": 1,
             "fs2_postgresql_backup_bucket_last_success_timestamp_seconds": (
@@ -1416,26 +1487,81 @@ def test_destroy_gate_requires_fresh_object_version_inventory(tmp_path: Path) ->
             "fs2_postgresql_backup_bucket_object_versions": versions,
             "fs2_postgresql_restore_last_success_timestamp_seconds": timestamps[
                 "restore"
-            ],
+            ] if restore is None else restore,
         }
-        return "".join(f"{name} {value}\n" for name, value in values.items())
+        scalars = "".join(f"{name} {value}\n" for name, value in values.items())
+        info = (
+            'fs2_postgresql_restore_receipt_info{'
+            'backup_name="fs2-control-db-20260916020000",'
+            'backup_uid="66666666-7777-8888-9999-aaaaaaaaaaaa",'
+            'cluster_uid="11111111-2222-3333-4444-555555555555",'
+            'run_id="sai06test",'
+            'source_backup_wal="000000010000000000000009",'
+            'source_commit="' + "a" * 40 + '",'
+            'source_tree="' + "b" * 40 + '",'
+            'verified_wal="00000001000000000000000A"} 1\n'
+        )
+        return scalars + info
+
+    receipt_binding = {
+        "backup_name": "fs2-control-db-20260916020000",
+        "backup_uid": "66666666-7777-8888-9999-aaaaaaaaaaaa",
+        "cluster_uid": "11111111-2222-3333-4444-555555555555",
+        "run_id": "sai06test",
+        "source_backup_wal": "000000010000000000000009",
+        "source_commit": "a" * 40,
+        "source_tree": "b" * 40,
+    }
 
     with mock.patch.object(STACK, "_kubectl_raw", return_value=metrics()):
         result = STACK._postgresql_inventory_evidence(
-            SimpleNamespace(), {}, retained, now=now
+            SimpleNamespace(),
+            {},
+            retained,
+            now=now,
+            receipt_binding=receipt_binding,
+            current_wal="00000001000000000000000A",
         )
     assert result["object_versions"] == 2
+
+    incomplete_binding = dict(receipt_binding)
+    incomplete_binding.pop("source_tree")
+    with (
+        mock.patch.object(STACK, "_kubectl_raw", return_value=metrics()),
+        pytest.raises(STACK.DeploymentError, match="no resource was changed"),
+    ):
+        STACK._postgresql_inventory_evidence(
+            SimpleNamespace(),
+            {},
+            retained,
+            now=now,
+            receipt_binding=incomplete_binding,
+            current_wal="00000001000000000000000A",
+        )
 
     for invalid in (
         metrics(versions=0),
         metrics(inventory=datetime(2026, 9, 16, 8, 30, tzinfo=UTC).timestamp()),
+        metrics(
+            restore=(now - timedelta(hours=47)).timestamp(),
+        ),
+        metrics().replace('source_tree="' + "b" * 40, 'source_tree="' + "c" * 40),
+        metrics().replace(
+            'source_backup_wal="000000010000000000000009"',
+            'source_backup_wal="000000000000000000000000"',
+        ),
     ):
         with (
             mock.patch.object(STACK, "_kubectl_raw", return_value=invalid),
             pytest.raises(STACK.DeploymentError, match="no resource was changed"),
         ):
             STACK._postgresql_inventory_evidence(
-                SimpleNamespace(), {}, retained, now=now
+                SimpleNamespace(),
+                {},
+                retained,
+                now=now,
+                receipt_binding=receipt_binding,
+                current_wal="00000001000000000000000A",
             )
 
 
@@ -1479,10 +1605,11 @@ def test_backup_handoff_is_exact_retained_and_secret_free(tmp_path: Path) -> Non
     contract, dynamic = _backup_handoff_inputs(tmp_path)
     STACK.private_directory(tmp_path)
     _foundation, workloads_path = STACK.write_downstream_variables(
-        tmp_path, contract, dynamic
+        tmp_path, contract, dynamic, source_identity=("a" * 40, "b" * 40)
     )
     generated_text = workloads_path.read_text(encoding="utf-8")
     backup = json.loads(generated_text)["postgresql_backup"]
+    source_identity = json.loads(generated_text)["sai06_source_identity"]
 
     assert backup["storage_contract"] == dynamic["postgresql_backup_storage_contract"]
     assert (
@@ -1503,6 +1630,7 @@ def test_backup_handoff_is_exact_retained_and_secret_free(tmp_path: Path) -> Non
     )
     assert "secret-access-key" not in generated_text
     assert "secret_value" not in generated_text
+    assert source_identity == {"commit": "a" * 40, "tree": "b" * 40}
 
 
 def test_backup_handoff_rejects_disposable_lifecycle(tmp_path: Path) -> None:
@@ -1511,7 +1639,9 @@ def test_backup_handoff_rejects_disposable_lifecycle(tmp_path: Path) -> None:
     STACK.private_directory(tmp_path)
 
     try:
-        STACK.write_downstream_variables(tmp_path, contract, dynamic)
+        STACK.write_downstream_variables(
+            tmp_path, contract, dynamic, source_identity=("a" * 40, "b" * 40)
+        )
     except STACK.DeploymentError as error:
         assert "must remain retained" in str(error)
     else:
@@ -1651,6 +1781,9 @@ def test_backup_observability_is_executable_and_covers_every_sai06_signal() -> N
     assert "fs2_postgresql_backup_bucket_usage_bytes" in metrics
     assert "fs2_postgresql_backup_bucket_capacity_bytes" in metrics
     assert "fs2_postgresql_restore_last_success_timestamp_seconds" in metrics
+    assert "fs2_postgresql_restore_receipt_info" in metrics
+    assert "> 129600" in monitoring
+    assert "within 36 hours" in monitoring
     assert "restore-verification/success/" in monitoring
     assert (
         '"fs2.nebius.ai/postgresql-inventory-credential-sha256" = '
@@ -1748,6 +1881,15 @@ def test_successful_restore_publishes_a_nonsensitive_durable_receipt() -> None:
     assert '"fs2-serve.nebius.ai/postgresql-restore-verification/v2"' in database
     assert 'IfNoneMatch="*"' in database
     assert "verification_binding_sha256" in database
+    for binding in (
+        '"source_tree"',
+        '"source_cluster_uid"',
+        '"source_backup_uid"',
+        '"source_backup_wal"',
+        '"verified_wal"',
+    ):
+        assert binding in database
+    assert "datetime.timedelta(hours=24)" in database
     assert "kubernetes_secret_v1.postgresql_restore_receipt" in database
     assert (
         "count = var.postgresql_backup.enabled && "

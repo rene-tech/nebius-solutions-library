@@ -1807,6 +1807,34 @@ variable "cleanup_database_restore_marker_job" {
   default     = false
 }
 
+variable "sai06_source_identity" {
+  description = "Exact clean Git commit and tree that supplied the immutable root, foundation and workloads Terraform source for this invocation."
+  type = object({
+    commit = string
+    tree   = string
+  })
+  default  = null
+  nullable = true
+
+  validation {
+    condition = try(
+      !var.postgresql_backup.enabled || (
+        can(regex("^[0-9a-f]{40}$", var.sai06_source_identity.commit)) &&
+        can(regex("^[0-9a-f]{40}$", var.sai06_source_identity.tree))
+      ),
+      false,
+    )
+    error_message = "enabled PostgreSQL backup requires the exact clean source commit and tree used for every planned stage."
+  }
+}
+
+variable "database_restore_source_cluster_uid" {
+  description = "Exact UID of the live source CNPG Cluster that owns the selected Backup."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
 variable "database_restore_source_backup_name" {
   description = "Exact non-sensitive CNPG Backup resource name used as the PITR base."
   type        = string
@@ -1814,8 +1842,29 @@ variable "database_restore_source_backup_name" {
   nullable    = true
 }
 
+variable "database_restore_source_backup_uid" {
+  description = "Exact UID of the completed CNPG Backup used as the PITR base."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
 variable "database_restore_source_backup_time" {
   description = "RFC3339 completion time of the exact source Backup, recorded before marker preparation."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "database_restore_source_backup_wal" {
+  description = "Exact nonzero CNPG end-WAL recorded from the completed source Backup."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "database_restore_verified_wal" {
+  description = "Exact archived WAL observed after the restore marker transaction; it must advance beyond the selected Backup."
   type        = string
   default     = null
   nullable    = true
@@ -1843,8 +1892,12 @@ check "database_restore_acceptance_contract" {
         (var.run_database_restore_verification_job ? 1 : 0) +
         (var.cleanup_database_restore_marker_job ? 1 : 0)
         ) == 0 ? (
+        var.database_restore_source_cluster_uid == null &&
         var.database_restore_source_backup_name == null &&
+        var.database_restore_source_backup_uid == null &&
         var.database_restore_source_backup_time == null &&
+        var.database_restore_source_backup_wal == null &&
+        var.database_restore_verified_wal == null &&
         var.database_restore_marker_id == null &&
         var.database_restore_target_time == null
         ) : (
@@ -1854,21 +1907,30 @@ check "database_restore_acceptance_contract" {
           (var.cleanup_database_restore_marker_job ? 1 : 0)
         ) == 1 &&
         var.postgresql_backup.enabled &&
+        can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", var.database_restore_source_cluster_uid)) &&
         can(regex("^[a-z0-9][a-z0-9-]{7,62}$", var.database_restore_source_backup_name)) &&
+        can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", var.database_restore_source_backup_uid)) &&
         can(timecmp(var.database_restore_source_backup_time, "1970-01-01T00:00:00Z")) &&
+        can(regex("^[0-9A-F]{24}$", var.database_restore_source_backup_wal)) &&
+        var.database_restore_source_backup_wal != "000000000000000000000000" &&
         can(regex("^[a-z0-9][a-z0-9-]{7,62}$", var.database_restore_marker_id)) &&
         (
           var.prepare_database_restore_marker_job ?
-          var.database_restore_target_time == null :
+          (
+            var.database_restore_target_time == null &&
+            var.database_restore_verified_wal == null
+          ) :
           (
             can(timecmp(var.database_restore_target_time, var.database_restore_source_backup_time)) &&
-            timecmp(var.database_restore_target_time, var.database_restore_source_backup_time) > 0
+            timecmp(var.database_restore_target_time, var.database_restore_source_backup_time) > 0 &&
+            can(regex("^[0-9A-F]{24}$", var.database_restore_verified_wal)) &&
+            parseint(var.database_restore_verified_wal, 16) > parseint(var.database_restore_source_backup_wal, 16)
           )
         )
       ),
       false,
     )
-    error_message = "PITR acceptance requires serialized marker, recovery and cleanup applies bound to an exact completed Backup; recovery and cleanup use the later target captured between marker A and marker B."
+    error_message = "PITR acceptance requires serialized marker, recovery and cleanup applies bound to the current source Cluster UID and exact completed Backup name/UID/time/nonzero WAL; recovery and cleanup additionally require the later target and strictly advancing archived WAL."
   }
 }
 

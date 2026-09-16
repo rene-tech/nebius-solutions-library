@@ -397,9 +397,14 @@ resource "terraform_data" "postgresql_pitr_marker_contract" {
   count = var.prepare_database_restore_marker_job ? 1 : 0
 
   input = {
-    source_cluster     = "fs2-control-db"
+    source_cluster_uid = var.database_restore_source_cluster_uid
     source_backup_name = var.database_restore_source_backup_name
+    source_backup_uid  = var.database_restore_source_backup_uid
     source_backup_time = var.database_restore_source_backup_time
+    source_backup_wal  = var.database_restore_source_backup_wal
+    source_commit      = var.sai06_source_identity.commit
+    source_tree        = var.sai06_source_identity.tree
+    run_id             = var.run_id
     marker_id          = var.database_restore_marker_id
     marker_job         = "fs2-control-db-pitr-marker"
     output_contract    = "payload-free job log line FS2_PITR_TARGET_TIME=<RFC3339>"
@@ -423,8 +428,11 @@ resource "kubernetes_job_v1" "database_pitr_marker" {
       "app.kubernetes.io/component" = "database-pitr-marker"
     })
     annotations = {
+      "fs2.nebius.ai/source-cluster-uid" = var.database_restore_source_cluster_uid
       "fs2.nebius.ai/source-backup-name" = var.database_restore_source_backup_name
+      "fs2.nebius.ai/source-backup-uid"  = var.database_restore_source_backup_uid
       "fs2.nebius.ai/source-backup-time" = var.database_restore_source_backup_time
+      "fs2.nebius.ai/source-backup-wal"  = var.database_restore_source_backup_wal
       "fs2.nebius.ai/non-sensitive"      = "marker-id-timestamp-and-wal-lsn-only"
     }
   }
@@ -571,9 +579,15 @@ resource "terraform_data" "postgresql_restore_verification_contract" {
   count = var.run_database_restore_verification_job ? 1 : 0
 
   input = {
-    source_cluster     = "fs2-control-db"
+    source_cluster_uid = var.database_restore_source_cluster_uid
     source_backup_name = var.database_restore_source_backup_name
+    source_backup_uid  = var.database_restore_source_backup_uid
     source_backup_time = var.database_restore_source_backup_time
+    source_backup_wal  = var.database_restore_source_backup_wal
+    verified_wal       = var.database_restore_verified_wal
+    source_commit      = var.sai06_source_identity.commit
+    source_tree        = var.sai06_source_identity.tree
+    run_id             = var.run_id
     recovery_cluster   = "fs2-control-db-restore-verification"
     verifier_job       = "fs2-control-db-restore-verifier"
     marker_id          = var.database_restore_marker_id
@@ -607,7 +621,15 @@ resource "kubernetes_manifest" "database_restore_verification" {
         "app.kubernetes.io/component" = "database-restore-verification"
       })
       annotations = {
-        "fs2.nebius.ai/cleanup" = "set acceptance.verify_database_restore=false and re-apply workloads"
+        "fs2.nebius.ai/cleanup"            = "set acceptance.verify_database_restore=false and re-apply workloads"
+        "fs2.nebius.ai/source-cluster-uid" = var.database_restore_source_cluster_uid
+        "fs2.nebius.ai/source-backup-name" = var.database_restore_source_backup_name
+        "fs2.nebius.ai/source-backup-uid"  = var.database_restore_source_backup_uid
+        "fs2.nebius.ai/source-backup-wal"  = var.database_restore_source_backup_wal
+        "fs2.nebius.ai/verified-wal"       = var.database_restore_verified_wal
+        "fs2.nebius.ai/source-commit"      = var.sai06_source_identity.commit
+        "fs2.nebius.ai/source-tree"        = var.sai06_source_identity.tree
+        "fs2.nebius.ai/run-id"             = var.run_id
       }
     }
     spec = {
@@ -859,9 +881,14 @@ resource "kubernetes_job_v1" "database_restore_verification_receipt" {
                 "bucket_name": os.environ["S3_BUCKET"],
                 "server_name": os.environ["SERVER_NAME"],
                 "source_commit": os.environ["SOURCE_COMMIT"],
+                "source_tree": os.environ["SOURCE_TREE"],
                 "run_id": os.environ["RUN_ID"],
+                "source_cluster_uid": os.environ["SOURCE_CLUSTER_UID"],
                 "source_backup_name": os.environ["SOURCE_BACKUP_NAME"],
+                "source_backup_uid": os.environ["SOURCE_BACKUP_UID"],
                 "source_backup_time": os.environ["SOURCE_BACKUP_TIME"],
+                "source_backup_wal": os.environ["SOURCE_BACKUP_WAL"],
+                "verified_wal": os.environ["VERIFIED_WAL"],
                 "marker_id": marker_id,
                 "target_time": target_time,
                 "publisher_access_key_id": os.environ["AWS_ACCESS_KEY_ID"],
@@ -879,7 +906,7 @@ resource "kubernetes_job_v1" "database_restore_verification_receipt" {
                 ).hexdigest(),
                 "nonce": secrets.token_hex(32),
                 "completed_at": completed.isoformat().replace("+00:00", "Z"),
-                "valid_until": (completed + datetime.timedelta(days=8))
+                "valid_until": (completed + datetime.timedelta(hours=24))
                 .isoformat()
                 .replace("+00:00", "Z"),
             }
@@ -923,7 +950,11 @@ resource "kubernetes_job_v1" "database_restore_verification_receipt" {
           }
           env {
             name  = "SOURCE_COMMIT"
-            value = var.infrastructure_contract.source_commit
+            value = var.sai06_source_identity.commit
+          }
+          env {
+            name  = "SOURCE_TREE"
+            value = var.sai06_source_identity.tree
           }
           env {
             name  = "RUN_ID"
@@ -934,12 +965,28 @@ resource "kubernetes_job_v1" "database_restore_verification_receipt" {
             value = var.postgresql_backup.storage_contract.layout.server_name
           }
           env {
+            name  = "SOURCE_CLUSTER_UID"
+            value = var.database_restore_source_cluster_uid
+          }
+          env {
             name  = "SOURCE_BACKUP_NAME"
             value = var.database_restore_source_backup_name
           }
           env {
+            name  = "SOURCE_BACKUP_UID"
+            value = var.database_restore_source_backup_uid
+          }
+          env {
             name  = "SOURCE_BACKUP_TIME"
             value = var.database_restore_source_backup_time
+          }
+          env {
+            name  = "SOURCE_BACKUP_WAL"
+            value = var.database_restore_source_backup_wal
+          }
+          env {
+            name  = "VERIFIED_WAL"
+            value = var.database_restore_verified_wal
           }
           env {
             name  = "S3_ENDPOINT"
@@ -1001,9 +1048,15 @@ resource "terraform_data" "postgresql_pitr_marker_cleanup_contract" {
   count = var.cleanup_database_restore_marker_job ? 1 : 0
 
   input = {
-    source_cluster     = "fs2-control-db"
+    source_cluster_uid = var.database_restore_source_cluster_uid
     source_backup_name = var.database_restore_source_backup_name
+    source_backup_uid  = var.database_restore_source_backup_uid
     source_backup_time = var.database_restore_source_backup_time
+    source_backup_wal  = var.database_restore_source_backup_wal
+    verified_wal       = var.database_restore_verified_wal
+    source_commit      = var.sai06_source_identity.commit
+    source_tree        = var.sai06_source_identity.tree
+    run_id             = var.run_id
     marker_id          = var.database_restore_marker_id
     target_time        = var.database_restore_target_time
     cleanup_job        = "fs2-control-db-pitr-marker-cleanup"
@@ -1025,8 +1078,12 @@ resource "kubernetes_job_v1" "database_pitr_marker_cleanup" {
       "app.kubernetes.io/component" = "database-pitr-marker-cleanup"
     })
     annotations = {
+      "fs2.nebius.ai/source-cluster-uid" = var.database_restore_source_cluster_uid
       "fs2.nebius.ai/source-backup-name" = var.database_restore_source_backup_name
+      "fs2.nebius.ai/source-backup-uid"  = var.database_restore_source_backup_uid
       "fs2.nebius.ai/source-backup-time" = var.database_restore_source_backup_time
+      "fs2.nebius.ai/source-backup-wal"  = var.database_restore_source_backup_wal
+      "fs2.nebius.ai/verified-wal"       = var.database_restore_verified_wal
       "fs2.nebius.ai/target-time"        = var.database_restore_target_time
       "fs2.nebius.ai/non-sensitive"      = "exact-marker-pair-cleanup"
     }

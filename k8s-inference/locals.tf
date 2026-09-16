@@ -1268,8 +1268,12 @@ locals {
     prepare_database_restore_marker_job   = var.deployment.acceptance.prepare_database_restore_marker
     run_database_restore_verification_job = var.deployment.acceptance.verify_database_restore
     cleanup_database_restore_marker_job   = var.deployment.acceptance.cleanup_database_restore_marker
+    database_restore_source_cluster_uid   = var.deployment.acceptance.database_restore_source_cluster_uid
     database_restore_source_backup_name   = var.deployment.acceptance.database_restore_source_backup_name
+    database_restore_source_backup_uid    = var.deployment.acceptance.database_restore_source_backup_uid
     database_restore_source_backup_time   = var.deployment.acceptance.database_restore_source_backup_time
+    database_restore_source_backup_wal    = var.deployment.acceptance.database_restore_source_backup_wal
+    database_restore_verified_wal         = var.deployment.acceptance.database_restore_verified_wal
     database_restore_marker_id            = var.deployment.acceptance.database_restore_marker_id
     database_restore_target_time          = var.deployment.acceptance.database_restore_target_time
     control_plane_image = {

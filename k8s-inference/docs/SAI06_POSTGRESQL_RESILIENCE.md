@@ -99,6 +99,30 @@ not clean. That commit remains immutable negative evidence. This successor
 addresses those findings additively and still does not integrate the rejected
 SAI-08 or SAI-10 candidates.
 
+The final independent review then rejected
+`e3051f8d56cbeb18e397d9797703ff49cfaf86ff` / tree
+`4bf2f45fbb344fa5df41bcd6a1b00eed62b4711f`. Its semantic plan-action
+allowlist, sealed plan descriptor, provider-backed retained-bucket checks,
+read-only restore identity, collision-resistant exporter rollout, quota delta,
+HA/PITR and Envoy contracts passed. It remained source NO-GO because the root
+configuration was planned before source identity was fixed and only the
+infrastructure stage used immutable source, the recovery receipt was not bound
+to the current Cluster/Backup/source/run, all-zero or non-advancing WAL plus an
+almost-eight-day receipt could pass, and recovery evidence was not refreshed
+after destroy planning. This successor corrects only those findings and keeps
+`e3051f8` as immutable negative evidence.
+
+## Non-destructive execution boundary
+
+The task owner imposed a hard non-destructive constraint after the preceding
+reviews. This source correction is therefore additive only. This task will not
+execute apply, destroy, marker cleanup, node disruption, credential revocation,
+resource replacement, cloud/cluster/registry/database mutation, or any test
+that creates disposable state and later deletes it. It will not create live or
+external verification resources. The rollout below remains a review plan, not
+authority to execute it. Any acceptance step that requires deletion, cleanup,
+disruption or replacement is blocked unless the owner changes that constraint.
+
 ## Implemented contract
 
 The root facade always provisions a distinct versioned backup bucket. There is
@@ -151,13 +175,14 @@ days before each deleted version expires, and 25% headroom. The default
 retained bucket ceiling is 12,288 GiB. Both 256 GiB and the rejected 6,144 GiB
 value fail validation before planning.
 
-`inference-stack preflight` is observation-only. Before `plan` starts, the
-wrapper requires a clean checkout at the requested commit, streams the
-infrastructure root, its exact profile inputs and its three local modules from
-that content-addressed Git object into a private read-only snapshot, and makes
-Terraform read only that snapshot. A transient edit-and-revert of the mutable
-checkout therefore cannot affect the plan. Source cleanliness and commit/tree
-identity are checked again after planning. `plan` writes the exact
+`inference-stack preflight` is observation-only. Before any root validation or
+planning starts, the wrapper fixes a clean commit/tree identity, streams the
+complete `k8s-inference` tree and its local `modules` from that
+content-addressed Git object into a private read-only snapshot, and makes root,
+infrastructure, foundation and workloads Terraform read only that snapshot. A
+transient edit-and-revert of the mutable checkout therefore cannot affect any
+stage plan. Source cleanliness and commit/tree identity are checked again
+after the command. `plan` writes the exact
 infrastructure binary plan and JSON, queries both `compute.instance.count` and
 `storage.bucket.size.standard`, and emits a mode-0600 approval request with a
 random 256-bit nonce. That request binds project, region, source commit and
@@ -219,12 +244,14 @@ system.
 Restore verification is deliberately a four-apply acceptance sequence after
 one exact `Backup` has completed:
 
-1. Enable `prepare_database_restore_marker` with that Backup's resource name,
-   completion time, and a new non-sensitive marker ID. The bounded source Job
+1. Enable `prepare_database_restore_marker` with the current source Cluster
+   UID, that Backup's exact resource name, UID, completion time and nonzero
+   end-WAL, plus a new non-sensitive marker ID. The bounded source Job
    commits marker A with its WAL LSN, emits a target timestamp, waits, and then
    commits marker B with its WAL LSN.
 2. Disable marker preparation, enable `verify_database_restore`, and supply the
-   captured target timestamp. The temporary CNPG cluster recovers with
+   captured target timestamp plus the currently archived WAL, which must be
+   strictly later than the selected Backup's end-WAL. The temporary CNPG cluster recovers with
    `recoveryTarget.targetTime`. The verifier requires a non-null replay LSN,
    marker A at or before the replay boundary, and marker B absent. This proves
    archived WAL replay beyond the selected base backup and a bounded PITR stop.
@@ -232,9 +259,12 @@ one exact `Backup` has completed:
    writes a non-sensitive, nonce-bearing v2 receipt under a content-addressed
    key in `postgresql/v1/restore-verification/success/`, using the upload-only
    publisher and an explicit S3 Signature Version 4 request. The receipt binds
-   the publisher access-key identity. The read-only metrics identity fetches at
+   the publisher access-key identity, current source commit/tree, run ID,
+   source Cluster UID, selected Backup name/UID/end-WAL and later verified WAL.
+   Its validity is 24 hours. The read-only metrics identity fetches at
    most 8 KiB and validates the exact project, region, bucket, server, publisher,
-   source commit, run, backup,
+   source commit/tree, run, Cluster UID, Backup name/UID/end-WAL, strictly
+   advancing verified WAL,
    marker, target-time ordering, expiry, verification-subject digest and
    content-addressed object key before exporting its completion time. A forged,
    stale, oversized or differently scoped object is an exporter failure, not a
@@ -258,9 +288,12 @@ WAL failures and an unarchived WAL backlog. A non-root, read-only exporter in
 `fs2-data` inventories all current and non-current versions under the backup
 prefix, reads only the newest bounded receipt for content validation, and
 exposes total bytes, configured capacity, pressure, inventory health and the
-newest validated restore-verification completion time. It never exports keys,
-payloads or credentials. Warning/critical bucket thresholds
-are 80/90 percent, and restore verification is stale after seven days.
+newest validated restore-verification completion time plus bounded identity
+labels needed by the live gate. It never exports object keys, payloads or
+credentials. Warning/critical bucket thresholds are 80/90 percent, and restore
+verification is stale after 36 hours. The live gate rejects a zero WAL, requires
+the current archived WAL to advance beyond the selected completed Backup, and
+requires the receipt's verified WAL to fall within that advancing range.
 The exporter Pod template is annotated with the full 256-bit SHA-256 of the
 inventory access-key ID, MysteryBox reference, provider resource version and
 operator generation. Secret write-only revisions use a 60-bit prefix of that
@@ -308,13 +341,12 @@ the rules to the plugin metric names in the same reviewed rollout.
    recovery apply and require marker A present, marker B absent, a replay LSN at
    or after A, and all sensitive-table denial checks. Save only status/events
    and bounded verifier output, never table contents.
-6. Run the marker-cleanup apply with the same exact identity. Require its
-   payload-free success receipt, then clear every acceptance flag/identity and
-   apply the saved resource-cleanup plan. Confirm the marker table/grant,
-   marker Job, cleanup Job, recovery Cluster, verifier/receipt Jobs, PVC and
-   Pods are absent; retain the production backups and the non-sensitive S3
-   restore success receipt.
-7. Under an approved one-system-node disruption, require both Envoy replicas to
+6. The marker-cleanup and temporary-resource removal steps are blocked by the
+   current non-destructive constraint. Preserve the marker, recovery resources
+   and receipt without executing cleanup until the owner supplies new explicit
+   authority; do not claim final live acceptance while this gate is blocked.
+7. The one-system-node disruption probe is likewise blocked by the current
+   non-destructive constraint. When separately authorized, require both Envoy replicas to
    start on distinct nodes, the PDB to retain one available replica, and the
    public endpoint to remain healthy. Restore the node and require 2/2 Ready.
 8. Re-run anonymous landing/catalog, lead submission, PAT/model grants,
@@ -375,12 +407,16 @@ its current parent project, region, name, capacity, active state, versioning,
 storage class, anonymous-access posture and both lifecycle rules to match. The
 current Kubernetes API objects must include a UUID cluster UID, the exact
 active ScheduledBackup, a recent completed Backup controlled by that same
-cluster UID, bounded real UTC timestamps, a recent first recoverability point,
-an exact WAL segment identity and healthy `ContinuousArchiving`. Finally, the
+cluster UID with its own UUID and nonzero end-WAL, bounded real UTC timestamps,
+a recent first recoverability point, a nonzero archived WAL strictly later than
+that Backup and healthy `ContinuousArchiving`. Finally, the
 read-only inventory exporter must have a fresh successful scrape, at least one
 current object/version, internally consistent current plus non-current byte
 counts, a matching bucket ceiling, safe remaining capacity and a fresh
-content-validated restore receipt.
+content-validated restore receipt bound to that Cluster, Backup, source
+commit/tree and run. After all downstream destroy plans exist, the wrapper
+repeats the complete provider/Kubernetes/inventory/receipt check immediately
+before the first action.
 Only after those checks pass does it plan every eligible downstream destroy
 stage. It applies none until all plans exist, always omits the retained
 infrastructure stage, and writes a mode-0600 adoption receipt. Empty, stale,
@@ -407,7 +443,8 @@ approval. The source now refuses apply unless fresh numeric provider limits
 appear or an authenticated `capacity-owner` signs exact plan-bound numeric
 overrides.
 
-The current successor source gate results are:
+The following green results belong to the rejected `e3051f8` boundary and are
+retained as prior evidence, not silently promoted to this successor:
 
 - root, infrastructure and workloads `terraform validate`: pass;
 - focused wrapper/SAI-06 plus deployment tests: 90 passed and 31 subtests;
@@ -462,3 +499,12 @@ The final independent review reported ten SAI-10 merge conflicts.
 Reconciliation is forbidden until SAI-10 has an accepted clean successor; it
 then belongs in a separate integration commit with both suites rerun, never in
 either independently reviewed source lineage.
+
+For this additive successor, the permitted local checks are deliberately
+non-mutating: Python AST parsing of every changed Python executable/test,
+`terraform fmt -check` for every changed HCL file, in-memory receipt/WAL/parser
+probes, and `git diff --check`. Full pytest/Terraform/Helm suites create and
+clean temporary files or provider working data and are therefore blocked by
+the current no-delete/no-cleanup constraint. Ruff is not installed in this
+worktree and no environment was created to obtain it. No live verification or
+cleanup was attempted.

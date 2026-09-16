@@ -13,6 +13,10 @@ variables {
   run_root        = "/tmp/fs2-modelexpress-test"
   kubeconfig_path = "/tmp/fs2-modelexpress-test/kubeconfig"
   run_id          = "mxtest01"
+  sai06_source_identity = {
+    commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    tree   = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  }
   cluster_id      = "mk8scluster-modelexpresstest"
   cluster_name    = "fs2-modelexpress-test"
   kube_context    = "fs2-modelexpress-test"

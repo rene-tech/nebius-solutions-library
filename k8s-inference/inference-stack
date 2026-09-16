@@ -209,10 +209,16 @@ def terraform_init(
     )
 
 
-def validate_stage_roots(terraform: str, run_root: Path) -> None:
+def validate_stage_roots(
+    terraform: str, run_root: Path, *, source_root: Path | None = None
+) -> None:
     for stage in ("infrastructure", "foundation", "workloads"):
         environment = terraform_environment(run_root, f"validate-{stage}")
-        root = stage_root(stage)
+        root = (
+            source_root / "stages" / stage
+            if source_root is not None
+            else stage_root(stage)
+        )
         run(
             [
                 terraform,
@@ -390,7 +396,7 @@ def exact_git_source_snapshot(commit: str, run_root: Path) -> Iterator[Path]:
     changed after the first check and restored before the second.  SAI-06 plans
     from a private, read-only extraction of the reviewed commit instead.  Git's
     content-addressed objects, rather than worktree pathnames, supply every
-    infrastructure module and profile byte Terraform reads.
+    root configuration and every staged module byte Terraform reads.
     """
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise DeploymentError("SAI-06 source snapshot requires an exact Git commit")
@@ -399,13 +405,10 @@ def exact_git_source_snapshot(commit: str, run_root: Path) -> Iterator[Path]:
         tempfile.mkdtemp(prefix=".sai06-source-", dir=str(run_root))
     )
     snapshot_parent.chmod(0o700)
-    approved_roots = (
-        "k8s-inference/stages/infrastructure",
-        "k8s-inference/catalog/profiles",
-        "modules/device-plugin",
-        "modules/gpu-operator",
-        "modules/network-operator",
-    )
+    # Keep one content-addressed source boundary for the facade and all three
+    # stages. A narrower archive leaves later stage plans vulnerable to a
+    # mutable-worktree plan/revert race even when infrastructure is pinned.
+    approved_roots = ("k8s-inference", "modules")
     process: subprocess.Popen[bytes] | None = None
     try:
         process = subprocess.Popen(
@@ -460,7 +463,10 @@ def exact_git_source_snapshot(commit: str, run_root: Path) -> Iterator[Path]:
             )
         solution_root = snapshot_parent / "k8s-inference"
         required = (
+            solution_root / "main.tf",
             solution_root / "stages" / "infrastructure" / "main.tf",
+            solution_root / "stages" / "foundation" / "main.tf",
+            solution_root / "stages" / "workloads" / "main.tf",
             solution_root / "catalog" / "profiles" / "approved-targets.json",
             snapshot_parent / "modules" / "device-plugin" / "main.tf",
             snapshot_parent / "modules" / "gpu-operator" / "main.tf",
@@ -507,13 +513,16 @@ def validate_configuration(
     terraform: str,
     variable_file: Path,
     run_root: Path,
+    *,
+    root_override: Path | None = None,
 ) -> tuple[dict[str, Any], dict[str, str]]:
+    root = root_override if root_override is not None else DEPLOY_ROOT
     environment = terraform_environment(run_root, "configuration")
     backend = run_root / "configuration.tfstate"
-    terraform_init(terraform, DEPLOY_ROOT, backend, environment)
+    terraform_init(terraform, root, backend, environment)
     document = plan_json(
         terraform,
-        root=DEPLOY_ROOT,
+        root=root,
         environment=environment,
         variable_file=variable_file,
         plan_path=run_root / "configuration.tfplan",
@@ -3047,6 +3056,8 @@ def write_downstream_variables(
     run_root: Path,
     contract: Mapping[str, Any],
     dynamic: Mapping[str, Any],
+    *,
+    source_identity: tuple[str, str] | None = None,
 ) -> tuple[Path, Path]:
     identity_keys = (
         "run_root",
@@ -3069,6 +3080,20 @@ def write_downstream_variables(
         "nebius_profile": dynamic.get("nebius_profile", "sandbox"),
         "public_edge_contract": dynamic["public_edge_contract"],
     }
+    postgresql_config = workloads.get("postgresql_backup")
+    if isinstance(postgresql_config, Mapping) and postgresql_config.get("enabled") is True:
+        if (
+            source_identity is None
+            or not re.fullmatch(r"[0-9a-f]{40}", source_identity[0])
+            or not re.fullmatch(r"[0-9a-f]{40}", source_identity[1])
+        ):
+            raise DeploymentError(
+                "the PostgreSQL backup stage requires the invocation's exact source commit and tree"
+            )
+        workloads["sai06_source_identity"] = {
+            "commit": source_identity[0],
+            "tree": source_identity[1],
+        }
     controller = workloads.get("model_controller")
     if isinstance(controller, Mapping):
         workloads["model_controller"] = {
@@ -3862,7 +3887,12 @@ def apply_stack(
     contract: Mapping[str, Any],
     commit: str,
     configuration_environment: Mapping[str, str],
+    source_root: Path,
+    source_tree: str,
 ) -> None:
+    infrastructure_root = source_root / "stages" / "infrastructure"
+    foundation_root = source_root / "stages" / "foundation"
+    workloads_root = source_root / "stages" / "workloads"
     postgresql_backup_enabled = (
         contract.get("stages", {})
         .get("infrastructure", {})
@@ -3877,12 +3907,12 @@ def apply_stack(
         environment = stage_environment(
             run_root, "infrastructure", contract, include_secrets=True
         )
-        terraform_init(args.terraform, INFRA_ROOT, state, environment)
+        terraform_init(args.terraform, infrastructure_root, state, environment)
         with _sealed_plan_snapshot(
             plan_path, label="SAI-06 infrastructure binary plan"
         ) as (descriptor, plan_sha256):
             plan_document = show_sealed_plan(
-                args.terraform, INFRA_ROOT, descriptor, environment
+                args.terraform, infrastructure_root, descriptor, environment
             )
             require_sai06_no_replacements(plan_document)
             approval = load_and_validate_sai06_capacity_approval(
@@ -3897,14 +3927,16 @@ def apply_stack(
             # before apply. Stored plan JSON is evidence only and is never an
             # authorization input.
             final_document = show_sealed_plan(
-                args.terraform, INFRA_ROOT, descriptor, environment
+                args.terraform, infrastructure_root, descriptor, environment
             )
             require_sai06_no_replacements(final_document)
             if canonical_sha256(final_document) != canonical_sha256(plan_document):
                 raise DeploymentError(
                     "SAI-06 sealed plan JSON changed between authorization and apply"
                 )
-            apply_sealed_plan(args.terraform, INFRA_ROOT, descriptor, environment)
+            apply_sealed_plan(
+                args.terraform, infrastructure_root, descriptor, environment
+            )
     else:
         infrastructure_variables = write_infrastructure_variables(
             run_root, contract, commit, args.nebius_profile
@@ -3915,8 +3947,9 @@ def apply_stack(
             stage="infrastructure",
             contract=contract,
             variable_file=infrastructure_variables,
+            root_override=infrastructure_root,
         )
-        apply_plan(args.terraform, INFRA_ROOT, plan_path, environment)
+        apply_plan(args.terraform, infrastructure_root, plan_path, environment)
 
     dynamic = infrastructure_outputs(
         args.terraform,
@@ -3928,7 +3961,7 @@ def apply_stack(
     )
     mirror_selected_images(args, run_root, contract, dynamic)
     foundation_variables, workloads_variables = write_downstream_variables(
-        run_root, contract, dynamic
+        run_root, contract, dynamic, source_identity=(commit, source_tree)
     )
 
     plan_path, foundation_plan, environment = plan_stage(
@@ -3937,17 +3970,18 @@ def apply_stack(
         stage="foundation",
         contract=contract,
         variable_file=foundation_variables,
+        root_override=foundation_root,
     )
     if postgresql_backup_enabled:
         apply_reviewed_sai06_plan(
             args.terraform,
-            FOUNDATION_ROOT,
+            foundation_root,
             plan_path,
             foundation_plan,
             environment,
         )
     else:
-        apply_plan(args.terraform, FOUNDATION_ROOT, plan_path, environment)
+        apply_plan(args.terraform, foundation_root, plan_path, environment)
 
     plan_path, workloads_plan, environment = plan_stage(
         args.terraform,
@@ -3955,22 +3989,23 @@ def apply_stack(
         stage="workloads",
         contract=contract,
         variable_file=workloads_variables,
+        root_override=workloads_root,
     )
     if postgresql_backup_enabled:
         apply_reviewed_sai06_plan(
             args.terraform,
-            WORKLOADS_ROOT,
+            workloads_root,
             plan_path,
             workloads_plan,
             environment,
         )
     else:
-        apply_plan(args.terraform, WORKLOADS_ROOT, plan_path, environment)
+        apply_plan(args.terraform, workloads_root, plan_path, environment)
 
     # Record the accepted root contract after all of its staged consumers converge.
     apply_plan(
         args.terraform,
-        DEPLOY_ROOT,
+        source_root,
         run_root / "configuration.tfplan",
         configuration_environment,
     )
@@ -3988,6 +4023,8 @@ def plan_infrastructure_with_sai06(
     contract: Mapping[str, Any],
     commit: str,
     variable_file: Path,
+    *,
+    source_root: Path | None = None,
 ) -> tuple[Path, dict[str, Any], dict[str, str]]:
     postgresql_backup_enabled = (
         contract.get("stages", {})
@@ -4004,15 +4041,18 @@ def plan_infrastructure_with_sai06(
                 "SAI-06 source commit changed before Terraform planning"
             )
     if postgresql_backup_enabled:
-        with exact_git_source_snapshot(commit, run_root) as snapshot_root:
-            result = plan_stage(
-                args.terraform,
-                run_root=run_root,
-                stage="infrastructure",
-                contract=contract,
-                variable_file=variable_file,
-                root_override=snapshot_root / "stages" / "infrastructure",
+        if source_root is None:
+            raise DeploymentError(
+                "SAI-06 planning requires the invocation-wide exact source snapshot"
             )
+        result = plan_stage(
+            args.terraform,
+            run_root=run_root,
+            stage="infrastructure",
+            contract=contract,
+            variable_file=variable_file,
+            root_override=source_root / "stages" / "infrastructure",
+        )
     else:
         result = plan_stage(
             args.terraform,
@@ -4064,6 +4104,8 @@ def plan_stack(
     run_root: Path,
     contract: Mapping[str, Any],
     commit: str,
+    source_root: Path,
+    source_tree: str,
 ) -> None:
     infrastructure_variables = write_infrastructure_variables(
         run_root,
@@ -4073,7 +4115,12 @@ def plan_stack(
     )
     if not state_ready(args.terraform, run_root, "infrastructure", contract):
         plan_infrastructure_with_sai06(
-            args, run_root, contract, commit, infrastructure_variables
+            args,
+            run_root,
+            contract,
+            commit,
+            infrastructure_variables,
+            source_root=source_root,
         )
         print(
             "Planned infrastructure. Apply it before foundation can be planned against the new API server."
@@ -4081,7 +4128,12 @@ def plan_stack(
         return
 
     _, infrastructure_plan, _ = plan_infrastructure_with_sai06(
-        args, run_root, contract, commit, infrastructure_variables
+        args,
+        run_root,
+        contract,
+        commit,
+        infrastructure_variables,
+        source_root=source_root,
     )
     if plan_changes_managed_resources_or_outputs(infrastructure_plan):
         print(
@@ -4099,14 +4151,19 @@ def plan_stack(
     )
     if "artifact_delivery" not in dynamic["accelerator_pool_contract"]:
         plan_infrastructure_with_sai06(
-            args, run_root, contract, commit, infrastructure_variables
+            args,
+            run_root,
+            contract,
+            commit,
+            infrastructure_variables,
+            source_root=source_root,
         )
         print(
             "Planned the registry-delivery contract upgrade. Apply infrastructure before planning downstream stages."
         )
         return
     foundation_variables, workloads_variables = write_downstream_variables(
-        run_root, contract, dynamic
+        run_root, contract, dynamic, source_identity=(commit, source_tree)
     )
     if not state_ready(args.terraform, run_root, "foundation", contract):
         plan_stage(
@@ -4115,6 +4172,7 @@ def plan_stack(
             stage="foundation",
             contract=contract,
             variable_file=foundation_variables,
+            root_override=source_root / "stages" / "foundation",
         )
         print("Planned foundation. Apply it before custom resources can be planned.")
         return
@@ -4125,6 +4183,7 @@ def plan_stack(
         stage="foundation",
         contract=contract,
         variable_file=foundation_variables,
+        root_override=source_root / "stages" / "foundation",
     )
     if plan_changes_managed_resources_or_outputs(foundation_plan):
         print(
@@ -4139,6 +4198,7 @@ def plan_stack(
             stage="workloads",
             contract=contract,
             variable_file=workloads_variables,
+            root_override=source_root / "stages" / "workloads",
         )
         print("Planned workloads.")
         return
@@ -4149,6 +4209,7 @@ def plan_stack(
         stage="workloads",
         contract=contract,
         variable_file=workloads_variables,
+        root_override=source_root / "stages" / "workloads",
     )
     print("Planned all three existing states after upstream handoffs converged.")
 
@@ -4589,12 +4650,36 @@ def _prometheus_scalar(metrics: str, name: str) -> float:
     return value
 
 
+def _prometheus_info_labels(metrics: str, name: str) -> dict[str, str]:
+    matches = re.findall(
+        rf"(?m)^{re.escape(name)}\{{([^}}]+)\}}\s+1(?:\.0+)?\s*$",
+        metrics,
+    )
+    if len(matches) != 1:
+        raise DeploymentError(
+            f"live PostgreSQL recovery inventory metric {name} is missing or "
+            "ambiguous; no resource was changed"
+        )
+    labels: dict[str, str] = {}
+    for item in matches[0].split(","):
+        match = re.fullmatch(r'([a-z_][a-z0-9_]*)="([^"\\]*)"', item)
+        if match is None or match.group(1) in labels:
+            raise DeploymentError(
+                f"live PostgreSQL recovery inventory metric {name} has invalid "
+                "labels; no resource was changed"
+            )
+        labels[match.group(1)] = match.group(2)
+    return labels
+
+
 def _postgresql_inventory_evidence(
     args: argparse.Namespace,
     dynamic: Mapping[str, Any],
     retained: Mapping[str, Any],
     *,
     now: datetime,
+    receipt_binding: Mapping[str, str],
+    current_wal: str,
 ) -> dict[str, Any]:
     metrics = _kubectl_raw(
         args,
@@ -4613,6 +4698,39 @@ def _postgresql_inventory_evidence(
         "fs2_postgresql_restore_last_success_timestamp_seconds",
     )
     values = {name: _prometheus_scalar(metrics, name) for name in names}
+    receipt_labels = _prometheus_info_labels(
+        metrics, "fs2_postgresql_restore_receipt_info"
+    )
+    required_receipt_labels = {
+        "backup_name",
+        "backup_uid",
+        "cluster_uid",
+        "run_id",
+        "source_backup_wal",
+        "source_commit",
+        "source_tree",
+        "verified_wal",
+    }
+    required_binding_labels = required_receipt_labels - {"verified_wal"}
+    if (
+        set(receipt_labels) != required_receipt_labels
+        or set(receipt_binding) != required_binding_labels
+        or not re.fullmatch(r"[0-9A-F]{24}", current_wal)
+        or int(current_wal, 16) == 0
+        or any(
+            receipt_labels.get(key) != value
+            for key, value in receipt_binding.items()
+        )
+        or not re.fullmatch(r"[0-9A-F]{24}", receipt_labels["verified_wal"])
+        or int(receipt_labels["source_backup_wal"], 16) == 0
+        or int(receipt_labels["verified_wal"], 16)
+        <= int(receipt_labels["source_backup_wal"], 16)
+        or int(receipt_labels["verified_wal"], 16) > int(current_wal, 16)
+    ):
+        raise DeploymentError(
+            "live PostgreSQL restore receipt is not bound to the current source, "
+            "Backup, run and advancing archived WAL; no resource was changed"
+        )
     expected_capacity = int(retained["configured_capacity_gib"]) * 1024**3
     inventory_success = datetime.fromtimestamp(
         values["fs2_postgresql_backup_bucket_last_success_timestamp_seconds"], UTC
@@ -4627,7 +4745,7 @@ def _postgresql_inventory_evidence(
         values["fs2_postgresql_backup_bucket_scrape_success"] != 1
         or now - inventory_success > timedelta(minutes=10)
         or inventory_success > now + timedelta(minutes=5)
-        or now - restore_success > timedelta(days=9)
+        or now - restore_success > timedelta(hours=36)
         or restore_success > now + timedelta(minutes=5)
         or values["fs2_postgresql_backup_bucket_capacity_bytes"]
         != expected_capacity
@@ -4647,6 +4765,7 @@ def _postgresql_inventory_evidence(
         "object_versions": int(
             values["fs2_postgresql_backup_bucket_object_versions"]
         ),
+        "receipt_binding": receipt_labels,
         "metrics_sha256": hashlib.sha256(metrics.encode()).hexdigest(),
     }
 
@@ -4674,6 +4793,8 @@ def validate_postgresql_live_recovery_boundary(
     contract: Mapping[str, Any],
     dynamic: Mapping[str, Any],
     *,
+    source_commit: str,
+    source_tree: str,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Require provider-backed storage plus a current, owned recovery chain."""
@@ -4754,7 +4875,7 @@ def validate_postgresql_live_recovery_boundary(
         None,
     )
     cluster_uid = str(cluster_metadata["uid"])
-    completed: list[tuple[Mapping[str, Any], datetime]] = []
+    completed: list[tuple[Mapping[str, Any], datetime, str, str]] = []
     for item in backup_items:
         if not isinstance(item, Mapping):
             continue
@@ -4774,19 +4895,27 @@ def validate_postgresql_live_recovery_boundary(
             for owner in owner_references
         )
         source_cluster = spec.get("cluster")
+        backup_uid = str(metadata.get("uid", ""))
+        backup_wal = str(status.get("endWal", ""))
         if (
             metadata.get("namespace") != "fs2-data"
+            or not re.fullmatch(
+                r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                backup_uid,
+            )
             or not owner_matches
             or not isinstance(source_cluster, Mapping)
             or source_cluster.get("name") != "fs2-control-db"
             or str(status.get("phase", "")).lower() != "completed"
+            or not re.fullmatch(r"[0-9A-F]{24}", backup_wal)
+            or int(backup_wal, 16) == 0
         ):
             continue
         completed_at = _live_utc(
             status.get("stoppedAt"), "completed backup time", now=current
         )
         if current - completed_at <= timedelta(hours=36):
-            completed.append((item, completed_at))
+            completed.append((item, completed_at, backup_uid, backup_wal))
     if (
         not isinstance(continuous, Mapping)
         or continuous.get("status") != "True"
@@ -4810,6 +4939,12 @@ def validate_postgresql_live_recovery_boundary(
         schedule_status["lastCheckTime"], "schedule last check", now=current
     )
     last_wal = cluster_status["lastArchivedWal"]
+    selected_backup, selected_time, backup_uid, backup_wal = max(
+        completed, key=lambda candidate: candidate[1]
+    )
+    backup_metadata = selected_backup["metadata"]
+    backup_name = str(backup_metadata.get("name", ""))
+    expected_run_id = dynamic.get("run_id")
     retention_days = int(retained["retention_days"])
     if (
         current - first_recoverability > timedelta(days=retention_days + 7)
@@ -4817,19 +4952,45 @@ def validate_postgresql_live_recovery_boundary(
         or current - last_check > timedelta(hours=36)
         or first_recoverability > last_backup
         or not re.fullmatch(r"[0-9A-F]{24}", str(last_wal))
+        or int(str(last_wal), 16) == 0
+        or int(str(last_wal), 16) <= int(backup_wal, 16)
+        or not re.fullmatch(r"[a-z][a-z0-9]{5,11}", str(expected_run_id))
+        or not re.fullmatch(r"[0-9a-f]{40}", source_commit)
+        or not re.fullmatch(r"[0-9a-f]{40}", source_tree)
+        or not re.fullmatch(r"[a-z0-9][a-z0-9-]{7,62}", backup_name)
     ):
         raise DeploymentError(
             "live PostgreSQL recovery timestamps or archived WAL identity are stale "
             "or malformed; no resource was changed"
         )
+    receipt_binding = {
+        "backup_name": backup_name,
+        "backup_uid": backup_uid,
+        "cluster_uid": cluster_uid,
+        "run_id": str(expected_run_id),
+        "source_backup_wal": backup_wal,
+        "source_commit": source_commit,
+        "source_tree": source_tree,
+    }
     inventory = _postgresql_inventory_evidence(
-        args, dynamic, retained, now=current
+        args,
+        dynamic,
+        retained,
+        now=current,
+        receipt_binding=receipt_binding,
+        current_wal=str(last_wal),
     )
     return {
         "cluster_uid": cluster_uid,
         "first_recoverability_point": cluster_status["firstRecoverabilityPoint"],
         "last_successful_backup": cluster_status["lastSuccessfulBackup"],
         "last_archived_wal": last_wal,
+        "selected_backup_name": backup_name,
+        "selected_backup_uid": backup_uid,
+        "selected_backup_end_wal": backup_wal,
+        "selected_backup_completed_at": selected_time.isoformat().replace(
+            "+00:00", "Z"
+        ),
         "completed_backup_count": len(completed),
         "continuous_archiving": True,
         "schedule_last_check_time": schedule_status["lastCheckTime"],
@@ -4843,6 +5004,9 @@ def destroy_stack(
     run_root: Path,
     contract: Mapping[str, Any],
     commit: str,
+    *,
+    source_root: Path | None = None,
+    source_tree: str | None = None,
 ) -> None:
     reference_infrastructure = (
         contract.get("stages", {}).get("infrastructure", {}).get("reference_data", {})
@@ -4949,10 +5113,31 @@ def destroy_stack(
                 "no resource was changed"
             )
         if postgresql_retained:
+            if source_root is None or source_tree is None:
+                raise DeploymentError(
+                    "SAI-06 destroy planning requires the invocation-wide exact source snapshot"
+                )
             validate_postgresql_retained_boundary(contract, dynamic)
-            validate_postgresql_live_recovery_boundary(args, contract, dynamic)
+            validate_postgresql_live_recovery_boundary(
+                args,
+                contract,
+                dynamic,
+                source_commit=commit,
+                source_tree=source_tree,
+            )
     if resources["foundation"] or resources["workloads"]:
-        if (
+        if postgresql_retained:
+            if dynamic is None or source_tree is None:
+                raise DeploymentError(
+                    "retained PostgreSQL destroy planning requires current outputs and exact source identity"
+                )
+            downstream = write_downstream_variables(
+                run_root,
+                contract,
+                dynamic,
+                source_identity=(commit, source_tree),
+            )
+        elif (
             cached_foundation.is_file()
             and not cached_foundation.is_symlink()
             and cached_workloads.is_file()
@@ -5012,8 +5197,27 @@ def destroy_stack(
             contract=contract,
             variable_file=variable_file,
             destroy=True,
+            root_override=(
+                source_root / "stages" / stage
+                if source_root is not None
+                else None
+            ),
         )
         planned_destroys.append((stage, plan_path, document, environment))
+
+    # Recovery evidence can age or be superseded while Terraform is planning.
+    # Re-read the provider, CNPG resources and content-bound receipt after all
+    # plans exist and immediately before the first destructive action.
+    if postgresql_retained and retain_infrastructure:
+        assert dynamic is not None
+        assert source_tree is not None
+        validate_postgresql_live_recovery_boundary(
+            args,
+            contract,
+            dynamic,
+            source_commit=commit,
+            source_tree=source_tree,
+        )
 
     # Destructive application starts only after every eligible stage has a
     # complete saved plan. A late foundation/infrastructure planning failure
@@ -5022,7 +5226,11 @@ def destroy_stack(
     for stage, plan_path, document, environment in planned_destroys:
         apply_plan(
             args.terraform,
-            stage_root(stage),
+            (
+                source_root / "stages" / stage
+                if source_root is not None
+                else stage_root(stage)
+            ),
             plan_path,
             environment,
             document,
@@ -5531,13 +5739,25 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"another inference-stack process owns {run_root}"
             ) from exc
 
-        contract, configuration_environment = validate_configuration(
-            args.terraform, variable_file, run_root
-        )
+        source_identity = verified_source_identity()
+        commit = source_identity[0]
+        with exact_git_source_snapshot(commit, run_root) as source_root:
+            contract, configuration_environment = validate_configuration(
+                args.terraform,
+                variable_file,
+                run_root,
+                root_override=source_root,
+            )
+        if verified_source_identity() != source_identity:
+            raise DeploymentError(
+                "SAI-06 source identity changed while validating the root configuration"
+            )
         proxy_arguments: list[str] | None = None
-        commit = source_commit()
         if args.command == "validate":
-            validate_stage_roots(args.terraform, run_root)
+            with exact_git_source_snapshot(commit, run_root) as source_root:
+                validate_stage_roots(
+                    args.terraform, run_root, source_root=source_root
+                )
             print(
                 json.dumps(
                     {
@@ -5571,29 +5791,47 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             )
         elif args.command == "plan":
-            plan_stack(
-                args,
-                run_root,
-                contract,
-                commit,
-            )
+            with exact_git_source_snapshot(commit, run_root) as source_root:
+                plan_stack(
+                    args,
+                    run_root,
+                    contract,
+                    commit,
+                    source_root,
+                    source_identity[1],
+                )
         elif args.command == "apply":
             require_deployable_images(contract)
-            apply_stack(
-                args,
-                run_root,
-                contract,
-                commit,
-                configuration_environment,
-            )
+            with exact_git_source_snapshot(commit, run_root) as source_root:
+                apply_stack(
+                    args,
+                    run_root,
+                    contract,
+                    commit,
+                    configuration_environment,
+                    source_root,
+                    source_identity[1],
+                )
         elif args.command == "destroy":
-            destroy_stack(args, run_root, contract, commit)
+            with exact_git_source_snapshot(commit, run_root) as source_root:
+                destroy_stack(
+                    args,
+                    run_root,
+                    contract,
+                    commit,
+                    source_root=source_root,
+                    source_tree=source_identity[1],
+                )
         elif args.command == "output":
             output_stack(args, run_root, contract)
         elif args.command == "proxy":
             proxy_arguments = internal_proxy_command(args, run_root, contract)
         else:
             status_stack(args, run_root, contract)
+        if verified_source_identity() != source_identity:
+            raise DeploymentError(
+                "SAI-06 source identity changed during the stack command"
+            )
     if proxy_arguments is not None:
         try:
             run(proxy_arguments, env=clean_environment())
