@@ -27,6 +27,22 @@ variable "iam_public_key_pem" {
 variable "auth_key_expires_at" {
   type        = string
   description = "RFC3339 expiry shared by both short-lived provisioner auth keys."
+  validation {
+    condition = (
+      can(formatdate("YYYY-MM-DD'T'hh:mm:ssZ", var.auth_key_expires_at)) &&
+      can(regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$", var.auth_key_expires_at))
+    )
+    error_message = "auth_key_expires_at must be an RFC3339 timestamp with an explicit timezone."
+  }
+  validation {
+    condition = (
+      !can(formatdate("YYYY-MM-DD'T'hh:mm:ssZ", var.auth_key_expires_at)) || (
+        timecmp(var.auth_key_expires_at, plantimestamp()) > 0 &&
+        timecmp(var.auth_key_expires_at, timeadd(plantimestamp(), "2160h")) <= 0
+      )
+    )
+    error_message = "auth_key_expires_at must be a future RFC3339 timestamp no more than 90 days ahead."
+  }
 }
 
 # Preserve the deployed resource addresses while replacing the credential and

@@ -676,7 +676,8 @@ async def reconcile_user_storage(settings: Settings) -> None:
     """Run cloud reconciliation outside every Internet-facing process."""
     from nebius.sdk import SDK
 
-    from .user_repository import PostgresUserRepository
+    from .postgres import PostgresStore
+    from .user_repository import StorageUserRepository
     from .user_storage import UserStorageService
     from .user_storage_models import StoragePolicy
     from .user_storage_nebius import NebiusUserStorage
@@ -690,20 +691,27 @@ async def reconcile_user_storage(settings: Settings) -> None:
     )
     if not settings.user_storage_enabled or not all(required):
         raise RuntimeError("storage-reconciler requires a project, region and two credential files")
-    store = await _store(settings)
+    pool = await PostgresStore._connect_pool(
+        settings.database_url,
+        min_size=1,
+        max_size=4,
+        application_name="fs2-customer-storage-reconciler",
+    )
+    storage_cipher = PayloadCipher.from_file(settings.user_storage_keyring_file)
+    storage_name_hasher = KeyedHasher.from_file(settings.user_storage_name_keyring_file)
     provider = NebiusUserStorage(
         SDK(credentials_file_name=settings.user_storage_resource_credentials_file),
         iam_sdk=SDK(credentials_file_name=settings.user_storage_iam_credentials_file),
         project_id=settings.user_storage_project_id,
         tenant_id=settings.user_storage_cloud_tenant_id,
         region=settings.user_storage_region,
-        name_hasher=store.hasher,
+        name_hasher=storage_name_hasher,
         key_ttl_days=settings.user_storage_key_ttl_days,
     )
     service = UserStorageService(
-        PostgresUserStorageRepository(store.pool, store.cipher),
+        PostgresUserStorageRepository(pool, storage_cipher),
         provider,
-        PostgresUserRepository(store.pool),
+        StorageUserRepository(pool),
         default=StoragePolicy(
             mode=settings.user_storage_default_mode,
             quota_bytes=settings.user_storage_quota_bytes,
@@ -711,12 +719,13 @@ async def reconcile_user_storage(settings: Settings) -> None:
         excluded_tenants=settings.user_storage_excluded_tenants,
         poll_seconds=settings.user_storage_poll_seconds,
         action_timeout_seconds=settings.user_storage_action_timeout_seconds,
+        rotation_window_days=settings.user_storage_rotation_window_days,
     )
     try:
         await service._run()
     finally:
         await service.close()
-        await store.close()
+        await pool.close()
 
 
 async def migrate(settings: Settings) -> None:
@@ -727,6 +736,7 @@ async def migrate(settings: Settings) -> None:
         settings.runtime_database_role,
         settings.maintenance_database_role,
         settings.activation_database_role,
+        settings.storage_database_role,
     )
 
 

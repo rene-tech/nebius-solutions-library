@@ -9,8 +9,14 @@ customerStorage:
   excludedTenants: []
   resourceCredentialsSecretName: ""
   iamCredentialsSecretName: ""
+  databaseSecretName: fs2-serve-database-storage
+  cryptoSecretName: fs2-serve-storage-keyring
   egressCidrs: []
+  egressContractSha256: ""
+  egressContractValidUntil: ""
+  egressContractEndpoints: []
   keyTtlDays: 90
+  rotationWindowDays: 14
   actionTimeoutSeconds: 30
   resources:
     requests:
@@ -383,17 +389,18 @@ migration:
   runtimeDatabaseRole: fs2_serve_runtime
   maintenanceDatabaseRole: fs2_serve_maintenance
   activationDatabaseRole: fs2_serve_activation
+  storageDatabaseRole: fs2_serve_storage
   # Exact value-suppressed inputs emitted by `fs2-serve
   # postgresql-release-contract`. The migration Job publishes these annotations
   # for the final PostgreSQL release receipt; chart validation rejects drift.
   releaseContract:
     schema: fs2-serve.nebius.ai/postgresql-release-contract/v1
-    contractPayloadSha256: 87dee4c94353034f368ef45e63b9ec28aa04b16aa20fdf01a757b8dbe134c009
-    migrationSetSha256: 6f4017391de80017ca579e6363d1dce72903e6e568a3901d889359d58e4f27a6
+    contractPayloadSha256: 5205ec0d72aed0ea4fedd819c5e94bee43fcb4f4bfb98d221d7fd27ee0880030
+    migrationSetSha256: ea736796a505c56573d4ebd248a0e1848f8ee0358159e32cf007ab06382da741
     migrationCount: 32
     firstMigrationVersion: 0001_initial.sql
     lastMigrationVersion: 0032_user_storage_security.sql
-    namespaceRoleOwnershipSha256: 47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca
+    namespaceRoleOwnershipSha256: 02a91557f23468b3c943575a2295f8fdd710575ffd438e466a7df5214d5dc3b0
   resources:
     requests:
       cpu: 50m
@@ -430,7 +437,9 @@ networkPolicy:
     namespaceLabels:
       kubernetes.io/metadata.name: kube-system
     podLabels:
-      k8s-app: kube-dns
+      app.kubernetes.io/instance: coredns
+      app.kubernetes.io/name: coredns
+      k8s-app: coredns
     port: 53
   gateway:
     namespaceLabels:

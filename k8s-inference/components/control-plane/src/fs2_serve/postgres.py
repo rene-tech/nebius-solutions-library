@@ -386,17 +386,19 @@ class PostgresStore:
         runtime_role: str = "fs2_serve_runtime",
         maintenance_role: str = "fs2_serve_maintenance",
         activation_role: str = "fs2_serve_activation",
+        storage_role: str = "fs2_serve_storage",
     ) -> None:
         for label, role in (
             ("reporting", reporting_role),
             ("runtime", runtime_role),
             ("maintenance", maintenance_role),
             ("activation", activation_role),
+            ("storage", storage_role),
         ):
             if not role.replace("_", "a").isalnum() or not 1 <= len(role) <= 63:
                 raise ValueError(f"{label} database role is invalid")
-        if len({reporting_role, runtime_role, maintenance_role, activation_role}) != 4:
-            raise ValueError("reporting, runtime, maintenance, and activation database roles must differ")
+        if len({reporting_role, runtime_role, maintenance_role, activation_role, storage_role}) != 5:
+            raise ValueError("reporting, runtime, maintenance, activation, and storage database roles must differ")
         manifest = cls._migration_manifest(migrations_dir)
         async with pool.acquire() as connection, connection.transaction():
             await connection.execute("SELECT pg_advisory_xact_lock(727201920001)")
@@ -444,6 +446,7 @@ class PostgresStore:
                 ("runtime", runtime_role),
                 ("maintenance", maintenance_role),
                 ("activation", activation_role),
+                ("storage", storage_role),
             ):
                 can_login = await connection.fetchval("SELECT rolcanlogin FROM pg_roles WHERE rolname=$1", role)
                 if can_login is None:
@@ -456,7 +459,8 @@ class PostgresStore:
             quoted_runtime = f'"{runtime_role}"'
             quoted_maintenance = f'"{maintenance_role}"'
             quoted_activation = f'"{activation_role}"'
-            all_roles = (quoted_reporting, quoted_runtime, quoted_maintenance, quoted_activation)
+            quoted_storage = f'"{storage_role}"'
+            all_roles = (quoted_reporting, quoted_runtime, quoted_maintenance, quoted_activation, quoted_storage)
             for role in all_roles:
                 await connection.execute(
                     f"REVOKE ALL ON fs2_schema_migrations,fs2_tokens,fs2_operations,"
@@ -481,6 +485,10 @@ class PostgresStore:
                     f"fs2_reporting_lifecycle_workloads FROM {role}"
                 )
                 await connection.execute(
+                    f"REVOKE ALL ON fs2_apps,fs2_inference_users,fs2_storage_policies,"
+                    f"fs2_storage_buckets,fs2_user_storage,fs2_request_telemetry,fs2_request_debug FROM {role}"
+                )
+                await connection.execute(
                     f"REVOKE ALL ON fs2_operation_events_id_seq,fs2_audit_events_id_seq,"
                     f"fs2_activation_events_id_seq,fs2_configuration_revisions_revision_seq,"
                     f"fs2_configuration_reconciliation_events_id_seq,"
@@ -503,7 +511,8 @@ class PostgresStore:
                     f"fs2_scientific_batch_append_only(),"
                     f"fs2_scientific_model_policy_forward(),"
                     f"fs2_scientific_dispatch_hold(text,text),"
-                    f"fs2_reject_telemetry_mutation() FROM {role}"
+                    f"fs2_reject_telemetry_mutation(),"
+                    f"fs2_consume_user_storage_disclosure(text,text,text,uuid) FROM {role}"
                 )
             await connection.execute(
                 f"GRANT SELECT ON fs2_reporting_model_usage,fs2_reporting_principal_usage,"
@@ -535,8 +544,18 @@ class PostgresStore:
             )
             await connection.execute(f"GRANT SELECT,INSERT,UPDATE ON fs2_model_deployments TO {quoted_runtime}")
             await connection.execute(f"GRANT SELECT,INSERT,UPDATE ON fs2_apps,fs2_inference_users TO {quoted_runtime}")
+            await connection.execute(f"GRANT SELECT,INSERT,UPDATE ON fs2_storage_policies TO {quoted_runtime}")
+            await connection.execute(f"GRANT SELECT ON fs2_storage_buckets TO {quoted_runtime}")
             await connection.execute(
-                f"GRANT SELECT,INSERT,UPDATE ON fs2_storage_policies,fs2_storage_buckets,fs2_user_storage "
+                f"GRANT SELECT (tenant_id,principal_id,owner_key,service_account_id,access_key_resource_id,"
+                f"access_key_id,expires_at,enabled,desired_enabled,revoked_at,requested_action,requested_at,"
+                f"replacement_access_key_resource_id,previous_access_key_resource_id,rotation_started_at,"
+                f"disclosure_consumed_at,version),"
+                f"UPDATE (desired_enabled,requested_action,requested_at,rotation_started_at,version,updated_at) "
+                f"ON fs2_user_storage TO {quoted_runtime}"
+            )
+            await connection.execute(
+                f"GRANT EXECUTE ON FUNCTION fs2_consume_user_storage_disclosure(text,text,text,uuid) "
                 f"TO {quoted_runtime}"
             )
             await connection.execute(
@@ -635,6 +654,14 @@ class PostgresStore:
             await connection.execute(
                 f"GRANT EXECUTE ON FUNCTION fs2_activation_model_lock_key(text) TO {quoted_activation}"
             )
+            await connection.execute(
+                f"GRANT SELECT,INSERT,UPDATE ON fs2_storage_policies,fs2_storage_buckets,fs2_user_storage "
+                f"TO {quoted_storage}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (id,tenant_id,principal_id,display_name,kind,team,enabled,academic_eligible,"
+                f"app_ids,created_at,updated_at) ON fs2_inference_users TO {quoted_storage}"
+            )
 
     async def migrate(self) -> None:
         await self._apply_migrations(self.pool, self.migrations_dir)
@@ -648,6 +675,7 @@ class PostgresStore:
         runtime_role: str = "fs2_serve_runtime",
         maintenance_role: str = "fs2_serve_maintenance",
         activation_role: str = "fs2_serve_activation",
+        storage_role: str = "fs2_serve_storage",
     ) -> None:
         """Apply serialized DDL without loading any runtime cryptographic material."""
 
@@ -665,6 +693,7 @@ class PostgresStore:
                 runtime_role,
                 maintenance_role,
                 activation_role,
+                storage_role,
             )
         finally:
             await pool.close()
@@ -742,6 +771,20 @@ class PostgresStore:
                             "'public.fs2_scientific_dispatch_hold(text,text)','EXECUTE')"
                             " AND has_function_privilege(current_user,"
                             "'public.fs2_scientific_dispatch_hold(text,text)','EXECUTE')"
+                            " AND has_function_privilege('fs2_serve_runtime',"
+                            "'public.fs2_consume_user_storage_disclosure(text,text,text,uuid)','EXECUTE')"
+                            " AND NOT has_column_privilege('fs2_serve_runtime',"
+                            "'public.fs2_user_storage','secret_ciphertext','SELECT')"
+                            " AND has_table_privilege('fs2_serve_storage',"
+                            "'public.fs2_user_storage','SELECT')"
+                            " AND has_table_privilege('fs2_serve_storage',"
+                            "'public.fs2_user_storage','INSERT')"
+                            " AND has_table_privilege('fs2_serve_storage',"
+                            "'public.fs2_user_storage','UPDATE')"
+                            " AND NOT has_table_privilege('fs2_serve_storage',"
+                            "'public.fs2_operations','SELECT')"
+                            " AND NOT has_table_privilege('fs2_serve_storage',"
+                            "'public.fs2_audit_events','SELECT')"
                         )
                     if not runtime_privileges_ready:
                         raise RuntimeError("database schema runtime privileges are incomplete")

@@ -189,6 +189,12 @@ def test_customer_storage_credentials_are_isolated_and_egress_is_bounded() -> No
         "customerStorage.resourceCredentialsSecretName=storage-resource",
         "--set",
         "customerStorage.iamCredentialsSecretName=storage-iam",
+        "--set",
+        "customerStorage.egressContractSha256=" + "a" * 64,
+        "--set",
+        "customerStorage.egressContractValidUntil=2026-09-17T00:00:00Z",
+        "--set",
+        "customerStorage.egressContractEndpoints[0]=cpl.iam.api.nebius.cloud",
     )
     rejected = subprocess.run(  # noqa: S603 - fixed Helm binary and test-owned arguments
         render_command(*base),
@@ -199,7 +205,7 @@ def test_customer_storage_credentials_are_isolated_and_egress_is_bounded() -> No
     assert rejected.returncode != 0
     assert "customerStorage.egressCidrs" in rejected.stderr
 
-    documents = render(*base, "--set-string", "customerStorage.egressCidrs[0]=198.51.100.0/24")
+    documents = render(*base, "--set-string", "customerStorage.egressCidrs[0]=198.51.100.10/32")
     named = {(item["kind"], item["metadata"]["name"]): item for item in documents}
     runtime = named[("Deployment", "fs2-serve-control-plane")]["spec"]["template"]["spec"]
     storage = named[("Deployment", "fs2-serve-control-plane-storage-reconciler")]["spec"]["template"]["spec"]
@@ -209,12 +215,30 @@ def test_customer_storage_credentials_are_isolated_and_egress_is_bounded() -> No
     assert "storage-iam" not in runtime_text
     assert "storage-resource" in storage_text
     assert "storage-iam" in storage_text
+    assert "fs2-serve-database-storage" in storage_text
+    assert "fs2-serve-storage-keyring" in storage_text
+    assert "ledger-hmac-keyring" not in storage_text
+    assert 'fs2-serve-database"' not in storage_text
 
     runtime_policy = named[("NetworkPolicy", "fs2-serve-control-plane-runtime")]
     assert all("to" in rule for rule in runtime_policy["spec"]["egress"])
     storage_policy = named[("NetworkPolicy", "fs2-serve-control-plane-storage-reconciler")]
     https = next(rule for rule in storage_policy["spec"]["egress"] if rule["ports"][0]["port"] == 443)
-    assert https["to"] == [{"ipBlock": {"cidr": "198.51.100.0/24"}}]
+    assert https["to"] == [{"ipBlock": {"cidr": "198.51.100.10/32"}}]
+    assert https["ports"] == [{"port": 443, "protocol": "TCP"}]
+
+    for values in (
+        ("customerStorage.egressCidrs[0]=0.0.0.0/1", "customerStorage.egressCidrs[1]=128.0.0.0/1"),
+        ("customerStorage.egressCidrs[0]=2000::/3",),
+    ):
+        args = [*base]
+        for value in values:
+            args.extend(("--set-string", value))
+        broad = subprocess.run(  # noqa: S603 - fixed Helm binary and adversarial test values
+            render_command(*args), check=False, capture_output=True, text=True
+        )
+        assert broad.returncode != 0
+        assert "provider-verified" in broad.stderr or "values don't meet" in broad.stderr
 
 
 def application_route(documents: list[dict]) -> dict:
@@ -1718,6 +1742,7 @@ def test_migration_job_is_the_only_ddl_credential_consumer_and_has_no_runtime_se
         "FS2_RUNTIME_DATABASE_ROLE",
         "FS2_MAINTENANCE_DATABASE_ROLE",
         "FS2_ACTIVATION_DATABASE_ROLE",
+        "FS2_STORAGE_DATABASE_ROLE",
     }
     assert container["env"][0]["valueFrom"]["secretKeyRef"] == {
         "name": "fs2-serve-database-migrations",
@@ -1852,7 +1877,13 @@ def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -
     egress_by_port = {tuple(port["port"] for port in rule["ports"]): rule["to"][0] for rule in runtime["egress"]}
     assert egress_by_port[(53, 53)] == {
         "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "kube-system"}},
-        "podSelector": {"matchLabels": {"k8s-app": "kube-dns"}},
+        "podSelector": {
+            "matchLabels": {
+                "app.kubernetes.io/instance": "coredns",
+                "app.kubernetes.io/name": "coredns",
+                "k8s-app": "coredns",
+            }
+        },
     }
     assert egress_by_port[(5432,)] == {
         "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "fs2-data"}},
@@ -2042,6 +2073,7 @@ def test_value_suppressed_dependency_contract_binds_catalog_database_roles_and_r
         "maintenance": "fs2_serve_maintenance",
         "activation": "fs2_serve_activation",
         "reporting": "fs2_serve_reporting",
+        "storage": "fs2_serve_storage",
     }
     assert database["secret_refs"]["runtime"] == {
         "namespace": "fs2-system",
@@ -2053,6 +2085,11 @@ def test_value_suppressed_dependency_contract_binds_catalog_database_roles_and_r
     assert database["secret_refs"]["reporting"] == {
         "namespace": "fs2-observability",
         "name": "fs2-serve-database-reporting",
+        "key": "url",
+    }
+    assert database["secret_refs"]["storage"] == {
+        "namespace": "fs2-system",
+        "name": "fs2-serve-database-storage",
         "key": "url",
     }
     assert contract["grafana"] == {
@@ -2851,6 +2888,8 @@ def test_chart_does_not_accept_an_activation_database_secret() -> None:
         ("activationDatabaseRole", "fs2_serve_maintenance"),
         ("runtimeDatabaseRole", "fs2_serve_reporting"),
         ("maintenanceDatabaseRole", "fs2_serve_runtime"),
+        ("storageDatabaseRole", "fs2_serve_runtime"),
+        ("runtimeDatabaseRole", "fs2_serve_storage"),
     ],
 )
 def test_chart_rejects_database_role_reuse(field: str, value: str) -> None:
@@ -3068,6 +3107,7 @@ def test_grafana_reporting_role_is_aggregate_only_and_provisioned_by_migration_j
     assert environment["FS2_REPORTING_DATABASE_ROLE"]["value"] == "fs2_serve_reporting"
     assert environment["FS2_RUNTIME_DATABASE_ROLE"]["value"] == "fs2_serve_runtime"
     assert environment["FS2_MAINTENANCE_DATABASE_ROLE"]["value"] == "fs2_serve_maintenance"
+    assert environment["FS2_STORAGE_DATABASE_ROLE"]["value"] == "fs2_serve_storage"
 
     store_source = (CONTROL_ROOT / "src" / "fs2_serve" / "postgres.py").read_text()
     assert "CREATE ROLE" in store_source and "NOLOGIN" in store_source
