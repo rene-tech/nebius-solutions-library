@@ -179,18 +179,20 @@ variable "deployment" {
           profiles_sha256 = string
           resource_apis   = map(bool)
           workloads = map(object({
-            uid        = string
-            generation = number
-            profile    = string
-            rollout    = map(number)
+            uid            = string
+            generation     = number
+            profile        = string
+            workload_class = string
+            rollout        = map(number)
           }))
           pods = map(object({
-            uid        = string
-            profile    = string
-            owner_kind = string
-            owner_uid  = string
-            phase      = string
-            ready      = bool
+            uid            = string
+            profile        = string
+            workload_class = string
+            owner_kind     = string
+            owner_uid      = string
+            phase          = string
+            ready          = bool
           }))
           live_controller = object({
             deployment_name     = string
@@ -205,7 +207,19 @@ variable "deployment" {
               ready    = bool
             }))
           })
-          admission_bindings = map(string)
+          transition_lock_uid = string
+          admission_policies  = map(object({
+            uid            = string
+            failure_policy = string
+            spec_sha256    = string
+          }))
+          admission_bindings  = map(object({
+            uid                = string
+            policy_name        = string
+            validation_actions = list(string)
+            namespace_selector = map(string)
+            spec_sha256        = string
+          }))
           payload_sha256     = string
         }), null)
         deny_absent_receipt = optional(object({

@@ -1,8 +1,9 @@
 # SAI-03 model-runtime network isolation
 
 Status: additive corrective successor whose direct parent is rejected source
-commit `093798f53cb4249887e59513a3b0114246f7e94c`; that exact commit remains
-preserved as negative evidence. Rejected integration commits
+commit `6dc67038698ed4d0412873e02baa1d50b179ff3c`; that exact commit remains
+preserved as negative evidence. Earlier rejected commits
+`093798f53cb4249887e59513a3b0114246f7e94c`,
 `92f9394cb3eb76b9b02f7682c96c056ae600e9ed` and
 `89b5cfe17cffd0a1924fcb4f1af52c8a449c4d1e` are evidence only and are not
 ancestors of this successor. No commit in this lineage has been deployed;
@@ -15,12 +16,14 @@ pods to carry the historical `app.kubernetes.io/instance` label:
 - `fs2-models` has Terraform-owned finite allow profiles, but its ingress-and-
   egress `default-deny` exists only in the explicit `enforce` phase. A permanent
   deny-mode ValidatingAdmissionPolicy fence first rejects any Deployment,
-  StatefulSet, DaemonSet, ReplicaSet, Job, JobSet, or Pod that lacks one of the
-  finite profiles. Enforcement then runs a fresh live verifier during apply,
+  StatefulSet, DaemonSet, ReplicaSet, ReplicationController, Job, CronJob,
+  JobSet, or Pod that lacks one of the finite profiles. Enforcement then runs a
+  fresh live verifier during apply,
   after Helm and every known workload producer, before Terraform may create the
   deny. The content-addressed census includes all of those workload kinds,
   every extant Pod and controller UID, old ReplicaSets, rollout convergence,
-  admission-binding UIDs, and the actual Ready model-controller Pod image ID.
+  exact admission-policy and binding UIDs/specifications, the retained
+  transition Lease UID, and the actual Ready model-controller Pod image ID.
   Base profiles are bounded by egress
   mode and service port. ModelExpress profiles are bounded by the exact
   qualification digest, accelerator class/count, NIXL backend and service port.
@@ -28,6 +31,13 @@ pods to carry the historical `app.kubernetes.io/instance` label:
   `fs2-serve.nebius.ai/network-profile` label. Arbitrarily named customer Apps,
   including `app-<uuid>` single- and multi-pool clones, reuse a canonical finite
   profile; no App name or UUID becomes policy authority.
+- Every finite policy also selects an immutable workload class. Serving
+  Deployments/Pods can select only canonical serving profiles; cache,
+  acceptance, internal-job, and public-acquisition profiles are disjoint.
+  Public acquisition additionally requires catalog ownership labels, an exact
+  acquisition-plan annotation on Job and Pod template, and the dedicated cache
+  service account. A runtime Deployment cannot regain public TCP/443 by copying
+  the support profile label.
 - The model controller renders no `NetworkPolicy`, has no NetworkPolicy HTTP
   endpoint, and receives no NetworkPolicy RBAC verbs. A compromised controller
   therefore cannot create an allow-all policy. Serving ingress is limited to
@@ -107,38 +117,54 @@ the rule before either can integrate.
 1. `prepare` creates or updates finite profiles, the inert admission-policy
    definitions, and every label-producing controller/manifest while both the
    admission bindings and `fs2-models/default-deny` remain absent.
-2. After those rollouts converge, apply `inventory`. Terraform installs four
-   deny-mode workload-profile bindings only after Helm, static models, keepers,
-   and acceptance producers, plus a fifth binding that forbids update or
-   deletion of the exact boundary marker. It then creates that immutable,
-   Terraform-owned marker. Every admission resource has `prevent_destroy`, the
-   namespaced model controller has no admission-policy authority, and the live
-   marker is protected even though the controller retains ordinary ConfigMap
-   access. A return to `prepare` is structurally impossible after the fence is
-   armed.
+2. After those rollouts converge, apply `inventory`. The supported wrapper
+   first acquires the retained `fs2-system/fs2-model-network-transition` Lease.
+   Terraform installs six deny-mode workload-profile bindings only after Helm,
+   static models, keepers, and acceptance producers, plus a binding that
+   forbids update or deletion of the exact boundary marker and a separate
+   `fs2-system` binding that freezes updates/deletion of the exact live
+   model-controller. A second `fs2-system` binding rejects creation, update,
+   or deletion of the Helm release-storage Secret/ConfigMap for
+   `fs2-serve-control-plane`, so an out-of-band Helm operation is rejected
+   before it can partially mutate chart resources. It then creates that immutable,
+   Terraform-owned marker. Policy definitions and the profile/marker bindings
+   have `prevent_destroy`; both freeze bindings are intentionally removable
+   only in the deny-absent `rollback-helm` phase. The namespaced
+   model controller has no admission-policy authority, and the live marker is
+   protected even though the controller retains ordinary ConfigMap access. A
+   return to `prepare` is structurally impossible after the fence is armed.
 3. Export `model_runtime_network_policy_transition` from the applied inventory
    state and run the read-only receipt tool. It lists **all** Pod-producing
    workload kinds and Pods in `fs2-models`, rejects an empty workload inventory,
-   naked/orphaned Pods, unknown profiles, and incomplete rollouts, and captures
-   live controller and admission-binding identities rather than desired values.
+   naked/orphaned Pods, unknown profiles, and incomplete rollouts. It includes
+   old ReplicaSets, core ReplicationControllers, CronJobs, workload class,
+   exact admission-policy/binding UIDs and specs, the live controller, and the
+   retained transition-Lease UID rather than desired values. Receipt capture is
+   refused while another transition owns the Lease.
 4. Set phase `enforce` and supply that receipt. A `local-exec` apply fence
    re-runs the read-only census after Helm, static models, keepers, acceptance,
    finite policies, and admission bindings have converged. Only a byte-equivalent
-   live census and exact running controller digest unlock `default-deny`.
+   live census, exact admission resources, an unexpired matching Lease holder,
+   and the exact running controller digest unlock `default-deny`. The admission
+   freezes reject an external Helm release write or direct model-controller
+   mutation after verification; the Lease serializes every supported
+   post-prepare transition.
    Concurrent arbitrary-App changes remain safe because admission permits them
    only with a finite immutable profile. The receipt can be refreshed while the
    phase remains `enforce`, so normal App additions and recreations do not force
    rollback.
 5. To roll back, set `rollback-remove-deny` with the same inventory receipt and
    without changing the enforced image. The supported `inference-stack`
-   workflow rejects the saved plan unless every managed change is either
-   deletion of `default-deny` or the transition-state update. It accepts zero,
-   either one, or both allowed changes so a crash between them is resumable,
-   while still rejecting Helm or unrelated mutation.
+   workflow rejects the saved plan unless every managed change is deletion of
+   `default-deny`, deletion of the one-shot apply fence, or the transition-state
+   update. It accepts any subset of those three changes so a crash between them
+   is resumable, while still rejecting Helm or unrelated mutation. The
+   controller and Helm release-storage freezes remain active through this phase.
 6. After that exact plan is applied, generate a `deny-absent` receipt. The tool
    refuses it while the deny exists or any finite allow policy is missing. Set
    `rollback-helm` with both receipts. Terraform independently re-reads the live
-   policies and enforcement marker; only then may the Helm release change.
+   policies and enforcement marker; only then are both freeze bindings removed
+   and the Helm release allowed to change.
 
 Receipt generation is read-only and emits no credentials or workload payloads:
 
@@ -151,14 +177,9 @@ python3 stages/workloads/scripts/model_network_policy_transition.py inventory \
   --kubeconfig /secure/path/kubeconfig \
   --context <exact-context> > /secure/path/network-inventory-receipt.json
 
-# Terraform runs this same check during the enforce apply, immediately before
-# default-deny. Operators may also reproduce it read-only:
-FS2_NETWORK_TRANSITION_JSON="$(cat /secure/path/network-transition.json)" \
-FS2_NETWORK_RECEIPT_JSON="$(cat /secure/path/network-inventory-receipt.json)" \
-python3 stages/workloads/scripts/model_network_policy_transition.py verify-enforce \
-  --contract-json-env FS2_NETWORK_TRANSITION_JSON \
-  --receipt-json-env FS2_NETWORK_RECEIPT_JSON \
-  --kubeconfig /secure/path/kubeconfig --context <exact-context>
+# During enforce, inference-stack supplies the same contract and receipt to the
+# read-only verifier while holding the transition Lease. A standalone verifier
+# without that exact live holder identity fails closed.
 
 # Run only after the isolated rollback-remove-deny saved plan was applied.
 python3 stages/workloads/scripts/model_network_policy_transition.py deny-absent \
@@ -250,7 +271,8 @@ terraform -chdir=reference-data/terraform test \
   -filter=tests/bootstrap.tftest.hcl -no-color
 ```
 
-Observed results for this corrective successor:
+Historical results for rejected parent `6dc67038698ed4d0412873e02baa1d50b179ff3c`
+are preserved below. They do not qualify this additive successor:
 
 - complete control-plane suite: 1,969 passed, 98 skipped;
 - root/wrapper/receipt/offline-preflight focus: 148 passed and 109 subtests
@@ -280,22 +302,31 @@ Observed results for this corrective successor:
 - Helm lint, Terraform formatting/validation, focused Ruff lint/format, focused
   mypy, and `git diff --check`: passed.
 
-Trivy 0.70.0 reported zero High/Critical findings in each changed Terraform
-file. The two legacy model manifests retain two pre-existing High findings each
-for writable root filesystems; this NetworkPolicy change neither introduced nor
-concealed them.
+No test, build, formatter, Terraform, Helm, pytest, or cleanup-capable command
+was run for this additive successor. The user's hard no-delete constraint
+permits only deletion-free read-only inspection, additive source edits, and a
+normal versioned commit. Static review therefore remains unexecuted evidence,
+and independent exact-commit review must run the suites in an environment where
+their temp/cache cleanup behavior is explicitly authorized.
+
+For rejected parent `6dc67038698ed4d0412873e02baa1d50b179ff3c`, Trivy
+0.70.0 reported zero High/Critical findings in each then-changed Terraform
+file. The two legacy model manifests retained two pre-existing High findings
+each for writable root filesystems; this successor neither resolves nor
+conceals them. No Trivy scan was run on this successor.
 
 A server-side dry-run against the retained API had accepted both hardened
 legacy policies and the namespace default deny at the rejected parent. It was
 not repeated for this successor because shared-live reconciliation is still
 required and no rollout or live mutation is authorized from this branch.
 
-The complete catalog suite at the accepted `4ea4b126` base ran 163 tests and
+The complete catalog suite at the clean `4ea4b126` base ran 163 tests and
 retained one unrelated baseline error: `model-variants.json` currently
-contains 13 fallback candidates while its schema fixes the count at 12. The
-changed Kubernetes-adapter suite is green. The academic and scientific
-integration fixtures changed by this successor are now green; no fixture
-failure is being waived as SAI-03 evidence.
+contains 13 fallback candidates while its schema fixes the count at 12.
+Historical focused adapter and Terraform fixture results belong to the rejected
+parent only; the files changed by this successor have not been executed under
+the no-delete constraint, and no historical result is promoted as evidence for
+them.
 
 ## Deferred rollout and rollback design
 
@@ -306,6 +337,12 @@ deploy it directly to the retained shared service. First,
 an integration branch must contain the currently deployed source, this change,
 and the completed MindGuard/voice sibling changes. Wait for the in-progress Helm
 rollback to settle before planning anything.
+
+No pre-existing user, product, or live file/resource was successfully deleted
+after that constraint. The only observed cleanup activity before the stricter
+reminder was pytest attempting and failing to remove its own scratch paths;
+there was no live/cloud/cluster/database/registry mutation. All remaining
+ignored and untracked artifacts are preserved.
 
 The safe order is:
 
@@ -325,9 +362,10 @@ The safe order is:
    current sibling models.
 
 The designed failure recovery enters `rollback-remove-deny` first; the wrapper
-proves that every remaining change is one of the two allowed crash-resumable
+proves that every remaining change is one of the three allowed crash-resumable
 changes and contains no Helm or unrelated mutation. After a deny-absent receipt,
-`rollback-helm` may return to the recorded pre-rollout revision/image digest.
+`rollback-helm` may remove the controller and Helm release-storage freezes and
+return to the recorded pre-rollout revision/image digest.
 Never remove allow policies before the deny and never combine deny removal with
 Helm rollback. This design is documented and tested only; executing its delete
 step is blocked by the current no-delete constraint.

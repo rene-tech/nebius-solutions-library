@@ -248,6 +248,31 @@ def regional_dynamic(run_root: Path) -> dict:
 
 
 class InferenceStackTests(unittest.TestCase):
+    @mock.patch.object(STACK, "run")
+    @mock.patch.object(STACK.subprocess, "run")
+    def test_transition_lock_fails_closed_on_unauthorized_get(
+        self,
+        subprocess_run: mock.Mock,
+        mutating_run: mock.Mock,
+    ) -> None:
+        subprocess_run.return_value = subprocess.CompletedProcess(
+            args=["kubectl-test"],
+            returncode=1,
+            stdout="",
+            stderr="Error from server (Forbidden): leases is forbidden",
+        )
+
+        with self.assertRaisesRegex(STACK.DeploymentError, "cannot inspect"):
+            with STACK.model_network_transition_lock(
+                kubectl="kubectl-test",
+                kubeconfig="/read-only/kubeconfig",
+                context="test-context",
+                run_id="test-run",
+            ):
+                self.fail("an unauthorized Lease read must not acquire the lock")
+
+        mutating_run.assert_not_called()
+
     def test_rollback_remove_deny_plan_is_exactly_bounded(self) -> None:
         current = contract()
         current["stages"]["workloads"]["model_runtime_network_policy"] = {
@@ -258,6 +283,11 @@ class InferenceStackTests(unittest.TestCase):
                 {
                     "mode": "managed",
                     "address": "kubernetes_network_policy_v1.model_namespace_default_deny[0]",
+                    "change": {"actions": ["delete"]},
+                },
+                {
+                    "mode": "managed",
+                    "address": "terraform_data.model_runtime_network_policy_apply_fence[0]",
                     "change": {"actions": ["delete"]},
                 },
                 {
@@ -276,7 +306,7 @@ class InferenceStackTests(unittest.TestCase):
         STACK.validate_model_network_policy_rollback_plan(
             {"resource_changes": []}, current
         )
-        for remaining in safe["resource_changes"][:2]:
+        for remaining in safe["resource_changes"][:3]:
             STACK.validate_model_network_policy_rollback_plan(
                 {"resource_changes": [remaining]}, current
             )

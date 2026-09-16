@@ -881,6 +881,8 @@ class HttpScientificBatchCluster:
         )
         if resource.namespace == "fs2-models":
             labels["fs2-serve.nebius.ai/network-profile"] = "job-internal-v1"
+            labels["fs2-serve.nebius.ai/network-workload-class"] = "internal-job"
+            labels["fs2-serve.nebius.ai/job-kind"] = "batch"
         if resource.scheduling.max_execution_seconds is not None:
             labels[MAX_EXECUTION_LABEL] = str(resource.scheduling.max_execution_seconds)
         if resource.shard_id is not None:

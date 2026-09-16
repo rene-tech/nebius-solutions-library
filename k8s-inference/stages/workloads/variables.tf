@@ -1285,18 +1285,20 @@ variable "model_runtime_network_policy" {
       profiles_sha256 = string
       resource_apis   = map(bool)
       workloads = map(object({
-        uid        = string
-        generation = number
-        profile    = string
-        rollout    = map(number)
+        uid            = string
+        generation     = number
+        profile        = string
+        workload_class = string
+        rollout        = map(number)
       }))
       pods = map(object({
-        uid        = string
-        profile    = string
-        owner_kind = string
-        owner_uid  = string
-        phase      = string
-        ready      = bool
+        uid            = string
+        profile        = string
+        workload_class = string
+        owner_kind     = string
+        owner_uid      = string
+        phase          = string
+        ready          = bool
       }))
       live_controller = object({
         deployment_name     = string
@@ -1311,7 +1313,19 @@ variable "model_runtime_network_policy" {
           ready    = bool
         }))
       })
-      admission_bindings = map(string)
+      transition_lock_uid = string
+      admission_policies  = map(object({
+        uid            = string
+        failure_policy = string
+        spec_sha256    = string
+      }))
+      admission_bindings  = map(object({
+        uid                  = string
+        policy_name          = string
+        validation_actions   = list(string)
+        namespace_selector   = map(string)
+        spec_sha256          = string
+      }))
       payload_sha256     = string
     }), null)
     deny_absent_receipt = optional(object({
@@ -1354,6 +1368,29 @@ variable "model_runtime_network_policy" {
       )
     )
     error_message = "prepare and inventory accept no receipts; enforce and rollback-remove-deny require only the inventory receipt; rollback-helm requires both receipts."
+  }
+}
+
+variable "model_network_transition_lock_identity" {
+  description = "Ephemeral holder identity supplied only by inference-stack while it owns the cluster-wide model-network transition Lease."
+  type        = string
+  default     = ""
+  nullable    = false
+  sensitive   = true
+}
+
+variable "model_network_transition_lock_required" {
+  description = "True only for a supported workloads apply running under the cluster-wide model-network transition Lease; offline plans leave it false."
+  type        = bool
+  default     = false
+  nullable    = false
+
+  validation {
+    condition = (
+      !var.model_network_transition_lock_required ||
+      (var.model_network_transition_lock_identity != "" && var.model_runtime_network_policy.phase != "prepare")
+    )
+    error_message = "A required model-network transition lock needs a non-empty holder identity and a post-prepare phase."
   }
 }
 

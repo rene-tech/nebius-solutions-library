@@ -19,6 +19,10 @@ ADMISSION_POLICY = "fs2-model-network-profile-apps"
 ADMISSION_BINDING = f"{ADMISSION_POLICY}-fs2-models"
 MARKER_ADMISSION_POLICY = "fs2-model-network-boundary-marker"
 MARKER_ADMISSION_BINDING = f"{MARKER_ADMISSION_POLICY}-fs2-models"
+FREEZE_ADMISSION_POLICY = "fs2-model-network-controller-freeze"
+FREEZE_ADMISSION_BINDING = f"{FREEZE_ADMISSION_POLICY}-fs2-system"
+HELM_FREEZE_ADMISSION_POLICY = "fs2-model-network-helm-freeze"
+HELM_FREEZE_ADMISSION_BINDING = f"{HELM_FREEZE_ADMISSION_POLICY}-fs2-system"
 CONTROLLER = "fs2-serve-control-plane-model-controller"
 IMAGE = {
     "repository": "registry.example.test/fs2/control-plane",
@@ -28,18 +32,61 @@ IMAGE = {
 
 def prepare_contract() -> dict[str, object]:
     profiles = [PROFILE]
+    policies = admission_policies()["items"]
+    bindings = admission_bindings()["items"]
     return {
         "phase": "inventory",
         "cluster_id": "mk8scluster-test",
         "namespace": "fs2-models",
         "profiles": profiles,
+        "serving_profiles": profiles,
         "profiles_sha256": transition.hashlib.sha256(
             json.dumps(profiles, separators=(",", ":")).encode()
         ).hexdigest(),
         "allow_policy_names": [POLICY],
-        "admission_policy_names": [MARKER_ADMISSION_POLICY, ADMISSION_POLICY],
-        "admission_binding_names": [MARKER_ADMISSION_BINDING, ADMISSION_BINDING],
+        "admission_policy_names": sorted(
+            [
+                MARKER_ADMISSION_POLICY,
+                FREEZE_ADMISSION_POLICY,
+                HELM_FREEZE_ADMISSION_POLICY,
+                ADMISSION_POLICY,
+            ]
+        ),
+        "admission_binding_names": sorted(
+            [
+                MARKER_ADMISSION_BINDING,
+                FREEZE_ADMISSION_BINDING,
+                HELM_FREEZE_ADMISSION_BINDING,
+                ADMISSION_BINDING,
+            ]
+        ),
+        "admission_policy_spec_sha256": {
+            item["metadata"]["name"]: transition._sha256(
+                {
+                    "failurePolicy": item["spec"]["failurePolicy"],
+                    "resourceRules": item["spec"]["matchConstraints"][
+                        "resourceRules"
+                    ],
+                    "validations": item["spec"]["validations"],
+                }
+            )
+            for item in policies
+        },
+        "admission_binding_spec_sha256": {
+            item["metadata"]["name"]: transition._sha256(
+                {
+                    "policyName": item["spec"]["policyName"],
+                    "validationActions": item["spec"]["validationActions"],
+                    "namespaceSelector": item["spec"]["matchResources"][
+                        "namespaceSelector"
+                    ]["matchLabels"],
+                }
+            )
+            for item in bindings
+        },
         "controller_deployment_name": CONTROLLER,
+        "transition_lock_name": "fs2-model-network-transition",
+        "transition_lock_namespace": "fs2-system",
         "control_plane_image": IMAGE,
         "inventory_receipt_sha256": None,
     }
@@ -49,6 +96,7 @@ def deployment(*, name: str = "qwen3-8b", profile: str = PROFILE) -> dict[str, o
     labels = {
         "app.kubernetes.io/component": "model-runtime",
         "app.kubernetes.io/part-of": "fs2-serve",
+        "fs2-serve.nebius.ai/network-workload-class": "runtime",
         "fs2-serve.nebius.ai/network-profile": profile,
     }
     return {
@@ -75,7 +123,9 @@ def workload_resources(*deployments: dict[str, object]) -> dict[str, object]:
         "statefulsets": {"items": []},
         "daemonsets": {"items": []},
         "replicasets": {"items": []},
+        "replicationcontrollers": {"items": []},
         "jobs": {"items": []},
+        "cronjobs": {"items": []},
         "jobsets": {"api_available": False, "items": []},
     }
 
@@ -84,7 +134,9 @@ def pod(
     *, name: str = "qwen3-8b-pod", owner_uid: str = "uid-qwen3-8b"
 ) -> dict[str, object]:
     labels = {
+        "app.kubernetes.io/component": "model-runtime",
         "app.kubernetes.io/part-of": "fs2-serve",
+        "fs2-serve.nebius.ai/network-workload-class": "runtime",
         "fs2-serve.nebius.ai/network-profile": PROFILE,
     }
     return {
@@ -160,16 +212,125 @@ def controller_pods() -> dict[str, object]:
     }
 
 
-def admission_bindings() -> dict[str, object]:
+def _policy(
+    name: str,
+    *,
+    api_groups: list[str],
+    operations: list[str],
+    resources: list[str],
+    expression: str,
+) -> dict[str, object]:
+    return {
+        "metadata": {"name": name, "uid": f"uid-{name}"},
+        "spec": {
+            "failurePolicy": "Fail",
+            "matchConstraints": {
+                "resourceRules": [
+                    {
+                        "apiGroups": api_groups,
+                        "apiVersions": ["v1"],
+                        "operations": operations,
+                        "resources": resources,
+                        "scope": "Namespaced",
+                    }
+                ]
+            },
+            "validations": [
+                {
+                    "expression": expression,
+                    "message": "test admission fence",
+                    "reason": "Forbidden",
+                }
+            ],
+        },
+    }
+
+
+def admission_policies() -> dict[str, object]:
     return {
         "items": [
-            {"metadata": {"name": ADMISSION_BINDING, "uid": "uid-binding"}},
+            _policy(
+                ADMISSION_POLICY,
+                api_groups=["apps"],
+                operations=["CREATE", "UPDATE"],
+                resources=["deployments"],
+                expression="true",
+            ),
+            _policy(
+                MARKER_ADMISSION_POLICY,
+                api_groups=[""],
+                operations=["UPDATE", "DELETE"],
+                resources=["configmaps"],
+                expression=(
+                    "oldObject.metadata.name != "
+                    "'fs2-runtime-network-policy-boundary-v2'"
+                ),
+            ),
+            _policy(
+                FREEZE_ADMISSION_POLICY,
+                api_groups=["apps"],
+                operations=["UPDATE", "DELETE"],
+                resources=["deployments"],
+                expression=f"oldObject.metadata.name != '{CONTROLLER}'",
+            ),
+            _policy(
+                HELM_FREEZE_ADMISSION_POLICY,
+                api_groups=[""],
+                operations=["CREATE", "UPDATE", "DELETE"],
+                resources=["configmaps", "secrets"],
+                expression="true",
+            ),
+        ]
+    }
+
+
+def admission_bindings() -> dict[str, object]:
+    def binding(name: str, policy: str, namespace: str) -> dict[str, object]:
+        return {
+            "metadata": {"name": name, "uid": f"uid-{name}"},
+            "spec": {
+                "policyName": policy,
+                "validationActions": ["Deny"],
+                "matchResources": {
+                    "namespaceSelector": {
+                        "matchLabels": {
+                            "kubernetes.io/metadata.name": namespace,
+                        }
+                    }
+                },
+            },
+        }
+
+    return {
+        "items": [
+            binding(ADMISSION_BINDING, ADMISSION_POLICY, "fs2-models"),
+            binding(MARKER_ADMISSION_BINDING, MARKER_ADMISSION_POLICY, "fs2-models"),
+            binding(FREEZE_ADMISSION_BINDING, FREEZE_ADMISSION_POLICY, "fs2-system"),
+            binding(
+                HELM_FREEZE_ADMISSION_BINDING,
+                HELM_FREEZE_ADMISSION_POLICY,
+                "fs2-system",
+            ),
+        ]
+    }
+
+
+def transition_leases(*, holder: str = "") -> dict[str, object]:
+    return {
+        "items": [
             {
                 "metadata": {
-                    "name": MARKER_ADMISSION_BINDING,
-                    "uid": "uid-marker-binding",
-                }
-            },
+                    "name": "fs2-model-network-transition",
+                    "namespace": "fs2-system",
+                    "uid": "uid-transition-lock",
+                },
+                "spec": {
+                    "holderIdentity": holder,
+                    "leaseDurationSeconds": 7200 if holder else 1,
+                    "renewTime": "2099-09-16T18:00:00Z",
+                    "leaseTransitions": 1,
+                },
+            }
         ]
     }
 
@@ -185,7 +346,9 @@ def capture(
         {"items": [pod()] if pods is None else pods},
         controller_deployments(),
         controller_pods(),
+        admission_policies(),
         admission_bindings(),
+        transition_leases(),
         captured_at="2026-09-16T18:00:00Z",
     )
 
@@ -195,11 +358,18 @@ def test_inventory_receipt_binds_workload_pod_controller_and_admission() -> None
 
     assert list(receipt["workloads"]) == ["apps/v1/Deployment/qwen3-8b"]
     assert receipt["pods"]["qwen3-8b-pod"]["profile"] == PROFILE
+    assert receipt["pods"]["qwen3-8b-pod"]["workload_class"] == "runtime"
     assert receipt["live_controller"]["deployment_uid"] == "uid-controller"
-    assert receipt["admission_bindings"] == {
-        ADMISSION_BINDING: "uid-binding",
-        MARKER_ADMISSION_BINDING: "uid-marker-binding",
-    }
+    assert receipt["transition_lock_uid"] == "uid-transition-lock"
+    assert receipt["admission_bindings"][FREEZE_ADMISSION_BINDING][
+        "policy_name"
+    ] == FREEZE_ADMISSION_POLICY
+    assert receipt["admission_bindings"][FREEZE_ADMISSION_BINDING][
+        "namespace_selector"
+    ] == {"kubernetes.io/metadata.name": "fs2-system"}
+    assert receipt["admission_bindings"][HELM_FREEZE_ADMISSION_BINDING][
+        "policy_name"
+    ] == HELM_FREEZE_ADMISSION_POLICY
     assert receipt["payload_sha256"] == transition._sha256(
         {key: value for key, value in receipt.items() if key != "payload_sha256"}
     )
@@ -246,16 +416,31 @@ def test_inventory_refuses_unconverged_rollout() -> None:
         capture(resources=workload_resources(item))
 
 
-def test_inventory_covers_old_replicasets_statefulsets_daemonsets_jobs_and_jobsets() -> (
-    None
-):
-    labels = {
+def test_inventory_covers_every_pod_producing_controller_kind() -> None:
+    runtime_labels = {
+        "app.kubernetes.io/component": "model-runtime",
         "app.kubernetes.io/part-of": "fs2-serve",
+        "fs2-serve.nebius.ai/network-workload-class": "runtime",
         "fs2-serve.nebius.ai/network-profile": PROFILE,
+    }
+    keeper_labels = {
+        "app.kubernetes.io/component": "model-cache-keeper",
+        "app.kubernetes.io/part-of": "fs2-serve",
+        "fs2-serve.nebius.ai/network-workload-class": "cache-keeper",
+        "fs2-serve.nebius.ai/network-profile": "cache-resident-zero-egress-v1",
+    }
+    job_labels = {
+        "app.kubernetes.io/part-of": "fs2-serve",
+        "fs2-serve.nebius.ai/job-kind": "batch",
+        "fs2-serve.nebius.ai/network-workload-class": "internal-job",
+        "fs2-serve.nebius.ai/network-profile": "job-internal-v1",
     }
 
     def item(
-        kind: str, name: str, spec: dict[str, object], status: dict[str, object]
+        name: str,
+        labels: dict[str, str],
+        spec: dict[str, object],
+        status: dict[str, object],
     ) -> dict[str, object]:
         return {
             "metadata": {
@@ -268,13 +453,15 @@ def test_inventory_covers_old_replicasets_statefulsets_daemonsets_jobs_and_jobse
             "status": status,
         }
 
-    template = {"metadata": {"labels": labels}, "spec": {}}
+    runtime_template = {"metadata": {"labels": runtime_labels}, "spec": {}}
+    keeper_template = {"metadata": {"labels": keeper_labels}, "spec": {}}
+    job_template = {"metadata": {"labels": job_labels}, "spec": {}}
     resources = workload_resources(deployment())
     resources["statefulsets"]["items"] = [
         item(
-            "StatefulSet",
             "stateful",
-            {"replicas": 0, "template": template},
+            runtime_labels,
+            {"replicas": 0, "template": runtime_template},
             {
                 "observedGeneration": 1,
                 "updatedReplicas": 0,
@@ -287,9 +474,9 @@ def test_inventory_covers_old_replicasets_statefulsets_daemonsets_jobs_and_jobse
     ]
     resources["daemonsets"]["items"] = [
         item(
-            "DaemonSet",
             "keeper",
-            {"template": template},
+            keeper_labels,
+            {"template": keeper_template},
             {
                 "observedGeneration": 1,
                 "desiredNumberScheduled": 0,
@@ -302,28 +489,49 @@ def test_inventory_covers_old_replicasets_statefulsets_daemonsets_jobs_and_jobse
     ]
     resources["replicasets"]["items"] = [
         item(
-            "ReplicaSet",
             "old-revision",
-            {"replicas": 0, "template": template},
+            runtime_labels,
+            {"replicas": 0, "template": runtime_template},
+            {"observedGeneration": 1, "readyReplicas": 0, "availableReplicas": 0},
+        )
+    ]
+    resources["replicationcontrollers"]["items"] = [
+        item(
+            "legacy-controller",
+            runtime_labels,
+            {"replicas": 0, "template": runtime_template},
             {"observedGeneration": 1, "readyReplicas": 0, "availableReplicas": 0},
         )
     ]
     resources["jobs"]["items"] = [
-        item("Job", "evaluation", {"suspend": True, "template": template}, {})
+        item("evaluation", job_labels, {"suspend": True, "template": job_template}, {})
+    ]
+    resources["cronjobs"]["items"] = [
+        item(
+            "scheduled-evaluation",
+            job_labels,
+            {
+                "jobTemplate": {
+                    "metadata": {"labels": job_labels},
+                    "spec": {"template": job_template},
+                }
+            },
+            {},
+        )
     ]
     resources["jobsets"] = {
         "api_available": True,
         "items": [
             item(
-                "JobSet",
                 "scientific",
+                job_labels,
                 {
                     "replicatedJobs": [
                         {
                             "name": "gang",
                             "template": {
-                                "metadata": {"labels": labels},
-                                "spec": {"template": template},
+                                "metadata": {"labels": job_labels},
+                                "spec": {"template": job_template},
                             },
                         }
                     ]
@@ -333,19 +541,33 @@ def test_inventory_covers_old_replicasets_statefulsets_daemonsets_jobs_and_jobse
         ],
     }
 
-    workloads, apis = transition._workload_inventory(prepare_contract(), resources)
-    assert len(workloads) == 6
+    contract = prepare_contract()
+    profiles = sorted(
+        [PROFILE, "cache-resident-zero-egress-v1", "job-internal-v1"]
+    )
+    contract["profiles"] = profiles
+    contract["profiles_sha256"] = transition.hashlib.sha256(
+        json.dumps(profiles, separators=(",", ":")).encode()
+    ).hexdigest()
+    contract["allow_policy_names"] = [
+        f"fs2-runtime-profile-{profile}" for profile in profiles
+    ]
+    workloads, apis = transition._workload_inventory(contract, resources)
+    assert len(workloads) == 8
     assert "apps/v1/ReplicaSet/old-revision" in workloads
+    assert "v1/ReplicationController/legacy-controller" in workloads
+    assert "batch/v1/CronJob/scheduled-evaluation" in workloads
     assert "jobset.x-k8s.io/v1alpha2/JobSet/scientific" in workloads
     assert apis["jobset.x-k8s.io/v1alpha2/JobSet"] is True
 
 
-def test_inventory_can_refresh_in_enforced_phase_and_apply_verifier_detects_change() -> (
-    None
-):
+def test_inventory_can_refresh_in_enforced_phase_and_apply_verifier_detects_change(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     contract = prepare_contract()
     contract["phase"] = "enforce"
     receipt = capture(contract=contract)
+    monkeypatch.setenv("FS2_NETWORK_TRANSITION_LOCK_IDENTITY", "test-holder")
     result = transition.verify_enforce(
         contract,
         receipt,
@@ -353,7 +575,9 @@ def test_inventory_can_refresh_in_enforced_phase_and_apply_verifier_detects_chan
         {"items": [pod()]},
         controller_deployments(),
         controller_pods(),
+        admission_policies(),
         admission_bindings(),
+        transition_leases(holder="test-holder"),
     )
     assert result["status"] == "verified"
 
@@ -367,7 +591,53 @@ def test_inventory_can_refresh_in_enforced_phase_and_apply_verifier_detects_chan
             {"items": [pod(owner_uid="replacement-uid")]},
             controller_deployments(),
             controller_pods(),
+            admission_policies(),
             admission_bindings(),
+            transition_leases(holder="test-holder"),
+        )
+
+
+def test_runtime_workload_cannot_select_public_acquisition_profile() -> None:
+    contract = prepare_contract()
+    contract["profiles"] = sorted([PROFILE, "job-public-acquisition-v1"])
+    item = deployment(profile="job-public-acquisition-v1")
+
+    with pytest.raises(transition.ReceiptError, match="not authorized"):
+        transition._authorized_profile(
+            contract,
+            "Deployment",
+            item["metadata"],
+            "untrusted runtime",
+        )
+
+
+def test_receipt_rejects_admission_spec_or_transition_lock_drift() -> None:
+    policies = admission_policies()
+    policies["items"][0]["spec"]["validations"][0]["expression"] = "false"
+    with pytest.raises(transition.ReceiptError, match="differs from Terraform"):
+        transition.inventory_receipt(
+            prepare_contract(),
+            workload_resources(deployment()),
+            {"items": [pod()]},
+            controller_deployments(),
+            controller_pods(),
+            policies,
+            admission_bindings(),
+            transition_leases(),
+            captured_at="2026-09-16T18:00:00Z",
+        )
+
+    with pytest.raises(transition.ReceiptError, match="active"):
+        transition.inventory_receipt(
+            prepare_contract(),
+            workload_resources(deployment()),
+            {"items": [pod()]},
+            controller_deployments(),
+            controller_pods(),
+            admission_policies(),
+            admission_bindings(),
+            transition_leases(holder="another-transition"),
+            captured_at="2026-09-16T18:00:00Z",
         )
 
 
@@ -417,6 +687,41 @@ def test_terraform_enforcement_orders_apply_fence_before_default_deny() -> None:
         in marker_admission
     )
     assert "prevent_destroy = true" in marker_admission
+    freeze_binding = source.split(
+        'resource "kubernetes_manifest" "model_runtime_network_controller_freeze_admission_binding"',
+        1,
+    )[1].split(
+        'resource "kubernetes_config_map_v1" "model_runtime_network_enforcement"',
+        1,
+    )[0]
+    assert '"rollback-remove-deny"' in freeze_binding
+    assert '"rollback-helm"' not in freeze_binding
+    assert '"kubernetes.io/metadata.name" = "fs2-system"' in freeze_binding
+    helm_freeze_admission = source.split(
+        'resource "kubernetes_manifest" "model_runtime_network_helm_freeze_admission"',
+        1,
+    )[1].split(
+        'resource "kubernetes_manifest" "model_runtime_network_controller_freeze_admission_binding"',
+        1,
+    )[0]
+    assert 'resources   = ["configmaps", "secrets"]' in helm_freeze_admission
+    assert "object.metadata.labels['owner'] != 'helm'" in helm_freeze_admission
+    assert (
+        "object.metadata.labels['name'] != 'fs2-serve-control-plane'"
+        in helm_freeze_admission
+    )
+    helm_freeze_binding = source.split(
+        'resource "kubernetes_manifest" "model_runtime_network_helm_freeze_admission_binding"',
+        1,
+    )[1].split(
+        'resource "kubernetes_config_map_v1" "model_runtime_network_enforcement"',
+        1,
+    )[0]
+    assert '"rollback-remove-deny"' in helm_freeze_binding
+    assert '"rollback-helm"' not in helm_freeze_binding
+    assert '"kubernetes.io/metadata.name" = "fs2-system"' in helm_freeze_binding
+    assert "model_runtime_network_class_label" in source
+    assert "workload_classes" in source
 
 
 def rollback_contract() -> dict[str, object]:

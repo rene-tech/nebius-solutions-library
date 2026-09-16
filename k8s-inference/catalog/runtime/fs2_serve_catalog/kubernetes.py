@@ -53,6 +53,7 @@ RUNTIME_REGISTRY_REQUIREMENT_BY_NAMESPACE = {
 CLUSTER_QUEUE_NAME = "fs2-b300-async"
 DNS_LABEL = re.compile(r"^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$")
 NETWORK_PROFILE_LABEL = "fs2-serve.nebius.ai/network-profile"
+NETWORK_WORKLOAD_CLASS_LABEL = "fs2-serve.nebius.ai/network-workload-class"
 NETWORK_PROFILE_BY_JOB_KIND = {
     "batch": "job-internal-v1",
     "cache": "cache-resident-zero-egress-v1",
@@ -232,6 +233,9 @@ def render_async_job(
     }
     if namespace == "fs2-models":
         labels[NETWORK_PROFILE_LABEL] = NETWORK_PROFILE_BY_JOB_KIND[job_kind]
+        labels[NETWORK_WORKLOAD_CLASS_LABEL] = (
+            "cache-resident" if job_kind == "cache" else "internal-job"
+        )
     annotations = {
         "fs2-serve.nebius.ai/model-digest": record.digest,
         "fs2-serve.nebius.ai/node-scaler-owner": value["resources"]["scaler_owner"],
@@ -510,6 +514,16 @@ def render_artifact_acquisition_job(
         image_pull_requirement_id="fs2-models/runtime-registry-secret",
     )
     _set_network_profile(job, "job-public-acquisition-v1")
+    job["metadata"]["labels"][NETWORK_WORKLOAD_CLASS_LABEL] = "public-acquisition"
+    job["metadata"]["labels"]["fs2-serve.nebius.ai/acquisition-authority"] = (
+        "catalog-qualified-v1"
+    )
+    job["spec"]["template"]["metadata"]["labels"].update(
+        {
+            NETWORK_WORKLOAD_CLASS_LABEL: "public-acquisition",
+            "fs2-serve.nebius.ai/acquisition-authority": "catalog-qualified-v1",
+        }
+    )
     security = helper["security_context"]
     pod = job["spec"]["template"]["spec"]
     pod["securityContext"] = {
@@ -806,6 +820,23 @@ def render_ngc_target_node_canary_job(
         image_pull_requirement_id="fs2-models/ngc-pull-secret",
     )
     _set_network_profile(job, "job-public-acquisition-v1")
+    job["metadata"]["labels"][NETWORK_WORKLOAD_CLASS_LABEL] = "public-acquisition"
+    job["metadata"]["labels"]["fs2-serve.nebius.ai/acquisition-authority"] = (
+        "catalog-qualified-v1"
+    )
+    job["spec"]["template"]["metadata"]["labels"].update(
+        {
+            NETWORK_WORKLOAD_CLASS_LABEL: "public-acquisition",
+            "fs2-serve.nebius.ai/acquisition-authority": "catalog-qualified-v1",
+        }
+    )
+    acquisition_plan_sha256 = canonical_object_digest(plan.to_dict())
+    job["metadata"]["annotations"][
+        "fs2-serve.nebius.ai/acquisition-plan-sha256"
+    ] = acquisition_plan_sha256
+    job["spec"]["template"]["metadata"]["annotations"][
+        "fs2-serve.nebius.ai/acquisition-plan-sha256"
+    ] = acquisition_plan_sha256
     pod = job["spec"]["template"]["spec"]
     pod["nodeSelector"] = backend_capability.node_selector
     pod["tolerations"] = backend_capability.tolerations

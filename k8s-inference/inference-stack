@@ -9,10 +9,12 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import subprocess
 import sys
 import tempfile
 from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterator, Mapping, Sequence
 from urllib.parse import urlsplit
@@ -329,8 +331,9 @@ def validate_model_network_policy_rollback_plan(
 
     Terraform dependency ordering cannot make two unrelated changes in one plan
     safe. During the rollback-remove-deny phase, the supported wrapper therefore
-    accepts only deletion of the namespace deny plus the transition receipt's
-    state update. The exact saved plan is applied only after this check.
+    accepts only deletion of the namespace deny and its one-shot apply-fence
+    receipt plus the transition receipt's state update. The exact saved plan is
+    applied only after this check.
     """
     transition = (
         contract.get("stages", {})
@@ -359,6 +362,7 @@ def validate_model_network_policy_rollback_plan(
         changes[address] = actions
     allowed = {
         "kubernetes_network_policy_v1.model_namespace_default_deny[0]": ["delete"],
+        "terraform_data.model_runtime_network_policy_apply_fence[0]": ["delete"],
         "terraform_data.model_runtime_network_policy_transition": ["update"],
     }
     # A prior apply can crash after either state transition. Retrying that exact
@@ -377,7 +381,7 @@ def validate_model_network_policy_rollback_plan(
         )
         raise DeploymentError(
             "rollback-remove-deny must be an isolated saved plan containing only "
-            "default-deny deletion and the transition receipt update; observed: "
+            "default-deny/apply-fence deletion and the transition receipt update; observed: "
             f"{rendered}"
         )
 
@@ -2190,6 +2194,7 @@ def plan_stage(
     contract: Mapping[str, Any],
     variable_file: Path,
     destroy: bool = False,
+    environment_overrides: Mapping[str, str] | None = None,
 ) -> tuple[Path, dict[str, Any], dict[str, str]]:
     if stage == "workloads" and not destroy:
         expected_batch = (
@@ -2226,6 +2231,8 @@ def plan_stage(
         contract,
         include_secrets=not destroy,
     )
+    if environment_overrides:
+        environment.update(environment_overrides)
     terraform_init(terraform, root, state, environment)
     suffix = "destroy" if destroy else "plan"
     plan_path = run_root / f"{stage}-{suffix}.tfplan"
@@ -2251,6 +2258,138 @@ def apply_plan(
         [terraform, f"-chdir={root}", "apply", "-input=false", str(plan_path)],
         env=environment,
     )
+
+
+@contextmanager
+def model_network_transition_lock(
+    *,
+    kubectl: str,
+    kubeconfig: str,
+    context: str,
+    run_id: str,
+) -> Iterator[str]:
+    """Hold the cluster-wide workloads/Helm transition Lease without deleting it."""
+    namespace = "fs2-system"
+    name = "fs2-model-network-transition"
+    holder = f"{run_id}:{os.getpid()}:{secrets.token_hex(16)}"
+    environment = clean_environment()
+    base = [kubectl, "--kubeconfig", kubeconfig, "--context", context]
+    observed = subprocess.run(
+        [*base, "-n", namespace, "get", "lease", name, "-o", "json"],
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    now = datetime.now(UTC)
+    if observed.returncode != 0:
+        diagnostic = (observed.stderr or observed.stdout).lower()
+        if "notfound" not in diagnostic and "not found" not in diagnostic:
+            raise DeploymentError(
+                "cannot inspect the model-network transition Lease: "
+                + (observed.stderr.strip() or observed.stdout.strip() or "unknown error")
+            )
+        lease = {
+            "apiVersion": "coordination.k8s.io/v1",
+            "kind": "Lease",
+            "metadata": {
+                "name": name,
+                "namespace": namespace,
+                "labels": {
+                    "app.kubernetes.io/part-of": "fs2-serve",
+                    "fs2-serve.nebius.ai/policy-owner": "network-transition",
+                },
+            },
+            "spec": {
+                "holderIdentity": holder,
+                "leaseDurationSeconds": 7200,
+                "acquireTime": now.isoformat().replace("+00:00", "Z"),
+                "renewTime": now.isoformat().replace("+00:00", "Z"),
+                "leaseTransitions": 0,
+            },
+        }
+        run(
+            [*base, "create", "-f", "-"],
+            env=environment,
+            input_text=json.dumps(lease, separators=(",", ":")),
+        )
+    else:
+        try:
+            lease = json.loads(observed.stdout)
+            metadata = lease["metadata"]
+            spec = lease.get("spec", {})
+            if "holderIdentity" not in spec or "leaseTransitions" not in spec:
+                raise ValueError("required Lease state is absent")
+            current_holder = spec["holderIdentity"]
+            renew_time = datetime.fromisoformat(
+                spec.get("renewTime", "1970-01-01T00:00:00Z").replace("Z", "+00:00")
+            )
+            duration = int(spec.get("leaseDurationSeconds", 0))
+            transitions = int(spec["leaseTransitions"])
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise DeploymentError("model-network transition Lease is malformed") from exc
+        if current_holder and renew_time + timedelta(seconds=duration) > now:
+            raise DeploymentError(
+                f"model-network transition Lease is held by {current_holder!r}"
+            )
+        patch = [
+            {
+                "op": "test",
+                "path": "/metadata/resourceVersion",
+                "value": metadata["resourceVersion"],
+            },
+            {"op": "test", "path": "/spec/holderIdentity", "value": current_holder},
+            {"op": "replace", "path": "/spec/holderIdentity", "value": holder},
+            {"op": "replace", "path": "/spec/leaseDurationSeconds", "value": 7200},
+            {
+                "op": "replace",
+                "path": "/spec/renewTime",
+                "value": now.isoformat().replace("+00:00", "Z"),
+            },
+            {
+                "op": "replace",
+                "path": "/spec/leaseTransitions",
+                "value": transitions + 1,
+            },
+        ]
+        run(
+            [
+                *base,
+                "-n",
+                namespace,
+                "patch",
+                "lease",
+                name,
+                "--type=json",
+                "-p",
+                json.dumps(patch, separators=(",", ":")),
+            ],
+            env=environment,
+        )
+    try:
+        yield holder
+    finally:
+        released_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        release_patch = [
+            {"op": "test", "path": "/spec/holderIdentity", "value": holder},
+            {"op": "replace", "path": "/spec/holderIdentity", "value": ""},
+            {"op": "replace", "path": "/spec/leaseDurationSeconds", "value": 1},
+            {"op": "replace", "path": "/spec/renewTime", "value": released_at},
+        ]
+        run(
+            [
+                *base,
+                "-n",
+                namespace,
+                "patch",
+                "lease",
+                name,
+                "--type=json",
+                "-p",
+                json.dumps(release_patch, separators=(",", ":")),
+            ],
+            env=environment,
+        )
 
 
 def workload_endpoint_outputs(
@@ -2645,15 +2784,37 @@ def apply_stack(
     )
     apply_plan(args.terraform, FOUNDATION_ROOT, plan_path, environment)
 
-    plan_path, workloads_plan, environment = plan_stage(
-        args.terraform,
-        run_root=run_root,
-        stage="workloads",
-        contract=contract,
-        variable_file=workloads_variables,
-    )
-    validate_model_network_policy_rollback_plan(workloads_plan, contract)
-    apply_plan(args.terraform, WORKLOADS_ROOT, plan_path, environment)
+    transition = contract["stages"]["workloads"]["model_runtime_network_policy"]
+
+    def apply_workloads(lock_identity: str = "") -> None:
+        overrides = {
+            "FS2_NETWORK_TRANSITION_LOCK_IDENTITY": lock_identity,
+            "TF_VAR_model_network_transition_lock_identity": lock_identity,
+            "TF_VAR_model_network_transition_lock_required": json.dumps(
+                bool(lock_identity)
+            ),
+        }
+        plan_path, workloads_plan, environment = plan_stage(
+            args.terraform,
+            run_root=run_root,
+            stage="workloads",
+            contract=contract,
+            variable_file=workloads_variables,
+            environment_overrides=overrides,
+        )
+        validate_model_network_policy_rollback_plan(workloads_plan, contract)
+        apply_plan(args.terraform, WORKLOADS_ROOT, plan_path, environment)
+
+    if transition.get("phase", "prepare") == "prepare":
+        apply_workloads()
+    else:
+        with model_network_transition_lock(
+            kubectl=args.kubectl,
+            kubeconfig=dynamic["kubeconfig_path"],
+            context=dynamic["kube_context"],
+            run_id=contract["run_id"],
+        ) as lock_identity:
+            apply_workloads(lock_identity)
 
     # Record the accepted root contract after all of its staged consumers converge.
     apply_plan(

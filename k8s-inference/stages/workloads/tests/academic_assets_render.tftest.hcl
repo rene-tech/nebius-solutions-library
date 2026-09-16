@@ -243,22 +243,26 @@ run "prepare_installs_finite_profiles" {
   }
 }
 
-run "prepare_installs_five_inert_admission_policies" {
+run "prepare_installs_inert_admission_policies" {
   command = plan
 
   plan_options {
     target = [
       kubernetes_manifest.model_runtime_network_profile_admission,
       kubernetes_manifest.model_runtime_network_boundary_marker_admission,
+      kubernetes_manifest.model_runtime_network_controller_freeze_admission,
+      kubernetes_manifest.model_runtime_network_helm_freeze_admission,
     ]
   }
 
   assert {
     condition = (
-      length(kubernetes_manifest.model_runtime_network_profile_admission) == 4 &&
-      kubernetes_manifest.model_runtime_network_boundary_marker_admission.manifest.metadata.name == "fs2-model-network-boundary-marker"
+      length(kubernetes_manifest.model_runtime_network_profile_admission) == 6 &&
+      kubernetes_manifest.model_runtime_network_boundary_marker_admission.manifest.metadata.name == "fs2-model-network-boundary-marker" &&
+      kubernetes_manifest.model_runtime_network_controller_freeze_admission.manifest.metadata.name == "fs2-model-network-controller-freeze" &&
+      kubernetes_manifest.model_runtime_network_helm_freeze_admission.manifest.metadata.name == "fs2-model-network-helm-freeze"
     )
-    error_message = "Prepare must install the four profile policies and the boundary-marker policy."
+    error_message = "Prepare must install the six profile policies plus the boundary-marker, controller-freeze, and Helm-release-freeze policies."
   }
 }
 
@@ -281,7 +285,9 @@ run "inventory_arms_only_with_default_deny_absent" {
   command = plan
 
   variables {
-    model_runtime_network_policy = { phase = "inventory" }
+    model_runtime_network_policy          = { phase = "inventory" }
+    model_network_transition_lock_identity = "terraform-test-holder"
+    model_network_transition_lock_required = true
   }
 
   override_data {
@@ -299,12 +305,14 @@ run "inventory_arms_only_with_default_deny_absent" {
   }
 }
 
-run "enforce_requires_the_v2_receipt_and_apply_fence" {
+run "enforce_rejects_a_legacy_v2_receipt" {
   command = plan
 
   variables {
-    model_express = merge(var.model_express, { enabled = false, models = {} })
-    model_runtime_network_policy = {
+    model_express                          = merge(var.model_express, { enabled = false, models = {} })
+    model_network_transition_lock_identity = "terraform-test-holder"
+    model_network_transition_lock_required = true
+    model_runtime_network_policy          = {
       phase = "enforce"
       inventory_receipt = {
         schema          = "fs2-serve.nebius.ai/model-runtime-network-inventory/v2"
@@ -317,25 +325,29 @@ run "enforce_requires_the_v2_receipt_and_apply_fence" {
           "apps/v1/Deployment"              = true
           "apps/v1/ReplicaSet"              = true
           "apps/v1/StatefulSet"             = true
+          "v1/ReplicationController"        = true
+          "batch/v1/CronJob"                = true
           "batch/v1/Job"                    = true
           "jobset.x-k8s.io/v1alpha2/JobSet" = false
         }
         workloads = {
           "apps/v1/Deployment/qwen3-8b" = {
-            uid        = "uid-qwen3"
-            generation = 2
-            profile    = "gateway-zero-egress-tcp-8000-v1"
-            rollout    = { desired = 1, updated = 1, ready = 1, available = 1, unavailable = 0 }
+            uid            = "uid-qwen3"
+            generation     = 2
+            profile        = "gateway-zero-egress-tcp-8000-v1"
+            workload_class = "runtime"
+            rollout        = { desired = 1, updated = 1, ready = 1, available = 1, unavailable = 0 }
           }
         }
         pods = {
           qwen3-8b-pod = {
-            uid        = "uid-qwen3-pod"
-            profile    = "gateway-zero-egress-tcp-8000-v1"
-            owner_kind = "Deployment"
-            owner_uid  = "uid-qwen3"
-            phase      = "Running"
-            ready      = true
+            uid            = "uid-qwen3-pod"
+            profile        = "gateway-zero-egress-tcp-8000-v1"
+            workload_class = "runtime"
+            owner_kind     = "Deployment"
+            owner_uid      = "uid-qwen3"
+            phase          = "Running"
+            ready          = true
           }
         }
         live_controller = {
@@ -353,14 +365,10 @@ run "enforce_requires_the_v2_receipt_and_apply_fence" {
             }
           }
         }
-        admission_bindings = {
-          fs2-model-network-boundary-marker-fs2-models = "uid-5"
-          fs2-model-network-profile-apps-fs2-models    = "uid-1"
-          fs2-model-network-profile-jobs-fs2-models    = "uid-2"
-          fs2-model-network-profile-jobsets-fs2-models = "uid-3"
-          fs2-model-network-profile-pods-fs2-models    = "uid-4"
-        }
-        payload_sha256 = "728dd1ac4ef231f19533b4b9275833a863e04d3c5b69f61e1bf6f142069f83b4"
+        transition_lock_uid = "uid-transition-lock"
+        admission_policies  = {}
+        admission_bindings  = {}
+        payload_sha256     = "728dd1ac4ef231f19533b4b9275833a863e04d3c5b69f61e1bf6f142069f83b4"
       }
     }
   }
@@ -369,13 +377,7 @@ run "enforce_requires_the_v2_receipt_and_apply_fence" {
     target = [terraform_data.model_runtime_network_policy_transition]
   }
 
-  assert {
-    condition = (
-      terraform_data.model_runtime_network_policy_transition.input.default_deny_planned &&
-      terraform_data.model_runtime_network_policy_transition.input.inventory_receipt_sha256 == "728dd1ac4ef231f19533b4b9275833a863e04d3c5b69f61e1bf6f142069f83b4"
-    )
-    error_message = "Enforce must bind the exact v2 receipt before scheduling the apply-time verifier and namespace deny."
-  }
+  expect_failures = [terraform_data.model_runtime_network_policy_transition]
 }
 
 run "enabled_academic_config_reaches_the_chart" {
