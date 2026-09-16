@@ -2184,6 +2184,7 @@ def test_public_route_exposes_inference_and_session_authenticated_admin_paths() 
     assert paths == {
         "/v1": "PathPrefix",
         "/v1/audio/stream": "Exact",
+        "/v1/voice": "PathPrefix",
         "/mcp": "Exact",
         "/admin/api/v1": "PathPrefix",
         "/.well-known/oauth-protected-resource": "Exact",
