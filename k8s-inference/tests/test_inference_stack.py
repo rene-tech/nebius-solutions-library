@@ -248,6 +248,68 @@ def regional_dynamic(run_root: Path) -> dict:
 
 
 class InferenceStackTests(unittest.TestCase):
+    def test_rollback_remove_deny_plan_is_exactly_bounded(self) -> None:
+        current = contract()
+        current["stages"]["workloads"]["model_runtime_network_policy"] = {
+            "phase": "rollback-remove-deny"
+        }
+        safe = {
+            "resource_changes": [
+                {
+                    "mode": "managed",
+                    "address": "kubernetes_network_policy_v1.model_namespace_default_deny[0]",
+                    "change": {"actions": ["delete"]},
+                },
+                {
+                    "mode": "managed",
+                    "address": "terraform_data.model_runtime_network_policy_transition",
+                    "change": {"actions": ["update"]},
+                },
+                {
+                    "mode": "data",
+                    "address": "data.kubernetes_resources.model_runtime_deployments",
+                    "change": {"actions": ["read"]},
+                },
+            ]
+        }
+        STACK.validate_model_network_policy_rollback_plan(safe, current)
+        STACK.validate_model_network_policy_rollback_plan(
+            {"resource_changes": []}, current
+        )
+
+        unsafe = json.loads(json.dumps(safe))
+        unsafe["resource_changes"].append(
+            {
+                "mode": "managed",
+                "address": "helm_release.control_plane",
+                "change": {"actions": ["update"]},
+            }
+        )
+        with self.assertRaisesRegex(
+            STACK.DeploymentError, "must be an isolated saved plan"
+        ):
+            STACK.validate_model_network_policy_rollback_plan(unsafe, current)
+
+    def test_nonrollback_plan_is_not_subject_to_the_deny_removal_whitelist(
+        self,
+    ) -> None:
+        current = contract()
+        current["stages"]["workloads"]["model_runtime_network_policy"] = {
+            "phase": "enforce"
+        }
+        STACK.validate_model_network_policy_rollback_plan(
+            {
+                "resource_changes": [
+                    {
+                        "mode": "managed",
+                        "address": "helm_release.control_plane",
+                        "change": {"actions": ["update"]},
+                    }
+                ]
+            },
+            current,
+        )
+
     def test_completed_model_handoff_survives_catalog_additions(self) -> None:
         def resource(name, value):
             return {"mode": "managed", "type": "terraform_data", "name": name,

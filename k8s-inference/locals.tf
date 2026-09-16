@@ -1125,6 +1125,7 @@ locals {
     model_image_overrides           = local.effective_model_images
     model_pool_overrides            = var.deployment.models.pool_overrides
     model_runtime_overrides         = var.deployment.models.runtime_overrides
+    model_runtime_network_policy    = var.deployment.models.network_policy
     model_scaling_mode              = var.deployment.models.scaling.mode
     hot_model_ids                   = sort(tolist(var.deployment.models.scaling.hot))
     model_scaling_overrides         = var.deployment.models.scaling.overrides

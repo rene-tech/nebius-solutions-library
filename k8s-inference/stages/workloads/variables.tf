@@ -1273,6 +1273,72 @@ variable "model_runtime_overrides" {
   }
 }
 
+variable "model_runtime_network_policy" {
+  description = "Phased fs2-models isolation contract. Enforcement requires an exact live Deployment receipt; Helm rollback requires a later receipt proving default-deny was removed first."
+  type = object({
+    phase = optional(string, "prepare")
+    inventory_receipt = optional(object({
+      schema      = string
+      cluster_id  = string
+      namespace   = string
+      captured_at = string
+      control_plane_image = object({
+        repository = string
+        digest     = string
+      })
+      profiles_sha256 = string
+      deployments = map(object({
+        uid                = string
+        profile            = string
+        workload_component = string
+        workload_part_of   = string
+        pod_component      = string
+        pod_part_of        = string
+      }))
+      payload_sha256 = string
+    }), null)
+    deny_absent_receipt = optional(object({
+      schema                     = string
+      cluster_id                 = string
+      namespace                  = string
+      captured_at                = string
+      enforcement_payload_sha256 = string
+      profiles_sha256            = string
+      allow_policy_names         = list(string)
+      default_deny_absent        = bool
+      payload_sha256             = string
+    }), null)
+  })
+  default  = {}
+  nullable = false
+
+  validation {
+    condition = contains([
+      "prepare",
+      "enforce",
+      "rollback-remove-deny",
+      "rollback-helm",
+    ], var.model_runtime_network_policy.phase)
+    error_message = "model_runtime_network_policy.phase must be prepare, enforce, rollback-remove-deny, or rollback-helm."
+  }
+
+  validation {
+    condition = (
+      var.model_runtime_network_policy.phase == "prepare" ? (
+        var.model_runtime_network_policy.inventory_receipt == null &&
+        var.model_runtime_network_policy.deny_absent_receipt == null
+        ) : var.model_runtime_network_policy.phase == "rollback-helm" ? (
+        var.model_runtime_network_policy.inventory_receipt != null &&
+        var.model_runtime_network_policy.deny_absent_receipt != null
+        ) : (
+        var.model_runtime_network_policy.inventory_receipt != null &&
+        var.model_runtime_network_policy.deny_absent_receipt == null
+      )
+    )
+    error_message = "prepare accepts no receipts; enforce and rollback-remove-deny require only the inventory receipt; rollback-helm requires both receipts."
+  }
+}
+
 variable "model_scaling_mode" {
   description = "Replica owner for routed GPU Deployments. static preserves manifest replicas; keda scales from durable PostgreSQL operation demand."
   type        = string

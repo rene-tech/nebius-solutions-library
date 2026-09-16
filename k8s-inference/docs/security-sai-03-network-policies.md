@@ -1,20 +1,24 @@
 # SAI-03 model-runtime network isolation
 
-Status: second corrective source successor prepared after independent review
-rejected both `692a22ccb0cf56be61ca0227646bcd4d4a896046` and
-`b7e5b12e8b31b9d055ec746c3c6cd691f3519874`. Both commits remain preserved as
-negative evidence. No commit in this lineage has been deployed; production
-rollout remains intentionally gated on independent review and SAI-07 integration.
+Status: clean corrective successor rooted at the separately accepted SAI-03
+source commit `4ea4b1260e6e682a2e4f40ee251860e3cfc7b679`. Rejected integration commits
+`92f9394cb3eb76b9b02f7682c96c056ae600e9ed` and
+`89b5cfe17cffd0a1924fcb4f1af52c8a449c4d1e` are evidence only and are not
+ancestors of this successor. No commit in this lineage has been deployed;
+production rollout remains gated on a future independently accepted SAI-07/KEDA
+successor and a new integration review.
 
 This change closes the source-side causes of SAI-03 without relying on runtime
 pods to carry the historical `app.kubernetes.io/instance` label:
 
-- `fs2-models` is Terraform-owned with an ingress-and-egress `default-deny`.
-  Terraform first creates a finite set of allow profiles, so applying the
-  namespace boundary cannot race ahead of model access. Base profiles are
-  bounded by egress mode and service port. ModelExpress profiles are bounded by
-  the exact qualification digest, accelerator class/count, NIXL backend and
-  service port.
+- `fs2-models` has Terraform-owned finite allow profiles, but its ingress-and-
+  egress `default-deny` exists only in the explicit `enforce` phase. Terraform
+  queries every live Deployment in the namespace and refuses enforcement until
+  its workload and Pod-template labels match a content-addressed inventory
+  receipt and the exact finite profile catalog. Merely creating the allow
+  resources cannot close the namespace. Base profiles are bounded by egress
+  mode and service port. ModelExpress profiles are bounded by the exact
+  qualification digest, accelerator class/count, NIXL backend and service port.
 - Runtime Pods select those profiles with the immutable
   `fs2-serve.nebius.ai/network-profile` label. Arbitrarily named customer Apps,
   including `app-<uuid>` single- and multi-pool clones, reuse a canonical finite
@@ -85,6 +89,51 @@ active SAI-07 worker. SAI-03 does not modify the SAI-07 branch or task files;
 independent integration review must verify that both exact successors remove
 the rule before either can integrate.
 
+## Enforced transition contract
+
+`deployment.models.network_policy.phase` is a closed state machine:
+
+1. `prepare` creates or updates the finite profiles and the label-producing
+   controller while `fs2-models/default-deny` remains absent. It is initial-only:
+   a live deny or the persistent enforcement marker makes a later `prepare`
+   plan fail, preventing phase-name rollback bypass.
+2. Export `model_runtime_network_policy_transition` from the applied workloads
+   state and run the read-only receipt tool. It lists **all** Deployments in
+   `fs2-models`, rejects an empty inventory, and requires the runtime component,
+   part-of, and recognized profile labels on both Deployment and Pod template.
+3. Set phase `enforce` and supply that receipt. Terraform re-reads all live
+   Deployments during the plan and requires byte-equivalent normalized
+   inventory, exact cluster/image/profile identities, and a valid payload hash.
+   Only this phase creates `default-deny`; it also creates a persistent marker
+   bound to the enforcement receipt.
+4. To roll back, set `rollback-remove-deny` with the same inventory receipt and
+   without changing the enforced image. The supported `inference-stack`
+   workflow rejects the saved plan unless its only managed changes are deletion
+   of `default-deny` and the transition-state update. This prevents a Helm
+   rollback or unrelated mutation in the deny-removal apply.
+5. After that exact plan is applied, generate a `deny-absent` receipt. The tool
+   refuses it while the deny exists or any finite allow policy is missing. Set
+   `rollback-helm` with both receipts. Terraform independently re-reads the live
+   policies and enforcement marker; only then may the Helm release change.
+
+Receipt generation is read-only and emits no credentials or workload payloads:
+
+```bash
+terraform -chdir=stages/workloads output -json \
+  model_runtime_network_policy_transition > /secure/path/network-transition.json
+
+python3 stages/workloads/scripts/model_network_policy_transition.py inventory \
+  --contract /secure/path/network-transition.json \
+  --kubeconfig /secure/path/kubeconfig \
+  --context <exact-context> > /secure/path/network-inventory-receipt.json
+
+# Run only after the isolated rollback-remove-deny saved plan was applied.
+python3 stages/workloads/scripts/model_network_policy_transition.py deny-absent \
+  --contract /secure/path/network-transition.json \
+  --kubeconfig /secure/path/kubeconfig \
+  --context <exact-context> > /secure/path/deny-absent-receipt.json
+```
+
 ## Pre-mutation live evidence
 
 Read-only inspection used kubeconfig
@@ -152,6 +201,16 @@ terraform -chdir=stages/workloads validate -no-color
 terraform -chdir=stages/workloads test \
   -filter=tests/modelexpress.tftest.hcl -no-color
 
+terraform -chdir=stages/workloads test \
+  -filter=tests/academic_assets_render.tftest.hcl \
+  -filter=tests/scientific_artifacts.tftest.hcl -no-color
+
+python3 -m pytest -q \
+  tests/test_deployment_contract.py \
+  tests/test_inference_stack.py \
+  tests/test_model_network_policy_transition.py \
+  models/general-media/tests/test_shared_cache_localization.py
+
 terraform -chdir=reference-data/terraform init -backend=false -input=false
 terraform -chdir=reference-data/terraform validate -no-color
 terraform -chdir=reference-data/terraform test \
@@ -161,21 +220,32 @@ terraform -chdir=reference-data/terraform test \
 Observed results for this corrective successor:
 
 - complete control-plane suite: 1,968 passed, 98 skipped;
+- root/wrapper/receipt/offline-preflight focus: 143 passed and 109 subtests
+  passed;
+- academic/scientific workloads integration fixtures: 21 passed, including
+  prepare/inventory/enforce/rollback transition failures and the previously
+  masked scientific-artifact same-bucket rejection;
+- complete workloads Terraform suite: 54 passed, 1 failed, 7 skipped. The sole
+  failure is the pre-existing general-CPU fixture
+  `an_exact_cpu_runtime_renders_one_static_service_without_a_gpu`, where
+  `local.selected_queue_pools[pool_id]` addresses a CPU pool outside the
+  selected GPU queue-pool map; no SAI-03 transition, academic, or scientific
+  test failed;
 - changed controller/renderer/Helm focus: 225 passed, including finite-profile
   derivation, real HTTP arbitrary-App lifecycle, and absence of NetworkPolicy
-  RBAC;
+  RBAC (accepted `4ea4b126` carry-forward evidence);
 - integrated gateway/model/MCP suite: 118 passed;
 - ModelExpress Terraform contract: 11 passed, including exact cross-layer
   profile inputs, IPv4 `/1`-pair rejection, IPv6 `/32` and `/64` rejection, and
   IPv6 `/128` acceptance;
-- academic-assets module: 10 passed, including separate IPv6 `/32` and `/64`
+- academic-assets module: 18 passed, including separate IPv6 `/32` and `/64`
   rejection and `/128` acceptance;
 - catalog Kubernetes adapters: 19 passed, including native selector matching
   and KServe/NIM fail-closed behavior;
 - reference-data bootstrap: 6 passed;
 - general-media offline-preflight/static-policy suite: 5 passed;
-- Helm lint/template, Terraform formatting/validation, Ruff lint/format, and
-  `git diff --check`: passed.
+- Helm lint, Terraform formatting/validation, focused Ruff lint/format, focused
+  mypy, and `git diff --check`: passed.
 
 Trivy 0.70.0 reported zero High/Critical findings in each changed Terraform
 file. The two legacy model manifests retain two pre-existing High findings each
@@ -187,12 +257,12 @@ legacy policies and the namespace default deny at the rejected parent. It was
 not repeated for this successor because shared-live reconciliation is still
 required and no rollout or live mutation is authorized from this branch.
 
-The complete catalog suite ran 163 tests and retained one unrelated baseline
-error: `model-variants.json` currently contains 13 fallback candidates while
-its schema fixes the count at 12. The changed Kubernetes-adapter suite is green.
-The changed scientific-artifact exact-host runs pass. A later pre-existing
-same-bucket/Kueue fixture in that test file remains independently tracked and
-does not invalidate the exact-host assertions.
+The complete catalog suite at the accepted `4ea4b126` base ran 163 tests and
+retained one unrelated baseline error: `model-variants.json` currently
+contains 13 fallback candidates while its schema fixes the count at 12. The
+changed Kubernetes-adapter suite is green. The academic and scientific
+integration fixtures changed by this successor are now green; no fixture
+failure is being waived as SAI-03 evidence.
 
 ## Safe rollout and rollback
 
@@ -205,22 +275,23 @@ The safe order is:
 
 1. Record the settled Helm revision and both control-plane image digests. Build,
    scan, and sign the integrated controller image.
-2. Upgrade the controller while leaving `fs2-models` without the default deny.
-   Wait until every managed runtime Deployment carries a recognized finite
-   network-profile label; reject any unknown profile before continuing.
-3. Apply the Terraform profile policies; verify their selectors and ports.
-   Only then apply the namespace default deny and the academic default deny.
+2. Apply `prepare`, which upgrades the integrated controller and finite policy
+   profiles while structurally keeping `fs2-models/default-deny` absent.
+3. Generate the inventory receipt, then plan `enforce`. Review that the live
+   Deployment count and names cover the full retained fleet and apply its exact
+   saved plan. Never author or copy a receipt by hand.
 4. Prove positive gateway PAT/model-grant sync and streaming inference plus MCP
    model calls. Prove from a scratch pod that direct model `:8000` access fails,
    and from an isolated model pod that public HTTPS egress fails while DNS and
    gateway inference continue to work. Recheck operations, observability, and
    current sibling models.
 
-If a customer flow regresses, remove only the affected namespace `default-deny`
-first to reopen the prior path while retaining the additive allow policies and
-evidence. Then roll Helm back to the recorded pre-rollout revision/image digest
-and revert the Terraform resources using the reviewed saved plan. Never delete
-all allow policies before removing the default deny.
+If a customer flow regresses, apply `rollback-remove-deny`; the wrapper proves
+that saved plan contains no Helm or unrelated change. Generate the live
+deny-absent receipt, then use `rollback-helm` to return to the recorded
+pre-rollout revision/image digest. Never delete allow policies before the deny,
+never combine deny deletion with Helm rollback, and never return to `prepare`
+after the enforcement marker exists.
 
 No GPU/model behavior changed, so a new GPU inference campaign is not meaningful
 before the integrated live rollout. No temporary cloud, Kubernetes, registry, or

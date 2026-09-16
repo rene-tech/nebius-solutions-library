@@ -320,6 +320,60 @@ def plan_changes_managed_resources_or_outputs(document: Mapping[str, Any]) -> bo
     return False
 
 
+def validate_model_network_policy_rollback_plan(
+    document: Mapping[str, Any], contract: Mapping[str, Any]
+) -> None:
+    """Keep deny removal isolated from Helm or any other workload mutation.
+
+    Terraform dependency ordering cannot make two unrelated changes in one plan
+    safe. During the rollback-remove-deny phase, the supported wrapper therefore
+    accepts only deletion of the namespace deny plus the transition receipt's
+    state update. The exact saved plan is applied only after this check.
+    """
+    transition = (
+        contract.get("stages", {})
+        .get("workloads", {})
+        .get("model_runtime_network_policy", {})
+    )
+    if (
+        not isinstance(transition, Mapping)
+        or transition.get("phase") != "rollback-remove-deny"
+    ):
+        return
+    changes: dict[str, list[str]] = {}
+    for resource in document.get("resource_changes", []):
+        if resource.get("mode", "managed") != "managed":
+            continue
+        actions = resource.get("change", {}).get("actions", [])
+        if actions in (["no-op"], ["read"]):
+            continue
+        address = resource.get("address")
+        if not isinstance(address, str) or not all(
+            isinstance(action, str) for action in actions
+        ):
+            raise DeploymentError(
+                "the workloads rollback plan has a malformed resource change"
+            )
+        changes[address] = actions
+    allowed = {
+        "kubernetes_network_policy_v1.model_namespace_default_deny[0]": ["delete"],
+        "terraform_data.model_runtime_network_policy_transition": ["update"],
+    }
+    if changes not in ({}, allowed):
+        rendered = (
+            ", ".join(
+                f"{address}={'+'.join(actions)}"
+                for address, actions in sorted(changes.items())
+            )
+            or "none"
+        )
+        raise DeploymentError(
+            "rollback-remove-deny must be an isolated saved plan containing only "
+            "default-deny deletion and the transition receipt update; observed: "
+            f"{rendered}"
+        )
+
+
 def source_commit() -> str:
     result = run(
         ["git", "-C", str(REPOSITORY_ROOT), "rev-parse", "HEAD"],
@@ -2509,13 +2563,14 @@ def apply_stack(
     )
     apply_plan(args.terraform, FOUNDATION_ROOT, plan_path, environment)
 
-    plan_path, _, environment = plan_stage(
+    plan_path, workloads_plan, environment = plan_stage(
         args.terraform,
         run_root=run_root,
         stage="workloads",
         contract=contract,
         variable_file=workloads_variables,
     )
+    validate_model_network_policy_rollback_plan(workloads_plan, contract)
     apply_plan(args.terraform, WORKLOADS_ROOT, plan_path, environment)
 
     # Record the accepted root contract after all of its staged consumers converge.
@@ -2623,13 +2678,14 @@ def plan_stack(
         print("Planned workloads.")
         return
 
-    plan_stage(
+    _, workloads_plan, _ = plan_stage(
         args.terraform,
         run_root=run_root,
         stage="workloads",
         contract=contract,
         variable_file=workloads_variables,
     )
+    validate_model_network_policy_rollback_plan(workloads_plan, contract)
     print("Planned all three existing states after upstream handoffs converged.")
 
 

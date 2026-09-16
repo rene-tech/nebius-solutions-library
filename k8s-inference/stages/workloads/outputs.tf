@@ -217,6 +217,11 @@ output "dynamic_model_handoff_receipt" {
   )
 }
 
+output "model_runtime_network_policy_transition" {
+  description = "Non-secret prepare/enforce/rollback contract consumed by the live inventory receipt tool."
+  value       = terraform_data.model_runtime_network_policy_transition.output
+}
+
 output "dynamic_model_contract" {
   description = "Non-secret derived controller ownership, catalog, bootstrap, and immutable contract identities."
   value = {

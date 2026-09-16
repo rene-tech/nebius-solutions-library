@@ -289,6 +289,14 @@ class DeploymentContractTests(unittest.TestCase):
             contract["stages"]["workloads"]["model_image_overrides"],
             {"proteinmpnn": runtime_catalog["runtime"]["image"]["reference"]},
         )
+        self.assertEqual(
+            contract["stages"]["workloads"]["model_runtime_network_policy"],
+            {
+                "phase": "prepare",
+                "inventory_receipt": None,
+                "deny_absent_receipt": None,
+            },
+        )
 
         self.assertEqual(
             contract["stages"]["workloads"]["model_controller"],
@@ -337,6 +345,7 @@ class DeploymentContractTests(unittest.TestCase):
                 "nvcr_dockerconfig": "FS2_NVCR_DOCKERCONFIGJSON",
             },
         )
+
         self.assertEqual(
             contract["secret_requirements"],
             {
@@ -388,6 +397,27 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertEqual(
             outputs["effective_configuration"]["port_forward_ports"],
             contract["stages"]["infrastructure"]["port_forward_local_ports"],
+        )
+
+    def test_model_network_policy_rejects_enforce_without_inventory_receipt(
+        self,
+    ) -> None:
+        variable_file = self._write_configuration(
+            "network-policy-enforce-without-receipt",
+            {
+                "schema_version": 1,
+                "name": "fs2-netpol-enforce-no-receipt",
+                "target": self.catalog_target(),
+                "models": {"network_policy": {"phase": "enforce"}},
+            },
+        )
+        result, _ = self._plan_file(
+            variable_file, "network-policy-enforce-without-receipt"
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertRegex(
+            f"{result.stdout}\n{result.stderr}",
+            r"enforce and rollback-remove-deny\s+require only the inventory receipt",
         )
 
     def test_control_plane_hpa_envelope_is_a_tfvars_only_workload_contract(

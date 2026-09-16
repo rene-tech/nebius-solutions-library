@@ -723,6 +723,14 @@ run "a_store_that_reuses_the_reference_data_bucket_is_refused" {
         resource_version    = 0
       }
     }
+    scheduling = {
+      core_pool_capacity = {
+        nebius-b300-preemptible-1x = {
+          cpu_millicores = 22000
+          memory_mib     = 344064
+        }
+      }
+    }
     reference_data = {
       enabled   = true
       namespace = "fs2-reference-data"
