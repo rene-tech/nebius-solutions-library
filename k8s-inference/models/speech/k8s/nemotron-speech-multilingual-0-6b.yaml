@@ -62,6 +62,10 @@ spec:
               key: artifact-hosts
         - name: OMP_NUM_THREADS
           value: '2'
+        # NeMo unpacks the multi-GB .nemo archive before loading it. Use the
+        # existing cache scratch budget, not the smaller general /tmp mount.
+        - name: TMPDIR
+          value: /cache
         - name: TORCHINDUCTOR_CACHE_DIR
           value: /cache/inductor
         - name: TRITON_CACHE_DIR

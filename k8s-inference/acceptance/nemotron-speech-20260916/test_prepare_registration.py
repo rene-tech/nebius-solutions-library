@@ -48,6 +48,10 @@ def test_additive_registration_preserves_input_and_has_no_false_qualification():
         for resource in rendered.resources:
             if resource.kind == "ScaledObject":
                 assert len("keda-hpa-" + resource.name) <= 63
+            if resource.kind == "Deployment":
+                container = resource.manifest["spec"]["template"]["spec"]["containers"][0]
+                assert {item["name"]: item.get("value") for item in container["env"]}["TMPDIR"] == "/cache"
+                assert container["resources"]["limits"]["ephemeral-storage"] == "24Gi"
 
 
 def test_refuses_to_overwrite_an_existing_registration():
@@ -55,3 +59,18 @@ def test_refuses_to_overwrite_an_existing_registration():
     source[0]["qualifications"][IDS[0]] = {}
     with pytest.raises(ValueError, match="already registered"):
         append_models(*source)
+
+
+def test_template_update_keeps_every_current_template_and_sibling_qualification():
+    from prepare_template_update import extend
+    original, bundles, _, _ = append_models(*inputs())
+    before = copy.deepcopy((original, bundles))
+    updated, actual_bundles, references = extend(original, bundles)
+    assert (original, bundles) == before
+    assert all(bundle in actual_bundles for bundle in bundles)
+    assert updated["pools"] == original["pools"]
+    assert updated["qualifications"]["qwen.3-8b"] == original["qualifications"]["qwen.3-8b"]
+    for identity in IDS:
+        qualification = updated["qualifications"][identity]
+        assert set(original["qualifications"][identity]["templateDigests"]) <= set(qualification["templateDigests"])
+        assert references[identity]["name"] in qualification["templateRefs"]

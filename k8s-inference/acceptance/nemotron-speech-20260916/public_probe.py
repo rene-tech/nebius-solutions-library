@@ -78,9 +78,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("kubeconfig", "context", "origin"):
         parser.add_argument("--" + name, required=True)
-    parser.add_argument("--mode", choices=("apply-apps", "repair-app-policy", "files", "live", "mcp"), required=True)
+    parser.add_argument("--mode", choices=("apply-apps", "repair-app-policy", "drain-apps", "update-templates", "files", "live", "mcp"), required=True)
     parser.add_argument("--paced", action="store_true", help="Replay live audio at original recording speed")
     parser.add_argument("--proposals", type=Path)
+    parser.add_argument("--template-refs", type=Path)
     parser.add_argument("--assets", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
@@ -94,9 +95,21 @@ def main():
         try:
             response = admin.post("/admin/api/v1/session", headers={"authorization": "Bearer " + token})
             response.raise_for_status()
-            if args.mode in {"apply-apps", "repair-app-policy"}:
+            if args.mode == "drain-apps":
+                for name in IDS:
+                    response = admin.get("/admin/api/v1/model-deployments/" + name)
+                    response.raise_for_status()
+                    value = response.json()["data"]
+                    response = admin.post("/admin/api/v1/model-deployments/" + name + ":drain", json={
+                        "base_etag": value["etag"], "idempotency_key": "speech-scratch-drain-" + uuid4().hex})
+                    receipt["measurements"].append({"model": name, "before": value, "drain": response.json()})
+                    response.raise_for_status()
+                    print(json.dumps({"model": name, "drain_requested": True}), flush=True)
+                return
+            if args.mode in {"apply-apps", "repair-app-policy", "update-templates"}:
                 proposals = []
-                if args.mode == "repair-app-policy":
+                if args.mode in {"repair-app-policy", "update-templates"}:
+                    references = json.loads(args.template_refs.read_text()) if args.mode == "update-templates" else {}
                     for name in IDS:
                         current = admin.get("/admin/api/v1/model-deployments/" + name)
                         current.raise_for_status()
@@ -104,6 +117,12 @@ def main():
                         if value["spec"]["policy"]["allowedPrincipalIds"] not in ([], ["rene"]):
                             raise ValueError("speech policy changed outside this task")
                         value["spec"]["policy"]["allowedPrincipalIds"] = []
+                        if args.mode == "update-templates":
+                            if value["spec"]["lifecycle"]["desiredState"] != "Draining":
+                                raise ValueError("drain this task App before changing runtime material")
+                            value["spec"]["runtime"]["templateRef"] = references[name]
+                            value["spec"]["lifecycle"]["desiredState"] = "Enabled"
+                            value["spec"]["availability"]["minReplicas"] = 1
                         proposals.append({"name": name, "namespace": value["namespace"],
                                           "base_etag": value["etag"], "spec": value["spec"]})
                 else:

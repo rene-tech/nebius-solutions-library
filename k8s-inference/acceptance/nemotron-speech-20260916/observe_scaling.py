@@ -32,7 +32,7 @@ def main():
                     summary.update(desired=spec.get("replicas", 0), ready=status.get("readyReplicas", 0))
                 else:
                     summary.update(node=spec.get("nodeName"), phase=status.get("phase"),
-                        ready=all(c["ready"] for c in status.get("containerStatuses", [])) and bool(status.get("containerStatuses")),
+                        ready=any(c["type"] == "Ready" and c["status"] == "True" for c in status.get("conditions", [])),
                         deleting=metadata.get("deletionTimestamp"),
                         conditions=[{"type": c["type"], "status": c["status"], "reason": c.get("reason")}
                                     for c in status.get("conditions", [])])
