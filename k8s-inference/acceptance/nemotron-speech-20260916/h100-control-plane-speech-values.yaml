@@ -1,0 +1,36 @@
+# Narrow live-release overlay. Reuse existing values; do not reset storage,
+# tenant settings, placement, service URLs or sibling-model registrations.
+# Image source: 6b9fc084d80e8e0dccf218d58e8b4334519bf89a.
+image:
+  digest: sha256:2c118d7fbceeb1040e9f79ce50407ea3a8a3990f2e1f415095aad453b8ddea77
+httpRoute:
+  speechStreamTimeout: 7500s
+scientificArtifacts:
+  mediaTypes:
+    - application/gzip
+    - application/json
+    - application/octet-stream
+    - application/vnd.fs2.scientific-manifest+json
+    - application/vnd.fs2.scientific-validation+json
+    - application/x-nifti
+    - application/x-tar
+    - audio/wav
+    - audio/x-wav
+    - audio/mpeg
+    - audio/mp4
+    - audio/ogg
+    - audio/webm
+    - audio/flac
+    - audio/aac
+    - chemical/x-cif
+    - chemical/x-mmcif
+    - chemical/x-pdb
+    - image/jpeg
+    - image/png
+    - image/webp
+    - text/csv
+    - text/plain
+    - text/x-a3m
+    - text/x-fasta
+    - video/mp4
+    - video/webm
