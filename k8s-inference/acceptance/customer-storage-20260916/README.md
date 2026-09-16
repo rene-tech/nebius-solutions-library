@@ -58,6 +58,10 @@ Unit/PostgreSQL coverage is not a substitute for those live checks.
 
 ## Release and retained infrastructure
 
+- Helm revision **123** completed successfully. Final rollout: 3/3 gateway,
+  2/2 admin, 2/2 controller and 15/15 GPU-observer pods ready. Quota failures now
+  identify `RESOURCE_EXHAUSTED` and operation IDs in runtime logs and back off.
+- Target-specific values are retained in `retained-release.values.yaml`.
 - Project `project-e00rene`, region `eu-north1`, cluster
   `mk8scluster-e00j5z9te7x5dd9g6a`, namespace `fs2-system`.
 - Backend source: `6dbf648e8165c9eb434300ad2b310ac2d136ca92`.
