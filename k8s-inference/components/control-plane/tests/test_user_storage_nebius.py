@@ -128,7 +128,11 @@ async def test_membership_has_no_name_and_explicit_key_is_recovered():
             return_value=SimpleNamespace(
                 items=[
                     SimpleNamespace(
-                        metadata=SimpleNamespace(name=name, id="key-alice"),
+                        metadata=SimpleNamespace(
+                            name=name,
+                            id="key-alice",
+                            labels={"fs2-storage-owner": name},
+                        ),
                         spec=SimpleNamespace(expires_at=datetime.now(UTC) + timedelta(days=90)),
                     )
                 ],
@@ -198,7 +202,11 @@ async def test_expired_existing_key_is_replaced_inactive_and_retained_as_predece
     provider.ensure_identity_access = AsyncMock()
     name = provider.name("user", "tenant-a", "alice")
     expired = SimpleNamespace(
-        metadata=SimpleNamespace(name=name, id="key-expired"),
+        metadata=SimpleNamespace(
+            name=name,
+            id="key-expired",
+            labels={"fs2-storage-owner": name},
+        ),
         spec=SimpleNamespace(expires_at=datetime.now(UTC) - timedelta(seconds=1)),
     )
     provider.keys = SimpleNamespace(
@@ -224,6 +232,96 @@ async def test_expired_existing_key_is_replaced_inactive_and_retained_as_predece
     assert previous == {
         "service_account_id": "sa-alice",
         "access_key_resource_id": "key-expired",
+    }
+
+
+async def test_inventory_quarantines_every_extra_key_before_allowing_current():
+    provider = naming_provider()
+    name = provider.name("user", "tenant-a", "alice")
+    current = SimpleNamespace(
+        metadata=SimpleNamespace(
+            name=name,
+            id="key-current",
+            labels={"fs2-storage-owner": name},
+        )
+    )
+    extra = SimpleNamespace(
+        metadata=SimpleNamespace(name="unrelated-active-key", id="key-extra", labels={})
+    )
+    provider._account_keys = AsyncMock(return_value=[current, extra])
+    provider._force_key_inactive = AsyncMock(return_value="INACTIVE")
+    provider.key_state = AsyncMock(return_value="ACTIVE")
+
+    verified = await provider.reconcile_key_inventory(
+        "tenant-a",
+        "alice",
+        {
+            "service_account_id": "sa-alice",
+            "access_key_resource_id": "key-current",
+            "replacement_access_key_resource_id": None,
+            "previous_access_key_resource_id": None,
+        },
+        effective_enabled=True,
+    )
+
+    assert verified is True
+    provider._force_key_inactive.assert_awaited_once_with("key-extra")
+
+
+async def test_inventory_rejects_foreign_same_name_even_when_db_tracks_it():
+    provider = naming_provider()
+    name = provider.name("user", "tenant-a", "alice")
+    foreign = SimpleNamespace(
+        metadata=SimpleNamespace(name=name, id="key-current", labels={})
+    )
+    provider._account_keys = AsyncMock(return_value=[foreign])
+    provider._force_key_inactive = AsyncMock(return_value="INACTIVE")
+
+    with pytest.raises(RuntimeError, match="foreign same-name"):
+        await provider.reconcile_key_inventory(
+            "tenant-a",
+            "alice",
+            {
+                "service_account_id": "sa-alice",
+                "access_key_resource_id": "key-current",
+                "replacement_access_key_resource_id": None,
+                "previous_access_key_resource_id": None,
+            },
+            effective_enabled=True,
+        )
+    provider._force_key_inactive.assert_awaited_once_with("key-current")
+
+
+async def test_off_inventory_quarantines_foreign_active_key_and_current():
+    provider = naming_provider()
+    name = provider.name("user", "tenant-a", "alice")
+    current = SimpleNamespace(
+        metadata=SimpleNamespace(
+            name=name,
+            id="key-current",
+            labels={"fs2-storage-owner": name},
+        )
+    )
+    foreign = SimpleNamespace(
+        metadata=SimpleNamespace(name="manual-key", id="key-manual", labels={})
+    )
+    provider._account_keys = AsyncMock(return_value=[current, foreign])
+    provider._force_key_inactive = AsyncMock(return_value="INACTIVE")
+
+    assert await provider.reconcile_key_inventory(
+        "tenant-a",
+        "alice",
+        {
+            "service_account_id": "sa-alice",
+            "access_key_resource_id": "key-current",
+            "replacement_access_key_resource_id": None,
+            "previous_access_key_resource_id": None,
+        },
+        effective_enabled=False,
+    )
+    assert {call.args[0] for call in provider._force_key_inactive.await_args_list} == {
+        "key-current",
+        "key-manual",
     }
 
 

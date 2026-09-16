@@ -13,7 +13,7 @@ from uuid import UUID, uuid4
 import pytest
 from cryptography.exceptions import InvalidTag
 
-from fs2_serve.crypto import Ciphertext
+from fs2_serve.crypto import Ciphertext, PayloadCipher
 from fs2_serve.models import Principal, Scope
 from fs2_serve.store import ConflictError
 from fs2_serve.user_models import InferenceUser, owner_id
@@ -39,6 +39,7 @@ class Repository:
     def __init__(self):
         self.policies, self.buckets, self.credentials = {}, {}, {}
         self.locks = {}
+        self.tenant_singletons = {}
 
     @asynccontextmanager
     async def tenant_lock(self, tenant):
@@ -56,7 +57,30 @@ class Repository:
         requested_layout = previous_layout if policy.mode == "disabled" else policy.mode
         if any(key[0] == tenant for key in self.buckets) and previous_layout != requested_layout:
             raise ConflictError("migration required")
+        if requested_layout == "tenant" and policy.mode != "disabled":
+            principals = {principal for (row_tenant, principal) in self.credentials if row_tenant == tenant}
+            if len(principals) != 1:
+                raise ConflictError("tenant mode requires one principal")
+            self.tenant_singletons[tenant] = next(iter(principals))
+        elif requested_layout == "user":
+            self.tenant_singletons.pop(tenant, None)
         self.policies[tenant] = policy
+
+    async def bind_tenant_singleton(self, tenant, principal, *, quota_bytes):
+        del quota_bytes
+        principals = {value for (row_tenant, value) in self.credentials if row_tenant == tenant}
+        principals.add(principal)
+        if principals != {principal} or self.tenant_singletons.get(tenant, principal) != principal:
+            raise ConflictError("tenant mode is restricted to one principal")
+        self.tenant_singletons[tenant] = principal
+        self.policies.setdefault(tenant, StoragePolicy(mode="tenant"))
+
+    async def bind_user_layout(self, tenant, *, quota_bytes):
+        del quota_bytes
+        if (await self.policy(tenant, StoragePolicy())).mode != "user":
+            raise ConflictError("per-user layout unavailable")
+        self.tenant_singletons.pop(tenant, None)
+        self.policies.setdefault(tenant, StoragePolicy())
 
     async def bucket(self, tenant, owner):
         return self.buckets.get((tenant, owner))
@@ -91,8 +115,16 @@ class Repository:
             "disclosure_consumed_at": None,
             "policy_suspension_requested": False,
             "current_action_id": None,
+            "provider_ownership_verified": bool(value.get("provider_ownership_verified", False)),
             "version": 0,
         }
+
+    async def record_provider_ownership(self, tenant, principal, *, verified, expected_version):
+        credential = self.credentials[tenant, principal]
+        if credential["version"] != expected_version:
+            raise ConflictError("CAS")
+        credential["provider_ownership_verified"] = verified
+        credential["version"] += 1
 
     async def request_enabled(self, tenant, principal, enabled):
         credential = self.credentials[tenant, principal]
@@ -343,6 +375,8 @@ class Provider:
     def __init__(self):
         self.bucket_calls, self.key_calls, self.enabled_calls, self.access_calls = [], [], [], []
         self.states = {}
+        self.accounts = {}
+        self.owned = set()
         self.rotation_count = 0
 
     def bucket_name(self, tenant, owner):
@@ -365,13 +399,17 @@ class Provider:
         self.key_calls.append((tenant, principal, group))
         key = f"key-{tenant}-{principal}"
         self.states[key] = "INACTIVE"
+        account = f"sa-{tenant}-{principal}"
+        self.accounts[key] = account
+        self.owned.add(key)
         return dict(
-            service_account_id=f"sa-{tenant}-{principal}",
+            service_account_id=account,
             access_key_resource_id=key,
             access_key_id=f"aws-{tenant}-{principal}",
             secret_access_key=f"secret-{tenant}-{principal}",
             expires_at=datetime.now(UTC) + timedelta(days=90),
             provider_state="INACTIVE",
+            provider_ownership_verified=True,
         )
 
     async def set_enabled(self, key, enabled):
@@ -384,6 +422,19 @@ class Provider:
     async def ensure_identity_access(self, group, account):
         self.access_calls.append((group, account))
 
+    async def reconcile_key_inventory(self, tenant, principal, credential, *, effective_enabled):
+        del tenant, principal
+        account = credential["service_account_id"]
+        current = credential["access_key_resource_id"]
+        current_owned = current in self.owned and self.accounts.get(current) == account
+        for key, key_account in list(self.accounts.items()):
+            if key_account != account:
+                continue
+            if key != current or not current_owned or not effective_enabled:
+                if self.states.get(key) == "ACTIVE":
+                    await self.set_enabled(key, False)
+        return current_owned
+
     async def prepare_rotation(self, tenant, principal, group, previous):
         del group
         self.key_calls.append((tenant, principal, "rotation"))
@@ -391,6 +442,8 @@ class Provider:
         suffix = "" if self.rotation_count == 1 else f"-{self.rotation_count}"
         key = f"rotated-key-{tenant}-{principal}{suffix}"
         self.states[key] = "INACTIVE"
+        self.accounts[key] = previous["service_account_id"]
+        self.owned.add(key)
         return dict(
             service_account_id=previous["service_account_id"],
             access_key_resource_id=key,
@@ -398,6 +451,7 @@ class Provider:
             secret_access_key=f"rotated-secret-{tenant}-{principal}",
             expires_at=datetime.now(UTC) + timedelta(days=90),
             provider_state="INACTIVE",
+            provider_ownership_verified=True,
         )
 
     async def close(self):
@@ -541,6 +595,38 @@ async def test_rotation_promotion_db_failure_compensates_and_retries(env):
 
     env.repository.promote_replacement = original
     await env.service.ensure(user())
+    assert env.provider.states[old_id] == "INACTIVE"
+    assert env.provider.states[replacement_id] == "ACTIVE"
+
+
+async def test_rotation_activation_noop_never_promotes_or_disables_predecessor(env):
+    await env.service.ensure(user())
+    credential = env.repository.credentials["customer-a", "alice"]
+    old_id = credential["access_key_resource_id"]
+    credential["expires_at"] = datetime.now(UTC) + timedelta(days=1)
+    original = env.provider.set_enabled
+
+    async def ignore_replacement_activation(key, enabled):
+        if key.startswith("rotated-key-") and enabled:
+            env.provider.enabled_calls.append((key, enabled))
+            return
+        await original(key, enabled)
+
+    env.provider.set_enabled = ignore_replacement_activation
+    with pytest.raises(RuntimeError, match="did not reach ACTIVE"):
+        await env.service.ensure(user())
+
+    replacement_id = "rotated-key-customer-a-alice"
+    current = env.repository.credentials["customer-a", "alice"]
+    assert current["access_key_resource_id"] == old_id
+    assert current["replacement_access_key_resource_id"] == replacement_id
+    assert current["requested_action"] == "rotate"
+    assert env.provider.states[old_id] == "ACTIVE"
+    assert env.provider.states[replacement_id] == "INACTIVE"
+
+    env.provider.set_enabled = original
+    await env.service.ensure(user())
+    assert current["access_key_resource_id"] == replacement_id
     assert env.provider.states[old_id] == "INACTIVE"
     assert env.provider.states[replacement_id] == "ACTIVE"
 
@@ -717,6 +803,19 @@ async def test_provider_reactivation_drift_is_repaired_for_every_effective_off_s
     assert env.provider.enabled_calls[calls:] == [(key_id, False)]
 
 
+async def test_disabled_owner_quarantines_differently_named_active_account_key(env):
+    await env.service.ensure(user())
+    credential = env.repository.credentials["customer-a", "alice"]
+    account = credential["service_account_id"]
+    env.provider.states["manually-created-key"] = "ACTIVE"
+    env.provider.accounts["manually-created-key"] = account
+
+    await env.service.ensure(user(enabled=False))
+
+    assert env.provider.states[credential["access_key_resource_id"]] == "INACTIVE"
+    assert env.provider.states["manually-created-key"] == "INACTIVE"
+
+
 async def test_policy_disable_and_reactivate_preserves_layout_and_identity(env):
     await env.service.ensure(user())
     credential = env.repository.credentials["customer-a", "alice"]
@@ -822,6 +921,46 @@ async def test_credentials_are_encrypted_and_bound_to_owner(cipher):
     assert cipher.decrypt(envelope, aad=repository.aad("customer-a", "alice")).decode() == value["secret_access_key"]
     with pytest.raises(InvalidTag):
         cipher.decrypt(envelope, aad=repository.aad("customer-b", "alice"))
+
+
+def test_storage_aad_supports_dual_read_current_write_and_rollback():
+    aad = PayloadCipher.customer_storage_aad("customer-a", "alice")
+    generation_one = PayloadCipher(active_key_id="storage-v1", keys={"storage-v1": b"1" * 32})
+    old = generation_one.encrypt(b"credential", aad=aad)
+
+    rotating = PayloadCipher(
+        active_key_id="storage-v2",
+        keys={"storage-v1": b"1" * 32, "storage-v2": b"2" * 32},
+    )
+    assert rotating.decrypt(old, aad=aad) == b"credential"
+    current = rotating.encrypt(rotating.decrypt(old, aad=aad), aad=aad)
+    assert current.key_id == "storage-v2"
+
+    rollback = PayloadCipher(
+        active_key_id="storage-v1",
+        keys={"storage-v1": b"1" * 32, "storage-v2": b"2" * 32},
+    )
+    assert rollback.decrypt(current, aad=aad) == b"credential"
+    assert rollback.encrypt(b"rollback-write", aad=aad).key_id == "storage-v1"
+    with pytest.raises(InvalidTag):
+        rollback.decrypt(
+            current,
+            aad=PayloadCipher.customer_storage_aad("customer-a", "bob"),
+        )
+    with pytest.raises(ValueError, match="AAD identity"):
+        PayloadCipher.customer_storage_aad("customer-a\0forged", "alice")
+
+
+async def test_tenant_layout_rejects_second_principal_before_cloud_access(env):
+    env.service.default = StoragePolicy(mode="tenant")
+    await env.service.ensure(user(principal="alice"))
+    cloud_calls = (len(env.provider.bucket_calls), len(env.provider.key_calls))
+
+    with pytest.raises(ConflictError, match="one principal"):
+        await env.service.ensure(user(principal="bob"))
+
+    assert (len(env.provider.bucket_calls), len(env.provider.key_calls)) == cloud_calls
+    assert env.repository.tenant_singletons["customer-a"] == "alice"
 
 
 def test_credentials_endpoint_auth_and_debug_exclusion(env, registry, cipher, hasher):

@@ -191,6 +191,10 @@ def test_customer_storage_credentials_are_isolated_and_egress_is_bounded() -> No
         "customerStorage.iamCredentialsSecretName=storage-iam",
         "--set",
         "networkPolicy.kubernetesApiCidrs[0]=192.0.2.1/32",
+        "--set",
+        "customerStorage.kubernetesApiCidrs[0]=192.0.2.1/32",
+        "--set-string",
+        f"customerStorage.egressContractSha256={'4' * 64}",
     )
     rejected = subprocess.run(  # noqa: S603 - fixed Helm binary and test-owned arguments
         render_command(*base),
@@ -237,9 +241,13 @@ def test_customer_storage_credentials_are_isolated_and_egress_is_bounded() -> No
     runtime_policy = named[("NetworkPolicy", "fs2-serve-control-plane-runtime")]
     assert all("to" in rule for rule in runtime_policy["spec"]["egress"])
     storage_policy = named[("NetworkPolicy", "fs2-serve-control-plane-storage-reconciler")]
-    https = next(rule for rule in storage_policy["spec"]["egress"] if rule["ports"][0]["port"] == 443)
-    assert https["to"] == [{"ipBlock": {"cidr": "198.51.100.10/32"}}]
-    assert https["ports"] == [{"port": 443, "protocol": "TCP"}]
+    https = [rule for rule in storage_policy["spec"]["egress"] if rule["ports"][0]["port"] == 443]
+    assert https[0]["to"] == [{"ipBlock": {"cidr": "198.51.100.10/32"}}]
+    assert https[1]["to"] == [{"ipBlock": {"cidr": "192.0.2.1/32"}}]
+    assert all(rule["ports"] == [{"port": 443, "protocol": "TCP"}] for rule in https)
+    assert storage_policy["metadata"]["annotations"] == {
+        "fs2.nebius.ai/storage-egress-contract-sha256": "4" * 64
+    }
 
     for values in (
         ("customerStorage.egressCidrs[0]=0.0.0.0/1", "customerStorage.egressCidrs[1]=128.0.0.0/1"),

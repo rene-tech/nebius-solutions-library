@@ -81,6 +81,19 @@ def test_terraform_uses_an_external_immutable_trust_root() -> None:
     assert "egress_contract_public_key_pem" not in source
 
 
+def test_terraform_owns_a_fail_closed_admission_boundary_outside_helm() -> None:
+    source = TERRAFORM.read_text(encoding="utf-8")
+    control_plane = (TERRAFORM.parent / "control_plane.tf").read_text(encoding="utf-8")
+    assert 'resource "kubernetes_manifest" "customer_storage_egress_admission_policy"' in source
+    assert 'resource "kubernetes_manifest" "customer_storage_egress_admission_binding"' in source
+    assert 'failurePolicy = "Fail"' in source
+    assert 'operations  = ["CREATE", "UPDATE", "DELETE"]' in source
+    assert 'expression = "request.operation != \'DELETE\'"' in source
+    assert "object.spec == ${jsonencode(local.customer_storage_network_policy_spec)}" in source
+    assert "data.external.customer_storage_egress[0].result.contract_sha256" in source
+    assert "customer_storage_egress_admission_binding" in control_plane
+
+
 @pytest.mark.parametrize(
     "cidrs",
     [
@@ -162,6 +175,55 @@ def test_live_network_policy_rejects_extra_https_rule_or_non_ip_peer(signed_cont
     }
     with pytest.raises(ValueError, match="does not equal"):
         contract_module.verify_network_policy(policy, contract["cidrs"])
+
+
+def test_readiness_requires_exact_dns_database_provider_and_api_rules(signed_contract):
+    _, contract = signed_contract
+    provider_rule = {
+        "to": [{"ipBlock": {"cidr": cidr}} for cidr in contract["cidrs"]],
+        "ports": [{"port": 443, "protocol": "TCP"}],
+    }
+    api_rule = {
+        "to": [{"ipBlock": {"cidr": "192.0.2.1/32"}}],
+        "ports": [{"port": 443, "protocol": "TCP"}],
+    }
+    dns_rule = {
+        "to": [
+            {
+                "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "kube-system"}},
+                "podSelector": {
+                    "matchLabels": {
+                        "app.kubernetes.io/instance": "coredns",
+                        "app.kubernetes.io/name": "coredns",
+                        "k8s-app": "coredns",
+                    }
+                },
+            }
+        ],
+        "ports": [{"port": 53, "protocol": "UDP"}, {"port": 53, "protocol": "TCP"}],
+    }
+    database_rule = {
+        "to": [
+            {
+                "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "fs2-data"}},
+                "podSelector": {"matchLabels": {"cnpg.io/cluster": "fs2-control-db"}},
+            }
+        ],
+        "ports": [{"port": 5432, "protocol": "TCP"}],
+    }
+    policy = {"spec": {"egress": [dns_rule, database_rule, provider_rule, api_rule]}}
+    contract_module.verify_network_policy(policy, contract["cidrs"], ["192.0.2.1/32"])
+
+    for mutation in ("destinationless", "dns-selector", "extra-rule"):
+        adversarial = copy.deepcopy(policy)
+        if mutation == "destinationless":
+            del adversarial["spec"]["egress"][2]["to"]
+        elif mutation == "dns-selector":
+            adversarial["spec"]["egress"][0]["to"][0]["podSelector"]["matchLabels"]["k8s-app"] = "kube-dns"
+        else:
+            adversarial["spec"]["egress"].append(copy.deepcopy(provider_rule))
+        with pytest.raises(ValueError):
+            contract_module.verify_network_policy(adversarial, contract["cidrs"], ["192.0.2.1/32"])
 
 
 def cli_inputs(tmp_path: Path, *, observed_at: datetime | None = None):

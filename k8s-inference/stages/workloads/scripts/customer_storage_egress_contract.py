@@ -303,7 +303,11 @@ def verify_contract(
     }
 
 
-def verify_network_policy(policy: dict[str, Any], expected_cidrs: list[str]) -> None:
+def verify_network_policy(
+    policy: dict[str, Any],
+    expected_cidrs: list[str],
+    expected_kubernetes_api_cidrs: list[str] | None = None,
+) -> None:
     rules = policy.get("spec", {}).get("egress", [])
     if not rules or any(not rule.get("to") for rule in rules):
         raise ValueError("every live customer-storage egress rule must have explicit destinations")
@@ -312,17 +316,62 @@ def verify_network_policy(policy: dict[str, Any], expected_cidrs: list[str]) -> 
         ports = rule.get("ports", [])
         if any(port.get("port") == 443 for port in ports):
             https_rules.append(rule)
-    if len(https_rules) != 1:
+    expected_sets = [sorted(expected_cidrs)]
+    if expected_kubernetes_api_cidrs is not None:
+        expected_sets.append(sorted(expected_kubernetes_api_cidrs))
+    if len(https_rules) != len(expected_sets):
         raise ValueError("live NetworkPolicy does not equal the signed egress CIDR set")
-    rule = https_rules[0]
-    if rule.get("ports") != [{"port": 443, "protocol": "TCP"}]:
-        raise ValueError("customer storage egress must be exact TCP/443")
-    peers = rule.get("to", [])
-    if any(set(peer) != {"ipBlock"} or set(peer["ipBlock"]) != {"cidr"} for peer in peers):
-        raise ValueError("customer storage HTTPS peers must be exact IP blocks")
-    cidrs = [peer["ipBlock"]["cidr"] for peer in peers]
-    if sorted(cidrs) != sorted(expected_cidrs) or len(cidrs) != len(set(cidrs)):
+    observed_sets: list[list[str]] = []
+    for rule in https_rules:
+        if rule.get("ports") != [{"port": 443, "protocol": "TCP"}]:
+            raise ValueError("customer storage egress must be exact TCP/443")
+        peers = rule.get("to", [])
+        if any(set(peer) != {"ipBlock"} or set(peer["ipBlock"]) != {"cidr"} for peer in peers):
+            raise ValueError("customer storage HTTPS peers must be exact IP blocks")
+        cidrs = [peer["ipBlock"]["cidr"] for peer in peers]
+        if len(cidrs) != len(set(cidrs)):
+            raise ValueError("live NetworkPolicy contains duplicate HTTPS destinations")
+        observed_sets.append(sorted(cidrs))
+    if sorted(observed_sets) != sorted(expected_sets):
         raise ValueError("live NetworkPolicy does not equal the signed egress CIDR set")
+    if expected_kubernetes_api_cidrs is None:
+        return
+    expected_non_https = [
+        {
+            "to": [
+                {
+                    "namespaceSelector": {
+                        "matchLabels": {"kubernetes.io/metadata.name": "kube-system"}
+                    },
+                    "podSelector": {
+                        "matchLabels": {
+                            "app.kubernetes.io/instance": "coredns",
+                            "app.kubernetes.io/name": "coredns",
+                            "k8s-app": "coredns",
+                        }
+                    },
+                }
+            ],
+            "ports": [
+                {"port": 53, "protocol": "UDP"},
+                {"port": 53, "protocol": "TCP"},
+            ],
+        },
+        {
+            "to": [
+                {
+                    "namespaceSelector": {
+                        "matchLabels": {"kubernetes.io/metadata.name": "fs2-data"}
+                    },
+                    "podSelector": {"matchLabels": {"cnpg.io/cluster": "fs2-control-db"}},
+                }
+            ],
+            "ports": [{"port": 5432, "protocol": "TCP"}],
+        },
+    ]
+    non_https = [rule for rule in rules if rule not in https_rules]
+    if non_https != expected_non_https or len(rules) != 4:
+        raise ValueError("live NetworkPolicy DNS/database rules do not equal the canonical policy")
 
 
 def _private_key(path: Path) -> Ed25519PrivateKey:
@@ -373,6 +422,7 @@ def main() -> int:
     parser.add_argument("--public-key", type=Path)
     parser.add_argument("--network-policy", type=Path)
     parser.add_argument("--expected-cidrs", type=Path)
+    parser.add_argument("--expected-kubernetes-api-cidrs", type=Path)
     parser.add_argument("--kubernetes-network-policy", nargs=2, metavar=("NAMESPACE", "NAME"))
     parser.add_argument("--terraform-external", action="store_true")
     args = parser.parse_args()
@@ -405,15 +455,25 @@ def main() -> int:
             expected = _json_bytes(safe_read(args.expected_cidrs, maximum=64 * 1024), "expected CIDRs")
             if expected != contract["cidrs"]:
                 raise ValueError("rendered egress CIDRs do not equal the signed contract")
+        expected_kubernetes_api_cidrs = None
+        if args.expected_kubernetes_api_cidrs is not None:
+            expected_kubernetes_api_cidrs = _json_bytes(
+                safe_read(args.expected_kubernetes_api_cidrs, maximum=64 * 1024),
+                "expected Kubernetes API CIDRs",
+            )
+            if not isinstance(expected_kubernetes_api_cidrs, list) or not expected_kubernetes_api_cidrs:
+                raise ValueError("expected Kubernetes API CIDRs must be a non-empty list")
         if args.network_policy is not None:
             verify_network_policy(
                 _json_bytes(safe_read(args.network_policy), "live NetworkPolicy"),
                 contract["cidrs"],
+                expected_kubernetes_api_cidrs,
             )
         if args.kubernetes_network_policy is not None:
             verify_network_policy(
                 _cluster_network_policy(*args.kubernetes_network_policy),
                 contract["cidrs"],
+                expected_kubernetes_api_cidrs,
             )
         print(json.dumps(result, sort_keys=True))
         return 0

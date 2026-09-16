@@ -99,6 +99,61 @@ module "customer_storage_provisioner" {
 }
 
 locals {
+  customer_storage_kubernetes_api_cidrs = sort(tolist(setunion(
+    local.kubernetes_api_service_cidrs,
+    local.kubernetes_api_endpoint_cidrs,
+  )))
+  customer_storage_network_policy_name = "fs2-serve-control-plane-storage-reconciler"
+  customer_storage_network_policy_spec = {
+    podSelector = {
+      matchLabels = {
+        "app.kubernetes.io/name"      = "fs2-serve-control-plane"
+        "app.kubernetes.io/instance"  = "fs2-serve-control-plane"
+        "app.kubernetes.io/component" = "storage-reconciler"
+      }
+    }
+    policyTypes = ["Ingress", "Egress"]
+    ingress     = []
+    egress = var.customer_storage.enabled ? [
+      {
+        to = [{
+          namespaceSelector = { matchLabels = { "kubernetes.io/metadata.name" = "kube-system" } }
+          podSelector = {
+            matchLabels = {
+              "app.kubernetes.io/instance" = "coredns"
+              "app.kubernetes.io/name"     = "coredns"
+              "k8s-app"                    = "coredns"
+            }
+          }
+        }]
+        ports = [
+          { port = 53, protocol = "UDP" },
+          { port = 53, protocol = "TCP" },
+        ]
+      },
+      {
+        to = [{
+          namespaceSelector = { matchLabels = { "kubernetes.io/metadata.name" = "fs2-data" } }
+          podSelector       = { matchLabels = { "cnpg.io/cluster" = "fs2-control-db" } }
+        }]
+        ports = [{ port = 5432, protocol = "TCP" }]
+      },
+      {
+        to = [
+          for cidr in jsondecode(data.external.customer_storage_egress[0].result.cidrs_json) :
+          { ipBlock = { cidr = cidr } }
+        ]
+        ports = [{ port = 443, protocol = "TCP" }]
+      },
+      {
+        to = [
+          for cidr in local.customer_storage_kubernetes_api_cidrs :
+          { ipBlock = { cidr = cidr } }
+        ]
+        ports = [{ port = 443, protocol = "TCP" }]
+      },
+    ] : []
+  }
   customer_storage_chart_values = {
     customerStorage = {
       enabled                       = var.customer_storage.enabled
@@ -113,8 +168,110 @@ locals {
       disclosureDatabaseSecretName  = "fs2-serve-database-storage-disclosure"
       cryptoSecretName              = "fs2-serve-storage-keyring"
       egressCidrs                   = var.customer_storage.enabled ? jsondecode(data.external.customer_storage_egress[0].result.cidrs_json) : []
+      kubernetesApiCidrs            = var.customer_storage.enabled ? local.customer_storage_kubernetes_api_cidrs : []
+      egressContractSha256          = var.customer_storage.enabled ? data.external.customer_storage_egress[0].result.contract_sha256 : ""
       keyTtlDays                    = var.customer_storage.key_ttl_days
       rotationWindowDays            = var.customer_storage.rotation_window_days
     }
   }
+}
+
+# This cluster-scoped boundary is owned by Terraform rather than Helm, so an
+# old chart rollback, --no-hooks, or direct NetworkPolicy edit cannot widen the
+# reconciler. Policies that might select the storage pod must either exclude
+# that component explicitly or equal the signed/current canonical policy.
+resource "kubernetes_manifest" "customer_storage_egress_admission_policy" {
+  count = var.customer_storage.enabled ? 1 : 0
+
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicy"
+    metadata = {
+      name = "fs2-customer-storage-egress"
+      annotations = {
+        "fs2.nebius.ai/storage-egress-contract-sha256" = data.external.customer_storage_egress[0].result.contract_sha256
+      }
+    }
+    spec = {
+      failurePolicy = "Fail"
+      matchConstraints = {
+        resourceRules = [{
+          apiGroups   = ["networking.k8s.io"]
+          apiVersions = ["v1"]
+          operations  = ["CREATE", "UPDATE", "DELETE"]
+          resources   = ["networkpolicies"]
+          scope       = "Namespaced"
+        }]
+      }
+      matchConditions = [{
+        name = "storage-reconciler-policy"
+        expression = join(" ", [
+          "request.namespace == 'fs2-system' &&",
+          "(request.operation == 'DELETE' ?",
+          "(oldObject.metadata.name == '${local.customer_storage_network_policy_name}' ||",
+          "!has(oldObject.spec.podSelector.matchLabels) ||",
+          "!('app.kubernetes.io/component' in oldObject.spec.podSelector.matchLabels) ||",
+          "oldObject.spec.podSelector.matchLabels['app.kubernetes.io/component'] == 'storage-reconciler') :",
+          "(object.metadata.name == '${local.customer_storage_network_policy_name}' ||",
+          "!has(object.spec.podSelector.matchLabels) ||",
+          "!('app.kubernetes.io/component' in object.spec.podSelector.matchLabels) ||",
+          "object.spec.podSelector.matchLabels['app.kubernetes.io/component'] == 'storage-reconciler'))",
+        ])
+      }]
+      validations = [
+        {
+          expression = "request.operation != 'DELETE'"
+          message    = "The canonical customer-storage egress policy cannot be deleted while customer storage is enabled."
+          reason     = "Forbidden"
+        },
+        {
+          expression = join(" ", [
+            "object.metadata.name == '${local.customer_storage_network_policy_name}' &&",
+            "has(object.metadata.annotations) &&",
+            "'fs2.nebius.ai/storage-egress-contract-sha256' in object.metadata.annotations &&",
+            "object.metadata.annotations['fs2.nebius.ai/storage-egress-contract-sha256'] == '${data.external.customer_storage_egress[0].result.contract_sha256}' &&",
+            "object.spec == ${jsonencode(local.customer_storage_network_policy_spec)}",
+          ])
+          message = "A NetworkPolicy that may select the storage reconciler must equal the signed provider and live Kubernetes API egress contract."
+          reason  = "Forbidden"
+        },
+      ]
+    }
+  }
+
+  field_manager {
+    force_conflicts = false
+    name            = "fs2-customer-storage-egress"
+  }
+
+  depends_on = [
+    terraform_data.cluster_contract,
+    kubernetes_config_map_v1.customer_storage_egress_contract,
+  ]
+}
+
+resource "kubernetes_manifest" "customer_storage_egress_admission_binding" {
+  count = var.customer_storage.enabled ? 1 : 0
+
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicyBinding"
+    metadata   = { name = "fs2-customer-storage-egress" }
+    spec = {
+      policyName        = "fs2-customer-storage-egress"
+      validationActions = ["Deny"]
+      matchResources = {
+        namespaceSelector = {
+          matchLabels = { "kubernetes.io/metadata.name" = "fs2-system" }
+        }
+      }
+    }
+  }
+
+  field_manager {
+    force_conflicts = false
+    name            = "fs2-customer-storage-egress"
+  }
+
+  depends_on = [kubernetes_manifest.customer_storage_egress_admission_policy]
 }

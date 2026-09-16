@@ -325,6 +325,46 @@ async def test_storage_and_runtime_roles_are_separate_and_ciphertext_is_not_enum
                 await conn.execute("RESET ROLE")
 
 
+async def test_tenant_layout_is_db_bound_to_one_principal_at_every_write_path(storage_database):
+    store = storage_database
+    users = PostgresUserRepository(store.pool)
+    repository = PostgresUserStorageRepository(store.pool, store.cipher)
+    alice = user(tenant="sai08-singleton", principal="sai08-singleton-alice")
+    bob = user(tenant="sai08-singleton", principal="sai08-singleton-bob")
+    await users.save(alice, create=True)
+    await repository.set_policy(
+        alice.tenant_id,
+        StoragePolicy(mode="tenant"),
+        StoragePolicy(),
+    )
+    assert await store.pool.fetchval(
+        "SELECT singleton_principal_id FROM fs2_storage_policies WHERE tenant_id=$1",
+        alice.tenant_id,
+    ) == alice.principal_id
+
+    with pytest.raises(asyncpg.CheckViolationError, match="another principal"):
+        await users.save(bob, create=True)
+    with pytest.raises(ConflictError, match="one immutable principal"):
+        await repository.bind_tenant_singleton(
+            alice.tenant_id,
+            bob.principal_id,
+            quota_bytes=5_000_000_000,
+        )
+
+    await repository.set_policy(
+        alice.tenant_id,
+        StoragePolicy(mode="disabled"),
+        StoragePolicy(),
+    )
+    await users.save(bob, create=True)
+    with pytest.raises(ConflictError, match="exactly one"):
+        await repository.set_policy(
+            alice.tenant_id,
+            StoragePolicy(mode="tenant"),
+            StoragePolicy(),
+        )
+
+
 async def wait_for_value(reader, expected, *, timeout: float = 2.0):
     async with asyncio.timeout(timeout):
         while (value := await reader()) != expected:
