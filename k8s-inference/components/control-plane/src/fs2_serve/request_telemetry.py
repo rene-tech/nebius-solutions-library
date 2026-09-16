@@ -86,8 +86,6 @@ class RequestTransportUsage(StrictModel):
 class RequestTelemetryStore(Protocol):
     async def record(self, observation: RequestTelemetry) -> None: ...
 
-    async def purge_expired(self, *, before: datetime) -> int: ...
-
 
 class InMemoryRequestTelemetryStore:
     """Local/test evidence only; production uses the PostgreSQL implementation."""
@@ -98,12 +96,6 @@ class InMemoryRequestTelemetryStore:
     async def record(self, observation: RequestTelemetry) -> None:
         if all(row.request_id != observation.request_id for row in self.observations):
             self.observations.append(observation)
-
-    async def purge_expired(self, *, before: datetime) -> int:
-        kept = [row for row in self.observations if row.started_at >= before]
-        removed = len(self.observations) - len(kept)
-        self.observations = kept
-        return removed
 
 
 def _uuid(value: object) -> UUID | None:
@@ -303,12 +295,6 @@ class PostgresRequestTelemetryStore:
                 "ON CONFLICT (request_id) DO NOTHING",
                 *(values[column] for column in columns),
             )
-
-    async def purge_expired(self, *, before: datetime) -> int:
-        """Delete transport telemetry older than the TTL. Metadata only, no payloads."""
-        async with self.pool.acquire() as connection:
-            result = await connection.execute("DELETE FROM fs2_request_telemetry WHERE started_at < $1", before)
-        return int(result.removeprefix("DELETE "))
 
     async def for_operation(self, operation_id: UUID, tenant_id: str | None) -> list[RequestTelemetry]:
         async with self.pool.acquire() as connection:

@@ -65,6 +65,9 @@ locals {
       syncWaitSeconds        = "30"
       maxSyncWaitSeconds     = "30"
       requestDebugEnabled    = var.request_debug_enabled
+      requestDebugTenants    = var.request_debug_tenants
+      requestDebugModels     = var.request_debug_models
+      requestDebugExpiresAt  = var.request_debug_expires_at
       }, var.model_scaling_mode == "keda" ? {
       activationTimeoutSeconds = "7200"
     } : {})

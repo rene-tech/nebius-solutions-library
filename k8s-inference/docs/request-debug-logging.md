@@ -9,15 +9,19 @@ window rather than leaving it on as a standing state.
 
 ## Enable capture
 
-Set `deployment.observability.request_debug_enabled = true` in the existing
-deployment configuration, preserving its other fields:
+There is **no global capture switch**. Enabling `request_debug_enabled` without a
+tenant/model scope and a bounded future expiry is rejected at startup, so capture
+is always scoped and self-closing. A minimal activation names a scope and an
+expiry within the maximum window:
 
 ```hcl
 deployment = {
   # Preserve the rest of the existing deployment configuration.
   observability = {
     # Preserve the other existing observability settings.
-    request_debug_enabled = true
+    request_debug_enabled    = true
+    request_debug_models     = "boltz2"          # and/or request_debug_tenants
+    request_debug_expires_at = "2026-09-20T00:00:00Z"
   }
 }
 ```
@@ -28,30 +32,34 @@ disabled again once the investigation is complete. Reading a captured exchange
 requires an **ADMIN** operator (tenant scoping still applies); customer API keys
 do not gain access to the admin debug API.
 
-**Enabling capture alone records nothing.** Capture is scoped and time-bounded so
-it never records every tenant by default. In addition to `request_debug_enabled`,
-name what to capture:
+**Enabling capture alone records nothing** — you must name what to capture and
+when it stops:
 
-- `config.requestDebugTenants` — comma-separated tenant IDs to capture. Only the
-  named tenants are recorded; unauthenticated/rejected requests (no tenant) are not.
-- `config.requestDebugModels` — comma-separated model (App) IDs to capture. All
-  tenants' use of those Apps is recorded, including pre-admission rejections for
-  the App. When both allowlists are set, an exchange must match both.
-- `config.requestDebugExpiresAt` — an RFC3339 instant after which capture stops
-  even while enabled, so a debugging window is self-closing.
-- `config.requestDebugCaptureAll` (default `false`) — explicit opt-in to capture
-  every tenant/App. Use only for a deliberate full-capture window; prefer the
-  tenant/model allowlists.
+- `request_debug_tenants` — comma-separated tenant IDs to capture. Only the named
+  tenants are recorded; unauthenticated/rejected requests (no tenant) are not.
+- `request_debug_models` — comma-separated model (App) IDs to capture. All tenants'
+  use of those Apps is recorded, including pre-admission rejections for the App.
+  When both allowlists are set, an exchange must match both.
+- `request_debug_expires_at` — a required RFC3339 instant after which capture stops
+  even while enabled. It must be in the future and within
+  `request_debug_max_window_seconds` (default 7 days), or the control plane refuses
+  to start. There is no unbounded or "capture everything" mode.
 
-With `requestDebugCaptureAll` false and no allowlist entries, nothing is captured.
+The control plane validates this at startup: an enabled policy that is unscoped, or
+whose expiry is missing/past/beyond the maximum window, fails fast rather than
+capturing broadly. Because capture is time-bounded, disable it before the expiry
+passes; leaving `request_debug_enabled = true` with a stale expiry captures nothing
+and will fail a subsequent restart.
 
 Two more chart values bound each retained record and are safe to leave at defaults:
 
 - `config.requestDebugMaxBodyBytes` (default `65536`) caps the stored size of each
-  captured request/response body. Only a bounded, redacted prefix is kept.
-- `config.requestDebugRetentionSeconds` (default `86400`) is the TTL after which
-  the maintenance job deletes captured exchanges. `config.requestTelemetryRetentionSeconds`
-  (default `2592000`) bounds the metadata-only transport telemetry table the same way.
+  captured request/response body. Only a bounded, redacted prefix is kept, and the
+  middleware buffers at most twice this cap regardless of body size.
+- `config.requestDebugRetentionSeconds` (default `86400`) is the TTL for captured
+  exchanges. The retention purge is scheduled by the platform maintenance job
+  (owned centrally, not by this facility); transport-telemetry retention is owned
+  by that same central job.
 
 Capture covers observed public `/v1/` HTTP exchanges and `/mcp` traffic that the
 policy admits, including validation failures and requests rejected before an
@@ -165,15 +173,15 @@ HTTP 0 or success.
   a missing row is not proof no request happened. Process failure can also leave
   missing captures. Bodies from before capture was enabled, or from failed
   persistence, cannot be reconstructed from old usage/logical-run metadata.
-- Captured exchanges have a **hard TTL**: the maintenance job deletes
-  `fs2_request_debug` rows older than `requestDebugRetentionSeconds` (default 24h)
-  and `fs2_request_telemetry` rows older than `requestTelemetryRetentionSeconds`.
-  The purge runs under a maintenance credential that can delete by timestamp only
-  and can read no payload, header, query or ciphertext column. Enabling capture
-  still increases PostgreSQL/storage use within the TTL window; disabling capture
-  stops new rows but does not retroactively delete history faster than the TTL.
-  Reads require ADMIN and are audited, so retention is bounded and access is
-  attributable rather than open-ended.
+- Captured exchanges have a **hard TTL**: `fs2_request_debug` rows older than
+  `requestDebugRetentionSeconds` (default 24h) are deleted by the platform's central
+  maintenance purge (scheduled centrally, not by this facility). The purge runs
+  under a maintenance credential that can delete by timestamp only and can read no
+  payload, header, query or ciphertext column. Enabling capture still increases
+  PostgreSQL/storage use within the TTL window; disabling capture stops new rows but
+  does not retroactively delete history faster than the TTL. Reads require ADMIN and
+  are audited, so retention is bounded and access is attributable rather than
+  open-ended.
 
 ## Verification status
 

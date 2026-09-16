@@ -27,8 +27,13 @@ from fs2_serve.request_telemetry import (
     current_request_id,
     observe_request_metadata,
 )
+from fs2_serve.settings import Settings
 
 NOW = datetime(2026, 9, 9, 8, tzinfo=UTC)
+_FUTURE = datetime(2099, 1, 1, tzinfo=UTC)
+# Default policy for middleware tests: scoped to the default boltz2 path, bounded
+# by a far-future expiry. Individual tests pass their own policy when needed.
+_TEST_POLICY = DebugCapturePolicy(enabled=True, models=frozenset({"boltz2"}), expires_at=_FUTURE)
 
 
 def owner():
@@ -105,7 +110,7 @@ async def capture(
         principal_resolver=resolver,
         persist_timeout_seconds=0.05,
         max_body_bytes=max_body_bytes,
-        policy=policy,
+        policy=policy or _TEST_POLICY,
     )(scope, receive, send)
     return store, outgoing, scope
 
@@ -411,33 +416,54 @@ async def test_purge_expired_deletes_only_captures_older_than_the_cutoff():
 
 
 def test_capture_policy_is_scoped_and_time_bounded():
-    """SAI-01: enabling capture records nothing unless a target is named (fail closed)."""
+    """SAI-01: no global capture; a scope AND a bounded future expiry are mandatory."""
     now = NOW
+    future = now + timedelta(hours=1)
     # Disabled: never captures.
-    assert DebugCapturePolicy(enabled=False).should_capture(tenant_id="t", model_id="m", now=now) is False
-    # Enabled but unscoped: fail closed (this is the core fix vs. one global boolean).
-    assert DebugCapturePolicy(enabled=True).should_capture(tenant_id="t", model_id="m", now=now) is False
+    assert DebugCapturePolicy(enabled=False, models=frozenset({"m"}), expires_at=future).should_capture(
+        tenant_id="t", model_id="m", now=now
+    ) is False
+    # Enabled but unscoped: fail closed (there is no global capture switch).
+    assert DebugCapturePolicy(enabled=True, expires_at=future).should_capture(
+        tenant_id="t", model_id="m", now=now
+    ) is False
+    # Enabled and scoped but no expiry: fail closed (a bounded window is mandatory).
+    assert DebugCapturePolicy(enabled=True, models=frozenset({"m"})).should_capture(
+        tenant_id="t", model_id="m", now=now
+    ) is False
     # Tenant-scoped: only the allowlisted tenant, and never an unauthenticated request.
-    tenant = DebugCapturePolicy(enabled=True, tenants=frozenset({"t1"}))
+    tenant = DebugCapturePolicy(enabled=True, tenants=frozenset({"t1"}), expires_at=future)
     assert tenant.should_capture(tenant_id="t1", model_id="m", now=now) is True
     assert tenant.should_capture(tenant_id="t2", model_id="m", now=now) is False
     assert tenant.should_capture(tenant_id=None, model_id="m", now=now) is False
     # Model/App-scoped: all tenants for that App, including pre-admission (tenant None).
-    model = DebugCapturePolicy(enabled=True, models=frozenset({"boltz2"}))
+    model = DebugCapturePolicy(enabled=True, models=frozenset({"boltz2"}), expires_at=future)
     assert model.should_capture(tenant_id=None, model_id="boltz2", now=now) is True
     assert model.should_capture(tenant_id="t1", model_id="qwen3-8b", now=now) is False
     # Both set: must match both.
-    both = DebugCapturePolicy(enabled=True, tenants=frozenset({"t1"}), models=frozenset({"boltz2"}))
+    both = DebugCapturePolicy(enabled=True, tenants=frozenset({"t1"}), models=frozenset({"boltz2"}), expires_at=future)
     assert both.should_capture(tenant_id="t1", model_id="boltz2", now=now) is True
     assert both.should_capture(tenant_id="t1", model_id="qwen3-8b", now=now) is False
-    # Explicit capture_all opt-in.
-    assert DebugCapturePolicy(enabled=True, capture_all=True).should_capture(
-        tenant_id=None, model_id=None, now=now
-    ) is True
     # Time-bounded: capture stops at expiry even while enabled and scoped.
-    expiring = DebugCapturePolicy(enabled=True, capture_all=True, expires_at=now)
+    expiring = DebugCapturePolicy(enabled=True, models=frozenset({"m"}), expires_at=now)
     assert expiring.should_capture(tenant_id="t", model_id="m", now=now - timedelta(seconds=1)) is True
     assert expiring.should_capture(tenant_id="t", model_id="m", now=now) is False
+
+
+def test_capture_policy_path_model_pre_gate():
+    """SAI-01: the pre-buffer gate proves no-capture before any bytes are buffered."""
+    now = NOW
+    future = now + timedelta(hours=1)
+    disabled = DebugCapturePolicy()
+    assert disabled.path_model_admissible("boltz2", now) is False
+    model = DebugCapturePolicy(enabled=True, models=frozenset({"boltz2"}), expires_at=future)
+    assert model.path_model_admissible("boltz2", now) is True
+    assert model.path_model_admissible("qwen3-8b", now) is False  # out-of-scope path model
+    assert model.path_model_admissible(None, now) is True  # unknown (e.g. /mcp): must buffer
+    # A tenant-scoped policy cannot pre-gate on the path model (tenant unknown yet).
+    tenant = DebugCapturePolicy(enabled=True, tenants=frozenset({"t1"}), expires_at=future)
+    assert tenant.path_model_admissible("qwen3-8b", now) is True
+    assert model.path_model_admissible("boltz2", future) is False  # expired
 
 
 async def _authenticated_capture(policy, *, tenant):
@@ -470,7 +496,7 @@ async def _authenticated_capture(policy, *, tenant):
 
 async def test_middleware_captures_only_the_allowlisted_tenant():
     """SAI-01: capture is tenant-scoped; other tenants are not recorded."""
-    policy = DebugCapturePolicy(enabled=True, tenants=frozenset({"tenant-a"}))
+    policy = DebugCapturePolicy(enabled=True, tenants=frozenset({"tenant-a"}), expires_at=_FUTURE)
     allowed = await _authenticated_capture(policy, tenant="tenant-a")
     assert len(allowed.exchanges) == 1
     denied = await _authenticated_capture(policy, tenant="tenant-b")
@@ -478,12 +504,186 @@ async def test_middleware_captures_only_the_allowlisted_tenant():
 
 
 async def test_middleware_records_nothing_when_policy_is_unscoped_or_disabled():
-    for policy in (DebugCapturePolicy(enabled=True), DebugCapturePolicy(enabled=False, capture_all=True)):
+    for policy in (
+        DebugCapturePolicy(enabled=True, expires_at=_FUTURE),  # enabled but unscoped
+        DebugCapturePolicy(enabled=False, models=frozenset({"boltz2"}), expires_at=_FUTURE),  # disabled
+        DebugCapturePolicy(enabled=True, models=frozenset({"boltz2"})),  # no expiry
+    ):
         store = await _authenticated_capture(policy, tenant="tenant-a")
         assert store.exchanges == {}
 
 
 async def test_middleware_stops_capturing_after_expiry():
-    policy = DebugCapturePolicy(enabled=True, capture_all=True, expires_at=datetime.now(UTC) - timedelta(seconds=1))
+    policy = DebugCapturePolicy(
+        enabled=True, models=frozenset({"boltz2"}), expires_at=datetime.now(UTC) - timedelta(seconds=1)
+    )
     store = await _authenticated_capture(policy, tenant="tenant-a")
     assert store.exchanges == {}
+
+
+async def test_middleware_bounds_memory_for_matched_large_streaming_bodies():
+    """SAI-01: a matched large request/response is bounded near the cap, not fully buffered."""
+    big_request = b'{"model":"boltz2","blob":"' + b"Q" * (20 * 1024 * 1024) + b'"}'
+    big_response = b'{"result":"' + b"R" * (20 * 1024 * 1024) + b'"}'
+
+    async def app(scope, receive, send):
+        while (await receive()).get("more_body", False):
+            pass
+        await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
+        for offset in range(0, len(big_response), 1 << 16):
+            chunk = big_response[offset : offset + (1 << 16)]
+            more = offset + len(chunk) < len(big_response)
+            await send({"type": "http.response.body", "body": chunk, "more_body": more})
+
+    cap = 64 * 1024
+    store, _, _ = await capture(
+        app,
+        chunks=[
+            {"type": "http.request", "body": big_request[: 10 * 1024 * 1024], "more_body": True},
+            {"type": "http.request", "body": big_request[10 * 1024 * 1024 :], "more_body": False},
+        ],
+        headers=[(b"content-type", b"application/json")],
+        max_body_bytes=cap,
+    )
+    (exchange,) = store.exchanges.values()
+    # Observed counts are the full wire length; stored bodies are bounded and truncated.
+    assert exchange.request_body.observed_bytes == len(big_request)
+    assert exchange.response_body.observed_bytes == len(big_response)
+    assert exchange.request_body.truncated and exchange.response_body.truncated
+    assert len(_stored_bytes(exchange.request_body)) <= cap
+    assert len(_stored_bytes(exchange.response_body)) <= cap
+
+
+async def test_middleware_does_not_buffer_unmatched_large_response():
+    """SAI-01: an out-of-scope path is gated before buffering and never captured."""
+    big = b"Z" * (20 * 1024 * 1024)
+
+    async def app(scope, receive, send):
+        await receive()
+        await send({"type": "http.response.start", "status": 200})
+        await send({"type": "http.response.body", "body": big})
+
+    policy = DebugCapturePolicy(enabled=True, models=frozenset({"boltz2"}), expires_at=_FUTURE)
+    store, outgoing, _ = await capture(
+        app,
+        path="/v1/models/qwen3-8b:invoke",  # out of the model scope -> pre-gated, not buffered
+        chunks=[{"type": "http.request", "body": b"{}"}],
+        policy=policy,
+        max_body_bytes=64 * 1024,
+    )
+    assert store.exchanges == {}
+    assert outgoing[-1]["body"] == big  # response still streamed through unchanged
+
+
+async def test_middleware_redacts_credential_split_across_request_chunks():
+    """SAI-01: a credential straddling a chunk boundary is still redacted."""
+    secret = "NGCSPLITSECRETVALUE0123456789"
+    first = b'{"model":"boltz2","api_key":"' + secret[:10].encode()
+    second = secret[10:].encode() + b'","sequence":"ACDEFG"}'
+
+    async def app(scope, receive, send):
+        while (await receive()).get("more_body", False):
+            pass
+        await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
+        await send({"type": "http.response.body", "body": b'{"ok":true}'})
+
+    store, _, _ = await capture(
+        app,
+        chunks=[
+            {"type": "http.request", "body": first, "more_body": True},
+            {"type": "http.request", "body": second, "more_body": False},
+        ],
+        headers=[(b"content-type", b"application/json")],
+    )
+    (exchange,) = store.exchanges.values()
+    assert secret not in exchange.model_dump_json() and "ACDEFG" in exchange.request_body.data
+
+
+async def test_unterminated_sensitive_scalar_is_redacted_in_request_and_echoed_response():
+    """SAI-01: a credential in an unterminated JSON scalar is redacted in both directions."""
+    secret = "UNTERMINATEDPASSWORDSECRET123"
+    request = b'{"model":"boltz2","password":"' + secret.encode()  # no closing quote/brace
+
+    async def app(scope, receive, send):
+        await receive()
+        await send({"type": "http.response.start", "status": 400, "headers": [(b"content-type", b"application/json")]})
+        # The error echoes the offending value back to the caller.
+        await send({"type": "http.response.body", "body": b'{"detail":"invalid value ' + secret.encode() + b'"}'})
+
+    store, outgoing, _ = await capture(
+        app,
+        chunks=[{"type": "http.request", "body": request}],
+        headers=[(b"content-type", b"application/json")],
+    )
+    (exchange,) = store.exchanges.values()
+    assert secret not in exchange.request_body.data
+    assert secret not in exchange.response_body.data
+    assert secret not in exchange.model_dump_json()
+
+
+async def test_storage_credentials_endpoint_is_never_captured():
+    """SAI-01/SAI-08: the storage-credentials disclosure is excluded from capture."""
+    async def app(scope, receive, send):
+        await receive()
+        await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
+        await send({"type": "http.response.body", "body": b'{"access_key_id":"AKIA","secret_access_key":"SECRET"}'})
+
+    store, outgoing, _ = await capture(
+        app,
+        path="/v1/storage/credentials",
+        chunks=[{"type": "http.request", "body": b"{}"}],
+    )
+    assert store.exchanges == {}
+    assert b"SECRET" in outgoing[-1]["body"]  # response still returned to the caller
+
+
+def _future_iso(hours: float) -> str:
+    return (datetime.now(UTC) + timedelta(hours=hours)).isoformat()
+
+
+def test_settings_reject_enabled_capture_without_scope_or_bounded_expiry():
+    """SAI-01: an enabled but unscoped/unbounded capture config must not start."""
+    import pytest as _pytest
+    from pydantic import ValidationError
+
+    # Enabled with no scope at all.
+    with _pytest.raises(ValidationError, match="request_debug"):
+        Settings(request_debug_enabled=True, request_debug_expires_at=_future_iso(1))
+    # Enabled and scoped but no expiry.
+    with _pytest.raises(ValidationError, match="expires_at"):
+        Settings(request_debug_enabled=True, request_debug_models="boltz2")
+    # Enabled, scoped, but expiry already in the past.
+    with _pytest.raises(ValidationError, match="future"):
+        Settings(
+            request_debug_enabled=True,
+            request_debug_models="boltz2",
+            request_debug_expires_at=(datetime.now(UTC) - timedelta(hours=1)).isoformat(),
+        )
+    # Enabled, scoped, but expiry beyond the strict maximum window.
+    with _pytest.raises(ValidationError, match="max_window"):
+        Settings(
+            request_debug_enabled=True,
+            request_debug_tenants="tenant-a",
+            request_debug_max_window_seconds=3600,
+            request_debug_expires_at=_future_iso(48),
+        )
+
+
+def test_settings_build_scoped_bounded_capture_policy():
+    """SAI-01: a valid scoped+bounded config yields an enabled policy; default is off."""
+    assert Settings().debug_capture_policy().enabled is False
+    settings = Settings(
+        request_debug_enabled=True,
+        request_debug_tenants="tenant-a, tenant-b",
+        request_debug_models="boltz2",
+        request_debug_expires_at=_future_iso(2),
+    )
+    policy = settings.debug_capture_policy()
+    assert policy.enabled is True
+    assert policy.tenants == frozenset({"tenant-a", "tenant-b"})
+    assert policy.models == frozenset({"boltz2"})
+    assert policy.expires_at is not None
+    # The built policy actually admits an in-scope exchange and rejects others.
+    now = datetime.now(UTC)
+    assert policy.should_capture(tenant_id="tenant-a", model_id="boltz2", now=now) is True
+    assert policy.should_capture(tenant_id="other", model_id="qwen3-8b", now=now) is False

@@ -327,26 +327,27 @@ config:
   otlpEndpoint: ""
   maxRequestBytes: "16777216"
   maxResponseBytes: "134217728"
-  # Evaluation-only full customer request/response logs in the existing database.
-  # Off by default: enabling it captures complete customer payloads, so it must
-  # be a deliberate, time-bounded operator choice, never a standing state.
+  # Evaluation-only customer request/response capture. Off by default; when
+  # enabled it must be scoped (tenants and/or models) AND time-bounded, or the
+  # control plane refuses to start. It is never a standing state.
   requestDebugEnabled: false
   # Hard ceiling on each stored captured body (bytes); a bounded, redacted prefix
   # is kept, never the whole payload. Far below maxResponseBytes by design.
   requestDebugMaxBodyBytes: "65536"
-  # TTL for captured debug exchanges (seconds); the maintenance job deletes rows
-  # older than this so capture cannot accumulate customer payloads without bound.
+  # TTL for captured debug exchanges (seconds); SAI-02's maintenance purge deletes
+  # rows older than this so capture cannot accumulate customer payloads unbounded.
   requestDebugRetentionSeconds: "86400"
-  # TTL for transport telemetry (metadata only, no payloads); longer than debug.
-  requestTelemetryRetentionSeconds: "2592000"
-  # Scope + time-bound for capture. Enabling requestDebug alone records nothing:
-  # name the tenant(s) and/or model App(s) to debug, or opt into captureAll.
-  requestDebugCaptureAll: false
+  # Scope + hard time-bound. Enabling requestDebug records nothing unless a tenant
+  # and/or model (App) scope is named AND requestDebugExpiresAt is a future instant
+  # within requestDebugMaxWindowSeconds. Settings validation rejects any other
+  # enabled configuration, so there is no global capture switch.
   requestDebugTenants: ""
   requestDebugModels: ""
-  # RFC3339 instant after which capture stops even while enabled (e.g.
-  # "2026-09-20T00:00:00Z"); empty means no expiry env is set.
+  # RFC3339 instant after which capture stops (e.g. "2026-09-20T00:00:00Z"); empty
+  # means no expiry env is set (and an enabled policy would fail validation).
   requestDebugExpiresAt: ""
+  # Strict maximum capture window (seconds) the expiry may not exceed.
+  requestDebugMaxWindowSeconds: "604800"
   payloadTtlSeconds: "86400"
   operationRetentionSeconds: "604800"
   patRetentionSeconds: "604800"

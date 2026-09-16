@@ -640,6 +640,12 @@ variable "deployment" {
     observability = optional(object({
       dcgm_cold_start_campaign = optional(bool, false)
       request_debug_enabled    = optional(bool, false)
+      # Scope + hard time-bound for request-debug capture. Enabling capture
+      # without a tenant/model scope and a bounded future expiry is rejected by
+      # the control plane; there is no global capture switch.
+      request_debug_tenants    = optional(string, "")
+      request_debug_models     = optional(string, "")
+      request_debug_expires_at = optional(string, "")
       grafana = optional(object({
         publish_external = optional(bool, false)
       }), {})

@@ -1134,6 +1134,9 @@ locals {
     enable_cold_start_keepers       = var.deployment.models.cold_start_keepers
     enable_dcgm_cold_start_campaign = var.deployment.observability.dcgm_cold_start_campaign
     request_debug_enabled           = var.deployment.observability.request_debug_enabled
+    request_debug_tenants           = var.deployment.observability.request_debug_tenants
+    request_debug_models            = var.deployment.observability.request_debug_models
+    request_debug_expires_at        = var.deployment.observability.request_debug_expires_at
     # core_pool_capacity is declared inside the workloads stage's scheduling
     # object and read as var.scheduling.core_pool_capacity, so it must travel
     # inside that object. Emitted as a sibling it was an undeclared variable:

@@ -1,7 +1,7 @@
 """Mounted operator request logs preserve payloads without changing inference."""
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from test_admin_access_api import BOOTSTRAP_AUTH, _client, _create_principal, _principal_cookie, _runtime
@@ -45,8 +45,9 @@ def test_capture_is_opt_in_and_admin_traffic_is_not_captured(registry, cipher, h
 def test_malformed_authenticated_payload_is_captured_without_a_run_or_auth_secret(registry, cipher, hasher):
     runtime = _runtime(registry, cipher, hasher)
     runtime.settings.request_debug_enabled = True
-    # Capture is scoped: enabling it alone records nothing, so opt into the tenant.
+    # Capture is scoped + time-bounded: opt into the tenant and a bounded window.
     runtime.settings.request_debug_tenants = "debug-tenant"
+    runtime.settings.request_debug_expires_at = datetime.now(UTC) + timedelta(hours=1)
     token = asyncio.run(
         runtime.tokens.issue(
             TokenCreate(

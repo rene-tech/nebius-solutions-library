@@ -6,7 +6,7 @@ import argparse
 import asyncio
 import logging
 import sys
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -78,7 +78,6 @@ from .postgres import PostgresMaintenanceStore, PostgresStore
 from .postgresql_release import render_postgresql_release_contract
 from .registry import Registry
 from .request_debug import PostgresDebugStore
-from .request_telemetry import PostgresRequestTelemetryStore
 from .route_revalidation import RouteRevalidator
 from .runtime import RuntimeClient
 from .runtime_kubernetes import KubernetesRuntimeMetadataProvider
@@ -670,17 +669,11 @@ async def maintain(settings: Settings) -> None:
             audit_retention_seconds=settings.audit_retention_seconds,
             usage_retention_seconds=settings.usage_retention_seconds,
         )
-        # Bound the retention of captured request/response debug exchanges and
-        # transport telemetry. These stores hold no key material for the purge,
-        # so the maintenance credential deletes by timestamp only. Kept as
-        # standalone callables so the scheduling owner can rewire them cleanly.
-        now = datetime.now(UTC)
-        await PostgresDebugStore(store.pool).purge_expired(
-            before=now - timedelta(seconds=settings.request_debug_retention_seconds)
-        )
-        await PostgresRequestTelemetryStore(store.pool).purge_expired(
-            before=now - timedelta(seconds=settings.request_telemetry_retention_seconds)
-        )
+        # NOTE: request-debug/telemetry retention purge is owned by SAI-02 (the
+        # sole central purge owner). This task provides the debug purge primitive
+        # (PostgresDebugStore.purge_expired), the request_debug_retention_seconds
+        # knob, and the maintenance-role DELETE grant on fs2_request_debug for
+        # SAI-02 to wire here; it is intentionally not scheduled from this task.
     finally:
         await store.close()
 

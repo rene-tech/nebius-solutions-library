@@ -3,14 +3,24 @@ from __future__ import annotations
 import asyncio
 import base64
 from dataclasses import replace
+from datetime import UTC, datetime
 
 import httpx
 import pytest
 from test_federation import _operation, _router
 from test_runtime_and_schema import claimed
 
-from fs2_serve.request_debug import DebugExchange, InMemoryDebugStore
+from fs2_serve.request_debug import DebugCapturePolicy, DebugExchange, InMemoryDebugStore
 from fs2_serve.runtime import PreemptedError, RuntimeClient, RuntimeProtocolError, RuntimeTransportError
+
+# The test operations belong to tenants "tenant-a" (claimed) and "tenant-private"
+# (_operation); capture is scoped and time-bounded (fail-closed), so upstream
+# capture tests opt into those tenants and a far-future window.
+_CAPTURE_POLICY = DebugCapturePolicy(
+    enabled=True,
+    tenants=frozenset({"tenant-a", "tenant-private"}),
+    expires_at=datetime(2099, 1, 1, tzinfo=UTC),
+)
 
 
 class DebugSink:
@@ -53,6 +63,7 @@ def runtime(client, sink, *, maximum=4096, federation=None):
         client=client,
         debug_store=sink,
         federation=federation,
+        debug_capture_policy=_CAPTURE_POLICY,
     )
 
 

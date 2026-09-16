@@ -74,6 +74,12 @@ _AUTH_TOKEN = re.compile(
 )
 _AUTH_SCHEME = re.compile(rb"\b(?:Bearer|Basic)\s+[A-Za-z0-9+/_=.:-]+", re.IGNORECASE)
 _JSON_SCALAR = re.compile(rb'("(?:[^"\\]|\\.)*")(\s*:\s*)("(?:[^"\\]|\\.)*"|[^,}\]\s]+)')
+# A sensitive scalar whose value is never terminated (a truncated/malformed body
+# ending mid-value). Captures the key and the partial value to end-of-buffer so
+# the value can still be collected as a credential and redacted from an echo.
+_JSON_UNTERMINATED = re.compile(rb'"([^"\\]{1,128})"\s*:\s*"((?:[^"\\]|\\.)*)\Z')
+# Cap on collected unterminated-value length so a huge body cannot blow up memory.
+_UNTERMINATED_VALUE_MAX = 4096
 
 
 class DebugBody(StrictModel):
@@ -287,6 +293,26 @@ def body_capture(
     )
 
 
+def bounded_body_capture(
+    head: bytes,
+    content_type: str | None,
+    complete: bool,
+    known_credentials: Credentials,
+    *,
+    max_bytes: int | None,
+    observed_bytes: int,
+) -> DebugBody:
+    """Redact/cap a bounded prefix while reporting the true observed length.
+
+    ``head`` is at most a bounded buffer (near the store cap); ``observed_bytes``
+    is the full number of wire bytes seen. If the tail beyond ``head`` was
+    discarded, or the redacted head exceeds the cap, the body is flagged truncated.
+    """
+    body = body_capture(head, content_type, complete, known_credentials, max_bytes)
+    truncated = body.truncated or observed_bytes > len(head)
+    return body.model_copy(update={"observed_bytes": observed_bytes, "truncated": truncated})
+
+
 def _body_bytes(body: DebugBody) -> bytes:
     return body.data.encode("utf-8") if body.encoding == "utf-8" else base64.b64decode(body.data, validate=True)
 
@@ -326,6 +352,15 @@ def credential_values(headers: HeaderPairs, query: str | bytes = "", body: bytes
                         collect(json.loads(match[3]), True)
                 except (ValueError, UnicodeError):
                     continue
+            # A malformed body can end in an unterminated sensitive value (no
+            # closing quote), which the terminated-scalar pass above misses. Its
+            # partial value must still be collected so an error response echoing
+            # it is redacted, not just the request copy.
+            tail = _JSON_UNTERMINATED.search(body)
+            if tail is not None and _name(tail[1].decode("latin-1")) in _AUTH_NAMES:
+                partial = tail[2][:_UNTERMINATED_VALUE_MAX].decode("utf-8", "ignore")
+                if partial and partial != REDACTED:
+                    values.append(partial)
     return tuple(values)
 
 
@@ -552,6 +587,15 @@ async def persist_debug_exchange(
         return False
 
 
+_INVOKE_PATH = re.compile(r"/v1/models/([^/:]+):invoke")
+
+
+def _path_model(path: str) -> str | None:
+    """The model id named directly in a `/v1/models/{model}:invoke` path, if any."""
+    match = _INVOKE_PATH.fullmatch(path)
+    return match[1] if match else None
+
+
 def _uuid(value: object) -> UUID | None:
     try:
         return UUID(str(value)) if value is not None else None
@@ -567,17 +611,15 @@ def _label(value: object) -> str | None:
 class DebugCapturePolicy:
     """Decides which exchanges may be captured.
 
-    Capture is scoped and time-bounded so enabling it never records every tenant
-    by default. With ``capture_all`` false and no allowlist, nothing is captured
-    (fail closed): an operator must name the tenant(s) and/or model App(s) to
-    debug, and an optional ``expires_at`` bounds the capture window. A tenant
-    allowlist matches on the authenticated tenant; a model allowlist matches on
-    the App's model id (so pre-admission rejections for that App still capture).
-    When both are set an exchange must match both.
+    There is no global capture switch. Capture requires an explicit tenant and/or
+    model (App) scope AND a bounded, future expiry; without either, nothing is
+    captured (fail closed). A tenant allowlist matches the authenticated tenant; a
+    model allowlist matches the App's model id (so pre-admission rejections for
+    that App still capture). When both are set an exchange must match both. The
+    default instance is disabled and captures nothing.
     """
 
     enabled: bool = False
-    capture_all: bool = False
     tenants: frozenset[str] = frozenset()
     models: frozenset[str] = frozenset()
     expires_at: datetime | None = None
@@ -585,20 +627,33 @@ class DebugCapturePolicy:
     def should_capture(self, *, tenant_id: str | None, model_id: str | None, now: datetime) -> bool:
         if not self.enabled:
             return False
-        if self.expires_at is not None and now >= self.expires_at:
-            return False
-        if self.capture_all:
-            return True
+        if self.expires_at is None or now >= self.expires_at:
+            return False  # A bounded, unexpired window is mandatory.
         if not self.tenants and not self.models:
-            return False  # Scoped capture requires an explicit tenant or App target.
+            return False  # An explicit tenant or App scope is mandatory.
         tenant_ok = not self.tenants or (tenant_id is not None and tenant_id in self.tenants)
         model_ok = not self.models or (model_id is not None and model_id in self.models)
         return tenant_ok and model_ok
 
+    def path_model_admissible(self, path_model: str | None, now: datetime) -> bool:
+        """Cheap pre-buffer gate: could any exchange on this path be captured?
 
-# Default when a middleware/client is constructed without an explicit policy
-# (legacy/test callers). Production always injects a scoped policy from settings.
-_CAPTURE_ALL = DebugCapturePolicy(enabled=True, capture_all=True)
+        Returns False when we can already prove nothing will be captured (policy
+        disabled/expired/unscoped, or a purely model-scoped policy whose path
+        model is known and out of scope) so the caller avoids buffering bytes.
+        """
+        if not self.enabled or self.expires_at is None or now >= self.expires_at:
+            return False
+        if not self.tenants and not self.models:
+            return False
+        if self.models and not self.tenants and path_model is not None and path_model not in self.models:
+            return False
+        return True
+
+
+# Fail-closed default when a middleware/client is constructed without an explicit
+# policy. Production always injects a scoped policy from settings.
+_DISABLED_POLICY = DebugCapturePolicy()
 
 
 class DebugCaptureMiddleware:
@@ -615,7 +670,12 @@ class DebugCaptureMiddleware:
         self.app, self.store = app, store
         self.persist_timeout_seconds, self.principal_resolver = persist_timeout_seconds, principal_resolver
         self.max_body_bytes = max_body_bytes
-        self.policy = policy or _CAPTURE_ALL
+        self.policy = policy or _DISABLED_POLICY
+
+    def _store_limit(self) -> int | None:
+        # Buffer at most twice the store cap: enough to redact a credential
+        # straddling the cap before truncation, but never the whole payload.
+        return None if self.max_body_bytes is None else 2 * self.max_body_bytes
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         path = scope.get("path", "")
@@ -623,14 +683,24 @@ class DebugCaptureMiddleware:
             scope["type"] != "http"
             or path == "/v1/tokens"
             or path.startswith("/v1/tokens/")
+            or path == "/v1/storage/credentials"
             or not (path.startswith("/v1/") or path in {"/mcp", "/mcp/"})
         ):
             await self.app(scope, receive, send)
             return
+        started_at = datetime.now(UTC)
+        # Gate before buffering: if the policy cannot possibly admit this path
+        # (disabled/expired/unscoped, or a model-scoped policy whose path model is
+        # out of scope), do not observe or accumulate any bytes.
+        path_model = _path_model(path)
+        if not self.policy.path_model_admissible(path_model, started_at):
+            await self.app(scope, receive, send)
+            return
         state = scope.setdefault("state", {})
         request_id = ensure_request_id(scope)
-        started_at = datetime.now(UTC)
+        store_limit = self._store_limit()
         request_parts, response_parts = bytearray(), bytearray()
+        request_observed = response_observed = 0
         request_complete = response_complete = disconnected = False
         status: int | None = None
         finished_at: datetime | None = None
@@ -640,18 +710,28 @@ class DebugCaptureMiddleware:
         request_headers = list(scope.get("headers", []))
         query = scope.get("query_string", b"")
 
+        def _accumulate(buffer: bytearray, chunk: bytes) -> None:
+            # Keep only a bounded prefix; the observed counters below track the
+            # true length so a large body never accumulates in memory.
+            if store_limit is None:
+                buffer.extend(chunk)
+            elif len(buffer) < store_limit:
+                buffer.extend(chunk[: store_limit - len(buffer)])
+
         async def observed_receive() -> Message:
-            nonlocal request_complete, disconnected
+            nonlocal request_complete, disconnected, request_observed
             message = await receive()
             if message["type"] == "http.request":
-                request_parts.extend(message.get("body", b""))
+                body = message.get("body", b"")
+                request_observed += len(body)
+                _accumulate(request_parts, body)
                 request_complete = not message.get("more_body", False)
             elif message["type"] == "http.disconnect":
                 disconnected = True
             return message
 
         async def observed_send(message: Message) -> None:
-            nonlocal status, response_headers, response_operation, response_complete, finished_at
+            nonlocal status, response_headers, response_operation, response_complete, finished_at, response_observed
             if message["type"] == "http.response.start":
                 status = message["status"]
                 response_headers = list(message.get("headers", []))
@@ -664,7 +744,9 @@ class DebugCaptureMiddleware:
                     None,
                 )
             elif message["type"] == "http.response.body":
-                response_parts.extend(message.get("body", b""))
+                body = message.get("body", b"")
+                response_observed += len(body)
+                _accumulate(response_parts, body)
             await send(message)
             if message["type"] == "http.response.body" and not message.get("more_body", False):
                 response_complete, finished_at = True, datetime.now(UTC)
@@ -695,10 +777,11 @@ class DebugCaptureMiddleware:
                             )
                         except Exception:
                             principal = None  # Never change the response or assign an unverified owner.
-                model_id = _label(state.get("model_id")) or _label(scope.get("path_params", {}).get("model_id"))
-                if model_id is None:
-                    match = re.fullmatch(r"/v1/models/([^/:]+):invoke", path)
-                    model_id = match[1] if match else None
+                model_id = (
+                    _label(state.get("model_id"))
+                    or _label(scope.get("path_params", {}).get("model_id"))
+                    or _label(path_model)
+                )
                 tool = _label(state.get("mcp_tool"))
                 try:
                     claimed = json.loads(request_parts)
@@ -743,11 +826,21 @@ class DebugCaptureMiddleware:
                         query_string=redact_query(query, known),
                         request_headers=redact_headers(request_headers, known),
                         response_headers=redact_headers(response_headers, known),
-                        request_body=body_capture(
-                            bytes(request_parts), request_type, request_complete, known, self.max_body_bytes
+                        request_body=bounded_body_capture(
+                            bytes(request_parts),
+                            request_type,
+                            request_complete,
+                            known,
+                            max_bytes=self.max_body_bytes,
+                            observed_bytes=request_observed,
                         ),
-                        response_body=body_capture(
-                            bytes(response_parts), response_type, response_complete, known, self.max_body_bytes
+                        response_body=bounded_body_capture(
+                            bytes(response_parts),
+                            response_type,
+                            response_complete,
+                            known,
+                            max_bytes=self.max_body_bytes,
+                            observed_bytes=response_observed,
                         ),
                     )
                     await persist_debug_exchange(self.store, exchange, self.persist_timeout_seconds)

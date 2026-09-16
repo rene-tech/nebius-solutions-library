@@ -6,6 +6,7 @@ import ipaddress
 import json
 import re
 from collections.abc import Mapping
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal
 from urllib.parse import SplitResult, urlsplit
@@ -257,21 +258,19 @@ class Settings(BaseSettings):
     # bounded, redacted prefix, never the whole multi-megabyte payload. A truncated
     # body is flagged so operators know they are looking at a prefix.
     request_debug_max_body_bytes: int = Field(default=64 * 1024, ge=1024, le=8 * 1024 * 1024)
-    # TTL for captured debug exchanges. The maintenance job deletes fs2_request_debug
-    # rows older than this so capture cannot accumulate customer payloads without
-    # bound. Distinct from operation payload TTL and audit/usage retention.
+    # TTL for captured debug exchanges. SAI-02 (the central purge owner) uses this
+    # knob to delete fs2_request_debug rows so capture cannot accumulate customer
+    # payloads without bound. This task does not schedule the purge itself.
     request_debug_retention_seconds: int = Field(default=86400, ge=3600, le=2592000)
-    # TTL for transport telemetry (metadata only, no payloads/headers/bodies).
-    # Longer than the debug TTL because it feeds observability, but still bounded.
-    request_telemetry_retention_seconds: int = Field(default=2592000, ge=3600, le=31536000)
-    # Scope + time-bound for capture. Enabling request_debug alone records
-    # nothing: an operator must name the tenant(s) and/or model App(s) to debug,
-    # or explicitly opt into capture_all. request_debug_expires_at bounds the
-    # window (capture stops at that instant even while enabled).
-    request_debug_capture_all: bool = False
+    # Scope + time-bound for capture. There is no global capture switch: enabling
+    # request_debug records nothing unless a tenant and/or model (App) scope is
+    # named AND request_debug_expires_at is a future instant within the strict
+    # maximum window below. Settings validation rejects an enabled policy that is
+    # unscoped or lacks a bounded future expiry.
     request_debug_tenants: str = Field(default="", max_length=8192)
     request_debug_models: str = Field(default="", max_length=8192)
     request_debug_expires_at: AwareDatetime | None = None
+    request_debug_max_window_seconds: int = Field(default=604800, ge=300, le=2592000)
     payload_ttl_seconds: int = Field(default=86400, ge=60, le=604800)
     scientific_artifacts_enabled: bool = False
     artifact_store_endpoint: str = Field(
@@ -403,6 +402,20 @@ class Settings(BaseSettings):
                 raise ValueError("artifact_inline_content_max_bytes cannot exceed max_request_bytes")
             if self.artifact_inline_content_max_bytes > self.artifact_max_bytes:
                 raise ValueError("artifact_inline_content_max_bytes cannot exceed artifact_max_bytes")
+        if self.request_debug_enabled:
+            # Capture must be scoped and time-bounded; reject an enabled policy
+            # that would capture broadly or without a bounded future expiry.
+            tenants = [item for item in self.request_debug_tenants.split(",") if item.strip()]
+            models = [item for item in self.request_debug_models.split(",") if item.strip()]
+            if not tenants and not models:
+                raise ValueError("request_debug_enabled requires request_debug_tenants and/or request_debug_models")
+            if self.request_debug_expires_at is None:
+                raise ValueError("request_debug_enabled requires a bounded request_debug_expires_at")
+            now = datetime.now(UTC)
+            if self.request_debug_expires_at <= now:
+                raise ValueError("request_debug_expires_at must be a future instant")
+            if self.request_debug_expires_at > now + timedelta(seconds=self.request_debug_max_window_seconds):
+                raise ValueError("request_debug_expires_at exceeds request_debug_max_window_seconds")
         database_roles = {
             self.reporting_database_role,
             self.runtime_database_role,
@@ -501,14 +514,13 @@ class Settings(BaseSettings):
     def debug_capture_policy(self) -> DebugCapturePolicy:
         """Build the scoped, time-bounded request-debug capture policy from env.
 
-        Enabling capture alone records nothing: capture_all must be set, or the
-        tenant/model allowlists must name a target. request_debug_expires_at
-        bounds the window regardless.
+        Enabling capture records nothing unless a tenant and/or model scope is
+        named and request_debug_expires_at is a bounded future instant; the
+        policy itself fail-closes on any missing piece.
         """
 
         return DebugCapturePolicy(
             enabled=self.request_debug_enabled,
-            capture_all=self.request_debug_capture_all,
             tenants=frozenset(item.strip() for item in self.request_debug_tenants.split(",") if item.strip()),
             models=frozenset(item.strip() for item in self.request_debug_models.split(",") if item.strip()),
             expires_at=self.request_debug_expires_at,

@@ -3,6 +3,7 @@
 import json
 from contextlib import asynccontextmanager
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import httpx2
@@ -276,8 +277,9 @@ async def test_http_native_validation_has_field_issues_no_run_and_debug_owner(
     )
     runtime = build_runtime(native, cipher, hasher)
     runtime.settings.request_debug_enabled = True
-    # Capture is scoped/fail-closed; opt into full capture for this MCP test.
-    runtime.settings.request_debug_capture_all = True
+    # Capture is scoped + time-bounded (fail-closed); opt into this tenant/window.
+    runtime.settings.request_debug_tenants = "tenant-a"
+    runtime.settings.request_debug_expires_at = datetime.now(UTC) + timedelta(hours=1)
     debug = InMemoryDebugStore()
     runtime.request_debug_store = debug
     app = _app(runtime)
