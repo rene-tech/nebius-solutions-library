@@ -3643,5 +3643,24 @@ def test_workloads_wires_exact_discovered_api_endpoint_hosts_to_envoy_webhook() 
     assert "local.kubernetes_api_endpoint_cidrs" in cluster_contract_source
 
 
+def test_control_plane_release_uses_executable_network_policy_transition_boundary() -> None:
+    source = (DEPLOY_ROOT / "stages/workloads/control_plane.tf").read_text(encoding="utf-8")
+    release = source.split('resource "helm_release" "control_plane"', maxsplit=1)[1].split(
+        'resource "terraform_data" "control_plane_network_policy_transition_complete"', maxsplit=1
+    )[0]
+
+    assert "atomic          = false" in release
+    assert "cleanup_on_fail = false" in release
+    assert "terraform_data.control_plane_network_policy_transition_stage" in release
+    assert source.index('resource "terraform_data" "control_plane_network_policy_transition_stage"') < source.index(
+        'resource "helm_release" "control_plane"'
+    )
+    assert 'command     = <<-EOT\n      "$FS2_TRANSITION_SCRIPT" stage' in source
+    assert 'command     = <<-EOT\n      "$FS2_TRANSITION_SCRIPT" complete' in source
+    assert "depends_on = [helm_release.control_plane]" in source
+    assert "--rollback-on-failure" not in source
+    assert "--cleanup-on-fail" not in source
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -5,6 +5,7 @@ umask 077
 control_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 repo_root="$(cd "${control_root}/../../.." && pwd)"
 chart="${repo_root}/k8s-inference/charts/control-plane/fs2-serve-control-plane"
+network_policy_transition="${control_root}/scripts/network-policy-transition.sh"
 test_dir="$(mktemp -d -t fs2-gateway-helm4.XXXXXX)"
 kind_name="fs2-gateway-helm4-${RANDOM}-${RANDOM}"
 registry_name="fs2-gateway-registry-${RANDOM}-${RANDOM}"
@@ -302,9 +303,21 @@ release_values=(
   --set-string config.schemaWaitSeconds=120
 )
 
+"${network_policy_transition}" stage \
+  --release fs2-serve \
+  --release-namespace fs2-system \
+  --chart "${chart}" \
+  --kubeconfig "${KUBECONFIG}" \
+  -- "${release_values[@]}" >/dev/null
 helm install fs2-serve "${chart}" --namespace fs2-system \
   "${release_values[@]}" \
-  --wait=watcher --wait-for-jobs --rollback-on-failure --timeout 5m >/dev/null
+  --wait=watcher --wait-for-jobs --timeout 5m >/dev/null
+"${network_policy_transition}" complete \
+  --release fs2-serve \
+  --release-namespace fs2-system \
+  --chart "${chart}" \
+  --kubeconfig "${KUBECONFIG}" \
+  -- "${release_values[@]}" >/dev/null
 kubectl rollout status deployment/fs2-serve-control-plane -n fs2-system --timeout=120s >/dev/null
 kubectl rollout status deployment/fs2-serve-control-plane-admin-console -n fs2-system --timeout=120s >/dev/null
 
@@ -341,20 +354,50 @@ postgres_pod="$(kubectl get pod -n fs2-data -l app=postgres -o jsonpath='{.items
 [[ "$(kubectl exec -n fs2-data "${postgres_pod}" -- psql -U postgres -d fs2serve -Atc 'SELECT count(*) FROM fs2_schema_migrations')" == 9 ]]
 [[ "$(kubectl exec -n fs2-data "${postgres_pod}" -- psql -U postgres -d fs2serve -Atc 'SELECT count(*) FROM (SELECT version,count(*) FROM fs2_schema_migrations GROUP BY version HAVING count(*)<>1) q')" == 0 ]]
 
-helm upgrade fs2-serve "${chart}" --namespace fs2-system --reuse-values \
-  --set-string config.workerPollSeconds=0.3 \
-  --wait=watcher --wait-for-jobs --rollback-on-failure --timeout 5m >/dev/null
+upgrade_values=("${release_values[@]}" --set-string config.workerPollSeconds=0.3)
+"${network_policy_transition}" stage \
+  --release fs2-serve \
+  --release-namespace fs2-system \
+  --chart "${chart}" \
+  --kubeconfig "${KUBECONFIG}" \
+  -- "${upgrade_values[@]}" >/dev/null
+helm upgrade fs2-serve "${chart}" --namespace fs2-system \
+  "${upgrade_values[@]}" \
+  --wait=watcher --wait-for-jobs --timeout 5m >/dev/null
+"${network_policy_transition}" complete \
+  --release fs2-serve \
+  --release-namespace fs2-system \
+  --chart "${chart}" \
+  --kubeconfig "${KUBECONFIG}" \
+  -- "${upgrade_values[@]}" >/dev/null
 kubectl rollout status deployment/fs2-serve-control-plane -n fs2-system --timeout=120s >/dev/null
 [[ "$(kubectl get deployment/fs2-serve-control-plane -n fs2-system -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="FS2_WORKER_POLL_SECONDS")].value}')" == 0.3 ]]
 [[ "$(kubectl exec -n fs2-data "${postgres_pod}" -- psql -U postgres -d fs2serve -Atc 'SELECT count(*) FROM fs2_schema_migrations')" == 9 ]]
 
-if helm upgrade fs2-serve "${chart}" --namespace fs2-system --reuse-values \
-  --set "image.digest=${failure_digest}" \
-  --wait=watcher --wait-for-jobs --rollback-on-failure --cleanup-on-fail --timeout 90s \
+rollback_revision="$(helm history fs2-serve --namespace fs2-system -o json | jq -er '[.[] | select(.status == "deployed")][-1].revision')"
+failure_values=("${upgrade_values[@]}" --set "image.digest=${failure_digest}")
+"${network_policy_transition}" stage \
+  --release fs2-serve \
+  --release-namespace fs2-system \
+  --chart "${chart}" \
+  --kubeconfig "${KUBECONFIG}" \
+  -- "${failure_values[@]}" >/dev/null
+if helm upgrade fs2-serve "${chart}" --namespace fs2-system \
+  "${failure_values[@]}" \
+  --wait=watcher --wait-for-jobs --timeout 90s \
   >/dev/null 2>&1; then
   echo "failing migration fixture unexpectedly upgraded" >&2
   exit 1
 fi
+[[ "$(helm status fs2-serve -n fs2-system -o json | jq -r '.info.status')" == failed ]]
+"${network_policy_transition}" rollback \
+  --release fs2-serve \
+  --release-namespace fs2-system \
+  --chart "${chart}" \
+  --kubeconfig "${KUBECONFIG}" \
+  --revision "${rollback_revision}" \
+  --timeout 5m \
+  -- "${failure_values[@]}" >/dev/null
 [[ "$(helm status fs2-serve -n fs2-system -o json | jq -r '.info.status')" == deployed ]]
 [[ "$(kubectl get deployment/fs2-serve-control-plane -n fs2-system -o jsonpath='{.spec.template.metadata.annotations.fs2\.nebius\.ai/image-digest}')" == "${candidate_digest}" ]]
 [[ "$(kubectl get deployment/fs2-serve-control-plane-admin-console -n fs2-system -o jsonpath='{.spec.template.metadata.annotations.fs2\.nebius\.ai/admin-image-digest}')" == "${admin_digest}" ]]
@@ -362,4 +405,4 @@ kubectl rollout status deployment/fs2-serve-control-plane -n fs2-system --timeou
 kubectl rollout status deployment/fs2-serve-control-plane-admin-console -n fs2-system --timeout=120s >/dev/null
 [[ "$(kubectl exec -n fs2-data "${postgres_pod}" -- psql -U postgres -d fs2serve -Atc 'SELECT count(*) FROM fs2_schema_migrations')" == 9 ]]
 
-echo "helm4-gateway-lifecycle=PASS install=watcher upgrade=watcher rollback=PASS migrations=9 routes=0 admin=ready"
+echo "helm4-gateway-lifecycle=PASS install=watcher upgrade=watcher rollback=governed migrations=9 routes=0 admin=ready"

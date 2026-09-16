@@ -776,40 +776,49 @@ labels; never broaden it to an entire namespace.
 
 ### Public-edge NetworkPolicy transition safety
 
-The rendered NetworkPolicy order is part of the release contract: apply the
-public proxy allow first, the selector-correct Envoy controller allow second,
-and the gateway-namespace default-deny third. Both selected allows must exist
-before the namespace-wide deny is created or patched. Do not move the deny
-ahead of either allow or split these documents across independently applied
-releases.
+The rendered NetworkPolicy order remains part of the release contract: public
+proxy allow, selector-correct Envoy controller allow, then gateway-namespace
+default-deny. Helm object application is not transactional, so document order
+alone is insufficient. The workloads stage runs the executable transition
+boundary before each release: it renders duplicate, uniquely named guards from
+the exact candidate allow specs, passes a server-side dry run, applies and
+verifies both guards, and only then permits the non-atomic Helm release. After a
+successful release it removes the guards only after both ordinary allows have
+the same specs. Automatic Helm rollback and cleanup are disabled for this
+release so neither guard can disappear on a later failure.
 
-A direct `helm rollback` while the namespace-wide deny still selects every Pod
-is forbidden. A governed rollback must first make the deny nonselecting while
-leaving both allow policies intact, verify that state, and only then invoke Helm.
-Use the freshly captured pre-rollout revision and exact namespaces:
+Use the same boundary for a manual or automated rollback. `stage` must complete
+using the exact candidate values before the upgrade. `rollback` discovers the
+gateway namespace and policy names from those rendered guards, makes the deny
+nonselecting, verifies that no Pod matches the relaxed selector and both guards
+remain, and only then invokes Helm. It retains the guards after rollback because
+an older revision may contain obsolete allow selectors.
 
 ```bash
-kubectl -n envoy-gateway-system patch networkpolicy \
-  fs2-serve-control-plane-envoy-default-deny \
-  --type=json \
-  --patch='[{"op":"replace","path":"/spec/podSelector","value":{"matchLabels":{"fs2.nebius.ai/rollback-relaxed":"true"}}}]'
+components/control-plane/scripts/network-policy-transition.sh stage \
+  --release fs2-serve-control-plane \
+  --release-namespace fs2-system \
+  --chart charts/control-plane/fs2-serve-control-plane \
+  --kubeconfig RUN_OWNED_KUBECONFIG \
+  --values EXACT_BASE_VALUES \
+  --values EXACT_CANDIDATE_VALUES
 
-kubectl -n envoy-gateway-system get networkpolicy \
-  fs2-serve-control-plane-envoy-default-deny -o json \
-  | jq -e '.spec.podSelector.matchLabels == {"fs2.nebius.ai/rollback-relaxed":"true"}'
-kubectl -n envoy-gateway-system get networkpolicy \
-  fs2-serve-control-plane-public-envoy \
-  fs2-serve-control-plane-envoy-controller-xds
-
-helm rollback fs2-serve-control-plane CAPTURED_PRE_ROLLOUT_REVISION \
-  -n fs2-system --wait
+# Run the reviewed Helm upgrade without --atomic, --rollback-on-failure, or
+# --cleanup-on-fail. On failure, use only the governed rollback entry point:
+components/control-plane/scripts/network-policy-transition.sh rollback \
+  --release fs2-serve-control-plane \
+  --release-namespace fs2-system \
+  --chart charts/control-plane/fs2-serve-control-plane \
+  --kubeconfig RUN_OWNED_KUBECONFIG \
+  --revision CAPTURED_PRE_ROLLOUT_REVISION \
+  --values EXACT_BASE_VALUES \
+  --values EXACT_CANDIDATE_VALUES
 ```
 
-Do not delete, replace, or stale either allow before the first two commands
-prove the deny is nonselecting. If Helm rollback fails, leave the deny relaxed
-and both allows present, diagnose the release, and reapply the reviewed
-candidate; never restore the namespace-wide deny until both exact selectors and
-their required ingress paths are verified again.
+Do not call `helm rollback` directly and do not add automatic rollback or
+cleanup flags to this release. If rollback fails, leave both guards present,
+diagnose the release, and reapply the reviewed candidate. Remove guards only
+with the helper's `complete` action after both exact ordinary allows verify.
 
 The chart intentionally has invalid empty defaults for the immutable image and
 public/authorization URLs. Rendering requires exact non-placeholder values.

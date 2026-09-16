@@ -402,6 +402,11 @@ rolloutStrategy:
 
 networkPolicy:
   enabled: true
+  transition:
+    # The release orchestrator temporarily enables duplicate allow policies
+    # before Helm can create or patch the namespace-wide Envoy deny. They are
+    # not part of a normal release render.
+    renderGuards: false
   dns:
     namespaceLabels:
       kubernetes.io/metadata.name: kube-system

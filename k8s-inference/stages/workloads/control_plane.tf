@@ -223,6 +223,53 @@ locals {
       "capacity.fs2.nebius/pool"   = "system"
     }
   }
+  control_plane_network_policy_transition_script = "${local.fs2_root}/components/control-plane/scripts/network-policy-transition.sh"
+  control_plane_chart_root                       = "${local.fs2_root}/charts/control-plane/fs2-serve-control-plane"
+  control_plane_chart_files                      = sort(fileset(local.control_plane_chart_root, "**"))
+  control_plane_network_policy_transition_sha256 = sha256(join("\n", [
+    filesha256(local.control_plane_network_policy_transition_script),
+    filesha256("${local.fs2_root}/charts/control-plane/control-plane.values.yaml"),
+    join("\n", [
+      for path in local.control_plane_chart_files : "${path}:${filesha256("${local.control_plane_chart_root}/${path}")}"
+    ]),
+    yamlencode(local.control_plane_overrides),
+    yamlencode(local.admin_control_plane_overrides),
+    yamlencode(local.bootstrap_access_overrides),
+    yamlencode(local.scientific_access_overrides),
+    yamlencode(local.scientific_chart_overrides),
+  ]))
+}
+
+resource "terraform_data" "control_plane_network_policy_transition_stage" {
+  triggers_replace = [local.control_plane_network_policy_transition_sha256]
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    command     = <<-EOT
+      "$FS2_TRANSITION_SCRIPT" stage \
+        --release "$FS2_RELEASE" \
+        --release-namespace "$FS2_RELEASE_NAMESPACE" \
+        --chart "$FS2_CHART" \
+        --kubeconfig "$FS2_KUBECONFIG" \
+        --context "$FS2_KUBE_CONTEXT" \
+        --values "$FS2_BASE_VALUES" \
+        --values-env FS2_CONTROL_PLANE_OVERRIDES \
+        --values-env FS2_ADMIN_CONTROL_PLANE_OVERRIDES
+    EOT
+    environment = {
+      FS2_TRANSITION_SCRIPT             = local.control_plane_network_policy_transition_script
+      FS2_RELEASE                       = "fs2-serve-control-plane"
+      FS2_RELEASE_NAMESPACE             = "fs2-system"
+      FS2_CHART                         = "${local.fs2_root}/charts/control-plane/fs2-serve-control-plane"
+      FS2_KUBECONFIG                    = var.kubeconfig_path
+      FS2_KUBE_CONTEXT                  = var.kube_context
+      FS2_BASE_VALUES                   = "${local.fs2_root}/charts/control-plane/control-plane.values.yaml"
+      FS2_CONTROL_PLANE_OVERRIDES       = yamlencode(local.control_plane_overrides)
+      FS2_ADMIN_CONTROL_PLANE_OVERRIDES = yamlencode(local.admin_control_plane_overrides)
+    }
+  }
+
+  depends_on = [terraform_data.cluster_contract]
 }
 
 resource "helm_release" "control_plane" {
@@ -230,11 +277,14 @@ resource "helm_release" "control_plane" {
   namespace        = "fs2-system"
   chart            = "${local.fs2_root}/charts/control-plane/fs2-serve-control-plane"
   create_namespace = false
-  atomic           = true
-  cleanup_on_fail  = true
-  wait             = true
-  wait_for_jobs    = true
-  timeout          = 1800
+  # A failed atomic release could restore or remove an allow after the
+  # namespace deny has landed. The staged transition guards make failure safe;
+  # recovery must use network-policy-transition.sh rollback.
+  atomic          = false
+  cleanup_on_fail = false
+  wait            = true
+  wait_for_jobs   = true
+  timeout         = 1800
 
   values = [
     file("${local.fs2_root}/charts/control-plane/control-plane.values.yaml"),
@@ -313,5 +363,38 @@ resource "helm_release" "control_plane" {
     kubernetes_manifest.additional_local_queue,
     kubernetes_manifest.general_cpu_local_queue,
     kubernetes_manifest.model_local_queue,
+    terraform_data.control_plane_network_policy_transition_stage,
   ]
+}
+
+resource "terraform_data" "control_plane_network_policy_transition_complete" {
+  triggers_replace = [local.control_plane_network_policy_transition_sha256]
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    command     = <<-EOT
+      "$FS2_TRANSITION_SCRIPT" complete \
+        --release "$FS2_RELEASE" \
+        --release-namespace "$FS2_RELEASE_NAMESPACE" \
+        --chart "$FS2_CHART" \
+        --kubeconfig "$FS2_KUBECONFIG" \
+        --context "$FS2_KUBE_CONTEXT" \
+        --values "$FS2_BASE_VALUES" \
+        --values-env FS2_CONTROL_PLANE_OVERRIDES \
+        --values-env FS2_ADMIN_CONTROL_PLANE_OVERRIDES
+    EOT
+    environment = {
+      FS2_TRANSITION_SCRIPT             = local.control_plane_network_policy_transition_script
+      FS2_RELEASE                       = "fs2-serve-control-plane"
+      FS2_RELEASE_NAMESPACE             = "fs2-system"
+      FS2_CHART                         = "${local.fs2_root}/charts/control-plane/fs2-serve-control-plane"
+      FS2_KUBECONFIG                    = var.kubeconfig_path
+      FS2_KUBE_CONTEXT                  = var.kube_context
+      FS2_BASE_VALUES                   = "${local.fs2_root}/charts/control-plane/control-plane.values.yaml"
+      FS2_CONTROL_PLANE_OVERRIDES       = yamlencode(local.control_plane_overrides)
+      FS2_ADMIN_CONTROL_PLANE_OVERRIDES = yamlencode(local.admin_control_plane_overrides)
+    }
+  }
+
+  depends_on = [helm_release.control_plane]
 }

@@ -1728,8 +1728,15 @@ def test_exact_helm4_lifecycle_uses_digest_registry_and_typed_release_values() -
     assert "kind load docker-image" not in script
     assert script.count("--from-literal='ca.crt=test-only-placeholder-ca'") == 3
     assert "--set-string config.schemaWaitSeconds=120" in script
-    assert "--wait=watcher --wait-for-jobs --rollback-on-failure" in script
-    assert "--cleanup-on-fail --timeout 90s" in script
+    assert "--rollback-on-failure" not in script
+    assert "--cleanup-on-fail" not in script
+    assert '"${network_policy_transition}" stage' in script
+    assert '"${network_policy_transition}" complete' in script
+    assert '"${network_policy_transition}" rollback' in script
+    failed_status = script.index("== failed ]")
+    governed_rollback = script.index('"${network_policy_transition}" rollback')
+    deployed_status = script.rindex("== deployed ]")
+    assert failed_status < governed_rollback < deployed_status
     assert "helm status fs2-serve -n fs2-system -o json" in script
     assert "SELECT count(*) FROM fs2_schema_migrations" in script
     assert '.status == "ready" and .models == 0 and .activation.required == false' in script
@@ -2000,16 +2007,21 @@ def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -
         "default": [],
     }
     assert contract["envoy_gateway"]["network_policy_transition"] == {
+        "release_boundary": "render-server-dry-run-apply-verify-two-guards-before-non-atomic-helm",
+        "automatic_rollback": False,
         "rollout_document_order": [
             "fs2-serve-control-plane-public-envoy",
             "fs2-serve-control-plane-envoy-controller-xds",
             "fs2-serve-control-plane-envoy-default-deny",
         ],
         "rollback_order": [
+            "stage-and-verify:public-envoy-transition-guard",
+            "stage-and-verify:envoy-controller-xds-transition-guard",
             "relax-or-remove:fs2-serve-control-plane-envoy-default-deny",
-            "rollback-or-remove:fs2-serve-control-plane-envoy-controller-xds",
-            "rollback-or-remove:fs2-serve-control-plane-public-envoy",
+            "helm-rollback:captured-revision",
+            "retain:both-transition-guards",
         ],
+        "namespace_source": "rendered public-envoy transition guard metadata.namespace",
     }
     assert contract["envoy_gateway"]["controller_selector"] == {
         "app.kubernetes.io/name": "gateway-helm",
@@ -2061,9 +2073,7 @@ def test_public_envoy_allows_render_before_namespace_default_deny() -> None:
     documents = render()
     contract = json.loads((CONTROL_ROOT / "contracts" / "public-edge-artifact-observations.json").read_text())
     network_policy_names = [
-        document["metadata"]["name"]
-        for document in documents
-        if document["kind"] == "NetworkPolicy"
+        document["metadata"]["name"] for document in documents if document["kind"] == "NetworkPolicy"
     ]
     expected_order = contract["envoy_gateway"]["network_policy_transition"]["rollout_document_order"]
     first_allow = network_policy_names.index(expected_order[0])
@@ -2077,15 +2087,60 @@ def test_public_envoy_rollback_relaxes_deny_before_helm_rollback() -> None:
         "\n### ", maxsplit=1
     )[0]
 
-    relax = section.index("kubectl -n envoy-gateway-system patch networkpolicy")
-    verify_deny = section.index(".spec.podSelector.matchLabels ==")
-    verify_proxy_allow = section.index("fs2-serve-control-plane-public-envoy")
-    verify_controller_allow = section.index("fs2-serve-control-plane-envoy-controller-xds")
-    rollback = section.index("helm rollback fs2-serve-control-plane")
-    assert relax < verify_deny < verify_proxy_allow < verify_controller_allow < rollback
-    assert "A direct `helm rollback`" in section
-    assert "is forbidden." in section
-    assert "Do not delete, replace, or stale either allow" in section
+    stage = section.index("network-policy-transition.sh stage")
+    rollback = section.index("network-policy-transition.sh rollback")
+    assert stage < rollback
+    assert "discovers the\ngateway namespace" in section
+    assert "Do not call `helm rollback` directly" in section
+    assert "--rollback-on-failure" in section
+    assert "--cleanup-on-fail" in section
+    assert "kubectl -n envoy-gateway-system" not in section
+
+    transition = (CONTROL_ROOT / "scripts" / "network-policy-transition.sh").read_text()
+    relax = transition.index('patch networkpolicy "${deny_name}"')
+    verify_deny = transition.index("rollback-relaxed", relax)
+    verify_guards = transition.index('verify_guards "$(load_guards)"', verify_deny)
+    helm_rollback = transition.index('helm rollback "${release}" "${revision}"', verify_guards)
+    retain_guards = transition.index('verify_guards "$(load_guards)"', helm_rollback)
+    assert relax < verify_deny < verify_guards < helm_rollback < retain_guards
+    assert '--namespace "${gateway_namespace}"' in transition
+
+
+def test_public_envoy_transition_guards_duplicate_exact_allow_specs() -> None:
+    gateway_namespace = "edge-gateway-system"
+    documents = render(
+        "--set-string",
+        rf"networkPolicy.gateway.namespaceLabels.kubernetes\.io/metadata\.name={gateway_namespace}",
+        "--set",
+        "networkPolicy.transition.renderGuards=true",
+    )
+    policies = {document["metadata"]["name"]: document for document in documents if document["kind"] == "NetworkPolicy"}
+
+    pairs = (
+        (
+            "fs2-serve-control-plane-public-envoy",
+            "fs2-serve-control-plane-public-envoy-transition-guard",
+            "public-envoy",
+        ),
+        (
+            "fs2-serve-control-plane-envoy-controller-xds",
+            "fs2-serve-control-plane-envoy-controller-xds-transition-guard",
+            "envoy-controller",
+        ),
+    )
+    for normal_name, guard_name, role in pairs:
+        normal = policies[normal_name]
+        guard = policies[guard_name]
+        assert guard["spec"] == normal["spec"]
+        assert guard["metadata"]["namespace"] == normal["metadata"]["namespace"]
+        assert guard["metadata"]["labels"]["fs2.nebius.ai/network-policy-transition"] == "guard"
+        assert guard["metadata"]["labels"]["fs2.nebius.ai/network-policy-role"] == role
+        assert guard["metadata"]["annotations"]["fs2.nebius.ai/normal-policy-name"] == normal_name
+    assert policies[pairs[0][1]]["metadata"]["namespace"] == gateway_namespace
+    assert (
+        policies[pairs[0][1]]["metadata"]["annotations"]["fs2.nebius.ai/deny-policy-name"]
+        == "fs2-serve-control-plane-envoy-default-deny"
+    )
 
 
 def test_public_envoy_dns_selector_and_webhook_sources_are_cluster_configurable() -> None:
@@ -2161,9 +2216,7 @@ def test_public_envoy_webhook_sources_default_closed_and_require_exact_host_rout
     )
     for source_cidrs in rejected_source_sets:
         command = render_command()
-        source_index = command.index(
-            f"networkPolicy.envoyController.webhookSourceCidrs[0]={TEST_WEBHOOK_SOURCE_CIDR}"
-        )
+        source_index = command.index(f"networkPolicy.envoyController.webhookSourceCidrs[0]={TEST_WEBHOOK_SOURCE_CIDR}")
         del command[source_index - 1 : source_index + 1]
         command.extend(
             [
@@ -2193,9 +2246,7 @@ def test_public_envoy_webhook_sources_accept_only_bounded_ipv4_and_ipv6_hosts() 
         if document["kind"] == "NetworkPolicy"
         and document["metadata"]["name"] == "fs2-serve-control-plane-envoy-controller-xds"
     )
-    webhook_rule = next(
-        rule for rule in controller["ingress"] if rule["ports"] == [{"port": 9443, "protocol": "TCP"}]
-    )
+    webhook_rule = next(rule for rule in controller["ingress"] if rule["ports"] == [{"port": 9443, "protocol": "TCP"}])
     assert webhook_rule["from"] == [
         {"ipBlock": {"cidr": "192.0.2.10/32"}},
         {"ipBlock": {"cidr": "2001:db8::10/128"}},
@@ -2338,9 +2389,7 @@ def test_public_envoy_policy_covers_discovered_live_gateway_flows() -> None:
         9443,
     }
     webhook_rule = next(
-        rule
-        for rule in controller_policy["ingress"]
-        if rule["ports"] == [{"port": 9443, "protocol": "TCP"}]
+        rule for rule in controller_policy["ingress"] if rule["ports"] == [{"port": 9443, "protocol": "TCP"}]
     )
     assert webhook_rule["from"] == [{"ipBlock": {"cidr": cidr}} for cidr in api_endpoint_cidrs]
     assert any(port["port"] == 19001 for rule in public_envoy["ingress"] for port in rule["ports"])

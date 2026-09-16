@@ -62,16 +62,21 @@
     "metrics_port": 19001,
     "webhook_port": 9443,
     "network_policy_transition": {
+      "release_boundary": "render-server-dry-run-apply-verify-two-guards-before-non-atomic-helm",
+      "automatic_rollback": false,
       "rollout_document_order": [
         "fs2-serve-control-plane-public-envoy",
         "fs2-serve-control-plane-envoy-controller-xds",
         "fs2-serve-control-plane-envoy-default-deny"
       ],
       "rollback_order": [
+        "stage-and-verify:public-envoy-transition-guard",
+        "stage-and-verify:envoy-controller-xds-transition-guard",
         "relax-or-remove:fs2-serve-control-plane-envoy-default-deny",
-        "rollback-or-remove:fs2-serve-control-plane-envoy-controller-xds",
-        "rollback-or-remove:fs2-serve-control-plane-public-envoy"
-      ]
+        "helm-rollback:captured-revision",
+        "retain:both-transition-guards"
+      ],
+      "namespace_source": "rendered public-envoy transition guard metadata.namespace"
     },
     "webhook_sources": {
       "value_source": "networkPolicy.envoyController.webhookSourceCidrs",

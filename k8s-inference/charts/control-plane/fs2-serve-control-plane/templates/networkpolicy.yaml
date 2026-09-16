@@ -215,15 +215,30 @@ spec:
 {{- if .Values.publicGateway.enabled }}
 {{- $gatewayNamespace := required "networkPolicy.gateway.namespaceLabels must include kubernetes.io/metadata.name" (index $network.gateway.namespaceLabels "kubernetes.io/metadata.name") }}
 {{- $envoyControllerNamespace := required "networkPolicy.envoyController.namespaceLabels must include kubernetes.io/metadata.name" (index $network.envoyController.namespaceLabels "kubernetes.io/metadata.name") }}
+{{- $root := . }}
+{{- $publicEnvoyPolicies := list (dict "name" (printf "%s-public-envoy" (include "fs2-serve.fullname" .)) "component" "public-edge" "guard" false) }}
+{{- if $network.transition.renderGuards }}
+{{- $publicEnvoyPolicies = append $publicEnvoyPolicies (dict "name" (printf "%s-public-envoy-transition-guard" (include "fs2-serve.fullname" .)) "component" "public-edge-transition-guard" "guard" true) }}
+{{- end }}
+{{- range $policy := $publicEnvoyPolicies }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "fs2-serve.fullname" . }}-public-envoy
+  name: {{ $policy.name }}
   namespace: {{ $gatewayNamespace }}
   labels:
-    {{- include "fs2-serve.labels" . | nindent 4 }}
-    app.kubernetes.io/component: public-edge
+    {{- include "fs2-serve.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $policy.component }}
+    {{- if $policy.guard }}
+    fs2.nebius.ai/network-policy-transition: guard
+    fs2.nebius.ai/network-policy-role: public-envoy
+    {{- end }}
+  {{- if $policy.guard }}
+  annotations:
+    fs2.nebius.ai/normal-policy-name: {{ include "fs2-serve.fullname" $root }}-public-envoy
+    fs2.nebius.ai/deny-policy-name: {{ include "fs2-serve.fullname" $root }}-envoy-default-deny
+  {{- end }}
 spec:
   podSelector:
     matchLabels:
@@ -264,23 +279,23 @@ spec:
     - to:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+              kubernetes.io/metadata.name: {{ $root.Release.Namespace }}
           podSelector:
             matchLabels:
-              {{- include "fs2-serve.runtimeSelectorLabels" . | nindent 14 }}
+              {{- include "fs2-serve.runtimeSelectorLabels" $root | nindent 14 }}
       ports:
-        - port: {{ .Values.service.port }}
+        - port: {{ $root.Values.service.port }}
           protocol: TCP
-    {{- if .Values.adminConsole.enabled }}
+    {{- if $root.Values.adminConsole.enabled }}
     - to:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+              kubernetes.io/metadata.name: {{ $root.Release.Namespace }}
           podSelector:
             matchLabels:
-              {{- include "fs2-serve.adminConsoleSelectorLabels" . | nindent 14 }}
+              {{- include "fs2-serve.adminConsoleSelectorLabels" $root | nindent 14 }}
       ports:
-        - port: {{ .Values.adminConsole.service.port }}
+        - port: {{ $root.Values.adminConsole.service.port }}
           protocol: TCP
     {{- end }}
     - to:
@@ -315,15 +330,29 @@ spec:
         - port: {{ .port }}
           protocol: TCP
     {{- end }}
+{{- end }}
+{{- $controllerPolicies := list (dict "name" (printf "%s-envoy-controller-xds" (include "fs2-serve.fullname" .)) "component" "envoy-controller-xds" "guard" false) }}
+{{- if $network.transition.renderGuards }}
+{{- $controllerPolicies = append $controllerPolicies (dict "name" (printf "%s-envoy-controller-xds-transition-guard" (include "fs2-serve.fullname" .)) "component" "envoy-controller-xds-transition-guard" "guard" true) }}
+{{- end }}
+{{- range $policy := $controllerPolicies }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "fs2-serve.fullname" . }}-envoy-controller-xds
+  name: {{ $policy.name }}
   namespace: {{ $envoyControllerNamespace }}
   labels:
-    {{- include "fs2-serve.labels" . | nindent 4 }}
-    app.kubernetes.io/component: envoy-controller-xds
+    {{- include "fs2-serve.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $policy.component }}
+    {{- if $policy.guard }}
+    fs2.nebius.ai/network-policy-transition: guard
+    fs2.nebius.ai/network-policy-role: envoy-controller
+    {{- end }}
+  {{- if $policy.guard }}
+  annotations:
+    fs2.nebius.ai/normal-policy-name: {{ include "fs2-serve.fullname" $root }}-envoy-controller-xds
+  {{- end }}
 spec:
   podSelector:
     matchLabels:
@@ -360,6 +389,7 @@ spec:
         - port: {{ $network.envoyController.webhookPort }}
           protocol: TCP
     {{- end }}
+{{- end }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
