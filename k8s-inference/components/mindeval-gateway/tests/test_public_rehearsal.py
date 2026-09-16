@@ -137,3 +137,58 @@ async def test_preflight_and_secret_safe_report(tmp_path):
         assert not (tmp_path / "must-not-exist.json").exists()
     finally:
         await rehearsal.client.aclose()
+
+
+async def test_full_cohort_uses_all_six_clinicians_and_checks_21_messages(tmp_path):
+    args = SimpleNamespace(
+        output=str(tmp_path),
+        insecure=False,
+        ca_file=None,
+        base_url="https://example.test",
+        run_label="cohort",
+        gateway_image="gateway",
+        workshop_image="workshop",
+        full_dialogue_all_clinicians=True,
+        full_dialogue_turns=10,
+        timeout_seconds=10,
+        poll_seconds=0,
+    )
+    teams = [{"label": f"team-{i}", "token": f"private-{i}"} for i in range(10)]
+    rehearsal = runner.Rehearsal(args, teams, "denied")
+    rehearsal.profiles = [{"id": f"profile-{i:03}"} for i in range(50)]
+    rehearsal.patient = "patient"
+    rehearsal.clinicians = [f"clinician-{i}" for i in range(6)]
+    rehearsal.catalog = {"judge_model": "judge"}
+    rows = []
+    for i in range(6):
+        row = make_run()
+        row.update(id=f"run-{i}", status="completed")
+        row["state"]["transcript"] = [
+            {"role": "patient" if turn % 2 == 0 else "clinician", "content": "fixture"} for turn in range(21)
+        ]
+        row["state"]["classification"] = {
+            "status": "completed",
+            "input_user_turns": 11,
+            "evaluated_user_turns": 11,
+            "assessments": [{"status": "completed", "coverage": {"truncated": False}} for _ in range(11)],
+        }
+        rows.append(row)
+
+    async def request(method, path, **kwargs):
+        if method == "POST":
+            assert kwargs["body"]["clinician_models"] == rehearsal.clinicians
+            assert kwargs["body"]["max_turns"] == 10
+            return {"data": rows}, 202
+        if path.endswith("/events"):
+            return {"data": []}, 200
+        row = next(row for row in rows if row["id"] in path)
+        return {"run": row} if path.endswith("/report") else row, 200
+
+    rehearsal.request = request
+    try:
+        await rehearsal.full_dialogue()
+        assert rehearsal.summary["full_dialogue"]["passed"]
+        assert len(rehearsal.summary["full_dialogue"]["run_ids"]) == 6
+        assert len(json.loads((tmp_path / "full-dialogue.json").read_text())["runs"]) == 6
+    finally:
+        await rehearsal.client.aclose()

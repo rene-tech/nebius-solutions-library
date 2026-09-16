@@ -167,3 +167,10 @@ saves public reports and gateway events, fails on any failed/invalid run, and
 does not silently retry failed jobs. `--insecure` is an explicit exception only
 for the workshop's self-signed rehearsal certificate. Image digest attestation
 remains the coordinator's cluster check, not a claim made by the public API.
+
+For the six-model full-length cohort, add `--full-dialogue-turns 10
+--full-dialogue-all-clinicians --repetitions 0`. This creates six canonical jobs
+on one common profile, each with 21 messages and eleven patient-prefix classifier
+assessments. The fixed judge excludes all six comparison families. Every job's
+full report is retained even if a cohort member fails. Using the same command
+without `--repetitions 0` first runs the default two ten-team repetitions.

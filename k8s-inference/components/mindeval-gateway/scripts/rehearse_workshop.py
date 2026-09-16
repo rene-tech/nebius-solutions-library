@@ -459,44 +459,64 @@ class Rehearsal:
             body={
                 "profile_ids": [self.profiles[20]["id"]],
                 "patient_model": self.patient,
-                "clinician_models": [self.patient],
+                "clinician_models": self.clinicians if self.args.full_dialogue_all_clinicians else [self.patient],
                 "mode": "canonical",
                 "max_turns": self.args.full_dialogue_turns,
                 "max_completion_tokens": 4096,
             },
         )
-        run_id = created["data"][0]["id"]
-        path = f"/v1/workshop/runs/{run_id}"
-        self.summary["full_dialogue"] = {"run_id": run_id, "turns": self.args.full_dialogue_turns}
+        run_ids = [run["id"] for run in created["data"]]
+        check(len(run_ids) == (6 if self.args.full_dialogue_all_clinicians else 1), "full cohort has wrong job count")
+        self.summary["full_dialogue"] = {"run_ids": run_ids, "turns": self.args.full_dialogue_turns}
         self.save("summary.json", self.summary)
         deadline = time.monotonic() + self.args.timeout_seconds
         while time.monotonic() < deadline:
-            row, _ = await self.request("GET", path)
+            rows = [(await self.request("GET", f"/v1/workshop/runs/{run_id}"))[0] for run_id in run_ids]
             print(
                 json.dumps(
-                    {"full_dialogue": run_id, "status": row["status"], "messages": len(row["state"]["transcript"])}
+                    {
+                        "full_cohort": [
+                            {"id": row["id"], "status": row["status"], "messages": len(row["state"]["transcript"])}
+                            for row in rows
+                        ]
+                    }
                 ),
                 flush=True,
             )
-            if row["status"] in TERMINAL:
+            if all(row["status"] in TERMINAL for row in rows):
                 break
             await asyncio.sleep(self.args.poll_seconds)
-        report, _ = await self.request("GET", path + "/report")
-        gateway_events, _ = await self.request("GET", f"/v1/mindeval/runs/{run_id}/events", expected=(200, 404))
-        self.save("full-dialogue.json", {"report": report, "gateway_events": gateway_events})
-        check(row["status"] == "completed", f"full dialogue {row['status']}: {row['state'].get('error')}")
-        validate_completed(row, self.catalog["judge_model"], self.args.full_dialogue_turns)
-        validate_classification(row)
+        reports, failures, telemetry = [], [], []
+        for row in rows:
+            run_id = row["id"]
+            report, _ = await self.request("GET", f"/v1/workshop/runs/{run_id}/report")
+            gateway_events, _ = await self.request("GET", f"/v1/mindeval/runs/{run_id}/events", expected=(200, 404))
+            reports.append({"report": report, "gateway_events": gateway_events})
+            try:
+                check(row["status"] == "completed", f"full dialogue {row['status']}: {row['state'].get('error')}")
+                validate_completed(row, self.catalog["judge_model"], self.args.full_dialogue_turns)
+                validate_classification(row)
+            except (AcceptanceFailure, KeyError, TypeError) as exc:
+                failures.append({"run_id": run_id, "error": str(exc)})
+            telemetry.extend(turn["completion"] for turn in row["state"]["transcript"] if turn.get("completion"))
+            if row["state"].get("judgment"):
+                telemetry.append(row["state"]["judgment"])
+        self.save("full-dialogue.json", reports[0] if len(reports) == 1 else {"runs": reports})
         self.summary["full_dialogue"].update(
             {
-                "passed": True,
+                "passed": not failures,
                 "elapsed_seconds": round(time.monotonic() - started, 3),
-                "classification": row["state"]["classification"],
+                "failures": failures,
+                "inference_calls": len(telemetry),
+                "usage": {
+                    key: sum(item.get("usage", {}).get(key, 0) or 0 for item in telemetry)
+                    for key in ("prompt_tokens", "completion_tokens", "total_tokens")
+                },
+                "classifications": [row["state"].get("classification") for row in rows],
             }
         )
-        self.record(
-            "full_canonical_dialogue_complete", run_id=run_id, transcript_messages=len(row["state"]["transcript"])
-        )
+        check(not failures, f"full dialogue cohort has {len(failures)} failures; see full-dialogue.json")
+        self.record("full_canonical_dialogue_complete", run_ids=run_ids, rounds=self.args.full_dialogue_turns)
 
 
 def main():
@@ -514,6 +534,11 @@ def main():
         type=int,
         default=0,
         help="Also run one full canonical dialogue; use --repetitions 0 for only this diagnostic",
+    )
+    parser.add_argument(
+        "--full-dialogue-all-clinicians",
+        action="store_true",
+        help="Use all six eligible clinicians in the full dialogue cohort",
     )
     parser.add_argument("--timeout-seconds", type=int, default=1800)
     parser.add_argument("--poll-seconds", type=float, default=5)
