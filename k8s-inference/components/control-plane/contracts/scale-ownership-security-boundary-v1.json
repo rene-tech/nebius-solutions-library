@@ -17,11 +17,17 @@
     "delete_verbs": [],
     "trusted_identities_forbidden": [
       "system:serviceaccount:fs2-security:fs2-admission-owner",
+      "system:serviceaccount:fs2-security:fs2-admission-release-automation",
       "system:serviceaccount:fs2-system:fs2-serve-control-plane-controller",
       "system:serviceaccount:keda:keda-operator"
     ],
+    "human_access": {
+      "protected_resource_mutation": "forbidden",
+      "trusted_identity_impersonation": "forbidden",
+      "security_automation_identity_use": "forbidden"
+    },
     "forbidden_identity_paths": {
-      "impersonate": ["users", "groups", "serviceaccounts", "userextras"],
+      "impersonate": ["users", "groups", "serviceaccounts", "userextras", "uids"],
       "token_request": ["serviceaccounts/token"],
       "workload_service_account_use": ["pods", "deployments", "replicasets", "statefulsets", "daemonsets", "jobs", "cronjobs"],
       "delegation": ["roles", "clusterroles", "rolebindings", "clusterrolebindings", "system:auth-delegator"],
@@ -48,12 +54,21 @@
     }
   },
   "security_automation_handoff": {
+    "release_identity": "system:serviceaccount:fs2-security:fs2-admission-release-automation",
+    "identity_constraints": {
+      "use": "automation-only",
+      "human_use_allowed": false,
+      "credential": "bound short-lived service account token",
+      "audience": "fs2-scale-ownership-release",
+      "maximum_lifetime_seconds": 900
+    },
     "required": [
       "immutable bundle digest",
       "detached signature",
       "review ticket",
       "approver identity",
-      "bounded expiry"
+      "bounded expiry",
+      "short-lived release identity evidence"
     ],
     "mutation_scope": "the eight protected resources only",
     "replay_allowed": false
@@ -63,6 +78,11 @@
     "requires_signed_handoff": true,
     "must_restore": ["Deny"],
     "delete_protected_resources": false
+  },
+  "enforcement_dependency": {
+    "source_contract_only": true,
+    "externally_owned_rbac_and_admission_required": true,
+    "retained_live_authorization_evidence_required": true
   },
   "release_gate": "NO-GO until an external security owner enforces this contract and supplies retained authorization evidence"
 }

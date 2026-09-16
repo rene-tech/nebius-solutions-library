@@ -883,11 +883,18 @@ def test_scale_ownership_security_boundary_is_external_signed_and_non_destructiv
     assert normal_release["mutating_verbs"] == [] and normal_release["delete_verbs"] == []
     assert set(normal_release["trusted_identities_forbidden"]) == {
         "system:serviceaccount:fs2-security:fs2-admission-owner",
+        "system:serviceaccount:fs2-security:fs2-admission-release-automation",
         "system:serviceaccount:fs2-system:fs2-serve-control-plane-controller",
         "system:serviceaccount:keda:keda-operator",
     }
+    assert normal_release["human_access"] == {
+        "protected_resource_mutation": "forbidden",
+        "trusted_identity_impersonation": "forbidden",
+        "security_automation_identity_use": "forbidden",
+    }
     identity_paths = normal_release["forbidden_identity_paths"]
     assert identity_paths["rbac_verbs"] == ["bind", "escalate", "impersonate"]
+    assert "uids" in identity_paths["impersonate"]
     assert identity_paths["token_request"] == ["serviceaccounts/token"]
     assert {"rolebindings", "clusterrolebindings", "system:auth-delegator"}.issubset(identity_paths["delegation"])
     deletion = contract["deletion_admission"]
@@ -899,13 +906,31 @@ def test_scale_ownership_security_boundary_is_external_signed_and_non_destructiv
     assert contract["runtime_writers"]["model_controller"]["verbs"] == ["get", "patch"]
     assert contract["runtime_writers"]["keda_operator"]["protected_resource_verbs"] == []
     handoff = contract["security_automation_handoff"]
-    assert {"immutable bundle digest", "detached signature", "bounded expiry"}.issubset(handoff["required"])
+    assert {
+        "immutable bundle digest",
+        "detached signature",
+        "bounded expiry",
+        "short-lived release identity evidence",
+    }.issubset(handoff["required"])
     assert handoff["replay_allowed"] is False
+    assert handoff["release_identity"] == "system:serviceaccount:fs2-security:fs2-admission-release-automation"
+    assert handoff["identity_constraints"] == {
+        "use": "automation-only",
+        "human_use_allowed": False,
+        "credential": "bound short-lived service account token",
+        "audience": "fs2-scale-ownership-release",
+        "maximum_lifetime_seconds": 900,
+    }
     assert contract["recovery"] == {
         "temporary_validation_actions": ["Audit", "Warn"],
         "requires_signed_handoff": True,
         "must_restore": ["Deny"],
         "delete_protected_resources": False,
+    }
+    assert contract["enforcement_dependency"] == {
+        "source_contract_only": True,
+        "externally_owned_rbac_and_admission_required": True,
+        "retained_live_authorization_evidence_required": True,
     }
     assert contract["release_gate"].startswith("NO-GO")
 

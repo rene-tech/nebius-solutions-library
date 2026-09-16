@@ -2768,6 +2768,58 @@ class HttpKubernetesModelClient:
             receipt=receipt,
         )
 
+    @classmethod
+    def _validate_post_delete_handoff_reversal(
+        cls,
+        body: Mapping[str, Any],
+        *,
+        resource: RenderedResource,
+        scaler: RenderedResource,
+        current: ResourceSnapshot,
+        owner_uid: str,
+        model_fence: ModelWriteFence,
+        receipt: ScaleHandoffReceipt,
+    ) -> ResourceSnapshot:
+        """Authorize exact ScaledObject recreation without touching replicas.
+
+        A fixed transition can durably close its gate and delete the
+        ScaledObject before it takes ownership from the old scale manager. If
+        the CR then reverses to autoscaled, the old scale owner is safe to
+        retain: the recovery only admits the newly rendered ScaledObject and
+        never writes ``/scale``. Every mutable identity/value is checked from
+        the fresh Deployment read, while the newer exact CR is fenced by the
+        caller immediately before the gate write.
+        """
+
+        cls._validate_fixed_scale_identity(
+            body,
+            resource=resource,
+            owner_uid=owner_uid,
+            expected_uid=current.observed.uid,
+        )
+        if (
+            receipt.deployment_uid != current.observed.uid
+            or receipt.model_uid != owner_uid
+            or receipt.model_generation >= model_fence.generation
+            or receipt.scaler.api_version != scaler.api_version
+            or receipt.scaler.kind != scaler.kind
+            or receipt.scaler.namespace != scaler.namespace
+            or receipt.scaler.name != scaler.name
+            or _controller_owned_scale_handoff_receipt(body) != receipt
+        ):
+            raise KubernetesConflictError("post-delete autoscaler reversal lacks exact handoff evidence")
+        snapshot = _snapshot(dict(body), resource)
+        if (
+            current.desired_replicas is None
+            or snapshot.desired_replicas != current.desired_replicas
+            or _replica_field_owners(body) != _replica_field_owners(current.raw)
+            or not _autoscaler_scale_manager_owns_replicas(snapshot)
+        ):
+            raise KubernetesConflictError(
+                "post-delete autoscaler reversal lacks one unchanged canonical stale scale owner"
+            )
+        return snapshot
+
     async def release_scale_gate(
         self,
         resource: RenderedResource,
@@ -2862,8 +2914,6 @@ class HttpKubernetesModelClient:
                 or scaler_snapshot.observed.digest != scaler.digest
             ):
                 raise KubernetesConflictError("rendered ScaledObject is stale, deleting, or foreign")
-        if live_scaler is None and (current.desired_replicas != 0 or not _fixed_scale_manager_owns_replicas(current)):
-            raise KubernetesConflictError("autoscaler admission cannot begin before exact zero-scale ownership")
         live = await self._get_resource(resource.api_version, resource.kind, resource.namespace, resource.name)
         if live is None:
             raise KubernetesConflictError("scale gate target disappeared before release")
@@ -2877,15 +2927,28 @@ class HttpKubernetesModelClient:
             raise KubernetesConflictError("autoscaler gate target receipt changed")
         live_snapshot = _snapshot(live, resource)
         if live_scaler is None:
-            self._validate_controller_scale_owner(
-                live,
-                resource=resource,
-                owner_uid=owner_uid,
-                expected_uid=current.observed.uid,
-                expected_replicas=0,
-                model_generation=model_fence.generation,
-                receipt=receipt,
-            )
+            if current.desired_replicas == 0 and _fixed_scale_manager_owns_replicas(current):
+                self._validate_controller_scale_owner(
+                    live,
+                    resource=resource,
+                    owner_uid=owner_uid,
+                    expected_uid=current.observed.uid,
+                    expected_replicas=0,
+                    model_generation=model_fence.generation,
+                    receipt=receipt,
+                )
+            elif isinstance(receipt, ScaleHandoffReceipt):
+                live_snapshot = self._validate_post_delete_handoff_reversal(
+                    live,
+                    resource=resource,
+                    scaler=scaler,
+                    current=current,
+                    owner_uid=owner_uid,
+                    model_fence=model_fence,
+                    receipt=receipt,
+                )
+            else:
+                raise KubernetesConflictError("autoscaler admission cannot begin before exact zero-scale ownership")
         elif not (
             _fixed_scale_manager_owns_replicas(live_snapshot) or _autoscaler_scale_manager_owns_replicas(live_snapshot)
         ):
