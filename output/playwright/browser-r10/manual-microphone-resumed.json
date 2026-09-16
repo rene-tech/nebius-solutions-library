@@ -1,0 +1,47 @@
+{
+  "kind": "browser-microphone",
+  "run_id": "a26ce896-ea39-426d-9774-d402a91a0eb1",
+  "resumed_same_run": true,
+  "input": "preconfigured Chromium synthetic fake microphone, not a physical microphone",
+  "capture_requested_ms": 5000,
+  "prior_attempt": {
+    "stage": "wait for queued patient takeover",
+    "outcome": "timeout",
+    "timeout_ms": 45000,
+    "load_context": "60-job load",
+    "source": "manager-reported original attempt"
+  },
+  "recovery_diagnostic": {
+    "stage": "test-only WAV verifier",
+    "outcome": "unauthenticated fetch HTTP401",
+    "resolved": "Reuse existing owner-authorized browser replay request header in memory; no production change"
+  },
+  "checks": [
+    "same existing run resumed without creating another run",
+    "Use microphone, 5000ms capture, manual Finish submitted recognized text before abort",
+    "recognized patient text and WAV retained with microphone provenance"
+  ],
+  "verified_at": "2026-09-16T18:35:52.018Z",
+  "transcript": "At  nine. Good morning. The workshop starts at nine. Good morning. The workshop starts",
+  "audio_url": "/v1/workshop/runs/a26ce896-ea39-426d-9774-d402a91a0eb1/audio/2",
+  "audio": {
+    "http_status": 200,
+    "bytes": 159788,
+    "sha256": "25a7f0be17eea198605cfbbf4e3f42d3c8cd9de543a398248ff45db3f424d37d",
+    "sample_rate_hz": 16000,
+    "channels": 1,
+    "bits_per_sample": 16,
+    "audio_seconds": 4.992,
+    "pcm_peak": 19617
+  },
+  "browser_media": {
+    "duration_seconds": 4.992,
+    "ready_state": 4,
+    "error_code": null
+  },
+  "passed": true,
+  "final_status": "aborted",
+  "completed_at": "2026-09-16T18:35:52.599Z",
+  "browser_disconnected": true,
+  "named_browser_session_closed": true
+}

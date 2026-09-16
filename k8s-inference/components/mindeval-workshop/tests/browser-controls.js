@@ -2,16 +2,20 @@
 // signing into /workshop with a dedicated rehearsal key. Creates one synthetic
 // diagnostic run and aborts it; no admin/provider credential is used or saved.
 async page => {
-  const evidence = {kind: 'browser-controls', checks: []};
+  const evidence = {kind: 'browser-controls', checks: [], started_at: new Date().toISOString(),
+    takeover_readiness_timeout_ms: 300000, waits: [],
+    diagnostic_context: 'Prior r10 90-second queue timeout remains in browser-r10/controls-resumed.json; this is a fresh run with a test-only 300-second deadline, not changed platform limits.'};
   const check = (condition, label) => {
     if (!condition) throw new Error(label);
     evidence.checks.push(label);
   };
   const submit = async (button, suffix) => {
+    const started = Date.now();
     const response = page.waitForResponse(r => r.url().endsWith(suffix) && r.request().method() === 'POST');
     await button.click();
     const result = await response;
     check(result.status() === (suffix === '/v1/workshop/runs' ? 202 : 200), `${suffix} accepted`);
+    evidence.waits.push({kind: 'http_response', action: await button.textContent(), elapsed_ms: Date.now() - started});
     return result.json();
   };
   await page.locator('#mode').selectOption('canonical');
@@ -31,8 +35,21 @@ async page => {
     await page.locator('#role').selectOption(role);
     const takeover = await submit(page.getByRole('button', {name: 'Take over', exact: true}), path);
     check(takeover.state.takeover_role === role, `${role} takeover persisted`);
-    await page.waitForFunction(() => document.querySelector('#run-status').textContent.startsWith('takeover') &&
-      !document.querySelector('#say').disabled, null, {timeout: 90000});
+    const started = Date.now();
+    const wait = {kind: 'takeover_ready', role, initial_status: takeover.status, started_at: new Date().toISOString(), outcome: 'waiting'};
+    evidence.waits.push(wait);
+    await page.evaluate(value => { window.workshopAcceptance = value; }, evidence);
+    try {
+      await page.waitForFunction(() => document.querySelector('#run-status').textContent.startsWith('takeover') &&
+        !document.querySelector('#say').disabled, null, {timeout: evidence.takeover_readiness_timeout_ms});
+      wait.outcome = 'ready';
+    } catch (error) {
+      wait.outcome = 'timeout';
+      throw error;
+    } finally {
+      wait.elapsed_ms = Date.now() - started;
+      await page.evaluate(value => { window.workshopAcceptance = value; }, evidence);
+    }
     check(await page.locator('#role').inputValue() === role, `${role} selected and ready for typed takeover`);
     await page.locator('#message').fill(role === 'patient'
       ? 'This is a synthetic patient turn for the workshop. I would like to discuss my sleep.'
@@ -47,6 +64,8 @@ async page => {
   check(!aborted.state.benchmark_eligible, 'intervened run excluded from comparison');
   await page.waitForFunction(() => document.querySelector('#run-status').textContent.startsWith('aborted'));
   evidence.passed = true;
+  evidence.final_status = aborted.status;
+  evidence.completed_at = new Date().toISOString();
   // Safe non-secret summary retained for a separate eval/screenshot command.
   await page.evaluate(value => { window.workshopAcceptance = value; }, evidence);
   return evidence;
