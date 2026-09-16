@@ -2,9 +2,10 @@
 
 The controller deliberately has no cloud-provider API.  It can only reconcile
 namespaced objects selected by the Terraform-owned infrastructure envelope.  A
-Kubernetes Lease is checked before every mutation, server-side apply never
-forces conflicts except for one verified stale KEDA scale-field handoff, and
-deletion always uses UID/resourceVersion preconditions.
+Kubernetes Lease is checked before every mutation, generic server-side apply
+never forces conflicts, and the sole exceptional write is a receipt-gated,
+minimal Deployment ``/scale`` apply under a dedicated scale manager. Deletion
+always uses UID/resourceVersion preconditions.
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ import httpx
 import uvicorn
 from fastapi import FastAPI, Response
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, generate_latest
-from pydantic import Field
+from pydantic import ConfigDict, Field, ValidationError
 
 from .admin import AdminAdapterUnavailableError
 from .admin_adapters import HttpPrometheusScalarReader
@@ -97,9 +98,12 @@ if TYPE_CHECKING:
 
 LOGGER = logging.getLogger(__name__)
 STATUS_FIELD_MANAGER = "fs2-model-controller-status"
+FIXED_SCALE_FIELD_MANAGER = "fs2-model-controller-fixed-scale"
+SCALE_HANDOFF_RECEIPT_FIELD_MANAGER = "fs2-model-controller-scale-handoff"
 FENCE_ANNOTATION = "inference.fs2.nebius.ai/fence-token"
 CONTROLLER_LABEL = "app.kubernetes.io/component=model-controller"
 STALE_SCALE_FIELD_MANAGERS = frozenset({"keda", "horizontal-pod-autoscaler"})
+SCALE_HANDOFF_RECEIPT_ANNOTATION = "inference.fs2.nebius.ai/scale-handoff-receipt"
 
 
 @dataclass(frozen=True)
@@ -108,6 +112,34 @@ class KubernetesFieldConflict:
     subresource: str | None
     api_version: str
     field: str
+
+
+class ScaleHandoffScaler(StrictModel):
+    """Exact retained identity of the deleted autoscaler."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, populate_by_name=True)
+
+    api_version: str = Field(alias="apiVersion", min_length=1, max_length=253)
+    kind: str = Field(min_length=1, max_length=253)
+    namespace: str = Field(min_length=1, max_length=253)
+    name: str = Field(min_length=1, max_length=253)
+    uid: str = Field(min_length=1, max_length=253)
+    generation: int = Field(ge=1)
+
+
+class ScaleHandoffReceipt(StrictModel):
+    """Durable proof that this controller observed an exact scaler transition."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, populate_by_name=True)
+
+    version: Literal[1]
+    deployment_uid: str = Field(alias="deploymentUID", min_length=1, max_length=253)
+    model_uid: str = Field(alias="modelUID", min_length=1, max_length=253)
+    model_generation: int = Field(alias="modelGeneration", ge=1)
+    scaler: ScaleHandoffScaler
+
+    def annotation_value(self) -> str:
+        return self.model_dump_json(by_alias=True)
 
 
 class ControllerError(RuntimeError):
@@ -267,6 +299,28 @@ class ModelControllerApi(Protocol):
         *,
         current: ResourceSnapshot,
         owner_uid: str,
+        model_generation: int,
+        fence: LeaseFence,
+    ) -> ResourceSnapshot: ...
+
+    async def record_scale_handoff_receipt(
+        self,
+        resource: RenderedResource,
+        *,
+        current: ResourceSnapshot,
+        scaler: ResourceSnapshot,
+        owner_uid: str,
+        model_generation: int,
+        fence: LeaseFence,
+    ) -> ResourceSnapshot: ...
+
+    async def apply_controller_scale(
+        self,
+        resource: RenderedResource,
+        *,
+        current: ResourceSnapshot,
+        replicas: int,
+        owner_uid: str,
         fence: LeaseFence,
     ) -> ResourceSnapshot: ...
 
@@ -396,6 +450,14 @@ class _ReplicaFieldOwner:
     api_version: str
 
 
+@dataclass(frozen=True)
+class _ManagedFieldOwner:
+    manager: str
+    operation: str
+    subresource: str | None
+    api_version: str
+
+
 def _replica_field_owners(body: Mapping[str, Any]) -> list[_ReplicaFieldOwner]:
     fields = _metadata(body).get("managedFields", [])
     if not isinstance(fields, list):
@@ -427,6 +489,66 @@ def _replica_field_managers(body: Mapping[str, Any]) -> list[str]:
     return sorted({item.manager for item in _replica_field_owners(body)})
 
 
+def _annotation_field_owners(body: Mapping[str, Any], annotation: str) -> list[_ManagedFieldOwner]:
+    fields = _metadata(body).get("managedFields", [])
+    if not isinstance(fields, list):
+        return []
+    owners: set[_ManagedFieldOwner] = set()
+    for item in fields:
+        if not isinstance(item, Mapping):
+            continue
+        manager = item.get("manager")
+        operation = item.get("operation")
+        api_version = item.get("apiVersion")
+        subresource = item.get("subresource")
+        fields_v1 = item.get("fieldsV1")
+        metadata_fields = fields_v1.get("f:metadata") if isinstance(fields_v1, Mapping) else None
+        annotation_fields = metadata_fields.get("f:annotations") if isinstance(metadata_fields, Mapping) else None
+        if (
+            isinstance(manager, str)
+            and manager
+            and isinstance(operation, str)
+            and operation
+            and isinstance(api_version, str)
+            and api_version
+            and (subresource is None or isinstance(subresource, str))
+            and isinstance(annotation_fields, Mapping)
+            and f"f:{annotation}" in annotation_fields
+        ):
+            owners.add(
+                _ManagedFieldOwner(
+                    manager=manager,
+                    operation=operation,
+                    subresource=subresource,
+                    api_version=api_version,
+                )
+            )
+    return sorted(owners, key=lambda item: (item.manager, item.operation, item.subresource or "", item.api_version))
+
+
+def _scale_handoff_receipt(body: Mapping[str, Any]) -> ScaleHandoffReceipt | None:
+    annotations = _metadata(body).get("annotations")
+    value = annotations.get(SCALE_HANDOFF_RECEIPT_ANNOTATION) if isinstance(annotations, Mapping) else None
+    if not isinstance(value, str) or not value or len(value) > 4096:
+        return None
+    try:
+        return ScaleHandoffReceipt.model_validate_json(value)
+    except (ValidationError, ValueError):
+        return None
+
+
+def _controller_owned_scale_handoff_receipt(body: Mapping[str, Any]) -> ScaleHandoffReceipt | None:
+    receipt = _scale_handoff_receipt(body)
+    expected_owner = _ManagedFieldOwner(
+        manager=SCALE_HANDOFF_RECEIPT_FIELD_MANAGER,
+        operation="Apply",
+        subresource=None,
+        api_version="apps/v1",
+    )
+    owners = _annotation_field_owners(body, SCALE_HANDOFF_RECEIPT_ANNOTATION)
+    return receipt if receipt is not None and owners == [expected_owner] else None
+
+
 _FIELD_MANAGER_CONFLICT_MESSAGE = re.compile(
     r'^conflict with "(?P<manager>[^"\r\n]{1,128})"'
     r'(?: with subresource "(?P<subresource>[^"\r\n]{1,64})")?'
@@ -443,7 +565,9 @@ def _field_manager_conflicts(response: httpx.Response) -> tuple[KubernetesFieldC
     except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
         return ()
     if (
-        not isinstance(status, Mapping)
+        response.status_code != 409
+        or not isinstance(status, Mapping)
+        or status.get("apiVersion") != "v1"
         or status.get("kind") != "Status"
         or status.get("status") != "Failure"
         or status.get("reason") != "Conflict"
@@ -798,6 +922,58 @@ class HttpKubernetesModelClient:
         response = await self._request("GET", endpoint.item(namespace, name))
         return None if response.status_code == 404 else response.json()
 
+    async def _list_all(self, endpoint: ResourceEndpoint, namespace: str) -> list[dict[str, Any]]:
+        """Return a complete namespace list; a partial page can never prove absence."""
+
+        items: list[dict[str, Any]] = []
+        continuation: str | None = None
+        seen: set[str] = set()
+        for _ in range(64):
+            params = {"limit": "500"}
+            if continuation is not None:
+                params["continue"] = continuation
+            response = await self._request("GET", endpoint.collection(namespace), params=params)
+            if response.status_code == 404 and endpoint == RESOURCE_ENDPOINTS[("keda.sh/v1alpha1", "ScaledObject")]:
+                return []
+            body = response.json()
+            raw_items = body.get("items") if isinstance(body, Mapping) else None
+            metadata = body.get("metadata") if isinstance(body, Mapping) else None
+            if not isinstance(raw_items, list) or not all(isinstance(item, dict) for item in raw_items):
+                raise ControllerError("Kubernetes collection response is invalid")
+            items.extend(raw_items)
+            next_token = metadata.get("continue") if isinstance(metadata, Mapping) else None
+            if next_token in (None, ""):
+                return items
+            if not isinstance(next_token, str) or len(next_token) > 4096 or next_token in seen:
+                raise ControllerError("Kubernetes collection continuation is invalid")
+            seen.add(next_token)
+            continuation = next_token
+        raise ControllerError("Kubernetes collection exceeded the pagination bound")
+
+    async def _assert_no_targeting_autoscalers(self, resource: RenderedResource) -> None:
+        """Fail closed on every namespaced HPA/ScaledObject target, labeled or not."""
+
+        if resource.api_version != "apps/v1" or resource.kind != "Deployment":
+            raise ControllerError("autoscaler absence check target is not a Deployment")
+        for endpoint in (HPA_ENDPOINT, RESOURCE_ENDPOINTS[("keda.sh/v1alpha1", "ScaledObject")]):
+            for body in await self._list_all(endpoint, resource.namespace):
+                target = _mapping(_mapping(body.get("spec")).get("scaleTargetRef"))
+                api_version = target.get("apiVersion")
+                kind = target.get("kind")
+                if endpoint == RESOURCE_ENDPOINTS[("keda.sh/v1alpha1", "ScaledObject")]:
+                    # KEDA defaults these optional fields for Deployment
+                    # targets. Absence checks must interpret the same defaults
+                    # or an unlabeled foreign ScaledObject containing only a
+                    # target name could bypass the handoff fence.
+                    api_version = api_version or "apps/v1"
+                    kind = kind or "Deployment"
+                if (
+                    api_version == resource.api_version
+                    and kind == resource.kind
+                    and target.get("name") == resource.name
+                ):
+                    raise KubernetesConflictError("a live autoscaler still targets the fixed Deployment")
+
     async def discover(self, *, key: ModelKey, owner_uid: str, render: RenderPlan) -> Discovery:
         desired = {f"{item.api_version}/{item.kind}/{item.namespace}/{item.name}": item for item in render.resources}
         bodies: dict[str, dict[str, Any]] = {}
@@ -923,13 +1099,158 @@ class HttpKubernetesModelClient:
         return _snapshot(reread, resource)
 
     @staticmethod
-    def _validate_fixed_scale_owner(
+    def _receipt_for(
+        *,
+        current: ResourceSnapshot,
+        scaler: ResourceSnapshot,
+        owner_uid: str,
+        model_generation: int,
+    ) -> ScaleHandoffReceipt:
+        if (
+            current.observed.api_version != "apps/v1"
+            or current.observed.kind != "Deployment"
+            or current.observed.controller_owner_uid != owner_uid
+            or current.observed.deleting
+            or scaler.observed.api_version != "keda.sh/v1alpha1"
+            or scaler.observed.kind != "ScaledObject"
+            or scaler.observed.namespace != current.observed.namespace
+            or scaler.observed.controller_owner_uid != owner_uid
+            or scaler.observed.deleting
+            or scaler.generation < 1
+            or model_generation < 1
+        ):
+            raise ControllerError("scale handoff receipt preconditions are not satisfied")
+        target = _mapping(_mapping(scaler.raw.get("spec")).get("scaleTargetRef"))
+        if (
+            target.get("apiVersion") != current.observed.api_version
+            or target.get("kind") != current.observed.kind
+            or target.get("name") != current.observed.name
+        ):
+            raise ControllerError("scale handoff receipt scaler target is not the exact Deployment")
+        return ScaleHandoffReceipt(
+            version=1,
+            deploymentUID=current.observed.uid,
+            modelUID=owner_uid,
+            modelGeneration=model_generation,
+            scaler=ScaleHandoffScaler(
+                apiVersion=scaler.observed.api_version,
+                kind=scaler.observed.kind,
+                namespace=scaler.observed.namespace,
+                name=scaler.observed.name,
+                uid=scaler.observed.uid,
+                generation=scaler.generation,
+            ),
+        )
+
+    async def record_scale_handoff_receipt(
+        self,
+        resource: RenderedResource,
+        *,
+        current: ResourceSnapshot,
+        scaler: ResourceSnapshot,
+        owner_uid: str,
+        model_generation: int,
+        fence: LeaseFence,
+    ) -> ResourceSnapshot:
+        """Persist exact transition evidence before deleting its ScaledObject."""
+
+        self._allow_write()
+        if resource.api_version != "apps/v1" or resource.kind != "Deployment":
+            raise ControllerError("scale handoff receipt target is not a Deployment")
+        expected = self._receipt_for(
+            current=current,
+            scaler=scaler,
+            owner_uid=owner_uid,
+            model_generation=model_generation,
+        )
+        if current.observed.identity != _rendered_identity(resource):
+            raise ControllerError("scale handoff receipt target identity changed")
+        annotations = _mapping(_metadata(current.raw).get("annotations"))
+        if SCALE_HANDOFF_RECEIPT_ANNOTATION in annotations:
+            retained = _controller_owned_scale_handoff_receipt(current.raw)
+            if retained is None:
+                raise KubernetesConflictError("Deployment has an invalid or foreign scale handoff receipt")
+            if retained == expected:
+                return current
+
+        live = await self._get_resource(resource.api_version, resource.kind, resource.namespace, resource.name)
+        live_scaler = await self._get_resource(
+            scaler.observed.api_version,
+            scaler.observed.kind,
+            scaler.observed.namespace,
+            scaler.observed.name,
+        )
+        if live is None or live_scaler is None:
+            raise KubernetesConflictError("scale handoff receipt objects disappeared")
+        self._validate_fixed_scale_identity(
+            live,
+            resource=resource,
+            owner_uid=owner_uid,
+            expected_uid=current.observed.uid,
+            resource_version=current.resource_version,
+        )
+        if (
+            _required_metadata(live_scaler, "uid") != scaler.observed.uid
+            or _required_metadata(live_scaler, "resourceVersion") != scaler.resource_version
+            or _controller_owner_uid(live_scaler) != owner_uid
+            or _metadata(live_scaler).get("deletionTimestamp") is not None
+            or int(_metadata(live_scaler).get("generation", 0)) != scaler.generation
+        ):
+            raise KubernetesConflictError("scale handoff receipt scaler changed before recording")
+        live_scaler_snapshot = _snapshot(live_scaler)
+        if (
+            self._receipt_for(
+                current=_snapshot(live, resource),
+                scaler=live_scaler_snapshot,
+                owner_uid=owner_uid,
+                model_generation=model_generation,
+            )
+            != expected
+        ):
+            raise KubernetesConflictError("scale handoff receipt evidence changed before recording")
+        await self.assert_fence(fence)
+        body = {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {
+                "name": resource.name,
+                "namespace": resource.namespace,
+                "resourceVersion": current.resource_version,
+                "annotations": {SCALE_HANDOFF_RECEIPT_ANNOTATION: expected.annotation_value()},
+            },
+        }
+        await self._request(
+            "PATCH",
+            RESOURCE_ENDPOINTS[("apps/v1", "Deployment")].item(resource.namespace, resource.name),
+            params={
+                "fieldManager": SCALE_HANDOFF_RECEIPT_FIELD_MANAGER,
+                "force": "false",
+                "fieldValidation": "Strict",
+            },
+            content_type="application/apply-patch+yaml",
+            content=json.dumps(body, separators=(",", ":")).encode(),
+        )
+        reread = await self._get_resource(resource.api_version, resource.kind, resource.namespace, resource.name)
+        if reread is None:
+            raise ControllerError("scale handoff receipt target disappeared after write")
+        self._validate_fixed_scale_identity(
+            reread,
+            resource=resource,
+            owner_uid=owner_uid,
+            expected_uid=current.observed.uid,
+        )
+        if _controller_owned_scale_handoff_receipt(reread) != expected:
+            raise ControllerError("scale handoff receipt was not durably controller-owned")
+        return _snapshot(reread, resource)
+
+    @staticmethod
+    def _validate_fixed_scale_identity(
         body: Mapping[str, Any],
         *,
         resource: RenderedResource,
         owner_uid: str,
         expected_uid: str,
-        resource_version: str,
+        resource_version: str | None = None,
     ) -> None:
         if (
             body.get("apiVersion") != "apps/v1"
@@ -937,22 +1258,177 @@ class HttpKubernetesModelClient:
             or _required_metadata(body, "namespace") != resource.namespace
             or _required_metadata(body, "name") != resource.name
             or _required_metadata(body, "uid") != expected_uid
-            or _required_metadata(body, "resourceVersion") != resource_version
+            or (resource_version is not None and _required_metadata(body, "resourceVersion") != resource_version)
             or _controller_owner_uid(body) != owner_uid
             or _metadata(body).get("deletionTimestamp") is not None
         ):
             raise KubernetesConflictError("fixed scale handoff target changed before ownership transfer")
+
+    @classmethod
+    def _validate_fixed_scale_owner(
+        cls,
+        body: Mapping[str, Any],
+        *,
+        resource: RenderedResource,
+        owner_uid: str,
+        expected_uid: str,
+        resource_version: str,
+        receipt: ScaleHandoffReceipt,
+    ) -> _ReplicaFieldOwner:
+        cls._validate_fixed_scale_identity(
+            body,
+            resource=resource,
+            owner_uid=owner_uid,
+            expected_uid=expected_uid,
+            resource_version=resource_version,
+        )
+        if (
+            receipt.deployment_uid != expected_uid
+            or receipt.model_uid != owner_uid
+            or receipt.scaler.api_version != "keda.sh/v1alpha1"
+            or receipt.scaler.kind != "ScaledObject"
+            or receipt.scaler.namespace != resource.namespace
+            or _controller_owned_scale_handoff_receipt(body) != receipt
+        ):
+            raise KubernetesConflictError("fixed scale handoff receipt is absent, stale, or foreign")
         owners = _replica_field_owners(body)
-        stale = [item for item in owners if item.manager != FIELD_MANAGER]
-        if not stale:
-            raise KubernetesConflictError("fixed scale handoff no longer has stale scale ownership")
-        if any(
-            item.manager not in STALE_SCALE_FIELD_MANAGERS
-            or item.subresource != "scale"
-            or item.api_version != "apps/v1"
-            for item in stale
+        if len(owners) != 1:
+            raise KubernetesConflictError("Deployment replica field does not have one stale owner")
+        stale = owners[0]
+        if (
+            stale.manager not in STALE_SCALE_FIELD_MANAGERS
+            or stale.subresource != "scale"
+            or stale.api_version != "apps/v1"
         ):
             raise KubernetesConflictError("Deployment replica field has a foreign manager")
+        return stale
+
+    @classmethod
+    def _verified_fixed_scale_result(
+        cls,
+        body: Mapping[str, Any],
+        *,
+        resource: RenderedResource,
+        owner_uid: str,
+        expected_uid: str,
+        desired_replicas: int,
+        expected_manager: str,
+        expected_subresource: str | None,
+    ) -> ResourceSnapshot:
+        cls._validate_fixed_scale_identity(
+            body,
+            resource=resource,
+            owner_uid=owner_uid,
+            expected_uid=expected_uid,
+        )
+        expected_owner = _ReplicaFieldOwner(
+            manager=expected_manager,
+            subresource=expected_subresource,
+            api_version="apps/v1",
+        )
+        if _mapping(body.get("spec")).get("replicas") != desired_replicas or _replica_field_owners(body) != [
+            expected_owner
+        ]:
+            raise ControllerError("fixed scale handoff did not establish exact exclusive replica ownership")
+        return _snapshot(dict(body), resource)
+
+    async def _patch_controller_scale(
+        self,
+        resource: RenderedResource,
+        *,
+        current: ResourceSnapshot,
+        replicas: int,
+        owner_uid: str,
+        fence: LeaseFence,
+        force: bool,
+    ) -> ResourceSnapshot:
+        if not isinstance(replicas, int) or isinstance(replicas, bool) or replicas < 0:
+            raise ControllerError("controller scale write has an invalid replica value")
+        await self.assert_fence(fence)
+        scale = {
+            "apiVersion": "autoscaling/v1",
+            "kind": "Scale",
+            "metadata": {
+                "name": resource.name,
+                "namespace": resource.namespace,
+                "uid": current.observed.uid,
+                "resourceVersion": current.resource_version,
+            },
+            "spec": {"replicas": replicas},
+        }
+        await self._request(
+            "PATCH",
+            f"{RESOURCE_ENDPOINTS[('apps/v1', 'Deployment')].item(resource.namespace, resource.name)}/scale",
+            params={
+                "fieldManager": FIXED_SCALE_FIELD_MANAGER,
+                "force": "true" if force else "false",
+                "fieldValidation": "Strict",
+            },
+            content_type="application/apply-patch+yaml",
+            content=json.dumps(scale, separators=(",", ":")).encode(),
+        )
+        reread = await self._get_resource(resource.api_version, resource.kind, resource.namespace, resource.name)
+        if reread is None:
+            raise ControllerError("controller scale target disappeared after write")
+        return self._verified_fixed_scale_result(
+            reread,
+            resource=resource,
+            owner_uid=owner_uid,
+            expected_uid=current.observed.uid,
+            desired_replicas=replicas,
+            expected_manager=FIXED_SCALE_FIELD_MANAGER,
+            expected_subresource="scale",
+        )
+
+    async def apply_controller_scale(
+        self,
+        resource: RenderedResource,
+        *,
+        current: ResourceSnapshot,
+        replicas: int,
+        owner_uid: str,
+        fence: LeaseFence,
+    ) -> ResourceSnapshot:
+        """Update a replica field already exclusively owned by the fixed-scale manager."""
+
+        self._allow_write()
+        if (
+            resource.api_version != "apps/v1"
+            or resource.kind != "Deployment"
+            or resource.field_manager != FIELD_MANAGER
+            or resource.force_conflicts
+            or current.observed.identity != _rendered_identity(resource)
+            or current.observed.controller_owner_uid != owner_uid
+            or current.observed.deleting
+            or _controller_owner_uid(resource.manifest) != owner_uid
+        ):
+            raise ControllerError("controller scale write preconditions are not satisfied")
+        live = await self._get_resource(resource.api_version, resource.kind, resource.namespace, resource.name)
+        if live is None:
+            raise KubernetesConflictError("controller scale target disappeared")
+        self._validate_fixed_scale_identity(
+            live,
+            resource=resource,
+            owner_uid=owner_uid,
+            expected_uid=current.observed.uid,
+            resource_version=current.resource_version,
+        )
+        if _replica_field_owners(live) != [
+            _ReplicaFieldOwner(
+                manager=FIXED_SCALE_FIELD_MANAGER,
+                subresource="scale",
+                api_version="apps/v1",
+            )
+        ]:
+            raise KubernetesConflictError("controller scale target has unexpected replica ownership")
+        return await self._patch_controller_scale(
+            resource,
+            current=current,
+            replicas=replicas,
+            owner_uid=owner_uid,
+            fence=fence,
+            force=False,
+        )
 
     async def apply_fixed_scale_handoff(
         self,
@@ -960,13 +1436,15 @@ class HttpKubernetesModelClient:
         *,
         current: ResourceSnapshot,
         owner_uid: str,
+        model_generation: int,
         fence: LeaseFence,
     ) -> ResourceSnapshot:
         """Take back fixed replica ownership from a deleted, observed KEDA scaler.
 
-        Generic SSA remains non-forcing. This one transition retries with force
-        only after the API server reports the complete expected conflict set,
-        and only while the exact UID/resourceVersion and Lease fence survive.
+        Generic SSA remains non-forcing. On the exact expected conflict, the
+        exceptional request uses only the Deployment ``/scale`` subresource
+        under a dedicated manager, and only after durable transition evidence
+        plus fresh namespace-wide autoscaler absence checks survive.
         """
 
         self._allow_write()
@@ -989,24 +1467,28 @@ class HttpKubernetesModelClient:
             raise ControllerError("fixed scale handoff preconditions are not satisfied")
         if _controller_owner_uid(manifest) != owner_uid:
             raise ControllerError("fixed scale handoff manifest has a different controller owner")
+        receipt = _controller_owned_scale_handoff_receipt(current.raw)
+        if receipt is None or receipt.model_generation != model_generation:
+            raise KubernetesConflictError("fixed scale handoff lacks a controller-owned transition receipt")
 
         endpoint = self._endpoint(resource.api_version, resource.kind)
         live = await self._get_resource(resource.api_version, resource.kind, resource.namespace, resource.name)
         if live is None:
             raise KubernetesConflictError("fixed scale handoff target disappeared")
-        self._validate_fixed_scale_owner(
+        stale_owner = self._validate_fixed_scale_owner(
             live,
             resource=resource,
             owner_uid=owner_uid,
             expected_uid=current.observed.uid,
             resource_version=current.resource_version,
+            receipt=receipt,
         )
         manifest.setdefault("metadata", {})["resourceVersion"] = current.resource_version
         path = endpoint.item(resource.namespace, resource.name)
         params = {"fieldManager": FIELD_MANAGER, "force": "false", "fieldValidation": "Strict"}
         await self.assert_fence(fence)
         try:
-            response = await self._request(
+            await self._request(
                 "PATCH",
                 path,
                 params=params,
@@ -1014,31 +1496,29 @@ class HttpKubernetesModelClient:
                 content=json.dumps(manifest, separators=(",", ":")).encode(),
             )
         except KubernetesConflictError as exc:
-            expected = {
-                KubernetesFieldConflict(
-                    manager=manager,
-                    subresource="scale",
-                    api_version="apps/v1",
-                    field=".spec.replicas",
-                )
-                for manager in STALE_SCALE_FIELD_MANAGERS
-            }
-            if len(exc.field_conflicts) != 1 or exc.field_conflicts[0] not in expected:
+            expected = KubernetesFieldConflict(
+                manager=stale_owner.manager,
+                subresource="scale",
+                api_version="apps/v1",
+                field=".spec.replicas",
+            )
+            if exc.field_conflicts != (expected,):
                 raise
         else:
-            applied = response.json()
             reread = await self._get_resource(resource.api_version, resource.kind, resource.namespace, resource.name)
-            if reread is None or _required_metadata(reread, "uid") != _required_metadata(applied, "uid"):
-                raise ControllerError("fixed scale handoff apply failed read-after-write UID verification")
-            result = _snapshot(reread, resource)
-            if (
-                result.desired_replicas != desired_replicas
-                or FIELD_MANAGER not in result.replica_field_managers
-                or any(manager in STALE_SCALE_FIELD_MANAGERS for manager in result.replica_field_managers)
-            ):
-                raise ControllerError("fixed scale handoff did not establish exclusive replica ownership")
-            return result
+            if reread is None:
+                raise ControllerError("fixed scale handoff target disappeared after non-forcing apply")
+            return self._verified_fixed_scale_result(
+                reread,
+                resource=resource,
+                owner_uid=owner_uid,
+                expected_uid=current.observed.uid,
+                desired_replicas=desired_replicas,
+                expected_manager=FIELD_MANAGER,
+                expected_subresource=None,
+            )
 
+        await self._assert_no_targeting_autoscalers(resource)
         unchanged = await self._get_resource(resource.api_version, resource.kind, resource.namespace, resource.name)
         if unchanged is None:
             raise KubernetesConflictError("fixed scale handoff target disappeared after conflict")
@@ -1048,27 +1528,22 @@ class HttpKubernetesModelClient:
             owner_uid=owner_uid,
             expected_uid=current.observed.uid,
             resource_version=current.resource_version,
+            receipt=receipt,
         )
-        await self.assert_fence(fence)
-        forced = await self._request(
-            "PATCH",
-            path,
-            params={**params, "force": "true"},
-            content_type="application/apply-patch+yaml",
-            content=json.dumps(manifest, separators=(",", ":")).encode(),
+        # There is no Kubernetes transaction spanning a scaler list and replica
+        # update. Repeat the complete unlabeled lists immediately before the
+        # Lease-checked, resourceVersion-pinned write to close every
+        # API-supported window. The pinned Deployment version makes another
+        # target read unnecessary after this final scaler check.
+        await self._assert_no_targeting_autoscalers(resource)
+        return await self._patch_controller_scale(
+            resource,
+            current=current,
+            replicas=desired_replicas,
+            owner_uid=owner_uid,
+            fence=fence,
+            force=True,
         )
-        applied = forced.json()
-        reread = await self._get_resource(resource.api_version, resource.kind, resource.namespace, resource.name)
-        if reread is None or _required_metadata(reread, "uid") != _required_metadata(applied, "uid"):
-            raise ControllerError("fixed scale handoff failed read-after-write UID verification")
-        result = _snapshot(reread, resource)
-        if (
-            result.desired_replicas != desired_replicas
-            or FIELD_MANAGER not in result.replica_field_managers
-            or any(manager in STALE_SCALE_FIELD_MANAGERS for manager in result.replica_field_managers)
-        ):
-            raise ControllerError("fixed scale handoff did not establish exclusive replica ownership")
-        return result
 
     @staticmethod
     def _parse_identity(identity: str) -> tuple[str, str, str, str]:
@@ -1383,6 +1858,43 @@ def _with_deployment_replicas(resource: RenderedResource, replicas: int) -> Rend
     return resource.model_copy(update={"manifest": manifest, "digest": canonical_digest(manifest)})
 
 
+def _without_deployment_replicas(resource: RenderedResource) -> RenderedResource:
+    manifest = copy.deepcopy(resource.manifest)
+    spec = manifest.get("spec")
+    if resource.kind != "Deployment" or not isinstance(spec, dict):
+        raise ControllerError("fixed-scale target is not a Deployment")
+    spec.pop("replicas", None)
+    return resource.model_copy(update={"manifest": manifest, "digest": canonical_digest(manifest)})
+
+
+def _fixed_scale_manager_owns_replicas(snapshot: ResourceSnapshot) -> bool:
+    return _replica_field_owners(snapshot.raw) == [
+        _ReplicaFieldOwner(
+            manager=FIXED_SCALE_FIELD_MANAGER,
+            subresource="scale",
+            api_version="apps/v1",
+        )
+    ]
+
+
+def _generic_apply_resource(resource: RenderedResource, discovery: Discovery) -> RenderedResource:
+    current = _resource_snapshot(
+        discovery,
+        resource.api_version,
+        resource.kind,
+        resource.namespace,
+        resource.name,
+    )
+    if (
+        resource.api_version == "apps/v1"
+        and resource.kind == "Deployment"
+        and current is not None
+        and _fixed_scale_manager_owns_replicas(current)
+    ):
+        return _without_deployment_replicas(resource)
+    return resource
+
+
 def _autoscaler_installed(
     scaler: RenderedResource,
     target: RenderedResource,
@@ -1507,6 +2019,7 @@ def _autoscaler_handoff_complete(
                 allow_idle_acknowledgement_lag=allow_idle_acknowledgement_lag,
             )
             and FIELD_MANAGER not in live_target.replica_field_managers
+            and FIXED_SCALE_FIELD_MANAGER not in live_target.replica_field_managers
         )
         for scaler, target in _autoscaler_pairs(render)
     )
@@ -1534,10 +2047,85 @@ def _autoscaler_targets_present(
     return False
 
 
+def _pending_scale_handoff_receipts(
+    render: RenderPlan | None,
+    discovery: Discovery,
+    delete_identities: set[str],
+    owner_uid: str,
+    model_generation: int,
+) -> list[tuple[RenderedResource, ResourceSnapshot, ResourceSnapshot]]:
+    """Find exact autoscaled-to-fixed transitions that need durable evidence."""
+
+    if render is None:
+        return []
+    desired = {_rendered_identity(item): item for item in render.resources}
+    pending: list[tuple[RenderedResource, ResourceSnapshot, ResourceSnapshot]] = []
+    for scaler in discovery.resources:
+        if scaler.observed.kind != "ScaledObject" or scaler.observed.identity not in delete_identities:
+            continue
+        if (
+            scaler.observed.api_version != "keda.sh/v1alpha1"
+            or scaler.observed.controller_owner_uid != owner_uid
+            or scaler.observed.deleting
+            or scaler.generation < 1
+        ):
+            raise ControllerError("scale handoff receipt source is not the exact live owned ScaledObject")
+        target_ref = _mapping(_mapping(scaler.raw.get("spec")).get("scaleTargetRef"))
+        target_identity = (
+            f"{target_ref.get('apiVersion')}/{target_ref.get('kind')}/"
+            f"{scaler.observed.namespace}/{target_ref.get('name')}"
+        )
+        # A scaler and its Deployment may both be retiring during drain or CR
+        # deletion. No replica takeover occurs in that path, so no exceptional
+        # scale receipt is warranted.
+        if target_identity in delete_identities:
+            continue
+        resource = desired.get(target_identity)
+        target = next((item for item in discovery.resources if item.observed.identity == target_identity), None)
+        spec = resource.manifest.get("spec") if resource is not None else None
+        replicas = spec.get("replicas") if isinstance(spec, Mapping) else None
+        if (
+            resource is None
+            or resource.api_version != "apps/v1"
+            or resource.kind != "Deployment"
+            or not isinstance(replicas, int)
+            or isinstance(replicas, bool)
+            or replicas < 0
+            or target is None
+            or target.observed.controller_owner_uid != owner_uid
+            or target.observed.deleting
+        ):
+            raise ControllerError("deleted ScaledObject does not map to one exact fixed Deployment")
+        expected = ScaleHandoffReceipt(
+            version=1,
+            deploymentUID=target.observed.uid,
+            modelUID=owner_uid,
+            modelGeneration=model_generation,
+            scaler=ScaleHandoffScaler(
+                apiVersion=scaler.observed.api_version,
+                kind=scaler.observed.kind,
+                namespace=scaler.observed.namespace,
+                name=scaler.observed.name,
+                uid=scaler.observed.uid,
+                generation=scaler.generation,
+            ),
+        )
+        annotations = _mapping(_metadata(target.raw).get("annotations"))
+        if SCALE_HANDOFF_RECEIPT_ANNOTATION in annotations:
+            retained = _controller_owned_scale_handoff_receipt(target.raw)
+            if retained is None:
+                raise ControllerError("Deployment scale handoff receipt is stale, malformed, or foreign")
+            if retained == expected:
+                continue
+        pending.append((resource, target, scaler))
+    return pending
+
+
 def _fixed_scale_handoff_targets(
     render: RenderPlan | None,
     discovery: Discovery,
     owner_uid: str,
+    model_generation: int,
 ) -> list[tuple[RenderedResource, ResourceSnapshot]]:
     if render is None:
         return []
@@ -1562,6 +2150,8 @@ def _fixed_scale_handoff_targets(
         )
         if current is None or not current.replica_field_managers:
             continue
+        if _fixed_scale_manager_owns_replicas(current):
+            continue
         external = set(current.replica_field_managers) - {FIELD_MANAGER}
         if not external:
             continue
@@ -1569,8 +2159,54 @@ def _fixed_scale_handoff_targets(
             raise ControllerError("fixed Deployment scale handoff target is not exclusively controller-owned")
         if not external.issubset(STALE_SCALE_FIELD_MANAGERS):
             raise ControllerError("Deployment replica field has a foreign manager")
+        receipt = _controller_owned_scale_handoff_receipt(current.raw)
+        if (
+            receipt is None
+            or receipt.deployment_uid != current.observed.uid
+            or receipt.model_uid != owner_uid
+            or receipt.model_generation != model_generation
+            or receipt.scaler.api_version != "keda.sh/v1alpha1"
+            or receipt.scaler.kind != "ScaledObject"
+            or receipt.scaler.namespace != resource.namespace
+        ):
+            raise ControllerError("fixed Deployment scale handoff lacks exact durable transition evidence")
         targets.append((resource, current))
     return targets
+
+
+def _controller_fixed_scale_updates(
+    render: RenderPlan | None,
+    discovery: Discovery,
+    owner_uid: str,
+) -> list[tuple[RenderedResource, ResourceSnapshot, int]]:
+    if render is None:
+        return []
+    updates: list[tuple[RenderedResource, ResourceSnapshot, int]] = []
+    for resource in render.resources:
+        spec = resource.manifest.get("spec")
+        replicas = spec.get("replicas") if isinstance(spec, Mapping) else None
+        if (
+            resource.api_version != "apps/v1"
+            or resource.kind != "Deployment"
+            or not isinstance(replicas, int)
+            or isinstance(replicas, bool)
+            or replicas < 0
+        ):
+            continue
+        current = _resource_snapshot(
+            discovery,
+            resource.api_version,
+            resource.kind,
+            resource.namespace,
+            resource.name,
+        )
+        if current is None or not _fixed_scale_manager_owns_replicas(current):
+            continue
+        if current.observed.controller_owner_uid != owner_uid or current.observed.deleting:
+            raise ControllerError("controller scale target lost its exact ModelDeployment owner")
+        if current.desired_replicas != replicas:
+            updates.append((resource, current, replicas))
+    return updates
 
 
 def _observed_hot_floor(discovery: Discovery) -> int:
@@ -2800,6 +3436,33 @@ class ModelDeploymentController:
                 for identity in plan.delete_resource_identities
                 if "/ScaledObject/" in identity or "fs2-model-publication-" in identity
             ]
+            receipt_writes = _pending_scale_handoff_receipts(
+                plan.render,
+                discovery,
+                set(plan.delete_resource_identities),
+                uid,
+                generation,
+            )
+            if receipt_writes:
+                # Every receipt candidate is validated before the first write.
+                # Scaler deletion happens only on a subsequent fresh reconcile.
+                for resource, current, scaler_snapshot in receipt_writes:
+                    await self.api.record_scale_handoff_receipt(
+                        resource,
+                        current=current,
+                        scaler=scaler_snapshot,
+                        owner_uid=uid,
+                        model_generation=generation,
+                        fence=fence,
+                    )
+                    wrote = True
+                return ReconcileResult(
+                    key=key,
+                    action="fixed-scale-handoff:receipt-recorded",
+                    generation=generation,
+                    wrote=wrote,
+                    requeue=True,
+                )
             if (
                 not handoff_identities
                 and drain is not None
@@ -2832,7 +3495,7 @@ class ModelDeploymentController:
                     requeue=True,
                 )
 
-        fixed_scale_handoffs = _fixed_scale_handoff_targets(plan.render, discovery, uid)
+        fixed_scale_handoffs = _fixed_scale_handoff_targets(plan.render, discovery, uid, generation)
         if fixed_scale_handoffs:
             target_identities = {_rendered_identity(resource) for resource, _ in fixed_scale_handoffs}
             if _autoscaler_targets_present(discovery, target_identities):
@@ -2850,12 +3513,32 @@ class ModelDeploymentController:
                     resource,
                     current=current,
                     owner_uid=uid,
+                    model_generation=generation,
                     fence=fence,
                 )
                 wrote = True
             return ReconcileResult(
                 key=key,
                 action="fixed-scale-handoff",
+                generation=generation,
+                wrote=wrote,
+                requeue=True,
+            )
+
+        controller_scale_updates = _controller_fixed_scale_updates(plan.render, discovery, uid)
+        if controller_scale_updates:
+            for resource, current, replicas in controller_scale_updates:
+                await self.api.apply_controller_scale(
+                    resource,
+                    current=current,
+                    replicas=replicas,
+                    owner_uid=uid,
+                    fence=fence,
+                )
+                wrote = True
+            return ReconcileResult(
+                key=key,
+                action="fixed-scale-update",
                 generation=generation,
                 wrote=wrote,
                 requeue=True,
@@ -2900,7 +3583,9 @@ class ModelDeploymentController:
                         raise ControllerError("autoscaled Deployment zero-replica bootstrap ownership was not observed")
                     wrote = True
                 for resource in apply_without_targets:
-                    await self.api.apply_resource(resource, owner_uid=uid, fence=fence)
+                    await self.api.apply_resource(
+                        _generic_apply_resource(resource, discovery), owner_uid=uid, fence=fence
+                    )
                     wrote = True
                 phase_action = "autoscaler-bootstrap"
                 phase_requeue = True
@@ -2915,7 +3600,18 @@ class ModelDeploymentController:
                         scaler.namespace,
                         scaler.name,
                     )
-                    if live_scaler is None and FIELD_MANAGER not in live_target.replica_field_managers:
+                    if live_scaler is None and _fixed_scale_manager_owns_replicas(live_target):
+                        bootstrap = await self.api.apply_controller_scale(
+                            target,
+                            current=live_target,
+                            replicas=0,
+                            owner_uid=uid,
+                            fence=fence,
+                        )
+                        if bootstrap.desired_replicas != 0 or not _fixed_scale_manager_owns_replicas(bootstrap):
+                            raise ControllerError("autoscaled Deployment dedicated scale bootstrap was not observed")
+                        wrote = True
+                    elif live_scaler is None and FIELD_MANAGER not in live_target.replica_field_managers:
                         bootstrap = await self.api.apply_resource(
                             _with_deployment_replicas(target, 0), owner_uid=uid, fence=fence
                         )
@@ -2925,9 +3621,23 @@ class ModelDeploymentController:
                             )
                         wrote = True
                 for resource in apply_without_targets:
-                    await self.api.apply_resource(resource, owner_uid=uid, fence=fence)
+                    await self.api.apply_resource(
+                        _generic_apply_resource(resource, discovery), owner_uid=uid, fence=fence
+                    )
                     wrote = True
                 phase_action = "autoscaler-install-pending"
+                phase_requeue = True
+            elif any(
+                _fixed_scale_manager_owns_replicas(live_target)
+                for live_target in live_targets.values()
+                if live_target is not None
+            ):
+                for resource in apply_without_targets:
+                    await self.api.apply_resource(
+                        _generic_apply_resource(resource, discovery), owner_uid=uid, fence=fence
+                    )
+                    wrote = True
+                phase_action = "autoscaler-scale-ownership-pending"
                 phase_requeue = True
             elif any(
                 FIELD_MANAGER in live_target.replica_field_managers
@@ -2935,7 +3645,9 @@ class ModelDeploymentController:
                 if live_target is not None
             ):
                 for resource in apply_without_targets:
-                    await self.api.apply_resource(resource, owner_uid=uid, fence=fence)
+                    await self.api.apply_resource(
+                        _generic_apply_resource(resource, discovery), owner_uid=uid, fence=fence
+                    )
                     wrote = True
                 for _, target in autoscaler_pairs:
                     live_target = live_targets[_rendered_identity(target)]
@@ -2953,7 +3665,7 @@ class ModelDeploymentController:
 
         if phase_action is None:
             for resource in plan.apply_resources:
-                await self.api.apply_resource(resource, owner_uid=uid, fence=fence)
+                await self.api.apply_resource(_generic_apply_resource(resource, discovery), owner_uid=uid, fence=fence)
                 wrote = True
         if plan.remove_finalizer:
             if phase_action is not None:

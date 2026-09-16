@@ -42,6 +42,7 @@ decides where or when a pod runs.
 | `ModelDeployment.spec` | Authenticated admin API using Kubernetes optimistic concurrency | Controller, audit writer | Human `kubectl` writes are policy-dependent; the admin API remains the supported mutation path. |
 | `ModelDeployment.status` and finalizer | FS2 model controller | Admin API, catalogs, metrics | Status is never copied from desired state without observation. |
 | Generated Deployment, Service, KEDA, warm/cache Job, route and publication binding | FS2 model controller, field manager `fs2-model-controller` | Kubernetes controllers | Terraform and users do not patch generated objects. |
+| Deployment replica count after an exceptional autoscaled-to-fixed handoff | FS2 model controller, `/scale` field manager `fs2-model-controller-fixed-scale` | FS2 controller | The generic manager omits `.spec.replicas` while this manager owns it; later fixed changes stay non-forcing and scale-only. |
 | Deployment replica count when KEDA is selected | KEDA-generated HPA via `/scale` | FS2 controller | The FS2 controller owns scaler policy, not the live replica value. |
 | Queue admission and accelerator quota state | Kueue | FS2 controller, admin API | Kueue's Deployment integration admits each exact-pool hot or burst Pod against the matching ResourceFlavor; KEDA remains the sole burst replica-count writer. |
 | Gateway route status | Gateway controller | FS2 controller, admin API | FS2 owns desired route; Gateway owns route status. |
@@ -55,14 +56,37 @@ decides where or when a pod runs.
    `ModelDeployment`, the labels `fs2-serve.nebius.ai/model-deployment` and
    `fs2-serve.nebius.ai/model-id`, and the annotation
    `fs2-serve.nebius.ai/spec-digest`.
-2. Server-side apply uses field manager `fs2-model-controller`; force-conflicts
-   is false outside an explicitly verified adoption operation or a fixed-scale
-   handoff after the owned ScaledObject and generated HPA are both absent. That
-   handoff pins the Deployment UID and resourceVersion, accepts exactly one
-   `.spec.replicas` conflict from the stale `keda` or
-   `horizontal-pod-autoscaler` scale manager, rechecks the Lease, and verifies
-   controller ownership by read-after-write. Every other conflict remains
-   fail-closed.
+2. Server-side apply uses field manager `fs2-model-controller`; generic object
+   apply always uses `force=false`. Before deleting an owned ScaledObject during
+   an autoscaled-to-fixed transition, the controller writes a non-forcing,
+   controller-owned Deployment annotation under the dedicated
+   `fs2-model-controller-scale-handoff` manager, retaining the exact Deployment
+   UID, ModelDeployment UID/generation, and ScaledObject identity, UID, and
+   generation. Isolating the receipt manager prevents the annotation-only SSA
+   write from relinquishing fields owned by the generic manager. A fixed-scale
+   handoff requires that durable receipt, exact
+   Deployment UID/resourceVersion/owner continuity, and two fresh complete
+   namespace lists proving that no HPA or ScaledObject (including unlabeled or
+   foreign objects) targets the Deployment. It accepts only the singleton
+   `.spec.replicas` conflict from the receipt-backed stale `keda` or
+   `horizontal-pod-autoscaler` scale owner. The exceptional `force=true` apply
+   uses the Deployment `/scale` subresource, field manager
+   `fs2-model-controller-fixed-scale`, and an `autoscaling/v1` `Scale` body
+   containing only identity/precondition metadata and `.spec.replicas`; a full
+   rendered Deployment is never forced. While that dedicated manager owns the
+   field, ordinary full-object reconciliation stays non-forcing and omits only
+   `.spec.replicas`; it continues applying the complete remaining Deployment.
+   Later fixed replica changes use the same `/scale` manager with
+   `force=false`. A fixed-to-autoscaled transition first writes zero through
+   that manager without force, creates the ScaledObject, and waits until the
+   exact KEDA/HPA pair has taken replica ownership before convergence. Both
+   normal and exceptional success require read-back of the pre-handoff
+   Deployment UID, exact ModelDeployment controller owner, no deletion marker,
+   exact replicas, and one exclusive intended controller replica owner. Every
+   other state remains fail-closed. Kubernetes offers no transaction spanning
+   collection reads and a replica write, so the final complete lists are repeated
+   immediately before the resourceVersion-pinned write to close every
+   API-supported race window.
 3. A reconcile reads the object again after every write. Status advances only
    from observed generation, resource UID, readiness, cache, admission, and
    route observations.
@@ -86,6 +110,25 @@ decides where or when a pod runs.
 8. Desired state alone never publishes a model. Disabled, draining, failed,
    infrastructure-required, unauthorized, or not-yet-observed models are absent
    from OpenAI and MCP catalogs.
+
+### Why the scale-handoff phases are separate
+
+The added state is confined to autoscaled/fixed ownership transitions. It is
+not folded into one reconcile because each security claim must survive a fresh
+API observation: first persist exact scaler identity before deletion; then
+observe ScaledObject deletion and generated-HPA garbage collection; then try
+ordinary non-forcing SSA; and only on its exact singleton replicas conflict run
+the two complete autoscaler scans and scale-only takeover. A dedicated fixed
+scale phase is also required so later fixed changes do not put replicas back
+into generic full-object SSA, while the reverse phase waits for KEDA/HPA to
+retake ownership.
+
+Steady autoscaled and fixed reconciles do not run namespace-wide autoscaler
+lists, receipt writes, or exceptional scale writes. Their controller-level
+sequence remains two ModelDeployment reads, two ordinary discoveries, and the
+existing conditional status projection. A normal object apply remains exactly
+one target GET, one Lease check, one `force=false` patch, and one read-back.
+Tests lock both baselines and the transition-only call paths.
 
 ## Infrastructure boundary
 
