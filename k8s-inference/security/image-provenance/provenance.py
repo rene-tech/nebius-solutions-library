@@ -24,7 +24,8 @@ import stat as stat_module
 import subprocess
 import sys
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -127,14 +128,15 @@ def receipt_path(run_root: Path, digest: str) -> Path:
     )
 
 
-def _read_evidence_bytes(path: Path) -> bytes:
+def _read_evidence_bytes(path: Path, private: bool = True) -> bytes:
     """Read evidence via dirfd + O_NOFOLLOW and refuse filesystem anomalies.
 
     The directory and the file are both opened without following symlinks, and
     the OPEN DESCRIPTOR is fstat-checked: it must be a regular file with link
-    count 1, owned by the caller, with no group/other access. The bytes
-    returned are read from that descriptor exactly once, so what is verified
-    is what is parsed.
+    count 1, owned by the caller; private evidence must have no group/other
+    access, public inputs (e.g. the committed verification key) must at least
+    not be group/other writable. The bytes returned are read from that
+    descriptor exactly once, so what is verified is what is parsed and hashed.
     """
     parent_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
@@ -157,9 +159,13 @@ def _read_evidence_bytes(path: Path) -> bytes:
             )
         if status.st_uid != os.getuid():
             raise ProvenanceError(f"evidence file has a foreign owner: {path}")
-        if status.st_mode & 0o077:
+        if private and status.st_mode & 0o077:
             raise ProvenanceError(
                 f"evidence file is group/other accessible: {path}; require mode 0600"
+            )
+        if not private and status.st_mode & 0o022:
+            raise ProvenanceError(
+                f"public input file is group/other writable: {path}"
             )
         chunks = []
         while True:
@@ -170,6 +176,36 @@ def _read_evidence_bytes(path: Path) -> bytes:
         return b"".join(chunks)
     finally:
         os.close(fd)
+
+
+class _PinnedPublicKey:
+    """One safe read of the verification key, reused for every check.
+
+    The key bytes are read once (O_NOFOLLOW, anomaly-checked) and written to a
+    private scratch copy; every cosign invocation and every recorded key hash
+    then refer to that single identity, so a mid-run swap of the original file
+    cannot make the verified key differ from the recorded one.
+    """
+
+    def __init__(self, public_key_path: str) -> None:
+        self._source = Path(public_key_path)
+        self._holder = None
+        self.path = ""
+        self.sha256 = ""
+
+    def __enter__(self) -> "_PinnedPublicKey":
+        key_bytes = _read_evidence_bytes(self._source, private=False)
+        self._holder = tempfile.TemporaryDirectory(prefix=".fs2-pubkey-")
+        copy = Path(self._holder.name) / "cosign.pub"
+        copy.write_bytes(key_bytes)
+        copy.chmod(0o600)
+        self.path = str(copy)
+        self.sha256 = hashlib.sha256(key_bytes).hexdigest()
+        return self
+
+    def __exit__(self, *exc_info) -> None:
+        if self._holder is not None:
+            self._holder.cleanup()
 
 
 def _verify_blob_bytes(
@@ -564,10 +600,17 @@ def _package_names_exact_digest(package: dict, digest_hex: str) -> bool:
 
 
 def _validated_spdx_document(digest: str, sbom_path: Path) -> dict:
-    """Parse, shape-check, and exactly subject-bind a standalone SPDX document."""
+    """Parse, shape-check, and exactly subject-bind a standalone SPDX document.
+
+    The document is read exactly once through the anomaly-checked O_NOFOLLOW
+    reader; the SAME byte string is parsed and hashed into the receipt, so a
+    pathname swap between parsing and hashing cannot record a hash for bytes
+    that were never validated.
+    """
+    sbom_bytes = _read_evidence_bytes(sbom_path, private=False)
     try:
-        document = json.loads(sbom_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
+        document = json.loads(sbom_bytes)
+    except json.JSONDecodeError as error:
         raise ProvenanceError(f"unreadable SPDX document: {sbom_path}") from error
     if not isinstance(document, dict) or not str(
         document.get("spdxVersion", "")
@@ -589,7 +632,7 @@ def _validated_spdx_document(digest: str, sbom_path: Path) -> dict:
         "spdx_layer_digest": None,
         "statement_sha256": None,
         "slsa_layer_digest": None,
-        "spdx_sha256": hashlib.sha256(sbom_path.read_bytes()).hexdigest(),
+        "spdx_sha256": hashlib.sha256(sbom_bytes).hexdigest(),
         "spdx_subject_digest": digest,
     }
 
@@ -599,12 +642,10 @@ def _read_anchor_store_strict(run_root: Path) -> dict:
     anchors_file = run_root / "release-anchors.json"
     if anchors_file.is_symlink():
         raise ProvenanceError(f"anchor store must not be a symlink: {anchors_file}")
+    if not anchors_file.is_file():
+        raise ProvenanceError(f"missing release anchor store: {anchors_file}")
     try:
-        anchors = json.loads(anchors_file.read_text(encoding="utf-8"))
-    except OSError as error:
-        raise ProvenanceError(
-            f"missing release anchor store: {anchors_file}"
-        ) from error
+        anchors = json.loads(_read_evidence_bytes(anchors_file))
     except json.JSONDecodeError as error:
         raise ProvenanceError(
             f"release anchor store is malformed and fails closed: {anchors_file}"
@@ -614,6 +655,35 @@ def _read_anchor_store_strict(run_root: Path) -> dict:
             f"release anchor store is malformed and fails closed: {anchors_file}"
         )
     return anchors
+
+
+@contextmanager
+def _verified_bundle_snapshot(
+    run_root: Path, bundle_path: Path, expected_sha256: str, context: str
+) -> Iterator[Path]:
+    """Yield a private snapshot of the bundle bound to its verified bytes.
+
+    The bundle is read exactly once through the anomaly-checked reader and
+    hash-verified; every subsequent git operation (list-heads, clone) runs
+    against a private copy of those verified bytes, so a same-user pathname
+    swap between hashing and git use cannot make the verified bytes differ
+    from the bytes git consumes.
+    """
+    if bundle_path.is_symlink() or not bundle_path.is_file():
+        raise ProvenanceError(
+            f"anchor bundle for {context} is missing or a symlink: {bundle_path}"
+        )
+    bundle_bytes = _read_evidence_bytes(bundle_path)
+    if hashlib.sha256(bundle_bytes).hexdigest() != expected_sha256:
+        raise ProvenanceError(
+            f"anchor bundle for {context} no longer matches its recorded "
+            f"SHA-256: {bundle_path}"
+        )
+    with tempfile.TemporaryDirectory(dir=run_root, prefix=".bundle-snap-") as scratch:
+        snapshot = Path(scratch) / "bundle-snapshot"
+        snapshot.write_bytes(bundle_bytes)
+        snapshot.chmod(0o600)
+        yield snapshot
 
 
 def create_release_receipt(
@@ -636,8 +706,9 @@ def create_release_receipt(
     equal the Git tree of the label commit inside a clone restored from that
     bundle; SBOM evidence must name this exact manifest as its subject. Deep
     checks run here; the receipt and its verified cosign signature are then
-    published together by one atomic directory rename, so a crash can never
-    leave partial evidence at the published path.
+    published together through a no-replace mkdir claim plus link(2), so
+    existing evidence at the published path is never replaced and a partial
+    claim fails closed on every later load.
     """
     reference = validate_digest_reference(reference)
     digest = reference.rsplit("@", 1)[1]
@@ -651,14 +722,6 @@ def create_release_receipt(
             "inference-stack anchor-release first"
         )
     bundle = Path(str(anchor.get("bundle_path", "")))
-    if bundle.is_symlink():
-        raise ProvenanceError(f"anchor bundle path is a symlink: {bundle}")
-    if not bundle.is_file():
-        raise ProvenanceError(f"anchor bundle is missing: {bundle}")
-    if hashlib.sha256(bundle.read_bytes()).hexdigest() != anchor.get("sha256"):
-        raise ProvenanceError(
-            f"anchor bundle no longer matches its recorded SHA-256: {bundle}"
-        )
     tag_target = _git_capture(repository, "rev-parse", anchor_tag).strip()
     if _git_capture(repository, "cat-file", "-t", tag_target).strip() != "tag":
         raise ProvenanceError(
@@ -682,15 +745,6 @@ def create_release_receipt(
             f"anchor {anchor_tag} moved: bundle receipt binds {anchor.get('commit')}, "
             f"the tag now resolves to {anchor_commit}"
         )
-    bundle_heads = _run_capture(["git", "bundle", "list-heads", str(bundle)])
-    if f"{tag_target} {anchor_tag}" not in {
-        line.strip() for line in bundle_heads.splitlines()
-    }:
-        raise ProvenanceError(
-            f"verified bundle {bundle} does not carry {anchor_tag} at tag "
-            f"object {tag_target}"
-        )
-
     top, amd64_digest, config_digest, labels = _resolve_amd64_image(
         reference, capture
     )
@@ -710,10 +764,29 @@ def create_release_receipt(
         )
     # Prove commit/tree/anchor ancestry against a fresh clone restored from
     # the durable bundle itself, so the recovery evidence is self-contained
-    # rather than trusting the current working repository's object store.
-    with tempfile.TemporaryDirectory(dir=run_root) as scratch:
+    # rather than trusting the current working repository's object store. Both
+    # git operations run against one private snapshot of the hash-verified
+    # bundle bytes, never against the mutable published pathname.
+    with (
+        _verified_bundle_snapshot(
+            run_root, bundle, str(anchor.get("sha256", "")), reference
+        ) as snapshot,
+        tempfile.TemporaryDirectory(dir=run_root) as scratch,
+    ):
+        bundle_heads = _run_capture(
+            ["git", "bundle", "list-heads", str(snapshot)]
+        )
+        if f"{tag_target} {anchor_tag}" not in {
+            line.strip() for line in bundle_heads.splitlines()
+        }:
+            raise ProvenanceError(
+                f"verified bundle {bundle} does not carry {anchor_tag} at tag "
+                f"object {tag_target}"
+            )
         restore = Path(scratch) / "restore.git"
-        _run_capture(["git", "clone", "--quiet", "--bare", str(bundle), str(restore)])
+        _run_capture(
+            ["git", "clone", "--quiet", "--bare", str(snapshot), str(restore)]
+        )
         restored_tag_target = _git_capture(restore, "rev-parse", anchor_tag).strip()
         if restored_tag_target != tag_target:
             raise ProvenanceError(
@@ -865,13 +938,19 @@ def _publish_receipt(
     public_key_path: str,
     capture,
 ) -> dict:
-    """Publish receipt+signature atomically; existing evidence is write-once.
+    """Publish receipt+signature no-replace; existing evidence is write-once.
 
     The receipt is written to a same-filesystem staging directory, signed,
-    the signature is VERIFIED, both files are fsynced, and only then is the
-    directory renamed into place. A crash leaves at most an inert staging
-    directory, never partial published evidence; a concurrent publisher loses
-    the rename race and falls back to the idempotence/conflict check.
+    the signature is VERIFIED, and both files are fsynced. Publication then
+    claims the final directory with mkdir — a true no-replace primitive that
+    fails even against an injected EMPTY directory, unlike rename(2), which
+    would silently replace one — and links the staged files in with link(2),
+    which is also no-replace. A publisher that loses the claim verifies the
+    winner through the idempotence/conflict check instead of overwriting it,
+    and the winning publisher re-reads the published bytes and requires them
+    to equal the verified staged bytes. A crash can leave a partial claim,
+    which every subsequent load and publish refuses fail-closed as partial
+    evidence; nothing ever replaces existing published state.
     """
     path = receipt_path(run_root, receipt["digest"])
     final_dir = path.parent
@@ -914,17 +993,42 @@ def _publish_receipt(
                 public_key_path, staged_receipt, staged_signature
             )
         )
+        staged_receipt_bytes = _read_evidence_bytes(staged_receipt)
+        staged_signature_bytes = _read_evidence_bytes(staged_signature)
         _fsync_file(staged_receipt)
         _fsync_file(staged_signature)
         _fsync_dir(staging)
         try:
-            os.rename(staging, final_dir)
+            os.mkdir(final_dir, mode=0o700)
         except OSError:
-            # Lost a publication race; the winner's evidence governs.
+            # The claim failed: a concurrent publisher won, or something —
+            # even an empty directory — was injected at the published path.
+            # The occupant is verified as the winner or refused; it is never
+            # replaced.
             return _existing_receipt_or_conflict(
                 run_root, final_dir, reference, receipt, public_key_path, capture
             )
+        os.link(staged_receipt, final_dir / "receipt.json")
+        os.link(staged_signature, final_dir / "receipt.json.sig")
+        _fsync_dir(final_dir)
         _fsync_dir(parent)
+        # Release the staging names first so the published files are
+        # single-linked, then verify the winner: the bytes now published
+        # must be exactly the verified staged bytes.
+        staged_receipt.unlink()
+        staged_signature.unlink()
+        staging.rmdir()
+        published_receipt = _read_evidence_bytes(final_dir / "receipt.json")
+        published_signature = _read_evidence_bytes(final_dir / "receipt.json.sig")
+        if (
+            published_receipt != staged_receipt_bytes
+            or published_signature != staged_signature_bytes
+        ):
+            raise ProvenanceError(
+                f"published receipt for {reference} at {final_dir} does not "
+                "byte-match the verified staged evidence; investigate the "
+                "tamper before trusting or replacing it"
+            )
         return receipt
     finally:
         if staging.exists():
@@ -993,30 +1097,29 @@ def validate_receipt_binding(receipt: dict, reference: str, run_root: Path) -> N
             f"release receipt for {reference} lacks the anchor bundle SHA-256"
         )
     bundle = Path(str(anchor.get("bundle_path", "")))
-    if bundle.is_symlink() or not bundle.is_file():
-        raise ProvenanceError(
-            f"anchor bundle for {reference} is missing or a symlink: {bundle}; "
-            "a receipt without its durable artifact does not authorize anything"
-        )
-    if hashlib.sha256(_read_evidence_bytes(bundle)).hexdigest() != anchor[
-        "bundle_sha256"
-    ]:
-        raise ProvenanceError(
-            f"anchor bundle for {reference} no longer matches the receipt: {bundle}"
-        )
-    heads = _run_capture(["git", "bundle", "list-heads", str(bundle)])
-    expected = f"{anchor.get('tag_target')} {anchor.get('tag')}"
-    if expected not in {line.strip() for line in heads.splitlines()}:
-        raise ProvenanceError(
-            f"anchor bundle for {reference} does not carry {anchor.get('tag')} "
-            f"at {anchor.get('tag_target')}"
-        )
     # Re-prove the recorded source identity against the bundle itself: a
     # receipt naming a commit, tree, or tag object the durable artifact does
-    # not actually contain is refused, whatever its other fields claim.
-    with tempfile.TemporaryDirectory(dir=run_root) as scratch:
+    # not actually contain is refused, whatever its other fields claim. The
+    # bundle is read once, hash-verified against the receipt, and every git
+    # operation runs against a private snapshot of those verified bytes so a
+    # same-user pathname swap cannot diverge verified and consumed bytes.
+    with (
+        _verified_bundle_snapshot(
+            run_root, bundle, str(anchor["bundle_sha256"]), reference
+        ) as snapshot,
+        tempfile.TemporaryDirectory(dir=run_root) as scratch,
+    ):
+        heads = _run_capture(["git", "bundle", "list-heads", str(snapshot)])
+        expected = f"{anchor.get('tag_target')} {anchor.get('tag')}"
+        if expected not in {line.strip() for line in heads.splitlines()}:
+            raise ProvenanceError(
+                f"anchor bundle for {reference} does not carry "
+                f"{anchor.get('tag')} at {anchor.get('tag_target')}"
+            )
         restore = Path(scratch) / "revalidate.git"
-        _run_capture(["git", "clone", "--quiet", "--bare", str(bundle), str(restore)])
+        _run_capture(
+            ["git", "clone", "--quiet", "--bare", str(snapshot), str(restore)]
+        )
         restored_target = _git_capture(restore, "rev-parse", anchor["tag"]).strip()
         restored_commit = _git_capture(
             restore, "rev-parse", f"{anchor['tag']}^{{commit}}"
@@ -1183,8 +1286,8 @@ def load_signed_inventory(
     public_key_path: str,
     verifier=None,
     max_age_hours: float = INVENTORY_MAX_AGE_HOURS,
-) -> dict:
-    """Load and verify the signed, complete platform-image inventory.
+) -> tuple[dict, str]:
+    """Load and verify the signed inventory; return it with its bytes' hash.
 
     The inventory is the acceptance-gate document enumerating every platform
     image reference from the live workloads, the Helm rollback window, and the
@@ -1192,6 +1295,8 @@ def load_signed_inventory(
     snapshot (observed_at plus the resource identities it was read from) and
     the document carries the cluster identity and capture time, which must be
     fresh — a stale or future-dated inventory is refused, bounding replay.
+    The returned SHA-256 is computed over EXACTLY the verified/parsed bytes,
+    so callers recording it can never hash different bytes than were checked.
 
     Drains can never remove an ACTIVE image: a drained reference must not
     appear in live_workloads and must come from a non-live source (rollback
@@ -1326,7 +1431,7 @@ def load_signed_inventory(
             f"drained removals; missing: {missing or 'none'}; extras: "
             f"{extras or 'none'}"
         )
-    return inventory
+    return inventory, hashlib.sha256(inventory_bytes).hexdigest()
 
 
 def verified_allowlist(
@@ -1348,46 +1453,52 @@ def verified_allowlist(
     both refused). Every inventory digest must then carry a bound release
     receipt and a valid cosign signature, so the ConfigMap can never drift
     ahead of the release evidence or silently drop coverage.
+
+    The verification key is read exactly once and pinned: every signature
+    check and the recorded key annotation refer to that single identity. The
+    recorded inventory annotation is the hash of the bytes that were verified
+    and parsed — never a re-read of the mutable pathname.
     """
-    inventory = load_signed_inventory(
-        inventory_path, public_key_path, verifier, max_age_hours
-    )
-    inventory_references = sorted(
-        validate_digest_reference(str(ref)) for ref in inventory["platform_images"]
-    )
-    if references:
-        given = {validate_digest_reference(ref) for ref in references}
-        if given != set(inventory_references):
-            missing = sorted(set(inventory_references) - given)
-            extras = sorted(given - set(inventory_references))
-            raise ProvenanceError(
-                "--image references must equal the signed inventory exactly; "
-                f"missing: {missing or 'none'}; extras: {extras or 'none'}"
-            )
-    run_verifier = verifier or (
-        lambda command: subprocess.run(list(command), check=True)
-    )
-    digests = []
-    for reference in inventory_references:
-        load_bound_receipt(receipts_root, reference, public_key_path, verifier)
-        try:
-            run_verifier(cosign_verify_command(public_key_path, reference))
-        except subprocess.CalledProcessError as error:
-            raise ProvenanceError(
-                f"signature verification failed for {reference}; sign it "
-                "before allow-listing"
-            ) from error
-        digests.append(reference.rsplit("@", 1)[1])
-    manifest = render_allowlist(
-        registry_prefixes, platform_repository_prefix, digests, deploy_principals
-    )
-    annotations = manifest["metadata"].setdefault("annotations", {})
-    annotations["security.fs2.nebius.ai/verified-with-key-sha256"] = hashlib.sha256(
-        Path(public_key_path).read_bytes()
-    ).hexdigest()
-    annotations["security.fs2.nebius.ai/inventory-sha256"] = hashlib.sha256(
-        inventory_path.read_bytes()
-    ).hexdigest()
+    with _PinnedPublicKey(public_key_path) as pinned:
+        inventory, inventory_sha256 = load_signed_inventory(
+            inventory_path, pinned.path, verifier, max_age_hours
+        )
+        inventory_references = sorted(
+            validate_digest_reference(str(ref))
+            for ref in inventory["platform_images"]
+        )
+        if references:
+            given = {validate_digest_reference(ref) for ref in references}
+            if given != set(inventory_references):
+                missing = sorted(set(inventory_references) - given)
+                extras = sorted(given - set(inventory_references))
+                raise ProvenanceError(
+                    "--image references must equal the signed inventory "
+                    f"exactly; missing: {missing or 'none'}; extras: "
+                    f"{extras or 'none'}"
+                )
+        run_verifier = verifier or (
+            lambda command: subprocess.run(list(command), check=True)
+        )
+        digests = []
+        for reference in inventory_references:
+            load_bound_receipt(receipts_root, reference, pinned.path, verifier)
+            try:
+                run_verifier(cosign_verify_command(pinned.path, reference))
+            except subprocess.CalledProcessError as error:
+                raise ProvenanceError(
+                    f"signature verification failed for {reference}; sign it "
+                    "before allow-listing"
+                ) from error
+            digests.append(reference.rsplit("@", 1)[1])
+        manifest = render_allowlist(
+            registry_prefixes, platform_repository_prefix, digests, deploy_principals
+        )
+        annotations = manifest["metadata"].setdefault("annotations", {})
+        annotations["security.fs2.nebius.ai/verified-with-key-sha256"] = (
+            pinned.sha256
+        )
+        annotations["security.fs2.nebius.ai/inventory-sha256"] = inventory_sha256
     return manifest
 
 
@@ -1566,22 +1677,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(json.dumps(manifest, indent=2, sort_keys=True))
     elif args.command == "receipt":
-        written = create_release_receipt(
-            args.image,
-            args.run_root,
-            args.repository,
-            args.anchor_tag,
-            args.key,
-            args.public_key,
-            args.sbom,
-        )
+        with _PinnedPublicKey(args.public_key) as pinned:
+            written = create_release_receipt(
+                args.image,
+                args.run_root,
+                args.repository,
+                args.anchor_tag,
+                args.key,
+                pinned.path,
+                args.sbom,
+            )
         print(json.dumps(written, indent=2, sort_keys=True))
     elif args.command == "sign":
-        for reference in args.reference:
-            load_bound_receipt(args.run_root, reference, args.public_key)
-        run_commands(
-            [cosign_sign_command(args.key, ref) for ref in args.reference]
-        )
+        with _PinnedPublicKey(args.public_key) as pinned:
+            for reference in args.reference:
+                load_bound_receipt(args.run_root, reference, pinned.path)
+            run_commands(
+                [cosign_sign_command(args.key, ref) for ref in args.reference]
+            )
     elif args.command == "verify":
         run_commands(
             [cosign_verify_command(args.public_key, ref) for ref in args.reference]

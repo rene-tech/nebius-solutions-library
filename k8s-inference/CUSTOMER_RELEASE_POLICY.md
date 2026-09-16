@@ -90,8 +90,10 @@ provenance gate (see `security/image-provenance/README.md`):
    All gate evaluations and exceptions are recorded in a hash-chained,
    checkpointed, tamper-evident history (`release-source-history.jsonl`);
    anchors are annotated-tag-only, content-addressed, and published without
-   replacement; receipts are write-once, published atomically, and fully
-   revalidated on every load.
+   replacement; receipts are write-once, published through no-replace
+   primitives (never a directory rename, which could replace an injected
+   empty target), and fully revalidated on every load, with bundle git
+   operations bound to private snapshots of the hash-verified bytes.
 2. **Bound release receipt:** before signing, every digest gets a cosign-signed
    release receipt binding it to its source commit/tree, the durable anchor
    bundle, and validated SBOM evidence

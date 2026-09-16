@@ -661,6 +661,41 @@ def _bundle_lists_ref_at(root: Path, bundle: Path, ref: str, target: str) -> boo
     return False
 
 
+@contextmanager
+def _verified_bundle_snapshot(
+    run_root: Path, bundle: Path, expected_sha256: str
+) -> Iterator[Path]:
+    """Yield a private snapshot of the bundle bound to its verified bytes.
+
+    The bundle is read exactly once through an O_NOFOLLOW descriptor and
+    hash-verified; every subsequent git operation (verify, list-heads, clone)
+    runs against a private copy of those verified bytes, so a same-user
+    pathname swap between hashing and git use cannot make the verified bytes
+    differ from the bytes git consumes.
+    """
+    if bundle.is_symlink():
+        raise DeploymentError(f"evidence file must not be a symlink: {bundle}")
+    try:
+        descriptor = os.open(bundle, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError as exc:
+        raise DeploymentError(
+            f"cannot open anchor bundle safely (symlink or missing): {bundle}"
+        ) from exc
+    with os.fdopen(descriptor, "rb") as handle:
+        data = handle.read()
+    if hashlib.sha256(data).hexdigest() != expected_sha256:
+        raise DeploymentError(
+            f"anchor bundle no longer matches its recorded SHA-256: {bundle}; "
+            "evidence is immutable — refusing; investigate the tamper and "
+            "anchor a new tag"
+        )
+    with tempfile.TemporaryDirectory(dir=run_root, prefix=".bundle-snap-") as scratch:
+        snapshot = Path(scratch) / "bundle-snapshot"
+        snapshot.write_bytes(data)
+        snapshot.chmod(0o600)
+        yield snapshot
+
+
 def _bundle_verified_tags(
     root: Path, run_root: Path, tag_refs: Sequence[str]
 ) -> list[str]:
@@ -688,8 +723,6 @@ def _bundle_verified_tags(
             continue
         if bundle.stat().st_mode & 0o077:
             continue
-        if _sha256_file(bundle) != entry.get("sha256"):
-            continue
         local_target = run(
             ["git", "-C", str(root), "rev-parse", ref],
             capture=True,
@@ -697,16 +730,22 @@ def _bundle_verified_tags(
         ).stdout.strip()
         if entry.get("tag_target") != local_target:
             continue
+        # The bundle is read once and hash-verified; integrity and list-heads
+        # both run against a private snapshot of those verified bytes, never
+        # against the mutable published pathname.
         try:
-            run(
-                ["git", "-C", str(root), "bundle", "verify", str(bundle)],
-                capture=True,
-                env=clean_environment(),
-            )
+            with _verified_bundle_snapshot(
+                run_root, bundle, str(entry.get("sha256", ""))
+            ) as snapshot:
+                run(
+                    ["git", "-C", str(root), "bundle", "verify", str(snapshot)],
+                    capture=True,
+                    env=clean_environment(),
+                )
+                if _bundle_lists_ref_at(root, snapshot, ref, local_target):
+                    verified.append(ref)
         except DeploymentError:
             continue
-        if _bundle_lists_ref_at(root, bundle, ref, local_target):
-            verified.append(ref)
     return sorted(verified)
 
 
@@ -859,26 +898,24 @@ def create_release_anchor(
                     "bundle from backup or anchor a new tag, never recreate "
                     "it in place"
                 )
-            if _sha256_file(recorded_bundle) != existing.get("sha256"):
-                raise DeploymentError(
-                    f"anchor {tag_ref} bundle no longer matches its recorded "
-                    f"SHA-256: {recorded_bundle}; evidence is immutable — "
-                    "refusing to overwrite; investigate the tamper and anchor "
-                    "a new tag"
+            # Idempotent path re-verifies the artifact, not just existence:
+            # one hash-verified read, with integrity and list-heads both run
+            # against a private snapshot of the verified bytes.
+            with _verified_bundle_snapshot(
+                run_root, recorded_bundle, str(existing.get("sha256", ""))
+            ) as snapshot:
+                run(
+                    ["git", "-C", str(root), "bundle", "verify", str(snapshot)],
+                    capture=True,
+                    env=clean_environment(),
                 )
-            # Idempotent path re-verifies the artifact, not just existence.
-            run(
-                ["git", "-C", str(root), "bundle", "verify", str(recorded_bundle)],
-                capture=True,
-                env=clean_environment(),
-            )
-            if not _bundle_lists_ref_at(
-                root, recorded_bundle, tag_ref, existing["tag_target"]
-            ):
-                raise DeploymentError(
-                    f"anchor {tag_ref} bundle no longer lists the tag at its "
-                    f"recorded target; refusing"
-                )
+                if not _bundle_lists_ref_at(
+                    root, snapshot, tag_ref, existing["tag_target"]
+                ):
+                    raise DeploymentError(
+                        f"anchor {tag_ref} bundle no longer lists the tag at "
+                        f"its recorded target; refusing"
+                    )
             return {"anchor_tag": tag_ref, **existing, "idempotent": True}
 
         # The bundle is built and fully verified in a same-filesystem staging
@@ -916,15 +953,22 @@ def create_release_anchor(
                     raise DeploymentError(
                         f"anchor bundle path is a symlink: {bundle}"
                     ) from None
-                if _sha256_file(bundle) != bundle_sha:
+                # The surviving file must byte-match the content address and
+                # fully verify; every check runs on a private snapshot of the
+                # bytes that were hashed, never on the racing pathname.
+                try:
+                    with _verified_bundle_snapshot(
+                        run_root, bundle, bundle_sha
+                    ) as survivor:
+                        _verify_bundle_identity(
+                            root, run_root, survivor, tag_ref, tag_target, commit
+                        )
+                except DeploymentError as exc:
                     raise DeploymentError(
                         f"conflicting file already exists at the "
                         f"content-addressed anchor path {bundle}; refusing to "
                         "overwrite evidence-directory content"
-                    ) from None
-                _verify_bundle_identity(
-                    root, run_root, bundle, tag_ref, tag_target, commit
-                )
+                    ) from exc
             else:
                 fsync_directory(bundle_directory)
                 # Re-verify the published winner, not the staging copy.

@@ -269,7 +269,8 @@ def build_anchor_fixture(base: Path) -> dict:
     git(repo, "bundle", "create", str(bundle), "refs/tags/deploy/fixture")
     bundle.chmod(0o600)
     sha = hashlib.sha256(bundle.read_bytes()).hexdigest()
-    (base / "release-anchors.json").write_text(
+    store = base / "release-anchors.json"
+    store.write_text(
         json.dumps(
             {
                 "refs/tags/deploy/fixture": {
@@ -283,6 +284,7 @@ def build_anchor_fixture(base: Path) -> dict:
         ),
         encoding="utf-8",
     )
+    store.chmod(0o600)
     return {
         "repo": repo,
         "head": head,
@@ -437,6 +439,41 @@ class VerifiedAllowlistTest(unittest.TestCase):
         annotations = manifest["metadata"]["annotations"]
         self.assertIn("security.fs2.nebius.ai/verified-with-key-sha256", annotations)
         self.assertIn("security.fs2.nebius.ai/inventory-sha256", annotations)
+
+    def test_allowlist_annotations_bind_verified_bytes_and_pinned_key(
+        self,
+    ) -> None:
+        import hashlib as h
+
+        original_inventory = self.inventory.read_bytes()
+        key_bytes = Path(self._tmp.name).read_bytes()
+        key_paths: list[str] = []
+        key_contents: set[bytes] = set()
+
+        def swapping_verifier(command):
+            key_path = command[command.index("--key") + 1]
+            key_paths.append(key_path)
+            key_contents.add(Path(key_path).read_bytes())
+            # Adversarial swap AFTER verification: rewrite the published
+            # inventory pathname. The annotation must record the bytes that
+            # were verified, never a re-read of the mutable pathname.
+            self.inventory.write_text('{"swapped": true}', encoding="utf-8")
+
+        manifest = self.render(verifier=swapping_verifier)
+        annotations = manifest["metadata"]["annotations"]
+        self.assertEqual(
+            annotations["security.fs2.nebius.ai/inventory-sha256"],
+            h.sha256(original_inventory).hexdigest(),
+        )
+        self.assertEqual(
+            annotations["security.fs2.nebius.ai/verified-with-key-sha256"],
+            h.sha256(key_bytes).hexdigest(),
+        )
+        # Every verification used ONE pinned private key identity — a scratch
+        # copy of the key bytes, not the swappable original pathname.
+        self.assertEqual(len(set(key_paths)), 1)
+        self.assertNotEqual(key_paths[0], self._tmp.name)
+        self.assertEqual(key_contents, {key_bytes})
 
     def test_explicit_references_must_equal_the_inventory_exactly(self) -> None:
         with self.assertRaisesRegex(TOOL.ProvenanceError, "equal the signed inventory"):
@@ -1045,6 +1082,92 @@ class ReceiptBindingTest(unittest.TestCase):
         with self.assertRaisesRegex(TOOL.ProvenanceError, "symlink"):
             self.create(capture)
 
+    def test_injected_empty_directory_at_receipt_path_is_never_replaced(
+        self,
+    ) -> None:
+        # rename(2) silently replaces an empty target directory; the mkdir
+        # claim must instead refuse it as partial evidence and leave it alone.
+        capture = self.crane_capture(self.fixture["head"])
+        final_dir = TOOL.receipt_path(self.run_root, self.created_digest()).parent
+        final_dir.mkdir(parents=True, mode=0o700)
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "partial receipt"):
+            self.create(capture)
+        self.assertTrue(final_dir.is_dir())
+        self.assertEqual(list(final_dir.iterdir()), [])
+
+    def test_bundle_snapshot_binds_git_use_to_verified_bytes(self) -> None:
+        # The snapshot is taken from the hash-verified bytes: mutating the
+        # original bundle mid-use cannot change what git consumes, and any
+        # bytes that do not match the recorded hash never yield a snapshot.
+        bundle = self.fixture["bundle"]
+        original = bundle.read_bytes()
+        with TOOL._verified_bundle_snapshot(
+            self.run_root, bundle, self.fixture["bundle_sha256"], "swap-test"
+        ) as snapshot:
+            bundle.write_bytes(b"swapped after verification")
+            self.assertEqual(snapshot.read_bytes(), original)
+            heads = TOOL._run_capture(
+                ["git", "bundle", "list-heads", str(snapshot)]
+            )
+            self.assertIn("refs/tags/deploy/fixture", heads)
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "no longer matches"):
+            with TOOL._verified_bundle_snapshot(
+                self.run_root, bundle, self.fixture["bundle_sha256"], "swap-test"
+            ):
+                self.fail("swapped bundle bytes must never yield a snapshot")
+        bundle.write_bytes(original)
+
+    def test_standalone_spdx_is_read_once_and_anomaly_checked(self) -> None:
+        import hashlib as h
+
+        digest_hex = DIGEST_A.split(":", 1)[1]
+        document = {
+            "spdxVersion": "SPDX-2.3",
+            "SPDXID": "SPDXRef-DOCUMENT",
+            "dataLicense": "CC0-1.0",
+            "name": "fixture-sbom",
+            "documentNamespace": "https://example.invalid/spdxdocs/swap",
+            "creationInfo": {
+                "created": "2026-09-16T00:00:00Z",
+                "creators": ["Tool: fixture"],
+            },
+            "packages": [
+                {
+                    "SPDXID": "SPDXRef-Package-image",
+                    "name": "fixture-image",
+                    "downloadLocation": "NOASSERTION",
+                    "checksums": [
+                        {"algorithm": "SHA256", "checksumValue": digest_hex}
+                    ],
+                }
+            ],
+            "relationships": [
+                {
+                    "spdxElementId": "SPDXRef-DOCUMENT",
+                    "relationshipType": "DESCRIBES",
+                    "relatedSpdxElement": "SPDXRef-Package-image",
+                }
+            ],
+        }
+        sbom = self.run_root / "single-read.spdx.json"
+        sbom.write_text(json.dumps(document), encoding="utf-8")
+        sbom.chmod(0o644)
+        # The recorded hash covers exactly the parsed bytes.
+        evidence = TOOL._validated_spdx_document(DIGEST_A, sbom)
+        self.assertEqual(
+            evidence["spdx_sha256"], h.sha256(sbom.read_bytes()).hexdigest()
+        )
+        # Group/other-writable input is an anomaly and is refused.
+        sbom.chmod(0o666)
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "group/other writable"):
+            TOOL._validated_spdx_document(DIGEST_A, sbom)
+        sbom.chmod(0o644)
+        # A symlinked path is refused by O_NOFOLLOW, not followed.
+        link = self.run_root / "linked.spdx.json"
+        link.symlink_to(sbom)
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "symlink or missing"):
+            TOOL._validated_spdx_document(DIGEST_A, link)
+
     def test_recreated_tag_object_at_same_commit_is_refused(self) -> None:
         # Same peeled commit, different annotated tag object: never receipted.
         git(self.fixture["repo"], "tag", "-d", "deploy/fixture")
@@ -1290,10 +1413,15 @@ class ReceiptBindingTest(unittest.TestCase):
             ],
         }
 
+    def write_spdx(self, path: Path, document: dict) -> Path:
+        path.write_text(json.dumps(document), encoding="utf-8")
+        path.chmod(0o644)
+        return path
+
     def test_spdx_document_binding_requires_exact_package_identity(self) -> None:
         digest_hex = DIGEST_A.split(":", 1)[1]
         good = self.run_root / "sbom.spdx.json"
-        good.write_text(json.dumps(self.spdx_document(digest_hex)), encoding="utf-8")
+        self.write_spdx(good, self.spdx_document(digest_hex))
         evidence = TOOL._validated_spdx_document(DIGEST_A, good)
         self.assertEqual(evidence["spdx_subject_digest"], DIGEST_A)
 
@@ -1304,15 +1432,15 @@ class ReceiptBindingTest(unittest.TestCase):
                 "referenceLocator": f"pkg:oci/fixture-image@sha256:{digest_hex}?arch=amd64",
             }
         ]
-        purl_path = self.run_root / "purl.spdx.json"
-        purl_path.write_text(json.dumps(purl), encoding="utf-8")
+        purl_path = self.write_spdx(self.run_root / "purl.spdx.json", purl)
         self.assertEqual(
             TOOL._validated_spdx_document(DIGEST_A, purl_path)["spdx_subject_digest"],
             DIGEST_A,
         )
 
-        not_spdx = self.run_root / "not-sbom.json"
-        not_spdx.write_text(json.dumps({"name": digest_hex}), encoding="utf-8")
+        not_spdx = self.write_spdx(
+            self.run_root / "not-sbom.json", {"name": digest_hex}
+        )
         with self.assertRaisesRegex(TOOL.ProvenanceError, "not an SPDX"):
             TOOL._validated_spdx_document(DIGEST_A, not_spdx)
 
@@ -1324,8 +1452,9 @@ class ReceiptBindingTest(unittest.TestCase):
         ):
             document = self.spdx_document(None)
             document.update(substring_doc)
-            path = self.run_root / "substring.spdx.json"
-            path.write_text(json.dumps(document), encoding="utf-8")
+            path = self.write_spdx(
+                self.run_root / "substring.spdx.json", document
+            )
             with self.assertRaisesRegex(TOOL.ProvenanceError, "exact SHA256"):
                 TOOL._validated_spdx_document(DIGEST_A, path)
 
@@ -1335,8 +1464,9 @@ class ReceiptBindingTest(unittest.TestCase):
         wrong_algorithm["packages"][0]["checksums"] = [
             {"algorithm": "SHA1", "checksumValue": digest_hex}
         ]
-        path = self.run_root / "wrong-algorithm.spdx.json"
-        path.write_text(json.dumps(wrong_algorithm), encoding="utf-8")
+        path = self.write_spdx(
+            self.run_root / "wrong-algorithm.spdx.json", wrong_algorithm
+        )
         with self.assertRaisesRegex(TOOL.ProvenanceError, "exact SHA256"):
             TOOL._validated_spdx_document(DIGEST_A, path)
 
@@ -1349,8 +1479,7 @@ class ReceiptBindingTest(unittest.TestCase):
                 "checksums": [{"algorithm": "SHA256", "checksumValue": digest_hex}],
             }
         )
-        path = self.run_root / "undescribed.spdx.json"
-        path.write_text(json.dumps(undescribed), encoding="utf-8")
+        path = self.write_spdx(self.run_root / "undescribed.spdx.json", undescribed)
         with self.assertRaisesRegex(TOOL.ProvenanceError, "exact SHA256"):
             TOOL._validated_spdx_document(DIGEST_A, path)
 
@@ -1364,8 +1493,7 @@ class ReceiptBindingTest(unittest.TestCase):
         ):
             document = self.spdx_document(digest_hex)
             document.update(mutation)
-            path = self.run_root / "shape.spdx.json"
-            path.write_text(json.dumps(document), encoding="utf-8")
+            path = self.write_spdx(self.run_root / "shape.spdx.json", document)
             with self.assertRaisesRegex(TOOL.ProvenanceError, pattern):
                 TOOL._validated_spdx_document(DIGEST_A, path)
 

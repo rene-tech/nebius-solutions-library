@@ -250,6 +250,29 @@ class ReleaseSourceGateTest(unittest.TestCase):
         self.assertEqual(second["sha256"], first["sha256"])
         self.assertEqual(self.anchor_evidence(first), (bundle_bytes, store_bytes))
 
+    def test_bundle_snapshot_binds_git_use_to_verified_bytes(self) -> None:
+        # Anchor git operations run against a private snapshot of the
+        # hash-verified bundle bytes: mutating the published pathname mid-use
+        # changes nothing, and mismatching bytes never yield a snapshot.
+        commit = self.add_unpushed_commit()
+        git(self.checkout, "tag", "-a", "-m", "anchor", "deploy/snap", commit)
+        receipt = STACK.create_release_anchor(
+            self.run_root, "deploy/snap", repository_root=self.checkout
+        )
+        bundle = Path(receipt["bundle_path"])
+        original = bundle.read_bytes()
+        with STACK._verified_bundle_snapshot(
+            self.run_root, bundle, receipt["sha256"]
+        ) as snapshot:
+            bundle.write_bytes(b"swapped after verification")
+            self.assertEqual(snapshot.read_bytes(), original)
+        with self.assertRaisesRegex(STACK.DeploymentError, "immutable"):
+            with STACK._verified_bundle_snapshot(
+                self.run_root, bundle, receipt["sha256"]
+            ):
+                self.fail("swapped bundle bytes must never yield a snapshot")
+        bundle.write_bytes(original)
+
     def test_anchor_refuses_reanchoring_a_moved_tag(self) -> None:
         commit = self.add_unpushed_commit()
         git(self.checkout, "tag", "-a", "-m", "anchor", "deploy/replay", commit)

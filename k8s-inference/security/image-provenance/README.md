@@ -11,7 +11,7 @@ an unreviewed local build cannot reach the platform namespaces unnoticed.
 | --- | --- | --- | --- |
 | Release-source gate | `inference-stack` (`release-gate`; enforced on `apply`) | `HEAD` is a clean checkout (tracked **and untracked** drift fails) reachable from `origin/main`, `origin/release/*`, an origin-verified `release/*`/`deploy/*` tag, or a bundle-verified local tag; latest state in `release-source.json`, every evaluation — including exceptions — appended to the hash-chained `release-source-history.jsonl`. Exceptions require a sanitized reason bound to a non-secret tracking ID (`incident:`/`change:`/`ticket:`/`task:`) plus a named approver (`--exception-approver` or `FS2_RELEASE_EXCEPTION_APPROVER`) | Deploys made outside the wrapper; this is a source-side check only and weaker than receipt anchoring. The chained log is tamper-EVIDENT (verify with `verify_chained_history`), not immutable — WORM storage of the log and binding approvers to real identities are owner infrastructure/IAM items |
 | Durable anchor | `inference-stack anchor-release` | A `release/*`/`deploy/*` tag bundled into the private run root: full history, mode 0600, SHA-256 recorded, `git bundle verify` passed, and restore proven by a real clone that must resolve the tag to the expected commit. A local tag **without** a verified bundle never anchors. Anchors are **write-once**: identity-equal re-runs are idempotent; a moved tag, a changed/missing bundle, or an unrecorded file at the bundle path is refused | Public/remote publication (an owner decision) |
-| Release receipt | `provenance.py receipt` | Digest ↔ source binding via the content-addressed chain: the **exactly one** linux/amd64 image manifest is resolved from the index (never "the first entry"), its config blob is fetched, hash-verified, platform-checked, and must carry exact 40-hex revision and source-tree labels; the anchor's current annotated **tag object** must equal the recorded target and be present in the verified bundle; ancestry and tree equality are proven inside a fresh clone restored **from the bundle**; SBOM evidence is the attestation selected for that exact amd64 manifest — a fetched, hash-verified (blob = layer digest) in-toto Statement (v0.1/v1) with `predicateType` exactly `https://spdx.dev/Document`, a named subject whose sha256 equals the amd64 manifest, and an SPDX-2.x predicate with valid unique SPDXIDs and a resolving SPDXRef-DOCUMENT DESCRIBES — or a standalone SPDX document that binds the digest as an exact SHA256 checksum or purl version on a described package (substring mentions never bind); the verified manifest/config/attestation/layer/statement digests are recorded and the receipt itself is cosign-signed and signature-verified before atomic publication. Receipts are **write-once**: identity-equal re-runs re-verify the signature and return the original bytes; any difference is refused | Images without exact revision/tree labels (refused); superseding requires explicitly archiving the old receipt directory first |
+| Release receipt | `provenance.py receipt` | Digest ↔ source binding via the content-addressed chain: the **exactly one** linux/amd64 image manifest is resolved from the index (never "the first entry"), its config blob is fetched, hash-verified, platform-checked, and must carry exact 40-hex revision and source-tree labels; the anchor's current annotated **tag object** must equal the recorded target and be present in the verified bundle; ancestry and tree equality are proven inside a fresh clone restored **from the bundle**; SBOM evidence is the attestation selected for that exact amd64 manifest — a fetched, hash-verified (blob = layer digest) in-toto Statement (v0.1/v1) with `predicateType` exactly `https://spdx.dev/Document`, a named subject whose sha256 equals the amd64 manifest, and an SPDX-2.x predicate with valid unique SPDXIDs and a resolving SPDXRef-DOCUMENT DESCRIBES — or a standalone SPDX document that binds the digest as an exact SHA256 checksum or purl version on a described package (substring mentions never bind); the verified manifest/config/attestation/layer/statement digests are recorded and the receipt itself is cosign-signed and signature-verified before no-replace publication. Receipts are **write-once**: identity-equal re-runs re-verify the signature and return the original bytes; any difference is refused | Images without exact revision/tree labels (refused); superseding requires explicitly archiving the old receipt directory first |
 | Signing / verification | `provenance.py sign` / `verify` | `sign` refuses any reference without a signed, validated receipt; key-based cosign signatures with `--use-signing-config=false --new-bundle-format=false --tlog-upload=false` (the regional registry rejects the new bundle media type, and private repo names/digests must not reach the public Rekor log) | Signature ≠ provenance by itself: a signature without a receipt is artifact presence only |
 | Admission: image rules | `policy.yaml` (`fs2-image-provenance`) | For Pods **and** Deployments/DaemonSets/StatefulSets/Jobs/CronJobs in `fs2-system`/`fs2-models`: digest pinning, registry prefix allow-list, and the platform-repository digest allow-list, so a direct `helm upgrade`/`kubectl apply` with a bad image fails at the workload write | Config-only changes that reuse allow-listed images |
 | Admission: Helm release writes | `policy.yaml` (`fs2-helm-release-governance`) | Secrets of type `helm.sh/release.v1` in `fs2-system` may only be written by the `deploy-principals` recorded in the allow-list ConfigMap | This is a **compensating control**, not closure: a deploy-principal holder can still run direct `helm upgrade`, and arbitrary config-only `kubectl` writes are not gated |
@@ -103,11 +103,11 @@ bump — in order:
    `provenance.py verify --public-key security/image-provenance/cosign.pub
    <ref>`.
 
-## Evidence immutability and atomic publication
+## Evidence immutability and no-replace publication
 
-Release evidence is write-once and published atomically, so neither a later
-run nor a crash or concurrent run can rewrite or truncate what an earlier
-release proved:
+Release evidence is write-once and published through no-replace primitives,
+so neither a later run nor a crash or concurrent run can rewrite or truncate
+what an earlier release proved:
 
 - **Anchors** (`release-anchors.json` + content-addressed bundles): only
   annotated tag objects anchor (lightweight tags are refused). The bundle is
@@ -125,15 +125,26 @@ release proved:
   anchoring a new tag.
 - **Receipts** (`release-receipts/<digest>/receipt.json` + `.sig`): receipt
   and signature are staged together, the signature is verified, both files
-  are fsynced, and one atomic directory rename publishes the pair — a failed
-  signing leaves no partial published evidence and the same creation succeeds
-  on retry. Every load reads the pair once through dirfd + `O_NOFOLLOW`,
+  are fsynced, and the pair is published by claiming the final directory with
+  `mkdir` — a true **no-replace** primitive; `rename(2)` would silently
+  replace an injected empty target directory — then linking the staged files
+  in with `link(2)` (also no-replace) and re-reading the published pair to
+  verify it byte-matches the verified staged evidence. A lost claim falls
+  back to verifying the occupant (idempotence or refusal); a failed signing
+  leaves no partial published evidence and the same creation succeeds on
+  retry; a crash mid-claim leaves a partial directory that every later load
+  and publish refuses fail-closed. Every load reads the pair once through
+  dirfd + `O_NOFOLLOW`,
   refuses non-regular files, hardlinked evidence, foreign owners, and
   group/other-accessible modes, verifies the signature over exactly the bytes
   it parses, and then **fully revalidates** the bindings against the bundle:
   tag object, anchor commit, source-commit ancestry, and source tree are
   re-proven in a fresh clone, and the SBOM subject must equal the recorded
-  linux/amd64 manifest. Identity-equal re-creation returns the original bytes
+  linux/amd64 manifest. Bundle git operations (`list-heads`, restore clones)
+  never touch the mutable published pathname: the bundle is read once through
+  the anomaly-checked reader, hash-verified, and git consumes a private
+  snapshot of exactly those verified bytes, at creation, at load, and in the
+  wrapper's release gate. Identity-equal re-creation returns the original bytes
   (`created_at` included); any difference is refused and the original is left
   untouched. Superseding requires explicitly archiving the old receipt
   directory first; the tool never overwrites. Symlinks are refused at every
@@ -157,6 +168,16 @@ release proved:
   are owner infrastructure/IAM items.
 - **Registry signatures**: cosign appends signatures to a digest's `.sig`
   manifest; existing signatures are never replaced by re-signing.
+- **Public inputs and single identities**: the standalone `--sbom` document
+  is read exactly once through the same O_NOFOLLOW/fstat-checked reader (the
+  parsed bytes are the hashed bytes), and public inputs — the committed
+  verification key, standalone SBOMs — are refused when group/other-writable
+  (chmod them 0644 after checkout under a group-writable umask). Allow-list
+  rendering pins ONE verification-key identity: the key bytes are read once
+  into a private scratch copy used for every signature check and recorded in
+  the ConfigMap annotation, and the recorded inventory hash is computed over
+  the exact bytes that were signature-verified and parsed, never a re-read of
+  the pathname.
 
 ## Negative verification
 
