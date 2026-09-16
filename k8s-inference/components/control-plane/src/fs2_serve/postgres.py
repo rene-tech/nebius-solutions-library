@@ -85,6 +85,7 @@ from .models import (
 from .postgres_retry import retry_serialization
 from .postgresql_release import validate_migration_set
 from .runtime import sanitize_error_detail
+from .scientific_batch.codec import state_from_value
 from .store import (
     BudgetExceededError,
     ConcurrencyExceededError,
@@ -127,42 +128,39 @@ SCIENTIFIC_RUNTIME_UPDATE_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
     ),
 }
 
-# Keep expired-token discovery proportional to the configured batch rather
-# than to the retained token/operation population. Each partial index supplies
-# at most one batch, the bounded union is deduplicated, and only those IDs get
-# an indexed FK eligibility probe. Referenced candidates are retried after the
-# operation-retention pass removes their last child.
-RETENTION_ID_CANDIDATES_SQL: Final = """
-    WITH revoked_candidates AS MATERIALIZED (
-        SELECT id,revoked_at AS expired_at
-        FROM fs2_tokens
-        WHERE revoked_at IS NOT NULL
-          AND revoked_at < statement_timestamp()-make_interval(secs=>$1::double precision)
-        ORDER BY revoked_at,id
-        LIMIT $2
-    ), expiry_candidates AS MATERIALIZED (
-        SELECT id,expires_at AS expired_at
-        FROM fs2_tokens
-        WHERE expires_at IS NOT NULL
-          AND expires_at < statement_timestamp()-make_interval(secs=>$1::double precision)
-        ORDER BY expires_at,id
-        LIMIT $2
-    ), deduplicated AS MATERIALIZED (
-        SELECT candidate.id,min(candidate.expired_at) AS expired_at
-        FROM (
-            SELECT id,expired_at FROM revoked_candidates
-            UNION ALL
-            SELECT id,expired_at FROM expiry_candidates
-        ) AS candidate
-        GROUP BY candidate.id
-    )
+# Each stream reads at most one ordered partial-index batch after its durable
+# keyset cursor. If that suffix is empty, the caller wraps once to the head.
+# Advancing the cursor before FK eligibility prevents a referenced head window
+# from starving later deletable tokens while retaining a strict scan bound.
+RETENTION_REVOKED_SCAN_SQL: Final = """
+    SELECT id,revoked_at AS expired_at
+    FROM fs2_tokens
+    WHERE revoked_at IS NOT NULL
+      AND revoked_at < statement_timestamp()-make_interval(secs=>$1::double precision)
+      AND ($3::timestamptz IS NULL OR (revoked_at,id)>($3::timestamptz,$4::uuid))
+    ORDER BY revoked_at,id
+    LIMIT $2
+"""
+RETENTION_EXPIRY_SCAN_SQL: Final = """
+    SELECT id,expires_at AS expired_at
+    FROM fs2_tokens
+    WHERE expires_at IS NOT NULL
+      AND expires_at < statement_timestamp()-make_interval(secs=>$1::double precision)
+      AND ($3::timestamptz IS NULL OR (expires_at,id)>($3::timestamptz,$4::uuid))
+    ORDER BY expires_at,id
+    LIMIT $2
+"""
+RETENTION_ELIGIBLE_CANDIDATES_SQL: Final = """
     SELECT candidate.id
-    FROM deduplicated AS candidate
-    WHERE NOT EXISTS (
-        SELECT 1 FROM fs2_operations AS operation
+    FROM unnest($1::uuid[]) WITH ORDINALITY AS candidate(id,ordinal)
+    LEFT JOIN LATERAL (
+        SELECT operation.token_id
+        FROM fs2_operations AS operation
         WHERE operation.token_id=candidate.id
-    )
-    ORDER BY candidate.expired_at,candidate.id
+        LIMIT 1
+    ) AS reference ON true
+    WHERE reference.token_id IS NULL
+    ORDER BY candidate.ordinal
     LIMIT $2
 """
 
@@ -329,6 +327,64 @@ class PostgresStore:
         await connection.execute("SELECT pg_advisory_xact_lock($1::bigint)", key)
 
     @staticmethod
+    async def _advance_token_retention_stream(
+        connection: asyncpg.Connection[Any],
+        *,
+        stream: str,
+        scan_sql: str,
+        retention_seconds: int,
+        batch_size: int,
+    ) -> list[asyncpg.Record]:
+        cursor = await connection.fetchrow(
+            """
+            SELECT position_at,position_id
+            FROM fs2_retention_scan_cursors
+            WHERE stream=$1
+            FOR UPDATE
+            """,
+            stream,
+        )
+        if cursor is None:
+            raise RuntimeError(f"token retention cursor is missing: {stream}")
+        candidates = await connection.fetch(
+            scan_sql,
+            retention_seconds,
+            batch_size,
+            cursor["position_at"],
+            cursor["position_id"],
+        )
+        if not candidates and cursor["position_at"] is not None:
+            candidates = await connection.fetch(
+                scan_sql,
+                retention_seconds,
+                batch_size,
+                None,
+                None,
+            )
+        if candidates:
+            final = candidates[-1]
+            await connection.execute(
+                """
+                UPDATE fs2_retention_scan_cursors
+                SET position_at=$2,position_id=$3,updated_at=clock_timestamp()
+                WHERE stream=$1
+                """,
+                stream,
+                final["expired_at"],
+                final["id"],
+            )
+        elif cursor["position_at"] is not None:
+            await connection.execute(
+                """
+                UPDATE fs2_retention_scan_cursors
+                SET position_at=NULL,position_id=NULL,updated_at=clock_timestamp()
+                WHERE stream=$1
+                """,
+                stream,
+            )
+        return cast(list[asyncpg.Record], candidates)
+
+    @staticmethod
     async def _configuration_lock(connection: asyncpg.Connection[Any]) -> None:
         await connection.execute("SELECT pg_advisory_xact_lock(727201920011)")
 
@@ -468,6 +524,22 @@ class PostgresStore:
                         raise RuntimeError(f"applied migration changed: {path.name}")
                     continue
                 await connection.execute(payload.decode("utf-8"))
+                if path.name == "0035_scientific_admission_digest.sql":
+                    rows = await connection.fetch("SELECT operation_id,payload FROM fs2_scientific_admission_outbox")
+                    for row in rows:
+                        try:
+                            state = state_from_value(row["payload"])
+                        except (TypeError, ValueError) as error:
+                            raise RuntimeError(
+                                "existing scientific admission cannot be reopened for digest binding"
+                            ) from error
+                        if state.operation_id != row["operation_id"]:
+                            raise RuntimeError("existing scientific admission identity differs")
+                        await connection.execute(
+                            "UPDATE fs2_scientific_admission_outbox SET scheduling_digest=$2 WHERE operation_id=$1",
+                            state.operation_id,
+                            state.scheduling.digest,
+                        )
                 await connection.execute(
                     "INSERT INTO fs2_schema_migrations(version,sha256) VALUES($1,$2)",
                     path.name,
@@ -539,7 +611,7 @@ class PostgresStore:
                     f"fs2_activation_target_state,fs2_activation_controller_status,"
                     f"fs2_activation_model_fences,fs2_telemetry_subjects,"
                     f"fs2_telemetry_correlations,fs2_lifecycle_signals,fs2_lifecycle_rollups,"
-                    f"fs2_request_debug,fs2_request_telemetry,"
+                    f"fs2_request_debug,fs2_request_telemetry,fs2_retention_scan_cursors,"
                     f"fs2_reporting_lifecycle_latest,fs2_reporting_gpu_phase_usage,"
                     f"fs2_reporting_lifecycle_workloads FROM {role}"
                 )
@@ -708,6 +780,10 @@ class PostgresStore:
             await connection.execute(
                 f"GRANT SELECT (id,revoked_at,expires_at,gpu_seconds_reserved),"
                 f"UPDATE (gpu_seconds_reserved),DELETE ON fs2_tokens TO {quoted_maintenance}"
+            )
+            await connection.execute(
+                f"GRANT SELECT,UPDATE (position_at,position_id,updated_at) "
+                f"ON fs2_retention_scan_cursors TO {quoted_maintenance}"
             )
             await connection.execute(
                 f"GRANT SELECT (id,tenant_id,token_id,status,reserved_gpu_seconds,payload_expires_at,"
@@ -896,6 +972,30 @@ class PostgresStore:
                             "AND p.proname='fs2_scientific_consume_admission_outbox' "
                             "AND p.prosecdef "
                             "AND p.proconfig @> ARRAY['search_path=pg_catalog, public'])"
+                            " AND EXISTS ("
+                            "SELECT 1 FROM pg_attribute "
+                            "WHERE attrelid='public.fs2_scientific_admission_outbox'::regclass "
+                            "AND attname='scheduling_digest' AND attnotnull AND NOT attisdropped)"
+                            " AND NOT has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_retention_scan_cursors','SELECT')"
+                            " AND NOT has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_retention_scan_cursors','INSERT')"
+                            " AND NOT has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_retention_scan_cursors','UPDATE')"
+                            " AND NOT has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_retention_scan_cursors','DELETE')"
+                            " AND has_table_privilege('fs2_serve_maintenance',"
+                            "'public.fs2_retention_scan_cursors','SELECT')"
+                            " AND has_column_privilege('fs2_serve_maintenance',"
+                            "'public.fs2_retention_scan_cursors','position_at','UPDATE')"
+                            " AND has_column_privilege('fs2_serve_maintenance',"
+                            "'public.fs2_retention_scan_cursors','position_id','UPDATE')"
+                            " AND has_column_privilege('fs2_serve_maintenance',"
+                            "'public.fs2_retention_scan_cursors','updated_at','UPDATE')"
+                            " AND NOT has_table_privilege('fs2_serve_maintenance',"
+                            "'public.fs2_retention_scan_cursors','INSERT')"
+                            " AND NOT has_table_privilege('fs2_serve_maintenance',"
+                            "'public.fs2_retention_scan_cursors','DELETE')"
                             " AND has_column_privilege('fs2_serve_runtime',"
                             "'public.fs2_scientific_batches','scheduling_digest','UPDATE')"
                             " AND has_column_privilege(current_user,"
@@ -2871,23 +2971,34 @@ class PostgresStore:
             # including when a process stopped before batch materialization.
             return
         payload = factory(operation)
+        try:
+            frozen_state = state_from_value(payload)
+        except (TypeError, ValueError) as error:
+            raise ConflictError("scientific admission factory returned invalid frozen state") from error
+        if frozen_state.operation_id != operation.id:
+            raise ConflictError("scientific admission factory returned another Operation identity")
         payload_json = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
         if len(payload_json.encode("utf-8")) > 4 * 1024 * 1024:
             raise ConflictError("scientific admission outbox exceeds the durable bound")
         await connection.execute(
             """
-            INSERT INTO fs2_scientific_admission_outbox(operation_id,payload)
-            VALUES($1,$2::jsonb)
+            INSERT INTO fs2_scientific_admission_outbox(operation_id,payload,scheduling_digest)
+            VALUES($1,$2::jsonb,$3)
             ON CONFLICT (operation_id) DO NOTHING
             """,
             operation.id,
             payload_json,
+            frozen_state.scheduling.digest,
         )
-        stored = await connection.fetchval(
-            "SELECT payload FROM fs2_scientific_admission_outbox WHERE operation_id=$1",
+        stored = await connection.fetchrow(
+            "SELECT payload,scheduling_digest FROM fs2_scientific_admission_outbox WHERE operation_id=$1",
             operation.id,
         )
-        if stored is None or _decode_configuration_json(stored, "scientific admission outbox") != payload:
+        if (
+            stored is None
+            or _decode_configuration_json(stored["payload"], "scientific admission outbox") != payload
+            or stored["scheduling_digest"] != frozen_state.scheduling.digest
+        ):
             raise ConflictError("scientific admission outbox already contains another frozen request")
 
     async def get_scientific_admission(self, operation_id: UUID) -> PendingScientificAdmission | None:
@@ -4002,11 +4113,41 @@ class PostgresStore:
                 operation_retention_seconds,
                 batch_size,
             )
-        async with self.pool.acquire() as connection:
-            candidates = await connection.fetch(
-                RETENTION_ID_CANDIDATES_SQL,
-                token_retention_seconds,
-                batch_size,
+        async with self.pool.acquire() as connection, connection.transaction():
+            revoked_candidates = await PostgresStore._advance_token_retention_stream(
+                connection,
+                stream="tokens_revoked",
+                scan_sql=RETENTION_REVOKED_SCAN_SQL,
+                retention_seconds=token_retention_seconds,
+                batch_size=batch_size,
+            )
+            expiry_candidates = await PostgresStore._advance_token_retention_stream(
+                connection,
+                stream="tokens_expiry",
+                scan_sql=RETENTION_EXPIRY_SCAN_SQL,
+                retention_seconds=token_retention_seconds,
+                batch_size=batch_size,
+            )
+            candidate_expirations: dict[UUID, datetime] = {}
+            for candidate in (*revoked_candidates, *expiry_candidates):
+                previous = candidate_expirations.get(candidate["id"])
+                if previous is None or candidate["expired_at"] < previous:
+                    candidate_expirations[candidate["id"]] = candidate["expired_at"]
+            ordered_candidate_ids = [
+                candidate_id
+                for candidate_id, _ in sorted(
+                    candidate_expirations.items(),
+                    key=lambda item: (item[1], item[0]),
+                )
+            ]
+            candidates = (
+                await connection.fetch(
+                    RETENTION_ELIGIBLE_CANDIDATES_SQL,
+                    ordered_candidate_ids,
+                    batch_size,
+                )
+                if ordered_candidate_ids
+                else []
             )
         deleted_tokens = 0
         for candidate in candidates:

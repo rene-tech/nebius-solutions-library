@@ -22,7 +22,7 @@ from fs2_serve.crypto import KeyedHasher, PayloadCipher
 from fs2_serve.models import AdmissionRequest, OperationStatus, Principal, Scope, TokenCreate
 from fs2_serve.postgres import PostgresStore
 from fs2_serve.scientific_artifacts import PostgresArtifactRepository
-from fs2_serve.scientific_batch.codec import state_from_value
+from fs2_serve.scientific_batch.codec import state_from_value, state_to_value
 from fs2_serve.scientific_batch.controller import ScientificBatchController
 from fs2_serve.scientific_batch.models import (
     LEGACY_ADMISSION_FAILURE_CODE,
@@ -654,13 +654,55 @@ async def test_real_postgres_pending_admission_replay_keeps_frozen_startup_polic
         idempotency_key="scientific-startup-replay-0001",
         request_body=b'{"input":"original"}',
     )
-    accepted_payload = {"startup_policy": {"backend": "cuda-criu", "bundle_id": "accepted-bundle"}}
+    input_artifact_id = uuid4()
+    plan = ScientificBatchPlan(stages=(ScientificStagePlan(stage_id="design", max_attempts=2),))
+
+    def accepted_policy(operation) -> dict[str, object]:
+        scheduling = SchedulingSnapshot(
+            policy_revision="accepted-bundle",
+            captured_at=operation.accepted_at,
+            service_class=ServiceClass.CUSTOMER_BATCH,
+            tenant_queue="scientific",
+            model_lane="rfdiffusion",
+            workload_namespace="fs2-models",
+            route_namespace="fs2-models",
+            stages=(
+                StageSchedulingDecision(
+                    stage_id="design",
+                    resource_class=ResourceClass.GPU,
+                    resolved_cluster_queue="inference-accelerators",
+                    resolved_local_queue="scientific",
+                    workload_priority_class="scientific-customer-batch",
+                    workload_priority_value=500,
+                    resolved_pool_preference=("h100-preemptible",),
+                    accelerator_resource_name="nvidia.com/gpu",
+                    accelerator_count=1,
+                    max_queue_seconds=None,
+                    max_execution_seconds=None,
+                    checkpoint_mode=CheckpointMode.RESTART,
+                    preemption_mode=PreemptionMode.RESTARTABLE,
+                ),
+            ),
+        )
+        return state_to_value(
+            ScientificBatchState.admit(
+                operation_id=operation.id,
+                tenant_id=TENANT,
+                model_id="rfdiffusion",
+                variant_id="rfdiffusion-h100",
+                input_artifact_id=input_artifact_id,
+                plan=plan,
+                scheduling=scheduling,
+            )
+        )
+
     arguments = dict(
         principal=principal, admission=admission, model_revision="2" * 40, reserved_gpu_seconds=0, max_attempts=1
     )
-    operation = await store.append_operation(**arguments, scientific_admission_factory=lambda _: accepted_payload)
+    operation = await store.append_operation(**arguments, scientific_admission_factory=accepted_policy)
     original = await store.get_scientific_admission(operation.id)
-    assert original is not None and original.payload == accepted_payload
+    assert original is not None
+    assert state_from_value(original.payload).scheduling.policy_revision == "accepted-bundle"
 
     def removed_policy(_):
         raise ValueError("accepted bundle is no longer offered for new operations")

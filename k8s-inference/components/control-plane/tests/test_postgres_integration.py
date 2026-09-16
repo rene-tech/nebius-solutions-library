@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import hashlib
 import json
 import os
@@ -89,7 +90,9 @@ from fs2_serve.models import (
     UsageDirection,
 )
 from fs2_serve.postgres import (
-    RETENTION_ID_CANDIDATES_SQL,
+    RETENTION_ELIGIBLE_CANDIDATES_SQL,
+    RETENTION_EXPIRY_SCAN_SQL,
+    RETENTION_REVOKED_SCAN_SQL,
     PostgresMaintenanceStore,
     PostgresStore,
     _decode_audit_detail,
@@ -219,6 +222,9 @@ async def postgres_store(cipher: PayloadCipher, hasher: KeyedHasher) -> Postgres
             "fs2_operation_events,fs2_operations,fs2_tokens "
             "RESTART IDENTITY CASCADE"
         )
+        await connection.execute(
+            "UPDATE fs2_retention_scan_cursors SET position_at=NULL,position_id=NULL,updated_at=clock_timestamp()"
+        )
         await connection.execute("DELETE FROM fs2_operator_principals WHERE id<>$1", BOOTSTRAP_OPERATOR_PRINCIPAL_ID)
     try:
         yield store
@@ -234,6 +240,9 @@ async def postgres_store(cipher: PayloadCipher, hasher: KeyedHasher) -> Postgres
                 "fs2_operator_sessions,fs2_usage_facts,fs2_audit_events,"
                 "fs2_operation_events,fs2_operations,fs2_tokens "
                 "RESTART IDENTITY CASCADE"
+            )
+            await connection.execute(
+                "UPDATE fs2_retention_scan_cursors SET position_at=NULL,position_id=NULL,updated_at=clock_timestamp()"
             )
             await connection.execute(
                 "DELETE FROM fs2_operator_principals WHERE id<>$1", BOOTSTRAP_OPERATOR_PRINCIPAL_ID
@@ -976,6 +985,135 @@ async def test_migration_and_schema_wait_entrypoints_need_only_database_credenti
                 role,
             )
         await transaction.rollback()
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+async def test_migrator_binds_preexisting_admission_to_its_exact_derived_digest(
+    postgres_store: PostgresStore,
+) -> None:
+    del postgres_store
+    database_url = os.environ["FS2_TEST_DATABASE_URL"]
+    admin_url, _ = database_url.rsplit("/", 1)
+    database_name = f"fs2_admission_digest_{uuid4().hex[:10]}"
+    candidate_url = f"{admin_url}/{database_name}"
+    admin = await asyncpg.connect(database_url)
+    try:
+        await admin.execute(f'CREATE DATABASE "{database_name}"')
+        connection = await asyncpg.connect(candidate_url)
+        try:
+            await connection.execute(
+                """
+                CREATE TABLE fs2_schema_migrations (
+                    version text PRIMARY KEY,
+                    sha256 char(64) NOT NULL,
+                    applied_at timestamptz NOT NULL DEFAULT clock_timestamp()
+                )
+                """
+            )
+            for version, digest in EXPECTED_MIGRATIONS:
+                if version == "0035_scientific_admission_digest.sql":
+                    break
+                await connection.execute((CONTROL_ROOT / "migrations" / version).read_text(encoding="utf-8"))
+                await connection.execute(
+                    "INSERT INTO fs2_schema_migrations(version,sha256) VALUES($1,$2)",
+                    version,
+                    digest,
+                )
+
+            operation_id = uuid4()
+            token_id = uuid4()
+            accepted_at = datetime(2026, 9, 16, 19, 0, tzinfo=UTC)
+            scheduling = SchedulingSnapshot(
+                policy_revision=hashlib.sha256(b"pre-digest-migration-policy").hexdigest(),
+                captured_at=accepted_at,
+                service_class=ServiceClass.CUSTOMER_BATCH,
+                tenant_queue="scientific",
+                model_lane="qwen3-8b",
+                workload_namespace="fs2-models",
+                route_namespace="fs2-models",
+                stages=(
+                    StageSchedulingDecision(
+                        stage_id="design",
+                        resource_class=ResourceClass.GPU,
+                        resolved_cluster_queue="inference-accelerators",
+                        resolved_local_queue="scientific",
+                        workload_priority_class="customer-batch",
+                        workload_priority_value=100,
+                        resolved_pool_preference=("h100-preemptible",),
+                        accelerator_resource_name="nvidia.com/gpu",
+                        accelerator_count=1,
+                        max_queue_seconds=None,
+                        max_execution_seconds=None,
+                        checkpoint_mode=CheckpointMode.RESTART,
+                        preemption_mode=PreemptionMode.RESTARTABLE,
+                    ),
+                ),
+            )
+            frozen = ScientificBatchState.admit(
+                operation_id=operation_id,
+                tenant_id="tenant-a",
+                model_id="qwen3-8b",
+                variant_id="qwen3-8b-h100",
+                input_artifact_id=uuid4(),
+                plan=ScientificBatchPlan(stages=(ScientificStagePlan(stage_id="design", max_attempts=2),)),
+                scheduling=scheduling,
+            )
+            payload = state_to_value(frozen)
+            await connection.execute(
+                """
+                INSERT INTO fs2_tokens(
+                    id,prefix,pepper_key_id,digest,principal_id,tenant_id,scopes,models,
+                    max_concurrency,created_by
+                ) VALUES($1,$2,'pepper-v1','not-key-material','principal-a','tenant-a',
+                    ARRAY['inference.invoke'],ARRAY['qwen3-8b'],1,'migration-test')
+                """,
+                token_id,
+                f"fs2_pat_{token_id.hex[:12]}",
+            )
+            await connection.execute(
+                """
+                INSERT INTO fs2_operations(
+                    id,tenant_id,principal_id,token_id,model_id,model_revision,protocol,operation,
+                    idempotency_key,request_hmac_key_id,request_hmac,request_content_type,
+                    accepted_at,payload_expires_at,max_attempts
+                ) VALUES($1,'tenant-a','principal-a',$2,'qwen3-8b','b968826d','scientific-batch-v1',
+                    'design','migration-admission-0001','hmac-v1',$3,'application/json',$4,$5,1)
+                """,
+                operation_id,
+                token_id,
+                "0" * 64,
+                accepted_at,
+                accepted_at + timedelta(days=1),
+            )
+            await connection.execute(
+                "INSERT INTO fs2_scientific_admission_outbox(operation_id,payload) VALUES($1,$2::jsonb)",
+                operation_id,
+                json.dumps(payload, sort_keys=True, separators=(",", ":")),
+            )
+        finally:
+            await connection.close()
+
+        await PostgresStore.migrate_database(candidate_url, CONTROL_ROOT / "migrations")
+        verified = await asyncpg.connect(candidate_url)
+        try:
+            row = await verified.fetchrow(
+                "SELECT payload,scheduling_digest FROM fs2_scientific_admission_outbox WHERE operation_id=$1",
+                operation_id,
+            )
+            assert row is not None
+            assert json.loads(row["payload"]) == payload
+            assert row["scheduling_digest"] == scheduling.digest
+            assert await verified.fetchval(
+                "SELECT attnotnull FROM pg_attribute "
+                "WHERE attrelid='fs2_scientific_admission_outbox'::regclass "
+                "AND attname='scheduling_digest'"
+            )
+        finally:
+            await verified.close()
+    finally:
+        await admin.execute(f'DROP DATABASE IF EXISTS "{database_name}" WITH (FORCE)')
+        await admin.close()
 
 
 @pytest.mark.postgres
@@ -3517,6 +3655,80 @@ async def test_audit_retention_is_bounded_independently(postgres_store: Postgres
 
 @pytest.mark.postgres
 @pytest.mark.asyncio
+async def test_token_retention_advances_past_a_referenced_head_window(
+    postgres_store: PostgresStore,
+) -> None:
+    batch_size = 5
+    token_ids = [uuid4() for _ in range(batch_size + 1)]
+    expired_at = datetime.now(UTC) - timedelta(days=30)
+    async with postgres_store.pool.acquire() as connection:
+        await connection.executemany(
+            """
+            INSERT INTO fs2_tokens(
+                id,prefix,pepper_key_id,digest,principal_id,tenant_id,scopes,models,
+                max_concurrency,created_by,revoked_at
+            ) VALUES($1,$2,'pepper-v1',$3,$4,'starvation-tenant',
+                     ARRAY['inference.invoke'],ARRAY['qwen3-8b'],4,
+                     'retention-starvation-test',$5)
+            """,
+            [
+                (
+                    token_id,
+                    f"fs2_starve_{ordinal}",
+                    f"starvation-digest-{ordinal}",
+                    f"starvation-principal-{ordinal}",
+                    expired_at + timedelta(seconds=ordinal),
+                )
+                for ordinal, token_id in enumerate(token_ids)
+            ],
+        )
+        await connection.executemany(
+            """
+            INSERT INTO fs2_operations(
+                id,tenant_id,principal_id,token_id,model_id,model_revision,protocol,operation,
+                idempotency_key,request_hmac_key_id,request_hmac,request_content_type,
+                payload_expires_at,max_attempts
+            ) VALUES($1,'starvation-tenant',$2,$3,'qwen3-8b','starvation-revision',
+                     'openai-chat','chat',$4,'hmac-v1',$5,'application/json',
+                     statement_timestamp()+interval '1 day',1)
+            """,
+            [
+                (
+                    uuid4(),
+                    f"starvation-principal-{ordinal}",
+                    token_id,
+                    f"starvation-key-{ordinal}",
+                    f"starvation-hmac-{ordinal}",
+                )
+                for ordinal, token_id in enumerate(token_ids[:batch_size])
+            ],
+        )
+
+    retention = {
+        "operation_retention_seconds": 604800,
+        "token_retention_seconds": 604800,
+        "audit_retention_seconds": 2592000,
+        "usage_retention_seconds": 7776000,
+        "batch_size": batch_size,
+    }
+    first = await postgres_store.delete_expired_rows(**retention)
+    assert first["tokens"] == 0
+    second = await postgres_store.delete_expired_rows(**retention)
+    assert second["tokens"] == 1
+
+    async with postgres_store.pool.acquire() as connection:
+        assert await connection.fetchval("SELECT count(*) FROM fs2_tokens WHERE id=$1", token_ids[-1]) == 0
+        assert (
+            await connection.fetchval(
+                "SELECT count(*) FROM fs2_tokens WHERE id=ANY($1::uuid[])",
+                token_ids[:batch_size],
+            )
+            == batch_size
+        )
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
 async def test_token_retention_candidate_plan_is_index_and_batch_bounded(
     postgres_store: PostgresStore,
 ) -> None:
@@ -3561,26 +3773,51 @@ async def test_token_retention_candidate_plan_is_index_and_batch_bounded(
         )
         await connection.execute("ANALYZE fs2_tokens")
         await connection.execute("ANALYZE fs2_operations")
-        raw_plan = await connection.fetchval(
-            "EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) " + RETENTION_ID_CANDIDATES_SQL,
-            604800,
+        raw_scan_plans = [
+            await connection.fetchval(
+                "EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) " + scan_sql,
+                604800,
+                batch_size,
+                None,
+                None,
+            )
+            for scan_sql in (RETENTION_REVOKED_SCAN_SQL, RETENTION_EXPIRY_SCAN_SQL)
+        ]
+        scanned = []
+        for scan_sql in (RETENTION_REVOKED_SCAN_SQL, RETENTION_EXPIRY_SCAN_SQL):
+            scanned.extend(
+                await connection.fetch(
+                    scan_sql,
+                    604800,
+                    batch_size,
+                    None,
+                    None,
+                )
+            )
+        candidate_ids = list(dict.fromkeys(candidate["id"] for candidate in scanned))
+        raw_eligibility_plan = await connection.fetchval(
+            "EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) " + RETENTION_ELIGIBLE_CANDIDATES_SQL,
+            candidate_ids,
             batch_size,
         )
 
-    plan_document = json.loads(raw_plan) if isinstance(raw_plan, str) else raw_plan
-    root = plan_document[0]["Plan"]
+    roots = [
+        (json.loads(raw_plan) if isinstance(raw_plan, str) else raw_plan)[0]["Plan"]
+        for raw_plan in (*raw_scan_plans, raw_eligibility_plan)
+    ]
     nodes = []
-    stack = [root]
-    while stack:
-        node = stack.pop()
-        nodes.append(node)
-        stack.extend(child for child in node.get("Plans", []) if isinstance(child, dict))
+    for root in roots:
+        stack = [root]
+        while stack:
+            node = stack.pop()
+            nodes.append(node)
+            stack.extend(child for child in node.get("Plans", []) if isinstance(child, dict))
     index_nodes = {str(node.get("Index Name")): node for node in nodes if node.get("Index Name")}
     assert {
         "fs2_tokens_revoked_retention_idx",
         "fs2_tokens_expiry_retention_idx",
         "fs2_operations_token_retention_idx",
-    } <= index_nodes.keys()
+    } <= index_nodes.keys(), json.dumps(roots, sort_keys=True)
     assert not any(
         node.get("Node Type") == "Seq Scan" and node.get("Relation Name") in {"fs2_tokens", "fs2_operations"}
         for node in nodes
@@ -3591,7 +3828,7 @@ async def test_token_retention_candidate_plan_is_index_and_batch_bounded(
     operation_probe = index_nodes["fs2_operations_token_retention_idx"]
     assert int(operation_probe["Actual Loops"]) <= batch_size * 2
     assert int(operation_probe["Actual Rows"]) <= 1
-    assert int(root["Actual Rows"]) <= batch_size
+    assert all(int(root["Actual Rows"]) <= batch_size for root in roots)
 
 
 @pytest.mark.postgres
@@ -4002,6 +4239,56 @@ async def test_scientific_admission_outbox_recovers_after_committed_operation_wi
             )
         with pytest.raises(asyncpg.InsufficientPrivilegeError):
             await runtime.execute("UPDATE fs2_scientific_admission_outbox SET payload=payload")
+
+        async def forge_batch(*, payload: dict[str, object], scheduling_digest: str) -> None:
+            await runtime.execute(
+                """
+                INSERT INTO fs2_scientific_batches(
+                    operation_id,batch_id,workload_id,tenant_id,model_id,variant_id,input_artifact_id,
+                    scheduling_digest,status,revision,cancel_requested,state
+                ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb)
+                """,
+                frozen.operation_id,
+                frozen.batch_id,
+                frozen.workload_id,
+                frozen.tenant_id,
+                frozen.model_id,
+                frozen.variant_id,
+                frozen.input_artifact_id,
+                scheduling_digest,
+                payload["status"],
+                payload["revision"],
+                payload["cancel_requested"],
+                json.dumps(payload, sort_keys=True, separators=(",", ":")),
+            )
+
+        with pytest.raises(asyncpg.PostgresError, match="differs from its frozen admission"):
+            await forge_batch(payload=pending[0].payload, scheduling_digest="sha256:" + "f" * 64)
+
+        forged_state = copy.deepcopy(pending[0].payload)
+        forged_state["failure_code"] = "forged-after-admission"
+        forged_state["result_published"] = True
+        with pytest.raises(asyncpg.PostgresError, match="differs from its frozen admission"):
+            await forge_batch(payload=forged_state, scheduling_digest=frozen.scheduling.digest)
+
+        forged_lifecycle = copy.deepcopy(pending[0].payload)
+        forged_lifecycle["status"] = "running"
+        forged_lifecycle["revision"] = 1
+        with pytest.raises(asyncpg.PostgresError, match="differs from its frozen admission"):
+            await forge_batch(payload=forged_lifecycle, scheduling_digest=frozen.scheduling.digest)
+
+    async with postgres_store.pool.acquire() as connection:
+        assert (
+            await connection.fetchval(
+                "SELECT scheduling_digest FROM fs2_scientific_admission_outbox WHERE operation_id=$1",
+                frozen.operation_id,
+            )
+            == frozen.scheduling.digest
+        )
+        assert not await connection.fetchval(
+            "SELECT EXISTS (SELECT 1 FROM fs2_scientific_batches WHERE operation_id=$1)",
+            frozen.operation_id,
+        )
 
     assert {item.operation_id for item in await postgres_store.list_scientific_admissions()} == {
         frozen.operation_id,

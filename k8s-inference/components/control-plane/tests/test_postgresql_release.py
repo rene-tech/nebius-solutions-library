@@ -13,7 +13,13 @@ import pytest
 from conftest import CONTROL_ROOT
 
 import fs2_serve.scientific_artifacts as scientific_artifacts
-from fs2_serve.postgres import SCIENTIFIC_RUNTIME_UPDATE_COLUMNS, PostgresStore
+from fs2_serve.postgres import (
+    RETENTION_ELIGIBLE_CANDIDATES_SQL,
+    RETENTION_EXPIRY_SCAN_SQL,
+    RETENTION_REVOKED_SCAN_SQL,
+    SCIENTIFIC_RUNTIME_UPDATE_COLUMNS,
+    PostgresStore,
+)
 from fs2_serve.postgresql_release import (
     EXPECTED_MIGRATIONS,
     build_postgresql_release_contract,
@@ -37,9 +43,9 @@ def test_committed_postgresql_contract_is_exact_emitted_release_receipt_input() 
     receipt = committed["required_release_receipt_inputs"]
     assert receipt == {
         "first_migration_version": "0001_initial.sql",
-        "last_migration_version": "0033_retention_privilege_and_token_scan.sql",
-        "migration_count": 33,
-        "migration_set_sha256": "a76e0bb289fbce02a7880de6822d8f1feb902a950a16f178f56b27a77bb3d91d",
+        "last_migration_version": "0036_scientific_admission_complete_binding.sql",
+        "migration_count": 36,
+        "migration_set_sha256": "8ff1bba38cb5a3ec388c94d0f00c3d2017bc39e7532fec41a338702892659cf7",
         "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca",
     }
     migrations = committed["migration_set"]["ordered_migrations"]
@@ -73,6 +79,24 @@ def test_scientific_runtime_grants_converge_to_trigger_bound_completion() -> Non
     )
     assert "REVOKE ALL ON FUNCTION fs2_scientific_consume_admission_outbox() FROM PUBLIC" in completion_normalized
 
+    digest_sql = (MIGRATIONS / "0035_scientific_admission_digest.sql").read_text(encoding="utf-8")
+    digest_normalized = " ".join(digest_sql.split())
+    assert "ADD COLUMN scheduling_digest char(71)" in digest_normalized
+    assert "scheduling_digest IS NULL OR scheduling_digest ~ '^sha256:[0-9a-f]{64}$'" in digest_normalized
+
+    binding_sql = (MIGRATIONS / "0036_scientific_admission_complete_binding.sql").read_text(encoding="utf-8")
+    binding_normalized = " ".join(binding_sql.split())
+    assert "ALTER COLUMN scheduling_digest SET NOT NULL" in binding_normalized
+    assert "NEW.state IS DISTINCT FROM frozen_payload" in binding_normalized
+    assert "NEW.scheduling_digest IS DISTINCT FROM frozen_scheduling_digest" in binding_normalized
+    assert "NEW.status <> 'queued'" in binding_normalized
+    assert "NEW.revision <> 0" in binding_normalized
+    assert "NEW.cancel_requested" in binding_normalized
+    assert "NEW.controller_id IS NOT NULL" in binding_normalized
+    assert "NEW.fencing_token <> 0" in binding_normalized
+    assert "NEW.lease_expires_at IS NOT NULL" in binding_normalized
+    assert "RAISE EXCEPTION USING ERRCODE='FS204'" in binding_normalized
+
     wait_source = inspect.getsource(PostgresStore.wait_for_schema)
     assert "has_table_privilege('fs2_serve_runtime'" in wait_source
     assert "has_table_privilege(current_user" in wait_source
@@ -81,6 +105,7 @@ def test_scientific_runtime_grants_converge_to_trigger_bound_completion() -> Non
     assert wait_source.count("NOT has_table_privilege") >= 4
     assert wait_source.count("NOT has_function_privilege") == 2
     assert "fs2_scientific_consume_admission_outbox_trigger" in wait_source
+    assert "attname='scheduling_digest' AND attnotnull" in wait_source
     assert wait_source.count("fs2_scientific_batches','scheduling_digest','UPDATE'") == 2
     assert "SELECT,INSERT" not in wait_source
     assert "database schema runtime privileges are incomplete" in wait_source
@@ -112,6 +137,28 @@ def test_retention_scan_hardening_is_versioned_and_future_functions_fail_closed(
             in successor_normalized
         )
         assert f"ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON {object_class} FROM %I" in successor_normalized
+
+
+def test_token_retention_progress_is_persistent_bounded_and_maintenance_only() -> None:
+    migration = (MIGRATIONS / "0034_token_retention_scan_progress.sql").read_text(encoding="utf-8")
+    normalized = " ".join(migration.split())
+    assert "CREATE TABLE fs2_retention_scan_cursors" in normalized
+    assert "stream IN ('tokens_revoked','tokens_expiry')" in normalized
+    assert "REVOKE ALL ON TABLE fs2_retention_scan_cursors FROM PUBLIC" in normalized
+    assert "REVOKE ALL ON TABLE fs2_retention_scan_cursors FROM %I" in normalized
+
+    store_source = inspect.getsource(PostgresStore)
+    for query_name in (
+        "RETENTION_REVOKED_SCAN_SQL",
+        "RETENTION_EXPIRY_SCAN_SQL",
+        "RETENTION_ELIGIBLE_CANDIDATES_SQL",
+    ):
+        assert query_name in store_source
+    assert "FOR UPDATE" in inspect.getsource(PostgresStore._advance_token_retention_stream)
+    assert "position_at=NULL,position_id=NULL" in inspect.getsource(PostgresStore._advance_token_retention_stream)
+    assert "LIMIT $2" in RETENTION_REVOKED_SCAN_SQL
+    assert "LIMIT $2" in RETENTION_EXPIRY_SCAN_SQL
+    assert "LIMIT $2" in RETENTION_ELIGIBLE_CANDIDATES_SQL
 
 
 def _updated_columns(source: str, table: str) -> set[str]:

@@ -1612,11 +1612,11 @@
           ],
           "properties": {
             "schema": {"const": "fs2-serve.nebius.ai/postgresql-release-contract/v1"},
-            "contractPayloadSha256": {"const": "c70a1c797394d21ea7cfc9e3093676d66203b25884d551081e21abebea4ca612"},
-            "migrationSetSha256": {"const": "a76e0bb289fbce02a7880de6822d8f1feb902a950a16f178f56b27a77bb3d91d"},
-            "migrationCount": {"const": 33},
+            "contractPayloadSha256": {"const": "79fc04d988a36e02c35786e187bec937e1c86a93d1a570e2ef7959584c8cab63"},
+            "migrationSetSha256": {"const": "8ff1bba38cb5a3ec388c94d0f00c3d2017bc39e7532fec41a338702892659cf7"},
+            "migrationCount": {"const": 36},
             "firstMigrationVersion": {"const": "0001_initial.sql"},
-            "lastMigrationVersion": {"const": "0033_retention_privilege_and_token_scan.sql"},
+            "lastMigrationVersion": {"const": "0036_scientific_admission_complete_binding.sql"},
             "namespaceRoleOwnershipSha256": {"const": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca"}
           },
           "additionalProperties": false

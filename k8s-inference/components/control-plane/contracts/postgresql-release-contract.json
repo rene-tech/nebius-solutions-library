@@ -1,6 +1,6 @@
 {
   "canonicalization": "utf8-json-sort-keys-no-whitespace",
-  "contract_payload_sha256": "c70a1c797394d21ea7cfc9e3093676d66203b25884d551081e21abebea4ca612",
+  "contract_payload_sha256": "79fc04d988a36e02c35786e187bec937e1c86a93d1a570e2ef7959584c8cab63",
   "migration_set": {
     "algorithm": "sha256",
     "ordered_migrations": [
@@ -168,9 +168,24 @@
         "ordinal": 33,
         "sha256": "c9c61b604fef4f9ab5c7f62f2317f5fcb077a2900586e483b5469299975fa394",
         "version": "0033_retention_privilege_and_token_scan.sql"
+      },
+      {
+        "ordinal": 34,
+        "sha256": "6d6c39af0f12d0179ceb93ae0c728823130e6bfbff0e5c1e167eb663ab5210a4",
+        "version": "0034_token_retention_scan_progress.sql"
+      },
+      {
+        "ordinal": 35,
+        "sha256": "9cb3ad6c858d8f820a463e3cc80f63459859809342b74d27b81ed1895212801d",
+        "version": "0035_scientific_admission_digest.sql"
+      },
+      {
+        "ordinal": 36,
+        "sha256": "d74762b7f9d2ee0678abbbf706924450b5508e669d15246bd976c593531edbdd",
+        "version": "0036_scientific_admission_complete_binding.sql"
       }
     ],
-    "sha256": "a76e0bb289fbce02a7880de6822d8f1feb902a950a16f178f56b27a77bb3d91d"
+    "sha256": "8ff1bba38cb5a3ec388c94d0f00c3d2017bc39e7532fec41a338702892659cf7"
   },
   "namespace_role_ownership": {
     "credential_secrets": [
@@ -283,9 +298,9 @@
   "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca",
   "required_release_receipt_inputs": {
     "first_migration_version": "0001_initial.sql",
-    "last_migration_version": "0033_retention_privilege_and_token_scan.sql",
-    "migration_count": 33,
-    "migration_set_sha256": "a76e0bb289fbce02a7880de6822d8f1feb902a950a16f178f56b27a77bb3d91d",
+    "last_migration_version": "0036_scientific_admission_complete_binding.sql",
+    "migration_count": 36,
+    "migration_set_sha256": "8ff1bba38cb5a3ec388c94d0f00c3d2017bc39e7532fec41a338702892659cf7",
     "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca"
   },
   "schema": "fs2-serve.nebius.ai/postgresql-release-contract/v1"

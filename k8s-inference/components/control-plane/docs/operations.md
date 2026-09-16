@@ -328,6 +328,14 @@ functions. It has no direct intent mutation, activation-event write, activation
 sequence, target-state, model-fence, or heartbeat mutation privilege.
 Runtime can append ordinary audit events but has no usage-fact access and no
 `UPDATE`/`DELETE` on audit or usage facts; it cannot delete operations or PATs.
+Scientific admission recovery stores the complete initial batch state and its
+application-derived scheduling digest in one immutable outbox row. Runtime has
+neither `UPDATE` nor `DELETE` on that outbox. Its non-callable trigger consumes
+the row only when a new batch exactly equals the full frozen state and digest
+and still has queued/revision-zero/unleased initial columns; any mismatch aborts
+the insertion and leaves the handoff intact. During the additive upgrade, the
+DDL-owner migrator reopens any pre-existing row with the closed state codec,
+derives its digest, and makes the new column non-null in the same transaction.
 The maintenance role can erase expired ciphertext and delete bounded aged
 operations, PATs, audit rows, usage rows, request-debug rows, request telemetry,
 and expired scientific artifact metadata through the maintenance process. Its
@@ -352,7 +360,7 @@ fs2-serve postgresql-release-contract
 ```
 
 The emitter verifies that the migration directory contains exactly the ordered
-`0001` through `0033` set, no missing/extra/renamed/symlinked file, and the
+`0001` through `0036` set, no missing/extra/renamed/symlinked file, and the
 contracted SHA-256 for every file. The migrator and `wait-schema` use the same
 validator. They also require the applied migration ledger to be an exact
 ordered prefix while an upgrade is running and the exact full set before a
@@ -360,13 +368,13 @@ runtime becomes ready; extra or reordered database rows fail closed.
 
 The required final release-receipt inputs are the ordered full-manifest
 migration-set SHA-256
-`a76e0bb289fbce02a7880de6822d8f1feb902a950a16f178f56b27a77bb3d91d`,
-count `33`, first version `0001_initial.sql`, last version
-`0033_retention_privilege_and_token_scan.sql`,
+`8ff1bba38cb5a3ec388c94d0f00c3d2017bc39e7532fec41a338702892659cf7`,
+count `36`, first version `0001_initial.sql`, last version
+`0036_scientific_admission_complete_binding.sql`,
 and namespace/role ownership SHA-256
 `47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca`.
 The whole logical contract payload is SHA-256
-`c70a1c797394d21ea7cfc9e3093676d66203b25884d551081e21abebea4ca612`.
+`79fc04d988a36e02c35786e187bec937e1c86a93d1a570e2ef7959584c8cab63`.
 The migration Job emits the payload, ordered-set digest, count, first/last
 version, and namespace/role digest as annotations. A later additive migration
 updates this one manifest contract; Helm and PostgreSQL code must not
@@ -439,10 +447,13 @@ above the measured peak write rate. If eligible rows remain after the final
 batch, the Job exits unsuccessfully and `Fs2ServeMaintenanceJobFailed` alerts
 on the non-converging backlog. Revoked and naturally expired PAT candidates
 are selected from separate ordered partial indexes, each capped at one batch,
-then deduplicated. At most two batches receive indexed operation-FK probes, so
-candidate work remains
-batch-bounded even when the retained PAT and operation populations are large;
-referenced heads are retried after the preceding operation-retention pass.
+then deduplicated. A maintenance-only keyset cursor advances past every scanned
+window before an indexed operation-FK eligibility probe. A referenced head
+window therefore cannot starve later deletable PATs; after reaching the end,
+the cursor wraps once and revisits rows whose final operation may since have
+expired. Each pass scans at most two candidate batches and probes at most their
+deduplicated size, so work remains batch-bounded even when retained PAT and
+operation populations are large.
 When scientific artifact storage is enabled,
 every bounded pass removes up to the same batch size of expired object and
 metadata sets under `FS2_ARTIFACT_RETENTION_SECONDS`. Both terminal results and
@@ -685,7 +696,8 @@ Kueue allows its Pod to start; reusable chart installs remain queue-independent
 unless `maintenance.queueName` is configured.
 
 PostgreSQL migrations are forward-only. After migration `0030` (and every
-successor, including retention and privilege hardening through `0033`), a raw Helm rollback
+successor, including retention, privilege, bounded-progress, and admission
+binding hardening through `0036`), a raw Helm rollback
 is forbidden: an image packaged only through `0029` rejects the extra applied
 migration in `wait-schema`, and its maintenance command does not contain the
 corrected FK-safe retention path. Use the current chart as a forward

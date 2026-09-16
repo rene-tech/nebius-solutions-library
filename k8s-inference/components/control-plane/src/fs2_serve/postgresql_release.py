@@ -113,6 +113,18 @@ EXPECTED_MIGRATIONS: Final = (
         "0033_retention_privilege_and_token_scan.sql",
         "c9c61b604fef4f9ab5c7f62f2317f5fcb077a2900586e483b5469299975fa394",
     ),
+    (
+        "0034_token_retention_scan_progress.sql",
+        "6d6c39af0f12d0179ceb93ae0c728823130e6bfbff0e5c1e167eb663ab5210a4",
+    ),
+    (
+        "0035_scientific_admission_digest.sql",
+        "9cb3ad6c858d8f820a463e3cc80f63459859809342b74d27b81ed1895212801d",
+    ),
+    (
+        "0036_scientific_admission_complete_binding.sql",
+        "d74762b7f9d2ee0678abbbf706924450b5508e669d15246bd976c593531edbdd",
+    ),
 )
 
 NAMESPACE_ROLE_OWNERSHIP: Final[dict[str, Any]] = {
