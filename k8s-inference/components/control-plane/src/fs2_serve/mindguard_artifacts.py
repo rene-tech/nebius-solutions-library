@@ -62,6 +62,11 @@ class MindGuardV2Bundle(MindGuardModel):
             raise ValueError("source_uri must not embed credentials, signed query parameters or fragments")
         if source.hostname.lower() == "huggingface.co" and source.path.lower().startswith("/qwen/"):
             raise ValueError("a public Qwen base checkpoint is not the private MindGuard v2 artifact")
+        if source.hostname.lower() == "huggingface.co" and "/".join(source.path.lower().split("/")[:3]) in {
+            "/swordhealth/mindguard-4b",
+            "/swordhealth/mindguard-8b",
+        }:
+            raise ValueError("a public MindGuard classifier is not the private v2 clinician artifact")
         return value
 
     @model_validator(mode="after")

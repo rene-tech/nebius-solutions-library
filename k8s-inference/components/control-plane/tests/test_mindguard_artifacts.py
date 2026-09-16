@@ -60,6 +60,8 @@ def test_tampered_weights_and_external_symlink_are_rejected(tmp_path: Path) -> N
     "source",
     [
         "https://huggingface.co/Qwen/Qwen3.6-35B-A3B",
+        "https://huggingface.co/swordhealth/MindGuard-4B",
+        "https://huggingface.co/swordhealth/MindGuard-8B/resolve/main/model.safetensors",
         "https://token:secret@weights.invalid/model",
         "https://weights.invalid/model?signature=secret",
     ],

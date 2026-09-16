@@ -26,6 +26,21 @@ two public classifiers. Caller code must persist the returned typed results and
 errors alongside its authenticated run, with ordinary tenant and admin visibility.
 The helpers do not create a second authorization or storage path.
 
+`mindguard_routes.mindguard_router(principal=existing_pat_dependency,
+endpoints={"mindguard-4b": settings.mindguard_4b_endpoint,
+"mindguard-8b": settings.mindguard_8b_endpoint})` mounts
+`POST /v1/mindguard/assess`. Body: `model`, `messages`, optional `language: "en"`.
+It requires both `inference.invoke` and the selected classifier model grant;
+a `mindeval` grant alone is insufficient. Reuse the enclosing app's request
+telemetry. No new audit store is created. Return values add the normal request ID
+and measured token/latency usage, explicitly marked `observational_unbilled`, with
+no invented GPU-seconds or durable-operation ID. Budget-constrained keys return
+`503 mindguard_metered_admission_required` until classifier admission converges
+on the ordinary durable queue/meter. This preview does not claim durable queueing,
+cluster-wide concurrency enforcement or billable usage accounting. The workshop
+persists the complete returned assessment under its run and handles observer
+outages independently of clinician evaluation.
+
 Each assessment contains model identity/revision, observational role, status,
 safety label, category codes (`S1`: self-harm risk; `S2`: threats to others including
 abuse/neglect), latency, token usage and exact context/target coverage. Failed,
