@@ -356,6 +356,7 @@ resource "helm_release" "control_plane" {
 
   depends_on = [
     kubernetes_manifest.model_deployment_crd,
+    kubernetes_manifest.customer_storage_egress_admission_binding,
     kubernetes_manifest.control_database,
     kubernetes_secret_v1.database_consumer,
     kubernetes_secret_v1.database_consumer_versioned,

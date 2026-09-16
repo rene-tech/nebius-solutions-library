@@ -27,7 +27,7 @@ class PostgresUserStorageRepository:
 
     @staticmethod
     def aad(tenant: str, principal: str) -> bytes:
-        return f"fs2.user-storage/v1\0{tenant}\0{principal}".encode()
+        return PayloadCipher.customer_storage_aad(tenant, principal)
 
     @asynccontextmanager
     async def tenant_lock(self, tenant: str) -> AsyncIterator[None]:
@@ -54,31 +54,128 @@ class PostgresUserStorageRepository:
         )
 
     async def set_policy(self, tenant: str, policy: StoragePolicy, default: StoragePolicy) -> None:
-        row = await self.pool.fetchrow(
-            "SELECT layout_mode,enabled,migration_state FROM fs2_storage_policies WHERE tenant_id=$1",
-            tenant,
-        )
-        if row is not None and row["migration_state"] != "ready" and policy.mode != "disabled":
-            raise ConflictError("storage layout migration must complete before this tenant can be enabled")
-        current_layout = str(row["layout_mode"]) if row else (default.mode if default.mode != "disabled" else "user")
-        requested_layout = current_layout if policy.mode == "disabled" else policy.mode
-        has_buckets = await self.pool.fetchval(
-            "SELECT EXISTS(SELECT 1 FROM fs2_storage_buckets WHERE tenant_id=$1)",
-            tenant,
-        )
-        if has_buckets and requested_layout != current_layout:
-            raise ConflictError(
-                "storage layout cannot change after provisioning; an explicit data migration is required"
+        async with self.pool.acquire() as connection, connection.transaction():
+            await connection.execute("SELECT pg_advisory_xact_lock(hashtextextended($1,32))", tenant)
+            row = await connection.fetchrow(
+                """SELECT layout_mode,enabled,migration_state,singleton_principal_id
+                FROM fs2_storage_policies WHERE tenant_id=$1 FOR UPDATE""",
+                tenant,
             )
-        await self.pool.execute(
-            """INSERT INTO fs2_storage_policies(tenant_id,layout_mode,enabled,quota_bytes)
-            VALUES($1,$2,$3,$4) ON CONFLICT(tenant_id) DO UPDATE
-            SET layout_mode=$2,enabled=$3,quota_bytes=$4,updated_at=now()""",
-            tenant,
-            requested_layout,
-            policy.mode != "disabled",
-            policy.quota_bytes,
-        )
+            if row is not None and row["migration_state"] != "ready" and policy.mode != "disabled":
+                raise ConflictError("storage layout migration must complete before this tenant can be enabled")
+            current_layout = (
+                str(row["layout_mode"]) if row else (default.mode if default.mode != "disabled" else "user")
+            )
+            requested_layout = current_layout if policy.mode == "disabled" else policy.mode
+            has_buckets = await connection.fetchval(
+                "SELECT EXISTS(SELECT 1 FROM fs2_storage_buckets WHERE tenant_id=$1)",
+                tenant,
+            )
+            if has_buckets and requested_layout != current_layout:
+                raise ConflictError(
+                    "storage layout cannot change after provisioning; an explicit data migration is required"
+                )
+            singleton = row["singleton_principal_id"] if row is not None else None
+            if requested_layout == "tenant" and policy.mode != "disabled":
+                principals = await connection.fetch(
+                    """SELECT principal_id FROM (
+                      SELECT principal_id FROM fs2_inference_users WHERE tenant_id=$1
+                      UNION
+                      SELECT principal_id FROM fs2_user_storage WHERE tenant_id=$1
+                    ) AS identities ORDER BY principal_id""",
+                    tenant,
+                )
+                identities = [str(item["principal_id"]) for item in principals]
+                if len(identities) != 1:
+                    raise ConflictError("tenant storage mode requires exactly one bound principal")
+                singleton = identities[0]
+            elif requested_layout == "user":
+                singleton = None
+            await connection.execute(
+                """INSERT INTO fs2_storage_policies
+                (tenant_id,layout_mode,enabled,quota_bytes,singleton_principal_id)
+                VALUES($1,$2,$3,$4,$5) ON CONFLICT(tenant_id) DO UPDATE
+                SET layout_mode=$2,enabled=$3,quota_bytes=$4,singleton_principal_id=$5,
+                    updated_at=now()""",
+                tenant,
+                requested_layout,
+                policy.mode != "disabled",
+                policy.quota_bytes,
+                singleton,
+            )
+
+    async def bind_tenant_singleton(self, tenant: str, principal: str, *, quota_bytes: int) -> None:
+        """Atomically bind a tenant-layout policy to its only identity."""
+
+        async with self.pool.acquire() as connection, connection.transaction():
+            await connection.execute("SELECT pg_advisory_xact_lock(hashtextextended($1,32))", tenant)
+            principals = await connection.fetch(
+                """SELECT principal_id FROM (
+                  SELECT principal_id FROM fs2_inference_users WHERE tenant_id=$1
+                  UNION
+                  SELECT principal_id FROM fs2_user_storage WHERE tenant_id=$1
+                  UNION SELECT $2::text AS principal_id
+                ) AS identities ORDER BY principal_id""",
+                tenant,
+                principal,
+            )
+            if [str(item["principal_id"]) for item in principals] != [principal]:
+                raise ConflictError("tenant storage mode is restricted to one immutable principal")
+            row = await connection.fetchrow(
+                """SELECT layout_mode,enabled,migration_state,singleton_principal_id
+                FROM fs2_storage_policies WHERE tenant_id=$1 FOR UPDATE""",
+                tenant,
+            )
+            if row is None:
+                await connection.execute(
+                    """INSERT INTO fs2_storage_policies
+                    (tenant_id,layout_mode,enabled,quota_bytes,singleton_principal_id)
+                    VALUES($1,'tenant',true,$2,$3)""",
+                    tenant,
+                    quota_bytes,
+                    principal,
+                )
+                return
+            if (
+                row["layout_mode"] != "tenant"
+                or not row["enabled"]
+                or row["migration_state"] != "ready"
+                or row["singleton_principal_id"] not in {None, principal}
+            ):
+                raise ConflictError("tenant storage singleton binding is unavailable")
+            if row["singleton_principal_id"] is None:
+                await connection.execute(
+                    """UPDATE fs2_storage_policies SET singleton_principal_id=$2,updated_at=now()
+                    WHERE tenant_id=$1 AND singleton_principal_id IS NULL""",
+                    tenant,
+                    principal,
+                )
+
+    async def bind_user_layout(self, tenant: str, *, quota_bytes: int) -> None:
+        """Materialize a default per-user policy before any storage write."""
+
+        async with self.pool.acquire() as connection, connection.transaction():
+            await connection.execute("SELECT pg_advisory_xact_lock(hashtextextended($1,32))", tenant)
+            await connection.execute(
+                """INSERT INTO fs2_storage_policies
+                (tenant_id,layout_mode,enabled,quota_bytes,singleton_principal_id)
+                VALUES($1,'user',true,$2,NULL) ON CONFLICT(tenant_id) DO NOTHING""",
+                tenant,
+                quota_bytes,
+            )
+            row = await connection.fetchrow(
+                """SELECT layout_mode,enabled,migration_state,singleton_principal_id
+                FROM fs2_storage_policies WHERE tenant_id=$1""",
+                tenant,
+            )
+            if (
+                row is None
+                or row["layout_mode"] != "user"
+                or not row["enabled"]
+                or row["migration_state"] != "ready"
+                or row["singleton_principal_id"] is not None
+            ):
+                raise ConflictError("per-user storage layout binding is unavailable")
 
     async def bucket(self, tenant: str, owner: str) -> dict[str, Any] | None:
         row = await self.pool.fetchrow(
@@ -115,7 +212,7 @@ class PostgresUserStorageRepository:
             access_key_resource_id,access_key_id,expires_at,enabled,desired_enabled,revoked_at,
             requested_action,requested_at,replacement_access_key_resource_id,
             previous_access_key_resource_id,rotation_started_at,disclosure_consumed_at,
-            policy_suspension_requested,current_action_id,version
+            policy_suspension_requested,current_action_id,provider_ownership_verified,version
             FROM fs2_user_storage WHERE tenant_id=$1 AND principal_id=$2""",
             tenant,
             principal,
@@ -206,6 +303,26 @@ class PostgresUserStorageRepository:
         if updated == "UPDATE 0" and current is not None and current != identity:
             raise ConflictError("storage owner route identity changed")
 
+    async def record_provider_ownership(
+        self,
+        tenant: str,
+        principal: str,
+        *,
+        verified: bool,
+        expected_version: int,
+    ) -> None:
+        updated = await self.pool.execute(
+            """UPDATE fs2_user_storage SET provider_ownership_verified=$4,
+            version=version+1,updated_at=clock_timestamp()
+            WHERE tenant_id=$1 AND principal_id=$2 AND version=$3""",
+            tenant,
+            principal,
+            expected_version,
+            verified,
+        )
+        if updated == "UPDATE 0":
+            raise ConflictError("storage provider-ownership proof lost its compare-and-swap")
+
     async def save_credential(self, tenant: str, principal: str, owner: str, value: dict[str, Any]) -> None:
         """Persist a new/adopted key before any controller-initiated activation."""
 
@@ -222,10 +339,11 @@ class PostgresUserStorageRepository:
             """INSERT INTO fs2_user_storage
             (tenant_id,principal_id,inference_user_id,owner_key,service_account_id,access_key_resource_id,access_key_id,
              secret_key_id,secret_nonce,secret_ciphertext,expires_at,enabled,desired_enabled,
-             requested_action,requested_at,previous_access_key_resource_id,rotation_started_at)
+             requested_action,requested_at,previous_access_key_resource_id,rotation_started_at,
+             provider_ownership_verified)
             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true,$13,
                    CASE WHEN $13='rotate' THEN now() ELSE NULL END,$14,
-                   CASE WHEN $13='rotate' THEN now() ELSE NULL END)""",
+                   CASE WHEN $13='rotate' THEN now() ELSE NULL END,$15)""",
             tenant,
             principal,
             owner_id(tenant, principal),
@@ -240,6 +358,7 @@ class PostgresUserStorageRepository:
             enabled,
             action,
             predecessor,
+            bool(value.get("provider_ownership_verified", False)),
         )
 
     async def stage_replacement(
@@ -258,6 +377,7 @@ class PostgresUserStorageRepository:
             replacement_access_key_resource_id=$5,replacement_access_key_id=$6,
             replacement_secret_key_id=$7,replacement_secret_nonce=$8,
             replacement_secret_ciphertext=$9,replacement_expires_at=$10,
+            replacement_provider_ownership_verified=$11,
             rotation_started_at=COALESCE(rotation_started_at,now()),version=version+1,updated_at=now()
             WHERE tenant_id=$1 AND principal_id=$2 AND version=$3 AND requested_action='rotate'
             AND replacement_access_key_resource_id IS NULL
@@ -272,6 +392,7 @@ class PostgresUserStorageRepository:
             encrypted.nonce,
             encrypted.value,
             value["expires_at"],
+            bool(value.get("provider_ownership_verified", False)),
         )
         if updated == "UPDATE 0":
             raise ConflictError("storage credential rotation lost its staging compare-and-swap")
@@ -289,10 +410,12 @@ class PostgresUserStorageRepository:
             secret_nonce=replacement_secret_nonce,
             secret_ciphertext=replacement_secret_ciphertext,
             expires_at=replacement_expires_at,
+            provider_ownership_verified=replacement_provider_ownership_verified,
             replacement_service_account_id=NULL,replacement_access_key_resource_id=NULL,
             replacement_access_key_id=NULL,replacement_secret_key_id=NULL,
             replacement_secret_nonce=NULL,replacement_secret_ciphertext=NULL,
-            replacement_expires_at=NULL,enabled=true,revoked_at=NULL,
+            replacement_expires_at=NULL,replacement_provider_ownership_verified=NULL,
+            enabled=true,revoked_at=NULL,
             disclosure_consumed_at=NULL,version=version+1,updated_at=now()
             WHERE tenant_id=$1 AND principal_id=$2 AND version=$3
             AND requested_action='rotate' AND replacement_access_key_resource_id IS NOT NULL

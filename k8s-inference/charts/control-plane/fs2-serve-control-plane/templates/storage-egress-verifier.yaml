@@ -64,6 +64,7 @@ metadata:
 immutable: true
 data:
   cidrs.json: {{ .Values.customerStorage.egressCidrs | toJson | quote }}
+  kubernetes-api-cidrs.json: {{ .Values.customerStorage.kubernetesApiCidrs | toJson | quote }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -146,6 +147,8 @@ spec:
             - /verify/public-key.pem
             - --expected-cidrs
             - /verify/cidrs.json
+            - --expected-kubernetes-api-cidrs
+            - /verify/kubernetes-api-cidrs.json
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -154,6 +157,7 @@ spec:
             - {name: contract, mountPath: /verify/contract.json, subPath: contract.json, readOnly: true}
             - {name: trust, mountPath: /verify/public-key.pem, subPath: public-key.pem, readOnly: true}
             - {name: desired, mountPath: /verify/cidrs.json, subPath: cidrs.json, readOnly: true}
+            - {name: desired, mountPath: /verify/kubernetes-api-cidrs.json, subPath: kubernetes-api-cidrs.json, readOnly: true}
       volumes:
         - name: contract
           configMap: {name: fs2-customer-storage-egress-contract}
@@ -203,6 +207,8 @@ spec:
             - /verify/public-key.pem
             - --expected-cidrs
             - /verify/cidrs.json
+            - --expected-kubernetes-api-cidrs
+            - /verify/kubernetes-api-cidrs.json
             - --kubernetes-network-policy
             - {{ .Release.Namespace | quote }}
             - {{ printf "%s-storage-reconciler" (include "fs2-serve.fullname" .) | quote }}
@@ -214,6 +220,7 @@ spec:
             - {name: contract, mountPath: /verify/contract.json, subPath: contract.json, readOnly: true}
             - {name: trust, mountPath: /verify/public-key.pem, subPath: public-key.pem, readOnly: true}
             - {name: desired, mountPath: /verify/cidrs.json, subPath: cidrs.json, readOnly: true}
+            - {name: desired, mountPath: /verify/kubernetes-api-cidrs.json, subPath: kubernetes-api-cidrs.json, readOnly: true}
       volumes:
         - name: contract
           configMap: {name: fs2-customer-storage-egress-contract}

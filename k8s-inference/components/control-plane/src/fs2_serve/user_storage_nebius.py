@@ -261,6 +261,94 @@ class NebiusUserStorage:
         state = key.status.state
         return state.name if hasattr(state, "name") else str(state).rsplit(".", maxsplit=1)[-1]
 
+    async def _account_keys(self, account_id: str) -> list[Any]:
+        identity = iam.Account(service_account=iam.Account__ServiceAccount(id=account_id))
+        page_token = ""
+        result: list[Any] = []
+        while True:
+            page = await self.keys.list_by_account(
+                keys.ListAccessKeysByAccountRequest(
+                    account=identity,
+                    page_size=100,
+                    page_token=page_token,
+                )
+            )
+            result.extend(page.items)
+            page_token = page.next_page_token
+            if not page_token:
+                return result
+
+    @staticmethod
+    def _controller_key(item: Any, base_name: str) -> bool:
+        """Require the exact per-resource controller ownership label."""
+
+        name = str(item.metadata.name)
+        labels = dict(getattr(item.metadata, "labels", {}) or {})
+        if labels.get("fs2-storage-owner") != name:
+            return False
+        if name == base_name:
+            return True
+        prefix = f"{base_name}-r-"
+        suffix = name.removeprefix(prefix)
+        return (
+            name.startswith(prefix)
+            and len(suffix) == 8
+            and all(character in "0123456789abcdef" for character in suffix)
+        )
+
+    async def _force_key_inactive(self, key_id: str) -> str:
+        state = await self.key_state(key_id)
+        if state == "ACTIVE":
+            await self.set_enabled(key_id, False)
+            state = await self.key_state(key_id)
+        if state not in {"INACTIVE", "EXPIRED", "DELETING", "DELETED"}:
+            raise RuntimeError("untracked customer-storage key did not reach a fail-closed state")
+        return state
+
+    async def reconcile_key_inventory(
+        self,
+        tenant: str,
+        principal: str,
+        credential: dict[str, Any],
+        *,
+        effective_enabled: bool,
+    ) -> bool:
+        """Inventory every key on the managed account and quarantine extras.
+
+        Only the exact DB-tracked current key may remain active, and only when
+        its provider metadata carries the controller ownership label. A legacy
+        unlabeled current key is made inactive and returned as unverified so
+        the durable state machine rotates it instead of disclosing it.
+        """
+
+        base_name = self.name("user", tenant, principal)
+        current_id = str(credential["access_key_resource_id"])
+        inventory = await self._account_keys(str(credential["service_account_id"]))
+        by_id = {str(item.metadata.id): item for item in inventory}
+        current_owned = current_id in by_id and self._controller_key(by_id[current_id], base_name)
+        foreign_managed_name = False
+        for item in inventory:
+            key_id = str(item.metadata.id)
+            owned = self._controller_key(item, base_name)
+            managed_name = str(item.metadata.name) == base_name or str(item.metadata.name).startswith(f"{base_name}-r-")
+            if managed_name and not owned:
+                foreign_managed_name = True
+            keep_active = key_id == current_id and current_owned and effective_enabled
+            if not keep_active:
+                await self._force_key_inactive(key_id)
+            else:
+                state = await self.key_state(key_id)
+                if state not in {"ACTIVE", "INACTIVE"}:
+                    raise RuntimeError("managed current S3 key has an unusable provider state")
+        if foreign_managed_name:
+            raise RuntimeError("foreign same-name customer-storage key was quarantined")
+        replacement_id = credential.get("replacement_access_key_resource_id")
+        if replacement_id is not None:
+            replacement = by_id.get(str(replacement_id))
+            if replacement is None or not self._controller_key(replacement, base_name):
+                raise RuntimeError("staged customer-storage replacement is not controller-owned")
+        return current_owned
+
     def _require_bounded_expiry(self, value: datetime | None) -> datetime:
         now = datetime.now(UTC)
         if value is None or value <= now or value > now + timedelta(days=self.key_ttl_days, minutes=5):
@@ -280,27 +368,26 @@ class NebiusUserStorage:
         )
         await self.ensure_identity_access(group_id, account.metadata.id)
         identity = iam.Account(service_account=iam.Account__ServiceAccount(id=account.metadata.id))
-        page_token = ""
-        existing: list[keys.AccessKey] = []
-        while True:
-            page = await self.keys.list_by_account(
-                keys.ListAccessKeysByAccountRequest(
-                    account=identity,
-                    page_size=100,
-                    page_token=page_token,
-                )
-            )
-            existing.extend(item for item in page.items if item.metadata.name == name)
-            page_token = page.next_page_token
-            if not page_token:
-                break
+        inventory = await self._account_keys(account.metadata.id)
+        foreign_same_name = [
+            item for item in inventory if item.metadata.name == name and not self._controller_key(item, name)
+        ]
+        for item in foreign_same_name:
+            await self._force_key_inactive(str(item.metadata.id))
+        if foreign_same_name:
+            raise RuntimeError("foreign same-name customer-storage key was quarantined")
+        existing = [item for item in inventory if item.metadata.name == name and self._controller_key(item, name)]
+        existing_ids = {str(item.metadata.id) for item in existing}
+        for item in inventory:
+            if str(item.metadata.id) not in existing_ids:
+                await self._force_key_inactive(str(item.metadata.id))
         expires_at: datetime | None = None
         provider_state = "INACTIVE"
         if existing:
             existing.sort(key=lambda item: (item.spec.expires_at or datetime.min.replace(tzinfo=UTC)), reverse=True)
             key_id = existing[0].metadata.id
             for stale in existing[1:]:
-                await self.set_enabled(stale.metadata.id, False)
+                await self._force_key_inactive(str(stale.metadata.id))
             state = await self.key_state(key_id)
             if (
                 existing[0].spec.expires_at is None
@@ -353,6 +440,7 @@ class NebiusUserStorage:
             "secret_access_key": secret.secret,
             "expires_at": expires_at,
             "provider_state": provider_state,
+            "provider_ownership_verified": True,
         }
 
     async def prepare_rotation(
@@ -369,16 +457,34 @@ class NebiusUserStorage:
         rotation_identity = f"{previous['access_key_resource_id']}\0{started_at}"
         rotation_name = f"{name}-r-{hashlib.sha256(rotation_identity.encode()).hexdigest()[:8]}"
         expires_at: datetime | None = datetime.now(UTC) + timedelta(days=self.key_ttl_days)
-        page_token = ""
-        replacement = None
-        while True:
-            page = await self.keys.list_by_account(
-                keys.ListAccessKeysByAccountRequest(account=identity, page_size=100, page_token=page_token)
+        inventory = await self._account_keys(account_id)
+        foreign_same_name = [
+            item
+            for item in inventory
+            if (
+                str(item.metadata.name) == name
+                or str(item.metadata.name).startswith(f"{name}-r-")
             )
-            replacement = next((item for item in page.items if item.metadata.name == rotation_name), replacement)
-            page_token = page.next_page_token
-            if not page_token:
-                break
+            and not self._controller_key(item, name)
+        ]
+        for item in foreign_same_name:
+            await self._force_key_inactive(str(item.metadata.id))
+        if foreign_same_name:
+            raise RuntimeError("foreign same-name rotation key was quarantined")
+        replacement = next(
+            (
+                item
+                for item in inventory
+                if item.metadata.name == rotation_name and self._controller_key(item, name)
+            ),
+            None,
+        )
+        allowed_ids = {str(previous["access_key_resource_id"])}
+        if replacement is not None:
+            allowed_ids.add(str(replacement.metadata.id))
+        for item in inventory:
+            if str(item.metadata.id) not in allowed_ids:
+                await self._force_key_inactive(str(item.metadata.id))
         key_id = (
             replacement.metadata.id
             if replacement is not None
@@ -423,6 +529,7 @@ class NebiusUserStorage:
             "secret_access_key": secret.secret,
             "expires_at": expires_at,
             "provider_state": "INACTIVE",
+            "provider_ownership_verified": True,
         }
 
     async def set_enabled(self, key_id: str, enabled: bool) -> None:

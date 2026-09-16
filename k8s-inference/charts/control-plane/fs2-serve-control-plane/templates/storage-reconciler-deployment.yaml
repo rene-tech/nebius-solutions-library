@@ -1,4 +1,33 @@
 {{- if .Values.customerStorage.enabled }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-storage-egress-readiness
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: storage-reconciler
+rules:
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    resourceNames: [{{ printf "%s-storage-reconciler" (include "fs2-serve.fullname" .) | quote }}]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-storage-egress-readiness
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: storage-reconciler
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "fs2-serve.serviceAccountName" (dict "root" . "component" "storage") }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "fs2-serve.fullname" . }}-storage-egress-readiness
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -46,6 +75,11 @@ spec:
             - /verify/public-key.pem
             - --expected-cidrs
             - /verify/cidrs.json
+            - --expected-kubernetes-api-cidrs
+            - /verify/kubernetes-api-cidrs.json
+            - --kubernetes-network-policy
+            - {{ .Release.Namespace | quote }}
+            - {{ printf "%s-storage-reconciler" (include "fs2-serve.fullname" .) | quote }}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -54,6 +88,8 @@ spec:
             - {name: egress-contract, mountPath: /verify/contract.json, subPath: contract.json, readOnly: true}
             - {name: egress-trust, mountPath: /verify/public-key.pem, subPath: public-key.pem, readOnly: true}
             - {name: egress-desired, mountPath: /verify/cidrs.json, subPath: cidrs.json, readOnly: true}
+            - {name: egress-desired, mountPath: /verify/kubernetes-api-cidrs.json, subPath: kubernetes-api-cidrs.json, readOnly: true}
+            - {name: kubernetes-api, mountPath: /var/run/secrets/kubernetes.io/serviceaccount, readOnly: true}
       containers:
         - name: storage-reconciler
           image: {{ include "fs2-serve.image" . }}
@@ -119,6 +155,19 @@ spec:
             name: {{ include "fs2-serve.fullname" . }}-storage-egress-desired
             items:
               - {key: cidrs.json, path: cidrs.json}
+              - {key: kubernetes-api-cidrs.json, path: kubernetes-api-cidrs.json}
+        - name: kubernetes-api
+          projected:
+            defaultMode: 0400
+            sources:
+              - serviceAccountToken:
+                  audience: kubernetes.default.svc
+                  expirationSeconds: 600
+                  path: token
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - {key: ca.crt, path: ca.crt}
         {{- include "fs2-serve.storageCryptoVolume" . | nindent 8 }}
         {{- include "fs2-serve.databaseCaVolume" (dict "secret" (dict "name" .Values.customerStorage.databaseSecretName "caKey" "ca.crt")) | nindent 8 }}
         - name: customer-storage-resource

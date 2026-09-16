@@ -118,10 +118,11 @@ class UserStorageService:
             # two active keys only until the next bounded reconciliation pass.
             current = credential["access_key_resource_id"]
             state = await self._provider_state(current)
-            if state != _ACTIVE:
-                if state != "INACTIVE":
-                    raise RuntimeError("persisted storage replacement is no longer activatable")
-                await self.provider.set_enabled(current, True)
+            if state not in {_ACTIVE, "INACTIVE"}:
+                raise RuntimeError("persisted storage replacement is no longer activatable")
+            # Completion is forbidden until two provider reads around any
+            # activation confirm the durably promoted key is still ACTIVE.
+            await self._set_provider_state(current, True)
             await self._set_provider_state(predecessor, False)
             await self.repository.complete_rotation(
                 tenant,
@@ -150,8 +151,9 @@ class UserStorageService:
         state = await self._provider_state(replacement)
         if state in {"EXPIRED", "DELETING", "DELETED"}:
             raise RuntimeError("staged storage replacement is no longer activatable")
-        if state != _ACTIVE:
-            await self.provider.set_enabled(replacement, True)
+        # Always use the verified transition, even when the first read reports
+        # ACTIVE, so promotion requires an independent confirming read.
+        await self._set_provider_state(replacement, True)
         try:
             await self.repository.promote_replacement(
                 tenant,
@@ -163,7 +165,7 @@ class UserStorageService:
             # Compensate the newly activated key so no unowned active key lasts
             # beyond this bounded cutover attempt.
             with suppress(Exception):
-                await self.provider.set_enabled(replacement, False)
+                await self._set_provider_state(replacement, False)
             raise
         return cast(dict[str, Any], await self.repository.credential(tenant, principal))
 
@@ -199,7 +201,7 @@ class UserStorageService:
                 # Enabling is the only unsafe direction after a DB failure.
                 if target:
                     with suppress(Exception):
-                        await self.provider.set_enabled(credential["access_key_resource_id"], False)
+                        await self._set_provider_state(credential["access_key_resource_id"], False)
                 raise
             return cast(
                 dict[str, Any],
@@ -218,12 +220,50 @@ class UserStorageService:
             if configured is not None:
                 user = configured
             policy = await self.policy(user.tenant_id)
+            if policy.mode == "tenant":
+                # Tenant layout is safe only for one immutable principal. The
+                # database binding also fences later user/configuration writes,
+                # including when tenant mode came from the process default.
+                await self.repository.bind_tenant_singleton(
+                    user.tenant_id,
+                    user.principal_id,
+                    quota_bytes=policy.quota_bytes,
+                )
+                policy = await self.policy(user.tenant_id)
+            elif policy.mode == "user":
+                await self.repository.bind_user_layout(
+                    user.tenant_id,
+                    quota_bytes=policy.quota_bytes,
+                )
             credential = await self.repository.credential(user.tenant_id, user.principal_id)
             if credential:
                 await self.repository.bind_user_identity(user.tenant_id, user.principal_id)
                 credential = await self.repository.credential(user.tenant_id, user.principal_id)
             if credential and await self.repository.reencrypt_if_needed(user.tenant_id, user.principal_id):
                 credential = await self.repository.credential(user.tenant_id, user.principal_id)
+
+            if credential:
+                effective_enabled = bool(
+                    user.enabled
+                    and policy.mode != "disabled"
+                    and credential["desired_enabled"]
+                    and credential["revoked_at"] is None
+                    and not credential["policy_suspension_requested"]
+                )
+                ownership_verified = await self.provider.reconcile_key_inventory(
+                    user.tenant_id,
+                    user.principal_id,
+                    credential,
+                    effective_enabled=effective_enabled,
+                )
+                if ownership_verified != bool(credential["provider_ownership_verified"]):
+                    await self.repository.record_provider_ownership(
+                        user.tenant_id,
+                        user.principal_id,
+                        verified=ownership_verified,
+                        expected_version=credential["version"],
+                    )
+                    credential = await self.repository.credential(user.tenant_id, user.principal_id)
 
             if credential and not user.enabled and credential["desired_enabled"]:
                 await self.repository.request_enabled(user.tenant_id, user.principal_id, False)

@@ -8,7 +8,10 @@
 {{- if eq (len .Values.customerStorage.egressCidrs) 0 }}
 {{- fail "customerStorage.egressCidrs requires at least one bounded Nebius API destination" }}
 {{- end }}
-{{- if eq (len .Values.networkPolicy.kubernetesApiCidrs) 0 }}
+{{- if not (regexMatch "^[a-f0-9]{64}$" .Values.customerStorage.egressContractSha256) }}
+{{- fail "customerStorage.egressContractSha256 requires the externally verified signed contract digest" }}
+{{- end }}
+{{- if eq (len .Values.customerStorage.kubernetesApiCidrs) 0 }}
 {{- fail "customerStorage rollout verification requires exact Kubernetes API CIDRs" }}
 {{- end }}
 {{- if or (not .Values.customerStorage.resourceCredentialsSecretName) (not .Values.customerStorage.iamCredentialsSecretName) }}
@@ -95,7 +98,7 @@
 {{- if and .Values.customerStorage.enabled (or (ne .Values.customerStorage.databaseSecretName "fs2-serve-database-storage") (ne .Values.customerStorage.disclosureDatabaseSecretName "fs2-serve-database-storage-disclosure") (ne .Values.customerStorage.cryptoSecretName "fs2-serve-storage-keyring")) }}
 {{- fail "customer storage database and crypto Secrets must match the least-privilege release contract" }}
 {{- end }}
-{{- if or (ne .Values.migration.releaseContract.schema "fs2-serve.nebius.ai/postgresql-release-contract/v1") (ne .Values.migration.releaseContract.contractPayloadSha256 "0da3740a81b1d47a00f4d0c2dac19100b865f1c301fba1049359a2e6751c22a0") (ne .Values.migration.releaseContract.migrationSetSha256 "b373527f03412686bec4a18b8126b1a5eba6b6b7f1eac2e0082d7c5833ba158c") (ne (int .Values.migration.releaseContract.migrationCount) 33) (ne .Values.migration.releaseContract.firstMigrationVersion "0001_initial.sql") (ne .Values.migration.releaseContract.lastMigrationVersion "0033_storage_disclosure_boundary.sql") (ne .Values.migration.releaseContract.namespaceRoleOwnershipSha256 "79bd52934dfe16d890f021222ed0d76784facbcb4d01883aa96f52e4f3bc0aa4") }}
+{{- if or (ne .Values.migration.releaseContract.schema "fs2-serve.nebius.ai/postgresql-release-contract/v1") (ne .Values.migration.releaseContract.contractPayloadSha256 "9c02134bc528f1e2a8e1c5ecd05f1e3d00d9a73b24a89252badaad7947a709ba") (ne .Values.migration.releaseContract.migrationSetSha256 "b4779e278e1f69b00034cd750709a46c528a0e985a63d6984ec8313c4a6eac4c") (ne (int .Values.migration.releaseContract.migrationCount) 34) (ne .Values.migration.releaseContract.firstMigrationVersion "0001_initial.sql") (ne .Values.migration.releaseContract.lastMigrationVersion "0034_storage_provider_tenant_guards.sql") (ne .Values.migration.releaseContract.namespaceRoleOwnershipSha256 "79bd52934dfe16d890f021222ed0d76784facbcb4d01883aa96f52e4f3bc0aa4") }}
 {{- fail "migration release receipt inputs must match the canonical PostgreSQL contract" }}
 {{- end }}
 {{- if ne .Values.httpRoute.authorityMode .Values.config.publicAuthorityMode }}

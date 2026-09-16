@@ -41,10 +41,6 @@ class PostgresStorageDisclosureRepository:
         self.cipher = cipher
         self.peppers = peppers
 
-    @staticmethod
-    def _aad(tenant: str, principal: str) -> bytes:
-        return f"fs2.user-storage/v1\0{tenant}\0{principal}".encode()
-
     def _session_proofs(self, cookie_value: str) -> tuple[UUID, tuple[str, ...]]:
         if len(cookie_value) > MAX_OPERATOR_SESSION_LENGTH:
             raise AuthenticationError("invalid operator session")
@@ -75,7 +71,7 @@ class PostgresStorageDisclosureRepository:
         principal = str(value["principal_id"])
         secret = self.cipher.decrypt(
             Ciphertext(value["secret_key_id"], value["secret_nonce"], value["secret_ciphertext"]),
-            aad=self._aad(tenant, principal),
+            aad=PayloadCipher.customer_storage_aad(tenant, principal),
         ).decode()
         return StorageCredentials(
             bucket_name=value["bucket_name"],

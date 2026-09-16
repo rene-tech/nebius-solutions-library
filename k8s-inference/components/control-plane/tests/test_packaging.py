@@ -286,6 +286,7 @@ def test_default_migration_path_resolves_the_source_tree_and_runtime_has_no_ddl(
         "0031_user_storage.sql",
         "0032_user_storage_security.sql",
         "0033_storage_disclosure_boundary.sql",
+        "0034_storage_provider_tenant_guards.sql",
     ]
     assert hashlib.sha256((migration_dir / "0005_terminal_accounting.sql").read_bytes()).hexdigest() == (
         "fedb6789a4839d42645c5ffb6905ce46525c213d81f15d9d987eacc109614197"
@@ -332,8 +333,8 @@ def test_default_migration_path_resolves_the_source_tree_and_runtime_has_no_ddl(
     assert "Settings.model_fields['migrations_dir'].default" in dockerfile
     release_contract = json.loads((CONTROL_ROOT / "contracts/postgresql-release-contract.json").read_text())
     receipt = release_contract["required_release_receipt_inputs"]
-    assert receipt["migration_count"] == 33
-    assert receipt["last_migration_version"] == "0033_storage_disclosure_boundary.sql"
+    assert receipt["migration_count"] == 34
+    assert receipt["last_migration_version"] == "0034_storage_provider_tenant_guards.sql"
     assert "validate_migration_set(migration_dir)" in dockerfile
     assert "build_postgresql_release_contract(migration_dir)" in dockerfile
     assert "len(manifest) == len(EXPECTED_MIGRATIONS) == receipt['migration_count']" in dockerfile
@@ -431,6 +432,7 @@ def test_clean_wheel_imports_catalog_without_repository_pythonpath(tmp_path: Pat
             "fs2_serve/migrations/0031_user_storage.sql",
             "fs2_serve/migrations/0032_user_storage_security.sql",
             "fs2_serve/migrations/0033_storage_disclosure_boundary.sql",
+            "fs2_serve/migrations/0034_storage_provider_tenant_guards.sql",
         ]
         entry_point_files = [name for name in names if name.endswith(".dist-info/entry_points.txt")]
         assert len(entry_point_files) == 1
@@ -500,7 +502,7 @@ def test_clean_wheel_imports_catalog_without_repository_pythonpath(tmp_path: Pat
                 "assert pathlib.Path(fs2_serve_catalog.__file__).resolve().is_relative_to(root);"
                 "migration_dir=Settings.model_fields['migrations_dir'].default;"
                 "assert migration_dir.parent == pathlib.Path(fs2_serve.__file__).resolve().parent;"
-                "assert len(list(migration_dir.glob('[0-9][0-9][0-9][0-9]_*.sql'))) == 33;"
+                "assert len(list(migration_dir.glob('[0-9][0-9][0-9][0-9]_*.sql'))) == 34;"
                 "assert Registry and load_gateway_catalog"
             ),
         ],
