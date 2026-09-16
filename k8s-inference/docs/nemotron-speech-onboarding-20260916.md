@@ -40,13 +40,16 @@ card documents it, so full chunk coverage cannot be assumed from that path.
 
 ## Capability coverage and outstanding work
 
-All rows below still require real runtime and public-path evidence. CPU contract
-tests alone do not change that status.
+Initial H100 direct-runtime evidence is retained in
+[`acceptance/nemotron-speech-20260916`](../acceptance/nemotron-speech-20260916/README.md).
+Both models passed six short synthetic-English repetitions, with live partials
+before EOS. This does not qualify the public path, long files or all languages.
+All rows still require public-path evidence; CPU tests alone do not qualify them.
 
 | Capability | Upstream / selected adapter | Platform status |
 | --- | --- | --- |
-| Live incremental audio, early partials, final flush | NeMo `Frame` / `transcribe_step` | Adapter and event contracts implemented; public transport pending |
-| Complete file transcription | Same stream, all frames through EOS | Diagnostic feeds files; multipart/async API pending |
+| Live incremental audio, early partials, final flush | NeMo `Frame` / `transcribe_step` | Both models verified directly on H100 at 560 ms; public transport pending |
+| Complete file transcription | Same stream, all frames through EOS | 14.69 s direct fixture verified for both; multipart/long-file async API pending |
 | English 80/160/560/1120 ms | Left context 70, right 0/1/6/13 | Strict options and profile validation; GPU matrix pending |
 | Multilingual additionally 320 ms | Left context 56, right 0/1/3/6/13 | Strict options and profile validation; GPU matrix pending |
 | 32 out-of-box locales | 19 primary + 13 broad-coverage | All identifiers CPU-tested, no audio languages qualified yet |
@@ -125,9 +128,12 @@ the server contract/reference client and handover, not that UI implementation.
 
 Read-only inventory on 2026-09-16: Scientific AI cluster
 `mk8scluster-e00j5z9te7x5dd9g6a` / project-e00rene / eu-north1 has unused
-preemptible H100 and L40S GPU slots. Initial diagnostics can reuse these without
+preemptible H100 and regular L40S GPU slots. Initial diagnostics reused H100s without
 creating nodes or changing quotas. Only task-owned Jobs may be created/stopped;
-no production gateway rollout or sibling model changes have occurred.
+no production gateway rollout or sibling model changes have occurred. Two H100
+Jobs completed successfully; resource identities, raw traces and phase-separated
+cold/warm measurements are recorded in the acceptance directory. No speech GPU
+remains occupied after Job completion. Storage limits remain user-owned.
 
 ## Sources
 

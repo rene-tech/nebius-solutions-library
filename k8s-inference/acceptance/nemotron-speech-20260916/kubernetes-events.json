@@ -1,0 +1,452 @@
+[
+  {
+    "apiVersion": "v1",
+    "count": 1,
+    "eventTime": null,
+    "firstTimestamp": "2026-09-16T08:23:35Z",
+    "involvedObject": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "name": "fs2-speech-probe-en-20260916a-lwx6q",
+      "namespace": "fs2-models",
+      "resourceVersion": "43890480",
+      "uid": "5a36a827-5496-47b9-bc97-7d6516a15335"
+    },
+    "kind": "Event",
+    "lastTimestamp": "2026-09-16T08:23:35Z",
+    "message": "Successfully assigned fs2-models/fs2-speech-probe-en-20260916a-lwx6q to computeinstance-e00xjaw5jqexvvnpat",
+    "metadata": {
+      "creationTimestamp": "2026-09-16T08:23:35Z",
+      "name": "fs2-speech-probe-en-20260916a-lwx6q.18d5bf87755a6552",
+      "namespace": "fs2-models",
+      "resourceVersion": "43890484",
+      "uid": "1695dfa6-573f-4f09-bec3-ad78da3d4cbf"
+    },
+    "reason": "Scheduled",
+    "reportingComponent": "default-scheduler",
+    "reportingInstance": "",
+    "source": {
+      "component": "default-scheduler"
+    },
+    "type": "Normal"
+  },
+  {
+    "apiVersion": "v1",
+    "count": 1,
+    "eventTime": null,
+    "firstTimestamp": "2026-09-16T08:23:36Z",
+    "involvedObject": {
+      "apiVersion": "v1",
+      "fieldPath": "spec.containers{probe}",
+      "kind": "Pod",
+      "name": "fs2-speech-probe-en-20260916a-lwx6q",
+      "namespace": "fs2-models",
+      "resourceVersion": "43890483",
+      "uid": "5a36a827-5496-47b9-bc97-7d6516a15335"
+    },
+    "kind": "Event",
+    "lastTimestamp": "2026-09-16T08:23:36Z",
+    "message": "Pulling image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-speech-runtime@sha256:70b31f37ec611241cab10e7b91afa20031fc8f7f503fee1f02e74bf33940a405\"",
+    "metadata": {
+      "creationTimestamp": "2026-09-16T08:23:36Z",
+      "name": "fs2-speech-probe-en-20260916a-lwx6q.18d5bf8795e6124e",
+      "namespace": "fs2-models",
+      "resourceVersion": "43890516",
+      "uid": "d0382f85-abc8-49b8-b995-2ac48f9f903e"
+    },
+    "reason": "Pulling",
+    "reportingComponent": "kubelet",
+    "reportingInstance": "computeinstance-e00xjaw5jqexvvnpat",
+    "source": {
+      "component": "kubelet",
+      "host": "computeinstance-e00xjaw5jqexvvnpat"
+    },
+    "type": "Normal"
+  },
+  {
+    "apiVersion": "v1",
+    "count": 1,
+    "eventTime": null,
+    "firstTimestamp": "2026-09-16T08:25:35Z",
+    "involvedObject": {
+      "apiVersion": "v1",
+      "fieldPath": "spec.containers{probe}",
+      "kind": "Pod",
+      "name": "fs2-speech-probe-en-20260916a-lwx6q",
+      "namespace": "fs2-models",
+      "resourceVersion": "43890483",
+      "uid": "5a36a827-5496-47b9-bc97-7d6516a15335"
+    },
+    "kind": "Event",
+    "lastTimestamp": "2026-09-16T08:25:35Z",
+    "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-speech-runtime@sha256:70b31f37ec611241cab10e7b91afa20031fc8f7f503fee1f02e74bf33940a405\" in 1m59.716s (1m59.716s including waiting). Image size: 5127248114 bytes.",
+    "metadata": {
+      "creationTimestamp": "2026-09-16T08:25:35Z",
+      "name": "fs2-speech-probe-en-20260916a-lwx6q.18d5bfa37593307f",
+      "namespace": "fs2-models",
+      "resourceVersion": "43895746",
+      "uid": "8983c915-cecc-4d88-b422-c92c7b573d31"
+    },
+    "reason": "Pulled",
+    "reportingComponent": "kubelet",
+    "reportingInstance": "computeinstance-e00xjaw5jqexvvnpat",
+    "source": {
+      "component": "kubelet",
+      "host": "computeinstance-e00xjaw5jqexvvnpat"
+    },
+    "type": "Normal"
+  },
+  {
+    "apiVersion": "v1",
+    "count": 1,
+    "eventTime": null,
+    "firstTimestamp": "2026-09-16T08:25:39Z",
+    "involvedObject": {
+      "apiVersion": "v1",
+      "fieldPath": "spec.containers{probe}",
+      "kind": "Pod",
+      "name": "fs2-speech-probe-en-20260916a-lwx6q",
+      "namespace": "fs2-models",
+      "resourceVersion": "43890483",
+      "uid": "5a36a827-5496-47b9-bc97-7d6516a15335"
+    },
+    "kind": "Event",
+    "lastTimestamp": "2026-09-16T08:25:39Z",
+    "message": "Container created",
+    "metadata": {
+      "creationTimestamp": "2026-09-16T08:25:39Z",
+      "name": "fs2-speech-probe-en-20260916a-lwx6q.18d5bfa45c5e0942",
+      "namespace": "fs2-models",
+      "resourceVersion": "43895912",
+      "uid": "83d380ab-b7a1-4081-836d-8e01420dbab2"
+    },
+    "reason": "Created",
+    "reportingComponent": "kubelet",
+    "reportingInstance": "computeinstance-e00xjaw5jqexvvnpat",
+    "source": {
+      "component": "kubelet",
+      "host": "computeinstance-e00xjaw5jqexvvnpat"
+    },
+    "type": "Normal"
+  },
+  {
+    "apiVersion": "v1",
+    "count": 1,
+    "eventTime": null,
+    "firstTimestamp": "2026-09-16T08:25:43Z",
+    "involvedObject": {
+      "apiVersion": "v1",
+      "fieldPath": "spec.containers{probe}",
+      "kind": "Pod",
+      "name": "fs2-speech-probe-en-20260916a-lwx6q",
+      "namespace": "fs2-models",
+      "resourceVersion": "43890483",
+      "uid": "5a36a827-5496-47b9-bc97-7d6516a15335"
+    },
+    "kind": "Event",
+    "lastTimestamp": "2026-09-16T08:25:43Z",
+    "message": "Container started",
+    "metadata": {
+      "creationTimestamp": "2026-09-16T08:25:43Z",
+      "name": "fs2-speech-probe-en-20260916a-lwx6q.18d5bfa543785ced",
+      "namespace": "fs2-models",
+      "resourceVersion": "43896080",
+      "uid": "0c46dd78-61a5-430e-86ea-358035daba9b"
+    },
+    "reason": "Started",
+    "reportingComponent": "kubelet",
+    "reportingInstance": "computeinstance-e00xjaw5jqexvvnpat",
+    "source": {
+      "component": "kubelet",
+      "host": "computeinstance-e00xjaw5jqexvvnpat"
+    },
+    "type": "Normal"
+  },
+  {
+    "apiVersion": "v1",
+    "count": 1,
+    "eventTime": null,
+    "firstTimestamp": "2026-09-16T08:23:35Z",
+    "involvedObject": {
+      "apiVersion": "batch/v1",
+      "kind": "Job",
+      "name": "fs2-speech-probe-en-20260916a",
+      "namespace": "fs2-models",
+      "resourceVersion": "43890478",
+      "uid": "a53be4e6-d919-4739-a670-b2ce868bd166"
+    },
+    "kind": "Event",
+    "lastTimestamp": "2026-09-16T08:23:35Z",
+    "message": "Created pod: fs2-speech-probe-en-20260916a-lwx6q",
+    "metadata": {
+      "creationTimestamp": "2026-09-16T08:23:35Z",
+      "name": "fs2-speech-probe-en-20260916a.18d5bf87751f2971",
+      "namespace": "fs2-models",
+      "resourceVersion": "43890481",
+      "uid": "b73a3687-403e-4630-9689-82e353fcef3a"
+    },
+    "reason": "SuccessfulCreate",
+    "reportingComponent": "job-controller",
+    "reportingInstance": "",
+    "source": {
+      "component": "job-controller"
+    },
+    "type": "Normal"
+  },
+  {
+    "apiVersion": "v1",
+    "count": 1,
+    "eventTime": null,
+    "firstTimestamp": "2026-09-16T08:27:31Z",
+    "involvedObject": {
+      "apiVersion": "batch/v1",
+      "kind": "Job",
+      "name": "fs2-speech-probe-en-20260916a",
+      "namespace": "fs2-models",
+      "resourceVersion": "43900843",
+      "uid": "a53be4e6-d919-4739-a670-b2ce868bd166"
+    },
+    "kind": "Event",
+    "lastTimestamp": "2026-09-16T08:27:31Z",
+    "message": "Job completed",
+    "metadata": {
+      "creationTimestamp": "2026-09-16T08:27:31Z",
+      "name": "fs2-speech-probe-en-20260916a.18d5bfbe7b920d01",
+      "namespace": "fs2-models",
+      "resourceVersion": "43900848",
+      "uid": "9d56103d-39c8-44a1-b4de-cde43b0189ba"
+    },
+    "reason": "Completed",
+    "reportingComponent": "job-controller",
+    "reportingInstance": "",
+    "source": {
+      "component": "job-controller"
+    },
+    "type": "Normal"
+  },
+  {
+    "apiVersion": "v1",
+    "count": 1,
+    "eventTime": null,
+    "firstTimestamp": "2026-09-16T08:23:36Z",
+    "involvedObject": {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "name": "fs2-speech-probe-multi-20260916a-9bmmj",
+      "namespace": "fs2-models",
+      "resourceVersion": "43890552",
+      "uid": "4822637a-129d-4787-9439-a1d432260062"
+    },
+    "kind": "Event",
+    "lastTimestamp": "2026-09-16T08:23:36Z",
+    "message": "Successfully assigned fs2-models/fs2-speech-probe-multi-20260916a-9bmmj to computeinstance-e00r9tdjfszjs3angk",
+    "metadata": {
+      "creationTimestamp": "2026-09-16T08:23:36Z",
+      "name": "fs2-speech-probe-multi-20260916a-9bmmj.18d5bf87cc000e47",
+      "namespace": "fs2-models",
+      "resourceVersion": "43890556",
+      "uid": "96104f71-01fb-407d-80a5-d9734fb2bcc2"
+    },
+    "reason": "Scheduled",
+    "reportingComponent": "default-scheduler",
+    "reportingInstance": "",
+    "source": {
+      "component": "default-scheduler"
+    },
+    "type": "Normal"
+  },
+  {
+    "apiVersion": "v1",
+    "count": 1,
+    "eventTime": null,
+    "firstTimestamp": "2026-09-16T08:23:37Z",
+    "involvedObject": {
+      "apiVersion": "v1",
+      "fieldPath": "spec.containers{probe}",
+      "kind": "Pod",
+      "name": "fs2-speech-probe-multi-20260916a-9bmmj",
+      "namespace": "fs2-models",
+      "resourceVersion": "43890553",
+      "uid": "4822637a-129d-4787-9439-a1d432260062"
+    },
+    "kind": "Event",
+    "lastTimestamp": "2026-09-16T08:23:37Z",
+    "message": "Pulling image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-speech-runtime@sha256:70b31f37ec611241cab10e7b91afa20031fc8f7f503fee1f02e74bf33940a405\"",
+    "metadata": {
+      "creationTimestamp": "2026-09-16T08:23:37Z",
+      "name": "fs2-speech-probe-multi-20260916a-9bmmj.18d5bf87ecf523d0",
+      "namespace": "fs2-models",
+      "resourceVersion": "43890583",
+      "uid": "3dc8ffe4-c500-424c-8dab-d32305923b29"
+    },
+    "reason": "Pulling",
+    "reportingComponent": "kubelet",
+    "reportingInstance": "computeinstance-e00r9tdjfszjs3angk",
+    "source": {
+      "component": "kubelet",
+      "host": "computeinstance-e00r9tdjfszjs3angk"
+    },
+    "type": "Normal"
+  },
+  {
+    "apiVersion": "v1",
+    "count": 1,
+    "eventTime": null,
+    "firstTimestamp": "2026-09-16T08:25:37Z",
+    "involvedObject": {
+      "apiVersion": "v1",
+      "fieldPath": "spec.containers{probe}",
+      "kind": "Pod",
+      "name": "fs2-speech-probe-multi-20260916a-9bmmj",
+      "namespace": "fs2-models",
+      "resourceVersion": "43890553",
+      "uid": "4822637a-129d-4787-9439-a1d432260062"
+    },
+    "kind": "Event",
+    "lastTimestamp": "2026-09-16T08:25:37Z",
+    "message": "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-speech-runtime@sha256:70b31f37ec611241cab10e7b91afa20031fc8f7f503fee1f02e74bf33940a405\" in 1m59.871s (1m59.871s including waiting). Image size: 5127248114 bytes.",
+    "metadata": {
+      "creationTimestamp": "2026-09-16T08:25:37Z",
+      "name": "fs2-speech-probe-multi-20260916a-9bmmj.18d5bfa3d5d70fd6",
+      "namespace": "fs2-models",
+      "resourceVersion": "43895815",
+      "uid": "ce04d7c9-b9e2-4c8c-93d7-16cab2595713"
+    },
+    "reason": "Pulled",
+    "reportingComponent": "kubelet",
+    "reportingInstance": "computeinstance-e00r9tdjfszjs3angk",
+    "source": {
+      "component": "kubelet",
+      "host": "computeinstance-e00r9tdjfszjs3angk"
+    },
+    "type": "Normal"
+  },
+  {
+    "apiVersion": "v1",
+    "count": 1,
+    "eventTime": null,
+    "firstTimestamp": "2026-09-16T08:25:40Z",
+    "involvedObject": {
+      "apiVersion": "v1",
+      "fieldPath": "spec.containers{probe}",
+      "kind": "Pod",
+      "name": "fs2-speech-probe-multi-20260916a-9bmmj",
+      "namespace": "fs2-models",
+      "resourceVersion": "43890553",
+      "uid": "4822637a-129d-4787-9439-a1d432260062"
+    },
+    "kind": "Event",
+    "lastTimestamp": "2026-09-16T08:25:40Z",
+    "message": "Container created",
+    "metadata": {
+      "creationTimestamp": "2026-09-16T08:25:40Z",
+      "name": "fs2-speech-probe-multi-20260916a-9bmmj.18d5bfa480e9d870",
+      "namespace": "fs2-models",
+      "resourceVersion": "43895941",
+      "uid": "bffeb1b0-656a-4753-aff5-b813cf319717"
+    },
+    "reason": "Created",
+    "reportingComponent": "kubelet",
+    "reportingInstance": "computeinstance-e00r9tdjfszjs3angk",
+    "source": {
+      "component": "kubelet",
+      "host": "computeinstance-e00r9tdjfszjs3angk"
+    },
+    "type": "Normal"
+  },
+  {
+    "apiVersion": "v1",
+    "count": 1,
+    "eventTime": null,
+    "firstTimestamp": "2026-09-16T08:25:40Z",
+    "involvedObject": {
+      "apiVersion": "v1",
+      "fieldPath": "spec.containers{probe}",
+      "kind": "Pod",
+      "name": "fs2-speech-probe-multi-20260916a-9bmmj",
+      "namespace": "fs2-models",
+      "resourceVersion": "43890553",
+      "uid": "4822637a-129d-4787-9439-a1d432260062"
+    },
+    "kind": "Event",
+    "lastTimestamp": "2026-09-16T08:25:40Z",
+    "message": "Container started",
+    "metadata": {
+      "creationTimestamp": "2026-09-16T08:25:40Z",
+      "name": "fs2-speech-probe-multi-20260916a-9bmmj.18d5bfa48e549410",
+      "namespace": "fs2-models",
+      "resourceVersion": "43895950",
+      "uid": "e53859aa-15ca-451f-ab29-ea4273c0475a"
+    },
+    "reason": "Started",
+    "reportingComponent": "kubelet",
+    "reportingInstance": "computeinstance-e00r9tdjfszjs3angk",
+    "source": {
+      "component": "kubelet",
+      "host": "computeinstance-e00r9tdjfszjs3angk"
+    },
+    "type": "Normal"
+  },
+  {
+    "apiVersion": "v1",
+    "count": 1,
+    "eventTime": null,
+    "firstTimestamp": "2026-09-16T08:23:36Z",
+    "involvedObject": {
+      "apiVersion": "batch/v1",
+      "kind": "Job",
+      "name": "fs2-speech-probe-multi-20260916a",
+      "namespace": "fs2-models",
+      "resourceVersion": "43890551",
+      "uid": "dcb23c1c-565b-441d-83fd-b3a5f8e4c8f0"
+    },
+    "kind": "Event",
+    "lastTimestamp": "2026-09-16T08:23:36Z",
+    "message": "Created pod: fs2-speech-probe-multi-20260916a-9bmmj",
+    "metadata": {
+      "creationTimestamp": "2026-09-16T08:23:36Z",
+      "name": "fs2-speech-probe-multi-20260916a.18d5bf87cc369b7f",
+      "namespace": "fs2-models",
+      "resourceVersion": "43890554",
+      "uid": "b06c2983-31ec-4fee-9631-23c4be1e063a"
+    },
+    "reason": "SuccessfulCreate",
+    "reportingComponent": "job-controller",
+    "reportingInstance": "",
+    "source": {
+      "component": "job-controller"
+    },
+    "type": "Normal"
+  },
+  {
+    "apiVersion": "v1",
+    "count": 1,
+    "eventTime": null,
+    "firstTimestamp": "2026-09-16T08:28:24Z",
+    "involvedObject": {
+      "apiVersion": "batch/v1",
+      "kind": "Job",
+      "name": "fs2-speech-probe-multi-20260916a",
+      "namespace": "fs2-models",
+      "resourceVersion": "43903139",
+      "uid": "dcb23c1c-565b-441d-83fd-b3a5f8e4c8f0"
+    },
+    "kind": "Event",
+    "lastTimestamp": "2026-09-16T08:28:24Z",
+    "message": "Job completed",
+    "metadata": {
+      "creationTimestamp": "2026-09-16T08:28:24Z",
+      "name": "fs2-speech-probe-multi-20260916a.18d5bfcac7762043",
+      "namespace": "fs2-models",
+      "resourceVersion": "43903143",
+      "uid": "1c865f51-aaa8-443c-bb98-066d6f070737"
+    },
+    "reason": "Completed",
+    "reportingComponent": "job-controller",
+    "reportingInstance": "",
+    "source": {
+      "component": "job-controller"
+    },
+    "type": "Normal"
+  }
+]

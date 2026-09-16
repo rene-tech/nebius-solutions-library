@@ -1,0 +1,155 @@
+{
+  "binaries": {
+    "aiperf": null,
+    "all_reduce_perf": null,
+    "dcgmi": null,
+    "docker": null,
+    "genai-perf": null,
+    "ibdev2netdev": null,
+    "lm-eval": null,
+    "ncu": null,
+    "nsys": null,
+    "nvbandwidth": null,
+    "trtllm-bench": null,
+    "vllm": null
+  },
+  "collected_at_utc": "2026-09-16T08:26:41.602860+00:00",
+  "commands": {
+    "cpu": {
+      "available": true,
+      "command": [
+        "lscpu",
+        "--json"
+      ],
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": "{\n   \"lscpu\": [\n      {\n         \"field\": \"Architecture:\",\n         \"data\": \"x86_64\"\n      },{\n         \"field\": \"CPU op-mode(s):\",\n         \"data\": \"32-bit, 64-bit\"\n      },{\n         \"field\": \"Address sizes:\",\n         \"data\": \"48 bits physical, 57 bits virtual\"\n      },{\n         \"field\": \"Byte Order:\",\n         \"data\": \"Little Endian\"\n      },{\n         \"field\": \"CPU(s):\",\n         \"data\": \"16\"\n      },{\n         \"field\": \"On-line CPU(s) list:\",\n         \"data\": \"0-15\"\n      },{\n         \"field\": \"Vendor ID:\",\n         \"data\": \"GenuineIntel\"\n      },{\n         \"field\": \"Model name:\",\n         \"data\": \"Intel(R) Xeon(R) Platinum 8468\"\n      },{\n         \"field\": \"CPU family:\",\n         \"data\": \"6\"\n      },{\n         \"field\": \"Model:\",\n         \"data\": \"143\"\n      },{\n         \"field\": \"Thread(s) per core:\",\n         \"data\": \"2\"\n      },{\n         \"field\": \"Core(s) per socket:\",\n         \"data\": \"8\"\n      },{\n         \"field\": \"Socket(s):\",\n         \"data\": \"1\"\n      },{\n         \"field\": \"Stepping:\",\n         \"data\": \"8\"\n      },{\n         \"field\": \"BogoMIPS:\",\n         \"data\": \"4200.00\"\n      },{\n         \"field\": \"Flags:\",\n         \"data\": \"fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts mmx fxsr sse sse2 ss ht syscall nx pdpe1gb rdtscp lm constant_tsc arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid tsc_known_freq pni pclmulqdq dtes64 ssse3 fma cx16 pdcm pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand hypervisor lahf_lm abm 3dnowprefetch cpuid_fault ssbd ibrs ibpb stibp ibrs_enhanced fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves avx_vnni avx512_bf16 wbnoinvd arat avx512vbmi umip pku ospke waitpkg avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg avx512_vpopcntdq la57 rdpid bus_lock_detect cldemote movdiri movdir64b fsrm md_clear serialize tsxldtrk amx_bf16 avx512_fp16 amx_tile amx_int8 arch_capabilities\"\n      },{\n         \"field\": \"Hypervisor vendor:\",\n         \"data\": \"KVM\"\n      },{\n         \"field\": \"Virtualization type:\",\n         \"data\": \"full\"\n      },{\n         \"field\": \"L1d cache:\",\n         \"data\": \"384 KiB (8 instances)\"\n      },{\n         \"field\": \"L1i cache:\",\n         \"data\": \"256 KiB (8 instances)\"\n      },{\n         \"field\": \"L2 cache:\",\n         \"data\": \"16 MiB (8 instances)\"\n      },{\n         \"field\": \"L3 cache:\",\n         \"data\": \"105 MiB (1 instance)\"\n      },{\n         \"field\": \"NUMA node(s):\",\n         \"data\": \"1\"\n      },{\n         \"field\": \"NUMA node0 CPU(s):\",\n         \"data\": \"0-15\"\n      },{\n         \"field\": \"Vulnerability Gather data sampling:\",\n         \"data\": \"Not affected\"\n      },{\n         \"field\": \"Vulnerability Itlb multihit:\",\n         \"data\": \"Not affected\"\n      },{\n         \"field\": \"Vulnerability L1tf:\",\n         \"data\": \"Not affected\"\n      },{\n         \"field\": \"Vulnerability Mds:\",\n         \"data\": \"Not affected\"\n      },{\n         \"field\": \"Vulnerability Meltdown:\",\n         \"data\": \"Not affected\"\n      },{\n         \"field\": \"Vulnerability Mmio stale data:\",\n         \"data\": \"Unknown: No mitigations\"\n      },{\n         \"field\": \"Vulnerability Reg file data sampling:\",\n         \"data\": \"Not affected\"\n      },{\n         \"field\": \"Vulnerability Retbleed:\",\n         \"data\": \"Not affected\"\n      },{\n         \"field\": \"Vulnerability Spec rstack overflow:\",\n         \"data\": \"Not affected\"\n      },{\n         \"field\": \"Vulnerability Spec store bypass:\",\n         \"data\": \"Mitigation; Speculative Store Bypass disabled via prctl\"\n      },{\n         \"field\": \"Vulnerability Spectre v1:\",\n         \"data\": \"Mitigation; usercopy/swapgs barriers and __user pointer sanitization\"\n      },{\n         \"field\": \"Vulnerability Spectre v2:\",\n         \"data\": \"Mitigation; Enhanced / Automatic IBRS; IBPB conditional; RSB filling; PBRSB-eIBRS SW sequence; BHI SW loop, KVM SW loop\"\n      },{\n         \"field\": \"Vulnerability Srbds:\",\n         \"data\": \"Not affected\"\n      },{\n         \"field\": \"Vulnerability Tsx async abort:\",\n         \"data\": \"Mitigation; TSX disabled\"\n      }\n   ]\n}"
+    },
+    "dcgmi": {
+      "available": false,
+      "command": [
+        "dcgmi",
+        "--version"
+      ]
+    },
+    "docker_client": {
+      "available": false,
+      "command": [
+        "docker",
+        "version",
+        "--format",
+        "{{json .Client}}"
+      ]
+    },
+    "infiniband_devices": {
+      "available": false,
+      "command": [
+        "ibv_devinfo",
+        "--list"
+      ]
+    },
+    "infiniband_netdevs": {
+      "available": false,
+      "command": [
+        "ibdev2netdev"
+      ]
+    },
+    "ncu": {
+      "available": false,
+      "command": [
+        "ncu",
+        "--version"
+      ]
+    },
+    "nsys": {
+      "available": false,
+      "command": [
+        "nsys",
+        "--version"
+      ]
+    },
+    "numa": {
+      "available": false,
+      "command": [
+        "numactl",
+        "--hardware"
+      ]
+    },
+    "nvcc": {
+      "available": false,
+      "command": [
+        "nvcc",
+        "--version"
+      ]
+    },
+    "nvidia_gpu_query": {
+      "available": true,
+      "command": [
+        "nvidia-smi",
+        "--query-gpu=index,name,uuid,pci.bus_id,compute_cap,driver_version,memory.total,power.limit",
+        "--format=csv,noheader,nounits"
+      ],
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": "0, NVIDIA H100 80GB HBM3, GPU-0c404bb3-6e89-6295-448e-f97df95344a4, 00000000:8D:00.0, 9.0, 580.159.04, 81559, 700.00"
+    },
+    "nvidia_smi": {
+      "available": true,
+      "command": [
+        "nvidia-smi"
+      ],
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": "Wed Sep 16 08:26:42 2026       \n+-----------------------------------------------------------------------------------------+\n| NVIDIA-SMI 580.159.04             Driver Version: 580.159.04     CUDA Version: 13.0     |\n+-----------------------------------------+------------------------+----------------------+\n| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |\n| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |\n|                                         |                        |               MIG M. |\n|=========================================+========================+======================|\n|   0  NVIDIA H100 80GB HBM3          On  |   00000000:8D:00.0 Off |                    0 |\n| N/A   44C    P0            155W /  700W |    5765MiB /  81559MiB |     31%      Default |\n|                                         |                        |             Disabled |\n+-----------------------------------------+------------------------+----------------------+\n\n+-----------------------------------------------------------------------------------------+\n| Processes:                                                                              |\n|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |\n|        ID   ID                                                               Usage      |\n|=========================================================================================|\n|    0   N/A  N/A               1      C   /opt/conda/bin/python                  5756MiB |\n+-----------------------------------------------------------------------------------------+"
+    },
+    "nvidia_topology": {
+      "available": true,
+      "command": [
+        "nvidia-smi",
+        "topo",
+        "-m"
+      ],
+      "exit_code": 0,
+      "stderr": "",
+      "stdout": "\u001b[4mGPU0\tCPU Affinity\tNUMA Affinity\tGPU NUMA ID\u001b[0m\nGPU0\t X \t0-15\t0\t\tN/A\n\nLegend:\n\n  X    = Self\n  SYS  = Connection traversing PCIe as well as the SMP interconnect between NUMA nodes (e.g., QPI/UPI)\n  NODE = Connection traversing PCIe as well as the interconnect between PCIe Host Bridges within a NUMA node\n  PHB  = Connection traversing PCIe as well as a PCIe Host Bridge (typically the CPU)\n  PXB  = Connection traversing multiple PCIe bridges (without traversing the PCIe Host Bridge)\n  PIX  = Connection traversing at most a single PCIe bridge\n  NV#  = Connection traversing a bonded set of # NVLinks"
+    }
+  },
+  "host": {
+    "hostname": "fs2-speech-probe-en-20260916a-lwx6q",
+    "kernel": "6.11.0-1016-nvidia",
+    "machine": "x86_64",
+    "platform": "Linux-6.11.0-1016-nvidia-x86_64-with-glibc2.35",
+    "python": "3.11.13"
+  },
+  "notes": [
+    "Run this collector inside the workload container as well as on the host.",
+    "Add container digest, model/tokenizer revisions, launch command, input checksum and benchmark artifacts to the experiment record.",
+    "No arbitrary environment variables are collected to avoid exposing credentials."
+  ],
+  "python_stack": {
+    "packages": {
+      "torch": "2.8.0+cu128",
+      "triton": "3.4.0"
+    },
+    "torch_cuda": {
+      "build_cuda": "12.8",
+      "cuda_available": true,
+      "cudnn": 91002,
+      "devices": [
+        {
+          "capability": [
+            9,
+            0
+          ],
+          "index": 0,
+          "name": "NVIDIA H100 80GB HBM3"
+        }
+      ]
+    }
+  },
+  "safe_environment": {
+    "NVIDIA_VISIBLE_DEVICES": "GPU-0c404bb3-6e89-6295-448e-f97df95344a4",
+    "OMP_NUM_THREADS": "2"
+  },
+  "schema_version": 1
+}

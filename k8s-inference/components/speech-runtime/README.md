@@ -1,9 +1,14 @@
 # Nemotron Speech runtime — implementation in progress
 
-This component is **not deployed or customer-qualified**. It establishes the
+This component is **not publicly deployed or customer-qualified**. It establishes the
 shared contracts, exact model pins, bounded audio framing and an adapter over
 NVIDIA NeMo's cache-aware RNNT pipeline. It does not replace the control plane's
 authentication, admission, durable operations, artifact delivery or billing.
+
+Initial task-owned preemptible H100 diagnostics passed for both models; see
+[raw evidence and measured limitations](../../acceptance/nemotron-speech-20260916/README.md).
+The initial image contains the probe/adapter, not the later stream lifecycle
+runner. Neither successful diagnostic is a public/customer acceptance result.
 
 Two Apps are planned: `nemotron-speech-en-0.6b` and
 `nemotron-speech-multilingual-0.6b`. Their independent checkpoint revisions and
