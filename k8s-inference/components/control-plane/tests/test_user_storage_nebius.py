@@ -55,6 +55,20 @@ def test_bucket_names_are_bounded_and_slug_collisions_are_disambiguated():
     assert provider.bucket_name("tenant", "alice") != old
 
 
+def test_bucket_name_rotation_retains_exact_generation_identity():
+    provider = naming_provider()
+    old = provider.bucket_name("tenant", "alice")
+    provider.name_hasher = KeyedHasher(
+        active_key_id="storage-name-v2",
+        keys={"test": b"x" * 32, "storage-name-v2": b"y" * 32},
+    )
+
+    candidates = dict(provider.bucket_name_candidates("tenant", "alice"))
+    assert candidates["test"] == old
+    assert candidates["storage-name-v2"] == provider.bucket_name("tenant", "alice")
+    assert candidates["storage-name-v2"] != old
+
+
 def test_s3_expiry_must_be_future_and_within_configured_ttl():
     provider = naming_provider()
     assert provider._require_bounded_expiry(datetime.now(UTC) + timedelta(days=89))
@@ -98,6 +112,7 @@ async def test_existing_bucket_quota_change_preserves_immutable_name_and_iam_ide
     assert list(request.spec.bucket_policy.rules[0].roles) == ["storage.object-editor"]
     assert result["bucket_id"] == "bucket-same"
     assert result["group_id"] == "group-same"
+    assert result["name_key_id"] == "legacy-unkeyed-v0"
     # A crash between cloud quota update and DB update adopts the same identity.
     provider.buckets.update.reset_mock()
     await provider.ensure_bucket(
@@ -245,9 +260,7 @@ async def test_inventory_quarantines_every_extra_key_before_allowing_current():
             labels={"fs2-storage-owner": name},
         )
     )
-    extra = SimpleNamespace(
-        metadata=SimpleNamespace(name="unrelated-active-key", id="key-extra", labels={})
-    )
+    extra = SimpleNamespace(metadata=SimpleNamespace(name="unrelated-active-key", id="key-extra", labels={}))
     provider._account_keys = AsyncMock(return_value=[current, extra])
     provider._force_key_inactive = AsyncMock(return_value="INACTIVE")
     provider.key_state = AsyncMock(return_value="ACTIVE")
@@ -271,9 +284,7 @@ async def test_inventory_quarantines_every_extra_key_before_allowing_current():
 async def test_inventory_rejects_foreign_same_name_even_when_db_tracks_it():
     provider = naming_provider()
     name = provider.name("user", "tenant-a", "alice")
-    foreign = SimpleNamespace(
-        metadata=SimpleNamespace(name=name, id="key-current", labels={})
-    )
+    foreign = SimpleNamespace(metadata=SimpleNamespace(name=name, id="key-current", labels={}))
     provider._account_keys = AsyncMock(return_value=[foreign])
     provider._force_key_inactive = AsyncMock(return_value="INACTIVE")
 
@@ -302,9 +313,7 @@ async def test_off_inventory_quarantines_foreign_active_key_and_current():
             labels={"fs2-storage-owner": name},
         )
     )
-    foreign = SimpleNamespace(
-        metadata=SimpleNamespace(name="manual-key", id="key-manual", labels={})
-    )
+    foreign = SimpleNamespace(metadata=SimpleNamespace(name="manual-key", id="key-manual", labels={}))
     provider._account_keys = AsyncMock(return_value=[current, foreign])
     provider._force_key_inactive = AsyncMock(return_value="INACTIVE")
 

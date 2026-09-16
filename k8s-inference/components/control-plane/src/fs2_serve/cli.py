@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import logging
 import sys
 from datetime import timedelta
@@ -760,6 +761,24 @@ async def serve_storage_disclosure(settings: Settings) -> None:
         await pool.close()
 
 
+async def emit_storage_key_inventory(settings: Settings) -> None:
+    """Emit value-free DB references that fence customer-storage key retirement."""
+
+    from .user_storage_repository import PostgresUserStorageRepository
+
+    pool = await PostgresStore._connect_pool(
+        settings.database_url,
+        min_size=1,
+        max_size=1,
+        application_name="fs2-customer-storage-key-inventory",
+    )
+    try:
+        inventory = await PostgresUserStorageRepository(pool, None).storage_key_usage()
+        print(json.dumps(inventory, sort_keys=True, separators=(",", ":")))
+    finally:
+        await pool.close()
+
+
 async def migrate(settings: Settings) -> None:
     await PostgresStore.migrate_database(
         settings.database_url,
@@ -801,6 +820,7 @@ async def bootstrap_access(settings: Settings) -> None:
                 models=settings.bootstrap_access_models,
                 max_concurrency=settings.bootstrap_access_max_concurrency,
                 name=settings.bootstrap_access_name,
+                expires_at=settings.bootstrap_access_expires_at,
             ),
             created_by="terraform-bootstrap",
         )
@@ -859,6 +879,7 @@ def main() -> None:
             "gpu-allocation-observer",
             "storage-reconciler",
             "storage-disclosure",
+            "storage-key-inventory",
             "scientific-materialize",
             "scientific-materialize-many",
             "scientific-collect",
@@ -886,6 +907,7 @@ def main() -> None:
             "gpu-allocation-observer": observe_gpu_allocations,
             "storage-reconciler": reconcile_user_storage,
             "storage-disclosure": serve_storage_disclosure,
+            "storage-key-inventory": emit_storage_key_inventory,
         }[args.command]
         asyncio.run(action(settings))
 

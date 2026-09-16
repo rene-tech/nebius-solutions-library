@@ -2,6 +2,13 @@
 {{- fail "config.maxSyncWaiters must be greater than or equal to config.workerConcurrency" }}
 {{- end }}
 {{- if .Values.customerStorage.enabled }}
+{{- $expectedStorageKeyring := "fs2-serve-storage-keyring" }}
+{{- if gt (.Values.secretRollout.storageGeneration | int) 1 }}
+{{- $expectedStorageKeyring = printf "fs2-serve-storage-keyring-v%d" (.Values.secretRollout.storageGeneration | int) }}
+{{- end }}
+{{- if ne .Values.customerStorage.cryptoSecretName $expectedStorageKeyring }}
+{{- fail "customerStorage.cryptoSecretName must equal its immutable secretRollout.storageGeneration identity" }}
+{{- end }}
 {{- if not .Values.networkPolicy.enabled }}
 {{- fail "customerStorage requires networkPolicy.enabled=true" }}
 {{- end }}
@@ -82,10 +89,10 @@
 {{- if or (ne .Values.migration.runtimeDatabaseRole "fs2_serve_runtime") (ne .Values.migration.reportingDatabaseRole "fs2_serve_reporting") (ne .Values.migration.maintenanceDatabaseRole "fs2_serve_maintenance") (ne .Values.migration.activationDatabaseRole "fs2_serve_activation") (ne .Values.migration.storageDatabaseRole "fs2_serve_storage") (ne .Values.migration.storageDisclosureDatabaseRole "fs2_serve_storage_disclosure") }}
 {{- fail "database group roles must match the canonical PostgreSQL release contract" }}
 {{- end }}
-{{- if and .Values.customerStorage.enabled (or (ne .Values.customerStorage.databaseSecretName "fs2-serve-database-storage") (ne .Values.customerStorage.disclosureDatabaseSecretName "fs2-serve-database-storage-disclosure") (ne .Values.customerStorage.cryptoSecretName "fs2-serve-storage-keyring")) }}
+{{- if and .Values.customerStorage.enabled (or (ne .Values.customerStorage.databaseSecretName "fs2-serve-database-storage") (ne .Values.customerStorage.disclosureDatabaseSecretName "fs2-serve-database-storage-disclosure")) }}
 {{- fail "customer storage database and crypto Secrets must match the least-privilege release contract" }}
 {{- end }}
-{{- if or (ne .Values.migration.releaseContract.schema "fs2-serve.nebius.ai/postgresql-release-contract/v1") (ne .Values.migration.releaseContract.contractPayloadSha256 "9c02134bc528f1e2a8e1c5ecd05f1e3d00d9a73b24a89252badaad7947a709ba") (ne .Values.migration.releaseContract.migrationSetSha256 "b4779e278e1f69b00034cd750709a46c528a0e985a63d6984ec8313c4a6eac4c") (ne (int .Values.migration.releaseContract.migrationCount) 34) (ne .Values.migration.releaseContract.firstMigrationVersion "0001_initial.sql") (ne .Values.migration.releaseContract.lastMigrationVersion "0034_storage_provider_tenant_guards.sql") (ne .Values.migration.releaseContract.namespaceRoleOwnershipSha256 "79bd52934dfe16d890f021222ed0d76784facbcb4d01883aa96f52e4f3bc0aa4") }}
+{{- if or (ne .Values.migration.releaseContract.schema "fs2-serve.nebius.ai/postgresql-release-contract/v1") (ne .Values.migration.releaseContract.contractPayloadSha256 "fe801243e9532362a254d8f9c8d8ea6bfbc494edf3dee421afd7f8048d849643") (ne .Values.migration.releaseContract.migrationSetSha256 "0a4bdf797063ab26b85e9bc62808e4a7197313780bd53b452ca52f3f6f2021a0") (ne (int .Values.migration.releaseContract.migrationCount) 35) (ne .Values.migration.releaseContract.firstMigrationVersion "0001_initial.sql") (ne .Values.migration.releaseContract.lastMigrationVersion "0035_storage_key_generation_inventory.sql") (ne .Values.migration.releaseContract.namespaceRoleOwnershipSha256 "79bd52934dfe16d890f021222ed0d76784facbcb4d01883aa96f52e4f3bc0aa4") }}
 {{- fail "migration release receipt inputs must match the canonical PostgreSQL contract" }}
 {{- end }}
 {{- if ne .Values.httpRoute.authorityMode .Values.config.publicAuthorityMode }}
@@ -116,8 +123,11 @@
 {{- if .Values.scientificAccess.enabled }}
 {{- $secretNames = append $secretNames .Values.scientificAccess.secretName }}
 {{- end }}
+{{- if .Values.websiteAccess.enabled }}
+{{- $secretNames = append $secretNames .Values.websiteAccess.secretName }}
+{{- end }}
 {{- if ne (len $secretNames) (len (uniq $secretNames)) }}
-{{- fail "runtime, migration, maintenance, cryptographic, admin, federation, bootstrap, and scientific credentials must use distinct Secret objects" }}
+{{- fail "runtime, migration, maintenance, cryptographic, admin, federation, bootstrap, scientific, and website credentials must use distinct Secret objects" }}
 {{- end }}
 {{- $runtimeServiceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "runtime") }}
 {{- $maintenanceServiceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "maintenance") }}
@@ -125,13 +135,13 @@
 {{- if or (eq $runtimeServiceAccount $maintenanceServiceAccount) (eq $runtimeServiceAccount $migrationServiceAccount) (eq $maintenanceServiceAccount $migrationServiceAccount) }}
 {{- fail "runtime, maintenance, and migration must use distinct service accounts" }}
 {{- end }}
-{{- if or .Values.bootstrapAccess.enabled .Values.scientificAccess.enabled }}
+{{- if or .Values.bootstrapAccess.enabled .Values.scientificAccess.enabled .Values.websiteAccess.enabled }}
 {{- $bootstrapServiceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "bootstrap") }}
 {{- if has $bootstrapServiceAccount (list $runtimeServiceAccount $maintenanceServiceAccount $migrationServiceAccount) }}
 {{- fail "bootstrap access must use a distinct service account" }}
 {{- end }}
 {{- if not .Values.networkPolicy.enabled }}
-{{- fail "bootstrapAccess and scientificAccess require networkPolicy.enabled=true" }}
+{{- fail "bootstrapAccess, scientificAccess, and websiteAccess require networkPolicy.enabled=true" }}
 {{- end }}
 {{- end }}
 {{- range .Values.networkPolicy.federationCidrs }}
@@ -278,6 +288,7 @@ spec:
       annotations:
         fs2.nebius.ai/image-digest: {{ .Values.image.digest | quote }}
         fs2.nebius.ai/catalog-rollout-digest: {{ .Values.catalog.rolloutDigest | quote }}
+        fs2.nebius.ai/secret-rollout-sha256: {{ dict "database" .Values.secretRollout.databaseGeneration "admin" .Values.secretRollout.adminGeneration "payload" .Values.secretRollout.payloadGeneration "ledger" .Values.secretRollout.ledgerGeneration "pepper" .Values.secretRollout.pepperGeneration "attestor" .Values.secretRollout.attestorGeneration | toJson | sha256sum | quote }}
         {{- if .Values.adminReadAdapters.observability.enabled }}
         fs2.nebius.ai/admin-observability-config-sha256: {{ .Values.adminReadAdapters.observability | toJson | sha256sum | quote }}
         {{- end }}

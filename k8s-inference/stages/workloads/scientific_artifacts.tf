@@ -298,7 +298,12 @@ resource "kubernetes_secret_v1" "scientific_artifact_store" {
   # only thing that rewrites the Secret.
   data_wo_revision = local.scientific_artifacts_revision
 
-  depends_on = [terraform_data.cluster_contract]
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
+  }
+
+  depends_on = [terraform_data.cluster_contract, terraform_data.credential_migration_gate]
 }
 
 # Disposable derived runtime state only: compiled kernels and framework cache

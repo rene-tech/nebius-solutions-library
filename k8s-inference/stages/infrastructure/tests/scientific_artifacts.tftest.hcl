@@ -63,10 +63,11 @@ mock_provider "nebius" {
 }
 
 variables {
-  project_id    = "project-syntheticlocal"
-  source_commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-  run_id        = "artstore1"
-  cluster_name  = "fs2-artifact-store-test"
+  project_id                  = "project-syntheticlocal"
+  source_commit               = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  run_id                      = "artstore1"
+  cluster_name                = "fs2-artifact-store-test"
+  control_plane_allowed_cidrs = ["192.0.2.1/32"]
 
   target_binding = {
     project_id          = "project-syntheticlocal"
@@ -432,4 +433,7 @@ run "an_out_of_range_retention_window_is_rejected" {
   }
 
   expect_failures = [var.scientific_artifacts]
+}
+mock_provider "external" {
+  mock_data "external" { defaults = { result = { status = "pass", receipt_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", expires_at = "2099-01-01T00:00:00Z" } } }
 }

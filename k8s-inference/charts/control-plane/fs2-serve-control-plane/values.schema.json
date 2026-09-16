@@ -10,11 +10,13 @@
     "artifactService",
     "bootstrapAccess",
     "scientificAccess",
+    "websiteAccess",
     "serviceAccounts",
     "runtimeAttribution",
     "catalog",
     "federation",
     "secrets",
+    "secretRollout",
     "config",
     "adminReadAdapters",
     "migration",
@@ -379,6 +381,7 @@
         "scopes",
         "models",
         "maxConcurrency",
+        "expiresAt",
         "activeDeadlineSeconds",
         "resources"
       ],
@@ -450,6 +453,10 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 100
+        },
+        "expiresAt": {
+          "type": "string",
+          "pattern": "^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
         },
         "activeDeadlineSeconds": {
           "type": "integer",
@@ -521,6 +528,7 @@
         "scopes",
         "models",
         "maxConcurrency",
+        "expiresAt",
         "activeDeadlineSeconds",
         "resources"
       ],
@@ -592,6 +600,138 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 100
+        },
+        "expiresAt": {
+          "type": "string",
+          "pattern": "^$|^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+        },
+        "activeDeadlineSeconds": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 3600
+        },
+        "resources": {
+          "type": "object",
+          "required": [
+            "requests",
+            "limits"
+          ],
+          "properties": {
+            "requests": {
+              "type": "object",
+              "required": [
+                "cpu",
+                "memory"
+              ],
+              "properties": {
+                "cpu": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32
+                },
+                "memory": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32
+                }
+              },
+              "additionalProperties": false
+            },
+            "limits": {
+              "type": "object",
+              "required": [
+                "cpu",
+                "memory"
+              ],
+              "properties": {
+                "cpu": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32
+                },
+                "memory": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "websiteAccess": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "secretName",
+        "tokenKey",
+        "principalId",
+        "tenantId",
+        "name",
+        "scopes",
+        "models",
+        "maxConcurrency",
+        "expiresAt",
+        "activeDeadlineSeconds",
+        "resources"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "secretName": {
+          "type": "string",
+          "maxLength": 63,
+          "pattern": "^$|^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"
+        },
+        "tokenKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253,
+          "pattern": "^[A-Za-z0-9](?:[-A-Za-z0-9_.]*[A-Za-z0-9])?$"
+        },
+        "principalId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]*$"
+        },
+        "tenantId": {
+          "type": "string",
+          "maxLength": 120,
+          "pattern": "^$|^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "scopes": {
+          "const": [
+            "catalog.read"
+          ]
+        },
+        "models": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "maxConcurrency": {
+          "const": 1
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
         },
         "activeDeadlineSeconds": {
           "type": "integer",
@@ -1243,6 +1383,30 @@
       },
       "additionalProperties": false
     },
+    "secretRollout": {
+      "type": "object",
+      "required": [
+        "databaseGeneration",
+        "adminGeneration",
+        "accessGeneration",
+        "payloadGeneration",
+        "storageGeneration",
+        "ledgerGeneration",
+        "pepperGeneration",
+        "attestorGeneration"
+      ],
+      "properties": {
+        "databaseGeneration": { "type": "integer", "minimum": 1 },
+        "adminGeneration": { "type": "integer", "minimum": 1 },
+        "accessGeneration": { "type": "integer", "minimum": 1 },
+        "payloadGeneration": { "type": "integer", "minimum": 1 },
+        "storageGeneration": { "type": "integer", "minimum": 1 },
+        "ledgerGeneration": { "type": "integer", "minimum": 1 },
+        "pepperGeneration": { "type": "integer", "minimum": 1 },
+        "attestorGeneration": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
     "config": {
       "type": "object",
       "required": [
@@ -1633,11 +1797,11 @@
           ],
           "properties": {
             "schema": {"const": "fs2-serve.nebius.ai/postgresql-release-contract/v1"},
-            "contractPayloadSha256": {"const": "9c02134bc528f1e2a8e1c5ecd05f1e3d00d9a73b24a89252badaad7947a709ba"},
-            "migrationSetSha256": {"const": "b4779e278e1f69b00034cd750709a46c528a0e985a63d6984ec8313c4a6eac4c"},
-            "migrationCount": {"const": 34},
+            "contractPayloadSha256": {"const": "fe801243e9532362a254d8f9c8d8ea6bfbc494edf3dee421afd7f8048d849643"},
+            "migrationSetSha256": {"const": "0a4bdf797063ab26b85e9bc62808e4a7197313780bd53b452ca52f3f6f2021a0"},
+            "migrationCount": {"const": 35},
             "firstMigrationVersion": {"const": "0001_initial.sql"},
-            "lastMigrationVersion": {"const": "0034_storage_provider_tenant_guards.sql"},
+            "lastMigrationVersion": {"const": "0035_storage_key_generation_inventory.sql"},
             "namespaceRoleOwnershipSha256": {"const": "79bd52934dfe16d890f021222ed0d76784facbcb4d01883aa96f52e4f3bc0aa4"}
           },
           "additionalProperties": false

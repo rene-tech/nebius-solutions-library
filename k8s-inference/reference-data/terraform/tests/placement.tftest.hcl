@@ -299,3 +299,6 @@ run "a_fitting_cpu_class_makes_the_data_pipeline_lane_runnable" {
     error_message = "the bulk stager must stay at its own smaller sizing."
   }
 }
+mock_provider "external" {
+  mock_data "external" { defaults = { result = { status = "pass", receipt_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", expires_at = "2099-01-01T00:00:00Z" } } }
+}

@@ -105,6 +105,10 @@ EXPECTED_MIGRATIONS: Final = (
         "0034_storage_provider_tenant_guards.sql",
         "c6261bdabcb2f9b41a311b33454e690e60399bd0f145e0b1be1f1082f4c03127",
     ),
+    (
+        "0035_storage_key_generation_inventory.sql",
+        "69db367a07c16c4bcffe3d109d4c3108adad048f517362acdc1d83299bddd567",
+    ),
 )
 
 NAMESPACE_ROLE_OWNERSHIP: Final[dict[str, Any]] = {

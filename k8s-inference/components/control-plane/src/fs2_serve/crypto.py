@@ -71,10 +71,14 @@ class PayloadCipher:
 
     @staticmethod
     def customer_storage_aad(tenant_id: str, principal_id: str) -> bytes:
-        """Bind a storage envelope to exactly one tenant/principal identity."""
+        """Stable cross-release AAD contract for customer storage credentials.
+
+        SAI-08 consumers must call this method rather than reproducing bytes.
+        Changing the domain or field order would strand existing ciphertext.
+        """
 
         if not tenant_id or not principal_id or "\0" in tenant_id or "\0" in principal_id:
-            raise ValueError("customer-storage AAD identity is invalid")
+            raise ValueError("customer storage AAD identities must be non-empty and NUL-free")
         return f"fs2.user-storage/v1\0{tenant_id}\0{principal_id}".encode()
 
     def encrypt(self, plaintext: bytes, *, aad: bytes) -> Ciphertext:

@@ -947,8 +947,31 @@ def test_storage_aad_supports_dual_read_current_write_and_rollback():
             current,
             aad=PayloadCipher.customer_storage_aad("customer-a", "bob"),
         )
-    with pytest.raises(ValueError, match="AAD identity"):
+    with pytest.raises(ValueError, match="AAD identities"):
         PayloadCipher.customer_storage_aad("customer-a\0forged", "alice")
+
+
+async def test_storage_key_usage_keeps_cipher_and_name_generations_separate():
+    pool = SimpleNamespace(
+        fetch=AsyncMock(
+            side_effect=[
+                [
+                    {"key_id": "storage-v1", "credential_count": 0},
+                    {"key_id": "storage-v2", "credential_count": 2},
+                ],
+                [
+                    {"key_id": "legacy-unkeyed-v0", "bucket_count": 2},
+                    {"key_id": "storage-name-v2", "bucket_count": 3},
+                ],
+            ]
+        )
+    )
+    repository = PostgresUserStorageRepository(pool, None)
+
+    assert await repository.storage_key_usage() == {
+        "cipher": {"storage-v1": 0, "storage-v2": 2},
+        "names": {"legacy-unkeyed-v0": 2, "storage-name-v2": 3},
+    }
 
 
 async def test_tenant_layout_rejects_second_principal_before_cloud_access(env):

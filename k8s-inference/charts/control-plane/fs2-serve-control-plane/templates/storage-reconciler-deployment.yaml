@@ -48,6 +48,7 @@ spec:
         {{- include "fs2-serve.storageSelectorLabels" . | nindent 8 }}
       annotations:
         fs2.nebius.ai/image-digest: {{ .Values.image.digest | quote }}
+        fs2.nebius.ai/secret-rollout-sha256: {{ dict "storage" .Values.secretRollout.storageGeneration | toJson | sha256sum | quote }}
         fs2.nebius.ai/storage-egress-cidrs-sha256: {{ .Values.customerStorage.egressCidrs | toJson | sha256sum | quote }}
     spec:
       serviceAccountName: {{ include "fs2-serve.serviceAccountName" (dict "root" . "component" "storage") }}

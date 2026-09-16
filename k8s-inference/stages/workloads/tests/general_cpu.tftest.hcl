@@ -68,14 +68,15 @@ run "native_formula_is_a_managed_zero_gpu_app_with_full_resources" {
 
 # Reuse the stage-wide inputs the existing stage tests already pin.
 variables {
-  run_root        = "/tmp/fs2-modelexpress-test"
-  kubeconfig_path = "/tmp/fs2-modelexpress-test/kubeconfig"
-  run_id          = "mxtest01"
-  cluster_id      = "mk8scluster-modelexpresstest"
-  cluster_name    = "fs2-modelexpress-test"
-  kube_context    = "fs2-modelexpress-test"
-  kube_system_uid = "00000000-0000-0000-0000-000000000001"
-  project_id      = "project-modelexpresstest"
+  bootstrap_access_expires_at = "2099-01-01T00:00:00Z"
+  run_root                    = "/tmp/fs2-modelexpress-test"
+  kubeconfig_path             = "/tmp/fs2-modelexpress-test/kubeconfig"
+  run_id                      = "mxtest01"
+  cluster_id                  = "mk8scluster-modelexpresstest"
+  cluster_name                = "fs2-modelexpress-test"
+  kube_context                = "fs2-modelexpress-test"
+  kube_system_uid             = "00000000-0000-0000-0000-000000000001"
+  project_id                  = "project-modelexpresstest"
 
   target_contract = {
     project_id                 = "project-modelexpresstest"
@@ -264,7 +265,8 @@ variables {
       }
     }
   }
-  nvcrio_dockerconfigjson = "{\"auths\":{}}"
+  nvcrio_dockerconfigjson            = "{\"auths\":{}}"
+  nvcrio_dockerconfigjson_configured = true
   # The lane budgets cpu and memory, so core admission is on. These are one
   # truth at the facade: budget_core_resources is exactly
   # scheduling.core_capacity != null, and the root refuses an enabled general
@@ -846,4 +848,7 @@ run "rejects_a_pool_contract_produced_for_another_project_or_region" {
   }
 
   expect_failures = [terraform_data.general_cpu_pool_target_binding]
+}
+mock_provider "external" {
+  mock_data "external" { defaults = { result = { status = "pass", receipt_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", expires_at = "2099-01-01T00:00:00Z" } } }
 }

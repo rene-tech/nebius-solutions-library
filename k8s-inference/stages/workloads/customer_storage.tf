@@ -166,7 +166,7 @@ locals {
       iamCredentialsSecretName      = var.customer_storage.iam_credentials_secret_name
       databaseSecretName            = "fs2-serve-database-storage"
       disclosureDatabaseSecretName  = "fs2-serve-database-storage-disclosure"
-      cryptoSecretName              = "fs2-serve-storage-keyring"
+      cryptoSecretName              = local.active_storage_keyring_name
       egressCidrs                   = var.customer_storage.enabled ? jsondecode(data.external.customer_storage_egress[0].result.cidrs_json) : []
       kubernetesApiCidrs            = var.customer_storage.enabled ? local.customer_storage_kubernetes_api_cidrs : []
       egressContractSha256          = var.customer_storage.enabled ? data.external.customer_storage_egress[0].result.contract_sha256 : ""

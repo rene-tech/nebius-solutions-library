@@ -1561,19 +1561,213 @@ variable "catalog_rollout_digest" {
 }
 
 variable "ngc_api_key" {
-  description = "NGC entitlement used by selected NIM models. Required only when model_artifacts marks an enabled model accordingly; stored in disposable local state."
+  description = "NGC entitlement used by selected NIM models. The ephemeral value is delivered only through write-only Secret data."
   type        = string
   sensitive   = true
+  ephemeral   = true
   nullable    = true
   default     = null
 }
 
 variable "nvcrio_dockerconfigjson" {
-  description = "Docker config JSON for selected nvcr.io model images and the full-catalog DCGM exporter; stored in disposable local state."
+  description = "Docker config JSON for selected nvcr.io images. The ephemeral value is delivered only through write-only Secret data."
   type        = string
   sensitive   = true
+  ephemeral   = true
   nullable    = true
   default     = null
+}
+
+variable "ngc_api_key_configured" {
+  description = "Non-secret presence signal supplied by the wrapper for the ephemeral NGC entitlement."
+  type        = bool
+  default     = false
+}
+
+variable "nvcrio_dockerconfigjson_configured" {
+  description = "Non-secret presence signal supplied by the wrapper for the ephemeral registry credential."
+  type        = bool
+  default     = false
+}
+
+variable "credential_generations" {
+  description = "Independent positive active generations. Generation 1 is the immutable imported legacy value; later generations use separately named Secrets."
+  type = object({
+    admin    = optional(number, 1)
+    access   = optional(number, 1)
+    database = optional(number, 1)
+    registry = optional(number, 1)
+  })
+  default = {}
+
+  validation {
+    condition = alltrue([
+      for generation in values(var.credential_generations) :
+      floor(generation) == generation && generation >= 1
+    ])
+    error_message = "Every credential_generations value must be a positive whole number."
+  }
+}
+
+variable "credential_generation_history" {
+  description = "Append-only retained generation histories for stateful application credentials."
+  type = object({
+    admin    = optional(set(number), [1])
+    access   = optional(set(number), [1])
+    database = optional(set(number), [1])
+  })
+  default = {}
+
+  validation {
+    condition = (
+      alltrue([
+        for history in values(var.credential_generation_history) :
+        length(history) >= 1 && history == toset(range(1, max(history...) + 1))
+      ]) &&
+      contains(var.credential_generation_history.admin, var.credential_generations.admin) &&
+      contains(var.credential_generation_history.access, var.credential_generations.access) &&
+      contains(var.credential_generation_history.database, var.credential_generations.database)
+    )
+    error_message = "Admin, access, and database generation histories must be contiguous from 1 and retain their active generation."
+  }
+}
+
+variable "admin_tokens" {
+  description = "Externally escrowed admin bootstrap tokens keyed by retained generation greater than 1."
+  type        = map(string)
+  sensitive   = true
+  ephemeral   = true
+  default     = {}
+}
+
+variable "bootstrap_access_tokens" {
+  description = "Externally escrowed general bootstrap PATs keyed by retained generation greater than 1."
+  type        = map(string)
+  sensitive   = true
+  ephemeral   = true
+  default     = {}
+}
+
+variable "scientific_access_tokens" {
+  description = "Externally escrowed scientific bootstrap PATs keyed by retained generation greater than 1."
+  type        = map(string)
+  sensitive   = true
+  ephemeral   = true
+  default     = {}
+}
+
+variable "website_access_tokens" {
+  description = "Externally escrowed catalog-only website PATs keyed by retained generation greater than 1."
+  type        = map(string)
+  sensitive   = true
+  ephemeral   = true
+  default     = {}
+}
+
+variable "database_passwords" {
+  description = "Externally escrowed per-account database passwords keyed by every retained database generation greater than 1."
+  type        = map(map(string))
+  sensitive   = true
+  ephemeral   = true
+  default     = {}
+
+  validation {
+    condition = (
+      toset(keys(var.database_passwords)) == toset([
+        for generation in var.credential_generation_history.database : tostring(generation)
+        if generation > 1
+      ]) &&
+      alltrue([
+        for passwords in values(var.database_passwords) :
+        toset(keys(passwords)) == toset([
+          "owner",
+          "runtime",
+          "maintenance",
+          "activation",
+          "restore_verifier",
+          "reporting",
+          "monitoring",
+        ]) && alltrue([for password in values(passwords) : length(password) >= 32])
+      ])
+    )
+    error_message = "database_passwords must contain exactly all seven accounts for every retained database generation greater than 1, with passwords of at least 32 characters."
+  }
+}
+
+variable "bootstrap_access_expires_at" {
+  description = "Future RFC3339 server-enforced expiry applied to every general, scientific and website PAT generation, including generation 1."
+  type        = string
+  nullable    = true
+  default     = null
+
+  validation {
+    condition     = try(timecmp(var.bootstrap_access_expires_at, timestamp()) > 0, false)
+    error_message = "Every PAT generation, including generation 1, requires a future RFC3339 bootstrap_access_expires_at."
+  }
+}
+
+variable "keyring_generations" {
+  description = "Independent active and retained generation histories. Retained generations are never removed by rollback."
+  type = object({
+    payload  = optional(object({ active = optional(number, 1), retained = optional(set(number), [1]) }), {})
+    storage  = optional(object({ active = optional(number, 1), retained = optional(set(number), [1]) }), {})
+    ledger   = optional(object({ active = optional(number, 1), retained = optional(set(number), [1]) }), {})
+    pepper   = optional(object({ active = optional(number, 1), retained = optional(set(number), [1]) }), {})
+    attestor = optional(object({ active = optional(number, 1), retained = optional(set(number), [1]) }), {})
+  })
+  default = {}
+
+  validation {
+    condition = alltrue([
+      for keyring in values(var.keyring_generations) :
+      length(keyring.retained) >= 1 &&
+      floor(keyring.active) == keyring.active &&
+      keyring.active >= 1 &&
+      contains(keyring.retained, keyring.active) &&
+      keyring.retained == toset(range(1, max(keyring.retained...) + 1))
+    ])
+    error_message = "Every keyring must retain a contiguous history beginning at generation 1 and include its positive whole-number active generation."
+  }
+}
+
+variable "payload_keyrings_json" {
+  description = "Externally escrowed payload keyring documents keyed by every retained generation greater than 1."
+  type        = map(string)
+  sensitive   = true
+  ephemeral   = true
+  default     = {}
+}
+
+variable "storage_keyrings_json" {
+  description = "Externally escrowed customer-storage cipher and opaque-name keyring documents keyed by every retained generation greater than 1."
+  type        = map(string)
+  sensitive   = true
+  ephemeral   = true
+  default     = {}
+}
+
+variable "ledger_keyrings_json" {
+  description = "Externally escrowed ledger keyring documents keyed by every retained generation greater than 1."
+  type        = map(string)
+  sensitive   = true
+  ephemeral   = true
+  default     = {}
+}
+
+variable "token_pepper_keyrings_json" {
+  description = "Externally escrowed PAT pepper keyring documents keyed by every retained generation greater than 1."
+  type        = map(string)
+  sensitive   = true
+  ephemeral   = true
+  default     = {}
+}
+
+variable "route_attestors_sets_json" {
+  description = "Externally managed public attestor-set documents keyed by every retained generation greater than 1."
+  type        = map(string)
+  sensitive   = true
+  ephemeral   = true
+  default     = {}
 }
 
 variable "run_acceptance_job" {

@@ -3,6 +3,9 @@ project_id = "project-REPLACE-WITH-EXACT-APPROVED-ID"
 run_id     = "r20260827a"
 source_commit = "0000000000000000000000000000000000000000"
 
+# Replace the documentation address with exact operator/automation egress CIDRs.
+control_plane_allowed_cidrs = ["192.0.2.1/32"]
+
 # Optional wrapper-owned naming/authentication inputs. The legacy defaults are
 # cluster_name=null and nebius_profile="sandbox". Credentials are never tfvars.
 # cluster_name   = "customer-inference"

@@ -63,9 +63,10 @@ mock_provider "nebius" {
 }
 
 variables {
-  project_id    = "project-syntheticlocal"
-  source_commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-  run_id        = "gputest1"
+  project_id                  = "project-syntheticlocal"
+  source_commit               = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  run_id                      = "gputest1"
+  control_plane_allowed_cidrs = ["192.0.2.1/32"]
 
   target_binding = {
     project_id          = "project-syntheticlocal"
@@ -359,4 +360,7 @@ run "fresh_empty_reference_storage_apply_acceptance" {
     )
     error_message = "Fresh acceptance storage must be disposable but keep versioning enabled; teardown is valid only before objects are written."
   }
+}
+mock_provider "external" {
+  mock_data "external" { defaults = { result = { status = "pass", receipt_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", expires_at = "2099-01-01T00:00:00Z" } } }
 }

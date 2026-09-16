@@ -63,9 +63,10 @@ mock_provider "nebius" {
 }
 
 variables {
-  project_id    = "project-syntheticlocal"
-  source_commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-  run_id        = "gputest1"
+  project_id                  = "project-syntheticlocal"
+  source_commit               = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  run_id                      = "gputest1"
+  control_plane_allowed_cidrs = ["192.0.2.1/32"]
 
   target_binding = {
     project_id          = "project-syntheticlocal"
@@ -220,4 +221,7 @@ run "no_cpu_pool_creates_no_node_group" {
     condition     = length(nebius_mk8s_v1_node_group.general_cpu) == 0
     error_message = "A deployment without general CPU pools must create no general CPU node group."
   }
+}
+mock_provider "external" {
+  mock_data "external" { defaults = { result = { status = "pass", receipt_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", expires_at = "2099-01-01T00:00:00Z" } } }
 }

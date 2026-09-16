@@ -245,9 +245,38 @@ def test_customer_storage_credentials_are_isolated_and_egress_is_bounded() -> No
     assert https[0]["to"] == [{"ipBlock": {"cidr": "198.51.100.10/32"}}]
     assert https[1]["to"] == [{"ipBlock": {"cidr": "192.0.2.1/32"}}]
     assert all(rule["ports"] == [{"port": 443, "protocol": "TCP"}] for rule in https)
-    assert storage_policy["metadata"]["annotations"] == {
-        "fs2.nebius.ai/storage-egress-contract-sha256": "4" * 64
-    }
+    assert storage_policy["metadata"]["annotations"] == {"fs2.nebius.ai/storage-egress-contract-sha256": "4" * 64}
+
+    rotated_documents = render(
+        *base,
+        "--set-string",
+        "customerStorage.egressCidrs[0]=198.51.100.10/32",
+        "--set",
+        "secretRollout.storageGeneration=2",
+        "--set",
+        "customerStorage.cryptoSecretName=fs2-serve-storage-keyring-v2",
+    )
+    rotated = {(item["kind"], item["metadata"]["name"]): item for item in rotated_documents}
+    for component in ("storage-reconciler", "storage-disclosure"):
+        deployment = rotated[("Deployment", f"fs2-serve-control-plane-{component}")]
+        template = deployment["spec"]["template"]
+        assert "fs2-serve-storage-keyring-v2" in json.dumps(template["spec"]["volumes"])
+        assert template["metadata"]["annotations"]["fs2.nebius.ai/secret-rollout-sha256"]
+
+    mismatched_generation = subprocess.run(  # noqa: S603 - fixed Helm binary and adversarial values.
+        render_command(
+            *base,
+            "--set-string",
+            "customerStorage.egressCidrs[0]=198.51.100.10/32",
+            "--set",
+            "secretRollout.storageGeneration=2",
+        ),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert mismatched_generation.returncode != 0
+    assert "immutable secretRollout.storageGeneration identity" in mismatched_generation.stderr
 
     for values in (
         ("customerStorage.egressCidrs[0]=0.0.0.0/1", "customerStorage.egressCidrs[1]=128.0.0.0/1"),

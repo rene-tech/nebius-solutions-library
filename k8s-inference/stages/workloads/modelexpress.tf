@@ -40,6 +40,9 @@ locals {
       pullPolicy = "IfNotPresent"
     }
     imagePullSecrets = local.modelexpress_nvcr_required ? [{ name = local.modelexpress_pull_secret_name }] : []
+    podAnnotations = {
+      "fs2.nebius.ai/secret-rollout-sha256" = sha256(jsonencode({ registry = var.credential_generations.registry }))
+    }
     serviceAccount = {
       create    = true
       automount = true
@@ -159,11 +162,17 @@ resource "kubernetes_secret_v1" "modelexpress_nvcrio" {
     labels    = local.common_labels
   }
   type = "kubernetes.io/dockerconfigjson"
-  data = {
+  data_wo = {
     ".dockerconfigjson" = var.nvcrio_dockerconfigjson
   }
+  data_wo_revision = var.credential_generations.registry
 
-  depends_on = [kubernetes_namespace_v1.modelexpress]
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
+  }
+
+  depends_on = [kubernetes_namespace_v1.modelexpress, terraform_data.credential_migration_gate]
 }
 
 resource "helm_release" "modelexpress" {
@@ -190,7 +199,7 @@ resource "helm_release" "modelexpress" {
     }
 
     precondition {
-      condition     = !local.modelexpress_nvcr_required || var.nvcrio_dockerconfigjson != null
+      condition     = !local.modelexpress_nvcr_required || var.nvcrio_dockerconfigjson_configured
       error_message = "A managed nvcr.io ModelExpress server requires FS2_NVCR_DOCKERCONFIGJSON."
     }
   }

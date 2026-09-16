@@ -1053,6 +1053,7 @@ locals {
 
   foundation_variables = {
     grafana_admin_secret_ref = var.deployment.secrets.grafana_admin_secret
+    credential_generation    = var.deployment.secrets.credential_generations.grafana
     jobset = {
       enabled            = var.deployment.scientific_batch.enabled
       kubernetes_version = var.deployment.cluster.kubernetes_version
@@ -1121,6 +1122,10 @@ locals {
 
   workloads_variables = {
     customer_storage                = var.deployment.storage.customer_buckets
+    credential_generations          = var.deployment.secrets.credential_generations
+    credential_generation_history   = var.deployment.secrets.credential_generation_history
+    bootstrap_access_expires_at     = var.deployment.secrets.bootstrap_access_expires_at
+    keyring_generations             = var.deployment.secrets.keyring_generations
     deployment_profile              = local.model_profile
     enabled_model_ids               = local.selected_model_ids
     model_image_overrides           = local.effective_model_images

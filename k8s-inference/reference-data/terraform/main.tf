@@ -472,6 +472,13 @@ resource "kubernetes_secret_v1" "object_storage" {
   # keeping it at 1 prevents a cloud-side metadata revision from turning into
   # an illegal in-place patch of immutable Kubernetes Secret data.
   data_wo_revision = 1
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
+  }
+
+  depends_on = [terraform_data.credential_migration_gate]
 }
 
 resource "kubernetes_config_map_v1" "tools" {

@@ -10,14 +10,15 @@ mock_provider "random" {}
 
 # Reuse the stage-wide inputs the existing stage tests already pin.
 variables {
-  run_root        = "/tmp/fs2-modelexpress-test"
-  kubeconfig_path = "/tmp/fs2-modelexpress-test/kubeconfig"
-  run_id          = "mxtest01"
-  cluster_id      = "mk8scluster-modelexpresstest"
-  cluster_name    = "fs2-modelexpress-test"
-  kube_context    = "fs2-modelexpress-test"
-  kube_system_uid = "00000000-0000-0000-0000-000000000001"
-  project_id      = "project-modelexpresstest"
+  bootstrap_access_expires_at = "2099-01-01T00:00:00Z"
+  run_root                    = "/tmp/fs2-modelexpress-test"
+  kubeconfig_path             = "/tmp/fs2-modelexpress-test/kubeconfig"
+  run_id                      = "mxtest01"
+  cluster_id                  = "mk8scluster-modelexpresstest"
+  cluster_name                = "fs2-modelexpress-test"
+  kube_context                = "fs2-modelexpress-test"
+  kube_system_uid             = "00000000-0000-0000-0000-000000000001"
+  project_id                  = "project-modelexpresstest"
 
   target_contract = {
     project_id                 = "project-modelexpresstest"
@@ -206,7 +207,8 @@ variables {
       }
     }
   }
-  nvcrio_dockerconfigjson = "{\"auths\":{}}"
+  nvcrio_dockerconfigjson            = "{\"auths\":{}}"
+  nvcrio_dockerconfigjson_configured = true
 }
 
 run "disabled_academic_config_is_projected_as_disabled" {
@@ -419,4 +421,7 @@ run "localized_private_generation_reaches_the_chart" {
     )
     error_message = "The chart must receive the exact Terraform tenant, readiness receipt, GPU queues, and runner identity."
   }
+}
+mock_provider "external" {
+  mock_data "external" { defaults = { result = { status = "pass", receipt_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", expires_at = "2099-01-01T00:00:00Z" } } }
 }

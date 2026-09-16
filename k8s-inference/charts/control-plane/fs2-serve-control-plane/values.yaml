@@ -191,6 +191,7 @@ bootstrapAccess:
     - use.noncommercial
   models: ["*"]
   maxConcurrency: 32
+  expiresAt: ""
   activeDeadlineSeconds: 300
   resources:
     requests:
@@ -222,6 +223,32 @@ scientificAccess:
     - use.noncommercial
   models: ["*"]
   maxConcurrency: 32
+  expiresAt: ""
+  activeDeadlineSeconds: 300
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# A website-only PAT for the public Scientific AI catalog. This identity is
+# deliberately incapable of inference, MCP, or operation access. Keep the
+# policy exact: both the schema and template reject broader scopes or a higher
+# concurrency value.
+websiteAccess:
+  enabled: false
+  secretName: ""
+  tokenKey: token
+  principalId: terraform-scientific-ai-website
+  tenantId: ""
+  name: Terraform Scientific AI website catalog
+  scopes:
+    - catalog.read
+  models: ["*"]
+  maxConcurrency: 1
+  expiresAt: ""
   activeDeadlineSeconds: 300
   resources:
     requests:
@@ -358,6 +385,20 @@ secrets:
     name: fs2-serve-artifact-store
     key: credentials.json
 
+# Non-secret generation metadata is deliberately hashed into every pod/job
+# template that consumes the corresponding Secret. Secret data is never used
+# as an annotation. Terraform changes the Secret first; Helm then performs an
+# ordered readiness-gated rollout.
+secretRollout:
+  databaseGeneration: 1
+  adminGeneration: 1
+  accessGeneration: 1
+  payloadGeneration: 1
+  storageGeneration: 1
+  ledgerGeneration: 1
+  pepperGeneration: 1
+  attestorGeneration: 1
+
 config:
   # Required public HTTPS origins; empty defaults fail validation.
   publicBaseUrl: ""
@@ -410,11 +451,11 @@ migration:
   # for the final PostgreSQL release receipt; chart validation rejects drift.
   releaseContract:
     schema: fs2-serve.nebius.ai/postgresql-release-contract/v1
-    contractPayloadSha256: 9c02134bc528f1e2a8e1c5ecd05f1e3d00d9a73b24a89252badaad7947a709ba
-    migrationSetSha256: b4779e278e1f69b00034cd750709a46c528a0e985a63d6984ec8313c4a6eac4c
-    migrationCount: 34
+    contractPayloadSha256: fe801243e9532362a254d8f9c8d8ea6bfbc494edf3dee421afd7f8048d849643
+    migrationSetSha256: 0a4bdf797063ab26b85e9bc62808e4a7197313780bd53b452ca52f3f6f2021a0
+    migrationCount: 35
     firstMigrationVersion: 0001_initial.sql
-    lastMigrationVersion: 0034_storage_provider_tenant_guards.sql
+    lastMigrationVersion: 0035_storage_key_generation_inventory.sql
     namespaceRoleOwnershipSha256: 79bd52934dfe16d890f021222ed0d76784facbcb4d01883aa96f52e4f3bc0aa4
   resources:
     requests:

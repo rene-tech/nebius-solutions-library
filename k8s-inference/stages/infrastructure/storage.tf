@@ -160,7 +160,13 @@ resource "nebius_iam_v2_access_key" "reference_data" {
     }
   }
 
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
+  }
+
   depends_on = [
+    terraform_data.credential_migration_gate,
     nebius_storage_v1_bucket.reference_data,
     nebius_storage_v1_bucket.reference_data_disposable,
   ]

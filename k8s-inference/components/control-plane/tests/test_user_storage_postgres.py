@@ -46,7 +46,7 @@ async def test_security_migration_queues_historical_rotation_and_fails_shared_la
         candidate = await asyncpg.connect(candidate_url)
         try:
             migration_dir = Path(__file__).parents[1] / "migrations"
-            for version, _ in EXPECTED_MIGRATIONS[:-2]:
+            for version, _ in EXPECTED_MIGRATIONS[:-4]:
                 await candidate.execute((migration_dir / version).read_text(encoding="utf-8"))
             await candidate.execute(
                 """INSERT INTO fs2_storage_policies(tenant_id,mode) VALUES('legacy-tenant','tenant');
@@ -63,7 +63,7 @@ async def test_security_migration_queues_historical_rotation_and_fails_shared_la
                   ('legacy-tenant','bob','','sa-bob','key-bob','public-bob','payload-v1',
                    decode('000000000000000000000000','hex'),decode('00','hex'),false)"""
             )
-            for version, _ in EXPECTED_MIGRATIONS[-2:]:
+            for version, _ in EXPECTED_MIGRATIONS[-4:]:
                 await candidate.execute((migration_dir / version).read_text(encoding="utf-8"))
 
             policy = dict(
@@ -193,6 +193,10 @@ async def test_db_bound_one_time_disclosure_blocks_cross_tenant_enumeration_and_
     rotated_repository = PostgresUserStorageRepository(store.pool, storage_cipher)
     assert await rotated_repository.reencrypt_if_needed("customer-a", "sai08-alice")
     assert not await rotated_repository.reencrypt_if_needed("customer-a", "sai08-alice")
+    assert await rotated_repository.storage_key_usage() == {
+        "cipher": {"payload-v1": 1, "storage-v1": 1},
+        "names": {"legacy-unkeyed-v0": 2},
+    }
     alice_token_id, alice_raw = await issue_storage_token(store, tenant="customer-a", principal="sai08-alice")
     _, bob_raw = await issue_storage_token(store, tenant="customer-b", principal="sai08-bob")
     pepper = b"x" * 32
@@ -337,10 +341,13 @@ async def test_tenant_layout_is_db_bound_to_one_principal_at_every_write_path(st
         StoragePolicy(mode="tenant"),
         StoragePolicy(),
     )
-    assert await store.pool.fetchval(
-        "SELECT singleton_principal_id FROM fs2_storage_policies WHERE tenant_id=$1",
-        alice.tenant_id,
-    ) == alice.principal_id
+    assert (
+        await store.pool.fetchval(
+            "SELECT singleton_principal_id FROM fs2_storage_policies WHERE tenant_id=$1",
+            alice.tenant_id,
+        )
+        == alice.principal_id
+    )
 
     with pytest.raises(asyncpg.CheckViolationError, match="another principal"):
         await users.save(bob, create=True)

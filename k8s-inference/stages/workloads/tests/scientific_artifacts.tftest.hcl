@@ -10,14 +10,15 @@ mock_provider "helm" {}
 mock_provider "random" {}
 
 variables {
-  run_root        = "/tmp/fs2-modelexpress-test"
-  kubeconfig_path = "/tmp/fs2-modelexpress-test/kubeconfig"
-  run_id          = "mxtest01"
-  cluster_id      = "mk8scluster-modelexpresstest"
-  cluster_name    = "fs2-modelexpress-test"
-  kube_context    = "fs2-modelexpress-test"
-  kube_system_uid = "00000000-0000-0000-0000-000000000001"
-  project_id      = "project-modelexpresstest"
+  bootstrap_access_expires_at = "2099-01-01T00:00:00Z"
+  run_root                    = "/tmp/fs2-modelexpress-test"
+  kubeconfig_path             = "/tmp/fs2-modelexpress-test/kubeconfig"
+  run_id                      = "mxtest01"
+  cluster_id                  = "mk8scluster-modelexpresstest"
+  cluster_name                = "fs2-modelexpress-test"
+  kube_context                = "fs2-modelexpress-test"
+  kube_system_uid             = "00000000-0000-0000-0000-000000000001"
+  project_id                  = "project-modelexpresstest"
 
   target_contract = {
     project_id                 = "project-modelexpresstest"
@@ -206,7 +207,32 @@ variables {
       }
     }
   }
-  nvcrio_dockerconfigjson = "{\"auths\":{}}"
+  nvcrio_dockerconfigjson            = "{\"auths\":{}}"
+  nvcrio_dockerconfigjson_configured = true
+}
+
+run "rejects_reused_pat_id_across_retained_generations" {
+  command = plan
+
+  plan_options {
+    target = [kubernetes_secret_v1.bootstrap_access_versioned]
+  }
+
+  variables {
+    credential_generations = {
+      access = 3
+    }
+    credential_generation_history = {
+      access = [1, 2, 3]
+    }
+    bootstrap_access_tokens = {
+      "2" = "fs2_pat_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      "3" = "fs2_pat_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+    }
+    bootstrap_access_expires_at = "2099-01-01T00:00:00Z"
+  }
+
+  expect_failures = [kubernetes_secret_v1.bootstrap_access_versioned]
 }
 
 run "the_store_is_absent_from_the_chart_until_it_is_enabled" {
@@ -535,6 +561,14 @@ run "a_store_that_reuses_the_reference_data_bucket_is_refused" {
   }
 
   variables {
+    scheduling = {
+      core_pool_capacity = {
+        nebius-b300-preemptible-1x = {
+          cpu_millicores = 22000
+          memory_mib     = 339968
+        }
+      }
+    }
     scientific_artifacts = {
       enabled               = true
       handle_ttl_seconds    = 600
@@ -857,4 +891,7 @@ run "an_out_of_region_bucket_is_refused" {
   }
 
   expect_failures = [var.scientific_artifacts]
+}
+mock_provider "external" {
+  mock_data "external" { defaults = { result = { status = "pass", receipt_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", expires_at = "2099-01-01T00:00:00Z" } } }
 }

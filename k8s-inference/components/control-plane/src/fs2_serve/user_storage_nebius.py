@@ -90,6 +90,15 @@ class NebiusUserStorage:
         )
         return f"fs2-{digest[:32]}"
 
+    def bucket_name_candidates(self, tenant: str, owner: str) -> tuple[tuple[str, str], ...]:
+        """Return every retained key identity and the exact name it authorizes."""
+
+        value = f"{self.project_id}\0{tenant}\0{owner}".encode()
+        return tuple(
+            (key_id, f"fs2-{digest[:32]}")
+            for key_id, digest in self.name_hasher.candidate_digests(value, context="fs2.user-storage-bucket/v1")
+        )
+
     @staticmethod
     async def _operation(request: Any) -> str:
         operation = await request
@@ -183,6 +192,18 @@ class NebiusUserStorage:
             raise ValueError("existing bucket is not owned by this customer-storage controller")
         if existing is not None and existing["group_id"] != group.metadata.id:
             raise ValueError("existing bucket IAM group identity changed")
+        name_key_id = "legacy-unkeyed-v0"
+        if existing is None or existing.get("name_key_id") not in {None, "legacy-unkeyed-v0"}:
+            matches = [
+                key_id
+                for key_id, candidate in self.bucket_name_candidates(tenant, owner)
+                if candidate == bucket.metadata.name
+            ]
+            if len(matches) != 1:
+                raise ValueError("existing bucket name is not bound to one retained storage-name key")
+            name_key_id = matches[0]
+            if existing is not None and existing.get("name_key_id") != name_key_id:
+                raise ValueError("existing bucket name-key identity changed")
         # Preserve unrelated bucket settings and use resource-version checking.
         # Nebius bucket names are immutable (verified against the live API).
         # Existing names require an explicit data migration, never replacement
@@ -219,6 +240,7 @@ class NebiusUserStorage:
         return {
             "bucket_id": bucket.metadata.id,
             "bucket_name": bucket.metadata.name,
+            "name_key_id": name_key_id,
             "group_id": group.metadata.id,
             "endpoint": f"https://storage.{self.region}.nebius.cloud",
             "region": self.region,
@@ -461,10 +483,7 @@ class NebiusUserStorage:
         foreign_same_name = [
             item
             for item in inventory
-            if (
-                str(item.metadata.name) == name
-                or str(item.metadata.name).startswith(f"{name}-r-")
-            )
+            if (str(item.metadata.name) == name or str(item.metadata.name).startswith(f"{name}-r-"))
             and not self._controller_key(item, name)
         ]
         for item in foreign_same_name:
@@ -472,11 +491,7 @@ class NebiusUserStorage:
         if foreign_same_name:
             raise RuntimeError("foreign same-name rotation key was quarantined")
         replacement = next(
-            (
-                item
-                for item in inventory
-                if item.metadata.name == rotation_name and self._controller_key(item, name)
-            ),
+            (item for item in inventory if item.metadata.name == rotation_name and self._controller_key(item, name)),
             None,
         )
         allowed_ids = {str(previous["access_key_resource_id"])}

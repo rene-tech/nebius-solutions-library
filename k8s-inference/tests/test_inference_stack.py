@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.machinery
 import importlib.util
+import base64
 import hashlib
 import io
 import json
@@ -14,6 +15,7 @@ import tempfile
 import unittest
 from argparse import Namespace
 from contextlib import redirect_stdout
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest import mock
 
@@ -36,6 +38,9 @@ def arguments() -> Namespace:
         kubectl="kubectl-test",
         crane="crane-test",
         nebius_profile="sandbox",
+        credential_file=None,
+        credential_kind=None,
+        credential_expires_in_seconds=3600,
     )
 
 
@@ -250,70 +255,179 @@ def regional_dynamic(run_root: Path) -> dict:
 class InferenceStackTests(unittest.TestCase):
     def test_completed_model_handoff_survives_catalog_additions(self) -> None:
         def resource(name, value):
-            return {"mode": "managed", "type": "terraform_data", "name": name,
-                    "instances": [{"attributes": {"input": {"value": value}}}]}
+            return {
+                "mode": "managed",
+                "type": "terraform_data",
+                "name": name,
+                "instances": [{"attributes": {"input": {"value": value}}}],
+            }
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            self.assertFalse(STACK.existing_controller_ownership(root, "cluster-test", "receipt-original"))
-            controller = {"workload_owner": "controller", "expected_handoff_receipt": "receipt-original"}
-            state = {"resources": [resource("cluster_contract", {"cluster_id": "cluster-test"}),
-                                   resource("model_controller_contract", controller)]}
+            self.assertFalse(
+                STACK.existing_controller_ownership(
+                    root, "cluster-test", "receipt-original"
+                )
+            )
+            controller = {
+                "workload_owner": "controller",
+                "expected_handoff_receipt": "receipt-original",
+            }
+            state = {
+                "resources": [
+                    resource("cluster_contract", {"cluster_id": "cluster-test"}),
+                    resource("model_controller_contract", controller),
+                ]
+            }
             path = root / "workloads.tfstate"
 
             def save():
                 path.write_text(json.dumps(state))
 
             save()
-            self.assertTrue(STACK.existing_controller_ownership(root, "cluster-test", "receipt-original"))
-            self.assertFalse(STACK.existing_controller_ownership(root, "wrong-cluster", "receipt-original"))
-            self.assertFalse(STACK.existing_controller_ownership(root, "cluster-test", "wrong-receipt"))
-            controller.update(accepted_handoff_receipt="receipt-original", expected_handoff_receipt="new-model-template")
+            self.assertTrue(
+                STACK.existing_controller_ownership(
+                    root, "cluster-test", "receipt-original"
+                )
+            )
+            self.assertFalse(
+                STACK.existing_controller_ownership(
+                    root, "wrong-cluster", "receipt-original"
+                )
+            )
+            self.assertFalse(
+                STACK.existing_controller_ownership(
+                    root, "cluster-test", "wrong-receipt"
+                )
+            )
+            controller.update(
+                accepted_handoff_receipt="receipt-original",
+                expected_handoff_receipt="new-model-template",
+            )
             save()
-            self.assertTrue(STACK.existing_controller_ownership(root, "cluster-test", "receipt-original"))
-            state["resources"].append({"mode": "managed", "type": "kubernetes_manifest", "name": "model",
-                                       "instances": [{"attributes": {"manifest": {"value": {"kind": "PersistentVolumeClaim"}}}}]})
+            self.assertTrue(
+                STACK.existing_controller_ownership(
+                    root, "cluster-test", "receipt-original"
+                )
+            )
+            state["resources"].append(
+                {
+                    "mode": "managed",
+                    "type": "kubernetes_manifest",
+                    "name": "model",
+                    "instances": [
+                        {
+                            "attributes": {
+                                "manifest": {"value": {"kind": "PersistentVolumeClaim"}}
+                            }
+                        }
+                    ],
+                }
+            )
             save()
-            self.assertTrue(STACK.existing_controller_ownership(root, "cluster-test", "receipt-original"))
-            state["resources"][-1]["instances"][0]["attributes"]["manifest"]["value"]["kind"] = "Deployment"
+            self.assertTrue(
+                STACK.existing_controller_ownership(
+                    root, "cluster-test", "receipt-original"
+                )
+            )
+            state["resources"][-1]["instances"][0]["attributes"]["manifest"]["value"][
+                "kind"
+            ] = "Deployment"
             save()
-            self.assertFalse(STACK.existing_controller_ownership(root, "cluster-test", "receipt-original"))
+            self.assertFalse(
+                STACK.existing_controller_ownership(
+                    root, "cluster-test", "receipt-original"
+                )
+            )
             state["resources"].pop()
-            cpu_deployment = {"kind": "Deployment", "metadata": {"name": "msa", "namespace": "models"},
-                              "spec": {"template": {"spec": {"serviceAccountName": "msa"}}}}
-            cpu_service = {"kind": "Service", "metadata": {"name": "msa", "namespace": "models"}}
-            state["resources"].append(resource("cpu_model_runtime_contract", {
-                "deployment": cpu_deployment, "service_manifest": cpu_service,
-            }))
-            state["resources"].append({"mode": "managed", "type": "kubernetes_manifest", "name": "model",
-                "instances": [{"attributes": {"manifest": {"value": document}}} for document in (
-                    cpu_deployment, cpu_service,
-                    {"kind": "ServiceAccount", "metadata": {"name": "msa", "namespace": "models"}},
-                )]})
+            cpu_deployment = {
+                "kind": "Deployment",
+                "metadata": {"name": "msa", "namespace": "models"},
+                "spec": {"template": {"spec": {"serviceAccountName": "msa"}}},
+            }
+            cpu_service = {
+                "kind": "Service",
+                "metadata": {"name": "msa", "namespace": "models"},
+            }
+            state["resources"].append(
+                resource(
+                    "cpu_model_runtime_contract",
+                    {
+                        "deployment": cpu_deployment,
+                        "service_manifest": cpu_service,
+                    },
+                )
+            )
+            state["resources"].append(
+                {
+                    "mode": "managed",
+                    "type": "kubernetes_manifest",
+                    "name": "model",
+                    "instances": [
+                        {"attributes": {"manifest": {"value": document}}}
+                        for document in (
+                            cpu_deployment,
+                            cpu_service,
+                            {
+                                "kind": "ServiceAccount",
+                                "metadata": {"name": "msa", "namespace": "models"},
+                            },
+                        )
+                    ],
+                }
+            )
             save()
-            self.assertTrue(STACK.existing_controller_ownership(root, "cluster-test", "receipt-original"))
-            state["resources"][-1]["instances"].append({"attributes": {"manifest": {"value": {
-                "kind": "Deployment", "metadata": {"name": "legacy-gpu", "namespace": "models"},
-            }}}})
+            self.assertTrue(
+                STACK.existing_controller_ownership(
+                    root, "cluster-test", "receipt-original"
+                )
+            )
+            state["resources"][-1]["instances"].append(
+                {
+                    "attributes": {
+                        "manifest": {
+                            "value": {
+                                "kind": "Deployment",
+                                "metadata": {
+                                    "name": "legacy-gpu",
+                                    "namespace": "models",
+                                },
+                            }
+                        }
+                    }
+                }
+            )
             save()
-            self.assertFalse(STACK.existing_controller_ownership(root, "cluster-test", "receipt-original"))
+            self.assertFalse(
+                STACK.existing_controller_ownership(
+                    root, "cluster-test", "receipt-original"
+                )
+            )
             state["resources"].pop()
             state["resources"].pop()
             controller["workload_owner"] = "terraform"
             save()
-            self.assertFalse(STACK.existing_controller_ownership(root, "cluster-test", "receipt-original"))
+            self.assertFalse(
+                STACK.existing_controller_ownership(
+                    root, "cluster-test", "receipt-original"
+                )
+            )
 
     def test_workloads_plan_refuses_execution_map_drift_before_terraform(self) -> None:
         configuration = contract()
         expected_map = json.loads(
-            (DEPLOY_ROOT / "catalog/runtime/contracts/scientific-execution-map.json").read_text(encoding="utf-8")
+            (
+                DEPLOY_ROOT / "catalog/runtime/contracts/scientific-execution-map.json"
+            ).read_text(encoding="utf-8")
         )
         configuration["stages"]["workloads"]["scientific_batch"] = {
             "enabled": True,
             "execution_map": expected_map,
         }
 
-        with tempfile.TemporaryDirectory(prefix="inference-stack-map-drift-") as temporary:
+        with tempfile.TemporaryDirectory(
+            prefix="inference-stack-map-drift-"
+        ) as temporary:
             run_root = Path(temporary)
             workloads_path = run_root / "workloads.tfvars.json"
             STACK.private_json(
@@ -410,6 +524,42 @@ class InferenceStackTests(unittest.TestCase):
                 first_bytes, {path.name: path.read_bytes() for path in paths}
             )
             self.assertEqual(list(run_root.glob(".*.tmp-*")), [])
+
+    def test_secure_run_root_removes_group_and_world_access_recursively(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="inference-stack-private-"
+        ) as temporary:
+            run_root = Path(temporary) / "run"
+            nested = run_root / "nested"
+            nested.mkdir(parents=True, mode=0o755)
+            state = run_root / "workloads.tfstate.backup"
+            state.write_text("metadata-only-test", encoding="utf-8")
+            state.chmod(0o664)
+            helper = nested / "helper"
+            helper.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            helper.chmod(0o755)
+
+            STACK.secure_run_root(run_root)
+
+            self.assertEqual(stat.S_IMODE(run_root.stat().st_mode), 0o700)
+            self.assertEqual(stat.S_IMODE(nested.stat().st_mode), 0o700)
+            self.assertEqual(stat.S_IMODE(state.stat().st_mode), 0o600)
+            self.assertEqual(stat.S_IMODE(helper.stat().st_mode), 0o700)
+
+    def test_secure_run_root_rejects_links_without_changing_their_targets(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="inference-stack-link-") as temporary:
+            parent = Path(temporary)
+            run_root = parent / "run"
+            run_root.mkdir(mode=0o700)
+            target = parent / "outside"
+            target.write_text("outside", encoding="utf-8")
+            target.chmod(0o644)
+            (run_root / "unsafe").symlink_to(target)
+
+            with self.assertRaisesRegex(STACK.DeploymentError, "file symlink"):
+                STACK.secure_run_root(run_root)
+
+            self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o644)
 
     def test_reference_data_handoff_stays_non_secret_and_exact(self) -> None:
         configuration = contract()
@@ -570,29 +720,71 @@ class InferenceStackTests(unittest.TestCase):
             STACK.canonical_sha256(baseline),
         )
 
-    def test_deployment_runtime_identity_follows_the_digest_across_regional_mirrors(self) -> None:
-        candidate = json.loads((DEPLOY_ROOT / "catalog/runtime/deployment-runtimes/genmol-portable-h100.json").read_text())
+    def test_deployment_runtime_identity_follows_the_digest_across_regional_mirrors(
+        self,
+    ) -> None:
+        candidate = json.loads(
+            (
+                DEPLOY_ROOT
+                / "catalog/runtime/deployment-runtimes/genmol-portable-h100.json"
+            ).read_text()
+        )
         digest = candidate["record"]["runtime"]["image"]["digest"]
-        selected = STACK.selected_deployment_runtimes({"genmol": f"registry.other-region.example/models/genmol@{digest}"})
+        selected = STACK.selected_deployment_runtimes(
+            {"genmol": f"registry.other-region.example/models/genmol@{digest}"}
+        )
         self.assertEqual(selected, {"genmol": candidate})
         identity = STACK.deployment_runtime_configuration_identities(selected)["genmol"]
-        self.assertEqual(identity["model_revision"], candidate["record"]["model"]["source"]["revision"])
-        self.assertEqual(identity["artifact_manifest_sha256"], candidate["record"]["cache"]["artifact"]["manifest_digest"])
-        canonical_record = json.dumps(candidate["record"], sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode() + b"\n"
-        self.assertEqual(identity["provenance_sha256"], hashlib.sha256(canonical_record).hexdigest())
-        self.assertNotEqual(identity["acquisition_contract_sha256"], STACK.canonical_sha256(STACK._admin_catalog().acquisition_plans["genmol"].to_dict()))
-        self.assertEqual(STACK.selected_deployment_runtimes({"genmol": f"registry.example/models/genmol@sha256:{'0' * 64}"}), {})
+        self.assertEqual(
+            identity["model_revision"],
+            candidate["record"]["model"]["source"]["revision"],
+        )
+        self.assertEqual(
+            identity["artifact_manifest_sha256"],
+            candidate["record"]["cache"]["artifact"]["manifest_digest"],
+        )
+        canonical_record = (
+            json.dumps(
+                candidate["record"],
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+            ).encode()
+            + b"\n"
+        )
+        self.assertEqual(
+            identity["provenance_sha256"], hashlib.sha256(canonical_record).hexdigest()
+        )
+        self.assertNotEqual(
+            identity["acquisition_contract_sha256"],
+            STACK.canonical_sha256(
+                STACK._admin_catalog().acquisition_plans["genmol"].to_dict()
+            ),
+        )
+        self.assertEqual(
+            STACK.selected_deployment_runtimes(
+                {"genmol": f"registry.example/models/genmol@sha256:{'0' * 64}"}
+            ),
+            {},
+        )
 
-    def test_cpu_deployment_runtime_uses_the_general_pool_without_a_fake_gpu(self) -> None:
-        candidate = json.loads((
-            DEPLOY_ROOT / "catalog/runtime/deployment-runtimes/msa-search-pdb70-portable-cpu.json"
-        ).read_text())
+    def test_cpu_deployment_runtime_uses_the_general_pool_without_a_fake_gpu(
+        self,
+    ) -> None:
+        candidate = json.loads(
+            (
+                DEPLOY_ROOT
+                / "catalog/runtime/deployment-runtimes/msa-search-pdb70-portable-cpu.json"
+            ).read_text()
+        )
         digest = candidate["record"]["runtime"]["image"]["digest"]
         configuration = contract()
-        configuration.update({
-            "selected_model_ids": ["msa-search-pdb70"],
-            "selected_model_placements": {},
-        })
+        configuration.update(
+            {
+                "selected_model_ids": ["msa-search-pdb70"],
+                "selected_model_placements": {},
+            }
+        )
         workloads = {
             "model_image_overrides": {
                 "msa-search-pdb70": f"registry.example/models/msa-search-pdb70@{digest}"
@@ -607,16 +799,22 @@ class InferenceStackTests(unittest.TestCase):
             "general_cpu_lane": {"local_queue": "general-cpu"},
         }
         dynamic = {
-            "accelerator_pool_contract": {"pools": {
-                "h100-1x": {
-                    "accelerator_class": "nvidia-h100-sxm5-80gb",
-                    "capacity": {"type": "preemptible", "min_nodes": 0, "max_nodes": 2},
-                    "node": {"gpus_per_node": 1},
-                    "resource_api": {"resource_name": "nvidia.com/gpu"},
-                    "features": {"shared_filesystem": True},
-                    "scheduling": {"stable_node_labels": {}, "tolerations": []},
+            "accelerator_pool_contract": {
+                "pools": {
+                    "h100-1x": {
+                        "accelerator_class": "nvidia-h100-sxm5-80gb",
+                        "capacity": {
+                            "type": "preemptible",
+                            "min_nodes": 0,
+                            "max_nodes": 2,
+                        },
+                        "node": {"gpus_per_node": 1},
+                        "resource_api": {"resource_name": "nvidia.com/gpu"},
+                        "features": {"shared_filesystem": True},
+                        "scheduling": {"stable_node_labels": {}, "tolerations": []},
+                    }
                 }
-            }},
+            },
             "general_cpu_pool_contract": {
                 "schema": "fs2-serve.nebius.ai/general-cpu-pools/v1",
                 "node_selector": {"workload.fs2.nebius/general-cpu": "true"},
@@ -625,9 +823,13 @@ class InferenceStackTests(unittest.TestCase):
                     "value": "true",
                     "effect": "NoSchedule",
                 },
-                "pools": {"batch-cpu": {
-                    "capacity_type": "regular", "min_nodes": 1, "max_nodes": 2,
-                }},
+                "pools": {
+                    "batch-cpu": {
+                        "capacity_type": "regular",
+                        "min_nodes": 1,
+                        "max_nodes": 2,
+                    }
+                },
             },
         }
 
@@ -1307,7 +1509,10 @@ class InferenceStackTests(unittest.TestCase):
             "bucket_name": "reference-data-test",
             "cpu_pool_id": "mk8snodegroup-test",
             "status_service": "fs2-reference-data-status.fs2-reference-data.svc.cluster.local:8080",
-            "pipeline": {"job_name": "fs2-stage-af3-test", "state": "submitted-suspended-awaiting-kueue-admission"},
+            "pipeline": {
+                "job_name": "fs2-stage-af3-test",
+                "state": "submitted-suspended-awaiting-kueue-admission",
+            },
             "lifecycle": {"retention_mode": "retain"},
         }
         reference_contract = {
@@ -1353,9 +1558,7 @@ class InferenceStackTests(unittest.TestCase):
         self,
     ) -> None:
         configuration = contract()
-        configuration["stages"]["infrastructure"]["reference_data"] = {
-            "enabled": True
-        }
+        configuration["stages"]["infrastructure"]["reference_data"] = {"enabled": True}
         configuration["stages"]["workloads"]["reference_data"] = {"enabled": True}
         storage_contract = {
             "filesystem": {"id": "computefilesystem-test"},
@@ -1432,25 +1635,249 @@ class InferenceStackTests(unittest.TestCase):
             {"storage": storage_contract, "plane": None},
         )
 
-    def test_output_explicitly_emits_the_sensitive_access_bundle(self) -> None:
-        access_bundle = complete_reference_access_bundle()
+    def test_output_writes_one_scoped_credential_and_value_free_receipt(self) -> None:
+        handoff = {
+            "schema": "fs2-serve.nebius.ai/scoped-credential-handoff/v1",
+            "kind": "general-access",
+            "credential": {"token": "test-only-client-token"},
+        }
+        audit = {
+            "schema": "fs2-serve.nebius.ai/scoped-credential-receipt/v1",
+            "receipt_id": "receipt-test",
+            "kind": "general-access",
+            "expires_at": "2030-01-01T01:00:00Z",
+        }
         output = io.StringIO()
+        with tempfile.TemporaryDirectory(prefix="inference-stack-output-") as temporary:
+            run_root = Path(temporary) / "run"
+            destination_parent = Path(temporary) / "handoff"
+            run_root.mkdir(mode=0o700)
+            destination_parent.mkdir(mode=0o700)
+            destination = destination_parent / "access.json"
+            args = arguments()
+            args.credential_file = destination
+            args.credential_kind = "general-access"
+            with (
+                mock.patch.object(STACK, "state_ready", return_value=True),
+                mock.patch.object(
+                    STACK,
+                    "scoped_credential_handoff",
+                    return_value=(handoff, audit),
+                ) as scoped_handoff,
+                redirect_stdout(output),
+            ):
+                STACK.output_stack(args, run_root, contract())
+
+            receipt = json.loads(output.getvalue())
+            self.assertEqual(receipt["status"], "scoped-credential-file-written")
+            self.assertEqual(receipt["kind"], "general-access")
+            self.assertNotIn("test-only", output.getvalue())
+            self.assertEqual(json.loads(destination.read_text()), handoff)
+            self.assertEqual(stat.S_IMODE(destination.stat().st_mode), 0o600)
+            receipt_path = destination.with_name(destination.name + ".receipt.json")
+            self.assertEqual(json.loads(receipt_path.read_text()), audit)
+            self.assertEqual(stat.S_IMODE(receipt_path.stat().st_mode), 0o600)
+            scoped_handoff.assert_called_once_with(
+                "terraform-test",
+                "kubectl-test",
+                run_root,
+                contract(),
+                kind="general-access",
+                expires_in_seconds=3600,
+            )
+
+    def test_output_requires_an_explicit_private_destination(self) -> None:
+        with mock.patch.object(STACK, "state_ready", return_value=True):
+            with self.assertRaisesRegex(STACK.DeploymentError, "credential-file"):
+                STACK.output_stack(arguments(), Path("/private/test-run"), contract())
+
+    def test_output_refuses_a_symlink_destination(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="inference-stack-output-") as temporary:
+            directory = Path(temporary)
+            directory.chmod(0o700)
+            target = directory / "target.json"
+            target.write_text("unchanged\n", encoding="utf-8")
+            destination = directory / "access.json"
+            destination.symlink_to(target)
+            args = arguments()
+            args.credential_file = destination
+            args.credential_kind = "general-access"
+            with mock.patch.object(STACK, "state_ready", return_value=True):
+                with self.assertRaisesRegex(STACK.DeploymentError, "symlink"):
+                    STACK.output_stack(args, directory / "run", contract())
+
+            self.assertEqual(target.read_text(encoding="utf-8"), "unchanged\n")
+
+    def test_private_directory_rejects_a_symlinked_parent(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="inference-stack-run-root-"
+        ) as temporary:
+            root = Path(temporary)
+            target = root / "target"
+            target.mkdir(mode=0o700)
+            link = root / "link"
+            link.symlink_to(target, target_is_directory=True)
+
+            with self.assertRaisesRegex(STACK.DeploymentError, "symlink"):
+                STACK.private_directory(link / "run")
+
+            self.assertFalse((target / "run").exists())
+
+    @unittest.skip("aggregate credential export was removed")
+    def test_access_contract_hydrates_credentials_only_from_live_secrets(self) -> None:
+        access_contract = complete_access_bundle()
+        access_contract["schema"] = "fs2-serve.nebius.ai/access-bundle-contract/v2"
+        del access_contract["credentials"]
+        access_contract["credential_secret_refs"] = {
+            "admin": {
+                "namespace": "fs2-system",
+                "name": "admin-secret",
+                "key": "token",
+            },
+            "mcp_inference": {
+                "namespace": "fs2-system",
+                "name": "bootstrap-secret",
+                "key": "token",
+            },
+            "scientific": None,
+            "grafana": {
+                "namespace": "fs2-observability",
+                "name": "grafana-secret",
+                "username_key": "admin-user",
+                "password_key": "admin-password",
+            },
+        }
+        values = {
+            "admin-secret": {"token": "test-only-admin-token"},
+            "bootstrap-secret": {"token": "test-only-client-token"},
+            "grafana-secret": {
+                "admin-user": "test-only-grafana-user",
+                "admin-password": "test-only-grafana-password",
+            },
+        }
+        calls: list[list[str]] = []
+
+        def fake_run(command, **_kwargs):
+            calls.append(list(command))
+            secret_name = command[command.index("secret") + 1]
+            payload = {
+                "data": {
+                    key: base64.b64encode(value.encode()).decode()
+                    for key, value in values[secret_name].items()
+                }
+            }
+            return subprocess.CompletedProcess(command, 0, stdout=json.dumps(payload))
+
+        with tempfile.TemporaryDirectory(
+            prefix="inference-stack-hydrate-"
+        ) as temporary:
+            run_root = Path(temporary)
+            kubeconfig = run_root / "kubeconfig"
+            kubeconfig.write_text("test-only-kubeconfig", encoding="utf-8")
+            kubeconfig.chmod(0o600)
+            with (
+                mock.patch.object(STACK, "stage_environment", return_value={}),
+                mock.patch.object(
+                    STACK, "terraform_json_output", return_value=access_contract
+                ),
+                mock.patch.object(STACK, "run", side_effect=fake_run),
+            ):
+                bundle = STACK.workload_access_bundle(
+                    "terraform-test",
+                    run_root,
+                    contract(),
+                    kubectl="kubectl-test",
+                )
+
+        self.assertEqual(bundle["credentials"], complete_access_bundle()["credentials"])
+        self.assertEqual(len(calls), 3)
+        self.assertTrue(all("test-only" not in " ".join(call) for call in calls))
+
+    def test_scoped_export_reads_only_the_requested_general_credential(self) -> None:
+        access_contract = complete_access_bundle()
+        access_contract["schema"] = "fs2-serve.nebius.ai/access-bundle-contract/v2"
+        access_contract["mcp_access"]["expires_at"] = (
+            (datetime.now(UTC) + timedelta(minutes=30))
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
+        del access_contract["credentials"]
+        access_contract["credential_secret_refs"] = {
+            "admin": {
+                "namespace": "fs2-system",
+                "name": "admin-secret",
+                "key": "token",
+            },
+            "mcp_inference": {
+                "namespace": "fs2-system",
+                "name": "general-secret",
+                "key": "token",
+            },
+            "scientific": {
+                "namespace": "fs2-system",
+                "name": "scientific-secret",
+                "key": "token",
+            },
+            "grafana": {
+                "namespace": "fs2-observability",
+                "name": "grafana-secret",
+                "username_key": "admin-user",
+                "password_key": "admin-password",
+            },
+        }
         with (
-            mock.patch.object(STACK, "state_ready", return_value=True),
+            mock.patch.object(STACK, "stage_environment", return_value={}),
+            mock.patch.object(
+                STACK, "terraform_json_output", return_value=access_contract
+            ),
             mock.patch.object(
                 STACK,
-                "workload_access_bundle",
-                return_value=access_bundle,
-            ) as workload_access_bundle,
-            redirect_stdout(output),
+                "kubernetes_secret_values",
+                return_value={"token": "test-only-general-token"},
+            ) as secret_values,
         ):
-            STACK.output_stack(arguments(), Path("/private/test-run"), contract())
+            handoff, receipt = STACK.scoped_credential_handoff(
+                "terraform-test",
+                "kubectl-test",
+                Path("/private/test-run"),
+                contract(),
+                kind="general-access",
+                expires_in_seconds=3600,
+            )
 
-        self.assertEqual(json.loads(output.getvalue()), access_bundle)
-        workload_access_bundle.assert_called_once_with(
-            "terraform-test", Path("/private/test-run"), contract()
+        self.assertEqual(handoff["kind"], "general-access")
+        self.assertEqual(handoff["credential"], {"token": "test-only-general-token"})
+        self.assertNotIn("admin", json.dumps(handoff))
+        self.assertNotIn("grafana", json.dumps(handoff))
+        self.assertNotIn("test-only", json.dumps(receipt))
+        secret_values.assert_called_once_with(
+            "kubectl-test",
+            Path("/private/test-run"),
+            context="k8s-inference-test",
+            namespace="fs2-system",
+            name="general-secret",
+            keys=("token",),
         )
 
+    def test_privileged_scoped_exports_are_not_supported(self) -> None:
+        with self.assertRaisesRegex(STACK.DeploymentError, "unsupported"):
+            STACK.scoped_credential_handoff(
+                "terraform-test",
+                "kubectl-test",
+                Path("/private/test-run"),
+                contract(),
+                kind="admin",
+                expires_in_seconds=3600,
+            )
+
+    def test_aggregate_credential_export_is_disabled(self) -> None:
+        with self.assertRaisesRegex(STACK.DeploymentError, "aggregate.*disabled"):
+            STACK.workload_access_bundle(
+                "terraform-test", Path("/private/test-run"), contract()
+            )
+
+    @unittest.skip("aggregate credential export was removed")
     def test_access_bundle_validation_requires_requested_connection_fields(
         self,
     ) -> None:
@@ -1470,7 +1897,10 @@ class InferenceStackTests(unittest.TestCase):
                 bundle,
             )
 
-    def test_access_bundle_exposes_reference_storage_cpu_service_and_pipeline(self) -> None:
+    @unittest.skip("aggregate credential export was removed")
+    def test_access_bundle_exposes_reference_storage_cpu_service_and_pipeline(
+        self,
+    ) -> None:
         bundle = complete_reference_access_bundle()
         with (
             mock.patch.object(STACK, "stage_environment", return_value={}),
@@ -1489,6 +1919,7 @@ class InferenceStackTests(unittest.TestCase):
                 bundle["reference_data_contract"],
             )
 
+    @unittest.skip("aggregate credential export was removed")
     def test_access_bundle_rejects_reference_contract_identity_drift(self) -> None:
         bundle = complete_reference_access_bundle()
         bundle["reference_data_contract"]["storage"]["filesystem"]["id"] = (
@@ -1503,6 +1934,7 @@ class InferenceStackTests(unittest.TestCase):
                 "terraform-test", Path("/private/test-run"), contract()
             )
 
+    @unittest.skip("aggregate credential export was removed")
     def test_access_bundle_validation_rejects_missing_connection_fields(
         self,
     ) -> None:
@@ -1544,6 +1976,7 @@ class InferenceStackTests(unittest.TestCase):
                         "terraform-test", Path("/private/test-run"), contract()
                     )
 
+    @unittest.skip("aggregate credential export was removed")
     def test_access_bundle_validation_requires_shared_token_alias(self) -> None:
         bundle = complete_access_bundle()
         bundle["credentials"]["inference_access_token"] = "different-token"
@@ -1560,6 +1993,7 @@ class InferenceStackTests(unittest.TestCase):
                 "terraform-test", Path("/private/test-run"), contract()
             )
 
+    @unittest.skip("aggregate credential export was removed")
     def test_access_bundle_separates_general_and_academic_tenant_tokens(self) -> None:
         deployment_contract = contract()
         deployment_contract["academic_assets"] = {
@@ -1567,9 +2001,7 @@ class InferenceStackTests(unittest.TestCase):
             "tenant_id": "tenant-academic",
         }
         bundle = complete_access_bundle()
-        bundle["credentials"]["scientific_access_token"] = (
-            "test-only-scientific-token"
-        )
+        bundle["credentials"]["scientific_access_token"] = "test-only-scientific-token"
         bundle["scientific_access"] = {
             "principal_id": "terraform-academic-scientific-client",
             "tenant_id": "tenant-academic",
@@ -1661,13 +2093,12 @@ class InferenceStackTests(unittest.TestCase):
                         deployment_contract,
                     )
 
+    @unittest.skip("aggregate credential export was removed")
     def test_access_bundle_rejects_scientific_access_when_academic_assets_are_disabled(
         self,
     ) -> None:
         bundle = complete_access_bundle()
-        bundle["credentials"]["scientific_access_token"] = (
-            "test-only-scientific-token"
-        )
+        bundle["credentials"]["scientific_access_token"] = "test-only-scientific-token"
         bundle["scientific_access"] = {
             "principal_id": "terraform-academic-scientific-client",
             "tenant_id": "tenant-academic",
@@ -1692,14 +2123,14 @@ class InferenceStackTests(unittest.TestCase):
     def test_output_rejects_an_incomplete_workloads_stage(self) -> None:
         with (
             mock.patch.object(STACK, "state_ready", return_value=False),
-            mock.patch.object(STACK, "workload_access_bundle") as access_bundle,
+            mock.patch.object(STACK, "scoped_credential_handoff") as scoped_handoff,
         ):
             with self.assertRaisesRegex(
                 STACK.DeploymentError,
                 "run inference-stack apply",
             ):
                 STACK.output_stack(arguments(), Path("/private/test-run"), contract())
-        access_bundle.assert_not_called()
+        scoped_handoff.assert_not_called()
 
     def test_internal_proxy_command_uses_only_terraform_owned_runtime_contract(
         self,
@@ -2176,7 +2607,9 @@ class InferenceStackTests(unittest.TestCase):
         output = io.StringIO()
         with (
             mock.patch.object(
-                STACK, "write_infrastructure_variables", return_value=Path("/infra.json")
+                STACK,
+                "write_infrastructure_variables",
+                return_value=Path("/infra.json"),
             ),
             mock.patch.object(STACK, "state_has_resources", return_value=True),
             mock.patch.object(STACK, "state_ready", return_value=True),
@@ -2275,19 +2708,19 @@ class InferenceStackTests(unittest.TestCase):
             "enabled": True,
             "status": {
                 "enabled": True,
-                "image": "registry.example.net/fs2/reference-status@"
-                f"sha256:{'d' * 64}",
+                "image": f"registry.example.net/fs2/reference-status@sha256:{'d' * 64}",
             },
             "pipeline": {
                 "enabled": True,
-                "image": "registry.example.net/fs2/reference-stager@"
-                f"sha256:{'e' * 64}",
+                "image": f"registry.example.net/fs2/reference-stager@sha256:{'e' * 64}",
             },
         }
         dynamic = regional_dynamic(Path("/private/test-run"))
         artifacts = {
             item["name"]: item
-            for item in STACK.selected_image_artifacts(configuration, dynamic["registry_delivery_contract"])
+            for item in STACK.selected_image_artifacts(
+                configuration, dynamic["registry_delivery_contract"]
+            )
         }
         self.assertEqual(
             {"reference-data/status", "reference-data/pipeline"},

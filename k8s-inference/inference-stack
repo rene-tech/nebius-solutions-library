@@ -4,18 +4,23 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import fcntl
 import hashlib
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import tempfile
 from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterator, Mapping, Sequence
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 
 SOLUTION_ROOT = Path(__file__).resolve().parent
@@ -36,6 +41,10 @@ POOL_PROFILES_PATH = (
     SOLUTION_ROOT / "catalog" / "profiles" / "accelerator-pool-profiles.json"
 )
 INTERNAL_EDGE_PROXY = WORKLOADS_ROOT / "scripts" / "internal_edge_proxy.py"
+SECRET_MIGRATION_GUARD = SOLUTION_ROOT / "scripts" / "secret_migration_guard.py"
+DURABLE_CREDENTIAL_REGISTRY = (
+    SOLUTION_ROOT / "security" / "durable-credential-registry.json"
+)
 STAGE_COMPLETION_OUTPUTS = {
     "infrastructure": "accelerator_pool_contract",
     "foundation": "cluster_contract",
@@ -81,10 +90,37 @@ def run(
 
 
 def private_directory(path: Path) -> None:
+    if any(parent.is_symlink() for parent in (path, *path.parents)):
+        raise DeploymentError(f"run root path must not contain a symlink: {path}")
     if path.exists() and (path.is_symlink() or not path.is_dir()):
         raise DeploymentError(f"run root must be a real directory: {path}")
     path.mkdir(parents=True, exist_ok=True, mode=0o700)
     path.chmod(0o700)
+
+
+def secure_run_root(run_root: Path) -> None:
+    """Make every run-owned artifact private without following links."""
+
+    if run_root.is_symlink() or not run_root.is_dir():
+        raise DeploymentError(f"run root must be a real directory: {run_root}")
+    for directory, directory_names, file_names in os.walk(
+        run_root, topdown=True, followlinks=False
+    ):
+        current = Path(directory)
+        if current.is_symlink():
+            raise DeploymentError(f"run root contains a directory symlink: {current}")
+        current.chmod(0o700)
+        for name in directory_names:
+            path = current / name
+            if path.is_symlink():
+                raise DeploymentError(f"run root contains a directory symlink: {path}")
+            path.chmod(0o700)
+        for name in file_names:
+            path = current / name
+            if path.is_symlink():
+                raise DeploymentError(f"run root contains a file symlink: {path}")
+            mode = stat.S_IMODE(path.stat().st_mode)
+            path.chmod(0o700 if mode & stat.S_IXUSR else 0o600)
 
 
 def private_json(path: Path, value: Any) -> None:
@@ -131,6 +167,7 @@ def clean_environment() -> dict[str, str]:
 # older binary they are silently unknown attributes, which would put credential
 # material back into state, so the whole flow refuses to run below 1.11.
 MINIMUM_TERRAFORM_VERSION = (1, 11, 0)
+PAT_TOKEN_PATTERN = re.compile(r"^fs2_pat_([0-9a-f]{32})_[A-Za-z0-9_-]{32,}$")
 
 
 def require_terraform_version(terraform: str) -> tuple[int, int, int]:
@@ -143,7 +180,9 @@ def require_terraform_version(terraform: str) -> tuple[int, int, int]:
         env=clean_environment(),
     )
     if result.returncode != 0:
-        raise DeploymentError(f"cannot determine the Terraform version using {terraform!r}")
+        raise DeploymentError(
+            f"cannot determine the Terraform version using {terraform!r}"
+        )
     try:
         raw = json.loads(result.stdout)["terraform_version"]
         version = tuple(int(part) for part in raw.split("-")[0].split(".")[:3])
@@ -164,6 +203,52 @@ def terraform_environment(run_root: Path, stage: str) -> dict[str, str]:
     environment["TF_DATA_DIR"] = str(data_directory)
     environment["TF_IN_AUTOMATION"] = "1"
     return environment
+
+
+def validate_versioned_access_pat_ids(
+    bootstrap_tokens_json: str | None,
+    scientific_tokens_json: str | None,
+    website_tokens_json: str | None,
+) -> None:
+    """Reject PAT identity reuse before any Terraform plan can consume it."""
+
+    identifiers: list[str] = []
+    for audience, encoded in (
+        ("general", bootstrap_tokens_json),
+        ("scientific", scientific_tokens_json),
+        ("website", website_tokens_json),
+    ):
+        if not encoded:
+            continue
+        try:
+            tokens = json.loads(encoded)
+        except json.JSONDecodeError as error:
+            raise DeploymentError(
+                f"{audience} access token map is not valid JSON"
+            ) from error
+        if not isinstance(tokens, dict):
+            raise DeploymentError(f"{audience} access token map must be a JSON object")
+        for generation, token in tokens.items():
+            if (
+                not isinstance(generation, str)
+                or not generation.isdecimal()
+                or int(generation) <= 1
+            ):
+                raise DeploymentError(
+                    f"{audience} access token map keys must be generations greater than 1"
+                )
+            match = (
+                PAT_TOKEN_PATTERN.fullmatch(token) if isinstance(token, str) else None
+            )
+            if match is None:
+                raise DeploymentError(
+                    f"{audience} access generation {generation} is not a valid PAT"
+                )
+            identifiers.append(match.group(1))
+    if len(identifiers) != len(set(identifiers)):
+        raise DeploymentError(
+            "PAT IDs must be unique across every generation and audience"
+        )
 
 
 def terraform_init(
@@ -291,8 +376,145 @@ def plan_json(
         env=environment,
         capture=True,
     )
+    guard_secret_migration_plan(
+        result.stdout,
+        identity_receipt=(
+            plan_path.parent / "fixed-v1-identity.receipt.json"
+            if root == WORKLOADS_ROOT
+            else None
+        ),
+        terraform_root=root.name,
+    )
     private_text(json_path, result.stdout)
     return json.loads(result.stdout)
+
+
+def guard_secret_migration_plan(
+    encoded_plan: str,
+    *,
+    identity_receipt: Path | None = None,
+    terraform_root: str | None = None,
+) -> None:
+    """Apply the fail-closed legacy-generation guard without writing more JSON."""
+
+    if SECRET_MIGRATION_GUARD.is_symlink() or not SECRET_MIGRATION_GUARD.is_file():
+        raise DeploymentError("secret migration guard is absent or unsafe")
+    arguments = [sys.executable, str(SECRET_MIGRATION_GUARD), "plan", "-"]
+    if identity_receipt is not None:
+        arguments.extend(["--identity-receipt", str(identity_receipt)])
+    arguments.extend(["--registry", str(DURABLE_CREDENTIAL_REGISTRY)])
+    if terraform_root is not None:
+        arguments.extend(["--terraform-root", terraform_root])
+    run(
+        arguments,
+        capture=True,
+        input_text=encoded_plan,
+    )
+
+
+def guard_saved_plan(
+    terraform: str,
+    root: Path,
+    plan_path: Path,
+    environment: Mapping[str, str],
+) -> None:
+    """Reinspect the exact saved plan immediately before Terraform applies it."""
+
+    if plan_path.is_symlink() or not plan_path.is_file():
+        raise DeploymentError(f"saved plan is absent or unsafe: {plan_path}")
+    result = run(
+        [terraform, f"-chdir={root}", "show", "-json", str(plan_path)],
+        env=environment,
+        capture=True,
+    )
+    guard_secret_migration_plan(
+        result.stdout,
+        identity_receipt=(
+            plan_path.parent / "fixed-v1-identity.receipt.json"
+            if root == WORKLOADS_ROOT
+            else None
+        ),
+        terraform_root=root.name,
+    )
+
+
+def prepare_credential_migration_gate(
+    terraform: str,
+    *,
+    run_root: Path,
+    root: Path,
+    state: Path,
+    environment: dict[str, str],
+) -> None:
+    """Create the short-lived receipt consumed by Terraform's native gate."""
+
+    stage = root.name
+    identity_receipt = (
+        run_root / "fixed-v1-identity.receipt.json"
+        if stage == "workloads"
+        else run_root / f"{stage}-durable-identity.receipt.json"
+    )
+    gate_receipt = (
+        run_root / f"{stage}-credential-migration-gate-{uuid4().hex}.receipt.json"
+    )
+    if state.exists():
+        state_result = run(
+            [terraform, f"-chdir={root}", "show", "-json", str(state)],
+            env=environment,
+            capture=True,
+        )
+        encoded_state = state_result.stdout
+    else:
+        encoded_state = json.dumps(
+            {"values": {"root_module": {"resources": []}}},
+            separators=(",", ":"),
+        )
+    command = [
+        sys.executable,
+        str(SECRET_MIGRATION_GUARD),
+        "capture-apply-gate",
+        "-",
+        str(gate_receipt),
+        "--terraform-configuration",
+        str(root),
+        "--terraform-root",
+        stage,
+        "--source-commit",
+        source_commit(),
+        "--registry",
+        str(DURABLE_CREDENTIAL_REGISTRY),
+    ]
+    if identity_receipt.exists():
+        command.extend(["--identity-receipt", str(identity_receipt)])
+    run(command, input_text=encoded_state, capture=True)
+    environment["TF_VAR_credential_migration_gate_receipt_path"] = str(gate_receipt)
+    environment["TF_VAR_credential_migration_gate_source_commit"] = source_commit()
+
+
+def validate_credential_migration_gate(
+    root: Path, environment: Mapping[str, str]
+) -> None:
+    query = {
+        "receipt_path": environment.get(
+            "TF_VAR_credential_migration_gate_receipt_path", ""
+        ),
+        "terraform_configuration": str(root),
+        "terraform_root": root.name,
+        "source_commit": environment.get(
+            "TF_VAR_credential_migration_gate_source_commit", ""
+        ),
+    }
+    run(
+        [
+            sys.executable,
+            str(SECRET_MIGRATION_GUARD),
+            "native-gate",
+            "--registry",
+            str(DURABLE_CREDENTIAL_REGISTRY),
+        ],
+        input_text=json.dumps(query, separators=(",", ":")),
+        capture=True,
+    )
 
 
 def planned_output(document: Mapping[str, Any], name: str) -> Any:
@@ -625,17 +847,18 @@ def require_deployable_images(contract: Mapping[str, Any]) -> None:
     if isinstance(reference_data, Mapping) and reference_data.get("enabled") is True:
         for component in ("status", "pipeline"):
             configuration = reference_data.get(component, {})
-            if not isinstance(configuration, Mapping) or configuration.get("enabled") is not True:
+            if (
+                not isinstance(configuration, Mapping)
+                or configuration.get("enabled") is not True
+            ):
                 continue
             image = configuration.get("image")
-            if not isinstance(image, str) or image.split("/", 1)[0].endswith(".invalid"):
-                raise DeploymentError(
-                    f"reference-data {component} image is unresolved"
-                )
+            if not isinstance(image, str) or image.split("/", 1)[0].endswith(
+                ".invalid"
+            ):
+                raise DeploymentError(f"reference-data {component} image is unresolved")
             if policy == "regional-mirror":
-                split_digest_reference(
-                    image, label=f"reference-data {component}"
-                )
+                split_digest_reference(image, label=f"reference-data {component}")
 
 
 def split_digest_reference(reference: str, *, label: str) -> tuple[str, str]:
@@ -739,7 +962,10 @@ def selected_image_artifacts(
     if isinstance(reference_data, Mapping) and reference_data.get("enabled") is True:
         for component in ("status", "pipeline"):
             configuration = reference_data.get(component, {})
-            if isinstance(configuration, Mapping) and configuration.get("enabled") is True:
+            if (
+                isinstance(configuration, Mapping)
+                and configuration.get("enabled") is True
+            ):
                 sources.append(
                     (f"reference-data/{component}", str(configuration["image"]))
                 )
@@ -812,12 +1038,15 @@ def rewritten_workloads(
         rewritten_reference_data = dict(reference_data)
         for component in ("status", "pipeline"):
             configuration = rewritten_reference_data.get(component)
-            if not isinstance(configuration, Mapping) or configuration.get("enabled") is not True:
+            if (
+                not isinstance(configuration, Mapping)
+                or configuration.get("enabled") is not True
+            ):
                 continue
             rewritten_configuration = dict(configuration)
-            rewritten_configuration["image"] = artifacts[
-                f"reference-data/{component}"
-            ]["target_reference"]
+            rewritten_configuration["image"] = artifacts[f"reference-data/{component}"][
+                "target_reference"
+            ]
             rewritten_reference_data[component] = rewritten_configuration
         workloads["reference_data"] = rewritten_reference_data
     return workloads
@@ -865,23 +1094,35 @@ def selected_deployment_runtimes(model_images: Mapping[str, str]) -> dict[str, A
         entry = json.loads(path.read_text(encoding="utf-8"))
         model_id = entry["model_id"]
         image = model_images.get(model_id)
-        if image is None or image.rsplit("@", 1)[-1] != entry["record"]["runtime"]["image"]["digest"]:
+        if (
+            image is None
+            or image.rsplit("@", 1)[-1] != entry["record"]["runtime"]["image"]["digest"]
+        ):
             continue
         if model_id in selected:
-            raise DeploymentError(f"model {model_id!r} has ambiguous deployment runtime records")
+            raise DeploymentError(
+                f"model {model_id!r} has ambiguous deployment runtime records"
+            )
         selected[model_id] = entry
     return selected
 
 
-def deployment_runtime_configuration_identities(entries: Mapping[str, Any]) -> dict[str, Any]:
+def deployment_runtime_configuration_identities(
+    entries: Mapping[str, Any],
+) -> dict[str, Any]:
     """Use the control plane's exact artifact identities for the admin baseline."""
     paths = [str(CATALOG_ROOT), str(SOLUTION_ROOT / "components/control-plane/src")]
     added = [path for path in paths if path not in sys.path]
     sys.path[:0] = added
     try:
-        from fs2_serve.deployment_runtimes import deployment_runtime_configuration_identity
+        from fs2_serve.deployment_runtimes import (
+            deployment_runtime_configuration_identity,
+        )
 
-        return {model_id: deployment_runtime_configuration_identity(entry) for model_id, entry in entries.items()}
+        return {
+            model_id: deployment_runtime_configuration_identity(entry)
+            for model_id, entry in entries.items()
+        }
     finally:
         for path in added:
             sys.path.remove(path)
@@ -1032,9 +1273,13 @@ def derived_admin_configuration(
 
     model_images = workloads.get("model_image_overrides", {})
     selected_model_ids = contract.get("selected_model_ids", [])
-    deployment_runtimes = selected_deployment_runtimes({
-        model_id: model_images[model_id] for model_id in selected_model_ids if model_id in model_images
-    })
+    deployment_runtimes = selected_deployment_runtimes(
+        {
+            model_id: model_images[model_id]
+            for model_id in selected_model_ids
+            if model_id in model_images
+        }
+    )
     cpu_runtime_model_ids = {
         model_id
         for model_id, entry in deployment_runtimes.items()
@@ -1048,9 +1293,13 @@ def derived_admin_configuration(
             "alternatives": [],
         }
     }
-    native_ids = set(json.loads(
-        (SOLUTION_ROOT / "catalog/profiles/model-profiles.json").read_text(encoding="utf-8")
-    ).get("managed_native_model_ids", []))
+    native_ids = set(
+        json.loads(
+            (SOLUTION_ROOT / "catalog/profiles/model-profiles.json").read_text(
+                encoding="utf-8"
+            )
+        ).get("managed_native_model_ids", [])
+    )
     managed_cpu_ids = cpu_runtime_model_ids & native_ids
     if cpu_runtime_model_ids:
         general_cpu_contract = dynamic.get("general_cpu_pool_contract")
@@ -1075,7 +1324,9 @@ def derived_admin_configuration(
             )
         for pool_id, raw_pool in sorted(general_pools.items()):
             if pool_id in pools or not isinstance(raw_pool, Mapping):
-                raise DeploymentError("the general CPU pool identity is malformed or duplicated")
+                raise DeploymentError(
+                    "the general CPU pool identity is malformed or duplicated"
+                )
             pools[str(pool_id)] = {
                 "resource_name": "cpu",
                 "accelerator_class": "CPU",
@@ -1103,19 +1354,30 @@ def derived_admin_configuration(
             }
             if managed_cpu_ids:
                 resources = raw_pool.get("schedulable_capacity", {})
-                pools[str(pool_id)].update({
-                    "allocatable_cpu_millis": int(resources.get("cpu_millicores", 0)),
-                    "allocatable_memory_bytes": int(resources.get("memory_mib", 0)) * 1048576,
-                })
+                pools[str(pool_id)].update(
+                    {
+                        "allocatable_cpu_millis": int(
+                            resources.get("cpu_millicores", 0)
+                        ),
+                        "allocatable_memory_bytes": int(resources.get("memory_mib", 0))
+                        * 1048576,
+                    }
+                )
             pool_features[str(pool_id)] = {}
-    deployment_identities = deployment_runtime_configuration_identities(deployment_runtimes) if deployment_runtimes else {}
+    deployment_identities = (
+        deployment_runtime_configuration_identities(deployment_runtimes)
+        if deployment_runtimes
+        else {}
+    )
     scaling = {
         model_id: (
             {
                 "min_replicas": 1,
                 "max_replicas": 1,
                 "target_queue_depth": 1,
-                "polling_interval_seconds": int(workloads["keda_polling_interval_seconds"]),
+                "polling_interval_seconds": int(
+                    workloads["keda_polling_interval_seconds"]
+                ),
                 "cooldown_seconds": int(workloads["keda_cooldown_period_seconds"]),
             }
             if model_id in cpu_runtime_model_ids and model_id not in managed_cpu_ids
@@ -1163,12 +1425,11 @@ def derived_admin_configuration(
             model_id=model_id,
             accelerator_class=str(gpu["class"]),
         )
-        selected_pool_features = [
-            pool_features[pool_id] for pool_id in pool_ids
-        ]
+        selected_pool_features = [pool_features[pool_id] for pool_id in pool_ids]
         cache_tier = (
             "node-local"
-            if model_id in cpu_runtime_model_ids or any(
+            if model_id in cpu_runtime_model_ids
+            or any(
                 item.get("local_cache") == "node-local"
                 for item in selected_pool_features
             )
@@ -1190,7 +1451,9 @@ def derived_admin_configuration(
             "placement": {
                 "pool_ids": pool_ids,
                 "accelerators": int(gpu["count"]),
-                "topology_policy": "any" if model_id in cpu_runtime_model_ids else "single-node",
+                "topology_policy": "any"
+                if model_id in cpu_runtime_model_ids
+                else "single-node",
             },
             "autoscaling": scaling[model_id],
             "queue": {
@@ -1233,18 +1496,26 @@ def derived_admin_configuration(
             },
         }
         if model_id in managed_cpu_ids:
-            models[model_id]["placement"].update({
-                "cpu_millis": int(value["resources"]["cpu_millis"]),
-                "memory_bytes": int(value["resources"]["memory_bytes"]),
-            })
+            models[model_id]["placement"].update(
+                {
+                    "cpu_millis": int(value["resources"]["cpu_millis"]),
+                    "memory_bytes": int(value["resources"]["memory_bytes"]),
+                }
+            )
         if model_id in deployment_identities:
             identity = deployment_identities[model_id]
-            models[model_id]["artifact"].update({
-                key: identity[key] for key in (
-                    "model_revision", "artifact_manifest_sha256", "acquisition_contract_sha256",
-                    "provenance_sha256", "semantic_health_contract_sha256",
-                )
-            })
+            models[model_id]["artifact"].update(
+                {
+                    key: identity[key]
+                    for key in (
+                        "model_revision",
+                        "artifact_manifest_sha256",
+                        "acquisition_contract_sha256",
+                        "provenance_sha256",
+                        "semantic_health_contract_sha256",
+                    )
+                }
+            )
 
     configuration = {
         "schema_version": "fs2.admin-configuration/v1",
@@ -1495,6 +1766,7 @@ def stage_environment(
             {"username": username, "password": password},
             separators=(",", ":"),
         )
+        environment["TF_VAR_bootstrap_grafana_credentials_configured"] = "true"
 
     if stage == "workloads":
         ngc_key = os.environ.get(secret_names["ngc_api_key"])
@@ -1512,6 +1784,32 @@ def stage_environment(
             environment["TF_VAR_ngc_api_key"] = ngc_key
         if docker_config:
             environment["TF_VAR_nvcrio_dockerconfigjson"] = docker_config
+        validate_versioned_access_pat_ids(
+            os.environ.get("FS2_BOOTSTRAP_ACCESS_TOKENS_JSON"),
+            os.environ.get("FS2_SCIENTIFIC_ACCESS_TOKENS_JSON"),
+            os.environ.get("FS2_WEBSITE_ACCESS_TOKENS_JSON"),
+        )
+        # Rotation keyrings are supplied by an encrypted external handoff. They
+        # bypass the root facade so their bytes never enter generated tfvars.
+        for variable_name, environment_name in {
+            "admin_tokens": "FS2_ADMIN_TOKENS_JSON",
+            "bootstrap_access_tokens": "FS2_BOOTSTRAP_ACCESS_TOKENS_JSON",
+            "scientific_access_tokens": "FS2_SCIENTIFIC_ACCESS_TOKENS_JSON",
+            "website_access_tokens": "FS2_WEBSITE_ACCESS_TOKENS_JSON",
+            "database_passwords": "FS2_DATABASE_PASSWORDS_JSON",
+            "payload_keyrings_json": "FS2_PAYLOAD_KEYRINGS_JSON",
+            "storage_keyrings_json": "FS2_STORAGE_KEYRINGS_JSON",
+            "ledger_keyrings_json": "FS2_LEDGER_KEYRINGS_JSON",
+            "token_pepper_keyrings_json": "FS2_TOKEN_PEPPER_KEYRINGS_JSON",
+            "route_attestors_sets_json": "FS2_ROUTE_ATTESTOR_SETS_JSON",
+        }.items():
+            value = os.environ.get(environment_name)
+            if value:
+                environment[f"TF_VAR_{variable_name}"] = value
+        environment["TF_VAR_ngc_api_key_configured"] = "true" if ngc_key else "false"
+        environment["TF_VAR_nvcrio_dockerconfigjson_configured"] = (
+            "true" if docker_config else "false"
+        )
 
     return environment
 
@@ -1790,10 +2088,13 @@ def existing_controller_ownership(
             if resource.get("mode") == "managed"
             and resource.get("type") == "terraform_data"
             and not resource.get("module")
-            and resource.get("name") in {"cluster_contract", "model_controller_contract"}
+            and resource.get("name")
+            in {"cluster_contract", "model_controller_contract"}
         }
         controller = inputs["model_controller_contract"]
-        accepted = controller.get("accepted_handoff_receipt") or controller.get("expected_handoff_receipt")
+        accepted = controller.get("accepted_handoff_receipt") or controller.get(
+            "expected_handoff_receipt"
+        )
         if (
             inputs["cluster_contract"]["cluster_id"] != cluster_id
             or controller.get("workload_owner") != "controller"
@@ -1813,13 +2114,22 @@ def existing_controller_ownership(
                 cpu = instance["attributes"]["input"]["value"]
                 for document in (cpu["deployment"], cpu["service_manifest"]):
                     metadata = document["metadata"]
-                    cpu_resources.add((document["kind"], metadata["namespace"], metadata["name"]))
+                    cpu_resources.add(
+                        (document["kind"], metadata["namespace"], metadata["name"])
+                    )
                 deployment = cpu["deployment"]
-                account = deployment["spec"]["template"]["spec"].get("serviceAccountName")
+                account = deployment["spec"]["template"]["spec"].get(
+                    "serviceAccountName"
+                )
                 if account:
-                    cpu_resources.add(("ServiceAccount", deployment["metadata"]["namespace"], account))
+                    cpu_resources.add(
+                        ("ServiceAccount", deployment["metadata"]["namespace"], account)
+                    )
         for resource in resources:
-            if resource.get("mode") != "managed" or resource.get("type") != "kubernetes_manifest":
+            if (
+                resource.get("mode") != "managed"
+                or resource.get("type") != "kubernetes_manifest"
+            ):
                 continue
             if resource.get("name") == "model_scaler" and resource.get("instances"):
                 return False
@@ -1827,9 +2137,18 @@ def existing_controller_ownership(
                 for instance in resource.get("instances", []):
                     manifest = instance["attributes"]["manifest"]["value"]
                     metadata = manifest.get("metadata", {})
-                    if (manifest.get("kind"), metadata.get("namespace"), metadata.get("name")) in cpu_resources:
+                    if (
+                        manifest.get("kind"),
+                        metadata.get("namespace"),
+                        metadata.get("name"),
+                    ) in cpu_resources:
                         continue
-                    if manifest.get("kind") in {"Deployment", "Service", "ServiceAccount", "ConfigMap"}:
+                    if manifest.get("kind") in {
+                        "Deployment",
+                        "Service",
+                        "ServiceAccount",
+                        "ConfigMap",
+                    }:
                         return False
         return True
     except (OSError, ValueError, KeyError, IndexError, TypeError):
@@ -1933,7 +2252,10 @@ def write_downstream_variables(
                 raise DeploymentError(
                     "a general CPU pool must never carry the reference-data filesystem"
                 )
-            if pool_contract.get("schema") != "fs2-serve.nebius.ai/general-cpu-pools/v1":
+            if (
+                pool_contract.get("schema")
+                != "fs2-serve.nebius.ai/general-cpu-pools/v1"
+            ):
                 raise DeploymentError(
                     "the general CPU pool handoff must be the v1 general-CPU pool contract"
                 )
@@ -1950,8 +2272,9 @@ def write_downstream_variables(
             raise DeploymentError(
                 "staged scientific batch execution requires the dedicated artifact store"
             )
-        if scientific_batch.get("writes_enabled") is True and not (
-            scientific_batch.get("enabled") is True
+        if (
+            scientific_batch.get("writes_enabled") is True
+            and scientific_batch.get("enabled") is not True
         ):
             raise DeploymentError(
                 "scientific batch Kubernetes writes require the batch controller gate"
@@ -2091,6 +2414,13 @@ def plan_stage(
         include_secrets=not destroy,
     )
     terraform_init(terraform, root, state, environment)
+    prepare_credential_migration_gate(
+        terraform,
+        run_root=run_root,
+        root=root,
+        state=state,
+        environment=environment,
+    )
     suffix = "destroy" if destroy else "plan"
     plan_path = run_root / f"{stage}-{suffix}.tfplan"
     document = plan_json(
@@ -2111,6 +2441,8 @@ def apply_plan(
     plan_path: Path,
     environment: Mapping[str, str],
 ) -> None:
+    validate_credential_migration_gate(root, environment)
+    guard_saved_plan(terraform, root, plan_path, environment)
     run(
         [terraform, f"-chdir={root}", "apply", "-input=false", str(plan_path)],
         env=environment,
@@ -2188,238 +2520,204 @@ def workload_endpoint_outputs(
         if scientific_enabled
         else None
     )
+    validate_scientific_artifact_public_metadata(outputs["scientific_artifacts"])
     return outputs
+
+
+def validate_scientific_artifact_public_metadata(value: Any) -> None:
+    """Keep status/scoped-handoff metadata free of storage credentials."""
+
+    if value is None:
+        return
+    if not isinstance(value, Mapping):
+        raise DeploymentError("the scientific artifact status output is malformed")
+    forbidden = {"secret_access_key", "secret_key", "credentials"}
+    if forbidden.intersection(value):
+        raise DeploymentError(
+            "the scientific artifact bundle must never carry object-storage secret material"
+        )
 
 
 def workload_access_bundle(
     terraform: str,
     run_root: Path,
     contract: Mapping[str, Any],
+    *,
+    kubectl: str = "kubectl",
 ) -> dict[str, Any]:
-    """Read the explicit sensitive connection bundle from workloads state."""
+    """Reject the removed aggregate credential-export interface."""
 
+    del terraform, run_root, contract, kubectl
+    raise DeploymentError(
+        "aggregate credential export is disabled; request one scoped expiring PAT"
+    )
+
+
+def kubernetes_secret_values(
+    kubectl: str,
+    run_root: Path,
+    *,
+    context: str,
+    namespace: str,
+    name: str,
+    keys: Sequence[str],
+) -> dict[str, str]:
+    """Read named UTF-8 Secret keys into memory without echoing their values."""
+
+    if not all(
+        isinstance(value, str) and value.strip()
+        for value in (context, namespace, name, *keys)
+    ):
+        raise DeploymentError("the workloads credential Secret reference is malformed")
+    kubeconfig = run_root / "kubeconfig"
+    if kubeconfig.is_symlink() or not kubeconfig.is_file():
+        raise DeploymentError("the run-owned kubeconfig is absent or unsafe")
+    if stat.S_IMODE(kubeconfig.stat().st_mode) & 0o077:
+        raise DeploymentError("the run-owned kubeconfig must be owner-only")
+    result = run(
+        [
+            kubectl,
+            "--kubeconfig",
+            str(kubeconfig),
+            "--context",
+            context,
+            "-n",
+            namespace,
+            "get",
+            "secret",
+            name,
+            "-o",
+            "json",
+        ],
+        env=clean_environment(),
+        capture=True,
+    )
+    try:
+        document = json.loads(result.stdout)
+        encoded = document["data"]
+        if not isinstance(encoded, dict):
+            raise TypeError
+        values = {
+            key: base64.b64decode(encoded[key], validate=True).decode("utf-8")
+            for key in keys
+        }
+    except (
+        KeyError,
+        TypeError,
+        UnicodeDecodeError,
+        binascii.Error,
+        json.JSONDecodeError,
+    ) as error:
+        raise DeploymentError(
+            f"Kubernetes Secret {namespace}/{name} is missing a required UTF-8 value"
+        ) from error
+    if any(not value for value in values.values()):
+        raise DeploymentError(
+            f"Kubernetes Secret {namespace}/{name} contains an empty required value"
+        )
+    return values
+
+
+def scoped_credential_handoff(
+    terraform: str,
+    kubectl: str,
+    run_root: Path,
+    contract: Mapping[str, Any],
+    *,
+    kind: str,
+    expires_in_seconds: int,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Resolve exactly one requested credential and a value-free audit receipt."""
+
+    if kind not in {"general-access", "scientific-access"}:
+        raise DeploymentError("unsupported credential kind")
+    if not 300 <= expires_in_seconds <= 86400:
+        raise DeploymentError("credential handoff expiry must be 300-86400 seconds")
     environment = stage_environment(
         run_root, "workloads", contract, include_secrets=False
     )
-    bundle = terraform_json_output(
+    access = terraform_json_output(
         terraform, WORKLOADS_ROOT, "access_bundle", environment
     )
-    if not isinstance(bundle, dict) or bundle.get("schema") != "fs2-serve.nebius.ai/access-bundle/v1":
-        raise DeploymentError("the workloads access bundle is missing or malformed")
-
-    cluster = bundle.get("cluster")
-    endpoints = bundle.get("endpoints")
-    credentials = bundle.get("credentials")
-    mcp_access = bundle.get("mcp_access")
-    scientific_access = bundle.get("scientific_access")
-    reference_data = bundle.get("reference_data")
-    reference_data_contract = bundle.get("reference_data_contract")
-    if not all(
-        isinstance(value, dict)
-        for value in (cluster, endpoints, credentials, mcp_access)
-    ):
-        raise DeploymentError("the workloads access bundle is missing or malformed")
-
-    def has_non_empty_strings(document: Mapping[str, Any], fields: tuple[str, ...]) -> bool:
-        return all(
-            isinstance(document.get(field), str) and bool(document[field].strip())
-            for field in fields
-        )
-
-    if not has_non_empty_strings(
-        cluster,
-        (
-            "project_id",
-            "region",
-            "cluster_id",
-            "cluster_name",
-            "kube_context",
-            "kubeconfig_command",
-        ),
-    ):
-        raise DeploymentError("the workloads access bundle is missing or malformed")
-    if not has_non_empty_strings(endpoints, ("mcp_url", "inference_base_url")):
-        raise DeploymentError("the workloads access bundle is missing or malformed")
-    if any(
-        key not in endpoints
-        or (endpoints[key] is not None and not isinstance(endpoints[key], str))
-        for key in (
-            "admin_portal_url",
-            "grafana_url",
-            "alertmanager_url",
-            "tempo_explore_url",
-        )
-    ):
-        raise DeploymentError("the workloads access bundle is missing or malformed")
-
-    shared_token = credentials.get("mcp_inference_token")
     if (
-        not has_non_empty_strings(
-            credentials,
-            ("admin_bootstrap_token", "mcp_inference_token", "inference_access_token"),
-        )
-        or credentials.get("inference_access_token") != shared_token
-        or "scientific_access_token" not in credentials
-        or "scientific_access" not in bundle
+        not isinstance(access, dict)
+        or access.get("schema") != "fs2-serve.nebius.ai/access-bundle-contract/v2"
+        or not isinstance(access.get("credential_secret_refs"), dict)
+        or not isinstance(access.get("cluster"), dict)
+        or not isinstance(access.get("endpoints"), dict)
     ):
-        raise DeploymentError("the workloads access bundle is missing or malformed")
-    grafana = credentials.get("grafana")
-    if not isinstance(grafana, dict) or not has_non_empty_strings(
-        grafana, ("username", "password")
-    ):
-        raise DeploymentError("the workloads access bundle is missing or malformed")
-    scopes = mcp_access.get("scopes")
-    if (
-        not has_non_empty_strings(
-            mcp_access, ("principal_id", "tenant_id")
-        )
-        or not isinstance(scopes, list)
-        or not {"mcp.invoke", "inference.invoke"}.issubset(scopes)
-    ):
-        raise DeploymentError("the workloads access bundle is missing or malformed")
-
-    academic_assets = contract.get("academic_assets")
-    academic_fleet_enabled = (
-        isinstance(academic_assets, dict)
-        and academic_assets.get("enabled") is True
+        raise DeploymentError("the workloads access contract is missing or malformed")
+    refs = access["credential_secret_refs"]
+    context = access["cluster"].get("kube_context")
+    mappings = {
+        "general-access": ("mcp_inference", ("key",)),
+        "scientific-access": ("scientific", ("key",)),
+    }
+    reference_name, key_fields = mappings[kind]
+    reference = refs.get(reference_name)
+    if not isinstance(reference, dict):
+        raise DeploymentError(f"the requested {kind} credential is not configured")
+    keys = tuple(reference.get(field) for field in key_fields)
+    values = kubernetes_secret_values(
+        kubectl,
+        run_root,
+        context=context,
+        namespace=reference.get("namespace"),
+        name=reference.get("name"),
+        keys=keys,
     )
-    if academic_fleet_enabled:
-        academic_tenant_id = academic_assets.get("tenant_id")
-        scientific_token = credentials.get("scientific_access_token")
-        scientific_scopes = (
-            scientific_access.get("scopes")
-            if isinstance(scientific_access, dict)
-            else None
+    issued_at = datetime.now(UTC).replace(microsecond=0)
+    policy_name = "mcp_access" if kind == "general-access" else "scientific_access"
+    policy = access.get(policy_name)
+    enforced_expiry = policy.get("expires_at") if isinstance(policy, Mapping) else None
+    if not isinstance(enforced_expiry, str):
+        raise DeploymentError(
+            f"the requested {kind} PAT has no server-enforced expiry and cannot be exported"
         )
-        scientific_models = (
-            scientific_access.get("models")
-            if isinstance(scientific_access, dict)
-            else None
+    try:
+        parsed_expiry = datetime.fromisoformat(enforced_expiry.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise DeploymentError(
+            f"the requested {kind} PAT has a malformed server-enforced expiry"
+        ) from error
+    if parsed_expiry.tzinfo is None:
+        raise DeploymentError(
+            f"the requested {kind} PAT expiry must include a timezone"
         )
-        scientific_max_concurrency = (
-            scientific_access.get("max_concurrency")
-            if isinstance(scientific_access, dict)
-            else None
+    expires_at = parsed_expiry.astimezone(UTC).replace(microsecond=0)
+    if expires_at <= issued_at:
+        raise DeploymentError(f"the requested {kind} PAT is expired")
+    if expires_at > issued_at + timedelta(seconds=expires_in_seconds):
+        raise DeploymentError(
+            f"the requested {kind} PAT outlives the requested handoff TTL; rotate it with a bounded server-enforced expiry first"
         )
-        if (
-            not isinstance(academic_tenant_id, str)
-            or not academic_tenant_id.strip()
-            or not isinstance(scientific_token, str)
-            or not scientific_token.strip()
-            or scientific_token == shared_token
-            or not isinstance(scientific_access, dict)
-            or not has_non_empty_strings(
-                scientific_access, ("principal_id", "tenant_id")
-            )
-            or scientific_access.get("tenant_id") != academic_tenant_id
-            or scientific_access.get("principal_id") == mcp_access.get("principal_id")
-            or not isinstance(scientific_scopes, list)
-            or not {
-                "mcp.invoke",
-                "inference.invoke",
-                "use.nonclinical",
-                "use.noncommercial",
-            }.issubset(scientific_scopes)
-            or not isinstance(scientific_models, list)
-            or not scientific_models
-            or not all(
-                isinstance(model_id, str) and model_id.strip()
-                for model_id in scientific_models
-            )
-            or not isinstance(scientific_max_concurrency, int)
-            or isinstance(scientific_max_concurrency, bool)
-            or not 1 <= scientific_max_concurrency <= 100
-        ):
-            raise DeploymentError("the workloads access bundle is missing or malformed")
-    elif (
-        credentials.get("scientific_access_token") is not None
-        or scientific_access is not None
-    ):
-        raise DeploymentError("the workloads access bundle is missing or malformed")
-    if reference_data is not None:
-        if not isinstance(reference_data, dict) or not has_non_empty_strings(
-            reference_data,
-            ("filesystem_id", "bucket_id", "bucket_name", "cpu_pool_id"),
-        ):
-            raise DeploymentError("the workloads access bundle is missing or malformed")
-        lifecycle = reference_data.get("lifecycle")
-        if (
-            not isinstance(lifecycle, dict)
-            or lifecycle.get("retention_mode") not in {"retain", "disposable"}
-            or (
-                lifecycle.get("retention_mode") == "retain"
-                and (
-                    lifecycle.get("destroy_status")
-                    != "blocked-retained"
-                    or lifecycle.get("destroy_completion")
-                    != "full-stack-destroy-incomplete-infrastructure-retained"
-                    or lifecycle.get("adoption_status")
-                    != "ids-exported-for-explicit-state-adoption"
-                )
-            )
-            or (
-                lifecycle.get("retention_mode") == "disposable"
-                and (
-                    lifecycle.get("destroy_status")
-                    != "eligible-only-while-bucket-empty"
-                    or lifecycle.get("destroy_completion")
-                    != "full-only-when-versioned-bucket-empty"
-                )
-            )
-            or not isinstance(reference_data.get("pipeline"), (dict, type(None)))
-            or not isinstance(reference_data.get("status_service"), (str, type(None)))
-            or not isinstance(reference_data_contract, dict)
-        ):
-            raise DeploymentError("the workloads access bundle is missing or malformed")
-        storage = reference_data_contract.get("storage")
-        plane = reference_data_contract.get("plane")
-        if (
-            not isinstance(storage, dict)
-            or not isinstance(plane, dict)
-            or storage.get("filesystem", {}).get("id")
-            != reference_data["filesystem_id"]
-            or storage.get("object_storage", {}).get("id")
-            != reference_data["bucket_id"]
-            or storage.get("object_storage", {}).get("name")
-            != reference_data["bucket_name"]
-            or storage.get("cpu_pool", {}).get("id")
-            != reference_data["cpu_pool_id"]
-            or plane.get("status_service") != reference_data["status_service"]
-            or plane.get("pipeline") != reference_data["pipeline"]
-        ):
-            raise DeploymentError("the workloads access bundle is missing or malformed")
-    elif reference_data_contract is not None:
-        raise DeploymentError("the workloads access bundle is missing or malformed")
-
-    scientific_artifacts = bundle.get("scientific_artifacts")
-    if scientific_artifacts is not None:
-        if not isinstance(scientific_artifacts, dict) or not has_non_empty_strings(
-            scientific_artifacts,
-            ("bucket_id", "bucket_name", "endpoint", "object_key", "writer_role"),
-        ):
-            raise DeploymentError("the workloads access bundle is missing or malformed")
-        lifecycle = scientific_artifacts.get("lifecycle")
-        if (
-            not isinstance(lifecycle, dict)
-            or lifecycle.get("retention_mode") not in {"retain", "disposable"}
-            or scientific_artifacts.get("writer_role") != "storage.object-editor"
-            or scientific_artifacts.get("credential_secret")
-            != "fs2-system/fs2-serve-artifact-store"
-            or not isinstance(scientific_artifacts.get("credential_revision"), int)
-            or scientific_artifacts["credential_revision"] < 1
-            or not isinstance(scientific_artifacts.get("batch_enabled"), bool)
-        ):
-            raise DeploymentError("the workloads access bundle is missing or malformed")
-        # The bundle is the operator's copy of every live credential, so an S3
-        # secret leaking into it would be the worst possible regression.
-        if any(
-            key in scientific_artifacts
-            for key in ("secret_access_key", "secret_key", "credentials")
-        ):
-            raise DeploymentError(
-                "the scientific artifact bundle must never carry object-storage secret material"
-            )
-    return bundle
+    credential = {"token": values[keys[0]]}
+    handoff = {
+        "schema": "fs2-serve.nebius.ai/scoped-credential-handoff/v1",
+        "kind": kind,
+        "issued_at": issued_at.isoformat().replace("+00:00", "Z"),
+        "expires_at": expires_at.isoformat().replace("+00:00", "Z"),
+        "endpoints": {
+            key: value
+            for key, value in access["endpoints"].items()
+            if value is not None and key in {"mcp_url", "inference_base_url"}
+        },
+        "credential": credential,
+    }
+    receipt_id = str(uuid4())
+    receipt = {
+        "schema": "fs2-serve.nebius.ai/scoped-credential-receipt/v1",
+        "receipt_id": receipt_id,
+        "kind": kind,
+        "issued_at": handoff["issued_at"],
+        "expires_at": handoff["expires_at"],
+        "source": {
+            "namespace": reference["namespace"],
+            "name": reference["name"],
+            "keys": list(keys),
+        },
+    }
+    return handoff, receipt
 
 
 def state_ready(
@@ -2640,9 +2938,7 @@ def destroy_stack(
     commit: str,
 ) -> None:
     reference_infrastructure = (
-        contract.get("stages", {})
-        .get("infrastructure", {})
-        .get("reference_data", {})
+        contract.get("stages", {}).get("infrastructure", {}).get("reference_data", {})
     )
     scientific_infrastructure = (
         contract.get("stages", {})
@@ -2806,38 +3102,58 @@ def destroy_stack(
             if isinstance(applied_contract, Mapping)
             else None
         )
-        reference_data = None if not reference_retained else {
-            "lifecycle": lifecycle,
-            "filesystem_id": storage.get("filesystem", {}).get("id"),
-            "bucket_id": storage.get("object_storage", {}).get("id"),
-            "bucket_name": storage.get("object_storage", {}).get("name"),
-            "cpu_pool_id": storage.get("cpu_pool", {}).get("id"),
-            "status_service": None,
-            "pipeline": None,
-            "last_applied": {
-                "status_service": last_applied_status_service,
-                "pipeline": last_applied_pipeline,
-            },
-        }
-        reference_data_contract = None if not reference_retained else {
-            "storage": storage,
-            "plane": None,
-            "last_applied_plane": last_applied_plane,
-        }
+        reference_data = (
+            None
+            if not reference_retained
+            else {
+                "lifecycle": lifecycle,
+                "filesystem_id": storage.get("filesystem", {}).get("id"),
+                "bucket_id": storage.get("object_storage", {}).get("id"),
+                "bucket_name": storage.get("object_storage", {}).get("name"),
+                "cpu_pool_id": storage.get("cpu_pool", {}).get("id"),
+                "status_service": None,
+                "pipeline": None,
+                "last_applied": {
+                    "status_service": last_applied_status_service,
+                    "pipeline": last_applied_pipeline,
+                },
+            }
+        )
+        reference_data_contract = (
+            None
+            if not reference_retained
+            else {
+                "storage": storage,
+                "plane": None,
+                "last_applied_plane": last_applied_plane,
+            }
+        )
         scientific_storage = dynamic.get("scientific_artifacts_storage_contract")
         scientific_lifecycle = dynamic.get("scientific_artifacts_lifecycle")
-        scientific_artifacts = None if not scientific_retained else {
-            "lifecycle": scientific_lifecycle,
-            "bucket_id": (scientific_storage or {}).get("object_storage", {}).get("id"),
-            "bucket_name": (scientific_storage or {})
-            .get("object_storage", {})
-            .get("name"),
-            "object_key": (scientific_storage or {}).get("layout", {}).get("object_key"),
-            "last_applied": retained_workload_outputs.get("scientific_artifacts"),
-        }
-        scientific_artifacts_contract = None if not scientific_retained else {
-            "storage": scientific_storage,
-        }
+        scientific_artifacts = (
+            None
+            if not scientific_retained
+            else {
+                "lifecycle": scientific_lifecycle,
+                "bucket_id": (scientific_storage or {})
+                .get("object_storage", {})
+                .get("id"),
+                "bucket_name": (scientific_storage or {})
+                .get("object_storage", {})
+                .get("name"),
+                "object_key": (scientific_storage or {})
+                .get("layout", {})
+                .get("object_key"),
+                "last_applied": retained_workload_outputs.get("scientific_artifacts"),
+            }
+        )
+        scientific_artifacts_contract = (
+            None
+            if not scientific_retained
+            else {
+                "storage": scientific_storage,
+            }
+        )
         adoption_lifecycle = lifecycle if reference_retained else scientific_lifecycle
         receipt_path = run_root / (
             "reference-data-retention.json"
@@ -3029,9 +3345,7 @@ def status_stack(
         endpoints["reference_data_contract"] is None
         and infrastructure_reference_data_contract is not None
     ):
-        endpoints["reference_data_contract"] = (
-            infrastructure_reference_data_contract
-        )
+        endpoints["reference_data_contract"] = infrastructure_reference_data_contract
     # The store can be provisioned and correct while the batch workloads that
     # consume it are still gated off. Report the live bucket identity rather
     # than pretending the feature is absent.
@@ -3053,14 +3367,60 @@ def output_stack(
     run_root: Path,
     contract: Mapping[str, Any],
 ) -> None:
-    """Print the intentionally requested sensitive post-apply access bundle."""
+    """Write one explicitly requested scoped credential to an owner-only file."""
     if not state_ready(args.terraform, run_root, "workloads", contract):
         raise DeploymentError(
             "workloads are not applied; run inference-stack apply before requesting endpoints"
         )
+    requested_path = getattr(args, "credential_file", None)
+    if requested_path is None:
+        raise DeploymentError(
+            "output requires --credential-file in an existing owner-only directory"
+        )
+    kind = getattr(args, "credential_kind", None)
+    if kind is None:
+        raise DeploymentError("output requires one explicit --credential-kind")
+    candidate = requested_path.expanduser().absolute()
+    if candidate.is_symlink():
+        raise DeploymentError("credential-file must not be a symlink")
+    parent = candidate.parent
+    if any(path.is_symlink() for path in (parent, *parent.parents)):
+        raise DeploymentError("credential-file parent must be a real directory")
+    if not parent.is_dir():
+        raise DeploymentError("credential-file parent must be a real directory")
+    parent_status = parent.stat()
+    if (
+        parent_status.st_uid != os.geteuid()
+        or stat.S_IMODE(parent_status.st_mode) & 0o077
+    ):
+        raise DeploymentError(
+            "credential-file parent must be owner-owned and owner-only"
+        )
+    destination = parent / candidate.name
+    receipt_path = destination.with_name(destination.name + ".receipt.json")
+    if destination.exists() or receipt_path.exists():
+        raise DeploymentError("credential handoff and receipt destinations must be new")
+    handoff, receipt = scoped_credential_handoff(
+        args.terraform,
+        args.kubectl,
+        run_root,
+        contract,
+        kind=kind,
+        expires_in_seconds=args.credential_expires_in_seconds,
+    )
+    private_json(destination, handoff)
+    private_json(receipt_path, receipt)
     print(
         json.dumps(
-            workload_access_bundle(args.terraform, run_root, contract),
+            {
+                "status": "scoped-credential-file-written",
+                "kind": kind,
+                "receipt_id": receipt["receipt_id"],
+                "credential_file": str(destination),
+                "receipt_file": str(receipt_path),
+                "expires_at": receipt["expires_at"],
+                "mode": "0600",
+            },
             indent=2,
         )
     )
@@ -3214,6 +3574,22 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=os.environ.get("NEBIUS_PROFILE", "sandbox"),
         help="authenticated Nebius CLI profile (default: NEBIUS_PROFILE or sandbox)",
     )
+    parser.add_argument(
+        "--credential-file",
+        type=Path,
+        help="owner-only destination required by the output command; secret values are never printed",
+    )
+    parser.add_argument(
+        "--credential-kind",
+        choices=("general-access", "scientific-access"),
+        help="single scoped credential kind to export; no aggregate export exists",
+    )
+    parser.add_argument(
+        "--credential-expires-in-seconds",
+        type=int,
+        default=3600,
+        help="receipt and delivery-file expiry, from 300 through 86400 seconds",
+    )
     return parser.parse_args(argv)
 
 
@@ -3226,62 +3602,70 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise DeploymentError(
             f"configuration does not exist: {variable_file}; copy terraform.tfvars.example first"
         )
-    run_root = (args.run_root or default_run_root(variable_file)).expanduser().resolve()
+    run_root = (
+        (args.run_root or default_run_root(variable_file)).expanduser().absolute()
+    )
     private_directory(run_root)
+    secure_run_root(run_root)
 
     lock_path = run_root / ".inference-stack.lock"
     if lock_path.is_symlink():
         raise DeploymentError(f"lock path must not be a symlink: {lock_path}")
-    with lock_path.open("a+", encoding="utf-8") as lock:
-        lock_path.chmod(0o600)
-        try:
-            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
-            raise DeploymentError(
-                f"another inference-stack process owns {run_root}"
-            ) from exc
+    try:
+        with lock_path.open("a+", encoding="utf-8") as lock:
+            lock_path.chmod(0o600)
+            try:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                raise DeploymentError(
+                    f"another inference-stack process owns {run_root}"
+                ) from exc
 
-        contract, configuration_environment = validate_configuration(
-            args.terraform, variable_file, run_root
-        )
-        proxy_arguments: list[str] | None = None
-        commit = source_commit()
-        if args.command == "validate":
-            validate_stage_roots(args.terraform, run_root)
-            print(
-                json.dumps(
-                    {
-                        "status": "valid",
-                        "run_root": str(run_root),
-                        "deployment": contract["name"],
-                        "profiles": contract["profiles"],
-                        "accelerator_pools": contract["selected_accelerator_pool_ids"],
-                        "models": contract["selected_model_ids"],
-                    },
-                    indent=2,
+            contract, configuration_environment = validate_configuration(
+                args.terraform, variable_file, run_root
+            )
+            proxy_arguments: list[str] | None = None
+            commit = source_commit()
+            if args.command == "validate":
+                validate_stage_roots(args.terraform, run_root)
+                print(
+                    json.dumps(
+                        {
+                            "status": "valid",
+                            "run_root": str(run_root),
+                            "deployment": contract["name"],
+                            "profiles": contract["profiles"],
+                            "accelerator_pools": contract[
+                                "selected_accelerator_pool_ids"
+                            ],
+                            "models": contract["selected_model_ids"],
+                        },
+                        indent=2,
+                    )
                 )
-            )
-        elif args.command == "preflight":
-            preflight_accelerators(args, contract)
-        elif args.command == "plan":
-            plan_stack(args, run_root, contract, commit)
-        elif args.command == "apply":
-            require_deployable_images(contract)
-            apply_stack(
-                args,
-                run_root,
-                contract,
-                commit,
-                configuration_environment,
-            )
-        elif args.command == "destroy":
-            destroy_stack(args, run_root, contract, commit)
-        elif args.command == "output":
-            output_stack(args, run_root, contract)
-        elif args.command == "proxy":
-            proxy_arguments = internal_proxy_command(args, run_root, contract)
-        else:
-            status_stack(args, run_root, contract)
+            elif args.command == "preflight":
+                preflight_accelerators(args, contract)
+            elif args.command == "plan":
+                plan_stack(args, run_root, contract, commit)
+            elif args.command == "apply":
+                require_deployable_images(contract)
+                apply_stack(
+                    args,
+                    run_root,
+                    contract,
+                    commit,
+                    configuration_environment,
+                )
+            elif args.command == "destroy":
+                destroy_stack(args, run_root, contract, commit)
+            elif args.command == "output":
+                output_stack(args, run_root, contract)
+            elif args.command == "proxy":
+                proxy_arguments = internal_proxy_command(args, run_root, contract)
+            else:
+                status_stack(args, run_root, contract)
+    finally:
+        secure_run_root(run_root)
     if proxy_arguments is not None:
         try:
             run(proxy_arguments, env=clean_environment())

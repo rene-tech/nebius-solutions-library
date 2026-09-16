@@ -179,7 +179,7 @@ class PostgresUserStorageRepository:
 
     async def bucket(self, tenant: str, owner: str) -> dict[str, Any] | None:
         row = await self.pool.fetchrow(
-            """SELECT tenant_id,owner_key,bucket_id,bucket_name,group_id,endpoint,region,quota_bytes
+            """SELECT tenant_id,owner_key,bucket_id,bucket_name,name_key_id,group_id,endpoint,region,quota_bytes
             FROM fs2_storage_buckets WHERE tenant_id=$1 AND owner_key=$2""",
             tenant,
             owner,
@@ -189,15 +189,17 @@ class PostgresUserStorageRepository:
     async def save_bucket(self, tenant: str, owner: str, bucket: dict[str, Any]) -> None:
         updated = await self.pool.execute(
             """INSERT INTO fs2_storage_buckets
-            (tenant_id,owner_key,bucket_id,bucket_name,group_id,endpoint,region,quota_bytes)
-            VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(tenant_id,owner_key)
-            DO UPDATE SET quota_bytes=excluded.quota_bytes,bucket_name=excluded.bucket_name
+            (tenant_id,owner_key,bucket_id,bucket_name,name_key_id,group_id,endpoint,region,quota_bytes)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(tenant_id,owner_key)
+            DO UPDATE SET quota_bytes=excluded.quota_bytes,bucket_name=excluded.bucket_name,
+                          name_key_id=excluded.name_key_id
             WHERE fs2_storage_buckets.bucket_id=excluded.bucket_id
             AND fs2_storage_buckets.group_id=excluded.group_id""",
             tenant,
             owner,
             bucket["bucket_id"],
             bucket["bucket_name"],
+            bucket.get("name_key_id", "legacy-unkeyed-v0"),
             bucket["group_id"],
             bucket["endpoint"],
             bucket["region"],
@@ -788,6 +790,17 @@ class PostgresUserStorageRepository:
             ) AS generations GROUP BY key_id ORDER BY key_id"""
         )
         return {str(row["key_id"]): int(row["credential_count"]) for row in rows}
+
+    async def storage_key_usage(self) -> dict[str, dict[str, int]]:
+        """Authoritative cipher/name references required before key retirement."""
+
+        cipher = await self.payload_key_usage()
+        rows = await self.pool.fetch(
+            """SELECT name_key_id AS key_id,count(*)::bigint AS bucket_count
+            FROM fs2_storage_buckets GROUP BY name_key_id ORDER BY name_key_id"""
+        )
+        names = {str(row["key_id"]): int(row["bucket_count"]) for row in rows}
+        return {"cipher": cipher, "names": names}
 
     async def wait_enabled(self, tenant: str, principal: str, *, enabled: bool, timeout: float) -> None:
         async with asyncio.timeout(timeout):

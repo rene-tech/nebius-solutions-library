@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import SplitResult, urlsplit
 
-from pydantic import Field, model_validator
+from pydantic import AwareDatetime, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .models import ModelId, Scope
@@ -124,6 +124,7 @@ class Settings(BaseSettings):
     )
     bootstrap_access_models: set[ModelId] = Field(default_factory=lambda: {"*"}, min_length=1)
     bootstrap_access_max_concurrency: int = Field(default=32, ge=1, le=100)
+    bootstrap_access_expires_at: AwareDatetime | None = None
     admin_capacity_enabled: bool = False
     admin_kubernetes_api_url: str = Field(default="https://kubernetes.default.svc", max_length=2048)
     admin_kubernetes_token_file: Path = Path("/var/run/secrets/fs2-serve/admin-kubernetes/token")
@@ -474,9 +475,12 @@ class Settings(BaseSettings):
             raise ValueError("scientific batch Kubernetes API URL must use HTTPS")
         if self.scientific_batch_enabled and not self.scientific_artifacts_enabled:
             raise ValueError("scientific batch requires the canonical artifact service")
-        required_bootstrap_scopes = {Scope.CATALOG_READ, Scope.INFERENCE_INVOKE, Scope.MCP_INVOKE}
-        if not required_bootstrap_scopes.issubset(self.bootstrap_access_scopes):
-            raise ValueError("bootstrap access requires catalog.read, inference.invoke, and mcp.invoke")
+        # The same idempotent bootstrap command provisions multiple bounded
+        # identities. Chart-level contracts require the general and academic
+        # clients to retain their invoke scopes, while the public website is
+        # intentionally catalog-only.
+        if Scope.CATALOG_READ not in self.bootstrap_access_scopes:
+            raise ValueError("bootstrap access requires catalog.read")
         return self
 
     def public_transport_allowlists(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
