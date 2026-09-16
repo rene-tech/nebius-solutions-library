@@ -1,0 +1,130 @@
+{
+  "case": "de-0676",
+  "language": "de",
+  "audio_seconds": 14.37,
+  "source_sha256": "92df0b55da7019fa398b645522ca5cbc787a563ab4ebe75b48d9ee76aa95828a",
+  "reference": "zur firma das heißt sie dürfen mit ihrer chipkarte die haupteingangstür und alle türen zu den bereichen in denen sie arbeiten öffnen zum beispiel sie frau und mann sind assistentin der",
+  "reference_provenance": {
+    "dataset": "leduckhai/MultiMed",
+    "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+    "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+    "row": 676
+  },
+  "media_type": "audio/ogg",
+  "model": "nemotron-speech-multilingual-0-6b",
+  "repetition": 1,
+  "status": "succeeded",
+  "started_at": "2026-09-16T21:46:31.717305+00:00",
+  "submit_status": 202,
+  "operation_id": "e6a36e0d-8253-4e23-b93f-d10f90bd7f75",
+  "operation": {
+    "id": "e6a36e0d-8253-4e23-b93f-d10f90bd7f75",
+    "tenant_id": "rene",
+    "principal_id": "rene",
+    "token_id": "28e90f73-dc7d-4491-bddf-6b4f14c2a6c3",
+    "model_id": "nemotron-speech-multilingual-0-6b",
+    "model_revision": "dynamic:sha256:7de9853b50ecc4ce141c419e5c573105dd1cc74612cd089e898a885879a6148f",
+    "protocol": "native",
+    "operation": "transcribe",
+    "idempotency_key": "medical-asr-d8000f9bbf064674bd14168dc98e53ff",
+    "status": "succeeded",
+    "accepted_at": "2026-09-16T21:46:32.209337Z",
+    "available_at": "2026-09-16T21:46:32.209337Z",
+    "deadline_at": "2026-09-16T23:46:32.204551Z",
+    "activation_started_at": "2026-09-16T21:46:32.229050Z",
+    "ready_at": "2026-09-16T21:46:32.506259Z",
+    "started_at": "2026-09-16T21:46:32.511923Z",
+    "completed_at": "2026-09-16T21:46:33.744335Z",
+    "outcome": "succeeded",
+    "semantic_outcome": "protocol_valid",
+    "http_status": 200,
+    "response_content_type": "application/json",
+    "result_available": true,
+    "payload_expires_at": "2026-09-17T21:46:32.209337Z",
+    "error_code": null,
+    "error_detail": null,
+    "attempt": 1,
+    "max_attempts": 3,
+    "fencing_token": 1,
+    "runtime": {
+      "pod_uid": null,
+      "node_uid": null,
+      "gpu_uuids": [],
+      "gpu_count": 0,
+      "preemptible": null
+    },
+    "estimated_gpu_seconds": 3600.0,
+    "reserved_gpu_seconds": 0.0,
+    "cold_start_seconds": 0.296922,
+    "input_tokens": null,
+    "output_tokens": null,
+    "modality_usage": [
+      {
+        "modality": "audio",
+        "direction": "input",
+        "unit": "seconds",
+        "amount": 14.37
+      }
+    ],
+    "modality_usage_reported": true,
+    "reused": false
+  },
+  "wall_seconds": 2.409948899410665,
+  "text": "zur Firma, das heißt, Sie dürfen mit Ihrer Chipkarte die Haupteingangstür und alle Türen zu den Bereichen, in denen sie arbeiten, öffnenZum Beispiel Sie, Frau Zündmann, sind Assistenten der",
+  "result_audio_seconds": 14.37,
+  "processing_seconds": 0.8298331419937313,
+  "result_keys": [
+    "audio_seconds",
+    "language",
+    "model",
+    "model_revision",
+    "processing_seconds",
+    "segments",
+    "text"
+  ],
+  "full_duration": true,
+  "raw_result_sha256": "12941f3e27ad92a5e5eb3ff6a7f472242f7354d612e7e336def70ecd7e3f951b",
+  "quality": {
+    "reference_words": 31,
+    "hypothesis_words": 29,
+    "wer": 0.16129032258064516,
+    "substitutions": 3,
+    "deletions": 2,
+    "insertions": 0,
+    "correct": 26,
+    "errors": [
+      {
+        "type": "deletion",
+        "reference_index": 21,
+        "reference": "öffnen"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 22,
+        "reference": "zum",
+        "recognized": "öffnenzum"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 26,
+        "reference": "und"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 27,
+        "reference": "mann",
+        "recognized": "zündmann"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 29,
+        "reference": "assistentin",
+        "recognized": "assistenten"
+      }
+    ],
+    "reference_characters": 154,
+    "character_errors": 3,
+    "cer": 0.01948051948051948
+  },
+  "finished_at": "2026-09-16T21:46:34.128230+00:00"
+}
