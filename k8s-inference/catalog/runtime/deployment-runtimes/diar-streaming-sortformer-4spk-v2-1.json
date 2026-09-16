@@ -140,14 +140,14 @@
         "classification": "measured-platform",
         "hardware": "NVIDIA L40S 48GB / SM89 / driver580.173.02",
         "outcome": "live-qualified",
-        "source_commit": "c1575ca0790b737471f829b758d06653626da122",
+        "source_commit": "7d774a66963449d39be050eb065c19b88f3fc680",
         "summary": "Two distinct private native requests passed. acceptance/voice-agent-20260916/native-results.json SHA256 5ebe7c9286f2453ed83c9ee53c44ce198d4bf4b850857656bb2068bd714b3e30. Streaming/noisy/lifecycle measurements documented separately; no static route grant."
       }
     ],
     "provenance": [
       {
-        "commit": "c1575ca0790b737471f829b758d06653626da122",
-        "tree": "fa8bff0ee1ed123dc66e8c492e99d60a7071681d",
+        "commit": "7d774a66963449d39be050eb065c19b88f3fc680",
+        "tree": "33c2a6a9c05bde46e590579a0723aa541feaa198",
         "path": "k8s-inference/components/voice-runtime",
         "classification": "measured-handoff"
       },
@@ -193,7 +193,7 @@
       "commercial_use": "license-dependent"
     },
     "evidence": {
-      "audited_catalog_sha256": "e4db2a1e67072f5868e842064fee082d56b36b8997edd4c792c4d9637f62b1e8",
+      "audited_catalog_sha256": "309be122a6b3f43ac20199236773fc4a35b9371582c215edd6161469125a9ba0",
       "audited_live_routes_sha256": null,
       "cold_start_acceptance_sha256": null,
       "elasticity_acceptance_sha256": null,

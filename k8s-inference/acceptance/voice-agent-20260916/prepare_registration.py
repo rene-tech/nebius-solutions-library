@@ -14,6 +14,7 @@ import json
 import subprocess
 from pathlib import Path
 
+import yaml
 
 from fs2_serve.model_deployment import (
     InfrastructureEnvelope,
@@ -47,9 +48,9 @@ def append_models(envelope, bundles, selections, baseline_spec):
             ).read_text()
         )
         record = entry["record"]
-        resources = json.loads(
+        resources = list(yaml.safe_load_all(
             (ROOT / "models/voice-agent/k8s" / (identity + ".yaml")).read_text()
-        )["items"]
+        ))
         digest = canonical_digest(resources)
         manifest = "sha256:" + record["cache"]["artifact"]["manifest_digest"]
         tool = "infer_" + identity.replace("-", "_")

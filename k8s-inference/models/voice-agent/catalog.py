@@ -8,6 +8,8 @@ import json
 import subprocess
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[2]
 SPECS = {
     "parakeet": (
@@ -304,7 +306,9 @@ def main(args):
             replicas=0,
             artifact_config="fs2-speech-runtime-settings",
         )
-        save(ROOT / manifestpath, rendered)
+        template_path = ROOT / manifestpath
+        template_path.parent.mkdir(parents=True, exist_ok=True)
+        template_path.write_text(yaml.safe_dump_all(rendered["items"], sort_keys=False))
         profiles["managed_native_model_ids"] = list(
             dict.fromkeys(profiles["managed_native_model_ids"] + [model])
         )

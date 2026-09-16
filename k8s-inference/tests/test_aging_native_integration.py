@@ -191,6 +191,7 @@ def test_profile_schema_and_h100_only_binding():
     ).validate(profile)
     assert set(profile["managed_native_model_ids"]) == {
         "altumage", "phenoage", "nemotron-speech-en-0-6b", "nemotron-speech-multilingual-0-6b",
+        "parakeet-realtime-eou-120m-v1", "magpie-tts-multilingual-357m", "diar-streaming-sortformer-4spk-v2-1",
     }
     assert profile["profiles"]["aging"]["canonical_routes"] == ["altumage", "phenoage"]
     compatibility = read(ROOT / "catalog/profiles/model-accelerator-compatibility.json")
@@ -236,6 +237,7 @@ def test_production_catalog_copy_loads_without_the_developer_checkout(tmp_path):
     assert native.digest == archived.digest
     assert set(native.records) == set(archived.records) | {
         "altumage", "phenoage", "nemotron-speech-en-0-6b", "nemotron-speech-multilingual-0-6b",
+        "parakeet-realtime-eou-120m-v1", "magpie-tts-multilingual-357m", "diar-streaming-sortformer-4spk-v2-1",
     }
     dockerfile = (ROOT / "components/control-plane/Dockerfile").read_text()
     assert (
