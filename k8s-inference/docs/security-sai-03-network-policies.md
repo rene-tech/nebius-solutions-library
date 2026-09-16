@@ -1,12 +1,23 @@
 # SAI-03 model-runtime network isolation
 
-Status: corrective integration successor prepared after independent review
-rejected both `692a22ccb0cf56be61ca0227646bcd4d4a896046` and
-`b7e5b12e8b31b9d055ec746c3c6cd691f3519874`. Both commits remain preserved as
-negative evidence. The integration tree has exact SAI-07 source
-`385168566a74adf48f9624da2f7574d48e4f6ace` as a merge parent. No commit in
-this lineage has been deployed; production rollout remains intentionally gated
-on independent review of the combined tree.
+Status: **NO-GO for integration and deployment.** Conflict-resolution commit
+`92f9394cb3eb76b9b02f7682c96c056ae600e9ed` contains exact SAI-07 source
+`385168566a74adf48f9624da2f7574d48e4f6ace`, which independent review rejected
+on seven PSA, storage, transition, and cleanup blockers. Preserve `92f9394cb`
+only as evidence that the four SAI-03/07 textual conflicts can be resolved; it
+is not an accepted integrated candidate. Earlier rejected commits
+`692a22ccb0cf56be61ca0227646bcd4d4a896046`,
+`b7e5b12e8b31b9d055ec746c3c6cd691f3519874`, and
+`8a81670f954960390744191271a030cb6e47ab23` also remain negative evidence. No
+commit in this lineage has been deployed.
+
+The separately reviewable SAI-03 root correction is
+`4ea4b1260e6e682a2e4f40ee251860e3cfc7b679`, tree
+`9d8c9169e5e6ba0c612205811eaa86cea11a11df`. It is the clean direct child of
+rejected `8a81670f` and an ancestor of the conflict-resolution merge. Final
+integration must start from `4ea4b126`, merge SAI-07's independently accepted
+corrected successor as the second parent, re-resolve the contracts below, and
+rerun both complete suites. Do not use `92f9394cb` as the integration base.
 
 This change closes the source-side causes of SAI-03 without relying on runtime
 pods to carry the historical `app.kubernetes.io/instance` label:
@@ -85,9 +96,9 @@ App owned by another identity remains byte-for-byte unchanged.
 SAI-03 did not modify the SAI-07 branch or task files. Instead, the task branch
 merged its exact reviewed source and resolved the combined contract below.
 
-### Exact SAI-03/SAI-07 integration contract
+### Reusable SAI-03/SAI-07 conflict-resolution contract
 
-The integration merge has these immutable parents:
+Rejected conflict-resolution merge `92f9394cb` has these immutable parents:
 
 - SAI-03 root-validation correction:
   `4ea4b1260e6e682a2e4f40ee251860e3cfc7b679`;
@@ -103,12 +114,17 @@ one branch wholesale:
 | `test_model_deployment_controller.py` | Keep the arbitrary UUID App lifecycle through the real HTTP client and the independent pre-I/O rejection of any attempted NetworkPolicy write. |
 | `stages/workloads/academic_assets.tf` | Pass both the exact DNS/API/object-store policy contract and SAI-07's staged Pod Security enforcement flag into the module. |
 
-The combined authorization boundary is exact: the model controller has no
-NetworkPolicy endpoint or RBAC verbs and cannot create ServiceAccounts, while
+This resolution shape requires the model controller to have no
+NetworkPolicy endpoint or RBAC verbs and no authority to create ServiceAccounts, while
 Terraform owns the finite policies and the single `fs2-model-runtime` identity.
 Arbitrary App IDs therefore do not expand Kubernetes write authority. A merge
 that drops either the finite profile label, hardened service account, academic
 network inputs, or staged Pod Security input violates this contract.
+
+Passing tests on `92f9394cb` prove only that this conflict resolution is
+internally executable. They do not waive or close any independent SAI-07
+finding. At the final read-only check, the SAI-07 remote still pointed to exact
+rejected `385168566`; no corrected successor was available to integrate.
 
 ## Pre-mutation live evidence
 
@@ -189,7 +205,8 @@ terraform -chdir=reference-data/terraform test \
   -filter=tests/bootstrap.tftest.hcl -no-color
 ```
 
-Observed results for the exact combined SAI-03/SAI-07 tree:
+Observed mechanical results for rejected conflict-resolution tree
+`92f9394cb` (not acceptance or promotion evidence):
 
 - complete control-plane suite: 1,970 passed, 98 skipped;
 - changed controller/renderer/Helm focus: 227 passed, including finite-profile
