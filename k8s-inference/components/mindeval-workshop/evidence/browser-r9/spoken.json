@@ -1,0 +1,118 @@
+{
+  "kind": "browser-spoken",
+  "checks": [
+    "spoken run accepted through browser",
+    "live PCM arrived through public playback socket",
+    "playback began before complete turn audio",
+    "pause accepted during live speech",
+    "barge-in stopped scheduled browser audio",
+    "spoken evaluation completed after resume",
+    "all four requested spoken turns retained",
+    "generated text, recognized text and ordered recordings retained for every turn",
+    "spoken/intervened result excluded from text benchmark",
+    "complete five-axis judgment retained"
+  ],
+  "events": [
+    {
+      "type": "playback.ready",
+      "at": 1789581872853
+    },
+    {
+      "type": "audio.start",
+      "at": 1789581876962,
+      "role": "clinician",
+      "stream_id": "fa0fd3f8-3188-40b5-99c0-407ce4527c01"
+    },
+    {
+      "type": "audio.chunk",
+      "at": 1789581880277,
+      "role": "clinician",
+      "stream_id": "fa0fd3f8-3188-40b5-99c0-407ce4527c01"
+    },
+    {
+      "type": "playback.control",
+      "at": 1789581880651
+    },
+    {
+      "type": "audio.stop",
+      "at": 1789581880736,
+      "stream_id": "fa0fd3f8-3188-40b5-99c0-407ce4527c01"
+    },
+    {
+      "type": "playback.control",
+      "at": 1789581881219
+    },
+    {
+      "type": "audio.start",
+      "at": 1789581888398,
+      "role": "clinician",
+      "stream_id": "cde178f1-0acf-4031-a84b-a7a6bf013f3e"
+    },
+    {
+      "type": "audio.end",
+      "at": 1789581909673,
+      "role": "clinician",
+      "stream_id": "cde178f1-0acf-4031-a84b-a7a6bf013f3e"
+    },
+    {
+      "type": "playback.keepalive",
+      "at": 1789581929673
+    },
+    {
+      "type": "audio.start",
+      "at": 1789581942544,
+      "role": "patient",
+      "stream_id": "3f4308bf-bcb0-4935-961c-e382f327970e"
+    },
+    {
+      "type": "audio.end",
+      "at": 1789581985101,
+      "role": "patient",
+      "stream_id": "3f4308bf-bcb0-4935-961c-e382f327970e"
+    },
+    {
+      "type": "audio.start",
+      "at": 1789582002970,
+      "role": "clinician",
+      "stream_id": "58375f89-0438-40c0-a5c2-8297f737b8b8"
+    },
+    {
+      "type": "playback.keepalive",
+      "at": 1789582054631
+    },
+    {
+      "type": "playback.keepalive",
+      "at": 1789582116806
+    },
+    {
+      "type": "audio.end",
+      "at": 1789582141653,
+      "role": "clinician",
+      "stream_id": "58375f89-0438-40c0-a5c2-8297f737b8b8"
+    },
+    {
+      "type": "audio.start",
+      "at": 1789582154312,
+      "role": "patient",
+      "stream_id": "87337f93-d628-41cd-955c-e88963700943"
+    },
+    {
+      "type": "playback.gap",
+      "at": 1789582158545
+    },
+    {
+      "type": "audio.end",
+      "at": 1789582197425,
+      "role": "patient",
+      "stream_id": "87337f93-d628-41cd-955c-e88963700943"
+    }
+  ],
+  "run_id": "33c26d98-4ac6-42ef-a3df-0b00f4e32629",
+  "audio_probe": {
+    "started": 5388,
+    "stopped": 55,
+    "nonSilent": 4927
+  },
+  "segment_count": 6,
+  "passed": true
+}

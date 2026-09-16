@@ -56,7 +56,9 @@ releases remain in Helm history and the Task Deck work logs.
 | Browser manual microphone | Final r9 run `39e53681-913a-4e1e-9d74-807adcac3cdf`: browser PCM capture, real ASR, retained human transcript/WAV and abort pass. |
 | New voice Apps / named MCP | All three named tools, public streaming routes, retained results and ordinary usage pass on CP138. Magpie's downloadable WAV duration exactly matches the output-audio ledger. Both existing Nemotron Apps also pass. |
 | Speech scaling | All three Apps reached two managed replicas through ordinary admin proposals. Distinct-worker overlap and scale-out during an admitted stream pass. Parakeet graceful Pod drain passes. Configured floors restored to min 1 / max 2; HPA may retain a second warm replica during normal stabilization. |
-| Final full rehearsals and clinician cohort | In progress; use the final receipt below, not earlier diagnostics, for acceptance. |
+| r9 canonical rehearsals and full cohort | Both 60-job rehearsals and all six ten-round clinicians pass: 126/126 jobs, 426 patient prefixes, 726 Token Factory calls, 3,883,164 tokens. Images remained unchanged. This is canonical-path acceptance, not a seamless-live-audio claim. |
+| Browser automatic microphone | Final full r9 script passes on `22cbfebe-b3cb-47b7-8438-da37a3f93af3`: Silero silence fallback, no manual Finish, HTTP 200 WAV and real browser decode. Earlier r9 run also exercised genuine Parakeet model EOU. |
+| Browser spoken continuity | Four turns, six retained WAV segments, live PCM, barge-in/resume and all judge scores completed on `33c26d98-4ac6-42ef-a3df-0b00f4e32629`, **but one live playback gap interrupted the last turn**. Durable audio is intact. This is not seamless-live acceptance; producer pacing fix and stronger no-gap test are pending. |
 
 The public r8 diagnostic completed 60/60 jobs, all 300 provider calls and all
 180 expected patient-prefix classifier observations without retries. It is
@@ -97,9 +99,11 @@ voice model benchmarks and deployment receipts are under
 ## Deployment and handoff
 
 The additive Helm chart has an accompanying Terraform module and example root;
-Terraform init/validate/fmt and Helm lint pass. This live release was installed
-with Helm. Adopt it into the module's state before Terraform manages the same
-release; validation is not represented as a fresh Terraform apply test.
+Terraform init/validate/fmt and Helm lint pass. The live release was initially
+installed with Helm and has now been imported into the module's protected
+Terraform state. Its first adoption plan contains zero creates, one in-place
+Helm update and zero destroys. Apply is pending the next qualified workshop
+image; validation/import are not represented as a completed apply test.
 
 Read the [attendee quickstart](../components/mindeval-workshop/docs/attendee-quickstart.md)
 and [operator runbook](../components/mindeval-workshop/docs/operator-runbook.md).
