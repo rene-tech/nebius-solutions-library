@@ -8,6 +8,23 @@ output are removed. The backend APIs, model services, credentials and stored
 run/audio evidence remain. Browser results below are historical r10 evidence,
 not an instruction to host or recreate a workshop website.
 
+Removal deployed at 21:03 UTC through the existing Terraform state (Helm
+revision 9), with API-only image
+`sha256:69c3c3798016a100df8048bbc2d7fdc636d90715e808fee77d2859c34f1406be`.
+Apply completed in 35 seconds: zero creates, one update, zero destroys. Both
+workshop API replicas are Ready; the gateway remains generation 1 with its
+previous image. The chart version label was left unchanged to avoid restarting
+the unrelated singleton gateway. The image contains no static UI files.
+
+Public `/workshop`, `/workshop/`, and former HTML/JS asset paths return 404.
+Both authorized API catalogs and the existing spoken-run report return 200;
+the main website and admin portal also return 200. TLS verification remains
+enabled. Backend regression: 54 passed, one environment-dependent ONNX skip;
+Ruff, Helm lint and Terraform validation pass. Receipt:
+`components/mindeval-workshop/evidence/webpage-removal-20260916.json`.
+Deleted UI source and its historical browser harnesses remain recoverable from
+Git history; run/audio data was not deleted.
+
 ## Entry points and scope
 
 - Resumable workshop API: <https://89.169.99.188/v1/workshop>
@@ -26,7 +43,7 @@ Spoken and human-intervened runs are explicitly excluded from untouched text
 comparison aggregates. MindGuard is an observation, never the judge, clinician,
 or a newly imposed request blocker.
 
-## Frozen deployment
+## Historical r10 frozen deployment
 
 Project `project-e00rene`, region `eu-north1`, cluster
 `mk8scluster-e00j5z9te7x5dd9g6a`. The existing regular L40S pool hosts the three

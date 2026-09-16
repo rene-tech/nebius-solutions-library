@@ -1,0 +1,62 @@
+{
+  "at": "2026-09-16T21:03:32.857Z",
+  "image": "sha256:69c3c3798016a100df8048bbc2d7fdc636d90715e808fee77d2859c34f1406be",
+  "tls_verification": true,
+  "checks": [
+    {
+      "path": "/workshop",
+      "status": 404,
+      "expected": 404,
+      "bytes": 11111
+    },
+    {
+      "path": "/workshop/",
+      "status": 404,
+      "expected": 404,
+      "bytes": 11111
+    },
+    {
+      "path": "/workshop/static/app.js",
+      "status": 404,
+      "expected": 404,
+      "bytes": 11111
+    },
+    {
+      "path": "/workshop/static/index.html",
+      "status": 404,
+      "expected": 404,
+      "bytes": 11111
+    },
+    {
+      "path": "/",
+      "status": 200,
+      "expected": 200,
+      "bytes": 36607
+    },
+    {
+      "path": "/admin",
+      "status": 200,
+      "expected": 200,
+      "bytes": 765
+    },
+    {
+      "path": "/v1/workshop/catalog",
+      "status": 200,
+      "expected": 200,
+      "bytes": 31880
+    },
+    {
+      "path": "/v1/mindeval/catalog",
+      "status": 200,
+      "expected": 200,
+      "bytes": 23319
+    },
+    {
+      "path": "/v1/workshop/runs/0783b3d4-45d7-4e10-9260-9d0a83dea83e/report",
+      "status": 200,
+      "expected": 200,
+      "bytes": 135595
+    }
+  ],
+  "passed": true
+}
