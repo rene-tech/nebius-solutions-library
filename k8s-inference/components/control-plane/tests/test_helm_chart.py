@@ -878,12 +878,24 @@ def test_scale_ownership_security_boundary_is_external_signed_and_non_destructiv
     contract = SCALE_OWNERSHIP_SECURITY_BOUNDARY
     assert contract["schema"] == "fs2.scale-ownership-security-boundary/v1"
     assert contract["status"] == "external-release-prerequisite"
-    assert len(contract["protected_resources"]) == 6
-    assert contract["normal_release_boundary"] == {
-        "mutating_verbs": [],
-        "delete_verbs": [],
-        "impersonate_security_owner": False,
+    assert len(contract["protected_resources"]) == 8
+    normal_release = contract["normal_release_boundary"]
+    assert normal_release["mutating_verbs"] == [] and normal_release["delete_verbs"] == []
+    assert set(normal_release["trusted_identities_forbidden"]) == {
+        "system:serviceaccount:fs2-security:fs2-admission-owner",
+        "system:serviceaccount:fs2-system:fs2-serve-control-plane-controller",
+        "system:serviceaccount:keda:keda-operator",
     }
+    identity_paths = normal_release["forbidden_identity_paths"]
+    assert identity_paths["rbac_verbs"] == ["bind", "escalate", "impersonate"]
+    assert identity_paths["token_request"] == ["serviceaccounts/token"]
+    assert {"rolebindings", "clusterrolebindings", "system:auth-delegator"}.issubset(identity_paths["delegation"])
+    deletion = contract["deletion_admission"]
+    assert deletion["operations"] == ["DELETE"] and deletion["validation_actions"] == ["Deny"]
+    assert deletion["externally_owned"] is True
+    assert deletion["policy"] in contract["protected_resources"]
+    assert deletion["binding"] in contract["protected_resources"]
+    assert "external RBAC" in deletion["self_protection"]
     assert contract["runtime_writers"]["model_controller"]["verbs"] == ["get", "patch"]
     assert contract["runtime_writers"]["keda_operator"]["protected_resource_verbs"] == []
     handoff = contract["security_automation_handoff"]
@@ -1033,9 +1045,14 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
     assert gate_validation["message"] == "fixed-scale gate blocks autoscaler targetRef creation"
     assert gate_validation["reason"] == "Forbidden"
     gate_expression = gate_validation["expression"]
-    assert "!(('target.' + object.spec.scaleTargetRef.name) in params.data)" in gate_expression
-    assert "scaledobject-name." in gate_expression and "scaledobject-owner." in gate_expression
-    assert "hpa-name." in gate_expression and "hpa-owner." in gate_expression
+    assert "params.data.exists(k, v" in gate_expression
+    assert "k.startsWith('target.')" in gate_expression
+    assert "k.startsWith('scaledobject.')" in gate_expression
+    assert "k.startsWith('hpa.')" in gate_expression
+    assert "object.spec.scaleTargetRef.apiVersion" in gate_expression
+    assert "object.spec.scaleTargetRef.kind" in gate_expression
+    assert "object.spec.scaleTargetRef.name" in gate_expression
+    assert "request.namespace" in gate_expression
     assert "ownerReferences.filter" in gate_expression
     assert "system:serviceaccount:fs2-system:fs2-serve-control-plane-controller" in gate_expression
     assert "system:serviceaccount:keda:keda-operator" in gate_expression

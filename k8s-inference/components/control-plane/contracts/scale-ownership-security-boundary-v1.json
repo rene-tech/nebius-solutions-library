@@ -3,8 +3,10 @@
   "status": "external-release-prerequisite",
   "security_owner": "system:serviceaccount:fs2-security:fs2-admission-owner",
   "protected_resources": [
+    "admissionregistration.k8s.io/validatingadmissionpolicies/fs2-security-model-controller-protected-deletion",
     "admissionregistration.k8s.io/validatingadmissionpolicies/fs2-serve-control-plane-model-controller-release",
     "admissionregistration.k8s.io/validatingadmissionpolicies/fs2-serve-control-plane-model-controller-scale-gates",
+    "admissionregistration.k8s.io/validatingadmissionpolicybindings/fs2-security-model-controller-protected-deletion",
     "admissionregistration.k8s.io/validatingadmissionpolicybindings/fs2-serve-control-plane-model-controller-release",
     "admissionregistration.k8s.io/validatingadmissionpolicybindings/fs2-serve-control-plane-model-controller-scale-gates",
     "v1/namespaces/fs2-system/configmaps/fs2-serve-control-plane-model-controller-release-images",
@@ -13,7 +15,27 @@
   "normal_release_boundary": {
     "mutating_verbs": [],
     "delete_verbs": [],
-    "impersonate_security_owner": false
+    "trusted_identities_forbidden": [
+      "system:serviceaccount:fs2-security:fs2-admission-owner",
+      "system:serviceaccount:fs2-system:fs2-serve-control-plane-controller",
+      "system:serviceaccount:keda:keda-operator"
+    ],
+    "forbidden_identity_paths": {
+      "impersonate": ["users", "groups", "serviceaccounts", "userextras"],
+      "token_request": ["serviceaccounts/token"],
+      "workload_service_account_use": ["pods", "deployments", "replicasets", "statefulsets", "daemonsets", "jobs", "cronjobs"],
+      "delegation": ["roles", "clusterroles", "rolebindings", "clusterrolebindings", "system:auth-delegator"],
+      "rbac_verbs": ["bind", "escalate", "impersonate"]
+    }
+  },
+  "deletion_admission": {
+    "policy": "admissionregistration.k8s.io/validatingadmissionpolicies/fs2-security-model-controller-protected-deletion",
+    "binding": "admissionregistration.k8s.io/validatingadmissionpolicybindings/fs2-security-model-controller-protected-deletion",
+    "owner": "system:serviceaccount:fs2-security:fs2-admission-owner",
+    "operations": ["DELETE"],
+    "validation_actions": ["Deny"],
+    "externally_owned": true,
+    "self_protection": "authoritative external RBAC; admission policy deletion is never treated as self-protected"
   },
   "runtime_writers": {
     "model_controller": {
@@ -33,7 +55,7 @@
       "approver identity",
       "bounded expiry"
     ],
-    "mutation_scope": "the six protected resources only",
+    "mutation_scope": "the eight protected resources only",
     "replay_allowed": false
   },
   "recovery": {

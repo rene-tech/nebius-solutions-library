@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import hashlib
 import json
 import logging
 import math
@@ -108,10 +109,8 @@ SCALE_INITIALIZATION_RECEIPT_ANNOTATION = "inference.fs2.nebius.ai/scale-initial
 SCALE_GATE_CONFIG_MAP = "fs2-model-controller-scale-gates"
 SCALE_GATE_DENIAL_MESSAGE = "fixed-scale gate blocks autoscaler targetRef creation"
 SCALE_GATE_TARGET_PREFIX = "target."
-SCALE_GATE_SCALED_OBJECT_NAME_PREFIX = "scaledobject-name."
-SCALE_GATE_SCALED_OBJECT_OWNER_PREFIX = "scaledobject-owner."
-SCALE_GATE_HPA_NAME_PREFIX = "hpa-name."
-SCALE_GATE_HPA_OWNER_PREFIX = "hpa-owner."
+SCALE_GATE_SCALED_OBJECT_PREFIX = "scaledobject."
+SCALE_GATE_HPA_PREFIX = "hpa."
 
 
 @dataclass(frozen=True)
@@ -120,6 +119,29 @@ class KubernetesFieldConflict:
     subresource: str | None
     api_version: str
     field: str
+
+
+class ScaleGateTargetIdentity(StrictModel):
+    """Exact readable target identity retained behind its bounded digest key."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, populate_by_name=True)
+
+    api_version: str = Field(alias="apiVersion", min_length=1, max_length=253)
+    kind: str = Field(min_length=1, max_length=253)
+    namespace: str = Field(min_length=1, max_length=253)
+    name: str = Field(min_length=1, max_length=253)
+
+
+class ScaleGateTargeterIdentity(StrictModel):
+    """Exact targeter admitted for one digest-bound workload identity."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, populate_by_name=True)
+
+    api_version: str = Field(alias="apiVersion", min_length=1, max_length=253)
+    kind: str = Field(min_length=1, max_length=253)
+    namespace: str = Field(min_length=1, max_length=253)
+    name: str = Field(min_length=1, max_length=253)
+    owner_uid: str = Field(alias="ownerUID", min_length=1, max_length=253)
 
 
 class ScaleHandoffScaler(StrictModel):
@@ -180,6 +202,32 @@ class ScaleGateTombstone(StrictModel):
     model_uid: str = Field(alias="modelUID", min_length=1, max_length=253)
 
     def annotation_value(self) -> str:
+        return self.model_dump_json(by_alias=True)
+
+
+class ScaleGateRecord(StrictModel):
+    """Digest-keyed gate value binding readable identity to controller evidence."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, populate_by_name=True)
+
+    version: Literal[1]
+    target: ScaleGateTargetIdentity
+    authorization: str = Field(min_length=1, max_length=4096)
+
+    def value(self) -> str:
+        return self.model_dump_json(by_alias=True)
+
+
+class ScaleGateAllowance(StrictModel):
+    """One exact target/targeter tuple consumed by admission CEL."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, populate_by_name=True)
+
+    version: Literal[1]
+    target: ScaleGateTargetIdentity
+    targeter: ScaleGateTargeterIdentity
+
+    def value(self) -> str:
         return self.model_dump_json(by_alias=True)
 
 
@@ -350,6 +398,17 @@ class ModelControllerApi(Protocol):
         *,
         replicas: int,
         target_mode: Literal["fixed", "autoscaled"],
+        owner_uid: str,
+        model_fence: ModelWriteFence,
+        fence: LeaseFence,
+    ) -> ResourceSnapshot: ...
+
+    async def recover_fixed_initialization(
+        self,
+        resource: RenderedResource,
+        *,
+        current: ResourceSnapshot,
+        replicas: int,
         owner_uid: str,
         model_fence: ModelWriteFence,
         fence: LeaseFence,
@@ -738,39 +797,102 @@ def _controller_owned_scale_authorization_receipt(body: Mapping[str, Any]) -> Sc
     return handoff or initialization
 
 
-def _scale_gate_tombstone(value: Any) -> ScaleGateTombstone | None:
-    if not isinstance(value, str) or not value or len(value) > 4096:
+def _scale_gate_record(value: Any, target: ScaleGateTargetIdentity) -> ScaleGateRecord | None:
+    if not isinstance(value, str) or not value or len(value) > 8192:
         return None
     try:
-        return ScaleGateTombstone.model_validate_json(value)
+        record = ScaleGateRecord.model_validate_json(value)
+    except (ValidationError, ValueError):
+        return None
+    return record if record.target == target else None
+
+
+def _scale_gate_tombstone(value: Any, target: ScaleGateTargetIdentity) -> ScaleGateTombstone | None:
+    record = _scale_gate_record(value, target)
+    if record is None:
+        return None
+    try:
+        return ScaleGateTombstone.model_validate_json(record.authorization)
     except (ValidationError, ValueError):
         return None
 
 
-def _scale_gate_authorization(value: Any) -> ScaleAuthorizationReceipt | None:
-    if not isinstance(value, str) or not value or len(value) > 4096:
+def _scale_gate_authorization(
+    value: Any,
+    target: ScaleGateTargetIdentity,
+) -> ScaleAuthorizationReceipt | None:
+    record = _scale_gate_record(value, target)
+    if record is None:
         return None
     for receipt_type in (ScaleHandoffReceipt, ScaleInitializationReceipt):
         try:
-            return receipt_type.model_validate_json(value)
+            return receipt_type.model_validate_json(record.authorization)
         except (ValidationError, ValueError):
             pass
     return None
 
 
-def _scale_gate_companion_keys(name: str) -> tuple[str, str, str, str]:
-    return (
-        f"{SCALE_GATE_SCALED_OBJECT_NAME_PREFIX}{name}",
-        f"{SCALE_GATE_SCALED_OBJECT_OWNER_PREFIX}{name}",
-        f"{SCALE_GATE_HPA_NAME_PREFIX}{name}",
-        f"{SCALE_GATE_HPA_OWNER_PREFIX}{name}",
+def _scale_gate_target(resource: RenderedResource) -> ScaleGateTargetIdentity:
+    return ScaleGateTargetIdentity(
+        apiVersion=resource.api_version,
+        kind=resource.kind,
+        namespace=resource.namespace,
+        name=resource.name,
     )
 
 
-def _scale_gate_target_key(name: str) -> str:
-    """Namespace target receipts away from valid dotted workload names."""
+def _scale_gate_target_digest(target: ScaleGateTargetIdentity) -> str:
+    return hashlib.sha256(target.model_dump_json(by_alias=True).encode()).hexdigest()
 
-    return f"{SCALE_GATE_TARGET_PREFIX}{name}"
+
+def _scale_gate_companion_keys(target: ScaleGateTargetIdentity) -> tuple[str, str]:
+    digest = _scale_gate_target_digest(target)
+    return (
+        f"{SCALE_GATE_SCALED_OBJECT_PREFIX}{digest}",
+        f"{SCALE_GATE_HPA_PREFIX}{digest}",
+    )
+
+
+def _scale_gate_target_key(target: ScaleGateTargetIdentity) -> str:
+    return f"{SCALE_GATE_TARGET_PREFIX}{_scale_gate_target_digest(target)}"
+
+
+def _encoded_scale_gate_value(target: ScaleGateTargetIdentity, authorization: ScaleAuthorizationReceipt) -> str:
+    return ScaleGateRecord(
+        version=1,
+        target=target,
+        authorization=authorization.annotation_value(),
+    ).value()
+
+
+def _encoded_scale_gate_tombstone_value(target: ScaleGateTargetIdentity, tombstone: ScaleGateTombstone) -> str:
+    return ScaleGateRecord(
+        version=1,
+        target=target,
+        authorization=tombstone.annotation_value(),
+    ).value()
+
+
+def _scale_gate_allowance_value(
+    target: ScaleGateTargetIdentity,
+    *,
+    api_version: str,
+    kind: str,
+    namespace: str,
+    name: str,
+    owner_uid: str,
+) -> str:
+    return ScaleGateAllowance(
+        version=1,
+        target=target,
+        targeter=ScaleGateTargeterIdentity(
+            apiVersion=api_version,
+            kind=kind,
+            namespace=namespace,
+            name=name,
+            ownerUID=owner_uid,
+        ),
+    ).value()
 
 
 _FIELD_MANAGER_CONFLICT_MESSAGE = re.compile(
@@ -1673,6 +1795,155 @@ class HttpKubernetesModelClient:
         )
         return initialized
 
+    async def recover_fixed_initialization(
+        self,
+        resource: RenderedResource,
+        *,
+        current: ResourceSnapshot,
+        replicas: int,
+        owner_uid: str,
+        model_fence: ModelWriteFence,
+        fence: LeaseFence,
+    ) -> ResourceSnapshot:
+        """Rebind a fresh zero autoscaled bootstrap that reversed to fixed.
+
+        The Deployment is already unpaused, but no scaler was admitted and the
+        dedicated scale owner still holds zero. The persistent gate is changed
+        first, then the controller-owned annotation. Either checkpoint can be
+        retried or safely reversed back to autoscaled mode.
+        """
+
+        self._allow_write()
+        retained = _controller_owned_scale_initialization_receipt(current.raw)
+        annotations = _mapping(_metadata(current.raw).get("annotations"))
+        if (
+            resource.api_version != "apps/v1"
+            or resource.kind != "Deployment"
+            or not isinstance(replicas, int)
+            or isinstance(replicas, bool)
+            or replicas < 0
+            or current.observed.identity != _rendered_identity(resource)
+            or current.observed.controller_owner_uid != owner_uid
+            or current.observed.deleting
+            or _mapping(current.raw.get("spec")).get("paused") is True
+            or current.desired_replicas != 0
+            or not _fixed_scale_manager_owns_replicas(current)
+            or retained is None
+            or retained.deployment_uid != current.observed.uid
+            or retained.model_uid != owner_uid
+            or SCALE_HANDOFF_RECEIPT_ANNOTATION in annotations
+            or model_fence.uid != owner_uid
+            or model_fence.key.namespace != resource.namespace
+        ):
+            raise KubernetesConflictError("fixed initialization reversal is not authorized")
+        replacement = ScaleInitializationReceipt(
+            version=1,
+            deploymentUID=current.observed.uid,
+            modelUID=owner_uid,
+            modelGeneration=model_fence.generation,
+            modelSpecDigest=model_fence.spec_digest,
+            desiredReplicas=replicas,
+            targetMode="fixed",
+        )
+        if retained.target_mode != "autoscaled" and retained != replacement:
+            raise KubernetesConflictError("fixed initialization reversal receipt is stale or foreign")
+        target = _scale_gate_target(resource)
+        target_key = _scale_gate_target_key(target)
+        old_gate_value = self._scale_gate_value(resource, retained)
+        replacement_gate_value = self._scale_gate_value(resource, replacement)
+        await self._assert_no_targeting_autoscalers(resource)
+        config_map = await self._scale_gate_config_map(resource.namespace)
+        data = _mapping(config_map.get("data"))
+        if data.get(target_key) not in {old_gate_value, replacement_gate_value} or any(
+            key in data for key in _scale_gate_companion_keys(target)
+        ):
+            raise KubernetesConflictError("fixed initialization reversal gate is stale or foreign")
+        if data.get(target_key) != replacement_gate_value:
+            await self.assert_fence(fence)
+            model = await self.get_model(model_fence.key)
+            if model is None:
+                raise KubernetesConflictError("ModelDeployment disappeared before reversal gate write")
+            self._validate_model_write_fence(model, model_fence)
+            await self._patch_scale_gate_data(
+                namespace=resource.namespace,
+                config_map=config_map,
+                data=self._closed_scale_gate_data(resource, replacement_gate_value),
+            )
+        confirmed_gate = await self._scale_gate_config_map(resource.namespace)
+        confirmed_data = _mapping(confirmed_gate.get("data"))
+        if confirmed_data.get(target_key) != replacement_gate_value or any(
+            key in confirmed_data for key in _scale_gate_companion_keys(target)
+        ):
+            raise KubernetesConflictError("fixed initialization reversal gate was not durably closed")
+        await self._assert_scale_gate_admission(resource)
+        await self._assert_no_targeting_autoscalers(resource)
+        latest = await self._get_resource(resource.api_version, resource.kind, resource.namespace, resource.name)
+        if latest is None:
+            raise KubernetesConflictError("Deployment disappeared during fixed initialization reversal")
+        self._validate_fixed_scale_identity(
+            latest,
+            resource=resource,
+            owner_uid=owner_uid,
+            expected_uid=current.observed.uid,
+        )
+        latest_receipt = _controller_owned_scale_initialization_receipt(latest)
+        if latest_receipt not in (retained, replacement) or _mapping(latest.get("spec")).get("paused") is True:
+            raise KubernetesConflictError("fixed initialization reversal receipt changed")
+        self._validate_controller_scale_owner(
+            latest,
+            resource=resource,
+            owner_uid=owner_uid,
+            expected_uid=current.observed.uid,
+            expected_replicas=0,
+            model_generation=model_fence.generation,
+            receipt=latest_receipt,
+        )
+        if latest_receipt != replacement:
+            await self.assert_fence(fence)
+            model = await self.get_model(model_fence.key)
+            if model is None:
+                raise KubernetesConflictError("ModelDeployment disappeared before reversal receipt write")
+            self._validate_model_write_fence(model, model_fence)
+            await self._request(
+                "PATCH",
+                RESOURCE_ENDPOINTS[("apps/v1", "Deployment")].item(resource.namespace, resource.name),
+                params={
+                    "fieldManager": SCALE_HANDOFF_RECEIPT_FIELD_MANAGER,
+                    "force": "false",
+                    "fieldValidation": "Strict",
+                },
+                content_type="application/apply-patch+yaml",
+                content=json.dumps(
+                    {
+                        "apiVersion": "apps/v1",
+                        "kind": "Deployment",
+                        "metadata": {
+                            "name": resource.name,
+                            "namespace": resource.namespace,
+                            "resourceVersion": _required_metadata(latest, "resourceVersion"),
+                            "annotations": {
+                                SCALE_INITIALIZATION_RECEIPT_ANNOTATION: replacement.annotation_value(),
+                            },
+                        },
+                    },
+                    separators=(",", ":"),
+                ).encode(),
+            )
+        reread = await self._get_resource(resource.api_version, resource.kind, resource.namespace, resource.name)
+        if reread is None:
+            raise KubernetesConflictError("Deployment disappeared after reversal receipt write")
+        self._validate_controller_scale_owner(
+            reread,
+            resource=resource,
+            owner_uid=owner_uid,
+            expected_uid=current.observed.uid,
+            expected_replicas=0,
+            model_generation=model_fence.generation,
+            receipt=replacement,
+        )
+        await self._assert_no_targeting_autoscalers(resource)
+        return _snapshot(reread, resource)
+
     @staticmethod
     def _receipt_for(
         *,
@@ -1956,14 +2227,16 @@ class HttpKubernetesModelClient:
         )
         config_map = await self._scale_gate_config_map(resource.namespace)
         data = _mapping(config_map.get("data"))
-        target_key = _scale_gate_target_key(resource.name)
+        target = _scale_gate_target(resource)
+        target_key = _scale_gate_target_key(target)
         retained = data.get(target_key)
-        retained_tombstone = _scale_gate_tombstone(retained)
+        retained_tombstone = _scale_gate_tombstone(retained, target)
+        tombstone_value = _encoded_scale_gate_tombstone_value(target, tombstone)
         if paused_without_receipt:
             allowed_retained = retained is None or retained_tombstone is not None
         else:
             assert receipt is not None
-            allowed_retained = retained in {receipt.annotation_value(), tombstone.annotation_value()}
+            allowed_retained = retained in {self._scale_gate_value(resource, receipt), tombstone_value}
         if not allowed_retained:
             raise KubernetesConflictError("scale gate changed before deletion tombstoning")
         if paused_without_receipt:
@@ -1973,10 +2246,8 @@ class HttpKubernetesModelClient:
         if model is None:
             raise KubernetesConflictError("ModelDeployment disappeared before deletion tombstoning")
         self._validate_model_deletion_fence(model, model_fence)
-        expected_data = self._closed_scale_gate_data(resource.name, tombstone.annotation_value())
-        if retained != tombstone.annotation_value() or any(
-            key in data for key in _scale_gate_companion_keys(resource.name)
-        ):
+        expected_data = self._closed_scale_gate_data(resource, tombstone_value)
+        if retained != tombstone_value or any(key in data for key in _scale_gate_companion_keys(target)):
             await self._patch_scale_gate_data(
                 namespace=resource.namespace,
                 config_map=config_map,
@@ -1984,8 +2255,8 @@ class HttpKubernetesModelClient:
             )
         confirmed = await self._scale_gate_config_map(resource.namespace)
         confirmed_data = _mapping(confirmed.get("data"))
-        if confirmed_data.get(target_key) != tombstone.annotation_value() or any(
-            key in confirmed_data for key in _scale_gate_companion_keys(resource.name)
+        if confirmed_data.get(target_key) != tombstone_value or any(
+            key in confirmed_data for key in _scale_gate_companion_keys(target)
         ):
             raise KubernetesConflictError("scale gate deletion tombstone was not durably closed")
         await self._assert_scale_gate_admission(resource)
@@ -2011,22 +2282,24 @@ class HttpKubernetesModelClient:
         await self._assert_no_targeting_autoscalers(resource)
         config_map = await self._scale_gate_config_map(resource.namespace)
         data = _mapping(config_map.get("data"))
-        tombstone = _scale_gate_tombstone(data.get(_scale_gate_target_key(resource.name)))
+        target = _scale_gate_target(resource)
+        tombstone = _scale_gate_tombstone(data.get(_scale_gate_target_key(target)), target)
         if (
             tombstone is None
             or tombstone.model_uid != owner_uid
-            or any(key in data for key in _scale_gate_companion_keys(resource.name))
+            or any(key in data for key in _scale_gate_companion_keys(target))
         ):
             raise KubernetesConflictError("closed scale gate tombstone is absent, stale, or foreign")
         await self._assert_scale_gate_admission(resource)
 
     @staticmethod
-    def _scale_gate_value(receipt: ScaleAuthorizationReceipt) -> str:
-        return receipt.annotation_value()
+    def _scale_gate_value(resource: RenderedResource, receipt: ScaleAuthorizationReceipt) -> str:
+        return _encoded_scale_gate_value(_scale_gate_target(resource), receipt)
 
     @staticmethod
-    def _closed_scale_gate_data(name: str, value: str) -> dict[str, str | None]:
-        return {_scale_gate_target_key(name): value, **dict.fromkeys(_scale_gate_companion_keys(name), None)}
+    def _closed_scale_gate_data(resource: RenderedResource, value: str) -> dict[str, str | None]:
+        target = _scale_gate_target(resource)
+        return {_scale_gate_target_key(target): value, **dict.fromkeys(_scale_gate_companion_keys(target), None)}
 
     async def _patch_scale_gate_data(
         self,
@@ -2124,15 +2397,16 @@ class HttpKubernetesModelClient:
         if model is None:
             raise KubernetesConflictError("ModelDeployment disappeared before scale gate acquisition")
         self._validate_model_write_fence(model, model_fence)
-        expected = self._scale_gate_value(receipt)
+        target = _scale_gate_target(resource)
+        expected = self._scale_gate_value(resource, receipt)
         config_map = await self._scale_gate_config_map(resource.namespace)
         data = _mapping(config_map.get("data"))
-        target_key = _scale_gate_target_key(resource.name)
+        target_key = _scale_gate_target_key(target)
         retained = data.get(target_key)
         replace = retained is None
         if retained is not None and retained != expected:
-            prior = _scale_gate_authorization(retained)
-            tombstone = _scale_gate_tombstone(retained)
+            prior = _scale_gate_authorization(retained, target)
+            tombstone = _scale_gate_tombstone(retained, target)
             same_deployment_transition = (
                 prior is not None
                 and prior.deployment_uid == receipt.deployment_uid
@@ -2151,7 +2425,7 @@ class HttpKubernetesModelClient:
         closed_receipt = isinstance(receipt, ScaleHandoffReceipt) or (
             isinstance(receipt, ScaleInitializationReceipt) and receipt.target_mode == "fixed"
         )
-        companions_present = any(key in data for key in _scale_gate_companion_keys(resource.name))
+        companions_present = any(key in data for key in _scale_gate_companion_keys(target))
         if replace or (closed_receipt and companions_present):
             await self.assert_fence(fence)
             model = await self.get_model(model_fence.key)
@@ -2161,7 +2435,7 @@ class HttpKubernetesModelClient:
             await self._patch_scale_gate_data(
                 namespace=resource.namespace,
                 config_map=config_map,
-                data=self._closed_scale_gate_data(resource.name, expected)
+                data=self._closed_scale_gate_data(resource, expected)
                 if closed_receipt or replace
                 else {target_key: expected},
             )
@@ -2169,7 +2443,7 @@ class HttpKubernetesModelClient:
         confirmed_data = _mapping(confirmed.get("data"))
         if confirmed_data.get(target_key) != expected:
             raise KubernetesConflictError("fixed-scale admission gate did not persist exact transition evidence")
-        if closed_receipt and any(key in confirmed_data for key in _scale_gate_companion_keys(resource.name)):
+        if closed_receipt and any(key in confirmed_data for key in _scale_gate_companion_keys(target)):
             raise KubernetesConflictError("fixed-scale admission gate retained an autoscaler allowance")
         await self._assert_scale_gate_admission(resource)
 
@@ -2180,13 +2454,14 @@ class HttpKubernetesModelClient:
     ) -> None:
         config_map = await self._scale_gate_config_map(resource.namespace)
         data = _mapping(config_map.get("data"))
-        if data.get(_scale_gate_target_key(resource.name)) != self._scale_gate_value(receipt):
+        target = _scale_gate_target(resource)
+        if data.get(_scale_gate_target_key(target)) != self._scale_gate_value(resource, receipt):
             raise KubernetesConflictError("fixed-scale admission gate is absent, stale, or foreign")
         if (
             isinstance(receipt, ScaleHandoffReceipt)
             or isinstance(receipt, ScaleInitializationReceipt)
             and receipt.target_mode == "fixed"
-        ) and any(key in data for key in _scale_gate_companion_keys(resource.name)):
+        ) and any(key in data for key in _scale_gate_companion_keys(target)):
             raise KubernetesConflictError("fixed-scale admission gate has an autoscaler allowance")
         await self._assert_scale_gate_admission(resource)
 
@@ -2528,11 +2803,29 @@ class HttpKubernetesModelClient:
             or model_fence.key.namespace != resource.namespace
         ):
             raise KubernetesConflictError("fixed-scale admission gate release is not authorized")
+        target = _scale_gate_target(resource)
+        expected_gate_value = self._scale_gate_value(resource, receipt)
         retained_gate = await self._scale_gate_config_map(resource.namespace)
-        if _mapping(retained_gate.get("data")).get(_scale_gate_target_key(resource.name)) != self._scale_gate_value(
-            receipt
-        ):
-            raise KubernetesConflictError("autoscaler admission gate is absent, stale, or foreign")
+        retained_gate_value = _mapping(retained_gate.get("data")).get(_scale_gate_target_key(target))
+        interrupted_authorization = None
+        if retained_gate_value != expected_gate_value:
+            interrupted_authorization = _scale_gate_authorization(retained_gate_value, target)
+            if (
+                interrupted_authorization is None
+                or interrupted_authorization.deployment_uid != current.observed.uid
+                or interrupted_authorization.model_uid != owner_uid
+                or interrupted_authorization.model_generation > model_fence.generation
+                or isinstance(interrupted_authorization, ScaleInitializationReceipt)
+                and interrupted_authorization.target_mode != "fixed"
+                or isinstance(interrupted_authorization, ScaleHandoffReceipt)
+                and (
+                    interrupted_authorization.scaler.api_version != scaler.api_version
+                    or interrupted_authorization.scaler.kind != scaler.kind
+                    or interrupted_authorization.scaler.namespace != scaler.namespace
+                    or interrupted_authorization.scaler.name != scaler.name
+                )
+            ):
+                raise KubernetesConflictError("autoscaler admission gate is absent, stale, or foreign")
         await self._assert_scale_gate_admission(resource)
         targeters = await self._targeting_autoscalers(resource)
         live_scalers = [
@@ -2546,6 +2839,14 @@ class HttpKubernetesModelClient:
         scaler_uid = _metadata(live_scaler).get("uid") if live_scaler is not None else None
         if scaler_uid is not None and not isinstance(scaler_uid, str):
             raise KubernetesConflictError("rendered ScaledObject UID is invalid")
+        if isinstance(interrupted_authorization, ScaleHandoffReceipt) and (
+            live_scaler is None
+            or interrupted_authorization.scaler.uid != scaler_uid
+            or interrupted_authorization.scaler.generation != int(_metadata(live_scaler).get("generation", 0))
+        ):
+            raise KubernetesConflictError("interrupted handoff scaler changed before gate recovery")
+        if isinstance(interrupted_authorization, ScaleInitializationReceipt) and live_scaler is not None:
+            raise KubernetesConflictError("interrupted initialization acquired a scaler before gate recovery")
         self._validate_exact_autoscaler_targeters(
             targeters,
             scaler_name=scaler.name,
@@ -2596,16 +2897,35 @@ class HttpKubernetesModelClient:
         self._validate_model_write_fence(model, model_fence)
         config_map = await self._scale_gate_config_map(resource.namespace)
         data = _mapping(config_map.get("data"))
-        target_key = _scale_gate_target_key(resource.name)
-        if data.get(target_key) != self._scale_gate_value(receipt):
+        target_key = _scale_gate_target_key(target)
+        guarded_gate_value = retained_gate_value if interrupted_authorization is not None else expected_gate_value
+        if data.get(target_key) != guarded_gate_value:
             raise KubernetesConflictError("fixed-scale admission gate changed before release")
-        so_name_key, so_owner_key, hpa_name_key, hpa_owner_key = _scale_gate_companion_keys(resource.name)
+        so_key, hpa_key = _scale_gate_companion_keys(target)
         expected_data: dict[str, str | None] = {
-            so_name_key: scaler.name,
-            so_owner_key: owner_uid,
-            hpa_name_key: f"keda-hpa-{scaler.name}" if scaler_uid is not None else None,
-            hpa_owner_key: scaler_uid,
+            so_key: _scale_gate_allowance_value(
+                target,
+                api_version=scaler.api_version,
+                kind=scaler.kind,
+                namespace=scaler.namespace,
+                name=scaler.name,
+                owner_uid=owner_uid,
+            ),
+            hpa_key: (
+                _scale_gate_allowance_value(
+                    target,
+                    api_version=HPA_ENDPOINT.api_version,
+                    kind=HPA_ENDPOINT.kind,
+                    namespace=scaler.namespace,
+                    name=f"keda-hpa-{scaler.name}",
+                    owner_uid=scaler_uid,
+                )
+                if scaler_uid is not None
+                else None
+            ),
         }
+        if interrupted_authorization is not None:
+            expected_data[target_key] = expected_gate_value
         gate_change = any(
             (value is None and key in data) or (value is not None and data.get(key) != value)
             for key, value in expected_data.items()
@@ -2618,7 +2938,7 @@ class HttpKubernetesModelClient:
             )
         confirmed = await self._scale_gate_config_map(resource.namespace) if gate_change else config_map
         confirmed_data = _mapping(confirmed.get("data"))
-        if confirmed_data.get(target_key) != self._scale_gate_value(receipt) or any(
+        if confirmed_data.get(target_key) != expected_gate_value or any(
             (value is None and key in confirmed_data) or (value is not None and confirmed_data.get(key) != value)
             for key, value in expected_data.items()
         ):
@@ -3516,6 +3836,57 @@ def _fixed_scale_handoff_targets(
         ):
             raise ControllerError("fixed Deployment scale handoff lacks exact durable transition evidence")
         targets.append((resource, current))
+    return targets
+
+
+def _fixed_initialization_reversal_targets(
+    render: RenderPlan | None,
+    discovery: Discovery,
+    owner_uid: str,
+) -> list[tuple[RenderedResource, ResourceSnapshot, int]]:
+    """Find fresh autoscaled zero bootstraps whose CR reversed to fixed."""
+
+    if render is None:
+        return []
+    autoscaled_targets = {_rendered_identity(target) for _, target in _autoscaler_pairs(render)}
+    targets: list[tuple[RenderedResource, ResourceSnapshot, int]] = []
+    for resource in render.resources:
+        spec = resource.manifest.get("spec")
+        replicas = spec.get("replicas") if isinstance(spec, Mapping) else None
+        if (
+            resource.api_version != "apps/v1"
+            or resource.kind != "Deployment"
+            or not isinstance(replicas, int)
+            or isinstance(replicas, bool)
+            or replicas < 0
+            or _rendered_identity(resource) in autoscaled_targets
+        ):
+            continue
+        current = _resource_snapshot(
+            discovery,
+            resource.api_version,
+            resource.kind,
+            resource.namespace,
+            resource.name,
+        )
+        if current is None:
+            continue
+        receipt = _controller_owned_scale_initialization_receipt(current.raw)
+        if receipt is None or receipt.target_mode != "autoscaled":
+            continue
+        if (
+            current.observed.controller_owner_uid != owner_uid
+            or current.observed.deleting
+            or receipt.deployment_uid != current.observed.uid
+            or receipt.model_uid != owner_uid
+        ):
+            raise ControllerError("fixed initialization reversal identity changed")
+        if (
+            current.desired_replicas == 0
+            and _fixed_scale_manager_owns_replicas(current)
+            and _mapping(current.raw.get("spec")).get("paused") is not True
+        ):
+            targets.append((resource, current, replicas))
     return targets
 
 
@@ -4886,6 +5257,27 @@ class ModelDeploymentController:
                         model_fence=deletion_model_fence,
                         fence=fence,
                     )
+        fixed_initialization_reversals = (
+            [] if deleting else _fixed_initialization_reversal_targets(plan.render, discovery, uid)
+        )
+        if fixed_initialization_reversals:
+            reversal_model_fence = _model_write_fence(raw, key)
+            for resource, current, replicas in fixed_initialization_reversals:
+                await self.api.recover_fixed_initialization(
+                    resource,
+                    current=current,
+                    replicas=replicas,
+                    owner_uid=uid,
+                    model_fence=reversal_model_fence,
+                    fence=fence,
+                )
+            return ReconcileResult(
+                key=key,
+                action="fixed-initialization-reversal",
+                generation=generation,
+                wrote=True,
+                requeue=True,
+            )
         # Delete stale scaler/publication resources first.  Applying the
         # explicit drain replica zero in the same pass could race an HPA that
         # still owns the scale subresource.
