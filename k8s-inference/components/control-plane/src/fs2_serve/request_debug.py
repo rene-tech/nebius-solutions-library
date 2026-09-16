@@ -1,9 +1,12 @@
-"""Opt-in preproduction HTTP/MCP debug captures, separate from usage telemetry.
+"""Opt-in HTTP/MCP debug captures, separate from usage telemetry.
 
-Model inputs and results are retained without a second payload-size ceiling.
-Authentication material is removed; encrypted PostgreSQL details are available
-only through the operator API. No body, header, query or exception message is
-written to ordinary application logs. An unread or interrupted body is explicit.
+Capture is off by default and, when enabled, is bounded: each stored body is
+capped to a redacted prefix, captures are deleted after a configurable TTL by
+the maintenance job, and detail reads require an ADMIN operator and emit an
+audit event. Authentication material is removed; encrypted PostgreSQL details
+are available only through the operator API. No body, header, query or exception
+message is written to ordinary application logs. An unread or interrupted body
+is explicit, and a body stored only as a bounded prefix is flagged truncated.
 """
 
 from __future__ import annotations
@@ -79,6 +82,11 @@ class DebugBody(StrictModel):
     observed_bytes: int = Field(ge=0)
     complete: bool
     redacted: bool
+    # True when the stored body is only a bounded prefix of the observed bytes,
+    # because the payload exceeded request_debug_max_body_bytes. observed_bytes
+    # still reports the full length seen on the wire. Defaults False so rows
+    # captured before this field existed validate unchanged.
+    truncated: bool = False
 
 
 class DebugMetadata(StrictModel):
@@ -141,6 +149,8 @@ class DebugStore(Protocol):
     ) -> DebugExchangeList: ...
 
     async def get(self, exchange_id: UUID, tenant_id: str | None = None) -> DebugExchange | None: ...
+
+    async def purge_expired(self, *, before: datetime) -> int: ...
 
 
 def _name(value: str) -> str:
@@ -225,7 +235,14 @@ def body_capture(
     content_type: str | None,
     complete: bool,
     known_credentials: Credentials = (),
+    max_bytes: int | None = None,
 ) -> DebugBody:
+    observed = len(raw)
+    truncated = max_bytes is not None and observed > max_bytes
+    if truncated:
+        # Keep only a bounded prefix; redaction below still runs on the prefix.
+        # Truncation is orthogonal to `complete` (whether the wire body finished).
+        raw = raw[:max_bytes]
     original = raw
     # Parse regardless of Content-Type: malformed/mislabeled requests are the
     # reason debug capture exists. Preserve exact original bytes when unchanged.
@@ -254,9 +271,10 @@ def body_capture(
         encoding=encoding,
         data=text,
         content_type=content_type,
-        observed_bytes=len(original),
+        observed_bytes=observed,
         complete=complete,
         redacted=raw != original,
+        truncated=truncated,
     )
 
 
@@ -313,7 +331,11 @@ def _sanitize(exchange: DebugExchange) -> DebugExchange:
         previous = getattr(exchange, field)
         clean = body_capture(_body_bytes(previous), previous.content_type, previous.complete, known)
         bodies[field] = clean.model_copy(
-            update={"observed_bytes": previous.observed_bytes, "redacted": previous.redacted or clean.redacted}
+            update={
+                "observed_bytes": previous.observed_bytes,
+                "redacted": previous.redacted or clean.redacted,
+                "truncated": previous.truncated,
+            }
         )
     return exchange.model_copy(
         update={
@@ -404,14 +426,26 @@ class InMemoryDebugStore:
         row = self.exchanges.get(exchange_id)
         return row.model_copy(deep=True) if row and (tenant_id is None or row.tenant_id == tenant_id) else None
 
+    async def purge_expired(self, *, before: datetime) -> int:
+        expired = [key for key, row in self.exchanges.items() if row.started_at < before]
+        for key in expired:
+            del self.exchanges[key]
+        return len(expired)
+
 
 class PostgresDebugStore:
-    def __init__(self, pool: asyncpg.Pool[Any], cipher: PayloadCipher) -> None:
+    def __init__(self, pool: asyncpg.Pool[Any], cipher: PayloadCipher | None = None) -> None:
         self.pool, self.cipher = pool, cipher
 
     @staticmethod
     def _aad(exchange_id: UUID, tenant_id: str | None, model_id: str | None) -> bytes:
         return json.dumps(["fs2.debug/v1", str(exchange_id), tenant_id, model_id], separators=(",", ":")).encode()
+
+    def _cipher(self) -> PayloadCipher:
+        if self.cipher is None:
+            # Retention purge needs no key material; recording/reading a payload does.
+            raise RuntimeError("request debug payload cipher is required for this operation")
+        return self.cipher
 
     async def record(self, exchange: DebugExchange) -> None:
         async with self.pool.acquire() as connection:
@@ -424,7 +458,7 @@ class PostgresDebugStore:
                 exchange = exchange.model_copy(update={"model_id": model_id})
             exchange = _sanitize(exchange)
             metadata = _summary(exchange).model_dump()
-            encrypted = self.cipher.encrypt(
+            encrypted = self._cipher().encrypt(
                 exchange.model_dump_json().encode(), aad=self._aad(exchange.id, exchange.tenant_id, exchange.model_id)
             )
             columns = (*DebugExchangeSummary.model_fields, "key_id", "nonce", "ciphertext")
@@ -477,11 +511,17 @@ class PostgresDebugStore:
             )
         if row is None:
             return None
-        raw = self.cipher.decrypt(
+        raw = self._cipher().decrypt(
             Ciphertext(row["key_id"], bytes(row["nonce"]), bytes(row["ciphertext"])),
             aad=self._aad(row["id"], row["tenant_id"], row["model_id"]),
         )
         return DebugExchange.model_validate_json(raw)
+
+    async def purge_expired(self, *, before: datetime) -> int:
+        """Delete captures older than the TTL. No key material is required."""
+        async with self.pool.acquire() as connection:
+            result = await connection.execute("DELETE FROM fs2_request_debug WHERE started_at < $1", before)
+        return int(result.removeprefix("DELETE "))
 
 
 async def persist_debug_exchange(
@@ -522,9 +562,11 @@ class DebugCaptureMiddleware:
         store: DebugStore,
         persist_timeout_seconds: float = 2.0,
         principal_resolver: Callable[[str], Awaitable[Principal]] | None = None,
+        max_body_bytes: int | None = None,
     ) -> None:
         self.app, self.store = app, store
         self.persist_timeout_seconds, self.principal_resolver = persist_timeout_seconds, principal_resolver
+        self.max_body_bytes = max_body_bytes
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         path = scope.get("path", "")
@@ -648,8 +690,12 @@ class DebugCaptureMiddleware:
                     query_string=redact_query(query, known),
                     request_headers=redact_headers(request_headers, known),
                     response_headers=redact_headers(response_headers, known),
-                    request_body=body_capture(bytes(request_parts), request_type, request_complete, known),
-                    response_body=body_capture(bytes(response_parts), response_type, response_complete, known),
+                    request_body=body_capture(
+                        bytes(request_parts), request_type, request_complete, known, self.max_body_bytes
+                    ),
+                    response_body=body_capture(
+                        bytes(response_parts), response_type, response_complete, known, self.max_body_bytes
+                    ),
                 )
                 await persist_debug_exchange(self.store, exchange, self.persist_timeout_seconds)
             except Exception as error:

@@ -328,7 +328,17 @@ config:
   maxRequestBytes: "16777216"
   maxResponseBytes: "134217728"
   # Evaluation-only full customer request/response logs in the existing database.
+  # Off by default: enabling it captures complete customer payloads, so it must
+  # be a deliberate, time-bounded operator choice, never a standing state.
   requestDebugEnabled: false
+  # Hard ceiling on each stored captured body (bytes); a bounded, redacted prefix
+  # is kept, never the whole payload. Far below maxResponseBytes by design.
+  requestDebugMaxBodyBytes: "65536"
+  # TTL for captured debug exchanges (seconds); the maintenance job deletes rows
+  # older than this so capture cannot accumulate customer payloads without bound.
+  requestDebugRetentionSeconds: "86400"
+  # TTL for transport telemetry (metadata only, no payloads); longer than debug.
+  requestTelemetryRetentionSeconds: "2592000"
   payloadTtlSeconds: "86400"
   operationRetentionSeconds: "604800"
   patRetentionSeconds: "604800"

@@ -74,6 +74,7 @@ async def capture(
     resolver=None,
     telemetry_store=None,
     send_error=False,
+    max_body_bytes=None,
 ):
     store = store or InMemoryDebugStore()
     incoming, outgoing = list(chunks), []
@@ -96,9 +97,13 @@ async def capture(
 
     if telemetry_store is not None:
         app = RequestTelemetryMiddleware(app, store=telemetry_store)
-    await DebugCaptureMiddleware(app, store=store, principal_resolver=resolver, persist_timeout_seconds=0.05)(
-        scope, receive, send
-    )
+    await DebugCaptureMiddleware(
+        app,
+        store=store,
+        principal_resolver=resolver,
+        persist_timeout_seconds=0.05,
+        max_body_bytes=max_body_bytes,
+    )(scope, receive, send)
     return store, outgoing, scope
 
 
@@ -306,3 +311,65 @@ async def test_persistence_failure_observable_without_customer_data_or_response_
     assert not await persist_debug_exchange(Broken(), row(), persist_timeout_seconds=0.01)
     assert "request debug persistence failed" in caplog.text
     assert "DB_SECRET" not in caplog.text and "ACDEFG" not in caplog.text
+
+
+def test_body_capture_bounds_stored_size_and_flags_truncation():
+    """SAI-01: a stored debug body is a bounded prefix, not the whole payload."""
+    payload = b'{"sequence":"' + b"A" * 5000 + b'"}'
+    capped = body_capture(payload, "application/json", complete=True, max_bytes=256)
+    assert capped.truncated is True
+    assert capped.observed_bytes == len(payload)
+    assert len(_stored_bytes(capped)) <= 256
+    # A small body under the ceiling is stored exactly and not marked truncated.
+    small = b'{"sequence":"ACDEFG"}'
+    kept = body_capture(small, "application/json", complete=True, max_bytes=256)
+    assert kept.truncated is False
+    assert kept.data == small.decode()
+    # Truncation still redacts credentials found in the retained prefix.
+    secret = b'{"api_key":"nvapi-' + b"z" * 40 + b'","pad":"' + b"P" * 5000 + b'"}'
+    redacted = body_capture(secret, "application/json", complete=True, max_bytes=256)
+    assert redacted.truncated is True
+    assert b"nvapi-zzzz" not in _stored_bytes(redacted)
+
+
+def _stored_bytes(body):
+    return body.data.encode() if body.encoding == "utf-8" else base64.b64decode(body.data)
+
+
+async def test_middleware_caps_stored_body_size_but_reports_true_observed_bytes():
+    big_response = b'{"result":"' + b"R" * 20000 + b'"}'
+
+    async def app(scope, receive, send):
+        await receive()
+        await send({"type": "http.response.start", "status": 200, "headers": [(b"content-type", b"application/json")]})
+        await send({"type": "http.response.body", "body": big_response, "more_body": False})
+
+    big_request = b'{"input":"' + b"Q" * 20000 + b'"}'
+    store, _, _ = await capture(
+        app,
+        chunks=[{"type": "http.request", "body": big_request, "more_body": False}],
+        headers=[(b"content-type", b"application/json")],
+        max_body_bytes=512,
+    )
+    (exchange,) = list(store.exchanges.values())
+    assert exchange.request_body.truncated and exchange.response_body.truncated
+    assert len(_stored_bytes(exchange.request_body)) <= 512
+    assert len(_stored_bytes(exchange.response_body)) <= 512
+    # observed_bytes still reports the full wire length, not the stored prefix.
+    assert exchange.request_body.observed_bytes == len(big_request)
+    assert exchange.response_body.observed_bytes == len(big_response)
+
+
+async def test_purge_expired_deletes_only_captures_older_than_the_cutoff():
+    """SAI-01: the TTL purge callable bounds retention of captured payloads."""
+    store = InMemoryDebugStore()
+    old = row(started_at=NOW - timedelta(days=2))
+    recent = row(started_at=NOW)
+    for exchange in (old, recent):
+        await store.record(exchange)
+    removed = await store.purge_expired(before=NOW - timedelta(days=1))
+    assert removed == 1
+    remaining = await store.list()
+    assert [item.id for item in remaining.items] == [recent.id]
+    # A second purge with nothing expired is a no-op.
+    assert await store.purge_expired(before=NOW - timedelta(days=1)) == 0

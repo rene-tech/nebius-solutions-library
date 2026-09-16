@@ -84,6 +84,7 @@ class _UpstreamCapture:
         request_headers: dict[str, str],
         maximum: int,
         upstream_attempt: int,
+        debug_max_body_bytes: int | None = None,
     ) -> None:
         self.operation = operation
         self.endpoint = endpoint
@@ -95,6 +96,7 @@ class _UpstreamCapture:
         self.request_content_type: str | None = operation.request_content_type
         self.response_content_type: str | None = None
         self.maximum = maximum
+        self.debug_max_body_bytes = debug_max_body_bytes
         self.upstream_attempt = upstream_attempt
         self.started_at = datetime.now(UTC)
         self.completed_at: datetime | None = None
@@ -175,13 +177,18 @@ class _UpstreamCapture:
 
     def exchange(self) -> DebugExchange:
         request = body_capture(
-            self.request_body, self.request_content_type, complete=True, known_credentials=self.known_credentials
+            self.request_body,
+            self.request_content_type,
+            complete=True,
+            known_credentials=self.known_credentials,
+            max_bytes=self.debug_max_body_bytes,
         )
         response = body_capture(
             bytes(self.content),
             self.response_content_type,
             complete=self.complete,
             known_credentials=self.known_credentials,
+            max_bytes=self.debug_max_body_bytes,
         )
         # observed_bytes counts bytes actually delivered by the existing decoded
         # HTTP body iterator, not wire/compressed bytes or advertised Content-Length.
@@ -274,6 +281,7 @@ class RuntimeClient:
         metadata_provider: RuntimeMetadataProvider | None = None,
         federation: FederationRouter | None = None,
         debug_store: DebugStore | None = None,
+        debug_max_body_bytes: int | None = None,
     ) -> None:
         self.activation_timeout_seconds = activation_timeout_seconds
         self.runtime_timeout_seconds = runtime_timeout_seconds
@@ -283,6 +291,7 @@ class RuntimeClient:
         self.metadata_provider = metadata_provider or NullRuntimeMetadataProvider()
         self.federation = federation or FederationRouter({})
         self.debug_store = debug_store
+        self.debug_max_body_bytes = debug_max_body_bytes
 
     @asynccontextmanager
     async def _debug_stream(
@@ -295,7 +304,13 @@ class RuntimeClient:
         upstream_attempt: int,
     ) -> AsyncIterator[httpx.Response]:
         capture = _UpstreamCapture(
-            operation, endpoint, request_body, headers, self.max_response_bytes, upstream_attempt
+            operation,
+            endpoint,
+            request_body,
+            headers,
+            self.max_response_bytes,
+            upstream_attempt,
+            self.debug_max_body_bytes,
         )
         try:
             async with stream as response:

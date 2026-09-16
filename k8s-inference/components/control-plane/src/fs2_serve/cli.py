@@ -6,7 +6,7 @@ import argparse
 import asyncio
 import logging
 import sys
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -78,6 +78,7 @@ from .postgres import PostgresMaintenanceStore, PostgresStore
 from .postgresql_release import render_postgresql_release_contract
 from .registry import Registry
 from .request_debug import PostgresDebugStore
+from .request_telemetry import PostgresRequestTelemetryStore
 from .route_revalidation import RouteRevalidator
 from .runtime import RuntimeClient
 from .runtime_kubernetes import KubernetesRuntimeMetadataProvider
@@ -507,6 +508,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         metadata_provider=runtime_metadata_provider,
         federation=federation,
         debug_store=request_debug_store if settings.request_debug_enabled else None,
+        debug_max_body_bytes=settings.request_debug_max_body_bytes,
     )
 
     async def refresh_routes() -> bool:
@@ -666,6 +668,17 @@ async def maintain(settings: Settings) -> None:
             token_retention_seconds=settings.pat_retention_seconds,
             audit_retention_seconds=settings.audit_retention_seconds,
             usage_retention_seconds=settings.usage_retention_seconds,
+        )
+        # Bound the retention of captured request/response debug exchanges and
+        # transport telemetry. These stores hold no key material for the purge,
+        # so the maintenance credential deletes by timestamp only. Kept as
+        # standalone callables so the scheduling owner can rewire them cleanly.
+        now = datetime.now(UTC)
+        await PostgresDebugStore(store.pool).purge_expired(
+            before=now - timedelta(seconds=settings.request_debug_retention_seconds)
+        )
+        await PostgresRequestTelemetryStore(store.pool).purge_expired(
+            before=now - timedelta(seconds=settings.request_telemetry_retention_seconds)
         )
     finally:
         await store.close()

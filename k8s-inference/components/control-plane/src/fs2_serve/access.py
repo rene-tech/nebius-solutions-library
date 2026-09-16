@@ -106,6 +106,31 @@ class AdminAccessService:
             raise RuntimeError("tenant resource authorization lost its tenant")
         return authorized
 
+    async def record_read(
+        self,
+        identity: OperatorPrincipal,
+        *,
+        action: str,
+        target_type: str,
+        target_id: str,
+        detail: dict[str, str | int | float | bool | None] | None = None,
+    ) -> None:
+        """Append a success audit event for a sensitive operator read.
+
+        Denials are already audited by authorize(); this records the completed
+        disclosure so every access to a captured payload leaves an audit trail.
+        """
+        await self.store.append_audit_event(
+            actor=identity.subject,
+            tenant_id=identity.tenant_id,
+            token_id=None,
+            action=action,
+            target_type=target_type,
+            target_id=target_id,
+            outcome="succeeded",
+            detail=detail,
+        )
+
     async def list_principals(
         self,
         identity: OperatorPrincipal,

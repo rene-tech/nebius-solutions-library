@@ -1745,6 +1745,8 @@ def test_maintenance_is_independent_fixed_cadence_and_network_egress_is_allowlis
         "FS2_PAT_RETENTION_SECONDS",
         "FS2_AUDIT_RETENTION_SECONDS",
         "FS2_USAGE_RETENTION_SECONDS",
+        "FS2_REQUEST_DEBUG_RETENTION_SECONDS",
+        "FS2_REQUEST_TELEMETRY_RETENTION_SECONDS",
     }
     assert maintenance["env"][0]["valueFrom"]["secretKeyRef"] == {
         "name": "fs2-serve-database-maintenance",

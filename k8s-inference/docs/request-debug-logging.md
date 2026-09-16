@@ -1,8 +1,11 @@
-# Preproduction request debug logging
+# Request debug logging
 
-Implementation and offline tests are available; **deployment and live acceptance
-are not yet claimed here**. This is an opt-in operator debugging facility, separate
-from ordinary logs, usage counters and logical run history.
+This is an opt-in operator debugging facility, separate from ordinary logs, usage
+counters and logical run history. It is **off by default** and, when enabled, is
+governed: each stored body is capped to a redacted prefix, captures are deleted
+after a configurable TTL by the maintenance job, and reading a captured exchange
+requires an ADMIN operator and is audited. Enable it deliberately for a bounded
+window rather than leaving it on as a standing state.
 
 ## Enable capture
 
@@ -20,9 +23,18 @@ deployment = {
 ```
 
 The default is `false`. Enable it through the normal reviewed Terraform/release
-workflow; it is not a browser setting. No additional customer key or permission
-is required. Existing admin session, operator-role and tenant restrictions govern
-reading captures. Customer API keys do not gain access to the admin debug API.
+workflow for a bounded window; it is not a browser setting, and it should be
+disabled again once the investigation is complete. Reading a captured exchange
+requires an **ADMIN** operator (tenant scoping still applies); customer API keys
+do not gain access to the admin debug API.
+
+Two chart values bound capture and are safe to leave at their defaults:
+
+- `config.requestDebugMaxBodyBytes` (default `65536`) caps the stored size of each
+  captured request/response body. Only a bounded, redacted prefix is kept.
+- `config.requestDebugRetentionSeconds` (default `86400`) is the TTL after which
+  the maintenance job deletes captured exchanges. `config.requestTelemetryRetentionSeconds`
+  (default `2592000`) bounds the metadata-only transport telemetry table the same way.
 
 Capture covers observed public `/v1/` HTTP exchanges and `/mcp` traffic, including
 validation failures and requests rejected before an operation exists. Token
@@ -65,8 +77,10 @@ logical run's eventual failure are different observations, not conflicting rows.
 
 ## Read-only admin API
 
-Paths below are relative to the same authenticated admin origin. Responses use
-the existing `AdminEnvelope` with `data` and contextual `meta`.
+Paths below are relative to the same authenticated admin origin and require an
+ADMIN operator session. Responses use the existing `AdminEnvelope` with `data` and
+contextual `meta`. Each `Inspect` of a full exchange emits a `request.debug.read`
+audit event so every disclosure of a captured payload is recorded.
 
 | GET endpoint | Result |
 | --- | --- |
@@ -96,6 +110,7 @@ content_type: observed value or null
 observed_bytes: number of body bytes actually observed before redaction
 complete: whether the observed capture reached a complete body
 redacted: whether sensitive content was replaced
+truncated: whether only a bounded prefix was stored (observed_bytes still full)
 ```
 
 Nullable identities/statuses are not invented. A request without a durable
@@ -104,11 +119,11 @@ HTTP 0 or success.
 
 ## Completeness, storage and limits
 
-- Capture retains the complete **observed** body when the stream completes within
-  applicable limits. It does not bypass existing endpoint validation, upload or
-  runtime response bounds. An oversized upstream response may retain only its
-  bounded prefix and report incomplete capture. This is not an unlimited packet
-  recorder or a new model payload-size allowance.
+- Each stored body is capped at `requestDebugMaxBodyBytes`. A body larger than the
+  cap is stored as a bounded, redacted prefix with `truncated=true`, while
+  `observed_bytes` still reports the full length seen on the wire. Capture does not
+  bypass existing endpoint validation, upload or runtime response bounds, and it is
+  not an unlimited packet recorder or a new model payload-size allowance.
 - A rejected request body may never have been consumed by the application. The
   public middleware does not drain it merely to fill a log. Interrupted, unread,
   failed or limit-exceeded streams remain explicitly partial/incomplete. An empty
@@ -132,10 +147,15 @@ HTTP 0 or success.
   a missing row is not proof no request happened. Process failure can also leave
   missing captures. Bodies from before capture was enabled, or from failed
   persistence, cannot be reconstructed from old usage/logical-run metadata.
-- **No automatic retention period, deletion job or purge endpoint is configured.**
-  Enabling capture increases PostgreSQL/storage use. Disabling it stops new
-  capture but does not delete retained history. Agree on a private-data retention
-  process before prolonged use; do not assume an automatic expiry exists.
+- Captured exchanges have a **hard TTL**: the maintenance job deletes
+  `fs2_request_debug` rows older than `requestDebugRetentionSeconds` (default 24h)
+  and `fs2_request_telemetry` rows older than `requestTelemetryRetentionSeconds`.
+  The purge runs under a maintenance credential that can delete by timestamp only
+  and can read no payload, header, query or ciphertext column. Enabling capture
+  still increases PostgreSQL/storage use within the TTL window; disabling capture
+  stops new rows but does not retroactively delete history faster than the TTL.
+  Reads require ADMIN and are audited, so retention is bounded and access is
+  attributable rather than open-ended.
 
 ## Verification status
 

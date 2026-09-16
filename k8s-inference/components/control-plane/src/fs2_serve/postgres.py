@@ -478,7 +478,8 @@ class PostgresStore:
                     f"fs2_activation_model_fences,fs2_telemetry_subjects,"
                     f"fs2_telemetry_correlations,fs2_lifecycle_signals,fs2_lifecycle_rollups,"
                     f"fs2_reporting_lifecycle_latest,fs2_reporting_gpu_phase_usage,"
-                    f"fs2_reporting_lifecycle_workloads FROM {role}"
+                    f"fs2_reporting_lifecycle_workloads,"
+                    f"fs2_request_telemetry,fs2_request_debug FROM {role}"
                 )
                 await connection.execute(
                     f"REVOKE ALL ON fs2_operation_events_id_seq,fs2_audit_events_id_seq,"
@@ -619,6 +620,12 @@ class PostgresStore:
             )
             await connection.execute(
                 f"GRANT SELECT (operation_id,occurred_at),DELETE ON fs2_usage_facts TO {quoted_maintenance}"
+            )
+            # TTL purge of captured debug exchanges and transport telemetry. The
+            # maintenance role deletes by timestamp only and can read no payload,
+            # header, query or ciphertext column.
+            await connection.execute(
+                f"GRANT SELECT (started_at),DELETE ON fs2_request_debug,fs2_request_telemetry TO {quoted_maintenance}"
             )
             await connection.execute(
                 f"GRANT SELECT (id,model_id,model_revision,status,attempt,lease_expires_at,deadline_at) "

@@ -183,6 +183,10 @@ app.kubernetes.io/component: model-controller
   value: {{ .Values.config.auditRetentionSeconds | quote }}
 - name: FS2_USAGE_RETENTION_SECONDS
   value: {{ .Values.config.usageRetentionSeconds | quote }}
+- name: FS2_REQUEST_DEBUG_RETENTION_SECONDS
+  value: {{ .Values.config.requestDebugRetentionSeconds | quote }}
+- name: FS2_REQUEST_TELEMETRY_RETENTION_SECONDS
+  value: {{ .Values.config.requestTelemetryRetentionSeconds | quote }}
 {{- end -}}
 
 {{- define "fs2-serve.runtimeEnv" -}}
@@ -246,6 +250,8 @@ app.kubernetes.io/component: model-controller
   value: {{ .Values.config.maxResponseBytes | quote }}
 - name: FS2_REQUEST_DEBUG_ENABLED
   value: {{ .Values.config.requestDebugEnabled | quote }}
+- name: FS2_REQUEST_DEBUG_MAX_BODY_BYTES
+  value: {{ .Values.config.requestDebugMaxBodyBytes | quote }}
 - name: FS2_SYNC_WAIT_SECONDS
   value: {{ .Values.config.syncWaitSeconds | quote }}
 - name: FS2_MAX_SYNC_WAIT_SECONDS

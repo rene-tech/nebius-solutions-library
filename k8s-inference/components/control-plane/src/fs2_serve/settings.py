@@ -248,8 +248,21 @@ class Settings(BaseSettings):
     max_request_bytes: int = Field(default=16 * 1024 * 1024, ge=1024, le=256 * 1024 * 1024)
     max_response_bytes: int = Field(default=128 * 1024 * 1024, ge=1024, le=1024 * 1024 * 1024)
     # Opt-in full customer transport/upstream capture for evaluation debugging.
-    # Existing body-size limits apply; authentication secrets are never retained.
+    # Off by default: enabling it captures complete customer payloads, so it must
+    # stay a deliberate, time-bounded operator choice rather than a standing state.
     request_debug_enabled: bool = False
+    # Hard ceiling on the stored size of each captured request/response body. This
+    # is intentionally far below max_response_bytes: debug capture keeps only a
+    # bounded, redacted prefix, never the whole multi-megabyte payload. A truncated
+    # body is flagged so operators know they are looking at a prefix.
+    request_debug_max_body_bytes: int = Field(default=64 * 1024, ge=1024, le=8 * 1024 * 1024)
+    # TTL for captured debug exchanges. The maintenance job deletes fs2_request_debug
+    # rows older than this so capture cannot accumulate customer payloads without
+    # bound. Distinct from operation payload TTL and audit/usage retention.
+    request_debug_retention_seconds: int = Field(default=86400, ge=3600, le=2592000)
+    # TTL for transport telemetry (metadata only, no payloads/headers/bodies).
+    # Longer than the debug TTL because it feeds observability, but still bounded.
+    request_telemetry_retention_seconds: int = Field(default=2592000, ge=3600, le=31536000)
     payload_ttl_seconds: int = Field(default=86400, ge=60, le=604800)
     scientific_artifacts_enabled: bool = False
     artifact_store_endpoint: str = Field(

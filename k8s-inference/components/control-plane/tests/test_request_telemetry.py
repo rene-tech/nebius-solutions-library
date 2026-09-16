@@ -216,3 +216,41 @@ def test_invalid_result_identity_and_non_http_context_do_not_raise_or_capture_pa
     assert scope["state"] == {}
     with request_telemetry_context(None):
         observe_mcp_result(json.loads('{"id":"not-a-uuid"}'))
+
+
+def _observation(started_at):
+    from fs2_serve.request_telemetry import RequestTelemetry
+
+    return RequestTelemetry(
+        request_id=uuid4(),
+        started_at=started_at,
+        completed_at=started_at,
+        endpoint="/v1/chat/completions",
+        method="POST",
+        transport="http",
+        http_status=200,
+        response_duration_seconds=0.1,
+        request_bytes=10,
+        response_bytes=10,
+        request_bytes_observed=10,
+        response_bytes_observed=10,
+        request_complete=True,
+        response_complete=True,
+        disconnected=False,
+    )
+
+
+def test_purge_expired_bounds_transport_telemetry_retention():
+    """SAI-01: telemetry rows are also bounded by a TTL purge callable."""
+    from datetime import UTC, datetime, timedelta
+
+    now = datetime(2026, 9, 16, tzinfo=UTC)
+    store = InMemoryRequestTelemetryStore()
+    old = _observation(now - timedelta(days=40))
+    recent = _observation(now)
+    asyncio.run(store.record(old))
+    asyncio.run(store.record(recent))
+    removed = asyncio.run(store.purge_expired(before=now - timedelta(days=30)))
+    assert removed == 1
+    assert [row.request_id for row in store.observations] == [recent.request_id]
+    assert asyncio.run(store.purge_expired(before=now - timedelta(days=30))) == 0

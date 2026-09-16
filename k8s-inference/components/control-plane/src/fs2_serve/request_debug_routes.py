@@ -26,11 +26,19 @@ def request_debug_router(
 ) -> APIRouter:
     router = APIRouter(prefix="/admin/api/v1", dependencies=[Depends(operator_dependency)])
 
-    async def authorize(request: Request) -> str | None:
+    async def authorized_identity(request: Request) -> tuple[OperatorPrincipal, str | None]:
         identity = getattr(request.state, "operator_principal", None)
         if not isinstance(identity, OperatorPrincipal):
             raise AdminProblemError(401, "operator_session_required", "operator session is required")
-        return await access.authorize(identity, OperatorRole.VIEWER, action="request.debug.read")
+        # Captured exchanges hold complete customer inputs/outputs, so reads
+        # require ADMIN rather than the lowest operator role. Tenant scoping is
+        # preserved: a tenant-scoped admin still sees only their own captures.
+        tenant = await access.authorize(identity, OperatorRole.ADMIN, action="request.debug.read")
+        return identity, tenant
+
+    async def authorize(request: Request) -> str | None:
+        _, tenant = await authorized_identity(request)
+        return tenant
 
     async def model_for(app_id: UUID | None) -> str | None:
         if app_id is None:
@@ -74,11 +82,18 @@ def request_debug_router(
         context: Annotated[AdminContext, Depends(context_dependency)],
         app_id: UUID | None = None,
     ) -> Any:
-        tenant = await authorize(request)
+        identity, tenant = await authorized_identity(request)
         model_id = await model_for(app_id)
         result = await store.get(exchange_id, tenant_id=tenant)
         if result is None or (model_id is not None and result.model_id != model_id):
             raise AdminProblemError(404, "request_debug_not_found", "captured request was not found")
+        # Record every disclosure of a captured payload, not only denials.
+        await access.record_read(
+            identity,
+            action="request.debug.read",
+            target_type="request_debug",
+            target_id=str(exchange_id),
+        )
         return envelope(result, context)
 
     return router
