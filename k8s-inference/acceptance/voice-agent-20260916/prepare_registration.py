@@ -100,6 +100,9 @@ def append_models(envelope, bundles, selections, baseline_spec):
             },
         )
         spec["availability"].update(minReplicas=1, maxReplicas=2)
+        # Availability changes also update controller-owned Pod annotations.
+        # Keep an admitted voice session and a ready worker during that rollout.
+        spec["rollout"].update(strategy="Rolling", maxUnavailable=0, maxSurge=1)
         spec["placement"]["poolRefs"] = ["l40s-1x"]
         # Shared platform Apps follow the customer's API-key model grants.
         # Legacy principal allowlists are local to the operator tenant, not

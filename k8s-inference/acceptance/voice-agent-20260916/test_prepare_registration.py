@@ -64,6 +64,8 @@ def test_voice_registration_preserves_pools_siblings_and_scales_matching_service
             scaled["availability"].update(minReplicas=replicas, maxReplicas=2)
             spec = ModelDeploymentSpec.model_validate(scaled)
             assert spec.policy.allowed_principal_ids == []
+            assert spec.rollout.max_unavailable == 0
+            assert spec.rollout.max_surge == 1
             rendered = contract.renderer().render(
                 spec,
                 RenderContext(
@@ -84,6 +86,10 @@ def test_voice_registration_preserves_pools_siblings_and_scales_matching_service
             services = [r.manifest for r in rendered.resources if r.kind == "Service"]
             assert workloads and services
             for workload in workloads:
+                assert workload["spec"]["strategy"] == {
+                    "type": "RollingUpdate",
+                    "rollingUpdate": {"maxUnavailable": 0, "maxSurge": 1},
+                }
                 labels = workload["spec"]["template"]["metadata"]["labels"]
                 assert any(
                     all(labels.get(k) == v for k, v in svc["spec"]["selector"].items())

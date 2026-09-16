@@ -13,7 +13,10 @@ PARAKEET = "parakeet-realtime-eou-120m-v1"
 SORTFORMER = "diar-streaming-sortformer-4spk-v2-1"
 
 
-async def run(origin, key, fixture):
+async def run(
+    origin, key, fixture, models=(PARAKEET, SORTFORMER), barrier=None,
+    on_first_output=None,
+):
     pcm = subprocess.check_output(
         [
             "ffmpeg",
@@ -35,7 +38,7 @@ async def run(origin, key, fixture):
     context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE
     results = []
-    for model in (PARAKEET, SORTFORMER):
+    for model in models:
         row = {"model": model, "events": []}
         started, producer, ready_at = time.monotonic(), None, None
         finished = asyncio.Event()
@@ -71,10 +74,14 @@ async def run(origin, key, fixture):
                         kind = event.get("type")
                         if kind == "session.ready":
                             assert producer is None
+                            if barrier is not None:
+                                await barrier.wait()
                             ready_at = time.monotonic()
+                            row["backend_id"] = event["backend_id"]
                             row["ready_seconds"] = ready_at - started
                             producer = asyncio.create_task(upload())
                         elif kind in {"transcript.partial", "speaker.activity"}:
+                            first_output = "first_output_from_ready_seconds" not in row
                             row.setdefault(
                                 "first_output_from_ready_seconds",
                                 time.monotonic() - ready_at,
@@ -82,6 +89,8 @@ async def run(origin, key, fixture):
                             row.setdefault(
                                 "output_before_end_of_input", not finished.is_set()
                             )
+                            if first_output and on_first_output is not None:
+                                await on_first_output()
                         elif kind == "error":
                             raise RuntimeError("public_voice_" + event["code"])
                         elif kind == "session.done":
