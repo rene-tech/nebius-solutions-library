@@ -22,6 +22,16 @@ this client.
   this baseline. Its subsequent scale/drain tests began only after completion.
   Parent coordinator owns deployment-image and GPU provenance.
 
+The voice worker's coordinated 17:18 UTC provenance records Service/Deployment
+`magpie-tts-multilingual-357m`, Pod
+`magpie-tts-multilingual-357m-9c9b4685d-hcnj2`, node
+`computeinstance-e00zs7gf1mgdygk6jv`, cluster
+`mk8scluster-e00j5z9te7x5dd9g6a` in `eu-north1`, regular/on-demand L40S 48GB,
+pool `l40s-1x` (not preemptible). Immutable image:
+`cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:fc9db5fd5df87e819766297d90a4595664aec63e7dbfd6735b3f2053b4725ead`.
+Checkpoint revision `19806879b16d3f2ccf28fb112b1bcd16a3c7923e`, SHA-256
+`ec675fa8c02b9c1d5382c5c2b5a6acec6492c1e8344866c07cf3892185d18953`.
+
 | Role / voice | WAV duration | First audio | Synthesis stream | STT | Normalized WER |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Clinician / Jason | 1.997s | 2.499s | 2.915s | 2.683s | 0.00% |
