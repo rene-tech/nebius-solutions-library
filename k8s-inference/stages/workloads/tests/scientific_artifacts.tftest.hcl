@@ -402,12 +402,12 @@ run "postgresql_inventory_key_rotation_is_bound_to_the_exporter_pod_template" {
   assert {
     condition = (
       terraform_data.postgresql_backup_inventory_rotation_contract[0].input.credential_revision == local.postgresql_backup_inventory_credential_revision &&
-      terraform_data.postgresql_backup_inventory_rotation_contract[0].input.pod_template_annotation == tostring(local.postgresql_backup_inventory_credential_revision) &&
-      terraform_data.postgresql_backup_inventory_rotation_contract[0].input.credential_identity_sha256 == sha256(local.postgresql_backup_inventory_credential_identity) &&
-      terraform_data.postgresql_backup_inventory_rotation_contract[0].input.credential_revision >= 16777216 &&
-      terraform_data.postgresql_backup_inventory_rotation_contract[0].input.credential_revision < 33554432
+      terraform_data.postgresql_backup_inventory_rotation_contract[0].input.pod_template_annotation == local.postgresql_backup_inventory_credential_identity_sha256 &&
+      terraform_data.postgresql_backup_inventory_rotation_contract[0].input.credential_identity_sha256 == local.postgresql_backup_inventory_credential_identity_sha256 &&
+      terraform_data.postgresql_backup_inventory_rotation_contract[0].input.credential_revision == parseint(substr(local.postgresql_backup_inventory_credential_identity_sha256, 0, 15), 16) &&
+      length(terraform_data.postgresql_backup_inventory_rotation_contract[0].input.pod_template_annotation) == 64
     )
-    error_message = "The exporter Pod template must bind the exact generation-plus-key identity so a SAI-10 MysteryBox key rotation creates a new ReplicaSet."
+    error_message = "The exporter Pod template must bind the full generation-plus-key SHA-256 and the Secret must use its collision-resistant 60-bit revision so a SAI-10 MysteryBox key rotation creates a new ReplicaSet."
   }
 }
 
@@ -801,7 +801,7 @@ run "a_store_that_reuses_the_reference_data_bucket_is_refused" {
       }
     }
     reference_data = {
-      enabled   = true
+      enabled   = false
       namespace = "fs2-reference-data"
       queue = {
         resource_flavor = "reference-data-cpu"

@@ -5,44 +5,48 @@ locals {
   postgresql_backup_inventory_secret_name = "fs2-control-db-backup-inventory"
   postgresql_restore_receipt_secret_name  = "fs2-control-db-restore-receipt"
   postgresql_backup_credential_identity = var.postgresql_backup.enabled ? join("|", [
+    tostring(var.postgresql_backup.credential_generation),
     var.postgresql_backup.object_storage_access.key_id,
     var.postgresql_backup.object_storage_access.access_key_id,
     var.postgresql_backup.object_storage_access.secret_reference_id,
     tostring(var.postgresql_backup.object_storage_access.resource_version),
   ]) : ""
+  postgresql_backup_credential_identity_sha256 = sha256(local.postgresql_backup_credential_identity)
   postgresql_backup_credential_revision = var.postgresql_backup.enabled ? (
-    var.postgresql_backup.credential_generation * 16777216 +
-    parseint(substr(sha256(local.postgresql_backup_credential_identity), 0, 6), 16)
+    parseint(substr(local.postgresql_backup_credential_identity_sha256, 0, 15), 16)
   ) : 0
   postgresql_backup_inventory_credential_identity = var.postgresql_backup.enabled ? join("|", [
+    tostring(var.postgresql_backup.credential_generation),
     var.postgresql_backup.inventory_object_storage_access.key_id,
     var.postgresql_backup.inventory_object_storage_access.access_key_id,
     var.postgresql_backup.inventory_object_storage_access.secret_reference_id,
     tostring(var.postgresql_backup.inventory_object_storage_access.resource_version),
   ]) : ""
+  postgresql_backup_inventory_credential_identity_sha256 = sha256(local.postgresql_backup_inventory_credential_identity)
   postgresql_backup_inventory_credential_revision = var.postgresql_backup.enabled ? (
-    var.postgresql_backup.credential_generation * 16777216 +
-    parseint(substr(sha256(local.postgresql_backup_inventory_credential_identity), 0, 6), 16)
+    parseint(substr(local.postgresql_backup_inventory_credential_identity_sha256, 0, 15), 16)
   ) : 0
   postgresql_backup_restore_credential_identity = var.postgresql_backup.enabled ? join("|", [
+    tostring(var.postgresql_backup.credential_generation),
     var.postgresql_backup.restore_object_storage_access.key_id,
     var.postgresql_backup.restore_object_storage_access.access_key_id,
     var.postgresql_backup.restore_object_storage_access.secret_reference_id,
     tostring(var.postgresql_backup.restore_object_storage_access.resource_version),
   ]) : ""
+  postgresql_backup_restore_credential_identity_sha256 = sha256(local.postgresql_backup_restore_credential_identity)
   postgresql_backup_restore_credential_revision = var.postgresql_backup.enabled ? (
-    var.postgresql_backup.credential_generation * 16777216 +
-    parseint(substr(sha256(local.postgresql_backup_restore_credential_identity), 0, 6), 16)
+    parseint(substr(local.postgresql_backup_restore_credential_identity_sha256, 0, 15), 16)
   ) : 0
   postgresql_restore_receipt_credential_identity = var.postgresql_backup.enabled ? join("|", [
+    tostring(var.postgresql_backup.credential_generation),
     var.postgresql_backup.receipt_object_storage_access.key_id,
     var.postgresql_backup.receipt_object_storage_access.access_key_id,
     var.postgresql_backup.receipt_object_storage_access.secret_reference_id,
     tostring(var.postgresql_backup.receipt_object_storage_access.resource_version),
   ]) : ""
+  postgresql_restore_receipt_credential_identity_sha256 = sha256(local.postgresql_restore_receipt_credential_identity)
   postgresql_restore_receipt_credential_revision = var.postgresql_backup.enabled ? (
-    var.postgresql_backup.credential_generation * 16777216 +
-    parseint(substr(sha256(local.postgresql_restore_receipt_credential_identity), 0, 6), 16)
+    parseint(substr(local.postgresql_restore_receipt_credential_identity_sha256, 0, 15), 16)
   ) : 0
   postgresql_backup_barman_object_store = var.postgresql_backup.enabled ? {
     destinationPath = var.postgresql_backup.storage_contract.layout.destination_path

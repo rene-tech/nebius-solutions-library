@@ -11,13 +11,12 @@ import re
 import shutil
 import subprocess
 import sys
+from contextlib import contextmanager, redirect_stdout
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Callable
 from unittest import mock
-from contextlib import redirect_stdout
-
 import pytest
 import yaml
 from cryptography.hazmat.primitives import serialization
@@ -565,29 +564,34 @@ def test_live_capacity_preflight_binds_compute_storage_and_incremental_deltas() 
     assert recurring_index["storage.bucket.size.standard"]["incremental_demand"] == 0
 
 
-def test_capacity_plan_rejects_any_resource_replacement() -> None:
+def test_capacity_plan_allows_only_stable_non_destructive_actions() -> None:
     accepted = _plan_document()
     STACK.require_sai06_no_replacements(accepted)
 
-    replacement = _plan_document()
-    replacement["resource_changes"].append(
-        {
-            "address": "nebius_mk8s_v1_cluster.this",
-            "change": {"before": {}, "after": {}, "actions": ["delete", "create"]},
-        }
-    )
-    with pytest.raises(STACK.DeploymentError, match="no-replacement.*cluster.this"):
-        STACK.require_sai06_no_replacements(replacement)
+    for address, actions, previous_address in (
+        ("nebius_mk8s_v1_cluster.this", ["delete", "create"], None),
+        ("nebius_vpc_v1_security_group.workers", ["delete"], None),
+        ("nebius_vpc_v1_security_group_rule.workers_egress", ["delete"], None),
+        ("nebius_iam_v1_group_membership.node_pull", ["delete"], None),
+        ("terraform_data.renamed", ["no-op"], "terraform_data.old"),
+    ):
+        document = _plan_document()
+        document["resource_changes"].append(
+            {
+                "address": address,
+                "previous_address": previous_address,
+                "change": {"before": {}, "after": {}, "actions": actions},
+            }
+        )
+        with pytest.raises(
+            STACK.DeploymentError, match="only no-op.*stable addresses"
+        ):
+            STACK.require_sai06_no_replacements(document)
 
-    pure_delete = _plan_document()
-    pure_delete["resource_changes"].append(
-        {
-            "address": "nebius_storage_v1_bucket.postgresql_backup[0]",
-            "change": {"before": {}, "after": None, "actions": ["delete"]},
-        }
-    )
-    with pytest.raises(STACK.DeploymentError, match="deletes critical.*bucket"):
-        STACK.require_sai06_no_replacements(pure_delete)
+    unknown = _plan_document()
+    unknown["resource_changes"][0]["change"]["actions"] = ["forget"]
+    with pytest.raises(STACK.DeploymentError, match="unknown managed changes"):
+        STACK.require_sai06_no_replacements(unknown)
 
 
 def test_signed_approval_rejects_missing_limits_without_owner_override() -> None:
@@ -937,6 +941,115 @@ def test_source_identity_rejects_dirty_tree_and_trust_comes_from_git_blob(
             STACK.verified_source_identity()
 
 
+def test_sai06_planning_checks_source_before_plan_and_discards_changed_plan(
+    tmp_path: Path,
+) -> None:
+    contract = {
+        "stages": {
+            "infrastructure": {"postgresql_backup": {"enabled": True}}
+        }
+    }
+    commit = "a" * 40
+    tree = "b" * 40
+    plan = tmp_path / "infrastructure-plan.tfplan"
+
+    with (
+        mock.patch.object(
+            STACK,
+            "verified_source_identity",
+            side_effect=STACK.DeploymentError("exact clean source required"),
+        ),
+        mock.patch.object(STACK, "plan_stage") as plan_stage,
+        pytest.raises(STACK.DeploymentError, match="exact clean source"),
+    ):
+        STACK.plan_infrastructure_with_sai06(
+            SimpleNamespace(terraform="terraform"),
+            tmp_path,
+            contract,
+            commit,
+            tmp_path / "infrastructure.tfvars.json",
+        )
+    plan_stage.assert_not_called()
+
+    def generated_plan(*_args: object, **_kwargs: object) -> tuple[Path, dict, dict]:
+        plan.write_bytes(b"untrusted plan")
+        return plan, {"resource_changes": []}, {}
+
+    @contextmanager
+    def exact_snapshot(_commit: str, _run_root: Path):
+        yield tmp_path / "snapshot" / "k8s-inference"
+
+    with (
+        mock.patch.object(
+            STACK,
+            "verified_source_identity",
+            side_effect=[(commit, tree), (commit, "c" * 40)],
+        ),
+        mock.patch.object(
+            STACK, "exact_git_source_snapshot", side_effect=exact_snapshot
+        ),
+        mock.patch.object(STACK, "plan_stage", side_effect=generated_plan),
+        pytest.raises(STACK.DeploymentError, match="changed while Terraform was planning"),
+    ):
+        STACK.plan_infrastructure_with_sai06(
+            SimpleNamespace(terraform="terraform"),
+            tmp_path,
+            contract,
+            commit,
+            tmp_path / "infrastructure.tfvars.json",
+        )
+    assert not plan.exists()
+
+
+def test_sai06_plans_from_exact_git_object_not_mutable_worktree(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    subprocess.run(["git", "-C", str(repository), "init", "-q"], check=True)
+    subprocess.run(
+        ["git", "-C", str(repository), "config", "user.email", "sai06@example.test"],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repository), "config", "user.name", "SAI06 Test"],
+        check=True,
+    )
+    files = {
+        "k8s-inference/stages/infrastructure/main.tf": "reviewed-source\n",
+        "k8s-inference/catalog/profiles/approved-targets.json": "{}\n",
+        "modules/device-plugin/main.tf": "reviewed-device\n",
+        "modules/gpu-operator/main.tf": "reviewed-gpu\n",
+        "modules/network-operator/main.tf": "reviewed-network\n",
+    }
+    for relative, content in files.items():
+        path = repository / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    subprocess.run(["git", "-C", str(repository), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(repository), "commit", "-qm", "reviewed source"],
+        check=True,
+    )
+    commit = subprocess.run(
+        ["git", "-C", str(repository), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    mutable = repository / "k8s-inference/stages/infrastructure/main.tf"
+    mutable.write_text("attacker-worktree-source\n", encoding="utf-8")
+    run_root = tmp_path / "run"
+
+    with mock.patch.object(STACK, "REPOSITORY_ROOT", repository):
+        with STACK.exact_git_source_snapshot(commit, run_root) as solution_root:
+            extracted = solution_root / "stages/infrastructure/main.tf"
+            assert extracted.read_text(encoding="utf-8") == "reviewed-source\n"
+            assert extracted.stat().st_mode & 0o222 == 0
+            snapshot_parent = solution_root.parent
+        assert not snapshot_parent.exists()
+
+
 def test_capacity_receipt_schema_is_strict_and_matches_runtime_resources() -> None:
     schema = json.loads(_text("docs/sai06-capacity-approval.schema.json"))
 
@@ -1070,9 +1183,14 @@ def test_destroy_rejects_invalid_retained_postgresql_boundary_before_any_plan(
 
 
 def _live_recovery_documents() -> list[dict]:
+    cluster_uid = "11111111-2222-3333-4444-555555555555"
     return [
         {
-            "metadata": {"uid": "11111111-2222-3333-4444-555555555555"},
+            "metadata": {
+                "name": "fs2-control-db",
+                "namespace": "fs2-data",
+                "uid": cluster_uid,
+            },
             "status": {
                 "firstRecoverabilityPoint": "2026-09-16T08:00:00Z",
                 "lastSuccessfulBackup": "2026-09-16T08:10:00Z",
@@ -1081,61 +1199,244 @@ def _live_recovery_documents() -> list[dict]:
             },
         },
         {
-            "spec": {"schedule": "0 0 2 * * *", "suspend": False},
+            "metadata": {"name": "fs2-control-db", "namespace": "fs2-data"},
+            "spec": {
+                "schedule": "0 0 2 * * *",
+                "suspend": False,
+                "cluster": {"name": "fs2-control-db"},
+            },
             "status": {"lastCheckTime": "2026-09-16T08:20:00Z"},
         },
         {
             "items": [
                 {
-                    "metadata": {"name": "fs2-control-db-20260916020000"},
-                    "status": {"phase": "completed"},
+                    "metadata": {
+                        "name": "fs2-control-db-20260916020000",
+                        "namespace": "fs2-data",
+                        "ownerReferences": [
+                            {
+                                "apiVersion": "postgresql.cnpg.io/v1",
+                                "kind": "Cluster",
+                                "name": "fs2-control-db",
+                                "uid": cluster_uid,
+                                "controller": True,
+                            }
+                        ],
+                    },
+                    "spec": {"cluster": {"name": "fs2-control-db"}},
+                    "status": {
+                        "phase": "completed",
+                        "stoppedAt": "2026-09-16T08:10:00Z",
+                    },
                 }
             ]
         },
     ]
 
 
+def _provider_bucket_document() -> dict:
+    return {
+        "metadata": {
+            "id": "storagebucket-postgresql-test",
+            "parent_id": "project-test",
+            "name": "postgresql-backup-test",
+            "resource_version": 7,
+        },
+        "spec": {
+            "versioning_policy": "ENABLED",
+            "max_size_bytes": 12288 * 1024**3,
+            "default_storage_class": "STANDARD",
+            "lifecycle_configuration": {
+                "rules": [
+                    {
+                        "id": "abort-incomplete-multipart-uploads",
+                        "status": "ENABLED",
+                        "abort_incomplete_multipart_upload": {
+                            "days_after_initiation": 1
+                        },
+                    },
+                    {
+                        "id": "expire-noncurrent-versions-after-recovery-window",
+                        "status": "ENABLED",
+                        "noncurrent_version_expiration": {"noncurrent_days": 37},
+                    },
+                ]
+            },
+        },
+        "status": {
+            "state": "ACTIVE",
+            "region": "eu-north1",
+            "suspension_state": "NOT_SUSPENDED",
+            "anonymous_access_enabled": False,
+        },
+    }
+
+
+def _inventory_evidence() -> dict:
+    return {
+        "inventory_last_success": "2026-09-16T08:55:00Z",
+        "restore_last_success": "2026-09-16T08:30:00Z",
+        "usage_bytes": 1024,
+        "object_versions": 2,
+        "metrics_sha256": "f" * 64,
+    }
+
+
 def test_live_destroy_gate_requires_backup_wal_and_recoverability_point(
     tmp_path: Path,
 ) -> None:
-    args = SimpleNamespace(kubectl="kubectl")
+    args = SimpleNamespace(
+        kubectl="kubectl", nebius="nebius", nebius_profile="sandbox"
+    )
     contract = _retained_destroy_contract()
     dynamic = _retained_destroy_dynamic(tmp_path)
+    now = datetime(2026, 9, 16, 9, 0, tzinfo=UTC)
 
-    def responses(documents: list[dict]) -> list[subprocess.CompletedProcess[str]]:
-        return [
-            subprocess.CompletedProcess(
-                ["kubectl"], 0, stdout=json.dumps(document), stderr=""
-            )
-            for document in documents
-        ]
-
-    with mock.patch.object(
-        STACK, "run", side_effect=responses(_live_recovery_documents())
+    with (
+        mock.patch.object(
+            STACK,
+            "_postgresql_provider_bucket",
+            return_value={"bucket_id": "storagebucket-postgresql-test"},
+        ),
+        mock.patch.object(
+            STACK, "_kubectl_json", side_effect=_live_recovery_documents()
+        ),
+        mock.patch.object(
+            STACK, "_postgresql_inventory_evidence", return_value=_inventory_evidence()
+        ),
     ):
         result = STACK.validate_postgresql_live_recovery_boundary(
-            args, contract, dynamic
+            args, contract, dynamic, now=now
         )
     assert result["completed_backup_count"] == 1
     assert result["continuous_archiving"] is True
 
     for mutate in (
+        lambda documents: documents[0]["metadata"].update({"uid": None}),
         lambda documents: documents[0]["status"].update(
-            {"firstRecoverabilityPoint": None}
+            {"firstRecoverabilityPoint": "2001-01-01T00:00:00Z"}
         ),
         lambda documents: documents[0]["status"]["conditions"][0].update(
             {"status": "False"}
         ),
-        lambda documents: documents[0]["status"].update({"lastArchivedWal": None}),
-        lambda documents: documents[2].update({"items": []}),
+        lambda documents: documents[0]["status"].update(
+            {"lastArchivedWal": "arbitrary-wal"}
+        ),
+        lambda documents: documents[2]["items"][0]["metadata"][
+            "ownerReferences"
+        ][0].update({"uid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"}),
     ):
         documents = _live_recovery_documents()
         mutate(documents)
         with (
-            mock.patch.object(STACK, "run", side_effect=responses(documents)),
+            mock.patch.object(
+                STACK,
+                "_postgresql_provider_bucket",
+                return_value={"bucket_id": "storagebucket-postgresql-test"},
+            ),
+            mock.patch.object(STACK, "_kubectl_json", side_effect=documents),
+            mock.patch.object(
+                STACK,
+                "_postgresql_inventory_evidence",
+                return_value=_inventory_evidence(),
+            ),
             pytest.raises(STACK.DeploymentError, match="no resource was changed"),
         ):
-            STACK.validate_postgresql_live_recovery_boundary(args, contract, dynamic)
+            STACK.validate_postgresql_live_recovery_boundary(
+                args, contract, dynamic, now=now
+            )
+
+
+def test_destroy_gate_gets_exact_provider_bucket_and_object_versions(
+    tmp_path: Path,
+) -> None:
+    args = SimpleNamespace(nebius="nebius", nebius_profile="sandbox")
+    retained = STACK.validate_postgresql_retained_boundary(
+        _retained_destroy_contract(), _retained_destroy_dynamic(tmp_path)
+    )
+    with mock.patch.object(
+        STACK, "_nebius_json", return_value=_provider_bucket_document()
+    ) as get_bucket:
+        evidence = STACK._postgresql_provider_bucket(args, retained)
+    assert evidence["resource_version"] == 7
+    assert evidence["provider_document_sha256"] == STACK.canonical_sha256(
+        _provider_bucket_document()
+    )
+    get_bucket.assert_called_once_with(
+        args,
+        [
+            "storage",
+            "bucket",
+            "get",
+            "--id",
+            "storagebucket-postgresql-test",
+        ],
+        "object-storage bucket",
+    )
+
+    for mutate in (
+        lambda document: document["metadata"].update({"parent_id": "project-other"}),
+        lambda document: document["status"].update({"state": "UPDATING"}),
+        lambda document: document["spec"].update(
+            {"versioning_policy": "SUSPENDED"}
+        ),
+        lambda document: document["spec"]["lifecycle_configuration"]["rules"][
+            1
+        ]["noncurrent_version_expiration"].update({"noncurrent_days": 1}),
+    ):
+        document = _provider_bucket_document()
+        mutate(document)
+        with (
+            mock.patch.object(STACK, "_nebius_json", return_value=document),
+            pytest.raises(STACK.DeploymentError, match="no resource was changed"),
+        ):
+            STACK._postgresql_provider_bucket(args, retained)
+
+
+def test_destroy_gate_requires_fresh_object_version_inventory(tmp_path: Path) -> None:
+    now = datetime(2026, 9, 16, 9, 0, tzinfo=UTC)
+    retained = STACK.validate_postgresql_retained_boundary(
+        _retained_destroy_contract(), _retained_destroy_dynamic(tmp_path)
+    )
+    timestamps = {
+        "inventory": datetime(2026, 9, 16, 8, 55, tzinfo=UTC).timestamp(),
+        "restore": datetime(2026, 9, 16, 8, 30, tzinfo=UTC).timestamp(),
+    }
+
+    def metrics(*, versions: int = 2, inventory: float | None = None) -> str:
+        values = {
+            "fs2_postgresql_backup_bucket_scrape_success": 1,
+            "fs2_postgresql_backup_bucket_last_success_timestamp_seconds": (
+                timestamps["inventory"] if inventory is None else inventory
+            ),
+            "fs2_postgresql_backup_bucket_usage_bytes": 1024,
+            "fs2_postgresql_backup_bucket_current_bytes": 768,
+            "fs2_postgresql_backup_bucket_noncurrent_bytes": 256,
+            "fs2_postgresql_backup_bucket_capacity_bytes": 12288 * 1024**3,
+            "fs2_postgresql_backup_bucket_object_versions": versions,
+            "fs2_postgresql_restore_last_success_timestamp_seconds": timestamps[
+                "restore"
+            ],
+        }
+        return "".join(f"{name} {value}\n" for name, value in values.items())
+
+    with mock.patch.object(STACK, "_kubectl_raw", return_value=metrics()):
+        result = STACK._postgresql_inventory_evidence(
+            SimpleNamespace(), {}, retained, now=now
+        )
+    assert result["object_versions"] == 2
+
+    for invalid in (
+        metrics(versions=0),
+        metrics(inventory=datetime(2026, 9, 16, 8, 30, tzinfo=UTC).timestamp()),
+    ):
+        with (
+            mock.patch.object(STACK, "_kubectl_raw", return_value=invalid),
+            pytest.raises(STACK.DeploymentError, match="no resource was changed"),
+        ):
+            STACK._postgresql_inventory_evidence(
+                SimpleNamespace(), {}, retained, now=now
+            )
 
 
 def test_destroy_plan_failure_makes_zero_deletions(tmp_path: Path) -> None:
@@ -1352,8 +1653,8 @@ def test_backup_observability_is_executable_and_covers_every_sai06_signal() -> N
     assert "fs2_postgresql_restore_last_success_timestamp_seconds" in metrics
     assert "restore-verification/success/" in monitoring
     assert (
-        '"fs2.nebius.ai/postgresql-inventory-credential-revision" = '
-        "tostring(local.postgresql_backup_inventory_credential_revision)" in monitoring
+        '"fs2.nebius.ai/postgresql-inventory-credential-sha256" = '
+        "local.postgresql_backup_inventory_credential_identity_sha256" in monitoring
     )
     for field in (
         "inventory_object_storage_access.key_id",
@@ -1362,7 +1663,39 @@ def test_backup_observability_is_executable_and_covers_every_sai06_signal() -> N
         "inventory_object_storage_access.resource_version",
     ):
         assert field in database
-    assert "var.postgresql_backup.credential_generation * 16777216" in database
+    assert (
+        "parseint(substr(local.postgresql_backup_inventory_credential_identity_sha256, 0, 15), 16)"
+        in database
+    )
+    assert (
+        "pod_template_annotation    = local.postgresql_backup_inventory_credential_identity_sha256"
+        in monitoring
+    )
+
+
+def test_inventory_rotation_identity_resists_the_reviewed_24_bit_collision() -> None:
+    database = _text("stages/workloads/database.tf")
+    assert "0, 6" not in database
+    assert "0, 15" in database
+    assert "tostring(var.postgresql_backup.credential_generation)" in database
+
+    def digest(resource_version: int) -> str:
+        identity = "|".join(
+            (
+                "1",
+                "accesskey-postgresqlinventorytest",
+                "AJE000POSTGRESQLINVENTORY",
+                "mysteryboxsecret-postgresqlinventorytest",
+                str(resource_version),
+            )
+        )
+        return hashlib.sha256(identity.encode()).hexdigest()
+
+    old = digest(1872)
+    new = digest(2695)
+    assert old != new
+    assert old[:15] != new[:15]
+    assert int(old[:15], 16) != int(new[:15], 16)
 
 
 def test_backup_alert_promql_is_accepted_by_promtool(tmp_path: Path) -> None:

@@ -13,9 +13,11 @@ import json
 import os
 import re
 import secrets
+import shutil
 import stat
 import subprocess
 import sys
+import tarfile
 import tempfile
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -377,6 +379,117 @@ def verified_source_identity() -> tuple[str, str]:
             "the source checkout does not have an exact Git commit and tree identity"
         )
     return identities[0], identities[1]
+
+
+@contextmanager
+def exact_git_source_snapshot(commit: str, run_root: Path) -> Iterator[Path]:
+    """Materialize Terraform's source from the named immutable Git object.
+
+    A clean-worktree check before and after planning detects ordinary drift but
+    cannot make a mutable checkout an authorization boundary: a file could be
+    changed after the first check and restored before the second.  SAI-06 plans
+    from a private, read-only extraction of the reviewed commit instead.  Git's
+    content-addressed objects, rather than worktree pathnames, supply every
+    infrastructure module and profile byte Terraform reads.
+    """
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise DeploymentError("SAI-06 source snapshot requires an exact Git commit")
+    private_directory(run_root)
+    snapshot_parent = Path(
+        tempfile.mkdtemp(prefix=".sai06-source-", dir=str(run_root))
+    )
+    snapshot_parent.chmod(0o700)
+    approved_roots = (
+        "k8s-inference/stages/infrastructure",
+        "k8s-inference/catalog/profiles",
+        "modules/device-plugin",
+        "modules/gpu-operator",
+        "modules/network-operator",
+    )
+    process: subprocess.Popen[bytes] | None = None
+    try:
+        process = subprocess.Popen(
+            [
+                "git",
+                "-C",
+                str(REPOSITORY_ROOT),
+                "archive",
+                "--format=tar",
+                commit,
+                "--",
+                *approved_roots,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=clean_environment(),
+        )
+        if process.stdout is None or process.stderr is None:
+            raise DeploymentError("cannot open the exact SAI-06 Git archive")
+        try:
+            with tarfile.open(fileobj=process.stdout, mode="r|") as archive:
+                for member in archive:
+                    parts = Path(member.name).parts
+                    name = member.name.rstrip("/")
+                    if (
+                        not parts
+                        or member.name.startswith("/")
+                        or ".." in parts
+                        or not any(
+                            name == root
+                            or name.startswith(f"{root}/")
+                            or root.startswith(f"{name}/")
+                            for root in approved_roots
+                        )
+                        or not (member.isdir() or member.isfile())
+                    ):
+                        raise DeploymentError(
+                            "the exact SAI-06 Git archive contains an unsafe entry"
+                        )
+                    archive.extract(member, path=snapshot_parent, filter="data")
+        except (OSError, tarfile.TarError) as error:
+            process.kill()
+            raise DeploymentError(
+                "cannot materialize the exact SAI-06 Git source snapshot"
+            ) from error
+        return_code = process.wait()
+        stderr = process.stderr.read().decode("utf-8", errors="replace")
+        if return_code != 0:
+            raise DeploymentError(
+                "cannot materialize the exact SAI-06 Git source snapshot: "
+                + stderr.strip()
+            )
+        solution_root = snapshot_parent / "k8s-inference"
+        required = (
+            solution_root / "stages" / "infrastructure" / "main.tf",
+            solution_root / "catalog" / "profiles" / "approved-targets.json",
+            snapshot_parent / "modules" / "device-plugin" / "main.tf",
+            snapshot_parent / "modules" / "gpu-operator" / "main.tf",
+            snapshot_parent / "modules" / "network-operator" / "main.tf",
+        )
+        if any(not path.is_file() or path.is_symlink() for path in required):
+            raise DeploymentError(
+                "the exact SAI-06 Git source snapshot is incomplete"
+            )
+        # TF_DATA_DIR and the local state live outside this tree.  Terraform
+        # therefore needs no write access to the configuration or module paths.
+        for path in sorted(snapshot_parent.rglob("*"), reverse=True):
+            if path.is_symlink():
+                raise DeploymentError(
+                    "the exact SAI-06 Git source snapshot contains a symbolic link"
+                )
+            path.chmod(0o500 if path.is_dir() else 0o400)
+        snapshot_parent.chmod(0o500)
+        yield solution_root
+    finally:
+        if process is not None and process.poll() is None:
+            process.kill()
+            process.wait()
+        if snapshot_parent.exists():
+            snapshot_parent.chmod(0o700)
+            for path in snapshot_parent.rglob("*"):
+                if not path.is_symlink() and path.is_dir():
+                    path.chmod(0o700)
+            shutil.rmtree(snapshot_parent)
 
 
 def source_commit() -> str:
@@ -799,47 +912,42 @@ def _sai06_plan_allocation(
 
 
 def require_sai06_no_replacements(plan_document: Mapping[str, Any]) -> None:
-    """Reject replacements and deletes of the SAI-06 critical infrastructure."""
-    replacements = sorted(
-        str(change.get("address", ""))
-        for change in plan_document.get("resource_changes", [])
-        if change.get("mode", "managed") == "managed"
-        and {"create", "delete"}.issubset(
-            set(change.get("change", {}).get("actions", []))
-        )
-    )
-    if replacements:
+    """Accept only non-destructive managed-resource rollout actions.
+
+    SAI-06 changes the cluster's recovery boundary and shared edge. An address
+    fragment denylist cannot enumerate every outage-capable security group,
+    permit, identity, network or future resource. The rollout is therefore
+    semantically allowlisted: managed resources may be read, created, updated,
+    or left unchanged, but never deleted, forgotten, moved, replaced, or use an
+    action Terraform did not explicitly classify here.
+    """
+    changes = plan_document.get("resource_changes", [])
+    if not isinstance(changes, list):
+        raise DeploymentError("SAI-06 plan resource changes are malformed")
+    allowed_actions = {("no-op",), ("read",), ("create",), ("update",)}
+    rejected: list[str] = []
+    for resource in changes:
+        if not isinstance(resource, Mapping):
+            raise DeploymentError("SAI-06 plan contains a malformed resource change")
+        if resource.get("mode", "managed") != "managed":
+            continue
+        address = resource.get("address")
+        change = resource.get("change")
+        if not isinstance(address, str) or not address or not isinstance(change, Mapping):
+            raise DeploymentError("SAI-06 plan contains an unbound managed change")
+        actions = change.get("actions")
+        if (
+            not isinstance(actions, list)
+            or any(not isinstance(action, str) for action in actions)
+            or tuple(actions) not in allowed_actions
+            or resource.get("previous_address") is not None
+        ):
+            rejected.append(address)
+    if rejected:
         raise DeploymentError(
-            "SAI-06 requires a no-replacement infrastructure plan; replacements: "
-            + ", ".join(replacements)
-        )
-    critical_fragments = (
-        "nebius_mk8s_v1_cluster.",
-        "nebius_mk8s_v1_node_group.system",
-        "nebius_vpc_v1_allocation.gateway",
-        "nebius_storage_v1_bucket.postgresql_backup",
-        "postgresql_backup",
-        "postgresql_restore",
-        "kubernetes_persistent_volume_claim",
-        "kubernetes_manifest.control_database",
-        "helm_release.cloudnative_pg",
-        "helm_release.envoy_gateway",
-        "helm_release.control_plane",
-    )
-    destructive = sorted(
-        str(change.get("address", ""))
-        for change in plan_document.get("resource_changes", [])
-        if change.get("mode", "managed") == "managed"
-        and "delete" in change.get("change", {}).get("actions", [])
-        and any(
-            fragment in str(change.get("address", ""))
-            for fragment in critical_fragments
-        )
-    )
-    if destructive:
-        raise DeploymentError(
-            "SAI-06 rollout plan deletes critical cluster, storage, edge or "
-            "recovery resources: " + ", ".join(destructive)
+            "SAI-06 rollout permits only no-op, read, create, or in-place update "
+            "actions with stable addresses; destructive, moved, replacement, or "
+            "unknown managed changes: " + ", ".join(sorted(rejected))
         )
 
 
@@ -3209,6 +3317,7 @@ def plan_stage(
     contract: Mapping[str, Any],
     variable_file: Path,
     destroy: bool = False,
+    root_override: Path | None = None,
 ) -> tuple[Path, dict[str, Any], dict[str, str]]:
     if stage == "workloads" and not destroy:
         expected_batch = (
@@ -3237,7 +3346,7 @@ def plan_stage(
                     "the generated scientific batch input differs from the customer "
                     "configuration; regenerate staged inputs with inference-stack"
                 )
-    root = stage_root(stage)
+    root = root_override if root_override is not None else stage_root(stage)
     state, _, _ = stage_paths(run_root, stage)
     environment = stage_environment(
         run_root,
@@ -3880,13 +3989,6 @@ def plan_infrastructure_with_sai06(
     commit: str,
     variable_file: Path,
 ) -> tuple[Path, dict[str, Any], dict[str, str]]:
-    result = plan_stage(
-        args.terraform,
-        run_root=run_root,
-        stage="infrastructure",
-        contract=contract,
-        variable_file=variable_file,
-    )
     postgresql_backup_enabled = (
         contract.get("stages", {})
         .get("infrastructure", {})
@@ -3894,8 +3996,46 @@ def plan_infrastructure_with_sai06(
         .get("enabled")
         is True
     )
+    source_before: tuple[str, str] | None = None
+    if postgresql_backup_enabled:
+        source_before = verified_source_identity()
+        if source_before[0] != commit:
+            raise DeploymentError(
+                "SAI-06 source commit changed before Terraform planning"
+            )
+    if postgresql_backup_enabled:
+        with exact_git_source_snapshot(commit, run_root) as snapshot_root:
+            result = plan_stage(
+                args.terraform,
+                run_root=run_root,
+                stage="infrastructure",
+                contract=contract,
+                variable_file=variable_file,
+                root_override=snapshot_root / "stages" / "infrastructure",
+            )
+    else:
+        result = plan_stage(
+            args.terraform,
+            run_root=run_root,
+            stage="infrastructure",
+            contract=contract,
+            variable_file=variable_file,
+        )
     if not postgresql_backup_enabled:
         return result
+    source_after = verified_source_identity()
+    if source_after != source_before:
+        for artifact in (
+            result[0],
+            run_root / "infrastructure-plan.plan.json",
+            run_root / SAI06_APPROVAL_REQUEST_NAME,
+        ):
+            if artifact.is_file() and not artifact.is_symlink():
+                artifact.unlink()
+        raise DeploymentError(
+            "SAI-06 source identity changed while Terraform was planning; the "
+            "untrusted plan was discarded"
+        )
     plan_path, document, _ = result
     require_sai06_no_replacements(document)
     capacity = preflight_postgresql_backup_capacity(
@@ -4269,6 +4409,7 @@ def validate_postgresql_retained_boundary(
         "region": region,
         "bucket_id": bucket_id,
         "bucket_name": object_storage["name"],
+        "configured_capacity_gib": sizing["configured_capacity_gib"],
         "retention_days": retention["barman_retention_days"],
         "resource_ids_sha256": canonical_sha256(all_resource_ids),
     }
@@ -4308,12 +4449,237 @@ def _kubectl_json(
         ) from error
 
 
+def _nebius_json(args: argparse.Namespace, arguments: Sequence[str], label: str) -> Any:
+    result = run(
+        [
+            args.nebius,
+            "--profile",
+            args.nebius_profile,
+            *arguments,
+            "--format",
+            "json",
+        ],
+        capture=True,
+        env=clean_environment(),
+    )
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise DeploymentError(
+            f"live PostgreSQL recovery preflight returned malformed {label} JSON; "
+            "no resource was changed"
+        ) from error
+
+
+def _postgresql_provider_bucket(
+    args: argparse.Namespace,
+    retained: Mapping[str, Any],
+) -> dict[str, Any]:
+    """GET and validate the retained bucket from the provider control plane."""
+    bucket_id = str(retained["bucket_id"])
+    document = _nebius_json(
+        args,
+        ["storage", "bucket", "get", "--id", bucket_id],
+        "object-storage bucket",
+    )
+    if not isinstance(document, Mapping):
+        raise DeploymentError(
+            "live retained PostgreSQL bucket is malformed; no resource was changed"
+        )
+    metadata = document.get("metadata")
+    spec = document.get("spec")
+    status = document.get("status")
+    if not all(isinstance(value, Mapping) for value in (metadata, spec, status)):
+        raise DeploymentError(
+            "live retained PostgreSQL bucket fields are incomplete; no resource was changed"
+        )
+    lifecycle = spec.get("lifecycle_configuration")
+    rules = lifecycle.get("rules") if isinstance(lifecycle, Mapping) else None
+    if not isinstance(rules, list):
+        raise DeploymentError(
+            "live retained PostgreSQL bucket has no lifecycle rules; no resource was changed"
+        )
+    rule_index = {
+        rule.get("id"): rule for rule in rules if isinstance(rule, Mapping)
+    }
+    noncurrent = rule_index.get(
+        "expire-noncurrent-versions-after-recovery-window"
+    )
+    multipart = rule_index.get("abort-incomplete-multipart-uploads")
+    expected_capacity = int(retained["configured_capacity_gib"]) * 1024**3
+    expected_noncurrent_days = int(retained["retention_days"]) + 7
+    exact = (
+        (metadata.get("id"), bucket_id),
+        (metadata.get("parent_id"), retained["project_id"]),
+        (metadata.get("name"), retained["bucket_name"]),
+        (spec.get("versioning_policy"), "ENABLED"),
+        (spec.get("max_size_bytes"), expected_capacity),
+        (spec.get("default_storage_class"), "STANDARD"),
+        (status.get("state"), "ACTIVE"),
+        (status.get("region"), retained["region"]),
+        (status.get("suspension_state"), "NOT_SUSPENDED"),
+        (status.get("anonymous_access_enabled"), False),
+    )
+    if (
+        any(actual != expected for actual, expected in exact)
+        or not isinstance(metadata.get("resource_version"), int)
+        or metadata["resource_version"] < 1
+        or not isinstance(noncurrent, Mapping)
+        or noncurrent.get("status") != "ENABLED"
+        or noncurrent.get("noncurrent_version_expiration", {}).get(
+            "noncurrent_days"
+        )
+        != expected_noncurrent_days
+        or not isinstance(multipart, Mapping)
+        or multipart.get("status") != "ENABLED"
+        or multipart.get("abort_incomplete_multipart_upload", {}).get(
+            "days_after_initiation"
+        )
+        != 1
+    ):
+        raise DeploymentError(
+            "live retained PostgreSQL bucket identity, versioning, capacity, region "
+            "or lifecycle differs from the reviewed boundary; no resource was changed"
+        )
+    return {
+        "bucket_id": bucket_id,
+        "resource_version": metadata["resource_version"],
+        "provider_document_sha256": canonical_sha256(document),
+    }
+
+
+def _kubectl_raw(
+    args: argparse.Namespace,
+    dynamic: Mapping[str, Any],
+    path: str,
+) -> str:
+    result = run(
+        [
+            args.kubectl,
+            "--kubeconfig",
+            str(dynamic["kubeconfig_path"]),
+            "--context",
+            str(dynamic["kube_context"]),
+            "get",
+            "--raw",
+            path,
+        ],
+        capture=True,
+        env=clean_environment(),
+    )
+    return result.stdout
+
+
+def _prometheus_scalar(metrics: str, name: str) -> float:
+    matches = re.findall(
+        rf"(?m)^{re.escape(name)}\s+(-?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?)\s*$",
+        metrics,
+    )
+    if len(matches) != 1:
+        raise DeploymentError(
+            f"live PostgreSQL recovery inventory metric {name} is missing or "
+            "ambiguous; no resource was changed"
+        )
+    value = float(matches[0])
+    if value < 0 or value != value or value in {float("inf"), float("-inf")}:
+        raise DeploymentError(
+            f"live PostgreSQL recovery inventory metric {name} is invalid; no "
+            "resource was changed"
+        )
+    return value
+
+
+def _postgresql_inventory_evidence(
+    args: argparse.Namespace,
+    dynamic: Mapping[str, Any],
+    retained: Mapping[str, Any],
+    *,
+    now: datetime,
+) -> dict[str, Any]:
+    metrics = _kubectl_raw(
+        args,
+        dynamic,
+        "/api/v1/namespaces/fs2-data/services/"
+        "http:fs2-postgresql-backup-metrics:9188/proxy/metrics",
+    )
+    names = (
+        "fs2_postgresql_backup_bucket_scrape_success",
+        "fs2_postgresql_backup_bucket_last_success_timestamp_seconds",
+        "fs2_postgresql_backup_bucket_usage_bytes",
+        "fs2_postgresql_backup_bucket_current_bytes",
+        "fs2_postgresql_backup_bucket_noncurrent_bytes",
+        "fs2_postgresql_backup_bucket_capacity_bytes",
+        "fs2_postgresql_backup_bucket_object_versions",
+        "fs2_postgresql_restore_last_success_timestamp_seconds",
+    )
+    values = {name: _prometheus_scalar(metrics, name) for name in names}
+    expected_capacity = int(retained["configured_capacity_gib"]) * 1024**3
+    inventory_success = datetime.fromtimestamp(
+        values["fs2_postgresql_backup_bucket_last_success_timestamp_seconds"], UTC
+    )
+    restore_success = datetime.fromtimestamp(
+        values["fs2_postgresql_restore_last_success_timestamp_seconds"], UTC
+    )
+    usage = values["fs2_postgresql_backup_bucket_usage_bytes"]
+    current = values["fs2_postgresql_backup_bucket_current_bytes"]
+    noncurrent = values["fs2_postgresql_backup_bucket_noncurrent_bytes"]
+    if (
+        values["fs2_postgresql_backup_bucket_scrape_success"] != 1
+        or now - inventory_success > timedelta(minutes=10)
+        or inventory_success > now + timedelta(minutes=5)
+        or now - restore_success > timedelta(days=9)
+        or restore_success > now + timedelta(minutes=5)
+        or values["fs2_postgresql_backup_bucket_capacity_bytes"]
+        != expected_capacity
+        or values["fs2_postgresql_backup_bucket_object_versions"] < 1
+        or current <= 0
+        or usage != current + noncurrent
+        or usage >= expected_capacity
+    ):
+        raise DeploymentError(
+            "live PostgreSQL backup object/version inventory or restore receipt is "
+            "stale, empty, inconsistent or capacity-unsafe; no resource was changed"
+        )
+    return {
+        "inventory_last_success": inventory_success.isoformat().replace("+00:00", "Z"),
+        "restore_last_success": restore_success.isoformat().replace("+00:00", "Z"),
+        "usage_bytes": int(usage),
+        "object_versions": int(
+            values["fs2_postgresql_backup_bucket_object_versions"]
+        ),
+        "metrics_sha256": hashlib.sha256(metrics.encode()).hexdigest(),
+    }
+
+
+def _live_utc(value: object, label: str, *, now: datetime) -> datetime:
+    if not isinstance(value, str) or not value.endswith("Z"):
+        raise DeploymentError(
+            f"live PostgreSQL {label} is not a UTC timestamp; no resource was changed"
+        )
+    try:
+        parsed = datetime.fromisoformat(value[:-1] + "+00:00").astimezone(UTC)
+    except ValueError as error:
+        raise DeploymentError(
+            f"live PostgreSQL {label} is malformed; no resource was changed"
+        ) from error
+    if parsed > now + timedelta(minutes=5):
+        raise DeploymentError(
+            f"live PostgreSQL {label} is in the future; no resource was changed"
+        )
+    return parsed
+
+
 def validate_postgresql_live_recovery_boundary(
     args: argparse.Namespace,
     contract: Mapping[str, Any],
     dynamic: Mapping[str, Any],
+    *,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Require a current base backup and healthy continuous WAL archive."""
+    """Require provider-backed storage plus a current, owned recovery chain."""
+    current = (now or datetime.now(UTC)).astimezone(UTC)
+    retained = validate_postgresql_retained_boundary(contract, dynamic)
+    provider = _postgresql_provider_bucket(args, retained)
     cluster = _kubectl_json(
         args, dynamic, "clusters.postgresql.cnpg.io", name="fs2-control-db"
     )
@@ -4343,10 +4709,27 @@ def validate_postgresql_live_recovery_boundary(
         .get("postgresql_backup", {})
         .get("schedule")
     )
+    cluster_metadata = cluster.get("metadata")
+    schedule_metadata = schedule.get("metadata")
+    schedule_cluster = (
+        schedule_spec.get("cluster") if isinstance(schedule_spec, Mapping) else None
+    )
     if (
-        not isinstance(cluster_status, Mapping)
+        not isinstance(cluster_metadata, Mapping)
+        or cluster_metadata.get("name") != "fs2-control-db"
+        or cluster_metadata.get("namespace") != "fs2-data"
+        or not re.fullmatch(
+            r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            str(cluster_metadata.get("uid", "")),
+        )
+        or not isinstance(schedule_metadata, Mapping)
+        or schedule_metadata.get("name") != "fs2-control-db"
+        or schedule_metadata.get("namespace") != "fs2-data"
+        or not isinstance(cluster_status, Mapping)
         or not isinstance(schedule_spec, Mapping)
         or not isinstance(schedule_status, Mapping)
+        or not isinstance(schedule_cluster, Mapping)
+        or schedule_cluster.get("name") != "fs2-control-db"
         or not isinstance(backup_items, list)
         or not backup_items
         or schedule_spec.get("suspend") is True
@@ -4370,13 +4753,40 @@ def validate_postgresql_live_recovery_boundary(
         ),
         None,
     )
-    completed = [
-        item
-        for item in backup_items
-        if isinstance(item, Mapping)
-        and isinstance(item.get("status"), Mapping)
-        and str(item["status"].get("phase", "")).lower() == "completed"
-    ]
+    cluster_uid = str(cluster_metadata["uid"])
+    completed: list[tuple[Mapping[str, Any], datetime]] = []
+    for item in backup_items:
+        if not isinstance(item, Mapping):
+            continue
+        metadata = item.get("metadata")
+        spec = item.get("spec")
+        status = item.get("status")
+        if not all(isinstance(value, Mapping) for value in (metadata, spec, status)):
+            continue
+        owner_references = metadata.get("ownerReferences")
+        owner_matches = isinstance(owner_references, list) and any(
+            isinstance(owner, Mapping)
+            and owner.get("apiVersion") == "postgresql.cnpg.io/v1"
+            and owner.get("kind") == "Cluster"
+            and owner.get("name") == "fs2-control-db"
+            and owner.get("uid") == cluster_uid
+            and owner.get("controller") is True
+            for owner in owner_references
+        )
+        source_cluster = spec.get("cluster")
+        if (
+            metadata.get("namespace") != "fs2-data"
+            or not owner_matches
+            or not isinstance(source_cluster, Mapping)
+            or source_cluster.get("name") != "fs2-control-db"
+            or str(status.get("phase", "")).lower() != "completed"
+        ):
+            continue
+        completed_at = _live_utc(
+            status.get("stoppedAt"), "completed backup time", now=current
+        )
+        if current - completed_at <= timedelta(hours=36):
+            completed.append((item, completed_at))
     if (
         not isinstance(continuous, Mapping)
         or continuous.get("status") != "True"
@@ -4386,14 +4796,45 @@ def validate_postgresql_live_recovery_boundary(
             "live PostgreSQL base backup or continuous WAL archival is unhealthy; "
             "no resource was changed"
         )
+    first_recoverability = _live_utc(
+        cluster_status["firstRecoverabilityPoint"],
+        "first recoverability point",
+        now=current,
+    )
+    last_backup = _live_utc(
+        cluster_status["lastSuccessfulBackup"],
+        "last successful backup",
+        now=current,
+    )
+    last_check = _live_utc(
+        schedule_status["lastCheckTime"], "schedule last check", now=current
+    )
+    last_wal = cluster_status["lastArchivedWal"]
+    retention_days = int(retained["retention_days"])
+    if (
+        current - first_recoverability > timedelta(days=retention_days + 7)
+        or current - last_backup > timedelta(hours=36)
+        or current - last_check > timedelta(hours=36)
+        or first_recoverability > last_backup
+        or not re.fullmatch(r"[0-9A-F]{24}", str(last_wal))
+    ):
+        raise DeploymentError(
+            "live PostgreSQL recovery timestamps or archived WAL identity are stale "
+            "or malformed; no resource was changed"
+        )
+    inventory = _postgresql_inventory_evidence(
+        args, dynamic, retained, now=current
+    )
     return {
-        "cluster_uid": cluster.get("metadata", {}).get("uid"),
+        "cluster_uid": cluster_uid,
         "first_recoverability_point": cluster_status["firstRecoverabilityPoint"],
         "last_successful_backup": cluster_status["lastSuccessfulBackup"],
-        "last_archived_wal": cluster_status["lastArchivedWal"],
+        "last_archived_wal": last_wal,
         "completed_backup_count": len(completed),
         "continuous_archiving": True,
         "schedule_last_check_time": schedule_status["lastCheckTime"],
+        "provider_bucket": provider,
+        "object_inventory": inventory,
     }
 
 

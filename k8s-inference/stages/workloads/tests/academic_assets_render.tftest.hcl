@@ -257,6 +257,9 @@ run "enabled_academic_config_reaches_the_chart" {
         general_shared_cache    = false
         deny_egress_on_validate = true
       }
+      execution = {
+        enabled = false
+      }
       assets                    = {}
       readiness_manifest_sha256 = "2b5a21f8eca6d8e465f29c508a6717915b84e73cb351d24811223a70228a3e36"
     }
@@ -302,6 +305,9 @@ run "localized_private_generation_reaches_the_chart" {
   command = plan
 
   variables {
+    scheduling = {
+      fair_share_precedence_acknowledged = true
+    }
     academic_assets = {
       enabled        = true
       project_id     = "project-test"

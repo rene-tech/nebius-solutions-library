@@ -17,18 +17,17 @@ resource "terraform_data" "postgresql_backup_inventory_rotation_contract" {
 
   input = {
     credential_generation      = var.postgresql_backup.credential_generation
-    credential_identity_sha256 = sha256(local.postgresql_backup_inventory_credential_identity)
+    credential_identity_sha256 = local.postgresql_backup_inventory_credential_identity_sha256
     credential_revision        = local.postgresql_backup_inventory_credential_revision
-    pod_template_annotation    = tostring(local.postgresql_backup_inventory_credential_revision)
+    pod_template_annotation    = local.postgresql_backup_inventory_credential_identity_sha256
   }
 
   lifecycle {
     precondition {
       condition = (
-        local.postgresql_backup_inventory_credential_revision >=
-        var.postgresql_backup.credential_generation * 16777216 &&
-        local.postgresql_backup_inventory_credential_revision <
-        (var.postgresql_backup.credential_generation + 1) * 16777216
+        local.postgresql_backup_inventory_credential_revision > 0 &&
+        local.postgresql_backup_inventory_credential_revision <= 1152921504606846975 &&
+        length(local.postgresql_backup_inventory_credential_identity_sha256) == 64
       )
       error_message = "The PostgreSQL inventory exporter rotation revision must bind the operator generation and exact MysteryBox access-key identity."
     }
@@ -72,7 +71,7 @@ resource "kubernetes_deployment_v1" "postgresql_backup_metrics" {
           # data_wo Secret rotation does not alter a pod template by itself.
           # Bind the exact cloud-key identity/generation so SAI-10 rotation
           # deterministically rolls the long-running inventory reader.
-          "fs2.nebius.ai/postgresql-inventory-credential-revision" = tostring(local.postgresql_backup_inventory_credential_revision)
+          "fs2.nebius.ai/postgresql-inventory-credential-sha256" = local.postgresql_backup_inventory_credential_identity_sha256
         }
       }
       spec {
