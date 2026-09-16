@@ -334,6 +334,27 @@ async def test_http_denied_model_is_not_attributed_to_the_caller_claimed_model(r
 
 
 @pytest.mark.asyncio
+async def test_http_core_tool_denied_by_scope_is_not_attributed(registry, cipher, hasher):
+    """SAI-01: CORE_TOOLS membership is not authorization. A core tool called without its
+    required token scope (list_models without catalog.read) is denied and must NOT be
+    attributed — mcp_tool is observed only after the per-tool scope check passes."""
+    runtime = build_runtime(registry, cipher, hasher)
+    runtime.settings.request_debug_enabled = True
+    runtime.settings.request_debug_tenants = "tenant-a"
+    runtime.settings.request_debug_expires_at = datetime.now(UTC) + timedelta(hours=1)
+    debug = InMemoryDebugStore()
+    runtime.request_debug_store = debug
+    app = _app(runtime)
+    key = await _key(runtime, catalog=False)  # no CATALOG_READ scope
+    async with app.router.lifespan_context(app), _connection(runtime, app, key) as client:
+        result = await client.call_tool("list_models", {})
+        assert result.is_error  # denied for lack of catalog.read scope
+    # The denied core tool is never attributed, even though the call was observed.
+    for row in (await debug.list(tenant_id="tenant-a")).items:
+        assert row.mcp_tool != "list_models"
+
+
+@pytest.mark.asyncio
 async def test_http_shared_model_access_does_not_share_operation_history(registry, cipher, hasher):
     runtime = build_runtime(registry, cipher, hasher)
     app = _app(runtime)

@@ -26,7 +26,11 @@ def _exchange(*, tenant="tenant-a", model="qwen3-8b", operation=None):
         method="POST",
         http_status=422,
         request_body=body_capture(b'{"input":"synthetic-debug-input"}', "application/json", True),
-        response_body=body_capture(b'{"detail":"synthetic upstream validation failure"}', "application/json", True),
+        # Responses are captured sanitized once at build time (is_response=True); the
+        # store no longer re-sanitizes, so fixtures must build the response as stored.
+        response_body=body_capture(
+            b'{"detail":"synthetic upstream validation failure"}', "application/json", True, is_response=True
+        ),
         error_type="upstream_http_error",
     )
 
@@ -82,13 +86,45 @@ def test_malformed_authenticated_payload_is_captured_without_a_run_or_auth_secre
         # The request (debugging target) is retained verbatim; the error response is
         # fail-closed hashed (free-text detail is never stored raw).
         assert data["request_body"]["data"] == raw
-        assert data["response_body"]["data"] != response.text and "[sha256:" in data["response_body"]["data"]
+        assert data["response_body"]["data"] != response.text and "[sha256:" not in data["response_body"]["data"]
+        assert "[REDACTED]" in data["response_body"]["data"]  # response string values redacted
         assert data["request_body"]["complete"] and data["response_body"]["complete"]
         assert token.token not in detail.text
         assert ["authorization", "[REDACTED]"] in data["request_headers"]
 
 
-def test_app_operation_filters_and_hashes_error_detail(registry, cipher, hasher):
+def test_denied_http_invoke_is_not_attributed_to_the_requested_model(registry, cipher, hasher):
+    """SAI-01: a /v1 invoke denied at admission (model outside token policy) must not be
+    captured under the requested model — HTTP attribution is set only after the grant."""
+    runtime = _runtime(registry, cipher, hasher)
+    runtime.settings.request_debug_enabled = True
+    runtime.settings.request_debug_tenants = "debug-tenant"
+    runtime.settings.request_debug_expires_at = datetime.now(UTC) + timedelta(hours=1)
+    token = asyncio.run(
+        runtime.tokens.issue(
+            TokenCreate(
+                principal_id="debug-researcher",
+                tenant_id="debug-tenant",
+                name="debug-test",
+                scopes=[Scope.INFERENCE_INVOKE],
+                models=["openfold2"],  # NOT qwen3-8b
+            ),
+            created_by="test",
+        )
+    )
+    with _client(runtime) as client:
+        denied = client.post(
+            "/v1/models/qwen3-8b:invoke",
+            json={"operation": "predict", "payload": {}},
+            headers={"authorization": f"Bearer {token.token}", "Idempotency-Key": "k" * 20},
+        )
+        assert denied.status_code in {401, 403}
+        assert client.post("/admin/api/v1/session", headers=BOOTSTRAP_AUTH).status_code == 200
+        for item in client.get("/admin/api/v1/requests").json()["data"]["items"]:
+            assert item["model_id"] != "qwen3-8b"  # denied request not attributed to the requested model
+
+
+def test_app_operation_filters_and_redacts_error_detail(registry, cipher, hasher):
     runtime = _runtime(registry, cipher, hasher)
     store = InMemoryDebugStore()
     runtime.request_debug_store = store
@@ -113,7 +149,7 @@ def test_app_operation_filters_and_hashes_error_detail(registry, cipher, hasher)
         # detail text (an operator reads structure + safe hashes, never arbitrary detail).
         stored_response = detail.json()["data"]["response_body"]
         assert stored_response["redacted"] and "synthetic upstream validation failure" not in stored_response["data"]
-        assert "[sha256:" in stored_response["data"]
+        assert "[sha256:" not in stored_response["data"] and "[REDACTED]" in stored_response["data"]
         assert client.get(f"{base}/{foreign_model.id}").status_code == 404
         assert client.get(base, params={"cursor": "invalid"}).status_code == 400
         assert len(client.get("/admin/api/v1/requests").json()["data"]["items"]) == 3

@@ -31,6 +31,7 @@ from .request_debug import (
     persist_debug_exchange,
     redact_headers,
     redact_query,
+    redact_response_headers,
     suppressed_body,
 )
 
@@ -204,12 +205,12 @@ class _UpstreamCapture:
             observed_bytes=self.request_observed,
             credential_prefixes=prefixes,
         )
-        # observed_bytes counts bytes actually delivered by the existing decoded
-        # HTTP body iterator, not wire/compressed bytes or advertised Content-Length.
-        # The stored content is a bounded prefix, so report the true observed length
-        # and flag truncation when the tail beyond the buffer was discarded. Fail
-        # closed when the request had an uninspected tail: a credential we never saw
-        # there could be echoed in the response, so the response body is withheld.
+        # observed_bytes counts bytes actually delivered by the existing decoded HTTP
+        # body iterator, not wire/compressed bytes or advertised Content-Length. The
+        # response is captured fail-closed by structure (redacted strings, or withheld);
+        # the true observed length is reported regardless. Fail closed too when the
+        # request had an uninspected tail: a credential we never saw there could be
+        # echoed in the response, so the response body is withheld entirely.
         response = (
             suppressed_body(self.response_content_type, self.observed_bytes, self.complete)
             if self.debug_max_body_bytes is not None and self.request_observed > self.store_limit
@@ -249,7 +250,7 @@ class _UpstreamCapture:
             error_detail=sanitize_error_detail(self.error_detail) or None if self.error_detail else None,
             query_string=redact_query(self.query_string, known_credentials=self.known_credentials),
             request_headers=redact_headers(self.request_headers, known_credentials=self.known_credentials),
-            response_headers=redact_headers(self.response_headers, known_credentials=self.known_credentials),
+            response_headers=redact_response_headers(self.response_headers, known_credentials=self.known_credentials),
             request_body=request,
             response_body=response,
             disconnected=self.disconnected,

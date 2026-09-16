@@ -65,7 +65,9 @@ def row(**updates):
         http_status=422,
         model_id="boltz2",
         request_body=body_capture(b'{"sequence":"ACDEFG"}', "application/json", True),
-        response_body=body_capture(b'{"detail":"polymers is required"}', "application/json", True),
+        # Response is sanitized once at build time (is_response=True); the store does not
+        # re-sanitize, so the fixture builds the response as it is stored.
+        response_body=body_capture(b'{"detail":"polymers is required"}', "application/json", True, is_response=True),
     )
     values.update(updates)
     return DebugExchange(**values)
@@ -79,6 +81,7 @@ async def capture(
     headers=(),
     query=b"",
     state=None,
+    model="boltz2",
     store=None,
     resolver=None,
     telemetry_store=None,
@@ -88,13 +91,16 @@ async def capture(
 ):
     store = store or InMemoryDebugStore()
     incoming, outgoing = list(chunks), []
+    # Attribution is server-authoritative from scope state (set by the real handler
+    # after authorization). Default to an authorized model so scoped capture matches;
+    # tests that simulate a denied/unattributed request pass their own state.
     scope = {
         "type": "http",
         "method": "POST",
         "path": path,
         "headers": list(headers),
         "query_string": query,
-        "state": state or {},
+        "state": {"model_id": model} if state is None else state,
     }
 
     async def receive():
@@ -739,7 +745,9 @@ async def test_middleware_captures_response_when_request_fits_the_buffer():
     # A complete valid-JSON response is stored (not withheld), but its free-text content
     # is fail-closed hashed: the echoed secret and the "ok" detail are both hashed.
     stored = _stored_bytes(exchange.response_body)
-    assert stored != b"[REDACTED]" and b"[sha256:" in stored and b'"ok"' not in stored
+    assert (
+        stored != b"[REDACTED]" and b"[REDACTED]" in stored and b'"ok"' not in stored
+    )  # strings redacted, structure kept
 
 
 @pytest.mark.parametrize(
@@ -793,9 +801,9 @@ async def test_arbitrary_and_binary_response_bodies_are_withheld():
         assert exchange.response_body.redacted and exchange.response_body.truncated
 
 
-async def test_success_response_content_is_hashed_structure_kept():
-    """SAI-01: a structured success response is retained but its free-text content is
-    replaced by a safe hash (not stored verbatim); numeric fields and structure remain."""
+async def test_success_response_content_is_redacted_structure_kept():
+    """SAI-01: a structured success response keeps only its structure and numbers; every
+    string value is redacted (no free-text or hash stored)."""
     body = b'{"choices":[{"message":{"content":"the model output"}}],"usage":{"prompt_tokens":3}}'
 
     async def app(scope, receive, send):
@@ -811,8 +819,9 @@ async def test_success_response_content_is_hashed_structure_kept():
     (exchange,) = store.exchanges.values()
     stored = _stored_bytes(exchange.response_body)
     assert exchange.response_body.complete and exchange.response_body.redacted
-    assert b"the model output" not in stored and b'"content":"[sha256:' in stored
-    assert b'"prompt_tokens":3' in stored  # numeric field kept for correlation/structure
+    assert b"the model output" not in stored and b"[sha256:" not in stored
+    assert b'"content":"[REDACTED]"' in stored  # string value redacted, key structure kept
+    assert b'"prompt_tokens":3' in stored  # numeric field kept for structure
 
 
 @pytest.mark.parametrize("state", [{}, {"model_id": "qwen3-8b"}, {"model_id": "boltz2"}])
@@ -885,11 +894,12 @@ async def test_concurrent_near_cap_captures_stay_within_a_bounded_memory_budget(
         (b'{"choices":[{"content":"model said SEKRIT"}]}', b"SEKRIT"),  # success content
     ],
 )
-def test_response_only_opaque_secret_is_hashed_not_stored(raw, secret):
-    """SAI-01: a valid-JSON response never stores arbitrary free-text; every non-allowlisted
-    string value (even an opaque, non-format secret) is replaced by a safe hash."""
+def test_response_only_opaque_secret_is_redacted_not_stored(raw, secret):
+    """SAI-01: a valid-JSON response never stores any string value verbatim; every string
+    (even an opaque, non-format secret, under any key) is redacted — and never hashed
+    reversibly. The response shape (keys, numbers) is kept."""
     stored = _stored_bytes(body_capture(raw, "application/json", complete=True, is_response=True))
-    assert secret not in stored and b"[sha256:" in stored
+    assert secret not in stored and b"[sha256:" not in stored and b"[REDACTED]" in stored
 
 
 @pytest.mark.parametrize(

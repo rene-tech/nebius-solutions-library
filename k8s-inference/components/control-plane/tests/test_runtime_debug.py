@@ -101,12 +101,12 @@ async def test_native_rejection_captures_exact_upstream_request_and_validation_r
     assert exchange.started_at <= exchange.completed_at
     # The request (debugging target) is captured verbatim. The error response is
     # fail-closed: structural fields (loc/type) are kept, but free-text detail (msg) is
-    # replaced by a safe hash — arbitrary detail is never stored.
+    # redacted (no free-text or reversible hash); only structure/numbers remain.
     assert exchange.request_body.data.encode() == request_body and exchange.request_body.complete
     assert exchange.response_body.complete and exchange.response_body.redacted
     stored = exchange.response_body.data
-    assert "Field required" not in stored and "[sha256:" in stored
-    assert '"type":"missing"' in stored and "sequences" in stored  # structural fields kept
+    assert "Field required" not in stored and "missing" not in stored and "[sha256:" not in stored
+    assert '"detail":[' in stored and '"[REDACTED]"' in stored  # key structure kept, string values redacted
     assert exchange.request_body.observed_bytes == len(request_body)
     assert exchange.response_body.observed_bytes == len(error_body)
     assert not exchange.request_body.redacted
@@ -130,12 +130,12 @@ async def test_success_capture_preserves_request_and_hashes_response_content(reg
     assert result.usage.input_tokens == 3
     exchange = sink.exchanges[0]
     assert exchange.error_type is None and exchange.http_status == 200
-    # The request (debugging target) is kept verbatim; the response content is
-    # fail-closed hashed (free-text is never stored), while numeric fields are kept.
+    # The request (debugging target) is kept verbatim; the response string values are
+    # redacted (free-text never stored), while numeric fields and structure are kept.
     assert exchange.request_body.data.encode() == request_body
     stored = exchange.response_body.data
     assert exchange.response_body.complete and exchange.response_body.redacted
-    assert '"content":"[sha256:' in stored and '"prompt_tokens":3' in stored and '"content": "ok"' not in stored
+    assert '"content":"[REDACTED]"' in stored and '"prompt_tokens":3' in stored and '"content": "ok"' not in stored
 
 
 @pytest.mark.asyncio
@@ -219,9 +219,9 @@ async def test_stored_error_is_retrievable_with_shared_header_and_query_credenti
     assert len(listing.items) == 1
     detail = await sink.get(listing.items[0].id, tenant_id=operation.tenant_id)
     assert detail is not None and detail.response_body.complete
-    # Response detail is fail-closed hashed (free-text never stored); echoed secrets gone.
+    # Response string values are redacted (free-text never stored); echoed secrets gone.
     assert detail.response_body.redacted and "missing input" not in detail.response_body.data
-    assert "[sha256:" in detail.response_body.data
+    assert "[sha256:" not in detail.response_body.data and "[REDACTED]" in detail.response_body.data
     assert detail.request_body.redacted and "synthetic request" in detail.request_body.data
     rendered = detail.model_dump_json()
     assert header_secret not in rendered and query_secret not in rendered and body_secret not in rendered
@@ -414,10 +414,10 @@ async def test_federated_internal_retry_captures_each_attempt_and_redacts_actual
         rendered = "\n".join(exchange.model_dump_json() for exchange in sink.exchanges)
         assert "federation-test-value-one" not in rendered and "fake-cookie-secret" not in rendered
         if first_failure == "http_status":
-            # 503 error response: detail fail-closed hashed; the echoed auth token is gone.
+            # 503 error response: string values redacted; the echoed auth token is gone.
             assert sink.exchanges[0].response_body.redacted
             assert "busy" not in sink.exchanges[0].response_body.data
-            assert "[sha256:" in sink.exchanges[0].response_body.data
+            assert "[sha256:" not in sink.exchanges[0].response_body.data
         else:
             # The timeout message embedded a credential; the raw string is never stored,
             # only a generic detail — the token cannot leak through error_detail.

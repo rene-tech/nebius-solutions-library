@@ -1036,7 +1036,8 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         wait_seconds: str | None,
     ) -> Response:
         model_id = _validate_model_id(model_id)
-        request.state.model_id = model_id
+        # Canonical capture attribution is set AFTER admission authorizes the model
+        # (see below), never from the caller-supplied path/model before authorization.
         if idempotency_key is None:
             idempotency_key = f"generated-{uuid4()}"
         if not MIN_IDEMPOTENCY_KEY_LENGTH <= len(idempotency_key) <= MAX_IDEMPOTENCY_KEY_LENGTH:
@@ -1071,6 +1072,8 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             ),
         )
         request.state.operation_id = admitted.id
+        # Server-authoritative model attribution, set only now that admission granted it.
+        request.state.model_id = admitted.model_id
         span = trace.get_current_span()
         span.set_attribute("fs2.operation.id", str(admitted.id))
         span.set_attribute("fs2.request.id", str(admitted.id))
@@ -1104,7 +1107,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         if payload.get("stream") is True:
             raise HTTPException(status_code=400, detail="streaming is not enabled in phase 1; use an async operation")
         model_id = _validate_model_id(payload["model"])
-        request.state.model_id = model_id
+        # Attribution is set by invoke() after admission authorizes the model.
         model = runtime.registry.get(model_id)
         resolved_operation = runtime.registry.operation_for_protocol(model, protocol)
         return await invoke(
@@ -1188,7 +1191,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         if runtime.scientific_batches is None:
             return _error(503, "scientific_batch_unavailable", "scientific batch submission is disabled")
         model_id = _validate_model_id(model_id)
-        request.state.model_id = model_id
+        # Attribution set after the scientific-batch service authorizes the model (below).
         if idempotency_key is None:
             raise HTTPException(status_code=400, detail="Idempotency-Key is required")
         if not MIN_IDEMPOTENCY_KEY_LENGTH <= len(idempotency_key) <= MAX_IDEMPOTENCY_KEY_LENGTH:
@@ -1206,6 +1209,8 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         )
         operation = result["operation"]
         request.state.operation_id = operation["id"]
+        # Server-authoritative model attribution, only now that submission was authorized.
+        request.state.model_id = operation.get("model_id", model_id)
         return JSONResponse(
             result,
             status_code=202,

@@ -530,27 +530,40 @@ class MCPAuthorizationMiddleware:
                     changed = self._sync_tools()
                     if changed and self._notify_tools_changed is not None:
                         await self._notify_tools_changed()
+            tool_name: str | None = None
+            core_call = False
             if ctx.method == "tools/call" and principal is not None:
-                name = str((ctx.params or {}).get("name", ""))
-                if name not in CORE_TOOLS and name not in _model_tool_names(self.runtime, principal):
+                tool_name = str((ctx.params or {}).get("name", ""))
+                if tool_name not in CORE_TOOLS and tool_name not in _model_tool_names(self.runtime, principal):
                     raise MCPError(code=INVALID_PARAMS, message="tool is outside token policy")
-                # Only after the tool name is authorized against the token policy is it
-                # trusted for attribution — never observe a caller-declared tool/model
-                # before authorization.
-                observe_request_metadata(mcp_tool=name)
-                # Typed validation runs before the admission handler. Attribute
-                # rejected inputs too, from the server-resolved model (never a caller's).
-                for model in self.runtime.registry.allowed_for_principal(principal, surface="mcp"):
-                    if name in _protocol_tool_names(model):
-                        observe_request_metadata(model_id=model.id)
-                        break
-                else:
-                    for profile in _scientific_tool_profiles(self.runtime, principal):
-                        if name == profile.mcp_tool_name:
-                            observe_request_metadata(model_id=profile.model_id)
+                core_call = tool_name in CORE_TOOLS
+                # A per-model tool's authorization IS its presence in the token's model
+                # allowlist (checked above), so attribute it now — a later typed-input
+                # rejection is still an authorized use. CORE tool names are NOT self-
+                # authorizing (membership != scope): defer their attribution until the
+                # handler's own per-tool scope check has passed (post-success, below).
+                if not core_call:
+                    observe_request_metadata(mcp_tool=tool_name)
+                    for model in self.runtime.registry.allowed_for_principal(principal, surface="mcp"):
+                        if tool_name in _protocol_tool_names(model):
+                            observe_request_metadata(model_id=model.id)
                             break
+                    else:
+                        for profile in _scientific_tool_profiles(self.runtime, principal):
+                            if tool_name == profile.mcp_tool_name:
+                                observe_request_metadata(model_id=profile.model_id)
+                                break
             result = await call_next(ctx)
             if ctx.method == "tools/call":
+                result_is_error = bool(getattr(result, "is_error", False)) or (
+                    isinstance(result, dict) and bool(result.get("isError", result.get("is_error", False)))
+                )
+                if core_call and tool_name is not None and not result_is_error:
+                    # A CORE tool name is not self-authorizing (membership != scope). Only a
+                    # non-error result means the handler's own per-tool scope check passed,
+                    # so attribute the tool only then. (Its model, if any, is set server-
+                    # authoritatively inside the handler after authorization.)
+                    observe_request_metadata(mcp_tool=tool_name)
                 observe_mcp_result(result)
             if ctx.method == "tools/list" and principal is not None:
                 try:

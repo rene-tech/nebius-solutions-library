@@ -3,12 +3,12 @@
 This is an opt-in operator debugging facility, separate from ordinary logs, usage
 counters and logical run history. It is **off by default** and, when enabled, is
 governed and fail closed: the request body (the debugging target) is stored redacted
-within the cap, while a response body is stored only as allowlisted structural fields
-plus safe hashes of its free-text — an unknown, malformed, incomplete or oversize body
-is withheld entirely rather than stored as a prefix; captures are deleted by the
-platform's central retention purge; and reading a captured exchange requires an ADMIN
-operator and is audited. Enable it deliberately for a bounded window rather than
-leaving it on as a standing state.
+within the cap, while a response body is stored only as its structure and numbers with
+every string value redacted — an unknown, malformed, incomplete or oversize body is
+withheld entirely rather than stored as a prefix; captures are deleted by the platform's
+central retention purge; and reading a captured exchange requires an ADMIN operator and
+is audited. Enable it deliberately for a bounded window rather than leaving it on as a
+standing state.
 
 ## Enable capture
 
@@ -171,14 +171,18 @@ HTTP 0 or success.
   complete body is different from zero bytes retained from an unread body.
 - Response bodies are fail closed by structure. A response is stored ONLY when it is a
   **complete, valid JSON document**; anything unknown, malformed, incomplete, streaming
-  (SSE) or binary is withheld (a `[REDACTED]` marker). A stored response keeps only
-  allowlisted structural string fields (e.g. `loc`, `type`, `code`, `status`, `id`,
-  `model_id`) verbatim; **every other string value is replaced by a safe hash**
-  (`[sha256:<12 hex>]`), so an arbitrary or opaque secret in free-text detail is never
-  stored, while equal values still correlate across exchanges. Numbers, booleans and
-  null are kept. The response is also withheld outright when its matching request
-  exceeded the cap (the uninspected request tail could be echoed). The request body
-  (the debugging target — customer input) is retained redacted rather than hashed.
+  (SSE) or binary is withheld (a `[REDACTED]` marker). A stored response keeps only its
+  **structure, numbers and booleans**: **every string value is redacted** to a fixed
+  `[REDACTED]` marker (no reversible or forgeable hash) and dict entries whose key is not
+  a safe short identifier are dropped, so no arbitrary or opaque secret in a string value
+  or key is ever stored. The response is also withheld outright when its matching request
+  exceeded the cap (the uninspected request tail could be echoed). The request body (the
+  debugging target — customer input) is retained credential-redacted, not reduced this way.
+  Response headers keep only an allowlist of safe protocol/cache values (content-type,
+  content-length, cache-control, date, etag, …); every other response header value is
+  redacted. (Retaining response free-text for debugging — via a keyed non-reversible
+  correlation marker, an intact credential-redacted copy, or a governed on-demand reveal
+  path — is an open operator/owner decision layered on this safe default.)
 - `error_detail` is a **generic, payload-independent code only** (e.g. "runtime
   operation failed"); the raw exception string is never stored, because an SDK may have
   embedded a prompt, URL or credential in it. The `error_type` and `http_status` carry

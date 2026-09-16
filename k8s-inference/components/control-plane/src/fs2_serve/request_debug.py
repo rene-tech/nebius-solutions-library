@@ -5,27 +5,32 @@ memory-bounded. Bodies are fail closed and asymmetric. The REQUEST body (the
 debugging target) is stored redacted within the store cap. A RESPONSE body is
 stored only when it is a COMPLETE, valid JSON document; anything unknown,
 malformed, incomplete, streaming or binary is withheld (a redaction marker). A
-stored response keeps only allowlisted structural string fields verbatim and
-replaces every other string value with a safe hash, so an arbitrary or opaque
-secret in free-text detail is never stored. A body over the store cap, or whose
-redaction expands past it, is withheld entirely rather than stored as a
-boundary-cut prefix, and a response is withheld when its matching request exceeded
-the cap. ``error_detail`` is a generic, payload-independent code only; the raw
-exception string is never stored.
+stored response keeps only its structure, numbers and booleans: EVERY string value
+is redacted and dict entries with an unsafe key are dropped, so no arbitrary or
+opaque secret in a string value or key is ever stored (and no reversible or
+forgeable per-value hash is used). Response headers keep only an allowlist of safe
+protocol/cache values; every other response header value is redacted. A body over
+the store cap, or whose redaction expands past it, is withheld entirely rather than
+stored as a boundary-cut prefix, and a response is withheld when its matching
+request exceeded the cap. ``error_detail`` is a generic, payload-independent code
+only; the raw exception string is never stored.
 
 Sanitization runs off the event loop in a bounded worker pool (overload sheds the
 capture). Captures are deleted by the platform's central retention purge; detail
 reads require an ADMIN operator and emit an audit event; no body, header, query or
 exception message reaches ordinary application logs. Model/App capture scope is
 decided from server-authoritative dispatch state only, after authorization — never
-a caller-declared model or tool in the request body.
+a caller-declared model or tool in the request body or URL path.
+
+Retaining response free-text — via a keyed (HMAC) non-reversible correlation marker,
+an intact credential-redacted copy, or a governed on-demand reveal path — is an OPEN
+owner scope decision; this module ships the safe, leak-free default (redact strings).
 """
 
 from __future__ import annotations
 
 import asyncio
 import base64
-import hashlib
 import json
 import logging
 import re
@@ -115,75 +120,29 @@ _UNTERMINATED_VALUE_MAX = 4096
 _UNTERMINATED_SCAN = _UNTERMINATED_VALUE_MAX + 512
 # RESPONSE handling is fail closed by structure, not by content type. A response is
 # stored only when it is a COMPLETE, valid JSON document; anything unknown, malformed,
-# incomplete, streaming or binary is withheld. Within a stored response, only these
-# structural keys keep their string values verbatim; every other string value is
-# replaced by a stable safe hash so an arbitrary/opaque secret in free-text detail is
-# never stored, while structure and cross-exchange correlation are preserved. Numbers,
-# booleans and null are inherently non-secret and are kept.
-_RESPONSE_ALLOWLIST = frozenset(
-    {
-        "loc",
-        "type",
-        "code",
-        "status",
-        "statuscode",
-        "httpstatus",
-        "errno",
-        "id",
-        "operationid",
-        "requestid",
-        "modelid",
-        "model",
-        "tool",
-        "mcptool",
-        "field",
-        "line",
-        "column",
-        "index",
-        "count",
-        "kind",
-        "category",
-        "severity",
-        "level",
-        "phase",
-        "state",
-        "stage",
-        "protocol",
-        "version",
-        "method",
-        "endpoint",
-        "encoding",
-        "contenttype",
-    }
-)
+# incomplete, streaming or binary is withheld. Within a stored response NO string value
+# is retained verbatim (any could be an opaque, non-format secret): every string value
+# is redacted to a fixed non-informative marker (no reversible/forgeable hash), and
+# dict entries whose key is not a safe short identifier are dropped (a key could itself
+# be a secret). Numbers, booleans and null are inherently non-secret and are kept, so
+# structural fields (status codes, counts) and the response shape remain for debugging.
+# NOTE: retaining response free-text — via a keyed (HMAC) non-reversible correlation
+# marker, an intact credential-redacted copy, or a governed on-demand reveal path — is
+# an OPEN owner scope decision; this module ships the safe, leak-free default (redact).
+_SAFE_KEY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$")
 
 
-def _safe_hash(value: str) -> str:
-    """A stable, non-reversible marker for a non-allowlisted response string, so an
-    opaque secret is never stored but equal values still correlate across exchanges."""
-    digest = hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()[:12]
-    return f"[sha256:{digest}]"
+def _safe_key(key: object) -> bool:
+    return isinstance(key, str) and _SAFE_KEY.match(key) is not None
 
 
-def _is_hash_marker(value: str) -> bool:
-    return value.startswith("[sha256:") and value.endswith("]")
-
-
-def _allowlist_response(value: Any, key_ok: bool = False) -> Any:
-    """Keep allowlisted structural string values; replace every other with a safe hash.
-
-    ``key_ok`` is True when the value sits under an allowlisted key (directly, or as an
-    element of an allowlisted key's list). Idempotent: an already-redacted or already-
-    hashed marker is left unchanged.
-    """
+def _allowlist_response(value: Any) -> Any:
     if isinstance(value, dict):
-        return {key: _allowlist_response(item, _name(key) in _RESPONSE_ALLOWLIST) for key, item in value.items()}
+        return {key: _allowlist_response(item) for key, item in value.items() if _safe_key(key)}
     if isinstance(value, list):
-        return [_allowlist_response(item, key_ok) for item in value]
+        return [_allowlist_response(item) for item in value]
     if isinstance(value, str):
-        if not value or key_ok or value == REDACTED or _is_hash_marker(value):
-            return value
-        return _safe_hash(value)
+        return REDACTED if value else value
     return value
 
 
@@ -194,10 +153,11 @@ class DebugBody(StrictModel):
     observed_bytes: int = Field(ge=0)
     complete: bool
     redacted: bool
-    # True when the stored body is only a bounded prefix of the observed bytes,
-    # because the payload exceeded request_debug_max_body_bytes. observed_bytes
-    # still reports the full length seen on the wire. Defaults False so rows
-    # captured before this field existed validate unchanged.
+    # True when the body was WITHHELD rather than stored (its `data` is a [REDACTED]
+    # marker) — because it exceeded request_debug_max_body_bytes, was an
+    # unknown/malformed/incomplete/binary response, or its request exceeded the cap.
+    # observed_bytes still reports the full length seen on the wire. Defaults False so
+    # rows captured before this field existed validate unchanged.
     truncated: bool = False
 
 
@@ -324,6 +284,60 @@ def redact_headers(pairs: HeaderPairs, known_credentials: Credentials = ()) -> l
     return result
 
 
+# Response header names whose values are safe protocol/cache metadata. Any other
+# response header value is redacted (a response may set an arbitrary secret header).
+_SAFE_RESPONSE_HEADERS = frozenset(
+    {
+        "contenttype",
+        "contentlength",
+        "contentencoding",
+        "contentlanguage",
+        "transferencoding",
+        "acceptranges",
+        "date",
+        "age",
+        "vary",
+        "cachecontrol",
+        "expires",
+        "etag",
+        "lastmodified",
+        "retryafter",
+        "allow",
+        "connection",
+        "xfs2operationid",
+        "xrequestid",
+        "xfs2preempted",
+    }
+)
+_MIME_TYPE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,126}/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,126}$")
+
+
+def redact_response_headers(pairs: HeaderPairs, known_credentials: Credentials = ()) -> list[tuple[str, str]]:
+    """Keep only allowlisted safe response header values; redact everything else.
+
+    A response header we do not recognize could carry an arbitrary secret, so its value
+    is redacted (the name is kept for structure). Safe headers still get a known-credential
+    scrub in case a credential value was echoed into one.
+    """
+    result = []
+    for raw_name, raw_value in pairs:
+        name, value = _text(raw_name), _text(raw_value)
+        if _name(name) in _SAFE_RESPONSE_HEADERS and _name(name) not in _AUTH_NAMES:
+            value = redact_text(value, known_credentials)
+        else:
+            value = REDACTED
+        result.append((name, value))
+    return result
+
+
+def _safe_content_type(content_type: str | None) -> str | None:
+    """Keep an observed Content-Type only when it looks like a MIME type; else drop it."""
+    if content_type is None:
+        return None
+    base = content_type.split(";", 1)[0].strip()
+    return content_type if _MIME_TYPE.match(base) else None
+
+
 def _redact_json(value: Any) -> Any:
     if isinstance(value, dict):
         return {key: REDACTED if _name(key) in _AUTH_NAMES else _redact_json(item) for key, item in value.items()}
@@ -445,10 +459,10 @@ def _response_body(
     A response is stored ONLY when it is a COMPLETE, valid JSON document. Anything
     unknown, malformed, incomplete, streaming or binary is withheld — an opaque or
     partial secret in such a body cannot be reliably scrubbed. A stored response keeps
-    only allowlisted structural string values verbatim; every other string value is
-    replaced by a safe hash, so an arbitrary/opaque secret in free-text detail is never
-    stored. Numbers/booleans/null are kept, and known credentials that survive in an
-    allowlisted field are still redacted.
+    only its structure, numbers and booleans; EVERY string value is redacted and dict
+    entries with an unsafe key are dropped (see _allowlist_response), so no arbitrary or
+    opaque secret in a string value or key is ever stored. Known credentials are also
+    scrubbed defensively.
     """
     observed = len(raw)
     if not complete:
@@ -496,9 +510,10 @@ def body_capture(
         return suppressed_body(content_type, observed, complete)
     known_credentials = tuple(known_credentials)
     if is_response:
-        # Responses are fail closed by structure (see _response_body): withhold unless
-        # a complete valid JSON document, then field-allowlist + safe-hash the content.
-        return _response_body(raw, content_type, complete, known_credentials, max_bytes)
+        # Responses are fail closed by structure (see _response_body): withhold unless a
+        # complete valid JSON document, then keep only structure/numbers and redact every
+        # string value. The stored Content-Type is dropped unless it looks like a MIME type.
+        return _response_body(raw, _safe_content_type(content_type), complete, known_credentials, max_bytes)
     parsed, is_json = _try_json(raw)
     original = raw
     # Request sanitization is conservative and driven by key names and value formats,
@@ -654,43 +669,6 @@ def body_credential_prefixes(body: bytes | None) -> tuple[str, ...]:
     return (partial,) if len(partial) >= 8 and partial != REDACTED else ()
 
 
-def _sanitize(exchange: DebugExchange) -> DebugExchange:
-    known = credential_values(
-        [*exchange.request_headers, *exchange.response_headers],
-        exchange.query_string,
-        _body_bytes(exchange.request_body),
-    )
-    bodies = {}
-    for field in ("request_body", "response_body"):
-        previous = getattr(exchange, field)
-        clean = body_capture(
-            _body_bytes(previous),
-            previous.content_type,
-            previous.complete,
-            known,
-            is_response=field == "response_body",
-        )
-        bodies[field] = clean.model_copy(
-            update={
-                "observed_bytes": previous.observed_bytes,
-                "redacted": previous.redacted or clean.redacted,
-                "truncated": previous.truncated,
-            }
-        )
-    return exchange.model_copy(
-        update={
-            **bodies,
-            "query_string": redact_query(exchange.query_string, known),
-            "request_headers": redact_headers(exchange.request_headers, known),
-            "response_headers": redact_headers(exchange.response_headers, known),
-            "endpoint": redact_text(exchange.endpoint, known),
-            "model_id": redact_text(exchange.model_id, known) if exchange.model_id else None,
-            "mcp_tool": redact_text(exchange.mcp_tool, known) if exchange.mcp_tool else None,
-            "error_detail": redact_text(exchange.error_detail, known) if exchange.error_detail is not None else None,
-        }
-    )
-
-
 def _summary(exchange: DebugExchange) -> DebugExchangeSummary:
     return DebugExchangeSummary(
         **{field: getattr(exchange, field) for field in DebugMetadata.model_fields},
@@ -730,8 +708,10 @@ class InMemoryDebugStore:
         self.exchanges: dict[UUID, DebugExchange] = {}
 
     async def record(self, exchange: DebugExchange) -> None:
+        # The exchange is already sanitized exactly once, off the event loop, by the
+        # capturing middleware/runtime (offload_capture); the store never re-sanitizes.
         if exchange.id not in self.exchanges:
-            self.exchanges[exchange.id] = _sanitize(exchange).model_copy(deep=True)
+            self.exchanges[exchange.id] = exchange.model_copy(deep=True)
 
     async def list(
         self,
@@ -784,7 +764,9 @@ class PostgresDebugStore:
                     exchange.tenant_id,
                 )
                 exchange = exchange.model_copy(update={"model_id": model_id})
-            exchange = _sanitize(exchange)
+            # Already sanitized exactly once off the event loop (offload_capture); the
+            # store never re-sanitizes. The model_id backfill above is a server-side
+            # canonicalization from the operations table, not a re-scrub.
             metadata = _summary(exchange).model_dump()
             encrypted = self.cipher.encrypt(
                 exchange.model_dump_json().encode(), aad=self._aad(exchange.id, exchange.tenant_id, exchange.model_id)
@@ -1120,17 +1102,14 @@ class DebugCaptureMiddleware:
                     principal = pre_resolved  # reuse any pre-buffer resolution
                 if principal is None:
                     principal = await self._resolve_principal(request_headers)
-                # Model/tool attribution is server-authoritative only: the trusted
-                # dispatch path sets state["model_id"]/["mcp_tool"] (api.py and the
-                # MCP middleware, including for pre-admission rejections), and the
-                # path names the model for /v1/models/{model}:invoke. The request
-                # body's caller-declared model/tool is never trusted for the scope
-                # gate — a caller could otherwise spoof another App's scope.
-                model_id = (
-                    _label(state.get("model_id"))
-                    or _label(scope.get("path_params", {}).get("model_id"))
-                    or _label(path_model)
-                )
+                # Model/tool attribution is server-authoritative ONLY: the trusted
+                # dispatch path sets state["model_id"]/["mcp_tool"] after authorization
+                # (api.py after admission; the MCP middleware after the token-policy/scope
+                # checks). The URL path model and the request body are never used for
+                # attribution, so a request denied before authorization is never recorded
+                # under the model/tool it merely requested. (path_model still feeds the
+                # cheap pre-buffer gate below, not the stored attribution.)
+                model_id = _label(state.get("model_id"))
                 tool = _label(state.get("mcp_tool"))
                 capture_tenant = principal.tenant_id if principal else None
                 # Scoped, time-bounded gate: only record exchanges the policy
@@ -1194,7 +1173,7 @@ class DebugCaptureMiddleware:
                             disconnected=disconnected,
                             query_string=redact_query(query, known),
                             request_headers=redact_headers(request_headers, known),
-                            response_headers=redact_headers(response_headers, known),
+                            response_headers=redact_response_headers(response_headers, known),
                             request_body=bounded_body_capture(
                                 bytes(request_parts),
                                 request_type,
