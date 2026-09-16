@@ -710,6 +710,7 @@ async def bootstrap_access(settings: Settings) -> None:
                 models=settings.bootstrap_access_models,
                 max_concurrency=settings.bootstrap_access_max_concurrency,
                 name=settings.bootstrap_access_name,
+                expires_at=settings.bootstrap_access_expires_at,
             ),
             created_by="terraform-bootstrap",
         )

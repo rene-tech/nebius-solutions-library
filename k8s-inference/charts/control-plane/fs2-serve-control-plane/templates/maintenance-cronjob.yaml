@@ -19,6 +19,8 @@ spec:
         metadata:
           labels:
             {{- include "fs2-serve.maintenanceSelectorLabels" . | nindent 12 }}
+          annotations:
+            fs2.nebius.ai/secret-rollout-sha256: {{ dict "database" .Values.secretRollout.databaseGeneration | toJson | sha256sum | quote }}
         spec:
           restartPolicy: Never
           serviceAccountName: {{ include "fs2-serve.serviceAccountName" (dict "root" . "component" "maintenance") }}

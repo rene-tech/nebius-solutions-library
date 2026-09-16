@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import SplitResult, urlsplit
 
-from pydantic import Field, model_validator
+from pydantic import AwareDatetime, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .models import ModelId, Scope
@@ -104,6 +104,7 @@ class Settings(BaseSettings):
     )
     bootstrap_access_models: set[ModelId] = Field(default_factory=lambda: {"*"}, min_length=1)
     bootstrap_access_max_concurrency: int = Field(default=32, ge=1, le=100)
+    bootstrap_access_expires_at: AwareDatetime | None = None
     admin_capacity_enabled: bool = False
     admin_kubernetes_api_url: str = Field(default="https://kubernetes.default.svc", max_length=2048)
     admin_kubernetes_token_file: Path = Path("/var/run/secrets/fs2-serve/admin-kubernetes/token")

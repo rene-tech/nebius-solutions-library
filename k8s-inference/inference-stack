@@ -16,9 +16,11 @@ import subprocess
 import sys
 import tempfile
 from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterator, Mapping, Sequence
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 
 SOLUTION_ROOT = Path(__file__).resolve().parent
@@ -1543,6 +1545,20 @@ def stage_environment(
             environment["TF_VAR_ngc_api_key"] = ngc_key
         if docker_config:
             environment["TF_VAR_nvcrio_dockerconfigjson"] = docker_config
+        # Rotation keyrings are supplied by an encrypted external handoff. They
+        # bypass the root facade so their bytes never enter generated tfvars.
+        for variable_name, environment_name in {
+            "admin_tokens": "FS2_ADMIN_TOKENS_JSON",
+            "bootstrap_access_tokens": "FS2_BOOTSTRAP_ACCESS_TOKENS_JSON",
+            "scientific_access_tokens": "FS2_SCIENTIFIC_ACCESS_TOKENS_JSON",
+            "payload_keyrings_json": "FS2_PAYLOAD_KEYRINGS_JSON",
+            "ledger_keyrings_json": "FS2_LEDGER_KEYRINGS_JSON",
+            "token_pepper_keyrings_json": "FS2_TOKEN_PEPPER_KEYRINGS_JSON",
+            "route_attestors_sets_json": "FS2_ROUTE_ATTESTOR_SETS_JSON",
+        }.items():
+            value = os.environ.get(environment_name)
+            if value:
+                environment[f"TF_VAR_{variable_name}"] = value
         environment["TF_VAR_ngc_api_key_configured"] = (
             "true" if ngc_key else "false"
         )
@@ -2612,6 +2628,106 @@ def hydrate_access_bundle(
     }
 
 
+def scoped_credential_handoff(
+    terraform: str,
+    kubectl: str,
+    run_root: Path,
+    contract: Mapping[str, Any],
+    *,
+    kind: str,
+    expires_in_seconds: int,
+    allow_privileged: bool,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Resolve exactly one requested credential and a value-free audit receipt."""
+
+    if kind in {"admin", "grafana"} and not allow_privileged:
+        raise DeploymentError(
+            "admin and grafana exports require --allow-privileged-credential"
+        )
+    if not 300 <= expires_in_seconds <= 86400:
+        raise DeploymentError("credential handoff expiry must be 300-86400 seconds")
+    environment = stage_environment(
+        run_root, "workloads", contract, include_secrets=False
+    )
+    access = terraform_json_output(
+        terraform, WORKLOADS_ROOT, "access_bundle", environment
+    )
+    if (
+        not isinstance(access, dict)
+        or access.get("schema")
+        != "fs2-serve.nebius.ai/access-bundle-contract/v2"
+        or not isinstance(access.get("credential_secret_refs"), dict)
+        or not isinstance(access.get("cluster"), dict)
+        or not isinstance(access.get("endpoints"), dict)
+    ):
+        raise DeploymentError("the workloads access contract is missing or malformed")
+    refs = access["credential_secret_refs"]
+    context = access["cluster"].get("kube_context")
+    mappings = {
+        "general-access": ("mcp_inference", ("key",)),
+        "scientific-access": ("scientific", ("key",)),
+        "admin": ("admin", ("key",)),
+        "grafana": ("grafana", ("username_key", "password_key")),
+    }
+    if kind not in mappings:
+        raise DeploymentError("unsupported credential kind")
+    reference_name, key_fields = mappings[kind]
+    reference = refs.get(reference_name)
+    if not isinstance(reference, dict):
+        raise DeploymentError(f"the requested {kind} credential is not configured")
+    keys = tuple(reference.get(field) for field in key_fields)
+    values = kubernetes_secret_values(
+        kubectl,
+        run_root,
+        context=context,
+        namespace=reference.get("namespace"),
+        name=reference.get("name"),
+        keys=keys,
+    )
+    issued_at = datetime.now(UTC).replace(microsecond=0)
+    expires_at = issued_at + timedelta(seconds=expires_in_seconds)
+    credential: dict[str, str]
+    if kind == "grafana":
+        credential = {
+            "username": values[keys[0]],
+            "password": values[keys[1]],
+        }
+    else:
+        credential = {"token": values[keys[0]]}
+    handoff = {
+        "schema": "fs2-serve.nebius.ai/scoped-credential-handoff/v1",
+        "kind": kind,
+        "issued_at": issued_at.isoformat().replace("+00:00", "Z"),
+        "expires_at": expires_at.isoformat().replace("+00:00", "Z"),
+        "endpoints": {
+            key: value
+            for key, value in access["endpoints"].items()
+            if value is not None
+            and (
+                (kind == "general-access" and key in {"mcp_url", "inference_base_url"})
+                or (kind == "scientific-access" and key in {"mcp_url", "inference_base_url"})
+                or (kind == "admin" and key == "admin_portal_url")
+                or (kind == "grafana" and key == "grafana_url")
+            )
+        },
+        "credential": credential,
+    }
+    receipt_id = str(uuid4())
+    receipt = {
+        "schema": "fs2-serve.nebius.ai/scoped-credential-receipt/v1",
+        "receipt_id": receipt_id,
+        "kind": kind,
+        "issued_at": handoff["issued_at"],
+        "expires_at": handoff["expires_at"],
+        "source": {
+            "namespace": reference["namespace"],
+            "name": reference["name"],
+            "keys": list(keys),
+        },
+    }
+    return handoff, receipt
+
+
 def state_ready(
     terraform: str,
     run_root: Path,
@@ -3243,7 +3359,7 @@ def output_stack(
     run_root: Path,
     contract: Mapping[str, Any],
 ) -> None:
-    """Write the explicitly requested access bundle to an owner-only file."""
+    """Write one explicitly requested scoped credential to an owner-only file."""
     if not state_ready(args.terraform, run_root, "workloads", contract):
         raise DeploymentError(
             "workloads are not applied; run inference-stack apply before requesting endpoints"
@@ -3253,6 +3369,9 @@ def output_stack(
         raise DeploymentError(
             "output requires --credential-file in an existing owner-only directory"
         )
+    kind = getattr(args, "credential_kind", None)
+    if kind is None:
+        raise DeploymentError("output requires one explicit --credential-kind")
     candidate = requested_path.expanduser().absolute()
     if candidate.is_symlink():
         raise DeploymentError("credential-file must not be a symlink")
@@ -3270,20 +3389,29 @@ def output_stack(
             "credential-file parent must be owner-owned and owner-only"
         )
     destination = parent / candidate.name
-    private_json(
-        destination,
-        workload_access_bundle(
-            args.terraform,
-            run_root,
-            contract,
-            kubectl=args.kubectl,
-        ),
+    receipt_path = destination.with_name(destination.name + ".receipt.json")
+    if destination.exists() or receipt_path.exists():
+        raise DeploymentError("credential handoff and receipt destinations must be new")
+    handoff, receipt = scoped_credential_handoff(
+        args.terraform,
+        args.kubectl,
+        run_root,
+        contract,
+        kind=kind,
+        expires_in_seconds=args.credential_expires_in_seconds,
+        allow_privileged=args.allow_privileged_credential,
     )
+    private_json(destination, handoff)
+    private_json(receipt_path, receipt)
     print(
         json.dumps(
             {
-                "status": "credential-file-written",
+                "status": "scoped-credential-file-written",
+                "kind": kind,
+                "receipt_id": receipt["receipt_id"],
                 "credential_file": str(destination),
+                "receipt_file": str(receipt_path),
+                "expires_at": receipt["expires_at"],
                 "mode": "0600",
             },
             indent=2,
@@ -3443,6 +3571,22 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--credential-file",
         type=Path,
         help="owner-only destination required by the output command; secret values are never printed",
+    )
+    parser.add_argument(
+        "--credential-kind",
+        choices=("general-access", "scientific-access", "admin", "grafana"),
+        help="single scoped credential kind to export; no aggregate export exists",
+    )
+    parser.add_argument(
+        "--credential-expires-in-seconds",
+        type=int,
+        default=3600,
+        help="receipt and delivery-file expiry, from 300 through 86400 seconds",
+    )
+    parser.add_argument(
+        "--allow-privileged-credential",
+        action="store_true",
+        help="explicitly allow an admin or Grafana credential export",
     )
     return parser.parse_args(argv)
 

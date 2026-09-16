@@ -95,19 +95,23 @@ output "access_bundle" {
     }
     credential_secret_refs = {
       admin = {
-        namespace = kubernetes_secret_v1.admin.metadata[0].namespace
-        name      = kubernetes_secret_v1.admin.metadata[0].name
+        namespace = "fs2-system"
+        name      = local.active_admin_secret_name
         key       = "token"
       }
       mcp_inference = {
-        namespace = kubernetes_secret_v1.bootstrap_access.metadata[0].namespace
-        name      = kubernetes_secret_v1.bootstrap_access.metadata[0].name
-        key       = "token"
+        namespace = "fs2-system"
+        name = var.credential_generations.access == 1 ? (
+          kubernetes_secret_v1.bootstrap_access.metadata[0].name
+        ) : kubernetes_secret_v1.bootstrap_access_versioned[tostring(var.credential_generations.access)].metadata[0].name
+        key = "token"
       }
       scientific = local.scientific_access_enabled ? {
-        namespace = kubernetes_secret_v1.scientific_access[0].metadata[0].namespace
-        name      = kubernetes_secret_v1.scientific_access[0].metadata[0].name
-        key       = "token"
+        namespace = "fs2-system"
+        name = var.credential_generations.access == 1 ? (
+          kubernetes_secret_v1.scientific_access[0].metadata[0].name
+        ) : kubernetes_secret_v1.scientific_access_versioned[tostring(var.credential_generations.access)].metadata[0].name
+        key = "token"
       } : null
       grafana = {
         namespace    = "fs2-observability"

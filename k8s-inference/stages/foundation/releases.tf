@@ -347,6 +347,9 @@ resource "helm_release" "monitoring" {
         }
       }
       grafana = {
+        podAnnotations = {
+          "fs2.nebius.ai/secret-rollout-generation" = tostring(var.credential_generation)
+        }
         admin = {
           existingSecret = var.grafana_admin_secret_ref.name
           userKey        = var.grafana_admin_secret_ref.user_key

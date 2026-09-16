@@ -33,6 +33,37 @@ locals {
       maxUnavailable = var.control_plane_rollout.max_unavailable
       maxSurge       = var.control_plane_rollout.max_surge
     }
+    secretRollout = {
+      databaseGeneration = var.credential_generations.database
+      adminGeneration    = var.credential_generations.admin
+      accessGeneration   = var.credential_generations.access
+      payloadGeneration  = var.keyring_generations.payload.active
+      ledgerGeneration   = var.keyring_generations.ledger.active
+      pepperGeneration   = var.keyring_generations.pepper.active
+      attestorGeneration = var.keyring_generations.attestor.active
+    }
+    secrets = {
+      payloadKeyring = {
+        name = local.active_payload_keyring_name
+        key  = "keyring.json"
+      }
+      ledgerHmacKeyring = {
+        name = local.active_ledger_keyring_name
+        key  = "keyring.json"
+      }
+      tokenPepper = {
+        name = local.active_token_pepper_name
+        key  = "keyring.json"
+      }
+      routeAttestors = {
+        name = local.active_route_attestors_name
+        key  = "attestors.json"
+      }
+      admin = {
+        name = local.active_admin_secret_name
+        key  = "token"
+      }
+    }
     image = {
       repository = var.control_plane_image.repository
       digest     = var.control_plane_image.digest
@@ -280,8 +311,15 @@ resource "helm_release" "control_plane" {
     kubernetes_secret_v1.ledger_keyring,
     kubernetes_secret_v1.token_pepper,
     kubernetes_secret_v1.route_attestors,
+    kubernetes_secret_v1.payload_keyring_versioned,
+    kubernetes_secret_v1.ledger_keyring_versioned,
+    kubernetes_secret_v1.token_pepper_versioned,
+    kubernetes_secret_v1.route_attestors_versioned,
     kubernetes_secret_v1.admin,
+    kubernetes_secret_v1.admin_versioned,
     kubernetes_secret_v1.bootstrap_access,
+    kubernetes_secret_v1.bootstrap_access_versioned,
+    kubernetes_secret_v1.scientific_access_versioned,
     kubernetes_secret_v1.scientific_access,
     kubernetes_secret_v1.scientific_artifact_store,
     kubernetes_persistent_volume_claim_v1.scientific_runtime_cache,

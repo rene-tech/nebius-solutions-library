@@ -233,11 +233,12 @@ variable "control_plane_allowed_cidrs" {
     condition = (
       length(var.control_plane_allowed_cidrs) >= 1 &&
       length(var.control_plane_allowed_cidrs) <= 8 &&
-      !contains(var.control_plane_allowed_cidrs, "0.0.0.0/0") &&
-      !contains(var.control_plane_allowed_cidrs, "::/0") &&
-      alltrue([for cidr in var.control_plane_allowed_cidrs : can(cidrhost(cidr, 0))])
+      alltrue([
+        for cidr in var.control_plane_allowed_cidrs :
+        can(cidrhost(cidr, 0)) && cidr == "${cidrhost(cidr, 0)}/${strcontains(cidr, ":") ? 128 : 32}"
+      ])
     )
-    error_message = "control_plane_allowed_cidrs must contain one to eight bounded, valid operator or automation source CIDRs."
+    error_message = "control_plane_allowed_cidrs must contain one to eight canonical /32 IPv4 or /128 IPv6 operator or automation egress addresses."
   }
 }
 

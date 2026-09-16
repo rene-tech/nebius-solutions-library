@@ -1591,13 +1591,12 @@ variable "nvcrio_dockerconfigjson_configured" {
 }
 
 variable "credential_generations" {
-  description = "Independent positive rotation generations for write-only credential classes."
+  description = "Independent positive active generations. Generation 1 is the immutable imported legacy value; later generations use separately named Secrets."
   type = object({
-    admin        = optional(number, 1)
-    access       = optional(number, 1)
-    database     = optional(number, 1)
-    key_material = optional(number, 1)
-    registry     = optional(number, 1)
+    admin    = optional(number, 1)
+    access   = optional(number, 1)
+    database = optional(number, 1)
+    registry = optional(number, 1)
   })
   default = {}
 
@@ -1608,6 +1607,123 @@ variable "credential_generations" {
     ])
     error_message = "Every credential_generations value must be a positive whole number."
   }
+}
+
+variable "credential_generation_history" {
+  description = "Append-only retained generation histories for stateful application credentials."
+  type = object({
+    admin    = optional(set(number), [1])
+    access   = optional(set(number), [1])
+    database = optional(set(number), [1])
+  })
+  default = {}
+
+  validation {
+    condition = (
+      alltrue([
+        for history in values(var.credential_generation_history) :
+        length(history) >= 1 && history == toset(range(1, max(history...) + 1))
+      ]) &&
+      contains(var.credential_generation_history.admin, var.credential_generations.admin) &&
+      contains(var.credential_generation_history.access, var.credential_generations.access) &&
+      contains(var.credential_generation_history.database, var.credential_generations.database)
+    )
+    error_message = "Admin, access, and database generation histories must be contiguous from 1 and retain their active generation."
+  }
+}
+
+variable "admin_tokens" {
+  description = "Externally escrowed admin bootstrap tokens keyed by retained generation greater than 1."
+  type        = map(string)
+  sensitive   = true
+  ephemeral   = true
+  default     = {}
+}
+
+variable "bootstrap_access_tokens" {
+  description = "Externally escrowed general bootstrap PATs keyed by retained generation greater than 1."
+  type        = map(string)
+  sensitive   = true
+  ephemeral   = true
+  default     = {}
+}
+
+variable "scientific_access_tokens" {
+  description = "Externally escrowed scientific bootstrap PATs keyed by retained generation greater than 1."
+  type        = map(string)
+  sensitive   = true
+  ephemeral   = true
+  default     = {}
+}
+
+variable "bootstrap_access_expires_at" {
+  description = "Future RFC3339 expiry applied to rotated general and scientific bootstrap PATs."
+  type        = string
+  nullable    = true
+  default     = null
+
+  validation {
+    condition = (
+      var.credential_generations.access == 1 ||
+      try(timecmp(var.bootstrap_access_expires_at, timestamp()) > 0, false)
+    )
+    error_message = "A rotated access generation requires a future RFC3339 bootstrap_access_expires_at."
+  }
+}
+
+variable "keyring_generations" {
+  description = "Independent active and retained generation histories. Retained generations are never removed by rollback."
+  type = object({
+    payload  = optional(object({ active = optional(number, 1), retained = optional(set(number), [1]) }), {})
+    ledger   = optional(object({ active = optional(number, 1), retained = optional(set(number), [1]) }), {})
+    pepper   = optional(object({ active = optional(number, 1), retained = optional(set(number), [1]) }), {})
+    attestor = optional(object({ active = optional(number, 1), retained = optional(set(number), [1]) }), {})
+  })
+  default = {}
+
+  validation {
+    condition = alltrue([
+      for keyring in values(var.keyring_generations) :
+      length(keyring.retained) >= 1 &&
+      floor(keyring.active) == keyring.active &&
+      keyring.active >= 1 &&
+      contains(keyring.retained, keyring.active) &&
+      keyring.retained == toset(range(1, max(keyring.retained...) + 1))
+    ])
+    error_message = "Every keyring must retain a contiguous history beginning at generation 1 and include its positive whole-number active generation."
+  }
+}
+
+variable "payload_keyrings_json" {
+  description = "Externally escrowed payload keyring documents keyed by every retained generation greater than 1."
+  type        = map(string)
+  sensitive   = true
+  ephemeral   = true
+  default     = {}
+}
+
+variable "ledger_keyrings_json" {
+  description = "Externally escrowed ledger keyring documents keyed by every retained generation greater than 1."
+  type        = map(string)
+  sensitive   = true
+  ephemeral   = true
+  default     = {}
+}
+
+variable "token_pepper_keyrings_json" {
+  description = "Externally escrowed PAT pepper keyring documents keyed by every retained generation greater than 1."
+  type        = map(string)
+  sensitive   = true
+  ephemeral   = true
+  default     = {}
+}
+
+variable "route_attestors_sets_json" {
+  description = "Externally managed public attestor-set documents keyed by every retained generation greater than 1."
+  type        = map(string)
+  sensitive   = true
+  ephemeral   = true
+  default     = {}
 }
 
 variable "run_acceptance_job" {

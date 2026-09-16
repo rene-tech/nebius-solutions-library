@@ -155,6 +155,7 @@ bootstrapAccess:
     - use.noncommercial
   models: ["*"]
   maxConcurrency: 32
+  expiresAt: ""
   activeDeadlineSeconds: 300
   resources:
     requests:
@@ -186,6 +187,7 @@ scientificAccess:
     - use.noncommercial
   models: ["*"]
   maxConcurrency: 32
+  expiresAt: ""
   activeDeadlineSeconds: 300
   resources:
     requests:
@@ -313,6 +315,19 @@ secrets:
   artifactStore:
     name: fs2-serve-artifact-store
     key: credentials.json
+
+# Non-secret generation metadata is deliberately hashed into every pod/job
+# template that consumes the corresponding Secret. Secret data is never used
+# as an annotation. Terraform changes the Secret first; Helm then performs an
+# ordered readiness-gated rollout.
+secretRollout:
+  databaseGeneration: 1
+  adminGeneration: 1
+  accessGeneration: 1
+  payloadGeneration: 1
+  ledgerGeneration: 1
+  pepperGeneration: 1
+  attestorGeneration: 1
 
 config:
   # Required public HTTPS origins; empty defaults fail validation.

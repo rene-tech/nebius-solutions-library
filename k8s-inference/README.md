@@ -334,11 +334,15 @@ customer key can use those models when its model permissions include them.
 The admin token is deliberately not valid for `/mcp` or `/v1`.
 An intentionally revoked or expired Terraform bootstrap PAT stays inactive:
 the next Helm upgrade fails closed instead of silently reactivating it. Rotate
-credentials through a reviewed change to the applicable
-`deployment.secrets.credential_generations` value. Generations are independent
-for `admin`, `access`, `database`, `key_material`, `registry`, and `grafana`, so
-an operator can stage a bounded rotation instead of replacing every credential
-at once.
+credentials through a reviewed, overlap-first change to the applicable
+`deployment.secrets.credential_generations` value. Payload, ledger, pepper,
+attestor, admin, access, database, registry, and Grafana generations are
+independent. Generation 1 retains the existing persisted resource addresses;
+later keyrings use new Secret names, retain every predecessor needed for reads,
+and trigger readiness-gated consumer rollouts from non-secret generation
+metadata. See [operator access and credential migration](docs/OPERATOR_ACCESS_HYGIENE.md)
+for the plan guard, encrypted-state retirement, scoped credential export, and
+rollback contract.
 
 The platform operator owns the Apps, model deployments, caches and shared
 capacity. Customers do not deploy or own a separate copy of a model. A customer

@@ -250,6 +250,7 @@ spec:
       annotations:
         fs2.nebius.ai/image-digest: {{ .Values.image.digest | quote }}
         fs2.nebius.ai/catalog-rollout-digest: {{ .Values.catalog.rolloutDigest | quote }}
+        fs2.nebius.ai/secret-rollout-sha256: {{ dict "database" .Values.secretRollout.databaseGeneration "admin" .Values.secretRollout.adminGeneration "payload" .Values.secretRollout.payloadGeneration "ledger" .Values.secretRollout.ledgerGeneration "pepper" .Values.secretRollout.pepperGeneration "attestor" .Values.secretRollout.attestorGeneration | toJson | sha256sum | quote }}
         {{- if .Values.adminReadAdapters.observability.enabled }}
         fs2.nebius.ai/admin-observability-config-sha256: {{ .Values.adminReadAdapters.observability | toJson | sha256sum | quote }}
         {{- end }}

@@ -688,17 +688,40 @@ variable "deployment" {
         user_key     = optional(string, "admin-user")
         password_key = optional(string, "admin-password")
       }), {})
-      grafana_username_env  = optional(string, "FS2_GRAFANA_ADMIN_USERNAME")
-      grafana_password_env  = optional(string, "FS2_GRAFANA_ADMIN_PASSWORD")
-      ngc_api_key_env       = optional(string, "FS2_NGC_API_KEY")
-      nvcr_dockerconfig_env = optional(string, "FS2_NVCR_DOCKERCONFIGJSON")
+      grafana_username_env        = optional(string, "FS2_GRAFANA_ADMIN_USERNAME")
+      grafana_password_env        = optional(string, "FS2_GRAFANA_ADMIN_PASSWORD")
+      ngc_api_key_env             = optional(string, "FS2_NGC_API_KEY")
+      nvcr_dockerconfig_env       = optional(string, "FS2_NVCR_DOCKERCONFIGJSON")
+      bootstrap_access_expires_at = optional(string, null)
       credential_generations = optional(object({
-        admin        = optional(number, 1)
-        access       = optional(number, 1)
-        database     = optional(number, 1)
-        key_material = optional(number, 1)
-        registry     = optional(number, 1)
-        grafana      = optional(number, 1)
+        admin    = optional(number, 1)
+        access   = optional(number, 1)
+        database = optional(number, 1)
+        registry = optional(number, 1)
+        grafana  = optional(number, 1)
+      }), {})
+      credential_generation_history = optional(object({
+        admin    = optional(set(number), [1])
+        access   = optional(set(number), [1])
+        database = optional(set(number), [1])
+      }), {})
+      keyring_generations = optional(object({
+        payload = optional(object({
+          active   = optional(number, 1)
+          retained = optional(set(number), [1])
+        }), {})
+        ledger = optional(object({
+          active   = optional(number, 1)
+          retained = optional(set(number), [1])
+        }), {})
+        pepper = optional(object({
+          active   = optional(number, 1)
+          retained = optional(set(number), [1])
+        }), {})
+        attestor = optional(object({
+          active   = optional(number, 1)
+          retained = optional(set(number), [1])
+        }), {})
       }), {})
     }), {})
 
@@ -715,6 +738,27 @@ variable "deployment" {
       can(keys(var.deployment.scientific_batch.gpu_snapshots.bundles))
     )
     error_message = "GPU snapshot bundles must be JSON objects keyed by bundle ID; model-specific bundle values retain their original schema."
+  }
+
+  validation {
+    condition = (
+      var.deployment.secrets.credential_generations.access == 1 ||
+      try(timecmp(var.deployment.secrets.bootstrap_access_expires_at, timestamp()) > 0, false)
+    )
+    error_message = "A rotated bootstrap access generation requires a future RFC3339 bootstrap_access_expires_at."
+  }
+
+  validation {
+    condition = (
+      alltrue([
+        for history in values(var.deployment.secrets.credential_generation_history) :
+        length(history) >= 1 && history == toset(range(1, max(history...) + 1))
+      ]) &&
+      contains(var.deployment.secrets.credential_generation_history.admin, var.deployment.secrets.credential_generations.admin) &&
+      contains(var.deployment.secrets.credential_generation_history.access, var.deployment.secrets.credential_generations.access) &&
+      contains(var.deployment.secrets.credential_generation_history.database, var.deployment.secrets.credential_generations.database)
+    )
+    error_message = "Admin, access, and database generation histories must be contiguous from 1 and retain their active generation."
   }
 
   validation {
@@ -1031,15 +1075,12 @@ variable "deployment" {
     condition = (
       length(var.deployment.cluster.control_plane_allowed_cidrs) >= 1 &&
       length(var.deployment.cluster.control_plane_allowed_cidrs) <= 8 &&
-      length(setintersection(
-        var.deployment.cluster.control_plane_allowed_cidrs,
-        toset(["0.0.0.0/0", "::/0"]),
-      )) == 0 &&
       alltrue([
-        for cidr in var.deployment.cluster.control_plane_allowed_cidrs : can(cidrhost(cidr, 0))
+        for cidr in var.deployment.cluster.control_plane_allowed_cidrs :
+        can(cidrhost(cidr, 0)) && cidr == "${cidrhost(cidr, 0)}/${strcontains(cidr, ":") ? 128 : 32}"
       ])
     )
-    error_message = "cluster.control_plane_allowed_cidrs must contain one to eight bounded, valid operator or automation source CIDRs."
+    error_message = "cluster.control_plane_allowed_cidrs must contain one to eight canonical /32 IPv4 or /128 IPv6 operator or automation egress addresses."
   }
 
   validation {
@@ -1048,6 +1089,18 @@ variable "deployment" {
       floor(generation) == generation && generation >= 1
     ])
     error_message = "Every secrets.credential_generations value must be a positive whole number and must increase for its coordinated credential rotation."
+  }
+
+  validation {
+    condition = alltrue([
+      for keyring in values(var.deployment.secrets.keyring_generations) :
+      length(keyring.retained) >= 1 &&
+      floor(keyring.active) == keyring.active &&
+      keyring.active >= 1 &&
+      contains(keyring.retained, keyring.active) &&
+      keyring.retained == toset(range(1, max(keyring.retained...) + 1))
+    ])
+    error_message = "Every keyring must retain a contiguous history beginning at generation 1 and include its positive whole-number active generation."
   }
 
   validation {

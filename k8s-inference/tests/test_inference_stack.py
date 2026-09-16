@@ -37,6 +37,10 @@ def arguments() -> Namespace:
         kubectl="kubectl-test",
         crane="crane-test",
         nebius_profile="sandbox",
+        credential_file=None,
+        credential_kind=None,
+        credential_expires_in_seconds=3600,
+        allow_privileged_credential=False,
     )
 
 
@@ -1467,8 +1471,18 @@ class InferenceStackTests(unittest.TestCase):
             {"storage": storage_contract, "plane": None},
         )
 
-    def test_output_writes_owner_only_bundle_without_printing_secrets(self) -> None:
-        access_bundle = complete_reference_access_bundle()
+    def test_output_writes_one_scoped_credential_and_value_free_receipt(self) -> None:
+        handoff = {
+            "schema": "fs2-serve.nebius.ai/scoped-credential-handoff/v1",
+            "kind": "general-access",
+            "credential": {"token": "test-only-client-token"},
+        }
+        audit = {
+            "schema": "fs2-serve.nebius.ai/scoped-credential-receipt/v1",
+            "receipt_id": "receipt-test",
+            "kind": "general-access",
+            "expires_at": "2030-01-01T01:00:00Z",
+        }
         output = io.StringIO()
         with tempfile.TemporaryDirectory(prefix="inference-stack-output-") as temporary:
             run_root = Path(temporary) / "run"
@@ -1478,24 +1492,35 @@ class InferenceStackTests(unittest.TestCase):
             destination = destination_parent / "access.json"
             args = arguments()
             args.credential_file = destination
+            args.credential_kind = "general-access"
             with (
                 mock.patch.object(STACK, "state_ready", return_value=True),
                 mock.patch.object(
                     STACK,
-                    "workload_access_bundle",
-                    return_value=access_bundle,
-                ) as workload_access_bundle,
+                    "scoped_credential_handoff",
+                    return_value=(handoff, audit),
+                ) as scoped_handoff,
                 redirect_stdout(output),
             ):
                 STACK.output_stack(args, run_root, contract())
 
             receipt = json.loads(output.getvalue())
-            self.assertEqual(receipt["status"], "credential-file-written")
+            self.assertEqual(receipt["status"], "scoped-credential-file-written")
+            self.assertEqual(receipt["kind"], "general-access")
             self.assertNotIn("test-only", output.getvalue())
-            self.assertEqual(json.loads(destination.read_text()), access_bundle)
+            self.assertEqual(json.loads(destination.read_text()), handoff)
             self.assertEqual(stat.S_IMODE(destination.stat().st_mode), 0o600)
-            workload_access_bundle.assert_called_once_with(
-                "terraform-test", run_root, contract(), kubectl="kubectl-test"
+            receipt_path = destination.with_name(destination.name + ".receipt.json")
+            self.assertEqual(json.loads(receipt_path.read_text()), audit)
+            self.assertEqual(stat.S_IMODE(receipt_path.stat().st_mode), 0o600)
+            scoped_handoff.assert_called_once_with(
+                "terraform-test",
+                "kubectl-test",
+                run_root,
+                contract(),
+                kind="general-access",
+                expires_in_seconds=3600,
+                allow_privileged=False,
             )
 
     def test_output_requires_an_explicit_private_destination(self) -> None:
@@ -1513,6 +1538,7 @@ class InferenceStackTests(unittest.TestCase):
             destination.symlink_to(target)
             args = arguments()
             args.credential_file = destination
+            args.credential_kind = "general-access"
             with mock.patch.object(STACK, "state_ready", return_value=True):
                 with self.assertRaisesRegex(STACK.DeploymentError, "symlink"):
                     STACK.output_stack(args, directory / "run", contract())
@@ -1598,6 +1624,50 @@ class InferenceStackTests(unittest.TestCase):
         self.assertEqual(bundle["credentials"], complete_access_bundle()["credentials"])
         self.assertEqual(len(calls), 3)
         self.assertTrue(all("test-only" not in " ".join(call) for call in calls))
+
+    def test_scoped_export_reads_only_the_requested_general_credential(self) -> None:
+        access_contract = complete_access_bundle()
+        access_contract["schema"] = "fs2-serve.nebius.ai/access-bundle-contract/v2"
+        del access_contract["credentials"]
+        access_contract["credential_secret_refs"] = {
+            "admin": {"namespace": "fs2-system", "name": "admin-secret", "key": "token"},
+            "mcp_inference": {"namespace": "fs2-system", "name": "general-secret", "key": "token"},
+            "scientific": {"namespace": "fs2-system", "name": "scientific-secret", "key": "token"},
+            "grafana": {
+                "namespace": "fs2-observability", "name": "grafana-secret",
+                "username_key": "admin-user", "password_key": "admin-password",
+            },
+        }
+        with (
+            mock.patch.object(STACK, "stage_environment", return_value={}),
+            mock.patch.object(STACK, "terraform_json_output", return_value=access_contract),
+            mock.patch.object(
+                STACK,
+                "kubernetes_secret_values",
+                return_value={"token": "test-only-general-token"},
+            ) as secret_values,
+        ):
+            handoff, receipt = STACK.scoped_credential_handoff(
+                "terraform-test", "kubectl-test", Path("/private/test-run"), contract(),
+                kind="general-access", expires_in_seconds=3600, allow_privileged=False,
+            )
+
+        self.assertEqual(handoff["kind"], "general-access")
+        self.assertEqual(handoff["credential"], {"token": "test-only-general-token"})
+        self.assertNotIn("admin", json.dumps(handoff))
+        self.assertNotIn("grafana", json.dumps(handoff))
+        self.assertNotIn("test-only", json.dumps(receipt))
+        secret_values.assert_called_once_with(
+            "kubectl-test", Path("/private/test-run"), context="k8s-inference-test",
+            namespace="fs2-system", name="general-secret", keys=("token",),
+        )
+
+    def test_privileged_scoped_exports_require_a_second_explicit_gate(self) -> None:
+        with self.assertRaisesRegex(STACK.DeploymentError, "allow-privileged"):
+            STACK.scoped_credential_handoff(
+                "terraform-test", "kubectl-test", Path("/private/test-run"), contract(),
+                kind="admin", expires_in_seconds=3600, allow_privileged=False,
+            )
 
     def test_access_bundle_validation_requires_requested_connection_fields(
         self,
@@ -1840,14 +1910,14 @@ class InferenceStackTests(unittest.TestCase):
     def test_output_rejects_an_incomplete_workloads_stage(self) -> None:
         with (
             mock.patch.object(STACK, "state_ready", return_value=False),
-            mock.patch.object(STACK, "workload_access_bundle") as access_bundle,
+            mock.patch.object(STACK, "scoped_credential_handoff") as scoped_handoff,
         ):
             with self.assertRaisesRegex(
                 STACK.DeploymentError,
                 "run inference-stack apply",
             ):
                 STACK.output_stack(arguments(), Path("/private/test-run"), contract())
-        access_bundle.assert_not_called()
+        scoped_handoff.assert_not_called()
 
     def test_internal_proxy_command_uses_only_terraform_owned_runtime_contract(
         self,
