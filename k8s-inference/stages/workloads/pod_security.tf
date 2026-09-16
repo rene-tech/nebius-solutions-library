@@ -44,6 +44,8 @@ locals {
       snapshot_policy_sha256 = filesha256("${path.module}/../foundation/pod_security_snapshot_admission.tf")
       rollout_manager        = "system:serviceaccount:fs2-system:fs2-pod-security-rollout-manager"
       host_agent_images      = local.pod_security_host_agent_images
+      storage_probe_image    = coalesce(var.reference_data.status.image, "prepare.invalid@sha256:${strrep("0", 64)}")
+      storage_tools_config   = var.reference_data.enabled ? "fs2-reference-data-tools-${substr(local.pod_security_reference_tools_sha256, 0, 12)}" : "fs2-reference-data-tools-prepare"
     }))
     psa_version           = var.pod_security_version
     scientific_namespaces = sort(tolist(var.pod_security_existing_scientific_namespaces))
@@ -116,6 +118,12 @@ locals {
       tools_config_map        = var.reference_data.enabled ? "fs2-reference-data-tools-${substr(local.pod_security_reference_tools_sha256, 0, 12)}" : "fs2-reference-data-tools-prepare"
       tools_data_sha256       = var.reference_data.enabled ? local.pod_security_reference_tools_sha256 : strrep("0", 64)
     }
+    successor_storage_sha256 = (
+      var.pod_security_successor_storage == null ?
+      strrep("0", 64) :
+      sha256(jsonencode(var.pod_security_successor_storage))
+    )
+    successor_storage = var.pod_security_successor_storage
     baseline = {
       schema                          = local.pod_security_baseline_artifact.schema
       artifact_sha256                 = local.pod_security_receipt_required ? filesha256(var.pod_security_rollout_receipt.baseline_artifact_path) : ""
@@ -186,6 +194,7 @@ resource "terraform_data" "pod_security_rollout_contract" {
     precondition {
       condition = var.pod_security_rollout_phase == "prepare" || (
         var.reference_data.enabled &&
+        var.pod_security_successor_storage != null &&
         var.reference_data.storage_contract.lifecycle.retention_mode == "retain" &&
         var.reference_data.storage_contract.filesystem.forbid_deletion &&
         var.reference_data.storage_contract.filesystem.node_mount_path == "/mnt/fs2-reference-data" &&

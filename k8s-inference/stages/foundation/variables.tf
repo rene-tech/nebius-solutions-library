@@ -77,6 +77,38 @@ variable "pod_security_rollout_receipt" {
   default = {}
 }
 
+variable "pod_security_successor_storage_sha256" {
+  description = "SHA-256 of the exact non-secret retained successor-storage custody contract passed to the workloads stage."
+  type        = string
+  default     = "0000000000000000000000000000000000000000000000000000000000000000"
+
+  validation {
+    condition = (
+      var.pod_security_rollout_phase == "prepare" ||
+      can(regex("^[a-f0-9]{64}$", var.pod_security_successor_storage_sha256)) &&
+      var.pod_security_successor_storage_sha256 != strrep("0", 64)
+    )
+    error_message = "Every post-prepare phase must bind the exact successor-storage custody contract digest."
+  }
+}
+
+variable "pod_security_successor_storage_json" {
+  description = "Canonical JSON form of the exact non-secret retained successor-storage custody contract."
+  type        = string
+  default     = "null"
+
+  validation {
+    condition = (
+      var.pod_security_rollout_phase == "prepare" || try(
+        jsondecode(var.pod_security_successor_storage_json) != null &&
+        sha256(jsonencode(jsondecode(var.pod_security_successor_storage_json))) == var.pod_security_successor_storage_sha256,
+        false,
+      )
+    )
+    error_message = "Every post-prepare phase must carry the canonical successor-storage contract matching its signed digest."
+  }
+}
+
 variable "pod_security_dataset" {
   description = "Exact retained dataset identity expected in the signed rollout receipt."
   type = object({
@@ -107,6 +139,24 @@ variable "pod_security_host_agent_images" {
       ])
     )
     error_message = "pod_security_host_agent_images must pin exactly four reviewed exception images by digest."
+  }
+}
+
+variable "pod_security_storage_probe_image" {
+  description = "Exact digest-pinned image admitted only for retained-storage proof Jobs."
+  type        = string
+  validation {
+    condition     = can(regex("^[^[:space:]@]+@sha256:[a-f0-9]{64}$", var.pod_security_storage_probe_image))
+    error_message = "pod_security_storage_probe_image must be pinned by sha256 digest."
+  }
+}
+
+variable "pod_security_storage_tools_config_map" {
+  description = "Content-addressed immutable reference-data tooling ConfigMap admitted for storage proof Jobs."
+  type        = string
+  validation {
+    condition     = can(regex("^fs2-reference-data-tools-[a-f0-9]{12}$", var.pod_security_storage_tools_config_map))
+    error_message = "pod_security_storage_tools_config_map must be the content-addressed tools generation."
   }
 }
 

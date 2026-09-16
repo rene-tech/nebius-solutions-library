@@ -66,6 +66,58 @@ variable "pod_security_rollout_receipt" {
   default = {}
 }
 
+variable "pod_security_successor_storage" {
+  description = "Exact, non-secret pre-provisioned CSI volume identities used for retained SAI-07 successor claims and proofs."
+  type = object({
+    schema = string
+    reference_source = object({
+      persistent_volume_name      = string
+      uid                         = string
+      resource_version            = string
+      csi_driver                  = string
+      volume_handle               = string
+      volume_attributes           = map(string)
+      capacity_quantity           = string
+      capacity_gib                = number
+      provisioning_receipt_sha256 = string
+      storage_owner               = string
+    })
+    checkpoint_source = object({
+      persistent_volume_name      = string
+      csi_driver                  = string
+      volume_handle               = string
+      volume_attributes           = map(string)
+      capacity_gib                = number
+      requested_gib               = number
+      provisioning_receipt_sha256 = string
+      storage_owner               = string
+    })
+  })
+  default  = null
+  nullable = true
+
+  validation {
+    condition = var.pod_security_successor_storage == null ? true : (
+      var.pod_security_successor_storage.schema == "fs2-serve.nebius.ai/sai07-successor-storage/v1" &&
+      var.pod_security_successor_storage.reference_source.csi_driver == "reference-data.mounted-fs-path.csi.nebius.ai" &&
+      can(regex("^[1-9][0-9]*(?:Ki|Mi|Gi|Ti)$", var.pod_security_successor_storage.reference_source.capacity_quantity)) &&
+      var.pod_security_successor_storage.reference_source.capacity_quantity == "${var.pod_security_successor_storage.reference_source.capacity_gib}Gi" &&
+      floor(var.pod_security_successor_storage.reference_source.capacity_gib) == var.pod_security_successor_storage.reference_source.capacity_gib &&
+      var.pod_security_successor_storage.reference_source.capacity_gib >= 1611 &&
+      can(regex("^[a-f0-9]{64}$", var.pod_security_successor_storage.reference_source.provisioning_receipt_sha256)) &&
+      var.pod_security_successor_storage.checkpoint_source.persistent_volume_name == "fs2-sai07-snapshot-checkpoints" &&
+      var.pod_security_successor_storage.checkpoint_source.csi_driver == "reference-data.mounted-fs-path.csi.nebius.ai" &&
+      var.pod_security_successor_storage.checkpoint_source.volume_handle != var.pod_security_successor_storage.reference_source.volume_handle &&
+      floor(var.pod_security_successor_storage.checkpoint_source.capacity_gib) == var.pod_security_successor_storage.checkpoint_source.capacity_gib &&
+      floor(var.pod_security_successor_storage.checkpoint_source.requested_gib) == var.pod_security_successor_storage.checkpoint_source.requested_gib &&
+      var.pod_security_successor_storage.checkpoint_source.capacity_gib >= var.pod_security_successor_storage.checkpoint_source.requested_gib &&
+      var.pod_security_successor_storage.checkpoint_source.requested_gib >= 1 &&
+      can(regex("^[a-f0-9]{64}$", var.pod_security_successor_storage.checkpoint_source.provisioning_receipt_sha256))
+    )
+    error_message = "successor storage must bind the existing retained reference-data volume and a distinct independently receipted retained checkpoint volume."
+  }
+}
+
 variable "pod_security_existing_scientific_namespaces" {
   description = "Existing externally owned scientific namespaces that receive only the three PSA labels during the enforce phase."
   type        = set(string)

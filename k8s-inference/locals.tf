@@ -1064,6 +1064,12 @@ locals {
       baseline_artifact_path = var.deployment.pod_security.receipt.baseline_artifact_path
       cleanup_result_path    = var.deployment.pod_security.receipt.cleanup_result_path
     }
+    pod_security_successor_storage_sha256 = (
+      var.deployment.pod_security.successor_storage == null ?
+      strrep("0", 64) :
+      sha256(jsonencode(var.deployment.pod_security.successor_storage))
+    )
+    pod_security_successor_storage_json = jsonencode(var.deployment.pod_security.successor_storage)
     pod_security_dataset = {
       id          = var.deployment.storage.reference_data.pipeline.bundle_id
       revision    = try(jsondecode(file("${path.module}/reference-data/source-catalog.json")).bundles[var.deployment.storage.reference_data.pipeline.bundle_id].revision, "")
@@ -1075,6 +1081,16 @@ locals {
       otel-node     = "ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-k8s@sha256:3a8f46e1ff33546d36ddd94ef8721c5807718e25825f3e3f6eb5d552fd24e422"
       gpu-observer  = "${var.deployment.applications.control_plane.repository}@${var.deployment.applications.control_plane.digest}"
     }
+    pod_security_storage_probe_image = coalesce(
+      var.deployment.storage.reference_data.status.image,
+      "prepare.invalid@sha256:${strrep("0", 64)}",
+    )
+    pod_security_storage_tools_config_map = "fs2-reference-data-tools-${substr(sha256(jsonencode({
+      "placement-contract.json"         = file("${path.module}/reference-data/placement-contract.json")
+      "reference_data.py"               = file("${path.module}/reference-data/reference_data.py")
+      "verify_checkpoint_durability.py" = file("${path.module}/reference-data/verify_checkpoint_durability.py")
+      "verify_csi_readiness.py"         = file("${path.module}/reference-data/verify_csi_readiness.py")
+    })), 0, 12)}"
     grafana_admin_secret_ref = var.deployment.secrets.grafana_admin_secret
     jobset = {
       enabled            = var.deployment.scientific_batch.enabled
@@ -1156,6 +1172,7 @@ locals {
       baseline_artifact_path = var.deployment.pod_security.receipt.baseline_artifact_path
       cleanup_result_path    = var.deployment.pod_security.receipt.cleanup_result_path
     }
+    pod_security_successor_storage  = var.deployment.pod_security.successor_storage
     deployment_profile              = local.model_profile
     enabled_model_ids               = local.selected_model_ids
     model_image_overrides           = local.effective_model_images

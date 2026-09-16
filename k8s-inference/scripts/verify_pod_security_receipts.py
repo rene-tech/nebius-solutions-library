@@ -82,6 +82,7 @@ RESOURCE_PATHS = {
     ("v1", "ConfigMap"): "configmaps",
     ("v1", "Namespace"): "namespaces",
     ("v1", "PersistentVolumeClaim"): "persistentvolumeclaims",
+    ("v1", "PersistentVolume"): "persistentvolumes",
     ("v1", "Pod"): "pods",
     ("v1", "PodTemplate"): "podtemplates",
     ("v1", "ReplicationController"): "replicationcontrollers",
@@ -105,6 +106,7 @@ RESOURCE_PATHS = {
 
 CLUSTER_SCOPED = {
     ("v1", "Namespace"),
+    ("v1", "PersistentVolume"),
     ("storage.k8s.io/v1", "StorageClass"),
     ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicy"),
     ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicyBinding"),
@@ -198,8 +200,17 @@ REFERENCE_SUCCESSOR_CLAIMS = (
     *((namespace, "fs2-reference-data-rwx") for namespace in BIOIR_REFERENCE_NAMESPACES),
     ("fs2-snapshot-operations", "fs2-snapshot-reference"),
 )
+REFERENCE_SUCCESSOR_VOLUMES = {
+    ("fs2-bioir-boltz2", "fs2-reference-data-rwx"): "fs2-sai07-ref-bioir-boltz2",
+    ("fs2-bioir-coverage", "fs2-reference-data-rwx"): "fs2-sai07-ref-bioir-coverage",
+    ("fs2-bioir-openfold", "fs2-reference-data-rwx"): "fs2-sai07-ref-bioir-openfold",
+    ("fs2-bioir-protenix", "fs2-reference-data-rwx"): "fs2-sai07-ref-bioir-protenix",
+    ("fs2-bioir-snapshot", "fs2-reference-data-rwx"): "fs2-sai07-ref-bioir-snapshot",
+    ("fs2-snapshot-operations", "fs2-snapshot-reference"): "fs2-sai07-ref-snapshot-operations",
+}
 REFERENCE_SUCCESSOR_STORAGE_CLASS = "fs2-reference-data-retained-sc"
 SNAPSHOT_CHECKPOINT_CLAIM = ("fs2-snapshot-operations", "fs2-snapshot-checkpoints")
+SNAPSHOT_CHECKPOINT_VOLUME = "fs2-sai07-snapshot-checkpoints"
 SNAPSHOT_CHECKPOINT_STORAGE_CLASS = "fs2-snapshot-checkpoints-retained-sc"
 
 
@@ -370,6 +381,8 @@ def _validate_context(context: dict[str, Any], expected: dict[str, Any]) -> None
             "dataset",
             "storage",
             "storage_evidence",
+            "successor_storage_sha256",
+            "successor_storage",
             "baseline",
             "host_agents",
             "host_agent_configs",
@@ -503,6 +516,80 @@ def _validate_context(context: dict[str, Any], expected: dict[str, Any]) -> None
         raise ReceiptError("context.storage_evidence.tools_config_map is malformed")
     if not SHA256_RE.fullmatch(_string(storage_evidence["tools_data_sha256"], "context storage tools digest")):
         raise ReceiptError("context.storage_evidence.tools_data_sha256 is malformed")
+    if not SHA256_RE.fullmatch(
+        _string(context["successor_storage_sha256"], "context.successor_storage_sha256")
+    ) or context["successor_storage_sha256"] == "0" * 64:
+        raise ReceiptError("context.successor_storage_sha256 must bind a non-empty custody contract")
+    successor_storage = _object(context["successor_storage"], "context.successor_storage")
+    if _sha256(_canonical(successor_storage)) != context["successor_storage_sha256"]:
+        raise ReceiptError("context successor-storage custody contract digest differs")
+    _exact_keys(
+        successor_storage,
+        {"schema", "reference_source", "checkpoint_source"},
+        "context.successor_storage",
+    )
+    if successor_storage["schema"] != "fs2-serve.nebius.ai/sai07-successor-storage/v1":
+        raise ReceiptError("context successor-storage schema is unsupported")
+    reference_source = _object(successor_storage["reference_source"], "successor reference source")
+    _exact_keys(
+        reference_source,
+        {
+            "persistent_volume_name",
+            "uid",
+            "resource_version",
+            "csi_driver",
+            "volume_handle",
+            "volume_attributes",
+            "capacity_quantity",
+            "capacity_gib",
+            "provisioning_receipt_sha256",
+            "storage_owner",
+        },
+        "successor reference source",
+    )
+    checkpoint_source = _object(successor_storage["checkpoint_source"], "successor checkpoint source")
+    _exact_keys(
+        checkpoint_source,
+        {
+            "persistent_volume_name",
+            "csi_driver",
+            "volume_handle",
+            "volume_attributes",
+            "capacity_gib",
+            "requested_gib",
+            "provisioning_receipt_sha256",
+            "storage_owner",
+        },
+        "successor checkpoint source",
+    )
+    if (
+        reference_source["csi_driver"] != "reference-data.mounted-fs-path.csi.nebius.ai"
+        or checkpoint_source["csi_driver"] != reference_source["csi_driver"]
+        or checkpoint_source["persistent_volume_name"] != SNAPSHOT_CHECKPOINT_VOLUME
+        or checkpoint_source["volume_handle"] == reference_source["volume_handle"]
+        or not re.fullmatch(r"[1-9][0-9]*(?:Ki|Mi|Gi|Ti)", str(reference_source["capacity_quantity"]))
+        or reference_source["capacity_quantity"] != f"{reference_source['capacity_gib']}Gi"
+        or _integer(reference_source["capacity_gib"], "successor reference capacity", 1611) > capacity
+        or _integer(checkpoint_source["requested_gib"], "checkpoint requested capacity", 1)
+        > _integer(checkpoint_source["capacity_gib"], "checkpoint capacity", 1)
+        or 1611 + int(checkpoint_source["capacity_gib"]) > capacity
+    ):
+        raise ReceiptError("successor storage is not the exact retained, distinct CSI contract")
+    for label, source in (("reference", reference_source), ("checkpoint", checkpoint_source)):
+        if (
+            not IDENTIFIER_RE.fullmatch(_string(source["persistent_volume_name"], f"{label} PV name"))
+            or not IDENTIFIER_RE.fullmatch(_string(source["volume_handle"], f"{label} CSI handle"))
+            or not SHA256_RE.fullmatch(
+                _string(source["provisioning_receipt_sha256"], f"{label} provisioning receipt")
+            )
+            or not IDENTIFIER_RE.fullmatch(_string(source["storage_owner"], f"{label} storage owner"))
+            or not isinstance(source["volume_attributes"], dict)
+            or not all(isinstance(key, str) and isinstance(value, str) for key, value in source["volume_attributes"].items())
+        ):
+            raise ReceiptError(f"successor {label} custody fields are malformed")
+    for field in ("uid", "resource_version"):
+        if not IDENTIFIER_RE.fullmatch(_string(reference_source[field], f"successor reference {field}")):
+            raise ReceiptError(f"successor reference {field} is malformed")
 
     baseline = _object(context["baseline"], "context.baseline")
     _exact_keys(
@@ -984,6 +1071,17 @@ def _validate_observation_contract(
                 "",
                 SNAPSHOT_CHECKPOINT_STORAGE_CLASS,
             ),
+            (
+                "v1",
+                "PersistentVolume",
+                "",
+                context["successor_storage"]["reference_source"]["persistent_volume_name"],
+            ),
+            *{
+                ("v1", "PersistentVolume", "", name)
+                for name in REFERENCE_SUCCESSOR_VOLUMES.values()
+            },
+            ("v1", "PersistentVolume", "", SNAPSHOT_CHECKPOINT_VOLUME),
             *{("v1", "PersistentVolumeClaim", namespace, name) for namespace, name in REFERENCE_SUCCESSOR_CLAIMS},
             *{
                 ("v1", "ConfigMap", namespace, context["storage_evidence"]["tools_config_map"])
@@ -1690,6 +1788,9 @@ def _validate_storage_successors(
     context: dict[str, Any],
 ) -> None:
     tree = context["dataset"]["tree_sha256"]
+    custody = _object(context["successor_storage"], "successor storage custody")
+    reference_source = _object(custody["reference_source"], "reference source custody")
+    checkpoint_source = _object(custody["checkpoint_source"], "checkpoint source custody")
     reference_class = live_objects.get(("storage.k8s.io/v1", "StorageClass", "", REFERENCE_SUCCESSOR_STORAGE_CLASS))
     checkpoint_class = live_objects.get(("storage.k8s.io/v1", "StorageClass", "", SNAPSHOT_CHECKPOINT_STORAGE_CLASS))
     if (
@@ -1700,25 +1801,90 @@ def _validate_storage_successors(
     ):
         raise ReceiptError("successor storage classes are absent or do not retain volumes")
 
+    source_volume = live_objects.get(
+        ("v1", "PersistentVolume", "", reference_source["persistent_volume_name"])
+    )
+    if source_volume is None:
+        raise ReceiptError("canonical reference source PV is absent")
+    source_metadata = _object(source_volume.get("metadata"), "canonical reference source PV metadata")
+    source_spec = _object(source_volume.get("spec"), "canonical reference source PV spec")
+    source_csi = _object(source_spec.get("csi"), "canonical reference source PV CSI source")
+    if (
+        context["pvc"]["volume_name"] != reference_source["persistent_volume_name"]
+        or source_metadata.get("name") != context["pvc"]["volume_name"]
+        or source_metadata.get("uid") != reference_source["uid"]
+        or source_metadata.get("resourceVersion") != reference_source["resource_version"]
+        or source_spec.get("storageClassName") != REFERENCE_SUCCESSOR_STORAGE_CLASS
+        or source_spec.get("persistentVolumeReclaimPolicy") != "Retain"
+        or _object(source_spec.get("capacity"), "canonical reference source PV capacity").get("storage")
+        != reference_source["capacity_quantity"]
+        or source_csi.get("driver") != reference_source["csi_driver"]
+        or source_csi.get("volumeHandle") != reference_source["volume_handle"]
+        or source_csi.get("volumeAttributes", {}) != reference_source["volume_attributes"]
+    ):
+        raise ReceiptError("canonical reference source PV differs from signed custody")
+
     for namespace, name in REFERENCE_SUCCESSOR_CLAIMS:
         label = f"reference successor {namespace}/{name}"
+        volume_name = REFERENCE_SUCCESSOR_VOLUMES[(namespace, name)]
+        volume = live_objects.get(("v1", "PersistentVolume", "", volume_name))
         claim = live_objects.get(("v1", "PersistentVolumeClaim", namespace, name))
         probe_name = _probe_name(f"{name}-read-probe", context)
         probe = live_objects.get(("batch/v1", "Job", namespace, probe_name))
-        if claim is None or probe is None:
-            raise ReceiptError(f"{label} claim or content probe is absent")
+        if volume is None or claim is None or probe is None:
+            raise ReceiptError(f"{label} retained PV, claim, or content probe is absent")
+        volume_metadata = _object(volume.get("metadata"), f"{label} PV metadata")
+        volume_annotations = _object(
+            volume_metadata.get("annotations", {}), f"{label} PV annotations"
+        )
+        volume_spec = _object(volume.get("spec"), f"{label} PV spec")
+        volume_csi = _object(volume_spec.get("csi"), f"{label} PV CSI source")
+        volume_claim_ref = _object(volume_spec.get("claimRef"), f"{label} PV claim reference")
+        if (
+            volume_spec.get("accessModes") != ["ReadOnlyMany"]
+            or volume_spec.get("persistentVolumeReclaimPolicy") != "Retain"
+            or volume_spec.get("storageClassName") != REFERENCE_SUCCESSOR_STORAGE_CLASS
+            or _object(volume_spec.get("capacity"), f"{label} PV capacity").get("storage")
+            != f"{reference_source['capacity_gib']}Gi"
+            or any(
+                volume_claim_ref.get(field) != value
+                for field, value in {
+                    "apiVersion": "v1",
+                    "kind": "PersistentVolumeClaim",
+                    "name": name,
+                    "namespace": namespace,
+                }.items()
+            )
+            or volume_csi.get("driver") != reference_source["csi_driver"]
+            or volume_csi.get("volumeHandle") != reference_source["volume_handle"]
+            or volume_csi.get("volumeAttributes", {}) != reference_source["volume_attributes"]
+            or volume_csi.get("readOnly") is not True
+            or volume_annotations.get("security.fs2.nebius.ai/custody-contract-sha256")
+            != context["successor_storage_sha256"]
+            or volume_annotations.get("security.fs2.nebius.ai/provisioning-receipt-sha256")
+            != reference_source["provisioning_receipt_sha256"]
+            or volume_annotations.get("security.fs2.nebius.ai/storage-owner")
+            != reference_source["storage_owner"]
+        ):
+            raise ReceiptError(f"{label} PV does not alias the exact retained source read-only")
         _validate_bound_retained_claim(
             claim,
             storage_class=REFERENCE_SUCCESSOR_STORAGE_CLASS,
-            allowed_access_modes={("ReadOnlyMany",), ("ReadWriteMany",)},
+            allowed_access_modes={("ReadOnlyMany",)},
             label=label,
         )
         claim_annotations = _object(
             _object(claim.get("metadata"), f"{label} metadata").get("annotations", {}),
             f"{label} annotations",
         )
-        if claim_annotations.get("security.fs2.nebius.ai/content-tree-sha256") != tree:
-            raise ReceiptError(f"{label} does not bind the exact dataset tree")
+        if (
+            claim_annotations.get("security.fs2.nebius.ai/content-tree-sha256") != tree
+            or claim_annotations.get("security.fs2.nebius.ai/custody-contract-sha256")
+            != context["successor_storage_sha256"]
+        ):
+            raise ReceiptError(f"{label} does not bind the exact dataset tree and custody")
+        if _object(claim.get("spec"), f"{label} claim spec").get("volumeName") != volume_name:
+            raise ReceiptError(f"{label} claim is not bound to its fixed retained PV")
         pod_spec = _job_completed_once(probe, f"{label} read probe")
         volumes = pod_spec.get("volumes")
         if (
@@ -1749,15 +1915,69 @@ def _validate_storage_successors(
         )
 
     checkpoint_namespace, checkpoint_name = SNAPSHOT_CHECKPOINT_CLAIM
+    checkpoint_volume = live_objects.get(("v1", "PersistentVolume", "", SNAPSHOT_CHECKPOINT_VOLUME))
     checkpoint = live_objects.get(("v1", "PersistentVolumeClaim", checkpoint_namespace, checkpoint_name))
-    if checkpoint is None:
-        raise ReceiptError("snapshot checkpoint successor claim is absent")
+    if checkpoint_volume is None or checkpoint is None:
+        raise ReceiptError("snapshot checkpoint successor PV or claim is absent")
+    checkpoint_volume_annotations = _object(
+        _object(checkpoint_volume.get("metadata"), "snapshot checkpoint PV metadata").get(
+            "annotations", {}
+        ),
+        "snapshot checkpoint PV annotations",
+    )
+    checkpoint_volume_spec = _object(checkpoint_volume.get("spec"), "snapshot checkpoint PV spec")
+    checkpoint_csi = _object(checkpoint_volume_spec.get("csi"), "snapshot checkpoint PV CSI source")
+    checkpoint_claim_ref = _object(checkpoint_volume_spec.get("claimRef"), "snapshot checkpoint PV claim reference")
+    if (
+        checkpoint_volume_spec.get("accessModes") != ["ReadWriteMany"]
+        or checkpoint_volume_spec.get("persistentVolumeReclaimPolicy") != "Retain"
+        or checkpoint_volume_spec.get("storageClassName") != SNAPSHOT_CHECKPOINT_STORAGE_CLASS
+        or _object(checkpoint_volume_spec.get("capacity"), "snapshot checkpoint PV capacity").get("storage")
+        != f"{checkpoint_source['capacity_gib']}Gi"
+        or any(
+            checkpoint_claim_ref.get(field) != value
+            for field, value in {
+                "apiVersion": "v1",
+                "kind": "PersistentVolumeClaim",
+                "name": checkpoint_name,
+                "namespace": checkpoint_namespace,
+            }.items()
+        )
+        or checkpoint_csi.get("driver") != checkpoint_source["csi_driver"]
+        or checkpoint_csi.get("volumeHandle") != checkpoint_source["volume_handle"]
+        or checkpoint_csi.get("volumeAttributes", {}) != checkpoint_source["volume_attributes"]
+        or checkpoint_csi.get("readOnly", False) is not False
+        or checkpoint_volume_annotations.get("security.fs2.nebius.ai/custody-contract-sha256")
+        != context["successor_storage_sha256"]
+        or checkpoint_volume_annotations.get("security.fs2.nebius.ai/provisioning-receipt-sha256")
+        != checkpoint_source["provisioning_receipt_sha256"]
+        or checkpoint_volume_annotations.get("security.fs2.nebius.ai/storage-owner")
+        != checkpoint_source["storage_owner"]
+    ):
+        raise ReceiptError("snapshot checkpoint PV differs from signed distinct custody")
     _validate_bound_retained_claim(
         checkpoint,
         storage_class=SNAPSHOT_CHECKPOINT_STORAGE_CLASS,
         allowed_access_modes={("ReadWriteMany",)},
         label="snapshot checkpoint successor",
     )
+    checkpoint_spec = _object(checkpoint.get("spec"), "snapshot checkpoint claim spec")
+    checkpoint_annotations = _object(
+        _object(checkpoint.get("metadata"), "snapshot checkpoint claim metadata").get(
+            "annotations", {}
+        ),
+        "snapshot checkpoint claim annotations",
+    )
+    if (
+        checkpoint_spec.get("volumeName") != SNAPSHOT_CHECKPOINT_VOLUME
+        or _object(checkpoint_spec.get("resources"), "snapshot checkpoint resources")
+        .get("requests", {})
+        .get("storage")
+        != f"{checkpoint_source['requested_gib']}Gi"
+        or checkpoint_annotations.get("security.fs2.nebius.ai/custody-contract-sha256")
+        != context["successor_storage_sha256"]
+    ):
+        raise ReceiptError("snapshot checkpoint claim is not bound to the exact retained PV and capacity")
     jobs = {
         mode: live_objects.get(
             ("batch/v1", "Job", checkpoint_namespace, _checkpoint_probe_name(mode, context))
@@ -2461,7 +2681,14 @@ def _validate_reference_data_postcondition(
 
     read("storage.k8s.io/v1", "StorageClass", "", REFERENCE_SUCCESSOR_STORAGE_CLASS)
     read("storage.k8s.io/v1", "StorageClass", "", SNAPSHOT_CHECKPOINT_STORAGE_CLASS)
+    read(
+        "v1",
+        "PersistentVolume",
+        "",
+        context["successor_storage"]["reference_source"]["persistent_volume_name"],
+    )
     for namespace, name in REFERENCE_SUCCESSOR_CLAIMS:
+        read("v1", "PersistentVolume", "", REFERENCE_SUCCESSOR_VOLUMES[(namespace, name)])
         read("v1", "PersistentVolumeClaim", namespace, name)
         read("v1", "ConfigMap", namespace, tools_name)
         read(
@@ -2472,6 +2699,7 @@ def _validate_reference_data_postcondition(
         )
         read_pods(namespace)
     checkpoint_namespace, checkpoint_name = SNAPSHOT_CHECKPOINT_CLAIM
+    read("v1", "PersistentVolume", "", SNAPSHOT_CHECKPOINT_VOLUME)
     read("v1", "PersistentVolumeClaim", checkpoint_namespace, checkpoint_name)
     for mode in ("write", "read"):
         read("batch/v1", "Job", checkpoint_namespace, _checkpoint_probe_name(mode, context))

@@ -36,6 +36,31 @@ def authority(tmp_path: Path) -> tuple[Path, Path]:
 
 @pytest.fixture()
 def context() -> dict[str, object]:
+    successor_storage = {
+        "schema": "fs2-serve.nebius.ai/sai07-successor-storage/v1",
+        "reference_source": {
+            "persistent_volume_name": "pv-reference-data-test",
+            "uid": "pv-reference-data-uid",
+            "resource_version": "900",
+            "csi_driver": "reference-data.mounted-fs-path.csi.nebius.ai",
+            "volume_handle": "reference-data-volume-test",
+            "volume_attributes": {"storage.kubernetes.io/csiProvisionerIdentity": "test"},
+            "capacity_quantity": "2048Gi",
+            "capacity_gib": 2048,
+            "provisioning_receipt_sha256": "c" * 64,
+            "storage_owner": "platform-storage",
+        },
+        "checkpoint_source": {
+            "persistent_volume_name": "fs2-sai07-snapshot-checkpoints",
+            "csi_driver": "reference-data.mounted-fs-path.csi.nebius.ai",
+            "volume_handle": "snapshot-checkpoints-volume-test",
+            "volume_attributes": {"storage.kubernetes.io/csiProvisionerIdentity": "test"},
+            "capacity_gib": 256,
+            "requested_gib": 256,
+            "provisioning_receipt_sha256": "d" * 64,
+            "storage_owner": "platform-storage",
+        },
+    }
     return {
         "cluster_id": "mk8scluster-test",
         "run_id": "sai07test",
@@ -126,6 +151,8 @@ def context() -> dict[str, object]:
             "tools_config_map": "fs2-reference-data-tools-test",
             "tools_data_sha256": hashlib.sha256(canonical({"verify": "content"})).hexdigest(),
         },
+        "successor_storage_sha256": hashlib.sha256(canonical(successor_storage)).hexdigest(),
+        "successor_storage": successor_storage,
     }
 
 
@@ -535,6 +562,11 @@ def exception_objects() -> list[dict[str, object]]:
 
 def successor_storage_objects(context: dict[str, object], start: int = 20) -> list[dict[str, object]]:
     tree = context["dataset"]["tree_sha256"]  # type: ignore[index]
+    custody = context["successor_storage"]
+    assert isinstance(custody, dict)
+    reference_source = custody["reference_source"]
+    checkpoint_source = custody["checkpoint_source"]
+    assert isinstance(reference_source, dict) and isinstance(checkpoint_source, dict)
     values: list[dict[str, object]] = []
     checkpoint_class = live_object(
         "storage.k8s.io/v1",
@@ -544,50 +576,143 @@ def successor_storage_objects(context: dict[str, object], start: int = 20) -> li
         start,
     )
     checkpoint_class["reclaimPolicy"] = "Retain"
-    values.append(checkpoint_class)
-    ordinal = start + 1
+    source_volume = live_object(
+        "v1",
+        "PersistentVolume",
+        "",
+        str(reference_source["persistent_volume_name"]),
+        start + 1,
+    )
+    source_volume["metadata"]["uid"] = reference_source["uid"]  # type: ignore[index]
+    source_volume["metadata"]["resourceVersion"] = reference_source["resource_version"]  # type: ignore[index]
+    source_volume["spec"] = {
+        "capacity": {"storage": reference_source["capacity_quantity"]},
+        "accessModes": ["ReadWriteMany"],
+        "persistentVolumeReclaimPolicy": "Retain",
+        "storageClassName": verifier.REFERENCE_SUCCESSOR_STORAGE_CLASS,
+        "csi": {
+            "driver": reference_source["csi_driver"],
+            "volumeHandle": reference_source["volume_handle"],
+            "volumeAttributes": reference_source["volume_attributes"],
+        },
+    }
+    values.extend([checkpoint_class, source_volume])
+    ordinal = start + 2
     for namespace, name in verifier.REFERENCE_SUCCESSOR_CLAIMS:
+        volume_name = verifier.REFERENCE_SUCCESSOR_VOLUMES[(namespace, name)]
+        volume = live_object("v1", "PersistentVolume", "", volume_name, ordinal)
+        volume["metadata"]["annotations"] = {  # type: ignore[index]
+            "security.fs2.nebius.ai/custody-contract-sha256": context[
+                "successor_storage_sha256"
+            ],
+            "security.fs2.nebius.ai/provisioning-receipt-sha256": reference_source[
+                "provisioning_receipt_sha256"
+            ],
+            "security.fs2.nebius.ai/storage-owner": reference_source["storage_owner"],
+        }
+        volume["spec"] = {
+            "capacity": {"storage": f"{reference_source['capacity_gib']}Gi"},
+            "accessModes": ["ReadOnlyMany"],
+            "persistentVolumeReclaimPolicy": "Retain",
+            "storageClassName": verifier.REFERENCE_SUCCESSOR_STORAGE_CLASS,
+            "claimRef": {
+                "apiVersion": "v1",
+                "kind": "PersistentVolumeClaim",
+                "name": name,
+                "namespace": namespace,
+            },
+            "csi": {
+                "driver": reference_source["csi_driver"],
+                "volumeHandle": reference_source["volume_handle"],
+                "volumeAttributes": reference_source["volume_attributes"],
+                "readOnly": True,
+            },
+        }
         tools = storage_tools(context, namespace, ordinal)
         claim = live_object("v1", "PersistentVolumeClaim", namespace, name, ordinal + 1)
         claim["metadata"]["annotations"] = {  # type: ignore[index]
             "security.fs2.nebius.ai/content-tree-sha256": tree,
+            "security.fs2.nebius.ai/custody-contract-sha256": context[
+                "successor_storage_sha256"
+            ],
         }
         claim["spec"] = {
             "accessModes": ["ReadOnlyMany"],
             "storageClassName": verifier.REFERENCE_SUCCESSOR_STORAGE_CLASS,
-            "volumeName": f"pv-{namespace}",
-            "resources": {"requests": {"storage": "1611Gi"}},
+            "volumeName": volume_name,
+            "resources": {"requests": {"storage": f"{reference_source['capacity_gib']}Gi"}},
         }
         claim["status"] = {"phase": "Bound"}
         values.extend(
             [
                 tools,
+                volume,
                 claim,
                 *read_probe_objects(context, claim, namespace, name, f"{name}-read-probe", ordinal + 2),
             ]
         )
-        ordinal += 4
+        ordinal += 5
 
     checkpoint_namespace, checkpoint_name = verifier.SNAPSHOT_CHECKPOINT_CLAIM
+    checkpoint_volume = live_object(
+        "v1",
+        "PersistentVolume",
+        "",
+        verifier.SNAPSHOT_CHECKPOINT_VOLUME,
+        ordinal,
+    )
+    checkpoint_volume["metadata"]["annotations"] = {  # type: ignore[index]
+        "security.fs2.nebius.ai/custody-contract-sha256": context[
+            "successor_storage_sha256"
+        ],
+        "security.fs2.nebius.ai/provisioning-receipt-sha256": checkpoint_source[
+            "provisioning_receipt_sha256"
+        ],
+        "security.fs2.nebius.ai/storage-owner": checkpoint_source["storage_owner"],
+    }
+    checkpoint_volume["spec"] = {
+        "capacity": {"storage": f"{checkpoint_source['capacity_gib']}Gi"},
+        "accessModes": ["ReadWriteMany"],
+        "persistentVolumeReclaimPolicy": "Retain",
+        "storageClassName": verifier.SNAPSHOT_CHECKPOINT_STORAGE_CLASS,
+        "claimRef": {
+            "apiVersion": "v1",
+            "kind": "PersistentVolumeClaim",
+            "name": checkpoint_name,
+            "namespace": checkpoint_namespace,
+        },
+        "csi": {
+            "driver": checkpoint_source["csi_driver"],
+            "volumeHandle": checkpoint_source["volume_handle"],
+            "volumeAttributes": checkpoint_source["volume_attributes"],
+            "readOnly": False,
+        },
+    }
     checkpoint = live_object(
         "v1",
         "PersistentVolumeClaim",
         checkpoint_namespace,
         checkpoint_name,
-        ordinal,
+        ordinal + 1,
     )
+    checkpoint["metadata"]["annotations"] = {  # type: ignore[index]
+        "security.fs2.nebius.ai/custody-contract-sha256": context[
+            "successor_storage_sha256"
+        ],
+    }
     checkpoint["spec"] = {
         "accessModes": ["ReadWriteMany"],
         "storageClassName": verifier.SNAPSHOT_CHECKPOINT_STORAGE_CLASS,
-        "volumeName": "pv-snapshot-checkpoints",
-        "resources": {"requests": {"storage": "256Gi"}},
+        "volumeName": verifier.SNAPSHOT_CHECKPOINT_VOLUME,
+        "resources": {"requests": {"storage": f"{checkpoint_source['requested_gib']}Gi"}},
     }
     checkpoint["status"] = {"phase": "Bound"}
     values.extend(
         [
+            checkpoint_volume,
             checkpoint,
-            *checkpoint_probe_objects(context, checkpoint, "write", ordinal + 1),
-            *checkpoint_probe_objects(context, checkpoint, "read", ordinal + 3),
+            *checkpoint_probe_objects(context, checkpoint, "write", ordinal + 2),
+            *checkpoint_probe_objects(context, checkpoint, "read", ordinal + 4),
         ]
     )
     return values

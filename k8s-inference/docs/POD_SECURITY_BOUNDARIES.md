@@ -131,6 +131,41 @@ challenge-bound marker. Missing namespace-local claims, immutable tooling,
 writer/reader Jobs, or their owned Pods keeps the rollout SOURCE/LIVE NO-GO;
 annotations alone never satisfy the gate.
 
+The deployable successor graph is owned by
+`stages/workloads/reference_data_successors.tf`. A post-`prepare` deployment
+must supply `deployment.pod_security.successor_storage`; there is no default and
+no dynamic-empty-claim fallback. The contract identifies the live canonical
+reference PV by name, UID, resourceVersion, CSI driver, handle and attributes,
+and identifies a distinct pre-provisioned checkpoint CSI volume. Both identities
+carry an external provisioning-receipt digest and storage owner. The complete
+contract digest is part of the signed rollout context consumed independently by
+the foundation and workloads stages.
+
+Terraform then creates exactly six fixed `ReadOnlyMany` PV/PVC aliases: one in
+each of the five BioIR namespaces and `fs2-snapshot-reference` in the snapshot
+exception namespace. All aliases use the live-verified canonical CSI handle, so
+they read the retained dataset rather than provisioning empty per-claim
+directories or copying 1.6 TiB six times. A separate fixed `ReadWriteMany` PV/PVC
+backs `fs2-snapshot-checkpoints`. Every PV and PVC uses `Retain` semantics and
+`prevent_destroy`; immutable proof tooling is replicated to every consumer
+namespace. The checkpoint writer Job must complete before the independently
+mounted read-only reader Job. Both exact Jobs and all six reference read probes
+are destruction-protected and bind the signed nonce plus live PVC UID,
+resourceVersion and volumeName.
+
+The snapshot admission policy has finite, non-privileged profiles for only the
+Job-controller-created snapshot reference probe and the two durability Pods.
+They bind the exact proof image and immutable tools generation, command
+arguments to Pod annotations, fixed claims, read/write mode, resource limits,
+storage-node placement and restricted security context. They do not broaden the
+privileged snapshot runtime profile or admit caller-created Pods.
+
+These source resources do not establish external storage custody or live
+readiness by themselves. The rollout remains blocked until the referenced
+volumes and receipt digests are independently reviewed, a non-destructive plan
+proves only additive actions, and the live probes complete under the serialized
+rollout gate.
+
 Every post-prepare phase requires one short-lived v4 Ed25519 receipt whose single
 signature covers the complete canonical bundle: reviewed signer identity and
 key digest, cluster/run/kube-system UID, deployment nonce, exact prior and next

@@ -70,6 +70,8 @@ locals {
       snapshot_policy_sha256 = filesha256("${path.module}/pod_security_snapshot_admission.tf")
       rollout_manager        = "system:serviceaccount:fs2-system:fs2-pod-security-rollout-manager"
       host_agent_images      = var.pod_security_host_agent_images
+      storage_probe_image    = var.pod_security_storage_probe_image
+      storage_tools_config   = var.pod_security_storage_tools_config_map
     }))
     psa_version           = var.pod_security_version
     scientific_namespaces = local.pod_security_scientific_namespaces
@@ -132,6 +134,8 @@ locals {
       tools_config_map        = local.pod_security_retained_context.evidence.tools_config_map
       tools_data_sha256       = local.pod_security_retained_context.evidence.tools_data_sha256
     }
+    successor_storage_sha256 = var.pod_security_successor_storage_sha256
+    successor_storage        = jsondecode(var.pod_security_successor_storage_json)
     baseline = {
       schema                          = local.pod_security_baseline_artifact.schema
       artifact_sha256                 = local.pod_security_receipt_required ? filesha256(var.pod_security_rollout_receipt.baseline_artifact_path) : ""

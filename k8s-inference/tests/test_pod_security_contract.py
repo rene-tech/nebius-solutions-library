@@ -195,6 +195,61 @@ def test_reference_data_uses_only_dedicated_retained_rwx_csi() -> None:
     assert "csi_readiness_receipt_sha256" not in variables
 
 
+def test_non_test_iac_owns_every_retained_storage_successor_and_exact_proof() -> None:
+    source = _source("stages/workloads/reference_data_successors.tf")
+    variables = _source("variables.tf")
+    verifier = _source("scripts/verify_pod_security_receipts.py")
+
+    for namespace in (
+        "fs2-bioir-boltz2",
+        "fs2-bioir-coverage",
+        "fs2-bioir-openfold",
+        "fs2-bioir-protenix",
+        "fs2-bioir-snapshot",
+        "fs2-snapshot-operations",
+    ):
+        assert namespace in source
+    for identity in (
+        "fs2-snapshot-reference",
+        "fs2-snapshot-checkpoints",
+        "fs2-snapshot-checkpoints-retained-sc",
+    ):
+        assert identity in source
+
+    assert source.count('resource "kubernetes_persistent_volume_v1"') == 2
+    assert source.count('resource "kubernetes_persistent_volume_claim_v1"') == 2
+    assert 'resource "kubernetes_config_map_v1" "pod_security_successor_tools"' in source
+    assert 'resource "kubernetes_job_v1" "pod_security_reference_successor_probe"' in source
+    assert 'resource "kubernetes_job_v1" "pod_security_snapshot_checkpoint_write"' in source
+    assert 'resource "kubernetes_job_v1" "pod_security_snapshot_checkpoint_read"' in source
+    assert source.count("prevent_destroy = true") >= 8
+    assert 'persistent_volume_reclaim_policy = "Retain"' in source
+    assert 'reclaim_policy      = "Retain"' in source
+    assert 'read_only         = true' in source
+    assert 'volume_handle     = var.pod_security_successor_storage.reference_source.volume_handle' in source
+    assert 'volume_handle     = var.pod_security_successor_storage.checkpoint_source.volume_handle' in source
+    assert 'depends_on = [kubernetes_job_v1.pod_security_snapshot_checkpoint_write]' in source
+    assert '"--pvc-resource-version"' in source
+    assert '"--proof-output", "/dev/termination-log"' in source
+    assert 'successor_storage = optional(object({' in variables
+    assert '"successor_storage_sha256"' in verifier
+
+
+def test_successor_storage_is_exactly_signed_and_cannot_fall_back_to_dynamic_empty_claims() -> None:
+    source = _source("stages/workloads/reference_data_successors.tf")
+    workloads = _source("stages/workloads/pod_security.tf")
+    foundation = _source("stages/foundation/pod_security.tf")
+
+    assert 'data "kubernetes_persistent_volume_v1" "pod_security_reference_source"' in source
+    assert '.persistent_volume_source[0].csi[0].volume_handle ==' in source
+    assert '.persistent_volume_source[0].csi[0].volume_attributes ==' in source
+    assert 'storage_class_name = "fs2-reference-data-retained-sc"' in source
+    assert 'volume_name        = kubernetes_persistent_volume_v1.pod_security_reference_successor' in source
+    assert "generate_name" not in source
+    assert 'successor_storage_sha256 = (' in workloads
+    assert 'successor_storage_sha256 = var.pod_security_successor_storage_sha256' in foundation
+
+
 def test_scientific_inventory_is_exact_nonempty_and_scanned_before_enforcement() -> None:
     root_variables = _source("variables.tf")
     stage_variables = _source("stages/workloads/variables.tf")
@@ -276,6 +331,12 @@ def test_functional_replacements_are_finite_tokenless_and_exactly_admitted() -> 
     assert "object.spec.containers[0].image == '${local.snapshot_runtime_image}'" in snapshot
     assert "object.spec.containers[0].command.size() in [14,18]" in snapshot
     assert "object.spec.ephemeralContainers.size() == 0" in snapshot
+    assert "system:serviceaccount:kube-system:job-controller" in snapshot
+    assert "snapshot_durability_pod_expression" in snapshot
+    assert "snapshot_reference_probe_pod_expression" in snapshot
+    assert "verify_checkpoint_durability.py" in snapshot
+    assert "pod_security_storage_probe_image" in snapshot
+    assert "pod_security_storage_tools_config_map" in snapshot
 
 
 def test_legacy_cleanup_is_exactly_fenced_and_never_touches_finite_profiles() -> None:

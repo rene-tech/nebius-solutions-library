@@ -1,6 +1,7 @@
 locals {
   snapshot_exception_namespace = "fs2-snapshot-operations"
   snapshot_manager_username    = "system:serviceaccount:fs2-system:fs2-snapshot-manager"
+  snapshot_job_controller      = "system:serviceaccount:kube-system:job-controller"
   snapshot_profile             = "esmfold2-h100-v1"
   snapshot_runtime_image       = "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2@sha256:b372dd7e34e464680a82456ca31b403b0ac0d0851511930d471b67041adbbde3"
   snapshot_tools_image         = "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4"
@@ -56,6 +57,76 @@ locals {
     "(object.spec.containers[0].command.size() == 14 && object.spec.containers[0].command[13] == 'restore') || (object.spec.containers[0].command.size() == 18 && object.spec.containers[0].command[13:18] == ['donor','--','/opt/esm/.pixi/envs/gpu/bin/python','-u','/opt/fs2/snapshot/esmfold2_server.py'])",
     "!has(object.spec.containers[0].args) && !has(object.spec.containers[0].ports) && !has(object.spec.containers[0].lifecycle) && !has(object.spec.containers[0].livenessProbe) && !has(object.spec.containers[0].readinessProbe) && !has(object.spec.containers[0].startupProbe)",
     "!has(object.spec.ephemeralContainers) || object.spec.ephemeralContainers.size() == 0",
+  ])
+  snapshot_durability_pod_expression = join(" && ", [
+    "object.metadata.namespace == '${local.snapshot_exception_namespace}'",
+    # Job-controller generated Pod names may truncate a 54-character Job name
+    # before adding their random suffix. The exact, untruncated Job identity is
+    # still bound below by ownerReference, job-name label and proof-mode.
+    "object.metadata.name.startsWith('fs2-snapshot-checkpoints-durability-') && object.metadata.name.matches('^[a-z0-9](?:[-a-z0-9]{0,55}[a-z0-9])?-[a-z0-9]{5}$')",
+    "object.metadata.ownerReferences.size() == 1",
+    "object.metadata.ownerReferences[0].apiVersion == 'batch/v1' && object.metadata.ownerReferences[0].kind == 'Job' && object.metadata.ownerReferences[0].controller == true",
+    "object.metadata.ownerReferences[0].name.matches('^fs2-snapshot-checkpoints-durability-(write|read)-[a-f0-9]{12}$')",
+    "object.metadata.labels['batch.kubernetes.io/job-name'] == object.metadata.ownerReferences[0].name",
+    "object.metadata.annotations['security.fs2.nebius.ai/proof-mode'] in ['write','read']",
+    "object.metadata.ownerReferences[0].name.startsWith('fs2-snapshot-checkpoints-durability-' + object.metadata.annotations['security.fs2.nebius.ai/proof-mode'] + '-')",
+    "object.spec.serviceAccountName == 'default' && object.spec.automountServiceAccountToken == false",
+    "object.spec.restartPolicy == 'Never' && object.spec.enableServiceLinks == false",
+    "(!has(object.spec.hostNetwork) || object.spec.hostNetwork == false) && (!has(object.spec.hostPID) || object.spec.hostPID == false) && (!has(object.spec.hostIPC) || object.spec.hostIPC == false)",
+    "object.spec.nodeSelector['storage.fs2.nebius/reference-data'] == 'true'",
+    "object.spec.securityContext.runAsNonRoot == true && object.spec.securityContext.runAsUser == 65532 && object.spec.securityContext.runAsGroup == 65532 && object.spec.securityContext.fsGroup == 65532 && object.spec.securityContext.seccompProfile.type == 'RuntimeDefault'",
+    "object.spec.volumes.size() == 2",
+    "object.spec.volumes.exists(v, v.name == 'checkpoints' && v.persistentVolumeClaim.claimName == 'fs2-snapshot-checkpoints' && ((object.metadata.annotations['security.fs2.nebius.ai/proof-mode'] == 'read' && has(v.persistentVolumeClaim.readOnly) && v.persistentVolumeClaim.readOnly == true) || (object.metadata.annotations['security.fs2.nebius.ai/proof-mode'] == 'write' && (!has(v.persistentVolumeClaim.readOnly) || v.persistentVolumeClaim.readOnly == false))))",
+    "object.spec.volumes.exists(v, v.name == 'tools' && v.configMap.name == '${var.pod_security_storage_tools_config_map}')",
+    "!has(object.spec.initContainers) || object.spec.initContainers.size() == 0",
+    "!has(object.spec.ephemeralContainers) || object.spec.ephemeralContainers.size() == 0",
+    "object.spec.containers.size() == 1",
+    "object.spec.containers[0].name == 'durability-proof' && object.spec.containers[0].image == '${var.pod_security_storage_probe_image}' && object.spec.containers[0].imagePullPolicy == 'IfNotPresent'",
+    "object.spec.containers[0].command.size() == 15",
+    "object.spec.containers[0].command[0:5] == ['python','/opt/fs2/reference-data/verify_checkpoint_durability.py',object.metadata.annotations['security.fs2.nebius.ai/proof-mode'],'--root','/checkpoints']",
+    "object.spec.containers[0].command[5:15] == ['--pvc-uid',object.metadata.annotations['security.fs2.nebius.ai/pvc-uid'],'--pvc-resource-version',object.metadata.annotations['security.fs2.nebius.ai/pvc-resource-version'],'--volume-name',object.metadata.annotations['security.fs2.nebius.ai/volume-name'],'--challenge',object.metadata.annotations['security.fs2.nebius.ai/proof-challenge'],'--proof-output','/dev/termination-log']",
+    "object.spec.containers[0].terminationMessagePath == '/dev/termination-log' && object.spec.containers[0].terminationMessagePolicy == 'File'",
+    "object.spec.containers[0].resources.requests == {'cpu':quantity('50m'),'memory':quantity('64Mi'),'ephemeral-storage':quantity('64Mi')} && object.spec.containers[0].resources.limits == {'cpu':quantity('250m'),'memory':quantity('256Mi'),'ephemeral-storage':quantity('256Mi')}",
+    "object.spec.containers[0].securityContext == {'allowPrivilegeEscalation':false,'capabilities':{'drop':['ALL']},'readOnlyRootFilesystem':true}",
+    "object.spec.containers[0].volumeMounts.size() == 2",
+    "object.spec.containers[0].volumeMounts.exists(m, m.name == 'checkpoints' && m.mountPath == '/checkpoints' && ((object.metadata.annotations['security.fs2.nebius.ai/proof-mode'] == 'read' && has(m.readOnly) && m.readOnly == true) || (object.metadata.annotations['security.fs2.nebius.ai/proof-mode'] == 'write' && (!has(m.readOnly) || m.readOnly == false))))",
+    "object.spec.containers[0].volumeMounts.exists(m, m.name == 'tools' && m.mountPath == '/opt/fs2/reference-data' && m.readOnly == true)",
+    "!has(object.spec.containers[0].args) && !has(object.spec.containers[0].env) && !has(object.spec.containers[0].ports) && !has(object.spec.containers[0].lifecycle) && !has(object.spec.containers[0].livenessProbe) && !has(object.spec.containers[0].readinessProbe) && !has(object.spec.containers[0].startupProbe)",
+  ])
+  snapshot_reference_probe_pod_expression = join(" && ", [
+    "object.metadata.namespace == '${local.snapshot_exception_namespace}'",
+    # The 59-character Job name is necessarily truncated by Job controller
+    # before the Pod suffix is appended. Its full identity remains exact in the
+    # ownerReference and job-name label validated below.
+    "object.metadata.name.startsWith('fs2-snapshot-reference-read-probe-') && object.metadata.name.matches('^[a-z0-9](?:[-a-z0-9]{0,55}[a-z0-9])?-[a-z0-9]{5}$')",
+    "object.metadata.ownerReferences.size() == 1",
+    "object.metadata.ownerReferences[0].apiVersion == 'batch/v1' && object.metadata.ownerReferences[0].kind == 'Job' && object.metadata.ownerReferences[0].controller == true",
+    "object.metadata.ownerReferences[0].name.matches('^fs2-snapshot-reference-read-probe-[a-f0-9]{12}-[a-f0-9]{12}$')",
+    "object.metadata.labels['batch.kubernetes.io/job-name'] == object.metadata.ownerReferences[0].name",
+    "object.spec.serviceAccountName == 'default' && object.spec.automountServiceAccountToken == false",
+    "object.spec.restartPolicy == 'Never' && object.spec.enableServiceLinks == false",
+    "(!has(object.spec.hostNetwork) || object.spec.hostNetwork == false) && (!has(object.spec.hostPID) || object.spec.hostPID == false) && (!has(object.spec.hostIPC) || object.spec.hostIPC == false)",
+    "object.spec.nodeSelector['storage.fs2.nebius/reference-data'] == 'true'",
+    "object.spec.securityContext.runAsNonRoot == true && object.spec.securityContext.runAsUser == 65532 && object.spec.securityContext.runAsGroup == 65532 && object.spec.securityContext.seccompProfile.type == 'RuntimeDefault'",
+    "object.spec.volumes.size() == 3",
+    "object.spec.volumes.exists(v, v.name == 'reference-data' && v.persistentVolumeClaim.claimName == 'fs2-snapshot-reference' && v.persistentVolumeClaim.readOnly == true)",
+    "object.spec.volumes.exists(v, v.name == 'tools' && v.configMap.name == '${var.pod_security_storage_tools_config_map}')",
+    "object.spec.volumes.exists(v, v.name == 'tmp' && v.emptyDir.sizeLimit == quantity('64Mi'))",
+    "!has(object.spec.initContainers) || object.spec.initContainers.size() == 0",
+    "!has(object.spec.ephemeralContainers) || object.spec.ephemeralContainers.size() == 0",
+    "object.spec.containers.size() == 1",
+    "object.spec.containers[0].name == 'read-probe' && object.spec.containers[0].image == '${var.pod_security_storage_probe_image}' && object.spec.containers[0].imagePullPolicy == 'IfNotPresent'",
+    "object.spec.containers[0].command.size() == 22",
+    "object.spec.containers[0].command == ['python','/opt/fs2/reference-data/verify_csi_readiness.py','--root','/reference-data','--receipt',object.metadata.annotations['reference-data.fs2.nebius.ai/receipt'],'--bundle',object.metadata.annotations['reference-data.fs2.nebius.ai/bundle'],'--revision',object.metadata.annotations['reference-data.fs2.nebius.ai/revision'],'--tree-sha256',object.metadata.annotations['reference-data.fs2.nebius.ai/tree-sha256'],'--pvc-uid',object.metadata.annotations['reference-data.fs2.nebius.ai/pvc-uid'],'--pvc-resource-version',object.metadata.annotations['reference-data.fs2.nebius.ai/pvc-resource-version'],'--volume-name',object.metadata.annotations['reference-data.fs2.nebius.ai/volume-name'],'--challenge',object.metadata.annotations['reference-data.fs2.nebius.ai/proof-challenge'],'--proof-output','/dev/termination-log']",
+    "object.metadata.annotations['security.fs2.nebius.ai/verified-tree-sha256'] == object.metadata.annotations['reference-data.fs2.nebius.ai/tree-sha256']",
+    "object.spec.containers[0].terminationMessagePath == '/dev/termination-log' && object.spec.containers[0].terminationMessagePolicy == 'File'",
+    "object.spec.containers[0].resources.requests == {'cpu':quantity('50m'),'memory':quantity('64Mi'),'ephemeral-storage':quantity('64Mi')} && object.spec.containers[0].resources.limits == {'cpu':quantity('250m'),'memory':quantity('256Mi'),'ephemeral-storage':quantity('256Mi')}",
+    "object.spec.containers[0].securityContext == {'allowPrivilegeEscalation':false,'capabilities':{'drop':['ALL']},'readOnlyRootFilesystem':true}",
+    "object.spec.containers[0].volumeMounts.size() == 3",
+    "object.spec.containers[0].volumeMounts.exists(m, m.name == 'reference-data' && m.mountPath == '/reference-data' && m.readOnly == true)",
+    "object.spec.containers[0].volumeMounts.exists(m, m.name == 'tools' && m.mountPath == '/opt/fs2/reference-data' && m.readOnly == true)",
+    "object.spec.containers[0].volumeMounts.exists(m, m.name == 'tmp' && m.mountPath == '/tmp')",
+    "!has(object.spec.containers[0].args) && !has(object.spec.containers[0].env) && !has(object.spec.containers[0].ports) && !has(object.spec.containers[0].lifecycle) && !has(object.spec.containers[0].livenessProbe) && !has(object.spec.containers[0].readinessProbe) && !has(object.spec.containers[0].startupProbe)",
   ])
 }
 
@@ -137,12 +208,12 @@ resource "kubernetes_manifest" "snapshot_pod_policy" {
       }
       validations = [
         {
-          expression = "request.userInfo.username == '${local.snapshot_manager_username}'"
-          message    = "Only the fixed snapshot-manager service account may create snapshot Pods."
+          expression = "request.userInfo.username in ['${local.snapshot_manager_username}','${local.snapshot_job_controller}']"
+          message    = "Only the fixed snapshot manager or Kubernetes Job controller may create exact-profile snapshot Pods."
         },
         {
-          expression = local.snapshot_fixed_pod_expression
-          message    = "Snapshot Pods must match the exact reviewed image, command, storage, GPU, and isolation profile."
+          expression = "(request.userInfo.username == '${local.snapshot_manager_username}' && (${local.snapshot_fixed_pod_expression})) || (request.userInfo.username == '${local.snapshot_job_controller}' && ((${local.snapshot_durability_pod_expression}) || (${local.snapshot_reference_probe_pod_expression})))"
+          message    = "Snapshot Pods must match the exact runtime profile or one of the two exact retained-storage proof profiles."
         },
       ]
     }

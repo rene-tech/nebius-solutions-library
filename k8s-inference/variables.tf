@@ -68,6 +68,35 @@ variable "deployment" {
         baseline_artifact_path = optional(string)
         cleanup_result_path    = optional(string)
       }), {})
+      # Exact, non-secret storage custody used to materialize the six
+      # namespace-local reference-data aliases and the distinct snapshot
+      # checkpoint volume.  These are pre-provisioned volume identities, not
+      # requests for Terraform to discover or allocate storage implicitly.
+      successor_storage = optional(object({
+        schema = string
+        reference_source = object({
+          persistent_volume_name      = string
+          uid                         = string
+          resource_version            = string
+          csi_driver                  = string
+          volume_handle               = string
+          volume_attributes           = map(string)
+          capacity_quantity           = string
+          capacity_gib                = number
+          provisioning_receipt_sha256 = string
+          storage_owner               = string
+        })
+        checkpoint_source = object({
+          persistent_volume_name      = string
+          csi_driver                  = string
+          volume_handle               = string
+          volume_attributes           = map(string)
+          capacity_gib                = number
+          requested_gib               = number
+          provisioning_receipt_sha256 = string
+          storage_owner               = string
+        })
+      }))
     }), {})
 
     accelerator_pool_capacity = optional(map(object({
@@ -877,6 +906,38 @@ variable "deployment" {
       )
     )
     error_message = "Every post-prepare phase requires the retained deletion-forbidden reference-data filesystem and a measured content identity bound by the signed receipt."
+  }
+
+  validation {
+    condition = (
+      var.deployment.pod_security.rollout_phase == "prepare" || try(
+        var.deployment.pod_security.successor_storage.schema == "fs2-serve.nebius.ai/sai07-successor-storage/v1" &&
+        var.deployment.pod_security.successor_storage.reference_source.persistent_volume_name != "" &&
+        can(regex("^[A-Za-z0-9](?:[-A-Za-z0-9._:@/]{0,251}[A-Za-z0-9])?$", var.deployment.pod_security.successor_storage.reference_source.uid)) &&
+        can(regex("^[A-Za-z0-9](?:[-A-Za-z0-9._:@/]{0,251}[A-Za-z0-9])?$", var.deployment.pod_security.successor_storage.reference_source.resource_version)) &&
+        var.deployment.pod_security.successor_storage.reference_source.csi_driver == "reference-data.mounted-fs-path.csi.nebius.ai" &&
+        var.deployment.pod_security.successor_storage.reference_source.volume_handle != "" &&
+        can(regex("^[1-9][0-9]*(?:Ki|Mi|Gi|Ti)$", var.deployment.pod_security.successor_storage.reference_source.capacity_quantity)) &&
+        var.deployment.pod_security.successor_storage.reference_source.capacity_quantity == "${var.deployment.pod_security.successor_storage.reference_source.capacity_gib}Gi" &&
+        floor(var.deployment.pod_security.successor_storage.reference_source.capacity_gib) == var.deployment.pod_security.successor_storage.reference_source.capacity_gib &&
+        var.deployment.pod_security.successor_storage.reference_source.capacity_gib >= 1611 &&
+        can(regex("^[a-f0-9]{64}$", var.deployment.pod_security.successor_storage.reference_source.provisioning_receipt_sha256)) &&
+        var.deployment.pod_security.successor_storage.reference_source.storage_owner != "" &&
+        var.deployment.pod_security.successor_storage.checkpoint_source.persistent_volume_name == "fs2-sai07-snapshot-checkpoints" &&
+        var.deployment.pod_security.successor_storage.checkpoint_source.csi_driver == "reference-data.mounted-fs-path.csi.nebius.ai" &&
+        var.deployment.pod_security.successor_storage.checkpoint_source.volume_handle != "" &&
+        var.deployment.pod_security.successor_storage.checkpoint_source.volume_handle != var.deployment.pod_security.successor_storage.reference_source.volume_handle &&
+        floor(var.deployment.pod_security.successor_storage.checkpoint_source.capacity_gib) == var.deployment.pod_security.successor_storage.checkpoint_source.capacity_gib &&
+        floor(var.deployment.pod_security.successor_storage.checkpoint_source.requested_gib) == var.deployment.pod_security.successor_storage.checkpoint_source.requested_gib &&
+        var.deployment.pod_security.successor_storage.checkpoint_source.capacity_gib >= var.deployment.pod_security.successor_storage.checkpoint_source.requested_gib &&
+        var.deployment.pod_security.successor_storage.checkpoint_source.requested_gib >= 1 &&
+        var.deployment.storage.reference_data.filesystem.size_gib >= 1611 + var.deployment.pod_security.successor_storage.checkpoint_source.capacity_gib &&
+        can(regex("^[a-f0-9]{64}$", var.deployment.pod_security.successor_storage.checkpoint_source.provisioning_receipt_sha256)) &&
+        var.deployment.pod_security.successor_storage.checkpoint_source.storage_owner != "",
+        false,
+      )
+    )
+    error_message = "Every post-prepare phase requires exact independently receipted reference and checkpoint CSI volume identities; the checkpoint must be a distinct retained volume."
   }
 
   validation {
