@@ -117,6 +117,8 @@ locals {
     "keda",
     "kueue-system",
     "jobset-system",
+    var.network_policy_boundary.gateway_namespace,
+    var.network_policy_boundary.controller_namespace,
   ])
 
   chart_versions = {

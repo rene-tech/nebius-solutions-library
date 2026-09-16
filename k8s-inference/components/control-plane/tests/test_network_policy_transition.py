@@ -16,7 +16,7 @@ WRAPPER = CONTROL_ROOT / "scripts" / "network-policy-transition.sh"
 SOLUTION_ROOT = CONTROL_ROOT.parents[1]
 CHART = SOLUTION_ROOT / "charts" / "control-plane" / "fs2-serve-control-plane"
 TERRAFORM = SOLUTION_ROOT / "stages" / "workloads" / "control_plane.tf"
-BOUNDARY_TERRAFORM = SOLUTION_ROOT / "stages" / "workloads" / "control_plane_network_policy_boundary.tf"
+BOUNDARY_TERRAFORM = SOLUTION_ROOT / "stages" / "foundation" / "control_plane_network_policy_boundary.tf"
 
 
 def _load_transition_module() -> ModuleType:
@@ -60,6 +60,7 @@ def _candidate() -> Any:
         candidate_sha256="a" * 64,
         chart_sha256="b" * 64,
         values_sha256="c" * 64,
+        complete_render_sha256="e" * 64,
         network_policy_render_sha256="d" * 64,
         release={
             "name": "test-release",
@@ -67,6 +68,37 @@ def _candidate() -> Any:
             "revision": "138",
             "status": "deployed",
             "deployed_manifest_sha256": "e" * 64,
+            "identity_uid": "uid-helm-release-138",
+            "storage": {
+                "name": "sh.helm.release.v1.test-release.v138",
+                "uid": "uid-helm-release-138",
+                "resource_version": "1380",
+                "revision": "138",
+                "status": "deployed",
+            },
+            "objects": {
+                "public-envoy": {"uid": "uid-public-envoy-normal"},
+                "envoy-controller": {"uid": "uid-envoy-controller-normal"},
+            },
+        },
+        topology={
+            "contract": {
+                "schema": "fs2-serve.nebius.ai/network-policy-boundary-topology/v1",
+                "mode": "public",
+                "security_owner_username": "fs2-network-policy-security-owner",
+                "gateway_namespace": "edge-custom",
+                "controller_namespace": "controller-custom",
+                "policy_names": {
+                    "proxy_normal": "test-release-public-envoy",
+                    "proxy_guard": "test-release-public-envoy-transition-guard",
+                    "controller_normal": "test-release-envoy-controller-xds",
+                    "controller_guard": "test-release-envoy-controller-xds-transition-guard",
+                    "default_deny": "test-release-envoy-default-deny",
+                },
+            },
+            "uid": "topology-uid",
+            "resource_version": "11",
+            "sha256": "f" * 64,
         },
         proxy=proxy,
         controller=controller,
@@ -110,6 +142,10 @@ def _bare_transition() -> Any:
     transition.release = "test-release"
     transition.release_namespace = "fs2-system"
     transition.arguments = type("Arguments", (), {"revision": "7", "timeout": "10m"})()
+    transition.holder = "test-holder"
+    transition.fence_transitions = 3
+    transition.lock = contextlib.nullcontext
+    transition._renew_fence = lambda: {}
     return transition
 
 
@@ -141,22 +177,54 @@ def test_wrapper_delegates_to_state_machine_without_cluster_wide_access() -> Non
     assert 'SERVICE_ACCOUNT = "fs2-network-policy-transition"' in source
 
 
+def test_rollout_identity_must_not_own_or_impersonate_security_boundary() -> None:
+    transition = _bare_transition()
+
+    topology = {"data": {"topology.json": json.dumps({"security_owner_username": "external-security-owner"})}}
+
+    def denied(arguments: tuple[str, ...], _kwargs: dict[str, Any]) -> Any:
+        if arguments[:2] == ("get", "configmap"):
+            return _result(stdout=json.dumps(topology))
+        return _result(stdout="no\n")
+
+    transition.bootstrap_kubectl = FakeCommand(denied)
+    transition.verify_external_iam_boundary()
+    assert len(transition.bootstrap_kubectl.calls) == 6
+    assert transition.bootstrap_kubectl.calls[-1][-1] == "users/external-security-owner"
+    assert all(call[:2] == ("auth", "can-i") for call in transition.bootstrap_kubectl.calls[1:])
+
+    def allowed(arguments: tuple[str, ...], _kwargs: dict[str, Any]) -> Any:
+        if arguments[:2] == ("get", "configmap"):
+            return _result(stdout=json.dumps(topology))
+        return _result(stdout="yes\n")
+
+    transition.bootstrap_kubectl = FakeCommand(allowed)
+    with pytest.raises(TRANSITION.TransitionError, match="external security boundary"):
+        transition.verify_external_iam_boundary()
+
+
 def test_ready_coverage_requires_a_ready_selected_pod() -> None:
     transition = _bare_transition()
 
     def no_pods(arguments: tuple[str, ...], _kwargs: dict[str, Any]) -> Any:
-        assert arguments[:4] == ("get", "pods", "--namespace", "edge-custom")
-        return _result(stdout='{"items":[]}')
+        assert arguments[:2] == ("get", "--raw")
+        assert "/api/v1/namespaces/edge-custom/pods?limit=100&" in arguments[2]
+        return _result(stdout='{"metadata":{"continue":""},"items":[]}')
 
     transition.guarded_kubectl = FakeCommand(no_pods)
     with pytest.raises(TRANSITION.TransitionError, match="selects zero Ready Pods"):
         transition.verify_ready_pods("edge-custom", PROXY_SPEC, role="public-envoy")
 
     def ready_pod(arguments: tuple[str, ...], _kwargs: dict[str, Any]) -> Any:
-        assert "--selector" in arguments
-        assert arguments[arguments.index("--selector") + 1] == "app.kubernetes.io/name=envoy"
+        assert arguments[:2] == ("get", "--raw")
+        assert "labelSelector=app.kubernetes.io%2Fname%3Denvoy" in arguments[2]
         return _result(
-            stdout=json.dumps({"items": [{"status": {"conditions": [{"type": "Ready", "status": "True"}]}}]})
+            stdout=json.dumps(
+                {
+                    "metadata": {"continue": ""},
+                    "items": [{"status": {"conditions": [{"type": "Ready", "status": "True"}]}}],
+                }
+            )
         )
 
     transition.guarded_kubectl = FakeCommand(ready_pod)
@@ -169,7 +237,7 @@ def test_strict_stage_rejects_absent_release_before_any_boundary_mutation() -> N
     candidate.release["status"] = "absent"
     transition.render_candidate = lambda: candidate
 
-    with pytest.raises(TRANSITION.TransitionError, match="requires an existing release"):
+    with pytest.raises(TRANSITION.TransitionError, match="requires a successful deployed release"):
         transition.stage()
 
 
@@ -212,6 +280,20 @@ def test_first_install_prepare_keeps_deny_relaxed_until_post_install_complete() 
     ]
 
 
+def test_stage_rejects_a_different_candidate_while_prior_transition_is_in_flight() -> None:
+    transition = _bare_transition()
+    candidate = _candidate()
+    prior = _candidate()
+    prior.candidate_sha256 = "f" * 64
+    transition.receipt = lambda: (
+        {},
+        {"phase": "staged", "candidate": prior.as_dict()},
+    )
+
+    with pytest.raises(TRANSITION.TransitionError, match="still in flight"):
+        transition._stage_locked(candidate)
+
+
 def test_bootstrap_complete_rebinds_ready_guards_before_activating_deny() -> None:
     transition = _bare_transition()
     candidate = _candidate()
@@ -237,7 +319,7 @@ def test_bootstrap_complete_rebinds_ready_guards_before_activating_deny() -> Non
         {},
         {
             "phase": state["phase"],
-            "candidate": {"candidate_sha256": candidate.candidate_sha256},
+            "candidate": candidate.as_dict(),
         },
     )
     transition.get_policy = lambda name, _namespace: {
@@ -246,6 +328,9 @@ def test_bootstrap_complete_rebinds_ready_guards_before_activating_deny() -> Non
         candidate.deny_name: deny,
     }[name]
     transition.verify_receipt_boundaries = lambda receipt, _boundaries: verified_phases.append(receipt["phase"])
+    transition.verify_local_candidate = lambda _receipt: candidate
+    deployed_release = {**candidate.release, "revision": "139"}
+    transition.verify_deployed_target = lambda _candidate: deployed_release
 
     def patch(role: str, *_args: Any) -> dict[str, Any]:
         events.append(f"ready:{role}")
@@ -285,6 +370,201 @@ def test_lock_rejects_concurrent_unexpired_holder() -> None:
 
     with pytest.raises(TRANSITION.TransitionError, match="holds the Lease"):
         transition._acquire_lock()
+
+
+def test_lease_renewal_rejects_stale_holder_or_transition_fence() -> None:
+    transition = _bare_transition()
+    stale = {
+        "metadata": {"resourceVersion": "10"},
+        "spec": {
+            "holderIdentity": "new-holder",
+            "leaseTransitions": transition.fence_transitions + 1,
+            "leaseDurationSeconds": 60,
+            "renewTime": "2999-01-01T00:00:00Z",
+        },
+    }
+    transition.guarded_kubectl = FakeCommand(lambda _arguments, _kwargs: _result(stdout=json.dumps(stale)))
+
+    with pytest.raises(TRANSITION.TransitionError, match="fence is stale"):
+        TRANSITION.Transition._renew_fence(transition)
+
+
+def test_every_policy_patch_has_resource_version_and_renews_fence() -> None:
+    transition = _bare_transition()
+    candidate = _candidate()
+    current = _boundary("public-envoy", candidate.proxy["guard_name"], candidate.proxy["namespace"], PROXY_SPEC)
+    events: list[str] = []
+    transition._renew_fence = lambda: events.append("renew") or {}
+    transition.verify_ready_pods = lambda *_args, **_kwargs: 1
+
+    def api(arguments: tuple[str, ...], _kwargs: dict[str, Any]) -> Any:
+        if arguments[:2] == ("get", "networkpolicy"):
+            return _result(stdout=json.dumps(current))
+        patch = json.loads(arguments[arguments.index("--patch") + 1])
+        assert patch["metadata"]["resourceVersion"] == "17"
+        if "--dry-run=server" in arguments:
+            events.append("dry-run")
+            return _result(stdout=json.dumps(current))
+        events.append("mutate")
+        updated = json.loads(json.dumps(current))
+        updated["metadata"].setdefault("annotations", {}).update(patch["metadata"]["annotations"])
+        updated["spec"] = patch["spec"]
+        return _result(stdout=json.dumps(updated))
+
+    transition.guarded_kubectl = FakeCommand(api)
+    transition.patch_guard("public-envoy", candidate.proxy, candidate)
+
+    assert events == ["dry-run", "renew", "mutate"]
+
+
+@pytest.mark.parametrize("status", ["failed", "pending-install", "pending-upgrade", "pending-rollback"])
+def test_release_identity_rejects_failed_or_pending_release(status: str) -> None:
+    transition = _bare_transition()
+
+    class Helm:
+        @staticmethod
+        def run(*_args: str, **_kwargs: Any) -> Any:
+            return _result(stdout=json.dumps([{"name": "test-release", "revision": "9", "status": status}]))
+
+    transition.helm = Helm()
+    with pytest.raises(TRANSITION.TransitionError, match="not successfully deployed"):
+        transition._release_identity(_candidate().proxy, _candidate().controller)
+
+
+def test_deployed_target_binds_exact_successor_manifest_and_release_uids() -> None:
+    transition = _bare_transition()
+    candidate = _candidate()
+    deployed = {
+        **candidate.release,
+        "revision": "139",
+        "identity_uid": "uid-helm-release-139",
+        "storage": {
+            "name": "sh.helm.release.v1.test-release.v139",
+            "uid": "uid-helm-release-139",
+            "resource_version": "1390",
+            "revision": "139",
+            "status": "deployed",
+        },
+        "deployed_manifest_sha256": candidate.complete_render_sha256,
+    }
+    transition._release_identity = lambda *_args, **_kwargs: deployed
+    assert transition.verify_deployed_target(candidate) == deployed
+
+    transition._release_identity = lambda *_args, **_kwargs: {**deployed, "revision": "140"}
+    with pytest.raises(TRANSITION.TransitionError, match="exact successor"):
+        transition.verify_deployed_target(candidate)
+
+
+def test_release_storage_identity_is_exact_metadata_only() -> None:
+    transition = _bare_transition()
+
+    def storage(arguments: tuple[str, ...], _kwargs: dict[str, Any]) -> Any:
+        assert arguments[:3] == ("get", "secret", "sh.helm.release.v1.test-release.v138")
+        assert arguments[3:5] == ("--namespace", "fs2-system")
+        assert arguments[5] == "-o"
+        assert arguments[6].startswith("jsonpath=")
+        return _result(
+            stdout=("sh.helm.release.v1.test-release.v138\tstorage-uid\t928\thelm\ttest-release\t138\tsuperseded")
+        )
+
+    transition.bootstrap_kubectl = FakeCommand(storage)
+    assert transition._release_storage_identity("138", "superseded") == {
+        "name": "sh.helm.release.v1.test-release.v138",
+        "uid": "storage-uid",
+        "resource_version": "928",
+        "revision": "138",
+        "status": "superseded",
+    }
+
+
+def test_rollback_rejects_arbitrary_revision_and_debug_enabled_target() -> None:
+    transition = _bare_transition()
+    candidate = _candidate()
+    with pytest.raises(TRANSITION.TransitionError, match="receipt-bound stable source"):
+        transition._rollback_target(candidate, "7")
+
+    transition._yaml_documents = lambda _text: [{"kind": "ConfigMap"}]
+    candidate.release["revision"] = "138"
+    candidate.release["deployed_manifest_sha256"] = TRANSITION.sha256_json([{"kind": "ConfigMap"}])
+
+    class Helm:
+        @staticmethod
+        def run(*arguments: str, **_kwargs: Any) -> Any:
+            if arguments[0] == "history":
+                return _result(
+                    stdout=json.dumps(
+                        [
+                            {
+                                "revision": 138,
+                                "status": "superseded",
+                                "description": "Upgrade complete",
+                            }
+                        ]
+                    )
+                )
+            if arguments[:2] == ("get", "manifest"):
+                return _result(stdout="manifest")
+            if arguments[:2] == ("get", "values"):
+                return _result(stdout=json.dumps({"config": {"requestDebugEnabled": True}}))
+            raise AssertionError(arguments)
+
+    transition.helm = Helm()
+    transition._release_storage_identity = lambda _revision, _status: candidate.release["storage"]
+    with pytest.raises(TRANSITION.TransitionError, match="request debugging is enabled"):
+        transition._rollback_target(candidate, "138")
+
+
+def test_live_topology_has_no_caller_rendered_disabled_bypass() -> None:
+    source = SCRIPT.read_text()
+    terraform = TERRAFORM.read_text()
+    assert "public_boundary_enabled" not in source
+    assert "internal_rollback" not in source
+    assert "public-gateway=false" not in source
+    assert "live_topology()" in source
+    assert "caller render does not match the protected live boundary topology" in source
+    assert "control_plane_network_policy_boundary_applicable" in terraform
+    assert 'network_policy_boundary_contract.mode == "public"' in terraform
+    assert "count = local.public_edge_enabled ? 1 : 0" not in terraform
+
+
+def test_live_topology_itself_must_authorize_public_transition() -> None:
+    transition = _bare_transition()
+    topology = {
+        "metadata": {
+            "uid": "topology-uid",
+            "resourceVersion": "11",
+            "labels": {TRANSITION.BOUNDARY_LABEL: TRANSITION.BOUNDARY_VALUE},
+        },
+        "data": {
+            "topology.json": json.dumps(
+                {
+                    "schema": "fs2-serve.nebius.ai/network-policy-boundary-topology/v1",
+                    "mode": "internal-only",
+                }
+            )
+        },
+    }
+    transition.guarded_kubectl = FakeCommand(lambda _arguments, _kwargs: _result(stdout=json.dumps(topology)))
+
+    with pytest.raises(TRANSITION.TransitionError, match="does not authorize a public boundary"):
+        transition.live_topology()
+
+
+def test_pod_listing_is_server_paginated_and_strictly_bounded() -> None:
+    transition = _bare_transition()
+    calls = 0
+
+    def pages(arguments: tuple[str, ...], _kwargs: dict[str, Any]) -> Any:
+        nonlocal calls
+        calls += 1
+        assert arguments[:2] == ("get", "--raw")
+        assert "limit=100" in arguments[2]
+        return _result(stdout=json.dumps({"metadata": {"continue": f"token-{calls}"}, "items": []}))
+
+    transition.guarded_kubectl = FakeCommand(pages)
+    with pytest.raises(TRANSITION.TransitionError, match="exceeded bounded pagination"):
+        transition.list_pods_bounded("edge-custom", {"app": "envoy"})
+    assert calls == TRANSITION.MAX_POD_PAGES
 
 
 @pytest.mark.parametrize("failure", ["forbidden", "timeout", "transport closed"])
@@ -355,7 +635,9 @@ def test_receipt_binds_candidate_and_exact_boundary_uid_rv_spec() -> None:
     assert captured["candidate"]["candidate_sha256"] == "a" * 64
     assert captured["candidate"]["chart_sha256"] == "b" * 64
     assert captured["candidate"]["values_sha256"] == "c" * 64
+    assert captured["candidate"]["complete_render_sha256"] == "e" * 64
     assert captured["candidate"]["release"]["revision"] == "138"
+    assert captured["candidate"]["topology"]["uid"] == "topology-uid"
     assert captured["receipt_object"] == {
         "namespace": "fs2-system",
         "name": TRANSITION.RECEIPT_NAME,
@@ -383,15 +665,19 @@ def test_complete_is_idempotent_and_never_deletes_permanent_boundaries(
         CONTROLLER_SPEC,
     )
     state = {"phase": "staged"}
+    deployed_release = {**candidate.release, "revision": "139"}
     transition.render_candidate = lambda: candidate
     transition.lock = contextlib.nullcontext
     transition.receipt = lambda: (
         {},
         {
             "phase": state["phase"],
-            "candidate": {"candidate_sha256": candidate.candidate_sha256},
+            "candidate": candidate.as_dict(),
+            "deployed_release": deployed_release,
         },
     )
+    transition.verify_local_candidate = lambda _receipt: candidate
+    transition.verify_deployed_target = lambda _candidate: deployed_release
     transition.current_guards = lambda _candidate: {
         "public-envoy": proxy,
         "envoy-controller": controller,
@@ -416,7 +702,9 @@ def test_complete_is_idempotent_and_never_deletes_permanent_boundaries(
 
     assert state["phase"] == "active"
     assert capsys.readouterr().out.count("boundaries=permanent") == 2
-    assert "delete" not in SCRIPT.read_text()
+    source = SCRIPT.read_text()
+    assert 'self.guarded.run("delete"' not in source
+    assert '"uninstall"' not in source
 
 
 def test_retry_rejects_replaced_or_modified_boundary_identity() -> None:
@@ -469,7 +757,7 @@ def test_rollback_failure_leaves_deny_relaxed_and_durable_prepared_receipt() -> 
         {},
         {
             "phase": state["phase"],
-            "candidate": {"candidate_sha256": candidate.candidate_sha256},
+            "candidate": candidate.as_dict(),
             "boundary_objects": {
                 "public-envoy": TRANSITION.Transition._guard_receipt(proxy),
                 "envoy-controller": TRANSITION.Transition._guard_receipt(controller),
@@ -487,6 +775,16 @@ def test_rollback_failure_leaves_deny_relaxed_and_durable_prepared_receipt() -> 
 
     transition.get_policy = get_policy
     transition.get_optional_policy = lambda _name, _namespace: deny
+    transition.verify_live_topology = lambda _candidate: None
+    target_hash = TRANSITION.sha256_json([{"manifest": "target"}])
+    transition._rollback_target = lambda _candidate, _revision: {
+        "target_revision": "7",
+        "target_manifest_sha256": target_hash,
+        "target_values_sha256": "f" * 64,
+        "request_debug_enabled": False,
+    }
+    transition._release_identity = lambda *_args, **_kwargs: {**candidate.release, "revision": "139"}
+    transition._yaml_documents = lambda text: [{"manifest": text}]
 
     def relax(_candidate: Any) -> str:
         state["deny"] = "relaxed"
@@ -501,12 +799,9 @@ def test_rollback_failure_leaves_deny_relaxed_and_durable_prepared_receipt() -> 
 
     transition.write_receipt = write
 
-    class FailingHelm:
-        @staticmethod
-        def run(*_args: str, **_kwargs: Any) -> Any:
-            raise TRANSITION.TransitionError("injected rollback failure")
-
-    transition.helm = FailingHelm()
+    transition.run_fenced_helm = lambda *_args: (_ for _ in ()).throw(
+        TRANSITION.TransitionError("injected rollback failure")
+    )
     with pytest.raises(TRANSITION.TransitionError, match="injected rollback failure"):
         transition.rollback()
 
@@ -514,7 +809,7 @@ def test_rollback_failure_leaves_deny_relaxed_and_durable_prepared_receipt() -> 
     assert writes == ["rollback-prepared"]
 
 
-def test_terraform_owns_boundary_and_enforces_scoped_rbac_admission_and_destroy_order() -> None:
+def test_foundation_security_owner_permanently_owns_boundary_outside_workloads() -> None:
     boundary = BOUNDARY_TERRAFORM.read_text()
     control_plane = TERRAFORM.read_text()
 
@@ -524,16 +819,28 @@ def test_terraform_owns_boundary_and_enforces_scoped_rbac_admission_and_destroy_
         'resource "kubernetes_network_policy_v1" "control_plane_envoy_default_deny"',
         'resource "kubernetes_manifest" "control_plane_network_policy_transition_lease"',
         'resource "kubernetes_config_map_v1" "control_plane_network_policy_transition_receipt"',
+        'resource "kubernetes_config_map_v1" "control_plane_network_policy_topology"',
         'resource "kubernetes_manifest" "control_plane_network_policy_boundary_admission"',
+        'resource "kubernetes_cluster_role_v1" "control_plane_network_policy_security_owner"',
     ):
         assert resource in boundary
+        assert resource not in control_plane
     assert '"fs2.nebius.ai/network-policy-boundary" = "permanent"' in boundary
-    assert "request.userInfo.username == 'system:serviceaccount:fs2-system:" in boundary
+    assert "request.userInfo.username == '${local.control_plane_network_policy_security_owner}'" in boundary
+    assert "system:serviceaccount:fs2-system:${local.control_plane_network_policy_service_account}" in boundary
+    assert "decommission-receipt-sha256" in boundary
+    assert boundary.count("prevent_destroy = true") >= 18
+    assert boundary.count("provider = kubernetes.network_policy_security_owner") == 17
+    assert "ordinary_can delete validatingadmissionpolicybindings" in boundary
+    assert 'ordinary_can impersonate "users/$FS2_SECURITY_OWNER_USERNAME"' in boundary
+    assert "auth whoami -o json" in boundary
+    assert "security_can delete validatingadmissionpolicybindings" in boundary
     assert 'operations  = ["UPDATE", "DELETE"]' in boundary
     assert "resource_names = [" in boundary
     assert 'resources  = ["pods"]' in boundary
     assert 'verbs      = ["get", "list"]' in boundary
-    assert "cluster_role" not in boundary.lower()
+    assert 'resources      = ["networkpolicies"]' in boundary
+    assert 'resources      = ["validatingadmissionpolicies", "validatingadmissionpolicybindings"]' in boundary
     deny_resource = boundary.split(
         'resource "kubernetes_network_policy_v1" "control_plane_envoy_default_deny"',
         maxsplit=1,
@@ -549,6 +856,7 @@ def test_terraform_owns_boundary_and_enforces_scoped_rbac_admission_and_destroy_
     assert helm_dependency < complete_dependency
     assert "atomic          = false" in control_plane
     assert "cleanup_on_fail = false" in control_plane
+    assert "stages/workloads/control_plane_network_policy_boundary.tf" not in control_plane
 
 
 def test_manual_helm_uninstall_or_replace_cannot_delete_boundary_objects() -> None:
@@ -563,4 +871,6 @@ def test_manual_helm_uninstall_or_replace_cannot_delete_boundary_objects() -> No
         assert name not in template
         assert name in boundary
     assert 'operations  = ["UPDATE", "DELETE"]' in boundary
-    assert "permanent NetworkPolicy boundaries may only be changed" in boundary
+    assert "permanent boundary deletion requires the external security owner" in boundary
+    assert "request.operation != 'DELETE'" in boundary
+    assert "decommission-receipt-sha256" in boundary

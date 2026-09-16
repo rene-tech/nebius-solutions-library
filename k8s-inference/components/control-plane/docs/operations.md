@@ -776,24 +776,51 @@ labels; never broaden it to an entire namespace.
 
 ### Public-edge NetworkPolicy transition safety
 
-Helm owns only the ordinary public-proxy and Envoy-controller allows. Terraform
-permanently owns duplicate allow boundaries and the gateway-namespace deny, so
-a Helm rollback, replacement, uninstall, or failed cleanup cannot remove the
-last selected allow. A fail-closed admission policy permits updates or deletes
-of those three boundary objects only from the dedicated transition ServiceAccount.
+Helm owns only the ordinary public-proxy and Envoy-controller allows. The
+independently applied foundation/security-owner state permanently owns duplicate
+allow boundaries, the gateway-namespace deny, transition state and the
+admission policy. Workload apply, replacement, targeted destroy,
+manual Helm uninstall and workload credentials therefore cannot remove the last
+selected allow or the policy protecting it. Every permanent object has
+Terraform `prevent_destroy` and an ownership label. Kubernetes deliberately
+does not invoke API-based admission for its own policy and binding resources,
+so this design does not claim self-protection. The admission policy and binding
+are applied with the separate security-owner kubeconfig, while a mandatory
+preflight proves the ordinary foundation/workload identity cannot update or
+delete either admission resource and cannot impersonate the security owner.
+Before foundation apply, provision the mode-0600
+`<run_root>/network-policy-security-owner-kubeconfig` for the exact configured
+external username. Its identity must be distinct from the ordinary run
+kubeconfig and independently authorized for the protected resources. The apply
+fails closed unless both positive owner permissions and negative ordinary
+permissions are proven; every transition repeats the negative admission-owner
+and impersonation checks before requesting its scoped ServiceAccount token.
+Deletion is limited to the exact external security-owner identity after the
+specific object has a reviewed 64-hex decommission-receipt annotation. The
+ordinary transition ServiceAccount can only update the exact receipt, Lease and
+three boundary NetworkPolicies; it cannot delete them or alter the protected
+topology.
 
-Before each existing public release, `stage` acquires the namespaced Lease,
-renders the exact candidate, binds both permanent allows to its chart, values,
-release and spec hashes, and verifies their Kubernetes UID and resourceVersion
-plus at least one selected Ready proxy and controller Pod. It records the
-crash-safe ConfigMap receipt before activating the external deny. `complete` is
-retry-safe: it verifies both Helm allows, permanent allows, Ready Pod coverage,
-candidate receipt, and active deny without deleting the permanent boundaries.
+Before each existing public release, `stage` acquires and renews the 60-second
+namespaced Lease fence, reads the protected live-topology ConfigMap, renders the
+exact candidate and binds both permanent allows to the exact chart, complete
+render, NetworkPolicy render, effective value sources, release UID, successful
+deployed revision/status/history, deployed manifest and policy UID/spec hashes.
+Every patch has a resourceVersion precondition and is preceded by a fenced Lease
+renewal. Namespaced Pod discovery is server-paginated at 100 objects and fails
+closed after ten pages; both exact selectors must cover at least one Ready Pod.
+`stage` records that crash-safe candidate receipt before activating the external
+deny. `complete` is retry-safe and re-derives the exact deployed successor,
+values, manifest, Helm-policy UIDs, permanent allows, Ready Pod coverage and
+active deny. A changed or failed/pending release cannot complete.
+
 Terraform invokes `prepare`: for an existing release it is exactly `stage`; for
 a first install it proves the external deny is nonselecting and records a
 `bootstrap-ready` receipt. Helm may then create the ordinary allows and Pods,
-after which `complete` performs the same exact Ready-Pod binding before it can
-activate the deny. The strict `stage` action never succeeds without Ready Pods.
+after which `complete` performs the same exact Ready-Pod and release binding
+before it can activate the deny. The strict `stage` action never succeeds with
+zero Ready Pods. The public chart has no guard-disable value: applicability
+comes from protected live topology rather than caller-rendered booleans.
 
 ```bash
 components/control-plane/scripts/network-policy-transition.sh stage \
@@ -816,19 +843,28 @@ components/control-plane/scripts/network-policy-transition.sh rollback \
   --values EXACT_CANDIDATE_VALUES
 ```
 
-`rollback` discovers the exact namespace from the candidate, acquires the Lease,
-relaxes the deny, proves the relaxed selector selects zero Pods, and records the
-target manifest before calling Helm. A retry detects an already reached target,
-rebinds both permanent allows to the verified rollback specs, and reactivates
-the deny. Only a successful empty `--ignore-not-found` response is absence;
-authorization, timeout, and transport errors fail closed.
+`rollback` discovers the exact namespaces from protected live topology,
+acquires and renews the Lease fence, and accepts only the receipt's captured
+source revision when Helm history proves it is successful and stable, its
+manifest is exactly receipt-bound, and `helm get values --all` proves
+`config.requestDebugEnabled=false`. It then relaxes the deny with a
+resourceVersion precondition, proves the relaxed selector selects zero Pods,
+and runs Helm while renewing the fence every 15 seconds. A retry revalidates the
+same target and, if already reached, rebinds both permanent allows to the exact
+verified rollback specs before reactivating the deny. Only an API response
+proven to be HTTP 404 is absence; authorization, timeout and transport failures
+fail closed.
 
 Do not call `helm rollback` directly and do not add `--atomic`,
-`--rollback-on-failure`, or `--cleanup-on-fail`. Terraform destroy runs the
-helper's `destroy` phase before removing Helm, proving the deny is relaxed while
-the permanent allows remain. Reverse dependency order then removes Helm,
-admission protection, and finally the external boundaries. Targeted replacement
-or manual Helm uninstall cannot delete those objects; direct mutation is denied.
+`--rollback-on-failure`, or `--cleanup-on-fail`. Workload destroy runs the
+helper's fenced `destroy` phase before removing Helm and proves the deny is
+relaxed while both foundation-owned allows remain. Workload destroy ends there:
+it cannot remove foundation admission protection, state, namespaces or
+boundaries. Foundation destruction and targeted replacement are refused by
+`prevent_destroy`; direct mutation, binding removal and namespace deletion are
+denied. Deliberate decommission is a separate security-owner procedure that
+must annotate and remove the deny before either allow, using the exact configured
+namespaces and an externally reviewed receipt.
 
 The chart intentionally has invalid empty defaults for the immutable image and
 public/authorization URLs. Rendering requires exact non-placeholder values.

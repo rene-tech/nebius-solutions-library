@@ -20,11 +20,11 @@ output "cluster_contract" {
 
 output "managed_resource_count" {
   description = "Expected managed Terraform address count for plan review."
-  # 29 pre-existing addresses, the Kueue release verification, and the always
-  # present jobset-system namespace. The JobSet module itself contributes five
-  # addresses only when it is enabled.
+  # 29 pre-existing addresses, Kueue verification, jobset-system namespace,
+  # and 18 deletion-protected NetworkPolicy-boundary/security-owner addresses. The JobSet
+  # module itself contributes five addresses only when it is enabled.
   value = (
-    31 +
+    49 +
     (nonsensitive(var.bootstrap_grafana_credentials == null) ? 0 : 1) +
     (var.jobset.enabled ? 5 : 0)
   )
@@ -52,4 +52,25 @@ output "component_versions" {
 output "grafana_admin_secret_ref" {
   description = "Non-secret keys needed by workload acceptance to verify Grafana provisioning."
   value       = var.grafana_admin_secret_ref
+}
+
+output "network_policy_boundary_contract" {
+  description = "Permanent foundation-owned Envoy policy identities consumed by workloads without transferring lifecycle ownership."
+  value = {
+    schema                  = "fs2-serve.nebius.ai/network-policy-boundary/v1"
+    owner_stage             = "foundation"
+    deletion_protected      = true
+    external_security_owner = true
+    mode                    = var.network_policy_boundary.mode
+    gateway_namespace       = local.control_plane_network_policy_gateway_namespace
+    controller_namespace    = local.control_plane_network_policy_controller_namespace
+    service_account         = local.control_plane_network_policy_service_account
+    security_owner          = local.control_plane_network_policy_security_owner
+    lease_name              = local.control_plane_network_policy_state_name
+    receipt_name            = local.control_plane_network_policy_state_name
+    topology_name           = local.control_plane_network_policy_topology_name
+    policy_names            = local.control_plane_network_policy_names
+    admission_policy        = "fs2-network-policy-boundary"
+    admission_binding       = "fs2-network-policy-boundary"
+  }
 }

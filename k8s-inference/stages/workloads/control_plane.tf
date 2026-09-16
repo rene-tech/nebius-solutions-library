@@ -223,13 +223,26 @@ locals {
       "capacity.fs2.nebius/pool"   = "system"
     }
   }
+  control_plane_network_policy_release_name = "fs2-serve-control-plane"
+  control_plane_network_policy_gateway_namespace = yamldecode(
+    file("${local.control_plane_chart_root}/values.yaml")
+  ).networkPolicy.gateway.namespaceLabels["kubernetes.io/metadata.name"]
+  control_plane_network_policy_controller_namespace = yamldecode(
+    file("${local.control_plane_chart_root}/values.yaml")
+  ).networkPolicy.envoyController.namespaceLabels["kubernetes.io/metadata.name"]
+  # Applicability comes only from the protected, independently applied
+  # foundation topology contract. A caller-rendered chart boolean cannot
+  # bypass the transition state machine for a public boundary.
+  control_plane_network_policy_boundary_applicable = (
+    data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract.mode == "public"
+  )
   control_plane_network_policy_transition_script = "${local.fs2_root}/components/control-plane/scripts/network-policy-transition.sh"
   control_plane_chart_root                       = "${local.fs2_root}/charts/control-plane/fs2-serve-control-plane"
   control_plane_chart_files                      = sort(fileset(local.control_plane_chart_root, "**"))
   control_plane_network_policy_transition_sha256 = sha256(join("\n", [
     filesha256(local.control_plane_network_policy_transition_script),
     filesha256("${local.fs2_root}/components/control-plane/scripts/network_policy_transition.py"),
-    filesha256("${local.fs2_root}/stages/workloads/control_plane_network_policy_boundary.tf"),
+    filesha256("${local.fs2_root}/stages/foundation/control_plane_network_policy_boundary.tf"),
     filesha256("${local.fs2_root}/charts/control-plane/control-plane.values.yaml"),
     join("\n", [
       for path in local.control_plane_chart_files : "${path}:${filesha256("${local.control_plane_chart_root}/${path}")}"
@@ -243,7 +256,7 @@ locals {
 }
 
 resource "terraform_data" "control_plane_network_policy_transition_stage" {
-  count = local.public_edge_enabled ? 1 : 0
+  count = local.control_plane_network_policy_boundary_applicable ? 1 : 0
 
   triggers_replace = [local.control_plane_network_policy_transition_sha256]
 
@@ -281,7 +294,6 @@ resource "terraform_data" "control_plane_network_policy_transition_stage" {
 
   depends_on = [
     terraform_data.cluster_contract,
-    kubernetes_manifest.control_plane_network_policy_boundary_admission_binding,
   ]
 }
 
@@ -381,7 +393,7 @@ resource "helm_release" "control_plane" {
 }
 
 resource "terraform_data" "control_plane_network_policy_transition_complete" {
-  count = local.public_edge_enabled ? 1 : 0
+  count = local.control_plane_network_policy_boundary_applicable ? 1 : 0
 
   triggers_replace = [local.control_plane_network_policy_transition_sha256]
 

@@ -1052,6 +1052,12 @@ locals {
   }
 
   foundation_variables = {
+    network_policy_boundary = {
+      mode                    = var.deployment.edge.mode
+      gateway_namespace       = "envoy-gateway-system"
+      controller_namespace    = "envoy-gateway-system"
+      security_owner_username = "fs2-network-policy-security-owner"
+    }
     grafana_admin_secret_ref = var.deployment.secrets.grafana_admin_secret
     jobset = {
       enabled            = var.deployment.scientific_batch.enabled

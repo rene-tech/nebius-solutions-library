@@ -2004,7 +2004,8 @@ def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -
         "default": [],
     }
     assert contract["envoy_gateway"]["network_policy_transition"] == {
-        "release_boundary": "terraform-owned-permanent-allows-and-deny-with-lease-receipt-and-admission-protection",
+        "release_boundary": "foundation-security-owner-permanent-allows-and-deny-with-external-iam-protected-admission",
+        "owner_state": "foundation",
         "automatic_rollback": False,
         "helm_owned_policies": [
             "fs2-serve-control-plane-public-envoy",
@@ -2016,16 +2017,22 @@ def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -
             "fs2-serve-control-plane-envoy-default-deny",
         ],
         "rollback_order": [
-            "acquire:fs2-network-policy-transition-lease",
-            "verify:candidate-bound-permanent-allows-and-ready-pods",
+            "acquire-and-renew:fs2-network-policy-transition-lease-with-transition-fence",
+            "verify:exact-live-topology-release-uid-revision-status-manifest-values-and-ready-pods",
+            "admit:receipt-bound-successful-stable-request-debug-disabled-revision",
             "relax-and-prove-zero-selected-pods:fs2-serve-control-plane-envoy-default-deny",
-            "helm-rollback:captured-revision",
+            "fenced-helm-rollback:captured-revision",
             "rebind:permanent-allows-to-verified-rollback-specs",
             "reactivate:fs2-serve-control-plane-envoy-default-deny",
         ],
-        "namespace_source": "candidate public-envoy policy metadata.namespace",
-        "state": "namespaced-Lease-and-ConfigMap-receipt",
+        "namespace_source": "protected-live-fs2-network-policy-boundary-topology-ConfigMap",
+        "state": "renewed-namespaced-Lease-fence-and-v3-ConfigMap-receipt",
         "mutation_identity": "system:serviceaccount:fs2-system:fs2-network-policy-transition",
+        "security_owner_identity": "protected-live-topology-external-username",
+        "deletion_protection": (
+            "external-security-owner-IAM-plus-Terraform-prevent_destroy-and-security-owner-decommission-receipt"
+        ),
+        "pod_discovery": "namespaced-server-pagination-limit-100-max-10-pages",
     }
     assert contract["envoy_gateway"]["controller_selector"] == {
         "app.kubernetes.io/name": "gateway-helm",
@@ -3133,7 +3140,7 @@ def test_foundation_default_deny_and_release_edge_flows_coexist_without_plaintex
     assert ("fs2-system", "fs2-serve-control-plane-acme-solver") in policies
     assert ("envoy-gateway-system", "fs2-serve-control-plane-envoy-controller-xds") in policies
     assert contract["envoy_gateway"]["network_policy_transition"]["release_boundary"] == (
-        "terraform-owned-permanent-allows-and-deny-with-lease-receipt-and-admission-protection"
+        "foundation-security-owner-permanent-allows-and-deny-with-external-iam-protected-admission"
     )
 
     redirect = redirect_route(documents)

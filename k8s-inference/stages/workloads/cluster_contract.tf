@@ -129,6 +129,35 @@ resource "terraform_data" "cluster_contract" {
       error_message = "internal-only mode requires the foundation public Grafana route to remain disabled."
     }
     precondition {
+      condition = try(
+        data.terraform_remote_state.foundation.outputs.network_policy_boundary_contract == {
+          schema                  = "fs2-serve.nebius.ai/network-policy-boundary/v1"
+          owner_stage             = "foundation"
+          deletion_protected      = true
+          external_security_owner = true
+          mode                    = local.public_edge_enabled ? "public" : "internal-only"
+          gateway_namespace       = local.control_plane_network_policy_gateway_namespace
+          controller_namespace    = local.control_plane_network_policy_controller_namespace
+          service_account         = "fs2-network-policy-transition"
+          security_owner          = "fs2-network-policy-security-owner"
+          lease_name              = "fs2-network-policy-transition"
+          receipt_name            = "fs2-network-policy-transition"
+          topology_name           = "fs2-network-policy-boundary-topology"
+          policy_names = {
+            proxy_normal      = "fs2-serve-control-plane-public-envoy"
+            proxy_guard       = "fs2-serve-control-plane-public-envoy-transition-guard"
+            controller_normal = "fs2-serve-control-plane-envoy-controller-xds"
+            controller_guard  = "fs2-serve-control-plane-envoy-controller-xds-transition-guard"
+            default_deny      = "fs2-serve-control-plane-envoy-default-deny"
+          }
+          admission_policy  = "fs2-network-policy-boundary"
+          admission_binding = "fs2-network-policy-boundary"
+        },
+        false,
+      )
+      error_message = "Workloads require the exact deletion-protected foundation NetworkPolicy boundary in the rendered gateway/controller namespaces."
+    }
+    precondition {
       condition     = abspath(var.kubeconfig_path) == local.expected_kubeconfig_path
       error_message = "kubeconfig_path must be the exact run-owned <run_root>/kubeconfig file."
     }

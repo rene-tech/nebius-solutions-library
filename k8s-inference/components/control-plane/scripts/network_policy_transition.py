@@ -14,24 +14,38 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import urllib.parse
 import uuid
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-SCHEMA = "fs2-serve.nebius.ai/network-policy-transition-receipt/v2"
+SCHEMA = "fs2-serve.nebius.ai/network-policy-transition-receipt/v3"
 BOUNDARY_LABEL = "fs2.nebius.ai/network-policy-boundary"
 BOUNDARY_VALUE = "permanent"
 ROLE_LABEL = "fs2.nebius.ai/network-policy-role"
 CANDIDATE_ANNOTATION = "fs2.nebius.ai/network-policy-candidate-sha256"
 NORMAL_ANNOTATION = "fs2.nebius.ai/normal-policy-name"
 DENY_ANNOTATION = "fs2.nebius.ai/deny-policy-name"
+FENCE_ANNOTATION = "fs2.nebius.ai/network-policy-fence"
 SERVICE_ACCOUNT = "fs2-network-policy-transition"
 LEASE_NAME = "fs2-network-policy-transition"
 RECEIPT_NAME = "fs2-network-policy-transition"
-LOCK_SECONDS = 3600
+TOPOLOGY_NAME = "fs2-network-policy-boundary-topology"
+LOCK_SECONDS = 60
+LOCK_RENEW_SECONDS = 15
+POD_PAGE_SIZE = 100
+MAX_POD_PAGES = 10
 RELAXED_SELECTOR = {"fs2.nebius.ai/network-policy-deny-relaxed": "true"}
+IN_FLIGHT_PHASES = {
+    "bootstrap-ready",
+    "guards-ready",
+    "staged",
+    "rollback-prepared",
+    "rollback-guards-ready",
+    "destroy-prepared",
+}
 
 
 class TransitionError(RuntimeError):
@@ -88,8 +102,10 @@ class Candidate:
     candidate_sha256: str
     chart_sha256: str
     values_sha256: str
+    complete_render_sha256: str
     network_policy_render_sha256: str
     release: dict[str, Any]
+    topology: dict[str, Any]
     proxy: dict[str, Any]
     controller: dict[str, Any]
     deny_name: str
@@ -99,8 +115,10 @@ class Candidate:
             "candidate_sha256": self.candidate_sha256,
             "chart_sha256": self.chart_sha256,
             "values_sha256": self.values_sha256,
+            "complete_render_sha256": self.complete_render_sha256,
             "network_policy_render_sha256": self.network_policy_render_sha256,
             "release": self.release,
+            "topology": self.topology,
             "policies": {
                 "public-envoy": self.proxy,
                 "envoy-controller": self.controller,
@@ -123,8 +141,10 @@ class Transition:
         if arguments.context:
             helm_prefix.extend(["--kube-context", arguments.context])
         self.helm = Command(helm_prefix, name="helm")
+        self.value_sources: list[dict[str, str]] = []
         self.helm_values = self._helm_values()
         self.guarded_kubectl: Command | None = None
+        self.fence_transitions: int | None = None
 
     def close(self) -> None:
         shutil.rmtree(self.tempdir)
@@ -142,19 +162,27 @@ class Transition:
             if not path.is_file():
                 raise TransitionError(f"values file does not exist: {path}")
             result.extend(["--values", str(path.resolve())])
+            self.value_sources.append(
+                {"kind": "file", "name": str(path.resolve()), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+            )
         for index, name in enumerate(self.arguments.values_env):
             if not re.fullmatch(r"[A-Z][A-Z0-9_]*", name) or name not in os.environ:
                 raise TransitionError("values environment name is invalid or unset")
             path = self.tempdir / f"values-{index}.yaml"
             path.write_text(os.environ[name] + "\n", encoding="utf-8")
             result.extend(["--values", str(path)])
+            self.value_sources.append(
+                {"kind": "environment", "name": name, "sha256": sha256_text(os.environ[name] + "\n")}
+            )
         passthrough = list(self.arguments.helm_value_args)
         if passthrough[:1] == ["--"]:
             passthrough.pop(0)
         result.extend(passthrough)
+        self.value_sources.append({"kind": "helm-arguments", "name": "remainder", "sha256": sha256_json(passthrough)})
         return result
 
     def configure_guarded_client(self) -> None:
+        self.verify_external_iam_boundary()
         token = self.bootstrap_kubectl.run(
             "create",
             "token",
@@ -196,6 +224,34 @@ class Transition:
         guarded_path.chmod(0o600)
         self.guarded_kubectl = Command(self._kubectl_prefix(guarded_path), name="guarded kubectl")
 
+    def verify_external_iam_boundary(self) -> None:
+        """Fail closed unless the rollout identity is outside security ownership."""
+        topology_result = self.bootstrap_kubectl.run(
+            "get", "configmap", TOPOLOGY_NAME, "--namespace", self.release_namespace, "-o", "json"
+        )
+        topology_resource = cast(dict[str, Any], json.loads(topology_result.stdout))
+        try:
+            topology = json.loads(topology_resource["data"]["topology.json"])
+            security_owner = topology["security_owner_username"]
+        except (KeyError, TypeError, json.JSONDecodeError) as error:
+            raise TransitionError("protected topology has no external security-owner identity") from error
+        if not isinstance(security_owner, str) or not re.fullmatch(r"[A-Za-z0-9:@._/-]{3,253}", security_owner):
+            raise TransitionError("protected topology has an invalid external security-owner identity")
+        forbidden = (
+            ("update", "validatingadmissionpolicies.admissionregistration.k8s.io"),
+            ("delete", "validatingadmissionpolicies.admissionregistration.k8s.io"),
+            ("update", "validatingadmissionpolicybindings.admissionregistration.k8s.io"),
+            ("delete", "validatingadmissionpolicybindings.admissionregistration.k8s.io"),
+            (
+                "impersonate",
+                f"users/{security_owner}",
+            ),
+        )
+        for permission in forbidden:
+            result = self.bootstrap_kubectl.run("auth", "can-i", *permission, check=False)
+            if result.returncode != 0 or result.stdout.strip() != "no":
+                raise TransitionError("rollout identity can remove or impersonate the external security boundary")
+
     @property
     def guarded(self) -> Command:
         if self.guarded_kubectl is None:
@@ -220,7 +276,7 @@ class Transition:
 
     def _lease(self) -> dict[str, Any]:
         result = self.guarded.run("get", "lease", LEASE_NAME, "--namespace", self.release_namespace, "-o", "json")
-        return json.loads(result.stdout)
+        return cast(dict[str, Any], json.loads(result.stdout))
 
     @staticmethod
     def _lease_expired(lease: dict[str, Any]) -> bool:
@@ -251,6 +307,11 @@ class Transition:
                 {"op": "add", "path": "/spec/leaseDurationSeconds", "value": LOCK_SECONDS},
                 {
                     "op": "add",
+                    "path": "/spec/leaseTransitions",
+                    "value": int(lease.get("spec", {}).get("leaseTransitions", 0)) + 1,
+                },
+                {
+                    "op": "add",
                     "path": "/spec/renewTime",
                     "value": dt.datetime.now(dt.UTC).isoformat(timespec="microseconds").replace("+00:00", "Z"),
                 },
@@ -264,14 +325,71 @@ class Transition:
                 "--type=json",
                 "--patch",
                 canonical(patch),
+                "-o",
+                "json",
                 check=False,
             )
             if result.returncode == 0:
+                updated = json.loads(result.stdout)
+                if updated.get("spec", {}).get("holderIdentity") != self.holder:
+                    raise TransitionError("Lease acquisition did not preserve holder identity")
+                self.fence_transitions = int(updated.get("spec", {}).get("leaseTransitions", -1))
                 return
         raise TransitionError("could not acquire the NetworkPolicy transition Lease")
 
-    def _release_lock(self) -> None:
+    def _renew_fence(self) -> dict[str, Any]:
+        if self.fence_transitions is None:
+            raise TransitionError("transition mutation attempted without a Lease fence")
         lease = self._lease()
+        spec = lease.get("spec", {})
+        if (
+            spec.get("holderIdentity") != self.holder
+            or int(spec.get("leaseTransitions", -1)) != self.fence_transitions
+            or self._lease_expired(lease)
+        ):
+            raise TransitionError("transition Lease fence is stale")
+        patch = [
+            {
+                "op": "test",
+                "path": "/metadata/resourceVersion",
+                "value": lease["metadata"]["resourceVersion"],
+            },
+            {"op": "test", "path": "/spec/holderIdentity", "value": self.holder},
+            {"op": "test", "path": "/spec/leaseTransitions", "value": self.fence_transitions},
+            {
+                "op": "add",
+                "path": "/spec/renewTime",
+                "value": dt.datetime.now(dt.UTC).isoformat(timespec="microseconds").replace("+00:00", "Z"),
+            },
+        ]
+        result = self.guarded.run(
+            "patch",
+            "lease",
+            LEASE_NAME,
+            "--namespace",
+            self.release_namespace,
+            "--type=json",
+            "--patch",
+            canonical(patch),
+            "-o",
+            "json",
+        )
+        renewed = cast(dict[str, Any], json.loads(result.stdout))
+        if (
+            renewed.get("spec", {}).get("holderIdentity") != self.holder
+            or int(renewed.get("spec", {}).get("leaseTransitions", -1)) != self.fence_transitions
+        ):
+            raise TransitionError("transition Lease renewal lost its fence")
+        return renewed
+
+    @property
+    def fence_identity(self) -> str:
+        if self.fence_transitions is None:
+            raise TransitionError("transition Lease fence is unavailable")
+        return f"{self.holder}:{self.fence_transitions}"
+
+    def _release_lock(self) -> None:
+        lease = self._renew_fence()
         if lease.get("spec", {}).get("holderIdentity") != self.holder:
             raise TransitionError("transition Lease ownership changed before release")
         patch = [
@@ -292,6 +410,38 @@ class Transition:
             "--patch",
             canonical(patch),
         )
+        self.fence_transitions = None
+
+    def run_fenced_helm(self, *arguments: str) -> CommandResult:
+        """Run one mutating Helm action while renewing and enforcing the Lease."""
+        self._renew_fence()
+        process = subprocess.Popen(  # noqa: S603 - fixed Helm prefix and validated arguments
+            [*self.helm.prefix, *arguments],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        while True:
+            try:
+                stdout, stderr = process.communicate(timeout=LOCK_RENEW_SECONDS)
+                break
+            except subprocess.TimeoutExpired:
+                try:
+                    self._renew_fence()
+                except TransitionError:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                    raise
+        outcome = CommandResult(process.returncode, stdout, stderr)
+        if outcome.returncode != 0:
+            detail = outcome.stderr.strip().splitlines()
+            suffix = f": {detail[-1]}" if detail else ""
+            raise TransitionError(f"fenced helm command failed{suffix}")
+        self._renew_fence()
+        return outcome
 
     def _chart_hash(self) -> str:
         digest = hashlib.sha256()
@@ -305,11 +455,83 @@ class Transition:
             digest.update(b"\0")
         return digest.hexdigest()
 
-    def _release_identity(self) -> dict[str, Any]:
+    @staticmethod
+    def _successful_history_entry(entry: dict[str, Any]) -> bool:
+        description = str(entry.get("description", "")).lower()
+        return (
+            str(entry.get("status", "")).lower() in {"deployed", "superseded"}
+            and "complete" in description
+            and not any(word in description for word in ("fail", "pending"))
+        )
+
+    @staticmethod
+    def _release_object_identity(policy: dict[str, Any]) -> dict[str, str]:
+        metadata = policy.get("metadata", {})
+        if not metadata.get("uid") or not metadata.get("resourceVersion"):
+            raise TransitionError("Helm release policy lacks UID/resourceVersion identity")
+        return {
+            "namespace": metadata["namespace"],
+            "name": metadata["name"],
+            "uid": metadata["uid"],
+            "resource_version": metadata["resourceVersion"],
+            "spec_sha256": sha256_json(policy.get("spec")),
+        }
+
+    def _release_storage_identity(self, revision: str, status: str) -> dict[str, str]:
+        """Read only the exact Helm release Secret metadata, never its payload."""
+        if not re.fullmatch(r"[1-9][0-9]*", revision):
+            raise TransitionError("Helm storage revision is not a positive integer")
+        if not re.fullmatch(r"[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?", self.release):
+            raise TransitionError("Helm release name cannot identify exact storage")
+        name = f"sh.helm.release.v1.{self.release}.v{revision}"
+        jsonpath = (
+            r'{.metadata.name}{"\t"}{.metadata.uid}{"\t"}{.metadata.resourceVersion}'
+            r'{"\t"}{.metadata.labels.owner}{"\t"}{.metadata.labels.name}'
+            r'{"\t"}{.metadata.labels.version}{"\t"}{.metadata.labels.status}'
+        )
+        result = self.bootstrap_kubectl.run(
+            "get",
+            "secret",
+            name,
+            "--namespace",
+            self.release_namespace,
+            "-o",
+            f"jsonpath={jsonpath}",
+        )
+        fields = result.stdout.split("\t")
+        if len(fields) != 7:
+            raise TransitionError("Helm release storage metadata is incomplete")
+        storage_name, uid, resource_version, owner, release_name, stored_revision, stored_status = fields
+        if (
+            storage_name != name
+            or not uid
+            or not resource_version
+            or owner != "helm"
+            or release_name != self.release
+            or stored_revision != revision
+            or stored_status.lower() != status.lower()
+        ):
+            raise TransitionError("Helm release storage identity does not match list/history")
+        return {
+            "name": storage_name,
+            "uid": uid,
+            "resource_version": resource_version,
+            "revision": stored_revision,
+            "status": stored_status.lower(),
+        }
+
+    def _release_identity(
+        self,
+        proxy: dict[str, Any],
+        controller: dict[str, Any],
+        *,
+        require_deployed: bool = True,
+    ) -> dict[str, Any]:
         listing = self.helm.run(
             "list",
             "--namespace",
             self.release_namespace,
+            "--all",
             "--filter",
             f"^{re.escape(self.release)}$",
             "-o",
@@ -323,16 +545,48 @@ class Transition:
                 "revision": "absent",
                 "status": "absent",
                 "deployed_manifest_sha256": None,
+                "identity_uid": None,
+                "storage": None,
+                "objects": {},
             }
         if len(exact) != 1:
             raise TransitionError("expected at most one existing exact Helm release")
-        manifest = self.helm.run("get", "manifest", self.release, "--namespace", self.release_namespace).stdout
+        revision = str(exact[0].get("revision", ""))
+        status = str(exact[0].get("status", "")).lower()
+        if not re.fullmatch(r"[1-9][0-9]*", revision):
+            raise TransitionError("Helm release revision is not a positive integer")
+        if require_deployed and status != "deployed":
+            raise TransitionError("existing Helm release is not successfully deployed")
+        history = json.loads(
+            self.helm.run("history", self.release, "--namespace", self.release_namespace, "-o", "json").stdout
+        )
+        current = [row for row in history if str(row.get("revision")) == revision]
+        if len(current) != 1 or str(current[0].get("status", "")).lower() != status:
+            raise TransitionError("Helm list/history identity is inconsistent")
+        if require_deployed and not self._successful_history_entry(current[0]):
+            raise TransitionError("Helm release is not a successful stable deployment")
+        manifest = self.helm.run(
+            "get", "manifest", self.release, "--namespace", self.release_namespace, "--revision", revision
+        ).stdout
+        storage = self._release_storage_identity(revision, status)
+        proxy_policy = self.get_policy(proxy["normal_name"], proxy["namespace"])
+        controller_policy = self.get_policy(controller["normal_name"], controller["namespace"])
+        objects = {
+            "public-envoy": self._release_object_identity(proxy_policy),
+            "envoy-controller": self._release_object_identity(controller_policy),
+        }
         return {
             "name": self.release,
             "namespace": self.release_namespace,
-            "revision": str(exact[0].get("revision", "")),
-            "status": exact[0].get("status", ""),
-            "deployed_manifest_sha256": sha256_text(manifest),
+            "revision": revision,
+            "status": status,
+            "description": current[0].get("description", ""),
+            "chart": current[0].get("chart", ""),
+            "app_version": current[0].get("app_version", ""),
+            "deployed_manifest_sha256": sha256_json(self._yaml_documents(manifest)),
+            "identity_uid": storage["uid"],
+            "storage": storage,
+            "objects": objects,
         }
 
     def _yaml_documents(self, rendered: str) -> list[dict[str, Any]]:
@@ -340,45 +594,41 @@ class Transition:
         documents = json.loads(result.stdout)
         return [item for item in documents if isinstance(item, dict)]
 
-    def public_boundary_enabled(self) -> bool:
-        rendered = self.helm.run(
-            "template",
-            self.release,
-            str(self.chart),
-            "--namespace",
-            self.release_namespace,
-            *self.helm_values,
-            "--show-only",
-            "templates/networkpolicy.yaml",
-        ).stdout
-        components = {
-            item.get("metadata", {}).get("labels", {}).get("app.kubernetes.io/component")
-            for item in self._yaml_documents(rendered)
-            if item.get("kind") == "NetworkPolicy"
-        }
-        boundary_components = components & {"public-edge", "envoy-controller-xds"}
-        if not boundary_components:
-            return False
-        if boundary_components != {"public-edge", "envoy-controller-xds"}:
-            raise TransitionError("public release must render both ordinary boundary allows")
-        return True
-
-    def internal_rollback(self) -> None:
-        self.helm.run(
-            "rollback",
-            self.release,
-            self.arguments.revision,
-            "--namespace",
-            self.release_namespace,
-            "--wait",
-            "--wait-for-jobs",
-            "--timeout",
-            self.arguments.timeout,
+    def live_topology(self) -> dict[str, Any]:
+        result = self.guarded.run(
+            "get", "configmap", TOPOLOGY_NAME, "--namespace", self.release_namespace, "-o", "json"
         )
-        print(f"network-policy-transition=rolled-back revision={self.arguments.revision} public-gateway=disabled")
+        resource = json.loads(result.stdout)
+        metadata = resource.get("metadata", {})
+        labels = metadata.get("labels", {})
+        if (
+            labels.get(BOUNDARY_LABEL) != BOUNDARY_VALUE
+            or not metadata.get("uid")
+            or not metadata.get("resourceVersion")
+        ):
+            raise TransitionError("live boundary topology is not externally owned")
+        try:
+            contract = json.loads(resource.get("data", {})["topology.json"])
+        except (KeyError, TypeError, json.JSONDecodeError) as error:
+            raise TransitionError("live boundary topology contract is invalid") from error
+        if contract.get("schema") != "fs2-serve.nebius.ai/network-policy-boundary-topology/v1":
+            raise TransitionError("live boundary topology schema is unsupported")
+        if contract.get("mode") != "public":
+            raise TransitionError("protected live topology does not authorize a public boundary transition")
+        if not isinstance(contract.get("security_owner_username"), str) or not re.fullmatch(
+            r"[A-Za-z0-9:@._/-]{3,253}", contract["security_owner_username"]
+        ):
+            raise TransitionError("protected live topology has no valid external security owner")
+        return {
+            "contract": contract,
+            "uid": metadata["uid"],
+            "resource_version": metadata["resourceVersion"],
+            "sha256": sha256_json(contract),
+        }
 
-    def render_candidate(self) -> Candidate:
-        common = [
+    def render_candidate(self, *, release_identity: dict[str, Any] | None = None) -> Candidate:
+        topology = self.live_topology()
+        policy_command = [
             "template",
             self.release,
             str(self.chart),
@@ -386,8 +636,7 @@ class Transition:
             self.release_namespace,
             *self.helm_values,
         ]
-        complete_render = self.helm.run(*common).stdout
-        policy_render = self.helm.run(*common, "--show-only", "templates/networkpolicy.yaml").stdout
+        policy_render = self.helm.run(*policy_command, "--show-only", "templates/networkpolicy.yaml").stdout
         policies = [item for item in self._yaml_documents(policy_render) if item.get("kind") == "NetworkPolicy"]
 
         def exact(component: str) -> dict[str, Any]:
@@ -413,16 +662,34 @@ class Transition:
         proxy["guard_name"] = f"{proxy['normal_name']}-transition-guard"
         controller["guard_name"] = f"{controller['normal_name']}-transition-guard"
         deny_name = proxy["normal_name"].removesuffix("-public-envoy") + "-envoy-default-deny"
+        expected = topology["contract"]
+        if (
+            proxy["namespace"] != expected.get("gateway_namespace")
+            or controller["namespace"] != expected.get("controller_namespace")
+            or proxy["normal_name"] != expected.get("policy_names", {}).get("proxy_normal")
+            or proxy["guard_name"] != expected.get("policy_names", {}).get("proxy_guard")
+            or controller["normal_name"] != expected.get("policy_names", {}).get("controller_normal")
+            or controller["guard_name"] != expected.get("policy_names", {}).get("controller_guard")
+            or deny_name != expected.get("policy_names", {}).get("default_deny")
+        ):
+            raise TransitionError("caller render does not match the protected live boundary topology")
+        release = release_identity or self._release_identity(proxy, controller)
+        complete_command = list(policy_command)
+        if release["status"] != "absent":
+            complete_command.append("--is-upgrade")
+        complete_render = self.helm.run(*complete_command).stdout
         chart_hash = self._chart_hash()
-        values_hash = sha256_text(complete_render)
-        policy_hash = sha256_text(policy_render)
-        release = self._release_identity()
+        values_hash = sha256_json(self.value_sources)
+        complete_render_hash = sha256_json(self._yaml_documents(complete_render))
+        policy_hash = sha256_json(self._yaml_documents(policy_render))
         material = {
             "schema": SCHEMA,
             "chart_sha256": chart_hash,
             "values_sha256": values_hash,
+            "complete_render_sha256": complete_render_hash,
             "network_policy_render_sha256": policy_hash,
-            "release": {"name": self.release, "namespace": self.release_namespace},
+            "release": release,
+            "topology": topology,
             "policies": {"public-envoy": proxy, "envoy-controller": controller},
             "deny_name": deny_name,
         }
@@ -430,8 +697,10 @@ class Transition:
             candidate_sha256=sha256_json(material),
             chart_sha256=chart_hash,
             values_sha256=values_hash,
+            complete_render_sha256=complete_render_hash,
             network_policy_render_sha256=policy_hash,
             release=release,
+            topology=topology,
             proxy=proxy,
             controller=controller,
             deny_name=deny_name,
@@ -439,7 +708,7 @@ class Transition:
 
     def get_policy(self, name: str, namespace: str) -> dict[str, Any]:
         result = self.guarded.run("get", "networkpolicy", name, "--namespace", namespace, "-o", "json")
-        return json.loads(result.stdout)
+        return cast(dict[str, Any], json.loads(result.stdout))
 
     def get_optional_policy(self, name: str, namespace: str) -> dict[str, Any] | None:
         result = self.guarded.run(
@@ -457,7 +726,7 @@ class Transition:
             raise TransitionError("default-deny lookup failed without a verified NotFound")
         if not result.stdout.strip():
             return None
-        return json.loads(result.stdout)
+        return cast(dict[str, Any], json.loads(result.stdout))
 
     @staticmethod
     def _verify_boundary_identity(policy: dict[str, Any], *, role: str) -> None:
@@ -474,10 +743,19 @@ class Transition:
         annotations = {
             CANDIDATE_ANNOTATION: candidate.candidate_sha256,
             NORMAL_ANNOTATION: policy["normal_name"],
+            FENCE_ANNOTATION: self.fence_identity,
         }
         if role == "public-envoy":
             annotations[DENY_ANNOTATION] = candidate.deny_name
-        patch = canonical({"metadata": {"annotations": annotations}, "spec": policy["spec"]})
+        patch = canonical(
+            {
+                "metadata": {
+                    "resourceVersion": current["metadata"]["resourceVersion"],
+                    "annotations": annotations,
+                },
+                "spec": policy["spec"],
+            }
+        )
         common = (
             "patch",
             "networkpolicy",
@@ -489,12 +767,13 @@ class Transition:
             patch,
         )
         self.guarded.run(*common, "--dry-run=server", "-o", "json")
+        self._renew_fence()
         result = self.guarded.run(
             *common,
             "-o",
             "json",
         )
-        updated = json.loads(result.stdout)
+        updated = cast(dict[str, Any], json.loads(result.stdout))
         self.verify_guard(role, policy, candidate, updated)
         return updated
 
@@ -520,11 +799,9 @@ class Transition:
         labels = selector.get("matchLabels")
         if not isinstance(labels, dict) or not labels or selector.get("matchExpressions"):
             raise TransitionError(f"{role} boundary requires an exact matchLabels selector")
-        label_selector = ",".join(f"{key}={value}" for key, value in sorted(labels.items()))
-        result = self.guarded.run("get", "pods", "--namespace", namespace, "--selector", label_selector, "-o", "json")
         ready = [
             pod
-            for pod in json.loads(result.stdout).get("items", [])
+            for pod in self.list_pods_bounded(namespace, labels)
             if any(
                 condition.get("type") == "Ready" and condition.get("status") == "True"
                 for condition in pod.get("status", {}).get("conditions", [])
@@ -534,16 +811,48 @@ class Transition:
             raise TransitionError(f"{role} boundary selects zero Ready Pods")
         return len(ready)
 
+    def list_pods_bounded(self, namespace: str, labels: dict[str, str]) -> list[dict[str, Any]]:
+        selector = ",".join(f"{key}={value}" for key, value in sorted(labels.items()))
+        encoded_namespace = urllib.parse.quote(namespace, safe="")
+        encoded_selector = urllib.parse.quote(selector, safe="")
+        continuation = ""
+        items: list[dict[str, Any]] = []
+        for _ in range(MAX_POD_PAGES):
+            query = f"limit={POD_PAGE_SIZE}&labelSelector={encoded_selector}"
+            if continuation:
+                query += f"&continue={urllib.parse.quote(continuation, safe='')}"
+            result = self.guarded.run("get", "--raw", f"/api/v1/namespaces/{encoded_namespace}/pods?{query}")
+            page = json.loads(result.stdout)
+            page_items = page.get("items", [])
+            if not isinstance(page_items, list) or len(page_items) > POD_PAGE_SIZE:
+                raise TransitionError("Pod list page exceeded its enforced bound")
+            items.extend(item for item in page_items if isinstance(item, dict))
+            continuation = str(page.get("metadata", {}).get("continue", ""))
+            if not continuation:
+                return items
+        raise TransitionError("Pod selector exceeded bounded pagination")
+
     def verify_normal(self, role: str, policy: dict[str, Any]) -> None:
         normal = self.get_policy(policy["normal_name"], policy["namespace"])
         if normal.get("spec") != policy["spec"]:
             raise TransitionError(f"{role} Helm policy does not match the staged boundary")
         self.verify_ready_pods(policy["namespace"], normal["spec"], role=role)
 
-    def _deny_patch(self, candidate: Candidate, spec: dict[str, Any]) -> dict[str, Any]:
+    def _deny_patch(
+        self,
+        candidate: Candidate,
+        spec: dict[str, Any],
+        current: dict[str, Any],
+    ) -> dict[str, Any]:
         patch = canonical(
             {
-                "metadata": {"annotations": {CANDIDATE_ANNOTATION: candidate.candidate_sha256}},
+                "metadata": {
+                    "resourceVersion": current["metadata"]["resourceVersion"],
+                    "annotations": {
+                        CANDIDATE_ANNOTATION: candidate.candidate_sha256,
+                        FENCE_ANNOTATION: self.fence_identity,
+                    },
+                },
                 "spec": spec,
             }
         )
@@ -558,18 +867,19 @@ class Transition:
             patch,
         )
         self.guarded.run(*common, "--dry-run=server", "-o", "json")
+        self._renew_fence()
         result = self.guarded.run(
             *common,
             "-o",
             "json",
         )
-        return json.loads(result.stdout)
+        return cast(dict[str, Any], json.loads(result.stdout))
 
     def activate_deny(self, candidate: Candidate) -> None:
         current = self.get_policy(candidate.deny_name, candidate.proxy["namespace"])
         self._verify_boundary_identity(current, role="default-deny")
         expected = {"podSelector": {}, "policyTypes": ["Ingress"], "ingress": []}
-        if self._deny_patch(candidate, expected).get("spec") != expected:
+        if self._deny_patch(candidate, expected, current).get("spec") != expected:
             raise TransitionError("default-deny did not become active")
 
     def verify_deny_active(self, candidate: Candidate) -> None:
@@ -590,20 +900,9 @@ class Transition:
             "policyTypes": ["Ingress"],
             "ingress": [],
         }
-        if self._deny_patch(candidate, expected).get("spec") != expected:
+        if self._deny_patch(candidate, expected, current).get("spec") != expected:
             raise TransitionError("default-deny was not relaxed")
-        selector = ",".join(f"{key}={value}" for key, value in RELAXED_SELECTOR.items())
-        pods = self.guarded.run(
-            "get",
-            "pods",
-            "--namespace",
-            candidate.proxy["namespace"],
-            "--selector",
-            selector,
-            "-o",
-            "json",
-        )
-        if json.loads(pods.stdout).get("items"):
+        if self.list_pods_bounded(candidate.proxy["namespace"], RELAXED_SELECTOR):
             raise TransitionError("relaxed default-deny still selects Pods")
         proof = self.get_policy(candidate.deny_name, candidate.proxy["namespace"])
         if proof.get("spec") != expected:
@@ -657,6 +956,10 @@ class Transition:
                 "prior_resource_version": metadata["resourceVersion"],
             },
             "previous_phase": previous.get("phase", "uninitialized"),
+            "fence": {
+                "holder_identity": self.holder,
+                "lease_transitions": self.fence_transitions,
+            },
         }
         deny = self.get_optional_policy(candidate.deny_name, candidate.proxy["namespace"])
         if deny is None:
@@ -674,6 +977,7 @@ class Transition:
             "metadata": {"resourceVersion": metadata["resourceVersion"]},
             "data": {"receipt.json": canonical(receipt)},
         }
+        self._renew_fence()
         result = self.guarded.run(
             "patch",
             "configmap",
@@ -686,7 +990,7 @@ class Transition:
             "-o",
             "json",
         )
-        return json.loads(result.stdout)
+        return cast(dict[str, Any], json.loads(result.stdout))
 
     @staticmethod
     def verify_receipt_boundaries(receipt: dict[str, Any], boundaries: dict[str, dict[str, Any]]) -> None:
@@ -708,39 +1012,89 @@ class Transition:
             "public-envoy": self.verify_guard("public-envoy", candidate.proxy, candidate),
         }
 
+    @staticmethod
+    def candidate_from_receipt(receipt: dict[str, Any]) -> Candidate:
+        encoded = receipt.get("candidate")
+        if not isinstance(encoded, dict) or encoded.get("candidate_sha256") is None:
+            raise TransitionError("transition receipt has no candidate identity")
+        policies = encoded.get("policies", {})
+        return Candidate(
+            candidate_sha256=encoded["candidate_sha256"],
+            chart_sha256=encoded["chart_sha256"],
+            values_sha256=encoded["values_sha256"],
+            complete_render_sha256=encoded["complete_render_sha256"],
+            network_policy_render_sha256=encoded["network_policy_render_sha256"],
+            release=encoded["release"],
+            topology=encoded["topology"],
+            proxy=policies["public-envoy"],
+            controller=policies["envoy-controller"],
+            deny_name=encoded["deny_name"],
+        )
+
+    def verify_local_candidate(self, receipt: dict[str, Any]) -> Candidate:
+        recorded = self.candidate_from_receipt(receipt)
+        rendered = self.render_candidate(release_identity=recorded.release)
+        if rendered.as_dict() != recorded.as_dict():
+            raise TransitionError("local chart/values/render no longer match the durable candidate")
+        return recorded
+
+    def verify_live_topology(self, candidate: Candidate) -> None:
+        if self.live_topology() != candidate.topology:
+            raise TransitionError("protected live boundary topology changed from the durable receipt")
+
+    def verify_deployed_target(self, candidate: Candidate) -> dict[str, Any]:
+        deployed = self._release_identity(candidate.proxy, candidate.controller)
+        source = candidate.release
+        expected_revision = 1 if source["status"] == "absent" else int(source["revision"]) + 1
+        if int(deployed["revision"]) != expected_revision:
+            raise TransitionError("deployed Helm revision is not the candidate's exact successor")
+        if deployed["deployed_manifest_sha256"] != candidate.complete_render_sha256:
+            raise TransitionError("deployed Helm manifest does not match the candidate render")
+        if source["status"] != "absent":
+            for role, identity in source.get("objects", {}).items():
+                if deployed.get("objects", {}).get(role, {}).get("uid") != identity.get("uid"):
+                    raise TransitionError(f"Helm release {role} UID changed during upgrade")
+        return deployed
+
     def stage(self) -> None:
-        candidate = self.render_candidate()
-        if candidate.release["status"] == "absent":
-            raise TransitionError("stage requires an existing release with Ready boundary Pods")
         with self.lock():
-            _, prior = self.receipt()
-            if (
-                prior.get("phase") in {"staged", "active"}
-                and prior.get("candidate", {}).get("candidate_sha256") == candidate.candidate_sha256
-            ):
-                guards = self.current_guards(candidate)
-                self.verify_deny_active(candidate)
-                deny = self.get_policy(candidate.deny_name, candidate.proxy["namespace"])
-                self.verify_receipt_boundaries(prior, {**guards, "default-deny": deny})
-                self.write_receipt(prior["phase"], candidate, guards)
-                print(
-                    f"network-policy-transition={prior['phase']} candidate={candidate.candidate_sha256} idempotent=true"
-                )
-                return
-            proxy = self.patch_guard("public-envoy", candidate.proxy, candidate)
-            controller = self.patch_guard("envoy-controller", candidate.controller, candidate)
-            guards = {"public-envoy": proxy, "envoy-controller": controller}
-            self.write_receipt("guards-ready", candidate, guards)
-            self.activate_deny(candidate)
-            self.write_receipt("staged", candidate, guards)
+            candidate = self.render_candidate()
+            if candidate.release["status"] != "deployed":
+                raise TransitionError("stage requires a successful deployed release with Ready boundary Pods")
+            self._stage_locked(candidate)
         print(f"network-policy-transition=staged candidate={candidate.candidate_sha256}")
 
-    def prepare(self) -> None:
-        candidate = self.render_candidate()
-        if candidate.release["status"] != "absent":
-            self.stage()
+    def _stage_locked(self, candidate: Candidate) -> None:
+        _, prior = self.receipt()
+        prior_candidate = prior.get("candidate", {}).get("candidate_sha256")
+        if prior.get("phase") in IN_FLIGHT_PHASES and prior_candidate != candidate.candidate_sha256:
+            raise TransitionError("a different durable NetworkPolicy transition is still in flight")
+        if (
+            prior.get("phase") in {"staged", "active"}
+            and prior.get("candidate", {}).get("candidate_sha256") == candidate.candidate_sha256
+        ):
+            guards = self.current_guards(candidate)
+            self.verify_deny_active(candidate)
+            deny = self.get_policy(candidate.deny_name, candidate.proxy["namespace"])
+            self.verify_receipt_boundaries(prior, {**guards, "default-deny": deny})
+            self.write_receipt(prior["phase"], candidate, guards)
             return
+        proxy = self.patch_guard("public-envoy", candidate.proxy, candidate)
+        controller = self.patch_guard("envoy-controller", candidate.controller, candidate)
+        guards = {"public-envoy": proxy, "envoy-controller": controller}
+        self.write_receipt("guards-ready", candidate, guards)
+        self.activate_deny(candidate)
+        self.write_receipt("staged", candidate, guards)
+
+    def prepare(self) -> None:
         with self.lock():
+            candidate = self.render_candidate()
+            if candidate.release["status"] != "absent":
+                if candidate.release["status"] != "deployed":
+                    raise TransitionError("prepare requires an absent or successful deployed release")
+                self._stage_locked(candidate)
+                print(f"network-policy-transition=staged candidate={candidate.candidate_sha256}")
+                return
             _, prior = self.receipt()
             guards = {
                 "public-envoy": self.get_policy(candidate.proxy["guard_name"], candidate.proxy["namespace"]),
@@ -766,13 +1120,12 @@ class Transition:
         print(f"network-policy-transition=bootstrap-ready candidate={candidate.candidate_sha256} deny=relaxed")
 
     def complete(self) -> None:
-        candidate = self.render_candidate()
         with self.lock():
             _, prior = self.receipt()
-            if prior.get("candidate", {}).get("candidate_sha256") != candidate.candidate_sha256:
-                raise TransitionError("receipt is not bound to the rendered candidate")
             if prior.get("phase") not in {"bootstrap-ready", "staged", "active"}:
                 raise TransitionError("transition receipt is not bootstrap-ready, staged, or active")
+            candidate = self.verify_local_candidate(prior)
+            deployed_release = self.verify_deployed_target(candidate)
             if prior.get("phase") == "bootstrap-ready":
                 bootstrap_guards = {
                     "public-envoy": self.get_policy(candidate.proxy["guard_name"], candidate.proxy["namespace"]),
@@ -785,18 +1138,20 @@ class Transition:
                 proxy = self.patch_guard("public-envoy", candidate.proxy, candidate)
                 controller = self.patch_guard("envoy-controller", candidate.controller, candidate)
                 guards = {"public-envoy": proxy, "envoy-controller": controller}
-                self.write_receipt("guards-ready", candidate, guards)
+                self.write_receipt("guards-ready", candidate, guards, extra={"deployed_release": deployed_release})
                 self.activate_deny(candidate)
-                self.write_receipt("staged", candidate, guards)
+                self.write_receipt("staged", candidate, guards, extra={"deployed_release": deployed_release})
                 _, prior = self.receipt()
             else:
                 guards = self.current_guards(candidate)
+                if prior.get("phase") == "active" and prior.get("deployed_release") != deployed_release:
+                    raise TransitionError("receipt is not bound to the exact deployed release")
             self.verify_normal("public-envoy", candidate.proxy)
             self.verify_normal("envoy-controller", candidate.controller)
             self.verify_deny_active(candidate)
             deny = self.get_policy(candidate.deny_name, candidate.proxy["namespace"])
             self.verify_receipt_boundaries(prior, {**guards, "default-deny": deny})
-            self.write_receipt("active", candidate, guards)
+            self.write_receipt("active", candidate, guards, extra={"deployed_release": deployed_release})
         print(f"network-policy-transition=active candidate={candidate.candidate_sha256} boundaries=permanent")
 
     def _target_manifest(self, revision: str) -> str:
@@ -813,55 +1168,131 @@ class Transition:
     def _current_manifest(self) -> str:
         return self.helm.run("get", "manifest", self.release, "--namespace", self.release_namespace).stdout
 
-    def _candidate_from_live(self, source: Candidate, target_manifest_sha256: str) -> Candidate:
+    def _rollback_target(self, source: Candidate, revision: str) -> dict[str, Any]:
+        if source.release.get("status") != "deployed" or revision != str(source.release.get("revision")):
+            raise TransitionError("rollback revision is not the receipt-bound stable source revision")
+        history = json.loads(
+            self.helm.run("history", self.release, "--namespace", self.release_namespace, "-o", "json").stdout
+        )
+        matches = [entry for entry in history if str(entry.get("revision")) == revision]
+        if len(matches) != 1 or not self._successful_history_entry(matches[0]):
+            raise TransitionError("rollback target is not a successful stable Helm revision")
+        target_storage = self._release_storage_identity(revision, str(matches[0].get("status", "")))
+        source_storage = source.release.get("storage", {})
+        if target_storage.get("name") != source_storage.get("name") or target_storage.get("uid") != source_storage.get(
+            "uid"
+        ):
+            raise TransitionError("rollback target is not the receipt-bound Helm release object")
+        manifest_sha256 = sha256_json(self._yaml_documents(self._target_manifest(revision)))
+        if manifest_sha256 != source.release.get("deployed_manifest_sha256"):
+            raise TransitionError("rollback target manifest differs from the staged source release")
+        values = json.loads(
+            self.helm.run(
+                "get",
+                "values",
+                self.release,
+                "--namespace",
+                self.release_namespace,
+                "--revision",
+                revision,
+                "--all",
+                "-o",
+                "json",
+            ).stdout
+        )
+        if values.get("config", {}).get("requestDebugEnabled") is not False:
+            raise TransitionError("rollback target is ineligible while request debugging is enabled or unknown")
+        return {
+            "target_revision": revision,
+            "target_history": matches[0],
+            "target_manifest_sha256": manifest_sha256,
+            "target_values_sha256": sha256_json(values),
+            "target_storage": target_storage,
+            "request_debug_enabled": False,
+            "source_release": source.release,
+        }
+
+    def _revalidate_rollback_target(self, rollback: dict[str, Any], revision: str) -> None:
+        if rollback.get("target_revision") != revision or rollback.get("request_debug_enabled") is not False:
+            raise TransitionError("durable rollback target does not match the request")
+        history = json.loads(
+            self.helm.run("history", self.release, "--namespace", self.release_namespace, "-o", "json").stdout
+        )
+        matches = [entry for entry in history if str(entry.get("revision")) == revision]
+        if len(matches) != 1 or not self._successful_history_entry(matches[0]):
+            raise TransitionError("durable rollback target is no longer a successful stable revision")
+        storage = self._release_storage_identity(revision, str(matches[0].get("status", "")))
+        recorded_storage = rollback.get("target_storage", {})
+        if storage.get("name") != recorded_storage.get("name") or storage.get("uid") != recorded_storage.get("uid"):
+            raise TransitionError("durable rollback target Helm release object changed")
+        if sha256_json(self._yaml_documents(self._target_manifest(revision))) != rollback.get("target_manifest_sha256"):
+            raise TransitionError("durable rollback target manifest changed")
+        values = json.loads(
+            self.helm.run(
+                "get",
+                "values",
+                self.release,
+                "--namespace",
+                self.release_namespace,
+                "--revision",
+                revision,
+                "--all",
+                "-o",
+                "json",
+            ).stdout
+        )
+        if values.get("config", {}).get("requestDebugEnabled") is not False:
+            raise TransitionError("rollback target request-debug state is no longer disabled")
+        if sha256_json(values) != rollback.get("target_values_sha256"):
+            raise TransitionError("durable rollback target values changed")
+
+    def _candidate_from_live(self, source: Candidate, deployed_release: dict[str, Any]) -> Candidate:
         proxy = dict(source.proxy)
         controller = dict(source.controller)
         proxy["spec"] = self.get_policy(proxy["normal_name"], proxy["namespace"])["spec"]
         controller["spec"] = self.get_policy(controller["normal_name"], controller["namespace"])["spec"]
-        release = dict(source.release)
-        release["deployed_manifest_sha256"] = target_manifest_sha256
-        release["revision"] = f"rollback:{self.arguments.revision}"
         material = {
             "schema": SCHEMA,
             "source": "verified-live-rollback",
-            "target_manifest_sha256": target_manifest_sha256,
-            "release": release,
+            "release": deployed_release,
+            "topology": source.topology,
             "policies": {"public-envoy": proxy, "envoy-controller": controller},
             "deny_name": source.deny_name,
         }
         return Candidate(
             candidate_sha256=sha256_json(material),
             chart_sha256=source.chart_sha256,
-            values_sha256=target_manifest_sha256,
-            network_policy_render_sha256=target_manifest_sha256,
-            release=release,
+            values_sha256=source.values_sha256,
+            complete_render_sha256=deployed_release["deployed_manifest_sha256"],
+            network_policy_render_sha256=sha256_json(
+                {"public-envoy": proxy["spec"], "envoy-controller": controller["spec"]}
+            ),
+            release=deployed_release,
+            topology=source.topology,
             proxy=proxy,
             controller=controller,
             deny_name=source.deny_name,
         )
 
     def rollback(self) -> None:
-        candidate = self.render_candidate()
         revision = self.arguments.revision
-        target_hash = sha256_text(self._target_manifest(revision))
         with self.lock():
             _, prior = self.receipt()
+            candidate = self.candidate_from_receipt(prior)
+            self.verify_live_topology(candidate)
             rollback_state = prior.get("rollback", {})
-            current_hash = sha256_text(self._current_manifest())
-            if (
-                prior.get("phase") == "rolled-back"
-                and rollback_state.get("target_revision") == revision
-                and rollback_state.get("target_manifest_sha256") == target_hash
-                and current_hash == target_hash
-            ):
-                live_candidate = self._candidate_from_live(candidate, target_hash)
-                guards = self.current_guards(live_candidate)
-                self.verify_deny_active(live_candidate)
-                deny = self.get_policy(live_candidate.deny_name, live_candidate.proxy["namespace"])
+            if prior.get("phase") == "rolled-back" and rollback_state.get("target_revision") == revision:
+                self._revalidate_rollback_target(rollback_state, revision)
+                deployed = self._release_identity(candidate.proxy, candidate.controller)
+                if deployed != candidate.release:
+                    raise TransitionError("rolled-back release identity no longer matches its receipt")
+                guards = self.current_guards(candidate)
+                self.verify_deny_active(candidate)
+                deny = self.get_policy(candidate.deny_name, candidate.proxy["namespace"])
                 self.verify_receipt_boundaries(prior, {**guards, "default-deny": deny})
                 self.write_receipt(
                     "rolled-back",
-                    live_candidate,
+                    candidate,
                     guards,
                     extra={"rollback": rollback_state},
                 )
@@ -874,11 +1305,6 @@ class Transition:
                 "rollback-guards-ready",
             }:
                 raise TransitionError("receipt phase does not authorize rollback")
-            if (
-                prior.get("phase") not in {"rollback-prepared", "rollback-guards-ready"}
-                and prior.get("candidate", {}).get("candidate_sha256") != candidate.candidate_sha256
-            ):
-                raise TransitionError("rollback receipt is not bound to the rendered candidate")
             guards = {
                 "public-envoy": self.get_policy(candidate.proxy["guard_name"], candidate.proxy["namespace"]),
                 "envoy-controller": self.get_policy(
@@ -886,20 +1312,25 @@ class Transition:
                 ),
             }
             if prior.get("phase") in {"staged", "active"}:
+                rollback_state = self._rollback_target(candidate, revision)
                 current_deny = self.get_optional_policy(candidate.deny_name, candidate.proxy["namespace"])
                 boundaries = dict(guards)
                 if current_deny is not None:
                     boundaries["default-deny"] = current_deny
                 self.verify_receipt_boundaries(prior, boundaries)
-            deny_proof = self.relax_deny(candidate)
-            rollback = {
-                "target_revision": revision,
-                "target_manifest_sha256": target_hash,
-                "deny_proof": deny_proof,
-            }
-            self.write_receipt("rollback-prepared", candidate, guards, extra={"rollback": rollback})
+                current = self._release_identity(candidate.proxy, candidate.controller, require_deployed=False)
+                if current["status"] == "absent" or int(current["revision"]) <= int(revision):
+                    raise TransitionError("current Helm release is not newer than the rollback target")
+                rollback_state["current_release_before_rollback"] = current
+                deny_proof = self.relax_deny(candidate)
+                rollback_state["deny_proof"] = deny_proof
+                self.write_receipt("rollback-prepared", candidate, guards, extra={"rollback": rollback_state})
+            else:
+                self._revalidate_rollback_target(rollback_state, revision)
+            current_hash = sha256_json(self._yaml_documents(self._current_manifest()))
+            target_hash = rollback_state["target_manifest_sha256"]
             if current_hash != target_hash:
-                self.helm.run(
+                self.run_fenced_helm(
                     "rollback",
                     self.release,
                     revision,
@@ -910,9 +1341,12 @@ class Transition:
                     "--timeout",
                     self.arguments.timeout,
                 )
-            if sha256_text(self._current_manifest()) != target_hash:
+            if sha256_json(self._yaml_documents(self._current_manifest())) != target_hash:
                 raise TransitionError("Helm rollback did not reach the target manifest")
-            live_candidate = self._candidate_from_live(candidate, target_hash)
+            deployed = self._release_identity(candidate.proxy, candidate.controller)
+            if deployed["deployed_manifest_sha256"] != target_hash:
+                raise TransitionError("rolled-back release identity has the wrong manifest")
+            live_candidate = self._candidate_from_live(candidate, deployed)
             proxy = self.patch_guard("public-envoy", live_candidate.proxy, live_candidate)
             controller = self.patch_guard("envoy-controller", live_candidate.controller, live_candidate)
             live_guards = {"public-envoy": proxy, "envoy-controller": controller}
@@ -920,29 +1354,17 @@ class Transition:
                 "rollback-guards-ready",
                 live_candidate,
                 live_guards,
-                extra={"rollback": rollback},
+                extra={"rollback": rollback_state},
             )
             self.activate_deny(live_candidate)
-            self.write_receipt("rolled-back", live_candidate, live_guards, extra={"rollback": rollback})
+            self.write_receipt("rolled-back", live_candidate, live_guards, extra={"rollback": rollback_state})
         print(f"network-policy-transition=rolled-back revision={revision} deny=active")
 
     def destroy(self) -> None:
         with self.lock():
             _, prior = self.receipt()
-            encoded = prior.get("candidate")
-            if not isinstance(encoded, dict):
-                raise TransitionError("destroy requires a durable candidate receipt")
-            policies = encoded.get("policies", {})
-            candidate = Candidate(
-                candidate_sha256=encoded["candidate_sha256"],
-                chart_sha256=encoded["chart_sha256"],
-                values_sha256=encoded["values_sha256"],
-                network_policy_render_sha256=encoded["network_policy_render_sha256"],
-                release=encoded["release"],
-                proxy=policies["public-envoy"],
-                controller=policies["envoy-controller"],
-                deny_name=encoded["deny_name"],
-            )
+            candidate = self.candidate_from_receipt(prior)
+            self.verify_live_topology(candidate)
             guards = {
                 "public-envoy": self.get_policy(candidate.proxy["guard_name"], candidate.proxy["namespace"]),
                 "envoy-controller": self.get_policy(
@@ -992,12 +1414,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     arguments = parse_arguments(argv or sys.argv[1:])
     transition = Transition(arguments)
     try:
-        if arguments.action != "destroy" and not transition.public_boundary_enabled():
-            if arguments.action == "rollback":
-                transition.internal_rollback()
-            else:
-                print(f"network-policy-transition=disabled release={arguments.release} public-gateway=false")
-            return 0
         transition.configure_guarded_client()
         getattr(transition, arguments.action)()
     except (TransitionError, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:

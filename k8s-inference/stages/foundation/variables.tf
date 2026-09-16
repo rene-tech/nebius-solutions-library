@@ -74,6 +74,53 @@ variable "kube_system_uid" {
   }
 }
 
+variable "network_policy_boundary" {
+  description = "Foundation-owned namespaces for the permanent Envoy allow/deny boundary. Workloads may consume but never own or disable this boundary."
+  type = object({
+    mode                           = optional(string, "public")
+    gateway_namespace              = optional(string, "envoy-gateway-system")
+    controller_namespace           = optional(string, "envoy-gateway-system")
+    security_owner_kubeconfig_path = optional(string)
+    security_owner_username        = optional(string, "fs2-network-policy-security-owner")
+  })
+  default = {}
+
+  validation {
+    condition     = contains(["public", "internal-only"], var.network_policy_boundary.mode)
+    error_message = "NetworkPolicy boundary mode must be public or internal-only."
+  }
+
+  validation {
+    condition = can(regex(
+      "^[A-Za-z0-9:@._/-]{3,253}$",
+      var.network_policy_boundary.security_owner_username,
+    ))
+    error_message = "The external security-owner username must be a bounded Kubernetes username without CEL quoting characters."
+  }
+
+  validation {
+    condition = (
+      var.network_policy_boundary.security_owner_kubeconfig_path == null ||
+      (
+        startswith(var.network_policy_boundary.security_owner_kubeconfig_path, "/") &&
+        !strcontains(var.network_policy_boundary.security_owner_kubeconfig_path, "..") &&
+        abspath(var.network_policy_boundary.security_owner_kubeconfig_path) != abspath(var.kubeconfig_path)
+      )
+    )
+    error_message = "The external security-owner kubeconfig path must be absolute, traversal-free, and distinct from the ordinary deployment kubeconfig."
+  }
+
+  validation {
+    condition = alltrue([
+      for namespace in [
+        var.network_policy_boundary.gateway_namespace,
+        var.network_policy_boundary.controller_namespace,
+      ] : length(namespace) <= 63 && can(regex("^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$", namespace))
+    ])
+    error_message = "NetworkPolicy boundary namespaces must be nonempty DNS labels."
+  }
+}
+
 variable "project_id" {
   description = "Exact target project ID. Its region and network identity are bound by target_contract."
   type        = string

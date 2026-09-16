@@ -412,8 +412,9 @@ networkPolicy:
     port: 53
   gateway:
     # The standard namespace-name label is also the namespace where the
-    # release creates its ordinary proxy allow. Terraform permanently owns the
-    # duplicate allow boundary and ingress default-deny in this namespace.
+    # release creates its ordinary proxy allow. The independently applied
+    # foundation/security-owner state permanently owns the duplicate allow
+    # boundary and ingress default-deny in this namespace.
     namespaceLabels:
       kubernetes.io/metadata.name: envoy-gateway-system
     podLabels:
