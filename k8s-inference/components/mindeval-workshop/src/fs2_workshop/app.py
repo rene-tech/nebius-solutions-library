@@ -70,7 +70,7 @@ def create_app(settings=None, *, store=None, client=None, start_workers=True):
             pool = await asyncpg.create_pool(
                 settings.database_url,
                 min_size=2,
-                max_size=settings.workers + 5,
+                max_size=min(settings.workers + 5, 12),
                 server_settings={"application_name": "fs2-workshop"},
             )
             store = Store(pool, Path(settings.credential_key_file).read_bytes().strip())

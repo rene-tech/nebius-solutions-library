@@ -16,7 +16,7 @@ workshop:
   name: fs2-mindeval-workshop
   image: ""
   replicas: 2
-  workers: 10
+  workers: 25
   requestTimeoutSeconds: 600
   publicOrigin: https://89.169.99.188
   authUrl: http://fs2-serve-control-plane.fs2-system.svc:8080/internal/ext-authz
