@@ -316,8 +316,13 @@ inputs or state.
 
 The control plane currently uses an in-cluster CloudNativePG deployment. It
 does not create Nebius Managed PostgreSQL. Its database, admin bootstrap
-credential, encryption material, and PAT verifier state are therefore part of
-the cluster lifecycle and protected Terraform/Kubernetes state boundary.
+credential, encryption material, and PAT verifier state remain inside that
+database boundary. A dedicated retained, versioned object bucket stores
+scheduled base backups and continuous WAL archives, and the system plane uses
+three-node required anti-affinity. Follow the staged recovery test, rollout and
+rollback procedure in
+[SAI-06 PostgreSQL resilience](docs/SAI06_POSTGRESQL_RESILIENCE.md); a health
+check against the source primary is not a restore test.
 
 Terraform creates a separate, scoped bootstrap PAT and a Helm post-install /
 post-upgrade job idempotently provisions its digest and policy in the durable

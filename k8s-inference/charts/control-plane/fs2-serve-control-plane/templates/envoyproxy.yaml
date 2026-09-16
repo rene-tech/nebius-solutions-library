@@ -13,6 +13,15 @@
 {{- if ne .Values.publicLoadBalancer.allocationType "public-ipv4" }}
 {{- fail "publicLoadBalancer allocation must be a public IPv4 allocation" }}
 {{- end }}
+{{- if lt (int .Values.publicGateway.replicaCount) 2 }}
+{{- fail "publicGateway requires at least two Envoy replicas" }}
+{{- end }}
+{{- if not .Values.publicGateway.podDisruptionBudget.enabled }}
+{{- fail "publicGateway requires an Envoy PodDisruptionBudget" }}
+{{- end }}
+{{- if or (lt (int .Values.publicGateway.podDisruptionBudget.minAvailable) 1) (ge (int .Values.publicGateway.podDisruptionBudget.minAvailable) (int .Values.publicGateway.replicaCount)) }}
+{{- fail "publicGateway PodDisruptionBudget must preserve at least one but fewer than all Envoy replicas" }}
+{{- end }}
 {{- $http := .Values.publicLoadBalancer.servicePorts.http }}
 {{- $https := .Values.publicLoadBalancer.servicePorts.https }}
 {{- if eq (int $http.nodePort) (int $https.nodePort) }}
@@ -28,6 +37,23 @@ spec:
   provider:
     type: Kubernetes
     kubernetes:
+      envoyDeployment:
+        replicas: {{ .Values.publicGateway.replicaCount }}
+        pod:
+          nodeSelector:
+            workload.fs2.nebius/system: "true"
+            capacity.fs2.nebius/type: regular
+            capacity.fs2.nebius/pool: system
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      gateway.envoyproxy.io/owning-gateway-name: {{ .Values.publicGateway.gatewayName | quote }}
+                      gateway.envoyproxy.io/owning-gateway-namespace: {{ .Release.Namespace | quote }}
+                  topologyKey: kubernetes.io/hostname
+      envoyPDB:
+        minAvailable: {{ .Values.publicGateway.podDisruptionBudget.minAvailable }}
       envoyService:
         type: LoadBalancer
         # Nebius CCM rejects Local for this managed LoadBalancer path. Cluster

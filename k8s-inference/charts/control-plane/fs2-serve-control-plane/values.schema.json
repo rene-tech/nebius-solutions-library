@@ -1655,6 +1655,8 @@
       "type": "object",
       "required": [
         "enabled",
+        "replicaCount",
+        "podDisruptionBudget",
         "gatewayClassName",
         "gatewayName",
         "controllerName",
@@ -1664,6 +1666,28 @@
       "properties": {
         "enabled": {
           "type": "boolean"
+        },
+        "replicaCount": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 20
+        },
+        "podDisruptionBudget": {
+          "type": "object",
+          "required": [
+            "enabled",
+            "minAvailable"
+          ],
+          "properties": {
+            "enabled": {
+              "const": true
+            },
+            "minAvailable": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
         },
         "gatewayClassName": {
           "const": "fs2-serve-public"

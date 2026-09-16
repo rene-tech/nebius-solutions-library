@@ -251,16 +251,17 @@ variable "system_pool" {
     coupled to preemptible GPU capacity.
   EOT
   type = object({
-    capacity                   = optional(string, "regular")
-    platform                   = optional(string, "cpu-d3")
-    preset                     = optional(string, "8vcpu-32gb")
-    node_count                 = optional(number)
-    boot_disk_type             = optional(string, "NETWORK_SSD")
-    boot_disk_gib              = optional(number, 160)
-    max_surge                  = optional(number)
-    max_unavailable            = optional(number)
-    drain_timeout              = optional(string, "15m")
-    inotify_max_user_instances = optional(number, 8192)
+    capacity                               = optional(string, "regular")
+    platform                               = optional(string, "cpu-d3")
+    preset                                 = optional(string, "8vcpu-32gb")
+    node_count                             = optional(number)
+    boot_disk_type                         = optional(string, "NETWORK_SSD")
+    boot_disk_gib                          = optional(number, 160)
+    max_surge                              = optional(number)
+    max_unavailable                        = optional(number)
+    drain_timeout                          = optional(string, "15m")
+    inotify_max_user_instances             = optional(number, 8192)
+    three_node_ha_cost_review_acknowledged = optional(bool, false)
   })
   default  = null
   nullable = true
@@ -272,7 +273,7 @@ variable "system_pool" {
       can(regex("^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$", var.system_pool.preset)) &&
       (var.system_pool.node_count == null ? true : (
         floor(var.system_pool.node_count) == var.system_pool.node_count &&
-        var.system_pool.node_count >= 1 &&
+        var.system_pool.node_count >= 3 &&
         var.system_pool.node_count <= 32
       )) &&
       contains(["NETWORK_SSD", "NETWORK_SSD_IO_M3", "NETWORK_SSD_NON_REPLICATED"], var.system_pool.boot_disk_type) &&
@@ -290,10 +291,11 @@ variable "system_pool" {
       floor(var.system_pool.inotify_max_user_instances) == var.system_pool.inotify_max_user_instances &&
       var.system_pool.inotify_max_user_instances >= 256 &&
       var.system_pool.inotify_max_user_instances <= 65536 &&
+      var.system_pool.three_node_ha_cost_review_acknowledged &&
       can(regex("^[1-9][0-9]*m$", var.system_pool.drain_timeout)),
       false,
     )
-    error_message = "system_pool must use regular capacity, a bounded provider shape/count/boot disk/inotify ceiling, and an integral nonzero rollout allowance."
+    error_message = "an explicit system_pool must use regular capacity, at least three nodes, safe rollout bounds, and an explicit three-node HA quota/cost-review acknowledgement."
   }
 }
 
@@ -558,6 +560,70 @@ variable "scientific_artifacts" {
       false,
     )
     error_message = "enabled scientific_artifacts requires an explicit retain or disposable lifecycle, a valid globally unique bucket name, 16-65536 whole GiB of capacity and a 1-3650 day application retention window."
+  }
+}
+
+variable "postgresql_backup" {
+  description = "Dedicated retained, versioned object store and MysteryBox identity for CloudNativePG base backups and WAL archives. The root facade always enables this contract."
+  type = object({
+    enabled = bool
+    lifecycle = object({
+      retention_mode = string
+    })
+    object_storage = object({
+      bucket_name  = string
+      max_size_gib = number
+    })
+    retention_days                    = number
+    database_volume_size_gib          = number
+    estimated_daily_wal_gib           = number
+    capacity_headroom_percent         = number
+    required_capacity_gib             = number
+    capacity_cost_review_acknowledged = bool
+  })
+  default = {
+    enabled = false
+    lifecycle = {
+      retention_mode = "retain"
+    }
+    object_storage = {
+      bucket_name  = "disabled-postgresql-backup.invalid"
+      max_size_gib = 6144
+    }
+    retention_days                    = 30
+    database_volume_size_gib          = 100
+    estimated_daily_wal_gib           = 32
+    capacity_headroom_percent         = 25
+    required_capacity_gib             = 5480
+    capacity_cost_review_acknowledged = false
+  }
+
+  validation {
+    condition = try(
+      !var.postgresql_backup.enabled || (
+        var.postgresql_backup.lifecycle.retention_mode == "retain" &&
+        can(regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$", var.postgresql_backup.object_storage.bucket_name)) &&
+        floor(var.postgresql_backup.object_storage.max_size_gib) == var.postgresql_backup.object_storage.max_size_gib &&
+        var.postgresql_backup.object_storage.max_size_gib >= var.postgresql_backup.required_capacity_gib &&
+        var.postgresql_backup.object_storage.max_size_gib <= 65536 &&
+        floor(var.postgresql_backup.retention_days) == var.postgresql_backup.retention_days &&
+        var.postgresql_backup.retention_days >= 7 &&
+        var.postgresql_backup.retention_days <= 365 &&
+        floor(var.postgresql_backup.database_volume_size_gib) == var.postgresql_backup.database_volume_size_gib &&
+        var.postgresql_backup.database_volume_size_gib >= 32 &&
+        floor(var.postgresql_backup.estimated_daily_wal_gib) == var.postgresql_backup.estimated_daily_wal_gib &&
+        var.postgresql_backup.estimated_daily_wal_gib >= 1 &&
+        floor(var.postgresql_backup.capacity_headroom_percent) == var.postgresql_backup.capacity_headroom_percent &&
+        var.postgresql_backup.capacity_headroom_percent >= 20 &&
+        var.postgresql_backup.required_capacity_gib == ceil((
+          var.postgresql_backup.database_volume_size_gib * (var.postgresql_backup.retention_days + 2) +
+          var.postgresql_backup.estimated_daily_wal_gib * (var.postgresql_backup.retention_days + 7)
+        ) * (100 + var.postgresql_backup.capacity_headroom_percent) / 100) &&
+        (var.system_pool == null || var.postgresql_backup.capacity_cost_review_acknowledged)
+      ),
+      false,
+    )
+    error_message = "enabled postgresql_backup must be retained and capacity-sized from volume, daily WAL, 7-365 day retention and at least 20% headroom; explicit system-pool rollouts require capacity/cost acknowledgement."
   }
 }
 

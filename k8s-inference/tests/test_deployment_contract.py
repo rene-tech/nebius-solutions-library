@@ -468,7 +468,16 @@ class DeploymentContractTests(unittest.TestCase):
             "name": "fs2-system-inotify",
             "target": self.catalog_target(),
             "cluster": {
-                "system_pool": {"inotify_max_user_instances": 16384},
+                "system_pool": {
+                    "node_count": 3,
+                    "inotify_max_user_instances": 16384,
+                    "three_node_ha_cost_review_acknowledged": True,
+                },
+            },
+            "storage": {
+                "postgresql_backup": {
+                    "capacity_cost_review_acknowledged": True,
+                },
             },
         }
         outputs = self._planned_outputs(
@@ -481,6 +490,16 @@ class DeploymentContractTests(unittest.TestCase):
             ]["inotify_max_user_instances"],
             16384,
         )
+
+        deployment["cluster"]["system_pool"]["node_count"] = 1
+        result, _ = self._plan_file(
+            self._write_configuration("system-pool-single-node", deployment),
+            "system-pool-single-node",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("three-node HA", result.stderr)
+
+        deployment["cluster"]["system_pool"]["node_count"] = 3
 
         deployment["cluster"]["system_pool"]["inotify_max_user_instances"] = 128
         result, _ = self._plan_file(

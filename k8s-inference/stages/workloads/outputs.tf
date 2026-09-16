@@ -403,6 +403,10 @@ output "managed_resource_count" {
     (data.terraform_remote_state.foundation.outputs.grafana_publication_contract.enabled ? 2 : 0) +
     (var.run_acceptance_job ? 4 : 0) +
     (var.run_acceptance_job && var.deployment_profile == "full_catalog" ? 1 : 0)
+    + (var.postgresql_backup.enabled ? 3 : 0)
+    + (var.prepare_database_restore_marker_job ? 2 : 0)
+    + (var.run_database_restore_verification_job ? 3 : 0)
+    + (var.cleanup_database_restore_marker_job ? 2 : 0)
     + (var.model_express.enabled ? 1 : 0)
     + (local.modelexpress_managed ? 2 : 0)
     + (local.modelexpress_nvcr_required ? 1 : 0)
@@ -443,7 +447,40 @@ output "managed_resource_count" {
 }
 
 output "sensitive_state_notice" {
-  value = "Generated and operator-supplied credentials use ephemeral values plus Kubernetes write-only Secret data. State and plans retain metadata only; keep the complete run root owner-only."
+  value = "Legacy generation-1 credentials remain in the run-owned local workloads state until their versioned migrations complete; newer generations use ephemeral inputs and Kubernetes write-only Secret data. Keep the complete run root owner-only. The versioned PostgreSQL backup bucket is retained independently and prevents full-stack destroy until it is explicitly adopted or removed under the documented recovery policy."
+}
+
+output "postgresql_backup_status" {
+  description = "Non-secret CNPG backup, WAL and restore-verification contract. Live backup success and firstRecoverabilityPoint must still be checked after rollout."
+  value = var.postgresql_backup.enabled ? {
+    schema                       = "fs2-serve.nebius.ai/postgresql-backup-runtime/v1"
+    cluster_name                 = "fs2-control-db"
+    scheduled_backup_name        = "fs2-control-db"
+    bucket_name                  = var.postgresql_backup.storage_contract.object_storage.name
+    destination_path             = var.postgresql_backup.storage_contract.layout.destination_path
+    retention_days               = var.postgresql_backup.retention_days
+    schedule                     = var.postgresql_backup.schedule
+    base_backup                  = "barmanObjectStore"
+    wal_archiving                = true
+    anti_affinity                = "required"
+    system_node_minimum          = 3
+    retention_aware_capacity_gib = var.postgresql_backup.storage_contract.sizing.required_capacity_gib
+    configured_capacity_gib      = var.postgresql_backup.storage_contract.sizing.configured_capacity_gib
+    live_capacity_preflight      = "required-before-plan-and-apply"
+    marker_preparation_enabled   = var.prepare_database_restore_marker_job
+    marker_job_name              = var.prepare_database_restore_marker_job ? "fs2-control-db-pitr-marker" : null
+    restore_verification_enabled = var.run_database_restore_verification_job
+    restore_cluster_name         = var.run_database_restore_verification_job ? "fs2-control-db-restore-verification" : null
+    restore_job_name             = var.run_database_restore_verification_job ? "fs2-control-db-restore-verifier" : null
+    restore_source_backup_name   = var.database_restore_source_backup_name
+    restore_source_backup_time   = var.database_restore_source_backup_time
+    restore_marker_id            = var.database_restore_marker_id
+    restore_target_time          = var.database_restore_target_time
+    marker_cleanup_enabled       = var.cleanup_database_restore_marker_job
+    marker_cleanup_job_name      = var.cleanup_database_restore_marker_job ? "fs2-control-db-pitr-marker-cleanup" : null
+    credential_secret            = "fs2-data/${local.postgresql_backup_secret_name}"
+    credential_delivery          = "MYSTERY_BOX_WRITE_ONLY"
+  } : null
 }
 
 output "academic_assets" {

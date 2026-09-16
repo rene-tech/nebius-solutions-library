@@ -142,6 +142,19 @@ locals {
     "${var.deployment.name}-${local.run_id}-scientific-artifacts",
   )
 
+  postgresql_backup_bucket_name = coalesce(
+    var.deployment.storage.postgresql_backup.object_storage.bucket_name,
+    "${var.deployment.name}-${local.run_id}-postgresql-backup",
+  )
+  postgresql_database_volume_size_gib = local.model_profile == "full_catalog" ? 100 : 32
+  # Daily Barman base backups can each approach the provisioned database
+  # volume. Keep two boundary backups, seven additional days for WAL/version
+  # cleanup lag, and an explicit operator-controlled headroom percentage.
+  postgresql_backup_required_capacity_gib = ceil((
+    local.postgresql_database_volume_size_gib * (var.deployment.storage.postgresql_backup.retention_days + 2) +
+    var.deployment.storage.postgresql_backup.estimated_daily_wal_gib * (var.deployment.storage.postgresql_backup.retention_days + 7)
+  ) * (100 + var.deployment.storage.postgresql_backup.capacity_headroom_percent) / 100)
+
   # General CPU pools. Capacity mode is exactly one of fixed or autoscaling, so
   # the effective bounds are unambiguous and the lane's nominal quota is derived
   # from the maximum node count an operator actually authorized.
@@ -1046,6 +1059,22 @@ locals {
       }
       retention_days = var.deployment.storage.scientific_artifacts.retention_days
     }
+    postgresql_backup = {
+      enabled = true
+      lifecycle = {
+        retention_mode = "retain"
+      }
+      object_storage = {
+        bucket_name  = local.postgresql_backup_bucket_name
+        max_size_gib = var.deployment.storage.postgresql_backup.object_storage.max_size_gib
+      }
+      retention_days                    = var.deployment.storage.postgresql_backup.retention_days
+      database_volume_size_gib          = local.postgresql_database_volume_size_gib
+      estimated_daily_wal_gib           = var.deployment.storage.postgresql_backup.estimated_daily_wal_gib
+      capacity_headroom_percent         = var.deployment.storage.postgresql_backup.capacity_headroom_percent
+      required_capacity_gib             = local.postgresql_backup_required_capacity_gib
+      capacity_cost_review_acknowledged = var.deployment.storage.postgresql_backup.capacity_cost_review_acknowledged
+    }
     public_edge_mode         = var.deployment.edge.mode
     public_edge_source_cidrs = sort(tolist(var.deployment.edge.source_cidrs))
     port_forward_local_ports = var.deployment.edge.port_forward_ports
@@ -1179,6 +1208,12 @@ locals {
       media_types           = sort(tolist(var.deployment.storage.scientific_artifacts.media_types))
       credential_generation = var.deployment.storage.scientific_artifacts.credential_generation
     }
+    postgresql_backup = {
+      enabled               = true
+      retention_days        = var.deployment.storage.postgresql_backup.retention_days
+      schedule              = var.deployment.storage.postgresql_backup.schedule
+      credential_generation = var.deployment.storage.postgresql_backup.credential_generation
+    }
     scientific_batch = {
       enabled                  = var.deployment.scientific_batch.enabled
       writes_enabled           = var.deployment.scientific_batch.writes_enabled
@@ -1208,9 +1243,16 @@ locals {
       external_network = var.deployment.acceleration.model_express.external_network
       models           = var.deployment.acceleration.model_express.models
     }
-    acme_email         = var.deployment.edge.acme_email
-    acme_environment   = var.deployment.edge.acme_environment
-    run_acceptance_job = var.deployment.acceptance.create_probe_job
+    acme_email                            = var.deployment.edge.acme_email
+    acme_environment                      = var.deployment.edge.acme_environment
+    run_acceptance_job                    = var.deployment.acceptance.create_probe_job
+    prepare_database_restore_marker_job   = var.deployment.acceptance.prepare_database_restore_marker
+    run_database_restore_verification_job = var.deployment.acceptance.verify_database_restore
+    cleanup_database_restore_marker_job   = var.deployment.acceptance.cleanup_database_restore_marker
+    database_restore_source_backup_name   = var.deployment.acceptance.database_restore_source_backup_name
+    database_restore_source_backup_time   = var.deployment.acceptance.database_restore_source_backup_time
+    database_restore_marker_id            = var.deployment.acceptance.database_restore_marker_id
+    database_restore_target_time          = var.deployment.acceptance.database_restore_target_time
     control_plane_image = {
       repository = var.deployment.applications.control_plane.repository
       digest     = var.deployment.applications.control_plane.digest

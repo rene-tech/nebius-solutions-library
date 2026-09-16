@@ -350,6 +350,129 @@ variable "scientific_artifacts" {
   }
 }
 
+variable "postgresql_backup" {
+  description = "Root-derived durable CloudNativePG backup store and non-secret MysteryBox handoff. The S3 secret is resolved ephemerally during apply."
+  type = object({
+    enabled               = bool
+    retention_days        = number
+    schedule              = string
+    credential_generation = number
+    storage_contract = optional(object({
+      schema     = string
+      project_id = string
+      region     = string
+      object_storage = object({
+        id                = string
+        name              = string
+        endpoint          = string
+        max_size_gib      = number
+        versioning_policy = string
+        storage_class     = string
+        addressing_style  = string
+        verify_tls        = bool
+      })
+      writer = object({
+        service_account_id = string
+        group_id           = string
+        role               = string
+        paths              = list(string)
+        secret_delivery    = string
+      })
+      layout = object({
+        root             = string
+        destination_path = string
+        server_name      = string
+      })
+      retention = object({
+        barman_retention_days                  = number
+        abort_incomplete_multipart_upload_days = number
+        noncurrent_version_expiration_days     = number
+        current_object_expiration              = string
+        lifecycle_rule_ids                     = list(string)
+      })
+      sizing = object({
+        database_volume_size_gib          = number
+        daily_base_backup_count           = number
+        estimated_daily_wal_gib           = number
+        capacity_headroom_percent         = number
+        required_capacity_gib             = number
+        configured_capacity_gib           = number
+        live_capacity_preflight_required  = bool
+        capacity_cost_review_acknowledged = bool
+      })
+      lifecycle = object({
+        retention_mode     = string
+        destroy_status     = string
+        destroy_completion = string
+        adoption_status    = string
+        retained_ids = object({
+          bucket = string
+        })
+      })
+    }))
+    object_storage_access = optional(object({
+      key_id              = string
+      access_key_id       = string
+      secret_reference_id = string
+      resource_version    = number
+    }))
+  })
+  default = {
+    enabled               = false
+    retention_days        = 30
+    schedule              = "0 0 2 * * *"
+    credential_generation = 1
+    storage_contract      = null
+    object_storage_access = null
+  }
+
+  validation {
+    condition = try(
+      !var.postgresql_backup.enabled || (
+        var.postgresql_backup.storage_contract.schema == "fs2-serve.nebius.ai/postgresql-backup-storage/v1" &&
+        var.postgresql_backup.storage_contract.project_id == nonsensitive(var.project_id) &&
+        var.postgresql_backup.storage_contract.region == var.target_contract.region &&
+        var.postgresql_backup.storage_contract.object_storage.endpoint == "https://storage.${var.target_contract.region}.nebius.cloud" &&
+        var.postgresql_backup.storage_contract.object_storage.versioning_policy == "ENABLED" &&
+        var.postgresql_backup.storage_contract.writer.role == "storage.object-editor" &&
+        join(",", var.postgresql_backup.storage_contract.writer.paths) == "postgresql/v1/*" &&
+        var.postgresql_backup.storage_contract.writer.secret_delivery == "MYSTERY_BOX" &&
+        var.postgresql_backup.storage_contract.layout.root == "postgresql/v1" &&
+        var.postgresql_backup.storage_contract.layout.server_name == "fs2-control-db" &&
+        var.postgresql_backup.storage_contract.retention.barman_retention_days == var.postgresql_backup.retention_days &&
+        var.postgresql_backup.storage_contract.sizing.daily_base_backup_count == 1 &&
+        var.postgresql_backup.storage_contract.sizing.configured_capacity_gib >= var.postgresql_backup.storage_contract.sizing.required_capacity_gib &&
+        var.postgresql_backup.storage_contract.sizing.live_capacity_preflight_required &&
+        var.postgresql_backup.storage_contract.lifecycle.retention_mode == "retain" &&
+        var.postgresql_backup.storage_contract.lifecycle.destroy_status == "blocked-retained"
+      ),
+      false,
+    )
+    error_message = "enabled postgresql_backup requires the exact same-project/same-region retained versioned bucket contract and a MysteryBox key scoped to storage.object-editor on postgresql/v1/*."
+  }
+
+  validation {
+    condition = try(
+      !var.postgresql_backup.enabled || (
+        length(var.postgresql_backup.object_storage_access.access_key_id) >= 8 &&
+        can(regex("^[A-Za-z0-9_-]+$", var.postgresql_backup.object_storage_access.access_key_id)) &&
+        can(regex("^[a-z][a-z0-9-]+$", var.postgresql_backup.object_storage_access.secret_reference_id)) &&
+        can(regex("^[a-z][a-z0-9-]+$", var.postgresql_backup.object_storage_access.key_id)) &&
+        var.postgresql_backup.object_storage_access.resource_version >= 0 &&
+        floor(var.postgresql_backup.retention_days) == var.postgresql_backup.retention_days &&
+        var.postgresql_backup.retention_days >= 7 &&
+        var.postgresql_backup.retention_days <= 365 &&
+        can(regex("^\\S+(?:\\s+\\S+){5}$", var.postgresql_backup.schedule)) &&
+        floor(var.postgresql_backup.credential_generation) == var.postgresql_backup.credential_generation &&
+        var.postgresql_backup.credential_generation >= 1 &&
+        var.postgresql_backup.credential_generation <= 1000
+      ),
+      false,
+    )
+    error_message = "enabled postgresql_backup requires complete non-secret MysteryBox access identifiers, 7-365 retention days, a six-field CNPG cron schedule and a bounded credential generation."
+  }
+}
+
 variable "scientific_batch" {
   description = "Staged scientific batch gates and immutable execution map. Batch execution requires the artifact store; Kubernetes writes require batch."
   type = object({
@@ -1730,6 +1853,89 @@ variable "run_acceptance_job" {
   description = "Create a one-shot authenticated HTTPS /v1/models and MCP tools/list probe after the platform is Ready."
   type        = bool
   default     = false
+}
+
+variable "run_database_restore_verification_job" {
+  description = "Create a temporary one-instance CNPG point-in-time recovery cluster and run the marker-only restore_verifier login. Requires a prior completed marker-preparation apply."
+  type        = bool
+  default     = false
+}
+
+variable "prepare_database_restore_marker_job" {
+  description = "Create the bounded source-database Job that writes non-sensitive marker A, emits a target time, and writes marker B. Run only after recording a completed base backup; disable before the recovery apply."
+  type        = bool
+  default     = false
+}
+
+variable "cleanup_database_restore_marker_job" {
+  description = "Create the bounded source-database Job that removes the exact verified marker pair and its marker-only grant after successful recovery acceptance."
+  type        = bool
+  default     = false
+}
+
+variable "database_restore_source_backup_name" {
+  description = "Exact non-sensitive CNPG Backup resource name used as the PITR base."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "database_restore_source_backup_time" {
+  description = "RFC3339 completion time of the exact source Backup, recorded before marker preparation."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "database_restore_marker_id" {
+  description = "Non-sensitive stable marker prefix. The source Job writes the derived -a and -b rows around the target timestamp."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "database_restore_target_time" {
+  description = "RFC3339 PITR target emitted between marker A and marker B by the completed marker Job. Required for the recovery and exact cleanup applies."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+check "database_restore_acceptance_contract" {
+  assert {
+    condition = try(
+      (
+        (var.prepare_database_restore_marker_job ? 1 : 0) +
+        (var.run_database_restore_verification_job ? 1 : 0) +
+        (var.cleanup_database_restore_marker_job ? 1 : 0)
+        ) == 0 ? (
+        var.database_restore_source_backup_name == null &&
+        var.database_restore_source_backup_time == null &&
+        var.database_restore_marker_id == null &&
+        var.database_restore_target_time == null
+        ) : (
+        (
+          (var.prepare_database_restore_marker_job ? 1 : 0) +
+          (var.run_database_restore_verification_job ? 1 : 0) +
+          (var.cleanup_database_restore_marker_job ? 1 : 0)
+        ) == 1 &&
+        var.postgresql_backup.enabled &&
+        can(regex("^[a-z0-9][a-z0-9-]{7,62}$", var.database_restore_source_backup_name)) &&
+        can(timecmp(var.database_restore_source_backup_time, "1970-01-01T00:00:00Z")) &&
+        can(regex("^[a-z0-9][a-z0-9-]{7,62}$", var.database_restore_marker_id)) &&
+        (
+          var.prepare_database_restore_marker_job ?
+          var.database_restore_target_time == null :
+          (
+            can(timecmp(var.database_restore_target_time, var.database_restore_source_backup_time)) &&
+            timecmp(var.database_restore_target_time, var.database_restore_source_backup_time) > 0
+          )
+        )
+      ),
+      false,
+    )
+    error_message = "PITR acceptance requires serialized marker, recovery and cleanup applies bound to an exact completed Backup; recovery and cleanup use the later target captured between marker A and marker B."
+  }
 }
 
 variable "academic_assets" {

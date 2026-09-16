@@ -31,10 +31,14 @@ deployment = {
     kubernetes_version          = "1.35"
     # Replace the documentation address with exact operator/automation egress CIDRs.
     control_plane_allowed_cidrs = ["192.0.2.1/32"]
-    # Optional system_pool overrides belong here. The default 8192 avoids
-    # exhausting registry-helper/controller inotify instances and is written
-    # persistently only to system nodes.
-    # system_pool = { inotify_max_user_instances = 8192 }
+    # Optional system_pool overrides belong here. Existing one-node installs
+    # must intentionally change node_count to at least three and acknowledge a
+    # fresh node quota/monthly-cost review before the HA plan can validate.
+    # system_pool = {
+    #   node_count                                = 3
+    #   inotify_max_user_instances                = 8192
+    #   three_node_ha_cost_review_acknowledged    = true
+    # }
   }
 
   accelerator_pools = {
@@ -341,6 +345,26 @@ deployment = {
   # The pipeline never shares the Kubernetes system pool. Its image must
   # contain Python, zstd and the AWS CLI and must be digest pinned.
   # storage = {
+  #   # PostgreSQL backups are always enabled and retained. This block only
+  #   # tunes the dedicated versioned bucket, CNPG retention/schedule, and
+  #   # non-secret rotation generation; there is intentionally no disable flag.
+  #   postgresql_backup = {
+  #     object_storage = {
+  #       # Omit bucket_name for the deterministic deployment/run-derived name.
+  #       # Full-catalog default: 30 daily 100 GiB base backups, boundary
+  #       # backups, estimated WAL, cleanup lag, and 25% headroom.
+  #       max_size_gib = 6144
+  #     }
+  #     retention_days                   = 30
+  #     estimated_daily_wal_gib           = 32
+  #     capacity_headroom_percent         = 25
+  #     # Required when an explicit system-pool rollout is configured. Run the
+  #     # read-only `./inference-stack preflight` immediately before plan.
+  #     capacity_cost_review_acknowledged = true
+  #     # CloudNativePG uses a six-field cron expression (seconds first).
+  #     schedule              = "0 0 2 * * *"
+  #     credential_generation = 1
+  #   }
   #   fast_start_claims = {
   #     manage                     = true
   #     storage_class              = "csi-mounted-fs-path-sc"
@@ -578,7 +602,20 @@ deployment = {
   }
 
   acceptance = {
-    create_probe_job = false
+    create_probe_job                = false
+    prepare_database_restore_marker = false
+    verify_database_restore         = false
+    cleanup_database_restore_marker = false
+    # PITR acceptance is deliberately two separate applies after a successful
+    # Backup. First set prepare=true with the exact Backup name/time and a new
+    # non-sensitive marker ID; capture FS2_PITR_TARGET_TIME from the Job log.
+    # Then set prepare=false, verify=true, and supply that target time. After a
+    # passing recovery, set verify=false, cleanup=true with the same identity;
+    # finally clear every field and apply once more to remove the cleanup Job.
+    # database_restore_source_backup_name = "fs2-control-db-20260916020000"
+    # database_restore_source_backup_time = "2026-09-16T02:05:00Z"
+    # database_restore_marker_id          = "sai06-20260916-a1b2c3d4"
+    # database_restore_target_time        = "2026-09-16T03:00:00.000000Z"
   }
 }
 

@@ -599,6 +599,22 @@ resource "terraform_data" "deployment_contract" {
     }
 
     precondition {
+      condition = can(regex(
+        "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$",
+        local.postgresql_backup_bucket_name,
+      ))
+      error_message = "The effective PostgreSQL backup bucket name must be a globally valid 3-63 character object-storage name; set deployment.storage.postgresql_backup.object_storage.bucket_name explicitly when the derived name is too long."
+    }
+
+    precondition {
+      condition = (
+        (!var.deployment.storage.reference_data.enabled || local.postgresql_backup_bucket_name != local.reference_data_bucket_name) &&
+        (!var.deployment.storage.scientific_artifacts.enabled || local.postgresql_backup_bucket_name != local.scientific_artifacts_bucket_name)
+      )
+      error_message = "PostgreSQL backups require a dedicated bucket and MysteryBox key; the reference-data and scientific-artifact stores cannot be reused or widened for database backups."
+    }
+
+    precondition {
       condition = length(setintersection(
         toset(local.general_cpu_pool_ids),
         toset(keys(var.deployment.accelerator_pools)),

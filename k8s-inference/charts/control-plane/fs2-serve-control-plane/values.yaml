@@ -608,6 +608,12 @@ httpRoute:
 # CRDs, but no other source owns these concrete resources.
 publicGateway:
   enabled: false
+  # The public data plane always keeps two replicas on different system nodes.
+  # Values validation prevents a release from reintroducing a single-node edge.
+  replicaCount: 2
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
   gatewayClassName: fs2-serve-public
   gatewayName: public
   controllerName: gateway.envoyproxy.io/gatewayclass-controller

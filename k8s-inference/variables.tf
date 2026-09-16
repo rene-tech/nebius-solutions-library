@@ -35,16 +35,17 @@ variable "deployment" {
       kubernetes_version          = optional(string, "1.35")
       control_plane_allowed_cidrs = set(string)
       system_pool = optional(object({
-        capacity                   = optional(string, "regular")
-        platform                   = optional(string, "cpu-d3")
-        preset                     = optional(string, "8vcpu-32gb")
-        node_count                 = optional(number)
-        boot_disk_type             = optional(string, "NETWORK_SSD")
-        boot_disk_gib              = optional(number, 160)
-        max_surge                  = optional(number)
-        max_unavailable            = optional(number)
-        drain_timeout              = optional(string, "15m")
-        inotify_max_user_instances = optional(number, 8192)
+        capacity                               = optional(string, "regular")
+        platform                               = optional(string, "cpu-d3")
+        preset                                 = optional(string, "8vcpu-32gb")
+        node_count                             = optional(number)
+        boot_disk_type                         = optional(string, "NETWORK_SSD")
+        boot_disk_gib                          = optional(number, 160)
+        max_surge                              = optional(number)
+        max_unavailable                        = optional(number)
+        drain_timeout                          = optional(string, "15m")
+        inotify_max_user_instances             = optional(number, 8192)
+        three_node_ha_cost_review_acknowledged = optional(bool, false)
       }))
     })
 
@@ -569,6 +570,24 @@ variable "deployment" {
           "video/mp4",
         ])
       }), {})
+
+      # PostgreSQL is the platform system of record. Its backup store is
+      # mandatory and retained independently of the cluster lifecycle; unlike
+      # scientific result storage, callers cannot disable or make it
+      # disposable. The bucket name is derived from the deployment/run when
+      # omitted so every installation gets a dedicated versioned boundary.
+      postgresql_backup = optional(object({
+        object_storage = optional(object({
+          bucket_name  = optional(string)
+          max_size_gib = optional(number, 6144)
+        }), {})
+        retention_days                    = optional(number, 30)
+        estimated_daily_wal_gib           = optional(number, 32)
+        capacity_headroom_percent         = optional(number, 25)
+        capacity_cost_review_acknowledged = optional(bool, false)
+        schedule                          = optional(string, "0 0 2 * * *")
+        credential_generation             = optional(number, 1)
+      }), {})
     }), {})
 
     # Staged scientific batch execution. The execution map defaults to the
@@ -726,7 +745,14 @@ variable "deployment" {
     }), {})
 
     acceptance = optional(object({
-      create_probe_job = optional(bool, false)
+      create_probe_job                    = optional(bool, false)
+      prepare_database_restore_marker     = optional(bool, false)
+      verify_database_restore             = optional(bool, false)
+      cleanup_database_restore_marker     = optional(bool, false)
+      database_restore_source_backup_name = optional(string)
+      database_restore_source_backup_time = optional(string)
+      database_restore_marker_id          = optional(string)
+      database_restore_target_time        = optional(string)
     }), {})
   })
 
@@ -1124,7 +1150,7 @@ variable "deployment" {
         var.deployment.cluster.system_pool.node_count == null ||
         (
           floor(var.deployment.cluster.system_pool.node_count) == var.deployment.cluster.system_pool.node_count &&
-          var.deployment.cluster.system_pool.node_count >= 1 &&
+          var.deployment.cluster.system_pool.node_count >= 3 &&
           var.deployment.cluster.system_pool.node_count <= 32
         )
       ) &&
@@ -1150,10 +1176,76 @@ variable "deployment" {
       floor(var.deployment.cluster.system_pool.inotify_max_user_instances) == var.deployment.cluster.system_pool.inotify_max_user_instances &&
       var.deployment.cluster.system_pool.inotify_max_user_instances >= 256 &&
       var.deployment.cluster.system_pool.inotify_max_user_instances <= 65536 &&
+      var.deployment.cluster.system_pool.three_node_ha_cost_review_acknowledged &&
       can(regex("^[1-9][0-9]*m$", var.deployment.cluster.system_pool.drain_timeout)),
       false,
     )
-    error_message = "cluster.system_pool must match the bounded regular CPU-pool, disk, rollout, drain-time, and inotify contract consumed by infrastructure."
+    error_message = "an explicit cluster.system_pool must match the bounded regular CPU-pool contract consumed by infrastructure, request at least three nodes, and explicitly acknowledge the three-node HA quota/cost review."
+  }
+
+  validation {
+    condition = try(
+      (
+        var.deployment.storage.postgresql_backup.object_storage.bucket_name == null ||
+        can(regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$", var.deployment.storage.postgresql_backup.object_storage.bucket_name))
+      ) &&
+      floor(var.deployment.storage.postgresql_backup.object_storage.max_size_gib) == var.deployment.storage.postgresql_backup.object_storage.max_size_gib &&
+      var.deployment.storage.postgresql_backup.object_storage.max_size_gib >= ceil((
+        (var.deployment.profiles.models == "full_catalog" ? 100 : 32) * (var.deployment.storage.postgresql_backup.retention_days + 2) +
+        var.deployment.storage.postgresql_backup.estimated_daily_wal_gib * (var.deployment.storage.postgresql_backup.retention_days + 7)
+      ) * (100 + var.deployment.storage.postgresql_backup.capacity_headroom_percent) / 100) &&
+      var.deployment.storage.postgresql_backup.object_storage.max_size_gib <= 65536 &&
+      floor(var.deployment.storage.postgresql_backup.retention_days) == var.deployment.storage.postgresql_backup.retention_days &&
+      var.deployment.storage.postgresql_backup.retention_days >= 7 &&
+      var.deployment.storage.postgresql_backup.retention_days <= 365 &&
+      floor(var.deployment.storage.postgresql_backup.estimated_daily_wal_gib) == var.deployment.storage.postgresql_backup.estimated_daily_wal_gib &&
+      var.deployment.storage.postgresql_backup.estimated_daily_wal_gib >= 1 &&
+      var.deployment.storage.postgresql_backup.estimated_daily_wal_gib <= 4096 &&
+      floor(var.deployment.storage.postgresql_backup.capacity_headroom_percent) == var.deployment.storage.postgresql_backup.capacity_headroom_percent &&
+      var.deployment.storage.postgresql_backup.capacity_headroom_percent >= 20 &&
+      var.deployment.storage.postgresql_backup.capacity_headroom_percent <= 200 &&
+      (var.deployment.cluster.system_pool == null || var.deployment.storage.postgresql_backup.capacity_cost_review_acknowledged) &&
+      can(regex("^\\S+(?:\\s+\\S+){5}$", var.deployment.storage.postgresql_backup.schedule)) &&
+      floor(var.deployment.storage.postgresql_backup.credential_generation) == var.deployment.storage.postgresql_backup.credential_generation &&
+      var.deployment.storage.postgresql_backup.credential_generation >= 1 &&
+      var.deployment.storage.postgresql_backup.credential_generation <= 1000,
+      false,
+    )
+    error_message = "storage.postgresql_backup must be retained-capacity sized from the database volume, daily WAL estimate, retention window and at least 20% headroom (up to 65536 GiB); an explicit system-pool rollout also requires capacity/cost acknowledgement."
+  }
+
+  validation {
+    condition = try(
+      (
+        (var.deployment.acceptance.prepare_database_restore_marker ? 1 : 0) +
+        (var.deployment.acceptance.verify_database_restore ? 1 : 0) +
+        (var.deployment.acceptance.cleanup_database_restore_marker ? 1 : 0)
+        ) == 0 ? (
+        var.deployment.acceptance.database_restore_source_backup_name == null &&
+        var.deployment.acceptance.database_restore_source_backup_time == null &&
+        var.deployment.acceptance.database_restore_marker_id == null &&
+        var.deployment.acceptance.database_restore_target_time == null
+        ) : (
+        (
+          (var.deployment.acceptance.prepare_database_restore_marker ? 1 : 0) +
+          (var.deployment.acceptance.verify_database_restore ? 1 : 0) +
+          (var.deployment.acceptance.cleanup_database_restore_marker ? 1 : 0)
+        ) == 1 &&
+        can(regex("^[a-z0-9][a-z0-9-]{7,62}$", var.deployment.acceptance.database_restore_source_backup_name)) &&
+        can(timecmp(var.deployment.acceptance.database_restore_source_backup_time, "1970-01-01T00:00:00Z")) &&
+        can(regex("^[a-z0-9][a-z0-9-]{7,62}$", var.deployment.acceptance.database_restore_marker_id)) &&
+        (
+          var.deployment.acceptance.prepare_database_restore_marker ?
+          var.deployment.acceptance.database_restore_target_time == null :
+          (
+            can(timecmp(var.deployment.acceptance.database_restore_target_time, var.deployment.acceptance.database_restore_source_backup_time)) &&
+            timecmp(var.deployment.acceptance.database_restore_target_time, var.deployment.acceptance.database_restore_source_backup_time) > 0
+          )
+        )
+      ),
+      false,
+    )
+    error_message = "database restore acceptance is a serialized prepare, verify, then cleanup flow: exactly one phase requires an exact completed Backup name/time and safe marker ID; verify and cleanup additionally require the later RFC3339 PITR target captured between marker A and marker B."
   }
 
   validation {
