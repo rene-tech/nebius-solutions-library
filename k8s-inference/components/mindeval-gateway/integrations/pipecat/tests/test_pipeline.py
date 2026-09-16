@@ -5,7 +5,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from adapters import MAGPIE, PlatformClient, wav_bytes
+from adapters import MAGPIE, PlatformClient, wav_bytes, word_error_rate
 from example import CRITERIA, run_pipeline, validate_wav
 
 VOICES = json.loads((Path(__file__).parent / "two_voices.json").read_text())
@@ -123,6 +123,12 @@ def test_wav_output_decodes_with_nonzero_pcm_and_expected_duration():
     assert properties["duration_seconds"] == 2 / 22050
     with pytest.raises(ValueError, match="silent"):
         validate_wav(wav_bytes(b"\x00\x00", 22050))
+
+
+def test_word_error_rate_is_edit_distance_not_semantic_accuracy():
+    assert word_error_rate("Hello, friend!", "hello friend") == 0
+    assert word_error_rate("one two three four", "one two four") == 0.25
+    assert word_error_rate("", "hallucinated words") is None
 
 
 async def test_truncated_ndjson_cannot_report_success_or_run_judge():

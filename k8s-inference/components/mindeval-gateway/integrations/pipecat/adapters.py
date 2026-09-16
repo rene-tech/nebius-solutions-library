@@ -37,6 +37,21 @@ MAGPIE = "magpie-tts-multilingual-357m"
 MAX_AUDIO = 8 * 1024 * 1024 - 44
 
 
+def word_error_rate(reference, hypothesis):
+    """Case/punctuation-normalized Levenshtein WER; not semantic accuracy."""
+    expected = re.findall(r"\w+", reference.casefold())
+    actual = re.findall(r"\w+", hypothesis.casefold())
+    if not expected:
+        return None
+    previous = list(range(len(actual) + 1))
+    for i, word in enumerate(expected, 1):
+        current = [i]
+        for j, other in enumerate(actual, 1):
+            current.append(min(previous[j] + 1, current[-1] + 1, previous[j - 1] + (word != other)))
+        previous = current
+    return previous[-1] / len(expected)
+
+
 def wav_bytes(audio, sample_rate):
     target = io.BytesIO()
     with wave.open(target, "wb") as output:
@@ -277,6 +292,7 @@ class NemotronSTTProcessor(CheckedProcessor):
         started = time.monotonic()
         result = await self.api.transcribe(pcm, rate, self.model)
         record = {**context, "asr": result, "stt_seconds": time.monotonic() - started}
+        record["word_error_rate"] = word_error_rate(context.get("text", ""), result["text"])
         self.observations.append(record)
         text = TranscriptionFrame(
             result["text"],

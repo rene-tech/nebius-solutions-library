@@ -36,7 +36,10 @@ registered profile -> MindEval LLM frames -> Magpie PCM frames -> Nemotron STT -
   `OutputTransportMessageUrgentFrame` messages, not hand-built lookalikes.
 - A final server-side MindEval judgment must contain all five valid named scores.
   Output includes canonical text, recognized speech, provider/token/queue
-  telemetry, first-audio/STT times, RTVI messages, WAV artifacts and SHA-256 hashes.
+  telemetry, first-audio/STT times, normalized word error rate, RTVI messages,
+  decoded WAV duration/amplitude, artifacts and SHA-256 hashes. Word error rate
+  compares recognized speech with generated text; it is not semantic or clinical
+  accuracy.
 
 The official version-pinned interfaces used here are
 [`FrameProcessor`](https://github.com/pipecat-ai/pipecat/blob/f67c18afddbfb0609991cd6830355713baaad01b/src/pipecat/processors/frame_processor.py),
@@ -56,7 +59,7 @@ uv run --frozen pytest -q
 uv run --frozen ruff check adapters.py example.py tests
 ```
 
-Nine tests passed on 2026-09-16 using the actual installed framework. Network
+Ten tests passed on 2026-09-16 using the actual installed framework. Network
 responses are deterministic fixtures, **not live model-quality evidence**.
 `tests/two_voices.json` contains distinct short PCM wire fixtures and separate
 Sofia/Jason text expectations; those four-byte PCM payloads are intentionally
