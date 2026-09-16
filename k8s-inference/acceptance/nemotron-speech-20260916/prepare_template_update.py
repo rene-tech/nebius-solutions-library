@@ -32,7 +32,10 @@ def extend(envelope, bundles):
         qualification = envelope["qualifications"][identity]
         if digest not in qualification["templateDigests"]:
             qualification["templateDigests"].append(digest)
-        name = identity + ".cache-scratch-v2"
+        # A digest has exactly one template name in the qualification contract.
+        # Re-preparing an already installed revision must retain that identity.
+        name = next((name for name, value in qualification["templateRefs"].items() if value == digest),
+                    identity + ".cache-scratch-v2")
         qualification["templateRefs"][name] = digest
         qualification["templateCacheTiers"][digest] = "Disabled"
         references[identity] = {"name": name, "digest": digest}
