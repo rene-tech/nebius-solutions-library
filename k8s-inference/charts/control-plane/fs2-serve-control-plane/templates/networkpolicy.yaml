@@ -319,43 +319,6 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "fs2-serve.fullname" . }}-envoy-default-deny
-  namespace: {{ $gatewayNamespace }}
-  labels:
-    {{- include "fs2-serve.labels" . | nindent 4 }}
-    app.kubernetes.io/component: envoy-default-deny
-spec:
-  podSelector: {}
-  policyTypes: [Ingress]
-  ingress: []
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: {{ include "fs2-serve.fullname" . }}-acme-solver
-  labels:
-    {{- include "fs2-serve.labels" . | nindent 4 }}
-    app.kubernetes.io/component: acme-solver
-spec:
-  podSelector:
-    matchLabels:
-      {{- toYaml $network.solver.podLabels | nindent 6 }}
-  policyTypes: [Ingress]
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              {{- toYaml $network.gateway.namespaceLabels | nindent 14 }}
-          podSelector:
-            matchLabels:
-              {{- toYaml $network.gateway.podLabels | nindent 14 }}
-      ports:
-        - port: {{ $network.solver.port }}
-          protocol: TCP
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
   name: {{ include "fs2-serve.fullname" . }}-envoy-controller-xds
   namespace: {{ $envoyControllerNamespace }}
   labels:
@@ -397,6 +360,43 @@ spec:
         - port: {{ $network.envoyController.webhookPort }}
           protocol: TCP
     {{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-envoy-default-deny
+  namespace: {{ $gatewayNamespace }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: envoy-default-deny
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-acme-solver
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: acme-solver
+spec:
+  podSelector:
+    matchLabels:
+      {{- toYaml $network.solver.podLabels | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $network.gateway.namespaceLabels | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $network.gateway.podLabels | nindent 14 }}
+      ports:
+        - port: {{ $network.solver.port }}
+          protocol: TCP
 {{- end }}
 ---
 apiVersion: networking.k8s.io/v1

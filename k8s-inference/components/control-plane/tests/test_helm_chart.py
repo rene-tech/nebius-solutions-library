@@ -1999,6 +1999,18 @@ def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -
         "allowed_prefixes": ["IPv4 /32", "IPv6 /128"],
         "default": [],
     }
+    assert contract["envoy_gateway"]["network_policy_transition"] == {
+        "rollout_document_order": [
+            "fs2-serve-control-plane-public-envoy",
+            "fs2-serve-control-plane-envoy-controller-xds",
+            "fs2-serve-control-plane-envoy-default-deny",
+        ],
+        "rollback_order": [
+            "relax-or-remove:fs2-serve-control-plane-envoy-default-deny",
+            "rollback-or-remove:fs2-serve-control-plane-envoy-controller-xds",
+            "rollback-or-remove:fs2-serve-control-plane-public-envoy",
+        ],
+    }
     assert contract["envoy_gateway"]["controller_selector"] == {
         "app.kubernetes.io/name": "gateway-helm",
         "control-plane": "envoy-gateway",
@@ -2043,6 +2055,37 @@ def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -
             "ports": [{"port": 9443, "protocol": "TCP"}],
         },
     ]
+
+
+def test_public_envoy_allows_render_before_namespace_default_deny() -> None:
+    documents = render()
+    contract = json.loads((CONTROL_ROOT / "contracts" / "public-edge-artifact-observations.json").read_text())
+    network_policy_names = [
+        document["metadata"]["name"]
+        for document in documents
+        if document["kind"] == "NetworkPolicy"
+    ]
+    expected_order = contract["envoy_gateway"]["network_policy_transition"]["rollout_document_order"]
+    first_allow = network_policy_names.index(expected_order[0])
+
+    assert network_policy_names[first_allow : first_allow + len(expected_order)] == expected_order
+
+
+def test_public_envoy_rollback_relaxes_deny_before_helm_rollback() -> None:
+    operations = (CONTROL_ROOT / "docs" / "operations.md").read_text()
+    section = operations.split("### Public-edge NetworkPolicy transition safety", maxsplit=1)[1].split(
+        "\n### ", maxsplit=1
+    )[0]
+
+    relax = section.index("kubectl -n envoy-gateway-system patch networkpolicy")
+    verify_deny = section.index(".spec.podSelector.matchLabels ==")
+    verify_proxy_allow = section.index("fs2-serve-control-plane-public-envoy")
+    verify_controller_allow = section.index("fs2-serve-control-plane-envoy-controller-xds")
+    rollback = section.index("helm rollback fs2-serve-control-plane")
+    assert relax < verify_deny < verify_proxy_allow < verify_controller_allow < rollback
+    assert "A direct `helm rollback`" in section
+    assert "is forbidden." in section
+    assert "Do not delete, replace, or stale either allow" in section
 
 
 def test_public_envoy_dns_selector_and_webhook_sources_are_cluster_configurable() -> None:

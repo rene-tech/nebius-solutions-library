@@ -69,6 +69,16 @@ Kubernetes API EndpointSlice addresses; aggregates and default routes fail
 before rendering. Every pod-originated cross-namespace flow combines a
 namespace selector with an exact pod selector. The control-plane release
 namespace still depends on the foundation default-deny boundary.
+
+NetworkPolicy document order is an availability contract. The public proxy
+allow and selector-correct controller allow render before the gateway namespace
+default-deny, so a normal Helm install or upgrade cannot isolate the controller
+between policy operations. Rollback is explicitly two phase: relax or remove
+the namespace default-deny first, verify both allow policies remain, and only
+then roll back or remove either allow. A direct `helm rollback` while the
+namespace-wide deny is active is unsupported. The governed commands and
+failure recovery are documented in `docs/operations.md`.
+
 Exact controller artifact digests and the
 reconciled artifact observations are in
 `contracts/public-edge-artifact-observations.json`. Those observations are

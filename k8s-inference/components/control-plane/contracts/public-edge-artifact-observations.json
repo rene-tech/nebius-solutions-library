@@ -61,6 +61,18 @@
     "xds_port": 18000,
     "metrics_port": 19001,
     "webhook_port": 9443,
+    "network_policy_transition": {
+      "rollout_document_order": [
+        "fs2-serve-control-plane-public-envoy",
+        "fs2-serve-control-plane-envoy-controller-xds",
+        "fs2-serve-control-plane-envoy-default-deny"
+      ],
+      "rollback_order": [
+        "relax-or-remove:fs2-serve-control-plane-envoy-default-deny",
+        "rollback-or-remove:fs2-serve-control-plane-envoy-controller-xds",
+        "rollback-or-remove:fs2-serve-control-plane-public-envoy"
+      ]
+    },
     "webhook_sources": {
       "value_source": "networkPolicy.envoyController.webhookSourceCidrs",
       "terraform_source": "local.kubernetes_api_endpoint_cidrs",

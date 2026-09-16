@@ -774,6 +774,43 @@ ingress and may reach only selected cluster DNS and the database on their exact
 ports. Change a selector only after inspecting the live retained component
 labels; never broaden it to an entire namespace.
 
+### Public-edge NetworkPolicy transition safety
+
+The rendered NetworkPolicy order is part of the release contract: apply the
+public proxy allow first, the selector-correct Envoy controller allow second,
+and the gateway-namespace default-deny third. Both selected allows must exist
+before the namespace-wide deny is created or patched. Do not move the deny
+ahead of either allow or split these documents across independently applied
+releases.
+
+A direct `helm rollback` while the namespace-wide deny still selects every Pod
+is forbidden. A governed rollback must first make the deny nonselecting while
+leaving both allow policies intact, verify that state, and only then invoke Helm.
+Use the freshly captured pre-rollout revision and exact namespaces:
+
+```bash
+kubectl -n envoy-gateway-system patch networkpolicy \
+  fs2-serve-control-plane-envoy-default-deny \
+  --type=json \
+  --patch='[{"op":"replace","path":"/spec/podSelector","value":{"matchLabels":{"fs2.nebius.ai/rollback-relaxed":"true"}}}]'
+
+kubectl -n envoy-gateway-system get networkpolicy \
+  fs2-serve-control-plane-envoy-default-deny -o json \
+  | jq -e '.spec.podSelector.matchLabels == {"fs2.nebius.ai/rollback-relaxed":"true"}'
+kubectl -n envoy-gateway-system get networkpolicy \
+  fs2-serve-control-plane-public-envoy \
+  fs2-serve-control-plane-envoy-controller-xds
+
+helm rollback fs2-serve-control-plane CAPTURED_PRE_ROLLOUT_REVISION \
+  -n fs2-system --wait
+```
+
+Do not delete, replace, or stale either allow before the first two commands
+prove the deny is nonselecting. If Helm rollback fails, leave the deny relaxed
+and both allows present, diagnose the release, and reapply the reviewed
+candidate; never restore the namespace-wide deny until both exact selectors and
+their required ingress paths are verified again.
+
 The chart intentionally has invalid empty defaults for the immutable image and
 public/authorization URLs. Rendering requires exact non-placeholder values.
 
