@@ -1,0 +1,47 @@
+# Optional classifier settings. Loaded as defaults by templates/mindguard.yaml;
+# also usable through Helm -f or the Terraform module's existing values input.
+# No classifier resources are rendered until enabled is explicitly true.
+mindguard:
+  enabled: false
+  namespace: fs2-models
+  # Empty uses the Helm release name. Managed names never adopt task previews.
+  namePrefix: ""
+  # Empty uses the immutable image from files/mindguard-public-models.lock.json.
+  # An image override must be an immutable digest and requires requalification.
+  image: ""
+  existingHuggingFaceSecret: ""
+  huggingFaceSecretKey: token
+  imagePullSecrets: []
+  nodeSelector:
+    accelerator.fs2.nebius/class: nvidia-l40s-48gb
+    capacity.fs2.nebius/type: regular
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: fs2-inference
+      effect: NoSchedule
+  affinity: {}
+  resources:
+    requests: {cpu: '4', memory: 32Gi, nvidia.com/gpu: '1'}
+    limits: {cpu: '12', memory: 64Gi, nvidia.com/gpu: '1'}
+  hydrateResources:
+    requests: {cpu: '1', memory: 2Gi}
+    limits: {cpu: '4', memory: 8Gi}
+  cache:
+    # Existing claim is mounted only; Helm does not adopt or delete it.
+    existingClaim: ""
+    storageClass: csi-mounted-fs-path-sc
+    accessModes: [ReadWriteMany]
+    size: 96Gi
+    retain: true
+  runtimeCacheSize: 12Gi
+  sharedMemorySize: 8Gi
+  models:
+    mindguard-4b:
+      enabled: true
+      replicas: 1
+    mindguard-8b:
+      enabled: false
+      replicas: 1
+  # A model entry may override nodeSelector, tolerations, affinity or resources.
+  # Checkpoint source/revision, BF16, native 32768 context and TP=1 stay pinned.

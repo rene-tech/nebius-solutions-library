@@ -1,0 +1,209 @@
+{{- $root := . -}}
+{{- $defaults := (.Files.Get "values-mindguard.yaml" | fromYaml).mindguard -}}
+{{- $cfg := mergeOverwrite (deepCopy $defaults) (.Values.mindguard | default dict) -}}
+{{- $lock := .Files.Get "files/mindguard-public-models.lock.json" | fromJson -}}
+{{- $active := dict -}}
+{{- if $cfg.enabled -}}
+{{- range $id, $model := $cfg.models -}}
+{{- if not (hasKey $lock.models $id) -}}
+{{- fail (printf "unknown MindGuard classifier %s; only the pinned public 4B/8B are supported" $id) -}}
+{{- end -}}
+{{- if $model.enabled -}}{{- $_ := set $active $id $model -}}{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if $active -}}
+{{- $prefix := default .Release.Name $cfg.namePrefix -}}
+{{- if or (gt (len $prefix) 45) (not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" $prefix)) -}}
+{{- fail "mindguard.namePrefix must be a DNS label of at most 45 characters" -}}
+{{- end -}}
+{{- $namespace := required "mindguard.namespace must be an existing model namespace" $cfg.namespace -}}
+{{- $secret := required "mindguard.existingHuggingFaceSecret is required when classifiers are enabled" $cfg.existingHuggingFaceSecret -}}
+{{- $image := default $lock.runtime_image $cfg.image -}}
+{{- if not (regexMatch "@sha256:[a-f0-9]{64}$" $image) -}}
+{{- fail "mindguard.image must be an immutable sha256 image reference" -}}
+{{- end -}}
+{{- $claim := default (printf "%s-mindguard-cache" $prefix) $cfg.cache.existingClaim -}}
+{{- if not $cfg.cache.existingClaim }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $claim }}
+  namespace: {{ $namespace }}
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/component: mindguard-cache
+  {{- if $cfg.cache.retain }}
+  annotations:
+    helm.sh/resource-policy: keep
+  {{- end }}
+spec:
+  accessModes: {{ $cfg.cache.accessModes | toJson }}
+  storageClassName: {{ $cfg.cache.storageClass | quote }}
+  resources:
+    requests:
+      storage: {{ $cfg.cache.size }}
+{{- end }}
+{{- range $id, $model := $active }}
+{{- $artifact := index $lock.models $id }}
+{{- $name := printf "%s-%s" $prefix $id }}
+{{- $path := printf "/models/%s/%s" $id $artifact.revision }}
+{{- $placement := mergeOverwrite (deepCopy (dict "nodeSelector" $cfg.nodeSelector "tolerations" $cfg.tolerations "affinity" $cfg.affinity "resources" $cfg.resources)) $model }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  namespace: {{ $namespace }}
+  labels:
+    app.kubernetes.io/name: {{ $name }}
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+    app.kubernetes.io/managed-by: {{ $root.Release.Service }}
+    app.kubernetes.io/component: model-runtime
+    app.kubernetes.io/part-of: fs2-serve
+spec:
+  replicas: {{ $model.replicas }}
+  revisionHistoryLimit: 2
+  strategy: {type: Recreate}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ $name }}
+        app.kubernetes.io/instance: {{ $root.Release.Name }}
+        app.kubernetes.io/component: model-runtime
+        app.kubernetes.io/part-of: fs2-serve
+      annotations:
+        fs2.nebius/model-revision: {{ $artifact.revision | quote }}
+        fs2.nebius/model-role: safety-classifier
+        fs2.nebius/enforcement: observe
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      {{- with $cfg.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      nodeSelector: {{ $placement.nodeSelector | toJson }}
+      tolerations: {{ $placement.tolerations | toJson }}
+      {{- with $placement.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: hydrate
+          image: {{ $image | quote }}
+          command:
+            - python3
+            - -c
+            - >-
+              import os; from huggingface_hub import snapshot_download;
+              snapshot_download(repo_id=os.environ['MODEL_REPO'], revision=os.environ['MODEL_REVISION'],
+              local_dir=os.environ['MODEL_PATH'], allow_patterns=['*.json','*.jinja','*.txt','*.safetensors'])
+          env:
+            - {name: MODEL_REPO, value: {{ $artifact.repo_id | quote }}}
+            - {name: MODEL_REVISION, value: {{ $artifact.revision | quote }}}
+            - {name: MODEL_PATH, value: {{ $path | quote }}}
+            - {name: HF_HOME, value: /models/.huggingface}
+            - {name: HF_HUB_DISABLE_TELEMETRY, value: '1'}
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret }}
+                  key: {{ $cfg.huggingFaceSecretKey }}
+          resources:
+            {{- toYaml $cfg.hydrateResources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: models, mountPath: /models}
+      containers:
+        - name: vllm
+          image: {{ $image | quote }}
+          args:
+            - {{ $path | quote }}
+            - --served-model-name
+            - {{ $id }}
+            - --host
+            - 0.0.0.0
+            - --port
+            - '8000'
+            - --dtype
+            - {{ $lock.dtype }}
+            - --max-model-len
+            - {{ $lock.max_model_len | int | quote }}
+            - --tensor-parallel-size
+            - '1'
+            - --gpu-memory-utilization
+            - '0.80'
+            - --generation-config
+            - vllm
+            - --chat-template
+            - {{ printf "%s/chat_template.jinja" $path | quote }}
+            - --enforce-eager
+          env:
+            - {name: HF_HUB_OFFLINE, value: '1'}
+            - {name: TRANSFORMERS_OFFLINE, value: '1'}
+            - {name: VLLM_NO_USAGE_STATS, value: '1'}
+            - {name: HF_HOME, value: /runtime-cache/huggingface}
+            - {name: VLLM_CACHE_ROOT, value: /runtime-cache/vllm}
+            - {name: TRITON_CACHE_DIR, value: /runtime-cache/triton}
+            - {name: XDG_CACHE_HOME, value: /runtime-cache/xdg}
+          resources:
+            {{- toYaml $placement.resources | nindent 12 }}
+          ports:
+            - {name: http, containerPort: 8000}
+          startupProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+            failureThreshold: 180
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket: {port: http}
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: models, mountPath: /models, readOnly: true}
+            - {name: runtime-cache, mountPath: /runtime-cache}
+            - {name: shm, mountPath: /dev/shm}
+      volumes:
+        - name: models
+          persistentVolumeClaim: {claimName: {{ $claim }}}
+        - name: runtime-cache
+          emptyDir: {sizeLimit: {{ $cfg.runtimeCacheSize }}}
+        - name: shm
+          emptyDir: {medium: Memory, sizeLimit: {{ $cfg.sharedMemorySize }}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  namespace: {{ $namespace }}
+  labels:
+    app.kubernetes.io/name: {{ $name }}
+    app.kubernetes.io/instance: {{ $root.Release.Name }}
+    app.kubernetes.io/managed-by: {{ $root.Release.Service }}
+    app.kubernetes.io/component: model-runtime
+    app.kubernetes.io/part-of: fs2-serve
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ $name }}
+  ports:
+    - {name: http, port: 8000, targetPort: http}
+{{- end }}
+{{- end }}
