@@ -1,0 +1,49 @@
+name: 'Inference website metadata'
+
+on:
+  pull_request:
+    paths:
+      - 'k8s-inference/catalog/runtime/**'
+      - 'k8s-inference/model-onboarding/**'
+      - '.github/workflows/inference-website-metadata.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'k8s-inference/catalog/runtime/**'
+      - 'k8s-inference/model-onboarding/**'
+      - '.github/workflows/inference-website-metadata.yml'
+  workflow_dispatch:
+    inputs:
+      base_ref:
+        description: 'Commit before the model additions to check'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: website-metadata-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  metadata:
+    # Other Solutions Library users can opt in to their own public website.
+    if: vars.SCIENTIFIC_AI_WEBSITE_URL != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Test the onboarding check
+        run: python3 -m unittest discover -s k8s-inference/model-onboarding/tests -p 'test_website_metadata.py' -v
+      - name: Require deployed website metadata for new App IDs
+        env:
+          WEBSITE_URL: ${{ vars.SCIENTIFIC_AI_WEBSITE_URL }}
+          BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before || inputs.base_ref }}
+        run: >-
+          python3 k8s-inference/model-onboarding/verify_website_metadata.py
+          --website-url "$WEBSITE_URL" --base-ref "$BASE_REF"
