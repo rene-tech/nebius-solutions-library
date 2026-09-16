@@ -53,6 +53,7 @@ app.kubernetes.io/component: maintenance
 {{- define "fs2-serve.storageSelectorLabels" -}}
 {{ include "fs2-serve.selectorLabels" . }}
 app.kubernetes.io/component: storage-reconciler
+fs2.nebius.ai/storage-egress-generation: {{ .Values.customerStorage.egressGeneration | quote }}
 {{- end -}}
 
 {{- define "fs2-serve.storageDisclosureSelectorLabels" -}}

@@ -77,6 +77,18 @@ def test_s3_expiry_must_be_future_and_within_configured_ttl():
             provider._require_bounded_expiry(invalid)
 
 
+def test_customer_bucket_lifecycle_never_authorizes_object_deletion():
+    rules = {rule.id: rule for rule in NebiusUserStorage.lifecycle().rules}
+
+    assert set(rules) == {
+        "expire-noncurrent-versions",
+        "abort-incomplete-multipart-uploads",
+    }
+    assert all(rule.status == storage.LifecycleRule__Status.DISABLED for rule in rules.values())
+    assert rules["expire-noncurrent-versions"].noncurrent_version_expiration.noncurrent_days == 30
+    assert rules["abort-incomplete-multipart-uploads"].abort_incomplete_multipart_upload.days_after_initiation == 7
+
+
 async def test_existing_bucket_quota_change_preserves_immutable_name_and_iam_identity():
     provider = naming_provider()
     legacy = provider.name("bucket", "kopra", "")
@@ -110,6 +122,9 @@ async def test_existing_bucket_quota_change_preserves_immutable_name_and_iam_ide
     assert request.spec.bucket_policy.rules[0].group_id == "group-same"
     assert list(request.spec.bucket_policy.rules[0].paths) == ["*"]
     assert list(request.spec.bucket_policy.rules[0].roles) == ["storage.object-editor"]
+    assert all(
+        rule.status == storage.LifecycleRule__Status.DISABLED for rule in request.spec.lifecycle_configuration.rules
+    )
     assert result["bucket_id"] == "bucket-same"
     assert result["group_id"] == "group-same"
     assert result["name_key_id"] == "legacy-unkeyed-v0"

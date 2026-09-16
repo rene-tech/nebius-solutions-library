@@ -1110,13 +1110,17 @@ def test_storage_deployment_contract_isolated_from_public_runtime():
         root / "charts/control-plane/fs2-serve-control-plane/templates/storage-reconciler-deployment.yaml"
     ).read_text()
     network = (root / "charts/control-plane/fs2-serve-control-plane/templates/networkpolicy.yaml").read_text()
+    security_boundary = (root / "security/customer-storage-egress-boundary/main.tf").read_text()
     module = (root / "modules/customer-storage-provisioner/main.tf").read_text()
     assert "FS2_USER_STORAGE_RESOURCE_CREDENTIALS_FILE" not in helpers
     assert "FS2_USER_STORAGE_IAM_CREDENTIALS_FILE" not in helpers
     assert "storage-reconciler" in deployment
     assert "resourceCredentialsSecretName" in deployment
     assert "iamCredentialsSecretName" in deployment
-    assert "customerStorage.egressCidrs" in network
+    assert "egressNetworkPolicyName" in deployment
+    assert "customerStorage.egressCidrs" not in network
+    assert 'resource "kubernetes_network_policy_v1" "contract"' in security_boundary
+    assert "prevent_destroy = true" in security_boundary
     assert "tls_private_key" not in module
     assert 'role        = "editor"' in module
     assert 'role        = "admin"' in module

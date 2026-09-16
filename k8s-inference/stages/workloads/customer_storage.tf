@@ -12,8 +12,20 @@ variable "customer_storage" {
     iam_public_key_pem               = optional(string, "")
     auth_key_expires_at              = optional(string, "")
     egress_contract_json             = optional(string, "")
-    key_ttl_days                     = optional(number, 90)
-    rotation_window_days             = optional(number, 14)
+    egress_boundary = optional(object({
+      schema                        = optional(string, "")
+      generation                    = optional(string, "")
+      contract_sha256               = optional(string, "")
+      contract_config_map_name      = optional(string, "")
+      trust_config_map_name         = optional(string, "")
+      network_policy_name           = optional(string, "")
+      boundary_policy_name          = optional(string, "")
+      security_owner_group          = optional(string, "")
+      security_owner_subject_sha256 = optional(string, "")
+      workloads_subject_sha256      = optional(string, "")
+    }), {})
+    key_ttl_days         = optional(number, 90)
+    rotation_window_days = optional(number, 14)
   })
   default   = {}
   sensitive = true
@@ -36,56 +48,110 @@ variable "customer_storage" {
         timecmp(var.customer_storage.auth_key_expires_at, plantimestamp()) > 0 &&
         timecmp(var.customer_storage.auth_key_expires_at, timeadd(plantimestamp(), "2160h")) <= 0 &&
         var.customer_storage.egress_contract_json != "" &&
+        var.customer_storage.egress_boundary.schema == "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v1" &&
+        can(regex("^g[0-9]{14}-[a-f0-9]{12}$", var.customer_storage.egress_boundary.generation)) &&
+        can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.contract_sha256)) &&
+        endswith(var.customer_storage.egress_boundary.generation, substr(var.customer_storage.egress_boundary.contract_sha256, 0, 12)) &&
+        var.customer_storage.egress_boundary.contract_config_map_name == "fs2-customer-storage-egress-contract-${var.customer_storage.egress_boundary.generation}" &&
+        can(regex("^fs2-customer-storage-egress-trust-g[0-9]{14}-[a-f0-9]{12}$", var.customer_storage.egress_boundary.trust_config_map_name)) &&
+        var.customer_storage.egress_boundary.network_policy_name == "fs2-customer-storage-egress-${var.customer_storage.egress_boundary.generation}" &&
+        can(regex("^fs2-customer-storage-egress-boundary-g[0-9]{14}-[a-f0-9]{12}$", var.customer_storage.egress_boundary.boundary_policy_name)) &&
+        var.customer_storage.egress_boundary.security_owner_group == "fs2:customer-storage-egress-security-owner" &&
+        can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.security_owner_subject_sha256)) &&
+        can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.workloads_subject_sha256)) &&
+        var.customer_storage.egress_boundary.security_owner_subject_sha256 != var.customer_storage.egress_boundary.workloads_subject_sha256 &&
         var.customer_storage.key_ttl_days >= 1 && var.customer_storage.key_ttl_days <= 365 &&
         var.customer_storage.rotation_window_days >= 1 &&
         var.customer_storage.rotation_window_days < var.customer_storage.key_ttl_days
       ))
     )
-    error_message = "Enabled customer storage requires a distinct project, split external credentials, an RFC3339 auth expiry no more than 90 days ahead, a signed egress contract, and a rotation window below the key TTL."
+    error_message = "Enabled customer storage requires a distinct project, split external credentials, an RFC3339 auth expiry no more than 90 days ahead, a signed egress contract with the exact external security-owner handoff, and a rotation window below the key TTL."
   }
 }
 
 data "external" "customer_storage_egress" {
-  count   = var.customer_storage.enabled ? 1 : 0
-  program = ["python3", "${path.module}/scripts/customer_storage_egress_contract.py", "--terraform-external"]
+  count = var.customer_storage.enabled ? 1 : 0
+  program = [
+    "uv",
+    "run",
+    "--frozen",
+    "--project",
+    "${path.module}/../../components/control-plane",
+    "python",
+    "${path.module}/scripts/customer_storage_egress_contract.py",
+    "--terraform-external",
+  ]
   query = {
     contract_json  = var.customer_storage.egress_contract_json
-    public_key_pem = data.kubernetes_secret_v1.customer_storage_egress_trust[0].data["public-key.pem"]
+    public_key_pem = data.kubernetes_config_map_v1.customer_storage_egress_trust[0].data["public-key.pem"]
   }
 }
 
-# This trust root is intentionally outside the Helm release and workloads
-# state. A security-owned bootstrap installs the immutable public key before a
-# plan; a chart caller cannot self-assert a replacement key beside its policy.
-data "kubernetes_secret_v1" "customer_storage_egress_trust" {
+# Every object below is read-only in this root. The distinct security-owner
+# root creates append-only generations and the admission policy forbids this
+# workloads identity from changing or deleting them.
+data "kubernetes_config_map_v1" "customer_storage_egress_trust" {
   count = var.customer_storage.enabled ? 1 : 0
 
   metadata {
-    name      = "fs2-customer-storage-egress-trust"
+    name      = var.customer_storage.egress_boundary.trust_config_map_name
     namespace = "fs2-system"
   }
   lifecycle {
     postcondition {
       condition     = self.immutable == true && try(self.data["public-key.pem"], "") != ""
-      error_message = "Customer-storage egress trust must be a pre-existing immutable Secret with public-key.pem."
+      error_message = "Customer-storage egress trust must be a pre-existing immutable security-owner ConfigMap."
     }
   }
   depends_on = [terraform_data.cluster_contract]
 }
 
-resource "kubernetes_config_map_v1" "customer_storage_egress_contract" {
+data "kubernetes_config_map_v1" "customer_storage_egress_contract" {
   count = var.customer_storage.enabled ? 1 : 0
 
   metadata {
-    name      = "fs2-customer-storage-egress-contract"
+    name      = var.customer_storage.egress_boundary.contract_config_map_name
     namespace = "fs2-system"
-    labels    = local.common_labels
   }
-  immutable = true
-  data = {
-    "contract.json" = var.customer_storage.egress_contract_json
+  lifecycle {
+    postcondition {
+      condition = (
+        self.immutable == true &&
+        try(self.data["contract.json"], "") == var.customer_storage.egress_contract_json &&
+        try(self.data["kubernetes-api-cidrs.json"], "") != ""
+      )
+      error_message = "Customer-storage egress contract must equal the immutable security-owner handoff."
+    }
   }
   depends_on = [terraform_data.cluster_contract]
+}
+
+data "kubernetes_resource" "customer_storage_egress_network_policy" {
+  count       = var.customer_storage.enabled ? 1 : 0
+  api_version = "networking.k8s.io/v1"
+  kind        = "NetworkPolicy"
+  metadata {
+    name      = var.customer_storage.egress_boundary.network_policy_name
+    namespace = "fs2-system"
+  }
+}
+
+data "kubernetes_resource" "customer_storage_egress_boundary_policy" {
+  count       = var.customer_storage.enabled ? 1 : 0
+  api_version = "admissionregistration.k8s.io/v1"
+  kind        = "ValidatingAdmissionPolicy"
+  metadata {
+    name = var.customer_storage.egress_boundary.boundary_policy_name
+  }
+}
+
+data "kubernetes_resource" "customer_storage_egress_boundary_binding" {
+  count       = var.customer_storage.enabled ? 1 : 0
+  api_version = "admissionregistration.k8s.io/v1"
+  kind        = "ValidatingAdmissionPolicyBinding"
+  metadata {
+    name = var.customer_storage.egress_boundary.boundary_policy_name
+  }
 }
 
 module "customer_storage_provisioner" {
@@ -103,13 +169,14 @@ locals {
     local.kubernetes_api_service_cidrs,
     local.kubernetes_api_endpoint_cidrs,
   )))
-  customer_storage_network_policy_name = "fs2-serve-control-plane-storage-reconciler"
+  customer_storage_network_policy_name = var.customer_storage.egress_boundary.network_policy_name
   customer_storage_network_policy_spec = {
     podSelector = {
       matchLabels = {
-        "app.kubernetes.io/name"      = "fs2-serve-control-plane"
-        "app.kubernetes.io/instance"  = "fs2-serve-control-plane"
-        "app.kubernetes.io/component" = "storage-reconciler"
+        "app.kubernetes.io/name"                  = "fs2-serve-control-plane"
+        "app.kubernetes.io/instance"              = "fs2-serve-control-plane"
+        "app.kubernetes.io/component"             = "storage-reconciler"
+        "fs2.nebius.ai/storage-egress-generation" = var.customer_storage.egress_boundary.generation
       }
     }
     policyTypes = ["Ingress", "Egress"]
@@ -170,108 +237,72 @@ locals {
       egressCidrs                   = var.customer_storage.enabled ? jsondecode(data.external.customer_storage_egress[0].result.cidrs_json) : []
       kubernetesApiCidrs            = var.customer_storage.enabled ? local.customer_storage_kubernetes_api_cidrs : []
       egressContractSha256          = var.customer_storage.enabled ? data.external.customer_storage_egress[0].result.contract_sha256 : ""
+      egressGeneration              = var.customer_storage.egress_boundary.generation
+      egressContractConfigMapName   = var.customer_storage.egress_boundary.contract_config_map_name
+      egressTrustConfigMapName      = var.customer_storage.egress_boundary.trust_config_map_name
+      egressNetworkPolicyName       = var.customer_storage.egress_boundary.network_policy_name
+      egressBoundaryPolicyName      = var.customer_storage.egress_boundary.boundary_policy_name
       keyTtlDays                    = var.customer_storage.key_ttl_days
       rotationWindowDays            = var.customer_storage.rotation_window_days
     }
   }
 }
 
-# This cluster-scoped boundary is owned by Terraform rather than Helm, so an
-# old chart rollback, --no-hooks, or direct NetworkPolicy edit cannot widen the
-# reconciler. Policies that might select the storage pod must either exclude
-# that component explicitly or equal the signed/current canonical policy.
-resource "kubernetes_manifest" "customer_storage_egress_admission_policy" {
+# This root has read-only dependency edges to the separately credentialed
+# security owner. It refuses a stale, mismatched, mutable or self-asserted
+# handoff but owns none of the protected objects.
+resource "terraform_data" "customer_storage_external_egress_boundary" {
   count = var.customer_storage.enabled ? 1 : 0
 
-  manifest = {
-    apiVersion = "admissionregistration.k8s.io/v1"
-    kind       = "ValidatingAdmissionPolicy"
-    metadata = {
-      name = "fs2-customer-storage-egress"
-      annotations = {
-        "fs2.nebius.ai/storage-egress-contract-sha256" = data.external.customer_storage_egress[0].result.contract_sha256
-      }
+  input = {
+    generation           = var.customer_storage.egress_boundary.generation
+    contract_sha256      = data.external.customer_storage_egress[0].result.contract_sha256
+    network_policy_name  = var.customer_storage.egress_boundary.network_policy_name
+    boundary_policy_name = var.customer_storage.egress_boundary.boundary_policy_name
+  }
+
+  lifecycle {
+    precondition {
+      condition     = data.external.customer_storage_egress[0].result.contract_sha256 == var.customer_storage.egress_boundary.contract_sha256
+      error_message = "The live/fresh signed contract digest differs from the external security-owner handoff."
     }
-    spec = {
-      failurePolicy = "Fail"
-      matchConstraints = {
-        resourceRules = [{
-          apiGroups   = ["networking.k8s.io"]
-          apiVersions = ["v1"]
-          operations  = ["CREATE", "UPDATE", "DELETE"]
-          resources   = ["networkpolicies"]
-          scope       = "Namespaced"
-        }]
-      }
-      matchConditions = [{
-        name = "storage-reconciler-policy"
-        expression = join(" ", [
-          "request.namespace == 'fs2-system' &&",
-          "(request.operation == 'DELETE' ?",
-          "(oldObject.metadata.name == '${local.customer_storage_network_policy_name}' ||",
-          "!has(oldObject.spec.podSelector.matchLabels) ||",
-          "!('app.kubernetes.io/component' in oldObject.spec.podSelector.matchLabels) ||",
-          "oldObject.spec.podSelector.matchLabels['app.kubernetes.io/component'] == 'storage-reconciler') :",
-          "(object.metadata.name == '${local.customer_storage_network_policy_name}' ||",
-          "!has(object.spec.podSelector.matchLabels) ||",
-          "!('app.kubernetes.io/component' in object.spec.podSelector.matchLabels) ||",
-          "object.spec.podSelector.matchLabels['app.kubernetes.io/component'] == 'storage-reconciler'))",
-        ])
-      }]
-      validations = [
-        {
-          expression = "request.operation != 'DELETE'"
-          message    = "The canonical customer-storage egress policy cannot be deleted while customer storage is enabled."
-          reason     = "Forbidden"
-        },
-        {
-          expression = join(" ", [
-            "object.metadata.name == '${local.customer_storage_network_policy_name}' &&",
-            "has(object.metadata.annotations) &&",
-            "'fs2.nebius.ai/storage-egress-contract-sha256' in object.metadata.annotations &&",
-            "object.metadata.annotations['fs2.nebius.ai/storage-egress-contract-sha256'] == '${data.external.customer_storage_egress[0].result.contract_sha256}' &&",
-            "object.spec == ${jsonencode(local.customer_storage_network_policy_spec)}",
-          ])
-          message = "A NetworkPolicy that may select the storage reconciler must equal the signed provider and live Kubernetes API egress contract."
-          reason  = "Forbidden"
-        },
-      ]
+    precondition {
+      condition = (
+        data.kubernetes_config_map_v1.customer_storage_egress_contract[0].metadata[0].annotations["fs2.nebius.ai/storage-egress-contract-sha256"] == var.customer_storage.egress_boundary.contract_sha256 &&
+        data.kubernetes_config_map_v1.customer_storage_egress_contract[0].metadata[0].labels["app.kubernetes.io/managed-by"] == "fs2-security-owner" &&
+        data.kubernetes_config_map_v1.customer_storage_egress_contract[0].metadata[0].labels["fs2.nebius.ai/security-generation"] == var.customer_storage.egress_boundary.generation &&
+        jsondecode(data.kubernetes_config_map_v1.customer_storage_egress_contract[0].data["kubernetes-api-cidrs.json"]) == local.customer_storage_kubernetes_api_cidrs
+      )
+      error_message = "The immutable contract object is not the exact externally owned generation."
+    }
+    precondition {
+      condition = (
+        try(data.kubernetes_resource.customer_storage_egress_network_policy[0].object.metadata.labels["app.kubernetes.io/managed-by"], "") == "fs2-security-owner" &&
+        try(data.kubernetes_resource.customer_storage_egress_network_policy[0].object.metadata.labels["fs2.nebius.ai/security-generation"], "") == var.customer_storage.egress_boundary.generation &&
+        try(data.kubernetes_resource.customer_storage_egress_network_policy[0].object.metadata.annotations["fs2.nebius.ai/storage-egress-contract-sha256"], "") == var.customer_storage.egress_boundary.contract_sha256 &&
+        try(data.kubernetes_resource.customer_storage_egress_network_policy[0].object.spec, null) == local.customer_storage_network_policy_spec
+      )
+      error_message = "The live security-owned NetworkPolicy does not equal the signed contract and exact workload selectors."
+    }
+    precondition {
+      condition = (
+        try(data.kubernetes_resource.customer_storage_egress_boundary_policy[0].object.metadata.labels["app.kubernetes.io/managed-by"], "") == "fs2-security-owner" &&
+        try(data.kubernetes_resource.customer_storage_egress_boundary_policy[0].object.metadata.annotations["fs2.nebius.ai/security-owner-subject-sha256"], "") == var.customer_storage.egress_boundary.security_owner_subject_sha256 &&
+        try(data.kubernetes_resource.customer_storage_egress_boundary_policy[0].object.metadata.annotations["fs2.nebius.ai/workloads-subject-sha256"], "") == var.customer_storage.egress_boundary.workloads_subject_sha256 &&
+        try(data.kubernetes_resource.customer_storage_egress_boundary_policy[0].object.spec.failurePolicy, "") == "Fail" &&
+        strcontains(jsonencode(data.kubernetes_resource.customer_storage_egress_boundary_policy[0].object.spec.validations), "request.operation != 'DELETE'") &&
+        strcontains(jsonencode(data.kubernetes_resource.customer_storage_egress_boundary_policy[0].object.spec.validations), var.customer_storage.egress_boundary.security_owner_group)
+      )
+      error_message = "The external append-only admission policy or security-owner identity is absent."
+    }
+    precondition {
+      condition = (
+        try(data.kubernetes_resource.customer_storage_egress_boundary_binding[0].object.spec.policyName, "") == var.customer_storage.egress_boundary.boundary_policy_name &&
+        try(data.kubernetes_resource.customer_storage_egress_boundary_binding[0].object.spec.validationActions, []) == ["Deny"]
+      )
+      error_message = "The external fail-closed admission binding is absent or not enforcing Deny."
     }
   }
 
-  field_manager {
-    force_conflicts = false
-    name            = "fs2-customer-storage-egress"
-  }
-
-  depends_on = [
-    terraform_data.cluster_contract,
-    kubernetes_config_map_v1.customer_storage_egress_contract,
-  ]
-}
-
-resource "kubernetes_manifest" "customer_storage_egress_admission_binding" {
-  count = var.customer_storage.enabled ? 1 : 0
-
-  manifest = {
-    apiVersion = "admissionregistration.k8s.io/v1"
-    kind       = "ValidatingAdmissionPolicyBinding"
-    metadata   = { name = "fs2-customer-storage-egress" }
-    spec = {
-      policyName        = "fs2-customer-storage-egress"
-      validationActions = ["Deny"]
-      matchResources = {
-        namespaceSelector = {
-          matchLabels = { "kubernetes.io/metadata.name" = "fs2-system" }
-        }
-      }
-    }
-  }
-
-  field_manager {
-    force_conflicts = false
-    name            = "fs2-customer-storage-egress"
-  }
-
-  depends_on = [kubernetes_manifest.customer_storage_egress_admission_policy]
+  depends_on = [terraform_data.cluster_contract]
 }

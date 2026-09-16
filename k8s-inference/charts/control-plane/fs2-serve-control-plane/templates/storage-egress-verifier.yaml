@@ -1,4 +1,8 @@
-{{- if .Values.customerStorage.enabled }}
+{{- /* Retained as inert source history. Egress admission, contract objects,
+and verification policy are owned by the separately credentialed
+security/customer-storage-egress-boundary root. Helm must never create or
+garbage-collect those objects. */ -}}
+{{- if and .Values.customerStorage.enabled false }}
 {{- $hooks := "pre-install,pre-upgrade,pre-rollback,post-install,post-upgrade,post-rollback" }}
 apiVersion: v1
 kind: ServiceAccount
@@ -7,7 +11,6 @@ metadata:
   annotations:
     helm.sh/hook: {{ $hooks | quote }}
     helm.sh/hook-weight: "-30"
-    helm.sh/hook-delete-policy: before-hook-creation
   labels:
     {{- include "fs2-serve.labels" . | nindent 4 }}
     app.kubernetes.io/component: storage-egress-verifier
@@ -20,7 +23,6 @@ metadata:
   annotations:
     helm.sh/hook: {{ $hooks | quote }}
     helm.sh/hook-weight: "-30"
-    helm.sh/hook-delete-policy: before-hook-creation
   labels:
     {{- include "fs2-serve.labels" . | nindent 4 }}
     app.kubernetes.io/component: storage-egress-verifier
@@ -37,7 +39,6 @@ metadata:
   annotations:
     helm.sh/hook: {{ $hooks | quote }}
     helm.sh/hook-weight: "-30"
-    helm.sh/hook-delete-policy: before-hook-creation
   labels:
     {{- include "fs2-serve.labels" . | nindent 4 }}
     app.kubernetes.io/component: storage-egress-verifier
@@ -57,7 +58,6 @@ metadata:
   annotations:
     helm.sh/hook: {{ $hooks | quote }}
     helm.sh/hook-weight: "-20"
-    helm.sh/hook-delete-policy: before-hook-creation
   labels:
     {{- include "fs2-serve.labels" . | nindent 4 }}
     app.kubernetes.io/component: storage-egress-verifier
@@ -73,7 +73,6 @@ metadata:
   annotations:
     helm.sh/hook: {{ $hooks | quote }}
     helm.sh/hook-weight: "-30"
-    helm.sh/hook-delete-policy: before-hook-creation
   labels:
     {{- include "fs2-serve.labels" . | nindent 4 }}
     app.kubernetes.io/component: storage-egress-verifier
@@ -113,7 +112,6 @@ metadata:
   annotations:
     helm.sh/hook: "pre-install,pre-upgrade,pre-rollback"
     helm.sh/hook-weight: "-10"
-    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
   labels:
     {{- include "fs2-serve.labels" . | nindent 4 }}
     app.kubernetes.io/component: storage-egress-verifier
@@ -173,7 +171,6 @@ metadata:
   annotations:
     helm.sh/hook: "post-install,post-upgrade,post-rollback"
     helm.sh/hook-weight: "10"
-    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
   labels:
     {{- include "fs2-serve.labels" . | nindent 4 }}
     app.kubernetes.io/component: storage-egress-verifier

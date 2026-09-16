@@ -16,9 +16,15 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-SCRIPT = Path(__file__).parents[1] / "stages/workloads/scripts/customer_storage_egress_contract.py"
+SCRIPT = (
+    Path(__file__).parents[1]
+    / "stages/workloads/scripts/customer_storage_egress_contract.py"
+)
 TERRAFORM = Path(__file__).parents[1] / "stages/workloads/customer_storage.tf"
-SPEC = importlib.util.spec_from_file_location("customer_storage_egress_contract", SCRIPT)
+SECURITY_ROOT = Path(__file__).parents[1] / "security/customer-storage-egress-boundary"
+SPEC = importlib.util.spec_from_file_location(
+    "customer_storage_egress_contract", SCRIPT
+)
 assert SPEC is not None and SPEC.loader is not None
 contract_module = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(contract_module)
@@ -39,8 +45,14 @@ def resolver(host: str, port: int, *, type: int):
 
 
 def resign(value: dict, private_key: Ed25519PrivateKey) -> dict:
-    body = {key: item for key, item in value.items() if key not in {"payload_sha256", "signature"}}
-    payload = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+    body = {
+        key: item
+        for key, item in value.items()
+        if key not in {"payload_sha256", "signature"}
+    }
+    payload = json.dumps(
+        body, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    ).encode()
     value["payload_sha256"] = hashlib.sha256(payload).hexdigest()
     value["signature"] = base64.b64encode(private_key.sign(payload)).decode()
     return value
@@ -57,7 +69,9 @@ def test_signed_contract_requires_live_provider_equality_and_host_routes(
     signed_contract,
 ):
     private_key, contract = signed_contract
-    result = contract_module.verify_contract(contract, private_key.public_key(), now=NOW, resolver=resolver)
+    result = contract_module.verify_contract(
+        contract, private_key.public_key(), now=NOW, resolver=resolver
+    )
     assert json.loads(result["cidrs_json"]) == [
         "198.51.100.10/32",
         "198.51.100.11/32",
@@ -65,33 +79,105 @@ def test_signed_contract_requires_live_provider_equality_and_host_routes(
     ]
     assert len(result["contract_sha256"]) == 64
     assert contract["sdk_services"] == contract_module.expected_sdk_services()
-    assert {item["endpoint"] for item in contract["sdk_services"]} == set(contract["endpoints"])
+    assert {item["endpoint"] for item in contract["sdk_services"]} == set(
+        contract["endpoints"]
+    )
 
 
 def test_endpoint_authority_matches_pinned_generated_sdk():
-    assert contract_module.provider_sdk_services() == contract_module.expected_sdk_services()
+    assert (
+        contract_module.provider_sdk_services()
+        == contract_module.expected_sdk_services()
+    )
 
 
-def test_terraform_uses_an_external_immutable_trust_root() -> None:
+def test_workloads_root_only_reads_the_external_versioned_boundary() -> None:
     source = TERRAFORM.read_text(encoding="utf-8")
-    assert 'data "kubernetes_secret_v1" "customer_storage_egress_trust"' in source
-    assert 'resource "kubernetes_secret_v1" "customer_storage_egress_trust"' not in source
+    assert 'data "kubernetes_config_map_v1" "customer_storage_egress_trust"' in source
+    assert (
+        'data "kubernetes_config_map_v1" "customer_storage_egress_contract"' in source
+    )
+    assert (
+        'data "kubernetes_resource" "customer_storage_egress_network_policy"' in source
+    )
+    assert (
+        'data "kubernetes_resource" "customer_storage_egress_boundary_policy"' in source
+    )
+    assert (
+        'data "kubernetes_resource" "customer_storage_egress_boundary_binding"'
+        in source
+    )
+    assert (
+        'resource "kubernetes_config_map_v1" "customer_storage_egress_contract"'
+        not in source
+    )
+    assert (
+        'resource "kubernetes_manifest" "customer_storage_egress_admission_policy"'
+        not in source
+    )
+    assert (
+        'resource "kubernetes_manifest" "customer_storage_egress_admission_binding"'
+        not in source
+    )
     assert "self.immutable == true" in source
-    assert 'data.kubernetes_secret_v1.customer_storage_egress_trust[0].data["public-key.pem"]' in source
+    assert (
+        'data.kubernetes_config_map_v1.customer_storage_egress_trust[0].data["public-key.pem"]'
+        in source
+    )
+    assert "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v1" in source
+    assert '"uv"' in source and '"--frozen"' in source
     assert "egress_contract_public_key_pem" not in source
 
 
-def test_terraform_owns_a_fail_closed_admission_boundary_outside_helm() -> None:
-    source = TERRAFORM.read_text(encoding="utf-8")
+def test_separate_security_owner_is_append_only_and_credential_isolated() -> None:
+    source = (SECURITY_ROOT / "main.tf").read_text(encoding="utf-8")
+    providers = (SECURITY_ROOT / "providers.tf").read_text(encoding="utf-8")
+    variables = (SECURITY_ROOT / "variables.tf").read_text(encoding="utf-8")
     control_plane = (TERRAFORM.parent / "control_plane.tf").read_text(encoding="utf-8")
-    assert 'resource "kubernetes_manifest" "customer_storage_egress_admission_policy"' in source
-    assert 'resource "kubernetes_manifest" "customer_storage_egress_admission_binding"' in source
+
+    assert "var.security_owner_kubeconfig_path" in providers
+    assert '"uv"' in source and '"--frozen"' in source
+    assert "workloads_kubeconfig_path" in variables
+    assert "filesha256(pathexpand(var.security_owner_kubeconfig_path))" in source
+    assert "filesha256(pathexpand(var.workloads_kubeconfig_path))" in source
+    assert 'resource "kubernetes_manifest" "boundary_policy"' in source
+    assert 'resource "kubernetes_manifest" "boundary_binding"' in source
+    assert 'resource "kubernetes_config_map_v1" "contract"' in source
+    assert 'resource "kubernetes_config_map_v1" "trust"' in source
+    assert 'resource "kubernetes_network_policy_v1" "contract"' in source
     assert 'failurePolicy = "Fail"' in source
     assert 'operations  = ["CREATE", "UPDATE", "DELETE"]' in source
-    assert 'expression = "request.operation != \'DELETE\'"' in source
-    assert "object.spec == ${jsonencode(local.customer_storage_network_policy_spec)}" in source
-    assert "data.external.customer_storage_egress[0].result.contract_sha256" in source
-    assert "customer_storage_egress_admission_binding" in control_plane
+    assert "expression = \"request.operation != 'DELETE'\"" in source
+    assert "request.userInfo.groups.exists" in source
+    assert "security-owner-subject-sha256" in source
+    assert "workloads-subject-sha256" in source
+    assert "fs2:customer-storage-egress-security-owner" in variables
+    assert source.count("prevent_destroy = true") == 5
+    assert "for_each = var.contract_generations" in source
+    assert "for_each = var.trust_generations" in source
+    assert "for_each = local.boundary_policy_names" in source
+    assert "customer_storage_external_egress_boundary" in control_plane
+
+
+def test_security_owner_contract_rotation_is_versioned_and_overlapping() -> None:
+    source = (SECURITY_ROOT / "main.tf").read_text(encoding="utf-8")
+    readme = (SECURITY_ROOT / "README.md").read_text(encoding="utf-8")
+
+    for prefix in (
+        "fs2-customer-storage-egress-contract-${generation}",
+        "fs2-customer-storage-egress-trust-${generation}",
+        "fs2-customer-storage-egress-${generation}",
+        "fs2-customer-storage-egress-boundary-${generation}",
+    ):
+        assert prefix in source
+    assert '"fs2.nebius.ai/storage-egress-generation" = each.key' in source
+    assert (
+        '"fs2.nebius.ai/storage-egress-generation" = var.customer_storage.egress_boundary.generation'
+        in TERRAFORM.read_text(encoding="utf-8")
+    )
+    assert "append-only" in readme
+    assert "Old resources remain" in readme
+    assert "-replace" in readme
 
 
 @pytest.mark.parametrize(
@@ -109,7 +195,9 @@ def test_rejects_aggregate_broad_arbitrary_and_empty_sets(signed_contract, cidrs
     adversarial["cidrs"] = cidrs
     resign(adversarial, private_key)
     with pytest.raises(ValueError, match="host routes|empty"):
-        contract_module.verify_contract(adversarial, private_key.public_key(), now=NOW, resolver=resolver)
+        contract_module.verify_contract(
+            adversarial, private_key.public_key(), now=NOW, resolver=resolver
+        )
 
 
 def test_rejects_missing_set_even_with_valid_signature(signed_contract):
@@ -118,7 +206,9 @@ def test_rejects_missing_set_even_with_valid_signature(signed_contract):
     del adversarial["cidrs"]
     resign(adversarial, private_key)
     with pytest.raises(ValueError, match="missing"):
-        contract_module.verify_contract(adversarial, private_key.public_key(), now=NOW, resolver=resolver)
+        contract_module.verify_contract(
+            adversarial, private_key.public_key(), now=NOW, resolver=resolver
+        )
 
 
 def test_rejects_signed_non_provider_resolution(signed_contract):
@@ -128,7 +218,9 @@ def test_rejects_signed_non_provider_resolution(signed_contract):
     adversarial["cidrs"] = ["198.51.100.11/32", "203.0.113.44/32", "2001:db8::12/128"]
     resign(adversarial, private_key)
     with pytest.raises(ValueError, match="live Nebius"):
-        contract_module.verify_contract(adversarial, private_key.public_key(), now=NOW, resolver=resolver)
+        contract_module.verify_contract(
+            adversarial, private_key.public_key(), now=NOW, resolver=resolver
+        )
 
 
 def test_live_network_policy_must_equal_contract_with_explicit_to_and_tcp_443(
@@ -158,7 +250,9 @@ def test_live_network_policy_rejects_extra_https_rule_or_non_ip_peer(signed_cont
         "ports": [{"port": 443, "protocol": "TCP"}],
     }
     policy = {"spec": {"egress": [copy.deepcopy(exact)]}}
-    policy["spec"]["egress"][0]["to"].append({"namespaceSelector": {"matchLabels": {"unreviewed": "true"}}})
+    policy["spec"]["egress"][0]["to"].append(
+        {"namespaceSelector": {"matchLabels": {"unreviewed": "true"}}}
+    )
     with pytest.raises(ValueError, match="exact IP blocks"):
         contract_module.verify_network_policy(policy, contract["cidrs"])
 
@@ -190,7 +284,9 @@ def test_readiness_requires_exact_dns_database_provider_and_api_rules(signed_con
     dns_rule = {
         "to": [
             {
-                "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "kube-system"}},
+                "namespaceSelector": {
+                    "matchLabels": {"kubernetes.io/metadata.name": "kube-system"}
+                },
                 "podSelector": {
                     "matchLabels": {
                         "app.kubernetes.io/instance": "coredns",
@@ -205,7 +301,9 @@ def test_readiness_requires_exact_dns_database_provider_and_api_rules(signed_con
     database_rule = {
         "to": [
             {
-                "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "fs2-data"}},
+                "namespaceSelector": {
+                    "matchLabels": {"kubernetes.io/metadata.name": "fs2-data"}
+                },
                 "podSelector": {"matchLabels": {"cnpg.io/cluster": "fs2-control-db"}},
             }
         ],
@@ -219,11 +317,15 @@ def test_readiness_requires_exact_dns_database_provider_and_api_rules(signed_con
         if mutation == "destinationless":
             del adversarial["spec"]["egress"][2]["to"]
         elif mutation == "dns-selector":
-            adversarial["spec"]["egress"][0]["to"][0]["podSelector"]["matchLabels"]["k8s-app"] = "kube-dns"
+            adversarial["spec"]["egress"][0]["to"][0]["podSelector"]["matchLabels"][
+                "k8s-app"
+            ] = "kube-dns"
         else:
             adversarial["spec"]["egress"].append(copy.deepcopy(provider_rule))
         with pytest.raises(ValueError):
-            contract_module.verify_network_policy(adversarial, contract["cidrs"], ["192.0.2.1/32"])
+            contract_module.verify_network_policy(
+                adversarial, contract["cidrs"], ["192.0.2.1/32"]
+            )
 
 
 def cli_inputs(tmp_path: Path, *, observed_at: datetime | None = None):
@@ -252,7 +354,10 @@ def cli_inputs(tmp_path: Path, *, observed_at: datetime | None = None):
                 "spec": {
                     "egress": [
                         {
-                            "to": [{"ipBlock": {"cidr": cidr}} for cidr in contract["cidrs"]],
+                            "to": [
+                                {"ipBlock": {"cidr": cidr}}
+                                for cidr in contract["cidrs"]
+                            ],
                             "ports": [{"port": 443, "protocol": "TCP"}],
                         }
                     ]
@@ -261,10 +366,23 @@ def cli_inputs(tmp_path: Path, *, observed_at: datetime | None = None):
         ),
         encoding="utf-8",
     )
-    return private_key, contract, contract_path, public_key_path, cidrs_path, policy_path
+    return (
+        private_key,
+        contract,
+        contract_path,
+        public_key_path,
+        cidrs_path,
+        policy_path,
+    )
 
 
-def run_verify_cli(monkeypatch, contract: Path, public_key: Path, cidrs: Path, policy: Path | None = None) -> int:
+def run_verify_cli(
+    monkeypatch,
+    contract: Path,
+    public_key: Path,
+    cidrs: Path,
+    policy: Path | None = None,
+) -> int:
     argv = [
         "customer-storage-egress-contract",
         "--contract",
@@ -288,7 +406,9 @@ def test_direct_rollout_cli_rejects_expired_and_forged_contracts(tmp_path, monke
     )
     assert run_verify_cli(monkeypatch, contract_path, public_key_path, cidrs_path) == 2
 
-    private_key, contract, contract_path, public_key_path, cidrs_path, _ = cli_inputs(tmp_path / "forged")
+    private_key, contract, contract_path, public_key_path, cidrs_path, _ = cli_inputs(
+        tmp_path / "forged"
+    )
     del private_key
     contract["signature"] = base64.b64encode(b"0" * 64).decode()
     contract_path.write_text(json.dumps(contract), encoding="utf-8")
@@ -296,7 +416,9 @@ def test_direct_rollout_cli_rejects_expired_and_forged_contracts(tmp_path, monke
 
 
 @pytest.mark.parametrize("linked_input", ["contract", "public_key", "cidrs", "policy"])
-def test_direct_rollout_cli_rejects_symlinked_inputs(tmp_path, monkeypatch, linked_input):
+def test_direct_rollout_cli_rejects_symlinked_inputs(
+    tmp_path, monkeypatch, linked_input
+):
     _, _, contract_path, public_key_path, cidrs_path, policy_path = cli_inputs(tmp_path)
     paths = {
         "contract": contract_path,
@@ -308,7 +430,12 @@ def test_direct_rollout_cli_rejects_symlinked_inputs(tmp_path, monkeypatch, link
     real = target.with_suffix(target.suffix + ".real")
     target.rename(real)
     target.symlink_to(real)
-    assert run_verify_cli(monkeypatch, contract_path, public_key_path, cidrs_path, policy_path) == 2
+    assert (
+        run_verify_cli(
+            monkeypatch, contract_path, public_key_path, cidrs_path, policy_path
+        )
+        == 2
+    )
 
 
 def test_direct_rollout_cli_rejects_reassigned_provider_address(tmp_path, monkeypatch):

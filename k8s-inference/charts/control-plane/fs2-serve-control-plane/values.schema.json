@@ -33,7 +33,7 @@
     "customerStorage": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["enabled", "projectId", "region", "defaultMode", "quotaBytes", "excludedTenants", "resourceCredentialsSecretName", "iamCredentialsSecretName", "databaseSecretName", "disclosureDatabaseSecretName", "cryptoSecretName", "egressCidrs", "kubernetesApiCidrs", "egressContractSha256", "keyTtlDays", "rotationWindowDays", "actionTimeoutSeconds", "disclosure", "resources"],
+      "required": ["enabled", "projectId", "region", "defaultMode", "quotaBytes", "excludedTenants", "resourceCredentialsSecretName", "iamCredentialsSecretName", "databaseSecretName", "disclosureDatabaseSecretName", "cryptoSecretName", "egressCidrs", "kubernetesApiCidrs", "egressContractSha256", "egressGeneration", "egressContractConfigMapName", "egressTrustConfigMapName", "egressNetworkPolicyName", "egressBoundaryPolicyName", "keyTtlDays", "rotationWindowDays", "actionTimeoutSeconds", "disclosure", "resources"],
       "properties": {
         "enabled": {"type": "boolean"},
         "projectId": {"type": "string"},
@@ -49,6 +49,11 @@
         "egressCidrs": {"type": "array", "maxItems": 32, "items": {"type": "string", "pattern": "^([0-9]{1,3}\\.){3}[0-9]{1,3}/32$|^[0-9A-Fa-f:]+/128$"}, "uniqueItems": true},
         "kubernetesApiCidrs": {"type": "array", "maxItems": 32, "items": {"type": "string", "pattern": "^([0-9]{1,3}\\.){3}[0-9]{1,3}/32$|^[0-9A-Fa-f:]+/128$"}, "uniqueItems": true},
         "egressContractSha256": {"type": "string", "pattern": "^$|^[a-f0-9]{64}$"},
+        "egressGeneration": {"type": "string", "pattern": "^$|^g[0-9]{14}-[a-f0-9]{12}$"},
+        "egressContractConfigMapName": {"type": "string", "pattern": "^$|^fs2-customer-storage-egress-contract-g[0-9]{14}-[a-f0-9]{12}$"},
+        "egressTrustConfigMapName": {"type": "string", "pattern": "^$|^fs2-customer-storage-egress-trust-g[0-9]{14}-[a-f0-9]{12}$"},
+        "egressNetworkPolicyName": {"type": "string", "pattern": "^$|^fs2-customer-storage-egress-g[0-9]{14}-[a-f0-9]{12}$"},
+        "egressBoundaryPolicyName": {"type": "string", "pattern": "^$|^fs2-customer-storage-egress-boundary-g[0-9]{14}-[a-f0-9]{12}$"},
         "keyTtlDays": {"type": "integer", "minimum": 1, "maximum": 365},
         "rotationWindowDays": {"type": "integer", "minimum": 1, "maximum": 364},
         "actionTimeoutSeconds": {"type": "number", "minimum": 1, "maximum": 120},
