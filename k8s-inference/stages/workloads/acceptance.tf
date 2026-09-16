@@ -133,7 +133,7 @@ resource "kubernetes_job_v1" "reporting_datasource_acceptance" {
             name = "FS2_REPORTING_DATABASE_URL"
             value_from {
               secret_key_ref {
-                name = kubernetes_secret_v1.database_consumer["reporting"].metadata[0].name
+                name = local.active_database_consumer_secret_names["reporting"]
                 key  = "url"
               }
             }
@@ -209,7 +209,7 @@ resource "kubernetes_job_v1" "reporting_datasource_acceptance" {
         volume {
           name = "database-ca"
           secret {
-            secret_name = kubernetes_secret_v1.database_consumer["reporting"].metadata[0].name
+            secret_name = local.active_database_consumer_secret_names["reporting"]
             items {
               key  = "ca.crt"
               path = "ca.crt"
@@ -223,7 +223,11 @@ resource "kubernetes_job_v1" "reporting_datasource_acceptance" {
   wait_for_completion = true
   timeouts { create = "15m" }
 
-  depends_on = [helm_release.control_plane, kubernetes_secret_v1.grafana_datasource]
+  depends_on = [
+    helm_release.control_plane,
+    kubernetes_secret_v1.grafana_datasource,
+    kubernetes_secret_v1.grafana_datasource_versioned,
+  ]
 }
 
 resource "kubernetes_job_v1" "gpu_observability_acceptance" {

@@ -15,8 +15,9 @@
 
 locals {
   scientific_artifacts_enabled        = var.scientific_artifacts.enabled
-  scientific_artifacts_secret_name    = "fs2-serve-artifact-store"
+  scientific_artifacts_secret_name    = var.scientific_artifacts.credential_generation == 1 ? "fs2-serve-artifact-store" : "fs2-serve-artifact-store-v${var.scientific_artifacts.credential_generation}"
   scientific_artifacts_secret_key     = "credentials.json"
+  scientific_artifacts_active_access  = local.scientific_artifacts_enabled ? var.scientific_artifacts.object_storage_access.generations[tostring(var.scientific_artifacts.credential_generation)] : null
   scientific_runtime_cache_claim_name = "fs2-scientific-runtime-cache"
   scientific_runtime_cache_mount_path = "/cache"
   scientific_runtime_cache_mounts = flatten([
@@ -185,15 +186,22 @@ locals {
   # operator's explicit generation as the leading term so a deliberate rotation
   # is always an increase.
   scientific_artifacts_credential_identity = local.scientific_artifacts_enabled ? join("|", [
-    var.scientific_artifacts.object_storage_access.key_id,
-    var.scientific_artifacts.object_storage_access.access_key_id,
-    var.scientific_artifacts.object_storage_access.secret_reference_id,
-    tostring(var.scientific_artifacts.object_storage_access.resource_version),
+    local.scientific_artifacts_active_access.key_id,
+    local.scientific_artifacts_active_access.access_key_id,
+    local.scientific_artifacts_active_access.secret_reference_id,
+    tostring(local.scientific_artifacts_active_access.resource_version),
   ]) : ""
-  scientific_artifacts_revision = local.scientific_artifacts_enabled ? (
-    var.scientific_artifacts.credential_generation * 16777216 +
-    parseint(substr(sha256(local.scientific_artifacts_credential_identity), 0, 6), 16)
-  ) : 0
+  scientific_artifacts_generation_revisions = local.scientific_artifacts_enabled ? {
+    for generation, access in var.scientific_artifacts.object_storage_access.generations : generation => (
+      tonumber(generation) * 16777216 + parseint(substr(sha256(join("|", [
+        access.key_id,
+        access.access_key_id,
+        access.secret_reference_id,
+        tostring(access.resource_version),
+      ])), 0, 6), 16)
+    )
+  } : {}
+  scientific_artifacts_revision = local.scientific_artifacts_enabled ? local.scientific_artifacts_generation_revisions[tostring(var.scientific_artifacts.credential_generation)] : 0
 
   # Zero-or-one comprehension so the disabled case yields an empty map rather
   # than an object Terraform cannot unify with the enabled one.
@@ -263,7 +271,7 @@ locals {
 ephemeral "nebius_mysterybox_v1_secret_payload_entry" "scientific_artifacts" {
   count = local.scientific_artifacts_enabled ? 1 : 0
 
-  secret_id = var.scientific_artifacts.object_storage_access.secret_reference_id
+  secret_id = var.scientific_artifacts.object_storage_access.generations["1"].secret_reference_id
   key       = "secret"
 }
 
@@ -271,7 +279,7 @@ resource "kubernetes_secret_v1" "scientific_artifact_store" {
   count = local.scientific_artifacts_enabled ? 1 : 0
 
   metadata {
-    name      = local.scientific_artifacts_secret_name
+    name      = "fs2-serve-artifact-store"
     namespace = "fs2-system"
     labels = merge(local.common_labels, {
       "fs2.nebius.ai/credential-purpose" = "scientific-artifact-store"
@@ -280,8 +288,8 @@ resource "kubernetes_secret_v1" "scientific_artifact_store" {
       # Non-secret. It exists so an operator can tell which key generation the
       # cluster currently holds without reading the Secret's data.
       "fs2.nebius.ai/artifact-store-credential-revision"   = tostring(local.scientific_artifacts_revision)
-      "fs2.nebius.ai/artifact-store-credential-generation" = tostring(var.scientific_artifacts.credential_generation)
-      "fs2.nebius.ai/artifact-store-access-key-id"         = var.scientific_artifacts.object_storage_access.access_key_id
+      "fs2.nebius.ai/artifact-store-credential-generation" = "1"
+      "fs2.nebius.ai/artifact-store-access-key-id"         = var.scientific_artifacts.object_storage_access.generations["1"].access_key_id
     }
   }
 
@@ -290,17 +298,58 @@ resource "kubernetes_secret_v1" "scientific_artifact_store" {
   # data_wo keeps the value out of state entirely; plain `data` would persist it.
   data_wo = {
     (local.scientific_artifacts_secret_key) = jsonencode({
-      access_key_id     = var.scientific_artifacts.object_storage_access.access_key_id
+      access_key_id     = var.scientific_artifacts.object_storage_access.generations["1"].access_key_id
       secret_access_key = ephemeral.nebius_mysterybox_v1_secret_payload_entry.scientific_artifacts[0].data.string_value
     })
   }
   # Monotonic with the cloud-side key version, so rotating the access key is the
   # only thing that rewrites the Secret.
-  data_wo_revision = local.scientific_artifacts_revision
+  data_wo_revision = local.scientific_artifacts_generation_revisions["1"]
 
   lifecycle {
     prevent_destroy = true
-    ignore_changes  = all
+  }
+
+  depends_on = [terraform_data.cluster_contract, terraform_data.credential_migration_gate]
+}
+
+ephemeral "nebius_mysterybox_v1_secret_payload_entry" "scientific_artifacts_versioned" {
+  for_each = local.scientific_artifacts_enabled ? toset([
+    for generation in var.scientific_artifacts.credential_generation_history : tostring(generation) if generation > 1
+  ]) : toset([])
+
+  secret_id = var.scientific_artifacts.object_storage_access.generations[each.key].secret_reference_id
+  key       = "secret"
+}
+
+resource "kubernetes_secret_v1" "scientific_artifact_store_versioned" {
+  for_each = local.scientific_artifacts_enabled ? toset([
+    for generation in var.scientific_artifacts.credential_generation_history : tostring(generation) if generation > 1
+  ]) : toset([])
+
+  metadata {
+    name      = "fs2-serve-artifact-store-v${each.key}"
+    namespace = "fs2-system"
+    labels = merge(local.common_labels, {
+      "fs2.nebius.ai/credential-purpose"    = "scientific-artifact-store"
+      "fs2.nebius.ai/credential-generation" = each.key
+    })
+    annotations = {
+      "fs2.nebius.ai/artifact-store-access-key-id" = var.scientific_artifacts.object_storage_access.generations[each.key].access_key_id
+    }
+  }
+
+  type = "Opaque"
+  data_wo = {
+    (local.scientific_artifacts_secret_key) = jsonencode({
+      access_key_id     = var.scientific_artifacts.object_storage_access.generations[each.key].access_key_id
+      secret_access_key = ephemeral.nebius_mysterybox_v1_secret_payload_entry.scientific_artifacts_versioned[each.key].data.string_value
+    })
+  }
+  data_wo_revision = local.scientific_artifacts_generation_revisions[each.key]
+
+  lifecycle {
+    prevent_destroy = true
   }
 
   depends_on = [terraform_data.cluster_contract, terraform_data.credential_migration_gate]

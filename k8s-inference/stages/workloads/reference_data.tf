@@ -9,13 +9,20 @@ module "reference_data" {
   count  = var.reference_data.enabled ? 1 : 0
   source = "../../reference-data/terraform"
 
-  cluster_region        = try(var.reference_data.storage_contract.region, local.selected_target.region)
-  object_storage_region = try(var.reference_data.storage_contract.region, local.selected_target.region)
-  object_bucket_name    = try(var.reference_data.storage_contract.object_storage.name, "disabled-reference-data.invalid")
+  cluster_region                = try(var.reference_data.storage_contract.region, local.selected_target.region)
+  object_storage_region         = try(var.reference_data.storage_contract.region, local.selected_target.region)
+  object_bucket_name            = try(var.reference_data.storage_contract.object_storage.name, "disabled-reference-data.invalid")
+  credential_generation         = var.reference_data.credential_generation
+  credential_generation_history = var.reference_data.credential_generation_history
   object_storage_access = coalesce(var.reference_data.object_storage_access, {
-    access_key_id       = "DISABLED0"
-    secret_reference_id = "mysteryboxsecret-disabled"
-    revision            = 1
+    active_generation = 1
+    generations = {
+      "1" = {
+        access_key_id       = "DISABLED0"
+        secret_reference_id = "mysteryboxsecret-disabled"
+        revision            = 1
+      }
+    }
   })
 
   namespace                   = var.reference_data.namespace

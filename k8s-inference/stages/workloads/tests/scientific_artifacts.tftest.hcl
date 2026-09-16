@@ -325,10 +325,15 @@ run "storage_only_projects_the_canonical_chart_values" {
         }
       }
       object_storage_access = {
-        key_id              = "accesskey-scientifictest"
-        access_key_id       = "AJE000SCIENTIFICTEST"
-        secret_reference_id = "mysteryboxsecret-scientifictest"
-        resource_version    = 0
+        active_generation = 1
+        generations = {
+          "1" = {
+            key_id              = "accesskey-scientifictest"
+            access_key_id       = "AJE000SCIENTIFICTEST"
+            secret_reference_id = "mysteryboxsecret-scientifictest"
+            resource_version    = 0
+          }
+        }
       }
     }
   }
@@ -456,10 +461,15 @@ run "the_credential_revision_is_the_only_rotation_trigger" {
         }
       }
       object_storage_access = {
-        key_id              = "accesskey-scientifictest"
-        access_key_id       = "AJE000SCIENTIFICTEST"
-        secret_reference_id = "mysteryboxsecret-scientifictest"
-        resource_version    = 0
+        active_generation = 1
+        generations = {
+          "1" = {
+            key_id              = "accesskey-scientifictest"
+            access_key_id       = "AJE000SCIENTIFICTEST"
+            secret_reference_id = "mysteryboxsecret-scientifictest"
+            resource_version    = 0
+          }
+        }
       }
     }
   }
@@ -626,10 +636,15 @@ run "a_store_that_reuses_the_reference_data_bucket_is_refused" {
         }
       }
       object_storage_access = {
-        key_id              = "accesskey-scientifictest"
-        access_key_id       = "AJE000SCIENTIFICTEST"
-        secret_reference_id = "mysteryboxsecret-scientifictest"
-        resource_version    = 0
+        active_generation = 1
+        generations = {
+          "1" = {
+            key_id              = "accesskey-scientifictest"
+            access_key_id       = "AJE000SCIENTIFICTEST"
+            secret_reference_id = "mysteryboxsecret-scientifictest"
+            resource_version    = 0
+          }
+        }
       }
     }
     reference_data = {
@@ -731,9 +746,14 @@ run "a_store_that_reuses_the_reference_data_bucket_is_refused" {
         }
       }
       object_storage_access = {
-        access_key_id       = "AJE000REFERENCETEST"
-        secret_reference_id = "mysteryboxsecret-referencetest"
-        revision            = 1
+        active_generation = 1
+        generations = {
+          "1" = {
+            access_key_id       = "AJE000REFERENCETEST"
+            secret_reference_id = "mysteryboxsecret-referencetest"
+            revision            = 1
+          }
+        }
       }
     }
   }
@@ -806,10 +826,15 @@ run "a_subnet_wide_egress_allowlist_is_refused" {
         }
       }
       object_storage_access = {
-        key_id              = "accesskey-scientifictest"
-        access_key_id       = "AJE000SCIENTIFICTEST"
-        secret_reference_id = "mysteryboxsecret-scientifictest"
-        resource_version    = 0
+        active_generation = 1
+        generations = {
+          "1" = {
+            key_id              = "accesskey-scientifictest"
+            access_key_id       = "AJE000SCIENTIFICTEST"
+            secret_reference_id = "mysteryboxsecret-scientifictest"
+            resource_version    = 0
+          }
+        }
       }
     }
   }
@@ -882,10 +907,15 @@ run "an_out_of_region_bucket_is_refused" {
         }
       }
       object_storage_access = {
-        key_id              = "accesskey-scientifictest"
-        access_key_id       = "AJE000SCIENTIFICTEST"
-        secret_reference_id = "mysteryboxsecret-scientifictest"
-        resource_version    = 0
+        active_generation = 1
+        generations = {
+          "1" = {
+            key_id              = "accesskey-scientifictest"
+            access_key_id       = "AJE000SCIENTIFICTEST"
+            secret_reference_id = "mysteryboxsecret-scientifictest"
+            resource_version    = 0
+          }
+        }
       }
     }
   }

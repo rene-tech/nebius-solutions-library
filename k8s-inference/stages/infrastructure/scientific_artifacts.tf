@@ -167,6 +167,7 @@ resource "nebius_storage_v1_bucket" "scientific_artifacts" {
 
   lifecycle {
     prevent_destroy = true
+    ignore_changes  = all
   }
 }
 
@@ -225,6 +226,37 @@ resource "nebius_iam_v2_access_key" "scientific_artifacts" {
   # The bucket policy is the only thing that authorizes this key, so it must
   # exist before the key does; otherwise the key is briefly valid for an
   # identity with no scope at all.
+  depends_on = [
+    terraform_data.credential_migration_gate,
+    nebius_storage_v1_bucket.scientific_artifacts,
+    nebius_storage_v1_bucket.scientific_artifacts_disposable,
+  ]
+}
+
+resource "nebius_iam_v2_access_key" "scientific_artifacts_versioned" {
+  for_each = local.scientific_artifacts_enabled ? toset([
+    for generation in var.scientific_artifacts.credential_generation_history : tostring(generation) if generation > 1
+  ]) : toset([])
+
+  parent_id            = var.project_id
+  name                 = "${local.resource_name}-scientific-artifacts-v${each.key}"
+  description          = "Generation ${each.key} S3 access key for the scientific result artifact store"
+  secret_delivery_mode = "MYSTERY_BOX"
+  labels = merge(local.common_labels, {
+    purpose                               = "scientific-artifact-object-write"
+    retention                             = local.scientific_artifacts_retain ? "durable" : "ephemeral"
+    "fs2.nebius.ai/credential-generation" = each.key
+  })
+  account = {
+    service_account = {
+      id = nebius_iam_v1_service_account.scientific_artifacts[0].id
+    }
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
   depends_on = [
     terraform_data.credential_migration_gate,
     nebius_storage_v1_bucket.scientific_artifacts,

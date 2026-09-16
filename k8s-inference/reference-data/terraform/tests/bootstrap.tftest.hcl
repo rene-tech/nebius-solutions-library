@@ -5,9 +5,14 @@ variables {
   object_storage_region = "eu-north1"
   object_bucket_name    = "fs2-reference-data-empty-volume-test"
   object_storage_access = {
-    access_key_id       = "accesskey-test"
-    secret_reference_id = "secret-test"
-    revision            = 1
+    active_generation = 1
+    generations = {
+      "1" = {
+        access_key_id       = "accesskey-test"
+        secret_reference_id = "secret-test"
+        revision            = 1
+      }
+    }
   }
   namespace = "fs2-reference-data"
   cpu_pool = {
@@ -108,7 +113,7 @@ run "reference_queue_admits_every_declared_consumer_namespace" {
   }
 }
 
-run "replacement_credential_identity_gets_a_new_immutable_secret_name" {
+run "successor_credential_identity_gets_a_new_immutable_secret_name" {
   command = apply
 
   plan_options {
@@ -116,21 +121,35 @@ run "replacement_credential_identity_gets_a_new_immutable_secret_name" {
   }
 
   variables {
+    credential_generation         = 2
+    credential_generation_history = [1, 2]
     object_storage_access = {
-      access_key_id       = "replacement-access-key"
-      secret_reference_id = "replacement-secret"
-      revision            = 1
+      active_generation = 2
+      generations = {
+        "1" = {
+          access_key_id       = "accesskey-test"
+          secret_reference_id = "secret-test"
+          revision            = 1
+        }
+        "2" = {
+          access_key_id       = "replacement-access-key"
+          secret_reference_id = "replacement-secret"
+          revision            = 1
+        }
+      }
     }
   }
 
   assert {
     condition = (
-      terraform_data.region_contract.output.object_storage_secret == "fs2-reference-data-object-storage-${substr(sha256(jsonencode({
+      terraform_data.region_contract.output.object_storage_secret == "fs2-reference-data-object-storage-v2-${substr(sha256(jsonencode({
+        generation          = 2
         access_key_id       = "replacement-access-key"
         secret_reference_id = "replacement-secret"
         revision            = 1
       })), 0, 12)}" &&
-      terraform_data.region_contract.output.object_storage_secret != "fs2-reference-data-object-storage-${substr(sha256(jsonencode({
+      terraform_data.region_contract.output.object_storage_secret != "fs2-reference-data-object-storage-v1-${substr(sha256(jsonencode({
+        generation          = 1
         access_key_id       = "accesskey-test"
         secret_reference_id = "secret-test"
         revision            = 1
@@ -140,7 +159,7 @@ run "replacement_credential_identity_gets_a_new_immutable_secret_name" {
   }
 }
 
-run "same_credential_ids_with_a_new_revision_get_a_new_immutable_secret_name" {
+run "fixed_generation_cannot_be_rewritten_as_a_new_revision" {
   command = apply
 
   plan_options {
@@ -149,20 +168,27 @@ run "same_credential_ids_with_a_new_revision_get_a_new_immutable_secret_name" {
 
   variables {
     object_storage_access = {
-      access_key_id       = "accesskey-test"
-      secret_reference_id = "secret-test"
-      revision            = 2
+      active_generation = 1
+      generations = {
+        "1" = {
+          access_key_id       = "accesskey-test"
+          secret_reference_id = "secret-test"
+          revision            = 2
+        }
+      }
     }
   }
 
   assert {
     condition = (
-      terraform_data.region_contract.output.object_storage_secret == "fs2-reference-data-object-storage-${substr(sha256(jsonencode({
+      terraform_data.region_contract.output.object_storage_secret == "fs2-reference-data-object-storage-v1-${substr(sha256(jsonencode({
+        generation          = 1
         access_key_id       = "accesskey-test"
         secret_reference_id = "secret-test"
         revision            = 2
       })), 0, 12)}" &&
-      terraform_data.region_contract.output.object_storage_secret != "fs2-reference-data-object-storage-${substr(sha256(jsonencode({
+      terraform_data.region_contract.output.object_storage_secret != "fs2-reference-data-object-storage-v1-${substr(sha256(jsonencode({
+        generation          = 1
         access_key_id       = "accesskey-test"
         secret_reference_id = "secret-test"
         revision            = 1

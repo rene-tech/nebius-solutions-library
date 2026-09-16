@@ -28,12 +28,23 @@ locals {
   }
   tools_sha256     = sha256(jsonencode(local.tools_files))
   tools_config_map = "fs2-reference-data-tools-${substr(local.tools_sha256, 0, 12)}"
-  credentials_identity = substr(sha256(jsonencode({
-    access_key_id       = var.object_storage_access.access_key_id
-    secret_reference_id = var.object_storage_access.secret_reference_id
-    revision            = var.object_storage_access.revision
-  })), 0, 12)
-  credentials_secret    = "fs2-reference-data-object-storage-${local.credentials_identity}"
+  retained_object_storage_access = {
+    for generation in var.credential_generation_history :
+    tostring(generation) => var.object_storage_access.generations[tostring(generation)]
+  }
+  credentials_identities = {
+    for generation, access in local.retained_object_storage_access : generation => substr(sha256(jsonencode({
+      generation          = tonumber(generation)
+      access_key_id       = access.access_key_id
+      secret_reference_id = access.secret_reference_id
+      revision            = access.revision
+    })), 0, 12)
+  }
+  credentials_secrets = {
+    for generation, identity in local.credentials_identities :
+    generation => "fs2-reference-data-object-storage-v${generation}-${identity}"
+  }
+  credentials_secret    = local.credentials_secrets[tostring(var.credential_generation)]
   source_catalog        = jsondecode(file("${path.module}/../source-catalog.json"))
   source_catalog_sha256 = filesha256("${path.module}/../source-catalog.json")
   selected_bundle       = local.source_catalog.bundles[var.pipeline.bundle_id]
@@ -430,7 +441,17 @@ resource "terraform_data" "region_contract" {
 }
 
 ephemeral "nebius_mysterybox_v1_secret_payload_entry" "object_storage" {
-  secret_id = var.object_storage_access.secret_reference_id
+  secret_id = local.retained_object_storage_access["1"].secret_reference_id
+  key       = "secret"
+}
+
+ephemeral "nebius_mysterybox_v1_secret_payload_entry" "object_storage_versioned" {
+  for_each = {
+    for generation, access in local.retained_object_storage_access :
+    generation => access if tonumber(generation) > 1
+  }
+
+  secret_id = each.value.secret_reference_id
   key       = "secret"
 }
 
@@ -457,14 +478,17 @@ resource "kubernetes_service_account_v1" "reference_data" {
 
 resource "kubernetes_secret_v1" "object_storage" {
   metadata {
-    name      = local.credentials_secret
+    name      = local.credentials_secrets["1"]
     namespace = kubernetes_namespace_v1.reference_data.metadata[0].name
-    labels    = local.common_labels
+    labels = merge(local.common_labels, {
+      "fs2.nebius.ai/credential-generation" = "1"
+      "fs2.nebius.ai/credential-state"      = var.credential_generation == 1 ? "current-write" : "retained-read"
+    })
   }
   type      = "Opaque"
   immutable = true
   data_wo = {
-    "access-key-id"     = var.object_storage_access.access_key_id
+    "access-key-id"     = local.retained_object_storage_access["1"].access_key_id
     "secret-access-key" = ephemeral.nebius_mysterybox_v1_secret_payload_entry.object_storage.data.string_value
   }
   # Each credential revision has a content-addressed, immutable Secret name.
@@ -475,7 +499,35 @@ resource "kubernetes_secret_v1" "object_storage" {
 
   lifecycle {
     prevent_destroy = true
-    ignore_changes  = all
+  }
+
+  depends_on = [terraform_data.credential_migration_gate]
+}
+
+resource "kubernetes_secret_v1" "object_storage_versioned" {
+  for_each = {
+    for generation, access in local.retained_object_storage_access :
+    generation => access if tonumber(generation) > 1
+  }
+
+  metadata {
+    name      = local.credentials_secrets[each.key]
+    namespace = kubernetes_namespace_v1.reference_data.metadata[0].name
+    labels = merge(local.common_labels, {
+      "fs2.nebius.ai/credential-generation" = each.key
+      "fs2.nebius.ai/credential-state"      = each.key == tostring(var.credential_generation) ? "current-write" : "retained-read"
+    })
+  }
+  type      = "Opaque"
+  immutable = true
+  data_wo = {
+    "access-key-id"     = each.value.access_key_id
+    "secret-access-key" = ephemeral.nebius_mysterybox_v1_secret_payload_entry.object_storage_versioned[each.key].data.string_value
+  }
+  data_wo_revision = tonumber(each.key)
+
+  lifecycle {
+    prevent_destroy = true
   }
 
   depends_on = [terraform_data.credential_migration_gate]

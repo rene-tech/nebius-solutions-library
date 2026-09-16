@@ -280,6 +280,40 @@ def service_account_lineage(
             "handoff group does not contain exactly its provider-derived service account"
         )
 
+    account_memberships = list_items(
+        provider_json(
+            args,
+            [
+                "iam",
+                "group-membership",
+                "list",
+                "--member-id",
+                service_account_id,
+                "--all",
+            ],
+            "service-account group membership",
+        ),
+        label="service-account group membership",
+    )
+    account_group_ids = {
+        (
+            item.get("metadata", {}).get("parent_id")
+            if isinstance(item.get("metadata"), dict)
+            else None
+        )
+        or item.get("group_id")
+        or (
+            item.get("spec", {}).get("group_id")
+            if isinstance(item.get("spec"), dict)
+            else None
+        )
+        for item in account_memberships
+    }
+    if account_group_ids != {group_id}:
+        raise HandoffError(
+            "handoff service account has an unreviewed provider group membership"
+        )
+
     permits = list_items(
         provider_json(
             args,
@@ -545,6 +579,31 @@ def read_auth_key_ids(args: argparse.Namespace, project_id: str) -> set[str]:
             "Nebius returned an unreadable authentication key inventory"
         ) from error
     return listed_auth_key_ids(document)
+
+
+def require_authoritative_not_found(result: subprocess.CompletedProcess[str]) -> None:
+    """Accept provider absence only when the provider explicitly reports it.
+
+    A non-zero exit alone is not absence: authentication, transport, throttling,
+    and server failures must leave the revocation journal pending so an operator
+    can reconcile them safely.
+    """
+
+    if result.returncode == 0:
+        raise HandoffError("revoked predecessor is still returned by authoritative get")
+    diagnostic = (result.stderr or "").strip().lower()
+    normalized = diagnostic.replace("_", " ").replace("-", " ")
+    if not any(
+        marker in normalized
+        for marker in (
+            "not found",
+            "does not exist",
+            "no such auth public key",
+        )
+    ):
+        raise HandoffError(
+            "authoritative predecessor absence was not proven by provider get"
+        )
 
 
 def read_auth_keys(
@@ -1146,8 +1205,7 @@ def revoke_old(args: argparse.Namespace) -> dict[str, Any]:
         capture=True,
         check=False,
     )
-    if absence_get.returncode == 0:
-        raise HandoffError("revoked predecessor is still returned by authoritative get")
+    require_authoritative_not_found(absence_get)
     remaining_ids = read_auth_key_ids(args, old_project_id)
     if old_public_key_id in remaining_ids:
         raise HandoffError("revoked predecessor remains present in provider inventory")

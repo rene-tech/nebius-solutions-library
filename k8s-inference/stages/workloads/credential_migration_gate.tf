@@ -28,8 +28,17 @@ data "external" "credential_migration_gate" {
 
 resource "terraform_data" "credential_migration_gate" {
   input = data.external.credential_migration_gate.result.receipt_sha256
+  # Force an apply-time execution for every plan, including reuse of the same
+  # still-valid planning receipt. A direct saved-plan apply therefore cannot
+  # skip the exact plan/state/live-Secret revalidation provisioner.
+  triggers_replace = [data.external.credential_migration_gate.result.receipt_sha256, timestamp()]
+
+  provisioner "local-exec" {
+    command = "python3 ${path.module}/../../scripts/secret_migration_guard.py apply-saved-plan-gate --terraform-configuration ${path.module} --terraform-root workloads --source-commit ${var.credential_migration_gate_source_commit} --registry ${path.module}/../../security/durable-credential-registry.json"
+  }
 
   lifecycle {
+    create_before_destroy = true
     precondition {
       condition     = data.external.credential_migration_gate.result.status == "pass"
       error_message = "The short-lived credential migration gate did not pass. Use inference-stack; direct apply without an exact gate receipt is forbidden."

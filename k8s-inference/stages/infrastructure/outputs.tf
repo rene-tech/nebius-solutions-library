@@ -287,14 +287,26 @@ output "reference_data_lifecycle" {
 }
 
 output "reference_data_object_storage_access" {
-  description = "Sensitive handoff containing only the S3 access-key ID, MysteryBox reference and a positive Kubernetes write-only-data revision; the secret value never enters infrastructure state or generated tfvars."
+  description = "Sensitive handoff containing every retained S3 access-key identity and MysteryBox reference; values never enter infrastructure state or generated tfvars."
   sensitive   = true
   value = var.reference_data.enabled ? {
-    access_key_id       = nebius_iam_v2_access_key.reference_data[0].status.aws_access_key_id
-    secret_reference_id = nebius_iam_v2_access_key.reference_data[0].status.secret_reference_id
-    # Nebius resource_version is zero-based, while kubernetes_secret_v1.data_wo_revision
-    # must be positive. Preserve one-to-one monotonicity without inventing mutable state.
-    revision = nebius_iam_v2_access_key.reference_data[0].resource_version + 1
+    active_generation = var.reference_data.credential_generation
+    generations = merge(
+      {
+        "1" = {
+          access_key_id       = nebius_iam_v2_access_key.reference_data[0].status.aws_access_key_id
+          secret_reference_id = nebius_iam_v2_access_key.reference_data[0].status.secret_reference_id
+          revision            = nebius_iam_v2_access_key.reference_data[0].resource_version + 1
+        }
+      },
+      {
+        for generation, access_key in nebius_iam_v2_access_key.reference_data_versioned : generation => {
+          access_key_id       = access_key.status.aws_access_key_id
+          secret_reference_id = access_key.status.secret_reference_id
+          revision            = access_key.resource_version + 1
+        }
+      },
+    )
   } : null
 }
 
@@ -436,13 +448,21 @@ output "scientific_artifacts_object_storage_access" {
   description = "Sensitive handoff containing only the key's non-secret identifiers: its resource ID, S3 access-key ID, MysteryBox reference and cloud resource version. The secret value never enters infrastructure state, a plan file, generated tfvars or any output."
   sensitive   = true
   value = var.scientific_artifacts.enabled ? {
-    # The resource ID is the only identifier that is guaranteed to change when
-    # the key is replaced. resource_version restarts at zero on a new key, so a
-    # revision derived from it alone would silently repeat after a rotation and
-    # leave the stale secret mounted.
-    key_id              = nebius_iam_v2_access_key.scientific_artifacts[0].id
-    access_key_id       = nebius_iam_v2_access_key.scientific_artifacts[0].status.aws_access_key_id
-    secret_reference_id = nebius_iam_v2_access_key.scientific_artifacts[0].status.secret_reference_id
-    resource_version    = nebius_iam_v2_access_key.scientific_artifacts[0].resource_version
+    active_generation = var.scientific_artifacts.credential_generation
+    generations = merge({
+      "1" = {
+        key_id              = nebius_iam_v2_access_key.scientific_artifacts[0].id
+        access_key_id       = nebius_iam_v2_access_key.scientific_artifacts[0].status.aws_access_key_id
+        secret_reference_id = nebius_iam_v2_access_key.scientific_artifacts[0].status.secret_reference_id
+        resource_version    = nebius_iam_v2_access_key.scientific_artifacts[0].resource_version
+      }
+      }, {
+      for generation, key in nebius_iam_v2_access_key.scientific_artifacts_versioned : generation => {
+        key_id              = key.id
+        access_key_id       = key.status.aws_access_key_id
+        secret_reference_id = key.status.secret_reference_id
+        resource_version    = key.resource_version
+      }
+    })
   } : null
 }

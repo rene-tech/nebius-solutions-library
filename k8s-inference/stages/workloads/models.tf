@@ -1,5 +1,17 @@
 resource "kubernetes_manifest" "model" {
-  for_each = local.terraform_owned_model_manifests
+  for_each = {
+    for key, value in local.terraform_owned_model_manifests : key => merge(value, {
+      manifest = jsondecode(replace(
+        replace(
+          jsonencode(value.manifest),
+          "\"ngc-api-key\"",
+          "\"${local.active_ngc_api_key_secret_name}\"",
+        ),
+        "\"nvcrio-cred\"",
+        "\"${local.active_nvcrio_secret_name}\"",
+      ))
+    })
+  }
 
   manifest = each.value.manifest.kind == "Deployment" ? merge(each.value.manifest, {
     spec = merge(each.value.manifest.spec, {
@@ -9,6 +21,14 @@ resource "kubernetes_manifest" "model" {
             "fs2.nebius.ai/secret-rollout-sha256" = sha256(jsonencode({ registry = var.credential_generations.registry }))
           })
         })
+        spec = merge(each.value.manifest.spec.template.spec, local.model_nvcr_credentials_required ? {
+          imagePullSecrets = [
+            for name in concat(
+              [local.active_nvcrio_secret_name],
+              [for retained in local.retained_nvcrio_secret_names : retained if retained != local.active_nvcrio_secret_name],
+            ) : { name = name }
+          ]
+        } : {})
       })
     })
   }) : each.value.manifest
@@ -48,7 +68,9 @@ resource "kubernetes_manifest" "model" {
     terraform_data.cluster_contract,
     terraform_data.cpu_model_runtime_contract,
     kubernetes_secret_v1.ngc_api_key,
+    kubernetes_secret_v1.ngc_api_key_versioned,
     kubernetes_secret_v1.nvcrio_cred,
+    kubernetes_secret_v1.nvcrio_cred_versioned,
     helm_release.dcgm_exporter,
   ]
 }

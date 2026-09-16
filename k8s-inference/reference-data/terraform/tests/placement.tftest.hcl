@@ -8,9 +8,14 @@ variables {
   object_storage_region = "eu-north1"
   object_bucket_name    = "fs2-reference-data-placement"
   object_storage_access = {
-    access_key_id       = "PLACEMENT0"
-    secret_reference_id = "mysteryboxsecret-placement"
-    revision            = 1
+    active_generation = 1
+    generations = {
+      "1" = {
+        access_key_id       = "PLACEMENT0"
+        secret_reference_id = "mysteryboxsecret-placement"
+        revision            = 1
+      }
+    }
   }
   shared_filesystem_host_path = "/mnt/fs2-reference-data/data"
   allow_public_source_staging = true

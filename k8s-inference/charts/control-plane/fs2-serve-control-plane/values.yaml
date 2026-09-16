@@ -332,6 +332,12 @@ secrets:
   routeAttestors:
     name: fs2-serve-route-attestors
     key: attestors.json
+  storageCipherKeyring:
+    name: fs2-serve-storage-keyring
+    key: keyring.json
+  storageNameKeyring:
+    name: fs2-serve-storage-keyring
+    key: name-keyring.json
   admin:
     name: fs2-serve-admin
     key: token
@@ -353,6 +359,9 @@ secretRollout:
   ledgerGeneration: 1
   pepperGeneration: 1
   attestorGeneration: 1
+  storageGeneration: 1
+  storageNameGeneration: 1
+  artifactStoreGeneration: 1
 
 config:
   # Required public HTTPS origins; empty defaults fail validation.

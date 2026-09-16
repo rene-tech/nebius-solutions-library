@@ -110,6 +110,12 @@ resource "terraform_data" "cluster_contract" {
   }
 }
 
+locals {
+  active_grafana_admin_secret_ref = merge(var.grafana_admin_secret_ref, {
+    name = var.credential_generation == 1 ? var.grafana_admin_secret_ref.name : "${var.grafana_admin_secret_ref.name}-v${var.credential_generation}"
+  })
+}
+
 resource "kubernetes_secret_v1" "grafana_admin" {
   count = var.bootstrap_grafana_credentials_configured ? 1 : 0
 
@@ -120,16 +126,48 @@ resource "kubernetes_secret_v1" "grafana_admin" {
   }
 
   data_wo = {
-    (var.grafana_admin_secret_ref.user_key)     = var.bootstrap_grafana_credentials.username
-    (var.grafana_admin_secret_ref.password_key) = var.bootstrap_grafana_credentials.password
+    (var.grafana_admin_secret_ref.user_key)     = lookup(var.grafana_credentials, "1", var.bootstrap_grafana_credentials).username
+    (var.grafana_admin_secret_ref.password_key) = lookup(var.grafana_credentials, "1", var.bootstrap_grafana_credentials).password
   }
-  data_wo_revision = var.credential_generation
+  data_wo_revision = 1
 
   type = "Opaque"
 
   lifecycle {
+    precondition {
+      condition     = try(length(lookup(var.grafana_credentials, "1", var.bootstrap_grafana_credentials).password) >= 16, false)
+      error_message = "Grafana generation 1 must remain externally escrowed while its Secret is retained."
+    }
     prevent_destroy = true
-    ignore_changes  = all
+  }
+
+  depends_on = [terraform_data.cluster_contract, terraform_data.credential_migration_gate]
+}
+
+resource "kubernetes_secret_v1" "grafana_admin_versioned" {
+  for_each = var.bootstrap_grafana_credentials_configured ? toset([
+    for generation in var.credential_generation_history : tostring(generation) if generation > 1
+  ]) : toset([])
+
+  metadata {
+    name      = "${var.grafana_admin_secret_ref.name}-v${each.key}"
+    namespace = kubernetes_namespace_v1.platform["fs2-observability"].metadata[0].name
+    labels    = merge(local.common_labels, { "fs2.nebius.ai/credential-generation" = each.key })
+  }
+
+  data_wo = {
+    (var.grafana_admin_secret_ref.user_key)     = lookup(var.grafana_credentials, each.key, null).username
+    (var.grafana_admin_secret_ref.password_key) = lookup(var.grafana_credentials, each.key, null).password
+  }
+  data_wo_revision = tonumber(each.key)
+  type             = "Opaque"
+
+  lifecycle {
+    precondition {
+      condition     = try(length(var.grafana_credentials[each.key].password) >= 16, false)
+      error_message = "Every retained Grafana generation requires externally escrowed credentials."
+    }
+    prevent_destroy = true
   }
 
   depends_on = [terraform_data.cluster_contract, terraform_data.credential_migration_gate]

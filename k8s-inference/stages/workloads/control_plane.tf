@@ -34,15 +34,33 @@ locals {
       maxSurge       = var.control_plane_rollout.max_surge
     }
     secretRollout = {
-      databaseGeneration = var.credential_generations.database
-      adminGeneration    = var.credential_generations.admin
-      accessGeneration   = var.credential_generations.access
-      payloadGeneration  = var.keyring_generations.payload.active
-      ledgerGeneration   = var.keyring_generations.ledger.active
-      pepperGeneration   = var.keyring_generations.pepper.active
-      attestorGeneration = var.keyring_generations.attestor.active
+      databaseGeneration      = var.credential_generations.database
+      adminGeneration         = var.credential_generations.admin
+      accessGeneration        = var.credential_generations.access
+      payloadGeneration       = var.keyring_generations.payload.active
+      ledgerGeneration        = var.keyring_generations.ledger.active
+      pepperGeneration        = var.keyring_generations.pepper.active
+      attestorGeneration      = var.keyring_generations.attestor.active
+      storageGeneration       = var.keyring_generations.storage.active
+      storageNameGeneration   = var.keyring_generations.storage_name.active
+      artifactStoreGeneration = var.scientific_artifacts.credential_generation
     }
     secrets = {
+      database = {
+        name  = local.active_database_consumer_secret_names["runtime"]
+        key   = "url"
+        caKey = "ca.crt"
+      }
+      migrationsDatabase = {
+        name  = local.active_database_consumer_secret_names["migrations"]
+        key   = "url"
+        caKey = "ca.crt"
+      }
+      maintenanceDatabase = {
+        name  = local.active_database_consumer_secret_names["maintenance"]
+        key   = "url"
+        caKey = "ca.crt"
+      }
       payloadKeyring = {
         name = local.active_payload_keyring_name
         key  = "keyring.json"
@@ -58,6 +76,14 @@ locals {
       routeAttestors = {
         name = local.active_route_attestors_name
         key  = "attestors.json"
+      }
+      storageCipherKeyring = {
+        name = local.active_storage_keyring_name
+        key  = "keyring.json"
+      }
+      storageNameKeyring = {
+        name = local.active_storage_name_keyring_name
+        key  = "name-keyring.json"
       }
       admin = {
         name = local.active_admin_secret_name
@@ -307,7 +333,9 @@ resource "helm_release" "control_plane" {
     kubernetes_manifest.model_deployment_crd,
     kubernetes_manifest.control_database,
     kubernetes_secret_v1.database_consumer,
+    kubernetes_secret_v1.database_consumer_versioned,
     kubernetes_secret_v1.grafana_datasource,
+    kubernetes_secret_v1.grafana_datasource_versioned,
     kubernetes_secret_v1.payload_keyring,
     kubernetes_secret_v1.ledger_keyring,
     kubernetes_secret_v1.token_pepper,
@@ -316,6 +344,9 @@ resource "helm_release" "control_plane" {
     kubernetes_secret_v1.ledger_keyring_versioned,
     kubernetes_secret_v1.token_pepper_versioned,
     kubernetes_secret_v1.route_attestors_versioned,
+    kubernetes_secret_v1.storage_keyring,
+    kubernetes_secret_v1.storage_keyring_versioned,
+    kubernetes_secret_v1.storage_name_keyring_versioned,
     kubernetes_secret_v1.admin,
     kubernetes_secret_v1.admin_versioned,
     kubernetes_secret_v1.bootstrap_access,
@@ -324,6 +355,7 @@ resource "helm_release" "control_plane" {
     kubernetes_secret_v1.scientific_access,
     kubernetes_secret_v1.website_access,
     kubernetes_secret_v1.scientific_artifact_store,
+    kubernetes_secret_v1.scientific_artifact_store_versioned,
     kubernetes_persistent_volume_claim_v1.scientific_runtime_cache,
     kubernetes_persistent_volume_claim_v1.scientific_runtime_cache_additional,
     kubernetes_job_v1.scientific_runtime_cache_bootstrap,

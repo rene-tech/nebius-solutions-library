@@ -146,7 +146,7 @@ resource "kubernetes_secret_v1" "database_consumer" {
     namespace = each.value.namespace
     labels    = merge(local.common_labels, { "fs2.nebius.ai/credential-purpose" = each.key })
     annotations = {
-      "fs2.nebius.ai/credential-generation" = tostring(var.credential_generations.database)
+      "fs2.nebius.ai/credential-generation" = "1"
     }
   }
 
@@ -154,16 +154,45 @@ resource "kubernetes_secret_v1" "database_consumer" {
   data_wo = {
     url = format(
       "postgresql://%s:%s@fs2-control-db-rw.fs2-data.svc.cluster.local:5432/fs2serve?sslmode=verify-full&sslrootcert=/tls/ca.crt",
-      local.active_database_usernames[each.value.account],
-      urlencode(local.active_database_passwords[each.value.account]),
+      local.database_accounts[each.value.account].username,
+      urlencode(random_password.database[each.value.account].result),
     )
     "ca.crt" = data.kubernetes_secret_v1.database_ca.data["ca.crt"]
   }
-  data_wo_revision = var.credential_generations.database
+  data_wo_revision = 1
 
   lifecycle {
     prevent_destroy = true
-    ignore_changes  = all
+  }
+
+  depends_on = [kubernetes_manifest.control_database, terraform_data.credential_migration_gate]
+}
+
+resource "kubernetes_secret_v1" "database_consumer_versioned" {
+  for_each = local.database_versioned_consumers
+
+  metadata {
+    name      = "${each.value.definition.secret_name}-v${each.value.generation}"
+    namespace = each.value.definition.namespace
+    labels = merge(local.common_labels, {
+      "fs2.nebius.ai/credential-purpose"    = each.value.consumer
+      "fs2.nebius.ai/credential-generation" = tostring(each.value.generation)
+    })
+  }
+
+  type = "Opaque"
+  data_wo = {
+    url = format(
+      "postgresql://%s:%s@fs2-control-db-rw.fs2-data.svc.cluster.local:5432/fs2serve?sslmode=verify-full&sslrootcert=/tls/ca.crt",
+      "${local.database_accounts[each.value.definition.account].username}_v${each.value.generation}",
+      urlencode(var.database_passwords[tostring(each.value.generation)][each.value.definition.account]),
+    )
+    "ca.crt" = data.kubernetes_secret_v1.database_ca.data["ca.crt"]
+  }
+  data_wo_revision = each.value.generation
+
+  lifecycle {
+    prevent_destroy = true
   }
 
   depends_on = [kubernetes_manifest.control_database, terraform_data.credential_migration_gate]
@@ -174,12 +203,12 @@ resource "kubernetes_secret_v1" "grafana_datasource" {
     name      = "fs2-serve-postgres-grafana-datasource"
     namespace = "fs2-observability"
     labels = merge(local.common_labels, {
-      "grafana_datasource"               = "1"
+      "grafana_datasource"               = var.credential_generations.database == 1 ? "1" : "0"
       "fs2.nebius.ai/credential-purpose" = "reporting-datasource"
       "fs2.nebius.ai/secret-delivery"    = "terraform-disposable-bootstrap"
     })
     annotations = {
-      "fs2.nebius.ai/credential-generation" = tostring(var.credential_generations.database)
+      "fs2.nebius.ai/credential-generation" = "1"
     }
   }
 
@@ -196,7 +225,7 @@ resource "kubernetes_secret_v1" "grafana_datasource" {
           access    = "proxy"
           orgId     = 1
           url       = "fs2-control-db-rw.fs2-data.svc:5432"
-          user      = local.active_database_usernames["reporting"]
+          user      = local.database_accounts["reporting"].username
           isDefault = false
           editable  = false
           version   = 1
@@ -214,7 +243,7 @@ resource "kubernetes_secret_v1" "grafana_datasource" {
             timescaledb            = false
           }
           secureJsonData = {
-            password  = local.active_database_passwords["reporting"]
+            password  = random_password.database["reporting"].result
             tlsCACert = data.kubernetes_secret_v1.database_ca.data["ca.crt"]
           }
         },
@@ -235,11 +264,83 @@ resource "kubernetes_secret_v1" "grafana_datasource" {
       ]
     })
   }
-  data_wo_revision = var.credential_generations.database
+  data_wo_revision = 1
 
   lifecycle {
     prevent_destroy = true
-    ignore_changes  = all
+  }
+
+  depends_on = [kubernetes_manifest.control_database, terraform_data.credential_migration_gate]
+}
+
+resource "kubernetes_secret_v1" "grafana_datasource_versioned" {
+  for_each = toset([for generation in var.credential_generation_history.database : tostring(generation) if generation > 1])
+
+  metadata {
+    name      = "fs2-serve-postgres-grafana-datasource-v${each.key}"
+    namespace = "fs2-observability"
+    labels = merge(local.common_labels, {
+      "grafana_datasource"                  = tonumber(each.key) == var.credential_generations.database ? "1" : "0"
+      "fs2.nebius.ai/credential-purpose"    = "reporting-datasource"
+      "fs2.nebius.ai/secret-delivery"       = "terraform-disposable-bootstrap"
+      "fs2.nebius.ai/credential-generation" = each.key
+    })
+  }
+
+  type = "Opaque"
+  data_wo = {
+    "datasource.yaml" = yamlencode({
+      apiVersion = 1
+      prune      = false
+      datasources = [
+        {
+          name      = "fs2-serve-reporting"
+          uid       = "fs2-serve-reporting"
+          type      = "postgres"
+          access    = "proxy"
+          orgId     = 1
+          url       = "fs2-control-db-rw.fs2-data.svc:5432"
+          user      = "${local.database_accounts["reporting"].username}_v${each.key}"
+          isDefault = false
+          editable  = false
+          version   = tonumber(each.key)
+          jsonData = {
+            database               = "fs2serve"
+            sslmode                = "verify-full"
+            tlsConfigurationMethod = "file-content"
+            tlsAuthWithCACert      = true
+            tlsSkipVerify          = false
+            maxOpenConns           = 10
+            maxIdleConns           = 2
+            maxIdleConnsAuto       = false
+            connMaxLifetime        = 300
+            postgresVersion        = 1800
+            timescaledb            = false
+          }
+          secureJsonData = {
+            password  = var.database_passwords[each.key]["reporting"]
+            tlsCACert = data.kubernetes_secret_v1.database_ca.data["ca.crt"]
+          }
+        },
+        {
+          name      = local.grafana_loki_datasource_uid
+          uid       = local.grafana_loki_datasource_uid
+          type      = "loki"
+          access    = "proxy"
+          orgId     = 1
+          url       = local.grafana_loki_datasource_url
+          isDefault = false
+          editable  = false
+          version   = tonumber(each.key)
+          jsonData  = { maxLines = 1000 }
+        },
+      ]
+    })
+  }
+  data_wo_revision = tonumber(each.key)
+
+  lifecycle {
+    prevent_destroy = true
   }
 
   depends_on = [kubernetes_manifest.control_database, terraform_data.credential_migration_gate]

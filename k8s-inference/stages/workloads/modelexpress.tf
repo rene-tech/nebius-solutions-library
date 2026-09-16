@@ -23,7 +23,11 @@ locals {
     for model_id in local.modelexpress_model_ids : model_id
     if try(local.catalog_models[model_id].runtime.kind, null) != "vllm"
   ])
-  modelexpress_pull_secret_name = "fs2-modelexpress-nvcrio"
+  modelexpress_pull_secret_name = var.credential_generations.registry == 1 ? "fs2-modelexpress-nvcrio" : "fs2-modelexpress-nvcrio-v${var.credential_generations.registry}"
+  modelexpress_pull_secret_names = [
+    for generation in sort(tolist(var.credential_generation_history.registry)) :
+    generation == 1 ? "fs2-modelexpress-nvcrio" : "fs2-modelexpress-nvcrio-v${generation}"
+  ]
   modelexpress_resource_counts = {
     contract   = var.model_express.enabled ? 1 : 0
     namespace  = local.modelexpress_managed ? 1 : 0
@@ -39,7 +43,12 @@ locals {
       digest     = try(var.model_express.server_image.digest, "")
       pullPolicy = "IfNotPresent"
     }
-    imagePullSecrets = local.modelexpress_nvcr_required ? [{ name = local.modelexpress_pull_secret_name }] : []
+    imagePullSecrets = local.modelexpress_nvcr_required ? [
+      for name in concat(
+        [local.modelexpress_pull_secret_name],
+        [for retained in local.modelexpress_pull_secret_names : retained if retained != local.modelexpress_pull_secret_name],
+      ) : { name = name }
+    ] : []
     podAnnotations = {
       "fs2.nebius.ai/secret-rollout-sha256" = sha256(jsonencode({ registry = var.credential_generations.registry }))
     }
@@ -163,13 +172,41 @@ resource "kubernetes_secret_v1" "modelexpress_nvcrio" {
   }
   type = "kubernetes.io/dockerconfigjson"
   data_wo = {
-    ".dockerconfigjson" = var.nvcrio_dockerconfigjson
+    ".dockerconfigjson" = lookup(var.registry_nvcrio_dockerconfigs, "1", null)
   }
-  data_wo_revision = var.credential_generations.registry
+  data_wo_revision = 1
 
   lifecycle {
+    precondition {
+      condition     = try(can(jsondecode(var.registry_nvcrio_dockerconfigs["1"])), false)
+      error_message = "ModelExpress registry generation 1 must remain externally escrowed while retained."
+    }
     prevent_destroy = true
-    ignore_changes  = all
+  }
+
+  depends_on = [kubernetes_namespace_v1.modelexpress, terraform_data.credential_migration_gate]
+}
+
+resource "kubernetes_secret_v1" "modelexpress_nvcrio_versioned" {
+  for_each = local.modelexpress_nvcr_required ? toset([
+    for generation in var.credential_generation_history.registry : tostring(generation) if generation > 1
+  ]) : toset([])
+
+  metadata {
+    name      = "fs2-modelexpress-nvcrio-v${each.key}"
+    namespace = var.model_express.namespace
+    labels    = merge(local.common_labels, { "fs2.nebius.ai/credential-generation" = each.key })
+  }
+  type             = "kubernetes.io/dockerconfigjson"
+  data_wo          = { ".dockerconfigjson" = lookup(var.registry_nvcrio_dockerconfigs, each.key, null) }
+  data_wo_revision = tonumber(each.key)
+
+  lifecycle {
+    precondition {
+      condition     = try(can(jsondecode(var.registry_nvcrio_dockerconfigs[each.key])), false)
+      error_message = "Every retained ModelExpress registry generation requires its escrowed Docker configuration."
+    }
+    prevent_destroy = true
   }
 
   depends_on = [kubernetes_namespace_v1.modelexpress, terraform_data.credential_migration_gate]
@@ -207,5 +244,6 @@ resource "helm_release" "modelexpress" {
   depends_on = [
     kubernetes_namespace_v1.modelexpress,
     kubernetes_secret_v1.modelexpress_nvcrio,
+    kubernetes_secret_v1.modelexpress_nvcrio_versioned,
   ]
 }

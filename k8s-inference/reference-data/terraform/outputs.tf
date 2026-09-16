@@ -18,8 +18,13 @@ output "storage_contract" {
 }
 
 output "object_storage_secret_name" {
-  description = "Non-secret, immutable credential Secret name derived from the current access-key identity and revision."
+  description = "Non-secret, immutable active-write credential Secret name derived from its generation and access-key identity."
   value       = local.credentials_secret
+}
+
+output "object_storage_retained_secret_names" {
+  description = "Non-secret map of every retained credential generation to its immutable Secret; old generations remain until externally proven unused and disabled."
+  value       = local.credentials_secrets
 }
 
 output "dynamic_configuration" {

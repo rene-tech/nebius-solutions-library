@@ -1034,6 +1034,8 @@ locals {
         bucket_name  = local.reference_data_bucket_name
         max_size_gib = var.deployment.storage.reference_data.object_storage.max_size_gib
       }
+      credential_generation         = var.deployment.storage.reference_data.credential_generation
+      credential_generation_history = var.deployment.storage.reference_data.credential_generation_history
     }
     scientific_artifacts = {
       enabled = var.deployment.storage.scientific_artifacts.enabled
@@ -1044,7 +1046,9 @@ locals {
         bucket_name  = local.scientific_artifacts_bucket_name
         max_size_gib = var.deployment.storage.scientific_artifacts.object_storage.max_size_gib
       }
-      retention_days = var.deployment.storage.scientific_artifacts.retention_days
+      retention_days                = var.deployment.storage.scientific_artifacts.retention_days
+      credential_generation         = var.deployment.storage.scientific_artifacts.credential_generation
+      credential_generation_history = var.deployment.storage.scientific_artifacts.credential_generation_history
     }
     public_edge_mode         = var.deployment.edge.mode
     public_edge_source_cidrs = sort(tolist(var.deployment.edge.source_cidrs))
@@ -1052,8 +1056,9 @@ locals {
   }
 
   foundation_variables = {
-    grafana_admin_secret_ref = var.deployment.secrets.grafana_admin_secret
-    credential_generation    = var.deployment.secrets.credential_generations.grafana
+    grafana_admin_secret_ref      = var.deployment.secrets.grafana_admin_secret
+    credential_generation         = var.deployment.secrets.credential_generations.grafana
+    credential_generation_history = var.deployment.secrets.credential_generation_history.grafana
     jobset = {
       enabled            = var.deployment.scientific_batch.enabled
       kubernetes_version = var.deployment.cluster.kubernetes_version
@@ -1162,22 +1167,25 @@ locals {
     fast_start_claims                     = var.deployment.storage.fast_start_claims
     accelerator_node_schedulable_capacity = local.root_accelerator_node_sizes
     reference_data = {
-      enabled    = var.deployment.storage.reference_data.enabled
-      namespace  = var.deployment.storage.reference_data.namespace
-      queue      = var.deployment.storage.reference_data.queue
-      network    = var.deployment.storage.reference_data.network
-      status     = var.deployment.storage.reference_data.status
-      pipeline   = var.deployment.storage.reference_data.pipeline
-      preprocess = var.deployment.storage.reference_data.preprocess
+      enabled                       = var.deployment.storage.reference_data.enabled
+      namespace                     = var.deployment.storage.reference_data.namespace
+      queue                         = var.deployment.storage.reference_data.queue
+      network                       = var.deployment.storage.reference_data.network
+      status                        = var.deployment.storage.reference_data.status
+      pipeline                      = var.deployment.storage.reference_data.pipeline
+      preprocess                    = var.deployment.storage.reference_data.preprocess
+      credential_generation         = var.deployment.storage.reference_data.credential_generation
+      credential_generation_history = var.deployment.storage.reference_data.credential_generation_history
     }
     scientific_artifacts = {
-      enabled               = var.deployment.storage.scientific_artifacts.enabled
-      handle_ttl_seconds    = var.deployment.storage.scientific_artifacts.handle_ttl_seconds
-      max_artifact_bytes    = var.deployment.storage.scientific_artifacts.max_artifact_bytes
-      retention_days        = var.deployment.storage.scientific_artifacts.retention_days
-      egress_cidrs          = sort(tolist(var.deployment.storage.scientific_artifacts.egress_cidrs))
-      media_types           = sort(tolist(var.deployment.storage.scientific_artifacts.media_types))
-      credential_generation = var.deployment.storage.scientific_artifacts.credential_generation
+      enabled                       = var.deployment.storage.scientific_artifacts.enabled
+      handle_ttl_seconds            = var.deployment.storage.scientific_artifacts.handle_ttl_seconds
+      max_artifact_bytes            = var.deployment.storage.scientific_artifacts.max_artifact_bytes
+      retention_days                = var.deployment.storage.scientific_artifacts.retention_days
+      egress_cidrs                  = sort(tolist(var.deployment.storage.scientific_artifacts.egress_cidrs))
+      media_types                   = sort(tolist(var.deployment.storage.scientific_artifacts.media_types))
+      credential_generation         = var.deployment.storage.scientific_artifacts.credential_generation
+      credential_generation_history = var.deployment.storage.scientific_artifacts.credential_generation_history
     }
     scientific_batch = {
       enabled                  = var.deployment.scientific_batch.enabled

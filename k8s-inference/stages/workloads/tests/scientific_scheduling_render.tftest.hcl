@@ -320,9 +320,14 @@ variables {
       }
     }
     object_storage_access = {
-      access_key_id       = "accesskey-schedtest"
-      secret_reference_id = "secret-schedtest"
-      revision            = 1
+      active_generation = 1
+      generations = {
+        "1" = {
+          access_key_id       = "accesskey-schedtest"
+          secret_reference_id = "secret-schedtest"
+          revision            = 1
+        }
+      }
     }
   }
 

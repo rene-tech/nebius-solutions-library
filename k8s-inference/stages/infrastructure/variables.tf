@@ -465,6 +465,8 @@ variable "reference_data" {
       bucket_name  = string
       max_size_gib = number
     })
+    credential_generation         = optional(number, 1)
+    credential_generation_history = optional(set(number), [1])
   })
   default = {
     enabled = false
@@ -496,6 +498,8 @@ variable "reference_data" {
       bucket_name  = "disabled-reference-data.invalid"
       max_size_gib = 2048
     }
+    credential_generation         = 1
+    credential_generation_history = [1]
   }
 
   validation {
@@ -536,7 +540,12 @@ variable "reference_data" {
         can(regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$", var.reference_data.object_storage.bucket_name)) &&
         floor(var.reference_data.object_storage.max_size_gib) == var.reference_data.object_storage.max_size_gib &&
         var.reference_data.object_storage.max_size_gib >= 1611 &&
-        var.reference_data.object_storage.max_size_gib <= 65536
+        var.reference_data.object_storage.max_size_gib <= 65536 &&
+        floor(var.reference_data.credential_generation) == var.reference_data.credential_generation &&
+        var.reference_data.credential_generation >= 1 &&
+        var.reference_data.credential_generation <= 1000 &&
+        var.reference_data.credential_generation_history == toset(range(1, max(var.reference_data.credential_generation_history...) + 1)) &&
+        contains(var.reference_data.credential_generation_history, var.reference_data.credential_generation)
       ),
       false,
     )
@@ -555,7 +564,9 @@ variable "scientific_artifacts" {
       bucket_name  = string
       max_size_gib = number
     })
-    retention_days = number
+    retention_days                = number
+    credential_generation         = optional(number, 1)
+    credential_generation_history = optional(set(number), [1])
   })
   default = {
     enabled = false
@@ -566,7 +577,9 @@ variable "scientific_artifacts" {
       bucket_name  = "disabled-scientific-artifacts.invalid"
       max_size_gib = 4096
     }
-    retention_days = 90
+    retention_days                = 90
+    credential_generation         = 1
+    credential_generation_history = [1]
   }
 
   validation {
@@ -579,7 +592,9 @@ variable "scientific_artifacts" {
         var.scientific_artifacts.object_storage.max_size_gib <= 65536 &&
         floor(var.scientific_artifacts.retention_days) == var.scientific_artifacts.retention_days &&
         var.scientific_artifacts.retention_days >= 1 &&
-        var.scientific_artifacts.retention_days <= 3650
+        var.scientific_artifacts.retention_days <= 3650 &&
+        var.scientific_artifacts.credential_generation_history == toset(range(1, max(var.scientific_artifacts.credential_generation_history...) + 1)) &&
+        contains(var.scientific_artifacts.credential_generation_history, var.scientific_artifacts.credential_generation)
       ),
       false,
     )

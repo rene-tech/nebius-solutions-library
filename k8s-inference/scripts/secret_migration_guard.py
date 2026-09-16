@@ -7,8 +7,10 @@ import argparse
 import hashlib
 import json
 import os
+import pwd
 import re
 import stat
+import subprocess
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -26,6 +28,11 @@ SCOPED_CREDENTIAL_PREFIXES = (
     "scientific-access",
 )
 DISPOSITION_ACTIONS = frozenset({"encrypted-rewrap", "secure-retire"})
+AUTHORITATIVE_STATE_SCOPE_RELATIVE = Path(".local/state")
+AUTHORITATIVE_STATE_ROOT_NAMES = (
+    "k8s-inference-dual-acceptance",
+    "nebius-k8s-inference",
+)
 
 
 class GuardError(RuntimeError):
@@ -95,6 +102,43 @@ def configuration_sha256(root: Path) -> str:
     return digest.hexdigest()
 
 
+def terraform_state_identity(document: Any) -> dict[str, Any]:
+    """Return the exact backend lineage required for a saved-plan apply.
+
+    Terraform's normalized ``show -json`` output omits the backend serial and
+    lineage.  The gate therefore also consumes the raw ``state pull`` document
+    and rejects empty/self-invented placeholders before planning.
+    """
+
+    if not isinstance(document, dict):
+        raise GuardError("raw Terraform state must be a JSON object")
+    lineage = document.get("lineage")
+    serial = document.get("serial")
+    version = document.get("version")
+    terraform_version = document.get("terraform_version")
+    resources = document.get("resources")
+    if (
+        version != 4
+        or not isinstance(lineage, str)
+        or re.fullmatch(r"[0-9a-fA-F-]{16,64}", lineage) is None
+        or not isinstance(serial, int)
+        or serial < 1
+        or not isinstance(terraform_version, str)
+        or not terraform_version
+        or not isinstance(resources, list)
+        or not resources
+    ):
+        raise GuardError(
+            "raw Terraform state must have a non-empty v4 lineage, positive serial and resource inventory"
+        )
+    return {
+        "lineage": lineage,
+        "serial": serial,
+        "terraform_version": terraform_version,
+        "raw_state_sha256": canonical_sha256(document),
+    }
+
+
 def reject_protected_moved_blocks(
     root: Path, *, registry: dict[str, Any], terraform_root: str
 ) -> None:
@@ -125,6 +169,7 @@ def reject_protected_moved_blocks(
 def write_apply_gate_receipt(
     *,
     state_document: dict[str, Any],
+    raw_state_document: dict[str, Any],
     identity_receipt: dict[str, Any] | None,
     terraform_configuration: Path,
     terraform_root: str,
@@ -146,6 +191,7 @@ def write_apply_gate_receipt(
     fingerprints = protected_state_fingerprints(
         state_document, registry=registry, terraform_root=terraform_root
     )
+    state_identity = terraform_state_identity(raw_state_document)
     if fingerprints:
         if identity_receipt is None:
             raise GuardError("durable state requires an exact identity receipt")
@@ -153,12 +199,13 @@ def write_apply_gate_receipt(
             raise GuardError("durable state differs from its identity receipt")
     now = utc_now()
     receipt = {
-        "schema": "fs2-serve.nebius.ai/terraform-apply-gate/v2",
+        "schema": "fs2-serve.nebius.ai/terraform-plan-gate/v3",
         "terraform_root": terraform_root,
         "source_commit": source_commit,
         "registry_sha256": registry_sha256(registry),
         "configuration_sha256": configuration_sha256(terraform_configuration),
         "state_fingerprints_sha256": canonical_sha256(fingerprints),
+        "state_identity": state_identity,
         "issued_at": now.isoformat().replace("+00:00", "Z"),
         "expires_at": (now.replace(microsecond=0) + timedelta(seconds=ttl_seconds))
         .isoformat()
@@ -169,7 +216,10 @@ def write_apply_gate_receipt(
 
 
 def validate_native_gate(
-    query: dict[str, Any], *, registry: dict[str, Any] | None = None
+    query: dict[str, Any],
+    *,
+    authoritative_state_document: dict[str, Any],
+    registry: dict[str, Any] | None = None,
 ) -> dict[str, str]:
     registry = registry or load_registry()
     required = {
@@ -186,7 +236,7 @@ def validate_native_gate(
         raise GuardError("native Terraform gate query is incomplete")
     receipt_path = Path(query["receipt_path"])
     receipt = load_private_document(receipt_path, label="Terraform gate receipt")
-    if receipt.get("schema") != "fs2-serve.nebius.ai/terraform-apply-gate/v2":
+    if receipt.get("schema") != "fs2-serve.nebius.ai/terraform-plan-gate/v3":
         raise GuardError("Terraform gate receipt has the wrong schema")
     root = Path(query["terraform_configuration"])
     expected = {
@@ -198,6 +248,23 @@ def validate_native_gate(
     if any(receipt.get(key) != value for key, value in expected.items()):
         raise GuardError(
             "Terraform gate receipt does not bind this source and registry"
+        )
+    state_identity = receipt.get("state_identity")
+    if (
+        not isinstance(state_identity, dict)
+        or set(state_identity)
+        != {"lineage", "serial", "terraform_version", "raw_state_sha256"}
+        or not isinstance(state_identity.get("lineage"), str)
+        or not isinstance(state_identity.get("serial"), int)
+        or state_identity["serial"] < 1
+        or not isinstance(state_identity.get("terraform_version"), str)
+        or not isinstance(state_identity.get("raw_state_sha256"), str)
+        or len(state_identity["raw_state_sha256"]) != 64
+    ):
+        raise GuardError("Terraform gate receipt has no exact state lineage")
+    if state_identity != terraform_state_identity(authoritative_state_document):
+        raise GuardError(
+            "Terraform gate receipt differs from the authoritative backend state"
         )
     issued_at = parse_timestamp(receipt.get("issued_at"))
     expires_at = parse_timestamp(receipt.get("expires_at"))
@@ -216,6 +283,296 @@ def validate_native_gate(
         "receipt_sha256": file_sha256(receipt_path),
         "expires_at": receipt["expires_at"],
     }
+
+
+def saved_plan_identity(path: Path) -> dict[str, Any]:
+    path = path.absolute()
+    if path.is_symlink() or not path.is_file():
+        raise GuardError("saved Terraform plan must be a real file")
+    metadata = path.stat()
+    if metadata.st_uid != os.geteuid() or stat.S_IMODE(metadata.st_mode) & 0o077:
+        raise GuardError("saved Terraform plan must be owner-owned and owner-only")
+    return {
+        "realpath_sha256": hashlib.sha256(str(path.resolve()).encode()).hexdigest(),
+        "device": metadata.st_dev,
+        "inode": metadata.st_ino,
+        "size": metadata.st_size,
+        "sha256": file_sha256(path),
+    }
+
+
+def write_saved_plan_gate_receipt(
+    *,
+    plan_document: dict[str, Any],
+    raw_state_document: dict[str, Any],
+    saved_plan: Path,
+    planning_receipt_path: Path,
+    identity_receipt: dict[str, Any] | None,
+    live_secret_document: dict[str, Any] | None,
+    terraform_configuration: Path,
+    terraform_root: str,
+    source_commit: str,
+    path: Path,
+    ttl_seconds: int = 300,
+    registry: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Seal the exact saved plan and live credential identities for apply."""
+
+    registry = registry or load_registry()
+    if not 60 <= ttl_seconds <= 300:
+        raise GuardError("saved-plan apply gate TTL must be between 60 and 300 seconds")
+    planning_receipt = load_private_document(
+        planning_receipt_path, label="Terraform planning gate receipt"
+    )
+    validate_native_gate(
+        {
+            "receipt_path": str(planning_receipt_path),
+            "terraform_configuration": str(terraform_configuration),
+            "terraform_root": terraform_root,
+            "source_commit": source_commit,
+        },
+        authoritative_state_document=raw_state_document,
+        registry=registry,
+    )
+    prior_state = plan_document.get("prior_state")
+    if not isinstance(prior_state, dict):
+        raise GuardError("saved plan has no authoritative prior state")
+    fingerprints = protected_state_fingerprints(
+        prior_state, registry=registry, terraform_root=terraform_root
+    )
+    if canonical_sha256(fingerprints) != planning_receipt.get(
+        "state_fingerprints_sha256"
+    ):
+        raise GuardError("saved plan prior state differs from the planning gate")
+    if planning_receipt.get("state_identity") != terraform_state_identity(
+        raw_state_document
+    ):
+        raise GuardError("saved plan was not sealed against the current backend state")
+    if fingerprints:
+        if identity_receipt is None:
+            raise GuardError("saved plan requires the exact durable identity receipt")
+        if identity_receipt.get("address_fingerprints") != fingerprints:
+            raise GuardError("saved plan differs from the durable identity receipt")
+    inspect_plan(
+        plan_document,
+        identity_receipt=identity_receipt,
+        registry=registry,
+        terraform_root=terraform_root,
+    )
+    bindings = live_secret_bindings(
+        prior_state,
+        live_secret_document,
+        registry=registry,
+        terraform_root=terraform_root,
+    )
+    if identity_receipt is not None and bindings != identity_receipt.get(
+        "live_secret_bindings"
+    ):
+        raise GuardError(
+            "live Secret identity/content differs from its custody receipt"
+        )
+    now = utc_now()
+    receipt = {
+        "schema": "fs2-serve.nebius.ai/terraform-saved-plan-apply-gate/v3",
+        "terraform_root": terraform_root,
+        "source_commit": source_commit,
+        "registry_sha256": registry_sha256(registry),
+        "configuration_sha256": configuration_sha256(terraform_configuration),
+        "state_identity": planning_receipt["state_identity"],
+        "address_fingerprints": fingerprints,
+        "live_secret_bindings": bindings,
+        "planning_receipt_sha256": file_sha256(planning_receipt_path),
+        "saved_plan": saved_plan_identity(saved_plan),
+        "plan_json_sha256": canonical_sha256(plan_document),
+        "issued_at": now.isoformat().replace("+00:00", "Z"),
+        "expires_at": (now + timedelta(seconds=ttl_seconds))
+        .isoformat()
+        .replace("+00:00", "Z"),
+    }
+    write_private_json(path, receipt)
+    return receipt
+
+
+def validate_saved_plan_gate(
+    *,
+    receipt_path: Path,
+    plan_document: dict[str, Any],
+    saved_plan: Path,
+    live_secret_document: dict[str, Any] | None,
+    raw_state_document: dict[str, Any],
+    terraform_configuration: Path,
+    terraform_root: str,
+    source_commit: str,
+    registry: dict[str, Any] | None = None,
+) -> dict[str, str]:
+    """Revalidate the saved plan at execution time, including receipt expiry."""
+
+    registry = registry or load_registry()
+    receipt = load_private_document(receipt_path, label="saved-plan apply receipt")
+    if (
+        receipt.get("schema")
+        != "fs2-serve.nebius.ai/terraform-saved-plan-apply-gate/v3"
+    ):
+        raise GuardError("saved-plan apply receipt has the wrong schema")
+    expected = {
+        "terraform_root": terraform_root,
+        "source_commit": source_commit,
+        "registry_sha256": registry_sha256(registry),
+        "configuration_sha256": configuration_sha256(terraform_configuration),
+        "saved_plan": saved_plan_identity(saved_plan),
+        "plan_json_sha256": canonical_sha256(plan_document),
+    }
+    if any(receipt.get(key) != value for key, value in expected.items()):
+        raise GuardError(
+            "saved-plan apply receipt differs from the exact execution input"
+        )
+    if receipt.get("state_identity") != terraform_state_identity(raw_state_document):
+        raise GuardError(
+            "saved-plan apply receipt differs from the authoritative backend state"
+        )
+    issued_at = parse_timestamp(receipt.get("issued_at"))
+    expires_at = parse_timestamp(receipt.get("expires_at"))
+    now = utc_now()
+    if (
+        expires_at <= now
+        or issued_at > now
+        or expires_at - issued_at > timedelta(seconds=300)
+    ):
+        raise GuardError(
+            "saved-plan apply receipt is expired or has an invalid lifetime"
+        )
+    identity_receipt = {
+        "registry_sha256": receipt["registry_sha256"],
+        "address_fingerprints": receipt.get("address_fingerprints"),
+        "live_secret_bindings": receipt.get("live_secret_bindings"),
+    }
+    inspect_plan(
+        plan_document,
+        identity_receipt=identity_receipt,
+        registry=registry,
+        terraform_root=terraform_root,
+    )
+    bindings = live_secret_bindings(
+        plan_document["prior_state"],
+        live_secret_document,
+        registry=registry,
+        terraform_root=terraform_root,
+    )
+    if bindings != receipt.get("live_secret_bindings"):
+        raise GuardError(
+            "live Secret identity/content changed after plan authorization"
+        )
+    return {
+        "status": "pass",
+        "receipt_sha256": file_sha256(receipt_path),
+        "expires_at": receipt["expires_at"],
+    }
+
+
+def command_json(command: Sequence[str], *, label: str) -> dict[str, Any]:
+    try:
+        result = subprocess.run(
+            list(command),
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        document = json.loads(result.stdout)
+    except (OSError, subprocess.CalledProcessError, json.JSONDecodeError) as error:
+        raise GuardError(
+            f"{label} failed without producing authoritative JSON"
+        ) from error
+    if not isinstance(document, dict):
+        raise GuardError(f"{label} produced malformed JSON")
+    return document
+
+
+def live_secret_inventory_for_receipt(
+    receipt: dict[str, Any], *, kubectl: str
+) -> dict[str, Any] | None:
+    bindings = receipt.get("live_secret_bindings")
+    if not isinstance(bindings, dict):
+        raise GuardError("saved-plan apply receipt has malformed live Secret bindings")
+    if not bindings:
+        return None
+    items: list[dict[str, Any]] = []
+    identities: set[tuple[str, str]] = set()
+    for binding in bindings.values():
+        if not isinstance(binding, dict):
+            raise GuardError(
+                "saved-plan apply receipt has malformed live Secret binding"
+            )
+        identity = (binding.get("namespace"), binding.get("name"))
+        if not all(isinstance(value, str) and value for value in identity):
+            raise GuardError("saved-plan apply receipt has incomplete Secret identity")
+        if identity in identities:
+            continue
+        identities.add(identity)
+        items.append(
+            command_json(
+                [
+                    kubectl,
+                    "get",
+                    "secret",
+                    identity[1],
+                    "--namespace",
+                    identity[0],
+                    "--output",
+                    "json",
+                ],
+                label="live Secret verification",
+            )
+        )
+    return {"items": items}
+
+
+def validate_saved_plan_gate_from_environment(
+    *,
+    terraform_configuration: Path,
+    terraform_root: str,
+    source_commit: str,
+    registry: dict[str, Any] | None = None,
+) -> dict[str, str]:
+    """Execution-time entrypoint used by Terraform's local apply provisioner."""
+
+    receipt_value = os.environ.get("FS2_TERRAFORM_APPLY_GATE_RECEIPT", "")
+    plan_value = os.environ.get("FS2_TERRAFORM_SAVED_PLAN", "")
+    terraform = os.environ.get("FS2_TERRAFORM_EXECUTABLE", "terraform")
+    if not receipt_value or not plan_value:
+        raise GuardError(
+            "apply requires the exact saved-plan receipt and plan in the execution environment"
+        )
+    receipt_path = Path(receipt_value)
+    saved_plan = Path(plan_value)
+    receipt = load_private_document(receipt_path, label="saved-plan apply receipt")
+    plan_document = command_json(
+        [
+            terraform,
+            f"-chdir={terraform_configuration}",
+            "show",
+            "-json",
+            str(saved_plan),
+        ],
+        label="saved Terraform plan inspection",
+    )
+    raw_state_document = command_json(
+        [terraform, f"-chdir={terraform_configuration}", "state", "pull"],
+        label="authoritative Terraform state inspection",
+    )
+    live_document = live_secret_inventory_for_receipt(
+        receipt, kubectl=os.environ.get("FS2_KUBECTL_EXECUTABLE", "kubectl")
+    )
+    return validate_saved_plan_gate(
+        receipt_path=receipt_path,
+        plan_document=plan_document,
+        saved_plan=saved_plan,
+        live_secret_document=live_document,
+        raw_state_document=raw_state_document,
+        terraform_configuration=terraform_configuration,
+        terraform_root=terraform_root,
+        source_commit=source_commit,
+        registry=registry,
+    )
 
 
 def load_registry(path: Path = DEFAULT_REGISTRY) -> dict[str, Any]:
@@ -729,44 +1086,224 @@ def file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def inventory_run_root(root: Path) -> list[dict[str, Any]]:
+def _descriptor_sha256(descriptor: int, *, display_path: Path) -> str:
+    """Hash one stable, owner-only regular-file descriptor."""
+
+    before = os.fstat(descriptor)
+    if not stat.S_ISREG(before.st_mode):
+        raise GuardError(f"run-root entry is not a regular file: {display_path}")
+    if before.st_uid != os.geteuid() or stat.S_IMODE(before.st_mode) & 0o077:
+        raise GuardError(
+            f"run-root file is not owner-owned and owner-only: {display_path}"
+        )
+    digest = hashlib.sha256()
+    while chunk := os.read(descriptor, 1024 * 1024):
+        digest.update(chunk)
+    after = os.fstat(descriptor)
+    stable_fields = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
+    if any(getattr(before, field) != getattr(after, field) for field in stable_fields):
+        raise GuardError(f"run-root file changed while inventoried: {display_path}")
+    return digest.hexdigest()
+
+
+def _inventory_run_root(root: Path) -> tuple[list[dict[str, Any]], os.stat_result]:
+    """Inventory from stable directory/file descriptors, rejecting all symlinks."""
+
     root = root.absolute()
     if root.is_symlink() or not root.is_dir():
         raise GuardError("run root must be a real directory")
+    directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    directory_flags |= getattr(os, "O_NOFOLLOW", 0)
+    root_descriptor = os.open(root, directory_flags)
     inventory: list[dict[str, Any]] = []
-    for directory, directory_names, file_names in os.walk(root, followlinks=False):
-        current = Path(directory)
-        metadata = current.stat()
+    try:
+        root_metadata = os.fstat(root_descriptor)
         if (
-            current.is_symlink()
-            or metadata.st_uid != os.geteuid()
-            or stat.S_IMODE(metadata.st_mode) & 0o077
+            not stat.S_ISDIR(root_metadata.st_mode)
+            or root_metadata.st_uid != os.geteuid()
+            or stat.S_IMODE(root_metadata.st_mode) & 0o077
+        ):
+            raise GuardError("run root must be an owner-owned, owner-only directory")
+        for directory, directory_names, file_names, directory_descriptor in os.fwalk(
+            ".", topdown=True, follow_symlinks=False, dir_fd=root_descriptor
+        ):
+            current_relative = Path(directory)
+            current_metadata = os.fstat(directory_descriptor)
+            if (
+                not stat.S_ISDIR(current_metadata.st_mode)
+                or current_metadata.st_uid != os.geteuid()
+                or stat.S_IMODE(current_metadata.st_mode) & 0o077
+            ):
+                raise GuardError(
+                    "run-root directory is not owner-owned and owner-only: "
+                    f"{root / current_relative}"
+                )
+            for name in directory_names:
+                child = os.stat(
+                    name, dir_fd=directory_descriptor, follow_symlinks=False
+                )
+                if stat.S_ISLNK(child.st_mode):
+                    raise GuardError(
+                        "run root contains a directory symlink: "
+                        f"{root / current_relative / name}"
+                    )
+                if not stat.S_ISDIR(child.st_mode):
+                    raise GuardError(
+                        "run-root traversal encountered a non-directory: "
+                        f"{root / current_relative / name}"
+                    )
+            for name in file_names:
+                relative_path = (current_relative / name).relative_to(".")
+                display_path = root / relative_path
+                flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+                try:
+                    descriptor = os.open(name, flags, dir_fd=directory_descriptor)
+                except OSError as error:
+                    raise GuardError(
+                        f"cannot safely open run-root entry: {display_path}"
+                    ) from error
+                try:
+                    digest = _descriptor_sha256(descriptor, display_path=display_path)
+                finally:
+                    os.close(descriptor)
+                inventory.append(
+                    {
+                        "path": relative_path.as_posix(),
+                        "sha256": digest,
+                        "classification": (
+                            "known-sensitive"
+                            if is_plaintext_artifact(name)
+                            else "unknown"
+                        ),
+                    }
+                )
+        path_metadata = os.stat(root, follow_symlinks=False)
+        if (path_metadata.st_dev, path_metadata.st_ino) != (
+            root_metadata.st_dev,
+            root_metadata.st_ino,
+        ):
+            raise GuardError("run root changed while it was inventoried")
+        return sorted(inventory, key=lambda item: item["path"]), root_metadata
+    finally:
+        os.close(root_descriptor)
+
+
+def inventory_run_root(root: Path) -> list[dict[str, Any]]:
+    inventory, _ = _inventory_run_root(root)
+    return inventory
+
+
+def authoritative_operator_state_root() -> Path:
+    """Return the non-overridable platform-state parent for the OS account."""
+
+    try:
+        owner_home = Path(pwd.getpwuid(os.geteuid()).pw_dir)
+    except KeyError as error:
+        raise GuardError("effective OS account has no authoritative home") from error
+    if not owner_home.is_absolute():
+        raise GuardError("effective OS account has no absolute authoritative home")
+    return owner_home / AUTHORITATIVE_STATE_SCOPE_RELATIVE
+
+
+def require_authoritative_scope(root: Path) -> str:
+    """Require the fixed platform-wide owner scope, never a caller-selected root."""
+
+    configured_path = authoritative_operator_state_root()
+    if configured_path.is_symlink() or not configured_path.is_dir():
+        raise GuardError("authoritative owner scope must be a real directory")
+    if configured_path.resolve() != root.absolute().resolve():
+        raise GuardError("requested run root is not the authoritative owner scope")
+    metadata = configured_path.stat()
+    if metadata.st_uid != os.geteuid() or stat.S_IMODE(metadata.st_mode) & 0o077:
+        raise GuardError("authoritative owner scope must be owner-owned and owner-only")
+    return hashlib.sha256(str(configured_path.resolve()).encode()).hexdigest()
+
+
+def _inventory_authoritative_scope(
+    scope: Path,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], os.stat_result]:
+    """Inventory every code-defined product state family below the fixed scope.
+
+    The caller supplies only the fixed parent returned by the OS account
+    database.  It cannot select one run directory and omit a sibling family.
+    Missing families are recorded so a newly created family also invalidates a
+    pre-retirement manifest.
+    """
+
+    scope = scope.absolute()
+    scope_metadata = os.stat(scope, follow_symlinks=False)
+    artifacts: list[dict[str, Any]] = []
+    roots: list[dict[str, Any]] = []
+    for name in AUTHORITATIVE_STATE_ROOT_NAMES:
+        child = scope / name
+        try:
+            child_metadata = os.stat(child, follow_symlinks=False)
+        except FileNotFoundError:
+            roots.append(
+                {"path": name, "present": False, "device": None, "inode": None}
+            )
+            continue
+        if stat.S_ISLNK(child_metadata.st_mode) or not stat.S_ISDIR(
+            child_metadata.st_mode
         ):
             raise GuardError(
-                f"run-root directory is not owner-owned and owner-only: {current}"
+                f"authoritative state family is not a real directory: {name}"
             )
-        for name in directory_names:
-            if (current / name).is_symlink():
-                raise GuardError(
-                    f"run root contains a directory symlink: {current / name}"
-                )
-        for name in file_names:
-            path = current / name
-            if path.is_symlink():
-                raise GuardError(f"run root contains a file symlink: {path}")
-            inventory.append(
-                {
-                    "path": path.relative_to(root).as_posix(),
-                    "sha256": file_sha256(path),
-                    "classification": (
-                        "known-sensitive" if is_plaintext_artifact(name) else "unknown"
-                    ),
-                }
-            )
-    return sorted(inventory, key=lambda item: item["path"])
+        child_artifacts, stable_metadata = _inventory_run_root(child)
+        roots.append(
+            {
+                "path": name,
+                "present": True,
+                "device": stable_metadata.st_dev,
+                "inode": stable_metadata.st_ino,
+            }
+        )
+        artifacts.extend(
+            {
+                **item,
+                "path": (Path(name) / item["path"]).as_posix(),
+            }
+            for item in child_artifacts
+        )
+    final_scope_metadata = os.stat(scope, follow_symlinks=False)
+    if (scope_metadata.st_dev, scope_metadata.st_ino) != (
+        final_scope_metadata.st_dev,
+        final_scope_metadata.st_ino,
+    ):
+        raise GuardError("authoritative state scope changed while inventoried")
+    return sorted(artifacts, key=lambda item: item["path"]), roots, scope_metadata
+
+
+def _validate_scope_roots(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list) or len(value) != len(AUTHORITATIVE_STATE_ROOT_NAMES):
+        raise GuardError("artifact manifest has malformed authoritative roots")
+    if [item.get("path") for item in value if isinstance(item, dict)] != list(
+        AUTHORITATIVE_STATE_ROOT_NAMES
+    ):
+        raise GuardError("artifact manifest omits an authoritative state family")
+    for item in value:
+        if not isinstance(item, dict) or set(item) != {
+            "path",
+            "present",
+            "device",
+            "inode",
+        }:
+            raise GuardError("artifact manifest has malformed authoritative roots")
+        if not isinstance(item["present"], bool):
+            raise GuardError("artifact manifest has malformed authoritative roots")
+        if item["present"]:
+            if not all(
+                isinstance(item[field], int) and item[field] >= 0
+                for field in ("device", "inode")
+            ):
+                raise GuardError("artifact manifest has malformed authoritative roots")
+        elif item["device"] is not None or item["inode"] is not None:
+            raise GuardError("artifact manifest has malformed authoritative roots")
+    return value
 
 
 def write_artifact_manifest(root: Path, path: Path) -> dict[str, Any]:
+    authority_sha256 = require_authoritative_scope(root)
     path = path.absolute()
     if path.exists() or path.is_symlink():
         raise GuardError("artifact manifest is write-once and already exists")
@@ -780,11 +1317,10 @@ def write_artifact_manifest(root: Path, path: Path) -> dict[str, Any]:
         raise GuardError("artifact manifest parent must be owner-owned and owner-only")
     if path.is_relative_to(root.absolute()):
         raise GuardError("artifact manifest must be stored outside the retirement root")
-    artifacts = inventory_run_root(root)
-    root_metadata = root.absolute().stat()
+    artifacts, scope_roots, root_metadata = _inventory_authoritative_scope(root)
     registry = load_registry()
     receipt = {
-        "schema": "fs2-serve.nebius.ai/global-state-artifacts/v2",
+        "schema": "fs2-serve.nebius.ai/global-state-artifacts/v3",
         "captured_at": datetime.now(UTC)
         .replace(microsecond=0)
         .isoformat()
@@ -792,8 +1328,10 @@ def write_artifact_manifest(root: Path, path: Path) -> dict[str, Any]:
         "scope_realpath_sha256": hashlib.sha256(
             str(root.absolute().resolve()).encode()
         ).hexdigest(),
+        "scope_authority_sha256": authority_sha256,
         "scope_device": root_metadata.st_dev,
         "scope_inode": root_metadata.st_ino,
+        "scope_roots": scope_roots,
         "registry_sha256": registry_sha256(registry),
         "artifacts": artifacts,
     }
@@ -816,7 +1354,7 @@ def load_artifact_manifest(path: Path) -> dict[str, Any]:
     if path.stat().st_uid != os.geteuid() or stat.S_IMODE(path.stat().st_mode) != 0o600:
         raise GuardError("artifact manifest must be owner-owned mode 0600")
     receipt = json.loads(path.read_text(encoding="utf-8"))
-    if receipt.get("schema") != "fs2-serve.nebius.ai/global-state-artifacts/v2":
+    if receipt.get("schema") != "fs2-serve.nebius.ai/global-state-artifacts/v3":
         raise GuardError("artifact manifest has the wrong schema")
     artifacts = receipt.get("artifacts")
     if not isinstance(artifacts, list) or not all(
@@ -849,6 +1387,9 @@ def load_artifact_manifest(path: Path) -> dict[str, Any]:
         and all(character in "0123456789abcdef" for character in root_sha256)
     ):
         raise GuardError("artifact manifest has a malformed root identity")
+    if receipt.get("scope_authority_sha256") != root_sha256:
+        raise GuardError("artifact manifest is not bound to its scope authority")
+    _validate_scope_roots(receipt.get("scope_roots"))
     if not all(
         isinstance(receipt.get(key), int) and receipt[key] >= 0
         for key in ("scope_device", "scope_inode")
@@ -871,7 +1412,7 @@ def disposition_entries(document: Any) -> list[dict[str, Any]]:
     if (
         not isinstance(document, dict)
         or document.get("schema")
-        != "fs2-serve.nebius.ai/global-artifact-disposition-input/v2"
+        != "fs2-serve.nebius.ai/global-artifact-disposition-input/v3"
     ):
         raise GuardError("artifact disposition input has the wrong schema")
     entries = document.get("artifacts")
@@ -909,8 +1450,10 @@ def disposition_entries(document: Any) -> list[dict[str, Any]]:
                 "verified_at",
                 "verifier",
                 "receipt_sha256",
+                "receipt_path",
             }
             or not all(isinstance(value, str) and value for value in evidence.values())
+            or not Path(evidence["receipt_path"]).is_absolute()
             or len(evidence["receipt_sha256"]) != 64
             or any(
                 character not in "0123456789abcdef"
@@ -933,10 +1476,58 @@ def disposition_entries(document: Any) -> list[dict[str, Any]]:
     return sorted(normalized, key=lambda item: item["path"])
 
 
+def verify_disposition_provider_receipt(entry: dict[str, Any]) -> None:
+    """Verify a separately captured provider/eraser receipt for one artifact."""
+
+    evidence = entry["evidence"]
+    receipt_path = Path(evidence["receipt_path"]).absolute()
+    document = load_private_document(
+        receipt_path, label="artifact disposition provider receipt"
+    )
+    if file_sha256(receipt_path) != evidence["receipt_sha256"]:
+        raise GuardError("artifact disposition provider receipt hash differs")
+    required = {
+        "schema",
+        "provider",
+        "action",
+        "source_sha256",
+        "object_id",
+        "version_id",
+        "audit_event_id",
+        "verified_at",
+        "verifier",
+        "status",
+    }
+    expected_status = {
+        "encrypted-rewrap": "rewrapped-and-verified",
+        "secure-retire": "securely-retired-and-verified",
+    }[entry["action"]]
+    if not isinstance(document, dict) or set(document) != required:
+        raise GuardError("artifact disposition provider receipt is malformed")
+    expected = {
+        "schema": "fs2-serve.nebius.ai/artifact-disposition-provider-receipt/v1",
+        "provider": evidence["provider"],
+        "action": entry["action"],
+        "source_sha256": entry["sha256"],
+        "object_id": evidence["object_id"],
+        "version_id": evidence["version_id"],
+        "audit_event_id": evidence["audit_event_id"],
+        "verified_at": evidence["verified_at"],
+        "verifier": evidence["verifier"],
+        "status": expected_status,
+    }
+    if document != expected:
+        raise GuardError(
+            "artifact disposition provider receipt differs from the exact artifact"
+        )
+
+
 def write_disposition_receipt(
     manifest: dict[str, Any], input_document: Any, path: Path
 ) -> dict[str, Any]:
     entries = disposition_entries(input_document)
+    for entry in entries:
+        verify_disposition_provider_receipt(entry)
     expected = {(item["path"], item["sha256"]) for item in manifest["artifacts"]}
     observed = {(item["path"], item["sha256"]) for item in entries}
     if observed != expected or len(entries) != len(manifest["artifacts"]):
@@ -944,7 +1535,7 @@ def write_disposition_receipt(
             "artifact disposition input does not exactly cover the captured manifest"
         )
     receipt = {
-        "schema": "fs2-serve.nebius.ai/global-artifact-dispositions/v2",
+        "schema": "fs2-serve.nebius.ai/global-artifact-dispositions/v3",
         "recorded_at": datetime.now(UTC)
         .replace(microsecond=0)
         .isoformat()
@@ -989,16 +1580,18 @@ def load_disposition_receipt(path: Path) -> dict[str, Any]:
     if (
         not isinstance(receipt, dict)
         or receipt.get("schema")
-        != "fs2-serve.nebius.ai/global-artifact-dispositions/v2"
+        != "fs2-serve.nebius.ai/global-artifact-dispositions/v3"
         or not isinstance(receipt.get("manifest_sha256"), str)
     ):
         raise GuardError("artifact disposition receipt has the wrong schema")
-    disposition_entries(
+    entries = disposition_entries(
         {
-            "schema": "fs2-serve.nebius.ai/global-artifact-disposition-input/v2",
+            "schema": "fs2-serve.nebius.ai/global-artifact-disposition-input/v3",
             "artifacts": receipt.get("artifacts"),
         }
     )
+    for entry in entries:
+        verify_disposition_provider_receipt(entry)
     return receipt
 
 
@@ -1009,7 +1602,8 @@ def inspect_run_root(
     artifact_manifest: dict[str, Any] | None = None,
     disposition_receipt: dict[str, Any] | None = None,
 ) -> dict[str, int | str]:
-    inventory = inventory_run_root(root)
+    authority_sha256 = require_authoritative_scope(root)
+    inventory, scope_roots, metadata = _inventory_authoritative_scope(root)
     known = sum(item["classification"] == "known-sensitive" for item in inventory)
     unknown = len(inventory) - known
     if retired:
@@ -1019,18 +1613,36 @@ def inspect_run_root(
             raise GuardError(
                 "retirement requires the exact artifact disposition receipt"
             )
-        metadata = root.absolute().stat()
         expected_root = hashlib.sha256(
             str(root.absolute().resolve()).encode()
         ).hexdigest()
         if (
             artifact_manifest.get("scope_realpath_sha256") != expected_root
+            or artifact_manifest.get("scope_authority_sha256") != authority_sha256
             or artifact_manifest.get("scope_device") != metadata.st_dev
             or artifact_manifest.get("scope_inode") != metadata.st_ino
             or artifact_manifest.get("registry_sha256")
             != registry_sha256(load_registry())
         ):
             raise GuardError("artifact manifest belongs to a different run root")
+        manifested_roots = _validate_scope_roots(artifact_manifest.get("scope_roots"))
+        for manifested, current in zip(manifested_roots, scope_roots, strict=True):
+            if not manifested["present"] and current["present"]:
+                raise GuardError(
+                    "authoritative state family appeared after the artifact manifest"
+                )
+            if (
+                manifested["present"]
+                and current["present"]
+                and (
+                    manifested["device"],
+                    manifested["inode"],
+                )
+                != (current["device"], current["inode"])
+            ):
+                raise GuardError(
+                    "authoritative state family changed after the artifact manifest"
+                )
         if disposition_receipt.get("manifest_sha256") != canonical_sha256(
             artifact_manifest
         ):
@@ -1084,6 +1696,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     apply_gate = subparsers.add_parser("capture-apply-gate")
     apply_gate.add_argument("state_json", type=Path)
     apply_gate.add_argument("receipt", type=Path)
+    apply_gate.add_argument("--raw-state", type=Path, required=True)
     apply_gate.add_argument("--identity-receipt", type=Path)
     apply_gate.add_argument("--terraform-configuration", type=Path, required=True)
     apply_gate.add_argument(
@@ -1096,6 +1709,32 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     apply_gate.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
     native_gate = subparsers.add_parser("native-gate")
     native_gate.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
+    saved_gate = subparsers.add_parser("capture-saved-plan-gate")
+    saved_gate.add_argument("plan_json", type=Path)
+    saved_gate.add_argument("saved_plan", type=Path)
+    saved_gate.add_argument("receipt", type=Path)
+    saved_gate.add_argument("--planning-receipt", type=Path, required=True)
+    saved_gate.add_argument("--raw-state", type=Path, required=True)
+    saved_gate.add_argument("--identity-receipt", type=Path)
+    saved_gate.add_argument("--live-secrets", type=Path)
+    saved_gate.add_argument("--terraform-configuration", type=Path, required=True)
+    saved_gate.add_argument(
+        "--terraform-root",
+        choices=("infrastructure", "foundation", "workloads", "reference-data"),
+        required=True,
+    )
+    saved_gate.add_argument("--source-commit", required=True)
+    saved_gate.add_argument("--ttl-seconds", type=int, default=300)
+    saved_gate.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
+    execution_gate = subparsers.add_parser("apply-saved-plan-gate")
+    execution_gate.add_argument("--terraform-configuration", type=Path, required=True)
+    execution_gate.add_argument(
+        "--terraform-root",
+        choices=("infrastructure", "foundation", "workloads", "reference-data"),
+        required=True,
+    )
+    execution_gate.add_argument("--source-commit", required=True)
+    execution_gate.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
     artifacts = subparsers.add_parser("capture-global-state")
     artifacts.add_argument("path", type=Path)
     artifacts.add_argument("receipt", type=Path)
@@ -1114,9 +1753,65 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     if args.command == "native-gate":
+        query = json.loads(os.sys.stdin.read())
+        terraform_configuration = Path(query.get("terraform_configuration", ""))
+        terraform = os.environ.get("FS2_TERRAFORM_EXECUTABLE", "terraform")
         result = validate_native_gate(
-            json.loads(os.sys.stdin.read()), registry=load_registry(args.registry)
+            query,
+            authoritative_state_document=command_json(
+                [
+                    terraform,
+                    f"-chdir={terraform_configuration}",
+                    "state",
+                    "pull",
+                ],
+                label="authoritative Terraform state inspection",
+            ),
+            registry=load_registry(args.registry),
         )
+    elif args.command == "apply-saved-plan-gate":
+        result = validate_saved_plan_gate_from_environment(
+            terraform_configuration=args.terraform_configuration,
+            terraform_root=args.terraform_root,
+            source_commit=args.source_commit,
+            registry=load_registry(args.registry),
+        )
+    elif args.command == "capture-saved-plan-gate":
+        registry = load_registry(args.registry)
+        plan_document = json.loads(
+            os.sys.stdin.read()
+            if str(args.plan_json) == "-"
+            else args.plan_json.read_text(encoding="utf-8")
+        )
+        receipt = write_saved_plan_gate_receipt(
+            plan_document=plan_document,
+            raw_state_document=load_private_document(
+                args.raw_state, label="raw Terraform state"
+            ),
+            saved_plan=args.saved_plan,
+            planning_receipt_path=args.planning_receipt,
+            identity_receipt=load_identity_receipt(
+                args.identity_receipt,
+                registry=registry,
+                terraform_root=args.terraform_root,
+            ),
+            live_secret_document=(
+                load_private_document(args.live_secrets, label="live Secret inventory")
+                if args.live_secrets is not None
+                else None
+            ),
+            terraform_configuration=args.terraform_configuration,
+            terraform_root=args.terraform_root,
+            source_commit=args.source_commit,
+            path=args.receipt,
+            ttl_seconds=args.ttl_seconds,
+            registry=registry,
+        )
+        result = {
+            "receipt": str(args.receipt.absolute()),
+            "expires_at": receipt["expires_at"],
+            "plan_sha256": receipt["saved_plan"]["sha256"],
+        }
     elif args.command in {"plan", "capture-state", "capture-apply-gate"}:
         document_path = args.plan_json if args.command == "plan" else args.state_json
         encoded = (
@@ -1161,6 +1856,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             registry = load_registry(args.registry)
             receipt = write_apply_gate_receipt(
                 state_document=document,
+                raw_state_document=load_private_document(
+                    args.raw_state, label="raw Terraform state"
+                ),
                 identity_receipt=load_identity_receipt(
                     args.identity_receipt,
                     registry=registry,

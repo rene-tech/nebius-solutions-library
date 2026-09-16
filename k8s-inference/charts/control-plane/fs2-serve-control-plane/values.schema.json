@@ -1289,6 +1289,8 @@
         "ledgerHmacKeyring",
         "tokenPepper",
         "routeAttestors",
+        "storageCipherKeyring",
+        "storageNameKeyring",
         "admin",
         "artifactStore"
       ],
@@ -1312,6 +1314,12 @@
           "$ref": "#/$defs/secretKeyReference"
         },
         "routeAttestors": {
+          "$ref": "#/$defs/secretKeyReference"
+        },
+        "storageCipherKeyring": {
+          "$ref": "#/$defs/secretKeyReference"
+        },
+        "storageNameKeyring": {
           "$ref": "#/$defs/secretKeyReference"
         },
         "admin": {
@@ -1349,7 +1357,10 @@
         "payloadGeneration",
         "ledgerGeneration",
         "pepperGeneration",
-        "attestorGeneration"
+        "attestorGeneration",
+        "storageGeneration",
+        "storageNameGeneration",
+        "artifactStoreGeneration"
       ],
       "properties": {
         "databaseGeneration": { "type": "integer", "minimum": 1 },
@@ -1358,7 +1369,10 @@
         "payloadGeneration": { "type": "integer", "minimum": 1 },
         "ledgerGeneration": { "type": "integer", "minimum": 1 },
         "pepperGeneration": { "type": "integer", "minimum": 1 },
-        "attestorGeneration": { "type": "integer", "minimum": 1 }
+        "attestorGeneration": { "type": "integer", "minimum": 1 },
+        "storageGeneration": { "type": "integer", "minimum": 1 },
+        "storageNameGeneration": { "type": "integer", "minimum": 1 },
+        "artifactStoreGeneration": { "type": "integer", "minimum": 1 }
       },
       "additionalProperties": false
     },

@@ -172,6 +172,42 @@ resource "nebius_iam_v2_access_key" "reference_data" {
   ]
 }
 
+# Generation one is the imported/preserved fixed identity above. Every later
+# generation has a new provider identity and can be disabled independently;
+# old generations remain valid until the external rotation ledger proves zero
+# readers before disable/delete.
+resource "nebius_iam_v2_access_key" "reference_data_versioned" {
+  for_each = var.reference_data.enabled ? {
+    for generation in var.reference_data.credential_generation_history :
+    tostring(generation) => generation if generation > 1
+  } : {}
+
+  parent_id            = var.project_id
+  name                 = "${local.resource_name}-reference-data-v${each.value}"
+  description          = "Generation ${each.value} S3 access key for the private reference-data preprocessing plane"
+  secret_delivery_mode = "MYSTERY_BOX"
+  labels = merge(local.common_labels, {
+    purpose               = "reference-data-object-write"
+    retention             = "durable"
+    credential_generation = tostring(each.value)
+  })
+  account = {
+    service_account = {
+      id = nebius_iam_v1_service_account.reference_data[0].id
+    }
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [
+    terraform_data.credential_migration_gate,
+    nebius_storage_v1_bucket.reference_data,
+    nebius_storage_v1_bucket.reference_data_disposable,
+  ]
+}
+
 locals {
   reference_data_filesystem_id = var.reference_data.enabled ? (
     var.reference_data.lifecycle.retention_mode == "retain" ?

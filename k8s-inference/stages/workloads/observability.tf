@@ -196,7 +196,12 @@ resource "helm_release" "dcgm_exporter" {
   values = [
     file("${path.module}/values/dcgm-exporter.yaml"),
     yamlencode({
-      imagePullSecrets = [{ name = kubernetes_secret_v1.dcgm_exporter_nvcrio[0].metadata[0].name }]
+      imagePullSecrets = [
+        for name in concat(
+          [local.active_dcgm_nvcrio_secret_name],
+          [for retained in local.retained_dcgm_nvcrio_secret_names : retained if retained != local.active_dcgm_nvcrio_secret_name],
+        ) : { name = name }
+      ]
       podAnnotations = {
         "fs2.nebius.ai/secret-rollout-sha256" = sha256(jsonencode({ registry = var.credential_generations.registry }))
       }
@@ -212,5 +217,6 @@ resource "helm_release" "dcgm_exporter" {
   depends_on = [
     terraform_data.cluster_contract,
     kubernetes_secret_v1.dcgm_exporter_nvcrio,
+    kubernetes_secret_v1.dcgm_exporter_nvcrio_versioned,
   ]
 }

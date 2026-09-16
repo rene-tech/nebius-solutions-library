@@ -438,6 +438,42 @@ def guard_saved_plan(
     )
 
 
+def authoritative_state_json(
+    terraform: str,
+    root: Path,
+    environment: Mapping[str, str],
+) -> str:
+    """Pull the configured backend state without persisting another copy."""
+
+    result = run(
+        [terraform, f"-chdir={root}", "state", "pull"],
+        env=environment,
+        capture=True,
+    )
+    try:
+        document = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise DeploymentError(
+            "Terraform did not return an authoritative backend state document"
+        ) from error
+    if not isinstance(document, dict):
+        raise DeploymentError("Terraform backend state is not a JSON object")
+    return result.stdout
+
+
+@contextmanager
+def private_temporary_json(run_root: Path, prefix: str, encoded: str) -> Iterator[Path]:
+    """Materialize sensitive command input briefly, owner-only, then unlink it."""
+
+    path = run_root / f".{prefix}-{uuid4().hex}.json"
+    private_text(path, encoded)
+    try:
+        yield path
+    finally:
+        if path.exists() and not path.is_symlink():
+            path.unlink()
+
+
 def prepare_credential_migration_gate(
     terraform: str,
     *,
@@ -445,7 +481,7 @@ def prepare_credential_migration_gate(
     root: Path,
     state: Path,
     environment: dict[str, str],
-) -> None:
+) -> Path:
     """Create the short-lived receipt consumed by Terraform's native gate."""
 
     stage = root.name
@@ -457,38 +493,165 @@ def prepare_credential_migration_gate(
     gate_receipt = (
         run_root / f"{stage}-credential-migration-gate-{uuid4().hex}.receipt.json"
     )
-    if state.exists():
-        state_result = run(
-            [terraform, f"-chdir={root}", "show", "-json", str(state)],
+    if not state.exists():
+        raise DeploymentError(
+            f"{stage} has no authoritative state; empty or fabricated state cannot "
+            "authorize credential migration"
+        )
+    state_result = run(
+        [terraform, f"-chdir={root}", "show", "-json", str(state)],
+        env=environment,
+        capture=True,
+    )
+    raw_state = authoritative_state_json(terraform, root, environment)
+    with private_temporary_json(run_root, f"{stage}-raw-state", raw_state) as raw_path:
+        command = [
+            sys.executable,
+            str(SECRET_MIGRATION_GUARD),
+            "capture-apply-gate",
+            "-",
+            str(gate_receipt),
+            "--raw-state",
+            str(raw_path),
+            "--terraform-configuration",
+            str(root),
+            "--terraform-root",
+            stage,
+            "--source-commit",
+            source_commit(),
+            "--registry",
+            str(DURABLE_CREDENTIAL_REGISTRY),
+        ]
+        if identity_receipt.exists():
+            command.extend(["--identity-receipt", str(identity_receipt)])
+        run(command, input_text=state_result.stdout, capture=True)
+    environment["TF_VAR_credential_migration_gate_receipt_path"] = str(gate_receipt)
+    environment["TF_VAR_credential_migration_gate_source_commit"] = source_commit()
+    environment["FS2_TERRAFORM_PLAN_GATE_RECEIPT"] = str(gate_receipt)
+    environment["FS2_TERRAFORM_EXECUTABLE"] = terraform
+    kubeconfig = run_root / "kubeconfig"
+    if kubeconfig.is_file() and not kubeconfig.is_symlink():
+        environment["KUBECONFIG"] = str(kubeconfig)
+    return gate_receipt
+
+
+def live_secret_inventory(
+    kubectl: str,
+    identity_receipt: Path | None,
+    environment: Mapping[str, str],
+) -> dict[str, Any] | None:
+    """Read only the exact Secrets named by a value-free custody receipt."""
+
+    if identity_receipt is None or not identity_receipt.exists():
+        return None
+    if identity_receipt.is_symlink() or not identity_receipt.is_file():
+        raise DeploymentError("durable identity receipt is absent or unsafe")
+    receipt = json.loads(identity_receipt.read_text(encoding="utf-8"))
+    bindings = receipt.get("live_secret_bindings")
+    if not isinstance(bindings, dict):
+        raise DeploymentError("durable identity receipt has malformed Secret bindings")
+    items: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for binding in bindings.values():
+        if not isinstance(binding, Mapping):
+            raise DeploymentError(
+                "durable identity receipt has malformed Secret binding"
+            )
+        identity = (binding.get("namespace"), binding.get("name"))
+        if not all(isinstance(value, str) and value for value in identity):
+            raise DeploymentError(
+                "durable identity receipt has incomplete Secret identity"
+            )
+        typed_identity = (str(identity[0]), str(identity[1]))
+        if typed_identity in seen:
+            continue
+        seen.add(typed_identity)
+        result = run(
+            [
+                kubectl,
+                "get",
+                "secret",
+                typed_identity[1],
+                "--namespace",
+                typed_identity[0],
+                "--output",
+                "json",
+            ],
             env=environment,
             capture=True,
         )
-        encoded_state = state_result.stdout
-    else:
-        encoded_state = json.dumps(
-            {"values": {"root_module": {"resources": []}}},
-            separators=(",", ":"),
-        )
-    command = [
-        sys.executable,
-        str(SECRET_MIGRATION_GUARD),
-        "capture-apply-gate",
-        "-",
-        str(gate_receipt),
-        "--terraform-configuration",
-        str(root),
-        "--terraform-root",
-        stage,
-        "--source-commit",
-        source_commit(),
-        "--registry",
-        str(DURABLE_CREDENTIAL_REGISTRY),
-    ]
-    if identity_receipt.exists():
-        command.extend(["--identity-receipt", str(identity_receipt)])
-    run(command, input_text=encoded_state, capture=True)
-    environment["TF_VAR_credential_migration_gate_receipt_path"] = str(gate_receipt)
-    environment["TF_VAR_credential_migration_gate_source_commit"] = source_commit()
+        try:
+            item = json.loads(result.stdout)
+        except json.JSONDecodeError as error:
+            raise DeploymentError("kubectl returned malformed Secret JSON") from error
+        if not isinstance(item, dict):
+            raise DeploymentError("kubectl returned a malformed Secret object")
+        items.append(item)
+    return {"items": items}
+
+
+def seal_saved_plan_gate(
+    terraform: str,
+    *,
+    run_root: Path,
+    root: Path,
+    plan_path: Path,
+    encoded_plan: str,
+    planning_receipt: Path,
+    environment: dict[str, str],
+) -> Path:
+    """Bind an apply receipt to current state, plan bytes and live Secrets."""
+
+    stage = root.name
+    identity_receipt = (
+        run_root / "fixed-v1-identity.receipt.json"
+        if stage == "workloads"
+        else run_root / f"{stage}-durable-identity.receipt.json"
+    )
+    if not identity_receipt.exists():
+        identity_receipt = None
+    kubectl = environment.get("FS2_KUBECTL_EXECUTABLE", "kubectl")
+    inventory = live_secret_inventory(kubectl, identity_receipt, environment)
+    receipt = run_root / f"{stage}-saved-plan-gate-{uuid4().hex}.receipt.json"
+    raw_state = authoritative_state_json(terraform, root, environment)
+    with private_temporary_json(
+        run_root, f"{stage}-saved-raw-state", raw_state
+    ) as raw_path:
+        command = [
+            sys.executable,
+            str(SECRET_MIGRATION_GUARD),
+            "capture-saved-plan-gate",
+            "-",
+            str(plan_path),
+            str(receipt),
+            "--planning-receipt",
+            str(planning_receipt),
+            "--raw-state",
+            str(raw_path),
+            "--terraform-configuration",
+            str(root),
+            "--terraform-root",
+            stage,
+            "--source-commit",
+            source_commit(),
+            "--registry",
+            str(DURABLE_CREDENTIAL_REGISTRY),
+        ]
+        if identity_receipt is not None:
+            command.extend(["--identity-receipt", str(identity_receipt)])
+        if inventory is None:
+            run(command, input_text=encoded_plan, capture=True)
+        else:
+            with private_temporary_json(
+                run_root,
+                f"{stage}-live-secrets",
+                json.dumps(inventory, separators=(",", ":")),
+            ) as live_path:
+                command.extend(["--live-secrets", str(live_path)])
+                run(command, input_text=encoded_plan, capture=True)
+    environment["FS2_TERRAFORM_APPLY_GATE_RECEIPT"] = str(receipt)
+    environment["FS2_TERRAFORM_SAVED_PLAN"] = str(plan_path)
+    return receipt
 
 
 def validate_credential_migration_gate(
@@ -513,6 +676,26 @@ def validate_credential_migration_gate(
             str(DURABLE_CREDENTIAL_REGISTRY),
         ],
         input_text=json.dumps(query, separators=(",", ":")),
+        capture=True,
+    )
+
+
+def validate_saved_plan_apply_gate(root: Path, environment: Mapping[str, str]) -> None:
+    run(
+        [
+            sys.executable,
+            str(SECRET_MIGRATION_GUARD),
+            "apply-saved-plan-gate",
+            "--terraform-configuration",
+            str(root),
+            "--terraform-root",
+            root.name,
+            "--source-commit",
+            environment.get("TF_VAR_credential_migration_gate_source_commit", ""),
+            "--registry",
+            str(DURABLE_CREDENTIAL_REGISTRY),
+        ],
+        env=environment,
         capture=True,
     )
 
@@ -1767,6 +1950,23 @@ def stage_environment(
             separators=(",", ":"),
         )
         environment["TF_VAR_bootstrap_grafana_credentials_configured"] = "true"
+        grafana_credentials = os.environ.get("FS2_GRAFANA_CREDENTIALS_JSON")
+        active_grafana_generation = (
+            contract.get("stages", {})
+            .get("foundation", {})
+            .get("credential_generation", 1)
+        )
+        if grafana_credentials:
+            environment["TF_VAR_grafana_credentials"] = grafana_credentials
+        elif active_grafana_generation == 1:
+            environment["TF_VAR_grafana_credentials"] = json.dumps(
+                {"1": {"username": username, "password": password}},
+                separators=(",", ":"),
+            )
+        else:
+            raise DeploymentError(
+                "Grafana rotation requires FS2_GRAFANA_CREDENTIALS_JSON with every retained generation"
+            )
 
     if stage == "workloads":
         ngc_key = os.environ.get(secret_names["ngc_api_key"])
@@ -1801,10 +2001,22 @@ def stage_environment(
             "ledger_keyrings_json": "FS2_LEDGER_KEYRINGS_JSON",
             "token_pepper_keyrings_json": "FS2_TOKEN_PEPPER_KEYRINGS_JSON",
             "route_attestors_sets_json": "FS2_ROUTE_ATTESTOR_SETS_JSON",
+            "storage_keyrings_json": "FS2_STORAGE_KEYRINGS_JSON",
+            "storage_name_keyrings_json": "FS2_STORAGE_NAME_KEYRINGS_JSON",
+            "registry_ngc_api_keys": "FS2_REGISTRY_NGC_API_KEYS_JSON",
+            "registry_nvcrio_dockerconfigs": "FS2_REGISTRY_NVCRIO_DOCKERCONFIGS_JSON",
         }.items():
             value = os.environ.get(environment_name)
             if value:
                 environment[f"TF_VAR_{variable_name}"] = value
+        if "TF_VAR_registry_ngc_api_keys" not in environment and ngc_key:
+            environment["TF_VAR_registry_ngc_api_keys"] = json.dumps(
+                {"1": ngc_key}, separators=(",", ":")
+            )
+        if "TF_VAR_registry_nvcrio_dockerconfigs" not in environment and docker_config:
+            environment["TF_VAR_registry_nvcrio_dockerconfigs"] = json.dumps(
+                {"1": docker_config}, separators=(",", ":")
+            )
         environment["TF_VAR_ngc_api_key_configured"] = "true" if ngc_key else "false"
         environment["TF_VAR_nvcrio_dockerconfigjson_configured"] = (
             "true" if docker_config else "false"
@@ -2218,16 +2430,10 @@ def write_downstream_variables(
                 "an enabled scientific artifact store requires complete infrastructure "
                 "bucket and object-access outputs"
             )
-        if enabled and set(object_access) != {
-            "key_id",
-            "access_key_id",
-            "secret_reference_id",
-            "resource_version",
-        }:
+        if enabled and set(object_access) != {"active_generation", "generations"}:
             raise DeploymentError(
-                "the scientific artifact access handoff must contain exactly the key's "
-                "non-secret identifiers: resource ID, access-key ID, MysteryBox reference "
-                "and cloud resource version"
+                "the scientific artifact access handoff must contain one active generation "
+                "and the complete retained non-secret generation inventory"
             )
         workloads["scientific_artifacts"] = {
             **scientific_artifacts,
@@ -2413,7 +2619,7 @@ def plan_stage(
         include_secrets=not destroy,
     )
     terraform_init(terraform, root, state, environment)
-    prepare_credential_migration_gate(
+    planning_receipt = prepare_credential_migration_gate(
         terraform,
         run_root=run_root,
         root=root,
@@ -2431,6 +2637,15 @@ def plan_stage(
         json_path=run_root / f"{stage}-{suffix}.plan.json",
         destroy=destroy,
     )
+    seal_saved_plan_gate(
+        terraform,
+        run_root=run_root,
+        root=root,
+        plan_path=plan_path,
+        encoded_plan=json.dumps(document, separators=(",", ":")),
+        planning_receipt=planning_receipt,
+        environment=environment,
+    )
     return plan_path, document, environment
 
 
@@ -2440,8 +2655,10 @@ def apply_plan(
     plan_path: Path,
     environment: Mapping[str, str],
 ) -> None:
-    validate_credential_migration_gate(root, environment)
-    guard_saved_plan(terraform, root, plan_path, environment)
+    if (root / "credential_migration_gate.tf").is_file():
+        validate_credential_migration_gate(root, environment)
+        validate_saved_plan_apply_gate(root, environment)
+        guard_saved_plan(terraform, root, plan_path, environment)
     run(
         [terraform, f"-chdir={root}", "apply", "-input=false", str(plan_path)],
         env=environment,
@@ -3595,6 +3812,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 def main(argv: Sequence[str] | None = None) -> int:
     os.umask(0o077)
     args = parse_args(argv)
+    os.environ["FS2_TERRAFORM_EXECUTABLE"] = args.terraform
+    os.environ["FS2_KUBECTL_EXECUTABLE"] = args.kubectl
     require_terraform_version(args.terraform)
     variable_file = args.var_file.expanduser().resolve()
     if not variable_file.is_file():

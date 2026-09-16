@@ -475,7 +475,9 @@ variable "deployment" {
           bucket_name  = optional(string)
           max_size_gib = optional(number, 2048)
         }), {})
-        namespace = optional(string, "fs2-reference-data")
+        credential_generation         = optional(number, 1)
+        credential_generation_history = optional(set(number), [1])
+        namespace                     = optional(string, "fs2-reference-data")
         queue = optional(object({
           resource_flavor = optional(string, "reference-data-cpu")
           cluster_queue   = optional(string, "reference-data-cpu")
@@ -547,7 +549,8 @@ variable "deployment" {
         # and moves the control plane's rollout annotation even when the cloud
         # key itself is unchanged. Replacing the key rotates it too, because the
         # rollout identity also covers the key's own non-secret identifiers.
-        credential_generation = optional(number, 1)
+        credential_generation         = optional(number, 1)
+        credential_generation_history = optional(set(number), [1])
         media_types = optional(set(string), [
           "application/gzip",
           "application/json",
@@ -704,6 +707,8 @@ variable "deployment" {
         admin    = optional(set(number), [1])
         access   = optional(set(number), [1])
         database = optional(set(number), [1])
+        registry = optional(set(number), [1])
+        grafana  = optional(set(number), [1])
       }), {})
       keyring_generations = optional(object({
         payload = optional(object({
@@ -719,6 +724,14 @@ variable "deployment" {
           retained = optional(set(number), [1])
         }), {})
         attestor = optional(object({
+          active   = optional(number, 1)
+          retained = optional(set(number), [1])
+        }), {})
+        storage = optional(object({
+          active   = optional(number, 1)
+          retained = optional(set(number), [1])
+        }), {})
+        storage_name = optional(object({
           active   = optional(number, 1)
           retained = optional(set(number), [1])
         }), {})
@@ -753,9 +766,11 @@ variable "deployment" {
       ]) &&
       contains(var.deployment.secrets.credential_generation_history.admin, var.deployment.secrets.credential_generations.admin) &&
       contains(var.deployment.secrets.credential_generation_history.access, var.deployment.secrets.credential_generations.access) &&
-      contains(var.deployment.secrets.credential_generation_history.database, var.deployment.secrets.credential_generations.database)
+      contains(var.deployment.secrets.credential_generation_history.database, var.deployment.secrets.credential_generations.database) &&
+      contains(var.deployment.secrets.credential_generation_history.registry, var.deployment.secrets.credential_generations.registry) &&
+      contains(var.deployment.secrets.credential_generation_history.grafana, var.deployment.secrets.credential_generations.grafana)
     )
-    error_message = "Admin, access, and database generation histories must be contiguous from 1 and retain their active generation."
+    error_message = "Admin, access, database, registry, and Grafana generation histories must be contiguous from 1 and retain their active generation."
   }
 
   validation {
@@ -1226,6 +1241,11 @@ variable "deployment" {
         floor(var.deployment.storage.reference_data.object_storage.max_size_gib) == var.deployment.storage.reference_data.object_storage.max_size_gib &&
         var.deployment.storage.reference_data.object_storage.max_size_gib >= 1611 &&
         var.deployment.storage.reference_data.object_storage.max_size_gib <= 65536 &&
+        floor(var.deployment.storage.reference_data.credential_generation) == var.deployment.storage.reference_data.credential_generation &&
+        var.deployment.storage.reference_data.credential_generation >= 1 &&
+        var.deployment.storage.reference_data.credential_generation <= 1000 &&
+        var.deployment.storage.reference_data.credential_generation_history == toset(range(1, max(var.deployment.storage.reference_data.credential_generation_history...) + 1)) &&
+        contains(var.deployment.storage.reference_data.credential_generation_history, var.deployment.storage.reference_data.credential_generation) &&
         (
           var.deployment.storage.reference_data.object_storage.bucket_name == null ||
           can(regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$", var.deployment.storage.reference_data.object_storage.bucket_name))
@@ -1327,11 +1347,13 @@ variable "deployment" {
         ]) &&
         floor(var.deployment.storage.scientific_artifacts.credential_generation) == var.deployment.storage.scientific_artifacts.credential_generation &&
         var.deployment.storage.scientific_artifacts.credential_generation >= 1 &&
-        var.deployment.storage.scientific_artifacts.credential_generation <= 1000
+        var.deployment.storage.scientific_artifacts.credential_generation <= 1000 &&
+        var.deployment.storage.scientific_artifacts.credential_generation_history == toset(range(1, max(var.deployment.storage.scientific_artifacts.credential_generation_history...) + 1)) &&
+        contains(var.deployment.storage.scientific_artifacts.credential_generation_history, var.deployment.storage.scientific_artifacts.credential_generation)
       ),
       false,
     )
-    error_message = "enabled storage.scientific_artifacts requires at least one exact approved media type, at least one exact /32 or /128 object-storage egress address, and a whole credential_generation between 1 and 1000; an empty, subnet-wide or malformed allowlist is never accepted."
+    error_message = "enabled storage.scientific_artifacts requires approved media types and exact egress hosts plus a contiguous retained credential history containing the active generation."
   }
 
   validation {

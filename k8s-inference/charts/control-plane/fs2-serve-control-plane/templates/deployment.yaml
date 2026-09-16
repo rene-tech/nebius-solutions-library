@@ -41,8 +41,8 @@
 {{- if and (eq .Values.catalog.delivery "pvc") (eq .Values.catalog.persistentVolumeClaimName .Values.catalog.evidencePersistentVolumeClaimName) }}
 {{- fail "catalog and qualification evidence require distinct read-only PVCs" }}
 {{- end }}
-{{- if or (ne .Values.secrets.database.name "fs2-serve-database") (ne .Values.secrets.database.key "url") (ne .Values.secrets.migrationsDatabase.name "fs2-serve-database-migrations") (ne .Values.secrets.migrationsDatabase.key "url") (ne .Values.secrets.maintenanceDatabase.name "fs2-serve-database-maintenance") (ne .Values.secrets.maintenanceDatabase.key "url") }}
-{{- fail "database Secret names and keys must match the canonical PostgreSQL release contract" }}
+{{- if or (not (regexMatch "^fs2-serve-database(-v[1-9][0-9]*)?$" .Values.secrets.database.name)) (ne .Values.secrets.database.key "url") (not (regexMatch "^fs2-serve-database-migrations(-v[1-9][0-9]*)?$" .Values.secrets.migrationsDatabase.name)) (ne .Values.secrets.migrationsDatabase.key "url") (not (regexMatch "^fs2-serve-database-maintenance(-v[1-9][0-9]*)?$" .Values.secrets.maintenanceDatabase.name)) (ne .Values.secrets.maintenanceDatabase.key "url") }}
+{{- fail "database Secret names and keys must match a canonical generation-specific PostgreSQL release contract" }}
 {{- end }}
 {{- if or (ne .Values.secrets.database.caKey "ca.crt") (ne .Values.secrets.migrationsDatabase.caKey "ca.crt") (ne .Values.secrets.maintenanceDatabase.caKey "ca.crt") }}
 {{- fail "database Secret CA keys must match the canonical PostgreSQL release contract" }}
@@ -90,6 +90,9 @@
 {{- end }}
 {{- if .Values.websiteAccess.enabled }}
 {{- $secretNames = append $secretNames .Values.websiteAccess.secretName }}
+{{- end }}
+{{- if or (has .Values.secrets.storageCipherKeyring.name $secretNames) (has .Values.secrets.storageNameKeyring.name $secretNames) }}
+{{- fail "customer-storage cipher and name keyrings must not reuse another credential Secret" }}
 {{- end }}
 {{- if ne (len $secretNames) (len (uniq $secretNames)) }}
 {{- fail "runtime, migration, maintenance, cryptographic, admin, federation, bootstrap, scientific, and website credentials must use distinct Secret objects" }}
@@ -253,7 +256,7 @@ spec:
       annotations:
         fs2.nebius.ai/image-digest: {{ .Values.image.digest | quote }}
         fs2.nebius.ai/catalog-rollout-digest: {{ .Values.catalog.rolloutDigest | quote }}
-        fs2.nebius.ai/secret-rollout-sha256: {{ dict "database" .Values.secretRollout.databaseGeneration "admin" .Values.secretRollout.adminGeneration "payload" .Values.secretRollout.payloadGeneration "ledger" .Values.secretRollout.ledgerGeneration "pepper" .Values.secretRollout.pepperGeneration "attestor" .Values.secretRollout.attestorGeneration | toJson | sha256sum | quote }}
+        fs2.nebius.ai/secret-rollout-sha256: {{ dict "database" .Values.secretRollout.databaseGeneration "admin" .Values.secretRollout.adminGeneration "payload" .Values.secretRollout.payloadGeneration "ledger" .Values.secretRollout.ledgerGeneration "pepper" .Values.secretRollout.pepperGeneration "attestor" .Values.secretRollout.attestorGeneration "storage" .Values.secretRollout.storageGeneration "storageName" .Values.secretRollout.storageNameGeneration "artifactStore" .Values.secretRollout.artifactStoreGeneration | toJson | sha256sum | quote }}
         {{- if .Values.adminReadAdapters.observability.enabled }}
         fs2.nebius.ai/admin-observability-config-sha256: {{ .Values.adminReadAdapters.observability | toJson | sha256sum | quote }}
         {{- end }}

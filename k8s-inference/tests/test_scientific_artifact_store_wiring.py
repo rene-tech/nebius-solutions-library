@@ -77,7 +77,9 @@ class ArtifactStoreContractTests(unittest.TestCase):
         cls.contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
         cls.infrastructure = INFRASTRUCTURE.read_text(encoding="utf-8")
         cls.infrastructure_outputs = INFRASTRUCTURE_OUTPUTS.read_text(encoding="utf-8")
-        cls.infrastructure_variables = INFRASTRUCTURE_VARIABLES.read_text(encoding="utf-8")
+        cls.infrastructure_variables = INFRASTRUCTURE_VARIABLES.read_text(
+            encoding="utf-8"
+        )
         cls.workloads = WORKLOADS.read_text(encoding="utf-8")
         cls.workloads_variables = WORKLOADS_VARIABLES.read_text(encoding="utf-8")
         cls.control_plane = CONTROL_PLANE.read_text(encoding="utf-8")
@@ -111,13 +113,19 @@ class ChartValueWiringTests(ArtifactStoreContractTests):
         credential = self.contract["credential"]
         self.assertRegex(
             self.workloads,
-            rf'scientific_artifacts_secret_name\s*=\s*"{re.escape(credential["secret_name"])}"',
+            rf'scientific_artifacts_secret_name\s*=\s*var\.scientific_artifacts\.credential_generation\s*==\s*1\s*\?\s*"{re.escape(credential["secret_name"])}"\s*:\s*"{re.escape(credential["secret_name"])}-v\$\{{var\.scientific_artifacts\.credential_generation\}}"',
         )
         self.assertRegex(
             self.workloads,
             rf'scientific_artifacts_secret_key\s*=\s*"{re.escape(credential["secret_key"])}"',
         )
         self.assertIn(f'namespace = "{credential["namespace"]}"', self.workloads)
+        self.assertIn(
+            'name      = "fs2-serve-artifact-store-v${each.key}"', self.workloads
+        )
+        self.assertIn(
+            "var.scientific_artifacts.credential_generation_history", self.workloads
+        )
 
     def test_the_egress_allowlist_and_rollout_annotation_reach_the_chart(self) -> None:
         self.assertIn("artifactStoreCidrs", self.workloads)
@@ -128,8 +136,12 @@ class ChartValueWiringTests(ArtifactStoreContractTests):
         self.assertIn("podAnnotations = {", self.workloads)
 
     def test_the_overrides_are_appended_to_the_control_plane_release(self) -> None:
-        self.assertIn("yamlencode(local.scientific_chart_overrides)", self.control_plane)
-        self.assertIn("kubernetes_secret_v1.scientific_artifact_store", self.control_plane)
+        self.assertIn(
+            "yamlencode(local.scientific_chart_overrides)", self.control_plane
+        )
+        self.assertIn(
+            "kubernetes_secret_v1.scientific_artifact_store", self.control_plane
+        )
 
     def test_the_obsolete_artifact_service_wiring_is_not_revived(self) -> None:
         for forbidden in self.contract["chart"]["forbidden_values"]:
@@ -170,19 +182,29 @@ class SecretSafetyTests(ArtifactStoreContractTests):
         self.assertIn('secret_delivery_mode = "MYSTERY_BOX"', self.infrastructure)
         # The mode is a constant, not a knob: an INLINE key would land in state.
         self.assertNotIn('secret_delivery_mode = "INLINE"', self.infrastructure)
-        self.assertNotIn("var.scientific_artifacts.secret_delivery_mode", self.infrastructure)
+        self.assertNotIn(
+            "var.scientific_artifacts.secret_delivery_mode", self.infrastructure
+        )
         self.assertEqual(self.infrastructure.count("secret_delivery_mode"), 1)
 
-    def test_only_identity_reference_and_revision_leave_the_infrastructure_stage(self) -> None:
+    def test_only_identity_reference_and_revision_leave_the_infrastructure_stage(
+        self,
+    ) -> None:
         body = block(
             self.infrastructure_outputs,
             'output "scientific_artifacts_object_storage_access" {',
         )
         self.assertIn("sensitive   = true", body)
-        emitted = assigned_names(block(body, "value = var.scientific_artifacts.enabled ? {"))
-        self.assertEqual(set(emitted), set(self.contract["credential"]["propagated_fields"]))
+        emitted = assigned_names(
+            block(body, "value = var.scientific_artifacts.enabled ? {")
+        )
+        self.assertEqual(
+            set(emitted), set(self.contract["credential"]["propagated_fields"])
+        )
 
-    def test_no_stage_variable_or_output_can_carry_the_object_store_secret(self) -> None:
+    def test_no_stage_variable_or_output_can_carry_the_object_store_secret(
+        self,
+    ) -> None:
         for forbidden in self.contract["credential"]["forbidden_fields"]:
             pattern = re.compile(rf"(?<![A-Za-z0-9_]){re.escape(forbidden)}\s*=")
             for name, source in (
@@ -196,7 +218,10 @@ class SecretSafetyTests(ArtifactStoreContractTests):
                     self.assertIsNone(pattern.search(source))
 
     def test_the_credential_is_written_write_only_and_never_persisted(self) -> None:
-        secret = block(self.workloads, 'resource "kubernetes_secret_v1" "scientific_artifact_store" {')
+        secret = block(
+            self.workloads,
+            'resource "kubernetes_secret_v1" "scientific_artifact_store" {',
+        )
         self.assertIn("data_wo = {", secret)
         self.assertIn("data_wo_revision = local.scientific_artifacts_revision", secret)
         # A plain `data` map would write the secret straight into workloads state.
@@ -216,7 +241,10 @@ class SecretSafetyTests(ArtifactStoreContractTests):
         self.assertIn("jsonencode({", self.workloads)
 
     def test_the_non_secret_receipt_carries_only_identity(self) -> None:
-        receipt = block(self.workloads, 'resource "terraform_data" "scientific_artifacts_contract" {')
+        receipt = block(
+            self.workloads,
+            'resource "terraform_data" "scientific_artifacts_contract" {',
+        )
         self.assertIn("credential_revision", receipt)
         self.assertIn("credential_generation", receipt)
         self.assertIn("credential_identity_sha256", receipt)
@@ -229,10 +257,20 @@ class SecretSafetyTests(ArtifactStoreContractTests):
             "var.scientific_artifacts.object_storage_access.resource_version + 1",
             self.workloads,
         )
-        identity = block(self.workloads, "scientific_artifacts_credential_identity = local.scientific_artifacts_enabled ? join(\"|\", [")
-        for field in ("key_id", "access_key_id", "secret_reference_id", "resource_version"):
+        identity = block(
+            self.workloads,
+            'scientific_artifacts_credential_identity = local.scientific_artifacts_enabled ? join("|", [',
+        )
+        for field in (
+            "key_id",
+            "access_key_id",
+            "secret_reference_id",
+            "resource_version",
+        ):
             self.assertIn(field, identity)
-        self.assertIn("var.scientific_artifacts.credential_generation * 16777216", self.workloads)
+        self.assertIn(
+            "var.scientific_artifacts.credential_generation * 16777216", self.workloads
+        )
 
     def test_the_generated_workloads_handoff_is_shape_checked(self) -> None:
         self.assertIn(
@@ -250,7 +288,10 @@ class SecretSafetyTests(ArtifactStoreContractTests):
 class BucketProvisioningTests(ArtifactStoreContractTests):
     def test_the_bucket_is_versioned_regional_and_dedicated(self) -> None:
         for resource in ("scientific_artifacts", "scientific_artifacts_disposable"):
-            body = block(self.infrastructure, f'resource "nebius_storage_v1_bucket" "{resource}" {{')
+            body = block(
+                self.infrastructure,
+                f'resource "nebius_storage_v1_bucket" "{resource}" {{',
+            )
             with self.subTest(resource=resource):
                 self.assertIn(
                     f'versioning_policy     = "{self.contract["storage"]["versioning_policy"]}"',
@@ -260,7 +301,9 @@ class BucketProvisioningTests(ArtifactStoreContractTests):
                     f'default_storage_class = "{self.contract["storage"]["storage_class"]}"',
                     body,
                 )
-                self.assertIn("var.scientific_artifacts.object_storage.bucket_name", body)
+                self.assertIn(
+                    "var.scientific_artifacts.object_storage.bucket_name", body
+                )
                 self.assertIn("lifecycle_configuration = {", body)
 
     def test_the_writer_permit_is_scoped_to_the_canonical_prefix(self) -> None:
@@ -274,7 +317,10 @@ class BucketProvisioningTests(ArtifactStoreContractTests):
             self.infrastructure,
         )
         for resource in ("scientific_artifacts", "scientific_artifacts_disposable"):
-            body = block(self.infrastructure, f'resource "nebius_storage_v1_bucket" "{resource}" {{')
+            body = block(
+                self.infrastructure,
+                f'resource "nebius_storage_v1_bucket" "{resource}" {{',
+            )
             self.assertIn("paths    = [local.scientific_artifacts_path_scope]", body)
             self.assertIn("roles    = [local.scientific_artifacts_writer_role]", body)
         # Project-wide roles would let the key read the model cache and registry.
@@ -303,9 +349,13 @@ class BucketProvisioningTests(ArtifactStoreContractTests):
         )
 
     def test_retained_and_disposable_storage_are_distinct_resources(self) -> None:
-        retained = block(self.infrastructure, 'resource "nebius_storage_v1_bucket" "scientific_artifacts" {')
+        retained = block(
+            self.infrastructure,
+            'resource "nebius_storage_v1_bucket" "scientific_artifacts" {',
+        )
         disposable = block(
-            self.infrastructure, 'resource "nebius_storage_v1_bucket" "scientific_artifacts_disposable" {'
+            self.infrastructure,
+            'resource "nebius_storage_v1_bucket" "scientific_artifacts_disposable" {',
         )
         self.assertIn("prevent_destroy = true", retained)
         self.assertNotIn("prevent_destroy", disposable)
@@ -322,11 +372,15 @@ class BucketProvisioningTests(ArtifactStoreContractTests):
             self.root_main,
         )
         # The reference-data policy keeps its own paths and its own role.
-        reference = (DEPLOY_ROOT / "stages/infrastructure/storage.tf").read_text(encoding="utf-8")
+        reference = (DEPLOY_ROOT / "stages/infrastructure/storage.tf").read_text(
+            encoding="utf-8"
+        )
         # The result store owns its own file; nothing here creates or widens it.
         self.assertNotIn("scientific_artifacts", reference)
         self.assertNotIn("storage.object-editor", reference)
-        self.assertIn('paths    = ["reference-data/*", "inputs/*", "preprocessing/*"]', reference)
+        self.assertIn(
+            'paths    = ["reference-data/*", "inputs/*", "preprocessing/*"]', reference
+        )
 
 
 class TfvarsSurfaceTests(ArtifactStoreContractTests):
@@ -343,14 +397,16 @@ class TfvarsSurfaceTests(ArtifactStoreContractTests):
             "media_types",
         ):
             with self.subTest(field=field):
-                self.assertIn(field, assigned_names(body) | {"lifecycle", "object_storage"})
+                self.assertIn(
+                    field, assigned_names(body) | {"lifecycle", "object_storage"}
+                )
         self.assertIn("bucket_name  = optional(string)", body)
         self.assertIn("max_size_gib = optional(number, 4096)", body)
         self.assertIn('retention_mode = optional(string, "disposable")', body)
 
     def test_the_bucket_name_is_derived_but_overridable(self) -> None:
         self.assertIn(
-            'scientific_artifacts_bucket_name = coalesce(\n'
+            "scientific_artifacts_bucket_name = coalesce(\n"
             "    var.deployment.storage.scientific_artifacts.object_storage.bucket_name,\n"
             '    "${var.deployment.name}-${local.run_id}-scientific-artifacts",\n'
             "  )",
@@ -375,7 +431,10 @@ class TfvarsSurfaceTests(ArtifactStoreContractTests):
             "length(var.deployment.storage.scientific_artifacts.egress_cidrs) > 0",
             self.root_variables,
         )
-        self.assertIn("length(var.scientific_artifacts.egress_cidrs) > 0", self.workloads_variables)
+        self.assertIn(
+            "length(var.scientific_artifacts.egress_cidrs) > 0",
+            self.workloads_variables,
+        )
 
     def test_only_exact_host_addresses_may_be_allow_listed(self) -> None:
         for source in (self.root_variables, self.workloads_variables):
@@ -389,7 +448,10 @@ class TfvarsSurfaceTests(ArtifactStoreContractTests):
             if ".terraform" in versions.parts:
                 continue
             with self.subTest(root=versions.relative_to(DEPLOY_ROOT).as_posix()):
-                self.assertIn('required_version = ">= 1.11.0, < 2.0.0"', versions.read_text(encoding="utf-8"))
+                self.assertIn(
+                    'required_version = ">= 1.11.0, < 2.0.0"',
+                    versions.read_text(encoding="utf-8"),
+                )
         self.assertIn("MINIMUM_TERRAFORM_VERSION = (1, 11, 0)", self.stack)
         self.assertIn("require_terraform_version(args.terraform)", self.stack)
         self.assertIn(
@@ -441,7 +503,10 @@ class FeatureGateTests(ArtifactStoreContractTests):
         body = block(self.workloads_variables, 'variable "scientific_artifacts" {')
         self.assertIn('"fs2-serve.nebius.ai/scientific-artifact-storage/v1"', body)
         self.assertIn('writer.role == "storage.object-editor"', body)
-        self.assertIn('join(",", var.scientific_artifacts.storage_contract.writer.paths) == "scientific/v1/*"', body)
+        self.assertIn(
+            'join(",", var.scientific_artifacts.storage_contract.writer.paths) == "scientific/v1/*"',
+            body,
+        )
         self.assertIn('writer.secret_delivery == "MYSTERY_BOX"', body)
         self.assertIn('layout.root == "scientific/v1"', body)
 
@@ -452,15 +517,19 @@ class LayoutAgreementTests(ArtifactStoreContractTests):
         root = self.contract["object_layout"]["root"]
         # The infrastructure output builds the same template from the root local.
         self.assertIn(
-            "${local.scientific_artifacts_root}" + template[len(root):],
+            "${local.scientific_artifacts_root}" + template[len(root) :],
             self.infrastructure_outputs,
         )
-        self.assertIn(template, (DEPLOY_ROOT / "outputs.tf").read_text(encoding="utf-8"))
+        self.assertIn(
+            template, (DEPLOY_ROOT / "outputs.tf").read_text(encoding="utf-8")
+        )
 
     def test_the_writer_scope_covers_the_whole_layout_and_nothing_else(self) -> None:
         root = self.contract["object_layout"]["root"]
         self.assertEqual(self.contract["storage"]["writer_paths"], [f"{root}/*"])
-        self.assertTrue(self.contract["object_layout"]["object_key"].startswith(f"{root}/"))
+        self.assertTrue(
+            self.contract["object_layout"]["object_key"].startswith(f"{root}/")
+        )
 
 
 if __name__ == "__main__":

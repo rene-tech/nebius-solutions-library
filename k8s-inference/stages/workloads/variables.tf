@@ -126,10 +126,15 @@ variable "reference_data" {
         }))
       })
     }))
+    credential_generation         = optional(number, 1)
+    credential_generation_history = optional(set(number), [1])
     object_storage_access = optional(object({
-      access_key_id       = string
-      secret_reference_id = string
-      revision            = number
+      active_generation = number
+      generations = map(object({
+        access_key_id       = string
+        secret_reference_id = string
+        revision            = number
+      }))
     }))
   })
   default = {
@@ -171,8 +176,10 @@ variable "reference_data" {
       backoff_limit           = 2
       threads                 = 16
     }
-    storage_contract      = null
-    object_storage_access = null
+    storage_contract              = null
+    object_storage_access         = null
+    credential_generation         = 1
+    credential_generation_history = [1]
   }
 
   validation {
@@ -209,10 +216,19 @@ variable "reference_data" {
           )
         ) &&
         !var.reference_data.storage_contract.public_msa_default &&
-        length(var.reference_data.object_storage_access.access_key_id) >= 8 &&
-        can(regex("^[A-Za-z0-9_-]+$", var.reference_data.object_storage_access.access_key_id)) &&
-        can(regex("^[a-z][a-z0-9-]+$", var.reference_data.object_storage_access.secret_reference_id)) &&
-        var.reference_data.object_storage_access.revision >= 1
+        var.reference_data.object_storage_access.active_generation == var.reference_data.credential_generation &&
+        toset(keys(var.reference_data.object_storage_access.generations)) == toset([for generation in var.reference_data.credential_generation_history : tostring(generation)]) &&
+        alltrue([for access in values(var.reference_data.object_storage_access.generations) :
+          length(access.access_key_id) >= 8 &&
+          can(regex("^[A-Za-z0-9_-]+$", access.access_key_id)) &&
+          can(regex("^[a-z][a-z0-9-]+$", access.secret_reference_id)) &&
+          access.revision >= 1
+        ]) &&
+        floor(var.reference_data.credential_generation) == var.reference_data.credential_generation &&
+        var.reference_data.credential_generation >= 1 &&
+        var.reference_data.credential_generation <= 1000 &&
+        var.reference_data.credential_generation_history == toset(range(1, max(var.reference_data.credential_generation_history...) + 1)) &&
+        contains(var.reference_data.credential_generation_history, var.reference_data.credential_generation)
       ),
       false,
     )
@@ -223,13 +239,14 @@ variable "reference_data" {
 variable "scientific_artifacts" {
   description = "Root-derived scientific result store bound to the exact infrastructure bucket contract and MysteryBox access handoff. The S3 secret itself is never a variable."
   type = object({
-    enabled               = bool
-    handle_ttl_seconds    = number
-    max_artifact_bytes    = number
-    retention_days        = number
-    egress_cidrs          = list(string)
-    media_types           = list(string)
-    credential_generation = number
+    enabled                       = bool
+    handle_ttl_seconds            = number
+    max_artifact_bytes            = number
+    retention_days                = number
+    egress_cidrs                  = list(string)
+    media_types                   = list(string)
+    credential_generation         = optional(number, 1)
+    credential_generation_history = optional(set(number), [1])
     storage_contract = optional(object({
       schema     = string
       project_id = string
@@ -280,22 +297,26 @@ variable "scientific_artifacts" {
     # ephemerally at apply time and is never held in a variable, in state, in a
     # plan or in a Helm value.
     object_storage_access = optional(object({
-      key_id              = string
-      access_key_id       = string
-      secret_reference_id = string
-      resource_version    = number
+      active_generation = number
+      generations = map(object({
+        key_id              = string
+        access_key_id       = string
+        secret_reference_id = string
+        resource_version    = number
+      }))
     }))
   })
   default = {
-    enabled               = false
-    handle_ttl_seconds    = 600
-    max_artifact_bytes    = 1099511627776
-    retention_days        = 90
-    egress_cidrs          = []
-    media_types           = []
-    credential_generation = 1
-    storage_contract      = null
-    object_storage_access = null
+    enabled                       = false
+    handle_ttl_seconds            = 600
+    max_artifact_bytes            = 1099511627776
+    retention_days                = 90
+    egress_cidrs                  = []
+    media_types                   = []
+    credential_generation         = 1
+    credential_generation_history = [1]
+    storage_contract              = null
+    object_storage_access         = null
   }
 
   validation {
@@ -323,14 +344,19 @@ variable "scientific_artifacts" {
   validation {
     condition = try(
       !var.scientific_artifacts.enabled || (
-        length(var.scientific_artifacts.object_storage_access.access_key_id) >= 8 &&
-        can(regex("^[A-Za-z0-9_-]+$", var.scientific_artifacts.object_storage_access.access_key_id)) &&
-        can(regex("^[a-z][a-z0-9-]+$", var.scientific_artifacts.object_storage_access.secret_reference_id)) &&
-        can(regex("^[a-z][a-z0-9-]+$", var.scientific_artifacts.object_storage_access.key_id)) &&
-        var.scientific_artifacts.object_storage_access.resource_version >= 0 &&
+        var.scientific_artifacts.object_storage_access.active_generation == var.scientific_artifacts.credential_generation &&
+        toset(keys(var.scientific_artifacts.object_storage_access.generations)) == toset([for generation in var.scientific_artifacts.credential_generation_history : tostring(generation)]) &&
+        alltrue([for access in values(var.scientific_artifacts.object_storage_access.generations) :
+          length(access.access_key_id) >= 8 &&
+          can(regex("^[A-Za-z0-9_-]+$", access.access_key_id)) &&
+          can(regex("^[a-z][a-z0-9-]+$", access.secret_reference_id)) &&
+          can(regex("^[a-z][a-z0-9-]+$", access.key_id)) &&
+          access.resource_version >= 0
+        ]) &&
         floor(var.scientific_artifacts.credential_generation) == var.scientific_artifacts.credential_generation &&
         var.scientific_artifacts.credential_generation >= 1 &&
         var.scientific_artifacts.credential_generation <= 1000 &&
+        var.scientific_artifacts.credential_generation_history == toset(range(1, max(var.scientific_artifacts.credential_generation_history...) + 1)) &&
         length(var.scientific_artifacts.media_types) > 0 &&
         length(var.scientific_artifacts.egress_cidrs) > 0 &&
         alltrue([
@@ -1615,6 +1641,7 @@ variable "credential_generation_history" {
     admin    = optional(set(number), [1])
     access   = optional(set(number), [1])
     database = optional(set(number), [1])
+    registry = optional(set(number), [1])
   })
   default = {}
 
@@ -1626,10 +1653,27 @@ variable "credential_generation_history" {
       ]) &&
       contains(var.credential_generation_history.admin, var.credential_generations.admin) &&
       contains(var.credential_generation_history.access, var.credential_generations.access) &&
-      contains(var.credential_generation_history.database, var.credential_generations.database)
+      contains(var.credential_generation_history.database, var.credential_generations.database) &&
+      contains(var.credential_generation_history.registry, var.credential_generations.registry)
     )
-    error_message = "Admin, access, and database generation histories must be contiguous from 1 and retain their active generation."
+    error_message = "Admin, access, database, and registry generation histories must be contiguous from 1 and retain their active generation."
   }
+}
+
+variable "registry_ngc_api_keys" {
+  description = "Externally escrowed NGC API keys keyed by every retained registry credential generation."
+  type        = map(string)
+  sensitive   = true
+  ephemeral   = true
+  default     = {}
+}
+
+variable "registry_nvcrio_dockerconfigs" {
+  description = "Externally escrowed NVCR Docker configuration documents keyed by every retained registry credential generation."
+  type        = map(string)
+  sensitive   = true
+  ephemeral   = true
+  default     = {}
 }
 
 variable "admin_tokens" {
@@ -1709,10 +1753,12 @@ variable "bootstrap_access_expires_at" {
 variable "keyring_generations" {
   description = "Independent active and retained generation histories. Retained generations are never removed by rollback."
   type = object({
-    payload  = optional(object({ active = optional(number, 1), retained = optional(set(number), [1]) }), {})
-    ledger   = optional(object({ active = optional(number, 1), retained = optional(set(number), [1]) }), {})
-    pepper   = optional(object({ active = optional(number, 1), retained = optional(set(number), [1]) }), {})
-    attestor = optional(object({ active = optional(number, 1), retained = optional(set(number), [1]) }), {})
+    payload      = optional(object({ active = optional(number, 1), retained = optional(set(number), [1]) }), {})
+    ledger       = optional(object({ active = optional(number, 1), retained = optional(set(number), [1]) }), {})
+    pepper       = optional(object({ active = optional(number, 1), retained = optional(set(number), [1]) }), {})
+    attestor     = optional(object({ active = optional(number, 1), retained = optional(set(number), [1]) }), {})
+    storage      = optional(object({ active = optional(number, 1), retained = optional(set(number), [1]) }), {})
+    storage_name = optional(object({ active = optional(number, 1), retained = optional(set(number), [1]) }), {})
   })
   default = {}
 
@@ -1755,6 +1801,22 @@ variable "token_pepper_keyrings_json" {
 
 variable "route_attestors_sets_json" {
   description = "Externally managed public attestor-set documents keyed by every retained generation greater than 1."
+  type        = map(string)
+  sensitive   = true
+  ephemeral   = true
+  default     = {}
+}
+
+variable "storage_keyrings_json" {
+  description = "Externally escrowed customer-storage cipher keyrings keyed by every retained generation greater than 1. Each document retains the imported payload-v1 compatibility key and every storage generation."
+  type        = map(string)
+  sensitive   = true
+  ephemeral   = true
+  default     = {}
+}
+
+variable "storage_name_keyrings_json" {
+  description = "Externally escrowed customer-storage name-derivation keyrings keyed by every retained generation greater than 1."
   type        = map(string)
   sensitive   = true
   ephemeral   = true

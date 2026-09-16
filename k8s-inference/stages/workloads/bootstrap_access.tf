@@ -277,7 +277,6 @@ resource "kubernetes_secret_v1" "bootstrap_access_versioned" {
       error_message = "Every retained access generation and audience requires a unique externally escrowed PAT ID that differs from both immutable generation-1 IDs."
     }
     prevent_destroy = true
-    ignore_changes  = all
   }
 
 
@@ -337,7 +336,6 @@ resource "kubernetes_secret_v1" "scientific_access_versioned" {
       error_message = "Every retained access generation and audience requires a unique externally escrowed PAT ID that differs from both immutable generation-1 IDs."
     }
     prevent_destroy = true
-    ignore_changes  = all
   }
 
 
@@ -397,7 +395,6 @@ resource "kubernetes_secret_v1" "website_access_versioned" {
       error_message = "Every retained access generation and audience requires a distinct PAT ID across bootstrap, scientific and website lineages."
     }
     prevent_destroy = true
-    ignore_changes  = all
   }
 
   depends_on = [terraform_data.credential_migration_gate]

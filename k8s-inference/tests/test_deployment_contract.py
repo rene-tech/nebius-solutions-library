@@ -2383,7 +2383,11 @@ class DeploymentContractTests(unittest.TestCase):
             "!contains(local.model_controller_dynamic_model_ids, document.model_id)",
             controller_source,
         )
-        self.assertIn("for_each = local.terraform_owned_model_manifests", models_source)
+        self.assertIn(
+            "for key, value in local.terraform_owned_model_manifests", models_source
+        )
+        self.assertIn("local.active_nvcrio_secret_name", models_source)
+        self.assertIn("local.retained_nvcrio_secret_names", models_source)
         self.assertIn("for_each = local.terraform_owned_model_scalers", models_source)
         self.assertIn(
             '"/admin/api/v1/model-deployments:plan-preview"', controller_source

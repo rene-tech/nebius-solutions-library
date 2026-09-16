@@ -16,6 +16,7 @@ from uuid import UUID
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 KEY_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+CUSTOMER_STORAGE_AAD_PREFIX = b"fs2.user-storage/v1\0"
 
 
 @dataclass(frozen=True)
@@ -73,13 +74,22 @@ class PayloadCipher:
     def customer_storage_aad(tenant_id: str, principal_id: str) -> bytes:
         """Stable cross-release AAD contract for customer storage credentials.
 
-        SAI-08 consumers must call this method rather than reproducing bytes.
-        Changing the domain or field order would strand existing ciphertext.
+        Every storage encrypt, decrypt, migration and disclosure path must call
+        this helper. Changing the domain, encoding or field order would strand
+        existing ciphertext, so identifiers are bound byte-for-byte without
+        normalization.
         """
 
-        if not tenant_id or not principal_id or "\0" in tenant_id or "\0" in principal_id:
+        if (
+            not isinstance(tenant_id, str)
+            or not isinstance(principal_id, str)
+            or not tenant_id
+            or not principal_id
+            or "\0" in tenant_id
+            or "\0" in principal_id
+        ):
             raise ValueError("customer storage AAD identities must be non-empty and NUL-free")
-        return f"fs2.user-storage/v1\0{tenant_id}\0{principal_id}".encode()
+        return CUSTOMER_STORAGE_AAD_PREFIX + tenant_id.encode() + b"\0" + principal_id.encode()
 
     def encrypt(self, plaintext: bytes, *, aad: bytes) -> Ciphertext:
         nonce = os.urandom(12)

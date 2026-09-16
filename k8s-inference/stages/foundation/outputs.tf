@@ -51,5 +51,5 @@ output "component_versions" {
 
 output "grafana_admin_secret_ref" {
   description = "Non-secret keys needed by workload acceptance to verify Grafana provisioning."
-  value       = var.grafana_admin_secret_ref
+  value       = local.active_grafana_admin_secret_ref
 }

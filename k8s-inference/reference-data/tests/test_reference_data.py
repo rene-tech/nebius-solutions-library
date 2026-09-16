@@ -556,16 +556,24 @@ class ReferenceDataContractTests(unittest.TestCase):
 
     def test_object_storage_secret_rotates_with_immutable_key_identity(self) -> None:
         module = (REFERENCE_DATA / "terraform" / "main.tf").read_text(encoding="utf-8")
-        identity = module.split("credentials_identity =", 1)[1].split(
+        identity = module.split("credentials_identities =", 1)[1].split(
             "source_catalog", 1
         )[0]
-        self.assertIn("var.object_storage_access.access_key_id", identity)
-        self.assertIn("var.object_storage_access.secret_reference_id", identity)
+        self.assertIn("access.access_key_id", identity)
+        self.assertIn("access.secret_reference_id", identity)
+        self.assertIn("generation", identity)
         self.assertIn(
-            'credentials_secret    = "fs2-reference-data-object-storage-${local.credentials_identity}"',
+            'generation => "fs2-reference-data-object-storage-v${generation}-${identity}"',
             module,
         )
-        self.assertEqual(module.count("name = local.credentials_secret"), 2)
+        self.assertIn(
+            "credentials_secret    = local.credentials_secrets[tostring(var.credential_generation)]",
+            module,
+        )
+        self.assertIn(
+            'resource "kubernetes_secret_v1" "object_storage_versioned"', module
+        )
+        self.assertIn("data_wo_revision = tonumber(each.key)", module)
         self.assertIn("immutable = true", module)
 
     def test_dedicated_worker_capacity_is_checked_before_workloads_exist(self) -> None:

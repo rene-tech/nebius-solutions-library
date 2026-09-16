@@ -351,9 +351,9 @@ resource "helm_release" "monitoring" {
           "fs2.nebius.ai/secret-rollout-generation" = tostring(var.credential_generation)
         }
         admin = {
-          existingSecret = var.grafana_admin_secret_ref.name
-          userKey        = var.grafana_admin_secret_ref.user_key
-          passwordKey    = var.grafana_admin_secret_ref.password_key
+          existingSecret = local.active_grafana_admin_secret_ref.name
+          userKey        = local.active_grafana_admin_secret_ref.user_key
+          passwordKey    = local.active_grafana_admin_secret_ref.password_key
         }
         sidecar = {
           dashboards = { enabled = true }
@@ -459,6 +459,7 @@ resource "helm_release" "monitoring" {
   depends_on = [
     terraform_data.kueue_deployment_admission_ready,
     kubernetes_secret_v1.grafana_admin,
+    kubernetes_secret_v1.grafana_admin_versioned,
   ]
 }
 

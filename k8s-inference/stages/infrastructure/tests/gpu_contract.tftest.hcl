@@ -299,8 +299,8 @@ run "enabled_reference_data_retained_provider_fixture" {
   }
 }
 
-run "fresh_empty_reference_storage_apply_acceptance" {
-  command = apply
+run "fresh_empty_reference_storage_plan_acceptance" {
+  command = plan
 
   plan_options {
     target = [

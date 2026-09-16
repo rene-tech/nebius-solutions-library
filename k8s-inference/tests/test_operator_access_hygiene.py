@@ -5,6 +5,7 @@ import hashlib
 import importlib.machinery
 import importlib.util
 import json
+import os
 import re
 import stat
 import subprocess
@@ -35,15 +36,48 @@ ROTATION = load_script("credential_rotation", ROOT / "scripts/credential_rotatio
 STACK = load_script("inference_stack", ROOT / "inference-stack")
 
 
-def disposition_evidence(index: int) -> dict[str, str]:
-    return {
+def disposition_evidence(
+    directory: Path,
+    index: int,
+    artifact: dict[str, str],
+    *,
+    action: str,
+) -> dict[str, str]:
+    evidence = {
         "provider": "encrypted-audit-store",
         "object_id": f"artifact-{index}",
         "version_id": f"version-{index}",
         "audit_event_id": f"audit-{index}",
         "verified_at": "2099-01-01T00:00:00Z",
         "verifier": "independent-security-review",
-        "receipt_sha256": f"{index + 1:064x}",
+    }
+    receipt_path = directory / f"provider-disposition-{index}.json"
+    GUARD.write_private_json(
+        receipt_path,
+        {
+            "schema": "fs2-serve.nebius.ai/artifact-disposition-provider-receipt/v1",
+            **evidence,
+            "action": action,
+            "source_sha256": artifact["sha256"],
+            "status": (
+                "rewrapped-and-verified"
+                if action == "encrypted-rewrap"
+                else "securely-retired-and-verified"
+            ),
+        },
+    )
+    return {
+        **evidence,
+        "receipt_path": str(receipt_path.absolute()),
+        "receipt_sha256": GUARD.file_sha256(receipt_path),
+    }
+
+
+def provider_inventory(readers: list[str]) -> dict[str, object]:
+    return {
+        "provider_version": "resource-version-17",
+        "expires_at": "2099-01-01T00:00:00Z",
+        "readers": readers,
     }
 
 
@@ -96,6 +130,24 @@ def hcl_resource_blocks(source: str) -> list[tuple[str, str, str]]:
 
 
 class OperatorAccessHygieneTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.provider_identity = {
+            "realpath": "/usr/local/bin/provider",
+            "device": 1,
+            "inode": 2,
+            "uid": 0,
+            "sha256": "f" * 64,
+            "arguments_sha256": hashlib.sha256(b"[]").hexdigest(),
+            "argument_files": [],
+        }
+        patcher = mock.patch.object(
+            ROTATION,
+            "provider_command_identity",
+            return_value=self.provider_identity,
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_fixed_generation_one_resources_are_preserved_and_protected(self) -> None:
         secrets = (ROOT / "stages/workloads/secrets.tf").read_text(encoding="utf-8")
         bootstrap = (ROOT / "stages/workloads/bootstrap_access.tf").read_text(
@@ -114,6 +166,11 @@ class OperatorAccessHygieneTests(unittest.TestCase):
             self.assertIn(key_id, resources[name])
             self.assertIn("prevent_destroy = true", resources[name])
             self.assertNotIn("data_wo", resources[name])
+        self.assertIn("storage-v1", resources["storage_keyring"])
+        self.assertIn("storage-name-v1", resources["storage_keyring"])
+        self.assertIn("data_wo_revision = 1", resources["storage_keyring"])
+        self.assertIn("prevent_destroy = true", resources["storage_keyring"])
+        self.assertNotIn("ignore_changes", resources["storage_keyring"])
         self.assertIn("prevent_destroy = true", resources["route_attestors"])
         self.assertIn("prevent_destroy = true", resources["admin"])
         self.assertIn("prevent_destroy = true", resources["admin_token"])
@@ -152,22 +209,30 @@ class OperatorAccessHygieneTests(unittest.TestCase):
         self.assertIn("local.database_versioned_accounts", cluster)
         self.assertIn("kubernetes_secret_v1.database_account_versioned", cluster)
         self.assertIn("local.database_role_memberships[identity.account]", cluster)
-        consumers = resources["database_consumer"]
-        self.assertIn("data_wo", consumers)
-        self.assertIn(
-            "data_wo_revision = var.credential_generations.database", consumers
-        )
-        self.assertIn("kubernetes_manifest.control_database", consumers)
-        self.assertIn("terraform_data.credential_migration_gate", consumers)
-        self.assertIn("local.active_database_usernames", consumers)
-        self.assertIn("local.active_database_passwords", consumers)
+        fixed_consumer = resources["database_consumer"]
+        versioned_consumer = resources["database_consumer_versioned"]
+        self.assertIn("data_wo_revision = 1", fixed_consumer)
+        self.assertIn("random_password.database", fixed_consumer)
+        self.assertIn("local.database_versioned_consumers", versioned_consumer)
+        self.assertIn("data_wo_revision = each.value.generation", versioned_consumer)
+        self.assertNotIn("ignore_changes", versioned_consumer)
+        for consumer in (fixed_consumer, versioned_consumer):
+            self.assertIn("kubernetes_manifest.control_database", consumer)
+            self.assertIn("terraform_data.credential_migration_gate", consumer)
 
     def test_key_classes_rotate_independently_with_retained_v1_and_write_only_delivery(
         self,
     ) -> None:
         secrets = (ROOT / "stages/workloads/secrets.tf").read_text(encoding="utf-8")
         variables = (ROOT / "stages/workloads/variables.tf").read_text(encoding="utf-8")
-        for key_class in ("payload", "ledger", "pepper", "attestor"):
+        for key_class in (
+            "payload",
+            "ledger",
+            "pepper",
+            "attestor",
+            "storage",
+            "storage_name",
+        ):
             self.assertRegex(variables, rf"(?m)^\s*{key_class}\s+= optional\(object")
         self.assertNotIn("key_material = optional", variables)
         for resource, legacy_id in {
@@ -175,6 +240,8 @@ class OperatorAccessHygieneTests(unittest.TestCase):
             "ledger_keyring_versioned": "ledger-v1",
             "token_pepper_versioned": "pepper-v1",
             "route_attestors_versioned": "generation-1 public key",
+            "storage_keyring_versioned": "storage-v1",
+            "storage_name_keyring_versioned": "storage-name-v1",
         }.items():
             block = dict(hcl_blocks(secrets, "resource"))[resource]
             self.assertIn("data_wo", block)
@@ -183,6 +250,15 @@ class OperatorAccessHygieneTests(unittest.TestCase):
         self.assertIn("var.keyring_generations.payload.retained", secrets)
         self.assertIn("var.keyring_generations.ledger.retained", secrets)
         self.assertIn("var.keyring_generations.pepper.retained", secrets)
+        self.assertIn("var.keyring_generations.storage.retained", secrets)
+        self.assertIn("var.keyring_generations.storage_name.retained", secrets)
+        self.assertIn('"storage", "storage_name"', secrets)
+        self.assertIn(
+            "FS2_STORAGE_KEYRINGS_JSON", (ROOT / "inference-stack").read_text()
+        )
+        self.assertIn(
+            "FS2_STORAGE_NAME_KEYRINGS_JSON", (ROOT / "inference-stack").read_text()
+        )
         self.assertGreaterEqual(secrets.count("prevent_destroy = true"), 9)
 
     def test_secret_consumers_have_nonsecret_generation_rollout_triggers(self) -> None:
@@ -209,6 +285,9 @@ class OperatorAccessHygieneTests(unittest.TestCase):
             "ledger",
             "pepper",
             "attestor",
+            "storage",
+            "storageName",
+            "artifactStore",
         ):
             self.assertIn(f'"{generation}" .Values.secretRollout.', runtime)
         bootstrap = templates["bootstrap-access-job.yaml"]
@@ -220,10 +299,132 @@ class OperatorAccessHygieneTests(unittest.TestCase):
         self.assertIn("atomic           = true", workloads)
         self.assertIn("wait             = true", workloads)
         self.assertIn("kubernetes_secret_v1.payload_keyring_versioned", workloads)
+        self.assertIn(
+            "artifactStoreGeneration = var.scientific_artifacts.credential_generation",
+            workloads,
+        )
         foundation = (ROOT / "stages/foundation/releases.tf").read_text(
             encoding="utf-8"
         )
         self.assertIn('"fs2.nebius.ai/secret-rollout-generation"', foundation)
+
+    def test_singleton_write_only_secrets_use_retained_generation_cutovers(
+        self,
+    ) -> None:
+        sources = {
+            "foundation": (ROOT / "stages/foundation/cluster_contract.tf").read_text(
+                encoding="utf-8"
+            ),
+            "secrets": (ROOT / "stages/workloads/secrets.tf").read_text(
+                encoding="utf-8"
+            ),
+            "database": (ROOT / "stages/workloads/database.tf").read_text(
+                encoding="utf-8"
+            ),
+            "modelexpress": (ROOT / "stages/workloads/modelexpress.tf").read_text(
+                encoding="utf-8"
+            ),
+            "artifacts": (ROOT / "stages/workloads/scientific_artifacts.tf").read_text(
+                encoding="utf-8"
+            ),
+        }
+        expected_pairs = {
+            "foundation": ("grafana_admin", "grafana_admin_versioned"),
+            "database": (
+                "database_consumer",
+                "database_consumer_versioned",
+                "grafana_datasource",
+                "grafana_datasource_versioned",
+            ),
+            "modelexpress": (
+                "modelexpress_nvcrio",
+                "modelexpress_nvcrio_versioned",
+            ),
+            "artifacts": (
+                "scientific_artifact_store",
+                "scientific_artifact_store_versioned",
+            ),
+            "secrets": (
+                "storage_keyring",
+                "storage_keyring_versioned",
+                "storage_name_keyring_versioned",
+                "ngc_api_key",
+                "ngc_api_key_versioned",
+                "nvcrio_cred",
+                "nvcrio_cred_versioned",
+                "dcgm_exporter_nvcrio",
+                "dcgm_exporter_nvcrio_versioned",
+            ),
+        }
+        for source_name, names in expected_pairs.items():
+            blocks = dict(hcl_blocks(sources[source_name], "resource"))
+            for name in names:
+                with self.subTest(source=source_name, resource=name):
+                    self.assertIn(name, blocks)
+                    self.assertIn("data_wo_revision", blocks[name])
+                    self.assertIn("prevent_destroy = true", blocks[name])
+                    self.assertNotIn("ignore_changes", blocks[name])
+                    self.assertIn(
+                        "terraform_data.credential_migration_gate", blocks[name]
+                    )
+
+        control_plane = (ROOT / "stages/workloads/control_plane.tf").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("active_database_consumer_secret_names", control_plane)
+        self.assertIn("scientific_artifact_store_versioned", control_plane)
+        monitoring = (ROOT / "stages/workloads/observability.tf").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("retained_dcgm_nvcrio_secret_names", monitoring)
+        releases = (ROOT / "stages/foundation/releases.tf").read_text(encoding="utf-8")
+        self.assertIn("active_grafana_admin_secret_ref", releases)
+        self.assertIn("grafana_admin_versioned", releases)
+
+        helpers = (
+            ROOT / "charts/control-plane/fs2-serve-control-plane/templates/_helpers.tpl"
+        ).read_text(encoding="utf-8")
+        settings = (
+            ROOT / "components/control-plane/src/fs2_serve/settings.py"
+        ).read_text(encoding="utf-8")
+        for contract in (
+            "fs2-serve.storageCryptoEnv",
+            "fs2-serve.storageCryptoVolumes",
+            "fs2-serve.storageCryptoVolumeMounts",
+            "fs2-serve.storageCipherVolume",
+            "fs2-serve.storageCipherVolumeMount",
+        ):
+            self.assertIn(f'define "{contract}"', helpers)
+        self.assertIn(".Values.secrets.storageCipherKeyring.name", helpers)
+        self.assertIn(".Values.secrets.storageNameKeyring.name", helpers)
+        self.assertIn("FS2_USER_STORAGE_KEYRING_FILE", helpers)
+        self.assertIn("FS2_USER_STORAGE_NAME_KEYRING_FILE", helpers)
+        self.assertIn("user_storage_keyring_file", settings)
+        self.assertIn("user_storage_name_keyring_file", settings)
+
+    def test_reference_data_s3_uses_new_provider_ids_and_retained_secrets(
+        self,
+    ) -> None:
+        infrastructure = (ROOT / "stages/infrastructure/storage.tf").read_text()
+        module = (ROOT / "reference-data/terraform/main.tf").read_text()
+        cloud = dict(hcl_blocks(infrastructure, "resource"))
+        secrets = dict(hcl_blocks(module, "resource"))
+        self.assertIn("ignore_changes  = all", cloud["reference_data"])
+        self.assertIn("prevent_destroy = true", cloud["reference_data"])
+        self.assertIn("reference_data_versioned", cloud)
+        self.assertIn(
+            "credential_generation_history", cloud["reference_data_versioned"]
+        )
+        self.assertNotIn("ignore_changes", cloud["reference_data_versioned"])
+        for name in ("object_storage", "object_storage_versioned"):
+            self.assertIn("prevent_destroy = true", secrets[name])
+            self.assertIn("data_wo_revision", secrets[name])
+            self.assertNotIn("ignore_changes", secrets[name])
+        self.assertIn(
+            "credentials_secret    = local.credentials_secrets[tostring(var.credential_generation)]",
+            module,
+        )
+        self.assertIn('"current-write" : "retained-read"', module)
 
     def test_control_plane_allowlist_accepts_only_canonical_hosts(self) -> None:
         for path in ("variables.tf", "stages/infrastructure/variables.tf"):
@@ -343,6 +544,11 @@ class OperatorAccessHygieneTests(unittest.TestCase):
             "nebius_iam_v2_access_key.postgresql_backup[0]",
             "nebius_iam_v2_access_key.scientific_artifacts[0]",
             "nebius_iam_v2_access_key.reference_data[0]",
+            'random_password.key_material["storage"]',
+            'random_password.key_material["storage_name"]',
+            "kubernetes_secret_v1.storage_keyring",
+            'kubernetes_secret_v1.storage_keyring_versioned["2"]',
+            'kubernetes_secret_v1.storage_name_keyring_versioned["2"]',
         }
         self.assertTrue(
             all(
@@ -382,7 +588,16 @@ class OperatorAccessHygieneTests(unittest.TestCase):
                 address = f"{resource_type}.{resource_name}"
                 observed.add((root_name, address))
                 self.assertIn("prevent_destroy = true", block, address)
-                self.assertIn("ignore_changes  = all", block, address)
+                if "data_wo" in block:
+                    self.assertIn("data_wo_revision", block, address)
+                    self.assertNotIn("ignore_changes", block, address)
+                elif (
+                    resource_type == "nebius_iam_v2_access_key"
+                    and resource_name.endswith("_versioned")
+                ):
+                    self.assertNotIn("ignore_changes", block, address)
+                else:
+                    self.assertIn("ignore_changes  = all", block, address)
                 self.assertIn(
                     "terraform_data.credential_migration_gate", block, address
                 )
@@ -392,6 +607,21 @@ class OperatorAccessHygieneTests(unittest.TestCase):
             gate = (root / "credential_migration_gate.tf").read_text(encoding="utf-8")
             self.assertIn('data "external" "credential_migration_gate"', gate)
             self.assertIn("secret_migration_guard.py", gate)
+            self.assertIn(
+                "triggers_replace = [data.external.credential_migration_gate.result.receipt_sha256, timestamp()]",
+                gate,
+            )
+            self.assertIn("apply-saved-plan-gate", gate)
+
+        with (
+            mock.patch.dict(os.environ, {}, clear=True),
+            self.assertRaisesRegex(GUARD.GuardError, "exact saved-plan receipt"),
+        ):
+            GUARD.validate_saved_plan_gate_from_environment(
+                terraform_configuration=ROOT / "stages/workloads",
+                terraform_root="workloads",
+                source_commit="a" * 40,
+            )
 
     def test_fixed_v1_identity_receipt_is_value_free_and_exact(self) -> None:
         secret_value = "must-not-appear-in-receipt"
@@ -461,6 +691,11 @@ class OperatorAccessHygieneTests(unittest.TestCase):
             "kubernetes_secret_v1.scientific_access[0]",
             'random_password.database["runtime"]',
             'kubernetes_secret_v1.database_account["runtime"]',
+            'random_password.key_material["storage"]',
+            'random_password.key_material["storage_name"]',
+            "kubernetes_secret_v1.storage_keyring",
+            'kubernetes_secret_v1.storage_keyring_versioned["2"]',
+            'kubernetes_secret_v1.storage_name_keyring_versioned["2"]',
         ):
             with self.subTest(address=address), self.assertRaises(GUARD.GuardError):
                 GUARD.inspect_plan(
@@ -472,6 +707,59 @@ class OperatorAccessHygieneTests(unittest.TestCase):
                             }
                         ]
                     }
+                )
+
+    def test_storage_credentials_cannot_escape_guard_through_move_or_target(
+        self,
+    ) -> None:
+        moved = {
+            "resource_changes": [
+                {
+                    "address": "terraform_data.unprotected",
+                    "previous_address": 'random_password.key_material["storage"]',
+                    "change": {"actions": ["no-op"]},
+                }
+            ]
+        }
+        with self.assertRaisesRegex(GUARD.GuardError, "move"):
+            GUARD.inspect_plan(moved)
+
+        protected = {
+            "values": {
+                "root_module": {
+                    "resources": [
+                        {
+                            "address": 'random_password.key_material["storage"]',
+                            "values": {"id": "none", "result": "not-recorded"},
+                        },
+                        {
+                            "address": 'random_password.key_material["storage_name"]',
+                            "values": {"id": "none", "result": "not-recorded"},
+                        },
+                    ]
+                }
+            }
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            directory.chmod(0o700)
+            receipt = GUARD.write_identity_receipt(
+                protected,
+                directory / "identity.json",
+                source_commit="a" * 40,
+            )
+            with self.assertRaisesRegex(GUARD.GuardError, "omitted"):
+                GUARD.inspect_plan(
+                    {
+                        "prior_state": protected,
+                        "resource_changes": [
+                            {
+                                "address": 'random_password.key_material["storage"]',
+                                "change": {"actions": ["no-op"]},
+                            }
+                        ],
+                    },
+                    identity_receipt=receipt,
                 )
 
     def test_identity_receipt_binds_live_secret_uid_resource_version_and_content(
@@ -607,8 +895,16 @@ class OperatorAccessHygieneTests(unittest.TestCase):
                 'resource "terraform_data" "safe" {}\n', encoding="utf-8"
             )
             receipt_path = receipts / "gate.json"
+            raw_state = {
+                "version": 4,
+                "terraform_version": "1.13.3",
+                "serial": 7,
+                "lineage": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                "resources": [{"mode": "managed", "type": "terraform_data"}],
+            }
             GUARD.write_apply_gate_receipt(
                 state_document={"values": {"root_module": {"resources": []}}},
+                raw_state_document=raw_state,
                 identity_receipt=None,
                 terraform_configuration=configuration,
                 terraform_root="workloads",
@@ -621,14 +917,36 @@ class OperatorAccessHygieneTests(unittest.TestCase):
                 "terraform_root": "workloads",
                 "source_commit": "a" * 40,
             }
-            self.assertEqual(GUARD.validate_native_gate(query)["status"], "pass")
+            self.assertEqual(
+                GUARD.validate_native_gate(
+                    query, authoritative_state_document=raw_state
+                )["status"],
+                "pass",
+            )
             with self.assertRaises(GUARD.GuardError):
-                GUARD.validate_native_gate({**query, "receipt_path": ""})
+                GUARD.validate_native_gate(
+                    {**query, "receipt_path": ""},
+                    authoritative_state_document=raw_state,
+                )
+            drifted_state = {**raw_state, "serial": 8}
+            with self.assertRaisesRegex(GUARD.GuardError, "authoritative"):
+                GUARD.validate_native_gate(
+                    query, authoritative_state_document=drifted_state
+                )
             (configuration / "main.tf").write_text(
                 'resource "terraform_data" "changed" {}\n', encoding="utf-8"
             )
             with self.assertRaisesRegex(GUARD.GuardError, "bind"):
-                GUARD.validate_native_gate(query)
+                GUARD.validate_native_gate(
+                    query, authoritative_state_document=raw_state
+                )
+
+            for fabricated in ({}, {**raw_state, "resources": []}):
+                with (
+                    self.subTest(fabricated=fabricated),
+                    self.assertRaisesRegex(GUARD.GuardError, "non-empty"),
+                ):
+                    GUARD.terraform_state_identity(fabricated)
 
             moved = owner / "moved"
             moved.mkdir(mode=0o700)
@@ -642,6 +960,7 @@ class OperatorAccessHygieneTests(unittest.TestCase):
             with self.assertRaisesRegex(GUARD.GuardError, "moves"):
                 GUARD.write_apply_gate_receipt(
                     state_document={"values": {"root_module": {"resources": []}}},
+                    raw_state_document=raw_state,
                     identity_receipt=None,
                     terraform_configuration=moved,
                     terraform_root="workloads",
@@ -653,25 +972,36 @@ class OperatorAccessHygieneTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
             base.chmod(0o700)
-            root = base / "run"
+            scope = base / "state"
+            scope.mkdir(mode=0o700)
+            root = scope / GUARD.AUTHORITATIVE_STATE_ROOT_NAMES[0]
             root.mkdir(mode=0o700)
-            root.chmod(0o700)
+            authority = mock.patch.object(
+                GUARD, "authoritative_operator_state_root", return_value=scope
+            )
+            authority.start()
+            self.addCleanup(authority.stop)
             state = root / "workloads.tfstate"
             state.write_text("test metadata", encoding="utf-8")
             state.chmod(0o600)
             manifest = GUARD.write_artifact_manifest(
-                root, base / "artifacts.receipt.json"
+                scope, base / "artifacts.receipt.json"
             )
             disposition = GUARD.write_disposition_receipt(
                 manifest,
                 {
-                    "schema": "fs2-serve.nebius.ai/global-artifact-disposition-input/v2",
+                    "schema": "fs2-serve.nebius.ai/global-artifact-disposition-input/v3",
                     "artifacts": [
                         {
                             "path": item["path"],
                             "sha256": item["sha256"],
                             "action": "encrypted-rewrap",
-                            "evidence": disposition_evidence(index),
+                            "evidence": disposition_evidence(
+                                base,
+                                index,
+                                item,
+                                action="encrypted-rewrap",
+                            ),
                         }
                         for index, item in enumerate(manifest["artifacts"])
                     ],
@@ -679,21 +1009,21 @@ class OperatorAccessHygieneTests(unittest.TestCase):
                 base / "dispositions.receipt.json",
             )
             self.assertEqual(
-                GUARD.inspect_run_root(root, retired=False)["plaintext_artifacts"], 1
+                GUARD.inspect_run_root(scope, retired=False)["plaintext_artifacts"], 1
             )
             with self.assertRaises(GUARD.GuardError):
                 GUARD.inspect_run_root(
-                    root,
+                    scope,
                     retired=True,
                     artifact_manifest=manifest,
                     disposition_receipt=disposition,
                 )
             state.unlink()
             with self.assertRaisesRegex(GUARD.GuardError, "disposition"):
-                GUARD.inspect_run_root(root, retired=True, artifact_manifest=manifest)
+                GUARD.inspect_run_root(scope, retired=True, artifact_manifest=manifest)
             self.assertEqual(
                 GUARD.inspect_run_root(
-                    root,
+                    scope,
                     retired=True,
                     artifact_manifest=manifest,
                     disposition_receipt=disposition,
@@ -701,7 +1031,154 @@ class OperatorAccessHygieneTests(unittest.TestCase):
                 0,
             )
             with self.assertRaisesRegex(GUARD.GuardError, "manifest"):
-                GUARD.inspect_run_root(root, retired=True)
+                GUARD.inspect_run_root(scope, retired=True)
+
+    def test_saved_plan_gate_binds_plan_state_and_live_secret_at_apply(self) -> None:
+        values = {
+            "metadata": [
+                {
+                    "name": "fs2-serve-admin",
+                    "namespace": "fs2-system",
+                    "uid": "uid-admin",
+                    "resource_version": "17",
+                }
+            ],
+            "data": {"token": "state-redacted"},
+        }
+        state = {
+            "values": {
+                "root_module": {
+                    "resources": [
+                        {
+                            "address": "kubernetes_secret_v1.admin",
+                            "values": values,
+                        }
+                    ]
+                }
+            }
+        }
+        plan = {
+            "prior_state": state,
+            "resource_changes": [
+                {
+                    "address": "kubernetes_secret_v1.admin",
+                    "change": {"actions": ["no-op"], "before": values, "after": values},
+                }
+            ],
+        }
+        raw_state = {
+            "version": 4,
+            "terraform_version": "1.13.3",
+            "serial": 91,
+            "lineage": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "resources": [{"mode": "managed", "type": "kubernetes_secret"}],
+        }
+        live = {
+            "items": [
+                {
+                    "metadata": {
+                        "name": "fs2-serve-admin",
+                        "namespace": "fs2-system",
+                        "uid": "uid-admin",
+                        "resourceVersion": "17",
+                    },
+                    "data": {"token": "bGl2ZS10b2tlbg=="},
+                }
+            ]
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            owner = Path(temporary)
+            owner.chmod(0o700)
+            configuration = owner / "workloads"
+            configuration.mkdir(mode=0o700)
+            (configuration / "main.tf").write_text(
+                'resource "terraform_data" "safe" {}\n', encoding="utf-8"
+            )
+            identity_path = owner / "identity.json"
+            identity = GUARD.write_identity_receipt(
+                state,
+                identity_path,
+                source_commit="a" * 40,
+                live_secret_document=live,
+            )
+            planning_path = owner / "planning.json"
+            GUARD.write_apply_gate_receipt(
+                state_document=state,
+                raw_state_document=raw_state,
+                identity_receipt=identity,
+                terraform_configuration=configuration,
+                terraform_root="workloads",
+                source_commit="a" * 40,
+                path=planning_path,
+            )
+            saved_plan = owner / "workloads.tfplan"
+            saved_plan.write_bytes(b"opaque exact saved plan")
+            saved_plan.chmod(0o600)
+            apply_path = owner / "apply.json"
+            GUARD.write_saved_plan_gate_receipt(
+                plan_document=plan,
+                raw_state_document=raw_state,
+                saved_plan=saved_plan,
+                planning_receipt_path=planning_path,
+                identity_receipt=identity,
+                live_secret_document=live,
+                terraform_configuration=configuration,
+                terraform_root="workloads",
+                source_commit="a" * 40,
+                path=apply_path,
+            )
+            self.assertEqual(
+                GUARD.validate_saved_plan_gate(
+                    receipt_path=apply_path,
+                    plan_document=plan,
+                    saved_plan=saved_plan,
+                    live_secret_document=live,
+                    raw_state_document=raw_state,
+                    terraform_configuration=configuration,
+                    terraform_root="workloads",
+                    source_commit="a" * 40,
+                )["status"],
+                "pass",
+            )
+
+            changed_live = json.loads(json.dumps(live))
+            changed_live["items"][0]["metadata"]["resourceVersion"] = "18"
+            with self.assertRaisesRegex(GUARD.GuardError, "live Secret"):
+                GUARD.validate_saved_plan_gate(
+                    receipt_path=apply_path,
+                    plan_document=plan,
+                    saved_plan=saved_plan,
+                    live_secret_document=changed_live,
+                    raw_state_document=raw_state,
+                    terraform_configuration=configuration,
+                    terraform_root="workloads",
+                    source_commit="a" * 40,
+                )
+
+            with self.assertRaisesRegex(GUARD.GuardError, "backend state"):
+                GUARD.validate_saved_plan_gate(
+                    receipt_path=apply_path,
+                    plan_document=plan,
+                    saved_plan=saved_plan,
+                    live_secret_document=live,
+                    raw_state_document={**raw_state, "serial": 92},
+                    terraform_configuration=configuration,
+                    terraform_root="workloads",
+                    source_commit="a" * 40,
+                )
+
+            saved_plan.write_bytes(b"different plan")
+            with self.assertRaisesRegex(GUARD.GuardError, "execution input"):
+                GUARD.validate_saved_plan_gate(
+                    receipt_path=apply_path,
+                    plan_document=plan,
+                    saved_plan=saved_plan,
+                    live_secret_document=live,
+                    raw_state_document=raw_state,
+                    terraform_configuration=configuration,
+                    terraform_root="workloads",
+                    source_commit="a" * 40,
+                )
 
     def test_retirement_canary_catches_real_plan_cookie_and_scoped_export_names(
         self,
@@ -709,8 +1186,15 @@ class OperatorAccessHygieneTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
             base.chmod(0o700)
-            root = base / "run"
+            scope = base / "state"
+            scope.mkdir(mode=0o700)
+            root = scope / GUARD.AUTHORITATIVE_STATE_ROOT_NAMES[0]
             root.mkdir(mode=0o700)
+            authority = mock.patch.object(
+                GUARD, "authoritative_operator_state_root", return_value=scope
+            )
+            authority.start()
+            self.addCleanup(authority.stop)
             for name in (
                 "configuration.plan.json",
                 "admin-cookie.acceptance.txt",
@@ -721,23 +1205,28 @@ class OperatorAccessHygieneTests(unittest.TestCase):
                 artifact.write_text("opaque", encoding="utf-8")
                 artifact.chmod(0o600)
             self.assertEqual(
-                GUARD.inspect_run_root(root, retired=False)["plaintext_artifacts"], 3
+                GUARD.inspect_run_root(scope, retired=False)["plaintext_artifacts"], 3
             )
             self.assertEqual(
-                GUARD.inspect_run_root(root, retired=False)["unknown_artifacts"], 1
+                GUARD.inspect_run_root(scope, retired=False)["unknown_artifacts"], 1
             )
             manifest = GUARD.write_artifact_manifest(
-                root, base / "artifacts.receipt.json"
+                scope, base / "artifacts.receipt.json"
             )
             self.assertEqual(len(manifest["artifacts"]), 4)
             disposition_input = {
-                "schema": "fs2-serve.nebius.ai/global-artifact-disposition-input/v2",
+                "schema": "fs2-serve.nebius.ai/global-artifact-disposition-input/v3",
                 "artifacts": [
                     {
                         "path": item["path"],
                         "sha256": item["sha256"],
                         "action": "secure-retire",
-                        "evidence": disposition_evidence(index),
+                        "evidence": disposition_evidence(
+                            base,
+                            index,
+                            item,
+                            action="secure-retire",
+                        ),
                     }
                     for index, item in enumerate(manifest["artifacts"])
                 ],
@@ -749,7 +1238,7 @@ class OperatorAccessHygieneTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(GUARD.GuardError, "not retired"):
                 GUARD.inspect_run_root(
-                    root,
+                    scope,
                     retired=True,
                     artifact_manifest=manifest,
                     disposition_receipt=disposition,
@@ -758,7 +1247,7 @@ class OperatorAccessHygieneTests(unittest.TestCase):
                 path.unlink()
             self.assertEqual(
                 GUARD.inspect_run_root(
-                    root,
+                    scope,
                     retired=True,
                     artifact_manifest=manifest,
                     disposition_receipt=disposition,
@@ -784,23 +1273,36 @@ class OperatorAccessHygieneTests(unittest.TestCase):
             receipts = owner / "receipts"
             scope.mkdir(mode=0o700)
             receipts.mkdir(mode=0o700)
+            authority = mock.patch.object(
+                GUARD, "authoritative_operator_state_root", return_value=scope
+            )
+            authority.start()
+            self.addCleanup(authority.stop)
             for relative in (
-                "run-a/workloads.tfstate",
-                "run-b/configuration.plan.json",
+                f"{GUARD.AUTHORITATIVE_STATE_ROOT_NAMES[0]}/workloads.tfstate",
+                f"{GUARD.AUTHORITATIVE_STATE_ROOT_NAMES[1]}/configuration.plan.json",
             ):
                 path = scope / relative
                 path.parent.mkdir(mode=0o700)
                 path.write_text("opaque", encoding="utf-8")
                 path.chmod(0o600)
+            with self.assertRaisesRegex(GUARD.GuardError, "authoritative"):
+                GUARD.write_artifact_manifest(
+                    scope / GUARD.AUTHORITATIVE_STATE_ROOT_NAMES[0],
+                    receipts / "partial-manifest.json",
+                )
             manifest = GUARD.write_artifact_manifest(
                 scope, receipts / "global-manifest.json"
             )
             self.assertEqual(
                 {item["path"] for item in manifest["artifacts"]},
-                {"run-a/workloads.tfstate", "run-b/configuration.plan.json"},
+                {
+                    f"{GUARD.AUTHORITATIVE_STATE_ROOT_NAMES[0]}/workloads.tfstate",
+                    f"{GUARD.AUTHORITATIVE_STATE_ROOT_NAMES[1]}/configuration.plan.json",
+                },
             )
             opaque = {
-                "schema": "fs2-serve.nebius.ai/global-artifact-disposition-input/v2",
+                "schema": "fs2-serve.nebius.ai/global-artifact-disposition-input/v3",
                 "artifacts": [
                     {
                         "path": item["path"],
@@ -818,20 +1320,27 @@ class OperatorAccessHygieneTests(unittest.TestCase):
             disposition = GUARD.write_disposition_receipt(
                 manifest,
                 {
-                    "schema": "fs2-serve.nebius.ai/global-artifact-disposition-input/v2",
+                    "schema": "fs2-serve.nebius.ai/global-artifact-disposition-input/v3",
                     "artifacts": [
                         {
                             "path": item["path"],
                             "sha256": item["sha256"],
                             "action": "secure-retire",
-                            "evidence": disposition_evidence(index),
+                            "evidence": disposition_evidence(
+                                receipts,
+                                index,
+                                item,
+                                action="secure-retire",
+                            ),
                         }
                         for index, item in enumerate(manifest["artifacts"])
                     ],
                 },
                 receipts / "disposition.json",
             )
-            (scope / "run-a/workloads.tfstate").unlink()
+            (
+                scope / GUARD.AUTHORITATIVE_STATE_ROOT_NAMES[0] / "workloads.tfstate"
+            ).unlink()
             with self.assertRaisesRegex(GUARD.GuardError, "not retired"):
                 GUARD.inspect_run_root(
                     scope,
@@ -839,6 +1348,51 @@ class OperatorAccessHygieneTests(unittest.TestCase):
                     artifact_manifest=manifest,
                     disposition_receipt=disposition,
                 )
+
+    def test_global_retirement_inventory_rejects_symlinks_and_midread_changes(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            owner = Path(temporary)
+            owner.chmod(0o700)
+            scope = owner / "all-operator-state"
+            scope.mkdir(mode=0o700)
+            authority = mock.patch.object(
+                GUARD, "authoritative_operator_state_root", return_value=scope
+            )
+            authority.start()
+            self.addCleanup(authority.stop)
+
+            outside = owner / "outside.tfstate"
+            outside.write_text("outside", encoding="utf-8")
+            outside.chmod(0o600)
+            (scope / "linked.tfstate").symlink_to(outside)
+            with self.assertRaisesRegex(GUARD.GuardError, "safely open"):
+                GUARD.inventory_run_root(scope)
+            (scope / "linked.tfstate").unlink()
+
+            artifact = scope / "workloads.tfstate"
+            artifact.write_bytes(b"a" * (1024 * 1024 + 1))
+            artifact.chmod(0o600)
+            real_read = os.read
+            changed = False
+
+            def mutate_after_first_read(descriptor: int, size: int) -> bytes:
+                nonlocal changed
+                chunk = real_read(descriptor, size)
+                if not changed:
+                    changed = True
+                    with artifact.open("ab") as stream:
+                        stream.write(b"changed")
+                return chunk
+
+            with (
+                mock.patch.object(
+                    GUARD.os, "read", side_effect=mutate_after_first_read
+                ),
+                self.assertRaisesRegex(GUARD.GuardError, "changed while inventoried"),
+            ):
+                GUARD.inventory_run_root(scope)
 
     def test_versioned_pat_ids_cannot_be_reused_across_generation_or_audience(
         self,
@@ -972,6 +1526,7 @@ class OperatorAccessHygieneTests(unittest.TestCase):
                 "purpose": "NVIDIA registry pulls and API access",
                 "readers": ["model-runtimes"],
                 "registry_sha256": "a" * 64,
+                "provider_command": self.provider_identity,
                 "predecessor": {
                     "id": "credential-old",
                     "credential_class": "registry-credentials",
@@ -981,6 +1536,7 @@ class OperatorAccessHygieneTests(unittest.TestCase):
                     "generation": 1,
                     "fingerprint": "1" * 64,
                     "status": "active",
+                    **provider_inventory(["model-runtimes"]),
                 },
                 "successor_generation": 2,
                 "successor_fingerprint": "2" * 64,
@@ -993,6 +1549,7 @@ class OperatorAccessHygieneTests(unittest.TestCase):
                     "generation": 2,
                     "fingerprint": "2" * 64,
                     "status": "active",
+                    **provider_inventory(["model-runtimes"]),
                 },
                 "phase": "current-write",
                 "created_at": "2026-09-16T00:00:00Z",
@@ -1035,6 +1592,190 @@ class OperatorAccessHygieneTests(unittest.TestCase):
                 result = ROTATION.transition(args)
             self.assertEqual(result["status"], "predecessor-deleted")
 
+    def test_rotation_rejects_reused_predecessor_fingerprint_before_create(
+        self,
+    ) -> None:
+        predecessor = {
+            "id": "storage-v1",
+            "credential_class": "customer-storage-cipher-keyring",
+            "owner_id": "owner-test",
+            "project_id": "project-test",
+            "purpose": "customer-storage access-key envelope encryption",
+            "generation": 1,
+            "fingerprint": "1" * 64,
+            "status": "active",
+            **provider_inventory(
+                [
+                    "customer-storage-reconciler",
+                    "customer-storage-disclosure",
+                    "migration-job",
+                ]
+            ),
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            args = argparse.Namespace(
+                directory=Path(temporary) / "rotation",
+                registry=ROOT / "security/durable-credential-registry.json",
+                provider_command=["provider"],
+                credential_class="customer-storage-cipher-keyring",
+                owner_id="owner-test",
+                project_id="project-test",
+                predecessor_id="storage-v1",
+                predecessor_generation=1,
+                successor_fingerprint="1" * 64,
+            )
+            with (
+                mock.patch.object(
+                    ROTATION, "provider_call", return_value=predecessor
+                ) as provider,
+                self.assertRaisesRegex(ROTATION.RotationError, "must differ"),
+            ):
+                ROTATION.create(args)
+            provider.assert_called_once()
+
+        with self.assertRaisesRegex(ROTATION.RotationError, "authority"):
+            ROTATION.require_provider_command(
+                {"provider_command": {**self.provider_identity, "inode": 99}},
+                ["provider"],
+            )
+        with self.assertRaisesRegex(ROTATION.RotationError, "incomplete"):
+            ROTATION.exact_identity(
+                {key: value for key, value in predecessor.items() if key != "readers"}
+            )
+
+    def test_provider_inventory_covers_every_class_with_expiry_and_readers(
+        self,
+    ) -> None:
+        registry = ROTATION.load_registry(
+            ROOT / "security/durable-credential-registry.json"
+        )
+        items = []
+        for index, policy in enumerate(registry["credentials"], start=1):
+            items.append(
+                {
+                    "id": f"credential-{index}",
+                    "credential_class": policy["id"],
+                    "owner_id": f"owner-{index}",
+                    "project_id": "project-test",
+                    "purpose": policy["purpose"],
+                    "generation": 1,
+                    "fingerprint": f"{index:064x}",
+                    "status": "active",
+                    "provider_version": f"version-{index}",
+                    "expires_at": (
+                        "2099-01-01T00:00:00Z" if policy["expiry"]["required"] else None
+                    ),
+                    "readers": policy["readers"],
+                }
+            )
+        with tempfile.TemporaryDirectory() as temporary:
+            args = argparse.Namespace(
+                directory=Path(temporary) / "inventory",
+                registry=ROOT / "security/durable-credential-registry.json",
+                provider_command=["provider"],
+                project_id="project-test",
+            )
+            with mock.patch.object(
+                ROTATION, "provider_call", return_value={"items": items}
+            ):
+                result = ROTATION.audit_inventory(args)
+            self.assertEqual(result["credential_classes"], len(registry["credentials"]))
+            receipt = json.loads(Path(result["receipt"]).read_text())
+            self.assertEqual(
+                set(receipt["classes"]),
+                {item["id"] for item in registry["credentials"]},
+            )
+            self.assertNotIn("credential_value", json.dumps(receipt).lower())
+
+        with tempfile.TemporaryDirectory() as temporary:
+            args.directory = Path(temporary) / "inventory"
+            with (
+                mock.patch.object(
+                    ROTATION, "provider_call", return_value={"items": items[:-1]}
+                ),
+                self.assertRaisesRegex(ROTATION.RotationError, "omits"),
+            ):
+                ROTATION.audit_inventory(args)
+
+    def test_rotation_interruption_is_journaled_before_cutover_and_reconciled(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = ROTATION.private_directory(Path(temporary) / "rotation")
+            journal = {
+                "schema": "fs2-serve.nebius.ai/credential-rotation/v2",
+                "operation_id": "operation-test",
+                "credential_class": "registry-credentials",
+                "owner_id": "owner-test",
+                "project_id": "project-test",
+                "purpose": "NVIDIA registry pulls and API access",
+                "readers": ["model-runtimes"],
+                "registry_sha256": "a" * 64,
+                "provider_command": self.provider_identity,
+                "predecessor": {
+                    "id": "registry-v1",
+                    "credential_class": "registry-credentials",
+                    "owner_id": "owner-test",
+                    "project_id": "project-test",
+                    "purpose": "NVIDIA registry pulls and API access",
+                    "generation": 1,
+                    "fingerprint": "1" * 64,
+                    "status": "active",
+                    **provider_inventory(["model-runtimes"]),
+                },
+                "successor_generation": 2,
+                "successor_fingerprint": "2" * 64,
+                "successor": {
+                    "id": "registry-v2",
+                    "credential_class": "registry-credentials",
+                    "owner_id": "owner-test",
+                    "project_id": "project-test",
+                    "purpose": "NVIDIA registry pulls and API access",
+                    "generation": 2,
+                    "fingerprint": "2" * 64,
+                    "status": "active",
+                    **provider_inventory(["model-runtimes"]),
+                },
+                "phase": "dual-read",
+                "created_at": "2026-09-16T00:00:00Z",
+                "events": [],
+            }
+            ROTATION.atomic_private_json(root / "journal.json", journal)
+            transition_args = argparse.Namespace(
+                directory=root,
+                provider_command=["provider"],
+                command="switch-write",
+            )
+            with (
+                mock.patch.object(
+                    ROTATION, "provider_call", side_effect=KeyboardInterrupt
+                ),
+                self.assertRaises(KeyboardInterrupt),
+            ):
+                ROTATION.transition(transition_args)
+            interrupted = ROTATION.load_journal(root / "journal.json")
+            self.assertEqual(interrupted["phase"], "switch-write-pending")
+            self.assertEqual(interrupted["events"][-1]["event"], "switch-write-intent")
+
+            reconcile_args = argparse.Namespace(
+                directory=root,
+                provider_command=["provider"],
+            )
+            with mock.patch.object(
+                ROTATION,
+                "provider_call",
+                return_value={
+                    "dual_read": True,
+                    "current_write_id": "registry-v2",
+                },
+            ):
+                result = ROTATION.reconcile(reconcile_args)
+            self.assertEqual(result["status"], "current-write")
+            self.assertEqual(
+                ROTATION.load_journal(root / "journal.json")["phase"],
+                "current-write",
+            )
+
     def test_payload_predecessor_disable_requires_all_deployed_ciphertext_cohorts(
         self,
     ) -> None:
@@ -1052,12 +1793,14 @@ class OperatorAccessHygieneTests(unittest.TestCase):
                 **base_identity,
                 "readers": ["control-plane"],
                 "registry_sha256": "a" * 64,
+                "provider_command": self.provider_identity,
                 "predecessor": {
                     "id": "payload-v1",
                     **base_identity,
                     "generation": 1,
                     "fingerprint": "1" * 64,
                     "status": "active",
+                    **provider_inventory(["control-plane"]),
                 },
                 "successor_generation": 2,
                 "successor_fingerprint": "2" * 64,
@@ -1067,6 +1810,7 @@ class OperatorAccessHygieneTests(unittest.TestCase):
                     "generation": 2,
                     "fingerprint": "2" * 64,
                     "status": "active",
+                    **provider_inventory(["control-plane"]),
                 },
                 "phase": "current-write",
                 "created_at": "2026-09-16T00:00:00Z",
@@ -1091,6 +1835,115 @@ class OperatorAccessHygieneTests(unittest.TestCase):
                 self.assertRaisesRegex(ROTATION.RotationError, "customer-storage"),
             ):
                 ROTATION.transition(args)
+
+    def test_storage_key_retirement_requires_usage_zero_and_rotation_canaries(
+        self,
+    ) -> None:
+        cases = {
+            "customer-storage-cipher-keyring": {
+                "purpose": "customer-storage access-key envelope encryption",
+                "operation": "prove-customer-storage-cipher-migration",
+                "evidence_key": "storage_cipher_migration_evidence_sha256",
+                "proof": {
+                    "aad_contract": "fs2.user-storage/v1",
+                    "old_key_references": 0,
+                    "current_write_id": "credential-new",
+                    "preexisting_ciphertexts": 2,
+                    "successor_ciphertexts": 1,
+                    "old_generation_decrypt_verified": True,
+                    "new_generation_decrypt_verified": True,
+                    "rollback_decrypt_verified": True,
+                    "tenant_principal_binding_verified": True,
+                },
+            },
+            "customer-storage-name-keyring": {
+                "purpose": "customer-storage deterministic resource-name derivation",
+                "operation": "prove-customer-storage-name-migration",
+                "evidence_key": "storage_name_migration_evidence_sha256",
+                "proof": {
+                    "old_key_references": 0,
+                    "current_write_id": "credential-new",
+                    "preexisting_names": 2,
+                    "successor_names": 1,
+                    "old_generation_verified": True,
+                    "new_generation_verified": True,
+                    "rollback_verified": True,
+                    "collision_free": True,
+                },
+            },
+        }
+        for credential_class, case in cases.items():
+            with (
+                self.subTest(credential_class=credential_class),
+                tempfile.TemporaryDirectory() as temporary,
+            ):
+                root = ROTATION.private_directory(Path(temporary) / "rotation")
+                base_identity = {
+                    "credential_class": credential_class,
+                    "owner_id": "owner-test",
+                    "project_id": "project-test",
+                    "purpose": case["purpose"],
+                }
+                journal = {
+                    "schema": "fs2-serve.nebius.ai/credential-rotation/v2",
+                    "operation_id": "operation-test",
+                    **base_identity,
+                    "readers": ["migration-job"],
+                    "registry_sha256": "a" * 64,
+                    "provider_command": self.provider_identity,
+                    "predecessor": {
+                        "id": "credential-old",
+                        **base_identity,
+                        "generation": 1,
+                        "fingerprint": "1" * 64,
+                        "status": "active",
+                        **provider_inventory(["migration-job"]),
+                    },
+                    "successor_generation": 2,
+                    "successor_fingerprint": "2" * 64,
+                    "successor": {
+                        "id": "credential-new",
+                        **base_identity,
+                        "generation": 2,
+                        "fingerprint": "2" * 64,
+                        "status": "active",
+                        **provider_inventory(["migration-job"]),
+                    },
+                    "phase": "current-write",
+                    "created_at": "2026-09-16T00:00:00Z",
+                    "events": [],
+                }
+                ROTATION.atomic_private_json(root / "journal.json", journal)
+                args = argparse.Namespace(
+                    directory=root,
+                    provider_command=["provider"],
+                    command="disable-old",
+                )
+                incomplete = {**case["proof"], "old_key_references": 1}
+                with (
+                    mock.patch.object(
+                        ROTATION, "provider_call", return_value=incomplete
+                    ),
+                    self.assertRaisesRegex(ROTATION.RotationError, "zero old-key"),
+                ):
+                    ROTATION.transition(args)
+
+                disabled = {**journal["predecessor"], "status": "disabled"}
+                with mock.patch.object(
+                    ROTATION,
+                    "provider_call",
+                    side_effect=[case["proof"], disabled],
+                ) as provider:
+                    result = ROTATION.transition(args)
+                self.assertEqual(result["status"], "predecessor-disabled")
+                self.assertEqual(
+                    provider.call_args_list[0].args[1]["operation"], case["operation"]
+                )
+                recorded = ROTATION.load_journal(root / "journal.json")
+                self.assertEqual(
+                    recorded[case["evidence_key"]],
+                    ROTATION.canonical_sha256(case["proof"]),
+                )
 
     def test_operator_receipts_remain_owner_only(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -1121,6 +1974,12 @@ class OperatorAccessHygieneTests(unittest.TestCase):
         inventory = [
             account,
             [{"member_id": "serviceaccount-viewer"}],
+            [
+                {
+                    "metadata": {"parent_id": "group-viewer"},
+                    "member_id": "serviceaccount-viewer",
+                }
+            ],
             [{"resource_id": "project-test", "role": "viewer"}],
         ]
         with mock.patch.object(HANDOFF, "provider_json", side_effect=inventory):
@@ -1149,6 +2008,12 @@ class OperatorAccessHygieneTests(unittest.TestCase):
         admin_inventory = [
             predecessor_admin,
             [{"member_id": "serviceaccount-admin"}],
+            [
+                {
+                    "metadata": {"parent_id": "group-admin"},
+                    "member_id": "serviceaccount-admin",
+                }
+            ],
             [{"resource_id": "project-test", "role": "admin"}],
         ]
         with mock.patch.object(HANDOFF, "provider_json", side_effect=admin_inventory):
@@ -1166,11 +2031,45 @@ class OperatorAccessHygieneTests(unittest.TestCase):
         wrong_role = [
             account,
             [{"member_id": "serviceaccount-viewer"}],
+            [
+                {
+                    "metadata": {"parent_id": "group-viewer"},
+                    "member_id": "serviceaccount-viewer",
+                }
+            ],
             [{"resource_id": "project-test", "role": "admin"}],
         ]
         with (
             mock.patch.object(HANDOFF, "provider_json", side_effect=wrong_role),
             self.assertRaisesRegex(HANDOFF.HandoffError, "exactly the required"),
+        ):
+            HANDOFF.service_account_lineage(
+                args,
+                service_account_id="serviceaccount-viewer",
+                group_id="group-viewer",
+                project_id="project-test",
+                lineage_id="lineage-test",
+                generation=2,
+                required_role="viewer",
+            )
+
+        extra_group = [
+            account,
+            [{"member_id": "serviceaccount-viewer"}],
+            [
+                {
+                    "metadata": {"parent_id": "group-viewer"},
+                    "member_id": "serviceaccount-viewer",
+                },
+                {
+                    "metadata": {"parent_id": "group-admin"},
+                    "member_id": "serviceaccount-viewer",
+                },
+            ],
+        ]
+        with (
+            mock.patch.object(HANDOFF, "provider_json", side_effect=extra_group),
+            self.assertRaisesRegex(HANDOFF.HandoffError, "unreviewed"),
         ):
             HANDOFF.service_account_lineage(
                 args,
@@ -1520,7 +2419,9 @@ class OperatorAccessHygieneTests(unittest.TestCase):
                 if action == "get":
                     if deleted:
                         self.assertFalse(check)
-                        return subprocess.CompletedProcess(command, 1, stdout="")
+                        return subprocess.CompletedProcess(
+                            command, 1, stdout="", stderr="resource not found"
+                        )
                     payload = {
                         "metadata": {
                             "id": "authpublickey-old",
@@ -1563,6 +2464,73 @@ class OperatorAccessHygieneTests(unittest.TestCase):
                 self.assertRaisesRegex(HANDOFF.HandoffError, "already revoked"),
             ):
                 HANDOFF.revoke_old(args)
+
+    def test_revoke_old_does_not_treat_provider_failure_as_absence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = HANDOFF.private_directory(Path(temporary) / "handoff")
+            HANDOFF.private_json(
+                root / "receipt.json",
+                {
+                    "schema": "fs2-serve.nebius.ai/operator-handoff/v2",
+                    "service_account_id": "serviceaccount-viewer",
+                    "project_id": "project-test",
+                    "cluster_id": "mk8scluster-test",
+                    "public_key_id": "authpublickey-new",
+                    "expires_at": "2099-01-01T00:00:00Z",
+                    "delivery": {"recipient": "operator"},
+                    "verification": {"verified_at": "2026-09-16T00:00:00Z"},
+                    "predecessor": {
+                        "public_key_id": "authpublickey-old",
+                        "service_account_id": "serviceaccount-admin",
+                        "project_id": "project-test",
+                        "expires_at": None,
+                    },
+                    "revocation_attempt": {
+                        "public_key_id": "authpublickey-old",
+                        "service_account_id": "serviceaccount-admin",
+                        "project_id": "project-test",
+                        "initiated_at": "2026-09-16T00:00:00Z",
+                    },
+                    "revoked_old_key": None,
+                },
+            )
+            args = argparse.Namespace(
+                directory=root,
+                nebius="nebius-test",
+                admin_profile="sandbox",
+                confirm_predecessor_public_key_id="authpublickey-old",
+            )
+
+            def fake_run(command, *, capture=False, check=True):
+                action = command[3]
+                if action == "list":
+                    return subprocess.CompletedProcess(
+                        command,
+                        0,
+                        stdout=json.dumps([{"metadata": {"id": "authpublickey-new"}}]),
+                    )
+                if action == "get":
+                    self.assertFalse(check)
+                    return subprocess.CompletedProcess(
+                        command,
+                        1,
+                        stdout="",
+                        stderr="permission denied",
+                    )
+                raise AssertionError(command)
+
+            with (
+                mock.patch.object(HANDOFF, "run", side_effect=fake_run),
+                mock.patch.object(HANDOFF, "prove_receipt_lineage"),
+                self.assertRaisesRegex(HANDOFF.HandoffError, "absence was not proven"),
+            ):
+                HANDOFF.revoke_old(args)
+            receipt = json.loads((root / "receipt.json").read_text())
+            self.assertIsNone(receipt["revoked_old_key"])
+            self.assertEqual(
+                receipt["revocation_attempt"]["public_key_id"],
+                "authpublickey-old",
+            )
 
     def test_revoke_old_rejects_unbound_provider_identity_before_delete(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

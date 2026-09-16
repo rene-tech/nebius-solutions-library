@@ -246,6 +246,32 @@ variable "credential_generation" {
   }
 }
 
+variable "credential_generation_history" {
+  description = "Append-only retained Grafana bootstrap credential generations."
+  type        = set(number)
+  default     = [1]
+
+  validation {
+    condition = (
+      length(var.credential_generation_history) >= 1 &&
+      var.credential_generation_history == toset(range(1, max(var.credential_generation_history...) + 1)) &&
+      contains(var.credential_generation_history, var.credential_generation)
+    )
+    error_message = "Grafana credential history must be contiguous from generation 1 and retain the active generation."
+  }
+}
+
+variable "grafana_credentials" {
+  description = "Externally escrowed Grafana bootstrap credentials keyed by every retained generation."
+  type = map(object({
+    username = string
+    password = string
+  }))
+  sensitive = true
+  ephemeral = true
+  default   = {}
+}
+
 variable "alertmanager" {
   description = "Persistent Alertmanager settings generated from deployment.observability.alertmanager. The service remains cluster-private and is operated through authenticated Grafana."
   type = object({

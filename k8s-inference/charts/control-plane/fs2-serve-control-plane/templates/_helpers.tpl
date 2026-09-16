@@ -174,6 +174,55 @@ app.kubernetes.io/component: model-controller
   value: /var/run/secrets/fs2-serve/crypto/ledger-hmac-keyring.json
 {{- end -}}
 
+{{- define "fs2-serve.storageCryptoEnv" -}}
+- name: FS2_USER_STORAGE_KEYRING_FILE
+  value: /var/run/secrets/fs2-serve/customer-storage-cipher/keyring.json
+- name: FS2_USER_STORAGE_NAME_KEYRING_FILE
+  value: /var/run/secrets/fs2-serve/customer-storage-name/name-keyring.json
+{{- end -}}
+
+{{- define "fs2-serve.storageCryptoVolumeMounts" -}}
+- name: customer-storage-cipher
+  mountPath: /var/run/secrets/fs2-serve/customer-storage-cipher
+  readOnly: true
+- name: customer-storage-name
+  mountPath: /var/run/secrets/fs2-serve/customer-storage-name
+  readOnly: true
+{{- end -}}
+
+{{- define "fs2-serve.storageCipherVolumeMount" -}}
+- name: customer-storage-cipher
+  mountPath: /var/run/secrets/fs2-serve/customer-storage-cipher
+  readOnly: true
+{{- end -}}
+
+{{- define "fs2-serve.storageCryptoVolumes" -}}
+- name: customer-storage-cipher
+  secret:
+    secretName: {{ .Values.secrets.storageCipherKeyring.name }}
+    defaultMode: 0400
+    items:
+      - key: {{ .Values.secrets.storageCipherKeyring.key }}
+        path: keyring.json
+- name: customer-storage-name
+  secret:
+    secretName: {{ .Values.secrets.storageNameKeyring.name }}
+    defaultMode: 0400
+    items:
+      - key: {{ .Values.secrets.storageNameKeyring.key }}
+        path: name-keyring.json
+{{- end -}}
+
+{{- define "fs2-serve.storageCipherVolume" -}}
+- name: customer-storage-cipher
+  secret:
+    secretName: {{ .Values.secrets.storageCipherKeyring.name }}
+    defaultMode: 0400
+    items:
+      - key: {{ .Values.secrets.storageCipherKeyring.key }}
+        path: keyring.json
+{{- end -}}
+
 {{- define "fs2-serve.payloadEnv" -}}
 - name: FS2_PAYLOAD_TTL_SECONDS
   value: {{ .Values.config.payloadTtlSeconds | quote }}

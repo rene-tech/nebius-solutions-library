@@ -25,23 +25,51 @@ variable "object_bucket_name" {
 }
 
 variable "object_storage_access" {
-  description = "Non-secret access-key identity and MysteryBox reference emitted by infrastructure; the secret value is consumed ephemerally."
+  description = "All retained access-key identities and MysteryBox references emitted by infrastructure; secret values are consumed ephemerally."
   type = object({
-    access_key_id       = string
-    secret_reference_id = string
-    revision            = number
+    active_generation = number
+    generations = map(object({
+      access_key_id       = string
+      secret_reference_id = string
+      revision            = number
+    }))
   })
   nullable = false
 
   validation {
     condition = (
-      length(var.object_storage_access.access_key_id) >= 8 &&
-      can(regex("^[A-Za-z0-9_-]+$", var.object_storage_access.access_key_id)) &&
-      can(regex("^[a-z][a-z0-9-]+$", var.object_storage_access.secret_reference_id)) &&
-      floor(var.object_storage_access.revision) == var.object_storage_access.revision &&
-      var.object_storage_access.revision >= 1
+      var.object_storage_access.active_generation == var.credential_generation &&
+      toset(keys(var.object_storage_access.generations)) == toset([for generation in var.credential_generation_history : tostring(generation)]) &&
+      alltrue([for access in values(var.object_storage_access.generations) :
+        length(access.access_key_id) >= 8 &&
+        can(regex("^[A-Za-z0-9_-]+$", access.access_key_id)) &&
+        can(regex("^[a-z][a-z0-9-]+$", access.secret_reference_id)) &&
+        floor(access.revision) == access.revision && access.revision >= 1
+      ])
     )
-    error_message = "object_storage_access must contain a bounded access-key ID, MysteryBox secret reference and positive revision."
+    error_message = "object_storage_access must contain an active generation and bounded retained identities with MysteryBox references and positive revisions."
+  }
+}
+
+variable "credential_generation" {
+  description = "Generation used for new reference-data writes."
+  type        = number
+  nullable    = false
+  default     = 1
+}
+
+variable "credential_generation_history" {
+  description = "Contiguous retained generations; removal requires external zero-reader and disable evidence."
+  type        = set(number)
+  nullable    = false
+  default     = [1]
+
+  validation {
+    condition = (
+      var.credential_generation_history == toset(range(1, max(var.credential_generation_history...) + 1)) &&
+      contains(var.credential_generation_history, var.credential_generation)
+    )
+    error_message = "credential_generation_history must be contiguous from one and contain the active generation."
   }
 }
 
