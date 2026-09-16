@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from typing import Any
 
@@ -12,6 +13,16 @@ from nebius.api.nebius.iam import v1 as iam
 from nebius.api.nebius.iam import v2 as keys
 from nebius.api.nebius.storage import v1 as storage
 from nebius.sdk import SDK
+
+
+class StorageOperationError(RuntimeError):
+    """Safe operation identifiers, without provider request/secret contents."""
+
+    def __init__(self, operation: Any) -> None:
+        status = operation.status()
+        self.code = status.code.name if status is not None else "UNKNOWN"
+        self.operation_id = str(operation.id)
+        super().__init__(f"customer storage operation failed: {self.code} ({self.operation_id})")
 
 
 class NebiusUserStorage:
@@ -35,6 +46,10 @@ class NebiusUserStorage:
     async def _operation(request: Any) -> str:
         operation = await request
         await operation.wait()
+        # SDK wait() means terminal, not successful. Never publish failed
+        # creates, key activations or quota updates as completed.
+        if not operation.successful():
+            raise StorageOperationError(operation)
         return str(operation.resource_id)
 
     async def _named(self, client: Any, get: Any, create: Any, name: str) -> Any:
@@ -44,7 +59,14 @@ class NebiusUserStorage:
             if exc.status.code != StatusCode.NOT_FOUND:
                 raise
             await self._operation(client.create(create))
-            resource = await client.get_by_name(get)
+            for attempt in range(5):
+                try:
+                    resource = await client.get_by_name(get)
+                    break
+                except RequestError as pending:
+                    if pending.status.code != StatusCode.NOT_FOUND or attempt == 4:
+                        raise
+                    await asyncio.sleep(0.5 * 2**attempt)
         if resource.metadata.labels.get("fs2-storage-owner") != name:
             raise ValueError("existing resource is not owned by this customer-storage controller")
         return resource

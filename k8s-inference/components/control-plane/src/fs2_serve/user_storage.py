@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Any
@@ -33,6 +34,7 @@ class UserStorageService:
         self.excluded_tenants = frozenset(excluded_tenants)
         self.poll_seconds = poll_seconds
         self.task: asyncio.Task[None] | None = None
+        self.provisioning_retry_at = 0.0
 
     async def policy(self, tenant: str) -> StoragePolicy:
         if tenant in self.excluded_tenants:
@@ -58,6 +60,8 @@ class UserStorageService:
                 await self.provider.set_enabled(credential["access_key_resource_id"], enabled)
                 await self.repository.enabled(user.tenant_id, user.principal_id, enabled)
             if not enabled:
+                return
+            if credential is None and time.monotonic() < self.provisioning_retry_at:
                 return
             owner = user.principal_id if policy.mode == "user" else ""
             bucket = await self.repository.bucket(user.tenant_id, owner)
@@ -96,7 +100,20 @@ class UserStorageService:
             except Exception as exc:
                 # SDK exceptions may contain request details: record type, not
                 # the exception body or any credential material.
-                LOG.warning("user storage reconciliation failed user_id=%s error_type=%s", user.id, type(exc).__name__)
+                code = getattr(exc, "code", "") or getattr(
+                    getattr(getattr(exc, "status", None), "code", None), "name", ""
+                )
+                if code == "RESOURCE_EXHAUSTED":
+                    # Back off new provisioning after a cloud quota failure.
+                    # Existing users' key disable/enable checks still run.
+                    self.provisioning_retry_at = time.monotonic() + 300
+                LOG.warning(
+                    "user storage reconciliation failed user_id=%s error_type=%s cloud_code=%s operation_id=%s",
+                    user.id,
+                    type(exc).__name__,
+                    code,
+                    getattr(exc, "operation_id", ""),
+                )
                 counts["failed"] += 1
         return counts
 

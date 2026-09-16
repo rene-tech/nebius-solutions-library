@@ -191,6 +191,19 @@ async def test_failed_key_creation_retries_saved_bucket_and_other_users_continue
     assert len(env.provider.bucket_calls) == 1
 
 
+async def test_quota_failure_backs_off_new_provisioning_but_still_disables_keys(env):
+    await env.service.ensure(user())
+    quota = RuntimeError("quota fixture")
+    quota.code = "RESOURCE_EXHAUSTED"
+    env.provider.ensure_bucket = AsyncMock(side_effect=quota)
+    env.users.list.return_value = [user("new-tenant"), user(enabled=False), user("another-tenant")]
+    result = await env.service.reconcile_once()
+    assert result["failed"] == 1
+    assert env.provider.ensure_bucket.call_count == 1
+    assert env.provider.enabled_calls[-1] == ("key-customer-a-alice", False)
+    assert (await env.service.view("another-tenant", "alice")).state == "pending"
+
+
 async def test_credentials_are_encrypted_and_bound_to_owner(cipher):
     pool = SimpleNamespace(execute=AsyncMock())
     repository = PostgresUserStorageRepository(pool, cipher)
