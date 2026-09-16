@@ -1646,12 +1646,16 @@ class HttpKubernetesModelClient:
         expected: ScaleGateScalerCheckpoint,
     ) -> ResourceSnapshot:
         snapshot = _snapshot(dict(body), resource)
+        observed = _scale_gate_scaler_checkpoint(snapshot)
         if (
             snapshot.observed.identity != _rendered_identity(resource)
             or snapshot.observed.controller_owner_uid != owner_uid
             or snapshot.observed.deleting
             or FIELD_MANAGER not in snapshot.observed.field_managers
-            or _scale_gate_scaler_checkpoint(snapshot) != expected
+            or observed.uid != expected.uid
+            or observed.generation != expected.generation
+            or observed.digest != expected.digest
+            or observed.resource_version != expected.resource_version
         ):
             raise KubernetesConflictError("ScaledObject changed outside its exact gate authorization")
         return snapshot
@@ -1701,6 +1705,7 @@ class HttpKubernetesModelClient:
 
         live = await self._get_resource(resource.api_version, resource.kind, resource.namespace, resource.name)
         desired_snapshot: ResourceSnapshot | None = None
+        create_only = False
         if authorization.phase == "applied":
             if live is None or authorization.applied_scaler is None:
                 raise KubernetesConflictError("applied ScaledObject gate has no exact live postcondition")
@@ -1723,6 +1728,7 @@ class HttpKubernetesModelClient:
             if authorization.prior_scaler is not None:
                 raise KubernetesConflictError("authorized ScaledObject update target disappeared")
             manifest = copy.deepcopy(resource.manifest)
+            create_only = True
         else:
             live_snapshot = _snapshot(live, resource)
             if live_snapshot.observed.digest == resource.digest:
@@ -1759,13 +1765,27 @@ class HttpKubernetesModelClient:
             final_gate = await self._scale_gate_config_map(resource.namespace)
             if _mapping(final_gate.get("data")).get(target_key) != prepared_value:
                 raise KubernetesConflictError("ScaledObject mutation gate changed at apply boundary")
-            response = await self._request(
-                "PATCH",
-                RESOURCE_ENDPOINTS[(resource.api_version, resource.kind)].item(resource.namespace, resource.name),
-                params={"fieldManager": FIELD_MANAGER, "force": "false", "fieldValidation": "Strict"},
-                content_type="application/apply-patch+yaml",
-                content=json.dumps(manifest, separators=(",", ":")).encode(),
-            )
+            endpoint = RESOURCE_ENDPOINTS[(resource.api_version, resource.kind)]
+            if create_only:
+                # SSA PATCH is an upsert: an object created after the last GET
+                # could be overwritten even though the gate authorized absence.
+                # Collection POST is the Kubernetes create-only primitive and
+                # atomically returns 409 when any same-name third state won.
+                response = await self._request(
+                    "POST",
+                    endpoint.collection(resource.namespace),
+                    params={"fieldManager": FIELD_MANAGER, "fieldValidation": "Strict"},
+                    content_type="application/json",
+                    content=json.dumps(manifest, separators=(",", ":")).encode(),
+                )
+            else:
+                response = await self._request(
+                    "PATCH",
+                    endpoint.item(resource.namespace, resource.name),
+                    params={"fieldManager": FIELD_MANAGER, "force": "false", "fieldValidation": "Strict"},
+                    content_type="application/apply-patch+yaml",
+                    content=json.dumps(manifest, separators=(",", ":")).encode(),
+                )
             applied = response.json()
             live = await self._get_resource(resource.api_version, resource.kind, resource.namespace, resource.name)
             if live is None or _required_metadata(live, "uid") != _required_metadata(applied, "uid"):
@@ -2784,6 +2804,44 @@ class HttpKubernetesModelClient:
             raise KubernetesConflictError("fixed-scale admission gate has an autoscaler allowance")
         await self._assert_scale_gate_admission(resource)
 
+    async def _assert_superseded_handoff_closure(
+        self,
+        resource: RenderedResource,
+        *,
+        receipt: ScaleHandoffReceipt,
+        model_fence: ModelWriteFence,
+    ) -> None:
+        """Require the exact current fixed closure before using an older receipt.
+
+        The Deployment annotation remains the immutable identity of the scaler
+        that handed off ownership. A later fixed generation may consume it only
+        after ``fixed_scale_guard_clear`` has durably superseded every intervening
+        autoscaler allowance. The old receipt is never copied back into the gate,
+        so this recovery cannot reopen a closed targetRef window.
+        """
+
+        gate = await self._scale_gate_config_map(resource.namespace)
+        data = _mapping(gate.get("data"))
+        target = _scale_gate_target(resource)
+        closure = _scale_gate_authorization(data.get(_scale_gate_target_key(target)), target)
+        if (
+            not isinstance(closure, ScaleGateReleaseAuthorization)
+            or closure.phase != "closed"
+            or receipt.model_generation >= model_fence.generation
+            or closure.deployment_uid != receipt.deployment_uid
+            or closure.model_uid != receipt.model_uid
+            or closure.model_resource_version != model_fence.resource_version
+            or closure.model_generation != model_fence.generation
+            or closure.model_spec_digest != model_fence.spec_digest
+            or closure.scaler_api_version != receipt.scaler.api_version
+            or closure.scaler_kind != receipt.scaler.kind
+            or closure.scaler_namespace != receipt.scaler.namespace
+            or closure.scaler_name != receipt.scaler.name
+            or any(key in data for key in _scale_gate_companion_keys(target))
+        ):
+            raise KubernetesConflictError("older scale handoff receipt lacks the exact current fixed closure")
+        await self._assert_scale_gate_admission(resource)
+
     @classmethod
     def _validate_fixed_scale_owner(
         cls,
@@ -3245,6 +3303,7 @@ class HttpKubernetesModelClient:
             scaler_uid=scaler_uid,
             model_uid=owner_uid,
         )
+        scaler_snapshot: ResourceSnapshot | None = None
         if live_scaler is not None:
             scaler_snapshot = _snapshot(live_scaler, scaler)
             if (
@@ -3262,24 +3321,49 @@ class HttpKubernetesModelClient:
                 raise KubernetesConflictError("current autoscaler authorization has a different desired digest")
             retained_prior = retained_authorization.prior_scaler
             retained_applied = retained_authorization.applied_scaler
-            live_matches_prior = (
-                live_scaler is not None
+            live_checkpoint = (
+                _scale_gate_scaler_checkpoint(scaler_snapshot) if scaler_snapshot is not None else None
+            )
+            live_semantically_matches_prior = (
+                scaler_snapshot is not None
                 and retained_prior is not None
                 and scaler_snapshot.observed.uid == retained_prior.uid
                 and scaler_snapshot.generation == retained_prior.generation
                 and scaler_snapshot.observed.digest == retained_prior.digest
             )
             live_matches_result = (
-                live_scaler is not None
+                scaler_snapshot is not None
                 and scaler_snapshot.observed.digest == retained_authorization.desired_scaler_digest
                 and (retained_prior is None or scaler_snapshot.observed.uid == retained_prior.uid)
             )
-            live_matches_applied = (
-                live_scaler is not None
+            live_semantically_matches_applied = (
+                scaler_snapshot is not None
                 and retained_applied is not None
                 and scaler_snapshot.observed.uid == retained_applied.uid
                 and scaler_snapshot.generation == retained_applied.generation
                 and scaler_snapshot.observed.digest == retained_applied.digest
+            )
+            live_prior_status_rv_churn = (
+                live_semantically_matches_prior
+                and live_checkpoint is not None
+                and retained_prior is not None
+                and live_checkpoint.resource_version != retained_prior.resource_version
+            )
+            live_applied_status_rv_churn = (
+                live_semantically_matches_applied
+                and live_checkpoint is not None
+                and retained_applied is not None
+                and live_checkpoint.resource_version != retained_applied.resource_version
+            )
+            live_matches_prior = (
+                live_checkpoint is not None
+                and retained_prior is not None
+                and (live_checkpoint == retained_prior or live_prior_status_rv_churn)
+            )
+            live_matches_applied = (
+                live_checkpoint is not None
+                and retained_applied is not None
+                and (live_checkpoint == retained_applied or live_applied_status_rv_churn)
             )
             retained_state_valid = (
                 (retained_authorization.phase == "closed" and live_scaler is None)
@@ -3343,7 +3427,19 @@ class HttpKubernetesModelClient:
 
         if retain_applied_authorization:
             assert isinstance(retained_authorization, ScaleGateReleaseAuthorization)
-            authorization = retained_authorization
+            assert scaler_snapshot is not None
+            # Status writes legitimately advance both the ModelDeployment and
+            # ScaledObject resourceVersions without changing the authorized
+            # generation/spec tuple. Reissue the durable postcondition with the
+            # freshly observed RVs under the ConfigMap CAS below. A UID,
+            # generation, digest, owner, manager, or deletion change was already
+            # rejected and can never be normalized as status-only churn.
+            authorization = retained_authorization.model_copy(
+                update={
+                    "model_resource_version": model_fence.resource_version,
+                    "applied_scaler": _scale_gate_scaler_checkpoint(scaler_snapshot),
+                }
+            )
         elif live_scaler is None:
             authorization = ScaleGateReleaseAuthorization(
                 version=2,
@@ -3360,6 +3456,7 @@ class HttpKubernetesModelClient:
                 phase="prepared",
             )
         else:
+            assert scaler_snapshot is not None
             scaler_checkpoint = _scale_gate_scaler_checkpoint(scaler_snapshot)
             authorization = ScaleGateReleaseAuthorization(
                 version=2,
@@ -3545,12 +3642,9 @@ class HttpKubernetesModelClient:
                 raise KubernetesConflictError("current fixed generation cannot close a non-superseded allowance")
             if retained_authorization.phase == "closed" and (
                 retained_authorization.model_generation == model_fence.generation
-                and (
-                    retained_authorization.model_resource_version != model_fence.resource_version
-                    or retained_authorization.model_spec_digest != model_fence.spec_digest
-                )
+                and retained_authorization.model_spec_digest != model_fence.spec_digest
             ):
-                raise KubernetesConflictError("fixed scale closure is not bound to the exact current CR revision")
+                raise KubernetesConflictError("fixed scale closure is not bound to the current CR semantics")
             closure = retained_authorization.model_copy(
                 update={
                     "model_resource_version": model_fence.resource_version,
@@ -3686,8 +3780,14 @@ class HttpKubernetesModelClient:
         if _controller_owner_uid(manifest) != owner_uid:
             raise ControllerError("fixed scale handoff manifest has a different controller owner")
         receipt = _controller_owned_scale_handoff_receipt(current.raw)
-        if receipt is None or receipt.model_generation != model_generation:
+        if receipt is None or receipt.model_generation > model_generation:
             raise KubernetesConflictError("fixed scale handoff lacks a controller-owned transition receipt")
+        if receipt.model_generation < model_generation:
+            await self._assert_superseded_handoff_closure(
+                resource,
+                receipt=receipt,
+                model_fence=model_fence,
+            )
 
         if current.desired_replicas is None:
             raise KubernetesConflictError("fixed scale handoff has no live replica value")
