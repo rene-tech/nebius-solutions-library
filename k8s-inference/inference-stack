@@ -336,6 +336,342 @@ def source_commit() -> str:
     return commit
 
 
+# Every mutating deploy must ship source that is reachable from a durable
+# release ref, so the deployed revision stays reproducible outside one
+# operator's local object store (SAI-09). Remote-tracking branches only exist
+# after a real push or fetch. Local release/deploy tags also anchor — public
+# publication of a release lineage can be owner-gated — but they are
+# classified against origin and, when only local, the release procedure
+# additionally requires a durable off-repository git bundle in the run root.
+RELEASE_ANCHOR_BRANCH_PATTERNS = (
+    "refs/remotes/origin/main",
+    "refs/remotes/origin/release",
+)
+RELEASE_ANCHOR_TAG_PATTERNS = (
+    "refs/tags/release",
+    "refs/tags/deploy",
+)
+
+
+def _refs_containing(root: Path, commit: str, patterns: Sequence[str]) -> list[str]:
+    refs = run(
+        [
+            "git",
+            "-C",
+            str(root),
+            "for-each-ref",
+            "--format=%(refname)",
+            f"--contains={commit}",
+            *patterns,
+        ],
+        capture=True,
+        env=clean_environment(),
+    )
+    return sorted({line.strip() for line in refs.stdout.splitlines() if line.strip()})
+
+
+def _remote_verified_tags(root: Path, tag_refs: Sequence[str]) -> list[str]:
+    """Return the local anchor tags whose exact target also exists on origin."""
+    if not tag_refs:
+        return []
+    listing = run(
+        ["git", "-C", str(root), "ls-remote", "--tags", "origin"],
+        capture=True,
+        env=clean_environment(),
+    )
+    remote_targets: dict[str, str] = {}
+    for line in listing.stdout.splitlines():
+        parts = line.split("\t")
+        if len(parts) != 2:
+            continue
+        sha, refname = parts[0].strip(), parts[1].strip()
+        if refname.endswith("^{}"):
+            remote_targets[refname[: -len("^{}")]] = sha
+        else:
+            remote_targets.setdefault(refname, sha)
+    verified = []
+    for ref in tag_refs:
+        local_target = run(
+            ["git", "-C", str(root), "rev-parse", f"{ref}^{{commit}}"],
+            capture=True,
+            env=clean_environment(),
+        ).stdout.strip()
+        if remote_targets.get(ref) == local_target:
+            verified.append(ref)
+    return verified
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def release_anchor_store(run_root: Path) -> Path:
+    return run_root / "release-anchors.json"
+
+
+def _read_release_anchors(run_root: Path) -> dict[str, Any]:
+    store = release_anchor_store(run_root)
+    if not store.is_file():
+        return {}
+    try:
+        value = json.loads(store.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _bundle_lists_ref_at(root: Path, bundle: Path, ref: str, target: str) -> bool:
+    heads = run(
+        ["git", "-C", str(root), "bundle", "list-heads", str(bundle)],
+        capture=True,
+        env=clean_environment(),
+    )
+    for line in heads.stdout.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[1] == ref and parts[0] == target:
+            return True
+    return False
+
+
+def _bundle_verified_tags(
+    root: Path, run_root: Path, tag_refs: Sequence[str]
+) -> list[str]:
+    """Return anchor tags backed by a verified, durable, off-repository bundle.
+
+    A local tag alone is not durable: it lives in the same object store the
+    gate is protecting against. It only counts once a recorded bundle exists
+    outside the repository, is access-restricted, matches its recorded SHA-256,
+    passes `git bundle verify`, and still lists the tag at its exact target.
+    """
+    if not tag_refs:
+        return []
+    anchors = _read_release_anchors(run_root)
+    verified = []
+    for ref in tag_refs:
+        entry = anchors.get(ref)
+        if not isinstance(entry, dict):
+            continue
+        bundle = Path(str(entry.get("bundle_path", "")))
+        if not bundle.is_absolute() or not bundle.is_file():
+            continue
+        if str(bundle).startswith(str(root) + os.sep):
+            continue
+        if bundle.stat().st_mode & 0o077:
+            continue
+        if _sha256_file(bundle) != entry.get("sha256"):
+            continue
+        local_target = run(
+            ["git", "-C", str(root), "rev-parse", ref],
+            capture=True,
+            env=clean_environment(),
+        ).stdout.strip()
+        if entry.get("tag_target") != local_target:
+            continue
+        try:
+            run(
+                ["git", "-C", str(root), "bundle", "verify", str(bundle)],
+                capture=True,
+                env=clean_environment(),
+            )
+        except DeploymentError:
+            continue
+        if _bundle_lists_ref_at(root, bundle, ref, local_target):
+            verified.append(ref)
+    return sorted(verified)
+
+
+def create_release_anchor(
+    run_root: Path,
+    tag_ref: str,
+    repository_root: Path | None = None,
+) -> dict[str, Any]:
+    """Bundle a release/deploy tag into the private run root and prove restore.
+
+    The bundle is self-contained (full history reachable from the tag), stored
+    mode 0600 inside the 0700 run root, hash-recorded, `git bundle verify`-ed,
+    and restore-tested with a real clone before the receipt is written.
+    """
+    root = repository_root or REPOSITORY_ROOT
+    if not tag_ref.startswith("refs/tags/"):
+        tag_ref = f"refs/tags/{tag_ref}"
+    if not any(
+        tag_ref == pattern or tag_ref.startswith(pattern + "/")
+        for pattern in RELEASE_ANCHOR_TAG_PATTERNS
+    ):
+        raise DeploymentError(
+            f"anchor tag {tag_ref} must live under refs/tags/release/ or refs/tags/deploy/"
+        )
+    tag_target = run(
+        ["git", "-C", str(root), "rev-parse", tag_ref],
+        capture=True,
+        env=clean_environment(),
+    ).stdout.strip()
+    commit = run(
+        ["git", "-C", str(root), "rev-parse", f"{tag_ref}^{{commit}}"],
+        capture=True,
+        env=clean_environment(),
+    ).stdout.strip()
+    bundle_directory = run_root / "release-anchors"
+    private_directory(bundle_directory)
+    bundle = bundle_directory / (
+        tag_ref.removeprefix("refs/tags/").replace("/", "-") + ".bundle"
+    )
+    run(
+        ["git", "-C", str(root), "bundle", "create", str(bundle), tag_ref],
+        env=clean_environment(),
+    )
+    bundle.chmod(0o600)
+    run(
+        ["git", "-C", str(root), "bundle", "verify", str(bundle)],
+        capture=True,
+        env=clean_environment(),
+    )
+    with tempfile.TemporaryDirectory(dir=run_root) as scratch:
+        restore = Path(scratch) / "restore.git"
+        run(
+            ["git", "clone", "--quiet", "--bare", str(bundle), str(restore)],
+            env=clean_environment(),
+        )
+        restored_commit = run(
+            ["git", "-C", str(restore), "rev-parse", f"{tag_ref}^{{commit}}"],
+            capture=True,
+            env=clean_environment(),
+        ).stdout.strip()
+    if restored_commit != commit:
+        raise DeploymentError(
+            f"restore test failed: bundle resolves {tag_ref} to "
+            f"{restored_commit}, expected {commit}"
+        )
+    entry = {
+        "bundle_path": str(bundle),
+        "sha256": _sha256_file(bundle),
+        "tag_target": tag_target,
+        "commit": commit,
+        "restore_tested": True,
+    }
+    anchors = _read_release_anchors(run_root)
+    anchors[tag_ref] = entry
+    private_json(release_anchor_store(run_root), anchors)
+    return {"anchor_tag": tag_ref, **entry}
+
+
+def release_source_state(
+    commit: str,
+    run_root: Path,
+    repository_root: Path | None = None,
+) -> dict[str, Any]:
+    """Describe whether HEAD is a clean checkout anchored on a release ref."""
+    root = repository_root or REPOSITORY_ROOT
+    # Untracked files are build inputs too: Terraform, Helm, and image builds
+    # read the working tree, so an untracked file can change what is deployed
+    # without changing the commit identity. Anything `git status` reports —
+    # modified, staged, or untracked (ignored files excluded) — is drift.
+    status = run(
+        ["git", "-C", str(root), "status", "--porcelain"],
+        capture=True,
+        env=clean_environment(),
+    )
+    dirty_paths = sorted(
+        line[3:].strip() for line in status.stdout.splitlines() if line.strip()
+    )
+    branch_refs = _refs_containing(root, commit, RELEASE_ANCHOR_BRANCH_PATTERNS)
+    local_tag_refs = _refs_containing(root, commit, RELEASE_ANCHOR_TAG_PATTERNS)
+    remote_verified_tags: list[str] = []
+    bundle_verified_tags: list[str] = []
+    unanchored_local_tags: list[str] = []
+    if local_tag_refs and not branch_refs:
+        try:
+            remote_verified_tags = _remote_verified_tags(root, local_tag_refs)
+        except DeploymentError:
+            remote_verified_tags = []
+        remaining = sorted(set(local_tag_refs) - set(remote_verified_tags))
+        bundle_verified_tags = _bundle_verified_tags(root, run_root, remaining)
+        unanchored_local_tags = sorted(set(remaining) - set(bundle_verified_tags))
+    anchor_refs = sorted({*branch_refs, *remote_verified_tags, *bundle_verified_tags})
+    return {
+        "schema": "fs2-serve.nebius.ai/release-source/v1",
+        "source_commit": commit,
+        "worktree_clean": not dirty_paths,
+        "dirty_paths": dirty_paths[:50],
+        "anchor_refs": anchor_refs,
+        "bundle_verified_tags": bundle_verified_tags,
+        "unanchored_local_tags": unanchored_local_tags,
+        "anchored": bool(anchor_refs),
+        "allowed_ref_patterns": list(
+            RELEASE_ANCHOR_BRANCH_PATTERNS + RELEASE_ANCHOR_TAG_PATTERNS
+        ),
+    }
+
+
+def enforce_release_source(
+    run_root: Path,
+    commit: str,
+    override_reason: str | None,
+    repository_root: Path | None = None,
+) -> dict[str, Any]:
+    """Refuse deploys whose source is not a clean, anchored release commit.
+
+    This extends the Terraform source-commit barrier to every mutating rollout
+    made through this wrapper, including Helm-only application upgrades that
+    change nothing but an image digest. An explicit override records a
+    governed, audited exception instead of silently weakening the gate.
+    """
+    state = release_source_state(commit, run_root, repository_root)
+    state["override_reason"] = override_reason
+    private_json(run_root / "release-source.json", state)
+    failures = []
+    if not state["worktree_clean"]:
+        failures.append(
+            "the source checkout has uncommitted or untracked changes, so the "
+            "deployed content would not match its commit identity: "
+            + ", ".join(state["dirty_paths"][:10])
+        )
+    if not state["anchored"]:
+        detail = ""
+        if state["unanchored_local_tags"]:
+            detail = (
+                "; local tags "
+                + ", ".join(state["unanchored_local_tags"])
+                + " are neither on origin nor backed by a verified durable "
+                "bundle — push them, or run: inference-stack anchor-release "
+                "--anchor-tag <tag>"
+            )
+        failures.append(
+            f"source commit {commit} is not reachable from an allowed release "
+            "ref (origin/main, origin/release/*, or a release/* or deploy/* "
+            "tag verified on origin or anchored by a durable bundle); anchor "
+            "the reviewed commit first, for example: "
+            "git push origin HEAD:refs/heads/release/<name>" + detail
+        )
+    if not failures:
+        if state["bundle_verified_tags"]:
+            print(
+                "NOTE: release source is anchored by bundle-verified local "
+                "tags (" + ", ".join(state["bundle_verified_tags"]) + "); "
+                "public/remote publication remains an owner decision",
+                file=sys.stderr,
+            )
+        return state
+    if override_reason:
+        print(
+            "WARNING: release-source gate overridden "
+            f"(reason: {override_reason}); recorded in release-source.json: "
+            + " | ".join(failures),
+            file=sys.stderr,
+        )
+        return state
+    raise DeploymentError(
+        "release-source gate failed (SAI-09): "
+        + " | ".join(failures)
+        + " — or rerun with --allow-unreleased-source '<reason>' to record a "
+        "governed exception"
+    )
+
+
 def default_run_root(variable_file: Path) -> Path:
     identity = hashlib.sha256(str(variable_file.resolve()).encode()).hexdigest()[:12]
     state_home = os.environ.get("XDG_STATE_HOME")
@@ -3182,12 +3518,31 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         choices=(
             "validate",
             "preflight",
+            "release-gate",
+            "anchor-release",
             "plan",
             "apply",
             "destroy",
             "status",
             "output",
             "proxy",
+        ),
+    )
+    parser.add_argument(
+        "--allow-unreleased-source",
+        metavar="REASON",
+        help=(
+            "record a governed exception and deploy even though HEAD is not a "
+            "clean checkout of origin/main, origin/release/*, or a release/deploy "
+            "tag; the reason is written to release-source.json (SAI-09)"
+        ),
+    )
+    parser.add_argument(
+        "--anchor-tag",
+        metavar="TAG",
+        help=(
+            "release/* or deploy/* tag to bundle into the private run root as "
+            "a durable, restore-tested release anchor (anchor-release command)"
         ),
     )
     parser.add_argument(
@@ -3241,9 +3596,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"another inference-stack process owns {run_root}"
             ) from exc
 
-        contract, configuration_environment = validate_configuration(
-            args.terraform, variable_file, run_root
-        )
+        contract: Mapping[str, Any] = {}
+        configuration_environment: Mapping[str, str] = {}
+        if args.command not in ("release-gate", "anchor-release"):
+            # Release governance commands are pure Git/run-root operations and
+            # must work without Terraform or the deployment contract.
+            contract, configuration_environment = validate_configuration(
+                args.terraform, variable_file, run_root
+            )
         proxy_arguments: list[str] | None = None
         commit = source_commit()
         if args.command == "validate":
@@ -3263,10 +3623,23 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         elif args.command == "preflight":
             preflight_accelerators(args, contract)
+        elif args.command == "release-gate":
+            state = enforce_release_source(
+                run_root, commit, args.allow_unreleased_source
+            )
+            print(json.dumps(state, indent=2, sort_keys=True))
+        elif args.command == "anchor-release":
+            if not args.anchor_tag:
+                raise DeploymentError(
+                    "anchor-release requires --anchor-tag <release/*|deploy/* tag>"
+                )
+            receipt = create_release_anchor(run_root, args.anchor_tag)
+            print(json.dumps(receipt, indent=2, sort_keys=True))
         elif args.command == "plan":
             plan_stack(args, run_root, contract, commit)
         elif args.command == "apply":
             require_deployable_images(contract)
+            enforce_release_source(run_root, commit, args.allow_unreleased_source)
             apply_stack(
                 args,
                 run_root,

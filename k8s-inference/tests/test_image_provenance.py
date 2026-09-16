@@ -1,0 +1,799 @@
+"""Image-provenance admission policy and signing tooling contract (SAI-09).
+
+Pins the ValidatingAdmissionPolicy that refuses unpinned, foreign-registry, or
+non-allow-listed platform images in the platform namespaces, and the tooling
+that renders the allow-list and constructs cosign commands.
+"""
+
+from __future__ import annotations
+
+import importlib.machinery
+import importlib.util
+import json
+import sys
+import unittest
+from pathlib import Path
+
+import yaml
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+PROVENANCE_DIR = REPOSITORY_ROOT / "security" / "image-provenance"
+POLICY_PATH = PROVENANCE_DIR / "policy.yaml"
+TOOL_PATH = PROVENANCE_DIR / "provenance.py"
+
+MODULE_NAME = "image_provenance_under_test"
+LOADER = importlib.machinery.SourceFileLoader(MODULE_NAME, str(TOOL_PATH))
+SPEC = importlib.util.spec_from_loader(MODULE_NAME, LOADER)
+assert SPEC is not None
+TOOL = importlib.util.module_from_spec(SPEC)
+sys.modules[MODULE_NAME] = TOOL
+LOADER.exec_module(TOOL)
+
+DIGEST_A = "sha256:" + "a" * 64
+DIGEST_B = "sha256:" + "b" * 64
+REGISTRY_PREFIX = "cr.example-region.example.invalid/registryid/"
+PLATFORM_PREFIX = REGISTRY_PREFIX + "fs2-platform/"
+
+
+def load_policy_documents() -> list[dict]:
+    return [
+        document
+        for document in yaml.safe_load_all(POLICY_PATH.read_text(encoding="utf-8"))
+        if document
+    ]
+
+
+class PolicyManifestTest(unittest.TestCase):
+    def setUp(self) -> None:
+        documents = load_policy_documents()
+        self.assertEqual(len(documents), 4)
+        self.policy, self.binding, self.helm_policy, self.helm_binding = documents
+        self.assertEqual(self.policy["kind"], "ValidatingAdmissionPolicy")
+        self.assertEqual(self.binding["kind"], "ValidatingAdmissionPolicyBinding")
+        self.assertEqual(self.helm_policy["kind"], "ValidatingAdmissionPolicy")
+        self.assertEqual(
+            self.helm_binding["kind"], "ValidatingAdmissionPolicyBinding"
+        )
+
+    def test_binding_denies_and_targets_only_platform_namespaces(self) -> None:
+        spec = self.binding["spec"]
+        self.assertEqual(spec["policyName"], self.policy["metadata"]["name"])
+        self.assertIn("Deny", spec["validationActions"])
+        expressions = spec["matchResources"]["namespaceSelector"]["matchExpressions"]
+        self.assertEqual(len(expressions), 1)
+        self.assertEqual(expressions[0]["key"], "kubernetes.io/metadata.name")
+        self.assertEqual(expressions[0]["operator"], "In")
+        self.assertEqual(
+            sorted(expressions[0]["values"]), ["fs2-models", "fs2-system"]
+        )
+
+    def test_binding_param_ref_fails_closed_when_allowlist_is_missing(self) -> None:
+        param_ref = self.binding["spec"]["paramRef"]
+        self.assertEqual(param_ref["name"], TOOL.ALLOWLIST_NAME)
+        self.assertEqual(param_ref["namespace"], TOOL.ALLOWLIST_NAMESPACE)
+        self.assertEqual(param_ref["parameterNotFoundAction"], "Deny")
+
+    def test_policy_matches_pods_and_direct_workload_deploys(self) -> None:
+        rules = self.policy["spec"]["matchConstraints"]["resourceRules"]
+        matched = {
+            (rule["apiGroups"][0], resource)
+            for rule in rules
+            for resource in rule["resources"]
+        }
+        # Workload-controller matching makes a direct `helm upgrade` or
+        # `kubectl apply` fail at the Deployment, not only at later Pod churn.
+        self.assertEqual(
+            matched,
+            {
+                ("", "pods"),
+                ("apps", "deployments"),
+                ("apps", "daemonsets"),
+                ("apps", "statefulsets"),
+                ("batch", "jobs"),
+                ("batch", "cronjobs"),
+            },
+        )
+        for rule in rules:
+            self.assertEqual(sorted(rule["operations"]), ["CREATE", "UPDATE"])
+
+    def test_policy_fails_closed_and_validates_all_container_kinds(self) -> None:
+        spec = self.policy["spec"]
+        self.assertEqual(spec["failurePolicy"], "Fail")
+        variables = {v["name"]: v["expression"] for v in spec["variables"]}
+        for field in ("containers", "initContainers", "ephemeralContainers"):
+            self.assertIn(field, variables["images"])
+        # Workload kinds contribute their Pod templates, including CronJobs.
+        self.assertIn("jobTemplate.spec.template.spec", variables["podSpec"])
+        self.assertIn("object.kind == 'Pod' ? object.spec", variables["podSpec"])
+
+    def test_policy_reads_exactly_the_rendered_allowlist_keys(self) -> None:
+        rendered_keys = set(
+            TOOL.render_allowlist(
+                [REGISTRY_PREFIX], PLATFORM_PREFIX, [DIGEST_A], ["deployer"]
+            )["data"]
+        )
+        variable_expressions = " ".join(
+            variable["expression"]
+            for document in (self.policy, self.helm_policy)
+            for variable in document["spec"]["variables"]
+        )
+        referenced_keys = {
+            key
+            for key in (
+                "registry-prefixes",
+                "platform-repository-prefix",
+                "platform-digests",
+                "deploy-principals",
+            )
+            if f"params.data['{key}']" in variable_expressions
+        }
+        self.assertEqual(referenced_keys, rendered_keys)
+        # Missing keys must fail closed through guarded lookups, not error out.
+        for key in rendered_keys:
+            self.assertIn(f"'{key}' in params.data", variable_expressions)
+
+    def test_helm_release_writes_are_restricted_to_deploy_principals(self) -> None:
+        rules = self.helm_policy["spec"]["matchConstraints"]["resourceRules"]
+        self.assertEqual(rules[0]["resources"], ["secrets"])
+        validation = self.helm_policy["spec"]["validations"][0]
+        self.assertIn("helm.sh/release.v1", validation["expression"])
+        self.assertIn("request.userInfo.username", validation["expression"])
+        self.assertIn("SAI-09", validation["message"])
+        binding_spec = self.helm_binding["spec"]
+        self.assertEqual(binding_spec["policyName"], self.helm_policy["metadata"]["name"])
+        self.assertIn("Deny", binding_spec["validationActions"])
+        self.assertEqual(
+            binding_spec["paramRef"]["parameterNotFoundAction"], "Deny"
+        )
+        namespaces = binding_spec["matchResources"]["namespaceSelector"][
+            "matchExpressions"
+        ][0]["values"]
+        self.assertEqual(namespaces, ["fs2-system"])
+
+    def test_policy_enforces_digest_registry_and_platform_allowlist(self) -> None:
+        expressions = [
+            validation["expression"]
+            for validation in self.policy["spec"]["validations"]
+        ]
+        self.assertEqual(len(expressions), 3)
+        self.assertIn("@sha256:[0-9a-f]{64}", expressions[0])
+        self.assertIn("registryPrefixes.exists", expressions[1])
+        self.assertIn("platformDigests.exists", expressions[2])
+        self.assertIn("!i.startsWith(variables.platformRepositoryPrefix)", expressions[2])
+        for validation in self.policy["spec"]["validations"]:
+            self.assertIn("SAI-09", validation["message"])
+            self.assertEqual(validation["reason"], "Forbidden")
+
+
+class AllowlistRenderingTest(unittest.TestCase):
+    def test_renders_sorted_unique_digests(self) -> None:
+        manifest = TOOL.render_allowlist(
+            [REGISTRY_PREFIX],
+            PLATFORM_PREFIX,
+            [DIGEST_B, DIGEST_A, DIGEST_B],
+            ["deployer"],
+        )
+        self.assertEqual(manifest["metadata"]["name"], TOOL.ALLOWLIST_NAME)
+        self.assertEqual(manifest["metadata"]["namespace"], TOOL.ALLOWLIST_NAMESPACE)
+        self.assertEqual(
+            manifest["data"]["platform-digests"], f"{DIGEST_A}\n{DIGEST_B}"
+        )
+        self.assertEqual(manifest["data"]["registry-prefixes"], REGISTRY_PREFIX)
+        self.assertEqual(manifest["data"]["deploy-principals"], "deployer")
+
+    def test_rejects_malformed_digests_prefixes_and_principals(self) -> None:
+        with self.assertRaises(TOOL.ProvenanceError):
+            TOOL.render_allowlist(
+                [REGISTRY_PREFIX], PLATFORM_PREFIX, ["sha256:short"], ["deployer"]
+            )
+        with self.assertRaises(TOOL.ProvenanceError):
+            TOOL.render_allowlist(
+                [REGISTRY_PREFIX], PLATFORM_PREFIX, ["latest"], ["deployer"]
+            )
+        with self.assertRaises(TOOL.ProvenanceError):
+            TOOL.render_allowlist(
+                ["cr.example.invalid/no-trailing-slash"],
+                PLATFORM_PREFIX,
+                [DIGEST_A],
+                ["deployer"],
+            )
+        with self.assertRaises(TOOL.ProvenanceError):
+            TOOL.render_allowlist([], PLATFORM_PREFIX, [DIGEST_A], ["deployer"])
+        with self.assertRaises(TOOL.ProvenanceError):
+            TOOL.render_allowlist([REGISTRY_PREFIX], PLATFORM_PREFIX, [], ["deployer"])
+        with self.assertRaises(TOOL.ProvenanceError):
+            TOOL.render_allowlist([REGISTRY_PREFIX], PLATFORM_PREFIX, [DIGEST_A], [])
+        with self.assertRaises(TOOL.ProvenanceError):
+            TOOL.render_allowlist(
+                [REGISTRY_PREFIX], PLATFORM_PREFIX, [DIGEST_A], ["bad\nprincipal"]
+            )
+
+
+class CosignCommandTest(unittest.TestCase):
+    REFERENCE = PLATFORM_PREFIX + "fs2-serve-control-plane@" + DIGEST_A
+
+    def test_sign_disables_public_transparency_log(self) -> None:
+        command = TOOL.cosign_sign_command("/private/cosign.key", self.REFERENCE)
+        self.assertEqual(command[:2], ["cosign", "sign"])
+        self.assertIn("--tlog-upload=false", command)
+        self.assertIn("--use-signing-config=false", command)
+        self.assertIn("--new-bundle-format=false", command)
+        self.assertIn("--yes", command)
+        self.assertEqual(command[-1], self.REFERENCE)
+
+    def test_verify_uses_private_infrastructure_mode(self) -> None:
+        command = TOOL.cosign_verify_command("cosign.pub", self.REFERENCE)
+        self.assertEqual(command[:2], ["cosign", "verify"])
+        self.assertIn("--private-infrastructure=true", command)
+        self.assertEqual(command[-1], self.REFERENCE)
+
+    def test_tag_only_references_are_refused(self) -> None:
+        for constructor in (TOOL.cosign_sign_command, TOOL.cosign_verify_command):
+            with self.assertRaises(TOOL.ProvenanceError):
+                constructor("key", PLATFORM_PREFIX + "fs2-serve-control-plane:latest")
+
+
+def git(repo: Path, *arguments: str) -> str:
+    import subprocess as sp
+
+    return sp.run(
+        ["git", "-C", str(repo), *arguments],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+def build_anchor_fixture(base: Path) -> dict:
+    """Real repo, tagged commit, and bundle so bindings are actually verified."""
+    import hashlib
+    import subprocess as sp
+
+    repo = base / "repo"
+    repo.mkdir()
+    sp.run(
+        ["git", "init", "--initial-branch=main", str(repo)],
+        check=True,
+        capture_output=True,
+    )
+    git(repo, "config", "user.email", "fixture@example.invalid")
+    git(repo, "config", "user.name", "Fixture")
+    git(repo, "commit", "--allow-empty", "-m", "anchored release")
+    head = git(repo, "rev-parse", "HEAD")
+    tree = git(repo, "rev-parse", "HEAD^{tree}")
+    git(repo, "tag", "-a", "-m", "anchor", "deploy/fixture", head)
+    tag_target = git(repo, "rev-parse", "refs/tags/deploy/fixture")
+    bundle = base / "release-anchors" / "deploy-fixture.bundle"
+    bundle.parent.mkdir(parents=True, exist_ok=True)
+    git(repo, "bundle", "create", str(bundle), "refs/tags/deploy/fixture")
+    sha = hashlib.sha256(bundle.read_bytes()).hexdigest()
+    (base / "release-anchors.json").write_text(
+        json.dumps(
+            {
+                "refs/tags/deploy/fixture": {
+                    "commit": head,
+                    "bundle_path": str(bundle),
+                    "sha256": sha,
+                    "restore_tested": True,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    return {
+        "repo": repo,
+        "head": head,
+        "tree": tree,
+        "tag_target": tag_target,
+        "bundle": bundle,
+        "bundle_sha256": sha,
+    }
+
+
+def write_signed_receipt_fixture(
+    run_root: Path, reference: str, fixture: dict, **overrides
+) -> Path:
+    digest = reference.rsplit("@", 1)[1]
+    receipt = {
+        "schema": TOOL.RECEIPT_SCHEMA,
+        "image": reference,
+        "digest": digest,
+        "source": {"commit": fixture["head"], "tree": fixture["tree"]},
+        "anchor": {
+            "mode": "bundle",
+            "tag": "refs/tags/deploy/fixture",
+            "tag_target": fixture["tag_target"],
+            "commit": fixture["head"],
+            "restored_commit": fixture["head"],
+            "bundle_path": str(fixture["bundle"]),
+            "bundle_sha256": fixture["bundle_sha256"],
+        },
+        "sbom": {
+            "attestation_manifest_digest": "sha256:" + "f" * 64,
+            "subject_manifest_digest": "sha256:" + "a" * 64,
+            "spdx_layer_digest": "sha256:" + "e" * 64,
+            "slsa_layer_digest": None,
+            "spdx_sha256": None,
+            "spdx_subject_digest": None,
+        },
+    }
+    for key, value in overrides.items():
+        section, _, field = key.partition(".")
+        if field:
+            receipt[section][field] = value
+        else:
+            receipt[section] = value
+    path = TOOL.receipt_path(run_root, digest)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(receipt), encoding="utf-8")
+    (path.parent / (path.name + ".sig")).write_text("fixture-signature\n")
+    return path
+
+
+NOOP_VERIFIER = lambda command: None  # noqa: E731 - injected in place of cosign
+
+
+class VerifiedAllowlistTest(unittest.TestCase):
+    """Allow-listing requires a signed, bound release receipt plus cosign verify."""
+
+    REFERENCE_A = PLATFORM_PREFIX + "control-plane@" + DIGEST_A
+    REFERENCE_B = PLATFORM_PREFIX + "admin-console@" + DIGEST_B
+
+    def setUp(self) -> None:
+        import tempfile
+
+        self._tmp = tempfile.NamedTemporaryFile("w", suffix=".pub", delete=False)
+        self._tmp.write("-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----\n")
+        self._tmp.close()
+        self.addCleanup(lambda: Path(self._tmp.name).unlink(missing_ok=True))
+        self._run_root_holder = tempfile.TemporaryDirectory()
+        self.addCleanup(self._run_root_holder.cleanup)
+        self.run_root = Path(self._run_root_holder.name)
+        self.fixture = build_anchor_fixture(self.run_root)
+        write_signed_receipt_fixture(self.run_root, self.REFERENCE_A, self.fixture)
+        write_signed_receipt_fixture(self.run_root, self.REFERENCE_B, self.fixture)
+
+    def test_every_reference_is_verified_before_rendering(self) -> None:
+        verified: list[str] = []
+        manifest = TOOL.verified_allowlist(
+            self._tmp.name,
+            [self.REFERENCE_A, self.REFERENCE_B],
+            [REGISTRY_PREFIX],
+            PLATFORM_PREFIX,
+            self.run_root,
+            deploy_principals=["deployer"],
+            verifier=lambda command: verified.append(command[-1]),
+        )
+        # Each reference verifies its receipt signature, then its image signature.
+        self.assertEqual(len(verified), 4)
+        self.assertEqual(
+            manifest["data"]["platform-digests"], f"{DIGEST_A}\n{DIGEST_B}"
+        )
+        self.assertIn(
+            "security.fs2.nebius.ai/verified-with-key-sha256",
+            manifest["metadata"]["annotations"],
+        )
+
+    def test_missing_release_receipt_aborts_rendering(self) -> None:
+        orphan = PLATFORM_PREFIX + "website@sha256:" + "9" * 64
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "no signed release receipt"):
+            TOOL.verified_allowlist(
+                self._tmp.name,
+                [orphan],
+                [REGISTRY_PREFIX],
+                PLATFORM_PREFIX,
+                self.run_root,
+                verifier=NOOP_VERIFIER,
+            )
+
+    def test_verification_failure_aborts_rendering(self) -> None:
+        import subprocess
+
+        def failing_verifier(command):
+            raise subprocess.CalledProcessError(1, command)
+
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "not trustworthy"):
+            TOOL.verified_allowlist(
+                self._tmp.name,
+                [self.REFERENCE_A],
+                [REGISTRY_PREFIX],
+                PLATFORM_PREFIX,
+                self.run_root,
+                verifier=failing_verifier,
+            )
+
+    def test_empty_reference_list_is_refused(self) -> None:
+        with self.assertRaises(TOOL.ProvenanceError):
+            TOOL.verified_allowlist(
+                self._tmp.name, [], [REGISTRY_PREFIX], PLATFORM_PREFIX, self.run_root
+            )
+
+
+class ReceiptBindingTest(unittest.TestCase):
+    """Signing prerequisites: digest <-> source <-> anchor <-> SBOM binding."""
+
+    REFERENCE = PLATFORM_PREFIX + "control-plane@" + DIGEST_A
+    PUBLIC_KEY = "unused.pub"
+
+    def setUp(self) -> None:
+        import tempfile
+
+        self._holder = tempfile.TemporaryDirectory()
+        self.addCleanup(self._holder.cleanup)
+        self.run_root = Path(self._holder.name)
+        self.fixture = build_anchor_fixture(self.run_root)
+
+    def load(self):
+        return TOOL.load_bound_receipt(
+            self.run_root, self.REFERENCE, self.PUBLIC_KEY, verifier=NOOP_VERIFIER
+        )
+
+    def test_bound_receipt_loads(self) -> None:
+        write_signed_receipt_fixture(self.run_root, self.REFERENCE, self.fixture)
+        self.assertEqual(self.load()["digest"], DIGEST_A)
+
+    def test_receipt_signature_is_verified_before_anything_else(self) -> None:
+        write_signed_receipt_fixture(self.run_root, self.REFERENCE, self.fixture)
+        commands: list[list[str]] = []
+        TOOL.load_bound_receipt(
+            self.run_root,
+            self.REFERENCE,
+            "release.pub",
+            verifier=lambda command: commands.append(list(command)),
+        )
+        self.assertEqual(commands[0][:2], ["cosign", "verify-blob"])
+        self.assertIn("--insecure-ignore-tlog=true", commands[0])
+
+    def test_missing_receipt_signature_is_refused(self) -> None:
+        path = write_signed_receipt_fixture(
+            self.run_root, self.REFERENCE, self.fixture
+        )
+        (path.parent / (path.name + ".sig")).unlink()
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "no signed release receipt"):
+            self.load()
+
+    def test_receipt_for_a_different_digest_is_refused(self) -> None:
+        write_signed_receipt_fixture(
+            self.run_root, self.REFERENCE, self.fixture, image="other@" + DIGEST_B
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "does not bind"):
+            self.load()
+
+    def test_restore_evidence_must_match_the_anchor_commit(self) -> None:
+        write_signed_receipt_fixture(
+            self.run_root,
+            self.REFERENCE,
+            self.fixture,
+            **{"anchor.restored_commit": "9" * 40},
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "restore evidence"):
+            self.load()
+
+    def test_receipt_without_subject_bound_sbom_is_refused(self) -> None:
+        write_signed_receipt_fixture(
+            self.run_root,
+            self.REFERENCE,
+            self.fixture,
+            sbom={
+                "attestation_manifest_digest": None,
+                "subject_manifest_digest": None,
+                "spdx_layer_digest": None,
+                "slsa_layer_digest": None,
+                "spdx_sha256": "b" * 64,
+                "spdx_subject_digest": "sha256:" + "9" * 64,
+            },
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "subject-bound SBOM"):
+            self.load()
+
+    def test_receipt_with_attestation_but_no_spdx_layer_is_refused(self) -> None:
+        write_signed_receipt_fixture(
+            self.run_root,
+            self.REFERENCE,
+            self.fixture,
+            **{"sbom.spdx_layer_digest": None},
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "subject-bound SBOM"):
+            self.load()
+
+    def test_missing_bundle_artifact_is_refused(self) -> None:
+        write_signed_receipt_fixture(self.run_root, self.REFERENCE, self.fixture)
+        self.fixture["bundle"].unlink()
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "missing"):
+            self.load()
+
+    def test_tampered_bundle_artifact_is_refused(self) -> None:
+        write_signed_receipt_fixture(self.run_root, self.REFERENCE, self.fixture)
+        self.fixture["bundle"].write_bytes(b"tampered")
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "no longer matches"):
+            self.load()
+
+    def test_bundle_must_still_carry_the_anchor_tag_at_its_target(self) -> None:
+        write_signed_receipt_fixture(
+            self.run_root,
+            self.REFERENCE,
+            self.fixture,
+            **{"anchor.tag_target": "8" * 40},
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "does not carry"):
+            self.load()
+
+    ATTESTATION_DIGEST = "sha256:" + "f" * 64
+    SPDX_LAYER_DIGEST = "sha256:" + "e" * 64
+    SUBJECT_DIGEST = "sha256:" + "a" * 64
+
+    def crane_capture(
+        self,
+        revision: str,
+        spdx_predicate: str = "https://spdx.dev/Document",
+        statement_subject: str | None = None,
+        tree_label: str | object = "fixture-tree",
+    ):
+        statement_subject = statement_subject or self.SUBJECT_DIGEST
+        if tree_label == "fixture-tree":
+            tree_label = self.fixture["tree"]
+
+        def capture(command):
+            if command[:2] == ["crane", "config"]:
+                labels = {"org.opencontainers.image.revision": revision}
+                if tree_label is not None:
+                    labels["ai.nebius.fs2-serve.source-tree"] = tree_label
+                return json.dumps({"config": {"Labels": labels}})
+            if command[:2] == ["crane", "manifest"]:
+                if command[2].endswith("@" + self.ATTESTATION_DIGEST):
+                    return json.dumps(
+                        {
+                            "layers": [
+                                {
+                                    "mediaType": "application/vnd.in-toto+json",
+                                    "digest": self.SPDX_LAYER_DIGEST,
+                                    "annotations": {
+                                        "in-toto.io/predicate-type": spdx_predicate
+                                    },
+                                },
+                                {
+                                    "mediaType": "application/vnd.in-toto+json",
+                                    "digest": "sha256:" + "d" * 64,
+                                    "annotations": {
+                                        "in-toto.io/predicate-type": "https://slsa.dev/provenance/v0.2"
+                                    },
+                                },
+                            ]
+                        }
+                    )
+                return json.dumps(
+                    {
+                        "manifests": [
+                            {"digest": self.SUBJECT_DIGEST},
+                            {
+                                "digest": self.ATTESTATION_DIGEST,
+                                "annotations": {
+                                    "vnd.docker.reference.type": "attestation-manifest",
+                                    "vnd.docker.reference.digest": self.SUBJECT_DIGEST,
+                                },
+                            },
+                        ]
+                    }
+                )
+            if command[:2] == ["crane", "blob"]:
+                return json.dumps(
+                    {
+                        "subject": [
+                            {"digest": {"sha256": statement_subject.split(":", 1)[1]}}
+                        ]
+                    }
+                )
+            if command[:2] == ["cosign", "sign-blob"]:
+                self.assertIn("--tlog-upload=false", command)
+                self.assertIn("--use-signing-config=false", command)
+                Path(command[command.index("--output-file") + 1]).write_text("sig\n")
+                return ""
+            raise AssertionError(f"unexpected command: {command}")
+
+        return capture
+
+    def test_create_receipt_binds_source_anchor_sbom_and_signs_it(self) -> None:
+        receipt = TOOL.create_release_receipt(
+            self.REFERENCE,
+            self.run_root,
+            self.fixture["repo"],
+            "deploy/fixture",
+            "release.key",
+            capture=self.crane_capture(self.fixture["head"]),
+        )
+        self.assertEqual(receipt["source"]["commit"], self.fixture["head"])
+        self.assertEqual(receipt["source"]["tree"], self.fixture["tree"])
+        self.assertEqual(receipt["anchor"]["tag_target"], self.fixture["tag_target"])
+        self.assertEqual(receipt["sbom"]["spdx_layer_digest"], self.SPDX_LAYER_DIGEST)
+        self.assertEqual(receipt["sbom"]["slsa_layer_digest"], "sha256:" + "d" * 64)
+        loaded = self.load()
+        self.assertEqual(loaded["anchor"]["tag"], "refs/tags/deploy/fixture")
+
+    def test_create_receipt_refuses_unanchored_source(self) -> None:
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "not reachable"):
+            TOOL.create_release_receipt(
+                self.REFERENCE,
+                self.run_root,
+                self.fixture["repo"],
+                "deploy/fixture",
+                "release.key",
+                capture=self.crane_capture("a" * 40),
+            )
+
+    def test_create_receipt_requires_exact_source_tree_label(self) -> None:
+        for bad_label in (None, "46a60fb"):
+            with self.assertRaisesRegex(TOOL.ProvenanceError, "source-tree"):
+                TOOL.create_release_receipt(
+                    self.REFERENCE,
+                    self.run_root,
+                    self.fixture["repo"],
+                    "deploy/fixture",
+                    "release.key",
+                    capture=self.crane_capture(
+                        self.fixture["head"], tree_label=bad_label
+                    ),
+                )
+
+    def test_create_receipt_refuses_wrong_source_tree_label(self) -> None:
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "does not match"):
+            TOOL.create_release_receipt(
+                self.REFERENCE,
+                self.run_root,
+                self.fixture["repo"],
+                "deploy/fixture",
+                "release.key",
+                capture=self.crane_capture(
+                    self.fixture["head"], tree_label="9" * 40
+                ),
+            )
+
+    def test_create_receipt_refuses_attestation_without_spdx_predicate(self) -> None:
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "spdx.dev"):
+            TOOL.create_release_receipt(
+                self.REFERENCE,
+                self.run_root,
+                self.fixture["repo"],
+                "deploy/fixture",
+                "release.key",
+                capture=self.crane_capture(
+                    self.fixture["head"],
+                    spdx_predicate="https://example.invalid/other",
+                ),
+            )
+
+    def test_create_receipt_refuses_statement_subject_mismatch(self) -> None:
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "subjects"):
+            TOOL.create_release_receipt(
+                self.REFERENCE,
+                self.run_root,
+                self.fixture["repo"],
+                "deploy/fixture",
+                "release.key",
+                capture=self.crane_capture(
+                    self.fixture["head"],
+                    statement_subject="sha256:" + "9" * 64,
+                ),
+            )
+
+    def test_create_receipt_refuses_mismatched_attestation_subject(self) -> None:
+        def capture(command):
+            if command[:2] == ["crane", "config"]:
+                return self.crane_capture(self.fixture["head"])(command)
+            return json.dumps(
+                {
+                    "manifests": [
+                        {"digest": "sha256:" + "a" * 64},
+                        {
+                            "digest": "sha256:" + "f" * 64,
+                            "annotations": {
+                                "vnd.docker.reference.type": "attestation-manifest",
+                                "vnd.docker.reference.digest": "sha256:" + "9" * 64,
+                            },
+                        },
+                    ]
+                }
+            )
+
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "subject"):
+            TOOL.create_release_receipt(
+                self.REFERENCE,
+                self.run_root,
+                self.fixture["repo"],
+                "deploy/fixture",
+                "release.key",
+                capture=capture,
+            )
+
+    def test_spdx_document_fallback_is_parsed_and_subject_checked(self) -> None:
+        digest_hex = DIGEST_A.split(":", 1)[1]
+        good = self.run_root / "sbom.spdx.json"
+        good.write_text(
+            json.dumps(
+                {
+                    "spdxVersion": "SPDX-2.3",
+                    "name": f"fixture-image@sha256:{digest_hex}",
+                    "packages": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        evidence = TOOL._validated_spdx_document(DIGEST_A, good)
+        self.assertEqual(evidence["spdx_subject_digest"], DIGEST_A)
+        not_spdx = self.run_root / "not-sbom.json"
+        not_spdx.write_text(json.dumps({"name": digest_hex}), encoding="utf-8")
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "not an SPDX"):
+            TOOL._validated_spdx_document(DIGEST_A, not_spdx)
+        wrong_subject = self.run_root / "wrong.spdx.json"
+        wrong_subject.write_text(
+            json.dumps(
+                {
+                    "spdxVersion": "SPDX-2.3",
+                    "name": "fixture-image",
+                    "comment": f"mentions sha256:{digest_hex} only informally",
+                    "packages": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "does not name"):
+            TOOL._validated_spdx_document(DIGEST_A, wrong_subject)
+
+
+class ReceiptSignatureRoundTripTest(unittest.TestCase):
+    """Real cosign blob signature round trip when cosign is available."""
+
+    def test_signed_receipt_verifies_and_tamper_fails(self) -> None:
+        import os
+        import shutil
+        import subprocess as sp
+        import tempfile
+
+        if shutil.which("cosign") is None:
+            self.skipTest("cosign is not installed")
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            env = dict(os.environ, COSIGN_PASSWORD="")
+            sp.run(
+                ["cosign", "generate-key-pair"],
+                cwd=base,
+                env=env,
+                check=True,
+                capture_output=True,
+            )
+            payload = base / "receipt.json"
+            payload.write_text('{"fixture": true}\n', encoding="utf-8")
+            signature = base / "receipt.json.sig"
+            sign_command = [
+                "cosign",
+                "sign-blob",
+                "--key",
+                str(base / "cosign.key"),
+                "--use-signing-config=false",
+                "--tlog-upload=false",
+                "--yes",
+                "--output-file",
+                str(signature),
+                str(payload),
+            ]
+            self.assertIn("--tlog-upload=false", sign_command)
+            sp.run(sign_command, env=env, check=True, capture_output=True)
+            verify = TOOL.receipt_verify_blob_command(
+                str(base / "cosign.pub"), payload, signature
+            )
+            sp.run(verify, check=True, capture_output=True)
+            payload.write_text('{"fixture": false}\n', encoding="utf-8")
+            with self.assertRaises(sp.CalledProcessError):
+                sp.run(verify, check=True, capture_output=True)
+
+
+class PublicKeyPresenceTest(unittest.TestCase):
+    def test_release_public_key_is_committed(self) -> None:
+        key_path = PROVENANCE_DIR / "cosign.pub"
+        self.assertTrue(key_path.is_file(), "cosign.pub must be committed")
+        content = key_path.read_text(encoding="utf-8")
+        self.assertIn("BEGIN PUBLIC KEY", content)
+        self.assertNotIn("PRIVATE", content)
+
+
+if __name__ == "__main__":
+    unittest.main()

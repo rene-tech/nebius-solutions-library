@@ -1,0 +1,207 @@
+# Image provenance admission policy for the fs2-serve platform (SAI-09).
+#
+# Enforced invariants for Pods and workload controllers (Deployments,
+# DaemonSets, StatefulSets, Jobs, CronJobs) admitted into the platform
+# namespaces (fs2-system, fs2-models):
+#
+#   1. Every container, init container, and ephemeral-container image must be
+#      digest-pinned (…@sha256:<64 hex>). Mutable tags are refused.
+#   2. Every image must come from an allow-listed registry prefix.
+#   3. Platform application images (control plane, admin console, website —
+#      anything under the platform repository prefix) must additionally use a
+#      digest present in the signed release allow-list.
+#
+# Matching workload controllers as well as Pods means a direct `helm upgrade`
+# or `kubectl apply` that introduces an unpinned or non-allow-listed image
+# fails immediately at the Deployment update, not minutes later at Pod churn.
+#
+# The environment-specific data (registry prefixes, platform repository
+# prefix, signed digests) lives in the paramRef ConfigMap
+# fs2-system/fs2-image-provenance-allowlist, rendered by
+# security/image-provenance/provenance.py render-allowlist, which
+# cosign-verifies every digest before it renders. This file is
+# environment-independent.
+#
+# Failure posture:
+#   - failurePolicy Fail plus fail-closed CEL: a missing or malformed
+#     allow-list key denies admission in the matched namespaces.
+#   - parameterNotFoundAction Deny: a deleted allow-list ConfigMap fails
+#     closed. Operational consequence: Pod churn in the matched namespaces
+#     stalls until the ConfigMap is restored from the run-root receipt.
+#   - The pods/ephemeralcontainers subresource is intentionally not matched so
+#     cluster-admin `kubectl debug` support workflows keep working.
+#
+# Rollback: kubectl delete validatingadmissionpolicybinding/fs2-image-provenance \
+#   validatingadmissionpolicy/fs2-image-provenance \
+#   configmap/-n fs2-system fs2-image-provenance-allowlist
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: fs2-image-provenance
+  labels:
+    app.kubernetes.io/name: fs2-image-provenance
+    app.kubernetes.io/part-of: fs2-serve
+    security.fs2.nebius.ai/finding: sai-09
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: v1
+    kind: ConfigMap
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+        scope: Namespaced
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments", "daemonsets", "statefulsets"]
+        scope: Namespaced
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["jobs", "cronjobs"]
+        scope: Namespaced
+  variables:
+    - name: podSpec
+      expression: >-
+        object.kind == 'Pod' ? object.spec :
+        (object.kind == 'CronJob'
+         ? object.spec.jobTemplate.spec.template.spec
+         : object.spec.template.spec)
+    - name: images
+      expression: >-
+        variables.podSpec.containers.map(c, c.image)
+        + (has(variables.podSpec.initContainers)
+           ? variables.podSpec.initContainers.map(c, c.image) : [])
+        + (has(variables.podSpec.ephemeralContainers)
+           ? variables.podSpec.ephemeralContainers.map(c, c.image) : [])
+    - name: registryPrefixes
+      expression: >-
+        ('registry-prefixes' in params.data
+         ? params.data['registry-prefixes'] : '')
+        .split("\n").filter(p, p != '')
+    - name: platformRepositoryPrefix
+      expression: >-
+        'platform-repository-prefix' in params.data
+        ? params.data['platform-repository-prefix'] : ''
+    - name: platformDigests
+      expression: >-
+        ('platform-digests' in params.data
+         ? params.data['platform-digests'] : '')
+        .split("\n").filter(d, d != '')
+  validations:
+    - expression: >-
+        variables.images.all(i, i.matches('^.+@sha256:[0-9a-f]{64}$'))
+      message: >-
+        every container image in this namespace must be pinned to an exact
+        @sha256 digest (SAI-09)
+      reason: Forbidden
+    - expression: >-
+        variables.images.all(i,
+          variables.registryPrefixes.exists(p, i.startsWith(p)))
+      message: >-
+        every container image in this namespace must come from an allow-listed
+        registry prefix in fs2-image-provenance-allowlist (SAI-09)
+      reason: Forbidden
+    - expression: >-
+        variables.platformRepositoryPrefix != '' &&
+        variables.images.all(i,
+          !i.startsWith(variables.platformRepositoryPrefix) ||
+          variables.platformDigests.exists(d, i.endsWith('@' + d)))
+      message: >-
+        platform application images must use a cosign-signed digest recorded in
+        fs2-image-provenance-allowlist; sign and allow-list the release before
+        deploying it (SAI-09)
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: fs2-image-provenance
+  labels:
+    app.kubernetes.io/name: fs2-image-provenance
+    app.kubernetes.io/part-of: fs2-serve
+    security.fs2.nebius.ai/finding: sai-09
+spec:
+  policyName: fs2-image-provenance
+  validationActions: [Deny, Audit]
+  paramRef:
+    name: fs2-image-provenance-allowlist
+    namespace: fs2-system
+    parameterNotFoundAction: Deny
+  matchResources:
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values: [fs2-system, fs2-models]
+---
+# A digest allow-list alone does not stop a config-only `helm upgrade` that
+# reuses allow-listed images while changing Services, routes, or chart
+# behavior. Helm records every release version as a Secret of type
+# helm.sh/release.v1, so restricting who may write those Secrets makes the
+# governed wrapper path admission-enforced, not procedural. Its enforcement
+# value requires a distinct deploy identity: while every operator shares one
+# cluster-admin principal this rule documents rather than separates authority,
+# and the identity split is an owner-level IAM action. Terraform's no-drift
+# plan remains the compensating detective control for config drift.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: fs2-helm-release-governance
+  labels:
+    app.kubernetes.io/name: fs2-image-provenance
+    app.kubernetes.io/part-of: fs2-serve
+    security.fs2.nebius.ai/finding: sai-09
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: v1
+    kind: ConfigMap
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["secrets"]
+        scope: Namespaced
+  variables:
+    - name: deployPrincipals
+      expression: >-
+        ('deploy-principals' in params.data
+         ? params.data['deploy-principals'] : '')
+        .split("\n").filter(p, p != '')
+  validations:
+    - expression: >-
+        !(has(object.type) && object.type == 'helm.sh/release.v1') ||
+        variables.deployPrincipals.exists(p, p == request.userInfo.username)
+      message: >-
+        Helm release versions in this namespace may only be written by the
+        governed deploy principals recorded in fs2-image-provenance-allowlist;
+        use the release-gated wrapper path (SAI-09)
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: fs2-helm-release-governance
+  labels:
+    app.kubernetes.io/name: fs2-image-provenance
+    app.kubernetes.io/part-of: fs2-serve
+    security.fs2.nebius.ai/finding: sai-09
+spec:
+  policyName: fs2-helm-release-governance
+  validationActions: [Deny, Audit]
+  paramRef:
+    name: fs2-image-provenance-allowlist
+    namespace: fs2-system
+    parameterNotFoundAction: Deny
+  matchResources:
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values: [fs2-system]

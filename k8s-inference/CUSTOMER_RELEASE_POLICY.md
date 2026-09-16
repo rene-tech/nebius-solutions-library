@@ -68,6 +68,40 @@ following against the exact candidate release:
 Secrets and customer payloads remain outside Git. Receipts must contain stable
 identities, hashes, status and timings without credentials or private inputs.
 
+## Release source and image provenance
+
+Acceptance evidence is only meaningful for a release whose source and images
+are reproducible. Every mutating rollout — a full `inference-stack apply` and
+equally a Helm-only application digest bump — must additionally satisfy the
+provenance gate (see `security/image-provenance/README.md`):
+
+1. **Anchored source:** the deployed commit is a clean checkout (tracked and
+   untracked drift both fail) reachable from `origin/main`, an
+   `origin/release/*` branch, an origin-verified `release/*`/`deploy/*` tag,
+   or — when public publication is owner-gated — a local anchor tag backed by
+   a hash-recorded, restore-tested `git bundle` in the private run root
+   (`inference-stack anchor-release`). The wrapper enforces this on `apply`
+   and offers a standalone `release-gate` command for Helm-only upgrades;
+   overrides require `--allow-unreleased-source REASON` and are recorded in
+   the run root (`release-source.json`).
+2. **Bound release receipt:** before signing, every digest gets a cosign-signed
+   release receipt binding it to its source commit/tree, the durable anchor
+   bundle, and validated SBOM evidence
+   (`security/image-provenance/provenance.py receipt`). Signing and
+   allow-listing refuse digests without one.
+3. **Signed digests:** every published platform image digest is cosign-signed
+   with the operator release key before it is deployed; a signature without a
+   bound receipt is artifact presence, not provenance.
+4. **Admission allow-list:** the receipted, signed digest is appended to the
+   `fs2-image-provenance-allowlist` ConfigMap before the rollout; the
+   `fs2-image-provenance` ValidatingAdmissionPolicy refuses unpinned,
+   foreign-registry, and non-allow-listed platform images in the platform
+   namespaces. Keep digests that live Pods, frozen scientific-stage bindings,
+   or the Helm rollback window still reference.
+
+A release deployed from an unanchored or unsigned identity is not
+customer-ready regardless of its test results.
+
 ## Claim discipline
 
 - `unit-tested`, `schema-validated`, `runtime-probed`, `model-qualified`, and
