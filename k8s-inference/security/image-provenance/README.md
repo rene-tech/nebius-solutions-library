@@ -76,7 +76,7 @@ bump — in order:
    <cosign.key> --public-key security/image-provenance/cosign.pub --run-root
    <run> <repo>@sha256:<digest>`.
 5. Assemble and sign the **complete inventory**
-   (`fs2-serve.nebius.ai/release-inventory/v3`): enumerate the current live
+   (`fs2-serve.nebius.ai/release-inventory/v4`): enumerate the current live
    workloads in the matched namespaces, the Helm rollback window
    (`helm history` digests), and frozen scientific-stage bindings as its three
    `sources`, each with `observed_at` and the unique, structured
@@ -105,23 +105,44 @@ bump — in order:
    `--image` arguments must equal the inventory exactly and exist only as a
    cross-check). The inventory additionally carries a strictly increasing
    integer `generation` and a typed collector
-   (`{method: fs2-live-enumeration/v1, identity: <authenticated user>}`);
-   the renderer keeps an external monotonic checkpoint
-   (`release-inventory-checkpoint.json` in the run root, advanced only on
-   ACCEPTED renders) so a previously valid signed inventory can never replay
-   over a newer one, and it re-enumerates the live platform images through
-   the AUTHENTICATED cluster API at render time (kubectl required —
-   unavailable enumeration fails closed): `live_workloads` must equal that
-   enumeration exactly and the recorded collector identity must equal the
-   authenticated identity, so a signer cannot omit an active sibling image
-   or self-assert coverage. **Admission scope is never caller-chosen**: the
-   committed, owner-reviewed `release-scope.json` is the single authority —
-   loaded from the blob at `refs/remotes/origin/main`, never from the
-   working tree or a local commit, with a diverging working copy failing
-   closed; it ships EMPTY, so rendering fails closed until the owner
-   populates and reviews the exact scope. The scope's namespaces must equal
-   the committed policy binding's namespaces exactly, they render into the
-   ConfigMap `namespaces` key, and the policy denies any request whose
+   (`{method: fs2-live-enumeration/v1, identity: <authenticated user>}`).
+   Replay protection is a SIGNED chain, not a mutable file: every accepted
+   render appends a cosign-signed head (sequence, generation, capture time,
+   inventory hash, previous-head hash) under `release-inventory-heads/`,
+   published no-replace via link(2); the whole chain is re-verified on every
+   render (signatures over exact bytes, content-addressed names, dense
+   sequences, prev-hash linkage, strictly increasing generations), so an
+   older or forked signed inventory never replays and a tampered, unsigned,
+   or spliced store fails closed — `render-allowlist` therefore requires
+   `--key`. (Deleting the NEWEST head is locally undetectable, like deleting
+   any local file: WORM/off-host anchoring of the head is the named owner
+   gate, as for the gate history.) At render time the tool authoritatively
+   re-observes the cluster through the AUTHENTICATED API (kubectl and helm
+   required — unavailable enumeration fails closed): live platform images
+   from Pods AND workload controllers (a scaled-to-zero or crash-looping
+   Deployment counts with no Pod), the Helm rollback window re-derived from
+   `helm history`/`helm get manifest` per revision, and frozen bindings
+   re-fetched from the exact resources their signed identities name; every
+   source's refs AND resource identities must equal the observation, the
+   kubeconfig cluster identity must equal the scope's cluster, and the
+   recorded collector identity must equal the authenticated identity — a
+   signer cannot omit an active sibling image, drain a rollback revision the
+   history still carries, or self-assert coverage. **Admission scope is
+   never caller-chosen**: the committed `release-scope.json` is the single
+   authority and it is OWNER-SIGNED — the detached
+   `release-scope.json.sig` must verify against the pinned release key over
+   the exact bytes parsed; no Git ref is consulted (local tracking refs are
+   writable by any local process via `git update-ref` and are NOT
+   authority). It ships EMPTY (signed), so rendering fails closed until the
+   owner populates and signs the exact scope. The scope pins the committed
+   admission policy manifest by SHA-256, the binding must select exactly the
+   scope's namespaces with a single `In` expression, include `Deny` in its
+   validationActions, and fail closed on the exact allow-list ConfigMap —
+   and the LIVE ValidatingAdmissionPolicy and binding, fetched through the
+   authenticated session, must equal the committed definitions on every
+   enforced field (a missing, Audit-only, `NotIn`, or otherwise drifted live
+   object refuses rendering). The scope's namespaces render into the
+   ConfigMap `namespaces` key and the policy denies any request whose
    namespace is not listed — claimed and enforced coverage cannot drift. The signed inventory's `scope` must equal it exactly (a
    signer cannot substitute their own coverage), every CLI argument must
    equal it (a mistyped platform prefix cannot bypass platform-digest
@@ -211,10 +232,13 @@ what an earlier release proved:
   every append, failing the gate itself on a tampered history. Exception
   approvers must appear in the reviewed, scoped, expiring
   `release-approvers.json` allow-list (an empty list makes exceptions
-  impossible), which is loaded from the blob at `refs/remotes/origin/main` —
-  never from the working tree or a local commit — so an exception can never
-  authorize its own authority mutation: a dirty-added or locally-committed
-  approver fails the override closed. The pair is tamper-evident, not immutable — WORM/off-host
+  impossible), which is OWNER-SIGNED: the detached
+  `release-approvers.json.sig` must verify against the committed release key
+  over the exact bytes parsed, so an exception can never authorize its own
+  authority mutation — a dirty-added or locally-committed approver fails
+  signature verification, no Git ref is consulted, and producing a valid
+  signature requires the owner-held private key, which never lives in the
+  repository. The pair is tamper-evident, not immutable — WORM/off-host
   anchoring of the log and authenticating the caller as the approver identity
   are owner infrastructure/IAM items.
 - **Registry signatures**: cosign appends signatures to a digest's `.sig`
@@ -223,7 +247,10 @@ what an earlier release proved:
   is read exactly once through the same O_NOFOLLOW/fstat-checked reader (the
   parsed bytes are the hashed bytes), and public inputs — the committed
   verification key, standalone SBOMs — are refused when group/other-writable
-  (chmod them 0644 after checkout under a group-writable umask). Every
+  (chmod them 0644 after checkout under a group-writable umask; public
+  inputs enforce mode bits within 0644 — no group/other write, no execute;
+  private evidence enforces mode bits within 0600 EXACTLY, so a 0700
+  executable file is refused, not accepted). Every
   evidence read walks EVERY path component from the root dirfd with
   openat(O_NOFOLLOW|O_DIRECTORY): a symlink at any ancestor, an
   other-writable or foreign-group-writable non-sticky ancestor, a
@@ -233,7 +260,8 @@ what an earlier release proved:
   fstat-stable: the descriptor is checked again after the bytes are read and
   any size/mtime/ctime/nlink/mode change refuses them, so a same-inode
   overwrite during a multi-chunk read can never yield accepted mixed
-  content; private evidence uniformly requires mode 0600 (bundles included). Allow-list
+  content; private evidence uniformly enforces mode bits within 0600,
+  bundles included. Allow-list
   rendering pins ONE verification-key identity: the key bytes are read once
   into a private scratch copy used for every signature check and recorded in
   the ConfigMap annotation, and the recorded inventory hash is computed over

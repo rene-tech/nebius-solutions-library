@@ -66,37 +66,73 @@ class ReleaseSourceGateTest(unittest.TestCase):
         git(self.checkout, "config", "user.name", "Gate Test")
         git(self.checkout, "remote", "add", "origin", str(self.origin))
         (self.checkout / "tracked.txt").write_text("v1\n", encoding="utf-8")
-        approvers = self.checkout / "security" / "image-provenance"
-        approvers.mkdir(parents=True)
-        (approvers / "release-approvers.json").write_text(
-            json.dumps(
+        self.signed_authority_hashes: set[str] = set()
+        self.sign_approvers(
+            [
                 {
-                    "schema": "fs2-serve.nebius.ai/release-approvers/v1",
-                    "approvers": [
-                        {
-                            "name": "release-operator",
-                            "scope": "release-source-exception",
-                            "expires_at": "2030-01-01T00:00:00Z",
-                        },
-                        {
-                            "name": "expired-operator",
-                            "scope": "release-source-exception",
-                            "expires_at": "2020-01-01T00:00:00Z",
-                        },
-                        {
-                            "name": "other-scope-operator",
-                            "scope": "some-other-scope",
-                            "expires_at": "2030-01-01T00:00:00Z",
-                        },
-                    ],
-                }
-            ),
-            encoding="utf-8",
+                    "name": "release-operator",
+                    "scope": "release-source-exception",
+                    "expires_at": "2030-01-01T00:00:00Z",
+                },
+                {
+                    "name": "expired-operator",
+                    "scope": "release-source-exception",
+                    "expires_at": "2020-01-01T00:00:00Z",
+                },
+                {
+                    "name": "other-scope-operator",
+                    "scope": "some-other-scope",
+                    "expires_at": "2030-01-01T00:00:00Z",
+                },
+            ],
+            commit_message="anchored commit",
+            extra_paths=["tracked.txt"],
         )
-        git(self.checkout, "add", "tracked.txt", "security")
-        git(self.checkout, "commit", "-m", "anchored commit")
+
+    def sign_approvers(
+        self,
+        approvers: list[dict],
+        commit_message: str = "review approver change",
+        extra_paths: list[str] | None = None,
+    ) -> None:
+        """Write an OWNER-SIGNED approver list (fixture signature registry).
+
+        The fake owner signature is a registry of payload hashes: the
+        authority verifier accepts exactly the byte strings this helper
+        produced, so any dirty edit or local re-commit fails verification the
+        same way a real cosign check would without the private key.
+        """
+        import hashlib
+
+        directory = self.checkout / "security" / "image-provenance"
+        directory.mkdir(parents=True, exist_ok=True)
+        payload = json.dumps(
+            {
+                "schema": "fs2-serve.nebius.ai/release-approvers/v1",
+                "approvers": approvers,
+            }
+        ).encode("utf-8")
+        approver_file = directory / "release-approvers.json"
+        approver_file.write_bytes(payload)
+        approver_file.chmod(0o644)
+        signature = directory / "release-approvers.json.sig"
+        signature.write_text("fixture-owner-signature\n", encoding="utf-8")
+        signature.chmod(0o644)
+        key = directory / "cosign.pub"
+        key.write_text("-----BEGIN PUBLIC KEY-----\nfixture\n-----END PUBLIC KEY-----\n", encoding="utf-8")
+        key.chmod(0o644)
+        self.signed_authority_hashes.add(hashlib.sha256(payload).hexdigest())
+        git(self.checkout, "add", "security", *(extra_paths or []))
+        git(self.checkout, "commit", "-m", commit_message)
         git(self.checkout, "push", "origin", "main")
         git(self.checkout, "fetch", "origin")
+
+    def authority_verifier(self, command: list[str]) -> None:
+        import hashlib
+
+        payload = Path(command[-1]).read_bytes()
+        if hashlib.sha256(payload).hexdigest() not in self.signed_authority_hashes:
+            raise subprocess.CalledProcessError(1, command)
 
     def head(self) -> str:
         return git(self.checkout, "rev-parse", "HEAD")
@@ -447,6 +483,7 @@ class ReleaseSourceGateTest(unittest.TestCase):
             "incident:INC-123 history test",
             repository_root=self.checkout,
             exception_approver="release-operator",
+            authority_verifier=self.authority_verifier,
         )
         history = self.run_root / "release-source-history.jsonl"
         first_line = history.read_text(encoding="utf-8").splitlines()[0]
@@ -499,6 +536,7 @@ class ReleaseSourceGateTest(unittest.TestCase):
             "incident:INC-1234 rollforward",
             repository_root=self.checkout,
             exception_approver="release-operator",
+            authority_verifier=self.authority_verifier,
         )
         self.assertFalse(state["anchored"])
         receipt = self.receipt()
@@ -520,6 +558,7 @@ class ReleaseSourceGateTest(unittest.TestCase):
                     bad_reason,
                     repository_root=self.checkout,
                     exception_approver="release-operator",
+                    authority_verifier=self.authority_verifier,
                 )
 
     def test_exception_requires_a_named_approver(self) -> None:
@@ -548,33 +587,15 @@ class ReleaseSourceGateTest(unittest.TestCase):
                     "incident:INC-1234 rollforward",
                     repository_root=self.checkout,
                     exception_approver=approver,
+                    authority_verifier=self.authority_verifier,
                 )
-
-    def push_reviewed_approvers(self, approvers: list[dict]) -> None:
-        """Route an approver-list change through the reviewed origin/main."""
-        approver_file = (
-            self.checkout / "security" / "image-provenance" / "release-approvers.json"
-        )
-        approver_file.write_text(
-            json.dumps(
-                {
-                    "schema": "fs2-serve.nebius.ai/release-approvers/v1",
-                    "approvers": approvers,
-                }
-            ),
-            encoding="utf-8",
-        )
-        git(self.checkout, "add", "security")
-        git(self.checkout, "commit", "-m", "review approver change")
-        git(self.checkout, "push", "origin", "main")
-        git(self.checkout, "fetch", "origin")
 
     def test_dirty_approver_file_never_self_authorizes(self) -> None:
         # The exact reproduced attack: reviewed EMPTY approver list, a
         # dirty-added attacker approver, then a dirty-source override naming
         # the attacker. Authority loads only from the reviewed origin/main
         # blob, and a diverging working-tree copy fails the override closed.
-        self.push_reviewed_approvers([])
+        self.sign_approvers([])
         commit = self.add_unpushed_commit()
         approver_file = (
             self.checkout / "security" / "image-provenance" / "release-approvers.json"
@@ -599,6 +620,7 @@ class ReleaseSourceGateTest(unittest.TestCase):
                 "incident:INC-1 attacker attempt",
                 repository_root=self.checkout,
                 exception_approver="attacker",
+                authority_verifier=self.authority_verifier,
             )
         # A LOCAL commit of the attacker list is equally powerless: the
         # reviewed origin/main blob did not move.
@@ -611,10 +633,11 @@ class ReleaseSourceGateTest(unittest.TestCase):
                 "incident:INC-1 attacker attempt",
                 repository_root=self.checkout,
                 exception_approver="attacker",
+                authority_verifier=self.authority_verifier,
             )
 
     def test_empty_approver_list_makes_exceptions_impossible(self) -> None:
-        self.push_reviewed_approvers([])
+        self.sign_approvers([])
         commit = self.add_unpushed_commit()
         with self.assertRaisesRegex(STACK.DeploymentError, "impossible until"):
             STACK.enforce_release_source(
@@ -623,6 +646,7 @@ class ReleaseSourceGateTest(unittest.TestCase):
                 "incident:INC-1234 rollforward",
                 repository_root=self.checkout,
                 exception_approver="release-operator",
+                authority_verifier=self.authority_verifier,
             )
 
     def test_lightweight_tags_are_not_anchorable(self) -> None:

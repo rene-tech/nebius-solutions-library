@@ -243,13 +243,17 @@ def _read_evidence_bytes(path: Path, private: bool = True) -> bytes:
             )
         if status.st_uid != os.getuid():
             raise ProvenanceError(f"evidence file has a foreign owner: {path}")
-        if private and status.st_mode & 0o077:
+        permissions = stat_module.S_IMODE(status.st_mode)
+        if private and permissions & ~0o600:
             raise ProvenanceError(
-                f"evidence file is group/other accessible: {path}; require mode 0600"
+                f"evidence file mode {oct(permissions)} exceeds 0600: {path}; "
+                "private evidence permits owner read/write only — no group/"
+                "other access and no execute bits"
             )
-        if not private and status.st_mode & 0o022:
+        if not private and permissions & ~0o644:
             raise ProvenanceError(
-                f"public input file is group/other writable: {path}"
+                f"public input file mode {oct(permissions)} exceeds 0644: "
+                f"{path}; no write beyond the owner and no execute bits"
             )
         chunks = []
         while True:
@@ -1538,7 +1542,7 @@ def load_bound_receipt(
 INVENTORY_SCHEMA = "fs2-serve.nebius.ai/release-inventory/v4"
 COLLECTOR_METHOD = "fs2-live-enumeration/v1"
 INVENTORY_CHECKPOINT_SCHEMA = "fs2-serve.nebius.ai/inventory-checkpoint/v1"
-SCOPE_SCHEMA = "fs2-serve.nebius.ai/release-scope/v1"
+SCOPE_SCHEMA = "fs2-serve.nebius.ai/release-scope/v2"
 INVENTORY_SOURCES = (
     "live_workloads",
     "helm_rollback_window",
@@ -1562,6 +1566,7 @@ SCOPE_FIELDS = (
     "platform_repository_prefix",
     "deploy_principals",
     "verification_key_sha256",
+    "policy_sha256",
 )
 
 
@@ -1637,24 +1642,80 @@ def _validated_scope(value, context: str) -> dict:
         raise ProvenanceError(
             f"{context} needs the exact SHA-256 of the verification key"
         )
+    if not SHA256_PATTERN.match(str(value.get("policy_sha256", ""))):
+        raise ProvenanceError(
+            f"{context} needs the exact SHA-256 of the committed admission "
+            "policy manifest it authorizes"
+        )
     return value
 
 
-def _assert_policy_matches_scope(
-    owner_scope: dict, policy_path: Path | None = None
-) -> None:
-    """The signed/approved namespaces must equal the ACTUAL policy coverage.
+def _collapse_whitespace(value) -> str:
+    return " ".join(str(value or "").split())
 
-    The VAP binding hardcodes its namespaceSelector: a scope naming a
-    namespace the committed policy does not match (or vice versa) would make
-    the recorded coverage a lie, so the renderer compares the owner scope's
-    namespaces with every binding's selector in the committed policy.yaml and
-    refuses any difference. The policy itself additionally validates at
-    admission time that the request namespace is listed in the rendered
-    ConfigMap, so a drifted binding fails closed in the cluster too.
-    """
-    if policy_path is None:
-        policy_path = Path(__file__).resolve().parent / "policy.yaml"
+
+def _normalized_policy_spec(document: dict) -> dict:
+    spec = document.get("spec", {}) or {}
+    return {
+        "failurePolicy": spec.get("failurePolicy"),
+        "paramKind": {
+            "apiVersion": (spec.get("paramKind") or {}).get("apiVersion"),
+            "kind": (spec.get("paramKind") or {}).get("kind"),
+        },
+        "resourceRules": [
+            {
+                "apiGroups": list(rule.get("apiGroups") or []),
+                "apiVersions": list(rule.get("apiVersions") or []),
+                "operations": sorted(rule.get("operations") or []),
+                "resources": list(rule.get("resources") or []),
+                "scope": rule.get("scope"),
+            }
+            for rule in (spec.get("matchConstraints") or {}).get(
+                "resourceRules", []
+            )
+        ],
+        "variables": [
+            {
+                "name": variable.get("name"),
+                "expression": _collapse_whitespace(variable.get("expression")),
+            }
+            for variable in spec.get("variables", [])
+        ],
+        "validations": [
+            {
+                "expression": _collapse_whitespace(validation.get("expression")),
+                "reason": validation.get("reason"),
+                "message": _collapse_whitespace(validation.get("message")),
+            }
+            for validation in spec.get("validations", [])
+        ],
+    }
+
+
+def _normalized_binding_spec(document: dict) -> dict:
+    spec = document.get("spec", {}) or {}
+    param_ref = spec.get("paramRef") or {}
+    selector = (spec.get("matchResources") or {}).get("namespaceSelector") or {}
+    return {
+        "policyName": spec.get("policyName"),
+        "validationActions": sorted(spec.get("validationActions") or []),
+        "paramRef": {
+            "name": param_ref.get("name"),
+            "namespace": param_ref.get("namespace"),
+            "parameterNotFoundAction": param_ref.get("parameterNotFoundAction"),
+        },
+        "namespaceSelector": [
+            {
+                "key": expression.get("key"),
+                "operator": expression.get("operator"),
+                "values": sorted(expression.get("values") or []),
+            }
+            for expression in selector.get("matchExpressions", [])
+        ],
+    }
+
+
+def _committed_policy_documents(policy_path: Path) -> tuple[bytes, dict, dict]:
     try:
         import yaml
     except ImportError as error:  # pragma: no cover - environment guard
@@ -1662,109 +1723,232 @@ def _assert_policy_matches_scope(
             "PyYAML is required to prove the admission policy matches the "
             "owner scope; rendering fails closed"
         ) from error
+    policy_bytes = _read_evidence_bytes(policy_path, private=False)
     try:
         documents = [
             document
-            for document in yaml.safe_load_all(
-                _read_evidence_bytes(policy_path, private=False)
-            )
+            for document in yaml.safe_load_all(policy_bytes)
             if document
         ]
     except yaml.YAMLError as error:
         raise ProvenanceError(
             f"cannot parse the committed admission policy: {policy_path}"
         ) from error
-    binding_namespaces: list[list[str]] = []
-    for document in documents:
-        if document.get("kind") != "ValidatingAdmissionPolicyBinding":
-            continue
-        # The image-provenance binding IS the coverage the scope claims; the
-        # Helm-release-Secret compensating binding intentionally targets only
-        # the namespace where Helm stores release Secrets.
-        if document.get("spec", {}).get("policyName") != "fs2-image-provenance":
-            continue
-        expressions = (
-            document.get("spec", {})
-            .get("matchResources", {})
-            .get("namespaceSelector", {})
-            .get("matchExpressions", [])
-        )
-        for expression in expressions:
-            if expression.get("key") == "kubernetes.io/metadata.name":
-                binding_namespaces.append(sorted(expression.get("values") or []))
-    if not binding_namespaces:
+    policy = next(
+        (
+            document
+            for document in documents
+            if document.get("kind") == "ValidatingAdmissionPolicy"
+            and document.get("metadata", {}).get("name") == "fs2-image-provenance"
+        ),
+        None,
+    )
+    binding = next(
+        (
+            document
+            for document in documents
+            if document.get("kind") == "ValidatingAdmissionPolicyBinding"
+            and document.get("spec", {}).get("policyName") == "fs2-image-provenance"
+        ),
+        None,
+    )
+    if policy is None or binding is None:
         raise ProvenanceError(
-            f"no namespace-bound admission policy binding found in "
-            f"{policy_path}; rendering fails closed"
+            f"the committed admission policy manifest {policy_path} lacks the "
+            "fs2-image-provenance policy or binding; rendering fails closed"
         )
-    expected = sorted(owner_scope["namespaces"])
-    for namespaces in binding_namespaces:
-        if namespaces != expected:
-            raise ProvenanceError(
-                f"the committed admission policy binding matches namespaces "
-                f"{namespaces}, but the owner-approved scope names "
-                f"{expected}; the claimed coverage must equal the enforced "
-                "coverage exactly — align the scope or the policy"
-            )
+    return policy_bytes, policy, binding
 
 
-def load_owner_scope(scope_path: Path) -> dict:
-    """Load the owner-approved admission scope from the REVIEWED Git object.
+def _assert_policy_matches_scope(
+    owner_scope: dict, live_runner, policy_path: Path | None = None
+) -> None:
+    """The signed scope, the committed policy, and the LIVE policy must agree.
 
-    Allow-list rendering is impossible until the owner commits the exact
-    scope (cluster, namespaces, prefixes, principals, key identity) through
-    review. The scope bytes are loaded from the blob at
-    refs/remotes/origin/main — never from the working tree, which any local
-    process can edit, and never from a local commit, which nobody reviewed —
-    so a signer can never substitute their own coverage decisions and then
-    sign a matching inventory. A working-tree copy that diverges from the
-    reviewed blob fails closed: it signals exactly that substitution.
+    Checked strictly, not by selector values alone:
+    - the owner-signed scope pins the committed policy manifest by SHA-256;
+    - the committed binding selects namespaces with operator `In` (a `NotIn`
+      with identical values would invert the coverage), its values equal the
+      scope's namespaces exactly, its validationActions include `Deny`
+      (Audit-only enforcement is observation, not a boundary), and its
+      paramRef fails closed with `parameterNotFoundAction: Deny` on the exact
+      allow-list ConfigMap;
+    - the committed policy fails closed, matches pods (incl. the
+      pods/ephemeralcontainers subresource) and every workload controller,
+      and carries all four validations;
+    - the LIVE ValidatingAdmissionPolicy and binding, fetched through the
+      authenticated API session, must equal the committed definitions on
+      every enforced field — a missing, deleted, weakened, or Audit-only
+      live object refuses rendering.
     """
+    if policy_path is None:
+        policy_path = Path(__file__).resolve().parent / "policy.yaml"
+    policy_bytes, policy, binding = _committed_policy_documents(policy_path)
+    policy_sha256 = hashlib.sha256(policy_bytes).hexdigest()
+    if policy_sha256 != owner_scope["policy_sha256"]:
+        raise ProvenanceError(
+            f"the committed admission policy manifest hashes to "
+            f"{policy_sha256}, but the owner-signed scope authorizes "
+            f"{owner_scope['policy_sha256']}; align the scope with the "
+            "reviewed policy revision"
+        )
+    committed_binding = _normalized_binding_spec(binding)
+    expressions = committed_binding["namespaceSelector"]
+    if (
+        len(expressions) != 1
+        or expressions[0]["key"] != "kubernetes.io/metadata.name"
+        or expressions[0]["operator"] != "In"
+        or expressions[0]["values"] != sorted(owner_scope["namespaces"])
+    ):
+        raise ProvenanceError(
+            "the committed admission policy binding must select exactly the "
+            f"owner-approved namespaces {sorted(owner_scope['namespaces'])} "
+            "with a single kubernetes.io/metadata.name In expression; the "
+            "claimed coverage must equal the enforced coverage exactly"
+        )
+    if "Deny" not in committed_binding["validationActions"]:
+        raise ProvenanceError(
+            "the committed admission policy binding does not Deny; Audit-only "
+            "enforcement is observation, not a security boundary — rendering "
+            "fails closed"
+        )
+    if (
+        committed_binding["paramRef"]["name"] != ALLOWLIST_NAME
+        or committed_binding["paramRef"]["namespace"] != ALLOWLIST_NAMESPACE
+        or committed_binding["paramRef"]["parameterNotFoundAction"] != "Deny"
+    ):
+        raise ProvenanceError(
+            "the committed admission policy binding must reference the exact "
+            f"allow-list ConfigMap {ALLOWLIST_NAMESPACE}/{ALLOWLIST_NAME} "
+            "with parameterNotFoundAction: Deny"
+        )
+    committed_policy = _normalized_policy_spec(policy)
+    if committed_policy["failurePolicy"] != "Fail":
+        raise ProvenanceError(
+            "the committed admission policy must set failurePolicy: Fail"
+        )
+    matched_resources = {
+        resource
+        for rule in committed_policy["resourceRules"]
+        for resource in rule["resources"]
+    }
+    required_resources = {
+        "pods",
+        "pods/ephemeralcontainers",
+        "deployments",
+        "daemonsets",
+        "statefulsets",
+        "jobs",
+        "cronjobs",
+    }
+    if not required_resources <= matched_resources:
+        raise ProvenanceError(
+            "the committed admission policy must match pods, the "
+            "pods/ephemeralcontainers subresource, and every workload "
+            f"controller; missing: {sorted(required_resources - matched_resources)}"
+        )
+    if len(committed_policy["validations"]) < 4:
+        raise ProvenanceError(
+            "the committed admission policy must carry the namespace, "
+            "digest-pin, registry, and platform-digest validations"
+        )
+    # LIVE equality: the enforced objects in the cluster must equal the
+    # committed, owner-pinned definitions. Absent objects fail closed.
+    try:
+        live_policy = json.loads(
+            live_runner(
+                [
+                    "kubectl",
+                    "get",
+                    "validatingadmissionpolicy",
+                    "fs2-image-provenance",
+                    "-o",
+                    "json",
+                ]
+            )
+        )
+        live_binding = json.loads(
+            live_runner(
+                [
+                    "kubectl",
+                    "get",
+                    "validatingadmissionpolicybinding",
+                    "fs2-image-provenance",
+                    "-o",
+                    "json",
+                ]
+            )
+        )
+    except (subprocess.CalledProcessError, OSError, json.JSONDecodeError) as error:
+        raise ProvenanceError(
+            "the LIVE fs2-image-provenance admission policy/binding cannot "
+            "be read; rendering fails closed until the owner-pinned policy "
+            "objects are applied and readable (apply the policy manifest "
+            "first — it fails closed even before the ConfigMap exists)"
+        ) from error
+    if _normalized_policy_spec(live_policy) != committed_policy:
+        raise ProvenanceError(
+            "the LIVE fs2-image-provenance ValidatingAdmissionPolicy does "
+            "not equal the committed, owner-pinned definition; a drifted or "
+            "weakened live policy refuses rendering"
+        )
+    if _normalized_binding_spec(live_binding) != committed_binding:
+        raise ProvenanceError(
+            "the LIVE fs2-image-provenance binding does not equal the "
+            "committed, owner-pinned definition (actions, paramRef, or "
+            "namespace selector drifted — e.g. Audit-only or NotIn); "
+            "rendering fails closed"
+        )
+
+
+def load_owner_scope(
+    scope_path: Path, public_key_path: str, verifier=None
+) -> dict:
+    """Load the OWNER-SIGNED admission scope; unsigned or tampered fails closed.
+
+    Authority is cryptographic, never positional: the scope bytes must carry
+    a detached cosign signature (`<scope>.sig`) that verifies against the
+    pinned release verification key over EXACTLY the bytes parsed. A Git ref
+    is not authority — local tracking refs are writable by any local process
+    (`git update-ref`), so no ref, branch, or commit is consulted. A dirty,
+    locally-committed, or substituted scope simply fails signature
+    verification; producing a new valid signature requires the owner-held
+    private key, which never lives in the repository. The shipped scope is
+    EMPTY and unsigned: rendering is impossible until the owner populates,
+    reviews, and SIGNS the exact scope.
+    """
+    signature_path = scope_path.parent / (scope_path.name + ".sig")
     if not scope_path.is_file() or scope_path.is_symlink():
         raise ProvenanceError(
             f"missing owner-approved release scope: {scope_path}; allow-list "
             "rendering fails closed until the owner commits the exact "
             "admission scope"
         )
-    try:
-        repo_root = Path(
-            _run_capture(
-                [
-                    "git",
-                    "-C",
-                    str(scope_path.resolve().parent),
-                    "rev-parse",
-                    "--show-toplevel",
-                ]
-            ).strip()
-        )
-        relative = scope_path.resolve().relative_to(repo_root).as_posix()
-        blob = _run_capture(
-            [
-                "git",
-                "-C",
-                str(repo_root),
-                "cat-file",
-                "blob",
-                f"refs/remotes/origin/main:{relative}",
-            ]
-        ).encode("utf-8")
-    except (subprocess.CalledProcessError, ValueError, OSError) as error:
+    if not signature_path.is_file() or signature_path.is_symlink():
         raise ProvenanceError(
-            f"owner release scope at {scope_path} is not a REVIEWED object on "
-            "origin/main; allow-list rendering fails closed until the exact "
-            "scope has been through review"
+            f"owner release scope at {scope_path} is UNSIGNED "
+            f"({signature_path} is missing); allow-list rendering fails "
+            "closed until the owner signs the exact scope with the release key"
+        )
+    scope_bytes = _read_evidence_bytes(scope_path, private=False)
+    signature_bytes = _read_evidence_bytes(signature_path, private=False)
+    try:
+        _verify_blob_bytes(
+            public_key_path,
+            scope_bytes,
+            signature_bytes,
+            verifier,
+            f"owner release scope {scope_path}",
+        )
+    except ProvenanceError as error:
+        raise ProvenanceError(
+            f"owner release scope signature verification failed for "
+            f"{scope_path}; a dirty, locally-committed, or substituted scope "
+            "never authorizes rendering — restore the signed scope and route "
+            "changes through owner review and re-signing"
         ) from error
-    working = _read_evidence_bytes(scope_path, private=False)
-    if working != blob:
-        raise ProvenanceError(
-            f"owner release scope at {scope_path} diverges from the reviewed "
-            "origin/main object and fails closed; a dirty or locally-"
-            "committed scope never authorizes rendering — restore it and "
-            "route scope changes through review"
-        )
     try:
-        document = json.loads(blob)
+        document = json.loads(scope_bytes)
     except json.JSONDecodeError as error:
         raise ProvenanceError(
             f"owner release scope is malformed and fails closed: {scope_path}"
@@ -1988,21 +2172,51 @@ def load_signed_inventory(
     return inventory, hashlib.sha256(inventory_bytes).hexdigest()
 
 
-def collect_live_platform_images(
-    namespaces: Sequence[str],
-    platform_repository_prefix: str,
-    runner=_run_capture,
-) -> tuple[str, set[str], list[str]]:
-    """Authoritatively enumerate live platform images through the cluster API.
+PLATFORM_IMAGE_IN_TEXT = None  # compiled lazily against the scope prefix
 
-    Returns (authenticated identity, digest-pinned platform image references,
-    the pod resource identities they were observed on). This is the
-    render-time collector: the signed inventory's live_workloads must equal
-    exactly what the AUTHENTICATED API session sees right now — a signer
-    cannot omit an active sibling image (e.g. live MindEval) or self-assert
-    resource identities. Any failure (no kubectl, no access, an unpinned live
-    platform image) fails closed.
+
+def _platform_references_in_text(text_value: str, platform_prefix: str) -> set[str]:
+    pattern = re.compile(
+        re.escape(platform_prefix) + r"[A-Za-z0-9._/-]*@sha256:[0-9a-f]{64}"
+    )
+    return set(pattern.findall(text_value))
+
+
+WORKLOAD_KINDS = (
+    ("deployment", "deployments"),
+    ("daemonset", "daemonsets"),
+    ("statefulset", "statefulsets"),
+    ("job", "jobs"),
+    ("cronjob", "cronjobs"),
+)
+
+FROZEN_RESOURCE_ID_PATTERN = re.compile(
+    r"^([a-z]+)/([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)/([A-Za-z0-9._-]{1,253})$"
+)
+HELM_RESOURCE_ID_PATTERN = re.compile(
+    r"^helm/([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)/([A-Za-z0-9._-]{1,253})/([0-9]{1,6})$"
+)
+
+
+def _pod_template_images(spec: dict) -> Iterator[str]:
+    for field in ("containers", "initContainers", "ephemeralContainers"):
+        for container in spec.get(field) or []:
+            yield str(container.get("image", ""))
+
+
+def collect_authoritative_observation(scope: dict, runner=_run_capture) -> dict:
+    """Authoritatively observe the cluster through the authenticated API.
+
+    Returns the authenticated identity, the kubeconfig cluster identity, the
+    live platform images (Pods AND workload controllers — a scaled-to-zero or
+    crash-looping Deployment counts even with no Pod), the pod/controller
+    resource identities they were observed on, and the Helm rollback-window
+    images per release revision. Any failure — no kubectl/helm, no access, an
+    unpinned live platform image, a foreign cluster — fails closed: the
+    signed inventory is only ever ACCEPTED against this observation, never
+    trusted on its own resource claims.
     """
+    platform_prefix = scope["platform_repository_prefix"]
     try:
         whoami = json.loads(runner(["kubectl", "auth", "whoami", "-o", "json"]))
         identity = str(
@@ -2013,147 +2227,376 @@ def collect_live_platform_images(
                 "authenticated live enumeration returned no usable identity; "
                 "rendering fails closed"
             )
-        images: set[str] = set()
-        resources: set[str] = set()
-        for namespace in namespaces:
-            listing = json.loads(
+        cluster = runner(
+            [
+                "kubectl",
+                "config",
+                "view",
+                "--minify",
+                "-o",
+                "jsonpath={.clusters[0].name}",
+            ]
+        ).strip()
+        if cluster != scope["cluster"]:
+            raise ProvenanceError(
+                f"the authenticated session targets cluster {cluster!r}, but "
+                f"the owner-approved scope names {scope['cluster']!r}; "
+                "rendering fails closed against a foreign cluster"
+            )
+        live_images: set[str] = set()
+        live_resources: set[str] = set()
+
+        def record(image: str, resource_id: str) -> None:
+            if not image.startswith(platform_prefix):
+                return
+            try:
+                live_images.add(validate_digest_reference(image))
+            except ProvenanceError as error:
+                raise ProvenanceError(
+                    f"live platform image {image!r} at {resource_id} is not "
+                    "digest-pinned; it can never be allow-listed — rendering "
+                    "fails closed"
+                ) from error
+            live_resources.add(resource_id)
+
+        for namespace in scope["namespaces"]:
+            pods = json.loads(
                 runner(["kubectl", "get", "pods", "-n", namespace, "-o", "json"])
             )
-            for pod in listing.get("items") or []:
+            for pod in pods.get("items") or []:
                 name = str((pod.get("metadata") or {}).get("name", ""))
-                spec = pod.get("spec") or {}
-                for field in (
-                    "containers",
-                    "initContainers",
-                    "ephemeralContainers",
-                ):
-                    for container in spec.get(field) or []:
-                        image = str(container.get("image", ""))
-                        if not image.startswith(platform_repository_prefix):
-                            continue
-                        try:
-                            images.add(validate_digest_reference(image))
-                        except ProvenanceError as error:
-                            raise ProvenanceError(
-                                f"live platform image {image!r} in pod "
-                                f"{namespace}/{name} is not digest-pinned; "
-                                "it can never be allow-listed — rendering "
-                                "fails closed"
-                            ) from error
-                        resources.add(f"pod/{namespace}/{name}")
-    except (subprocess.CalledProcessError, OSError, json.JSONDecodeError) as error:
+                for image in _pod_template_images(pod.get("spec") or {}):
+                    record(image, f"pod/{namespace}/{name}")
+            for singular, plural in WORKLOAD_KINDS:
+                listing = json.loads(
+                    runner(
+                        ["kubectl", "get", plural, "-n", namespace, "-o", "json"]
+                    )
+                )
+                for item in listing.get("items") or []:
+                    name = str((item.get("metadata") or {}).get("name", ""))
+                    spec = item.get("spec") or {}
+                    if singular == "cronjob":
+                        template_spec = (
+                            (spec.get("jobTemplate") or {})
+                            .get("spec", {})
+                            .get("template", {})
+                            .get("spec", {})
+                        )
+                    else:
+                        template_spec = (spec.get("template") or {}).get(
+                            "spec", {}
+                        )
+                    for image in _pod_template_images(template_spec or {}):
+                        record(image, f"{singular}/{namespace}/{name}")
+
+        helm_images: set[str] = set()
+        helm_resources: set[str] = set()
+        for namespace in scope["namespaces"]:
+            releases = json.loads(
+                runner(["helm", "list", "-n", namespace, "-o", "json"]) or "[]"
+            )
+            for release in releases or []:
+                name = str(release.get("name", ""))
+                history = json.loads(
+                    runner(["helm", "history", name, "-n", namespace, "-o", "json"])
+                    or "[]"
+                )
+                for entry in history or []:
+                    revision = int(entry.get("revision", 0))
+                    manifest = runner(
+                        [
+                            "helm",
+                            "get",
+                            "manifest",
+                            name,
+                            "-n",
+                            namespace,
+                            "--revision",
+                            str(revision),
+                        ]
+                    )
+                    found = _platform_references_in_text(manifest, platform_prefix)
+                    if found:
+                        helm_images |= found
+                        helm_resources.add(f"helm/{namespace}/{name}/{revision}")
+    except (subprocess.CalledProcessError, OSError, json.JSONDecodeError, ValueError) as error:
         raise ProvenanceError(
             "authenticated live enumeration is unavailable; the allow-list "
             "renders only against a live authoritative collection — "
             "rendering fails closed"
         ) from error
-    return identity, images, sorted(resources)
+    return {
+        "identity": identity,
+        "cluster": cluster,
+        "live_images": live_images,
+        "live_resources": live_resources,
+        "helm_images": helm_images,
+        "helm_resources": helm_resources,
+    }
 
 
-def _inventory_checkpoint_path(run_root: Path) -> Path:
-    return run_root / "release-inventory-checkpoint.json"
+def _verify_frozen_bindings(
+    scope: dict, source: dict, inventory_path: Path, runner
+) -> None:
+    """Frozen refs must come from the exact live resources they claim.
+
+    Every recorded resource identity is fetched through the authenticated
+    API and the platform references extracted from those objects must equal
+    the recorded refs exactly — self-asserted or forged frozen coverage
+    fails closed.
+    """
+    recorded = {
+        validate_digest_reference(str(ref)) for ref in source.get("refs") or []
+    }
+    resource_ids = [str(item) for item in source.get("resource_ids") or []]
+    if not recorded and not resource_ids:
+        return
+    found: set[str] = set()
+    try:
+        for resource_id in resource_ids:
+            match = FROZEN_RESOURCE_ID_PATTERN.match(resource_id)
+            if not match or match.group(2) not in scope["namespaces"]:
+                raise ProvenanceError(
+                    f"{inventory_path} frozen_scientific_bindings resource "
+                    f"identity {resource_id!r} is not a fetchable "
+                    "kind/namespace/name inside the owner-approved namespaces"
+                )
+            kind, namespace, _, name = (
+                match.group(1),
+                match.group(2),
+                match.group(3),
+                match.group(4),
+            )
+            payload = runner(
+                ["kubectl", "get", kind, name, "-n", namespace, "-o", "json"]
+            )
+            found |= _platform_references_in_text(
+                payload, scope["platform_repository_prefix"]
+            )
+    except (subprocess.CalledProcessError, OSError) as error:
+        raise ProvenanceError(
+            f"{inventory_path} frozen_scientific_bindings resources cannot "
+            "be fetched through the authenticated API; rendering fails closed"
+        ) from error
+    if found != recorded:
+        raise ProvenanceError(
+            f"{inventory_path} frozen_scientific_bindings refs do not equal "
+            "the platform references in the fetched live resources; missing "
+            f"from records: {sorted(found - recorded) or 'none'}; recorded "
+            f"but not present: {sorted(recorded - found) or 'none'}"
+        )
 
 
-def _read_inventory_checkpoint(run_root: Path) -> dict | None:
-    """Read the local monotonic acceptance checkpoint, fail-closed.
+ACCEPTANCE_HEAD_SCHEMA = "fs2-serve.nebius.ai/inventory-acceptance/v1"
+GENESIS_HASH = "0" * 64
 
-    The checkpoint is anti-replay state EXTERNAL to the signed document: it
-    records the last ACCEPTED inventory's generation, capture time, and byte
-    hash, so a previously valid signed inventory (old -> new -> old within
-    the freshness window) can never be replayed. It is local mutable state —
-    WORM/off-host anchoring of the checkpoint is the same owner
+
+def _acceptance_heads_directory(run_root: Path) -> Path:
+    return run_root / "release-inventory-heads"
+
+
+def _verified_acceptance_chain(
+    run_root: Path, public_key_path: str, verifier
+) -> list[dict]:
+    """Verify the SIGNED, hash-chained, no-replace inventory acceptance heads.
+
+    Every accepted render appends one head record — sequence, inventory
+    generation, capture time, inventory sha256, and the sha256 of the
+    PREVIOUS head's exact bytes — cosign-signed with the release key and
+    published via link(2) under a serialized content-addressed name. On
+    every render the whole chain is re-verified: signatures over the exact
+    bytes, filenames matching content, sequences dense from 1, prev-hash
+    linkage from the genesis hash, and strictly increasing generations. A
+    tampered, unsigned, reordered, or gap-ridden store fails closed. The
+    chain is local anti-replay state: WORM/off-host anchoring of the newest
+    head (so whole-store deletion is also detectable) is the same owner
     infrastructure item as for the gate history.
     """
-    checkpoint_path = _inventory_checkpoint_path(run_root)
-    if checkpoint_path.is_symlink():
+    directory = _acceptance_heads_directory(run_root)
+    if directory.is_symlink():
         raise ProvenanceError(
-            f"inventory checkpoint is a symlink: {checkpoint_path}"
+            f"inventory acceptance store is a symlink: {directory}"
         )
-    if not checkpoint_path.exists():
-        return None
-    try:
-        checkpoint = json.loads(_read_evidence_bytes(checkpoint_path))
-    except json.JSONDecodeError as error:
-        raise ProvenanceError(
-            f"inventory checkpoint is malformed and fails closed: "
-            f"{checkpoint_path}"
-        ) from error
-    generation = checkpoint.get("generation") if isinstance(checkpoint, dict) else None
-    if (
-        not isinstance(checkpoint, dict)
-        or checkpoint.get("schema") != INVENTORY_CHECKPOINT_SCHEMA
-        or isinstance(generation, bool)
-        or not isinstance(generation, int)
-        or generation < 1
-        or not SHA256_PATTERN.match(str(checkpoint.get("sha256", "")))
-    ):
-        raise ProvenanceError(
-            f"inventory checkpoint is malformed and fails closed: "
-            f"{checkpoint_path}"
-        )
-    _parse_rfc3339(
-        str(checkpoint.get("captured_at", "")), f"{checkpoint_path} captured_at"
+    if not directory.is_dir():
+        return []
+    heads = sorted(
+        entry
+        for entry in directory.iterdir()
+        if entry.name.endswith(".json") and not entry.name.startswith(".")
     )
-    return checkpoint
+    records: list[dict] = []
+    previous_hash = GENESIS_HASH
+    previous_generation = 0
+    for index, head in enumerate(heads, start=1):
+        signature_path = directory / (head.name + ".sig")
+        if not signature_path.is_file():
+            raise ProvenanceError(
+                f"inventory acceptance head {head} is UNSIGNED; the "
+                "acceptance chain fails closed"
+            )
+        payload = _read_evidence_bytes(head)
+        signature = _read_evidence_bytes(signature_path)
+        _verify_blob_bytes(
+            public_key_path,
+            payload,
+            signature,
+            verifier,
+            f"inventory acceptance head {head}",
+        )
+        try:
+            record = json.loads(payload)
+        except json.JSONDecodeError as error:
+            raise ProvenanceError(
+                f"inventory acceptance head {head} is malformed; the "
+                "acceptance chain fails closed"
+            ) from error
+        sequence = record.get("sequence") if isinstance(record, dict) else None
+        generation = record.get("generation") if isinstance(record, dict) else None
+        if (
+            not isinstance(record, dict)
+            or record.get("schema") != ACCEPTANCE_HEAD_SCHEMA
+            or isinstance(sequence, bool)
+            or not isinstance(sequence, int)
+            or isinstance(generation, bool)
+            or not isinstance(generation, int)
+            or generation < 1
+            or not SHA256_PATTERN.match(str(record.get("sha256", "")))
+            or not SHA256_PATTERN.match(str(record.get("prev", "")))
+        ):
+            raise ProvenanceError(
+                f"inventory acceptance head {head} is malformed; the "
+                "acceptance chain fails closed"
+            )
+        _parse_rfc3339(
+            str(record.get("captured_at", "")), f"{head} captured_at"
+        )
+        record_hash = hashlib.sha256(payload).hexdigest()
+        expected_name = f"{sequence:012d}-{record_hash[:12]}.json"
+        if head.name != expected_name:
+            raise ProvenanceError(
+                f"inventory acceptance head {head} does not match its "
+                f"content address ({expected_name}); the chain fails closed"
+            )
+        if sequence != index:
+            raise ProvenanceError(
+                f"inventory acceptance chain has a gap or reordering at "
+                f"sequence {index} (found {sequence}); a truncated or "
+                "spliced chain fails closed"
+            )
+        if record["prev"] != previous_hash:
+            raise ProvenanceError(
+                f"inventory acceptance head {head} breaks the hash chain; "
+                "the chain fails closed"
+            )
+        if generation <= previous_generation:
+            raise ProvenanceError(
+                f"inventory acceptance head {head} does not increase the "
+                "generation; the chain fails closed"
+            )
+        previous_hash = record_hash
+        previous_generation = generation
+        records.append({**record, "_payload_hash": record_hash})
+    return records
 
 
 def _enforce_inventory_monotonicity(
-    run_root: Path, inventory: dict, inventory_sha256: str, inventory_path: Path
-) -> None:
-    checkpoint = _read_inventory_checkpoint(run_root)
-    if checkpoint is None:
-        return
+    chain: list[dict], inventory: dict, inventory_sha256: str, inventory_path: Path
+) -> bool:
+    """Return True when this exact inventory is already the accepted head."""
+    if not chain:
+        return False
+    head = chain[-1]
     generation = inventory["generation"]
-    if generation > checkpoint["generation"]:
+    if generation > head["generation"]:
         newer = _parse_rfc3339(
             str(inventory.get("captured_at", "")), f"{inventory_path} captured_at"
         )
         accepted = _parse_rfc3339(
-            str(checkpoint.get("captured_at", "")), "checkpoint captured_at"
+            str(head.get("captured_at", "")), "accepted head captured_at"
         )
         if newer < accepted:
             raise ProvenanceError(
                 f"{inventory_path} generation {generation} was captured "
                 "BEFORE the last accepted inventory; a rewound capture never "
-                "advances the checkpoint"
+                "advances the acceptance chain"
             )
-        return
-    if (
-        generation == checkpoint["generation"]
-        and inventory_sha256 == checkpoint["sha256"]
-    ):
-        return
+        return False
+    if generation == head["generation"] and inventory_sha256 == head["sha256"]:
+        return True
     raise ProvenanceError(
-        f"{inventory_path} replays generation {generation}; the accepted "
-        f"checkpoint is at generation {checkpoint['generation']} "
-        f"(sha256 {checkpoint['sha256'][:12]}…) — a previously valid signed "
+        f"{inventory_path} replays generation {generation}; the signed "
+        f"acceptance chain is at generation {head['generation']} "
+        f"(sha256 {head['sha256'][:12]}…) — a previously valid signed "
         "inventory can never be replayed over a newer one"
     )
 
 
-def _advance_inventory_checkpoint(
-    run_root: Path, inventory: dict, inventory_sha256: str
+def _append_acceptance_head(
+    run_root: Path,
+    chain: list[dict],
+    inventory: dict,
+    inventory_sha256: str,
+    key_path: str,
+    public_key_path: str,
+    verifier,
+    capture,
 ) -> None:
-    checkpoint_path = _inventory_checkpoint_path(run_root)
-    payload = json.dumps(
-        {
-            "schema": INVENTORY_CHECKPOINT_SCHEMA,
-            "generation": inventory["generation"],
-            "captured_at": inventory["captured_at"],
-            "sha256": inventory_sha256,
-        },
-        indent=2,
-        sort_keys=True,
-    )
-    descriptor, temp_name = tempfile.mkstemp(dir=run_root, prefix=".inv-cp-")
-    try:
-        os.write(descriptor, payload.encode("utf-8"))
-        os.fchmod(descriptor, 0o600)
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
-    os.replace(temp_name, checkpoint_path)
-    _fsync_dir(run_root)
+    """Append a SIGNED head, no-replace, linked into the serialized chain."""
+    directory = _acceptance_heads_directory(run_root)
+    directory.mkdir(mode=0o700, exist_ok=True)
+    previous_hash = chain[-1]["_payload_hash"] if chain else GENESIS_HASH
+    record = {
+        "schema": ACCEPTANCE_HEAD_SCHEMA,
+        "sequence": len(chain) + 1,
+        "generation": inventory["generation"],
+        "captured_at": inventory["captured_at"],
+        "sha256": inventory_sha256,
+        "prev": previous_hash,
+    }
+    payload = (json.dumps(record, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    record_hash = hashlib.sha256(payload).hexdigest()
+    final = directory / f"{record['sequence']:012d}-{record_hash[:12]}.json"
+    final_signature = directory / (final.name + ".sig")
+    with tempfile.TemporaryDirectory(dir=directory) as staging:
+        staged = Path(staging) / "head.json"
+        staged_signature = Path(staging) / "head.json.sig"
+        staged.write_bytes(payload)
+        staged.chmod(0o600)
+        capture(
+            [
+                "cosign",
+                "sign-blob",
+                "--key",
+                key_path,
+                "--use-signing-config=false",
+                "--tlog-upload=false",
+                "--yes",
+                "--output-file",
+                str(staged_signature),
+                str(staged),
+            ]
+        )
+        staged_signature.chmod(0o600)
+        signature_bytes = _read_evidence_bytes(staged_signature)
+        _verify_blob_bytes(
+            public_key_path,
+            payload,
+            signature_bytes,
+            verifier,
+            f"new inventory acceptance head {final.name}",
+        )
+        _fsync_file(staged)
+        _fsync_file(staged_signature)
+        try:
+            os.link(staged, final)
+            os.link(staged_signature, final_signature)
+        except FileExistsError as error:
+            raise ProvenanceError(
+                f"inventory acceptance head {final} already exists; "
+                "concurrent or replayed acceptance is refused"
+            ) from error
+        _fsync_dir(directory)
 
 
 def verified_allowlist(
@@ -2165,6 +2608,7 @@ def verified_allowlist(
     inventory_path: Path,
     scope_path: Path,
     deploy_principals: Sequence[str] = (),
+    key_path: str | None = None,
     verifier=None,
     max_age_hours: float = INVENTORY_MAX_AGE_HOURS,
     capture=_run_capture,
@@ -2194,8 +2638,8 @@ def verified_allowlist(
     recorded inventory annotation is the hash of the bytes that were verified
     and parsed — never a re-read of the mutable pathname.
     """
-    owner_scope = load_owner_scope(Path(scope_path))
     with _PinnedPublicKey(public_key_path) as pinned:
+        owner_scope = load_owner_scope(Path(scope_path), pinned.path, verifier)
         if pinned.sha256 != owner_scope["verification_key_sha256"]:
             raise ProvenanceError(
                 "verification key does not match the owner-approved scope: "
@@ -2205,8 +2649,16 @@ def verified_allowlist(
         inventory, inventory_sha256 = load_signed_inventory(
             inventory_path, pinned.path, verifier, max_age_hours
         )
-        _enforce_inventory_monotonicity(
-            receipts_root, inventory, inventory_sha256, inventory_path
+        if not key_path:
+            raise ProvenanceError(
+                "allow-list rendering requires --key: every accepted "
+                "inventory appends a SIGNED head to the acceptance chain"
+            )
+        acceptance_chain = _verified_acceptance_chain(
+            receipts_root, pinned.path, verifier
+        )
+        already_accepted = _enforce_inventory_monotonicity(
+            acceptance_chain, inventory, inventory_sha256, inventory_path
         )
         if inventory["scope"] != owner_scope:
             raise ProvenanceError(
@@ -2229,36 +2681,71 @@ def verified_allowlist(
                 "--deploy-principal arguments must equal the owner-approved "
                 f"scope exactly: {sorted(owner_scope['deploy_principals'])}"
             )
-        # Authoritative render-time collection: the signed live_workloads set
-        # must equal exactly what the authenticated API session sees NOW, so
-        # a signer can never omit an active image or self-assert coverage.
-        collector_identity, live_images, live_resources = (
-            collect_live_platform_images(
-                owner_scope["namespaces"],
-                owner_scope["platform_repository_prefix"],
-                live_runner,
-            )
-        )
+        # Authoritative render-time collection: every signed source must
+        # equal exactly what the authenticated API session observes NOW —
+        # Pods AND workload controllers (a scaled-to-zero or crash-looping
+        # Deployment counts), the Helm rollback window per release revision,
+        # and the frozen bindings re-fetched from the exact resources they
+        # claim. Signed resource identities are compared, not trusted.
+        observation = collect_authoritative_observation(owner_scope, live_runner)
+        sources = inventory["sources"]
         recorded_live = {
             validate_digest_reference(str(ref))
-            for ref in inventory["sources"]["live_workloads"]["refs"]
+            for ref in sources["live_workloads"]["refs"]
         }
-        if recorded_live != live_images:
-            omitted = sorted(live_images - recorded_live)
-            phantom = sorted(recorded_live - live_images)
+        if recorded_live != observation["live_images"]:
+            omitted = sorted(observation["live_images"] - recorded_live)
+            phantom = sorted(recorded_live - observation["live_images"])
             raise ProvenanceError(
                 f"{inventory_path} live_workloads does not equal the "
                 "authenticated live enumeration; omitted live images: "
                 f"{omitted or 'none'}; recorded-but-not-live: "
                 f"{phantom or 'none'} — re-capture the inventory"
             )
-        if inventory["collector"]["identity"] != collector_identity:
+        recorded_live_ids = {
+            str(item) for item in sources["live_workloads"]["resource_ids"]
+        }
+        if recorded_live_ids != observation["live_resources"]:
+            raise ProvenanceError(
+                f"{inventory_path} live_workloads resource identities do not "
+                "equal the authenticated observation; forged or stale "
+                "resource identities never render"
+            )
+        recorded_helm = {
+            validate_digest_reference(str(ref))
+            for ref in sources["helm_rollback_window"]["refs"]
+        }
+        if recorded_helm != observation["helm_images"]:
+            raise ProvenanceError(
+                f"{inventory_path} helm_rollback_window does not equal the "
+                "authenticated Helm history enumeration; omitted: "
+                f"{sorted(observation['helm_images'] - recorded_helm) or 'none'}; "
+                "recorded-but-not-in-history: "
+                f"{sorted(recorded_helm - observation['helm_images']) or 'none'}"
+            )
+        recorded_helm_ids = {
+            str(item) for item in sources["helm_rollback_window"]["resource_ids"]
+        }
+        if recorded_helm_ids != observation["helm_resources"]:
+            raise ProvenanceError(
+                f"{inventory_path} helm_rollback_window resource identities "
+                "do not equal the authenticated Helm history observation"
+            )
+        _verify_frozen_bindings(
+            owner_scope,
+            sources["frozen_scientific_bindings"],
+            inventory_path,
+            live_runner,
+        )
+        if inventory["collector"]["identity"] != observation["identity"]:
             raise ProvenanceError(
                 f"{inventory_path} collector identity "
                 f"{inventory['collector']['identity']!r} does not equal the "
-                f"authenticated identity {collector_identity!r}; a foreign or "
-                "self-asserted collection never renders"
+                f"authenticated identity {observation['identity']!r}; a "
+                "foreign or self-asserted collection never renders"
             )
+        collector_identity = observation["identity"]
+        live_resources = observation["live_resources"]
         inventory_references = sorted(
             validate_digest_reference(str(ref))
             for ref in inventory["platform_images"]
@@ -2296,7 +2783,7 @@ def verified_allowlist(
                     "before allow-listing"
                 ) from error
             digests.append(reference.rsplit("@", 1)[1])
-        _assert_policy_matches_scope(owner_scope)
+        _assert_policy_matches_scope(owner_scope, live_runner)
         manifest = render_allowlist(
             owner_scope["registry_prefixes"],
             owner_scope["platform_repository_prefix"],
@@ -2324,9 +2811,17 @@ def verified_allowlist(
         annotations["security.fs2.nebius.ai/live-resources"] = str(
             len(live_resources)
         )
-        _advance_inventory_checkpoint(
-            receipts_root, inventory, inventory_sha256
-        )
+        if not already_accepted:
+            _append_acceptance_head(
+                receipts_root,
+                acceptance_chain,
+                inventory,
+                inventory_sha256,
+                key_path,
+                pinned.path,
+                verifier,
+                capture,
+            )
     return manifest
 
 
@@ -2382,6 +2877,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--public-key",
         required=True,
         help="cosign public key used to verify every digest before rendering",
+    )
+    render.add_argument(
+        "--key",
+        required=True,
+        help=(
+            "cosign private key; every ACCEPTED inventory appends a signed "
+            "head to the run-root acceptance chain (replay protection)"
+        ),
     )
     render.add_argument(
         "--registry-prefix",
@@ -2515,6 +3018,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.inventory,
             args.scope,
             args.deploy_principal,
+            key_path=args.key,
             max_age_hours=args.max_inventory_age_hours,
         )
         print(json.dumps(manifest, indent=2, sort_keys=True))

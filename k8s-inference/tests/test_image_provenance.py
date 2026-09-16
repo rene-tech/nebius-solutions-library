@@ -573,6 +573,8 @@ def build_crane_fixture(
 
 
 def default_scope_fixture(key_sha256: str) -> dict:
+    import hashlib
+
     return {
         "cluster": "fixture-cluster",
         "namespaces": ["fs2-models", "fs2-system"],
@@ -580,25 +582,57 @@ def default_scope_fixture(key_sha256: str) -> dict:
         "platform_repository_prefix": PLATFORM_PREFIX,
         "deploy_principals": ["deployer"],
         "verification_key_sha256": key_sha256,
+        "policy_sha256": hashlib.sha256(POLICY_PATH.read_bytes()).hexdigest(),
     }
 
 
+SIGNED_AUTHORITY_HASHES: set[str] = set()
+
+
 def write_scope_fixture(
-    repo: Path, scope: dict | None, name: str = "release-scope.json"
+    base: Path, scope: dict | None, name: str = "release-scope.json"
 ) -> Path:
-    """Commit and push a scope file through the fixture's reviewed origin."""
-    directory = repo / "security" / "image-provenance"
-    directory.mkdir(parents=True, exist_ok=True)
-    path = directory / name
-    path.write_text(
-        json.dumps({"schema": TOOL.SCOPE_SCHEMA, "scope": scope}), encoding="utf-8"
+    """Write an OWNER-SIGNED scope fixture (signature = payload-hash registry).
+
+    The fake owner signature registers the exact payload bytes; the fixture
+    authority verifier accepts only registered byte strings, so a dirty edit,
+    substitution, or local re-commit fails verification exactly as a real
+    cosign check would without the owner-held private key.
+    """
+    import hashlib
+
+    payload = json.dumps({"schema": TOOL.SCOPE_SCHEMA, "scope": scope}).encode(
+        "utf-8"
     )
+    path = base / name
+    path.write_bytes(payload)
     path.chmod(0o644)
-    git(repo, "add", str(path.relative_to(repo)))
-    git(repo, "commit", "-m", f"review scope {name}")
-    git(repo, "push", "origin", "main")
-    git(repo, "fetch", "origin")
+    signature = base / (name + ".sig")
+    signature.write_text("fixture-owner-signature\n", encoding="utf-8")
+    signature.chmod(0o644)
+    SIGNED_AUTHORITY_HASHES.add(hashlib.sha256(payload).hexdigest())
     return path
+
+
+def authority_checking_verifier(command):
+    """Fixture verifier: owner-signed payloads must be REGISTERED bytes.
+
+    Scope documents are checked against the signed registry; every other
+    verify-blob (receipts, inventories) is accepted like NOOP_VERIFIER.
+    """
+    import hashlib
+    import subprocess as sp
+
+    if command[:2] != ["cosign", "verify-blob"]:
+        return
+    payload = Path(command[-1]).read_bytes()
+    try:
+        document = json.loads(payload)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return
+    if isinstance(document, dict) and document.get("schema") == TOOL.SCOPE_SCHEMA:
+        if hashlib.sha256(payload).hexdigest() not in SIGNED_AUTHORITY_HASHES:
+            raise sp.CalledProcessError(1, command)
 
 
 TEST_KEY_CONTENT = "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----\n"
@@ -629,11 +663,11 @@ def write_inventory_fixture(
 
     now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    def source(refs: list[str]) -> dict:
+    def source(refs: list[str], id_pattern: str) -> dict:
         return {
             "refs": refs,
             "observed_at": observed_at or now,
-            "resource_ids": [f"fixture-resource-{i}" for i in range(len(refs))],
+            "resource_ids": [id_pattern.format(i) for i in range(len(refs))],
         }
 
     inventory = {
@@ -650,9 +684,21 @@ def write_inventory_fixture(
             fixture_hashlib.sha256(TEST_KEY_CONTENT.encode("utf-8")).hexdigest()
         ),
         "sources": {
-            "live_workloads": source(live if live is not None else platform_images),
-            "helm_rollback_window": source(helm or []),
-            "frozen_scientific_bindings": source(frozen or []),
+            "live_workloads": source(
+                live if live is not None else platform_images,
+                "pod/fs2-system/pod-{}",
+            ),
+            "helm_rollback_window": {
+                "refs": helm or [],
+                "observed_at": observed_at or now,
+                "resource_ids": [
+                    f"helm/fs2-system/fixture-release/{i + 1}"
+                    for i in range(len(helm or []))
+                ],
+            },
+            "frozen_scientific_bindings": source(
+                frozen or [], "configmap/fs2-system/frozen-{}"
+            ),
         },
         "drained_removals": drained or [],
         "platform_images": platform_images,
@@ -708,7 +754,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
                 capture=built.capture,
             )
         self.scope = default_scope_fixture(self.key_sha256)
-        self.scope_path = write_scope_fixture(self.fixture["repo"], self.scope)
+        self.scope_path = write_scope_fixture(self.run_root, self.scope)
         self.inventory = write_inventory_fixture(
             self.run_root, [self.REFERENCE_A, self.REFERENCE_B]
         )
@@ -719,16 +765,57 @@ class VerifiedAllowlistTest(unittest.TestCase):
             return self.fx_b.capture(command)
         return self.fx_a.capture(command)
 
-    def live_runner(self, images=None, identity="fixture-collector"):
+    def live_runner(
+        self,
+        images=None,
+        identity="fixture-collector",
+        live_policy=None,
+        live_binding=None,
+        helm_images=None,
+        frozen_objects=None,
+        controller_images=None,
+        cluster="fixture-cluster",
+    ):
+        """Serve the full authoritative observation surface.
+
+        Pods carry `images` (defaults to both references), controllers carry
+        `controller_images`, Helm history serves one release with one
+        revision per helm image, frozen ConfigMaps serve `frozen_objects`
+        ({name: [refs]}), and the live policy objects default to the
+        committed manifests.
+        """
+        import subprocess
+
         live = list(
             images if images is not None else [self.REFERENCE_A, self.REFERENCE_B]
         )
+        helm = list(helm_images or [])
+        frozen = dict(frozen_objects or {})
+        controllers = list(controller_images or [])
+        documents = load_policy_documents()
+        policy_object = live_policy if live_policy is not None else documents[0]
+        binding_object = (
+            live_binding if live_binding is not None else documents[1]
+        )
 
         def runner(command):
+            joined = " ".join(str(part) for part in command)
             if command[:3] == ["kubectl", "auth", "whoami"]:
                 return json.dumps(
                     {"status": {"userInfo": {"username": identity}}}
                 )
+            if command[:3] == ["kubectl", "config", "view"]:
+                return cluster
+            if command[:3] == ["kubectl", "get", "validatingadmissionpolicy"]:
+                if policy_object == "absent":
+                    raise subprocess.CalledProcessError(1, command)
+                return json.dumps(policy_object)
+            if command[:3] == [
+                "kubectl",
+                "get",
+                "validatingadmissionpolicybinding",
+            ]:
+                return json.dumps(binding_object)
             if command[:3] == ["kubectl", "get", "pods"]:
                 namespace = command[command.index("-n") + 1]
                 if namespace != "fs2-system":
@@ -744,7 +831,53 @@ class VerifiedAllowlistTest(unittest.TestCase):
                         ]
                     }
                 )
-            raise AssertionError(f"unexpected live-enumeration command: {command}")
+            if command[:2] == ["kubectl", "get"] and command[2] in (
+                "deployments",
+                "daemonsets",
+                "statefulsets",
+                "jobs",
+                "cronjobs",
+            ):
+                namespace = command[command.index("-n") + 1]
+                if command[2] != "deployments" or namespace != "fs2-system":
+                    return json.dumps({"items": []})
+                return json.dumps(
+                    {
+                        "items": [
+                            {
+                                "metadata": {"name": f"scaled-zero-{index}"},
+                                "spec": {
+                                    "template": {
+                                        "spec": {
+                                            "containers": [{"image": image}]
+                                        }
+                                    }
+                                },
+                            }
+                            for index, image in enumerate(controllers)
+                        ]
+                    }
+                )
+            if command[:2] == ["kubectl", "get"] and command[2] == "configmap":
+                name = command[3]
+                if name not in frozen:
+                    raise subprocess.CalledProcessError(1, command)
+                return json.dumps(
+                    {"metadata": {"name": name}, "data": {"refs": frozen[name]}}
+                )
+            if command[:2] == ["helm", "list"]:
+                namespace = command[command.index("-n") + 1]
+                if namespace != "fs2-system" or not helm:
+                    return json.dumps([])
+                return json.dumps([{"name": "fixture-release"}])
+            if command[:2] == ["helm", "history"]:
+                return json.dumps(
+                    [{"revision": index + 1} for index in range(len(helm))]
+                )
+            if command[:3] == ["helm", "get", "manifest"]:
+                revision = int(command[command.index("--revision") + 1])
+                return f'image: "{helm[revision - 1]}"'
+            raise AssertionError(f"unexpected live-enumeration command: {joined}")
 
         return runner
 
@@ -754,7 +887,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
     def render(
         self,
         references=(),
-        verifier=NOOP_VERIFIER,
+        verifier=authority_checking_verifier,
         inventory=None,
         scope_path=None,
         registry_prefixes=None,
@@ -771,6 +904,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
             inventory or self.inventory,
             scope_path or self.scope_path,
             deploy_principals=list(deploy_principals),
+            key_path="release.key",
             verifier=verifier,
             capture=self.capture,
             live_runner=live_runner or self.live_runner(),
@@ -778,11 +912,15 @@ class VerifiedAllowlistTest(unittest.TestCase):
 
     def test_inventory_references_are_verified_before_rendering(self) -> None:
         verified: list[str] = []
-        manifest = self.render(
-            verifier=lambda command: verified.append(command[-1])
-        )
-        # Inventory signature, then per reference: receipt sig + image sig.
-        self.assertEqual(len(verified), 5)
+
+        def counting_verifier(command):
+            authority_checking_verifier(command)
+            verified.append(command[-1])
+
+        manifest = self.render(verifier=counting_verifier)
+        # Owner-scope signature, inventory signature, per reference a
+        # receipt sig + image sig, and the newly appended acceptance head.
+        self.assertEqual(len(verified), 7)
         self.assertEqual(
             manifest["data"]["platform-digests"], self.expected_digests()
         )
@@ -801,13 +939,27 @@ class VerifiedAllowlistTest(unittest.TestCase):
         key_contents: set[bytes] = set()
 
         def swapping_verifier(command):
+            authority_checking_verifier(command)
             key_path = command[command.index("--key") + 1]
             key_paths.append(key_path)
             key_contents.add(Path(key_path).read_bytes())
-            # Adversarial swap AFTER verification: rewrite the published
-            # inventory pathname. The annotation must record the bytes that
-            # were verified, never a re-read of the mutable pathname.
-            self.inventory.write_text('{"swapped": true}', encoding="utf-8")
+            # Adversarial swap AFTER the inventory bytes were verified:
+            # rewrite the published inventory pathname. The annotation must
+            # record the bytes that were verified, never a re-read of the
+            # mutable pathname. (The swap starts once the inventory payload
+            # has been seen, so earlier authority checks read the original.)
+            if command[:2] != ["cosign", "verify-blob"]:
+                return
+            payload = Path(command[-1]).read_bytes()
+            try:
+                document = json.loads(payload)
+            except json.JSONDecodeError:
+                document = {}
+            if (
+                isinstance(document, dict)
+                and document.get("schema") == TOOL.INVENTORY_SCHEMA
+            ):
+                self.inventory.write_text('{"swapped": true}', encoding="utf-8")
 
         manifest = self.render(verifier=swapping_verifier)
         annotations = manifest["metadata"]["annotations"]
@@ -824,6 +976,112 @@ class VerifiedAllowlistTest(unittest.TestCase):
         self.assertEqual(len(set(key_paths)), 1)
         self.assertNotEqual(key_paths[0], self._tmp.name)
         self.assertEqual(key_contents, {key_bytes})
+
+    def test_zero_pod_controller_image_cannot_be_omitted(self) -> None:
+        # A scaled-to-zero or crash-looping Deployment has NO Pod, but its
+        # template image is active platform surface: the controller
+        # enumeration must catch its omission from live_workloads.
+        zero_pod = PLATFORM_PREFIX + "batch-worker@sha256:" + "e" * 64
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "omitted live images"):
+            self.render(
+                live_runner=self.live_runner(controller_images=[zero_pod])
+            )
+
+    def test_forged_live_resource_ids_fail_closed(self) -> None:
+        # Correct refs with self-asserted resource identities never render:
+        # the signed identities must equal the authenticated observation.
+        inventory = write_inventory_fixture(
+            self.run_root,
+            [self.REFERENCE_A, self.REFERENCE_B],
+            name="forged-ids.json",
+        )
+        document = json.loads(inventory.read_text(encoding="utf-8"))
+        document["sources"]["live_workloads"]["resource_ids"] = [
+            "pod/fs2-system/forged-a",
+            "pod/fs2-system/forged-b",
+        ]
+        inventory.write_text(json.dumps(document), encoding="utf-8")
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "resource identities"):
+            self.render(inventory=inventory)
+
+    def test_foreign_cluster_fails_closed(self) -> None:
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "foreign cluster"):
+            self.render(live_runner=self.live_runner(cluster="other-cluster"))
+
+    def test_omitted_helm_rollback_revision_fails_closed(self) -> None:
+        # The rollback window is authoritatively re-derived from Helm history
+        # manifests; a signed inventory that omits (or drains) a revision
+        # image the history still carries never renders.
+        rollback = PLATFORM_PREFIX + "control-plane@sha256:" + "d" * 64
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "Helm history"):
+            self.render(live_runner=self.live_runner(helm_images=[rollback]))
+
+    def test_forged_frozen_binding_fails_closed(self) -> None:
+        # Frozen refs must be present in the exact live resources their
+        # signed identities name; a forged ref or an empty resource refuses.
+        phantom = PLATFORM_PREFIX + "frozen-stage@sha256:" + "c" * 64
+        inventory = write_inventory_fixture(
+            self.run_root,
+            [self.REFERENCE_A, self.REFERENCE_B, phantom],
+            live=[self.REFERENCE_A, self.REFERENCE_B],
+            frozen=[phantom],
+            name="frozen-forged.json",
+        )
+        with self.assertRaisesRegex(
+            TOOL.ProvenanceError, "frozen_scientific_bindings"
+        ):
+            self.render(
+                inventory=inventory,
+                live_runner=self.live_runner(
+                    frozen_objects={"frozen-0": ["unrelated"]}
+                ),
+            )
+        # The same inventory renders once the live resource actually carries
+        # the recorded reference.
+        receipt_fx = build_crane_fixture(self.fixture, repository="frozen-stage")
+        frozen_ref = receipt_fx.reference
+        TOOL.create_release_receipt(
+            frozen_ref,
+            self.run_root,
+            self.fixture["repo"],
+            "deploy/fixture",
+            "release.key",
+            "release.pub",
+            None,
+            capture=receipt_fx.capture,
+        )
+        inventory = write_inventory_fixture(
+            self.run_root,
+            [self.REFERENCE_A, self.REFERENCE_B, frozen_ref],
+            live=[self.REFERENCE_A, self.REFERENCE_B],
+            frozen=[frozen_ref],
+            name="frozen-good.json",
+        )
+
+        def routing_capture(command):
+            if "frozen-stage" in " ".join(str(part) for part in command):
+                return receipt_fx.capture(command)
+            return self.capture(command)
+
+        manifest = TOOL.verified_allowlist(
+            self._tmp.name,
+            [],
+            [REGISTRY_PREFIX],
+            PLATFORM_PREFIX,
+            self.run_root,
+            inventory,
+            self.scope_path,
+            deploy_principals=["deployer"],
+            key_path="release.key",
+            verifier=authority_checking_verifier,
+            capture=routing_capture,
+            live_runner=self.live_runner(
+                frozen_objects={"frozen-0": [frozen_ref]}
+            ),
+        )
+        self.assertIn(
+            frozen_ref.rsplit("@", 1)[1], manifest["data"]["platform-digests"]
+        )
 
     def test_omitted_live_image_fails_closed(self) -> None:
         # The MindEval-omission class: an active platform image the
@@ -907,6 +1165,51 @@ class VerifiedAllowlistTest(unittest.TestCase):
         with self.assertRaisesRegex(TOOL.ProvenanceError, "replays generation"):
             self.render(inventory=forked)
 
+    def test_acceptance_chain_tamper_and_truncation_fail_closed(self) -> None:
+        # The acceptance heads are signed, content-addressed, and chained:
+        # tampered bytes, a removed signature, and a spliced-out intermediate
+        # head all refuse; deleting only the NEWEST head breaks nothing
+        # locally detectable, which is exactly why WORM/off-host anchoring of
+        # the head remains a named owner gate.
+        for generation, name in ((1, "chain1.json"), (2, "chain2.json"), (3, "chain3.json")):
+            inventory = write_inventory_fixture(
+                self.run_root,
+                [self.REFERENCE_A, self.REFERENCE_B],
+                generation=generation,
+                name=name,
+            )
+            self.render(inventory=inventory)
+        heads_dir = self.run_root / "release-inventory-heads"
+        heads = sorted(
+            head for head in heads_dir.iterdir() if head.name.endswith(".json")
+        )
+        self.assertEqual(len(heads), 3)
+        next_inventory = write_inventory_fixture(
+            self.run_root,
+            [self.REFERENCE_A, self.REFERENCE_B],
+            generation=4,
+            name="chain4.json",
+        )
+        # Tampered head bytes: content address no longer matches.
+        original = heads[1].read_bytes()
+        heads[1].write_bytes(original.replace(b'"generation": 2', b'"generation": 9'))
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "content address"):
+            self.render(inventory=next_inventory)
+        heads[1].write_bytes(original)
+        # Missing signature: unsigned heads fail closed.
+        signature = heads_dir / (heads[1].name + ".sig")
+        signature_bytes = signature.read_bytes()
+        signature.unlink()
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "UNSIGNED"):
+            self.render(inventory=next_inventory)
+        signature.write_bytes(signature_bytes)
+        signature.chmod(0o600)
+        # Spliced-out intermediate head: sequence gap fails closed.
+        heads[1].unlink()
+        (heads_dir / (heads[1].name + ".sig")).unlink()
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "gap|chain"):
+            self.render(inventory=next_inventory)
+
     def test_missing_or_invalid_generation_is_refused(self) -> None:
         inventory = write_inventory_fixture(
             self.run_root,
@@ -961,9 +1264,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
     def test_missing_or_empty_owner_scope_fails_closed(self) -> None:
         with self.assertRaisesRegex(TOOL.ProvenanceError, "fails closed"):
             self.render(scope_path=self.run_root / "no-such-scope.json")
-        empty = write_scope_fixture(
-            self.fixture["repo"], None, name="empty-scope.json"
-        )
+        empty = write_scope_fixture(self.run_root, None, name="empty-scope.json")
         with self.assertRaisesRegex(TOOL.ProvenanceError, "EMPTY"):
             self.render(scope_path=empty)
 
@@ -985,7 +1286,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
         # Key identity: the pinned verification key must be the one the
         # owner scope names.
         wrong_key_scope = write_scope_fixture(
-            self.fixture["repo"],
+            self.run_root,
             dict(self.scope, verification_key_sha256="f" * 64),
             name="wrong-key-scope.json",
         )
@@ -998,37 +1299,73 @@ class VerifiedAllowlistTest(unittest.TestCase):
             self.render(registry_prefixes=["cr.other.invalid/"])
 
     def test_substituted_scope_never_renders(self) -> None:
-        # The reproduced attack: locally edit (or locally commit) a widened
-        # scope plus a matching signed inventory. Authority loads from the
-        # reviewed origin/main blob, so both variants fail closed.
+        # The reproduced attack: locally edit the scope (or re-commit it, or
+        # move any Git ref — refs are NOT consulted). Authority is the owner
+        # SIGNATURE over the exact bytes, so unsigned substituted bytes fail.
         substituted = dict(
             self.scope, registry_prefixes=["cr.attacker.invalid/"]
         )
-        self.scope_path.write_text(
-            json.dumps({"schema": TOOL.SCOPE_SCHEMA, "scope": substituted}),
-            encoding="utf-8",
+        self.scope_path.write_bytes(
+            json.dumps(
+                {"schema": TOOL.SCOPE_SCHEMA, "scope": substituted}
+            ).encode("utf-8")
         )
         self.scope_path.chmod(0o644)
-        with self.assertRaisesRegex(TOOL.ProvenanceError, "diverges"):
-            self.render()
-        # A local commit is equally powerless: origin/main did not move.
-        git(self.fixture["repo"], "add", "security")
-        git(self.fixture["repo"], "commit", "-m", "attacker scope")
-        with self.assertRaisesRegex(TOOL.ProvenanceError, "diverges"):
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "never authorizes"):
             self.render()
 
-    def test_unreviewed_scope_file_never_renders(self) -> None:
-        # A scope file that origin/main has never seen is not authority.
-        unreviewed = (
-            self.fixture["repo"] / "security" / "image-provenance" / "new-scope.json"
-        )
-        unreviewed.write_text(
+    def test_unsigned_scope_file_never_renders(self) -> None:
+        # A scope file without its owner signature is not authority, however
+        # well-formed its content is.
+        unsigned = self.run_root / "unsigned-scope.json"
+        unsigned.write_text(
             json.dumps({"schema": TOOL.SCOPE_SCHEMA, "scope": self.scope}),
             encoding="utf-8",
         )
-        unreviewed.chmod(0o644)
-        with self.assertRaisesRegex(TOOL.ProvenanceError, "REVIEWED"):
-            self.render(scope_path=unreviewed)
+        unsigned.chmod(0o644)
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "UNSIGNED"):
+            self.render(scope_path=unsigned)
+
+    def test_weakened_or_absent_live_policy_refuses_rendering(self) -> None:
+        import copy
+
+        documents = load_policy_documents()
+        # No live VAP at all: fail closed.
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "fails closed"):
+            self.render(live_runner=self.live_runner(live_policy="absent"))
+        # Audit-only live binding: observation is not a boundary.
+        audit_only = copy.deepcopy(documents[1])
+        audit_only["spec"]["validationActions"] = ["Audit", "Warn"]
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "drifted"):
+            self.render(live_runner=self.live_runner(live_binding=audit_only))
+        # NotIn selector with identical values inverts coverage: refused.
+        inverted = copy.deepcopy(documents[1])
+        inverted["spec"]["matchResources"]["namespaceSelector"][
+            "matchExpressions"
+        ][0]["operator"] = "NotIn"
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "drifted"):
+            self.render(live_runner=self.live_runner(live_binding=inverted))
+        # A live policy missing the ephemeral-container subresource: refused.
+        weakened = copy.deepcopy(documents[0])
+        weakened["spec"]["matchConstraints"]["resourceRules"][0][
+            "resources"
+        ] = ["pods"]
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "does not equal"):
+            self.render(live_runner=self.live_runner(live_policy=weakened))
+
+    def test_scope_must_pin_the_committed_policy_hash(self) -> None:
+        mismatched = dict(self.scope, policy_sha256="f" * 64)
+        scope_path = write_scope_fixture(
+            self.run_root, mismatched, name="wrong-policy-scope.json"
+        )
+        inventory = write_inventory_fixture(
+            self.run_root,
+            [self.REFERENCE_A, self.REFERENCE_B],
+            scope=mismatched,
+            name="wrong-policy-inventory.json",
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "owner-signed scope authorizes"):
+            self.render(inventory=inventory, scope_path=scope_path)
 
     def test_scope_namespaces_must_equal_the_enforced_policy_coverage(
         self,
@@ -1039,7 +1376,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
             self.scope, namespaces=["fs2-extra", "fs2-models", "fs2-system"]
         )
         scope_path = write_scope_fixture(
-            self.fixture["repo"], widened, name="widened-scope.json"
+            self.run_root, widened, name="widened-scope.json"
         )
         inventory = write_inventory_fixture(
             self.run_root,
@@ -1081,11 +1418,21 @@ class VerifiedAllowlistTest(unittest.TestCase):
     def test_inventory_signature_failure_is_refused(self) -> None:
         import subprocess
 
-        def failing_verifier(command):
-            raise subprocess.CalledProcessError(1, command)
+        def failing_inventory_verifier(command):
+            authority_checking_verifier(command)
+            payload = Path(command[-1]).read_bytes()
+            try:
+                document = json.loads(payload)
+            except json.JSONDecodeError:
+                return
+            if (
+                isinstance(document, dict)
+                and document.get("schema") == TOOL.INVENTORY_SCHEMA
+            ):
+                raise subprocess.CalledProcessError(1, command)
 
         with self.assertRaisesRegex(TOOL.ProvenanceError, "inventory signature"):
-            self.render(verifier=failing_verifier)
+            self.render(verifier=failing_inventory_verifier)
 
     def test_inventory_set_arithmetic_is_enforced(self) -> None:
         # platform_images must equal union(sources) minus audited drains.
@@ -1123,7 +1470,10 @@ class VerifiedAllowlistTest(unittest.TestCase):
             ],
         )
         manifest = self.render(
-            inventory=audited, live_runner=self.live_runner([self.REFERENCE_A])
+            inventory=audited,
+            live_runner=self.live_runner(
+                [self.REFERENCE_A], helm_images=[self.REFERENCE_B]
+            ),
         )
         self.assertEqual(manifest["data"]["platform-digests"], self.DIGEST_A)
 
@@ -1189,8 +1539,9 @@ class VerifiedAllowlistTest(unittest.TestCase):
         calls = {"count": 0}
 
         def failing_after_inventory(command):
+            authority_checking_verifier(command)
             calls["count"] += 1
-            if calls["count"] > 1:
+            if calls["count"] > 2:
                 raise subprocess.CalledProcessError(1, command)
 
         with self.assertRaisesRegex(TOOL.ProvenanceError, "not trustworthy"):
@@ -1686,6 +2037,16 @@ class ReceiptBindingTest(unittest.TestCase):
             self.load()
         path.parent.chmod(0o700)
 
+    def test_private_evidence_mode_0700_is_refused(self) -> None:
+        # The documented contract is EXACT: private evidence permits owner
+        # read/write only. Executable 0700 is an anomaly, not a valid mode.
+        path = write_signed_receipt_fixture(
+            self.run_root, self.REFERENCE, self.fixture
+        )
+        path.chmod(0o700)
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "exceeds 0600"):
+            self.load()
+
     def test_hardlinked_standalone_spdx_is_refused(self) -> None:
         digest_hex = DIGEST_A.split(":", 1)[1]
         sbom = self.run_root / "hardlinked.spdx.json"
@@ -1736,10 +2097,12 @@ class ReceiptBindingTest(unittest.TestCase):
         self.assertEqual(
             evidence["spdx_sha256"], h.sha256(sbom.read_bytes()).hexdigest()
         )
-        # Group/other-writable input is an anomaly and is refused.
-        sbom.chmod(0o666)
-        with self.assertRaisesRegex(TOOL.ProvenanceError, "group/other writable"):
-            TOOL._validated_spdx_document(DIGEST_A, sbom)
+        # Mode bits beyond 0644 on a public input are an anomaly: refused
+        # for group/other write AND for owner-execute (0700-style modes).
+        for mode in (0o666, 0o700, 0o755):
+            sbom.chmod(mode)
+            with self.assertRaisesRegex(TOOL.ProvenanceError, "exceeds 0644"):
+                TOOL._validated_spdx_document(DIGEST_A, sbom)
         sbom.chmod(0o644)
         # A symlinked path is refused by O_NOFOLLOW, not followed.
         link = self.run_root / "linked.spdx.json"

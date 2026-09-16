@@ -41,8 +41,12 @@
 #     injection is admission-governed like any other image. Debugging stays
 #     available through the governed workflow below; it is never disabled.
 #
-# Governed debugging (kubectl debug keeps working, with pinned images):
-#   kubectl -n fs2-system debug <pod> -it #     --image=<allow-listed-registry>/fs2-tools/debug@sha256:<digest>
+# Governed debugging (kubectl debug keeps working, with pinned images; this
+# exact command shape is proven verbatim on an isolated kind cluster by
+# tests/test_admission_kind.py):
+#   kubectl -n fs2-system debug <pod> --container debugger \
+#     --image <allow-listed-registry>/fs2-tools/debug@sha256:<digest> -- sleep 3600
+#   (add -it to attach interactively once the ephemeral container is admitted)
 #   The debug image must be digest-pinned and come from an allow-listed
 #   registry prefix; host debug tooling OUTSIDE the platform repository
 #   prefix (e.g. an fs2-tools repository) so it needs no release allow-list

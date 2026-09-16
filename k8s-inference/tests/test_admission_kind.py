@@ -202,6 +202,52 @@ class KindAdmissionTest(unittest.TestCase):
         ]
         self.assertIn(DEBUG_IMAGE, images)
 
+    def test_documented_kubectl_debug_command_works_verbatim(self) -> None:
+        # The exact command documented in policy.yaml, through the real
+        # kubectl debug verb (not a raw subresource patch): admitted for the
+        # pinned allow-listed image, denied for the evil mutable one.
+        admitted = self._run(
+            "kubectl",
+            "-n",
+            "fs2-system",
+            "debug",
+            "sai09-debug-target",
+            "--container",
+            "docs-debugger",
+            "--image",
+            DEBUG_IMAGE,
+            "--",
+            "sleep",
+            "3600",
+        )
+        self.assertEqual(admitted.returncode, 0, admitted.stderr)
+        pod = json.loads(
+            self._kubectl(
+                "-n", "fs2-system", "get", "pod", "sai09-debug-target", "-o", "json"
+            ).stdout
+        )
+        by_name = {
+            container["name"]: container["image"]
+            for container in pod["spec"].get("ephemeralContainers", [])
+        }
+        self.assertEqual(by_name.get("docs-debugger"), DEBUG_IMAGE)
+        denied = self._run(
+            "kubectl",
+            "-n",
+            "fs2-system",
+            "debug",
+            "sai09-debug-target",
+            "--container",
+            "evil-debugger",
+            "--image",
+            EVIL_IMAGE,
+            "--",
+            "sleep",
+            "3600",
+        )
+        self.assertNotEqual(denied.returncode, 0)
+        self.assertIn("SAI-09", denied.stderr)
+
     def test_mutable_foreign_debug_injection_is_denied(self) -> None:
         # kubectl debug with evil.invalid/debug:latest must fail admission at
         # the pods/ephemeralcontainers subresource: unpinned AND foreign.

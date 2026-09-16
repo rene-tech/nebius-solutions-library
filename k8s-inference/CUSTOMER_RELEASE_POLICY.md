@@ -110,13 +110,18 @@ provenance gate (see `security/image-provenance/README.md`):
    rendering fails closed until the owner ratifies the exact cluster,
    namespaces, prefixes, principals, and key identity; the signed inventory
    and every CLI argument must equal it exactly). Scope and exception-approver
-   authority load from the reviewed `origin/main` blob only — dirty or
-   locally-committed authority files fail closed. The inventory carries a
-   strictly monotonic generation checked against an external checkpoint (no
-   replay of older signed inventories), and rendering re-enumerates live
-   platform images through the authenticated cluster API: the signed
-   `live_workloads` must equal that enumeration exactly, so an active image
-   can never be omitted. An active-live image can
+   authority is OWNER-SIGNED (detached cosign signatures verified against the
+   committed release key over the exact bytes parsed; no Git ref is
+   consulted) — dirty, locally-committed, or substituted authority files fail
+   closed. The inventory carries a strictly monotonic generation checked
+   against a SIGNED, hash-chained, no-replace acceptance chain (no replay of
+   older signed inventories), and rendering authoritatively re-observes the
+   cluster through the authenticated API — Pods AND workload controllers,
+   the Helm rollback window per revision, frozen bindings re-fetched from
+   their exact signed resources, cluster identity, and resource identities
+   all compared — so an active image can never be omitted, drained, or
+   claimed from forged resources, and the LIVE admission policy objects must
+   equal the committed, scope-pinned definitions. An active-live image can
    never be drained out — it must be receipted and signed, or the admission
    policy's match scope must be changed by owner decision; drains apply only
    to audited non-live entries. Extras, missing entries, stale or
