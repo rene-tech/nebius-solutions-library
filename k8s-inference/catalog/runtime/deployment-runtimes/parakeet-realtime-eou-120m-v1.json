@@ -1,0 +1,206 @@
+{
+  "schema": "fs2-serve.nebius.ai/deployment-runtime/v1",
+  "model_id": "parakeet-realtime-eou-120m-v1",
+  "variant_id": "parakeet-realtime-eou-120m-v1-nemo-cuda-v1",
+  "record": {
+    "schema": "fs2-serve.nebius.ai/model/v1",
+    "model": {
+      "id": "parakeet-realtime-eou-120m-v1",
+      "display_name": "Parakeet Realtime EOU 120M",
+      "family": "speech-recognition",
+      "tested_lane": true,
+      "source": {
+        "kind": "huggingface",
+        "repository": "nvidia/parakeet_realtime_eou_120m-v1",
+        "revision": "a7e2b4629593dce0ec19f600e00e9904353fda2d",
+        "license": {
+          "id": "NVIDIA-Open-Model-License",
+          "state": "verified",
+          "notes": "Pinned official NVIDIA Open Model License; see docs/voice-agent-onboarding-20260916.md. Non-clinical only."
+        },
+        "entitlement": {
+          "required": false,
+          "state": "not-required",
+          "credential_contract": null,
+          "notes": "Public ungated checkpoint; independent NeMo adapter, not NVIDIA NIM."
+        }
+      }
+    },
+    "runtime": {
+      "kind": "custom",
+      "version": "nemo-3d91009e-voice-20260916",
+      "image": {
+        "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa",
+        "digest": "sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa",
+        "state": "resolved"
+      },
+      "command": [
+        "fs2-voice-serve"
+      ]
+    },
+    "resources": {
+      "cpu_millis": 2000,
+      "memory_bytes": 17179869184,
+      "host_ram_min_bytes": null,
+      "scaler_owner": "nebius-managed-node-group-autoscaler",
+      "gpu": {
+        "class": "NVIDIA-L40S-48GB",
+        "count": 1,
+        "topology": "single-gpu",
+        "placement": null,
+        "b300_state": "unverified",
+        "alternatives": []
+      }
+    },
+    "interface": {
+      "execution_mode": "http",
+      "protocols": [
+        "native"
+      ],
+      "endpoints": {
+        "native": "/generate"
+      },
+      "readiness": {
+        "method": "GET",
+        "path": "/readyz",
+        "expected_status": 200,
+        "timeout_seconds": 900
+      },
+      "warmup": null,
+      "policy": {
+        "operations": [
+          "transcribe"
+        ],
+        "license_enforced": true,
+        "non_clinical": true,
+        "commercial_use": "license-dependent"
+      },
+      "mcp": {
+        "discoverable": true,
+        "invocable": false
+      }
+    },
+    "startup": {
+      "default": "conventional",
+      "fallback": "conventional",
+      "enabled_mechanisms": [
+        "conventional"
+      ],
+      "experiments": [
+        {
+          "mechanism": "snapshot",
+          "state": "blocked",
+          "gate": null,
+          "artifact_kind": "snapshot",
+          "artifact_manifest_digest": null,
+          "reason": "No restored voice-runtime public-path cohort exists. Conventional pinned-image/weight cache only; CUDA/CRIU snapshots remain disabled."
+        }
+      ],
+      "multi_gpu_criu": "unproven-disabled"
+    },
+    "cache": {
+      "owner": "runtime-image",
+      "shared_path": "/mnt/fs2-serve-cache/models/parakeet-realtime-eou-120m-v1",
+      "local_path": "/var/lib/fs2-serve/cache/models/parakeet-realtime-eou-120m-v1",
+      "pre_pull_image": true,
+      "artifact": {
+        "state": "platform-verified",
+        "kind": "weights",
+        "manifest_digest": "bf4fabc9cdddfdfebd741afb0f969b8e9021bce0549726caff48e35934c890d9",
+        "expanded_bytes": 885084160,
+        "minimum_bytes": 885084160,
+        "capacity_bound_bytes": 885084160,
+        "staged": false
+      }
+    },
+    "semantic_validator": {
+      "kind": "repository-command",
+      "contract": "voice-native-two-distinct-requests/v1",
+      "source_path": "k8s-inference/acceptance/voice-agent-20260916/native_probe.py",
+      "source_sha256": "2a901b681bc0bed3b525ad989f2e4529fdaad8138201c322f84d2ad7fcf7d7cf",
+      "fixture_path": "k8s-inference/acceptance/voice-agent-20260916/native_probe.py",
+      "fixture_sha256": "2a901b681bc0bed3b525ad989f2e4529fdaad8138201c322f84d2ad7fcf7d7cf",
+      "request_count": 2,
+      "distinct_requests": true,
+      "distinct_responses": true
+    },
+    "support": {
+      "state": "qualified",
+      "route_exposed": false,
+      "non_clinical": true,
+      "limitations": [
+        "Independent pinned NVIDIA NeMo runtime, not NVIDIA NIM. One active GPU request/session per replica; overload retries only before input/audio acceptance.",
+        "Only L40S single-GPU resident workers are hardware qualified here. No public-path or snapshot qualification is implied by these native receipts.",
+        "Magpie uses bounded phrase-incremental synthesis, not codec-token streaming; named voices are actual v2607 speakers. Parakeet is English only. Sortformer labels are anonymous arrival-order speakers, not identities.",
+        "Synthetic clean/noisy fixtures are protocol and latency evidence, not medical accuracy or clinical validation. Abrupt worker loss explicitly fails established sessions; reconnect starts a new operation."
+      ]
+    },
+    "evidence": [
+      {
+        "classification": "measured-platform",
+        "hardware": "NVIDIA L40S 48GB / SM89 / driver580.173.02",
+        "outcome": "live-qualified",
+        "source_commit": "c1575ca0790b737471f829b758d06653626da122",
+        "summary": "Two distinct private native requests passed. acceptance/voice-agent-20260916/native-results.json SHA256 5ebe7c9286f2453ed83c9ee53c44ce198d4bf4b850857656bb2068bd714b3e30. Streaming/noisy/lifecycle measurements documented separately; no static route grant."
+      }
+    ],
+    "provenance": [
+      {
+        "commit": "c1575ca0790b737471f829b758d06653626da122",
+        "tree": "fa8bff0ee1ed123dc66e8c492e99d60a7071681d",
+        "path": "k8s-inference/components/voice-runtime",
+        "classification": "measured-handoff"
+      },
+      {
+        "url": "https://huggingface.co/nvidia/parakeet_realtime_eou_120m-v1/tree/a7e2b4629593dce0ec19f600e00e9904353fda2d",
+        "revision": "a7e2b4629593dce0ec19f600e00e9904353fda2d",
+        "classification": "reviewed-input"
+      }
+    ]
+  },
+  "qualification": {
+    "model_id": "parakeet-realtime-eou-120m-v1",
+    "variant_id": "parakeet-realtime-eou-120m-v1-nemo-cuda-v1",
+    "active_runtime": {
+      "model_revision": "a7e2b4629593dce0ec19f600e00e9904353fda2d",
+      "runtime_image_digest": "sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa",
+      "service": {
+        "name": "parakeet-realtime-eou-120m-v1",
+        "namespace": "fs2-models",
+        "port": 8000
+      }
+    },
+    "runtime_origin": {
+      "kind": "independent-runtime",
+      "variant_id": "parakeet-realtime-eou-120m-v1-nemo-cuda-v1",
+      "source_kind": "huggingface",
+      "repository": "nvidia/parakeet_realtime_eou_120m-v1",
+      "relationship": "exact-model",
+      "nim_artifact_parity": "not-applicable"
+    },
+    "states": {
+      "registered": true,
+      "route_active": false,
+      "runtime_ready": true,
+      "semantic_qualified": true,
+      "http_mcp_qualified": false,
+      "cold_start_qualified": false,
+      "elasticity_qualified": false
+    },
+    "policy": {
+      "license_id": "NVIDIA-Open-Model-License",
+      "non_clinical": true,
+      "commercial_use": "license-dependent"
+    },
+    "evidence": {
+      "audited_catalog_sha256": "f9492d4c320b63807e20abd48f045f6007fb520957c3e90a2f56aaf0d0220503",
+      "audited_live_routes_sha256": null,
+      "cold_start_acceptance_sha256": null,
+      "elasticity_acceptance_sha256": null,
+      "http_mcp_acceptance_sha256": null,
+      "mcp_discovery_sha256": null,
+      "model_discovery_sha256": null,
+      "retained_deployments_sha256": "5ebe7c9286f2453ed83c9ee53c44ce198d4bf4b850857656bb2068bd714b3e30"
+    }
+  }
+}

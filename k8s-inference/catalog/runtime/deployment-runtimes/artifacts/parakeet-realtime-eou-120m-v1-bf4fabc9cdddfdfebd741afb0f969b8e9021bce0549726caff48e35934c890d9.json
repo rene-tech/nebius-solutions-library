@@ -1,0 +1,32 @@
+{
+  "schema": "fs2-serve.nebius.ai/artifact-manifest/v1",
+  "model_id": "parakeet-realtime-eou-120m-v1",
+  "kind": "weights",
+  "source": {
+    "uri": "https://huggingface.co/nvidia/parakeet_realtime_eou_120m-v1/tree/a7e2b4629593dce0ec19f600e00e9904353fda2d",
+    "revision": "a7e2b4629593dce0ec19f600e00e9904353fda2d"
+  },
+  "content": {
+    "digest": "d6cee0f6540f6fa771e48898584521d454a84f39a173ba70574c76df69e11899",
+    "expanded_bytes": 885084160,
+    "files": [
+      {
+        "path": "nanocodec.nemo",
+        "bytes": 425021440,
+        "sha256": "28c2518de3e3d5a2c7d9bca40a7ebc0644eb76c60b890970365325bdd8e9f099"
+      },
+      {
+        "path": "parakeet_realtime_eou_120m-v1.nemo",
+        "bytes": 460062720,
+        "sha256": "6603a22a53b7c1a4bac4736cb24628fb568a7102ba931a28c799e2e72f109893"
+      }
+    ]
+  },
+  "license": {
+    "id": "NVIDIA-Open-Model-License",
+    "state": "verified"
+  },
+  "entitlement_state": "not-required",
+  "owner": "runtime-image",
+  "retention": "retained-platform"
+}

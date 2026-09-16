@@ -247,7 +247,7 @@ def main(args):
                 "model_revision": revision,
                 "runtime_image_digest": imagedigest,
                 "service": {
-                    "name": f"fs2-voice-{short}-r20260916",
+                    "name": model,
                     "namespace": "fs2-models",
                     "port": 8000,
                 },

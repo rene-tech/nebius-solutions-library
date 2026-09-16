@@ -1,0 +1,206 @@
+{
+  "schema": "fs2-serve.nebius.ai/deployment-runtime/v1",
+  "model_id": "diar-streaming-sortformer-4spk-v2-1",
+  "variant_id": "diar-streaming-sortformer-4spk-v2-1-nemo-cuda-v1",
+  "record": {
+    "schema": "fs2-serve.nebius.ai/model/v1",
+    "model": {
+      "id": "diar-streaming-sortformer-4spk-v2-1",
+      "display_name": "Sortformer Streaming Four Speaker 2.1",
+      "family": "speaker-diarization",
+      "tested_lane": true,
+      "source": {
+        "kind": "huggingface",
+        "repository": "nvidia/diar_streaming_sortformer_4spk-v2.1",
+        "revision": "fafaab5faa1617a0ca52d38dd3dc4bd636800d3d",
+        "license": {
+          "id": "NVIDIA-Open-Model-License",
+          "state": "verified",
+          "notes": "Pinned official NVIDIA Open Model License; see docs/voice-agent-onboarding-20260916.md. Non-clinical only."
+        },
+        "entitlement": {
+          "required": false,
+          "state": "not-required",
+          "credential_contract": null,
+          "notes": "Public ungated checkpoint; independent NeMo adapter, not NVIDIA NIM."
+        }
+      }
+    },
+    "runtime": {
+      "kind": "custom",
+      "version": "nemo-3d91009e-voice-20260916",
+      "image": {
+        "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253",
+        "digest": "sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253",
+        "state": "resolved"
+      },
+      "command": [
+        "fs2-voice-serve"
+      ]
+    },
+    "resources": {
+      "cpu_millis": 2000,
+      "memory_bytes": 17179869184,
+      "host_ram_min_bytes": null,
+      "scaler_owner": "nebius-managed-node-group-autoscaler",
+      "gpu": {
+        "class": "NVIDIA-L40S-48GB",
+        "count": 1,
+        "topology": "single-gpu",
+        "placement": null,
+        "b300_state": "unverified",
+        "alternatives": []
+      }
+    },
+    "interface": {
+      "execution_mode": "http",
+      "protocols": [
+        "native"
+      ],
+      "endpoints": {
+        "native": "/generate"
+      },
+      "readiness": {
+        "method": "GET",
+        "path": "/readyz",
+        "expected_status": 200,
+        "timeout_seconds": 900
+      },
+      "warmup": null,
+      "policy": {
+        "operations": [
+          "diarize"
+        ],
+        "license_enforced": true,
+        "non_clinical": true,
+        "commercial_use": "license-dependent"
+      },
+      "mcp": {
+        "discoverable": true,
+        "invocable": false
+      }
+    },
+    "startup": {
+      "default": "conventional",
+      "fallback": "conventional",
+      "enabled_mechanisms": [
+        "conventional"
+      ],
+      "experiments": [
+        {
+          "mechanism": "snapshot",
+          "state": "blocked",
+          "gate": null,
+          "artifact_kind": "snapshot",
+          "artifact_manifest_digest": null,
+          "reason": "No restored voice-runtime public-path cohort exists. Conventional pinned-image/weight cache only; CUDA/CRIU snapshots remain disabled."
+        }
+      ],
+      "multi_gpu_criu": "unproven-disabled"
+    },
+    "cache": {
+      "owner": "runtime-image",
+      "shared_path": "/mnt/fs2-serve-cache/models/diar-streaming-sortformer-4spk-v2-1",
+      "local_path": "/var/lib/fs2-serve/cache/models/diar-streaming-sortformer-4spk-v2-1",
+      "pre_pull_image": true,
+      "artifact": {
+        "state": "platform-verified",
+        "kind": "weights",
+        "manifest_digest": "43c517f7fcf432ede6f00ac28eee93657b6c803806788bb5e3d37e4989fda99e",
+        "expanded_bytes": 896389120,
+        "minimum_bytes": 896389120,
+        "capacity_bound_bytes": 896389120,
+        "staged": false
+      }
+    },
+    "semantic_validator": {
+      "kind": "repository-command",
+      "contract": "voice-native-two-distinct-requests/v1",
+      "source_path": "k8s-inference/acceptance/voice-agent-20260916/native_probe.py",
+      "source_sha256": "2a901b681bc0bed3b525ad989f2e4529fdaad8138201c322f84d2ad7fcf7d7cf",
+      "fixture_path": "k8s-inference/acceptance/voice-agent-20260916/native_probe.py",
+      "fixture_sha256": "2a901b681bc0bed3b525ad989f2e4529fdaad8138201c322f84d2ad7fcf7d7cf",
+      "request_count": 2,
+      "distinct_requests": true,
+      "distinct_responses": true
+    },
+    "support": {
+      "state": "qualified",
+      "route_exposed": false,
+      "non_clinical": true,
+      "limitations": [
+        "Independent pinned NVIDIA NeMo runtime, not NVIDIA NIM. One active GPU request/session per replica; overload retries only before input/audio acceptance.",
+        "Only L40S single-GPU resident workers are hardware qualified here. No public-path or snapshot qualification is implied by these native receipts.",
+        "Magpie uses bounded phrase-incremental synthesis, not codec-token streaming; named voices are actual v2607 speakers. Parakeet is English only. Sortformer labels are anonymous arrival-order speakers, not identities.",
+        "Synthetic clean/noisy fixtures are protocol and latency evidence, not medical accuracy or clinical validation. Abrupt worker loss explicitly fails established sessions; reconnect starts a new operation."
+      ]
+    },
+    "evidence": [
+      {
+        "classification": "measured-platform",
+        "hardware": "NVIDIA L40S 48GB / SM89 / driver580.173.02",
+        "outcome": "live-qualified",
+        "source_commit": "c1575ca0790b737471f829b758d06653626da122",
+        "summary": "Two distinct private native requests passed. acceptance/voice-agent-20260916/native-results.json SHA256 5ebe7c9286f2453ed83c9ee53c44ce198d4bf4b850857656bb2068bd714b3e30. Streaming/noisy/lifecycle measurements documented separately; no static route grant."
+      }
+    ],
+    "provenance": [
+      {
+        "commit": "c1575ca0790b737471f829b758d06653626da122",
+        "tree": "fa8bff0ee1ed123dc66e8c492e99d60a7071681d",
+        "path": "k8s-inference/components/voice-runtime",
+        "classification": "measured-handoff"
+      },
+      {
+        "url": "https://huggingface.co/nvidia/diar_streaming_sortformer_4spk-v2.1/tree/fafaab5faa1617a0ca52d38dd3dc4bd636800d3d",
+        "revision": "fafaab5faa1617a0ca52d38dd3dc4bd636800d3d",
+        "classification": "reviewed-input"
+      }
+    ]
+  },
+  "qualification": {
+    "model_id": "diar-streaming-sortformer-4spk-v2-1",
+    "variant_id": "diar-streaming-sortformer-4spk-v2-1-nemo-cuda-v1",
+    "active_runtime": {
+      "model_revision": "fafaab5faa1617a0ca52d38dd3dc4bd636800d3d",
+      "runtime_image_digest": "sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253",
+      "service": {
+        "name": "diar-streaming-sortformer-4spk-v2-1",
+        "namespace": "fs2-models",
+        "port": 8000
+      }
+    },
+    "runtime_origin": {
+      "kind": "independent-runtime",
+      "variant_id": "diar-streaming-sortformer-4spk-v2-1-nemo-cuda-v1",
+      "source_kind": "huggingface",
+      "repository": "nvidia/diar_streaming_sortformer_4spk-v2.1",
+      "relationship": "exact-model",
+      "nim_artifact_parity": "not-applicable"
+    },
+    "states": {
+      "registered": true,
+      "route_active": false,
+      "runtime_ready": true,
+      "semantic_qualified": true,
+      "http_mcp_qualified": false,
+      "cold_start_qualified": false,
+      "elasticity_qualified": false
+    },
+    "policy": {
+      "license_id": "NVIDIA-Open-Model-License",
+      "non_clinical": true,
+      "commercial_use": "license-dependent"
+    },
+    "evidence": {
+      "audited_catalog_sha256": "e4db2a1e67072f5868e842064fee082d56b36b8997edd4c792c4d9637f62b1e8",
+      "audited_live_routes_sha256": null,
+      "cold_start_acceptance_sha256": null,
+      "elasticity_acceptance_sha256": null,
+      "http_mcp_acceptance_sha256": null,
+      "mcp_discovery_sha256": null,
+      "model_discovery_sha256": null,
+      "retained_deployments_sha256": "5ebe7c9286f2453ed83c9ee53c44ce198d4bf4b850857656bb2068bd714b3e30"
+    }
+  }
+}

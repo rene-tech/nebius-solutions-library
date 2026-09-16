@@ -63,5 +63,20 @@
     "variant_id": "proteinmpnn-upstream-portable",
     "runtime_kind": "custom",
     "source": "k8s-inference/catalog/runtime/deployment-runtimes/proteinmpnn-portable-h100.json"
+  },
+  "parakeet-realtime-eou-120m-v1": {
+    "variant_id": "parakeet-realtime-eou-120m-v1-nemo-cuda-v1",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/parakeet-realtime-eou-120m-v1.json"
+  },
+  "magpie-tts-multilingual-357m": {
+    "variant_id": "magpie-tts-multilingual-357m-nemo-cuda-v1",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/magpie-tts-multilingual-357m.json"
+  },
+  "diar-streaming-sortformer-4spk-v2-1": {
+    "variant_id": "diar-streaming-sortformer-4spk-v2-1-nemo-cuda-v1",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/diar-streaming-sortformer-4spk-v2-1.json"
   }
 }

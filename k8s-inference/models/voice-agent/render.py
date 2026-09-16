@@ -41,7 +41,7 @@ def render(
     }
     pod = {
         "automountServiceAccountToken": False,
-        "terminationGracePeriodSeconds": 210,
+        "terminationGracePeriodSeconds": 1900,
         "securityContext": {"runAsUser": 10001, "runAsGroup": 10001, "fsGroup": 10001},
         "nodeSelector": selectors or {},
         "tolerations": [
@@ -96,7 +96,10 @@ def render(
                             "command": [
                                 "python",
                                 "-c",
-                                "import urllib.request,time; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/drain',method='POST')); time.sleep(5)",
+                                "import json,time,urllib.request; "
+                                "urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/drain',method='POST'),timeout=5); "
+                                "deadline=time.monotonic()+1850; "
+                                "exec(\"while time.monotonic()<deadline:\\n try:\\n  r=urllib.request.urlopen('http://127.0.0.1:8000/metrics',timeout=5).read().decode()\\n  if 'fs2_voice_occupied 0.0' in r: break\\n except Exception: break\\n time.sleep(1)\"); time.sleep(5)",
                             ]
                         }
                     }

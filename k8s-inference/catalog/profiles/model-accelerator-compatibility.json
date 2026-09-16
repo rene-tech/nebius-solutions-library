@@ -5,62 +5,62 @@
   "binding_scope": "exact-runtime-variant-only",
   "gpu_count_semantics": "workload-consumed-not-host-pool-shape",
   "models": {
-  "nemotron-speech-en-0-6b": {
-    "runtimes": {
-      "nemotron-speech-en-0-6b-nemo-cuda-v1": {
-        "runtime_variant": "nemotron-speech-en-0-6b-nemo-cuda-v1",
-        "runtime_ref": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/en@sha256:288f6caf0c2feb3690c963969e4a26c45a38ca1338f4abe80570b24db91423d2",
-        "runtime_ref_kind": "container-image-digest",
-        "requirements": {
-          "gpu_count": 1,
-          "topology": "single-gpu",
-          "host_architectures": [
-            "amd64"
-          ]
-        },
-        "bindings": [
-          {
-            "accelerator_class": "nvidia-h100-sxm5-80gb",
-            "pool_template": "unbound-h100",
-            "state": "hardware-validated",
-            "enabled": true,
+    "nemotron-speech-en-0-6b": {
+      "runtimes": {
+        "nemotron-speech-en-0-6b-nemo-cuda-v1": {
+          "runtime_variant": "nemotron-speech-en-0-6b-nemo-cuda-v1",
+          "runtime_ref": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/en@sha256:288f6caf0c2feb3690c963969e4a26c45a38ca1338f4abe80570b24db91423d2",
+          "runtime_ref_kind": "container-image-digest",
+          "requirements": {
             "gpu_count": 1,
-            "catalog_b300_state": null,
-            "evidence": "acceptance/nemotron-speech-20260916/en-native-contract-r3.json@sha256:14556e7747bacb9f22228392cdf27a8ac17507f47c5afb183c8c4fce3a731418"
-          }
-        ],
-        "qualification_candidates": []
+            "topology": "single-gpu",
+            "host_architectures": [
+              "amd64"
+            ]
+          },
+          "bindings": [
+            {
+              "accelerator_class": "nvidia-h100-sxm5-80gb",
+              "pool_template": "unbound-h100",
+              "state": "hardware-validated",
+              "enabled": true,
+              "gpu_count": 1,
+              "catalog_b300_state": null,
+              "evidence": "acceptance/nemotron-speech-20260916/en-native-contract-r3.json@sha256:14556e7747bacb9f22228392cdf27a8ac17507f47c5afb183c8c4fce3a731418"
+            }
+          ],
+          "qualification_candidates": []
+        }
       }
-    }
-  },
-  "nemotron-speech-multilingual-0-6b": {
-    "runtimes": {
-      "nemotron-speech-multilingual-0-6b-nemo-cuda-v1": {
-        "runtime_variant": "nemotron-speech-multilingual-0-6b-nemo-cuda-v1",
-        "runtime_ref": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/multilingual@sha256:628c1ffdb68c6e510de5a691432b4da9a6f64941ce5f35c57213ad8cea8b7205",
-        "runtime_ref_kind": "container-image-digest",
-        "requirements": {
-          "gpu_count": 1,
-          "topology": "single-gpu",
-          "host_architectures": [
-            "amd64"
-          ]
-        },
-        "bindings": [
-          {
-            "accelerator_class": "nvidia-h100-sxm5-80gb",
-            "pool_template": "unbound-h100",
-            "state": "hardware-validated",
-            "enabled": true,
+    },
+    "nemotron-speech-multilingual-0-6b": {
+      "runtimes": {
+        "nemotron-speech-multilingual-0-6b-nemo-cuda-v1": {
+          "runtime_variant": "nemotron-speech-multilingual-0-6b-nemo-cuda-v1",
+          "runtime_ref": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nemotron-speech/multilingual@sha256:628c1ffdb68c6e510de5a691432b4da9a6f64941ce5f35c57213ad8cea8b7205",
+          "runtime_ref_kind": "container-image-digest",
+          "requirements": {
             "gpu_count": 1,
-            "catalog_b300_state": null,
-            "evidence": "acceptance/nemotron-speech-20260916/multi-native-contract-r3.json@sha256:187a32f376fa9e3271eb170b1d0b4877b2b56538c1cb6a741da0dc0a0af5c359"
-          }
-        ],
-        "qualification_candidates": []
+            "topology": "single-gpu",
+            "host_architectures": [
+              "amd64"
+            ]
+          },
+          "bindings": [
+            {
+              "accelerator_class": "nvidia-h100-sxm5-80gb",
+              "pool_template": "unbound-h100",
+              "state": "hardware-validated",
+              "enabled": true,
+              "gpu_count": 1,
+              "catalog_b300_state": null,
+              "evidence": "acceptance/nemotron-speech-20260916/multi-native-contract-r3.json@sha256:187a32f376fa9e3271eb170b1d0b4877b2b56538c1cb6a741da0dc0a0af5c359"
+            }
+          ],
+          "qualification_candidates": []
+        }
       }
-    }
-  },
+    },
     "altumage": {
       "runtimes": {
         "altumage-cuda-v1": {
@@ -203,17 +203,21 @@
           "requirements": {
             "gpu_count": 2,
             "topology": "single-node-multi-gpu",
-            "host_architectures": ["amd64"]
+            "host_architectures": [
+              "amd64"
+            ]
           },
-          "bindings": [{
-            "accelerator_class": "nvidia-h100-sxm5-80gb",
-            "pool_template": "unbound-h100",
-            "state": "hardware-validated",
-            "enabled": true,
-            "gpu_count": 2,
-            "catalog_b300_state": null,
-            "evidence": "acceptance/h100-fleet/medical-media/evo2-qualification.json@sha256:2e625a1a683a8461c9e1de7b394d994db0c1fb099f76773b693c13c7e37968a9"
-          }],
+          "bindings": [
+            {
+              "accelerator_class": "nvidia-h100-sxm5-80gb",
+              "pool_template": "unbound-h100",
+              "state": "hardware-validated",
+              "enabled": true,
+              "gpu_count": 2,
+              "catalog_b300_state": null,
+              "evidence": "acceptance/h100-fleet/medical-media/evo2-qualification.json@sha256:2e625a1a683a8461c9e1de7b394d994db0c1fb099f76773b693c13c7e37968a9"
+            }
+          ],
           "qualification_candidates": []
         },
         "catalog-canonical": {
@@ -494,16 +498,20 @@
           "requirements": {
             "gpu_count": 1,
             "topology": "single-gpu",
-            "host_architectures": ["amd64"]
+            "host_architectures": [
+              "amd64"
+            ]
           },
-          "bindings": [{
-            "accelerator_class": "nvidia-h100-sxm5-80gb",
-            "pool_template": "unbound-h100",
-            "state": "hardware-validated",
-            "enabled": true,
-            "catalog_b300_state": null,
-            "evidence": "acceptance/h100-fleet/openfold3-standalone/qualification.json@sha256:cbeb59dcff780cf10ccfb95f5996144ab12d063de60953774452ebf485da9dc1"
-          }],
+          "bindings": [
+            {
+              "accelerator_class": "nvidia-h100-sxm5-80gb",
+              "pool_template": "unbound-h100",
+              "state": "hardware-validated",
+              "enabled": true,
+              "catalog_b300_state": null,
+              "evidence": "acceptance/h100-fleet/openfold3-standalone/qualification.json@sha256:cbeb59dcff780cf10ccfb95f5996144ab12d063de60953774452ebf485da9dc1"
+            }
+          ],
           "qualification_candidates": []
         },
         "catalog-canonical": {
@@ -690,6 +698,90 @@
               "enabled": true,
               "catalog_b300_state": null,
               "evidence": "catalog/profiles/evidence/h100-media-hardware-qualification-20260907.json@sha256:49f20898a7a2017e27d563d268916378d7e38784b65f5fc3e25a2078b0778f9f"
+            }
+          ],
+          "qualification_candidates": []
+        }
+      }
+    },
+    "parakeet-realtime-eou-120m-v1": {
+      "runtimes": {
+        "parakeet-realtime-eou-120m-v1-nemo-cuda-v1": {
+          "runtime_variant": "parakeet-realtime-eou-120m-v1-nemo-cuda-v1",
+          "runtime_ref": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/parakeet@sha256:99c38f2fa6fc7ec267c8475cc25380a98ac6e2b0eb2141b5628569c8b45f98fa",
+          "runtime_ref_kind": "container-image-digest",
+          "requirements": {
+            "gpu_count": 1,
+            "topology": "single-gpu",
+            "host_architectures": [
+              "amd64"
+            ]
+          },
+          "bindings": [
+            {
+              "accelerator_class": "nvidia-l40s-48gb",
+              "pool_template": "unbound-l40s",
+              "state": "hardware-validated",
+              "enabled": true,
+              "gpu_count": 1,
+              "catalog_b300_state": null,
+              "evidence": "acceptance/voice-agent-20260916/native-results.json@sha256:5ebe7c9286f2453ed83c9ee53c44ce198d4bf4b850857656bb2068bd714b3e30"
+            }
+          ],
+          "qualification_candidates": []
+        }
+      }
+    },
+    "magpie-tts-multilingual-357m": {
+      "runtimes": {
+        "magpie-tts-multilingual-357m-nemo-cuda-v1": {
+          "runtime_variant": "magpie-tts-multilingual-357m-nemo-cuda-v1",
+          "runtime_ref": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/magpie@sha256:fc9db5fd5df87e819766297d90a4595664aec63e7dbfd6735b3f2053b4725ead",
+          "runtime_ref_kind": "container-image-digest",
+          "requirements": {
+            "gpu_count": 1,
+            "topology": "single-gpu",
+            "host_architectures": [
+              "amd64"
+            ]
+          },
+          "bindings": [
+            {
+              "accelerator_class": "nvidia-l40s-48gb",
+              "pool_template": "unbound-l40s",
+              "state": "hardware-validated",
+              "enabled": true,
+              "gpu_count": 1,
+              "catalog_b300_state": null,
+              "evidence": "acceptance/voice-agent-20260916/native-results.json@sha256:5ebe7c9286f2453ed83c9ee53c44ce198d4bf4b850857656bb2068bd714b3e30"
+            }
+          ],
+          "qualification_candidates": []
+        }
+      }
+    },
+    "diar-streaming-sortformer-4spk-v2-1": {
+      "runtimes": {
+        "diar-streaming-sortformer-4spk-v2-1-nemo-cuda-v1": {
+          "runtime_variant": "diar-streaming-sortformer-4spk-v2-1-nemo-cuda-v1",
+          "runtime_ref": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/voice-agent/sortformer@sha256:ef54e92d54aa3f603c9aabdc129c3d3bfea017f8466c26fba87e8056e2e75253",
+          "runtime_ref_kind": "container-image-digest",
+          "requirements": {
+            "gpu_count": 1,
+            "topology": "single-gpu",
+            "host_architectures": [
+              "amd64"
+            ]
+          },
+          "bindings": [
+            {
+              "accelerator_class": "nvidia-l40s-48gb",
+              "pool_template": "unbound-l40s",
+              "state": "hardware-validated",
+              "enabled": true,
+              "gpu_count": 1,
+              "catalog_b300_state": null,
+              "evidence": "acceptance/voice-agent-20260916/native-results.json@sha256:5ebe7c9286f2453ed83c9ee53c44ce198d4bf4b850857656bb2068bd714b3e30"
             }
           ],
           "qualification_candidates": []
