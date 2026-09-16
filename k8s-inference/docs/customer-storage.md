@@ -41,6 +41,11 @@ acceptance-run identities that have no current key. Exclusions override tenant
 policies; Stockholm is excluded in the retained deployment, not hard-coded
 into the reusable application. Provisioning is off the inference request path.
 Cloud failures leave storage pending and are retried independently of inference.
+Cloud quota exhaustion backs off new provisioning for five minutes per replica,
+while existing users' enable/disable reconciliation continues. Logs include the
+cloud status code and operation ID, never the secret or raw provider request.
+The provisioner checks the final operation result: a completed but failed cloud
+operation does not become a ready bucket or an activated key.
 
 ## User and operator APIs
 
@@ -92,3 +97,15 @@ platform Files APIs, and LibreChat integration are separate increments.
 References: [bucket limits](https://docs.nebius.com/cli/reference/storage/bucket/create),
 [bucket policies](https://docs.nebius.com/object-storage/buckets/bucket-policy),
 [IAM roles](https://docs.nebius.com/iam/authorization/roles).
+
+## Deployment prerequisites and current acceptance
+
+Nebius bucket policies consume the tenant-wide IAM quota
+`iam.storageaccesspolicy.count`. Reserve enough policies for the desired number
+of tenant/private buckets; the controller never raises cloud limits.
+Build and supply matching control-plane/admin images through the existing
+`deployment.applications` configuration.
+
+The retained H100 deployment on 2026-09-16 is **partially provisioned**, blocked
+by that quota (limit 10). Do not describe all tenants or private-user mode as
+live-qualified yet. See the [acceptance and resume report](../acceptance/customer-storage-20260916/README.md).
