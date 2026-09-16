@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+  "runtime_qualification": "candidate_pending_exact_model_gpu_verification",
+  "dtype": "bfloat16",
+  "source_dtype": "float32",
+  "max_model_len": 4096,
+  "max_output_tokens": 15,
+  "temperature": 0,
+  "role": "safety_classifier",
+  "enforcement": "observe",
+  "classification_target": "last_user_message_with_preceding_context",
+  "models": {
+    "mindguard-4b": {
+      "repo_id": "swordhealth/MindGuard-4B",
+      "revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+    },
+    "mindguard-8b": {
+      "repo_id": "swordhealth/MindGuard-8B",
+      "revision": "a24baa872d902224b3de80e912ad1f4201b514ed"
+    }
+  },
+  "testset": {
+    "repo_id": "swordhealth/MindGuard-testset",
+    "revision": "0724945e3e2f175ef85745dfcb564e538e86d229",
+    "filename": "data/train-00000-of-00001.parquet",
+    "expected_rows": 1134
+  }
+}
