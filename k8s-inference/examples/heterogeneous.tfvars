@@ -25,6 +25,10 @@ deployment = {
     models       = "full_catalog"
   }
 
+  cluster = {
+    system_pool_cost_review_acknowledged = true
+  }
+
   accelerator_pools = {
     "b300-8x-local" = {
       platform          = "gpu-b300-sxm"
@@ -119,6 +123,7 @@ deployment = {
   }
 
   storage = {
+    postgresql_backup = { capacity_cost_review_acknowledged = true }
     reference_data = {
       enabled   = true
       namespace = "fs2-reference-data"

@@ -25,8 +25,16 @@ deployment = {
     models       = "minimal"
   }
 
+  cluster = {
+    system_pool_cost_review_acknowledged = true
+  }
+
   models = {
     selection = "profile"
+  }
+
+  storage = {
+    postgresql_backup = { capacity_cost_review_acknowledged = true }
   }
 
   edge = {

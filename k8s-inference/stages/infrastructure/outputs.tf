@@ -475,6 +475,10 @@ output "postgresql_backup_storage_contract" {
       database_volume_size_gib          = var.postgresql_backup.database_volume_size_gib
       daily_base_backup_count           = 1
       estimated_daily_wal_gib           = var.postgresql_backup.estimated_daily_wal_gib
+      current_base_backup_days          = local.postgresql_backup_current_base_backup_days
+      noncurrent_base_backup_days       = local.postgresql_backup_noncurrent_base_backup_days
+      current_wal_days                  = local.postgresql_backup_current_wal_days
+      noncurrent_wal_days               = local.postgresql_backup_noncurrent_wal_days
       capacity_headroom_percent         = var.postgresql_backup.capacity_headroom_percent
       required_capacity_gib             = local.postgresql_backup_required_capacity_gib
       configured_capacity_gib           = var.postgresql_backup.object_storage.max_size_gib

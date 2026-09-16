@@ -660,6 +660,151 @@ resource "kubernetes_job_v1" "database_restore_verification" {
   depends_on = [kubernetes_manifest.database_restore_verification]
 }
 
+# Publish only a payload-free success receipt after the restricted SQL verifier
+# has proved targetTime WAL replay, marker A inclusion, marker B exclusion and
+# sensitive-table denial. The S3 object's LastModified time is durable across
+# cleanup and is exported as the restore-test-age metric.
+resource "kubernetes_job_v1" "database_restore_verification_receipt" {
+  count = var.run_database_restore_verification_job && var.postgresql_backup.enabled ? 1 : 0
+
+  metadata {
+    name      = "fs2-control-db-restore-receipt"
+    namespace = "fs2-data"
+    labels = merge(local.common_labels, {
+      "app.kubernetes.io/component" = "database-restore-verification-receipt"
+    })
+  }
+
+  spec {
+    backoff_limit           = 1
+    active_deadline_seconds = 300
+
+    template {
+      metadata {
+        labels = merge(local.common_labels, {
+          "app.kubernetes.io/component" = "database-restore-verification-receipt"
+        })
+      }
+      spec {
+        restart_policy                  = "Never"
+        automount_service_account_token = false
+        node_selector = {
+          "workload.fs2.nebius/system" = "true"
+          "capacity.fs2.nebius/type"   = "regular"
+          "capacity.fs2.nebius/pool"   = "system"
+        }
+        security_context {
+          run_as_non_root = true
+          seccomp_profile { type = "RuntimeDefault" }
+        }
+        container {
+          name    = "publish"
+          image   = local.postgresql_image
+          command = ["python3", "-c"]
+          args = [<<-PYTHON
+            import datetime
+            import hashlib
+            import json
+            import os
+            import boto3
+
+            marker_id = os.environ["PITR_MARKER_ID"]
+            target_time = os.environ["PITR_TARGET_TIME"]
+            receipt_id = hashlib.sha256(
+                (marker_id + "|" + target_time).encode("utf-8")
+            ).hexdigest()
+            body = json.dumps(
+                {
+                    "schema": "fs2-serve.nebius.ai/postgresql-restore-verification/v1",
+                    "status": "passed",
+                    "marker_id": marker_id,
+                    "target_time": target_time,
+                    "completed_at": datetime.datetime.now(
+                        datetime.timezone.utc
+                    ).isoformat().replace("+00:00", "Z"),
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            client = boto3.client(
+                "s3",
+                endpoint_url=os.environ["S3_ENDPOINT"],
+                region_name=os.environ["AWS_REGION"],
+                aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
+                aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
+            )
+            client.put_object(
+                Bucket=os.environ["S3_BUCKET"],
+                Key="postgresql/v1/restore-verification/success/" + receipt_id + ".json",
+                Body=body,
+                ContentType="application/json",
+            )
+          PYTHON
+          ]
+          env {
+            name  = "PITR_MARKER_ID"
+            value = var.database_restore_marker_id
+          }
+          env {
+            name  = "PITR_TARGET_TIME"
+            value = var.database_restore_target_time
+          }
+          env {
+            name  = "S3_ENDPOINT"
+            value = var.postgresql_backup.storage_contract.object_storage.endpoint
+          }
+          env {
+            name  = "S3_BUCKET"
+            value = var.postgresql_backup.storage_contract.object_storage.name
+          }
+          env {
+            name = "AWS_ACCESS_KEY_ID"
+            value_from {
+              secret_key_ref {
+                name = kubernetes_secret_v1.postgresql_backup[0].metadata[0].name
+                key  = "ACCESS_KEY_ID"
+              }
+            }
+          }
+          env {
+            name = "AWS_SECRET_ACCESS_KEY"
+            value_from {
+              secret_key_ref {
+                name = kubernetes_secret_v1.postgresql_backup[0].metadata[0].name
+                key  = "ACCESS_SECRET_KEY"
+              }
+            }
+          }
+          env {
+            name = "AWS_REGION"
+            value_from {
+              secret_key_ref {
+                name = kubernetes_secret_v1.postgresql_backup[0].metadata[0].name
+                key  = "AWS_REGION"
+              }
+            }
+          }
+          resources {
+            requests = { cpu = "25m", memory = "64Mi" }
+            limits   = { cpu = "250m", memory = "256Mi" }
+          }
+          security_context {
+            allow_privilege_escalation = false
+            read_only_root_filesystem  = true
+            run_as_non_root            = true
+            capabilities { drop = ["ALL"] }
+          }
+        }
+      }
+    }
+  }
+
+  wait_for_completion = true
+  timeouts { create = "10m" }
+
+  depends_on = [kubernetes_job_v1.database_restore_verification]
+}
+
 resource "terraform_data" "postgresql_pitr_marker_cleanup_contract" {
   count = var.cleanup_database_restore_marker_job ? 1 : 0
 

@@ -42,6 +42,10 @@ deployment = {
     models       = "none"
   }
 
+  cluster = {
+    system_pool_cost_review_acknowledged = true
+  }
+
   accelerator_pools = {
     # Both pools are preemptible: this example claims no reservation, and a
     # regular H100 pool needs capacity-block reservation IDs this file does not
@@ -156,6 +160,10 @@ deployment = {
         pool_preference         = ["h100-warm", "h100-preemptible"]
       }
     }
+  }
+
+  storage = {
+    postgresql_backup = { capacity_cost_review_acknowledged = true }
   }
 
   edge = {

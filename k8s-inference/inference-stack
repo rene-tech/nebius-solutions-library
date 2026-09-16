@@ -13,7 +13,7 @@ import subprocess
 import sys
 import tempfile
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterator, Mapping, Sequence
 from urllib.parse import urlsplit
@@ -586,16 +586,49 @@ def preflight_postgresql_backup_capacity(
     args: argparse.Namespace,
     contract: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Capture the live standard-object usage behind the retention-aware cap."""
+    """Fail closed on the live and independently reviewed SAI-06 capacity."""
     project_id = str(contract["target"]["project_id"])
     region = str(contract["target"]["region"])
     backup = contract["stages"]["infrastructure"]["postgresql_backup"]
+    system_pool = contract["stages"]["infrastructure"].get("system_pool")
     configured_gib = int(backup["object_storage"]["max_size_gib"])
     required_gib = int(backup["required_capacity_gib"])
     if configured_gib < required_gib:
         raise DeploymentError(
-            f"PostgreSQL backup capacity {configured_gib} GiB is below the retention-aware requirement {required_gib} GiB"
+            f"PostgreSQL backup capacity {configured_gib} GiB is below the "
+            f"retention-aware requirement {required_gib} GiB"
         )
+    if not isinstance(system_pool, Mapping) or int(
+        system_pool.get("node_count", 0)
+    ) < 3:
+        raise DeploymentError(
+            "the effective system-pool plan must contain at least three nodes"
+        )
+    if (
+        system_pool.get("three_node_ha_cost_review_acknowledged") is not True
+        or backup.get("capacity_cost_review_acknowledged") is not True
+    ):
+        raise DeploymentError(
+            "the effective three-node system pool and PostgreSQL backup "
+            "capacity both require explicit cost acknowledgements"
+        )
+
+    receipt_path = getattr(args, "sai06_capacity_receipt", None)
+    if receipt_path is None:
+        raise DeploymentError(
+            "SAI-06 capacity receipt is required; provider responses without numeric limits are not apply authority"
+        )
+    receipt_path = Path(receipt_path).expanduser()
+    if receipt_path.is_symlink() or not receipt_path.is_file():
+        raise DeploymentError("SAI-06 capacity receipt must be a regular file")
+    receipt_path = receipt_path.resolve()
+    if receipt_path.stat().st_mode & 0o077:
+        raise DeploymentError("SAI-06 capacity receipt must have mode 0600")
+    try:
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise DeploymentError("SAI-06 capacity receipt is not valid JSON") from error
+    receipt_summary = validate_sai06_capacity_receipt(receipt, contract)
 
     result = run(
         [
@@ -623,7 +656,8 @@ def preflight_postgresql_backup_capacity(
     ]
     if len(matches) != 1:
         raise DeploymentError(
-            "live capacity preflight requires exactly one standard object-storage usage allowance for the target project and region"
+            "live capacity preflight requires exactly one standard "
+            "object-storage usage allowance for the target project and region"
         )
     status = matches[0].get("status", {})
     usage_text = str(status.get("usage", ""))
@@ -640,27 +674,35 @@ def preflight_postgresql_backup_capacity(
     provider_limit_bytes = int(limit_text) if limit_text is not None else None
     configured_bytes = configured_gib * 1024**3
     projected_usage_bytes = usage_bytes + configured_bytes
+    reviewed_storage_ceiling = receipt_summary["storage_ceiling_bytes"]
+    if projected_usage_bytes > reviewed_storage_ceiling:
+        raise DeploymentError(
+            "current Standard object-storage usage plus configured PostgreSQL "
+            "backup capacity exceeds the reviewed object-storage allowance"
+        )
     if (
         provider_limit_bytes is not None
         and projected_usage_bytes > provider_limit_bytes
     ):
         raise DeploymentError(
-            "current Standard object-storage usage plus the configured PostgreSQL backup capacity exceeds the live provider limit"
+            "current Standard object-storage usage plus the configured "
+            "PostgreSQL backup capacity exceeds the live provider limit"
         )
-
-    system_pool = contract["stages"]["infrastructure"].get("system_pool")
-    if system_pool is not None and (
-        int(system_pool.get("node_count", 0)) < 3
-        or system_pool.get("three_node_ha_cost_review_acknowledged") is not True
-        or backup.get("capacity_cost_review_acknowledged") is not True
-    ):
+    if int(system_pool["node_count"]) > receipt_summary["system_node_ceiling"]:
         raise DeploymentError(
-            "the explicit system-pool rollout requires three nodes plus node and backup capacity/cost acknowledgements"
+            "effective system-node demand exceeds the reviewed system-node allowance"
         )
+    receipt_summary = {
+        **receipt_summary,
+        "observed_storage_usage_bytes": usage_bytes,
+        "configured_storage_capacity_bytes": configured_bytes,
+        "projected_storage_usage_bytes": projected_usage_bytes,
+        "effective_system_node_count": int(system_pool["node_count"]),
+    }
 
     return {
         "schema": "fs2-serve.nebius.ai/sai06-capacity-preflight/v1",
-        "checked_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "checked_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "project_id": project_id,
         "region": region,
         "quota_name": "storage.bucket.size.standard",
@@ -677,18 +719,167 @@ def preflight_postgresql_backup_capacity(
         "configured_bucket_max_bytes": configured_bytes,
         "projected_usage_if_fully_allocated_bytes": projected_usage_bytes,
         "provider_limit_verdict": (
-            "within-explicit-provider-limit"
+            "within-explicit-provider-limit-and-reviewed-capacity-ceiling"
             if provider_limit_bytes is not None
-            else "provider-limit-not-exposed-manual-quota-review-required"
+            else "within-reviewed-capacity-ceiling"
         ),
+        "capacity_receipt": receipt_summary,
         "cost_review_acknowledged": bool(
             backup.get("capacity_cost_review_acknowledged")
         ),
-        "system_pool_nodes": (
-            int(system_pool["node_count"]) if system_pool is not None else None
+        "system_pool_nodes": int(system_pool["node_count"]),
+        "status": "live-usage-and-reviewed-capacity-approved",
+        "limitation": (
+            "This approval is valid only for the exact plan binding and receipt "
+            "validity window; refresh both immediately before apply."
         ),
-        "status": "live-usage-observed",
-        "limitation": "A usage observation is not a provider reservation; review quota and current pricing again immediately before applying the saved no-replacement plan.",
+    }
+
+
+def sai06_capacity_plan_binding(contract: Mapping[str, Any]) -> str:
+    """Bind a reviewed allowance to the exact effective SAI-06 demand plan."""
+    infrastructure = contract["stages"]["infrastructure"]
+    backup = infrastructure["postgresql_backup"]
+    return canonical_sha256(
+        {
+            "schema": "fs2-serve.nebius.ai/sai06-capacity-plan/v1",
+            "project_id": contract["target"]["project_id"],
+            "region": contract["target"]["region"],
+            "effective_system_node_count": int(
+                infrastructure["system_pool"]["node_count"]
+            ),
+            "postgresql_backup": {
+                "configured_capacity_gib": int(
+                    backup["object_storage"]["max_size_gib"]
+                ),
+                "schedule": backup["schedule"],
+                "retention_days": backup["retention_days"],
+                "database_volume_size_gib": backup["database_volume_size_gib"],
+                "estimated_daily_wal_gib": backup["estimated_daily_wal_gib"],
+                "capacity_headroom_percent": backup["capacity_headroom_percent"],
+                "required_capacity_gib": backup["required_capacity_gib"],
+            },
+        }
+    )
+
+
+def _sai06_utc_timestamp(value: object, label: str) -> datetime:
+    if not isinstance(value, str) or not value.endswith("Z"):
+        raise DeploymentError(f"SAI-06 capacity receipt {label} must be UTC Z time")
+    try:
+        parsed = datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError as error:
+        raise DeploymentError(
+            f"SAI-06 capacity receipt {label} is malformed"
+        ) from error
+    return parsed.astimezone(UTC)
+
+
+def validate_sai06_capacity_receipt(
+    receipt: object,
+    contract: Mapping[str, Any],
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Validate a short-lived numeric ceiling bound to this exact plan."""
+    if not isinstance(receipt, Mapping):
+        raise DeploymentError("SAI-06 capacity receipt must be a JSON object")
+    expected_fields = {
+        "schema",
+        "project_id",
+        "region",
+        "reviewed_at",
+        "valid_until",
+        "plan_binding_sha256",
+        "reviewed_by",
+        "evidence_sha256",
+        "allowances",
+    }
+    if set(receipt) != expected_fields:
+        raise DeploymentError("SAI-06 capacity receipt fields are not exact")
+    if receipt.get("schema") != "fs2-serve.nebius.ai/sai06-capacity-approval/v1":
+        raise DeploymentError("SAI-06 capacity receipt schema is unsupported")
+    if (
+        receipt.get("project_id") != contract["target"]["project_id"]
+        or receipt.get("region") != contract["target"]["region"]
+    ):
+        raise DeploymentError(
+            "SAI-06 capacity receipt project/region scope does not match the plan"
+        )
+    expected_binding = sai06_capacity_plan_binding(contract)
+    if receipt.get("plan_binding_sha256") != expected_binding:
+        raise DeploymentError(
+            "SAI-06 capacity receipt is bound to a different plan"
+        )
+    reviewed_by = receipt.get("reviewed_by")
+    evidence_sha256 = receipt.get("evidence_sha256")
+    if (
+        not isinstance(reviewed_by, str)
+        or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._@/-]{2,127}", reviewed_by)
+        or not isinstance(evidence_sha256, str)
+        or not re.fullmatch(r"[0-9a-f]{64}", evidence_sha256)
+    ):
+        raise DeploymentError(
+            "SAI-06 capacity receipt requires a bounded reviewer identity and exact evidence SHA-256"
+        )
+    reviewed_at = _sai06_utc_timestamp(receipt.get("reviewed_at"), "reviewed_at")
+    valid_until = _sai06_utc_timestamp(receipt.get("valid_until"), "valid_until")
+    current = (now or datetime.now(UTC)).astimezone(UTC)
+    if reviewed_at > current + timedelta(minutes=5):
+        raise DeploymentError("SAI-06 capacity receipt review time is in the future")
+    if reviewed_at < current - timedelta(hours=24):
+        raise DeploymentError("SAI-06 capacity receipt is stale")
+    if valid_until <= current or valid_until > reviewed_at + timedelta(hours=24):
+        raise DeploymentError("SAI-06 capacity receipt is expired or overlong")
+    allowances = receipt.get("allowances")
+    if not isinstance(allowances, list) or len(allowances) != 2:
+        raise DeploymentError(
+            "SAI-06 capacity receipt requires exactly system-node and object-storage allowances"
+        )
+    indexed: dict[str, Mapping[str, Any]] = {}
+    for allowance in allowances:
+        if not isinstance(allowance, Mapping):
+            raise DeploymentError("SAI-06 capacity receipt allowance is malformed")
+        if set(allowance) != {"resource", "unit", "ceiling"}:
+            raise DeploymentError(
+                "SAI-06 capacity receipt allowance fields are not exact"
+            )
+        resource = allowance.get("resource")
+        if not isinstance(resource, str) or resource in indexed:
+            raise DeploymentError(
+                "SAI-06 capacity receipt resource allowances must be unique"
+            )
+        indexed[resource] = allowance
+    expected_units = {
+        "compute.system_pool.nodes": "node",
+        "storage.bucket.size.standard": "byte",
+    }
+    ceilings: dict[str, int] = {}
+    for resource, unit in expected_units.items():
+        allowance = indexed.get(resource)
+        ceiling = None if allowance is None else allowance.get("ceiling")
+        if (
+            allowance is None
+            or allowance.get("unit") != unit
+            or isinstance(ceiling, bool)
+            or not isinstance(ceiling, int)
+            or ceiling <= 0
+        ):
+            raise DeploymentError(
+                f"SAI-06 capacity receipt lacks a numeric {resource} allowance"
+            )
+        ceilings[resource] = ceiling
+    return {
+        "schema": receipt["schema"],
+        "project_id": receipt["project_id"],
+        "region": receipt["region"],
+        "reviewed_at": receipt["reviewed_at"],
+        "valid_until": receipt["valid_until"],
+        "reviewed_by": reviewed_by,
+        "evidence_sha256": evidence_sha256,
+        "plan_binding_sha256": expected_binding,
+        "system_node_ceiling": ceilings["compute.system_pool.nodes"],
+        "storage_ceiling_bytes": ceilings["storage.bucket.size.standard"],
     }
 
 
@@ -1632,10 +1823,13 @@ def write_infrastructure_variables(
     contract: Mapping[str, Any],
     commit: str,
     nebius_profile: str,
+    capacity_approval: Mapping[str, Any] | None = None,
 ) -> Path:
     variables = dict(contract["stages"]["infrastructure"])
     variables["source_commit"] = commit
     variables["nebius_profile"] = nebius_profile
+    if capacity_approval is not None:
+        variables["sai06_capacity_approval"] = dict(capacity_approval)
     path = run_root / "infrastructure.tfvars.json"
     private_json(path, variables)
     return path
@@ -2666,9 +2860,14 @@ def apply_stack(
     contract: Mapping[str, Any],
     commit: str,
     configuration_environment: Mapping[str, str],
+    capacity_approval: Mapping[str, Any] | None = None,
 ) -> None:
     infrastructure_variables = write_infrastructure_variables(
-        run_root, contract, commit, args.nebius_profile
+        run_root,
+        contract,
+        commit,
+        args.nebius_profile,
+        capacity_approval,
     )
     plan_path, _, environment = plan_stage(
         args.terraform,
@@ -2727,9 +2926,14 @@ def plan_stack(
     run_root: Path,
     contract: Mapping[str, Any],
     commit: str,
+    capacity_approval: Mapping[str, Any] | None = None,
 ) -> None:
     infrastructure_variables = write_infrastructure_variables(
-        run_root, contract, commit, args.nebius_profile
+        run_root,
+        contract,
+        commit,
+        args.nebius_profile,
+        capacity_approval,
     )
     if not state_ready(args.terraform, run_root, "infrastructure", contract):
         plan_stage(
@@ -3406,6 +3610,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=os.environ.get("NEBIUS_PROFILE", "sandbox"),
         help="authenticated Nebius CLI profile (default: NEBIUS_PROFILE or sandbox)",
     )
+    parser.add_argument(
+        "--sai06-capacity-receipt",
+        type=Path,
+        help=(
+            "mode-0600, <=24h numeric node/storage allowance receipt bound to "
+            "the exact effective SAI-06 plan (required by preflight/plan/apply)"
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -3449,6 +3661,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "profiles": contract["profiles"],
                         "accelerator_pools": contract["selected_accelerator_pool_ids"],
                         "models": contract["selected_model_ids"],
+                        "sai06_capacity_plan_binding": sai06_capacity_plan_binding(
+                            contract
+                        ),
                     },
                     indent=2,
                 )
@@ -3474,7 +3689,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             private_json(
                 run_root / "sai06-postgresql-capacity-preflight.json", capacity
             )
-            plan_stack(args, run_root, contract, commit)
+            plan_stack(
+                args,
+                run_root,
+                contract,
+                commit,
+                capacity_approval=capacity["capacity_receipt"],
+            )
         elif args.command == "apply":
             require_deployable_images(contract)
             capacity = preflight_postgresql_backup_capacity(args, contract)
@@ -3487,6 +3708,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 contract,
                 commit,
                 configuration_environment,
+                capacity_approval=capacity["capacity_receipt"],
             )
         elif args.command == "destroy":
             destroy_stack(args, run_root, contract, commit)

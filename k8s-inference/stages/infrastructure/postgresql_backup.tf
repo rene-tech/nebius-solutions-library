@@ -6,14 +6,24 @@
 # delivered through MysteryBox. No secret value enters Terraform state.
 
 locals {
-  postgresql_backup_root            = "postgresql/v1"
-  postgresql_backup_path_scope      = "${local.postgresql_backup_root}/*"
-  postgresql_backup_writer_role     = "storage.object-editor"
-  postgresql_backup_endpoint        = "https://storage.${local.selected_target.region}.nebius.cloud"
-  postgresql_backup_noncurrent_days = var.postgresql_backup.retention_days + 7
+  postgresql_backup_root                        = "postgresql/v1"
+  postgresql_backup_path_scope                  = "${local.postgresql_backup_root}/*"
+  postgresql_backup_writer_role                 = "storage.object-editor"
+  postgresql_backup_endpoint                    = "https://storage.${local.selected_target.region}.nebius.cloud"
+  postgresql_backup_noncurrent_days             = var.postgresql_backup.retention_days + 7
+  postgresql_backup_current_base_backup_days    = var.postgresql_backup.retention_days + 2
+  postgresql_backup_noncurrent_base_backup_days = local.postgresql_backup_noncurrent_days
+  postgresql_backup_current_wal_days            = var.postgresql_backup.retention_days + 7
+  postgresql_backup_noncurrent_wal_days         = local.postgresql_backup_noncurrent_days
   postgresql_backup_required_capacity_gib = ceil((
-    var.postgresql_backup.database_volume_size_gib * (var.postgresql_backup.retention_days + 2) +
-    var.postgresql_backup.estimated_daily_wal_gib * (var.postgresql_backup.retention_days + 7)
+    var.postgresql_backup.database_volume_size_gib * (
+      local.postgresql_backup_current_base_backup_days +
+      local.postgresql_backup_noncurrent_base_backup_days
+    ) +
+    var.postgresql_backup.estimated_daily_wal_gib * (
+      local.postgresql_backup_current_wal_days +
+      local.postgresql_backup_noncurrent_wal_days
+    )
   ) * (100 + var.postgresql_backup.capacity_headroom_percent) / 100)
   postgresql_backup_lifecycle_rules = [
     {
@@ -38,6 +48,21 @@ locals {
       transition                    = null
     },
   ]
+  postgresql_capacity_plan_binding = sha256(jsonencode({
+    schema                      = "fs2-serve.nebius.ai/sai06-capacity-plan/v1"
+    project_id                  = nonsensitive(var.project_id)
+    region                      = local.selected_target.region
+    effective_system_node_count = local.effective_system_pool.node_count
+    postgresql_backup = {
+      configured_capacity_gib   = var.postgresql_backup.object_storage.max_size_gib
+      schedule                  = var.postgresql_backup.schedule
+      retention_days            = var.postgresql_backup.retention_days
+      database_volume_size_gib  = var.postgresql_backup.database_volume_size_gib
+      estimated_daily_wal_gib   = var.postgresql_backup.estimated_daily_wal_gib
+      capacity_headroom_percent = var.postgresql_backup.capacity_headroom_percent
+      required_capacity_gib     = var.postgresql_backup.required_capacity_gib
+    }
+  }))
 }
 
 resource "terraform_data" "postgresql_backup_contract" {
@@ -50,6 +75,10 @@ resource "terraform_data" "postgresql_backup_contract" {
     retention_days                    = var.postgresql_backup.retention_days
     database_volume_size_gib          = var.postgresql_backup.database_volume_size_gib
     estimated_daily_wal_gib           = var.postgresql_backup.estimated_daily_wal_gib
+    current_base_backup_days          = local.postgresql_backup_current_base_backup_days
+    noncurrent_base_backup_days       = local.postgresql_backup_noncurrent_base_backup_days
+    current_wal_days                  = local.postgresql_backup_current_wal_days
+    noncurrent_wal_days               = local.postgresql_backup_noncurrent_wal_days
     capacity_headroom_percent         = var.postgresql_backup.capacity_headroom_percent
     required_capacity_gib             = var.postgresql_backup.required_capacity_gib
     capacity_cost_review_acknowledged = var.postgresql_backup.capacity_cost_review_acknowledged
@@ -79,6 +108,25 @@ resource "terraform_data" "postgresql_backup_contract" {
         local.postgresql_backup_required_capacity_gib
       )
       error_message = "PostgreSQL backup storage is below the retention-aware base-backup, WAL and headroom requirement."
+    }
+    precondition {
+      condition = try(
+        var.sai06_capacity_approval != null &&
+        var.sai06_capacity_approval.project_id == nonsensitive(var.project_id) &&
+        var.sai06_capacity_approval.region == local.selected_target.region &&
+        var.sai06_capacity_approval.plan_binding_sha256 == local.postgresql_capacity_plan_binding &&
+        timecmp(var.sai06_capacity_approval.reviewed_at, timeadd(plantimestamp(), "5m")) <= 0 &&
+        timecmp(var.sai06_capacity_approval.reviewed_at, timeadd(plantimestamp(), "-24h")) >= 0 &&
+        timecmp(var.sai06_capacity_approval.valid_until, plantimestamp()) > 0 &&
+        timecmp(var.sai06_capacity_approval.valid_until, timeadd(var.sai06_capacity_approval.reviewed_at, "24h")) <= 0 &&
+        var.sai06_capacity_approval.effective_system_node_count == local.effective_system_pool.node_count &&
+        var.sai06_capacity_approval.system_node_ceiling >= local.effective_system_pool.node_count &&
+        var.sai06_capacity_approval.configured_storage_capacity_bytes == var.postgresql_backup.object_storage.max_size_gib * 1024 * 1024 * 1024 &&
+        var.sai06_capacity_approval.projected_storage_usage_bytes == var.sai06_capacity_approval.observed_storage_usage_bytes + var.sai06_capacity_approval.configured_storage_capacity_bytes &&
+        var.sai06_capacity_approval.storage_ceiling_bytes >= var.sai06_capacity_approval.projected_storage_usage_bytes,
+        false,
+      )
+      error_message = "PostgreSQL backup/system-pool planning requires a fresh project/region-bound numeric SAI-06 capacity receipt whose node and storage ceilings cover the exact effective demand."
     }
   }
 

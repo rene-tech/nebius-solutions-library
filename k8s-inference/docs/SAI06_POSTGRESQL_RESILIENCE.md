@@ -55,11 +55,22 @@ daily backups and 30-day retention. It is negative evidence and must never be
 rolled out. This successor replaces both contracts; it does not rewrite the
 rejected commit into a successful result.
 
+Independent preliminary review then rejected successor
+`ba2ff86cf78853726e2b5faf139f525b18bf6ec3`. That candidate preserved PITR
+and privilege denial, but undercounted versioned non-current backup/WAL data,
+accepted arbitrary cron cadences with daily sizing, lacked executable backup
+and capacity alerts, allowed the default/null system pool to bypass cost
+acknowledgement, and treated a provider response with no numeric limit as a
+manual-review note rather than a hard stop. It is also immutable negative
+evidence and is not rollout-authorized.
+
 ## Implemented contract
 
 The root facade always provisions a distinct versioned backup bucket. There is
 intentionally no `enabled` input. The default recovery window is 30 days and
-the default CloudNativePG six-field schedule is `0 0 2 * * *`. The bucket has
+the only supported CloudNativePG schedule is the once-daily six-field cron
+`0 0 2 * * *`. Other cadences fail validation rather than silently reusing
+daily capacity math. The bucket has
 `prevent_destroy`, keeps current backup/WAL objects under Barman retention, and
 expires only incomplete uploads and non-current versions outside the recovery
 window. Its dedicated service account receives only `storage.object-editor` on
@@ -70,20 +81,36 @@ Backup capacity is retention-aware rather than a fixed 256 GiB. The enforced
 minimum is:
 
 ```text
-ceil(((database GiB * (retention days + 2 boundary backups))
-    + (estimated daily WAL GiB * (retention days + 7 cleanup-lag days)))
+ceil(((database GiB * ((retention days + 2 current backups)
+                     + (retention days + 7 non-current backup days)))
+    + (estimated daily WAL GiB * ((retention days + 7 current WAL days)
+                                + (retention days + 7 non-current WAL days))))
     * (100 + headroom percent) / 100)
 ```
 
-For the full-catalog defaults this is 5,480 GiB: a 100 GiB database, one daily
-base backup, 32 GiB/day estimated WAL, 30 retained days, seven WAL/version
-cleanup-lag days, and 25% headroom. The default retained bucket ceiling is
-6,144 GiB. A 256 GiB value fails validation before planning. Because the live
-Nebius quota response exposes current Standard-storage usage but not an
-explicit ceiling, `inference-stack preflight`, `plan`, and `apply` all capture
-a private, payload-free live usage receipt and require an explicit capacity and
-cost acknowledgement; the receipt never claims that observed usage is a
-reservation.
+For the full-catalog defaults this is 11,585 GiB: a 100 GiB database, one
+daily base backup, 32 GiB/day estimated WAL, 30 retained days, seven additional
+days before each deleted version expires, and 25% headroom. The default
+retained bucket ceiling is 12,288 GiB. Both 256 GiB and the rejected 6,144 GiB
+value fail validation before planning.
+
+`inference-stack preflight`, `plan`, and `apply` require a mode-0600
+`--sai06-capacity-receipt`. The receipt contains numeric ceilings for
+`compute.system_pool.nodes` and `storage.bucket.size.standard`, is bound to the
+exact effective plan digest, project and region, names its reviewer and source
+evidence digest, and is valid for at most 24 hours. Missing, stale,
+wrong-project, wrong-plan and insufficient receipts all fail closed. Current
+live object-storage usage plus the configured bucket maximum must fit the
+reviewed ceiling and any numeric provider ceiling. A provider response with no
+numeric limit provides no apply authority by itself.
+
+The read-only `inference-stack validate` output publishes the non-sensitive
+`sai06_capacity_plan_binding` that an independent operator places in the
+receipt. The infrastructure stage recomputes that SHA-256 from its actual
+project, region, effective node count, daily schedule and storage-sizing inputs;
+it does not trust the wrapper's summary. Direct Terraform planning therefore
+also rejects a missing, stale, wrong-project, wrong-plan or insufficient
+receipt.
 
 The database always has three instances with required hostname anti-affinity on
 the regular system pool. Its `barmanObjectStore` configuration sends base
@@ -96,9 +123,12 @@ and a PodDisruptionBudget with `minAvailable: 1`. Both Envoy and PostgreSQL
 remain pinned to the system pool, whose capacity profiles and explicit override
 now reject fewer than three nodes. The retained private deployment input
 currently requests one system node, so it deliberately fails the new source
-gate. Promotion requires an intentional change to three nodes, the explicit
-`three_node_ha_cost_review_acknowledged` flag, and fresh saved-plan, quota and
-cost review. The remediation does not silently resize the retained system.
+gate. Promotion requires an intentional change to three nodes and the
+top-level `system_pool_cost_review_acknowledged` flag. That acknowledgement
+applies to the effective profile-derived count even when `system_pool` is null;
+the backup acknowledgement is independently mandatory. The numeric capacity
+receipt, no-replacement saved plan, quota and price review remain additional
+gates. The remediation does not silently resize the retained system.
 
 Restore verification is deliberately a four-apply acceptance sequence after
 one exact `Backup` has completed:
@@ -112,6 +142,10 @@ one exact `Backup` has completed:
    `recoveryTarget.targetTime`. The verifier requires a non-null replay LSN,
    marker A at or before the replay boundary, and marker B absent. This proves
    archived WAL replay beyond the selected base backup and a bounded PITR stop.
+   Only after that verifier succeeds, a separate no-service-account-token Job
+   writes a non-sensitive success receipt under
+   `postgresql/v1/restore-verification/success/`; its S3 `LastModified` drives
+   the restore-test-age metric.
 3. Disable verification and enable `cleanup_database_restore_marker` with the
    same Backup, marker and target identity. The bounded source Job refuses
    anything except the exact A/B pair, revokes the marker-only grant and drops
@@ -125,6 +159,19 @@ artifact, credential, secret, or session-bearing relations. The Job has no
 service account token, runs non-root with a read-only root filesystem, and
 receives only the existing database login and recovered-cluster CA.
 
+The release also creates a `ServiceMonitor` and `PrometheusRule`. Native CNPG
+metrics alert on failed/stale backups, a missing first recoverability point,
+WAL failures and an unarchived WAL backlog. A non-root, read-only exporter in
+`fs2-data` lists only metadata for all current and non-current versions under
+the backup prefix and exposes total bytes, configured capacity, pressure,
+inventory health and the newest durable restore-verification receipt time. It
+never exports keys, payloads or credentials. Warning/critical bucket thresholds
+are 80/90 percent, and restore verification is stale after seven days.
+The current release uses CloudNativePG's in-core `barmanObjectStore`, so its
+native backup metrics remain populated even though CNPG has deprecated them in
+favor of plugin-specific metrics. Any later Barman CNPG-I migration must change
+the rules to the plugin metric names in the same reviewed rollout.
+
 ## Planned staged rollout
 
 1. After SAI-09 clearance, fetch the deployed source identities, integrate them
@@ -134,7 +181,9 @@ receives only the existing database login and recovered-cluster CA.
    terminal and healthy; a `pending-*` state is a no-go.
 2. Change the retained private system-pool input from one to three regular
    nodes and set both node and backup capacity/cost acknowledgements only after
-   reviewing live quota, current pricing and the private preflight receipt.
+   reviewing live quota and current pricing. Generate a <=24-hour mode-0600
+   numeric capacity receipt bound to the exact project, region and effective
+   plan; pass it with `--sai06-capacity-receipt` to preflight, plan and apply.
    Save the infrastructure binary plan and JSON. Require a no replacement
    result: the plan may add the dedicated bucket, identity/key and two system
    nodes, but it must not replace the cluster, public IP, database PVCs or any
@@ -148,7 +197,9 @@ receives only the existing database login and recovered-cluster CA.
    `status.firstRecoverabilityPoint`. Record `lastArchivedWal` twice across a
    controlled non-sensitive marker write and require it to advance; confirm
    continuous WAL archive health from CNPG status/events without reading backup
-   contents.
+   contents. Query Prometheus for all SAI-06 rules and require their health;
+   verify the bucket inventory reports current plus non-current bytes and is
+   below the reviewed ceiling.
 5. Run the marker-preparation apply for the exact completed Backup. Capture the
    payload-free marker A/B LSNs and emitted target time. Run the distinct
    recovery apply and require marker A present, marker B absent, a replay LSN at
@@ -157,8 +208,9 @@ receives only the existing database login and recovered-cluster CA.
 6. Run the marker-cleanup apply with the same exact identity. Require its
    payload-free success receipt, then clear every acceptance flag/identity and
    apply the saved resource-cleanup plan. Confirm the marker table/grant,
-   marker Job, cleanup Job, recovery Cluster, verifier Job, PVC and Pods are
-   absent; retain the production backups.
+   marker Job, cleanup Job, recovery Cluster, verifier/receipt Jobs, PVC and
+   Pods are absent; retain the production backups and the non-sensitive S3
+   restore success receipt.
 7. Under an approved one-system-node disruption, require both Envoy replicas to
    start on distinct nodes, the PDB to retain one available replica, and the
    public endpoint to remain healthy. Restore the node and require 2/2 Ready.
@@ -186,8 +238,9 @@ kubectl --context k8s-inference-h100 -n envoy-gateway-system get pods \
 kubectl --context k8s-inference-h100 -n envoy-gateway-system get pdb
 kubectl --context k8s-inference-h100 -n fs2-data logs job/fs2-control-db-pitr-marker \
   | grep '^FS2_PITR_TARGET_TIME='
-kubectl --context k8s-inference-h100 -n fs2-data get job fs2-control-db-restore-verifier
+kubectl --context k8s-inference-h100 -n fs2-data get job fs2-control-db-restore-verifier,fs2-control-db-restore-receipt
 kubectl --context k8s-inference-h100 -n fs2-data logs job/fs2-control-db-pitr-marker-cleanup
+kubectl --context k8s-inference-h100 -n fs2-data get prometheusrule,servicemonitor
 ```
 
 ## Rollback and retention
@@ -217,36 +270,46 @@ cloud, Kubernetes, bucket, key, node, PVC, Pod, Job, backup or GPU resource and
 therefore incurred no incremental cost and requires no cleanup. This is not a
 live SAI-06 closure claim: successful backups, `firstRecoverabilityPoint`,
 three-node PostgreSQL spread, two-node Envoy spread and recovered-cluster Job
-success remain mandatory after the parent releases the SAI-09 gate. No model or
-GPU behavior changes in this remediation, so a GPU verification run is not
-applicable. The eventual plan adds two regular CPU system nodes and a retained
-6,144 GiB object-storage ceiling by default. A read-only live check on
+success and all backup/WAL/bucket/restore alerts remain mandatory after the
+parent releases the SAI-09 gate. No model or GPU behavior changes in this
+remediation, so a GPU verification run is not applicable. The eventual plan
+adds two regular CPU system nodes and a retained 12,288 GiB object-storage
+ceiling by default. A read-only live check on
 2026-09-16 observed 239,727,929,141 bytes of Standard-storage use in the target
 project/region and no explicit ceiling in the returned allowance. This is
 usage evidence, not capacity or price approval; refresh the receipt and record
 the provider plan and current pricing before approving the no-replacement plan.
+A fresh numeric receipt is mandatory because that live response did not expose
+a limit.
 
 The source gate completed with these exact results:
 
 - root, infrastructure and workloads `terraform validate`: pass;
-- focused infrastructure backup tests: 3 passed, including retention-aware
-  sizing acceptance and rejection of both a disposable bucket and 256 GiB;
-- focused SAI-06, deployment-contract, wrapper and infrastructure-contract
-  tests: 164 passed plus 104 parameterized subtests;
+- complete infrastructure Terraform tests: 27 passed; the seven SAI-06 backup
+  cases include valid exact-plan binding plus rejection of disposable,
+  undersized, missing-receipt, stale, wrong-project and insufficient receipts;
+- focused SAI-06, deployment-contract and wrapper tests: 147 passed plus 104
+  parameterized subtests;
 - Helm lint and public-edge rendering: pass, including exact Envoy replica,
   anti-affinity and PDB assertions; one-replica and disabled-PDB inputs were
   both rejected;
-- Trivy HIGH/CRITICAL configuration scans: zero findings in the changed backup
-  and database Terraform; repository secret scan: zero findings;
-- Ruff lint over the changed Python wrapper/tests, Terraform recursive format
-  check and `git diff --check`: pass.
+- the exact pinned CloudNativePG/PostgreSQL image imported both `boto3 1.43.70`
+  and the exporter under a read-only, network-disabled container run;
+- strict Ruff and mypy passed for the new metrics implementation and SAI-06
+  tests; fatal Python checks and compilation passed for the wrapper; Terraform
+  recursive format and `git diff --check` passed;
+- Trivy HIGH/CRITICAL configuration scans found zero findings in the changed
+  backup/database/monitoring Terraform, and the repository secret scan found
+  zero secrets.
 
 The broader current checkout is not represented as green. The workloads
-Terraform suite reported 37 passed, 3 failed and 10 skipped; all three new
-PITR plan cases passed, while the failures remain in untouched
-general-CPU/scientific-artifact cases. The broad Python suite reported 497
-passed, 14 failed and 492 parameterized subtests passed; failures were outside
-the SAI-06 diff (one missing optional host dependency, existing public-export
-history, two scheduling-contract checks and ten scientific receipt-identity
-mismatches). These negative results are retained rather than rewritten as
-promotion evidence; the focused SAI-06 gate above is green.
+Terraform file containing the new PITR cases reported 8 passed, 1 failed and 2
+skipped. All three PITR cases passed; the failure is the pre-existing
+scientific-artifact bucket-reuse expectation being preempted by an unrelated
+Kueue CPU-admission precondition. It is retained rather than rewritten as
+promotion evidence. The sibling SAI-10 secret-migration candidate is clean at
+`851a15df2` but remains queued for independent review. It is deliberately not
+merged and is not an ancestor of this SAI-06 candidate. After both candidates
+independently pass review, integration must begin with a read-only merge-tree
+check from their shared base and rerun both suites; any overlap belongs in a
+separate integration commit rather than either source-remediation lineage.

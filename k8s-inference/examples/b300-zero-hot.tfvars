@@ -25,6 +25,10 @@ deployment = {
     models       = "full_catalog"
   }
 
+  cluster = {
+    system_pool_cost_review_acknowledged = true
+  }
+
   accelerator_pools = {
     "nebius-b300-preemptible-1x" = {
       platform          = "gpu-b300-sxm"
@@ -60,6 +64,10 @@ deployment = {
       hot  = []
     }
     cold_start_keepers = true
+  }
+
+  storage = {
+    postgresql_backup = { capacity_cost_review_acknowledged = true }
   }
 
   edge = {

@@ -568,6 +568,7 @@ variable "postgresql_backup" {
       bucket_name  = string
       max_size_gib = number
     })
+    schedule                          = string
     retention_days                    = number
     database_volume_size_gib          = number
     estimated_daily_wal_gib           = number
@@ -582,13 +583,14 @@ variable "postgresql_backup" {
     }
     object_storage = {
       bucket_name  = "disabled-postgresql-backup.invalid"
-      max_size_gib = 6144
+      max_size_gib = 12288
     }
+    schedule                          = "0 0 2 * * *"
     retention_days                    = 30
     database_volume_size_gib          = 100
     estimated_daily_wal_gib           = 32
     capacity_headroom_percent         = 25
-    required_capacity_gib             = 5480
+    required_capacity_gib             = 11585
     capacity_cost_review_acknowledged = false
   }
 
@@ -600,6 +602,7 @@ variable "postgresql_backup" {
         floor(var.postgresql_backup.object_storage.max_size_gib) == var.postgresql_backup.object_storage.max_size_gib &&
         var.postgresql_backup.object_storage.max_size_gib >= var.postgresql_backup.required_capacity_gib &&
         var.postgresql_backup.object_storage.max_size_gib <= 65536 &&
+        var.postgresql_backup.schedule == "0 0 2 * * *" &&
         floor(var.postgresql_backup.retention_days) == var.postgresql_backup.retention_days &&
         var.postgresql_backup.retention_days >= 7 &&
         var.postgresql_backup.retention_days <= 365 &&
@@ -610,14 +613,59 @@ variable "postgresql_backup" {
         floor(var.postgresql_backup.capacity_headroom_percent) == var.postgresql_backup.capacity_headroom_percent &&
         var.postgresql_backup.capacity_headroom_percent >= 20 &&
         var.postgresql_backup.required_capacity_gib == ceil((
-          var.postgresql_backup.database_volume_size_gib * (var.postgresql_backup.retention_days + 2) +
-          var.postgresql_backup.estimated_daily_wal_gib * (var.postgresql_backup.retention_days + 7)
+          var.postgresql_backup.database_volume_size_gib * (
+            (var.postgresql_backup.retention_days + 2) +
+            (var.postgresql_backup.retention_days + 7)
+          ) +
+          var.postgresql_backup.estimated_daily_wal_gib * 2 * (var.postgresql_backup.retention_days + 7)
         ) * (100 + var.postgresql_backup.capacity_headroom_percent) / 100) &&
-        (var.system_pool == null || var.postgresql_backup.capacity_cost_review_acknowledged)
+        var.postgresql_backup.capacity_cost_review_acknowledged
       ),
       false,
     )
-    error_message = "enabled postgresql_backup must be retained and capacity-sized from volume, daily WAL, 7-365 day retention and at least 20% headroom; explicit system-pool rollouts require capacity/cost acknowledgement."
+    error_message = "enabled postgresql_backup must be retained and capacity-sized for current and retained non-current base-backup/WAL versions plus at least 20% headroom; every effective system-pool rollout requires capacity/cost acknowledgement."
+  }
+}
+
+variable "sai06_capacity_approval" {
+  description = "Short-lived numeric node/storage allowance validated by inference-stack and rechecked by the infrastructure plan. Null is never valid for an enabled PostgreSQL backup create/update plan."
+  type = object({
+    schema                            = string
+    project_id                        = string
+    region                            = string
+    reviewed_at                       = string
+    valid_until                       = string
+    reviewed_by                       = string
+    evidence_sha256                   = string
+    plan_binding_sha256               = string
+    system_node_ceiling               = number
+    storage_ceiling_bytes             = number
+    observed_storage_usage_bytes      = number
+    configured_storage_capacity_bytes = number
+    projected_storage_usage_bytes     = number
+    effective_system_node_count       = number
+  })
+  default  = null
+  nullable = true
+
+  validation {
+    condition = var.sai06_capacity_approval == null || try(
+      var.sai06_capacity_approval.schema == "fs2-serve.nebius.ai/sai06-capacity-approval/v1" &&
+      can(regex("^[A-Za-z0-9][A-Za-z0-9._@/-]{2,127}$", var.sai06_capacity_approval.reviewed_by)) &&
+      can(regex("^[0-9a-f]{64}$", var.sai06_capacity_approval.evidence_sha256)) &&
+      can(regex("^[0-9a-f]{64}$", var.sai06_capacity_approval.plan_binding_sha256)) &&
+      floor(var.sai06_capacity_approval.system_node_ceiling) == var.sai06_capacity_approval.system_node_ceiling &&
+      floor(var.sai06_capacity_approval.storage_ceiling_bytes) == var.sai06_capacity_approval.storage_ceiling_bytes &&
+      floor(var.sai06_capacity_approval.observed_storage_usage_bytes) == var.sai06_capacity_approval.observed_storage_usage_bytes &&
+      floor(var.sai06_capacity_approval.configured_storage_capacity_bytes) == var.sai06_capacity_approval.configured_storage_capacity_bytes &&
+      floor(var.sai06_capacity_approval.projected_storage_usage_bytes) == var.sai06_capacity_approval.projected_storage_usage_bytes &&
+      floor(var.sai06_capacity_approval.effective_system_node_count) == var.sai06_capacity_approval.effective_system_node_count &&
+      var.sai06_capacity_approval.system_node_ceiling >= 1 &&
+      var.sai06_capacity_approval.storage_ceiling_bytes >= 1 &&
+      var.sai06_capacity_approval.observed_storage_usage_bytes >= 0,
+      false,
+    )
+    error_message = "sai06_capacity_approval must be the exact numeric, digest-bound SAI-06 capacity receipt emitted by the live preflight."
   }
 }
 

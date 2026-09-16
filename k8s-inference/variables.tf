@@ -34,18 +34,21 @@ variable "deployment" {
     cluster = optional(object({
       kubernetes_version          = optional(string, "1.35")
       control_plane_allowed_cidrs = optional(set(string), [])
+      # This acknowledgement applies to the effective system pool, including
+      # the profile-derived default. Keeping it outside the optional override
+      # prevents a null system_pool from bypassing the HA cost/quota gate.
+      system_pool_cost_review_acknowledged = optional(bool, false)
       system_pool = optional(object({
-        capacity                               = optional(string, "regular")
-        platform                               = optional(string, "cpu-d3")
-        preset                                 = optional(string, "8vcpu-32gb")
-        node_count                             = optional(number)
-        boot_disk_type                         = optional(string, "NETWORK_SSD")
-        boot_disk_gib                          = optional(number, 160)
-        max_surge                              = optional(number)
-        max_unavailable                        = optional(number)
-        drain_timeout                          = optional(string, "15m")
-        inotify_max_user_instances             = optional(number, 8192)
-        three_node_ha_cost_review_acknowledged = optional(bool, false)
+        capacity                   = optional(string, "regular")
+        platform                   = optional(string, "cpu-d3")
+        preset                     = optional(string, "8vcpu-32gb")
+        node_count                 = optional(number)
+        boot_disk_type             = optional(string, "NETWORK_SSD")
+        boot_disk_gib              = optional(number, 160)
+        max_surge                  = optional(number)
+        max_unavailable            = optional(number)
+        drain_timeout              = optional(string, "15m")
+        inotify_max_user_instances = optional(number, 8192)
       }))
     }), {})
 
@@ -579,7 +582,7 @@ variable "deployment" {
       postgresql_backup = optional(object({
         object_storage = optional(object({
           bucket_name  = optional(string)
-          max_size_gib = optional(number, 6144)
+          max_size_gib = optional(number, 12288)
         }), {})
         retention_days                    = optional(number, 30)
         estimated_daily_wal_gib           = optional(number, 32)
@@ -1099,11 +1102,15 @@ variable "deployment" {
       floor(var.deployment.cluster.system_pool.inotify_max_user_instances) == var.deployment.cluster.system_pool.inotify_max_user_instances &&
       var.deployment.cluster.system_pool.inotify_max_user_instances >= 256 &&
       var.deployment.cluster.system_pool.inotify_max_user_instances <= 65536 &&
-      var.deployment.cluster.system_pool.three_node_ha_cost_review_acknowledged &&
       can(regex("^[1-9][0-9]*m$", var.deployment.cluster.system_pool.drain_timeout)),
       false,
     )
-    error_message = "an explicit cluster.system_pool must match the bounded regular CPU-pool contract consumed by infrastructure, request at least three nodes, and explicitly acknowledge the three-node HA quota/cost review."
+    error_message = "an explicit cluster.system_pool must match the bounded regular CPU-pool contract consumed by infrastructure and request at least three nodes; the effective-pool cost review is acknowledged separately at cluster.system_pool_cost_review_acknowledged."
+  }
+
+  validation {
+    condition     = var.deployment.cluster.system_pool_cost_review_acknowledged
+    error_message = "cluster.system_pool_cost_review_acknowledged must be true for the effective profile-derived or explicitly overridden three-node HA system pool."
   }
 
   validation {
@@ -1114,8 +1121,11 @@ variable "deployment" {
       ) &&
       floor(var.deployment.storage.postgresql_backup.object_storage.max_size_gib) == var.deployment.storage.postgresql_backup.object_storage.max_size_gib &&
       var.deployment.storage.postgresql_backup.object_storage.max_size_gib >= ceil((
-        (var.deployment.profiles.models == "full_catalog" ? 100 : 32) * (var.deployment.storage.postgresql_backup.retention_days + 2) +
-        var.deployment.storage.postgresql_backup.estimated_daily_wal_gib * (var.deployment.storage.postgresql_backup.retention_days + 7)
+        (var.deployment.profiles.models == "full_catalog" ? 100 : 32) * (
+          (var.deployment.storage.postgresql_backup.retention_days + 2) +
+          (var.deployment.storage.postgresql_backup.retention_days + 7)
+        ) +
+        var.deployment.storage.postgresql_backup.estimated_daily_wal_gib * 2 * (var.deployment.storage.postgresql_backup.retention_days + 7)
       ) * (100 + var.deployment.storage.postgresql_backup.capacity_headroom_percent) / 100) &&
       var.deployment.storage.postgresql_backup.object_storage.max_size_gib <= 65536 &&
       floor(var.deployment.storage.postgresql_backup.retention_days) == var.deployment.storage.postgresql_backup.retention_days &&
@@ -1127,14 +1137,14 @@ variable "deployment" {
       floor(var.deployment.storage.postgresql_backup.capacity_headroom_percent) == var.deployment.storage.postgresql_backup.capacity_headroom_percent &&
       var.deployment.storage.postgresql_backup.capacity_headroom_percent >= 20 &&
       var.deployment.storage.postgresql_backup.capacity_headroom_percent <= 200 &&
-      (var.deployment.cluster.system_pool == null || var.deployment.storage.postgresql_backup.capacity_cost_review_acknowledged) &&
-      can(regex("^\\S+(?:\\s+\\S+){5}$", var.deployment.storage.postgresql_backup.schedule)) &&
+      var.deployment.storage.postgresql_backup.capacity_cost_review_acknowledged &&
+      var.deployment.storage.postgresql_backup.schedule == "0 0 2 * * *" &&
       floor(var.deployment.storage.postgresql_backup.credential_generation) == var.deployment.storage.postgresql_backup.credential_generation &&
       var.deployment.storage.postgresql_backup.credential_generation >= 1 &&
       var.deployment.storage.postgresql_backup.credential_generation <= 1000,
       false,
     )
-    error_message = "storage.postgresql_backup must be retained-capacity sized from the database volume, daily WAL estimate, retention window and at least 20% headroom (up to 65536 GiB); an explicit system-pool rollout also requires capacity/cost acknowledgement."
+    error_message = "storage.postgresql_backup must use the supported once-daily 02:00 UTC schedule, be sized for current and retained non-current base-backup/WAL versions plus at least 20% headroom (up to 65536 GiB), and explicitly acknowledge the effective capacity/cost review."
   }
 
   validation {

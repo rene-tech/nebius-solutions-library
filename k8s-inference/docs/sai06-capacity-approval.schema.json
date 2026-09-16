@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schemas/sai06-capacity-approval-v1.json",
+  "title": "SAI-06 capacity approval",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "project_id",
+    "region",
+    "reviewed_at",
+    "valid_until",
+    "plan_binding_sha256",
+    "reviewed_by",
+    "evidence_sha256",
+    "allowances"
+  ],
+  "properties": {
+    "schema": {
+      "const": "fs2-serve.nebius.ai/sai06-capacity-approval/v1"
+    },
+    "project_id": {
+      "type": "string",
+      "pattern": "^project-[a-z0-9]+$"
+    },
+    "region": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]+$"
+    },
+    "reviewed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "valid_until": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "plan_binding_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "reviewed_by": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 128
+    },
+    "evidence_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "allowances": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["resource", "unit", "ceiling"],
+        "properties": {
+          "resource": {
+            "enum": [
+              "compute.system_pool.nodes",
+              "storage.bucket.size.standard"
+            ]
+          },
+          "unit": {
+            "enum": ["node", "byte"]
+          },
+          "ceiling": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    }
+  }
+}

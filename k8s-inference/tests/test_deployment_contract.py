@@ -174,6 +174,16 @@ class DeploymentContractTests(unittest.TestCase):
         **top_level: Any,
     ) -> Path:
         deployment = dict(deployment)
+        acknowledge_sai06 = top_level.pop("_acknowledge_sai06", True)
+        if acknowledge_sai06:
+            cluster = dict(deployment.get("cluster", {}))
+            cluster.setdefault("system_pool_cost_review_acknowledged", True)
+            deployment["cluster"] = cluster
+            storage = dict(deployment.get("storage", {}))
+            postgresql_backup = dict(storage.get("postgresql_backup", {}))
+            postgresql_backup.setdefault("capacity_cost_review_acknowledged", True)
+            storage["postgresql_backup"] = postgresql_backup
+            deployment["storage"] = storage
         deployment.setdefault("applications", TEST_APPLICATIONS)
         # core_capacity is bounded by measured schedulable capacity, never by
         # a preset's nominal size, so a profile-pool fixture that budgets core
@@ -445,10 +455,10 @@ class DeploymentContractTests(unittest.TestCase):
             "name": "fs2-system-inotify",
             "target": self.catalog_target(),
             "cluster": {
+                "system_pool_cost_review_acknowledged": True,
                 "system_pool": {
                     "node_count": 3,
                     "inotify_max_user_instances": 16384,
-                    "three_node_ha_cost_review_acknowledged": True,
                 },
             },
             "storage": {
@@ -474,7 +484,7 @@ class DeploymentContractTests(unittest.TestCase):
             "system-pool-single-node",
         )
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("three-node HA", result.stderr)
+        self.assertIn("at least three nodes", result.stderr)
 
         deployment["cluster"]["system_pool"]["node_count"] = 3
 
@@ -485,6 +495,93 @@ class DeploymentContractTests(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("cluster.system_pool", result.stderr)
+
+    def test_default_system_pool_and_backup_cost_gates_cannot_be_bypassed(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-sai06-default-cost-gate",
+            "target": self.catalog_target(),
+        }
+        result, _ = self._plan_file(
+            self._write_configuration(
+                "sai06-default-no-ack",
+                deployment,
+                _acknowledge_sai06=False,
+            ),
+            "sai06-default-no-ack",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("system_pool_cost_review_acknowledged", result.stderr)
+
+        backup_only = dict(deployment)
+        backup_only["storage"] = {
+            "postgresql_backup": {"capacity_cost_review_acknowledged": True}
+        }
+        result, _ = self._plan_file(
+            self._write_configuration(
+                "sai06-default-backup-ack-only",
+                backup_only,
+                _acknowledge_sai06=False,
+            ),
+            "sai06-default-backup-ack-only",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("system_pool_cost_review_acknowledged", result.stderr)
+
+        node_only = dict(deployment)
+        node_only["cluster"] = {"system_pool_cost_review_acknowledged": True}
+        result, _ = self._plan_file(
+            self._write_configuration(
+                "sai06-default-node-ack-only",
+                node_only,
+                _acknowledge_sai06=False,
+            ),
+            "sai06-default-node-ack-only",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("capacity/cost review", result.stderr)
+
+        fully_acknowledged = dict(node_only)
+        fully_acknowledged["storage"] = {
+            "postgresql_backup": {"capacity_cost_review_acknowledged": True}
+        }
+        outputs = self._planned_outputs(
+            self._write_configuration(
+                "sai06-default-both-acks",
+                fully_acknowledged,
+                _acknowledge_sai06=False,
+            ),
+            "sai06-default-both-acks",
+        )
+        effective = outputs["deployment_contract"]["stages"]["infrastructure"]
+        self.assertEqual(effective["system_pool"]["node_count"], 3)
+        self.assertTrue(
+            effective["system_pool"][
+                "three_node_ha_cost_review_acknowledged"
+            ]
+        )
+        self.assertEqual(
+            effective["postgresql_backup"]["object_storage"]["max_size_gib"],
+            12288,
+        )
+
+        hourly = dict(fully_acknowledged)
+        hourly["storage"] = {
+            "postgresql_backup": {
+                "capacity_cost_review_acknowledged": True,
+                "schedule": "0 0 * * * *",
+            }
+        }
+        result, _ = self._plan_file(
+            self._write_configuration(
+                "sai06-hourly-with-daily-math",
+                hourly,
+                _acknowledge_sai06=False,
+            ),
+            "sai06-hourly-with-daily-math",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("once-daily", result.stderr)
 
         cluster_source = (
             DEPLOY_ROOT / "stages/infrastructure/cluster.tf"

@@ -30,13 +30,15 @@ deployment = {
   cluster = {
     kubernetes_version          = "1.35"
     control_plane_allowed_cidrs = []
+    # Required even when system_pool is omitted: the selected capacity profile
+    # resolves to three regular system nodes and cannot bypass cost review.
+    system_pool_cost_review_acknowledged = true
     # Optional system_pool overrides belong here. Existing one-node installs
     # must intentionally change node_count to at least three and acknowledge a
     # fresh node quota/monthly-cost review before the HA plan can validate.
     # system_pool = {
     #   node_count                                = 3
     #   inotify_max_user_instances                = 8192
-    #   three_node_ha_cost_review_acknowledged    = true
     # }
   }
 
@@ -337,6 +339,15 @@ deployment = {
     }
   }
 
+  # Both acknowledgements are intentionally explicit even when no pool/storage
+  # override is present. Numeric allowance still comes from the short-lived
+  # --sai06-capacity-receipt, not these booleans.
+  storage = {
+    postgresql_backup = {
+      capacity_cost_review_acknowledged = true
+    }
+  }
+
   # Dedicated same-region scientific reference-data plane. The 2 TiB defaults
   # cover the official AlphaFold3 630 GB expanded estimate with more than 1 TiB
   # headroom. H100 workers consume the mounted immutable tree; downloads and MSA
@@ -352,13 +363,15 @@ deployment = {
   #       # Omit bucket_name for the deterministic deployment/run-derived name.
   #       # Full-catalog default: 30 daily 100 GiB base backups, boundary
   #       # backups, estimated WAL, cleanup lag, and 25% headroom.
-  #       max_size_gib = 6144
+  #       # Counts current plus non-current base backups and WAL for the
+  #       # versioned 30d+7d lifecycle, then applies configured headroom.
+  #       max_size_gib = 12288
   #     }
   #     retention_days                   = 30
   #     estimated_daily_wal_gib           = 32
   #     capacity_headroom_percent         = 25
-  #     # Required when an explicit system-pool rollout is configured. Run the
-  #     # read-only `./inference-stack preflight` immediately before plan.
+  #     # Required for the effective capacity even when system_pool is null.
+  #     # Pass a fresh numeric --sai06-capacity-receipt to preflight/plan/apply.
   #     capacity_cost_review_acknowledged = true
   #     # CloudNativePG uses a six-field cron expression (seconds first).
   #     schedule              = "0 0 2 * * *"

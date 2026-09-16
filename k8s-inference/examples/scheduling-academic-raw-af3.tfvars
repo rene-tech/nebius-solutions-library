@@ -37,7 +37,8 @@ deployment = {
   cluster = {
     # Inside the Kueue and JobSet upstream-tested intersection, which enabling
     # scientific batch requires.
-    kubernetes_version = "1.34"
+    kubernetes_version                   = "1.34"
+    system_pool_cost_review_acknowledged = true
   }
 
   accelerator_pools = {
@@ -140,6 +141,7 @@ deployment = {
   }
 
   storage = {
+    postgresql_backup = { capacity_cost_review_acknowledged = true }
     # Batch execution commits every result here, so the store is enabled with
     # the exact object-storage addresses the control plane may reach. The
     # default media types already cover the scientific formats.

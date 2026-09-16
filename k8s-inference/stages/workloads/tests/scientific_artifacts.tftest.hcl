@@ -220,7 +220,7 @@ variables {
         id                = "storagebucket-postgresqltest"
         name              = "fs2-modelexpress-test-postgresql-backup"
         endpoint          = "https://storage.us-north1.nebius.cloud"
-        max_size_gib      = 6144
+        max_size_gib      = 12288
         versioning_policy = "ENABLED"
         storage_class     = "STANDARD"
         addressing_style  = "path"
@@ -252,9 +252,13 @@ variables {
         database_volume_size_gib          = 100
         daily_base_backup_count           = 1
         estimated_daily_wal_gib           = 32
+        current_base_backup_days          = 32
+        noncurrent_base_backup_days       = 37
+        current_wal_days                  = 37
+        noncurrent_wal_days               = 37
         capacity_headroom_percent         = 25
-        required_capacity_gib             = 5480
-        configured_capacity_gib           = 6144
+        required_capacity_gib             = 11585
+        configured_capacity_gib           = 12288
         live_capacity_preflight_required  = true
         capacity_cost_review_acknowledged = true
       }

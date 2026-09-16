@@ -147,12 +147,23 @@ locals {
     "${var.deployment.name}-${local.run_id}-postgresql-backup",
   )
   postgresql_database_volume_size_gib = local.model_profile == "full_catalog" ? 100 : 32
-  # Daily Barman base backups can each approach the provisioned database
-  # volume. Keep two boundary backups, seven additional days for WAL/version
-  # cleanup lag, and an explicit operator-controlled headroom percentage.
+  # The bucket is versioned. Barman's current recovery window can retain one
+  # daily full-volume base backup per day plus two boundary backups, while
+  # lifecycle retains each deleted base/WAL object as a non-current version
+  # for retention_days + 7. Count both populations before adding headroom.
+  postgresql_backup_current_base_backup_days    = var.deployment.storage.postgresql_backup.retention_days + 2
+  postgresql_backup_noncurrent_base_backup_days = var.deployment.storage.postgresql_backup.retention_days + 7
+  postgresql_backup_current_wal_days            = var.deployment.storage.postgresql_backup.retention_days + 7
+  postgresql_backup_noncurrent_wal_days         = var.deployment.storage.postgresql_backup.retention_days + 7
   postgresql_backup_required_capacity_gib = ceil((
-    local.postgresql_database_volume_size_gib * (var.deployment.storage.postgresql_backup.retention_days + 2) +
-    var.deployment.storage.postgresql_backup.estimated_daily_wal_gib * (var.deployment.storage.postgresql_backup.retention_days + 7)
+    local.postgresql_database_volume_size_gib * (
+      local.postgresql_backup_current_base_backup_days +
+      local.postgresql_backup_noncurrent_base_backup_days
+    ) +
+    var.deployment.storage.postgresql_backup.estimated_daily_wal_gib * (
+      local.postgresql_backup_current_wal_days +
+      local.postgresql_backup_noncurrent_wal_days
+    )
   ) * (100 + var.deployment.storage.postgresql_backup.capacity_headroom_percent) / 100)
 
   # General CPU pools. Capacity mode is exactly one of fixed or autoscaling, so
@@ -1000,7 +1011,19 @@ locals {
       repository_prefix = var.deployment.artifacts.registry_policy.repository_prefix
       source_hosts      = local.selected_image_source_hosts
     }
-    system_pool = var.deployment.cluster.system_pool
+    # Materialize the selected profile's effective node count before handing
+    # the stage its variables. The HA acknowledgement therefore applies to the
+    # default/null path exactly as it does to an explicit override.
+    system_pool = merge(
+      jsondecode(var.deployment.cluster.system_pool == null ? "{}" : jsonencode(var.deployment.cluster.system_pool)),
+      {
+        node_count = coalesce(
+          try(var.deployment.cluster.system_pool.node_count, null),
+          local.selected_capacity.system_nodes,
+        )
+        three_node_ha_cost_review_acknowledged = var.deployment.cluster.system_pool_cost_review_acknowledged
+      },
+    )
     # Elastic general CPU pools, passed through verbatim with their resolved
     # capacity bounds so the stage never re-derives a node count.
     cpu_pools = {
@@ -1068,6 +1091,7 @@ locals {
         bucket_name  = local.postgresql_backup_bucket_name
         max_size_gib = var.deployment.storage.postgresql_backup.object_storage.max_size_gib
       }
+      schedule                          = var.deployment.storage.postgresql_backup.schedule
       retention_days                    = var.deployment.storage.postgresql_backup.retention_days
       database_volume_size_gib          = local.postgresql_database_volume_size_gib
       estimated_daily_wal_gib           = var.deployment.storage.postgresql_backup.estimated_daily_wal_gib

@@ -394,6 +394,10 @@ variable "postgresql_backup" {
         database_volume_size_gib          = number
         daily_base_backup_count           = number
         estimated_daily_wal_gib           = number
+        current_base_backup_days          = number
+        noncurrent_base_backup_days       = number
+        current_wal_days                  = number
+        noncurrent_wal_days               = number
         capacity_headroom_percent         = number
         required_capacity_gib             = number
         configured_capacity_gib           = number
@@ -441,6 +445,20 @@ variable "postgresql_backup" {
         var.postgresql_backup.storage_contract.layout.server_name == "fs2-control-db" &&
         var.postgresql_backup.storage_contract.retention.barman_retention_days == var.postgresql_backup.retention_days &&
         var.postgresql_backup.storage_contract.sizing.daily_base_backup_count == 1 &&
+        var.postgresql_backup.storage_contract.sizing.current_base_backup_days == var.postgresql_backup.retention_days + 2 &&
+        var.postgresql_backup.storage_contract.sizing.noncurrent_base_backup_days == var.postgresql_backup.retention_days + 7 &&
+        var.postgresql_backup.storage_contract.sizing.current_wal_days == var.postgresql_backup.retention_days + 7 &&
+        var.postgresql_backup.storage_contract.sizing.noncurrent_wal_days == var.postgresql_backup.retention_days + 7 &&
+        var.postgresql_backup.storage_contract.sizing.required_capacity_gib == ceil((
+          var.postgresql_backup.storage_contract.sizing.database_volume_size_gib * (
+            var.postgresql_backup.storage_contract.sizing.current_base_backup_days +
+            var.postgresql_backup.storage_contract.sizing.noncurrent_base_backup_days
+          ) +
+          var.postgresql_backup.storage_contract.sizing.estimated_daily_wal_gib * (
+            var.postgresql_backup.storage_contract.sizing.current_wal_days +
+            var.postgresql_backup.storage_contract.sizing.noncurrent_wal_days
+          )
+        ) * (100 + var.postgresql_backup.storage_contract.sizing.capacity_headroom_percent) / 100) &&
         var.postgresql_backup.storage_contract.sizing.configured_capacity_gib >= var.postgresql_backup.storage_contract.sizing.required_capacity_gib &&
         var.postgresql_backup.storage_contract.sizing.live_capacity_preflight_required &&
         var.postgresql_backup.storage_contract.lifecycle.retention_mode == "retain" &&
@@ -462,14 +480,14 @@ variable "postgresql_backup" {
         floor(var.postgresql_backup.retention_days) == var.postgresql_backup.retention_days &&
         var.postgresql_backup.retention_days >= 7 &&
         var.postgresql_backup.retention_days <= 365 &&
-        can(regex("^\\S+(?:\\s+\\S+){5}$", var.postgresql_backup.schedule)) &&
+        var.postgresql_backup.schedule == "0 0 2 * * *" &&
         floor(var.postgresql_backup.credential_generation) == var.postgresql_backup.credential_generation &&
         var.postgresql_backup.credential_generation >= 1 &&
         var.postgresql_backup.credential_generation <= 1000
       ),
       false,
     )
-    error_message = "enabled postgresql_backup requires complete non-secret MysteryBox access identifiers, 7-365 retention days, a six-field CNPG cron schedule and a bounded credential generation."
+    error_message = "enabled postgresql_backup requires complete non-secret MysteryBox access identifiers, 7-365 retention days, the supported once-daily 02:00 UTC CNPG schedule and a bounded credential generation."
   }
 }
 

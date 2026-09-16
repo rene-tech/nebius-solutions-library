@@ -3,16 +3,17 @@ from __future__ import annotations
 import importlib.machinery
 import importlib.util
 import json
-from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
 import pytest
 import yaml
-
 
 ROOT = Path(__file__).resolve().parents[1]
 STACK_PATH = ROOT / "inference-stack"
@@ -126,16 +127,52 @@ def test_postgresql_backup_capacity_is_retention_aware_and_live_checked() -> Non
     assert "estimated_daily_wal_gib" in root_variables
     assert "capacity_headroom_percent" in root_variables
     assert "postgresql_backup_required_capacity_gib" in root_locals
-    assert "max_size_gib = optional(number, 6144)" in root_variables
+    assert "max_size_gib = optional(number, 12288)" in root_variables
+    assert "postgresql_backup_noncurrent_base_backup_days" in root_locals
+    assert "postgresql_backup_noncurrent_wal_days" in root_locals
+    assert 'schedule == "0 0 2 * * *"' in root_variables
     assert "var.postgresql_backup.object_storage.max_size_gib >=" in infrastructure
     assert "local.postgresql_backup_required_capacity_gib" in infrastructure
     assert "preflight_postgresql_backup_capacity" in stack
+    assert '"sai06_capacity_plan_binding": sai06_capacity_plan_binding(' in stack
     assert '"storage.bucket.size.standard"' in stack
     assert '"sai06-postgresql-capacity-preflight.json"' in stack
+    assert (
+        "var.sai06_capacity_approval.plan_binding_sha256 == "
+        "local.postgresql_capacity_plan_binding"
+    ) in infrastructure
 
 
-def test_live_capacity_preflight_binds_usage_sizing_and_cost_review() -> None:
-    contract = {
+def _capacity_receipt(contract: dict, *, now: datetime | None = None) -> dict:
+    captured = now or datetime.now(UTC)
+    return {
+        "schema": "fs2-serve.nebius.ai/sai06-capacity-approval/v1",
+        "project_id": contract["target"]["project_id"],
+        "region": contract["target"]["region"],
+        "reviewed_at": captured.isoformat().replace("+00:00", "Z"),
+        "valid_until": (captured + timedelta(hours=12))
+        .isoformat()
+        .replace("+00:00", "Z"),
+        "plan_binding_sha256": STACK.sai06_capacity_plan_binding(contract),
+        "reviewed_by": "platform-capacity-review",
+        "evidence_sha256": "a" * 64,
+        "allowances": [
+            {
+                "resource": "compute.system_pool.nodes",
+                "unit": "node",
+                "ceiling": 3,
+            },
+            {
+                "resource": "storage.bucket.size.standard",
+                "unit": "byte",
+                "ceiling": 20 * 1024**4,
+            },
+        ],
+    }
+
+
+def _capacity_contract() -> dict:
+    return {
         "target": {"project_id": "project-test", "region": "eu-north1"},
         "stages": {
             "infrastructure": {
@@ -144,17 +181,32 @@ def test_live_capacity_preflight_binds_usage_sizing_and_cost_review() -> None:
                     "three_node_ha_cost_review_acknowledged": True,
                 },
                 "postgresql_backup": {
-                    "object_storage": {"max_size_gib": 6144},
+                    "object_storage": {"max_size_gib": 12288},
+                    "schedule": "0 0 2 * * *",
                     "retention_days": 30,
                     "database_volume_size_gib": 100,
                     "estimated_daily_wal_gib": 32,
                     "capacity_headroom_percent": 25,
-                    "required_capacity_gib": 5480,
+                    "required_capacity_gib": 11585,
                     "capacity_cost_review_acknowledged": True,
                 },
             }
         },
     }
+
+
+def _write_capacity_receipt(tmp_path: Path, receipt: dict) -> Path:
+    path = tmp_path / "capacity-receipt.json"
+    path.write_text(json.dumps(receipt), encoding="utf-8")
+    path.chmod(0o600)
+    return path
+
+
+def test_live_capacity_preflight_binds_usage_sizing_and_cost_review(
+    tmp_path: Path,
+) -> None:
+    contract = _capacity_contract()
+    receipt_path = _write_capacity_receipt(tmp_path, _capacity_receipt(contract))
     payload = {
         "items": [
             {
@@ -177,20 +229,27 @@ def test_live_capacity_preflight_binds_usage_sizing_and_cost_review() -> None:
         ),
     ):
         evidence = STACK.preflight_postgresql_backup_capacity(
-            SimpleNamespace(nebius="nebius", nebius_profile="sandbox"), contract
+            SimpleNamespace(
+                nebius="nebius",
+                nebius_profile="sandbox",
+                sai06_capacity_receipt=receipt_path,
+            ),
+            contract,
         )
 
-    assert evidence["required_capacity_gib"] == 5480
-    assert evidence["configured_bucket_max_gib"] == 6144
+    assert evidence["required_capacity_gib"] == 11585
+    assert evidence["configured_bucket_max_gib"] == 12288
     assert evidence["observed_usage_bytes"] == 239725098497
     assert evidence["provider_explicit_limit_bytes"] is None
     assert evidence["projected_usage_if_fully_allocated_bytes"] > evidence[
         "observed_usage_bytes"
     ]
-    assert (
-        evidence["provider_limit_verdict"]
-        == "provider-limit-not-exposed-manual-quota-review-required"
+    assert evidence["provider_limit_verdict"] == "within-reviewed-capacity-ceiling"
+    assert evidence["capacity_receipt"]["plan_binding_sha256"] == (
+        STACK.sai06_capacity_plan_binding(contract)
     )
+    assert evidence["capacity_receipt"]["storage_ceiling_bytes"] == 20 * 1024**4
+    assert evidence["capacity_receipt"]["system_node_ceiling"] == 3
     assert evidence["system_pool_nodes"] == 3
     assert evidence["cost_review_acknowledged"] is True
 
@@ -206,7 +265,12 @@ def test_live_capacity_preflight_binds_usage_sizing_and_cost_review() -> None:
         pytest.raises(STACK.DeploymentError, match="three nodes"),
     ):
         STACK.preflight_postgresql_backup_capacity(
-            SimpleNamespace(nebius="nebius", nebius_profile="sandbox"), contract
+            SimpleNamespace(
+                nebius="nebius",
+                nebius_profile="sandbox",
+                sai06_capacity_receipt=receipt_path,
+            ),
+            contract,
         )
 
     contract["stages"]["infrastructure"]["system_pool"]["node_count"] = 3
@@ -222,8 +286,106 @@ def test_live_capacity_preflight_binds_usage_sizing_and_cost_review() -> None:
         pytest.raises(STACK.DeploymentError, match="exceeds the live provider limit"),
     ):
         STACK.preflight_postgresql_backup_capacity(
-            SimpleNamespace(nebius="nebius", nebius_profile="sandbox"), contract
+            SimpleNamespace(
+                nebius="nebius",
+                nebius_profile="sandbox",
+                sai06_capacity_receipt=receipt_path,
+            ),
+            contract,
         )
+
+
+def test_capacity_preflight_rejects_missing_stale_wrong_scope_and_insufficient_receipts(
+    tmp_path: Path,
+) -> None:
+    contract = _capacity_contract()
+    payload = {
+        "items": [
+            {
+                "metadata": {"name": "storage.bucket.size.standard"},
+                "spec": {"region": "eu-north1"},
+                "status": {
+                    "usage": "239725098497",
+                    "unit": "byte",
+                    "usage_state": "USAGE_STATE_USED",
+                },
+            }
+        ]
+    }
+
+    def invoke(receipt_path: Path | None) -> None:
+        with mock.patch.object(
+            STACK,
+            "run",
+            return_value=subprocess.CompletedProcess(
+                ["nebius"], 0, stdout=json.dumps(payload), stderr=""
+            ),
+        ):
+            STACK.preflight_postgresql_backup_capacity(
+                SimpleNamespace(
+                    nebius="nebius",
+                    nebius_profile="sandbox",
+                    sai06_capacity_receipt=receipt_path,
+                ),
+                contract,
+            )
+
+    with pytest.raises(STACK.DeploymentError, match="capacity receipt"):
+        invoke(None)
+
+    no_node_ack = _capacity_contract()
+    no_node_ack["stages"]["infrastructure"]["system_pool"][
+        "three_node_ha_cost_review_acknowledged"
+    ] = False
+    original_contract = contract
+    contract = no_node_ack
+    with pytest.raises(STACK.DeploymentError, match="cost acknowledgements"):
+        invoke(_write_capacity_receipt(tmp_path, _capacity_receipt(contract)))
+
+    no_backup_ack = _capacity_contract()
+    no_backup_ack["stages"]["infrastructure"]["postgresql_backup"][
+        "capacity_cost_review_acknowledged"
+    ] = False
+    contract = no_backup_ack
+    with pytest.raises(STACK.DeploymentError, match="cost acknowledgements"):
+        invoke(_write_capacity_receipt(tmp_path, _capacity_receipt(contract)))
+    contract = original_contract
+
+    stale = _capacity_receipt(contract, now=datetime.now(UTC) - timedelta(days=2))
+    with pytest.raises(STACK.DeploymentError, match="stale|expired"):
+        invoke(_write_capacity_receipt(tmp_path, stale))
+
+    wrong_project = _capacity_receipt(contract)
+    wrong_project["project_id"] = "project-other"
+    with pytest.raises(STACK.DeploymentError, match="project|scope"):
+        invoke(_write_capacity_receipt(tmp_path, wrong_project))
+
+    wrong_plan = _capacity_receipt(contract)
+    wrong_plan["plan_binding_sha256"] = "b" * 64
+    with pytest.raises(STACK.DeploymentError, match="different plan"):
+        invoke(_write_capacity_receipt(tmp_path, wrong_plan))
+
+    insufficient_nodes = _capacity_receipt(contract)
+    insufficient_nodes["allowances"][0]["ceiling"] = 2
+    with pytest.raises(STACK.DeploymentError, match="system-node allowance"):
+        invoke(_write_capacity_receipt(tmp_path, insufficient_nodes))
+
+    insufficient_storage = _capacity_receipt(contract)
+    insufficient_storage["allowances"][1]["ceiling"] = 1024**3
+    with pytest.raises(STACK.DeploymentError, match="object-storage allowance"):
+        invoke(_write_capacity_receipt(tmp_path, insufficient_storage))
+
+
+def test_capacity_receipt_schema_is_strict_and_matches_runtime_resources() -> None:
+    schema = json.loads(_text("docs/sai06-capacity-approval.schema.json"))
+
+    assert schema["additionalProperties"] is False
+    allowance = schema["properties"]["allowances"]
+    assert allowance["minItems"] == allowance["maxItems"] == 2
+    assert set(allowance["items"]["properties"]["resource"]["enum"]) == {
+        "compute.system_pool.nodes",
+        "storage.bucket.size.standard",
+    }
 
 
 def test_backup_handoff_is_exact_retained_and_secret_free(tmp_path: Path) -> None:
@@ -332,17 +494,104 @@ def test_restore_verifier_is_marker_only_and_denied_sensitive_tables() -> None:
     assert "pg_attribute" in database
 
 
-def test_explicit_system_pool_requires_three_node_cost_acknowledgement() -> None:
+def test_effective_system_pool_requires_three_node_cost_acknowledgement() -> None:
     root_variables = _text("variables.tf")
     infrastructure_variables = _text("stages/infrastructure/variables.tf")
     example = _text("terraform.tfvars.example")
 
+    assert "system_pool_cost_review_acknowledged" in root_variables
+    assert "three_node_ha_cost_review_acknowledged" in infrastructure_variables
     for source in (root_variables, infrastructure_variables):
-        assert "three_node_ha_cost_review_acknowledged" in source
         assert "node_count >= 3" in source
     assert re.search(
-        r"three_node_ha_cost_review_acknowledged\s*=\s*true", example
+        r"system_pool_cost_review_acknowledged\s*=\s*true", example
     )
+
+
+def test_default_system_pool_requires_effective_node_and_backup_acknowledgements() -> None:
+    root_variables = _text("variables.tf")
+    root_locals = _text("locals.tf")
+    stack = _text("inference-stack")
+
+    assert "system_pool_cost_review_acknowledged" in root_variables
+    assert "local.selected_capacity.system_nodes" in root_locals
+    assert "three_node_ha_cost_review_acknowledged" in root_locals
+    assert "not isinstance(system_pool, Mapping)" in stack
+    assert "backup.get(\"capacity_cost_review_acknowledged\") is not True" in stack
+
+
+def test_backup_observability_is_executable_and_covers_every_sai06_signal() -> None:
+    monitoring = _text("stages/workloads/postgresql_backup_monitoring.tf")
+    metrics = _text("stages/workloads/scripts/postgresql_backup_metrics.py")
+
+    assert 'kind       = "ServiceMonitor"' in monitoring
+    assert 'kind       = "PrometheusRule"' in monitoring
+    for alert in (
+        "Fs2PostgresqlBackupFailed",
+        "Fs2PostgresqlBackupStale",
+        "Fs2PostgresqlRecoverabilityPointMissing",
+        "Fs2PostgresqlWalArchiveFailed",
+        "Fs2PostgresqlWalArchiveStalled",
+        "Fs2PostgresqlBackupBucketExporterUnavailable",
+        "Fs2PostgresqlBackupBucketCapacityWarning",
+        "Fs2PostgresqlBackupBucketCapacityCritical",
+        "Fs2PostgresqlRestoreVerificationFailed",
+        "Fs2PostgresqlRestoreVerificationStale",
+    ):
+        assert alert in monitoring
+    assert "list_object_versions" in metrics
+    assert "fs2_postgresql_backup_bucket_usage_bytes" in metrics
+    assert "fs2_postgresql_backup_bucket_capacity_bytes" in metrics
+    assert "fs2_postgresql_restore_last_success_timestamp_seconds" in metrics
+    assert "restore-verification/success/" in monitoring
+
+
+def test_backup_alert_promql_is_accepted_by_promtool(tmp_path: Path) -> None:
+    monitoring = _text("stages/workloads/postgresql_backup_monitoring.tf")
+    expressions = [
+        json.loads(f'"{encoded}"')
+        for encoded in re.findall(
+            r'(?m)^\s*expr\s*=\s*"((?:\\.|[^"\\])*)"\s*$', monitoring
+        )
+    ]
+    assert len(expressions) == 10
+    rule_file = tmp_path / "sai06-rules.yaml"
+    rule_file.write_text(
+        yaml.safe_dump(
+            {
+                "groups": [
+                    {
+                        "name": "sai06",
+                        "rules": [
+                            {"alert": f"Sai06Syntax{index}", "expr": expression}
+                            for index, expression in enumerate(expressions)
+                        ],
+                    }
+                ]
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    promtool = shutil.which("promtool")
+    assert promtool is not None
+    result = subprocess.run(  # noqa: S603 - exact resolved test dependency
+        [promtool, "check", "rules", str(rule_file)],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_successful_restore_publishes_a_nonsensitive_durable_receipt() -> None:
+    database = _text("stages/workloads/database.tf")
+
+    assert 'resource "kubernetes_job_v1" "database_restore_verification_receipt"' in database
+    assert "restore-verification/success/" in database
+    assert "boto3.client" in database
+    assert "depends_on = [kubernetes_job_v1.database_restore_verification]" in database
+    assert 'automount_service_account_token = false' in database
 
 
 def test_public_envoy_has_two_replicas_required_spread_and_a_pdb() -> None:
