@@ -433,6 +433,9 @@ def test_api_auth_model_list_openai_admission_revoke_and_nonleak(registry, ciphe
         )
         assert ext.status_code == 200
         assert ext.headers["x-fs2-principal"] == "rene"
+        assert "inference.invoke" in json.loads(ext.headers["x-fs2-scopes"])
+        assert json.loads(ext.headers["x-fs2-models"]) == ["qwen3-8b"]
+        assert int(ext.headers["x-fs2-max-concurrency"]) >= 1
 
         token_id = next(iter(runtime.store.tokens))  # type: ignore[attr-defined]
         assert (

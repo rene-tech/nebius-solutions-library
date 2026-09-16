@@ -2216,6 +2216,9 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                 "x-fs2-tenant": identity.tenant_id,
                 "x-fs2-principal": identity.principal_id,
                 "x-fs2-token-id": str(identity.token_id),
+                "x-fs2-scopes": json.dumps(sorted(identity.scopes), separators=(",", ":")),
+                "x-fs2-models": json.dumps(sorted(identity.models), separators=(",", ":")),
+                "x-fs2-max-concurrency": str(identity.max_concurrency),
             },
         )
 
