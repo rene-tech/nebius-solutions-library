@@ -143,7 +143,9 @@ def require_terraform_version(terraform: str) -> tuple[int, int, int]:
         env=clean_environment(),
     )
     if result.returncode != 0:
-        raise DeploymentError(f"cannot determine the Terraform version using {terraform!r}")
+        raise DeploymentError(
+            f"cannot determine the Terraform version using {terraform!r}"
+        )
     try:
         raw = json.loads(result.stdout)["terraform_version"]
         version = tuple(int(part) for part in raw.split("-")[0].split(".")[:3])
@@ -359,7 +361,13 @@ def validate_model_network_policy_rollback_plan(
         "kubernetes_network_policy_v1.model_namespace_default_deny[0]": ["delete"],
         "terraform_data.model_runtime_network_policy_transition": ["update"],
     }
-    if changes not in ({}, allowed):
+    # A prior apply can crash after either state transition. Retrying that exact
+    # saved plan may therefore contain neither change or just the remaining one.
+    # Accept any subset, but never a third address or different action.
+    if any(
+        address not in allowed or actions != allowed[address]
+        for address, actions in changes.items()
+    ):
         rendered = (
             ", ".join(
                 f"{address}={'+'.join(actions)}"
@@ -679,17 +687,18 @@ def require_deployable_images(contract: Mapping[str, Any]) -> None:
     if isinstance(reference_data, Mapping) and reference_data.get("enabled") is True:
         for component in ("status", "pipeline"):
             configuration = reference_data.get(component, {})
-            if not isinstance(configuration, Mapping) or configuration.get("enabled") is not True:
+            if (
+                not isinstance(configuration, Mapping)
+                or configuration.get("enabled") is not True
+            ):
                 continue
             image = configuration.get("image")
-            if not isinstance(image, str) or image.split("/", 1)[0].endswith(".invalid"):
-                raise DeploymentError(
-                    f"reference-data {component} image is unresolved"
-                )
+            if not isinstance(image, str) or image.split("/", 1)[0].endswith(
+                ".invalid"
+            ):
+                raise DeploymentError(f"reference-data {component} image is unresolved")
             if policy == "regional-mirror":
-                split_digest_reference(
-                    image, label=f"reference-data {component}"
-                )
+                split_digest_reference(image, label=f"reference-data {component}")
 
 
 def split_digest_reference(reference: str, *, label: str) -> tuple[str, str]:
@@ -793,7 +802,10 @@ def selected_image_artifacts(
     if isinstance(reference_data, Mapping) and reference_data.get("enabled") is True:
         for component in ("status", "pipeline"):
             configuration = reference_data.get(component, {})
-            if isinstance(configuration, Mapping) and configuration.get("enabled") is True:
+            if (
+                isinstance(configuration, Mapping)
+                and configuration.get("enabled") is True
+            ):
                 sources.append(
                     (f"reference-data/{component}", str(configuration["image"]))
                 )
@@ -866,12 +878,15 @@ def rewritten_workloads(
         rewritten_reference_data = dict(reference_data)
         for component in ("status", "pipeline"):
             configuration = rewritten_reference_data.get(component)
-            if not isinstance(configuration, Mapping) or configuration.get("enabled") is not True:
+            if (
+                not isinstance(configuration, Mapping)
+                or configuration.get("enabled") is not True
+            ):
                 continue
             rewritten_configuration = dict(configuration)
-            rewritten_configuration["image"] = artifacts[
-                f"reference-data/{component}"
-            ]["target_reference"]
+            rewritten_configuration["image"] = artifacts[f"reference-data/{component}"][
+                "target_reference"
+            ]
             rewritten_reference_data[component] = rewritten_configuration
         workloads["reference_data"] = rewritten_reference_data
     return workloads
@@ -919,23 +934,35 @@ def selected_deployment_runtimes(model_images: Mapping[str, str]) -> dict[str, A
         entry = json.loads(path.read_text(encoding="utf-8"))
         model_id = entry["model_id"]
         image = model_images.get(model_id)
-        if image is None or image.rsplit("@", 1)[-1] != entry["record"]["runtime"]["image"]["digest"]:
+        if (
+            image is None
+            or image.rsplit("@", 1)[-1] != entry["record"]["runtime"]["image"]["digest"]
+        ):
             continue
         if model_id in selected:
-            raise DeploymentError(f"model {model_id!r} has ambiguous deployment runtime records")
+            raise DeploymentError(
+                f"model {model_id!r} has ambiguous deployment runtime records"
+            )
         selected[model_id] = entry
     return selected
 
 
-def deployment_runtime_configuration_identities(entries: Mapping[str, Any]) -> dict[str, Any]:
+def deployment_runtime_configuration_identities(
+    entries: Mapping[str, Any],
+) -> dict[str, Any]:
     """Use the control plane's exact artifact identities for the admin baseline."""
     paths = [str(CATALOG_ROOT), str(SOLUTION_ROOT / "components/control-plane/src")]
     added = [path for path in paths if path not in sys.path]
     sys.path[:0] = added
     try:
-        from fs2_serve.deployment_runtimes import deployment_runtime_configuration_identity
+        from fs2_serve.deployment_runtimes import (
+            deployment_runtime_configuration_identity,
+        )
 
-        return {model_id: deployment_runtime_configuration_identity(entry) for model_id, entry in entries.items()}
+        return {
+            model_id: deployment_runtime_configuration_identity(entry)
+            for model_id, entry in entries.items()
+        }
     finally:
         for path in added:
             sys.path.remove(path)
@@ -1086,9 +1113,13 @@ def derived_admin_configuration(
 
     model_images = workloads.get("model_image_overrides", {})
     selected_model_ids = contract.get("selected_model_ids", [])
-    deployment_runtimes = selected_deployment_runtimes({
-        model_id: model_images[model_id] for model_id in selected_model_ids if model_id in model_images
-    })
+    deployment_runtimes = selected_deployment_runtimes(
+        {
+            model_id: model_images[model_id]
+            for model_id in selected_model_ids
+            if model_id in model_images
+        }
+    )
     cpu_runtime_model_ids = {
         model_id
         for model_id, entry in deployment_runtimes.items()
@@ -1102,9 +1133,13 @@ def derived_admin_configuration(
             "alternatives": [],
         }
     }
-    native_ids = set(json.loads(
-        (SOLUTION_ROOT / "catalog/profiles/model-profiles.json").read_text(encoding="utf-8")
-    ).get("managed_native_model_ids", []))
+    native_ids = set(
+        json.loads(
+            (SOLUTION_ROOT / "catalog/profiles/model-profiles.json").read_text(
+                encoding="utf-8"
+            )
+        ).get("managed_native_model_ids", [])
+    )
     managed_cpu_ids = cpu_runtime_model_ids & native_ids
     if cpu_runtime_model_ids:
         general_cpu_contract = dynamic.get("general_cpu_pool_contract")
@@ -1129,7 +1164,9 @@ def derived_admin_configuration(
             )
         for pool_id, raw_pool in sorted(general_pools.items()):
             if pool_id in pools or not isinstance(raw_pool, Mapping):
-                raise DeploymentError("the general CPU pool identity is malformed or duplicated")
+                raise DeploymentError(
+                    "the general CPU pool identity is malformed or duplicated"
+                )
             pools[str(pool_id)] = {
                 "resource_name": "cpu",
                 "accelerator_class": "CPU",
@@ -1157,19 +1194,30 @@ def derived_admin_configuration(
             }
             if managed_cpu_ids:
                 resources = raw_pool.get("schedulable_capacity", {})
-                pools[str(pool_id)].update({
-                    "allocatable_cpu_millis": int(resources.get("cpu_millicores", 0)),
-                    "allocatable_memory_bytes": int(resources.get("memory_mib", 0)) * 1048576,
-                })
+                pools[str(pool_id)].update(
+                    {
+                        "allocatable_cpu_millis": int(
+                            resources.get("cpu_millicores", 0)
+                        ),
+                        "allocatable_memory_bytes": int(resources.get("memory_mib", 0))
+                        * 1048576,
+                    }
+                )
             pool_features[str(pool_id)] = {}
-    deployment_identities = deployment_runtime_configuration_identities(deployment_runtimes) if deployment_runtimes else {}
+    deployment_identities = (
+        deployment_runtime_configuration_identities(deployment_runtimes)
+        if deployment_runtimes
+        else {}
+    )
     scaling = {
         model_id: (
             {
                 "min_replicas": 1,
                 "max_replicas": 1,
                 "target_queue_depth": 1,
-                "polling_interval_seconds": int(workloads["keda_polling_interval_seconds"]),
+                "polling_interval_seconds": int(
+                    workloads["keda_polling_interval_seconds"]
+                ),
                 "cooldown_seconds": int(workloads["keda_cooldown_period_seconds"]),
             }
             if model_id in cpu_runtime_model_ids and model_id not in managed_cpu_ids
@@ -1217,12 +1265,11 @@ def derived_admin_configuration(
             model_id=model_id,
             accelerator_class=str(gpu["class"]),
         )
-        selected_pool_features = [
-            pool_features[pool_id] for pool_id in pool_ids
-        ]
+        selected_pool_features = [pool_features[pool_id] for pool_id in pool_ids]
         cache_tier = (
             "node-local"
-            if model_id in cpu_runtime_model_ids or any(
+            if model_id in cpu_runtime_model_ids
+            or any(
                 item.get("local_cache") == "node-local"
                 for item in selected_pool_features
             )
@@ -1244,7 +1291,9 @@ def derived_admin_configuration(
             "placement": {
                 "pool_ids": pool_ids,
                 "accelerators": int(gpu["count"]),
-                "topology_policy": "any" if model_id in cpu_runtime_model_ids else "single-node",
+                "topology_policy": "any"
+                if model_id in cpu_runtime_model_ids
+                else "single-node",
             },
             "autoscaling": scaling[model_id],
             "queue": {
@@ -1287,18 +1336,26 @@ def derived_admin_configuration(
             },
         }
         if model_id in managed_cpu_ids:
-            models[model_id]["placement"].update({
-                "cpu_millis": int(value["resources"]["cpu_millis"]),
-                "memory_bytes": int(value["resources"]["memory_bytes"]),
-            })
+            models[model_id]["placement"].update(
+                {
+                    "cpu_millis": int(value["resources"]["cpu_millis"]),
+                    "memory_bytes": int(value["resources"]["memory_bytes"]),
+                }
+            )
         if model_id in deployment_identities:
             identity = deployment_identities[model_id]
-            models[model_id]["artifact"].update({
-                key: identity[key] for key in (
-                    "model_revision", "artifact_manifest_sha256", "acquisition_contract_sha256",
-                    "provenance_sha256", "semantic_health_contract_sha256",
-                )
-            })
+            models[model_id]["artifact"].update(
+                {
+                    key: identity[key]
+                    for key in (
+                        "model_revision",
+                        "artifact_manifest_sha256",
+                        "acquisition_contract_sha256",
+                        "provenance_sha256",
+                        "semantic_health_contract_sha256",
+                    )
+                }
+            )
 
     configuration = {
         "schema_version": "fs2.admin-configuration/v1",
@@ -1844,10 +1901,13 @@ def existing_controller_ownership(
             if resource.get("mode") == "managed"
             and resource.get("type") == "terraform_data"
             and not resource.get("module")
-            and resource.get("name") in {"cluster_contract", "model_controller_contract"}
+            and resource.get("name")
+            in {"cluster_contract", "model_controller_contract"}
         }
         controller = inputs["model_controller_contract"]
-        accepted = controller.get("accepted_handoff_receipt") or controller.get("expected_handoff_receipt")
+        accepted = controller.get("accepted_handoff_receipt") or controller.get(
+            "expected_handoff_receipt"
+        )
         if (
             inputs["cluster_contract"]["cluster_id"] != cluster_id
             or controller.get("workload_owner") != "controller"
@@ -1867,13 +1927,22 @@ def existing_controller_ownership(
                 cpu = instance["attributes"]["input"]["value"]
                 for document in (cpu["deployment"], cpu["service_manifest"]):
                     metadata = document["metadata"]
-                    cpu_resources.add((document["kind"], metadata["namespace"], metadata["name"]))
+                    cpu_resources.add(
+                        (document["kind"], metadata["namespace"], metadata["name"])
+                    )
                 deployment = cpu["deployment"]
-                account = deployment["spec"]["template"]["spec"].get("serviceAccountName")
+                account = deployment["spec"]["template"]["spec"].get(
+                    "serviceAccountName"
+                )
                 if account:
-                    cpu_resources.add(("ServiceAccount", deployment["metadata"]["namespace"], account))
+                    cpu_resources.add(
+                        ("ServiceAccount", deployment["metadata"]["namespace"], account)
+                    )
         for resource in resources:
-            if resource.get("mode") != "managed" or resource.get("type") != "kubernetes_manifest":
+            if (
+                resource.get("mode") != "managed"
+                or resource.get("type") != "kubernetes_manifest"
+            ):
                 continue
             if resource.get("name") == "model_scaler" and resource.get("instances"):
                 return False
@@ -1881,9 +1950,18 @@ def existing_controller_ownership(
                 for instance in resource.get("instances", []):
                     manifest = instance["attributes"]["manifest"]["value"]
                     metadata = manifest.get("metadata", {})
-                    if (manifest.get("kind"), metadata.get("namespace"), metadata.get("name")) in cpu_resources:
+                    if (
+                        manifest.get("kind"),
+                        metadata.get("namespace"),
+                        metadata.get("name"),
+                    ) in cpu_resources:
                         continue
-                    if manifest.get("kind") in {"Deployment", "Service", "ServiceAccount", "ConfigMap"}:
+                    if manifest.get("kind") in {
+                        "Deployment",
+                        "Service",
+                        "ServiceAccount",
+                        "ConfigMap",
+                    }:
                         return False
         return True
     except (OSError, ValueError, KeyError, IndexError, TypeError):
@@ -1987,7 +2065,10 @@ def write_downstream_variables(
                 raise DeploymentError(
                     "a general CPU pool must never carry the reference-data filesystem"
                 )
-            if pool_contract.get("schema") != "fs2-serve.nebius.ai/general-cpu-pools/v1":
+            if (
+                pool_contract.get("schema")
+                != "fs2-serve.nebius.ai/general-cpu-pools/v1"
+            ):
                 raise DeploymentError(
                     "the general CPU pool handoff must be the v1 general-CPU pool contract"
                 )
@@ -2004,8 +2085,9 @@ def write_downstream_variables(
             raise DeploymentError(
                 "staged scientific batch execution requires the dedicated artifact store"
             )
-        if scientific_batch.get("writes_enabled") is True and not (
-            scientific_batch.get("enabled") is True
+        if (
+            scientific_batch.get("writes_enabled") is True
+            and scientific_batch.get("enabled") is not True
         ):
             raise DeploymentError(
                 "scientific batch Kubernetes writes require the batch controller gate"
@@ -2258,7 +2340,10 @@ def workload_access_bundle(
     bundle = terraform_json_output(
         terraform, WORKLOADS_ROOT, "access_bundle", environment
     )
-    if not isinstance(bundle, dict) or bundle.get("schema") != "fs2-serve.nebius.ai/access-bundle/v1":
+    if (
+        not isinstance(bundle, dict)
+        or bundle.get("schema") != "fs2-serve.nebius.ai/access-bundle/v1"
+    ):
         raise DeploymentError("the workloads access bundle is missing or malformed")
 
     cluster = bundle.get("cluster")
@@ -2274,7 +2359,9 @@ def workload_access_bundle(
     ):
         raise DeploymentError("the workloads access bundle is missing or malformed")
 
-    def has_non_empty_strings(document: Mapping[str, Any], fields: tuple[str, ...]) -> bool:
+    def has_non_empty_strings(
+        document: Mapping[str, Any], fields: tuple[str, ...]
+    ) -> bool:
         return all(
             isinstance(document.get(field), str) and bool(document[field].strip())
             for field in fields
@@ -2324,9 +2411,7 @@ def workload_access_bundle(
         raise DeploymentError("the workloads access bundle is missing or malformed")
     scopes = mcp_access.get("scopes")
     if (
-        not has_non_empty_strings(
-            mcp_access, ("principal_id", "tenant_id")
-        )
+        not has_non_empty_strings(mcp_access, ("principal_id", "tenant_id"))
         or not isinstance(scopes, list)
         or not {"mcp.invoke", "inference.invoke"}.issubset(scopes)
     ):
@@ -2334,8 +2419,7 @@ def workload_access_bundle(
 
     academic_assets = contract.get("academic_assets")
     academic_fleet_enabled = (
-        isinstance(academic_assets, dict)
-        and academic_assets.get("enabled") is True
+        isinstance(academic_assets, dict) and academic_assets.get("enabled") is True
     )
     if academic_fleet_enabled:
         academic_tenant_id = academic_assets.get("tenant_id")
@@ -2403,8 +2487,7 @@ def workload_access_bundle(
             or (
                 lifecycle.get("retention_mode") == "retain"
                 and (
-                    lifecycle.get("destroy_status")
-                    != "blocked-retained"
+                    lifecycle.get("destroy_status") != "blocked-retained"
                     or lifecycle.get("destroy_completion")
                     != "full-stack-destroy-incomplete-infrastructure-retained"
                     or lifecycle.get("adoption_status")
@@ -2436,8 +2519,7 @@ def workload_access_bundle(
             != reference_data["bucket_id"]
             or storage.get("object_storage", {}).get("name")
             != reference_data["bucket_name"]
-            or storage.get("cpu_pool", {}).get("id")
-            != reference_data["cpu_pool_id"]
+            or storage.get("cpu_pool", {}).get("id") != reference_data["cpu_pool_id"]
             or plane.get("status_service") != reference_data["status_service"]
             or plane.get("pipeline") != reference_data["pipeline"]
         ):
@@ -2696,9 +2778,7 @@ def destroy_stack(
     commit: str,
 ) -> None:
     reference_infrastructure = (
-        contract.get("stages", {})
-        .get("infrastructure", {})
-        .get("reference_data", {})
+        contract.get("stages", {}).get("infrastructure", {}).get("reference_data", {})
     )
     scientific_infrastructure = (
         contract.get("stages", {})
@@ -2862,38 +2942,58 @@ def destroy_stack(
             if isinstance(applied_contract, Mapping)
             else None
         )
-        reference_data = None if not reference_retained else {
-            "lifecycle": lifecycle,
-            "filesystem_id": storage.get("filesystem", {}).get("id"),
-            "bucket_id": storage.get("object_storage", {}).get("id"),
-            "bucket_name": storage.get("object_storage", {}).get("name"),
-            "cpu_pool_id": storage.get("cpu_pool", {}).get("id"),
-            "status_service": None,
-            "pipeline": None,
-            "last_applied": {
-                "status_service": last_applied_status_service,
-                "pipeline": last_applied_pipeline,
-            },
-        }
-        reference_data_contract = None if not reference_retained else {
-            "storage": storage,
-            "plane": None,
-            "last_applied_plane": last_applied_plane,
-        }
+        reference_data = (
+            None
+            if not reference_retained
+            else {
+                "lifecycle": lifecycle,
+                "filesystem_id": storage.get("filesystem", {}).get("id"),
+                "bucket_id": storage.get("object_storage", {}).get("id"),
+                "bucket_name": storage.get("object_storage", {}).get("name"),
+                "cpu_pool_id": storage.get("cpu_pool", {}).get("id"),
+                "status_service": None,
+                "pipeline": None,
+                "last_applied": {
+                    "status_service": last_applied_status_service,
+                    "pipeline": last_applied_pipeline,
+                },
+            }
+        )
+        reference_data_contract = (
+            None
+            if not reference_retained
+            else {
+                "storage": storage,
+                "plane": None,
+                "last_applied_plane": last_applied_plane,
+            }
+        )
         scientific_storage = dynamic.get("scientific_artifacts_storage_contract")
         scientific_lifecycle = dynamic.get("scientific_artifacts_lifecycle")
-        scientific_artifacts = None if not scientific_retained else {
-            "lifecycle": scientific_lifecycle,
-            "bucket_id": (scientific_storage or {}).get("object_storage", {}).get("id"),
-            "bucket_name": (scientific_storage or {})
-            .get("object_storage", {})
-            .get("name"),
-            "object_key": (scientific_storage or {}).get("layout", {}).get("object_key"),
-            "last_applied": retained_workload_outputs.get("scientific_artifacts"),
-        }
-        scientific_artifacts_contract = None if not scientific_retained else {
-            "storage": scientific_storage,
-        }
+        scientific_artifacts = (
+            None
+            if not scientific_retained
+            else {
+                "lifecycle": scientific_lifecycle,
+                "bucket_id": (scientific_storage or {})
+                .get("object_storage", {})
+                .get("id"),
+                "bucket_name": (scientific_storage or {})
+                .get("object_storage", {})
+                .get("name"),
+                "object_key": (scientific_storage or {})
+                .get("layout", {})
+                .get("object_key"),
+                "last_applied": retained_workload_outputs.get("scientific_artifacts"),
+            }
+        )
+        scientific_artifacts_contract = (
+            None
+            if not scientific_retained
+            else {
+                "storage": scientific_storage,
+            }
+        )
         adoption_lifecycle = lifecycle if reference_retained else scientific_lifecycle
         receipt_path = run_root / (
             "reference-data-retention.json"
@@ -3085,9 +3185,7 @@ def status_stack(
         endpoints["reference_data_contract"] is None
         and infrastructure_reference_data_contract is not None
     ):
-        endpoints["reference_data_contract"] = (
-            infrastructure_reference_data_contract
-        )
+        endpoints["reference_data_contract"] = infrastructure_reference_data_contract
     # The store can be provisioned and correct while the batch workloads that
     # consume it are still gated off. Report the live bucket identity rather
     # than pretending the feature is absent.

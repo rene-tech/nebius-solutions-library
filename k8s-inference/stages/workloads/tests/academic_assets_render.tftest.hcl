@@ -225,19 +225,11 @@ run "disabled_academic_config_is_projected_as_disabled" {
   }
 }
 
-run "prepare_installs_finite_profiles_without_default_deny" {
+run "prepare_installs_finite_profiles" {
   command = plan
 
   plan_options {
-    target = [
-      kubernetes_network_policy_v1.model_runtime_base_profile,
-      kubernetes_network_policy_v1.model_namespace_default_deny,
-    ]
-  }
-
-  assert {
-    condition     = length(kubernetes_network_policy_v1.model_namespace_default_deny) == 0
-    error_message = "Prepare must install allow profiles while keeping fs2-models/default-deny absent."
+    target = [kubernetes_network_policy_v1.model_runtime_base_profile]
   }
 
   assert {
@@ -251,361 +243,139 @@ run "prepare_installs_finite_profiles_without_default_deny" {
   }
 }
 
-run "prepare_cannot_bypass_an_existing_enforcement_marker" {
+run "prepare_installs_five_inert_admission_policies" {
   command = plan
+
+  plan_options {
+    target = [
+      kubernetes_manifest.model_runtime_network_profile_admission,
+      kubernetes_manifest.model_runtime_network_boundary_marker_admission,
+    ]
+  }
+
+  assert {
+    condition = (
+      length(kubernetes_manifest.model_runtime_network_profile_admission) == 4 &&
+      kubernetes_manifest.model_runtime_network_boundary_marker_admission.manifest.metadata.name == "fs2-model-network-boundary-marker"
+    )
+    error_message = "Prepare must install the four profile policies and the boundary-marker policy."
+  }
+}
+
+run "prepare_refuses_a_live_default_deny" {
+  command = plan
+
+  override_data {
+    target = data.kubernetes_resources.model_runtime_network_policies[0]
+    values = { objects = [{ metadata = { name = "default-deny" } }] }
+  }
+
+  plan_options {
+    target = [terraform_data.model_runtime_network_policy_transition]
+  }
+
+  expect_failures = [terraform_data.model_runtime_network_policy_transition]
+}
+
+run "inventory_arms_only_with_default_deny_absent" {
+  command = plan
+
+  variables {
+    model_runtime_network_policy = { phase = "inventory" }
+  }
 
   override_data {
     target = data.kubernetes_resources.model_runtime_network_policies[0]
     values = { objects = [] }
   }
 
-  override_data {
-    target = data.kubernetes_resources.model_runtime_network_enforcement_markers[0]
-    values = {
-      objects = [{ metadata = { name = "fs2-runtime-network-policy-enforcement" } }]
-    }
-  }
-
   plan_options {
     target = [terraform_data.model_runtime_network_policy_transition]
   }
 
-  expect_failures = [terraform_data.model_runtime_network_policy_transition]
+  assert {
+    condition     = terraform_data.model_runtime_network_policy_transition.input.phase == "inventory"
+    error_message = "Inventory must be an explicit receipt-free phase between prepare and enforce."
+  }
 }
 
-run "enforce_requires_and_matches_the_live_profile_inventory" {
+run "enforce_requires_the_v2_receipt_and_apply_fence" {
   command = plan
-
-  override_data {
-    target = data.kubernetes_resources.model_runtime_deployments[0]
-    values = {
-      objects = [{
-        metadata = {
-          name = "qwen3-8b"
-          uid  = "uid-qwen3"
-          labels = {
-            "app.kubernetes.io/component"         = "model-runtime"
-            "app.kubernetes.io/part-of"           = "fs2-serve"
-            "fs2-serve.nebius.ai/network-profile" = "gateway-zero-egress-tcp-8000-v1"
-          }
-        }
-        spec = {
-          template = {
-            metadata = {
-              labels = {
-                "app.kubernetes.io/component"         = "model-runtime"
-                "app.kubernetes.io/part-of"           = "fs2-serve"
-                "fs2-serve.nebius.ai/network-profile" = "gateway-zero-egress-tcp-8000-v1"
-              }
-            }
-          }
-        }
-      }]
-    }
-  }
 
   variables {
     model_express = merge(var.model_express, { enabled = false, models = {} })
     model_runtime_network_policy = {
       phase = "enforce"
       inventory_receipt = {
-        schema      = "fs2-serve.nebius.ai/model-runtime-network-inventory/v1"
-        cluster_id  = "mk8scluster-modelexpresstest"
-        namespace   = "fs2-models"
-        captured_at = "2026-09-16T18:00:00Z"
-        control_plane_image = {
-          repository = "registry.example.invalid/k8s-inference/control-plane"
-          digest     = "sha256:da2624948771c1231b5f70d2420c87f635516b6be0ec5539d8437830d57add55"
+        schema          = "fs2-serve.nebius.ai/model-runtime-network-inventory/v2"
+        cluster_id      = "mk8scluster-modelexpresstest"
+        namespace       = "fs2-models"
+        captured_at     = "2026-09-16T18:00:00Z"
+        profiles_sha256 = "50ea54374c2b27be55c92fb50da0dfc073a508597d820d6ef05f1eb4cde53bc3"
+        resource_apis = {
+          "apps/v1/DaemonSet"               = true
+          "apps/v1/Deployment"              = true
+          "apps/v1/ReplicaSet"              = true
+          "apps/v1/StatefulSet"             = true
+          "batch/v1/Job"                    = true
+          "jobset.x-k8s.io/v1alpha2/JobSet" = false
         }
-        profiles_sha256 = "ae5ba0c87afa8335b4a5aca930793702398450424282fe73b9d47dc53659dde0"
-        deployments = {
-          qwen3-8b = {
-            uid                = "uid-qwen3"
-            profile            = "gateway-zero-egress-tcp-8000-v1"
-            workload_component = "model-runtime"
-            workload_part_of   = "fs2-serve"
-            pod_component      = "model-runtime"
-            pod_part_of        = "fs2-serve"
+        workloads = {
+          "apps/v1/Deployment/qwen3-8b" = {
+            uid        = "uid-qwen3"
+            generation = 2
+            profile    = "gateway-zero-egress-tcp-8000-v1"
+            rollout    = { desired = 1, updated = 1, ready = 1, available = 1, unavailable = 0 }
           }
         }
-        payload_sha256 = "697da808d0ee49e0240c50ad36593378909edbe24737fc83da0d3fc3f08e396e"
+        pods = {
+          qwen3-8b-pod = {
+            uid        = "uid-qwen3-pod"
+            profile    = "gateway-zero-egress-tcp-8000-v1"
+            owner_kind = "Deployment"
+            owner_uid  = "uid-qwen3"
+            phase      = "Running"
+            ready      = true
+          }
+        }
+        live_controller = {
+          deployment_name     = "fs2-serve-control-plane-model-controller"
+          deployment_uid      = "uid-controller"
+          generation          = 4
+          observed_generation = 4
+          image               = "registry.example.invalid/k8s-inference/control-plane@sha256:da2624948771c1231b5f70d2420c87f635516b6be0ec5539d8437830d57add55"
+          rollout             = { desired = 1, updated = 1, ready = 1, available = 1, unavailable = 0 }
+          pods = {
+            controller-pod = {
+              uid      = "uid-controller-pod"
+              image_id = "docker-pullable://registry.example.invalid/k8s-inference/control-plane@sha256:da2624948771c1231b5f70d2420c87f635516b6be0ec5539d8437830d57add55"
+              ready    = true
+            }
+          }
+        }
+        admission_bindings = {
+          fs2-model-network-boundary-marker-fs2-models = "uid-5"
+          fs2-model-network-profile-apps-fs2-models    = "uid-1"
+          fs2-model-network-profile-jobs-fs2-models    = "uid-2"
+          fs2-model-network-profile-jobsets-fs2-models = "uid-3"
+          fs2-model-network-profile-pods-fs2-models    = "uid-4"
+        }
+        payload_sha256 = "728dd1ac4ef231f19533b4b9275833a863e04d3c5b69f61e1bf6f142069f83b4"
       }
     }
   }
 
   plan_options {
-    target = [
-      terraform_data.model_runtime_network_policy_transition,
-      kubernetes_network_policy_v1.model_namespace_default_deny,
-    ]
+    target = [terraform_data.model_runtime_network_policy_transition]
   }
 
   assert {
     condition = (
-      length(kubernetes_network_policy_v1.model_namespace_default_deny) == 1 &&
-      kubernetes_network_policy_v1.model_namespace_default_deny[0].metadata[0].name == "default-deny"
+      terraform_data.model_runtime_network_policy_transition.input.default_deny_planned &&
+      terraform_data.model_runtime_network_policy_transition.input.inventory_receipt_sha256 == "728dd1ac4ef231f19533b4b9275833a863e04d3c5b69f61e1bf6f142069f83b4"
     )
-    error_message = "Enforce must create default-deny only after the live inventory exactly matches its content-addressed receipt."
+    error_message = "Enforce must bind the exact v2 receipt before scheduling the apply-time verifier and namespace deny."
   }
-}
-
-run "enforce_rejects_a_live_deployment_missing_its_profile" {
-  command = plan
-
-  override_data {
-    target = data.kubernetes_resources.model_runtime_deployments[0]
-    values = {
-      objects = [{
-        metadata = {
-          name = "qwen3-8b"
-          uid  = "uid-qwen3"
-          labels = {
-            "app.kubernetes.io/component" = "model-runtime"
-            "app.kubernetes.io/part-of"   = "fs2-serve"
-          }
-        }
-        spec = {
-          template = {
-            metadata = {
-              labels = {
-                "app.kubernetes.io/component"         = "model-runtime"
-                "app.kubernetes.io/part-of"           = "fs2-serve"
-                "fs2-serve.nebius.ai/network-profile" = "gateway-zero-egress-tcp-8000-v1"
-              }
-            }
-          }
-        }
-      }]
-    }
-  }
-
-  variables {
-    model_express = merge(var.model_express, { enabled = false, models = {} })
-    model_runtime_network_policy = {
-      phase = "enforce"
-      inventory_receipt = {
-        schema      = "fs2-serve.nebius.ai/model-runtime-network-inventory/v1"
-        cluster_id  = "mk8scluster-modelexpresstest"
-        namespace   = "fs2-models"
-        captured_at = "2026-09-16T18:00:00Z"
-        control_plane_image = {
-          repository = "registry.example.invalid/k8s-inference/control-plane"
-          digest     = "sha256:da2624948771c1231b5f70d2420c87f635516b6be0ec5539d8437830d57add55"
-        }
-        profiles_sha256 = "ae5ba0c87afa8335b4a5aca930793702398450424282fe73b9d47dc53659dde0"
-        deployments = {
-          qwen3-8b = {
-            uid                = "uid-qwen3"
-            profile            = "gateway-zero-egress-tcp-8000-v1"
-            workload_component = "model-runtime"
-            workload_part_of   = "fs2-serve"
-            pod_component      = "model-runtime"
-            pod_part_of        = "fs2-serve"
-          }
-        }
-        payload_sha256 = "697da808d0ee49e0240c50ad36593378909edbe24737fc83da0d3fc3f08e396e"
-      }
-    }
-  }
-
-  plan_options {
-    target = [terraform_data.model_runtime_network_policy_transition]
-  }
-
-  expect_failures = [terraform_data.model_runtime_network_policy_transition]
-}
-
-run "rollback_remove_deny_cannot_change_the_enforced_image" {
-  command = plan
-
-  variables {
-    model_express = merge(var.model_express, { enabled = false, models = {} })
-    model_runtime_network_policy = {
-      phase = "rollback-remove-deny"
-      inventory_receipt = {
-        schema      = "fs2-serve.nebius.ai/model-runtime-network-inventory/v1"
-        cluster_id  = "mk8scluster-modelexpresstest"
-        namespace   = "fs2-models"
-        captured_at = "2026-09-16T18:00:00Z"
-        control_plane_image = {
-          repository = "registry.example.invalid/k8s-inference/control-plane"
-          digest     = "sha256:da2624948771c1231b5f70d2420c87f635516b6be0ec5539d8437830d57add55"
-        }
-        profiles_sha256 = "ae5ba0c87afa8335b4a5aca930793702398450424282fe73b9d47dc53659dde0"
-        deployments = {
-          qwen3-8b = {
-            uid                = "uid-qwen3"
-            profile            = "gateway-zero-egress-tcp-8000-v1"
-            workload_component = "model-runtime"
-            workload_part_of   = "fs2-serve"
-            pod_component      = "model-runtime"
-            pod_part_of        = "fs2-serve"
-          }
-        }
-        payload_sha256 = "697da808d0ee49e0240c50ad36593378909edbe24737fc83da0d3fc3f08e396e"
-      }
-    }
-  }
-
-  plan_options {
-    target = [
-      terraform_data.model_runtime_network_policy_transition,
-      kubernetes_network_policy_v1.model_namespace_default_deny,
-    ]
-  }
-
-  assert {
-    condition     = length(kubernetes_network_policy_v1.model_namespace_default_deny) == 0
-    error_message = "The first rollback apply must remove default-deny while retaining the exact enforced image and allow profiles."
-  }
-}
-
-run "rollback_helm_requires_a_live_deny_absent_receipt" {
-  command = plan
-
-  override_data {
-    target = data.kubernetes_resources.model_runtime_network_policies[0]
-    values = {
-      objects = [{ metadata = { name = "fs2-runtime-profile-gateway-zero-egress-tcp-8000-v1" } }]
-    }
-  }
-
-  override_data {
-    target = data.kubernetes_resources.model_runtime_network_enforcement_markers[0]
-    values = {
-      objects = [{
-        metadata = { name = "fs2-runtime-network-policy-enforcement" }
-        data = {
-          inventory_receipt_sha256   = "697da808d0ee49e0240c50ad36593378909edbe24737fc83da0d3fc3f08e396e"
-          profiles_sha256            = "ae5ba0c87afa8335b4a5aca930793702398450424282fe73b9d47dc53659dde0"
-          control_plane_image_digest = "sha256:da2624948771c1231b5f70d2420c87f635516b6be0ec5539d8437830d57add55"
-        }
-      }]
-    }
-  }
-
-  variables {
-    model_express = merge(var.model_express, { enabled = false, models = {} })
-    model_runtime_network_policy = {
-      phase = "rollback-helm"
-      inventory_receipt = {
-        schema      = "fs2-serve.nebius.ai/model-runtime-network-inventory/v1"
-        cluster_id  = "mk8scluster-modelexpresstest"
-        namespace   = "fs2-models"
-        captured_at = "2026-09-16T18:00:00Z"
-        control_plane_image = {
-          repository = "registry.example.invalid/k8s-inference/control-plane"
-          digest     = "sha256:da2624948771c1231b5f70d2420c87f635516b6be0ec5539d8437830d57add55"
-        }
-        profiles_sha256 = "ae5ba0c87afa8335b4a5aca930793702398450424282fe73b9d47dc53659dde0"
-        deployments = {
-          qwen3-8b = {
-            uid                = "uid-qwen3"
-            profile            = "gateway-zero-egress-tcp-8000-v1"
-            workload_component = "model-runtime"
-            workload_part_of   = "fs2-serve"
-            pod_component      = "model-runtime"
-            pod_part_of        = "fs2-serve"
-          }
-        }
-        payload_sha256 = "697da808d0ee49e0240c50ad36593378909edbe24737fc83da0d3fc3f08e396e"
-      }
-      deny_absent_receipt = {
-        schema                     = "fs2-serve.nebius.ai/model-runtime-network-deny-absent/v1"
-        cluster_id                 = "mk8scluster-modelexpresstest"
-        namespace                  = "fs2-models"
-        captured_at                = "2026-09-16T18:05:00Z"
-        enforcement_payload_sha256 = "697da808d0ee49e0240c50ad36593378909edbe24737fc83da0d3fc3f08e396e"
-        profiles_sha256            = "ae5ba0c87afa8335b4a5aca930793702398450424282fe73b9d47dc53659dde0"
-        allow_policy_names         = ["fs2-runtime-profile-gateway-zero-egress-tcp-8000-v1"]
-        default_deny_absent        = true
-        payload_sha256             = "e2c330efe97263ee7447ce85f7208f48ab3345775e85fbd0303d3a4f8f7aec83"
-      }
-    }
-  }
-
-  plan_options {
-    target = [terraform_data.model_runtime_network_policy_transition]
-  }
-
-  assert {
-    condition     = terraform_data.model_runtime_network_policy_transition.input.helm_rollback_authorized
-    error_message = "Helm rollback is authorized only by the second receipt and matching live deny-absent inventory."
-  }
-}
-
-run "rollback_helm_fails_while_default_deny_is_live" {
-  command = plan
-
-  override_data {
-    target = data.kubernetes_resources.model_runtime_network_policies[0]
-    values = {
-      objects = [
-        { metadata = { name = "default-deny" } },
-        { metadata = { name = "fs2-runtime-profile-gateway-zero-egress-tcp-8000-v1" } },
-      ]
-    }
-  }
-
-  override_data {
-    target = data.kubernetes_resources.model_runtime_network_enforcement_markers[0]
-    values = {
-      objects = [{
-        metadata = { name = "fs2-runtime-network-policy-enforcement" }
-        data = {
-          inventory_receipt_sha256   = "697da808d0ee49e0240c50ad36593378909edbe24737fc83da0d3fc3f08e396e"
-          profiles_sha256            = "ae5ba0c87afa8335b4a5aca930793702398450424282fe73b9d47dc53659dde0"
-          control_plane_image_digest = "sha256:da2624948771c1231b5f70d2420c87f635516b6be0ec5539d8437830d57add55"
-        }
-      }]
-    }
-  }
-
-  variables {
-    model_express = merge(var.model_express, { enabled = false, models = {} })
-    model_runtime_network_policy = {
-      phase = "rollback-helm"
-      inventory_receipt = {
-        schema      = "fs2-serve.nebius.ai/model-runtime-network-inventory/v1"
-        cluster_id  = "mk8scluster-modelexpresstest"
-        namespace   = "fs2-models"
-        captured_at = "2026-09-16T18:00:00Z"
-        control_plane_image = {
-          repository = "registry.example.invalid/k8s-inference/control-plane"
-          digest     = "sha256:da2624948771c1231b5f70d2420c87f635516b6be0ec5539d8437830d57add55"
-        }
-        profiles_sha256 = "ae5ba0c87afa8335b4a5aca930793702398450424282fe73b9d47dc53659dde0"
-        deployments = {
-          qwen3-8b = {
-            uid                = "uid-qwen3"
-            profile            = "gateway-zero-egress-tcp-8000-v1"
-            workload_component = "model-runtime"
-            workload_part_of   = "fs2-serve"
-            pod_component      = "model-runtime"
-            pod_part_of        = "fs2-serve"
-          }
-        }
-        payload_sha256 = "697da808d0ee49e0240c50ad36593378909edbe24737fc83da0d3fc3f08e396e"
-      }
-      deny_absent_receipt = {
-        schema                     = "fs2-serve.nebius.ai/model-runtime-network-deny-absent/v1"
-        cluster_id                 = "mk8scluster-modelexpresstest"
-        namespace                  = "fs2-models"
-        captured_at                = "2026-09-16T18:05:00Z"
-        enforcement_payload_sha256 = "697da808d0ee49e0240c50ad36593378909edbe24737fc83da0d3fc3f08e396e"
-        profiles_sha256            = "ae5ba0c87afa8335b4a5aca930793702398450424282fe73b9d47dc53659dde0"
-        allow_policy_names         = ["fs2-runtime-profile-gateway-zero-egress-tcp-8000-v1"]
-        default_deny_absent        = true
-        payload_sha256             = "e2c330efe97263ee7447ce85f7208f48ab3345775e85fbd0303d3a4f8f7aec83"
-      }
-    }
-  }
-
-  plan_options {
-    target = [terraform_data.model_runtime_network_policy_transition]
-  }
-
-  expect_failures = [terraform_data.model_runtime_network_policy_transition]
 }
 
 run "enabled_academic_config_reaches_the_chart" {

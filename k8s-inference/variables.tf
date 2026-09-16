@@ -165,30 +165,48 @@ variable "deployment" {
       pool_overrides  = optional(map(string), {})
       # Network isolation is deliberately a multi-apply transition. `prepare`
       # installs finite allow profiles without closing the namespace;
-      # `enforce` requires a live, content-addressed Deployment inventory;
+      # `enforce` requires a live, content-addressed workload/Pod inventory,
+      # admission fence, and running controller identity;
       # rollback removes the deny in one apply and permits Helm rollback only
       # after a second live absence receipt.
       network_policy = optional(object({
         phase = optional(string, "prepare")
         inventory_receipt = optional(object({
-          schema      = string
-          cluster_id  = string
-          namespace   = string
-          captured_at = string
-          control_plane_image = object({
-            repository = string
-            digest     = string
-          })
+          schema          = string
+          cluster_id      = string
+          namespace       = string
+          captured_at     = string
           profiles_sha256 = string
-          deployments = map(object({
-            uid                = string
-            profile            = string
-            workload_component = string
-            workload_part_of   = string
-            pod_component      = string
-            pod_part_of        = string
+          resource_apis   = map(bool)
+          workloads = map(object({
+            uid        = string
+            generation = number
+            profile    = string
+            rollout    = map(number)
           }))
-          payload_sha256 = string
+          pods = map(object({
+            uid        = string
+            profile    = string
+            owner_kind = string
+            owner_uid  = string
+            phase      = string
+            ready      = bool
+          }))
+          live_controller = object({
+            deployment_name     = string
+            deployment_uid      = string
+            generation          = number
+            observed_generation = number
+            image               = string
+            rollout             = map(number)
+            pods = map(object({
+              uid      = string
+              image_id = string
+              ready    = bool
+            }))
+          })
+          admission_bindings = map(string)
+          payload_sha256     = string
         }), null)
         deny_absent_receipt = optional(object({
           schema                     = string
@@ -743,16 +761,17 @@ variable "deployment" {
   validation {
     condition = contains([
       "prepare",
+      "inventory",
       "enforce",
       "rollback-remove-deny",
       "rollback-helm",
     ], var.deployment.models.network_policy.phase)
-    error_message = "deployment.models.network_policy.phase must be prepare, enforce, rollback-remove-deny, or rollback-helm."
+    error_message = "deployment.models.network_policy.phase must be prepare, inventory, enforce, rollback-remove-deny, or rollback-helm."
   }
 
   validation {
     condition = (
-      var.deployment.models.network_policy.phase == "prepare" ? (
+      contains(["prepare", "inventory"], var.deployment.models.network_policy.phase) ? (
         var.deployment.models.network_policy.inventory_receipt == null &&
         var.deployment.models.network_policy.deny_absent_receipt == null
         ) : var.deployment.models.network_policy.phase == "rollback-helm" ? (
@@ -763,7 +782,7 @@ variable "deployment" {
         var.deployment.models.network_policy.deny_absent_receipt == null
       )
     )
-    error_message = "prepare accepts no NetworkPolicy receipts; enforce and rollback-remove-deny require only the inventory receipt; rollback-helm requires both receipts."
+    error_message = "prepare and inventory accept no NetworkPolicy receipts; enforce and rollback-remove-deny require only the inventory receipt; rollback-helm requires both receipts."
   }
 
   validation {

@@ -420,19 +420,23 @@ def _gpu_allocation(
     if not 0 <= resolution <= 300:
         raise ScientificKubernetesError("trusted GPU observer resolution is outside the bound")
     try:
-        return PodLifecycleObservation(
-            pod_uid="validation",
-            pod_name=None,
-            node_name=None,
-            node_uid=None,
-            created_at=datetime(1970, 1, 1, tzinfo=UTC),
-            observed_at=datetime(1970, 1, 1, tzinfo=UTC),
-            scheduled_at=datetime(1970, 1, 1, tzinfo=UTC),
-            gpu_count=gpu_count,
-            gpu_uuids=tuple(values),
-            device_allocation_observed_at=datetime(1970, 1, 1, tzinfo=UTC),
-            device_observation_resolution_seconds=resolution,
-        ).gpu_uuids, device_observed_at, resolution
+        return (
+            PodLifecycleObservation(
+                pod_uid="validation",
+                pod_name=None,
+                node_name=None,
+                node_uid=None,
+                created_at=datetime(1970, 1, 1, tzinfo=UTC),
+                observed_at=datetime(1970, 1, 1, tzinfo=UTC),
+                scheduled_at=datetime(1970, 1, 1, tzinfo=UTC),
+                gpu_count=gpu_count,
+                gpu_uuids=tuple(values),
+                device_allocation_observed_at=datetime(1970, 1, 1, tzinfo=UTC),
+                device_observation_resolution_seconds=resolution,
+            ).gpu_uuids,
+            device_observed_at,
+            resolution,
+        )
     except ValueError as error:
         raise ScientificKubernetesError("trusted GPU UUID annotation contains an invalid device") from error
 
@@ -567,18 +571,19 @@ def _pod_lifecycle(
             for interval in stage_intervals:
                 if interval.phase is not LifecyclePhase.ACTIVE_COMPUTE:
                     startup_intervals.append(interval)
-                elif (
-                    snapshot_request_at is not None
-                    and interval.started_at <= snapshot_request_at <= (interval.ended_at or observed_at)
+                elif snapshot_request_at is not None and interval.started_at <= snapshot_request_at <= (
+                    interval.ended_at or observed_at
                 ):
-                    startup_intervals.extend((
-                        PodPhaseInterval(
-                            phase=LifecyclePhase.RESTORING,
-                            started_at=interval.started_at,
-                            ended_at=snapshot_request_at,
-                        ),
-                        replace(interval, started_at=snapshot_request_at),
-                    ))
+                    startup_intervals.extend(
+                        (
+                            PodPhaseInterval(
+                                phase=LifecyclePhase.RESTORING,
+                                started_at=interval.started_at,
+                                ended_at=snapshot_request_at,
+                            ),
+                            replace(interval, started_at=snapshot_request_at),
+                        )
+                    )
                 # Without the marker we know GPU occupancy, but not the
                 # startup/compute boundary. Do not persist a false compute
                 # interval that cannot later be retracted from the ledger.
@@ -703,6 +708,20 @@ def _template_metadata(manifest: dict[str, Any], kind: WorkloadKind) -> list[dic
         pod = _object(_object(job_spec.get("spec"), "JobSet Job spec").get("template"), "JobSet Pod template")
         result.append(_object(pod.setdefault("metadata", {}), "JobSet Pod metadata"))
     return result
+
+
+def _jobset_job_template_metadata(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+    spec = _object(manifest.get("spec"), "Kubernetes workload spec")
+    jobs = spec.get("replicatedJobs")
+    if not isinstance(jobs, list) or not jobs:
+        raise ScientificKubernetesError("JobSet must contain replicatedJobs")
+    return [
+        _object(
+            _object(job, "JobSet replicated job").setdefault("template", {}).setdefault("metadata", {}),
+            "JobSet Job metadata",
+        )
+        for job in jobs
+    ]
 
 
 def _pod_specs(manifest: dict[str, Any], kind: WorkloadKind) -> list[dict[str, Any]]:
@@ -846,6 +865,7 @@ class HttpScientificBatchCluster:
         labels = _object(metadata.setdefault("labels", {}), "Kubernetes labels")
         labels.update(
             {
+                "app.kubernetes.io/part-of": "fs2-serve",
                 OPERATION_LABEL: str(resource.operation_id),
                 WORKLOAD_LABEL: str(resource.workload_id),
                 ATTEMPT_LABEL: str(resource.attempt_id),
@@ -859,6 +879,8 @@ class HttpScientificBatchCluster:
                 PRIORITY_LABEL: resource.scheduling.workload_priority_class,
             }
         )
+        if resource.namespace == "fs2-models":
+            labels["fs2-serve.nebius.ai/network-profile"] = "job-internal-v1"
         if resource.scheduling.max_execution_seconds is not None:
             labels[MAX_EXECUTION_LABEL] = str(resource.scheduling.max_execution_seconds)
         if resource.shard_id is not None:
@@ -879,6 +901,10 @@ class HttpScientificBatchCluster:
         for pod_metadata in _template_metadata(manifest, resource.kind):
             pod_labels = _object(pod_metadata.setdefault("labels", {}), "Pod template labels")
             pod_labels.update(labels)
+        if resource.kind is WorkloadKind.JOB_SET:
+            for job_metadata in _jobset_job_template_metadata(manifest):
+                job_labels = _object(job_metadata.setdefault("labels", {}), "JobSet Job template labels")
+                job_labels.update(labels)
         spec = _object(manifest.get("spec"), "Kubernetes workload spec")
         spec["suspend"] = True
         if resource.scheduling.resource_class is ResourceClass.GPU:
@@ -1034,12 +1060,16 @@ class HttpScientificBatchCluster:
             return self._snapshot_markers[uid]
         path = f"/api/v1/namespaces/{quote(namespace, safe='')}/pods/{quote(name, safe='')}/log"
         try:
-            response = await self._request("GET", path, params={
-                "container": STAGE_CONTAINER_NAME,
-                "timestamps": "true",
-                "tailLines": "2000",
-                "limitBytes": str(MAX_LOG_BYTES),
-            })
+            response = await self._request(
+                "GET",
+                path,
+                params={
+                    "container": STAGE_CONTAINER_NAME,
+                    "timestamps": "true",
+                    "tailLines": "2000",
+                    "limitBytes": str(MAX_LOG_BYTES),
+                },
+            )
         except ScientificKubernetesError:
             # Waiting containers, rotated logs and unavailable telemetry must
             # not block model execution or manufacture a restore measurement.
@@ -1248,7 +1278,8 @@ class HttpScientificBatchCluster:
             pod_lifecycle=tuple(pod_lifecycle),
             pending_code=(
                 next((code for code in pending_codes if code != "NodeProvisioning"), "NodeProvisioning")
-                if LifecyclePhase.NODE_PENDING in phases else None
+                if LifecyclePhase.NODE_PENDING in phases
+                else None
             ),
         )
 

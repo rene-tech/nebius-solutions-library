@@ -267,7 +267,7 @@ class InferenceStackTests(unittest.TestCase):
                 },
                 {
                     "mode": "data",
-                    "address": "data.kubernetes_resources.model_runtime_deployments",
+                    "address": "data.kubernetes_resources.model_runtime_network_policies",
                     "change": {"actions": ["read"]},
                 },
             ]
@@ -276,6 +276,10 @@ class InferenceStackTests(unittest.TestCase):
         STACK.validate_model_network_policy_rollback_plan(
             {"resource_changes": []}, current
         )
+        for remaining in safe["resource_changes"][:2]:
+            STACK.validate_model_network_policy_rollback_plan(
+                {"resource_changes": [remaining]}, current
+            )
 
         unsafe = json.loads(json.dumps(safe))
         unsafe["resource_changes"].append(
@@ -312,70 +316,179 @@ class InferenceStackTests(unittest.TestCase):
 
     def test_completed_model_handoff_survives_catalog_additions(self) -> None:
         def resource(name, value):
-            return {"mode": "managed", "type": "terraform_data", "name": name,
-                    "instances": [{"attributes": {"input": {"value": value}}}]}
+            return {
+                "mode": "managed",
+                "type": "terraform_data",
+                "name": name,
+                "instances": [{"attributes": {"input": {"value": value}}}],
+            }
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            self.assertFalse(STACK.existing_controller_ownership(root, "cluster-test", "receipt-original"))
-            controller = {"workload_owner": "controller", "expected_handoff_receipt": "receipt-original"}
-            state = {"resources": [resource("cluster_contract", {"cluster_id": "cluster-test"}),
-                                   resource("model_controller_contract", controller)]}
+            self.assertFalse(
+                STACK.existing_controller_ownership(
+                    root, "cluster-test", "receipt-original"
+                )
+            )
+            controller = {
+                "workload_owner": "controller",
+                "expected_handoff_receipt": "receipt-original",
+            }
+            state = {
+                "resources": [
+                    resource("cluster_contract", {"cluster_id": "cluster-test"}),
+                    resource("model_controller_contract", controller),
+                ]
+            }
             path = root / "workloads.tfstate"
 
             def save():
                 path.write_text(json.dumps(state))
 
             save()
-            self.assertTrue(STACK.existing_controller_ownership(root, "cluster-test", "receipt-original"))
-            self.assertFalse(STACK.existing_controller_ownership(root, "wrong-cluster", "receipt-original"))
-            self.assertFalse(STACK.existing_controller_ownership(root, "cluster-test", "wrong-receipt"))
-            controller.update(accepted_handoff_receipt="receipt-original", expected_handoff_receipt="new-model-template")
+            self.assertTrue(
+                STACK.existing_controller_ownership(
+                    root, "cluster-test", "receipt-original"
+                )
+            )
+            self.assertFalse(
+                STACK.existing_controller_ownership(
+                    root, "wrong-cluster", "receipt-original"
+                )
+            )
+            self.assertFalse(
+                STACK.existing_controller_ownership(
+                    root, "cluster-test", "wrong-receipt"
+                )
+            )
+            controller.update(
+                accepted_handoff_receipt="receipt-original",
+                expected_handoff_receipt="new-model-template",
+            )
             save()
-            self.assertTrue(STACK.existing_controller_ownership(root, "cluster-test", "receipt-original"))
-            state["resources"].append({"mode": "managed", "type": "kubernetes_manifest", "name": "model",
-                                       "instances": [{"attributes": {"manifest": {"value": {"kind": "PersistentVolumeClaim"}}}}]})
+            self.assertTrue(
+                STACK.existing_controller_ownership(
+                    root, "cluster-test", "receipt-original"
+                )
+            )
+            state["resources"].append(
+                {
+                    "mode": "managed",
+                    "type": "kubernetes_manifest",
+                    "name": "model",
+                    "instances": [
+                        {
+                            "attributes": {
+                                "manifest": {"value": {"kind": "PersistentVolumeClaim"}}
+                            }
+                        }
+                    ],
+                }
+            )
             save()
-            self.assertTrue(STACK.existing_controller_ownership(root, "cluster-test", "receipt-original"))
-            state["resources"][-1]["instances"][0]["attributes"]["manifest"]["value"]["kind"] = "Deployment"
+            self.assertTrue(
+                STACK.existing_controller_ownership(
+                    root, "cluster-test", "receipt-original"
+                )
+            )
+            state["resources"][-1]["instances"][0]["attributes"]["manifest"]["value"][
+                "kind"
+            ] = "Deployment"
             save()
-            self.assertFalse(STACK.existing_controller_ownership(root, "cluster-test", "receipt-original"))
+            self.assertFalse(
+                STACK.existing_controller_ownership(
+                    root, "cluster-test", "receipt-original"
+                )
+            )
             state["resources"].pop()
-            cpu_deployment = {"kind": "Deployment", "metadata": {"name": "msa", "namespace": "models"},
-                              "spec": {"template": {"spec": {"serviceAccountName": "msa"}}}}
-            cpu_service = {"kind": "Service", "metadata": {"name": "msa", "namespace": "models"}}
-            state["resources"].append(resource("cpu_model_runtime_contract", {
-                "deployment": cpu_deployment, "service_manifest": cpu_service,
-            }))
-            state["resources"].append({"mode": "managed", "type": "kubernetes_manifest", "name": "model",
-                "instances": [{"attributes": {"manifest": {"value": document}}} for document in (
-                    cpu_deployment, cpu_service,
-                    {"kind": "ServiceAccount", "metadata": {"name": "msa", "namespace": "models"}},
-                )]})
+            cpu_deployment = {
+                "kind": "Deployment",
+                "metadata": {"name": "msa", "namespace": "models"},
+                "spec": {"template": {"spec": {"serviceAccountName": "msa"}}},
+            }
+            cpu_service = {
+                "kind": "Service",
+                "metadata": {"name": "msa", "namespace": "models"},
+            }
+            state["resources"].append(
+                resource(
+                    "cpu_model_runtime_contract",
+                    {
+                        "deployment": cpu_deployment,
+                        "service_manifest": cpu_service,
+                    },
+                )
+            )
+            state["resources"].append(
+                {
+                    "mode": "managed",
+                    "type": "kubernetes_manifest",
+                    "name": "model",
+                    "instances": [
+                        {"attributes": {"manifest": {"value": document}}}
+                        for document in (
+                            cpu_deployment,
+                            cpu_service,
+                            {
+                                "kind": "ServiceAccount",
+                                "metadata": {"name": "msa", "namespace": "models"},
+                            },
+                        )
+                    ],
+                }
+            )
             save()
-            self.assertTrue(STACK.existing_controller_ownership(root, "cluster-test", "receipt-original"))
-            state["resources"][-1]["instances"].append({"attributes": {"manifest": {"value": {
-                "kind": "Deployment", "metadata": {"name": "legacy-gpu", "namespace": "models"},
-            }}}})
+            self.assertTrue(
+                STACK.existing_controller_ownership(
+                    root, "cluster-test", "receipt-original"
+                )
+            )
+            state["resources"][-1]["instances"].append(
+                {
+                    "attributes": {
+                        "manifest": {
+                            "value": {
+                                "kind": "Deployment",
+                                "metadata": {
+                                    "name": "legacy-gpu",
+                                    "namespace": "models",
+                                },
+                            }
+                        }
+                    }
+                }
+            )
             save()
-            self.assertFalse(STACK.existing_controller_ownership(root, "cluster-test", "receipt-original"))
+            self.assertFalse(
+                STACK.existing_controller_ownership(
+                    root, "cluster-test", "receipt-original"
+                )
+            )
             state["resources"].pop()
             state["resources"].pop()
             controller["workload_owner"] = "terraform"
             save()
-            self.assertFalse(STACK.existing_controller_ownership(root, "cluster-test", "receipt-original"))
+            self.assertFalse(
+                STACK.existing_controller_ownership(
+                    root, "cluster-test", "receipt-original"
+                )
+            )
 
     def test_workloads_plan_refuses_execution_map_drift_before_terraform(self) -> None:
         configuration = contract()
         expected_map = json.loads(
-            (DEPLOY_ROOT / "catalog/runtime/contracts/scientific-execution-map.json").read_text(encoding="utf-8")
+            (
+                DEPLOY_ROOT / "catalog/runtime/contracts/scientific-execution-map.json"
+            ).read_text(encoding="utf-8")
         )
         configuration["stages"]["workloads"]["scientific_batch"] = {
             "enabled": True,
             "execution_map": expected_map,
         }
 
-        with tempfile.TemporaryDirectory(prefix="inference-stack-map-drift-") as temporary:
+        with tempfile.TemporaryDirectory(
+            prefix="inference-stack-map-drift-"
+        ) as temporary:
             run_root = Path(temporary)
             workloads_path = run_root / "workloads.tfvars.json"
             STACK.private_json(
@@ -632,29 +745,71 @@ class InferenceStackTests(unittest.TestCase):
             STACK.canonical_sha256(baseline),
         )
 
-    def test_deployment_runtime_identity_follows_the_digest_across_regional_mirrors(self) -> None:
-        candidate = json.loads((DEPLOY_ROOT / "catalog/runtime/deployment-runtimes/genmol-portable-h100.json").read_text())
+    def test_deployment_runtime_identity_follows_the_digest_across_regional_mirrors(
+        self,
+    ) -> None:
+        candidate = json.loads(
+            (
+                DEPLOY_ROOT
+                / "catalog/runtime/deployment-runtimes/genmol-portable-h100.json"
+            ).read_text()
+        )
         digest = candidate["record"]["runtime"]["image"]["digest"]
-        selected = STACK.selected_deployment_runtimes({"genmol": f"registry.other-region.example/models/genmol@{digest}"})
+        selected = STACK.selected_deployment_runtimes(
+            {"genmol": f"registry.other-region.example/models/genmol@{digest}"}
+        )
         self.assertEqual(selected, {"genmol": candidate})
         identity = STACK.deployment_runtime_configuration_identities(selected)["genmol"]
-        self.assertEqual(identity["model_revision"], candidate["record"]["model"]["source"]["revision"])
-        self.assertEqual(identity["artifact_manifest_sha256"], candidate["record"]["cache"]["artifact"]["manifest_digest"])
-        canonical_record = json.dumps(candidate["record"], sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode() + b"\n"
-        self.assertEqual(identity["provenance_sha256"], hashlib.sha256(canonical_record).hexdigest())
-        self.assertNotEqual(identity["acquisition_contract_sha256"], STACK.canonical_sha256(STACK._admin_catalog().acquisition_plans["genmol"].to_dict()))
-        self.assertEqual(STACK.selected_deployment_runtimes({"genmol": f"registry.example/models/genmol@sha256:{'0' * 64}"}), {})
+        self.assertEqual(
+            identity["model_revision"],
+            candidate["record"]["model"]["source"]["revision"],
+        )
+        self.assertEqual(
+            identity["artifact_manifest_sha256"],
+            candidate["record"]["cache"]["artifact"]["manifest_digest"],
+        )
+        canonical_record = (
+            json.dumps(
+                candidate["record"],
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+            ).encode()
+            + b"\n"
+        )
+        self.assertEqual(
+            identity["provenance_sha256"], hashlib.sha256(canonical_record).hexdigest()
+        )
+        self.assertNotEqual(
+            identity["acquisition_contract_sha256"],
+            STACK.canonical_sha256(
+                STACK._admin_catalog().acquisition_plans["genmol"].to_dict()
+            ),
+        )
+        self.assertEqual(
+            STACK.selected_deployment_runtimes(
+                {"genmol": f"registry.example/models/genmol@sha256:{'0' * 64}"}
+            ),
+            {},
+        )
 
-    def test_cpu_deployment_runtime_uses_the_general_pool_without_a_fake_gpu(self) -> None:
-        candidate = json.loads((
-            DEPLOY_ROOT / "catalog/runtime/deployment-runtimes/msa-search-pdb70-portable-cpu.json"
-        ).read_text())
+    def test_cpu_deployment_runtime_uses_the_general_pool_without_a_fake_gpu(
+        self,
+    ) -> None:
+        candidate = json.loads(
+            (
+                DEPLOY_ROOT
+                / "catalog/runtime/deployment-runtimes/msa-search-pdb70-portable-cpu.json"
+            ).read_text()
+        )
         digest = candidate["record"]["runtime"]["image"]["digest"]
         configuration = contract()
-        configuration.update({
-            "selected_model_ids": ["msa-search-pdb70"],
-            "selected_model_placements": {},
-        })
+        configuration.update(
+            {
+                "selected_model_ids": ["msa-search-pdb70"],
+                "selected_model_placements": {},
+            }
+        )
         workloads = {
             "model_image_overrides": {
                 "msa-search-pdb70": f"registry.example/models/msa-search-pdb70@{digest}"
@@ -669,16 +824,22 @@ class InferenceStackTests(unittest.TestCase):
             "general_cpu_lane": {"local_queue": "general-cpu"},
         }
         dynamic = {
-            "accelerator_pool_contract": {"pools": {
-                "h100-1x": {
-                    "accelerator_class": "nvidia-h100-sxm5-80gb",
-                    "capacity": {"type": "preemptible", "min_nodes": 0, "max_nodes": 2},
-                    "node": {"gpus_per_node": 1},
-                    "resource_api": {"resource_name": "nvidia.com/gpu"},
-                    "features": {"shared_filesystem": True},
-                    "scheduling": {"stable_node_labels": {}, "tolerations": []},
+            "accelerator_pool_contract": {
+                "pools": {
+                    "h100-1x": {
+                        "accelerator_class": "nvidia-h100-sxm5-80gb",
+                        "capacity": {
+                            "type": "preemptible",
+                            "min_nodes": 0,
+                            "max_nodes": 2,
+                        },
+                        "node": {"gpus_per_node": 1},
+                        "resource_api": {"resource_name": "nvidia.com/gpu"},
+                        "features": {"shared_filesystem": True},
+                        "scheduling": {"stable_node_labels": {}, "tolerations": []},
+                    }
                 }
-            }},
+            },
             "general_cpu_pool_contract": {
                 "schema": "fs2-serve.nebius.ai/general-cpu-pools/v1",
                 "node_selector": {"workload.fs2.nebius/general-cpu": "true"},
@@ -687,9 +848,13 @@ class InferenceStackTests(unittest.TestCase):
                     "value": "true",
                     "effect": "NoSchedule",
                 },
-                "pools": {"batch-cpu": {
-                    "capacity_type": "regular", "min_nodes": 1, "max_nodes": 2,
-                }},
+                "pools": {
+                    "batch-cpu": {
+                        "capacity_type": "regular",
+                        "min_nodes": 1,
+                        "max_nodes": 2,
+                    }
+                },
             },
         }
 
@@ -1369,7 +1534,10 @@ class InferenceStackTests(unittest.TestCase):
             "bucket_name": "reference-data-test",
             "cpu_pool_id": "mk8snodegroup-test",
             "status_service": "fs2-reference-data-status.fs2-reference-data.svc.cluster.local:8080",
-            "pipeline": {"job_name": "fs2-stage-af3-test", "state": "submitted-suspended-awaiting-kueue-admission"},
+            "pipeline": {
+                "job_name": "fs2-stage-af3-test",
+                "state": "submitted-suspended-awaiting-kueue-admission",
+            },
             "lifecycle": {"retention_mode": "retain"},
         }
         reference_contract = {
@@ -1415,9 +1583,7 @@ class InferenceStackTests(unittest.TestCase):
         self,
     ) -> None:
         configuration = contract()
-        configuration["stages"]["infrastructure"]["reference_data"] = {
-            "enabled": True
-        }
+        configuration["stages"]["infrastructure"]["reference_data"] = {"enabled": True}
         configuration["stages"]["workloads"]["reference_data"] = {"enabled": True}
         storage_contract = {
             "filesystem": {"id": "computefilesystem-test"},
@@ -1532,7 +1698,9 @@ class InferenceStackTests(unittest.TestCase):
                 bundle,
             )
 
-    def test_access_bundle_exposes_reference_storage_cpu_service_and_pipeline(self) -> None:
+    def test_access_bundle_exposes_reference_storage_cpu_service_and_pipeline(
+        self,
+    ) -> None:
         bundle = complete_reference_access_bundle()
         with (
             mock.patch.object(STACK, "stage_environment", return_value={}),
@@ -1629,9 +1797,7 @@ class InferenceStackTests(unittest.TestCase):
             "tenant_id": "tenant-academic",
         }
         bundle = complete_access_bundle()
-        bundle["credentials"]["scientific_access_token"] = (
-            "test-only-scientific-token"
-        )
+        bundle["credentials"]["scientific_access_token"] = "test-only-scientific-token"
         bundle["scientific_access"] = {
             "principal_id": "terraform-academic-scientific-client",
             "tenant_id": "tenant-academic",
@@ -1727,9 +1893,7 @@ class InferenceStackTests(unittest.TestCase):
         self,
     ) -> None:
         bundle = complete_access_bundle()
-        bundle["credentials"]["scientific_access_token"] = (
-            "test-only-scientific-token"
-        )
+        bundle["credentials"]["scientific_access_token"] = "test-only-scientific-token"
         bundle["scientific_access"] = {
             "principal_id": "terraform-academic-scientific-client",
             "tenant_id": "tenant-academic",
@@ -2238,7 +2402,9 @@ class InferenceStackTests(unittest.TestCase):
         output = io.StringIO()
         with (
             mock.patch.object(
-                STACK, "write_infrastructure_variables", return_value=Path("/infra.json")
+                STACK,
+                "write_infrastructure_variables",
+                return_value=Path("/infra.json"),
             ),
             mock.patch.object(STACK, "state_has_resources", return_value=True),
             mock.patch.object(STACK, "state_ready", return_value=True),
@@ -2337,19 +2503,19 @@ class InferenceStackTests(unittest.TestCase):
             "enabled": True,
             "status": {
                 "enabled": True,
-                "image": "registry.example.net/fs2/reference-status@"
-                f"sha256:{'d' * 64}",
+                "image": f"registry.example.net/fs2/reference-status@sha256:{'d' * 64}",
             },
             "pipeline": {
                 "enabled": True,
-                "image": "registry.example.net/fs2/reference-stager@"
-                f"sha256:{'e' * 64}",
+                "image": f"registry.example.net/fs2/reference-stager@sha256:{'e' * 64}",
             },
         }
         dynamic = regional_dynamic(Path("/private/test-run"))
         artifacts = {
             item["name"]: item
-            for item in STACK.selected_image_artifacts(configuration, dynamic["registry_delivery_contract"])
+            for item in STACK.selected_image_artifacts(
+                configuration, dynamic["registry_delivery_contract"]
+            )
         }
         self.assertEqual(
             {"reference-data/status", "reference-data/pipeline"},

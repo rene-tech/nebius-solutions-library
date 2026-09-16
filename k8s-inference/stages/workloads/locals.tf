@@ -926,7 +926,29 @@ locals {
       )
     })
   ]
-  keeper_manifests = { for document in local.rendered_keeper_documents : document.key => document }
+  network_profiled_keeper_documents = [
+    for document in local.rendered_keeper_documents : merge(document, {
+      manifest = document.manifest.kind != "DaemonSet" ? document.manifest : merge(document.manifest, {
+        metadata = merge(document.manifest.metadata, {
+          labels = merge(try(document.manifest.metadata.labels, {}), {
+            "app.kubernetes.io/part-of"           = "fs2-serve"
+            "fs2-serve.nebius.ai/network-profile" = "cache-resident-zero-egress-v1"
+          })
+        })
+        spec = merge(document.manifest.spec, {
+          template = merge(document.manifest.spec.template, {
+            metadata = merge(try(document.manifest.spec.template.metadata, {}), {
+              labels = merge(try(document.manifest.spec.template.metadata.labels, {}), {
+                "app.kubernetes.io/part-of"           = "fs2-serve"
+                "fs2-serve.nebius.ai/network-profile" = "cache-resident-zero-egress-v1"
+              })
+            })
+          })
+        })
+      })
+    })
+  ]
+  keeper_manifests = { for document in local.network_profiled_keeper_documents : document.key => document }
 
   selected_routes = { for model_id in local.selected_model_ids : model_id => local.inventory.routes[model_id] }
   selected_runtime_ports = [

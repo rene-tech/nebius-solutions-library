@@ -1,7 +1,8 @@
 # SAI-03 model-runtime network isolation
 
-Status: clean corrective successor rooted at the separately accepted SAI-03
-source commit `4ea4b1260e6e682a2e4f40ee251860e3cfc7b679`. Rejected integration commits
+Status: additive corrective successor whose direct parent is rejected source
+commit `093798f53cb4249887e59513a3b0114246f7e94c`; that exact commit remains
+preserved as negative evidence. Rejected integration commits
 `92f9394cb3eb76b9b02f7682c96c056ae600e9ed` and
 `89b5cfe17cffd0a1924fcb4f1af52c8a449c4d1e` are evidence only and are not
 ancestors of this successor. No commit in this lineage has been deployed;
@@ -12,11 +13,15 @@ This change closes the source-side causes of SAI-03 without relying on runtime
 pods to carry the historical `app.kubernetes.io/instance` label:
 
 - `fs2-models` has Terraform-owned finite allow profiles, but its ingress-and-
-  egress `default-deny` exists only in the explicit `enforce` phase. Terraform
-  queries every live Deployment in the namespace and refuses enforcement until
-  its workload and Pod-template labels match a content-addressed inventory
-  receipt and the exact finite profile catalog. Merely creating the allow
-  resources cannot close the namespace. Base profiles are bounded by egress
+  egress `default-deny` exists only in the explicit `enforce` phase. A permanent
+  deny-mode ValidatingAdmissionPolicy fence first rejects any Deployment,
+  StatefulSet, DaemonSet, ReplicaSet, Job, JobSet, or Pod that lacks one of the
+  finite profiles. Enforcement then runs a fresh live verifier during apply,
+  after Helm and every known workload producer, before Terraform may create the
+  deny. The content-addressed census includes all of those workload kinds,
+  every extant Pod and controller UID, old ReplicaSets, rollout convergence,
+  admission-binding UIDs, and the actual Ready model-controller Pod image ID.
+  Base profiles are bounded by egress
   mode and service port. ModelExpress profiles are bounded by the exact
   qualification digest, accelerator class/count, NIXL backend and service port.
 - Runtime Pods select those profiles with the immutable
@@ -30,7 +35,13 @@ pods to carry the historical `app.kubernetes.io/instance` label:
   Ordinary egress is limited to cluster DNS. A qualified ModelExpress profile
   adds only same-profile transfer peers and its exact coordinator host/port.
 - Native catalog workloads carry the same gateway/DNS boundary. Mounted-content
-  workloads keep their stricter zero-egress startup contract.
+  workloads and cache keepers retain true zero egress. Batch/evaluation Jobs
+  select a finite internal profile with DNS, the exact control-plane endpoint,
+  and configured exact-host object-store routes. Public Hugging Face cache
+  acquisition is isolated in a separate finite profile that permits only TCP
+  443 to public addresses and excludes private, loopback, link-local,
+  documentation, multicast, and reserved ranges. The Kueue acceptance Job uses
+  a zero-egress profile.
 - The two legacy static policies select labels that are present on the actual
   Pod templates; the same templates carry their finite Terraform profile.
   Qwen is in the zero-egress profile and its checked-in policy has `egress: []`.
@@ -93,25 +104,38 @@ the rule before either can integrate.
 
 `deployment.models.network_policy.phase` is a closed state machine:
 
-1. `prepare` creates or updates the finite profiles and the label-producing
-   controller while `fs2-models/default-deny` remains absent. It is initial-only:
-   a live deny or the persistent enforcement marker makes a later `prepare`
-   plan fail, preventing phase-name rollback bypass.
-2. Export `model_runtime_network_policy_transition` from the applied workloads
-   state and run the read-only receipt tool. It lists **all** Deployments in
-   `fs2-models`, rejects an empty inventory, and requires the runtime component,
-   part-of, and recognized profile labels on both Deployment and Pod template.
-3. Set phase `enforce` and supply that receipt. Terraform re-reads all live
-   Deployments during the plan and requires byte-equivalent normalized
-   inventory, exact cluster/image/profile identities, and a valid payload hash.
-   Only this phase creates `default-deny`; it also creates a persistent marker
-   bound to the enforcement receipt.
-4. To roll back, set `rollback-remove-deny` with the same inventory receipt and
+1. `prepare` creates or updates finite profiles, the inert admission-policy
+   definitions, and every label-producing controller/manifest while both the
+   admission bindings and `fs2-models/default-deny` remain absent.
+2. After those rollouts converge, apply `inventory`. Terraform installs four
+   deny-mode workload-profile bindings only after Helm, static models, keepers,
+   and acceptance producers, plus a fifth binding that forbids update or
+   deletion of the exact boundary marker. It then creates that immutable,
+   Terraform-owned marker. Every admission resource has `prevent_destroy`, the
+   namespaced model controller has no admission-policy authority, and the live
+   marker is protected even though the controller retains ordinary ConfigMap
+   access. A return to `prepare` is structurally impossible after the fence is
+   armed.
+3. Export `model_runtime_network_policy_transition` from the applied inventory
+   state and run the read-only receipt tool. It lists **all** Pod-producing
+   workload kinds and Pods in `fs2-models`, rejects an empty workload inventory,
+   naked/orphaned Pods, unknown profiles, and incomplete rollouts, and captures
+   live controller and admission-binding identities rather than desired values.
+4. Set phase `enforce` and supply that receipt. A `local-exec` apply fence
+   re-runs the read-only census after Helm, static models, keepers, acceptance,
+   finite policies, and admission bindings have converged. Only a byte-equivalent
+   live census and exact running controller digest unlock `default-deny`.
+   Concurrent arbitrary-App changes remain safe because admission permits them
+   only with a finite immutable profile. The receipt can be refreshed while the
+   phase remains `enforce`, so normal App additions and recreations do not force
+   rollback.
+5. To roll back, set `rollback-remove-deny` with the same inventory receipt and
    without changing the enforced image. The supported `inference-stack`
-   workflow rejects the saved plan unless its only managed changes are deletion
-   of `default-deny` and the transition-state update. This prevents a Helm
-   rollback or unrelated mutation in the deny-removal apply.
-5. After that exact plan is applied, generate a `deny-absent` receipt. The tool
+   workflow rejects the saved plan unless every managed change is either
+   deletion of `default-deny` or the transition-state update. It accepts zero,
+   either one, or both allowed changes so a crash between them is resumable,
+   while still rejecting Helm or unrelated mutation.
+6. After that exact plan is applied, generate a `deny-absent` receipt. The tool
    refuses it while the deny exists or any finite allow policy is missing. Set
    `rollback-helm` with both receipts. Terraform independently re-reads the live
    policies and enforcement marker; only then may the Helm release change.
@@ -126,6 +150,15 @@ python3 stages/workloads/scripts/model_network_policy_transition.py inventory \
   --contract /secure/path/network-transition.json \
   --kubeconfig /secure/path/kubeconfig \
   --context <exact-context> > /secure/path/network-inventory-receipt.json
+
+# Terraform runs this same check during the enforce apply, immediately before
+# default-deny. Operators may also reproduce it read-only:
+FS2_NETWORK_TRANSITION_JSON="$(cat /secure/path/network-transition.json)" \
+FS2_NETWORK_RECEIPT_JSON="$(cat /secure/path/network-inventory-receipt.json)" \
+python3 stages/workloads/scripts/model_network_policy_transition.py verify-enforce \
+  --contract-json-env FS2_NETWORK_TRANSITION_JSON \
+  --receipt-json-env FS2_NETWORK_RECEIPT_JSON \
+  --kubeconfig /secure/path/kubeconfig --context <exact-context>
 
 # Run only after the isolated rollback-remove-deny saved plan was applied.
 python3 stages/workloads/scripts/model_network_policy_transition.py deny-absent \
@@ -219,22 +252,22 @@ terraform -chdir=reference-data/terraform test \
 
 Observed results for this corrective successor:
 
-- complete control-plane suite: 1,968 passed, 98 skipped;
-- root/wrapper/receipt/offline-preflight focus: 143 passed and 109 subtests
+- complete control-plane suite: 1,969 passed, 98 skipped;
+- root/wrapper/receipt/offline-preflight focus: 148 passed and 109 subtests
   passed;
-- academic/scientific workloads integration fixtures: 21 passed, including
-  prepare/inventory/enforce/rollback transition failures and the previously
-  masked scientific-artifact same-bucket rejection;
-- complete workloads Terraform suite: 54 passed, 1 failed, 7 skipped. The sole
+- SAI-03 academic, ModelExpress, and scientific-artifact workload fixtures:
+  30 passed (8 + 11 + 11), including prepare/inventory/enforce/rollback gates,
+  exact-host route validation, and the previously masked scientific-artifact
+  same-bucket rejection;
+- complete workloads Terraform suite: 52 passed, 1 failed, 7 skipped. The sole
   failure is the pre-existing general-CPU fixture
   `an_exact_cpu_runtime_renders_one_static_service_without_a_gpu`, where
   `local.selected_queue_pools[pool_id]` addresses a CPU pool outside the
   selected GPU queue-pool map; no SAI-03 transition, academic, or scientific
   test failed;
-- changed controller/renderer/Helm focus: 225 passed, including finite-profile
-  derivation, real HTTP arbitrary-App lifecycle, and absence of NetworkPolicy
-  RBAC (accepted `4ea4b126` carry-forward evidence);
-- integrated gateway/model/MCP suite: 118 passed;
+- the full control-plane run includes finite-profile derivation, real HTTP
+  arbitrary-App lifecycle, gateway/model/MCP behavior, and absence of
+  NetworkPolicy requests from the App controller;
 - ModelExpress Terraform contract: 11 passed, including exact cross-layer
   profile inputs, IPv4 `/1`-pair rejection, IPv6 `/32` and `/64` rejection, and
   IPv6 `/128` acceptance;
@@ -264,9 +297,12 @@ changed Kubernetes-adapter suite is green. The academic and scientific
 integration fixtures changed by this successor are now green; no fixture
 failure is being waived as SAI-03 evidence.
 
-## Safe rollout and rollback
+## Deferred rollout and rollback design
 
-Do not deploy this task commit directly to the retained shared service. First,
+The 2026-09-16 user constraint forbids live mutation, deletion, replacement, or
+creation of disposable external resources, so this successor is source-only:
+no prepare/enforce/rollback apply or live negative probe is authorized. Do not
+deploy it directly to the retained shared service. First,
 an integration branch must contain the currently deployed source, this change,
 and the completed MindGuard/voice sibling changes. Wait for the in-progress Helm
 rollback to settle before planning anything.
@@ -276,9 +312,11 @@ The safe order is:
 1. Record the settled Helm revision and both control-plane image digests. Build,
    scan, and sign the integrated controller image.
 2. Apply `prepare`, which upgrades the integrated controller and finite policy
-   profiles while structurally keeping `fs2-models/default-deny` absent.
-3. Generate the inventory receipt, then plan `enforce`. Review that the live
-   Deployment count and names cover the full retained fleet and apply its exact
+   profiles while structurally keeping admission bindings and
+   `fs2-models/default-deny` absent.
+3. Apply `inventory` to arm the admission fence after label convergence, then
+   generate the inventory receipt and plan `enforce`. Review that the live
+   workload and Pod census covers the full retained fleet and apply its exact
    saved plan. Never author or copy a receipt by hand.
 4. Prove positive gateway PAT/model-grant sync and streaming inference plus MCP
    model calls. Prove from a scratch pod that direct model `:8000` access fails,
@@ -286,12 +324,13 @@ The safe order is:
    gateway inference continue to work. Recheck operations, observability, and
    current sibling models.
 
-If a customer flow regresses, apply `rollback-remove-deny`; the wrapper proves
-that saved plan contains no Helm or unrelated change. Generate the live
-deny-absent receipt, then use `rollback-helm` to return to the recorded
-pre-rollout revision/image digest. Never delete allow policies before the deny,
-never combine deny deletion with Helm rollback, and never return to `prepare`
-after the enforcement marker exists.
+The designed failure recovery enters `rollback-remove-deny` first; the wrapper
+proves that every remaining change is one of the two allowed crash-resumable
+changes and contains no Helm or unrelated mutation. After a deny-absent receipt,
+`rollback-helm` may return to the recorded pre-rollout revision/image digest.
+Never remove allow policies before the deny and never combine deny removal with
+Helm rollback. This design is documented and tested only; executing its delete
+step is blocked by the current no-delete constraint.
 
 No GPU/model behavior changed, so a new GPU inference campaign is not meaningful
 before the integrated live rollout. No temporary cloud, Kubernetes, registry, or

@@ -220,9 +220,7 @@ class KubernetesAdapterTests(unittest.TestCase):
                 },
                 "protected-storage-class",
             )
-            validation_time = datetime(
-                2026, 8, 26, 21, 49, 40, tzinfo=timezone.utc
-            )
+            validation_time = datetime(2026, 8, 26, 21, 49, 40, tzinfo=timezone.utc)
             for path in sorted(root.rglob("*"), key=lambda item: len(item.parts)):
                 path.chmod(0o750 if path.is_dir() else 0o640)
             root.chmod(0o700)
@@ -291,9 +289,7 @@ class KubernetesAdapterTests(unittest.TestCase):
                 "lease_duration_seconds": 900,
             }
             mount_set = {
-                "api_server_identity_sha256": observer[
-                    "api_server_identity_sha256"
-                ],
+                "api_server_identity_sha256": observer["api_server_identity_sha256"],
                 "namespace": "fs2-models",
                 "claim_uid": claim["uid"],
                 "list_resource_version": "16",
@@ -303,9 +299,7 @@ class KubernetesAdapterTests(unittest.TestCase):
                 "observed_at": "2026-08-26T21:49:20Z",
                 "mounts": [],
             }
-            mount_set_digest = hashlib.sha256(
-                canonical_bytes(mount_set)
-            ).hexdigest()
+            mount_set_digest = hashlib.sha256(canonical_bytes(mount_set)).hexdigest()
             api_fence = {
                 "enforcement": (
                     "controller-owned-job-create-plus-validating-admission-policy-plus-lease-cas"
@@ -393,7 +387,8 @@ class KubernetesAdapterTests(unittest.TestCase):
         image_digest = self.digest("helper-image", image=True)
         image = {
             "id": "fs2-acquisition-helper",
-            "reference": "registry.invalid/fs2-serve/acquisition-helper@" + image_digest,
+            "reference": "registry.invalid/fs2-serve/acquisition-helper@"
+            + image_digest,
             "digest": image_digest,
             "registry_identity_sha256": self.digest("helper-registry"),
             "os": "linux",
@@ -579,7 +574,9 @@ class KubernetesAdapterTests(unittest.TestCase):
                 },
             )
 
-    def test_acquisition_helper_admission_rejects_supply_chain_substitution(self) -> None:
+    def test_acquisition_helper_admission_rejects_supply_chain_substitution(
+        self,
+    ) -> None:
         record = self.catalog.model("nv-reason-cxr-3b")
         foreign_digest = self.digest("foreign-helper-image", image=True)
 
@@ -599,7 +596,8 @@ class KubernetesAdapterTests(unittest.TestCase):
             "dummy-digest": lambda value: value["image"].update(
                 {
                     "reference": (
-                        "registry.invalid/fs2-serve/acquisition-helper@sha256:" + "f" * 64
+                        "registry.invalid/fs2-serve/acquisition-helper@sha256:"
+                        + "f" * 64
                     ),
                     "digest": "sha256:" + "f" * 64,
                 }
@@ -621,13 +619,19 @@ class KubernetesAdapterTests(unittest.TestCase):
             with self.subTest(case=case), self.assertRaises(CatalogError):
                 self.helper_admission(record, mutate=mutate)
 
-    def test_ngc_materialization_rejects_eso_and_secret_observation_substitution(self) -> None:
+    def test_ngc_materialization_rejects_eso_and_secret_observation_substitution(
+        self,
+    ) -> None:
         mutations = {
             "ESO delivery": lambda value: value.update(
                 {"delivery_mode": "external-secrets-nebius-mysterybox"}
             ),
             "invented ESO eligibility": lambda value: value.update(
-                {"optional_backend_eligibility_receipt": hashlib.sha256(b"fake").hexdigest()}
+                {
+                    "optional_backend_eligibility_receipt": hashlib.sha256(
+                        b"fake"
+                    ).hexdigest()
+                }
             ),
             "Secret value read": lambda value: value["server_observation"].update(
                 {"values_recorded": True}
@@ -644,9 +648,9 @@ class KubernetesAdapterTests(unittest.TestCase):
             "Secret UID substitution": lambda value: value["secrets"][0].update(
                 {"uid": "ffffffff-ffff-ffff-ffff-ffffffffffff"}
             ),
-            "Secret resourceVersion substitution": lambda value: value["secrets"][0].update(
-                {"resource_version": "999"}
-            ),
+            "Secret resourceVersion substitution": lambda value: value["secrets"][
+                0
+            ].update({"resource_version": "999"}),
             "Secret type substitution": lambda value: value["secrets"][0].update(
                 {"secret_type": "Opaque"}
             ),
@@ -666,7 +670,9 @@ class KubernetesAdapterTests(unittest.TestCase):
                 with self.assertRaises(CatalogError):
                     bind_runtime_prerequisites(self.catalog, observation)
 
-    def test_ngc_materialization_server_digest_binds_observer_and_api_server(self) -> None:
+    def test_ngc_materialization_server_digest_binds_observer_and_api_server(
+        self,
+    ) -> None:
         observation = copy.deepcopy(self.observation)
         observation["ngc_credential_materialization"]["server_observation"][
             "observer_principal_sha256"
@@ -689,9 +695,7 @@ class KubernetesAdapterTests(unittest.TestCase):
                 placement["pool"]
                 if placement is not None
                 else (
-                    "b300-burst-8x"
-                    if storage_mode == "local-nvme"
-                    else "b300-burst-1x"
+                    "b300-burst-8x" if storage_mode == "local-nvme" else "b300-burst-1x"
                 )
             )
         node_count = 8 if pool.endswith("8x") else 1
@@ -752,9 +756,7 @@ class KubernetesAdapterTests(unittest.TestCase):
             provider_block_pvc = {
                 "schema": "fs2-serve.nebius.ai/provider-block-pvc-lifecycle/v2",
                 "state": "verified",
-                "lifecycle_receipt_digest": self.digest(
-                    "provider-block-pvc-lifecycle"
-                ),
+                "lifecycle_receipt_digest": self.digest("provider-block-pvc-lifecycle"),
                 "storage_class": {
                     "apiVersion": "storage.k8s.io/v1",
                     "kind": "StorageClass",
@@ -836,7 +838,9 @@ class KubernetesAdapterTests(unittest.TestCase):
                 "class": "NVIDIA-B300-SXM6-288GB",
                 "node_preset": "b300-8x" if node_count == 8 else "b300-1x",
                 "node_count": node_count,
-                "node_topology": "eight-gpu-nvlink" if node_count == 8 else "single-gpu",
+                "node_topology": "eight-gpu-nvlink"
+                if node_count == 8
+                else "single-gpu",
                 "workload_count": value["resources"]["gpu"]["count"],
                 "workload_topology": value["resources"]["gpu"]["topology"],
             },
@@ -854,10 +858,14 @@ class KubernetesAdapterTests(unittest.TestCase):
         }
         return bind_backend_capability(record, raw)
 
-    def test_actual_localqueue_is_v1beta2_namespaced_and_matches_the_renderer(self) -> None:
+    def test_actual_localqueue_is_v1beta2_namespaced_and_matches_the_renderer(
+        self,
+    ) -> None:
         from jsonschema import Draft202012Validator
 
-        expected = json.loads((CATALOG_ROOT / "kubernetes" / "localqueues.json").read_text())
+        expected = json.loads(
+            (CATALOG_ROOT / "kubernetes" / "localqueues.json").read_text()
+        )
         self.assertEqual(expected, render_local_queues())
         schema = json.loads(
             (CATALOG_ROOT / "schema" / "localqueues.schema.json").read_text()
@@ -907,6 +915,21 @@ class KubernetesAdapterTests(unittest.TestCase):
                 self.assertEqual("Job", job["kind"])
                 self.assertTrue(job["spec"]["suspend"])
                 self.assertIn("kueue.x-k8s.io/queue-name", job["metadata"]["labels"])
+                expected_profile = (
+                    "cache-resident-zero-egress-v1"
+                    if kind == "cache"
+                    else "job-internal-v1"
+                )
+                self.assertEqual(
+                    expected_profile,
+                    job["metadata"]["labels"]["fs2-serve.nebius.ai/network-profile"],
+                )
+                self.assertEqual(
+                    expected_profile,
+                    job["spec"]["template"]["metadata"]["labels"][
+                        "fs2-serve.nebius.ai/network-profile"
+                    ],
+                )
                 self.assertNotIn("ClusterQueue", json.dumps(job))
                 if kind != "cache":
                     self.assertEqual(
@@ -954,6 +977,10 @@ class KubernetesAdapterTests(unittest.TestCase):
             backend_capability=sfs_capability,
         )
         self.assertEqual(
+            "cache-resident-zero-egress-v1",
+            prepull["metadata"]["labels"]["fs2-serve.nebius.ai/network-profile"],
+        )
+        self.assertEqual(
             sfs_capability.node_selector,
             prepull["spec"]["template"]["spec"]["nodeSelector"],
         )
@@ -970,9 +997,7 @@ class KubernetesAdapterTests(unittest.TestCase):
             )
             self.assertEqual(
                 sfs_capability.to_dict()["backend_identity_digest"],
-                metadata["annotations"][
-                    "fs2-serve.nebius.ai/backend-identity-digest"
-                ],
+                metadata["annotations"]["fs2-serve.nebius.ai/backend-identity-digest"],
             )
         with self.assertRaisesRegex(CatalogError, "gated-unimplemented"):
             self.capability(cxr, storage_mode="local-nvme")
@@ -989,7 +1014,8 @@ class KubernetesAdapterTests(unittest.TestCase):
                 self.catalog.model("boltz2"),
                 prerequisites=self.prerequisites,
                 operation_id="stage-1",
-                localizer_image="registry.invalid/localizer@" + self.digest("localizer", image=True),
+                localizer_image="registry.invalid/localizer@"
+                + self.digest("localizer", image=True),
                 artifact_manifest_digest=self.digest("artifact-manifest"),
                 artifact_content_digest=self.digest("artifact-content"),
                 backend_capability=self.capability(
@@ -1008,10 +1034,15 @@ class KubernetesAdapterTests(unittest.TestCase):
                 backend_capability=sfs_capability,
             )
 
-    def test_native_adapter_isolated_and_operator_child_adapters_fail_closed(self) -> None:
+    def test_native_adapter_isolated_and_operator_child_adapters_fail_closed(
+        self,
+    ) -> None:
         cxr = self.catalog.model("nv-reason-cxr-3b")
         capability = self.capability(cxr)
-        uri = "sfs://fs2-cache/mnt/fs2-serve-cache/models/nv-reason-cxr-3b/sha256/" + self.digest("cxr-content")
+        uri = (
+            "sfs://fs2-cache/mnt/fs2-serve-cache/models/nv-reason-cxr-3b/sha256/"
+            + self.digest("cxr-content")
+        )
         native = render_native_http_workload(
             cxr,
             prerequisites=self.prerequisites,
@@ -1054,7 +1085,9 @@ class KubernetesAdapterTests(unittest.TestCase):
             offline_env,
         )
         self.assertEqual([], native["items"][2]["spec"]["egress"])
-        self.assertEqual(["Ingress", "Egress"], native["items"][2]["spec"]["policyTypes"])
+        self.assertEqual(
+            ["Ingress", "Egress"], native["items"][2]["spec"]["policyTypes"]
+        )
         runtime_labels = native_deployment["spec"]["template"]["metadata"]["labels"]
         policy_selector = native["items"][2]["spec"]["podSelector"]["matchLabels"]
         self.assertLessEqual(policy_selector.items(), runtime_labels.items())
@@ -1082,9 +1115,12 @@ class KubernetesAdapterTests(unittest.TestCase):
         boltz = self.catalog.model("boltz2")
         nim_capability = self.capability(boltz, storage_mode="nimcache-pvc")
         for renderer in (render_nim_operator_cache, render_nim_operator_service):
-            with self.subTest(renderer=renderer.__name__), self.assertRaisesRegex(
-                CatalogError,
-                "NIM Operator child Pod NetworkPolicy selector is unqualified",
+            with (
+                self.subTest(renderer=renderer.__name__),
+                self.assertRaisesRegex(
+                    CatalogError,
+                    "NIM Operator child Pod NetworkPolicy selector is unqualified",
+                ),
             ):
                 renderer(
                     boltz,
@@ -1109,12 +1145,16 @@ class KubernetesAdapterTests(unittest.TestCase):
                 backend_capability=nim_capability,
             )
 
-    def test_replica_field_contract_is_zero_bootstrap_and_activation_owned(self) -> None:
+    def test_replica_field_contract_is_zero_bootstrap_and_activation_owned(
+        self,
+    ) -> None:
         from jsonschema import Draft202012Validator
 
         validator = Draft202012Validator(
             json.loads(
-                (CATALOG_ROOT / "schema" / "replica-field-ownership.schema.json").read_text()
+                (
+                    CATALOG_ROOT / "schema" / "replica-field-ownership.schema.json"
+                ).read_text()
             )
         )
         for api_version, kind in (
@@ -1151,6 +1191,10 @@ class KubernetesAdapterTests(unittest.TestCase):
             helper_image_admission=self.helper_admission(cxr),
         )
         pod = acquisition["spec"]["template"]["spec"]
+        self.assertEqual(
+            "job-public-acquisition-v1",
+            acquisition["metadata"]["labels"]["fs2-serve.nebius.ai/network-profile"],
+        )
         helper_admission = self.helper_admission(cxr)
         self.assertEqual(
             helper_admission.image_reference,
@@ -1172,15 +1216,17 @@ class KubernetesAdapterTests(unittest.TestCase):
         self.assertTrue(acquisition["spec"]["suspend"])
         self.assertEqual(
             "patch-server-observed-uid-before-unsuspend",
-            acquisition["metadata"]["annotations"][
-                "fs2-serve.nebius.ai/job-uid-gate"
-            ],
+            acquisition["metadata"]["annotations"]["fs2-serve.nebius.ai/job-uid-gate"],
         )
-        self.assertEqual("fs2-cache", pod["volumes"][0]["persistentVolumeClaim"]["claimName"])
+        self.assertEqual(
+            "fs2-cache", pod["volumes"][0]["persistentVolumeClaim"]["claimName"]
+        )
         self.assertEqual(10001, pod["securityContext"]["runAsUser"])
         self.assertEqual(10001, pod["securityContext"]["runAsGroup"])
         self.assertEqual(10001, pod["securityContext"]["fsGroup"])
-        self.assertEqual("OnRootMismatch", pod["securityContext"]["fsGroupChangePolicy"])
+        self.assertEqual(
+            "OnRootMismatch", pod["securityContext"]["fsGroupChangePolicy"]
+        )
         self.assertEqual("Strict", pod["securityContext"]["supplementalGroupsPolicy"])
         self.assertEqual(10001, pod["containers"][0]["securityContext"]["runAsUser"])
         self.assertNotIn("NGC_API_KEY", json.dumps(acquisition))
@@ -1191,7 +1237,8 @@ class KubernetesAdapterTests(unittest.TestCase):
                 self.catalog.acquisition_plan("nv-reason-cxr-3b"),
                 prerequisites=self.prerequisites,
                 operation_id="acquire-1",
-                acquisition_image="registry.invalid/caller@" + self.digest("caller", image=True),
+                acquisition_image="registry.invalid/caller@"
+                + self.digest("caller", image=True),
             )
         with self.assertRaisesRegex(CatalogError, "model plan"):
             render_artifact_acquisition_job(
@@ -1226,7 +1273,9 @@ class KubernetesAdapterTests(unittest.TestCase):
         self.assertEqual(["ReadWriteOnce"], claim["spec"]["accessModes"])
         self.assertEqual("Filesystem", claim["spec"]["volumeMode"])
         self.assertEqual("64Gi", claim["spec"]["resources"]["requests"]["storage"])
-        self.assertEqual("keep", claim["metadata"]["annotations"]["helm.sh/resource-policy"])
+        self.assertEqual(
+            "keep", claim["metadata"]["annotations"]["helm.sh/resource-policy"]
+        )
         self.assertEqual(
             storage_admission.receipt_digest,
             claim["metadata"]["annotations"][
@@ -1251,7 +1300,12 @@ class KubernetesAdapterTests(unittest.TestCase):
         )
         self.assertEqual([GPU_TOLERATION], qwen_pod["tolerations"])
         self.assertEqual(10001, qwen_pod["securityContext"]["runAsUser"])
-        self.assertEqual("ext4", qwen_acquisition["metadata"]["annotations"]["fs2-serve.nebius.ai/required-filesystem"])
+        self.assertEqual(
+            "ext4",
+            qwen_acquisition["metadata"]["annotations"][
+                "fs2-serve.nebius.ai/required-filesystem"
+            ],
+        )
         self.assertEqual(
             "exclusive-create-write-fsync-read-unlink",
             qwen_acquisition["metadata"]["annotations"][
@@ -1289,9 +1343,8 @@ class KubernetesAdapterTests(unittest.TestCase):
         provider_capability = self.capability(
             resolved_qwen, storage_mode="provider-block-pvc"
         )
-        uri = (
-            "pvc://fs2-models/qwen3-8b-weights/models/qwen3-8b/sha256/"
-            + self.digest("qwen-content")
+        uri = "pvc://fs2-models/qwen3-8b-weights/models/qwen3-8b/sha256/" + self.digest(
+            "qwen-content"
         )
         qwen_workload = render_native_http_workload(
             resolved_qwen,
@@ -1305,7 +1358,9 @@ class KubernetesAdapterTests(unittest.TestCase):
             {"claimName": "qwen3-8b-weights", "readOnly": True},
             qwen_runtime_pod["volumes"][0]["persistentVolumeClaim"],
         )
-        self.assertTrue(qwen_runtime_pod["containers"][0]["volumeMounts"][0]["readOnly"])
+        self.assertTrue(
+            qwen_runtime_pod["containers"][0]["volumeMounts"][0]["readOnly"]
+        )
         self.assertEqual(
             1,
             qwen_runtime_pod["containers"][0]["resources"]["requests"][
@@ -1357,6 +1412,10 @@ class KubernetesAdapterTests(unittest.TestCase):
             backend_capability=capability,
         )
         canary_pod = canary["spec"]["template"]["spec"]
+        self.assertEqual(
+            "job-public-acquisition-v1",
+            canary["metadata"]["labels"]["fs2-serve.nebius.ai/network-profile"],
+        )
         self.assertEqual([{"name": "fs2-ngc-pull"}], canary_pod["imagePullSecrets"])
         self.assertEqual([GPU_TOLERATION], canary_pod["tolerations"])
         self.assertEqual(
@@ -1385,11 +1444,11 @@ class KubernetesAdapterTests(unittest.TestCase):
         )
         self.assertEqual({"valueFrom"}, set(ngc_env) - {"name"})
         with self.assertRaisesRegex(CatalogError, "SM103-incompatible"):
-            self.capability(
-                self.catalog.model("evo2-40b"), storage_mode="nimcache-pvc"
-            )
+            self.capability(self.catalog.model("evo2-40b"), storage_mode="nimcache-pvc")
 
-    def test_prerequisite_binding_requires_fresh_precreated_ngc_observation(self) -> None:
+    def test_prerequisite_binding_requires_fresh_precreated_ngc_observation(
+        self,
+    ) -> None:
         leaked = json.loads(json.dumps(self.observation))
         leaked["resources"][0]["data"] = {"credential": "forbidden"}
         with self.assertRaisesRegex(CatalogError, "keys differ"):
@@ -1420,15 +1479,15 @@ class KubernetesAdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(CatalogError, "not fresh and platform-owned"):
             bind_runtime_prerequisites(self.catalog, copied)
         compromised = json.loads(json.dumps(self.observation))
-        compromised["ngc_credential_materialization"][
-            "compromise_review_status"
-        ] = "unknown"
+        compromised["ngc_credential_materialization"]["compromise_review_status"] = (
+            "unknown"
+        )
         with self.assertRaisesRegex(CatalogError, "not fresh and platform-owned"):
             bind_runtime_prerequisites(self.catalog, compromised)
         fake_issuance = json.loads(json.dumps(self.observation))
-        fake_issuance["ngc_credential_materialization"][
-            "issuer_receipt_sha256"
-        ] = "0" * 64
+        fake_issuance["ngc_credential_materialization"]["issuer_receipt_sha256"] = (
+            "0" * 64
+        )
         with self.assertRaisesRegex(CatalogError, "placeholder"):
             bind_runtime_prerequisites(self.catalog, fake_issuance)
         substituted = json.loads(json.dumps(self.observation))
@@ -1438,7 +1497,9 @@ class KubernetesAdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(CatalogError, "identity differs"):
             bind_runtime_prerequisites(self.catalog, substituted)
 
-    def test_public_workloads_do_not_invent_registry_secrets_and_sm103_fails_closed(self) -> None:
+    def test_public_workloads_do_not_invent_registry_secrets_and_sm103_fails_closed(
+        self,
+    ) -> None:
         cxr = self.catalog.model("nv-reason-cxr-3b")
         capability = self.capability(cxr, storage_mode="sfs-pvc")
         uri = (
@@ -1487,11 +1548,11 @@ class KubernetesAdapterTests(unittest.TestCase):
         )
         self.assertNotIn("0.0.0.0/0", json.dumps(policy))
         with self.assertRaisesRegex(CatalogError, "SM103-incompatible"):
-            self.capability(
-                self.catalog.model("evo2-40b"), storage_mode="sfs-pvc"
-            )
+            self.capability(self.catalog.model("evo2-40b"), storage_mode="sfs-pvc")
 
-    def test_backend_capability_rejects_scheduling_storage_and_identity_adversaries(self) -> None:
+    def test_backend_capability_rejects_scheduling_storage_and_identity_adversaries(
+        self,
+    ) -> None:
         record = self.catalog.model("nv-reason-cxr-3b")
         good = self.capability(record).to_dict()
         adversaries = {
@@ -1528,7 +1589,9 @@ class KubernetesAdapterTests(unittest.TestCase):
         try:
             from jsonschema import Draft202012Validator
         except ImportError as exc:  # pragma: no cover
-            self.fail(f"jsonschema is required for backend capability validation: {exc}")
+            self.fail(
+                f"jsonschema is required for backend capability validation: {exc}"
+            )
         schema = json.loads(
             (CATALOG_ROOT / "schema" / "backend-capability.schema.json").read_text()
         )
@@ -1537,7 +1600,9 @@ class KubernetesAdapterTests(unittest.TestCase):
             self.capability(self.catalog.model("nv-reason-cxr-3b")).to_dict()
         )
 
-    def test_qwen_backend_separates_one_gpu_allocation_from_eight_gpu_node(self) -> None:
+    def test_qwen_backend_separates_one_gpu_allocation_from_eight_gpu_node(
+        self,
+    ) -> None:
         record = self.catalog.model("qwen3-8b")
         provider = self.capability(record, storage_mode="provider-block-pvc")
         self.assertEqual(1, provider.workload_gpu_count)
@@ -1563,19 +1628,17 @@ class KubernetesAdapterTests(unittest.TestCase):
             "default-delete-class": lambda value: value["storage"][
                 "provider_block_pvc"
             ]["storage_class"]["spec"].update({"reclaimPolicy": "Delete"}),
-            "volume-type-drift": lambda value: value["storage"][
-                "provider_block_pvc"
-            ]["storage_class"]["spec"]["parameters"].update(
-                {"type": "NETWORK_SSD_NON_REPLICATED"}
-            ),
+            "volume-type-drift": lambda value: value["storage"]["provider_block_pvc"][
+                "storage_class"
+            ]["spec"]["parameters"].update({"type": "NETWORK_SSD_NON_REPLICATED"}),
             "filesystem-parameter-drift": lambda value: value["storage"][
                 "provider_block_pvc"
             ]["storage_class"]["spec"]["parameters"].update(
                 {"csi.storage.k8s.io/fstype": "xfs"}
             ),
-            "missing-server-uid": lambda value: value["storage"][
-                "provider_block_pvc"
-            ]["storage_class"]["metadata"].pop("uid"),
+            "missing-server-uid": lambda value: value["storage"]["provider_block_pvc"][
+                "storage_class"
+            ]["metadata"].pop("uid"),
             "empty-resource-version": lambda value: value["storage"][
                 "provider_block_pvc"
             ]["storage_class"]["metadata"].update({"resourceVersion": ""}),
@@ -1604,7 +1667,9 @@ class KubernetesAdapterTests(unittest.TestCase):
                 with self.assertRaises(CatalogError):
                     bind_backend_capability(record, candidate)
 
-    def test_federated_h200_capability_is_exact_but_cannot_render_local_objects(self) -> None:
+    def test_federated_h200_capability_is_exact_but_cannot_render_local_objects(
+        self,
+    ) -> None:
         record = self.catalog.model("molmim")
         value = record.to_dict()
         inventory = self.catalog.federated_backend("molmim")
@@ -1634,9 +1699,7 @@ class KubernetesAdapterTests(unittest.TestCase):
             "backend_identity_digest": self.digest("molmim-federated-backend"),
             "nim_image": None,
         }
-        capability = bind_backend_capability(
-            record, raw, federated_backend=inventory
-        )
+        capability = bind_backend_capability(record, raw, federated_backend=inventory)
         self.assertEqual("NVIDIA-H200-SXM", capability.gpu_class)
         with self.assertRaisesRegex(CatalogError, "local backend capability"):
             render_nim_operator_cache(
@@ -1649,9 +1712,7 @@ class KubernetesAdapterTests(unittest.TestCase):
     def test_nim_tag_binding_runtime_drift_is_rejected(self) -> None:
         record = self.catalog.model("boltz2")
         raw = self.capability(record, storage_mode="nimcache-pvc").to_dict()
-        raw["nim_image"]["expected_digest"] = self.digest(
-            "wrong-nim-image", image=True
-        )
+        raw["nim_image"]["expected_digest"] = self.digest("wrong-nim-image", image=True)
         with self.assertRaisesRegex(CatalogError, "different image digest"):
             bind_backend_capability(record, raw)
 

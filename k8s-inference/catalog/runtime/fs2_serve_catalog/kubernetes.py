@@ -52,12 +52,25 @@ RUNTIME_REGISTRY_REQUIREMENT_BY_NAMESPACE = {
 }
 CLUSTER_QUEUE_NAME = "fs2-b300-async"
 DNS_LABEL = re.compile(r"^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$")
+NETWORK_PROFILE_LABEL = "fs2-serve.nebius.ai/network-profile"
+NETWORK_PROFILE_BY_JOB_KIND = {
+    "batch": "job-internal-v1",
+    "cache": "cache-resident-zero-egress-v1",
+    "evaluation": "job-internal-v1",
+}
 
 
 def canonical_object_digest(value: Any) -> str:
-    payload = json.dumps(
-        value, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False
-    ).encode() + b"\n"
+    payload = (
+        json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode()
+        + b"\n"
+    )
     return hashlib.sha256(payload).hexdigest()
 
 
@@ -93,7 +106,9 @@ def render_local_queues() -> dict[str, Any]:
     return {
         "apiVersion": "v1",
         "kind": "List",
-        "items": [render_local_queue(namespace) for namespace in sorted(QUEUE_BY_NAMESPACE)],
+        "items": [
+            render_local_queue(namespace) for namespace in sorted(QUEUE_BY_NAMESPACE)
+        ],
     }
 
 
@@ -124,6 +139,11 @@ def _bind_backend_subject(
     }
     manifest["metadata"]["annotations"].update(annotations)
     manifest["spec"]["template"]["metadata"]["annotations"].update(annotations)
+
+
+def _set_network_profile(job: dict[str, Any], profile: str) -> None:
+    job["metadata"]["labels"][NETWORK_PROFILE_LABEL] = profile
+    job["spec"]["template"]["metadata"]["labels"][NETWORK_PROFILE_LABEL] = profile
 
 
 def render_async_job(
@@ -174,7 +194,9 @@ def render_async_job(
         )
     if job_kind in FASTSTART_JOB_KINDS:
         if gpu["count"] != 1 or gpu["topology"] != "single-gpu":
-            raise CatalogError("initial donor/snapshot Jobs are restricted to a single B300")
+            raise CatalogError(
+                "initial donor/snapshot Jobs are restricted to a single B300"
+            )
         if faststart_admission is None:
             raise CatalogError("donor/snapshot Job requires reopened signed admission")
         faststart_admission.authorize(
@@ -186,9 +208,13 @@ def render_async_job(
         )
         runtime_tuple_digest = faststart_admission.runtime_tuple_digest
         if runtime_tuple_digest != backend_capability.runtime_tuple_digest:
-            raise CatalogError("donor/snapshot runtime tuple differs from the backend capability")
+            raise CatalogError(
+                "donor/snapshot runtime tuple differs from the backend capability"
+            )
     elif faststart_admission is not None:
-        raise CatalogError("only donor/snapshot Jobs accept signed fast-start admission")
+        raise CatalogError(
+            "only donor/snapshot Jobs accept signed fast-start admission"
+        )
     else:
         runtime_tuple_digest = None
     if artifact_manifest_digest is not None:
@@ -204,6 +230,8 @@ def render_async_job(
         "fs2-serve.nebius.ai/operation-id": operation_id,
         "kueue.x-k8s.io/queue-name": queue_name,
     }
+    if namespace == "fs2-models":
+        labels[NETWORK_PROFILE_LABEL] = NETWORK_PROFILE_BY_JOB_KIND[job_kind]
     annotations = {
         "fs2-serve.nebius.ai/model-digest": record.digest,
         "fs2-serve.nebius.ai/node-scaler-owner": value["resources"]["scaler_owner"],
@@ -214,7 +242,9 @@ def render_async_job(
             faststart_admission.admission_digest
         )
     if artifact_manifest_digest is not None:
-        annotations["fs2-serve.nebius.ai/artifact-manifest-digest"] = artifact_manifest_digest
+        annotations["fs2-serve.nebius.ai/artifact-manifest-digest"] = (
+            artifact_manifest_digest
+        )
 
     resources: dict[str, Any] = {
         "requests": {
@@ -314,7 +344,9 @@ def render_image_prepull_job(
         raise CatalogError("NGC images require the target-node pull/runtime canary")
     reference = value["runtime"]["image"]["reference"]
     if not isinstance(reference, str):
-        raise CatalogError("image pre-pull requires a resolved immutable runtime reference")
+        raise CatalogError(
+            "image pre-pull requires a resolved immutable runtime reference"
+        )
     require_local_capability(record, backend_capability)
     job = render_async_job(
         record,
@@ -353,9 +385,7 @@ def render_localization_job(
     value = record.to_dict()
     if value["cache"]["owner"] != "fs2-serve-localizer":
         raise CatalogError("fs2 localizer cannot write a NIM Operator-owned cache")
-    require_local_capability(
-        record, backend_capability, storage_modes={"local-nvme"}
-    )
+    require_local_capability(record, backend_capability, storage_modes={"local-nvme"})
     strong_sha256(artifact_content_digest, "localizer content digest")
     job = render_async_job(
         record,
@@ -389,10 +419,14 @@ def render_localization_job(
     node_identity = backend_capability.node_identity
     local_pv_pvc = backend_capability.local_pv_pvc
     if node_identity is None or local_pv_pvc is None:
-        raise CatalogError("localizer requires reviewed local-PV/PVC lifecycle evidence")
+        raise CatalogError(
+            "localizer requires reviewed local-PV/PVC lifecycle evidence"
+        )
     claim = local_pv_pvc["persistent_volume_claim"]
     if claim["namespace"] != job["metadata"]["namespace"]:
-        raise CatalogError("localizer and local PVC must share the exact cache namespace")
+        raise CatalogError(
+            "localizer and local PVC must share the exact cache namespace"
+        )
     command = pod["containers"][0]["command"]
     command.extend(
         [
@@ -421,7 +455,10 @@ def render_localization_job(
     job["metadata"]["annotations"].update(node_annotations)
     job["spec"]["template"]["metadata"]["annotations"].update(node_annotations)
     pod["volumes"] = [
-        {"name": "shared-cache", "persistentVolumeClaim": {"claimName": shared_pvc_name}},
+        {
+            "name": "shared-cache",
+            "persistentVolumeClaim": {"claimName": shared_pvc_name},
+        },
         {
             "name": "local-cache",
             "persistentVolumeClaim": {"claimName": claim["name"]},
@@ -451,7 +488,9 @@ def render_artifact_acquisition_job(
     prerequisites.require(plan.required_prerequisite_ids)
     helper = plan.to_dict().get("helper_image")
     if not isinstance(helper, dict):
-        raise CatalogError("artifact acquisition plan lacks its catalog-owned helper image")
+        raise CatalogError(
+            "artifact acquisition plan lacks its catalog-owned helper image"
+        )
     admitted_helper = helper_image_admission.authorize(record, plan)
     helper_contract_sha256 = canonical_object_digest(helper)
     acquisition_plan_sha256 = canonical_object_digest(plan.to_dict())
@@ -470,6 +509,7 @@ def render_artifact_acquisition_job(
         ],
         image_pull_requirement_id="fs2-models/runtime-registry-secret",
     )
+    _set_network_profile(job, "job-public-acquisition-v1")
     security = helper["security_context"]
     pod = job["spec"]["template"]["spec"]
     pod["securityContext"] = {
@@ -499,9 +539,7 @@ def render_artifact_acquisition_job(
             "name": "FS2_ACQUISITION_JOB_UID",
             "valueFrom": {
                 "fieldRef": {
-                    "fieldPath": (
-                        "metadata.annotations['fs2-serve.nebius.ai/job-uid']"
-                    )
+                    "fieldPath": ("metadata.annotations['fs2-serve.nebius.ai/job-uid']")
                 }
             },
         },
@@ -531,7 +569,10 @@ def render_artifact_acquisition_job(
             "value": admitted_helper["build_identity_sha256"],
         },
         {"name": "FS2_ACQUISITION_PLAN_SHA256", "value": acquisition_plan_sha256},
-        {"name": "FS2_ACQUISITION_HELPER_CONTRACT_SHA256", "value": helper_contract_sha256},
+        {
+            "name": "FS2_ACQUISITION_HELPER_CONTRACT_SHA256",
+            "value": helper_contract_sha256,
+        },
     ]
     placement = record.to_dict()["resources"]["gpu"]["placement"]
     if plan.to_dict()["publication"] == "atomic-content-addressed-provider-block-pvc":
@@ -539,7 +580,9 @@ def render_artifact_acquisition_job(
             raise CatalogError("provider block acquisition is reviewed only for Qwen")
         provider = placement["provider_block_pvc"]
         if provider["state"] != "candidate-unqualified":
-            raise CatalogError("provider block acquisition contract has an unexpected state")
+            raise CatalogError(
+                "provider block acquisition contract has an unexpected state"
+            )
         claim = provider["claim"]
         if storage_class_admission is None or writer_admission is None:
             raise CatalogError(
@@ -569,7 +612,10 @@ def render_artifact_acquisition_job(
             {"name": "tmp", "mountPath": "/tmp"},
         ]
         resources = container["resources"]
-        if "nvidia.com/gpu" in resources["requests"] or "nvidia.com/gpu" in resources["limits"]:
+        if (
+            "nvidia.com/gpu" in resources["requests"]
+            or "nvidia.com/gpu" in resources["limits"]
+        ):
             raise CatalogError("provider block acquisition Job must not request a GPU")
         job["metadata"]["annotations"].update(
             {
@@ -633,16 +679,23 @@ def render_artifact_acquisition_job(
             )
         pvc = prerequisites.resource("fs2-models/shared-cache-pvc")
         pod["volumes"] = [
-            {"name": "shared-cache", "persistentVolumeClaim": {"claimName": pvc["name"]}},
+            {
+                "name": "shared-cache",
+                "persistentVolumeClaim": {"claimName": pvc["name"]},
+            },
             {"name": "tmp", "emptyDir": {"sizeLimit": "1Gi"}},
         ]
         container["volumeMounts"] = [
             {"name": "shared-cache", "mountPath": "/mnt/fs2-serve-cache"},
             {"name": "tmp", "mountPath": "/tmp"},
         ]
-    job["metadata"]["annotations"]["fs2-serve.nebius.ai/acquisition-method"] = plan.method
+    job["metadata"]["annotations"]["fs2-serve.nebius.ai/acquisition-method"] = (
+        plan.method
+    )
     helper_annotations = {
-        "fs2-serve.nebius.ai/acquisition-helper-image-digest": admitted_helper["digest"],
+        "fs2-serve.nebius.ai/acquisition-helper-image-digest": admitted_helper[
+            "digest"
+        ],
         "fs2-serve.nebius.ai/acquisition-helper-admission-digest": admitted_helper[
             "receipt_digest"
         ],
@@ -675,7 +728,9 @@ def render_provider_block_pvc(
         raise CatalogError("provider block PVC is reviewed only for Qwen")
     contract = placement["provider_block_pvc"]
     if contract["state"] != "candidate-unqualified":
-        raise CatalogError("provider block PVC renderer accepts only the unqualified candidate")
+        raise CatalogError(
+            "provider block PVC renderer accepts only the unqualified candidate"
+        )
     storage_class = contract["storage_class"]
     claim = contract["claim"]
     if storage_class["owner"] != "fs2-serve-cluster":
@@ -736,9 +791,7 @@ def render_ngc_target_node_canary_job(
     value = record.to_dict()
     if plan.model_id != record.model_id or plan.method != "ngc-target-node-nimcache":
         raise CatalogError("NGC canary requires the exact target-node acquisition plan")
-    require_local_capability(
-        record, backend_capability, storage_modes={"nimcache-pvc"}
-    )
+    require_local_capability(record, backend_capability, storage_modes={"nimcache-pvc"})
     prerequisites.require(plan.required_prerequisite_ids)
     reference = value["runtime"]["image"]["reference"]
     if not isinstance(reference, str):
@@ -752,6 +805,7 @@ def render_ngc_target_node_canary_job(
         command=list(value["runtime"]["command"]),
         image_pull_requirement_id="fs2-models/ngc-pull-secret",
     )
+    _set_network_profile(job, "job-public-acquisition-v1")
     pod = job["spec"]["template"]["spec"]
     pod["nodeSelector"] = backend_capability.node_selector
     pod["tolerations"] = backend_capability.tolerations
