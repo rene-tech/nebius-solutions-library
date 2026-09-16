@@ -74,6 +74,12 @@ review, including the original teaching narration; narration must not become
 patient findings in a downstream report. No report generation, speaker
 diarization validation or clinical review was performed.
 
+A separate human-transcribed German reference set has since been evaluated:
+[full MultiMed German test split](GERMAN-MULTIMED.md),1,091clips,16.94%WER and
+8.88%CER. This supplements these HHU recordings; it does not create a reference
+for them. Subsequent [public integration cohorts](PUBLIC-INTEGRATION.md) retain
+full customer-path results and failures separately from private-runtime quality.
+
 ## Attribution / reproduction
 
 English: Babylon Health / PriMock57, CC BY 4.0, revision

@@ -1,8 +1,8 @@
 # Narrow live-release overlay. Reuse existing values; do not reset storage,
 # tenant settings, placement, service URLs or sibling-model registrations.
-# Image source: b66c55164c9516e6ebb6d9870cf7b92debfc76fe.
+# Image source: 7e5e682d2b6981e1f978ab07bd8c09a6609838ad.
 image:
-  digest: sha256:76a1c76e768346d39ed034137427efdc7be60762ea257a3153699fcb659edef0
+  digest: sha256:d41ffd9c0281058b7c7c5bd63d168d409fac259ea5cab2ccc690961ea831a386
 httpRoute:
   speechStreamTimeout: 7500s
 scientificArtifacts:
