@@ -5,6 +5,15 @@ compatibility with the new media adapter. It is deliberately not a public
 customer acceptance receipt. `ADAPTER-CUTOVER.md` contains the separately
 reviewed shared-template promotion plan.
 
+`public-media-failure-20260917.json` records the first real public cold request
+after promotion. It failed with control-plane `runtime_protocol_error` despite
+successful r7 restore and three adapter HTTP200 responses. No generated result
+artifact reached the caller, and the remaining matrix was stopped. The initial
+runner corrections and exact same-key operation recovery are retained explicitly;
+this is neither a clean cohort nor a public media pass. The likely failure is
+the gateway's JSON-only native semantic validation preceding binary result
+artifactization. The release owner is handling that separate control-plane fix.
+
 ## Reproduction inputs
 
 - `render_media_preview.py` renders only task-owned ConfigMap/Deployment names,
