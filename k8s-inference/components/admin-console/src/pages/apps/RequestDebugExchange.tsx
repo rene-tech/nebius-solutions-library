@@ -101,10 +101,10 @@ export function DebugBodyView({
       </dl>
       {body.truncated ? (
         <p className="inline-notice">
-          The body was withheld and not stored — a response body is never stored, and a
+          The body is withheld on read and not shown — a response body is never served, and a
           request body is withheld when it exceeds the stored-size cap or is wire-incomplete
-          (whole-or-withhold, never a partial prefix) — even though{" "}
-          {body.observed_bytes.toLocaleString()} bytes were observed.
+          (whole-or-withhold, never a partial prefix). Preserved legacy content is withheld on read,
+          not rewritten — even though {body.observed_bytes.toLocaleString()} bytes were observed.
         </p>
       ) : null}
       {!body.complete && !body.truncated ? (

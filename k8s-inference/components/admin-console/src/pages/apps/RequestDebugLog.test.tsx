@@ -355,7 +355,7 @@ describe("actual request debug viewer", () => {
       screen.getByText("Complete on the wire; body withheld"),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/The body was withheld and not stored/),
+      screen.getByText(/The body is withheld on read and not shown/),
     ).toBeInTheDocument();
   });
 

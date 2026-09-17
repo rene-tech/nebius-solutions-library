@@ -508,8 +508,8 @@ _READ_WITHHELD_DETAIL = "[detail withheld on read]"
 
 def normalize_exchange_for_read(exchange: DebugExchange, max_body_bytes: int | None = None) -> DebugExchange:
     """Full current-contract EGRESS SANITIZER for a stored exchange, applied on EVERY serve path
-    (detail read, list-derived summary via ``normalize_summary_for_read``, UI render, copy, export/
-    download) WITHOUT mutating or deleting the stored row.
+    (detail read, the list-derived summary — computed from this sanitized exchange — UI render, copy,
+    export/download) WITHOUT mutating or deleting the stored row.
 
     The no-delete retention preserves rows for 90 days, INCLUDING legacy rows captured under an
     earlier, narrower contract. Serving those verbatim would disclose what the current contract
@@ -569,24 +569,6 @@ def normalize_exchange_for_read(exchange: DebugExchange, max_body_bytes: int | N
             "request_headers": redact_headers(exchange.request_headers, known),
             "response_headers": redact_response_headers(exchange.response_headers),
             "error_detail": None if exchange.error_detail is None else _READ_WITHHELD_DETAIL,
-        }
-    )
-
-
-def normalize_summary_for_read(
-    summary: DebugExchangeSummary, max_body_bytes: int | None = None
-) -> DebugExchangeSummary:
-    """Egress-sanitize a LIST summary's disclosure FLAGS so they match what detail-read now serves
-    (a summary carries no body/header content, only booleans + observed lengths). The response is
-    always withheld (redacted), and the request is redacted whenever it will be withheld on read
-    (wire-incomplete or over the current cap) or was already redacted. Factual fields (observed
-    lengths, wire-completeness) are unchanged."""
-    return summary.model_copy(
-        update={
-            "response_redacted": True,
-            "request_redacted": summary.request_redacted
-            or (not summary.request_complete)
-            or (max_body_bytes is not None and summary.request_observed_bytes > max_body_bytes),
         }
     )
 
@@ -866,8 +848,10 @@ class InMemoryDebugStore:
             key=lambda row: (row.started_at, row.id),
             reverse=True,
         )
-        # Egress-sanitize the list flags too, so they match what detail-read now serves.
-        items = [normalize_summary_for_read(_summary(row), self._max_body_bytes) for row in rows[:limit]]
+        # Compute each summary from the EGRESS-SANITIZED exchange, so the list flags (including
+        # truncation truth for legacy rows) match exactly what detail-read serves — no separate,
+        # possibly-stale summary logic.
+        items = [_summary(normalize_exchange_for_read(row, self._max_body_bytes)) for row in rows[:limit]]
         return DebugExchangeList(items=items, next_cursor=_cursor(items[-1]) if len(rows) > limit else None)
 
     async def get(self, exchange_id: UUID, tenant_id: str | None = None) -> DebugExchange | None:
@@ -945,7 +929,11 @@ class PostgresDebugStore:
         after = _pagination(limit, cursor)
         async with self.pool.acquire() as connection:
             rows = await connection.fetch(
-                f"SELECT {','.join(DebugExchangeSummary.model_fields)} FROM fs2_request_debug "  # noqa: S608
+                # Filter/sort/paginate on the CLEAR columns, but fetch the ciphertext too: the summary
+                # flags (redaction + legacy-truncation truth) are COMPUTED at read time from the
+                # decrypted, egress-sanitized exchange, matching detail-read exactly — no persisted
+                # truncated column, and the ciphertext is never rewritten.
+                "SELECT * FROM fs2_request_debug "
                 "WHERE ($1::text IS NULL OR model_id=$1) AND ($2::uuid IS NULL OR operation_id=$2) "
                 "AND ($3::text IS NULL OR tenant_id=$3) AND ($4::timestamptz IS NULL OR started_at >= $4) "
                 "AND ($5::timestamptz IS NULL OR started_at < $5) "
@@ -960,12 +948,16 @@ class PostgresDebugStore:
                 after[1] if after else None,
                 limit + 1,
             )
-        # Egress-sanitize the list flags too, so they match what detail-read now serves.
-        items = [
-            normalize_summary_for_read(DebugExchangeSummary.model_validate(dict(row)), self._max_body_bytes)
-            for row in rows[:limit]
-        ]
+        items = [_summary(normalize_exchange_for_read(self._decode(row), self._max_body_bytes)) for row in rows[:limit]]
         return DebugExchangeList(items=items, next_cursor=_cursor(items[-1]) if len(rows) > limit else None)
+
+    def _decode(self, row: asyncpg.Record) -> DebugExchange:
+        """Decrypt a stored row into the full DebugExchange (before egress sanitization)."""
+        raw = self.cipher.decrypt(
+            Ciphertext(row["key_id"], bytes(row["nonce"]), bytes(row["ciphertext"])),
+            aad=self._aad(row["id"], row["tenant_id"], row["model_id"]),
+        )
+        return DebugExchange.model_validate_json(raw)
 
     async def get(self, exchange_id: UUID, tenant_id: str | None = None) -> DebugExchange | None:
         async with self.pool.acquire() as connection:
@@ -976,14 +968,10 @@ class PostgresDebugStore:
             )
         if row is None:
             return None
-        raw = self.cipher.decrypt(
-            Ciphertext(row["key_id"], bytes(row["nonce"]), bytes(row["ciphertext"])),
-            aad=self._aad(row["id"], row["tenant_id"], row["model_id"]),
-        )
         # Egress-sanitize on read: apply the current contract so a preserved (possibly legacy) row
         # never discloses a stored response/incomplete/over-cap body, raw error_detail, broad headers,
         # or under-scrubbed query/headers. The stored ciphertext is never rewritten.
-        return normalize_exchange_for_read(DebugExchange.model_validate_json(raw), self._max_body_bytes)
+        return normalize_exchange_for_read(self._decode(row), self._max_body_bytes)
 
     async def retention_preflight(self, *, now: datetime, tenant_id: str | None = None) -> RetentionPreflight:
         # Payload-free: aggregates over the clear started_at column only. No ciphertext is
@@ -1181,21 +1169,27 @@ class DebugPersistQueue:
         if len(self._pending) >= self._maxsize:
             self.dropped += 1  # overload shed; token stays reserved, the handle frees it on exit
             return False
-        item = (builder, token)  # allocate BEFORE append; a MemoryError here leaves the token reserved
+        # Allocate the item AND append it under one guard: BOTH the tuple construction and the append
+        # are potential (MemoryError) failure points, and either failing must leave the token RESERVED
+        # with nothing queued (freed once on context exit) — never committed-with-nothing-queued. The
+        # append is atomic (fully inserts or raises without a partial insert; no bookkeeping to
+        # corrupt), so on success the whole item is queued.
         try:
-            self._pending.append(item)  # atomic: fully appends or raises without a partial insert
+            self._pending.append((builder, token))
         except Exception:
             self.dropped += 1  # nothing queued; token stays reserved, freed on context exit
             return False
         self._slots[token] = True  # commit AFTER a successful append: non-allocating, cannot raise
-        self._idle.clear()
-        self._wake.set()
+        # Notify the worker — GUARDED so a notification failure can neither propagate into the caller
+        # (a capture must never replace a customer outcome) nor strand the item: the item is already
+        # queued and committed (count == deque contents), and a later commit and drain()/aclose() both
+        # re-notify and (re)start the worker, so at worst the capture persists slightly later.
         try:
+            self._idle.clear()
+            self._wake.set()
             self._ensure_worker()
         except Exception:
-            # The item is queued and the token committed; a worker (re)start failure here does not
-            # orphan accounting — a later commit re-tries the start, and drain()/aclose() start one too.
-            LOGGER.warning("request debug worker start failed; capture remains queued")
+            LOGGER.warning("request debug enqueue notification failed; capture remains queued")
         return True
 
     def _release(self, token: object) -> None:
@@ -1217,27 +1211,35 @@ class DebugPersistQueue:
             self._worker = asyncio.create_task(self._run())
 
     async def _run(self) -> None:
-        while True:
-            # Clear the wakeup FIRST, then check for work: a commit that arrives after this clear sets
-            # the event again, so a pending item can never be missed (no lost wakeup).
-            self._wake.clear()
-            if not self._pending:
-                if self._processing == 0:
-                    self._idle.set()
-                await self._wake.wait()
-                continue
-            builder, token = self._pending.popleft()
-            self._processing += 1
-            try:
-                built = await offload_capture(builder)
-                if built is not None:
-                    await persist_debug_exchange(self._store, built, self._persist_timeout_seconds)
-            except Exception as error:
-                LOGGER.warning("request debug capture failed error_type=%s", type(error).__name__)
-            finally:
-                # Free the slot bound to THIS capture's token (its buffers are now released).
-                self._complete(token)
-                self._processing -= 1
+        try:
+            while True:
+                # Clear the wakeup FIRST, then check for work: a commit that arrives after this clear
+                # sets the event again, so a pending item can never be missed (no lost wakeup).
+                self._wake.clear()
+                if not self._pending:
+                    if self._processing == 0:
+                        self._idle.set()
+                    await self._wake.wait()
+                    continue
+                builder, token = self._pending.popleft()
+                self._processing += 1
+                try:
+                    built = await offload_capture(builder)
+                    if built is not None:
+                        await persist_debug_exchange(self._store, built, self._persist_timeout_seconds)
+                except Exception as error:
+                    LOGGER.warning("request debug capture failed error_type=%s", type(error).__name__)
+                finally:
+                    # Balance the in-flight count and free THIS token even on cancellation mid-item.
+                    self._complete(token)
+                    self._processing -= 1
+        finally:
+            # On ANY worker exit — cancellation (aclose), shutdown, or an unexpected error — release the
+            # idle latch IFF nothing is in flight, so drain()/aclose() waiting on _idle can never hang.
+            # Any items still pending are picked up by a worker (re)started on the next commit or by
+            # drain()/aclose()'s _ensure_worker; the count stays consistent (== deque contents).
+            if self._processing == 0 and not self._pending:
+                self._idle.set()
 
     async def drain(self) -> None:
         """Wait until nothing is pending and nothing is being processed. TESTS/SHUTDOWN ONLY — never on

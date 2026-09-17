@@ -370,8 +370,12 @@ class RuntimeClient:
                 # Persist OFF the customer critical path: enqueue on the bounded queue and return
                 # immediately — never await sanitize/persist here. On success the worker releases the
                 # reservation after it persists; a defensive enqueue-drop leaves the slot with the
-                # reservation, which releases it on context exit. submit()/release() never await.
-                reservation.submit(capture.exchange)
+                # reservation, which releases it on context exit. GUARDED so a capture-path failure can
+                # NEVER replace a valid customer outcome — the reservation context still frees the slot.
+                try:
+                    reservation.submit(capture.exchange)
+                except Exception as error:
+                    _LOGGER.warning("request debug upstream submit failed error_type=%s", type(error).__name__)
 
     async def close(self) -> None:
         # Drain + stop the bounded capture-persist queue on shutdown (best-effort), so a queued

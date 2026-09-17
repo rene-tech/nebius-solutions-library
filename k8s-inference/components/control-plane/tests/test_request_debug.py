@@ -1689,3 +1689,60 @@ async def test_commit_enqueue_is_exception_atomic_append_failure_leaves_token_re
     await queue.drain()
     assert len(store.exchanges) == 1 and queue._inflight() == 0
     await queue.aclose()
+
+
+async def test_queue_drain_recovers_after_worker_cancellation_without_hanging():
+    """SAI-01 regression: worker cancellation/shutdown must not strand accounting or hang drain. If the
+    worker is cancelled with items still pending, the count stays consistent (no undercount), and
+    drain() restarts the worker and completes — the idle latch is released on worker exit so
+    drain()/aclose() never deadlock. Simulated; not executed here."""
+    from fs2_serve.request_debug import DebugPersistQueue
+
+    store = InMemoryDebugStore()
+    queue = DebugPersistQueue(store, maxsize=8, max_inflight=8)
+    for _ in range(2):
+        reservation = queue.reserve()
+        assert reservation is not None
+        with reservation:
+            assert reservation.submit(lambda: row(id=uuid4())) is True
+    worker = queue._worker
+    assert worker is not None
+    worker.cancel()
+    try:
+        await worker
+    except asyncio.CancelledError:
+        pass
+    # Items remain pending and still counted — cancellation did not undercount or discard the backlog.
+    assert len(queue._pending) == 2 and queue._inflight() == 2
+    # drain() restarts the worker, processes the backlog, and returns without hanging.
+    await queue.drain()
+    assert queue._inflight() == 0 and len(store.exchanges) == 2 and len(queue._pending) == 0
+    await queue.aclose()
+
+
+async def test_read_and_list_withhold_legacy_complete_truncated_request_under_cap():
+    """SAI-01 (reviewer-overruled 3c): a legacy request marked complete AND truncated (a stored prefix)
+    that is UNDER the current cap must be withheld on detail AND listed redacted. The list summary is
+    COMPUTED from the sanitized exchange (read-time truncation truth), so no persisted truncated column
+    is needed. Authored; not executed here."""
+    store = InMemoryDebugStore(max_body_bytes=1024)  # generous cap; the row is well under it
+    legacy = row(
+        request_body=DebugBody(
+            encoding="utf-8",
+            data='{"input":"legacy-prefix"}',
+            content_type="application/json",
+            observed_bytes=64,  # under the 1024 cap, yet the stored body is a truncated prefix
+            complete=True,
+            redacted=True,
+            truncated=True,
+        ),
+    )
+    await store.record(legacy)
+    got = await store.get(legacy.id)
+    assert got is not None
+    # Detail: the truncated (prefix) request is withheld even though complete and under the cap.
+    assert got.request_body.truncated and got.request_body.data == "[REDACTED]"
+    assert "legacy-prefix" not in got.request_body.data
+    # List: the summary is computed from the sanitized exchange, so it reflects the withholding.
+    (summary,) = (await store.list()).items
+    assert summary.request_redacted is True and summary.response_redacted is True
