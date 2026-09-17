@@ -44,6 +44,16 @@ followed by one OpenFold2 fixture, preserving two models and the exact server-
 timestamp concurrency-five requirement. No threshold or payload validator was
 relaxed; two fresh cohorts are still required on the frozen effective release.
 
+The ordered retry passed 13 protein operations and real overlap five. ESMFold2
+`5426bdb8-b1a2-48d2-8654-76367c920dab` succeeded after normal CPU autoscaling
+(expected `FailedScheduling` followed by `TriggeredScaleUp`, no manual recovery).
+Its original polling client stopped on one `http_transport_failed`; the untouched
+failure receipt is supplemented by `existing-batch-recovery/`, which verified the
+same admitted operation's terminal semantics and three artifact hashes without
+new uploads or inference. That recovery is not a clean initial transport run.
+The next cohort was paused for the release owner's separate Cosmos CP fix;
+this is still intermediate release-142 evidence, not a final qualifying pair.
+
 Private evidence is under
 `/home/tux/secure-handoff/stockholm-live-acceptance-20260917/`, mode 0700; files
 are 0600. A new same-policy `stockholm-canary-*` key expires at
@@ -179,6 +189,14 @@ signed URLs/headers. Required download-tool discovery is checked before inferenc
 `--resume` reuses persisted operation/idempotency identities; never discard an
 uncertain submission receipt and resubmit with a new identity. `--stop-file`
 lets the operator block new admissions while already-known operations settle.
+The batch transport journal persists operation/upload/artifact IDs before polling
+and records every transport failure with timing. Only the identical GET can be
+retried after one second; three failed transports exhaust the entire batch
+budget. POST/PUT are never retried by this wrapper. Each cohort and final receipt
+retain failure counts and `clean_batch_transport`; recovered reads cannot be
+presented as a clean initial run. `observe_batch.py` is a read-only fallback for
+an already-known operation, using recovered immutable upload references and the
+same scientific/artifact validators, never new submission or upload calls.
 
 `finish_live.py` requires two complete bounded receipts, unchanged CP/config
 identity, fixed target model/runtime identities and released batch resources.

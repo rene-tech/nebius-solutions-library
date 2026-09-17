@@ -263,6 +263,76 @@ def scientific_module():
     return module
 
 
+class RecordedBatchClient:
+    """Record durable IDs and every transport failure; retry only the same GET.
+
+    Three failed transports exhaust the whole batch budget (not each poll).
+    Mutating requests are never retried here, even when their outcome is unknown.
+    No headers, bodies, signed handles or credentials enter the journal.
+    """
+
+    def __init__(self, client, journal_path, token, *, sleep=time.sleep):
+        self.client, self.path, self.token, self.sleep = client, journal_path, token, sleep
+        self.host, self.tls = client.host, client.tls
+        self.journal = {"scope": "batch-client-transport-journal", "started_at": now(),
+                        "failures": [], "known_operations": [], "known_uploads": [],
+                        "known_artifacts": [], "transport_failure_count": 0,
+                        "clean_transport": True, "get_retry_count": 0}
+        checkpoint(self.path, self.journal, self.token)
+
+    def request(self, method, path, **kwargs):
+        attempt = 0
+        while True:
+            attempt += 1
+            started = now()
+            try:
+                response = self.client.request(method, path, **kwargs)
+            except Exception as error:
+                if getattr(error, "code", None) != "http_transport_failed":
+                    raise
+                self.journal["transport_failure_count"] += 1
+                self.journal["clean_transport"] = False
+                retry = method == "GET" and self.journal["transport_failure_count"] < 3
+                self.journal["failures"].append({
+                    "method": method, "path": path, "attempt": attempt,
+                    "started_at": started, "failed_at": now(),
+                    "type": type(error).__name__, "code": error.code,
+                    "cause_type": type(error.__cause__).__name__ if error.__cause__ else None,
+                    "same_get_retry": retry, "backoff_seconds": 1 if retry else 0})
+                if retry:
+                    self.journal["get_retry_count"] += 1
+                checkpoint(self.path, self.journal, self.token)
+                if not retry:
+                    raise
+                self.sleep(1)
+                continue
+            try:
+                document = json.loads(response.body)
+            except (ValueError, UnicodeDecodeError):
+                document = {}
+            if isinstance(document, dict):
+                operation = document.get("operation")
+                identifiers = {
+                    "known_operations": [document.get("operation_id"),
+                        operation.get("id") if isinstance(operation, dict) else None],
+                    "known_uploads": [document.get("upload_id")],
+                    "known_artifacts": [document.get("artifact_id")],
+                }
+                # Flat operation views also carry a model and protocol.
+                if document.get("model_id") and document.get("protocol"):
+                    identifiers["known_operations"].append(document.get("id"))
+                for category, values in identifiers.items():
+                    for value in values:
+                        if value is not None:
+                            identifier = str(UUID(value))
+                            if identifier not in self.journal[category]:
+                                self.journal[category].append(identifier)
+            self.journal["last_response"] = {"method": method, "path": path,
+                                             "status": response.status, "at": now()}
+            checkpoint(self.path, self.journal, self.token)
+            return response
+
+
 def run_batch(args, token, origin, cohort):
     module = scientific_module()
     path = args.output / f"cohort-{cohort}-esmfold2-batch.json"
@@ -276,7 +346,9 @@ def run_batch(args, token, origin, cohort):
     )
     # Existing runner verifies scientific semantics and artifact references.
     # The advertised MCP download handle + HTTPS verifies the downloaded bytes.
-    return module.run_acceptance(config, module.PublicApiClient(origin, token))
+    client = RecordedBatchClient(module.PublicApiClient(origin, token),
+        args.output / f"cohort-{cohort}-batch-transport.json", token)
+    return module.run_acceptance(config, client)
 
 
 def require_batch_download_tool(tools):
@@ -397,7 +469,15 @@ async def execute(args) -> int:
                         batch_exists = (args.output / f"cohort-{cohort}-esmfold2-batch.json").exists()
                         check(batch_exists or args.stop_file is None or not args.stop_file.exists(),
                               "operator_paused_new_submissions")
-                        record["batch"] = await asyncio.to_thread(run_batch, args, token, origin, cohort)
+                        journal = args.output / f"cohort-{cohort}-batch-transport.json"
+                        try:
+                            record["batch"] = await asyncio.to_thread(run_batch, args, token, origin, cohort)
+                        finally:
+                            if journal.exists():
+                                record["batch_transport"] = private_json(journal)
+                            else:
+                                record["batch_transport"] = {"coverage": "unavailable-for-pre-journal-attempt",
+                                                             "clean_transport": None}
                         record["verified_batch_downloads"] = await batch_downloads(
                             client, record["batch"], found["tools"])
                     refreshed, _ = await discovery(client)
@@ -411,6 +491,10 @@ async def execute(args) -> int:
     except Exception as error:
         receipt["failure_type"] = type(error).__name__
         receipt["failures"] = failures(error)
+    journals = [row["batch_transport"] for row in receipt["cohorts"] if "batch_transport" in row]
+    receipt["batch_transport_failure_count"] = sum(row.get("transport_failure_count", 0) for row in journals)
+    receipt["clean_batch_transport"] = (
+        all(row["clean_transport"] is True for row in journals) if journals else None)
     receipt["completed_at"] = now()
     checkpoint(args.output / "partial-receipt.json", receipt, token)
     print(json.dumps({"outcome": receipt["outcome"], "output": str(args.output), "customer_ready": False}))

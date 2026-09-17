@@ -218,3 +218,55 @@ def test_teardown_retains_failed_attempts_without_requiring_deletion():
 def test_teardown_refuses_partial_cohort_receipt():
     with pytest.raises(ValueError, match="two_completed_bounded_cohorts_required"):
         finalizer.expected_operations({"outcome": "partial_scope_passed", "cohorts": [{}]})
+
+
+def batch_transport(failures):
+    from types import SimpleNamespace
+
+    class FailedTransport(Exception):
+        code = "http_transport_failed"
+
+    class Transport:
+        host, tls = "example.invalid", True
+
+        def __init__(self):
+            self.calls = []
+
+        def request(self, method, path, **kwargs):
+            self.calls.append((method, path, kwargs))
+            if len(self.calls) <= failures:
+                raise FailedTransport()
+            return SimpleNamespace(status=200, body=b'{"operation_id":"e10a1fc9-316e-40cb-81f5-596022b383bf"}')
+
+    return Transport(), FailedTransport
+
+
+def test_batch_transport_retries_identical_get_and_keeps_failure(tmp_path):
+    transport, _ = batch_transport(1)
+    sleeps = []
+    client = runner.RecordedBatchClient(transport, tmp_path / "journal.json", "synthetic-secret", sleep=sleeps.append)
+    client.request("GET", "/v1/operations/existing")
+    assert transport.calls == [("GET", "/v1/operations/existing", {})] * 2
+    assert sleeps == [1]
+    journal = collector.private_json(tmp_path / "journal.json")
+    assert journal["transport_failure_count"] == 1 and journal["clean_transport"] is False
+    assert journal["known_operations"] == ["e10a1fc9-316e-40cb-81f5-596022b383bf"]
+    assert journal["failures"][0]["started_at"] <= journal["failures"][0]["failed_at"]
+
+
+@pytest.mark.parametrize("method", ["POST", "PUT"])
+def test_batch_transport_never_retries_mutation(tmp_path, method):
+    transport, error = batch_transport(1)
+    client = runner.RecordedBatchClient(transport, tmp_path / "journal.json", "synthetic-secret", sleep=lambda _: None)
+    with pytest.raises(error):
+        client.request(method, "/v1/scientific-artifacts/uploads")
+    assert len(transport.calls) == 1
+    assert client.journal["get_retry_count"] == 0
+
+
+def test_batch_transport_three_failures_exhaust_entire_budget(tmp_path):
+    transport, error = batch_transport(9)
+    client = runner.RecordedBatchClient(transport, tmp_path / "journal.json", "synthetic-secret", sleep=lambda _: None)
+    with pytest.raises(error):
+        client.request("GET", "/v1/operations/existing")
+    assert len(transport.calls) == 3 and client.journal["transport_failure_count"] == 3
