@@ -17,7 +17,11 @@ SECURITY_ROOT = Path(__file__).resolve().parents[1]
 if os.fspath(SECURITY_ROOT) not in sys.path:
     sys.path.insert(0, os.fspath(SECURITY_ROOT))
 
-from rbac_authority import verify_subject_inventory  # noqa: E402
+from rbac_authority import (  # noqa: E402
+    reject_unapproved_dangerous,
+    subject_authority,
+    verify_subject_inventory,
+)
 
 MAX_KUBECONFIG_BYTES = 1024 * 1024
 MAX_OUTPUT_BYTES = 8 * 1024 * 1024
@@ -741,6 +745,51 @@ def verify(query: dict[str, str]) -> dict[str, str]:
     if effective_authority_sha256 != query["expected_effective_authority_sha256"]:
         raise ValueError("live RBAC effective authority differs from the signed receipt")
 
+    controller_users = {
+        "deployment": query["deployment_controller_username"],
+        "replicaset": query["replicaset_controller_username"],
+        "daemonset": query["daemonset_controller_username"],
+        "scheduler": query["scheduler_username"],
+    }
+    for identity in checked:
+        _, semantic_dangerous = subject_authority(
+            effective_authority,
+            kind="User",
+            namespace="",
+            name=identity["username"],
+            groups=identity["groups"],
+        )
+        allowed: set[str] = set()
+        if identity["category"] == "owner":
+            policy_names = ",".join(
+                sorted({names["boundary_policy"], names["workload_policy"]})
+            )
+            allowed.update(
+                {
+                    "*|admissionregistration.k8s.io|validatingadmissionpolicies|create|names=*",
+                    "*|admissionregistration.k8s.io|validatingadmissionpolicybindings|create|names=*",
+                    f"*|admissionregistration.k8s.io|validatingadmissionpolicies|patch|names={policy_names}",
+                    f"*|admissionregistration.k8s.io|validatingadmissionpolicybindings|patch|names={policy_names}",
+                    f"{names['namespace']}|core|configmaps|create|names=*",
+                    f"{names['namespace']}|rbac.authorization.k8s.io|roles|create|names=*",
+                    f"{names['namespace']}|rbac.authorization.k8s.io|rolebindings|create|names=*",
+                }
+            )
+        elif identity["category"] == "release":
+            allowed.update(
+                {
+                    f"{names['namespace']}|core|serviceaccounts|create|names=*",
+                    f"{names['namespace']}|apps|deployments|create|names=*",
+                    f"{names['namespace']}|core|configmaps|create|names=*",
+                    f"{names['namespace']}|core|configmaps|update|names={names['release_record']}",
+                    f"{names['namespace']}|core|configmaps|patch|names={names['release_record']}",
+                }
+            )
+        reject_unapproved_dangerous(
+            semantic_dangerous,
+            explicitly_allowed=allowed,
+        )
+
     authorized_users = {item["username"] for item in checked}
     authorized_groups = {group for item in checked for group in item["groups"]}
     authorized_service_accounts: set[tuple[str, str]] = set()
@@ -831,6 +880,7 @@ def verify(query: dict[str, str]) -> dict[str, str]:
         declared_service_accounts,
         declared_system_subjects,
         effective_authority,
+        controller_users=controller_users,
     )
     for subject in rbac_subjects:
         if subject["kind"] == "User" and subject["name"] not in authorized_users:

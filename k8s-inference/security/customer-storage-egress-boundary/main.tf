@@ -73,6 +73,17 @@ locals {
   }
   v3_pod_labels_cel        = jsonencode(local.v3_pod_labels)
   v3_runtime_label_key_cel = "pod-template-hash"
+  accepted_non_owner_usernames_cel = jsonencode(sort(concat(
+    [var.workloads_username],
+    [for identity in values(var.non_owner_identities) : identity.username],
+  )))
+  current_trust_data_cel = jsonencode({
+    "public-key.pem" = local.current_trust.public_key_pem
+  })
+  current_contract_data_cel = jsonencode({
+    "contract.json"             = local.current_contract.contract_json
+    "kubernetes-api-cidrs.json" = jsonencode(sort(tolist(local.current_contract.kubernetes_api_cidrs)))
+  })
   v3_selector_matches_object_cel = join(" ", [
     "(!has(object.spec.podSelector.matchLabels) ||",
     "object.spec.podSelector.matchLabels.all(key, value,",
@@ -176,10 +187,9 @@ locals {
         "request.name in ['${local.successor_boundary_policy_names[var.current_boundary_generation]}','${local.successor_workload_policy_names[var.current_workload_policy_generation]}']) ||",
         "(request.resource.group == 'rbac.authorization.k8s.io' && request.namespace == '${local.namespace}' &&",
         "request.name == '${local.current_release_name}') ||",
-        "(request.namespace == '${local.namespace}' &&",
-        "request.name in ['${local.successor_contract_names[var.current_generation]}','${local.successor_trust_names[local.current_contract.trust_generation]}']) ||",
         "(request.resource.group == '' && request.resource.resource == 'configmaps' && request.namespace == '${local.namespace}' &&",
-        "request.userInfo.username == '${var.non_owner_identities[var.release_identity_name].username}') ||",
+        "(request.userInfo.username in ${local.accepted_non_owner_usernames_cel} ||",
+        "request.userInfo.groups.exists(group, group == '${var.security_owner_group}'))) ||",
         "(request.resource.group == 'networking.k8s.io' && request.namespace == '${local.namespace}' &&",
         "(request.operation == 'DELETE' ?",
         "(oldObject.metadata.name == '${local.successor_network_policy_names[var.current_generation]}' || (${local.v3_selector_matches_old_object_cel})) :",
@@ -187,6 +197,18 @@ locals {
       ])
     }]
     validations = [
+      {
+        expression = join(" ", [
+          "request.resource.group != '' || request.resource.resource != 'configmaps' ||",
+          "!request.userInfo.groups.exists(group, group == '${var.security_owner_group}') ||",
+          "(request.operation == 'CREATE' && has(object.immutable) && object.immutable == true &&",
+          "((object.metadata.name == '${local.successor_trust_names[local.current_contract.trust_generation]}' && object.data == ${local.current_trust_data_cel}) ||",
+          "(object.metadata.name == '${local.successor_contract_names[var.current_generation]}' && object.data == ${local.current_contract_data_cel})) &&",
+          "(!has(object.binaryData) || size(object.binaryData) == 0))",
+        ])
+        message = "The security owner may create only the exact immutable trust or contract ConfigMap."
+        reason  = "Forbidden"
+      },
       {
         expression = join(" ", [
           "request.resource.group != 'networking.k8s.io' ||",
@@ -394,35 +416,52 @@ locals {
     "POD",
     "object.spec",
   )
-  protected_node_exempt_namespaces_cel = jsonencode([local.namespace, "kube-system"])
-  protected_node_pod_spec_cel = join(" ", [
-    "((has(POD.nodeName) && POD.nodeName != '') ||",
-    "(has(POD.nodeSelector) && '${var.provider_authority.node_selector_key}' in POD.nodeSelector &&",
+  protected_node_explicit_spec_cel = join(" ", [
+    "((has(POD.nodeSelector) && '${var.provider_authority.node_selector_key}' in POD.nodeSelector &&",
     "POD.nodeSelector['${var.provider_authority.node_selector_key}'] == '${var.provider_authority.node_selector_value}') ||",
     "(has(POD.tolerations) && POD.tolerations.exists(toleration,",
-    "(((has(toleration.key) && toleration.key == '${var.provider_authority.taint_key}') ||",
-    "((!has(toleration.key) || toleration.key == '') && has(toleration.operator) && toleration.operator == 'Exists')) &&",
-    "(!has(toleration.effect) || toleration.effect == '' || toleration.effect == '${var.provider_authority.taint_effect}')))))",
+    "has(toleration.key) && toleration.key == '${var.provider_authority.taint_key}' &&",
+    "(!has(toleration.effect) || toleration.effect == '' || toleration.effect == '${var.provider_authority.taint_effect}'))))",
   ])
+  protected_node_blanket_toleration_cel = join(" ", [
+    "(has(POD.tolerations) && POD.tolerations.exists(toleration,",
+    "(!has(toleration.key) || toleration.key == '') &&",
+    "has(toleration.operator) && toleration.operator == 'Exists' &&",
+    "(!has(toleration.effect) || toleration.effect == '' || toleration.effect == '${var.provider_authority.taint_effect}')))"
+  ])
+  protected_node_pod_spec_cel = "((${local.protected_node_explicit_spec_cel}) || (${local.protected_node_blanket_toleration_cel}))"
   protected_node_pod_cel = replace(
     local.protected_node_pod_spec_cel,
     "POD",
     "object.spec",
   )
   protected_node_template_cel = replace(
-    local.protected_node_pod_spec_cel,
+    local.protected_node_explicit_spec_cel,
     "POD",
     "object.spec.template.spec",
   )
   protected_node_cronjob_cel = replace(
-    local.protected_node_pod_spec_cel,
+    local.protected_node_explicit_spec_cel,
     "POD",
     "object.spec.jobTemplate.spec.template.spec",
   )
   protected_node_target_cel = join(" ", [
-    "(request.resource.resource == 'pods' && (${local.protected_node_pod_cel})) ||",
+    "(request.resource.resource == 'pods' && request.subResource == '' && (${local.protected_node_pod_cel})) ||",
     "(request.resource.resource in ['deployments','daemonsets','statefulsets','replicasets','jobs'] && (${local.protected_node_template_cel})) ||",
     "(request.resource.resource == 'cronjobs' && (${local.protected_node_cronjob_cel}))",
+  ])
+  kube_system_daemon_pod_cel = join(" ", [
+    "request.namespace == 'kube-system' && request.operation == 'CREATE' &&",
+    "request.userInfo.username == '${var.daemonset_controller_username}' &&",
+    "size(object.metadata.ownerReferences) == 1 &&",
+    "object.metadata.ownerReferences[0].apiVersion == 'apps/v1' &&",
+    "object.metadata.ownerReferences[0].kind == 'DaemonSet' &&",
+    "object.metadata.ownerReferences[0].name != '' &&",
+    "object.metadata.ownerReferences[0].controller == true &&",
+    "object.metadata.ownerReferences[0].blockOwnerDeletion == true &&",
+    "(!has(object.spec.nodeName) || object.spec.nodeName == '') &&",
+    "!(${replace(local.protected_node_explicit_spec_cel, "POD", "object.spec")}) &&",
+    "(${replace(local.protected_node_blanket_toleration_cel, "POD", "object.spec")})",
   ])
   workload_policy_spec = {
     failurePolicy = "Fail"
@@ -434,6 +473,13 @@ locals {
           apiVersions = ["v1"]
           operations  = ["CREATE", "UPDATE"]
           resources   = ["pods", "serviceaccounts"]
+          scope       = "Namespaced"
+        },
+        {
+          apiGroups   = [""]
+          apiVersions = ["v1"]
+          operations  = ["CREATE"]
+          resources   = ["pods/binding"]
           scope       = "Namespaced"
         },
         {
@@ -461,7 +507,8 @@ locals {
         "(request.operation == 'UPDATE' ?",
         "(has(oldObject.metadata.labels) && oldObject.metadata.labels.exists(key, value, key == 'fs2.nebius.ai/storage-egress-generation' && value == '${var.current_generation}') && oldObject.metadata.labels.exists(key, value, key == 'fs2.nebius.ai/storage-rollout-generation' && value == '${var.current_release_generation}')) :",
         "(has(object.metadata.labels) && object.metadata.labels.exists(key, value, key == 'fs2.nebius.ai/storage-egress-generation' && value == '${var.current_generation}') && object.metadata.labels.exists(key, value, key == 'fs2.nebius.ai/storage-rollout-generation' && value == '${var.current_release_generation}'))))) ||",
-        "(!(request.namespace in ${local.protected_node_exempt_namespaces_cel}) && (${local.protected_node_target_cel}))",
+        "(request.resource.resource == 'pods' && request.subResource == 'binding') ||",
+        "(${local.protected_node_target_cel})",
       ])
     }]
     validations = [
@@ -503,16 +550,25 @@ locals {
       },
       {
         expression = join(" ", [
-          "request.resource.resource != 'pods' ||",
+          "request.resource.resource != 'pods' || request.subResource == 'binding' ||",
           "(request.userInfo.username == '${var.replicaset_controller_username}' &&",
           "size(object.metadata.ownerReferences) == 1 && object.metadata.ownerReferences[0].apiVersion == 'apps/v1' && object.metadata.ownerReferences[0].kind == 'ReplicaSet' &&",
           "object.metadata.ownerReferences[0].name.startsWith('${local.current_release_name}-') && object.metadata.ownerReferences[0].controller == true && object.metadata.ownerReferences[0].blockOwnerDeletion == true &&",
           "object.metadata.labels.all(key, value, (key in ${local.v3_pod_labels_cel} && ${local.v3_pod_labels_cel}[key] == value) || key == 'pod-template-hash') &&",
           "'pod-template-hash' in object.metadata.labels && object.metadata.labels['pod-template-hash'] != '' &&",
           "${local.v3_pod_labels_cel}.all(key, value, key in object.metadata.labels && object.metadata.labels[key] == value) &&",
-          "(${local.pod_spec_cel}))",
+          "(${local.pod_spec_cel})) ||",
+          "(${local.kube_system_daemon_pod_cel})",
         ])
         message = "A successor Pod differs from the signed generation, Secret allowlist, or protected scheduling contract."
+        reason  = "Forbidden"
+      },
+      {
+        expression = join(" ", [
+          "request.resource.resource != 'pods' || request.subResource != 'binding' ||",
+          "(request.operation == 'CREATE' && request.userInfo.username == '${var.scheduler_username}')",
+        ])
+        message = "Only the provider-bound scheduler may create Pod binding subresources."
         reason  = "Forbidden"
       },
       {
@@ -704,6 +760,10 @@ data "external" "identity_separation" {
     ))
     service_account_inventory_json = jsonencode(var.kubernetes_service_account_inventory)
     system_subject_inventory_json  = jsonencode(var.kubernetes_system_subject_inventory)
+    deployment_controller_username = var.deployment_controller_username
+    replicaset_controller_username = var.replicaset_controller_username
+    daemonset_controller_username  = var.daemonset_controller_username
+    scheduler_username             = var.scheduler_username
     protected_names_json = jsonencode({
       boundary_policy  = local.successor_boundary_policy_names[var.current_boundary_generation]
       workload_policy  = local.successor_workload_policy_names[var.current_workload_policy_generation]
@@ -743,7 +803,7 @@ data "external" "integration_dependencies" {
       provider_authority_adapter_sha256                 = var.provider_authority.provider_authority_adapter_sha256
       provider_state_custody_sha256                     = var.provider_authority.provider_state_custody_sha256
       boundary_state_custody_sha256                     = var.provider_authority.boundary_state_custody_sha256
-      retained_v3_admission_custody_sha256              = var.provider_authority.retained_v3_admission_custody_sha256
+      retained_admission_custody_sha256                 = var.provider_authority.retained_admission_custody_sha256
       kubernetes_rbac_inventory_receipt_sha256          = var.provider_authority.kubernetes_rbac_inventory_receipt_sha256
       kubernetes_rbac_effective_authority_sha256        = var.provider_authority.kubernetes_rbac_effective_authority_sha256
       kubernetes_service_account_inventory_sha256       = var.provider_authority.kubernetes_service_account_inventory_sha256
@@ -810,10 +870,38 @@ data "kubernetes_resource" "predecessor_deployment" {
   }
 }
 
-# Re-read every v3 enforcement generation retained by the separately signed
+# Re-read every legacy and v3 enforcement generation retained by the separately signed
 # prior state. Terraform's ignore_changes protects ownership but is never used
 # as evidence that a live admission policy or binding still has the approved
 # canonical spec.
+data "kubernetes_resource" "retained_legacy_boundary_policy" {
+  for_each    = var.provider_authority.retained_legacy_boundary_policies
+  api_version = "admissionregistration.k8s.io/v1"
+  kind        = "ValidatingAdmissionPolicy"
+  metadata { name = each.value.name }
+}
+
+data "kubernetes_resource" "retained_legacy_boundary_binding" {
+  for_each    = var.provider_authority.retained_legacy_boundary_policies
+  api_version = "admissionregistration.k8s.io/v1"
+  kind        = "ValidatingAdmissionPolicyBinding"
+  metadata { name = each.value.name }
+}
+
+data "kubernetes_resource" "retained_legacy_workload_policy" {
+  for_each    = var.provider_authority.retained_legacy_workload_policies
+  api_version = "admissionregistration.k8s.io/v1"
+  kind        = "ValidatingAdmissionPolicy"
+  metadata { name = each.value.name }
+}
+
+data "kubernetes_resource" "retained_legacy_workload_binding" {
+  for_each    = var.provider_authority.retained_legacy_workload_policies
+  api_version = "admissionregistration.k8s.io/v1"
+  kind        = "ValidatingAdmissionPolicyBinding"
+  metadata { name = each.value.name }
+}
+
 data "kubernetes_resource" "retained_boundary_policy_v3" {
   for_each    = var.provider_authority.retained_v3_boundary_policies
   api_version = "admissionregistration.k8s.io/v1"
@@ -900,14 +988,49 @@ resource "terraform_data" "separate_security_owner" {
       error_message = "Kubernetes owner, workloads, release, human, break-glass or other identity inventory differs from the root-owned provider registry."
     }
     precondition {
-      condition = alltrue([
-        for controller in [var.deployment_controller_username, var.replicaset_controller_username] :
-        contains([
-          for subject in var.kubernetes_system_subject_inventory : subject.name
-          if subject.kind == "User"
-        ], controller)
-      ])
-      error_message = "Deployment and ReplicaSet controller usernames must be exact signed effective-authority subjects."
+      condition = (
+        var.legacy_boundary_generations == toset(keys(var.provider_authority.retained_legacy_boundary_policies)) &&
+        alltrue([
+          for generation, expected in var.provider_authority.retained_legacy_boundary_policies :
+          try(data.kubernetes_resource.retained_legacy_boundary_policy[generation].object.spec, null) == expected.policy_spec &&
+          sha256(jsonencode(try(data.kubernetes_resource.retained_legacy_boundary_policy[generation].object.spec, null))) == expected.policy_sha256 &&
+          try(data.kubernetes_resource.retained_legacy_boundary_binding[generation].object.spec, null) == expected.binding_spec
+        ])
+      )
+      error_message = "A retained legacy boundary policy or Deny binding differs from separately signed canonical live custody."
+    }
+    precondition {
+      condition = (
+        var.legacy_workload_policy_generations == toset(keys(var.provider_authority.retained_legacy_workload_policies)) &&
+        alltrue([
+          for generation, expected in var.provider_authority.retained_legacy_workload_policies :
+          try(data.kubernetes_resource.retained_legacy_workload_policy[generation].object.spec, null) == expected.policy_spec &&
+          sha256(jsonencode(try(data.kubernetes_resource.retained_legacy_workload_policy[generation].object.spec, null))) == expected.policy_sha256 &&
+          try(data.kubernetes_resource.retained_legacy_workload_binding[generation].object.spec, null) == expected.binding_spec
+        ])
+      )
+      error_message = "A retained legacy workload policy or Deny binding differs from separately signed canonical live custody."
+    }
+    precondition {
+      condition = (
+        alltrue([
+          for controller in [
+            var.deployment_controller_username,
+            var.replicaset_controller_username,
+            var.daemonset_controller_username,
+            var.scheduler_username,
+          ] :
+          contains([
+            for subject in var.kubernetes_system_subject_inventory : subject.name
+            if subject.kind == "User"
+          ], controller)
+        ]) &&
+        var.deployment_controller_username == var.provider_authority.deployment_controller_username &&
+        var.replicaset_controller_username == var.provider_authority.replicaset_controller_username &&
+        var.daemonset_controller_username == var.provider_authority.daemonset_controller_username &&
+        var.scheduler_username == var.provider_authority.scheduler_username
+      )
+      error_message = "Deployment, ReplicaSet, DaemonSet and scheduler usernames must be exact provider-bound effective-authority subjects."
     }
     precondition {
       condition     = contains(keys(var.contract_generations), var.current_generation)
@@ -1058,13 +1181,13 @@ resource "terraform_data" "security_generation_v4" {
 # owner group for additions or changes. A workloads/Helm identity cannot remove
 # the binding first, weaken the policy, or replace the selected NetworkPolicy.
 resource "kubernetes_manifest" "boundary_policy" {
-  for_each = local.boundary_policy_names
+  for_each = var.provider_authority.retained_legacy_boundary_policies
 
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
     kind       = "ValidatingAdmissionPolicy"
     metadata = {
-      name = each.value
+      name = each.value.name
       labels = {
         "app.kubernetes.io/managed-by"      = "fs2-security-owner"
         "fs2.nebius.ai/security-owner"      = "customer-storage-egress"
@@ -1075,7 +1198,7 @@ resource "kubernetes_manifest" "boundary_policy" {
         "fs2.nebius.ai/workloads-subject-sha256"      = data.external.identity_separation.result.workloads_subject_sha256
       }
     }
-    spec = local.boundary_policy_spec
+    spec = each.value.policy_spec
   }
 
   field_manager {
@@ -1092,23 +1215,20 @@ resource "kubernetes_manifest" "boundary_policy" {
 }
 
 resource "kubernetes_manifest" "boundary_binding" {
-  for_each = local.boundary_policy_names
+  for_each = var.provider_authority.retained_legacy_boundary_policies
 
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
     kind       = "ValidatingAdmissionPolicyBinding"
     metadata = {
-      name = each.value
+      name = each.value.name
       labels = {
         "app.kubernetes.io/managed-by"      = "fs2-security-owner"
         "fs2.nebius.ai/security-owner"      = "customer-storage-egress"
         "fs2.nebius.ai/security-generation" = each.key
       }
     }
-    spec = {
-      policyName        = each.value
-      validationActions = ["Deny"]
-    }
+    spec = each.value.binding_spec
   }
 
   field_manager {
@@ -1130,23 +1250,23 @@ resource "kubernetes_manifest" "boundary_binding" {
 # ServiceAccount and its generated Pods must retain the exact Secret allowlist,
 # immutable generation labels, image digest and provider-enforced node target.
 resource "kubernetes_manifest" "workload_policy" {
-  for_each = local.workload_policy_names
+  for_each = var.provider_authority.retained_legacy_workload_policies
 
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
     kind       = "ValidatingAdmissionPolicy"
     metadata = {
-      name = each.value
+      name = each.value.name
       labels = {
         "app.kubernetes.io/managed-by"      = "fs2-security-owner"
         "fs2.nebius.ai/security-owner"      = "customer-storage-egress"
         "fs2.nebius.ai/security-generation" = each.key
       }
       annotations = {
-        "fs2.nebius.ai/workload-policy-sha256" = local.workload_policy_sha256
+        "fs2.nebius.ai/workload-policy-sha256" = each.value.policy_sha256
       }
     }
-    spec = local.workload_policy_spec
+    spec = each.value.policy_spec
   }
 
   field_manager {
@@ -1162,23 +1282,20 @@ resource "kubernetes_manifest" "workload_policy" {
 }
 
 resource "kubernetes_manifest" "workload_binding" {
-  for_each = local.workload_policy_names
+  for_each = var.provider_authority.retained_legacy_workload_policies
 
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
     kind       = "ValidatingAdmissionPolicyBinding"
     metadata = {
-      name = each.value
+      name = each.value.name
       labels = {
         "app.kubernetes.io/managed-by"      = "fs2-security-owner"
         "fs2.nebius.ai/security-owner"      = "customer-storage-egress"
         "fs2.nebius.ai/security-generation" = each.key
       }
     }
-    spec = {
-      policyName        = each.value
-      validationActions = ["Deny"]
-    }
+    spec = each.value.binding_spec
   }
 
   field_manager {

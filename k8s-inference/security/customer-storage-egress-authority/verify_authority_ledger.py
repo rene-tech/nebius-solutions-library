@@ -23,14 +23,14 @@ SECURITY_ROOT = Path(__file__).resolve().parents[1]
 if os.fspath(SECURITY_ROOT) not in sys.path:
     sys.path.insert(0, os.fspath(SECURITY_ROOT))
 
-from rbac_authority import verify_subject_inventory  # noqa: E402
+from rbac_authority import CONTROLLER_USERNAMES, verify_subject_inventory  # noqa: E402
 
 REGISTRY_PATH = Path("/etc/fs2-security-ro/authority/customer-storage-egress-authority.json")
 PRIOR_HEAD_PATH = Path(
     "/var/lib/fs2-security-checkpoints-ro/customer-storage-egress-prior-head.json"
 )
-REGISTRY_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-authority-registry/v5"
-PRIOR_HEAD_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-prior-head/v4"
+REGISTRY_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-authority-registry/v6"
+PRIOR_HEAD_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-prior-head/v5"
 MANIFEST_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-authority-ledger/v3"
 MAX_BYTES = 1024 * 1024
 NEBIUS_TERRAFORM_PROVIDER_VERSION = "0.5.232"
@@ -255,6 +255,7 @@ def verify(manifest_json: str) -> dict[str, str]:
         "kubernetes_identity_inventory",
         "kubernetes_service_account_inventory",
         "kubernetes_system_subject_inventory",
+        "kubernetes_controller_identities",
         "kubernetes_rbac_inventory_receipt",
         "provider_project_iam_inventory_receipt",
         "provider_effective_authority_graph_receipt",
@@ -440,6 +441,20 @@ def verify(manifest_json: str) -> dict[str, str]:
         != len(system_subjects)
     ):
         raise ValueError("Kubernetes native system-subject inventory is incomplete")
+    controller_users = registry["kubernetes_controller_identities"]
+    if (
+        controller_users != CONTROLLER_USERNAMES
+        or any(
+            username
+            not in {
+                item["name"]
+                for item in system_subjects
+                if item["kind"] == "User"
+            }
+            for username in controller_users.values()
+        )
+    ):
+        raise ValueError("Kubernetes controller identities are incomplete or aliased")
 
     authority_graph = registry["provider_effective_authority_graph_receipt"]
     if not isinstance(authority_graph, dict) or set(authority_graph) != {
@@ -672,6 +687,7 @@ def verify(manifest_json: str) -> dict[str, str]:
         service_account_subjects,
         system_subjects,
         effective_authority,
+        controller_users=controller_users,
     )
 
     custody = registry["accepted_custody"]
@@ -873,6 +889,8 @@ def verify(manifest_json: str) -> dict[str, str]:
         "state_version_id",
         "state_version_adapter_sha256",
         "state_snapshot_sha256",
+        "retained_legacy_boundary_policies",
+        "retained_legacy_workload_policies",
         "retained_v3_boundary_policies",
         "retained_v3_workload_policies",
         "managed_addresses",
@@ -929,6 +947,18 @@ def verify(manifest_json: str) -> dict[str, str]:
     retained_policy_sets: dict[str, dict[str, Any]] = {}
     for field, name_prefix, policy_address, binding_address in (
         (
+            "retained_legacy_boundary_policies",
+            "fs2-customer-storage-egress-boundary-",
+            "kubernetes_manifest.boundary_policy[",
+            "kubernetes_manifest.boundary_binding[",
+        ),
+        (
+            "retained_legacy_workload_policies",
+            "fs2-customer-storage-egress-boundary-workload-",
+            "kubernetes_manifest.workload_policy[",
+            "kubernetes_manifest.workload_binding[",
+        ),
+        (
             "retained_v3_boundary_policies",
             "fs2-storage-v3-boundary-",
             "kubernetes_manifest.boundary_policy_v3[",
@@ -943,7 +973,7 @@ def verify(manifest_json: str) -> dict[str, str]:
     ):
         retained = boundary_state_custody.get(field)
         if not isinstance(retained, dict):
-            raise ValueError("retained v3 admission custody is absent")
+            raise ValueError("retained admission custody is absent")
         for generation, policy in retained.items():
             if (
                 not isinstance(generation, str)
@@ -956,9 +986,9 @@ def verify(manifest_json: str) -> dict[str, str]:
                 or policy.get("binding_spec")
                 != {"policyName": policy.get("name"), "validationActions": ["Deny"]}
             ):
-                raise ValueError("retained v3 admission identity is malformed")
+                raise ValueError("retained admission identity is malformed")
             policy_sha256 = digest(
-                policy.get("policy_sha256"), "retained v3 admission policy"
+                policy.get("policy_sha256"), "retained admission policy"
             )
             if (
                 not isinstance(policy.get("policy_spec"), dict)
@@ -966,14 +996,14 @@ def verify(manifest_json: str) -> dict[str, str]:
                 != policy_sha256
                 or generation[-12:] != policy_sha256[:12]
             ):
-                raise ValueError("retained v3 admission policy is not content-bound")
+                raise ValueError("retained admission policy is not content-bound")
             quoted = json.dumps(generation)
             required = {
                 f"{policy_address}{quoted}]",
                 f"{binding_address}{quoted}]",
             }
             if not required <= set(boundary_state_custody["managed_addresses"]):
-                raise ValueError("retained v3 policy/binding is absent from state custody")
+                raise ValueError("retained policy/binding is absent from state custody")
         observed_policy_generations: set[str] = set()
         observed_binding_generations: set[str] = set()
         for address in boundary_state_custody["managed_addresses"]:
@@ -984,22 +1014,22 @@ def verify(manifest_json: str) -> dict[str, str]:
                 if not address.startswith(prefix):
                     continue
                 if not address.endswith("]"):
-                    raise ValueError("retained v3 admission state address is malformed")
+                    raise ValueError("retained admission state address is malformed")
                 try:
                     generation = json.loads(address[len(prefix) : -1])
                 except json.JSONDecodeError as exc:
                     raise ValueError(
-                        "retained v3 admission state generation is malformed"
+                        "retained admission state generation is malformed"
                     ) from exc
                 if not isinstance(generation, str):
-                    raise ValueError("retained v3 admission generation is not a string")
+                    raise ValueError("retained admission generation is not a string")
                 observed.add(generation)
         if (
             observed_policy_generations != set(retained)
             or observed_binding_generations != set(retained)
         ):
             raise ValueError(
-                "retained v3 admission custody does not cover every state-owned policy/binding"
+                "retained admission custody does not cover every state-owned policy/binding"
             )
         retained_policy_sets[field] = retained
     for field in (
@@ -1305,6 +1335,10 @@ def verify(manifest_json: str) -> dict[str, str]:
         "kubernetes_system_subject_inventory_sha256": hashlib.sha256(
             canonical(system_subjects)
         ).hexdigest(),
+        "deployment_controller_username": controller_users["deployment"],
+        "replicaset_controller_username": controller_users["replicaset"],
+        "daemonset_controller_username": controller_users["daemonset"],
+        "scheduler_username": controller_users["scheduler"],
         "provider_project_iam_inventory_receipt_sha256": iam_receipt_sha256,
         "provider_effective_authority_graph_receipt_sha256": authority_graph_sha256,
         "provider_authority_adapter_sha256": registry["provider_authority_adapter_sha256"],
@@ -1315,6 +1349,16 @@ def verify(manifest_json: str) -> dict[str, str]:
             separators=(",", ":"),
         ),
         "boundary_state_custody_sha256": prior_head["boundary_state_custody_sha256"],
+        "retained_legacy_boundary_policies_json": json.dumps(
+            retained_policy_sets["retained_legacy_boundary_policies"],
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+        "retained_legacy_workload_policies_json": json.dumps(
+            retained_policy_sets["retained_legacy_workload_policies"],
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
         "retained_v3_boundary_policies_json": json.dumps(
             retained_policy_sets["retained_v3_boundary_policies"],
             sort_keys=True,
@@ -1325,7 +1369,7 @@ def verify(manifest_json: str) -> dict[str, str]:
             sort_keys=True,
             separators=(",", ":"),
         ),
-        "retained_v3_admission_custody_sha256": hashlib.sha256(
+        "retained_admission_custody_sha256": hashlib.sha256(
             canonical(retained_policy_sets)
         ).hexdigest(),
         "kubernetes_rbac_inventory_receipt_sha256": rbac_receipt_sha256,

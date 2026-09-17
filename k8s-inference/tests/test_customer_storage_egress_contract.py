@@ -128,7 +128,7 @@ def test_workloads_root_only_reads_the_external_versioned_boundary() -> None:
         'data.kubernetes_config_map_v1.customer_storage_egress_trust[0].data["public-key.pem"]'
         in source
     )
-    assert "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v5" in source
+    assert "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v6" in source
     assert '"uv"' in source and '"--frozen"' in source
     assert "egress_contract_public_key_pem" not in source
 
@@ -361,6 +361,9 @@ def test_sai08_external_authority_workload_and_state_closure_regression() -> Non
         PROVIDER_AUTHORITY_ROOT / "verify_backend_custody.py"
     ).read_text(encoding="utf-8")
     boundary = (SECURITY_ROOT / "main.tf").read_text(encoding="utf-8")
+    boundary_variables = (SECURITY_ROOT / "variables.tf").read_text(
+        encoding="utf-8"
+    )
     owner = (SECURITY_ROOT / "verify_owner_identity.py").read_text(
         encoding="utf-8"
     )
@@ -422,6 +425,14 @@ def test_sai08_external_authority_workload_and_state_closure_regression() -> Non
     assert 'resource "terraform_data" "security_generation_v4"' in boundary
     assert "successor_workload_policy_generations" in boundary
     assert "protected_node_target_cel" in boundary
+    assert 'resources   = ["pods/binding"]' in boundary
+    assert "scheduler_username" in boundary
+    assert "daemonset_controller_username" in boundary
+    assert "system:controller:daemon-set-controller" in boundary_variables
+    assert "system:kube-scheduler" in boundary_variables
+    assert "protected_node_exempt_namespaces_cel" not in boundary
+    assert "request.subResource == 'binding'" in boundary
+    assert "request.subResource == ''" in boundary
     assert "current_release_helm_record_name" in boundary
     assert 'data "kubernetes_resource" "retained_boundary_policy_v3"' in boundary
     assert 'data "kubernetes_resource" "retained_workload_policy_v3"' in boundary
@@ -432,6 +443,13 @@ def test_sai08_external_authority_workload_and_state_closure_regression() -> Non
     assert '"impersonate-users": ("impersonate", "users")' in owner
     assert "effective_authority_sha256" in owner
     assert "verify_subject_inventory" in owner
+    assert "reject_unapproved_dangerous" in owner
+    assert "subject_authority" in owner
+    assert "retained_legacy_boundary_policies" in boundary
+    assert "retained_legacy_workload_policies" in boundary
+    assert "accepted_non_owner_usernames_cel" in boundary
+    assert 'data "kubernetes_resource" "retained_legacy_boundary_policy"' in boundary
+    assert 'data "kubernetes_resource" "retained_legacy_workload_policy"' in boundary
     assert '"state", "pull"' in provider_backend
     assert '"state", "pull"' in boundary_backend
     workloads = TERRAFORM.read_text(encoding="utf-8")

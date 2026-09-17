@@ -1,7 +1,7 @@
 output "current_handoff" {
   description = "Value-free, exact handoff consumed by the ordinary workloads root."
   value = {
-    schema                        = "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v5"
+    schema                        = "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v6"
     generation                    = var.current_generation
     contract_sha256               = data.external.current_contract.result.contract_sha256
     contract_config_map_name      = local.successor_contract_names[var.current_generation]

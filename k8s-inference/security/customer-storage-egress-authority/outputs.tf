@@ -1,7 +1,7 @@
 output "current_handoff" {
   description = "Non-secret provider-enforced egress handoff for the additive compatibility-v3 reconciler."
   value = {
-    schema                                            = "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v4"
+    schema                                            = "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v5"
     generation                                        = local.authority.current_generation
     authority_manifest_sha256                         = data.external.authority.result.manifest_sha256
     prior_head_receipt_sha256                         = data.external.authority.result.prior_head_receipt_sha256
@@ -26,6 +26,10 @@ output "current_handoff" {
     kubernetes_identity_inventory_sha256              = data.external.authority.result.kubernetes_identity_inventory_sha256
     kubernetes_service_account_inventory_sha256       = data.external.authority.result.kubernetes_service_account_inventory_sha256
     kubernetes_system_subject_inventory_sha256        = data.external.authority.result.kubernetes_system_subject_inventory_sha256
+    deployment_controller_username                    = data.external.authority.result.deployment_controller_username
+    replicaset_controller_username                    = data.external.authority.result.replicaset_controller_username
+    daemonset_controller_username                     = data.external.authority.result.daemonset_controller_username
+    scheduler_username                                = data.external.authority.result.scheduler_username
     kubernetes_rbac_inventory_sha256                  = data.external.authority.result.kubernetes_rbac_inventory_sha256
     kubernetes_rbac_effective_authority_sha256        = data.external.authority.result.kubernetes_rbac_effective_authority_sha256
     kubernetes_rbac_inventory_receipt_sha256          = data.external.authority.result.kubernetes_rbac_inventory_receipt_sha256
@@ -35,9 +39,11 @@ output "current_handoff" {
     provider_authority_adapter_sha256                 = data.external.authority.result.provider_authority_adapter_sha256
     provider_state_custody_sha256                     = data.external.authority.result.provider_state_custody_sha256
     boundary_state_custody_sha256                     = data.external.authority.result.boundary_state_custody_sha256
+    retained_legacy_boundary_policies                 = jsondecode(data.external.authority.result.retained_legacy_boundary_policies_json)
+    retained_legacy_workload_policies                 = jsondecode(data.external.authority.result.retained_legacy_workload_policies_json)
     retained_v3_boundary_policies                     = jsondecode(data.external.authority.result.retained_v3_boundary_policies_json)
     retained_v3_workload_policies                     = jsondecode(data.external.authority.result.retained_v3_workload_policies_json)
-    retained_v3_admission_custody_sha256              = data.external.authority.result.retained_v3_admission_custody_sha256
+    retained_admission_custody_sha256                 = data.external.authority.result.retained_admission_custody_sha256
     accepted_sai10_commit                             = data.external.authority.result.accepted_sai10_commit
     accepted_sai10_tree                               = data.external.authority.result.accepted_sai10_tree
     sai10_independent_review_receipt_sha256           = data.external.authority.result.sai10_independent_review_receipt_sha256
