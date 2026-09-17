@@ -173,6 +173,39 @@ resources. It changes no model, schema, admin image, scaling policy or quota.
 Live held-upload verification and fresh bounded cohorts are required on that
 digest; successful 145 results are retained, not relabeled as 146 results.
 
+### Release-146 live evidence
+
+The upload-only regression passed on the deployed image. Operation
+`9d8cab8d-0647-48f8-aa07-bc019d9f8a14` was accepted at 16:03:25.591970 UTC and
+finalized at 16:04:56.783718. Ten caller-visible samples showed it queued for
+90.408645 seconds. Retrospective Prometheus correlation found all nine CP
+queued/activating/running series and aggregate GPU demand at zero throughout,
+with 19–20 distinct scrapes per replica and maximum sample age 4.903 seconds.
+Advancing KSM samples and before/after Kubernetes reads showed zero desired/
+observed replicas and zero model Pods; startup hold stayed zero. The same upload
+then completed successfully, retaining its durable operation and verified result,
+with attempt/reservation/GPU estimate zero. No generation, second upload or
+manual scaling was needed for this diagnostic. This is retrospective metrics
+correlation with the timestamped public samples, not a simultaneous SQL probe.
+
+Protected receipt `held-upload-r146-retrospective-correlation.json` has SHA-256
+`7226e7be5bdbb626da4b804fd67010e06f1d66b3aeb31993c2f557576886a630`.
+Final-image compatibility and two bounded model cohorts continue independently;
+the upload regression alone does not qualify inference or the entire platform.
+
+The first video matrix also retains an operator/harness sequencing error: a
+two-sample preflight assertion failed against an older KSM sample, but the next
+orchestration tool call was not conditioned on that nonzero exit status. The
+runner independently required actual desired replicas/Pods zero before admitting
+generation. Read-only historical correlation subsequently proved **six** advancing
+zero KSM samples, 16:08:50.604–16:11:20.604, all before actual admission at
+16:11:22.832604, with zero GPU/startup demand and all nine CP state series zero.
+No post-admission sample was counted. Actual cold state is therefore proven,
+but the failed synchronous guard is not relabeled as clean execution. Receipt
+`cosmos-cohort6-r146-pre-admission-zero-correlation.json`, SHA-256
+`7a059d357a0e97a851b3d0953e3002b2e48d11cf57b2580fb65a7933e711f31a`,
+retains this distinction; the next cohort explicitly gates its dependent launch.
+
 ## What changed
 
 | Area | Implementation | Remaining live proof |
