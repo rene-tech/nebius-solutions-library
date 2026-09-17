@@ -459,6 +459,21 @@ class MemoryStore:
             row.digest = digest
             row.view = row.view.model_copy(update={"pepper_key_id": pepper_key_id})
 
+    async def rehash_token_with_fingerprint(
+        self,
+        token_id: UUID,
+        *,
+        pepper_key_id: str,
+        digest: str,
+        fingerprint: str,
+    ) -> None:
+        async with self._lock:
+            row = self.tokens.get(token_id)
+            if row is None or row.view.revoked_at is not None:
+                return
+            row.digest = digest
+            row.view = row.view.model_copy(update={"pepper_key_id": pepper_key_id, "fingerprint": fingerprint})
+
     async def list_tokens(self, *, tenant_id: str | None = None, limit: int = 200) -> list[TokenView]:
         if not 1 <= limit <= 1000:
             raise ValueError("token list limit is outside the bound")

@@ -1049,6 +1049,28 @@ class PostgresStore:
                 digest,
             )
 
+    @retry_serialization
+    async def rehash_token_with_fingerprint(
+        self,
+        token_id: UUID,
+        *,
+        pepper_key_id: str,
+        digest: str,
+        fingerprint: str,
+    ) -> None:
+        async with self.pool.acquire() as connection, connection.transaction():
+            await self._token_lock(connection, token_id)
+            await connection.execute(
+                """
+                UPDATE fs2_tokens SET pepper_key_id=$2,digest=$3,fingerprint=$4
+                WHERE id=$1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>clock_timestamp())
+                """,
+                token_id,
+                pepper_key_id,
+                digest,
+                fingerprint,
+            )
+
     async def list_tokens(self, *, tenant_id: str | None = None, limit: int = 200) -> list[TokenView]:
         if not 1 <= limit <= 1000:
             raise ValueError("token list limit is outside the bound")

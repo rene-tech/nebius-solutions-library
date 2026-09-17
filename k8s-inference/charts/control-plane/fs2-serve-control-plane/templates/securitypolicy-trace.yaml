@@ -1,0 +1,21 @@
+{{- if .Values.publicGateway.enabled }}
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-deny-trace
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ .Values.publicGateway.gatewayName }}
+  authorization:
+    defaultAction: Allow
+    rules:
+      - name: deny-trace
+        action: Deny
+        operation:
+          methods:
+            - TRACE
+{{- end }}

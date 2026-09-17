@@ -342,6 +342,22 @@ class TrustedEdgeMiddleware:
         await self.app(scope, bounded_receive, send)
 
 
+class RejectTraceMiddleware:
+    """Reject TRACE before route dispatch as application-layer defense in depth."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: ASGIScope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and str(scope.get("method", "")).upper() == "TRACE":
+            await Response(
+                status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
+                headers={"cache-control": "no-store", "x-content-type-options": "nosniff"},
+            )(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+
 def _bearer(value: str | None) -> str:
     if value is None or len(value) > MAX_PAT_LENGTH + 7 or not value.startswith("Bearer ") or not value[7:]:
         raise AuthenticationError("bearer token required")
@@ -616,6 +632,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     )
     if runtime.settings.request_debug_enabled:
         app.add_middleware(DebugCaptureMiddleware, store=debug_store, principal_resolver=runtime.tokens.verify)
+    app.add_middleware(RejectTraceMiddleware)
 
     @app.middleware("http")
     async def access_log(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:

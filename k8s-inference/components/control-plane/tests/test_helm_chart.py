@@ -3538,3 +3538,41 @@ def test_extra_kueue_namespace_must_not_repeat_the_model_namespace() -> None:
     )
     assert result.returncode != 0
     assert "must not repeat modelNamespace" in result.stderr
+
+
+def test_public_gateway_denies_trace_before_any_route_dispatch() -> None:
+    documents = render()
+    policy = next(
+        document
+        for document in documents
+        if document["kind"] == "SecurityPolicy" and document["metadata"]["name"].endswith("-deny-trace")
+    )
+
+    assert policy["apiVersion"] == "gateway.envoyproxy.io/v1alpha1"
+    assert policy["spec"]["targetRefs"] == [
+        {
+            "group": "gateway.networking.k8s.io",
+            "kind": "Gateway",
+            "name": "public",
+        }
+    ]
+    assert policy["spec"]["authorization"] == {
+        "defaultAction": "Allow",
+        "rules": [
+            {
+                "name": "deny-trace",
+                "action": "Deny",
+                "operation": {"methods": ["TRACE"]},
+            }
+        ],
+    }
+
+    public_paths = {
+        match["path"]["value"]
+        for document in documents
+        if document["kind"] == "HTTPRoute"
+        for rule in document["spec"]["rules"]
+        for match in rule.get("matches", [])
+    }
+    assert "/admin/v1" not in public_paths
+    assert "/internal/ext-authz" not in public_paths

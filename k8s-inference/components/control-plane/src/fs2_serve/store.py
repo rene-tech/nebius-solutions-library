@@ -113,6 +113,15 @@ class Store(Protocol):
 
     async def rehash_token(self, token_id: UUID, *, pepper_key_id: str, digest: str) -> None: ...
 
+    async def rehash_token_with_fingerprint(
+        self,
+        token_id: UUID,
+        *,
+        pepper_key_id: str,
+        digest: str,
+        fingerprint: str,
+    ) -> None: ...
+
     async def list_tokens(self, *, tenant_id: str | None = None, limit: int = 200) -> list[TokenView]: ...
 
     async def record_token_expired(self, token_id: UUID, *, actor: str) -> None: ...

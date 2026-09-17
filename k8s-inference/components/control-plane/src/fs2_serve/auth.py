@@ -25,6 +25,7 @@ MAX_PAT_LENGTH = 256
 SESSION_MARKER = "fs2_admin"
 MAX_OPERATOR_SESSION_LENGTH = 256
 OPERATOR_SESSION_DIGEST_CONTEXT = b"fs2-serve.admin-session/v1\0"
+PAT_FINGERPRINT_CONTEXT = b"fs2-serve.pat-fingerprint/v2\0"
 
 
 class AuthenticationError(PermissionError):
@@ -110,6 +111,15 @@ class TokenService:
             raise AuthenticationError("token hash key is unavailable") from exc
         return hmac.new(pepper, token.encode(), hashlib.sha256).hexdigest()
 
+    def _fingerprint(self, token: str, key_id: str) -> str:
+        """Return a domain-separated operator identifier, never a raw-token hash."""
+
+        try:
+            pepper = self._peppers.keys[key_id]
+        except KeyError as exc:
+            raise AuthenticationError("token fingerprint key is unavailable") from exc
+        return hmac.new(pepper, PAT_FINGERPRINT_CONTEXT + token.encode(), hashlib.sha256).hexdigest()
+
     @staticmethod
     def _parse(token: str) -> tuple[UUID, str]:
         if len(token) > MAX_PAT_LENGTH:
@@ -136,6 +146,7 @@ class TokenService:
         pepper_key_id = self._peppers.active_key_id
         digest = self._hasher.hash(self._prehash(token, pepper_key_id))
         fingerprint = hashlib.sha256(token.encode()).hexdigest()
+        fingerprint = self._fingerprint(token, pepper_key_id)
         view = await self.store.issue_token(
             token_id=token_id,
             prefix=prefix,
@@ -162,8 +173,11 @@ class TokenService:
         token_id, prefix = self._parse(token)
         fingerprint = hashlib.sha256(token.encode()).hexdigest()
         stored = await self.store.token_for_verification(token_id)
+        fingerprint_key_id = self._peppers.active_key_id if stored is None else stored[0].pepper_key_id
+        keyed_fingerprint = self._fingerprint(token, fingerprint_key_id)
         if stored is None:
             pepper_key_id = self._peppers.active_key_id
+            fingerprint = keyed_fingerprint
             digest = self._hasher.hash(self._prehash(token, pepper_key_id))
             try:
                 return await self.store.issue_token(
@@ -183,6 +197,8 @@ class TokenService:
                     raise
 
         view, digest = stored
+        if view.fingerprint is not None and secrets.compare_digest(keyed_fingerprint, view.fingerprint):
+            fingerprint = keyed_fingerprint
         if not secrets.compare_digest(prefix, view.prefix):
             raise AuthenticationError("bootstrap token identity conflicts with stored token")
         if view.fingerprint is not None and not secrets.compare_digest(fingerprint, view.fingerprint):
@@ -227,8 +243,15 @@ class TokenService:
         if view.pepper_key_id != self._peppers.active_key_id:
             active_id = self._peppers.active_key_id
             replacement = self._hasher.hash(self._prehash(token, active_id))
+            active_fingerprint = self._fingerprint(token, active_id)
+            await self.store.rehash_token_with_fingerprint(
+                view.id,
+                pepper_key_id=active_id,
+                digest=replacement,
+                fingerprint=active_fingerprint,
+            )
             await self.store.rehash_token(view.id, pepper_key_id=active_id, digest=replacement)
-            view = view.model_copy(update={"pepper_key_id": active_id})
+            view = view.model_copy(update={"pepper_key_id": active_id, "fingerprint": active_fingerprint})
         return view
 
     async def verify(self, token: str) -> Principal:
@@ -252,6 +275,12 @@ class TokenService:
         if view.pepper_key_id != self._peppers.active_key_id:
             active_id = self._peppers.active_key_id
             replacement = self._hasher.hash(self._prehash(token, active_id))
+            await self.store.rehash_token_with_fingerprint(
+                view.id,
+                pepper_key_id=active_id,
+                digest=replacement,
+                fingerprint=self._fingerprint(token, active_id),
+            )
             await self.store.rehash_token(view.id, pepper_key_id=active_id, digest=replacement)
         principal = Principal(
             token_id=view.id,
@@ -288,6 +317,7 @@ class TokenService:
         pepper_key_id = self._peppers.active_key_id
         digest = self._hasher.hash(self._prehash(token, pepper_key_id))
         fingerprint = hashlib.sha256(token.encode()).hexdigest()
+        fingerprint = self._fingerprint(token, pepper_key_id)
         view = await self.store.rotate_token(
             token_id,
             token_id=successor_id,
