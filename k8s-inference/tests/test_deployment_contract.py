@@ -803,6 +803,8 @@ class DeploymentContractTests(unittest.TestCase):
                 "writes_enabled": True,
                 "workload_owner": "controller",
                 "bootstrap_model_ids": ["qwen3-8b"],
+                "bootstrap_assertion_secret_name": "fs2-release-model-bootstrap-release-test-01",
+                "bootstrap_assertion_generation": "release-test-01",
                 "fresh_install": True,
             },
             "acceleration": {
@@ -1795,14 +1797,24 @@ class DeploymentContractTests(unittest.TestCase):
                 "writes_enabled": True,
                 "workload_owner": "controller",
                 "bootstrap_model_ids": ["qwen3-8b"],
+                "bootstrap_assertion_secret_name": "fs2-release-model-bootstrap-release-test-02",
+                "bootstrap_assertion_generation": "release-test-02",
                 "fresh_install": True,
             },
         }
         variable_file = self._write_configuration("dynamic-models", deployment)
         outputs = self._planned_outputs(variable_file, "dynamic-models")
-        dynamic = outputs["deployment_contract"]["stages"]["workloads"][
-            "model_controller"
-        ]
+        workloads = outputs["deployment_contract"]["stages"]["workloads"]
+        dynamic = workloads["model_controller"]
+        self.assertEqual(
+            workloads["release_identity_model_bootstrap_assertion_secret_name"],
+            "fs2-release-model-bootstrap-release-test-02",
+        )
+        self.assertEqual(
+            workloads["release_identity_model_bootstrap_assertion_generation"],
+            "release-test-02",
+        )
+        self.assertEqual(workloads["release_identity_model_bootstrap_retained_assertions"], {})
 
         self.assertEqual(
             dynamic,
@@ -1848,7 +1860,10 @@ class DeploymentContractTests(unittest.TestCase):
             "models": {"selection": "explicit", "enabled": ["qwen3-8b"]},
             "dynamic_models": {
                 "enabled": True, "writes_enabled": True, "workload_owner": "controller",
-                "bootstrap_model_ids": ["qwen3-8b"], "fresh_install": True,
+                "bootstrap_model_ids": ["qwen3-8b"],
+                "bootstrap_assertion_secret_name": "fs2-release-model-bootstrap-release-test-03",
+                "bootstrap_assertion_generation": "release-test-03",
+                "fresh_install": True,
             },
         }
         path = self._write_configuration("startup-default", deployment)
@@ -1891,6 +1906,8 @@ class DeploymentContractTests(unittest.TestCase):
                 "writes_enabled": True,
                 "workload_owner": "controller",
                 "bootstrap_model_ids": ["qwen3-8b"],
+                "bootstrap_assertion_secret_name": "fs2-release-model-bootstrap-release-test-04",
+                "bootstrap_assertion_generation": "release-test-04",
                 "fresh_install": True,
             },
             "acceleration": {
@@ -1974,6 +1991,8 @@ class DeploymentContractTests(unittest.TestCase):
                 "writes_enabled": True,
                 "workload_owner": "controller",
                 "bootstrap_model_ids": ["cosmos3-nano"],
+                "bootstrap_assertion_secret_name": "fs2-release-model-bootstrap-release-test-05",
+                "bootstrap_assertion_generation": "release-test-05",
                 "fresh_install": True,
             },
             "acceleration": {
@@ -2017,6 +2036,8 @@ class DeploymentContractTests(unittest.TestCase):
                 "writes_enabled": True,
                 "workload_owner": "controller",
                 "bootstrap_model_ids": ["qwen3-8b"],
+                "bootstrap_assertion_secret_name": "fs2-release-model-bootstrap-release-test-06",
+                "bootstrap_assertion_generation": "release-test-06",
                 "fresh_install": True,
             },
         }
@@ -2092,6 +2113,8 @@ class DeploymentContractTests(unittest.TestCase):
                 "writes_enabled": True,
                 "workload_owner": "controller",
                 "bootstrap_model_ids": ["qwen3-8b"],
+                "bootstrap_assertion_secret_name": "fs2-release-model-bootstrap-release-test-07",
+                "bootstrap_assertion_generation": "release-test-07",
                 "fresh_install": True,
                 "fast_start_evidence_file": str(evidence_file),
                 "gpu_snapshots": {
@@ -2848,7 +2871,10 @@ class DeploymentContractTests(unittest.TestCase):
             },
             "dynamic_models": {
                 "enabled": True, "writes_enabled": True, "workload_owner": "controller",
-                "bootstrap_model_ids": ["altumage", "phenoage"], "fresh_install": True,
+                "bootstrap_model_ids": ["altumage", "phenoage"],
+                "bootstrap_assertion_secret_name": "fs2-release-model-bootstrap-release-test-08",
+                "bootstrap_assertion_generation": "release-test-08",
+                "fresh_install": True,
             },
         }
         variable_file = self._write_configuration("aging-native", deployment)

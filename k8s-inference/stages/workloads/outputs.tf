@@ -233,6 +233,14 @@ output "dynamic_model_contract" {
     terraform_manifest_count    = length(local.terraform_owned_model_manifests)
     terraform_scaler_count      = length(local.terraform_owned_model_scalers)
     bootstrap_job_enabled       = local.model_controller_bootstrap_enabled
+    bootstrap_current_generation = (
+      local.model_controller_bootstrap_enabled ? local.model_controller_bootstrap_current_generation : null
+    )
+    bootstrap_current_retention_spec = (
+      local.model_controller_bootstrap_enabled ? local.model_controller_bootstrap_current_spec : null
+    )
+    bootstrap_managed_generations  = sort(keys(local.model_controller_bootstrap_assertions))
+    bootstrap_retained_generations = sort(keys(var.release_identity_model_bootstrap_retained_assertions))
     unsupported_gvks_retained = sort(distinct([
       for document in values(local.terraform_owned_model_manifests) : "${document.manifest.apiVersion}/${document.manifest.kind}"
       if(
@@ -423,8 +431,10 @@ output "managed_resource_count" {
     length(local.terraform_owned_model_scalers) +
     length(local.fast_start_managed_compile_cache_claims) +
     length(local.fast_start_managed_residency_receipt_claims) +
+    (var.model_controller.enabled || length(local.model_controller_bootstrap_assertions) > 0 ? 2 : 0) +
+    (local.model_controller_bootstrap_enabled ? 1 : 0) +
     (var.model_controller.enabled ? 2 : 0) +
-    (local.model_controller_bootstrap_enabled ? 3 : 0) +
+    2 * length(local.model_controller_bootstrap_assertions) +
     (local.admin_configuration_enabled ? 1 : 0) +
     (data.terraform_remote_state.foundation.outputs.grafana_publication_contract.enabled ? 2 : 0) +
     (var.run_acceptance_job ? 4 : 0) +

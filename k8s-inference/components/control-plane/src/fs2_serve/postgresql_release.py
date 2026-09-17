@@ -102,6 +102,10 @@ EXPECTED_MIGRATIONS: Final = (
         "0031_release_identity_receipts.sql",
         "a1d76ba328c38cff2452ac8b53cbe6da43eba0978079ef2d1a2eab51e0097c88",
     ),
+    (
+        "0032_session_exchange_buckets.sql",
+        "8ab43b8cdbfd193cc45ed19791fc02edea794715fb6adec2d497c8450798f624",
+    ),
 )
 
 NAMESPACE_ROLE_OWNERSHIP: Final[dict[str, Any]] = {

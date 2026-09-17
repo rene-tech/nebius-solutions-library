@@ -210,6 +210,7 @@ class StrictModel(BaseModel):
 
 class ReleaseModelBootstrapRequest(StrictModel):
     schema: Literal["fs2-serve.nebius.ai/model-bootstrap/v1"]
+    generation: str = Field(min_length=8, max_length=63, pattern=r"^[a-z0-9][a-z0-9.-]{6,61}[a-z0-9]$")
     proposals: list[ModelDeploymentPreviewProposal] = Field(min_length=1, max_length=200)
 
     def sha256(self) -> str:
@@ -1729,12 +1730,18 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         verified: Annotated[VerifiedReleaseIdentity, Depends(release_models_bootstrap)],
     ) -> AdminEnvelope[dict[str, Any]]:
         expected_digest = verified.assertion.resource_sha256
+        expected_generation = verified.assertion.resource_generation
         payload_digest = payload.sha256()
-        if expected_digest is None or expected_digest != payload_digest:
+        if (
+            expected_digest is None
+            or expected_digest != payload_digest
+            or expected_generation is None
+            or expected_generation != payload.generation
+        ):
             raise AdminProblemError(
                 403,
-                "release_model_bootstrap_digest_mismatch",
-                "release assertion is not bound to this model bootstrap payload",
+                "release_model_bootstrap_identity_mismatch",
+                "release assertion is not bound to this model bootstrap payload and generation",
             )
         preview_service = runtime.model_deployment_preview
         mutation_service = runtime.model_deployment_mutation
@@ -1815,6 +1822,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         return access_envelope(
             {
                 "payload_sha256": payload_digest,
+                "generation": payload.generation,
                 "models": results,
             }
         )

@@ -3050,6 +3050,12 @@ def test_grafana_reporting_role_is_aggregate_only_and_provisioned_by_migration_j
     assert "GRANT SELECT ON fs2_reporting_model_usage,fs2_reporting_principal_usage" in store_source
     assert "GRANT SELECT ON fs2_operations" not in store_source
     assert "GRANT SELECT,INSERT ON fs2_operation_events,fs2_audit_events" in store_source
+    assert (
+        "GRANT EXECUTE ON FUNCTION fs2_consume_session_exchange(text,integer,integer,integer)"
+        in store_source
+    )
+    assert "GRANT SELECT ON fs2_session_exchange_source_buckets" not in store_source
+    assert "GRANT SELECT ON fs2_session_exchange_aggregate_buckets" not in store_source
     assert "DELETE ON fs2_audit_events TO {quoted_maintenance}" in store_source
     assert "DELETE ON fs2_usage_facts TO {quoted_maintenance}" in store_source
     assert "GRANT SELECT (id,model_id,model_revision,status,attempt,lease_expires_at,deadline_at) " in store_source

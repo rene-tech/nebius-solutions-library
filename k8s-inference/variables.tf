@@ -192,6 +192,18 @@ variable "deployment" {
       bootstrap_model_ids = optional(set(string), [])
       fresh_install       = optional(bool, false)
       handoff_receipt     = optional(string)
+      bootstrap_assertion_secret_name = optional(
+        string,
+        "fs2-release-model-bootstrap-assertion",
+      )
+      bootstrap_assertion_generation = optional(string, "")
+      bootstrap_retained_assertions = optional(map(object({
+        assertion_generation = string
+        secret_name          = string
+        payload_json         = string
+        bootstrap_script     = string
+        runtime_image        = string
+      })), {})
       # Qualified serving checkpoints are optional; select one per model in
       # the admin console. A shared cache can also serve scientific batches.
       gpu_snapshots = optional(object({
@@ -1725,10 +1737,50 @@ variable "deployment" {
         var.deployment.models.selection == "profile" ?
         toset(jsondecode(file("${path.module}/catalog/profiles/model-profiles.json")).profiles[var.deployment.profiles.models].canonical_routes) :
         var.deployment.models.enabled,
-      )) == 0,
+      )) == 0 &&
+      (
+        length(var.deployment.dynamic_models.bootstrap_model_ids) == 0 || (
+          can(regex(
+            "^[a-z0-9][a-z0-9.-]{6,61}[a-z0-9]$",
+            var.deployment.dynamic_models.bootstrap_assertion_generation,
+          )) &&
+          can(regex(
+            "^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*$",
+            var.deployment.dynamic_models.bootstrap_assertion_secret_name,
+          )) &&
+          var.deployment.dynamic_models.bootstrap_assertion_secret_name == "fs2-release-model-bootstrap-${var.deployment.dynamic_models.bootstrap_assertion_generation}" &&
+          alltrue([
+            for generation_key, assertion in var.deployment.dynamic_models.bootstrap_retained_assertions :
+            can(regex("^[a-f0-9]{32}$", generation_key)) &&
+            can(regex("^[a-z0-9][a-z0-9.-]{6,61}[a-z0-9]$", assertion.assertion_generation)) &&
+            can(regex(
+              "^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*$",
+              assertion.secret_name,
+            )) &&
+            assertion.secret_name == "fs2-release-model-bootstrap-${assertion.assertion_generation}" &&
+            length(assertion.payload_json) >= 64 && length(assertion.payload_json) <= 900000 &&
+            can(jsondecode(assertion.payload_json)) &&
+            try(jsondecode(assertion.payload_json).schema, null) == "fs2-serve.nebius.ai/model-bootstrap/v1" &&
+            try(jsondecode(assertion.payload_json).generation, null) == assertion.assertion_generation &&
+            length(assertion.bootstrap_script) >= 512 && length(assertion.bootstrap_script) <= 65536 &&
+            can(regex("@sha256:[a-f0-9]{64}$", assertion.runtime_image)) &&
+            generation_key == substr(sha256(jsonencode({
+              payload_sha256        = sha256(assertion.payload_json)
+              implementation_sha256 = sha256(assertion.bootstrap_script)
+              runtime_image         = assertion.runtime_image
+              assertion_generation  = assertion.assertion_generation
+              assertion_secret_name = assertion.secret_name
+            })), 0, 32)
+          ]) &&
+          length(distinct(concat(
+            [var.deployment.dynamic_models.bootstrap_assertion_secret_name],
+            [for retained in values(var.deployment.dynamic_models.bootstrap_retained_assertions) : retained.secret_name],
+          ))) == 1 + length(var.deployment.dynamic_models.bootstrap_retained_assertions)
+        )
+      ),
       false,
     )
-    error_message = "dynamic_models must use one exclusive ownership mode: terraform (read-only controller), released (first cutover apply), or controller (write mode with KEDA and exactly one of fresh_install or a release handoff_receipt); bootstrap IDs must be selected models."
+    error_message = "dynamic_models must use one exclusive ownership mode: terraform, released, or controller; bootstrap IDs must be selected models and require a unique Secret name, public assertion generation, and valid append-only retained assertion map."
   }
 
   validation {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -20,6 +21,7 @@ from fs2_serve.auth import OperatorSessionService, PasswordWorkCapacityError, Pe
 from fs2_serve.client_source import ClientSourceError, TrustedClientSource
 from fs2_serve.memory_store import MemoryStore
 from fs2_serve.release_identity import ReleaseIdentityError
+from fs2_serve.session_exchange import session_exchange_coordinates
 from release_identity_testkit import ReleaseAuthorityFixture
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -59,12 +61,15 @@ def test_release_assertion_is_short_lived_audience_and_capability_bound() -> Non
     resource_bound = authority.bearer(
         ReleaseIdentityCapability.MODELS_BOOTSTRAP,
         resource_sha256="2" * 64,
+        resource_generation="release-test-01",
     )
-    assert authority.verifier.verify(
+    verified_resource = authority.verifier.verify(
         resource_bound,
         capability=ReleaseIdentityCapability.MODELS_BOOTSTRAP,
         purpose=ReleaseIdentityPurpose.ADMIN_AUTOMATION,
-    ).assertion.resource_sha256 == "2" * 64
+    ).assertion
+    assert verified_resource.resource_sha256 == "2" * 64
+    assert verified_resource.resource_generation == "release-test-01"
     with pytest.raises(ReleaseIdentityError):
         authority.verifier.verify(
             authority.bearer(
@@ -103,6 +108,57 @@ def test_static_bootstrap_is_absent_from_runtime_and_model_bootstrap_uses_one_us
     assert "/var/run/fs2-admin" not in bootstrap
 
 
+def test_model_bootstrap_recovery_is_generation_keyed_and_retains_job_history() -> None:
+    bootstrap = (REPOSITORY_ROOT / "stages/workloads/model_controller.tf").read_text(encoding="utf-8")
+    variables = (REPOSITORY_ROOT / "stages/workloads/variables.tf").read_text(encoding="utf-8")
+    outputs = (REPOSITORY_ROOT / "stages/workloads/outputs.tf").read_text(encoding="utf-8")
+    assert "generation = var.release_identity_model_bootstrap_assertion_generation" in bootstrap
+    assert "model_controller_bootstrap_current_spec" in bootstrap
+    assert "payload_json" in bootstrap
+    assert "bootstrap_script" in bootstrap
+    assert "runtime_image" in bootstrap
+    assert "generation_key == substr(sha256(jsonencode" in variables
+    assert bootstrap.count("for_each = local.model_controller_bootstrap_assertions") == 2
+    assert bootstrap.count("prevent_destroy = true") >= 2
+    assert "ignore_changes  = [data]" not in bootstrap
+    assert "ignore_changes  = [spec]" not in bootstrap
+    assert "secret_name = each.value.secret_name" in bootstrap
+    assert "image   = each.value.runtime_image" in bootstrap
+    assert "ValidatingAdmissionPolicy" in bootstrap
+    assert "object.immutable == true" in bootstrap
+    assert 'name      = "fs2-model-bootstrap-${each.key}"' in bootstrap
+    assert "release_identity_model_bootstrap_retained_assertions" in variables
+    assert "bootstrap_managed_generations" in outputs
+    assert "bootstrap_retained_generations" in outputs
+
+
+def test_postgres_session_exchange_uses_bounded_buckets_and_coalesced_evidence() -> None:
+    store = (REPOSITORY_ROOT / "components/control-plane/src/fs2_serve/postgres.py").read_text(encoding="utf-8")
+    migration = (
+        REPOSITORY_ROOT / "components/control-plane/migrations/0032_session_exchange_buckets.sql"
+    ).read_text(encoding="utf-8")
+    normalized_store = " ".join(store.split())
+    normalized_migration = " ".join(migration.split())
+    assert "fs2_consume_session_exchange($1,$2,$3,$4)" in store
+    assert "FROM fs2_audit_events WHERE action='session.exchange.attempt'" not in normalized_store
+    assert "admin-exchange-aggregate" not in store
+    assert "_SESSION_EXCHANGE_SOURCE_CACHE_SIZE = 4096" in store
+    assert "_SESSION_EXCHANGE_AGGREGATE_CACHE_SIZE = 64" in store
+    assert "slot BETWEEN 0 AND 65535" in migration
+    assert "shard BETWEEN 0 AND 15" in migration
+    assert "rejection_count" not in migration
+    assert "collision_rejection_count" not in migration
+    assert "Stable rejection states are read-only" in migration
+    assert migration.count("IF v_emit THEN") == 3
+    assert '"rejections_observed": "one_or_more"' in store
+    assert "CREATE INDEX fs2_session_exchange_source_forensics_idx" in migration
+    assert "CREATE INDEX fs2_session_exchange_aggregate_forensics_idx" in migration
+    assert "CREATE INDEX fs2_audit_session_exchange_forensics_idx" in migration
+    assert "SAI-10 owns the independent 0030_customer_storage_credentials.sql lineage" in migration
+    assert "SECURITY DEFINER SET search_path = pg_catalog, public" in normalized_migration
+    assert "DELETE FROM fs2_session_exchange" not in migration
+
+
 def test_trusted_proxy_source_is_canonical_and_untrusted_forwarding_is_ignored() -> None:
     resolver = TrustedClientSource(["10.20.0.0/24"])
     assert resolver.resolve(peer="10.20.0.9", forwarded="203.0.113.7") == "203.0.113.7"
@@ -128,30 +184,126 @@ async def test_source_and_aggregate_limits_are_independent_and_fingerprints_are_
             attempted_at=now,
             window_seconds=60,
             maximum_source_attempts=5,
-            maximum_aggregate_attempts=10,
+            maximum_aggregate_attempts=200,
         ) is SessionExchangeAdmission.ADMITTED
     assert await store.consume_operator_session_exchange(
         fingerprint,
         attempted_at=now,
         window_seconds=60,
         maximum_source_attempts=5,
-        maximum_aggregate_attempts=10,
+        maximum_aggregate_attempts=200,
     ) is SessionExchangeAdmission.SOURCE_THROTTLED
-    for index in range(5):
-        assert await store.consume_operator_session_exchange(
-            sessions.source_fingerprint(f"198.51.100.{index + 1}"),
+
+    aggregate_store = MemoryStore(cipher, hasher)
+    candidates = [hashlib.sha256(f"source-{index}".encode()).hexdigest() for index in range(1000)]
+    target = session_exchange_coordinates(
+        candidates[0],
+        window_seconds=60,
+        maximum_source_attempts=5,
+        maximum_aggregate_attempts=10,
+    )
+    same_shard = [
+        candidate
+        for candidate in candidates
+        if session_exchange_coordinates(
+            candidate,
+            window_seconds=60,
+            maximum_source_attempts=5,
+            maximum_aggregate_attempts=10,
+        ).aggregate_shard == target.aggregate_shard
+    ]
+    for candidate in same_shard[: target.aggregate_shard_quota]:
+        assert await aggregate_store.consume_operator_session_exchange(
+            candidate,
             attempted_at=now,
             window_seconds=60,
             maximum_source_attempts=5,
             maximum_aggregate_attempts=10,
         ) is SessionExchangeAdmission.ADMITTED
-    assert await store.consume_operator_session_exchange(
-        sessions.source_fingerprint("192.0.2.1"),
+    assert await aggregate_store.consume_operator_session_exchange(
+        same_shard[target.aggregate_shard_quota],
         attempted_at=now,
         window_seconds=60,
         maximum_source_attempts=5,
         maximum_aggregate_attempts=10,
     ) is SessionExchangeAdmission.AGGREGATE_THROTTLED
+    aggregate_rejections = [
+        event
+        for event in aggregate_store.audit
+        if event.action == "session.exchange.attempt"
+        and event.outcome == str(SessionExchangeAdmission.AGGREGATE_THROTTLED)
+    ]
+    for candidate in same_shard[
+        target.aggregate_shard_quota + 1 : target.aggregate_shard_quota + 101
+    ]:
+        assert await aggregate_store.consume_operator_session_exchange(
+            candidate,
+            attempted_at=now,
+            window_seconds=60,
+            maximum_source_attempts=5,
+            maximum_aggregate_attempts=10,
+        ) is SessionExchangeAdmission.AGGREGATE_THROTTLED
+    assert [
+        event
+        for event in aggregate_store.audit
+        if event.action == "session.exchange.attempt"
+        and event.outcome == str(SessionExchangeAdmission.AGGREGATE_THROTTLED)
+    ] == aggregate_rejections
+
+
+@pytest.mark.asyncio
+async def test_fixed_window_and_collision_semantics_do_not_lock_an_aggregate_shard(cipher, hasher) -> None:
+    store = MemoryStore(cipher, hasher)
+    window_start = datetime.fromtimestamp(1_800_000_000, tz=UTC)
+    source_a = "00000001000000020000" + "1" * 44
+    source_b = "00000001000000020000" + "2" * 44
+    source_collision = "00000001000000020000" + "3" * 44
+    unrelated = "00000003000000040000" + "4" * 44
+    for source in (source_a, source_b):
+        assert await store.consume_operator_session_exchange(
+            source,
+            attempted_at=window_start,
+            window_seconds=60,
+            maximum_source_attempts=5,
+            maximum_aggregate_attempts=100,
+        ) is SessionExchangeAdmission.ADMITTED
+    assert await store.consume_operator_session_exchange(
+        source_collision,
+        attempted_at=window_start,
+        window_seconds=60,
+        maximum_source_attempts=5,
+        maximum_aggregate_attempts=100,
+    ) is SessionExchangeAdmission.SOURCE_THROTTLED
+    assert await store.consume_operator_session_exchange(
+        unrelated,
+        attempted_at=window_start,
+        window_seconds=60,
+        maximum_source_attempts=5,
+        maximum_aggregate_attempts=100,
+    ) is SessionExchangeAdmission.ADMITTED
+
+    boundary_store = MemoryStore(cipher, hasher)
+    assert await boundary_store.consume_operator_session_exchange(
+        source_a,
+        attempted_at=window_start + timedelta(seconds=59),
+        window_seconds=60,
+        maximum_source_attempts=1,
+        maximum_aggregate_attempts=100,
+    ) is SessionExchangeAdmission.ADMITTED
+    assert await boundary_store.consume_operator_session_exchange(
+        source_a,
+        attempted_at=window_start + timedelta(seconds=59, milliseconds=500),
+        window_seconds=60,
+        maximum_source_attempts=1,
+        maximum_aggregate_attempts=100,
+    ) is SessionExchangeAdmission.SOURCE_THROTTLED
+    assert await boundary_store.consume_operator_session_exchange(
+        source_a,
+        attempted_at=window_start + timedelta(seconds=60),
+        window_seconds=60,
+        maximum_source_attempts=1,
+        maximum_aggregate_attempts=100,
+    ) is SessionExchangeAdmission.ADMITTED
 
 
 @pytest.mark.asyncio

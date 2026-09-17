@@ -37,9 +37,9 @@ def test_committed_postgresql_contract_is_exact_emitted_release_receipt_input() 
     receipt = committed["required_release_receipt_inputs"]
     assert receipt == {
         "first_migration_version": "0001_initial.sql",
-        "last_migration_version": "0031_release_identity_receipts.sql",
-        "migration_count": 31,
-        "migration_set_sha256": "6db59f99747ad837a7b53137d9d1df7983eacc48383b75ba2ecdcf359bff0fc6",
+        "last_migration_version": "0032_session_exchange_buckets.sql",
+        "migration_count": 32,
+        "migration_set_sha256": "9fbf63850b4e274c12b046af6dd9419a8e7323ecfb09f0fcccb63d2e3a4cbd1e",
         "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca",
     }
     migrations = committed["migration_set"]["ordered_migrations"]
@@ -73,6 +73,13 @@ def test_scientific_runtime_grant_repairs_are_additive_and_readiness_checked() -
     assert wait_source.count("fs2_scientific_batches','scheduling_digest','UPDATE'") == 2
     for privilege in ("SELECT", "INSERT"):
         assert wait_source.count(f"fs2_release_identity_receipts','{privilege}'") == 2
+    assert wait_source.count(
+        "fs2_consume_session_exchange(text,integer,integer,integer)','EXECUTE'"
+    ) == 2
+    assert "fs2_session_exchange_source_buckets','SELECT'" in wait_source
+    assert "fs2_session_exchange_aggregate_buckets','SELECT'" in wait_source
+    assert wait_source.count("fs2_session_exchange_source_buckets','SELECT'") == 2
+    assert wait_source.count("fs2_session_exchange_aggregate_buckets','SELECT'") == 2
     assert "SELECT,INSERT" not in wait_source
     assert "database schema runtime privileges are incomplete" in wait_source
 

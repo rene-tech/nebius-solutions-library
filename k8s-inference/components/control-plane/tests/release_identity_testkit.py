@@ -73,6 +73,7 @@ class ReleaseAuthorityFixture:
         assertion_id: str | None = None,
         now: datetime | None = None,
         resource_sha256: str | None = None,
+        resource_generation: str | None = None,
     ) -> str:
         issued = now or datetime.now(UTC)
         purpose = (
@@ -100,6 +101,7 @@ class ReleaseAuthorityFixture:
             "impersonation_allowed": False,
             "authorization_closure_sha256": self.closure,
             "resource_sha256": resource_sha256,
+            "resource_generation": resource_generation,
             "operator": operator,
         }
         protected = _segment(

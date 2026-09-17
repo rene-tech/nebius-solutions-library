@@ -1332,20 +1332,119 @@ locals {
     }
   }
   model_controller_bootstrap_payload = {
-    schema    = "fs2-serve.nebius.ai/model-bootstrap/v1"
-    proposals = values(local.model_controller_bootstrap_proposals)
+    schema     = "fs2-serve.nebius.ai/model-bootstrap/v1"
+    generation = var.release_identity_model_bootstrap_assertion_generation
+    proposals  = values(local.model_controller_bootstrap_proposals)
   }
-  # The bootstrap Job and immutable ConfigMap must roll when either desired
-  # seeds, this bounded implementation, or its exact runtime image changes.
-  model_controller_bootstrap_identity = {
-    payload_sha256        = sha256(jsonencode(local.model_controller_bootstrap_payload))
-    implementation_sha256 = filesha256("${path.module}/model_controller.tf")
-    runtime_image         = "${var.control_plane_image.repository}@${var.control_plane_image.digest}"
-  }
-  model_controller_bootstrap_digest = sha256(jsonencode(local.model_controller_bootstrap_identity))
   model_controller_bootstrap_enabled = (
     var.model_controller.workload_owner == "controller" &&
     length(var.model_controller.bootstrap_model_ids) > 0
+  )
+  model_controller_bootstrap_script = <<-PY
+    import hashlib
+    import json
+    import os
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+    from pathlib import Path
+
+    base = os.environ["FS2_BOOTSTRAP_BASE_URL"].rstrip("/")
+    public_origin = os.environ["FS2_BOOTSTRAP_PUBLIC_ORIGIN"].rstrip("/")
+    public_authority = urllib.parse.urlsplit(public_origin).netloc
+    assertion = Path("/var/run/fs2-release/assertion").read_text(encoding="utf-8").strip()
+    payload_raw = Path("/bootstrap/bootstrap.json").read_bytes()
+    payload = json.loads(payload_raw)
+
+    def call(path, *, method="GET", body=None, accepted=(200,)):
+        headers = {
+            "Accept": "application/json",
+            "Authorization": "Bearer " + assertion,
+            "Host": public_authority,
+            "Origin": public_origin,
+        }
+        if body is not None:
+            headers["Content-Type"] = "application/json"
+        request = urllib.request.Request(
+            base + path,
+            data=None if body is None else json.dumps(body, sort_keys=True, separators=(",", ":")).encode("utf-8"),
+            headers=headers,
+            method=method,
+        )
+        try:
+            response = urllib.request.urlopen(request, timeout=15)
+            document = json.loads(response.read()) if response.status != 204 else None
+            if response.status not in accepted:
+                raise RuntimeError(f"unexpected HTTP {response.status} for {path}")
+            return response.status, document, response.headers
+        except urllib.error.HTTPError as error:
+            raw = error.read()
+            document = json.loads(raw) if raw else None
+            if error.code in accepted:
+                return error.code, document, error.headers
+            code = document.get("code", "unknown") if isinstance(document, dict) else "unknown"
+            raise RuntimeError(f"HTTP {error.code} ({code}) for {path}") from None
+
+    _, response, _ = call(
+        "/admin/api/v1/release/model-bootstrap",
+        method="POST",
+        body=payload,
+    )
+    data = response.get("data") if isinstance(response, dict) else None
+    models = data.get("models") if isinstance(data, dict) else None
+    if (
+        not isinstance(models, list)
+        or len(models) != len(payload["proposals"])
+        or data.get("payload_sha256") != hashlib.sha256(payload_raw).hexdigest()
+        or data.get("generation") != payload["generation"]
+    ):
+        raise RuntimeError("release model bootstrap returned an invalid receipt")
+    for model in models:
+        if not isinstance(model, dict) or model.get("projection") not in ("preserved", "applied", "pending"):
+            raise RuntimeError("release model bootstrap returned an invalid model projection")
+        print(f"model bootstrap projection: {model['name']} ({model['projection']})")
+  PY
+  # Each retained value is a complete non-secret immutable execution spec.
+  # Its key is derived from this identity, never supplied as an opaque label.
+  model_controller_bootstrap_current_spec = {
+    assertion_generation = var.release_identity_model_bootstrap_assertion_generation
+    secret_name          = var.release_identity_model_bootstrap_assertion_secret_name
+    payload_json         = jsonencode(local.model_controller_bootstrap_payload)
+    bootstrap_script     = local.model_controller_bootstrap_script
+    runtime_image        = "${var.control_plane_image.repository}@${var.control_plane_image.digest}"
+  }
+  model_controller_bootstrap_current_identity = {
+    payload_sha256        = sha256(local.model_controller_bootstrap_current_spec.payload_json)
+    implementation_sha256 = sha256(local.model_controller_bootstrap_current_spec.bootstrap_script)
+    runtime_image         = local.model_controller_bootstrap_current_spec.runtime_image
+    assertion_generation  = local.model_controller_bootstrap_current_spec.assertion_generation
+    assertion_secret_name = local.model_controller_bootstrap_current_spec.secret_name
+  }
+  model_controller_bootstrap_current_generation = substr(
+    sha256(jsonencode(local.model_controller_bootstrap_current_identity)),
+    0,
+    32,
+  )
+  model_controller_bootstrap_retained_specs = {
+    for generation_key, spec in var.release_identity_model_bootstrap_retained_assertions :
+    generation_key => merge(spec, {
+      identity = {
+        payload_sha256        = sha256(spec.payload_json)
+        implementation_sha256 = sha256(spec.bootstrap_script)
+        runtime_image         = spec.runtime_image
+        assertion_generation  = spec.assertion_generation
+        assertion_secret_name = spec.secret_name
+      }
+    })
+  }
+  model_controller_bootstrap_assertions = merge(
+    local.model_controller_bootstrap_retained_specs,
+    local.model_controller_bootstrap_enabled ? {
+      (local.model_controller_bootstrap_current_generation) = merge(
+        local.model_controller_bootstrap_current_spec,
+        { identity = local.model_controller_bootstrap_current_identity },
+      )
+    } : {},
   )
 }
 
@@ -1409,6 +1508,22 @@ resource "terraform_data" "model_controller_contract" {
       error_message = "Every bootstrap model must pass the retained artifact/runtime/accelerator/template qualification join. Ineligible bootstrap IDs: ${jsonencode(sort(tolist(setsubtract(var.model_controller.bootstrap_model_ids, toset(local.model_controller_dynamic_model_ids)))))}; failed checks: ${jsonencode(local.model_controller_ineligible_reasons)}."
     }
 
+    precondition {
+      condition = !local.model_controller_bootstrap_enabled || (
+        can(regex("^[a-z0-9][a-z0-9.-]{6,61}[a-z0-9]$", var.release_identity_model_bootstrap_assertion_generation)) &&
+        var.release_identity_model_bootstrap_assertion_secret_name == "fs2-release-model-bootstrap-${var.release_identity_model_bootstrap_assertion_generation}" &&
+        !contains(
+          keys(var.release_identity_model_bootstrap_retained_assertions),
+          local.model_controller_bootstrap_current_generation,
+        ) &&
+        length(distinct(concat(
+          [var.release_identity_model_bootstrap_assertion_secret_name],
+          [for retained in values(var.release_identity_model_bootstrap_retained_assertions) : retained.secret_name],
+        ))) == 1 + length(var.release_identity_model_bootstrap_retained_assertions)
+      )
+      error_message = "Model bootstrap requires a new signed public assertion generation and its exact fs2-release-model-bootstrap-<generation> immutable Secret name; retain every prior full execution spec under its identity-derived key instead of replacing or deleting its Job."
+    }
+
     # A measured elasticity receipt is status, not permission to configure
     # Kubernetes scaling. An explicit zero floor is also how a new runtime's
     # real demand-to-ready-to-idle behavior can be tested. The unchanged
@@ -1458,81 +1573,26 @@ resource "kubernetes_config_map_v1" "model_controller_bundles" {
 }
 
 resource "kubernetes_config_map_v1" "model_controller_bootstrap" {
-  count = local.model_controller_bootstrap_enabled ? 1 : 0
+  for_each = local.model_controller_bootstrap_assertions
 
   metadata {
-    name      = "fs2-model-bootstrap-${substr(local.model_controller_bootstrap_digest, 0, 16)}"
+    name      = "fs2-model-bootstrap-${each.key}"
     namespace = "fs2-system"
-    labels    = merge(local.common_labels, { "app.kubernetes.io/component" = "model-bootstrap" })
+    labels = merge(local.common_labels, {
+      "app.kubernetes.io/component" = "model-bootstrap"
+      "fs2.nebius.ai/generation"     = each.key
+    })
   }
   immutable = true
   data = {
-    "bootstrap-identity.json" = jsonencode(local.model_controller_bootstrap_identity)
-    "bootstrap.json"          = jsonencode(local.model_controller_bootstrap_payload)
-    "bootstrap.py"            = <<-PY
-      import json
-      import os
-      import urllib.error
-      import urllib.parse
-      import urllib.request
-      from pathlib import Path
-
-      base = os.environ["FS2_BOOTSTRAP_BASE_URL"].rstrip("/")
-      public_origin = os.environ["FS2_BOOTSTRAP_PUBLIC_ORIGIN"].rstrip("/")
-      public_authority = urllib.parse.urlsplit(public_origin).netloc
-      assertion = Path("/var/run/fs2-release/assertion").read_text(encoding="utf-8").strip()
-      payload = json.loads(Path("/bootstrap/bootstrap.json").read_text(encoding="utf-8"))
-
-      def call(path, *, method="GET", body=None, accepted=(200,)):
-          headers = {
-              "Accept": "application/json",
-              "Authorization": "Bearer " + assertion,
-              "Host": public_authority,
-              "Origin": public_origin,
-          }
-          if body is not None:
-              headers["Content-Type"] = "application/json"
-          request = urllib.request.Request(
-              base + path,
-              data=None if body is None else json.dumps(body, sort_keys=True, separators=(",", ":")).encode("utf-8"),
-              headers=headers,
-              method=method,
-          )
-          try:
-              response = urllib.request.urlopen(request, timeout=15)
-              document = json.loads(response.read()) if response.status != 204 else None
-              if response.status not in accepted:
-                  raise RuntimeError(f"unexpected HTTP {response.status} for {path}")
-              return response.status, document, response.headers
-          except urllib.error.HTTPError as error:
-              raw = error.read()
-              document = json.loads(raw) if raw else None
-              if error.code in accepted:
-                  return error.code, document, error.headers
-              code = document.get("code", "unknown") if isinstance(document, dict) else "unknown"
-              raise RuntimeError(f"HTTP {error.code} ({code}) for {path}") from None
-
-      _, response, _ = call(
-          "/admin/api/v1/release/model-bootstrap",
-          method="POST",
-          body=payload,
-      )
-      data = response.get("data") if isinstance(response, dict) else None
-      models = data.get("models") if isinstance(data, dict) else None
-      if (
-          not isinstance(models, list)
-          or len(models) != len(payload["proposals"])
-          or data.get("payload_sha256") != "${local.model_controller_bootstrap_identity.payload_sha256}"
-      ):
-          raise RuntimeError("release model bootstrap returned an invalid receipt")
-      for model in models:
-          if not isinstance(model, dict) or model.get("projection") not in ("preserved", "applied", "pending"):
-              raise RuntimeError("release model bootstrap returned an invalid model projection")
-          print(f"model bootstrap projection: {model['name']} ({model['projection']})")
-    PY
+    "bootstrap-identity.json" = jsonencode(each.value.identity)
+    "bootstrap.json"          = each.value.payload_json
+    "bootstrap.py"            = each.value.bootstrap_script
   }
 
-  lifecycle { create_before_destroy = true }
+  lifecycle {
+    prevent_destroy = true
+  }
   depends_on = [terraform_data.model_controller_contract]
 }
 
@@ -1569,13 +1629,82 @@ resource "kubernetes_network_policy_v1" "model_controller_bootstrap" {
   depends_on = [terraform_data.cluster_contract]
 }
 
+resource "kubernetes_manifest" "model_controller_bootstrap_secret_policy" {
+  count = (var.model_controller.enabled || length(local.model_controller_bootstrap_assertions) > 0) ? 1 : 0
+
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicy"
+    metadata = {
+      name   = "fs2-model-bootstrap-assertion-secrets"
+      labels = local.common_labels
+    }
+    spec = {
+      failurePolicy = "Fail"
+      matchConstraints = {
+        resourceRules = [{
+          apiGroups   = [""]
+          apiVersions = ["v1"]
+          operations  = ["CREATE", "UPDATE"]
+          resources   = ["secrets"]
+          scope       = "Namespaced"
+        }]
+      }
+      matchConditions = [{
+        name       = "model-bootstrap-assertion-secret"
+        expression = "object.metadata.namespace == 'fs2-system' && object.metadata.name.startsWith('fs2-release-model-bootstrap-')"
+      }]
+      validations = [
+        {
+          expression = "has(object.immutable) && object.immutable == true"
+          message    = "model-bootstrap assertion Secrets must be immutable"
+        },
+        {
+          expression = "has(object.metadata.labels) && 'fs2.nebius.ai/assertion-generation' in object.metadata.labels && object.metadata.labels['fs2.nebius.ai/assertion-generation'].matches('^[a-z0-9][a-z0-9.-]{6,61}[a-z0-9]$') && object.metadata.name == 'fs2-release-model-bootstrap-' + object.metadata.labels['fs2.nebius.ai/assertion-generation']"
+          message    = "model-bootstrap assertion Secret name and generation label must be identical"
+        },
+        {
+          expression = "has(object.data) && object.data.size() == 1 && 'assertion' in object.data && (!has(object.stringData) || object.stringData.size() == 0)"
+          message    = "model-bootstrap assertion Secrets contain only the assertion data key"
+        },
+      ]
+    }
+  }
+
+  lifecycle { prevent_destroy = true }
+  depends_on = [terraform_data.cluster_contract]
+}
+
+resource "kubernetes_manifest" "model_controller_bootstrap_secret_policy_binding" {
+  count = (var.model_controller.enabled || length(local.model_controller_bootstrap_assertions) > 0) ? 1 : 0
+
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicyBinding"
+    metadata = {
+      name   = "fs2-model-bootstrap-assertion-secrets"
+      labels = local.common_labels
+    }
+    spec = {
+      policyName        = "fs2-model-bootstrap-assertion-secrets"
+      validationActions = ["Deny"]
+    }
+  }
+
+  lifecycle { prevent_destroy = true }
+  depends_on = [kubernetes_manifest.model_controller_bootstrap_secret_policy]
+}
+
 resource "kubernetes_job_v1" "model_controller_bootstrap" {
-  count = local.model_controller_bootstrap_enabled ? 1 : 0
+  for_each = local.model_controller_bootstrap_assertions
 
   metadata {
-    name      = "fs2-model-bootstrap-${substr(local.model_controller_bootstrap_digest, 0, 16)}"
+    name      = "fs2-model-bootstrap-${each.key}"
     namespace = "fs2-system"
-    labels    = merge(local.common_labels, { "app.kubernetes.io/component" = "model-bootstrap" })
+    labels = merge(local.common_labels, {
+      "app.kubernetes.io/component" = "model-bootstrap"
+      "fs2.nebius.ai/generation"     = each.key
+    })
   }
   wait_for_completion = true
   timeouts { create = "15m" }
@@ -1587,14 +1716,17 @@ resource "kubernetes_job_v1" "model_controller_bootstrap" {
     active_deadline_seconds = 600
     template {
       metadata {
-        labels = merge(local.common_labels, { "app.kubernetes.io/component" = "model-bootstrap" })
+        labels = merge(local.common_labels, {
+          "app.kubernetes.io/component" = "model-bootstrap"
+          "fs2.nebius.ai/generation"     = each.key
+        })
       }
       spec {
         automount_service_account_token = false
         restart_policy                  = "Never"
         container {
           name    = "bootstrap"
-          image   = "${var.control_plane_image.repository}@${var.control_plane_image.digest}"
+          image   = each.value.runtime_image
           command = ["python", "/bootstrap/bootstrap.py"]
           env {
             name  = "FS2_BOOTSTRAP_BASE_URL"
@@ -1628,12 +1760,12 @@ resource "kubernetes_job_v1" "model_controller_bootstrap" {
         }
         volume {
           name = "bootstrap"
-          config_map { name = kubernetes_config_map_v1.model_controller_bootstrap[0].metadata[0].name }
+          config_map { name = kubernetes_config_map_v1.model_controller_bootstrap[each.key].metadata[0].name }
         }
         volume {
           name = "release-assertion"
           secret {
-            secret_name = var.release_identity_model_bootstrap_assertion_secret_name
+            secret_name = each.value.secret_name
             items {
               key  = "assertion"
               path = "assertion"
@@ -1644,8 +1776,13 @@ resource "kubernetes_job_v1" "model_controller_bootstrap" {
     }
   }
 
+  lifecycle {
+    prevent_destroy = true
+  }
+
   depends_on = [
     helm_release.control_plane,
     kubernetes_network_policy_v1.model_controller_bootstrap,
+    kubernetes_manifest.model_controller_bootstrap_secret_policy_binding,
   ]
 }

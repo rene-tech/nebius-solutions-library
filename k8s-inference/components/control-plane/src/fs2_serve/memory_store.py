@@ -85,6 +85,7 @@ from .models import (
     TokenView,
 )
 from .runtime import sanitize_error_detail
+from .session_exchange import session_exchange_coordinates, session_exchange_window_start
 from .store import (
     BudgetExceededError,
     ConcurrencyExceededError,
@@ -131,6 +132,22 @@ class _ActivationEvent:
     status: ActivationIntentStatus
     attempt: int
     fencing_token: int
+
+
+@dataclass
+class _SessionExchangeSourceBucket:
+    source_fingerprint: str
+    window_started_at: datetime
+    admitted_count: int = 0
+    rejection_observed: bool = False
+
+
+@dataclass
+class _SessionExchangeAggregateBucket:
+    window_started_at: datetime
+    admitted_count: int = 0
+    rejection_observed: bool = False
+    collision_rejection_observed: bool = False
 
 
 class MemoryStore:
@@ -184,8 +201,8 @@ class MemoryStore:
         }
         self.operator_credentials: dict[UUID, tuple[str, str, str]] = {}
         self.operator_sessions: dict[UUID, OperatorSessionRecord] = {}
-        self.operator_session_exchange_attempts: dict[str, list[datetime]] = {}
-        self.operator_session_exchange_aggregate: list[datetime] = []
+        self.operator_session_exchange_attempts: dict[int, _SessionExchangeSourceBucket] = {}
+        self.operator_session_exchange_aggregate: dict[int, _SessionExchangeAggregateBucket] = {}
         self.release_identity_assertions: set[UUID] = set()
         self.configuration_revisions: dict[int, ConfigurationRevision] = {}
         self.configuration_plans: dict[UUID, ConfigurationPlan] = {}
@@ -862,6 +879,7 @@ class MemoryStore:
                 "capability": capability,
                 "purpose": str(assertion.purpose),
                 "session_id": assertion.session_id,
+                "resource_generation": assertion.resource_generation,
             },
         )
 
@@ -969,26 +987,103 @@ class MemoryStore:
         maximum_source_attempts: int,
         maximum_aggregate_attempts: int,
     ) -> SessionExchangeAdmission:
-        if attempted_at.tzinfo is None:
-            raise ValueError("operator exchange timestamp must be timezone-aware")
+        coordinates = session_exchange_coordinates(
+            source_fingerprint,
+            window_seconds=window_seconds,
+            maximum_source_attempts=maximum_source_attempts,
+            maximum_aggregate_attempts=maximum_aggregate_attempts,
+        )
+        window_started_at = session_exchange_window_start(attempted_at, window_seconds)
         async with self._lock:
-            window_start = attempted_at - timedelta(seconds=window_seconds)
-            attempts = [
-                observed
-                for observed in self.operator_session_exchange_attempts.get(source_fingerprint, [])
-                if observed > window_start
-            ]
-            aggregate = [observed for observed in self.operator_session_exchange_aggregate if observed > window_start]
-            if len(aggregate) >= maximum_aggregate_attempts:
-                admission = SessionExchangeAdmission.AGGREGATE_THROTTLED
-            elif len(attempts) >= maximum_source_attempts:
-                admission = SessionExchangeAdmission.SOURCE_THROTTLED
+            source_bucket = next(
+                (
+                    bucket
+                    for slot in (coordinates.source_slot_a, coordinates.source_slot_b)
+                    if (bucket := self.operator_session_exchange_attempts.get(slot)) is not None
+                    and bucket.window_started_at == window_started_at
+                    and bucket.source_fingerprint == source_fingerprint
+                ),
+                None,
+            )
+            if source_bucket is not None and source_bucket.admitted_count >= maximum_source_attempts:
+                if not source_bucket.rejection_observed:
+                    source_bucket.rejection_observed = True
+                    self._session_exchange_rejection_audit(
+                        source_fingerprint=source_fingerprint,
+                        admission=SessionExchangeAdmission.SOURCE_THROTTLED,
+                        evidence_kind="source_limit",
+                        window_started_at=window_started_at,
+                        window_seconds=window_seconds,
+                        maximum_source_attempts=maximum_source_attempts,
+                        maximum_aggregate_attempts=maximum_aggregate_attempts,
+                        source_slot=next(
+                            slot
+                            for slot in (coordinates.source_slot_a, coordinates.source_slot_b)
+                            if self.operator_session_exchange_attempts.get(slot) is source_bucket
+                        ),
+                        aggregate_shard=coordinates.aggregate_shard,
+                    )
+                return SessionExchangeAdmission.SOURCE_THROTTLED
+
+            aggregate = self.operator_session_exchange_aggregate.get(coordinates.aggregate_shard)
+            if aggregate is None or aggregate.window_started_at != window_started_at:
+                aggregate = _SessionExchangeAggregateBucket(window_started_at=window_started_at)
+                self.operator_session_exchange_aggregate[coordinates.aggregate_shard] = aggregate
+            if aggregate.admitted_count >= coordinates.aggregate_shard_quota:
+                if not aggregate.rejection_observed:
+                    aggregate.rejection_observed = True
+                    self._session_exchange_rejection_audit(
+                        source_fingerprint=source_fingerprint,
+                        admission=SessionExchangeAdmission.AGGREGATE_THROTTLED,
+                        evidence_kind="aggregate_shard_limit",
+                        window_started_at=window_started_at,
+                        window_seconds=window_seconds,
+                        maximum_source_attempts=maximum_source_attempts,
+                        maximum_aggregate_attempts=maximum_aggregate_attempts,
+                        source_slot=coordinates.source_slot_a,
+                        aggregate_shard=coordinates.aggregate_shard,
+                    )
+                return SessionExchangeAdmission.AGGREGATE_THROTTLED
+
+            if source_bucket is None:
+                source_slot = next(
+                    (
+                        slot
+                        for slot in sorted((coordinates.source_slot_a, coordinates.source_slot_b))
+                        if (existing := self.operator_session_exchange_attempts.get(slot)) is None
+                        or existing.window_started_at < window_started_at
+                    ),
+                    None,
+                )
+                if source_slot is None:
+                    if not aggregate.collision_rejection_observed:
+                        aggregate.collision_rejection_observed = True
+                        self._session_exchange_rejection_audit(
+                            source_fingerprint=source_fingerprint,
+                            admission=SessionExchangeAdmission.SOURCE_THROTTLED,
+                            evidence_kind="source_slot_collision",
+                            window_started_at=window_started_at,
+                            window_seconds=window_seconds,
+                            maximum_source_attempts=maximum_source_attempts,
+                            maximum_aggregate_attempts=maximum_aggregate_attempts,
+                            source_slot=coordinates.source_slot_a,
+                            aggregate_shard=coordinates.aggregate_shard,
+                        )
+                    return SessionExchangeAdmission.SOURCE_THROTTLED
+                source_bucket = _SessionExchangeSourceBucket(
+                    source_fingerprint=source_fingerprint,
+                    window_started_at=window_started_at,
+                )
+                self.operator_session_exchange_attempts[source_slot] = source_bucket
             else:
-                admission = SessionExchangeAdmission.ADMITTED
-                attempts.append(attempted_at)
-                self.operator_session_exchange_attempts[source_fingerprint] = attempts
-                aggregate.append(attempted_at)
-                self.operator_session_exchange_aggregate = aggregate
+                source_slot = next(
+                    slot
+                    for slot in (coordinates.source_slot_a, coordinates.source_slot_b)
+                    if self.operator_session_exchange_attempts.get(slot) is source_bucket
+                )
+
+            aggregate.admitted_count += 1
+            source_bucket.admitted_count += 1
             self._audit(
                 actor="anonymous",
                 tenant_id=None,
@@ -996,14 +1091,53 @@ class MemoryStore:
                 action="session.exchange.attempt",
                 target_type="network_source_fingerprint",
                 target_id=source_fingerprint,
-                outcome="accepted" if admission is SessionExchangeAdmission.ADMITTED else str(admission),
+                outcome="accepted",
                 detail={
+                    "limiter": "bounded-sharded-fixed-window-v1",
+                    "window_started_at": window_started_at.isoformat(),
                     "window_seconds": window_seconds,
                     "maximum_source_attempts": maximum_source_attempts,
                     "maximum_aggregate_attempts": maximum_aggregate_attempts,
+                    "source_slot": source_slot,
+                    "aggregate_shard": coordinates.aggregate_shard,
                 },
             )
-            return admission
+            return SessionExchangeAdmission.ADMITTED
+
+    def _session_exchange_rejection_audit(
+        self,
+        *,
+        source_fingerprint: str,
+        admission: SessionExchangeAdmission,
+        evidence_kind: str,
+        window_started_at: datetime,
+        window_seconds: int,
+        maximum_source_attempts: int,
+        maximum_aggregate_attempts: int,
+        source_slot: int,
+        aggregate_shard: int,
+    ) -> None:
+        self._audit(
+            actor="anonymous",
+            tenant_id=None,
+            token_id=None,
+            action="session.exchange.attempt",
+            target_type="network_source_fingerprint",
+            target_id=source_fingerprint,
+            outcome=str(admission),
+            detail={
+                "limiter": "bounded-sharded-fixed-window-v1",
+                "window_started_at": window_started_at.isoformat(),
+                "window_seconds": window_seconds,
+                "maximum_source_attempts": maximum_source_attempts,
+                "maximum_aggregate_attempts": maximum_aggregate_attempts,
+                "source_slot": source_slot,
+                "aggregate_shard": aggregate_shard,
+                "evidence": "coalesced_transition",
+                "evidence_kind": evidence_kind,
+                "rejections_observed": "one_or_more",
+            },
+        )
 
     async def create_operator_session(
         self,

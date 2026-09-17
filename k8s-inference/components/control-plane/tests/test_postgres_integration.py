@@ -95,6 +95,7 @@ from fs2_serve.models import (
 from fs2_serve.postgres import PostgresMaintenanceStore, PostgresStore, _decode_audit_detail
 from fs2_serve.postgresql_release import EXPECTED_MIGRATIONS
 from fs2_serve.runtime import ActivationError, StubRuntimeClient
+from fs2_serve.session_exchange import session_exchange_coordinates
 from fs2_serve.scientific_artifacts import FinalizeArtifactUpload, PostgresArtifactRepository, ScientificArtifactService
 from fs2_serve.scientific_batch.codec import state_from_value, state_to_value
 from fs2_serve.scientific_batch.controller import ScientificBatchController
@@ -213,6 +214,7 @@ async def postgres_store(cipher: PayloadCipher, hasher: KeyedHasher) -> Postgres
             "fs2_configuration_reconciliation_events,fs2_configuration_plans,"
             "fs2_configuration_revisions,fs2_activation_controller_status,fs2_activation_target_state,"
             "fs2_activation_model_fences,fs2_activation_intents,"
+            "fs2_session_exchange_source_buckets,fs2_session_exchange_aggregate_buckets,"
             "fs2_release_identity_receipts,fs2_operator_credentials,fs2_operator_sessions,"
             "fs2_usage_facts,fs2_audit_events,"
             "fs2_operation_events,fs2_operations,fs2_tokens "
@@ -230,6 +232,7 @@ async def postgres_store(cipher: PayloadCipher, hasher: KeyedHasher) -> Postgres
                 "fs2_configuration_reconciliation_events,fs2_configuration_plans,"
                 "fs2_configuration_revisions,fs2_activation_controller_status,fs2_activation_target_state,"
                 "fs2_activation_model_fences,fs2_activation_intents,"
+                "fs2_session_exchange_source_buckets,fs2_session_exchange_aggregate_buckets,"
                 "fs2_release_identity_receipts,fs2_operator_credentials,fs2_operator_sessions,"
                 "fs2_usage_facts,fs2_audit_events,"
                 "fs2_operation_events,fs2_operations,fs2_tokens "
@@ -723,6 +726,139 @@ async def test_admin_access_migration_sessions_rotation_rate_and_reported_units_
         maximum_source_attempts=5,
         maximum_aggregate_attempts=200,
     ) is SessionExchangeAdmission.SOURCE_THROTTLED
+    for _ in range(100):
+        assert await postgres_store.consume_operator_session_exchange(
+            "a" * 64,
+            attempted_at=attempt_at,
+            window_seconds=60,
+            maximum_source_attempts=5,
+            maximum_aggregate_attempts=200,
+        ) is SessionExchangeAdmission.SOURCE_THROTTLED
+    async with postgres_store.pool.acquire() as connection:
+        assert await connection.fetchval(
+            """
+            SELECT count(*) FROM fs2_audit_events
+            WHERE action='session.exchange.attempt'
+              AND target_id=$1 AND outcome='source_throttled'
+            """,
+            "a" * 64,
+        ) == 1
+        assert await connection.fetchval(
+            "SELECT count(*) FROM fs2_session_exchange_source_buckets WHERE rejection_observed"
+        ) == 1
+        assert await connection.fetchval("SELECT count(*) FROM fs2_session_exchange_source_buckets") <= 2
+        assert await connection.fetchval("SELECT count(*) FROM fs2_session_exchange_aggregate_buckets") <= 16
+        source_transition = await connection.fetchrow(
+            """
+            SELECT updated_at,xmin::text AS xmin
+            FROM fs2_session_exchange_source_buckets
+            WHERE source_fingerprint=$1
+            """,
+            "a" * 64,
+        )
+        assert source_transition is not None
+        for _ in range(100):
+            repeated = await connection.fetchrow(
+                "SELECT * FROM fs2_consume_session_exchange($1,$2,$3,$4)",
+                "a" * 64,
+                60,
+                5,
+                200,
+            )
+            assert repeated["admission"] == "source_throttled"
+            assert repeated["emit_audit"] is False
+        assert await connection.fetchrow(
+            """
+            SELECT updated_at,xmin::text AS xmin
+            FROM fs2_session_exchange_source_buckets
+            WHERE source_fingerprint=$1
+            """,
+            "a" * 64,
+        ) == source_transition
+
+        collision_sources = [
+            "00000001000000020000" + suffix * 44
+            for suffix in ("1", "2", "3")
+        ]
+        assert (
+            await connection.fetchval(
+                "SELECT admission FROM fs2_consume_session_exchange($1,60,5,100)",
+                collision_sources[0],
+            )
+            == "admitted"
+        )
+        assert (
+            await connection.fetchval(
+                "SELECT admission FROM fs2_consume_session_exchange($1,60,5,100)",
+                collision_sources[1],
+            )
+            == "admitted"
+        )
+        collision = await connection.fetchrow(
+            "SELECT * FROM fs2_consume_session_exchange($1,60,5,100)",
+            collision_sources[2],
+        )
+        assert collision["admission"] == "source_throttled"
+        assert collision["evidence_kind"] == "source_slot_collision"
+        assert (
+            await connection.fetchval(
+                "SELECT admission FROM fs2_consume_session_exchange($1,60,5,100)",
+                "00000003000000040000" + "4" * 44,
+            )
+            == "admitted"
+        )
+
+        aggregate_candidates: list[str] = []
+        occupied_slots = {1, 2, 3, 4, 43690, 43691}
+        for index in range(10000):
+            candidate = hashlib.sha256(f"postgres-aggregate-{index}".encode()).hexdigest()
+            coordinates = session_exchange_coordinates(
+                candidate,
+                window_seconds=60,
+                maximum_source_attempts=5,
+                maximum_aggregate_attempts=10,
+            )
+            candidate_slots = {coordinates.source_slot_a, coordinates.source_slot_b}
+            if coordinates.aggregate_shard != 1 or candidate_slots & occupied_slots:
+                continue
+            aggregate_candidates.append(candidate)
+            occupied_slots.update(candidate_slots)
+            if len(aggregate_candidates) == coordinates.aggregate_shard_quota + 1:
+                break
+        assert len(aggregate_candidates) == 6
+        for candidate in aggregate_candidates[:5]:
+            assert (
+                await connection.fetchval(
+                    "SELECT admission FROM fs2_consume_session_exchange($1,60,5,10)",
+                    candidate,
+                )
+                == "admitted"
+            )
+        aggregate_rejection = await connection.fetchrow(
+            "SELECT * FROM fs2_consume_session_exchange($1,60,5,10)",
+            aggregate_candidates[5],
+        )
+        assert aggregate_rejection["admission"] == "aggregate_throttled"
+        assert aggregate_rejection["emit_audit"] is True
+        aggregate_transition = await connection.fetchrow(
+            """
+            SELECT updated_at,xmin::text AS xmin
+            FROM fs2_session_exchange_aggregate_buckets WHERE shard=1
+            """
+        )
+        for _ in range(100):
+            repeated = await connection.fetchrow(
+                "SELECT * FROM fs2_consume_session_exchange($1,60,5,10)",
+                aggregate_candidates[5],
+            )
+            assert repeated["admission"] == "aggregate_throttled"
+            assert repeated["emit_audit"] is False
+        assert await connection.fetchrow(
+            """
+            SELECT updated_at,xmin::text AS xmin
+            FROM fs2_session_exchange_aggregate_buckets WHERE shard=1
+            """
+        ) == aggregate_transition
     assert [
         item.id
         for item in await postgres_store.list_operator_principals(
@@ -1071,6 +1207,20 @@ async def test_scientific_grant_migrations_repair_drift_and_runtime_wait_checks_
                     "SELECT has_table_privilege($1,'fs2_scientific_batches','UPDATE')",
                     role,
                 )
+                assert await migrated.fetchval(
+                    "SELECT has_function_privilege($1,"
+                    "'fs2_consume_session_exchange(text,integer,integer,integer)','EXECUTE')",
+                    role,
+                )
+                for limiter_table in (
+                    "fs2_session_exchange_source_buckets",
+                    "fs2_session_exchange_aggregate_buckets",
+                ):
+                    assert not await migrated.fetchval(
+                        "SELECT has_table_privilege($1,$2,'SELECT')",
+                        role,
+                        limiter_table,
+                    )
             await migrated.execute("SET ROLE fs2_serve_runtime")
             await migrated.fetch("SELECT payload FROM fs2_scientific_admission_outbox WHERE false FOR SHARE")
             await migrated.execute("UPDATE fs2_scientific_batches SET scheduling_digest=scheduling_digest WHERE false")
@@ -1086,6 +1236,19 @@ async def test_scientific_grant_migrations_repair_drift_and_runtime_wait_checks_
         repaired = await asyncpg.connect(upgrade_url)
         try:
             await repaired.execute("REVOKE UPDATE ON fs2_operator_credentials FROM fs2_serve_runtime")
+        finally:
+            await repaired.close()
+
+        with pytest.raises(RuntimeError, match="database schema runtime privileges are incomplete"):
+            await PostgresStore.wait_for_schema(runtime_url, CONTROL_ROOT / "migrations", timeout_seconds=1)
+
+        await PostgresStore.migrate_database(upgrade_url, CONTROL_ROOT / "migrations")
+        repaired = await asyncpg.connect(upgrade_url)
+        try:
+            await repaired.execute(
+                "REVOKE EXECUTE ON FUNCTION "
+                "fs2_consume_session_exchange(text,integer,integer,integer) FROM fs2_serve_runtime"
+            )
         finally:
             await repaired.close()
 
@@ -1357,6 +1520,22 @@ async def test_real_postgres_upgrade_preserves_prior_ledger_and_applies_pending_
                     "SELECT to_regclass('public.fs2_release_identity_receipts')"
                 )
                 == "fs2_release_identity_receipts"
+            )
+            assert (
+                await upgraded_connection.fetchval(
+                    "SELECT to_regclass('public.fs2_session_exchange_source_buckets')"
+                )
+                == "fs2_session_exchange_source_buckets"
+            )
+            assert (
+                await upgraded_connection.fetchval(
+                    "SELECT to_regclass('public.fs2_session_exchange_aggregate_buckets')"
+                )
+                == "fs2_session_exchange_aggregate_buckets"
+            )
+            assert await upgraded_connection.fetchval(
+                "SELECT to_regprocedure("
+                "'public.fs2_consume_session_exchange(text,integer,integer,integer)') IS NOT NULL"
             )
             assert (
                 await upgraded_connection.fetchval("SELECT to_regclass('public.fs2_model_deployments')")

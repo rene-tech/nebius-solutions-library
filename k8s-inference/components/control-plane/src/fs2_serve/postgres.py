@@ -8,6 +8,8 @@ import copy
 import hashlib
 import json
 import secrets
+import time
+from collections import OrderedDict
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime, timedelta
@@ -89,6 +91,7 @@ from .models import (
 from .postgres_retry import retry_serialization
 from .postgresql_release import validate_migration_set
 from .runtime import sanitize_error_detail
+from .session_exchange import session_exchange_coordinates
 from .store import (
     BudgetExceededError,
     ConcurrencyExceededError,
@@ -134,6 +137,8 @@ SCIENTIFIC_RUNTIME_UPDATE_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
 _TERMINAL = {"succeeded", "failed", "cancelled", "preempted", "expired"}
 _CLAIM_BATCH_SIZE = 16
 _MAX_AUDIT_DETAIL_CHARS = 64 * 1024
+_SESSION_EXCHANGE_SOURCE_CACHE_SIZE = 4096
+_SESSION_EXCHANGE_AGGREGATE_CACHE_SIZE = 64
 P = ParamSpec("P")
 R = TypeVar("R")
 
@@ -183,6 +188,87 @@ def _decode_configuration_json(value: object, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise RuntimeError(f"stored {label} is not an object")
     return cast(dict[str, Any], value)
+
+
+class _SessionExchangeThrottleCache:
+    """Bound repeated 429s before they can reacquire a database connection."""
+
+    def __init__(self) -> None:
+        self._sources: OrderedDict[tuple[str, int, int], float] = OrderedDict()
+        self._aggregate: OrderedDict[tuple[int, int, int, int], float] = OrderedDict()
+
+    @staticmethod
+    def _active(cache: OrderedDict[Any, float], key: Any, now: float) -> bool:
+        expires_at = cache.get(key)
+        if expires_at is None:
+            return False
+        if expires_at <= now:
+            del cache[key]
+            return False
+        cache.move_to_end(key)
+        return True
+
+    @staticmethod
+    def _remember(cache: OrderedDict[Any, float], key: Any, expires_at: float, maximum: int) -> None:
+        cache[key] = expires_at
+        cache.move_to_end(key)
+        while len(cache) > maximum:
+            cache.popitem(last=False)
+
+    def lookup(
+        self,
+        source_key: tuple[str, int, int],
+        aggregate_key: tuple[int, int, int, int],
+    ) -> SessionExchangeAdmission | None:
+        now = time.monotonic()
+        if self._active(self._sources, source_key, now):
+            return SessionExchangeAdmission.SOURCE_THROTTLED
+        if self._active(self._aggregate, aggregate_key, now):
+            return SessionExchangeAdmission.AGGREGATE_THROTTLED
+        return None
+
+    def remember(
+        self,
+        admission: SessionExchangeAdmission,
+        *,
+        source_key: tuple[str, int, int],
+        aggregate_key: tuple[int, int, int, int],
+        retry_after_seconds: float,
+    ) -> None:
+        expires_at = time.monotonic() + max(0.001, retry_after_seconds)
+        if admission is SessionExchangeAdmission.SOURCE_THROTTLED:
+            self._remember(self._sources, source_key, expires_at, _SESSION_EXCHANGE_SOURCE_CACHE_SIZE)
+        elif admission is SessionExchangeAdmission.AGGREGATE_THROTTLED:
+            self._remember(
+                self._aggregate,
+                aggregate_key,
+                expires_at,
+                _SESSION_EXCHANGE_AGGREGATE_CACHE_SIZE,
+            )
+
+
+def _session_exchange_cache_keys(
+    source_fingerprint: str,
+    *,
+    window_seconds: int,
+    maximum_source_attempts: int,
+    maximum_aggregate_attempts: int,
+) -> tuple[tuple[str, int, int], tuple[int, int, int, int]]:
+    coordinates = session_exchange_coordinates(
+        source_fingerprint,
+        window_seconds=window_seconds,
+        maximum_source_attempts=maximum_source_attempts,
+        maximum_aggregate_attempts=maximum_aggregate_attempts,
+    )
+    return (
+        (source_fingerprint, window_seconds, maximum_source_attempts),
+        (
+            window_seconds,
+            maximum_source_attempts,
+            maximum_aggregate_attempts,
+            coordinates.aggregate_shard,
+        ),
+    )
 
 
 def _upgrade_legacy_model_deployment_status(value: dict[str, Any]) -> dict[str, Any]:
@@ -331,6 +417,7 @@ class PostgresStore:
         self.hasher = hasher
         self.payload_ttl_seconds = payload_ttl_seconds
         self.activation = PostgresActivationStore(pool, owns_pool=False)
+        self._session_exchange_throttles = _SessionExchangeThrottleCache()
 
     @classmethod
     async def _connect_pool(
@@ -466,6 +553,7 @@ class PostgresStore:
                     f"REVOKE ALL ON fs2_schema_migrations,fs2_tokens,fs2_operations,"
                     f"fs2_operation_events,fs2_audit_events,fs2_usage_facts,"
                     f"fs2_operator_principals,fs2_operator_credentials,fs2_operator_sessions,"
+                    f"fs2_session_exchange_source_buckets,fs2_session_exchange_aggregate_buckets,"
                     f"fs2_release_identity_receipts,"
                     f"fs2_configuration_revisions,fs2_configuration_plans,"
                     f"fs2_configuration_reconciliation_events,"
@@ -508,6 +596,7 @@ class PostgresStore:
                     f"fs2_scientific_batch_append_only(),"
                     f"fs2_scientific_model_policy_forward(),"
                     f"fs2_scientific_dispatch_hold(text,text),"
+                    f"fs2_consume_session_exchange(text,integer,integer,integer),"
                     f"fs2_reject_telemetry_mutation() FROM {role}"
                 )
             await connection.execute(
@@ -522,6 +611,10 @@ class PostgresStore:
             )
             await connection.execute(
                 f"GRANT SELECT,INSERT ON fs2_release_identity_receipts TO {quoted_runtime}"
+            )
+            await connection.execute(
+                f"GRANT EXECUTE ON FUNCTION fs2_consume_session_exchange(text,integer,integer,integer) "
+                f"TO {quoted_runtime}"
             )
             await connection.execute(
                 f"GRANT SELECT,INSERT ON fs2_operation_events,fs2_audit_events TO {quoted_runtime}"
@@ -765,6 +858,18 @@ class PostgresStore:
                             "'public.fs2_release_identity_receipts','SELECT')"
                             " AND has_table_privilege(current_user,"
                             "'public.fs2_release_identity_receipts','INSERT')"
+                            " AND has_function_privilege('fs2_serve_runtime',"
+                            "'public.fs2_consume_session_exchange(text,integer,integer,integer)','EXECUTE')"
+                            " AND has_function_privilege(current_user,"
+                            "'public.fs2_consume_session_exchange(text,integer,integer,integer)','EXECUTE')"
+                            " AND NOT has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_session_exchange_source_buckets','SELECT')"
+                            " AND NOT has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_session_exchange_aggregate_buckets','SELECT')"
+                            " AND NOT has_table_privilege(current_user,"
+                            "'public.fs2_session_exchange_source_buckets','SELECT')"
+                            " AND NOT has_table_privilege(current_user,"
+                            "'public.fs2_session_exchange_aggregate_buckets','SELECT')"
                             " AND has_function_privilege('fs2_serve_runtime',"
                             "'public.fs2_scientific_dispatch_hold(text,text)','EXECUTE')"
                             " AND has_function_privilege(current_user,"
@@ -1606,8 +1711,9 @@ class PostgresStore:
                 """
                 INSERT INTO fs2_release_identity_receipts(
                     assertion_id,session_id,issuer,subject,purpose,capability,
-                    assertion_fingerprint,issued_at,expires_at,consumed_by
-                ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                    assertion_fingerprint,issued_at,expires_at,consumed_by,
+                    resource_sha256,resource_generation
+                ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
                 """,
                 assertion.assertion_id,
                 assertion.session_id,
@@ -1619,6 +1725,8 @@ class PostgresStore:
                 assertion.issued_at,
                 assertion.expires_at,
                 actor,
+                assertion.resource_sha256,
+                assertion.resource_generation,
             )
         except asyncpg.UniqueViolationError as exc:
             raise ConflictError("release identity assertion was already consumed") from exc
@@ -1636,6 +1744,7 @@ class PostgresStore:
                 "capability": capability,
                 "purpose": str(assertion.purpose),
                 "session_id": assertion.session_id,
+                "resource_generation": assertion.resource_generation,
             },
         )
 
@@ -1788,63 +1897,76 @@ class PostgresStore:
         maximum_source_attempts: int,
         maximum_aggregate_attempts: int,
     ) -> SessionExchangeAdmission:
-        if attempted_at.tzinfo is None:
+        if attempted_at.tzinfo is None or attempted_at.utcoffset() is None:
             raise ValueError("operator exchange timestamp must be timezone-aware")
+        # Production bucket boundaries use the database clock inside the
+        # function. The injected timestamp exists so MemoryStore can use the
+        # identical aligned-window algorithm under a deterministic test clock.
+        source_key, aggregate_key = _session_exchange_cache_keys(
+            source_fingerprint,
+            window_seconds=window_seconds,
+            maximum_source_attempts=maximum_source_attempts,
+            maximum_aggregate_attempts=maximum_aggregate_attempts,
+        )
+        cached = self._session_exchange_throttles.lookup(source_key, aggregate_key)
+        if cached is not None:
+            return cached
+
+        decision_started_at = time.monotonic()
         async with self.pool.acquire() as connection, connection.transaction():
-            await connection.execute("SELECT pg_advisory_xact_lock(hashtextextended('admin-exchange-aggregate',0))")
-            aggregate_attempts = int(
-                await connection.fetchval(
-                    """
-                    SELECT count(*) FROM fs2_audit_events
-                    WHERE action='session.exchange.attempt'
-                      AND target_type='network_source_fingerprint'
-                      AND outcome='accepted'
-                      AND occurred_at>clock_timestamp()-($1::double precision * interval '1 second')
-                    """,
-                    window_seconds,
-                )
+            decision = await connection.fetchrow(
+                "SELECT * FROM fs2_consume_session_exchange($1,$2,$3,$4)",
+                source_fingerprint,
+                window_seconds,
+                maximum_source_attempts,
+                maximum_aggregate_attempts,
             )
-            if aggregate_attempts >= maximum_aggregate_attempts:
-                admission = SessionExchangeAdmission.AGGREGATE_THROTTLED
-            else:
-                await connection.execute(
-                    "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
-                    source_fingerprint,
-                )
-                source_attempts = int(
-                    await connection.fetchval(
-                        """
-                        SELECT count(*) FROM fs2_audit_events
-                        WHERE action='session.exchange.attempt'
-                          AND target_type='network_source_fingerprint'
-                          AND target_id=$1 AND outcome='accepted'
-                          AND occurred_at>clock_timestamp()-($2::double precision * interval '1 second')
-                        """,
-                        source_fingerprint,
-                        window_seconds,
-                    )
-                )
-                admission = (
-                    SessionExchangeAdmission.SOURCE_THROTTLED
-                    if source_attempts >= maximum_source_attempts
-                    else SessionExchangeAdmission.ADMITTED
-                )
-            await self._audit(
-                connection,
-                actor="anonymous",
-                tenant_id=None,
-                token_id=None,
-                action="session.exchange.attempt",
-                target_type="network_source_fingerprint",
-                target_id=source_fingerprint,
-                outcome="accepted" if admission is SessionExchangeAdmission.ADMITTED else str(admission),
-                detail={
+            if decision is None:
+                raise RuntimeError("session exchange limiter returned no decision")
+            admission = SessionExchangeAdmission(str(decision["admission"]))
+            if admission is SessionExchangeAdmission.ADMITTED or bool(decision["emit_audit"]):
+                detail: dict[str, Any] = {
+                    "limiter": "bounded-sharded-fixed-window-v1",
                     "window_seconds": window_seconds,
                     "maximum_source_attempts": maximum_source_attempts,
                     "maximum_aggregate_attempts": maximum_aggregate_attempts,
-                },
+                    "source_slot": int(decision["source_slot"]),
+                    "aggregate_shard": int(decision["aggregate_shard"]),
+                    "bucket_started_at": decision["bucket_started_at"].isoformat(),
+                }
+                if admission is not SessionExchangeAdmission.ADMITTED:
+                    detail.update(
+                        {
+                            "evidence": "coalesced_transition",
+                            "evidence_kind": str(decision["evidence_kind"]),
+                            "rejections_observed": "one_or_more",
+                            "repeated_rejections_suppressed_until_bucket_rollover": True,
+                        }
+                    )
+                await self._audit(
+                    connection,
+                    actor="anonymous",
+                    tenant_id=None,
+                    token_id=None,
+                    action="session.exchange.attempt",
+                    target_type="network_source_fingerprint",
+                    target_id=source_fingerprint,
+                    outcome="accepted" if admission is SessionExchangeAdmission.ADMITTED else str(admission),
+                    detail=detail,
+                )
+
+        if admission is not SessionExchangeAdmission.ADMITTED:
+            remaining_seconds = max(
+                0.001,
+                float(decision["retry_after_seconds"]) - (time.monotonic() - decision_started_at),
             )
-            return admission
+            self._session_exchange_throttles.remember(
+                admission,
+                source_key=source_key,
+                aggregate_key=aggregate_key,
+                retry_after_seconds=remaining_seconds,
+            )
+        return admission
 
     @retry_serialization
     async def create_operator_session(

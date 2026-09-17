@@ -461,9 +461,11 @@ def test_store_uses_only_migration_global_lock_and_bounded_skip_locked_janitors(
     normalized = " ".join(source.lower().split())
     assert "727201920002" not in source
     # Migration, per-token, configuration-chain, per-model scale, dynamic-model
-    # identity, and dynamic-model idempotency fences. Only migration and the
-    # single configuration chain are global constants; the rest are keyed.
+    # identity, and dynamic-model idempotency fences remain where required.
+    # Unauthenticated session exchange uses bounded row buckets and must never
+    # add either a global or source-derived advisory lock.
     assert source.count("pg_advisory_xact_lock") == 6
+    assert "admin-exchange-aggregate" not in source
     assert "pg_advisory_xact_lock(fs2_activation_model_lock_key($1))" in source
     assert "async def _model_deployment_lock" in source
     assert "async def _model_deployment_idempotency_lock" in source

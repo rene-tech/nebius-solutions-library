@@ -52,12 +52,33 @@ routes.
 An initial dynamic-model seed uses one `models.bootstrap` assertion bound to
 the SHA-256 of the canonical `fs2-serve.nebius.ai/model-bootstrap/v1` payload.
 The external release authority owns the short-lived Secret named by
-`release_identity_model_bootstrap_assertion_secret_name`; Terraform references
-only that public object name and never reads assertion data into state. The Job
-has zero automatic retries because an ambiguous response must not replay a
-single-use assertion. Existing model identities are preserved; new proposals
-still pass the ordinary preview, qualification, persistence, and projection
-services.
+`release_identity_model_bootstrap_assertion_secret_name` and supplies the
+non-secret `release_identity_model_bootstrap_assertion_generation`, which is
+also a signed assertion claim and a field in the digest-bound request; Terraform
+references only those public identities and never reads assertion data into
+state. The payload, implementation, runtime image, assertion generation and
+Secret name produce a 32-hex Job generation key. A Job has zero automatic
+retries because an ambiguous response must not replay a single-use assertion.
+Existing model identities are preserved; new proposals still pass the ordinary
+preview, qualification, persistence, and projection services.
+
+Bootstrap recovery is append-only. Before rotating or replacing an assertion,
+changing the payload/runtime implementation, or disabling bootstrap,
+copy the prior generation key and complete `bootstrap_current_retention_spec`
+(payload JSON, exact runner implementation, digest-pinned image, assertion
+generation and Secret name) from the `dynamic_model_contract` output into
+`release_identity_model_bootstrap_retained_assertions`, then set a new Secret
+name and assertion generation. Each Secret name must be exactly
+`fs2-release-model-bootstrap-<generation>`. Terraform recomputes and verifies
+the retained key from the complete identity, creates a new immutable ConfigMap
+and zero-retry Job, while `prevent_destroy` retains every prior terminal Job.
+Removing a retained generation, mutating its immutable template, reusing a
+Secret name, or changing assertion bytes without changing the public generation
+fails closed. A fail-closed ValidatingAdmissionPolicy must be installed before
+the release authority creates the Secret; it admits only immutable,
+generation-labeled, single-`assertion`-key Secrets. This is the supported
+fresh-install and recovery path; a mutable Secret behind a fixed Job name is
+not.
 
 ## Rollout and rollback boundary
 

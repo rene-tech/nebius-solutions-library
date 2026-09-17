@@ -185,6 +185,12 @@ class ReleaseIdentityAssertion(StrictModel):
     impersonation_allowed: Literal[False]
     authorization_closure_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     resource_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    resource_generation: str | None = Field(
+        default=None,
+        min_length=8,
+        max_length=63,
+        pattern=r"^[a-z0-9][a-z0-9.-]{6,61}[a-z0-9]$",
+    )
     operator: ReleaseOperatorTarget | None = None
 
     @model_validator(mode="after")
@@ -206,8 +212,10 @@ class ReleaseIdentityAssertion(StrictModel):
         elif enrollment or self.operator is not None:
             raise ValueError("admin automation cannot carry an operator enrollment target")
         bootstrap = ReleaseIdentityCapability.MODELS_BOOTSTRAP in self.capabilities
-        if bootstrap != (self.resource_sha256 is not None):
-            raise ValueError("model bootstrap assertions alone require an exact resource digest")
+        if bootstrap != (self.resource_sha256 is not None and self.resource_generation is not None):
+            raise ValueError("model bootstrap assertions alone require an exact resource digest and generation")
+        if not bootstrap and (self.resource_sha256 is not None or self.resource_generation is not None):
+            raise ValueError("non-bootstrap assertions cannot carry a resource identity")
         return self
 
 

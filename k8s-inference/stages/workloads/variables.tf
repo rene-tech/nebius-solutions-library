@@ -1035,7 +1035,7 @@ variable "model_controller" {
 }
 
 variable "release_identity_model_bootstrap_assertion_secret_name" {
-  description = "External release authority-owned Secret containing one unexpired, payload-bound models.bootstrap assertion. Terraform references only its public object name and never reads its data."
+  description = "External release authority-owned Secret containing the current unexpired, payload-bound models.bootstrap assertion. Every generation uses a new public Secret name; Terraform never reads its data."
   type        = string
   default     = "fs2-release-model-bootstrap-assertion"
 
@@ -1045,6 +1045,67 @@ variable "release_identity_model_bootstrap_assertion_secret_name" {
       var.release_identity_model_bootstrap_assertion_secret_name,
     ))
     error_message = "release_identity_model_bootstrap_assertion_secret_name must be a DNS subdomain."
+  }
+}
+
+variable "release_identity_model_bootstrap_assertion_generation" {
+  description = "Public external-release generation for the current models.bootstrap assertion. Changing the assertion, Secret, payload, implementation, or image requires a new value and therefore a new retained Job identity."
+  type        = string
+  default     = ""
+
+  validation {
+    condition = (
+      var.release_identity_model_bootstrap_assertion_generation == "" ||
+      can(regex(
+        "^[a-z0-9][a-z0-9.-]{6,61}[a-z0-9]$",
+        var.release_identity_model_bootstrap_assertion_generation,
+      ))
+    )
+    error_message = "release_identity_model_bootstrap_assertion_generation must be empty or an 8-63 character lowercase public generation identifier."
+  }
+}
+
+variable "release_identity_model_bootstrap_retained_assertions" {
+  description = "Append-only prior model-bootstrap execution specs keyed by the first 32 hex characters of sha256(canonical identity). Full payload, implementation, image and public assertion identity make historical reconstruction byte-stable."
+  type = map(object({
+    assertion_generation = string
+    secret_name          = string
+    payload_json         = string
+    bootstrap_script     = string
+    runtime_image        = string
+  }))
+  default = {}
+
+  validation {
+    condition = (
+      alltrue([
+        for generation_key, assertion in var.release_identity_model_bootstrap_retained_assertions :
+        can(regex("^[a-f0-9]{32}$", generation_key)) &&
+        can(regex("^[a-z0-9][a-z0-9.-]{6,61}[a-z0-9]$", assertion.assertion_generation)) &&
+        can(regex(
+          "^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?)*$",
+          assertion.secret_name,
+        )) &&
+        assertion.secret_name == "fs2-release-model-bootstrap-${assertion.assertion_generation}" &&
+        length(assertion.payload_json) >= 64 && length(assertion.payload_json) <= 900000 &&
+        can(jsondecode(assertion.payload_json)) &&
+        try(jsondecode(assertion.payload_json).schema, null) == "fs2-serve.nebius.ai/model-bootstrap/v1" &&
+        try(jsondecode(assertion.payload_json).generation, null) == assertion.assertion_generation &&
+        length(assertion.bootstrap_script) >= 512 && length(assertion.bootstrap_script) <= 65536 &&
+        can(regex("@sha256:[a-f0-9]{64}$", assertion.runtime_image)) &&
+        generation_key == substr(sha256(jsonencode({
+          payload_sha256        = sha256(assertion.payload_json)
+          implementation_sha256 = sha256(assertion.bootstrap_script)
+          runtime_image         = assertion.runtime_image
+          assertion_generation  = assertion.assertion_generation
+          assertion_secret_name = assertion.secret_name
+        })), 0, 32)
+      ]) &&
+      length(distinct([
+        for assertion in values(var.release_identity_model_bootstrap_retained_assertions) : assertion.secret_name
+      ])) == length(var.release_identity_model_bootstrap_retained_assertions)
+    )
+    error_message = "Every retained model-bootstrap entry must contain its complete bounded historical spec, generation-derived immutable Secret name, and exact identity-derived key."
   }
 }
 

@@ -293,12 +293,26 @@ dynamic_models = {
   writes_enabled                             = true
   workload_owner                             = "controller"
   bootstrap_model_ids                        = ["cosmos3-nano", "qwen3-8b"]
+  bootstrap_assertion_secret_name             = "fs2-release-model-bootstrap-release-20260917-01"
+  bootstrap_assertion_generation              = "release-20260917-01"
+  bootstrap_retained_assertions               = {}
   fresh_install                              = true
   fast_start_evidence_file                   = "/absolute/reviewed/fast-start-evidence.json"
   fast_start_environment_qualifications_file = "/absolute/reviewed/environment-qualifications.json"
   fast_start_measurement_contracts_file      = "/absolute/reviewed/measurement-contracts.json"
 }
 ```
+
+`bootstrap_assertion_generation` is a signed assertion claim and the immutable
+Secret name must be exactly `fs2-release-model-bootstrap-<generation>`. A
+failed, expired, or consumed assertion is recovered by copying the complete
+`bootstrap_current_retention_spec` output (payload JSON, implementation,
+digest-pinned image and public assertion identity) into
+`bootstrap_retained_assertions`, keyed by `bootstrap_current_generation`, and
+supplying a new generation. Terraform recomputes each retained key from the
+full identity; generation-keyed Jobs are additive and `prevent_destroy`
+refuses a history-removing plan. The admission policy requires assertion
+Secrets to be immutable, generation-labeled, uniquely named and single-key.
 
 The exact retained H100 qualification for those two models is recorded in
 [`h100-qwen-cosmos-elasticity-qualification-20260902.json`](catalog/profiles/evidence/h100-qwen-cosmos-elasticity-qualification-20260902.json).

@@ -257,6 +257,14 @@ plane. Absence of that exact trust policy fails release automation closed.
 The complete issuer, enrollment/recovery, model-bootstrap, rollout, and
 rollback contract is in
 [`release-identity-enrollment.md`](release-identity-enrollment.md).
+Model-bootstrap assertion rotation is generation-keyed and append-only: retain
+the previous generation in
+`release_identity_model_bootstrap_retained_assertions`, then supply a new
+full retention spec plus a new signed public assertion generation whose Secret
+is exactly `fs2-release-model-bootstrap-<generation>`. Install the fail-closed
+assertion-Secret admission policy before Secret creation. The new immutable Job
+runs once; prior terminal Jobs remain protected by `prevent_destroy` as
+recovery and forensic history.
 
 Sessions have both the configured absolute TTL and a 30-minute default idle
 timeout. No principal may hold more than four active, non-idle sessions by

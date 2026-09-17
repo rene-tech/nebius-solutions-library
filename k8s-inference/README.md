@@ -532,13 +532,26 @@ models = {
 }
 
 dynamic_models = {
-  enabled             = true
-  writes_enabled      = true
-  workload_owner      = "controller"
-  bootstrap_model_ids = ["cosmos3-nano", "qwen3-8b"]
-  fresh_install       = true
+  enabled                        = true
+  writes_enabled                 = true
+  workload_owner                 = "controller"
+  bootstrap_model_ids            = ["cosmos3-nano", "qwen3-8b"]
+  bootstrap_assertion_secret_name = "fs2-release-model-bootstrap-release-20260917-01"
+  bootstrap_assertion_generation  = "release-20260917-01"
+  bootstrap_retained_assertions   = {}
+  fresh_install                  = true
 }
 ```
+
+The assertion generation is a signed claim and the immutable Secret name is
+exactly `fs2-release-model-bootstrap-<generation>`; neither is an assertion
+byte. Every retry or recovery uses a new generation. Before rotating, copy the
+full `bootstrap_current_retention_spec` from the workloads
+`dynamic_model_contract` output under its `bootstrap_current_generation` key.
+Terraform verifies that key from the retained payload, implementation,
+digest-pinned image and assertion identity, creates a new zero-retry Job, and
+refuses to destroy prior Job history. A fail-closed admission policy accepts
+only immutable, generation-labeled, single-key assertion Secrets.
 
 Startup retention prevents already-requested capacity from being removed during
 initialization when a short request queue drains. It does not raise replica/node
