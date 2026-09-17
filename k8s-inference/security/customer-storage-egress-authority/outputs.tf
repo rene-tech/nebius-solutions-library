@@ -1,7 +1,7 @@
 output "current_handoff" {
   description = "Non-secret provider-enforced egress handoff for the additive compatibility-v3 reconciler."
   value = {
-    schema                                            = "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v10"
+    schema                                            = "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v11"
     generation                                        = local.authority.current_generation
     provisioning_generation                           = local.generations[local.authority.current_generation].provisioning_generation
     provisioning_receipt_sha256                       = local.generations[local.authority.current_generation].provisioning_receipt_sha256
@@ -40,6 +40,10 @@ output "current_handoff" {
     kubernetes_service_account_inventory_sha256       = data.external.authority.result.kubernetes_service_account_inventory_sha256
     kubernetes_system_subject_inventory_sha256        = data.external.authority.result.kubernetes_system_subject_inventory_sha256
     controller_identities                             = local.controller_identities
+    controller_audit_receipt_sha256                   = data.external.authority.result.controller_audit_receipt_sha256
+    node_health_mutation                              = jsondecode(data.external.authority.result.node_health_mutation_json)
+    daemonset_inventory_sha256                        = data.external.authority.result.daemonset_inventory_sha256
+    daemonset_list_resource_version                   = data.external.authority.result.daemonset_list_resource_version
     kubernetes_rbac_inventory_sha256                  = data.external.authority.result.kubernetes_rbac_inventory_sha256
     kubernetes_rbac_effective_authority_sha256        = data.external.authority.result.kubernetes_rbac_effective_authority_sha256
     kubernetes_rbac_inventory_receipt_sha256          = data.external.authority.result.kubernetes_rbac_inventory_receipt_sha256

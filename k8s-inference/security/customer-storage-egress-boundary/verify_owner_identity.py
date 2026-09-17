@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import stat
 import subprocess
 import sys
@@ -555,12 +556,14 @@ def verify(query: dict[str, str]) -> dict[str, str]:
     declared_service_accounts = json.loads(query["service_account_inventory_json"])
     declared_system_subjects = json.loads(query["system_subject_inventory_json"])
     controller_identities = json.loads(query["controller_identities_json"])
+    critical_daemonsets = json.loads(query["critical_daemonset_maintenance_json"])
     if (
         not isinstance(names, dict)
         or not isinstance(declared_identities, dict)
         or not isinstance(declared_service_accounts, list)
         or not isinstance(declared_system_subjects, list)
         or not isinstance(controller_identities, dict)
+        or not isinstance(critical_daemonsets, dict)
     ):
         raise ValueError("identity inventory or protected names are invalid")
     owner_declarations = [
@@ -876,11 +879,51 @@ def verify(query: dict[str, str]) -> dict[str, str]:
             authorized_groups.update(subject["groups"])
         else:
             authorized_groups.add(subject["name"])
+    critical_daemonset_maintenance: dict[
+        tuple[str, str, str], dict[str, set[str]]
+    ] = {}
+    for key, daemonset in critical_daemonsets.items():
+        if (
+            not isinstance(key, str)
+            or "/" not in key
+            or not isinstance(daemonset, dict)
+            or not isinstance(daemonset.get("maintenance_identity"), dict)
+        ):
+            raise ValueError("signed critical DaemonSet maintenance inventory is malformed")
+        identity = daemonset["maintenance_identity"]
+        match = re.fullmatch(
+            r"system:serviceaccount:([^:]+):([^:]+)",
+            str(identity.get("username", "")),
+        )
+        namespace, name = key.split("/", 1)
+        if match is None or identity.get("groups") != sorted(
+            {
+                "system:authenticated",
+                "system:serviceaccounts",
+                f"system:serviceaccounts:{match.group(1)}",
+            }
+        ):
+            raise ValueError("critical DaemonSet maintainer identity is not deterministic")
+        subject_key = ("ServiceAccount", match.group(1), match.group(2))
+        if len(
+            [
+                subject
+                for subject in declared_service_accounts
+                if subject.get("namespace") == match.group(1)
+                and subject.get("name") == match.group(2)
+                and subject.get("uid") == identity.get("uid")
+            ]
+        ) != 1:
+            raise ValueError("critical DaemonSet maintainer UID is not in the live subject inventory")
+        critical_daemonset_maintenance.setdefault(subject_key, {}).setdefault(
+            namespace, set()
+        ).add(name)
     verify_subject_inventory(
         declared_service_accounts,
         declared_system_subjects,
         effective_authority,
         controller_identities=controller_identities,
+        critical_daemonset_maintenance=critical_daemonset_maintenance,
     )
     for subject in rbac_subjects:
         if subject["kind"] == "User" and subject["name"] not in authorized_users:

@@ -55,7 +55,7 @@ def controller_identities() -> dict[str, dict[str, object]]:
             "audit_evidence_sha256": f"{index}" * 64,
         }
         for index, role in enumerate(
-            ("deployment", "replicaset", "daemonset", "scheduler"), start=1
+            ("deployment", "replicaset", "daemonset", "scheduler", "node_health"), start=1
         )
     }
 
@@ -107,7 +107,7 @@ def contract(generation: str) -> dict[str, object]:
     observers: dict[str, object] = {}
     for index, role in enumerate(LANE_ROLES + NODE_AGENT_ROLES, start=1):
         spec = observer_spec(generation, role)
-        observers[role] = {
+        observer = {
             "class": "lane" if role in LANE_ROLES else "critical-blanket-agent",
             "namespace": "kube-system",
             "name": (
@@ -128,6 +128,9 @@ def contract(generation: str) -> dict[str, object]:
             "daemonset_spec": spec,
             "daemonset_spec_sha256": ADMISSION.digest(spec),
         }
+        if role in NODE_AGENT_ROLES:
+            observer["maintenance_audit_sha256"] = f"{index:x}" * 64
+        observers[role] = observer
     scheduling_key = f"workload.fs2.nebius/customer-storage-egress-{suffix}"
     protected_node_names = ["computeinstance-protected"]
     protected_node_scheduling_labels = {
@@ -144,6 +147,10 @@ def contract(generation: str) -> dict[str, object]:
             "name": protected_node_names[0],
             "uid": "30000000-0000-4000-8000-000000000001",
             "resource_version": "81234",
+            "provider_id": "nebius://computeinstance-protected",
+            "node_group_id": "mk8snodegroup-protected",
+            "provisioning_receipt_sha256": "a" * 64,
+            "observed_at": "2026-09-17T12:00:00Z",
             "labels": protected_node_scheduling_labels[protected_node_names[0]],
             "taints": [
                 {
@@ -155,7 +162,7 @@ def contract(generation: str) -> dict[str, object]:
         }
     }
     result = {
-        "schema": "fs2-serve.nebius.ai/protected-lane-admission/v4",
+        "schema": "fs2-serve.nebius.ai/protected-lane-admission/v5",
         "generation": generation,
         "lane_id": lane_id,
         "selector_key": scheduling_key,
@@ -174,6 +181,18 @@ def contract(generation: str) -> dict[str, object]:
             protected_node_attestations
         ),
         "controller_identities": controller_identities(),
+        "controller_audit_receipt_sha256": "b" * 64,
+        "node_health_mutation": {
+            "identity_role": "node_health",
+            "mutable_label_keys": ["node.kubernetes.io/exclude-from-external-load-balancers"],
+            "mutable_taint_keys": [
+                "node.kubernetes.io/not-ready",
+                "node.kubernetes.io/unreachable",
+            ],
+            "allow_unschedulable": True,
+        },
+        "daemonset_inventory_sha256": "c" * 64,
+        "daemonset_list_resource_version": "99123",
         "observers": observers,
         "observer_inventory_sha256": ADMISSION.digest(observers),
     }

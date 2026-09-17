@@ -342,3 +342,29 @@ This source is not deployable on the current branch: accepted SAI-10 ancestry
 and external dependency receipts remain unresolved. Under the active
 no-delete constraint, no Terraform, Helm, Kubernetes, provider, database,
 credential or cleanup action is authorized.
+
+## Protected-lane handoff (v11 successor, source only)
+
+The additive v11 source fixes the remaining bootstrap and evidence gaps while
+retaining every predecessor. Provider provisioning starts exactly one node;
+after creation, a pinned external read-only adapter captures fresh remote-state
+custody and live security-group/NodeGroup membership. Kubernetes attestation
+must bind the Node name, UID, resourceVersion, full labels and taints, and a
+`spec.providerID` that occurs in that signed NodeGroup membership.
+The authority gate invokes the same digest-pinned adapter again and requires
+the live provider and backend response to equal the signed custody receipt.
+
+Controller identities and critical DaemonSet maintainers are accepted only
+from fresh signed audit events containing the actual authenticated username,
+UID and groups. Complete DaemonSet discovery uses an exact resourceVersion
+double read and is repeated before and after admission installation. Exact
+resourceName-fenced update/patch authority preserves inventoried CNI,
+kube-proxy, GPU, storage and telemetry agents without granting generic
+DaemonSet mutation.
+
+The Node guard freezes the providerID, lane label and lane taint. It permits
+only the signed node-health controller to change explicitly allowlisted health
+labels, health taints or `unschedulable`; routine status updates with unchanged
+scheduling metadata remain available. This source is still NO-GO: accepted
+SAI-10 ancestry and external dependency receipts are unresolved, and no live
+action is authorized under the no-delete constraint.

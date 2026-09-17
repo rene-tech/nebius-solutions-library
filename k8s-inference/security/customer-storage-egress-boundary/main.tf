@@ -10,7 +10,7 @@ data "external" "protected_lane_admission" {
   ]
   query = {
     contract_json = jsonencode({
-      schema                                    = "fs2-serve.nebius.ai/protected-lane-admission/v4"
+      schema                                    = "fs2-serve.nebius.ai/protected-lane-admission/v5"
       generation                                = var.provider_authority.generation
       lane_id                                   = var.provider_authority.lane_id
       selector_key                              = var.provider_authority.node_selector_key
@@ -25,6 +25,10 @@ data "external" "protected_lane_admission" {
       protected_node_attestations               = var.provider_authority.protected_node_attestations
       protected_node_attestation_sha256         = var.provider_authority.protected_node_attestation_sha256
       controller_identities                     = var.controller_identities
+      controller_audit_receipt_sha256           = var.provider_authority.controller_audit_receipt_sha256
+      node_health_mutation                      = var.provider_authority.node_health_mutation
+      daemonset_inventory_sha256                = var.provider_authority.daemonset_inventory_sha256
+      daemonset_list_resource_version           = var.provider_authority.daemonset_list_resource_version
       observers                                 = var.provider_authority.protected_observers
       observer_inventory_sha256                 = var.provider_authority.protected_observer_inventory_sha256
     })
@@ -49,6 +53,19 @@ locals {
       "request.userInfo.groups.all(group, group in ${jsonencode(identity.groups)}) &&",
       "${jsonencode(identity.groups)}.all(group, group in request.userInfo.groups)",
     ])
+  }
+  signed_blanket_agents = {
+    for role, observer in var.provider_authority.protected_observers :
+    "${observer.namespace}/${observer.name}" => {
+      namespace                = observer.namespace
+      name                     = observer.name
+      uid                      = observer.uid
+      daemonset_spec           = observer.daemonset_spec
+      daemonset_spec_sha256    = observer.daemonset_spec_sha256
+      maintenance_identity     = observer.owner_identity
+      maintenance_audit_sha256 = observer.maintenance_audit_sha256
+    }
+    if observer.class == "critical-blanket-agent"
   }
 
   current_contract = var.contract_generations[var.current_generation]
@@ -666,12 +683,23 @@ locals {
           "(request.operation == 'UPDATE' && object.metadata.name == '${var.provider_authority.protected_node_names[0]}' &&",
           "object.metadata.uid == '${var.provider_authority.protected_node_attestations[var.provider_authority.protected_node_names[0]].uid}' &&",
           "oldObject.metadata.uid == '${var.provider_authority.protected_node_attestations[var.provider_authority.protected_node_names[0]].uid}' &&",
-          "object.metadata.labels == ${jsonencode(var.provider_authority.protected_node_attestations[var.provider_authority.protected_node_names[0]].labels)} &&",
-          "oldObject.metadata.labels == ${jsonencode(var.provider_authority.protected_node_attestations[var.provider_authority.protected_node_names[0]].labels)} &&",
-          "object.spec.taints == ${jsonencode(var.provider_authority.protected_node_attestations[var.provider_authority.protected_node_names[0]].taints)} &&",
-          "oldObject.spec.taints == ${jsonencode(var.provider_authority.protected_node_attestations[var.provider_authority.protected_node_names[0]].taints)})",
+          "object.spec.providerID == '${var.provider_authority.protected_node_attestations[var.provider_authority.protected_node_names[0]].provider_id}' &&",
+          "oldObject.spec.providerID == '${var.provider_authority.protected_node_attestations[var.provider_authority.protected_node_names[0]].provider_id}' &&",
+          "'${var.provider_authority.node_selector_key}' in object.metadata.labels && object.metadata.labels['${var.provider_authority.node_selector_key}'] == '${var.provider_authority.lane_id}' &&",
+          "'${var.provider_authority.node_selector_key}' in oldObject.metadata.labels && oldObject.metadata.labels['${var.provider_authority.node_selector_key}'] == '${var.provider_authority.lane_id}' &&",
+          "size(object.spec.taints.filter(taint, taint.key == '${var.provider_authority.taint_key}' && taint.value == '${var.provider_authority.taint_value}' && taint.effect == '${var.provider_authority.taint_effect}')) == 1 &&",
+          "size(oldObject.spec.taints.filter(taint, taint.key == '${var.provider_authority.taint_key}' && taint.value == '${var.provider_authority.taint_value}' && taint.effect == '${var.provider_authority.taint_effect}')) == 1 &&",
+          "((object.metadata.labels == oldObject.metadata.labels && object.spec == oldObject.spec) ||",
+          "((${local.controller_identity_cel.node_health}) &&",
+          "object.metadata.labels.all(key, value, (key in oldObject.metadata.labels && oldObject.metadata.labels[key] == value) || key in ${jsonencode(var.provider_authority.node_health_mutation.mutable_label_keys)}) &&",
+          "oldObject.metadata.labels.all(key, value, (key in object.metadata.labels && object.metadata.labels[key] == value) || key in ${jsonencode(var.provider_authority.node_health_mutation.mutable_label_keys)}) &&",
+          "object.spec.taints.all(taint, taint in oldObject.spec.taints || taint.key in ${jsonencode(var.provider_authority.node_health_mutation.mutable_taint_keys)}) &&",
+          "oldObject.spec.taints.all(taint, taint in object.spec.taints || taint.key in ${jsonencode(var.provider_authority.node_health_mutation.mutable_taint_keys)}) &&",
+          "has(object.spec.podCIDR) == has(oldObject.spec.podCIDR) && (!has(object.spec.podCIDR) || object.spec.podCIDR == oldObject.spec.podCIDR) &&",
+          "has(object.spec.podCIDRs) == has(oldObject.spec.podCIDRs) && (!has(object.spec.podCIDRs) || object.spec.podCIDRs == oldObject.spec.podCIDRs) &&",
+          "has(object.spec.configSource) == has(oldObject.spec.configSource) && (!has(object.spec.configSource) || object.spec.configSource == oldObject.spec.configSource))))",
         ])
-        message = "Protected-lane Node UID, full labels and full taints are immutable after signed attestation."
+        message = "Protected-lane Node provider membership and lane identity are immutable; only the audit-proven health controller may change allowlisted health metadata."
         reason  = "Forbidden"
       },
     ]
@@ -850,6 +878,7 @@ data "external" "identity_separation" {
     service_account_inventory_json = jsonencode(var.kubernetes_service_account_inventory)
     system_subject_inventory_json  = jsonencode(var.kubernetes_system_subject_inventory)
     controller_identities_json     = jsonencode(var.controller_identities)
+    critical_daemonset_maintenance_json = jsonencode(local.signed_blanket_agents)
     protected_names_json = jsonencode({
       boundary_policy  = local.successor_boundary_policy_names[var.current_boundary_generation]
       workload_policy  = local.successor_workload_policy_names[var.current_workload_policy_generation]
@@ -969,6 +998,35 @@ data "kubernetes_resource" "protected_observer" {
   }
 }
 
+data "external" "live_daemonsets_pre_guard" {
+  program = [
+    "uv", "run", "--frozen", "--project",
+    "${path.module}/../../components/control-plane", "python",
+    "${path.module}/verify_live_daemonset_inventory.py",
+  ]
+  query = {
+    kubeconfig_path          = var.security_owner_kubeconfig_path
+    kube_context             = var.security_owner_kube_context
+    expected_agents_json     = jsonencode(local.signed_blanket_agents)
+    expected_inventory_sha256 = var.provider_authority.daemonset_inventory_sha256
+  }
+}
+
+data "external" "live_daemonsets_post_guard" {
+  program = [
+    "uv", "run", "--frozen", "--project",
+    "${path.module}/../../components/control-plane", "python",
+    "${path.module}/verify_live_daemonset_inventory.py",
+  ]
+  query = {
+    kubeconfig_path          = var.security_owner_kubeconfig_path
+    kube_context             = var.security_owner_kube_context
+    expected_agents_json     = jsonencode(local.signed_blanket_agents)
+    expected_inventory_sha256 = var.provider_authority.daemonset_inventory_sha256
+  }
+  depends_on = [kubernetes_manifest.workload_binding_v3]
+}
+
 # Re-read every legacy and v3 enforcement generation retained by the separately signed
 # prior state. Terraform's ignore_changes protects ownership but is never used
 # as evidence that a live admission policy or binding still has the approved
@@ -1051,6 +1109,9 @@ resource "terraform_data" "separate_security_owner" {
     protected_observer_inventory       = var.provider_authority.protected_observer_inventory_sha256
     protected_node_inventory           = var.provider_authority.protected_node_inventory_sha256
     protected_node_scheduling_labels   = var.provider_authority.protected_node_scheduling_labels_sha256
+    controller_audit_receipt            = var.provider_authority.controller_audit_receipt_sha256
+    daemonset_inventory                 = var.provider_authority.daemonset_inventory_sha256
+    daemonset_list_resource_version     = var.provider_authority.daemonset_list_resource_version
     protected_observer_live = sha256(jsonencode({
       for role, observer in data.kubernetes_resource.protected_observer : role => {
         uid         = observer.object.metadata.uid
@@ -1082,6 +1143,13 @@ resource "terraform_data" "separate_security_owner" {
     precondition {
       condition     = data.external.backend_custody.result.authorized == "true"
       error_message = "The initialized Terraform backend is not the separately anchored workloads-state lineage."
+    }
+    precondition {
+      condition = (
+        data.external.live_daemonsets_pre_guard.result.authorized == "true" &&
+        data.external.live_daemonsets_pre_guard.result.inventory_sha256 == var.provider_authority.daemonset_inventory_sha256
+      )
+      error_message = "The complete double-read DaemonSet inventory differs before admission installation."
     }
     precondition {
       condition = alltrue([
@@ -1568,13 +1636,33 @@ resource "kubernetes_manifest" "workload_binding_v3" {
   depends_on = [kubernetes_manifest.workload_policy_v3]
 }
 
+resource "terraform_data" "daemonset_inventory_post_guard" {
+  input = {
+    signed_inventory_sha256 = var.provider_authority.daemonset_inventory_sha256
+    pre_guard_resource_version = data.external.live_daemonsets_pre_guard.result.list_resource_version
+    post_guard_resource_version = data.external.live_daemonsets_post_guard.result.list_resource_version
+  }
+  lifecycle {
+    prevent_destroy = true
+    precondition {
+      condition = (
+        data.external.live_daemonsets_post_guard.result.authorized == "true" &&
+        data.external.live_daemonsets_post_guard.result.inventory_sha256 == var.provider_authority.daemonset_inventory_sha256 &&
+        data.external.live_daemonsets_pre_guard.result.inventory_sha256 == data.external.live_daemonsets_post_guard.result.inventory_sha256
+      )
+      error_message = "A blanket-tolerating or omitted DaemonSet changed across admission installation."
+    }
+  }
+  depends_on = [kubernetes_manifest.workload_binding_v3]
+}
+
 data "kubernetes_resource" "protected_node_post_guard" {
   api_version = "v1"
   kind        = "Node"
   metadata {
     name = var.provider_authority.protected_node_names[0]
   }
-  depends_on = [kubernetes_manifest.workload_binding_v3]
+  depends_on = [terraform_data.daemonset_inventory_post_guard]
 }
 
 resource "terraform_data" "protected_node_post_guard_attestation" {
@@ -1582,6 +1670,8 @@ resource "terraform_data" "protected_node_post_guard_attestation" {
     signed_resource_version = var.provider_authority.protected_node_attestations[var.provider_authority.protected_node_names[0]].resource_version
     live_resource_version   = data.kubernetes_resource.protected_node_post_guard.object.metadata.resourceVersion
     node_uid                = data.kubernetes_resource.protected_node_post_guard.object.metadata.uid
+    provider_id             = data.kubernetes_resource.protected_node_post_guard.object.spec.providerID
+    node_group_id           = var.provider_authority.protected_node_attestations[var.provider_authority.protected_node_names[0]].node_group_id
     labels_sha256           = sha256(jsonencode(data.kubernetes_resource.protected_node_post_guard.object.metadata.labels))
     taints_sha256           = sha256(jsonencode(data.kubernetes_resource.protected_node_post_guard.object.spec.taints))
   }
@@ -1594,14 +1684,19 @@ resource "terraform_data" "protected_node_post_guard_attestation" {
         data.kubernetes_resource.protected_node_post_guard.object.metadata.uid == var.provider_authority.protected_node_attestations[var.provider_authority.protected_node_names[0]].uid &&
         data.kubernetes_resource.protected_node_post_guard.object.metadata.resourceVersion != "" &&
         var.provider_authority.protected_node_attestations[var.provider_authority.protected_node_names[0]].resource_version != "" &&
-        data.kubernetes_resource.protected_node_post_guard.object.metadata.labels == var.provider_authority.protected_node_attestations[var.provider_authority.protected_node_names[0]].labels &&
-        data.kubernetes_resource.protected_node_post_guard.object.spec.taints == var.provider_authority.protected_node_attestations[var.provider_authority.protected_node_names[0]].taints
+        data.kubernetes_resource.protected_node_post_guard.object.spec.providerID == var.provider_authority.protected_node_attestations[var.provider_authority.protected_node_names[0]].provider_id &&
+        try(data.kubernetes_resource.protected_node_post_guard.object.metadata.labels[var.provider_authority.node_selector_key], "") == var.provider_authority.lane_id &&
+        contains(data.kubernetes_resource.protected_node_post_guard.object.spec.taints, {
+          key    = var.provider_authority.taint_key
+          value  = var.provider_authority.taint_value
+          effect = var.provider_authority.taint_effect
+        })
       )
-      error_message = "The post-guard live Node UID, full labels or full taints differ from the signed attestation."
+      error_message = "The post-guard live Node UID/providerID is not the signed NodeGroup member or its immutable lane label/taint differs."
     }
   }
 
-  depends_on = [kubernetes_manifest.workload_binding_v3]
+  depends_on = [terraform_data.daemonset_inventory_post_guard]
 }
 
 resource "kubernetes_config_map_v1" "trust" {
