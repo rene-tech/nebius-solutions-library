@@ -76,6 +76,23 @@ def metadata():
     return identity, discovery, policy, client
 
 
+def test_wildcard_grants_expand_through_complete_discovery():
+    identity, discovery, policy, client = metadata()
+    policy["models"] = ["*"]
+    identity["tenant_policy_sha256"] = verifier.digest(policy)
+    manifest = verifier.build_manifest(identity, discovery, policy, client)
+    assert set(manifest["apps"]) == {"protein-fixture", "batch-fixture"}
+    assert manifest["excluded_cosmos_apps"] == ["cosmos-excluded-fixture"]
+
+
+def test_explicit_grant_with_wildcard_must_not_disappear():
+    identity, discovery, policy, client = metadata()
+    policy["models"] = ["*", "missing-app"]
+    identity["tenant_policy_sha256"] = verifier.digest(policy)
+    with pytest.raises(verifier.ReceiptError, match="team_grant_missing_from_discovery"):
+        verifier.build_manifest(identity, discovery, policy, client)
+
+
 def inputs():
     manifest = verifier.build_manifest(*metadata())
     required = sorted(

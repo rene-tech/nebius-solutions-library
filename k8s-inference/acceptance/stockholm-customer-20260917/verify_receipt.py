@@ -198,7 +198,7 @@ def build_manifest(identity: object, discovery: object, team_policy: object, cli
         app_id = app["app_id"]
         check(app_id not in seen, "duplicate_app")
         seen.add(app_id)
-        check(app_id in policy["models"], "advertised_app_outside_team_grants")
+        check("*" in policy["models"] or app_id in policy["models"], "advertised_app_outside_team_grants")
         if app["source_model_ref"].startswith("cosmos"):
             excluded.append(app_id)
             continue
@@ -252,7 +252,10 @@ def build_manifest(identity: object, discovery: object, team_policy: object, cli
     check(apps, "no_non_cosmos_apps")
     # Grants absent from discovery still block coverage; they cannot silently
     # disappear from the manifest. Explicit Cosmos source rows are excluded.
-    check(set(policy["models"]) == seen, "team_grant_missing_from_discovery")
+    # Live Stockholm teams grant '*'. Expand that grant through the complete
+    # caller-scoped discovery export; '*' is not itself a public App identity.
+    # Explicit grants must still all be present, even alongside a wildcard.
+    check(set(policy["models"]) - {"*"} <= seen, "team_grant_missing_from_discovery")
     safe([release, policy, client, discovery])
     return {
         "release_identity": release,

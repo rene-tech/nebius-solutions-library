@@ -1,9 +1,44 @@
 # Stockholm customer receipt verifier
 
-Implemented scope: an executable **offline receipt consistency verifier** and
-its tests. This is **not a complete live acceptance runner**, and no Stockholm
-customer acceptance receipt has been produced. The live deployment remains
-unverified while cluster credentials are unavailable.
+Implemented scope: an offline receipt consistency verifier, read-only live
+deployment/team/client collectors, an explicit disposable-canary issuer, and a
+bounded resumable OpenFold2/Boltz2 SDK/HTTP driver with representative ESMFold2
+batch readback. This is **not a complete customer release gate**. Raw client
+passes never establish actual LibreChat or all-App readiness.
+
+Authorized sandbox2 access was restored on 2026-09-17. The first live attempt
+completed three OpenFold2 MCP operations (named, generic, legacy nested), each
+with in-flight and terminal replay plus semantic PDB validation, against CP
+image `sha256:1cf5df3c2a7b11207eed3f939cb3c2b12b2c5920e3b67a52da098104bb7ab8df`.
+Its HTTP attempt then stopped before recording an operation: the driver used
+the base NIM operation `predict` instead of the live portable discovery's
+`predict-structure`. The driver now obtains the operation from live discovery.
+The negative receipt is retained. Further
+submissions were paused while the release owner replaced this CP's broken
+metrics endpoint. The image above is **not final-release acceptance**.
+
+On corrected CP `sha256:f96d890a19fb917322f5986d1ee81b1d5911643e35b62d76a46503c5f35654f8`
+(Helm 140), one bounded cohort subsequently passed all eight OpenFold2/Boltz2
+named/generic/nested/HTTP cases with semantic validation and replay, plus five
+mixed-model operations with server-observed outstanding concurrency exactly five.
+ESMFold2 operation `1ad494d6-43b5-4fe3-b5dd-0d82c1040c64` succeeded with queue,
+upload and scientific validation evidence. The advertised download tool plus
+HTTPS readback verified its 695-byte manifest, 26,292-byte PDB and 597-byte
+validation receipt against their published SHA-256 hashes. The first readback
+attempt incorrectly used the unadvertised client-only `read_scientific_artifact_bytes`;
+that collector error is preserved as a negative attempt, not a backend defect.
+Only saved results were read on resume; no replacement inference was submitted.
+
+`cohorts-final-1/partial-receipt.json` reports `partial_scope_passed`, still
+`customer_ready: false`. This is one intermediate cohort, not two qualifying
+customer cohorts. Both bounded cohorts must be repeated after release-owner GO
+for the additive release 141 configuration identity. No cold-start, all-App,
+or actual LibreChat qualification is inferred from these results.
+
+Private evidence is under
+`/home/tux/secure-handoff/stockholm-live-acceptance-20260917/`, mode 0700; files
+are 0600. A new same-policy `stockholm-canary-*` key expires at
+2026-09-17 19:43:47 UTC. No real team key or hosted client setting was changed.
 
 `verify_receipt.py` builds per-App capability manifests using the existing
 [`customer-readiness/capability_gate.py`](../customer-readiness/capability_gate.py)
@@ -59,7 +94,9 @@ with `sha256:`. This is distinct from hashing an arbitrary pretty-printed file.
 The source `model_revision` in the multi-App release identity should identify
 the pinned model inventory; each discovery App also carries its exact revision.
 
-Discovery must account for every team grant. A missing grant blocks the report;
+Discovery must account for every team grant. Live teams grant `*`, which expands
+through the complete caller-scoped discovery; it is not a literal App name.
+A missing explicit grant blocks the report;
 do not shrink the policy to conceal an untested or unavailable App. Explicit
 Cosmos source-model rows are listed as externally owned exclusions and generate
 no passing coverage. No model name, biological fixture, or runtime call is
@@ -102,24 +139,108 @@ and flat/outer-envelope shape in the cohort receipt. A raw SDK receipt renamed
 as a client receipt is not acceptable evidence; the release owner must retain
 the corresponding actual client traces and provenance.
 
-## Still required before live acceptance
+## Executable live preparation and bounded probes
 
-The following pieces are **not implemented by this directory**:
+`collect_live.py` performs only explicit-context Kubernetes and in-pod read-only
+policy queries. It records all fs2-system deployment images, CP Pod image IDs,
+readiness/restarts, mounted configuration hashes and the exact common policy of
+the 20 active Stockholm teams. The observed policy hash was
+`sha256:467d5cefd976e1a6444eb858b9c71d2c25fa84a782871deec7c3c442fca6c1b9`:
+wildcard models, concurrency five, ordinary inference/MCP/results/artifact
+scopes, and null request/GPU/rate budgets. No admin scope is granted.
 
-1. Trusted exporters for live deployment/image/config/model identity, complete
-   customer discovery, team policy, and installed LibreChat/skill fingerprints.
-2. A disposable same-policy Stockholm canary lifecycle and verified ordinary
-   caller identity, without using the operator's or Rene's credentials.
-3. A live orchestration driver for actual LibreChat plus raw SDK/public API
-   routes, including five-way scheduling, polling, discovery refresh, bounded
-   retries, and failure/cancellation behavior.
+`issue_canary.py --execute` issues only a new six-hour same-policy canary after
+the supplied immutable CP image is fully running. Its output contains secrets
+and must stay outside the repository. It never changes or revokes existing
+customer keys. The release owner owns revocation of this one disposable key
+after all unfinished work has settled.
+
+`run_live.py` without `--execute` prints the offline plan. Execution requires
+that owner-only key, an exact deployed CP image, and explicit context. It
+refuses real team keys, mismatched grants, unbounded/expired canaries and
+rollout drift. Each cohort has eight protocol cases (two models × named,
+generic, legacy nested, HTTP), then five mixed-model submissions. Replay is
+checked both while admitted and after terminal success; concurrency is measured
+from server accepted/completed times, not from client task counts. `--batch`
+also uses the existing scientific-fleet ESMFold2 upload/queue/semantic runner
+and obtains the advertised MCP download handles, then verifies the output
+manifest and every artifact over HTTPS using a separate unauthenticated HTTP
+client. It never forwards the gateway bearer to object storage or persists
+signed URLs/headers. Required download-tool discovery is checked before inference.
+`--resume` reuses persisted operation/idempotency identities; never discard an
+uncertain submission receipt and resubmit with a new identity. `--stop-file`
+lets the operator block new admissions while already-known operations settle.
+
+Example after explicit release-owner GO (replace the image/path placeholders):
+
+```sh
+components/control-plane/.venv/bin/python acceptance/stockholm-customer-20260917/run_live.py \
+  --execute --key-file /secure-evidence/canary.json \
+  --kubeconfig /secure-evidence/authorized.kubeconfig --context explicit-context \
+  --expected-cp-image registry/control-plane@sha256:EXACT_DEPLOYED_DIGEST \
+  --output /secure-evidence/new-cohorts --cohorts 2 --batch \
+  --stop-file /secure-evidence/PAUSE
+```
+
+`sibling_checks.py` reads speech discovery, the caller's storage metadata
+(Stockholm must remain disabled), and existing MindEval health/catalog routing.
+It does not request storage credentials, provision buckets, submit speech, or
+run evaluations. These checks are sibling preservation, not modality quality.
+The corrected-release readback preserved all five speech catalog entries;
+Stockholm own-user storage stayed disabled with no bucket or credentials; public
+MindEval catalog returned 200. The optional in-pod MindEval service-health probe
+timed out, so its receipt explicitly does not claim internal health success.
+
+`inspect_librechat.py` reads the hosted endpoint identity, authenticates only
+for configuration/skill reads, paginates all installed skills and hashes their
+bodies. It never calls a model/tool or changes client configuration. The live
+Stockholm endpoint is `aiendpoint-e00mhcnw5jpbsg95dk`, project
+`project-e00z6b02t8ddk96c49`, image tag `20260909-cc85e14`, with 32 installed
+skills including scientific-gateway, scientific-batch, openfold2 and boltz2.
+The image tag has not been independently resolved to a runtime digest here.
+
+The exact `cc85e14` configuration renderer uses a global
+`SCIENTIFIC_MODELS_API_KEY` whenever that environment variable is supplied;
+per-user custom variables exist only in the opposite branch. This endpoint
+supplies the global key and its read API advertises no per-user variable.
+It therefore has not been bound to the disposable canary. Replacing that
+shared key is out of scope. An isolated same-build client would provide only
+component integration evidence, not unchanged hosted-client acceptance.
+
+The optional `probe_librechat.py` authenticates the existing seeded account and
+would label any run as the existing shared principal, never the canary. Its
+bounded attempts stopped before inference: the global key is a MysteryBox
+reference (never resolved), then the known saved-protein-agent API lookups did
+not return a usable agent. This does not establish that the hosted agent is
+absent; its actual route remains unresolved. No model turn or tool call was
+submitted. The browser login-page inspection also remained unauthenticated,
+and its task-owned browser was closed. `browser_login.js` is now explicitly a
+read-only page check; the earlier VM dynamic-import failure is retained in the
+attempt history. No alternative client is presented as hosted-client evidence.
+
+## Still required before full customer acceptance
+
+The following pieces remain incomplete or unexecuted:
+
+1. Complete release identity assembly across actual model images, source,
+   configuration and client digest, tied to the release owner's build receipts.
+2. Actual hosted LibreChat canary binding and conversation/tool traces. Installed
+   skill hashes do not prove use; per-model skills must be mapped honestly into
+   the verifier's BioNeMo integration evidence, not fabricated group labels.
+3. Two complete unchanged-final-release cohorts, including concurrency five,
+   representative batch and failure/cancellation behavior. One corrected-release
+   bounded cohort passed, but release 141 changes configuration and requires a
+   fresh pair. The new bounded
+   driver is not a full all-model or LibreChat driver.
 4. Approved, bounded, model-specific synthetic inputs and semantic/artifact
    validators for every advertised serving and scientific App. No fake
    all-model fixture inventory is supplied here.
 5. Collectors for client traces, upstream shapes, complete attempts, lifecycle
    identity, usage reconciliation, warning/restart/resource counts, and cleanup.
-6. Two real unchanged-release cohorts and exact final-image evidence, followed
-   by root-owned release evaluation and a human-readable customer handoff.
+6. Root-owned release evaluation, disposable-key teardown evidence and a
+   human-readable customer handoff. The first live discovery advertised 21
+   serving and 10 scientific Apps / 60 tools; excluding Cosmos leaves 30 Apps,
+   not the two protein models selected for the first bounded run.
 
 Existing model/public acceptance helpers can provide pieces of this work, but
 must be adapted and exercised through these actual paths before they count.
@@ -134,7 +255,7 @@ components/control-plane/.venv/bin/python -m pytest \
   tests/test_customer_capability_gate.py -q
 ```
 
-2026-09-17 result: **41 passed in 0.11s** (31 dedicated tests plus 10 existing
+Initial offline result: **41 passed in 0.11s** (31 dedicated tests plus 10 existing
 capability-gate tests). Ruff and CLI help passed. Tests use only two synthetic
 App metadata fixtures and one explicit Cosmos exclusion; they never invoke a
 model or establish coverage of live Apps. An initial test fixture accidentally
@@ -143,6 +264,13 @@ and the release-drift rejection remains covered.
 
 Integration branch `agent/fs2-cosmos-stockholm-remediation-r20260917`, base
 `bad3f9cba9cac2762ddbe0b62f8c6ab3a780a6d7`. The root agent owns the final commit
-and frozen suite. This directory made no cloud writes, created no canary, and
-performed no live inference or cleanup. Credentials were already reported
-revoked; the manager has requested refreshed access.
+and frozen suite. That initial implementation made no cloud writes or live
+calls. After authorized access was restored, preparation tests plus verifier
+tests initially passed **54 tests in 0.60s**. After the public download-path fix,
+**62 tests passed in 0.60s**, including absent-tool, metadata mismatch, expired
+handle, HTTP failure, oversized content and digest mismatch negatives; Ruff
+passed. The live activities above
+supersede the original credential blocker. Earlier failed/incomplete client
+collector receipts are retained, including pagination and redaction corrections;
+use `librechat-final-readback.json` for the complete 32-skill inventory. No
+historical scientific data or customer key was deleted.
