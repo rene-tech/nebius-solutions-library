@@ -1,7 +1,7 @@
 output "current_handoff" {
   description = "Non-secret provider-enforced egress handoff for the additive compatibility-v3 reconciler."
   value = {
-    schema                                            = "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v7"
+    schema                                            = "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v8"
     generation                                        = local.authority.current_generation
     lane_id                                           = local.generations[local.authority.current_generation].lane_id
     authority_manifest_sha256                         = data.external.authority.result.manifest_sha256
@@ -24,6 +24,8 @@ output "current_handoff" {
     max_node_count                                    = local.generations[local.authority.current_generation].max_node_count
     protected_observers                               = local.generations[local.authority.current_generation].protected_observers
     protected_observer_inventory_sha256               = local.generations[local.authority.current_generation].protected_observer_inventory_sha256
+    protected_node_names                              = local.generations[local.authority.current_generation].protected_node_names
+    protected_node_inventory_sha256                   = local.generations[local.authority.current_generation].protected_node_inventory_sha256
     provider_api_cidrs                                = local.generations[local.authority.current_generation].provider_api_cidrs
     kubernetes_api_cidrs                              = local.generations[local.authority.current_generation].kubernetes_api_cidrs
     authority_service_account_sha256                  = sha256(data.external.authority.result.authority_service_account_id)

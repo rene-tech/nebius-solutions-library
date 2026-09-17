@@ -43,19 +43,23 @@ inherited/federated/external principals, the fresh signed target-cluster RBAC
 inventory, its complete subject closure and its derived binding-to-rule
 effective-authority graph, deterministic Kubernetes-native groups, exact
 provider-bound controller identities, the exact signed OTel/GPU compatibility
-observer inventory, and every content-named route/node generation. Every new
+observer inventory, the retained filesystem CSI/Prometheus node-exporter/OTel
+node-agent inventory, the activated protected-node name, and every
+content-named route/node generation. Every new
 node generation uses a separately signed lane-unique selector/taint key. The
 lane ID is independent of the final content-hashed authority generation so
 observer UIDs can be captured before that generation is sealed. Retained resources
 keep their original key under `ignore_changes`, so source never proposes their
-replacement. The signed observer inventory includes exact namespace, lane-derived name,
-live UID, canonical DaemonSet spec and non-system release owner. The provider
-generation is invalid until both additive observers have been created while
-the new node selector matches no node and their UID/spec receipt has been
-independently signed. A successor node group is created with autoscaling bounded
-to zero through one node. It stays at zero until the admission boundary is live
-and the exact storage Pod is admitted, eliminating a pre-policy scheduling
-window. Canonical state uses a locked,
+replacement. The signed workload inventory includes exact namespaces, names,
+live UIDs, canonical DaemonSet specs and non-system release owners. The provider
+generation is invalid until both additive observers exist and the three
+retained critical node agents have been read exactly. A successor node group is
+created with autoscaling bounded to zero through one node, then exactly one
+non-credentialed node is activated. Its canonical Kubernetes name is added to
+the independently signed generation before admission is installed; arbitrary
+`nodeName` or controller affinity on another node therefore does not enter the
+lane guard. The credential-bearing storage release remains blocked until that
+admission boundary is live. Canonical state uses a locked,
 versioned remote backend; local or omitted state is never an authority source.
 
 Before provider evaluation, a paginated read-only Nebius CLI preflight proves that the

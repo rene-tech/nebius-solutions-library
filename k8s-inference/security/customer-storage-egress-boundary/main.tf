@@ -10,7 +10,7 @@ data "external" "protected_lane_admission" {
   ]
   query = {
     contract_json = jsonencode({
-      schema                        = "fs2-serve.nebius.ai/protected-lane-admission/v1"
+      schema                        = "fs2-serve.nebius.ai/protected-lane-admission/v2"
       generation                    = var.provider_authority.generation
       lane_id                       = var.provider_authority.lane_id
       selector_key                  = var.provider_authority.node_selector_key
@@ -18,6 +18,8 @@ data "external" "protected_lane_admission" {
       taint_key                     = var.provider_authority.taint_key
       taint_value                   = var.provider_authority.taint_value
       taint_effect                  = var.provider_authority.taint_effect
+      protected_node_names          = var.provider_authority.protected_node_names
+      protected_node_inventory_sha256 = var.provider_authority.protected_node_inventory_sha256
       daemonset_controller_username = var.daemonset_controller_username
       scheduler_username            = var.scheduler_username
       observers                     = var.provider_authority.protected_observers
@@ -1002,6 +1004,7 @@ resource "terraform_data" "separate_security_owner" {
     provider_security_group_id         = var.provider_authority.security_group_id
     provider_node_group_id             = var.provider_authority.node_group_id
     protected_observer_inventory       = var.provider_authority.protected_observer_inventory_sha256
+    protected_node_inventory           = var.provider_authority.protected_node_inventory_sha256
     protected_observer_live = sha256(jsonencode({
       for role, observer in data.kubernetes_resource.protected_observer : role => {
         uid         = observer.object.metadata.uid
@@ -1045,7 +1048,7 @@ resource "terraform_data" "separate_security_owner" {
           if identity.category == "release" && identity.username == expected.owner_username
         ]) == 1
       ])
-      error_message = "A protected-lane OTel/GPU observer differs from the signed UID/spec inventory or its independently checked release identity."
+      error_message = "A lane observer or retained critical node agent differs from the signed UID/spec inventory or its independently checked release identity."
     }
     precondition {
       condition = (
@@ -1232,6 +1235,7 @@ resource "terraform_data" "security_generation_v4" {
     provider_authority_adapter_sha256          = var.provider_authority.provider_authority_adapter_sha256
     predecessor_compatibility_sha256           = local.predecessor_compatibility_sha256
     protected_observer_inventory_sha256        = var.provider_authority.protected_observer_inventory_sha256
+    protected_node_inventory_sha256            = var.provider_authority.protected_node_inventory_sha256
     protected_observer_live_sha256 = sha256(jsonencode({
       for role, observer in data.kubernetes_resource.protected_observer : role => {
         uid         = observer.object.metadata.uid

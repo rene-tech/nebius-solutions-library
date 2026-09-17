@@ -88,32 +88,40 @@ Secret and image-pull-secret allowlists; projected Secrets, host paths, PVCs,
 CSI volumes, `spec.nodeName`, and additional secret-backed environment sources
 are denied.
 The workload policy has no namespace exemption. It matches the signed lane's
-unique node selector and exact `Equal` taint toleration globally, and it also
-matches every keyless blanket `Exists` toleration. Blanket toleration is denied.
-Only the two provider-ledger-bound OTel and GPU compatibility observers are
-admitted: each has an exact namespace, lane-named DaemonSet name, live
-UID, canonical spec digest, separately inventoried release owner and exact
-DaemonSet-controller child owner reference. UPDATE matches both `object` and
-`oldObject`, so selector removal or a shift to affinity plus blanket tolerance
+unique node selector, required node-affinity expressions, keyed `Equal` or
+`Exists` tolerations (including an omitted effect), and direct `nodeName` only
+when it equals the single activated node name committed by the signed provider
+generation. Controller-generated `metadata.name` affinity is matched only when
+it intersects that same node inventory and is combined with a blanket
+toleration. A keyless `Exists` toleration by itself is not a lane selector and
+is never used as the sole match predicate.
+
+The provider ledger binds five exact DaemonSets: the lane-specific OTel and GPU
+observers plus the retained filesystem CSI, Prometheus node-exporter, and OTel
+node agents. Each entry fixes namespace, name, live UID, canonical spec digest,
+separately inventoried release owner, and the DaemonSet-controller child owner
+reference. The retained agents keep their recorded blanket toleration but may
+not claim the lane key; only their exact identity/spec is accepted when the
+controller adds per-node affinity. This preserves storage and telemetry without
+granting a namespace-wide or generic DaemonSet exception. UPDATE evaluates both
+`object` and `oldObject`, so entering or leaving any protected scheduling path
 cannot evade the policy. Pod binding subresources are matched cluster-wide and
-accepted only from the provider-bound scheduler. Ordinary direct `nodeName` use
-is not globally rejected; direct Pod creators are instead closed by
-independently derived RBAC authority, while the exact storage contract forbids
-`nodeName`. Retained policies protect their own retained node groups without
-selecting later exact storage or observer workloads because both selector and
-taint keys carry the signed lane digest.
+accepted only from the provider-bound scheduler. Retained policies protect
+their own retained node groups without selecting later exact storage or
+observer workloads because selector and taint keys carry the signed lane ID.
 
 Retained Deny policies are never overridden, edited, disabled or deleted. The
 non-destructive handoff is ordered: first create lane-named OTel and GPU
 observer successors using the future lane-unique key while no matching
 node exists; next capture and independently sign their exact UIDs/specs; then
-create the provider node group with a zero-node minimum; then install the new
-workload Deny policy. Only after that gate is live may the credential-bearing
+activate exactly one provider node and bind its name into the same signed
+generation before installing the new workload Deny policy. Only after that
+gate is live may the credential-bearing
 storage release trigger scale-up to the one-node maximum. The former observer DaemonSets and every
 predecessor admission object remain present. Under policy conjunction, old
 exact-key rules do not select the successors and the new rule rejects every
 unlisted blanket workload. A generation cannot be accepted if either observer
-receipt is absent.
+receipt or the exact activated-node inventory receipt is absent.
 
 The ConfigMap Helm driver is not a namespace-wide exemption. RBAC may grant
 the release identity namespace-scoped create only because Kubernetes cannot
