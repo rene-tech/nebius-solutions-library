@@ -822,7 +822,7 @@ def live_secret_inventory_for_state(
         address = resource.get("address")
         if not (
             isinstance(address, str)
-            and address.startswith("kubernetes_secret_v1.")
+            and credential_resource_type(address) == "kubernetes_secret_v1"
             and is_protected_address(
                 address, registry=registry, terraform_root=terraform_root
             )
@@ -1157,9 +1157,8 @@ def load_registry(path: Path = DEFAULT_REGISTRY) -> dict[str, Any]:
             or adoption.get("credential_class") not in identifiers
             or (adoption.get("root"), adoption.get("address"))
             not in declared_resources
-            or not str(adoption.get("address", "")).startswith(
-                "kubernetes_secret_v1."
-            )
+            or credential_resource_type(adoption.get("address"))
+            != "kubernetes_secret_v1"
             or "_versioned" in str(adoption.get("address", ""))
             or not any(
                 entry["id"] == adoption.get("credential_class")
@@ -1183,7 +1182,7 @@ def load_registry(path: Path = DEFAULT_REGISTRY) -> dict[str, Any]:
     legacy_secret_addresses = {
         (root, address)
         for root, address in declared_resources
-        if address.startswith("kubernetes_secret_v1.")
+        if credential_resource_type(address) == "kubernetes_secret_v1"
         and "_versioned" not in address
     }
     adopted_secret_addresses = {(root, address) for root, address, _ in adoption_keys}
@@ -1221,14 +1220,27 @@ def legacy_v1_adoption_classes(
 ) -> frozenset[str]:
     """Return source-approved classes for one exact, never-mutated predecessor.
 
-    This is deliberately address exact.  A versioned successor, moved address,
+    This is deliberately exact at the configuration-address level. Terraform
+    instance keys are removed, but the owning root, complete module path, type,
+    and resource name must still match. A versioned successor, moved address,
     or caller-provided alias can never enter the legacy exception.
     """
 
     return frozenset(
         item["credential_class"]
         for item in registry["legacy_v1_secret_adoptions"]
-        if item["root"] == terraform_root and item["address"] == address
+        if item["root"] == terraform_root
+        and base_resource_address(item["address"])
+        == base_resource_address(address)
+        and any(
+            entry["id"] == item["credential_class"]
+            and entry["terraform_root"] == terraform_root
+            and any(
+                re.fullmatch(pattern, address)
+                for pattern in entry["address_regexes"]
+            )
+            for entry in registry["credentials"]
+        )
     )
 
 
@@ -1259,11 +1271,11 @@ def registry_resource_addresses(
 
 
 def base_resource_address(address: Any) -> str | None:
-    """Return the declared Terraform resource address without an instance key."""
+    """Return the declared address with module path but without instance keys."""
 
     if not isinstance(address, str) or not address:
         return None
-    return re.sub(r"\[[^\]]+\]$", "", address)
+    return re.sub(r"\[[^\]]+\]", "", address)
 
 
 def generation_from_address(address: str) -> int:
@@ -1304,9 +1316,9 @@ def configuration_resource_addresses(document: Any) -> frozenset[str]:
     if not isinstance(root, dict):
         raise GuardError("Terraform plan has no embedded root configuration")
     addresses: set[str] = set()
-    pending = [root]
+    pending = [(root, "")]
     while pending:
-        module = pending.pop()
+        module, module_prefix = pending.pop()
         resources = module.get("resources", [])
         if not isinstance(resources, list):
             raise GuardError("Terraform plan configuration has malformed resources")
@@ -1320,14 +1332,28 @@ def configuration_resource_addresses(document: Any) -> frozenset[str]:
             address = base_resource_address(resource["address"])
             if address is None or address in addresses:
                 raise GuardError("Terraform plan configuration duplicates a resource")
+            if (
+                (module_prefix and not address.startswith(module_prefix))
+                or (not module_prefix and address.startswith("module."))
+            ):
+                raise GuardError(
+                    "Terraform resource address differs from its configuration module path"
+                )
             addresses.add(address)
         calls = module.get("module_calls", {})
         if not isinstance(calls, dict):
             raise GuardError("Terraform plan configuration has malformed module calls")
-        for call in calls.values():
+        for call_name, call in calls.items():
+            if (
+                not isinstance(call_name, str)
+                or re.fullmatch(r"[A-Za-z0-9_-]+", call_name) is None
+            ):
+                raise GuardError(
+                    "Terraform plan configuration has a malformed module call name"
+                )
             nested = call.get("module") if isinstance(call, dict) else None
             if isinstance(nested, dict):
-                pending.append(nested)
+                pending.append((nested, f"{module_prefix}module.{call_name}."))
     return frozenset(addresses)
 
 
@@ -1503,7 +1529,8 @@ def live_secret_bindings(
         resource
         for resource in state_resources(state_document)
         if isinstance(resource.get("address"), str)
-        and resource["address"].startswith("kubernetes_secret_v1.")
+        and credential_resource_type(resource["address"])
+        == "kubernetes_secret_v1"
         and is_protected_address(
             resource["address"],
             registry=registry,
@@ -2611,7 +2638,7 @@ def load_identity_receipt(
     expected_secret_addresses = {
         address
         for address in fingerprints
-        if address.startswith("kubernetes_secret_v1.")
+        if credential_resource_type(address) == "kubernetes_secret_v1"
     }
     if set(bindings) != expected_secret_addresses:
         raise GuardError(

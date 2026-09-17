@@ -18,6 +18,7 @@ import hashlib
 import ipaddress
 import json
 import os
+import re
 import socket
 import stat
 import struct
@@ -66,6 +67,18 @@ CALLER_PURPOSES = frozenset(
         "credential-delivery-scientific",
     }
 )
+
+
+def terraform_resource_type(address: Any) -> str | None:
+    """Return the terminal resource type without trusting a root-only prefix."""
+
+    if not isinstance(address, str) or not address:
+        return None
+    canonical = re.sub(r"\[[^\]]+\]", "", address)
+    parts = canonical.rsplit(".", 2)
+    return parts[-2] if len(parts) >= 2 else None
+
+
 CLIENT_FIELDS: dict[str, frozenset[str]] = {
     "custody-snapshot": frozenset(),
     "planned-generation-admission": frozenset({"phase"}),
@@ -1554,7 +1567,7 @@ def normalized_parameters(request: dict[str, Any], config: dict[str, Any]) -> di
         for address, binding in bindings.items():
             if (
                 not isinstance(address, str)
-                or not address.startswith("kubernetes_secret_v1.")
+                or terraform_resource_type(address) != "kubernetes_secret_v1"
                 or not isinstance(binding, dict)
                 or set(binding) != binding_fields
                 or not all(isinstance(value, str) and value for value in binding.values())

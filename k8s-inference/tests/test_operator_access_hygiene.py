@@ -566,26 +566,30 @@ class OperatorAccessHygieneTests(unittest.TestCase):
             for item in registry["terraform_resource_addresses"]
         }
         observed: set[tuple[str, str]] = set()
-        roots = {
-            "foundation": ROOT / "stages/foundation",
-            "infrastructure": ROOT / "stages/infrastructure",
-            "workloads": ROOT / "stages/workloads",
-            "reference-data": ROOT / "reference-data/terraform",
-        }
+        source_roots = (
+            ("foundation", "", ROOT / "stages/foundation"),
+            ("infrastructure", "", ROOT / "stages/infrastructure"),
+            ("workloads", "", ROOT / "stages/workloads"),
+            (
+                "workloads",
+                "module.reference_data.",
+                ROOT / "reference-data/terraform",
+            ),
+        )
         credential_types = {
             "random_password",
             "random_id",
             "kubernetes_secret_v1",
             "nebius_iam_v2_access_key",
         }
-        for root_name, root in roots.items():
+        for root_name, address_prefix, root in source_roots:
             source = "\n".join(
                 path.read_text(encoding="utf-8") for path in sorted(root.glob("*.tf"))
             )
             for resource_type, resource_name, block in hcl_resource_blocks(source):
                 if resource_type not in credential_types:
                     continue
-                address = f"{resource_type}.{resource_name}"
+                address = f"{address_prefix}{resource_type}.{resource_name}"
                 observed.add((root_name, address))
                 self.assertIn("prevent_destroy = true", block, address)
                 if "data_wo" in block:
@@ -603,7 +607,7 @@ class OperatorAccessHygieneTests(unittest.TestCase):
                 )
         self.assertEqual(observed, expected)
 
-        for root in roots.values():
+        for root in dict.fromkeys(item[2] for item in source_roots):
             gate = (root / "credential_migration_gate.tf").read_text(encoding="utf-8")
             self.assertIn('data "external" "credential_migration_gate"', gate)
             self.assertIn("secret_migration_guard.py", gate)

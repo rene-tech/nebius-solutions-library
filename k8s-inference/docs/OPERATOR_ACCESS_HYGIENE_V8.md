@@ -1,5 +1,9 @@
 # Authoritative feature-gated credential presence v8
 
+> Superseded by [v9](OPERATOR_ACCESS_HYGIENE_V9.md), which binds the
+> reference-data delivery Secrets to their exact workloads nested-module
+> configuration and raw-state addresses.
+
 This additive source-only successor preserves v7 and every predecessor. It does
 not authorize integration or deployment. Production trust, provider adapters,
 accepted SAI-08/SAI-09 integration, dynamic tests, and live evidence remain

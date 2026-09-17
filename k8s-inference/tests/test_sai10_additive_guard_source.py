@@ -9,8 +9,13 @@ import pytest
 
 from scripts.credential_authority_provider import (
     ProviderError,
+    base_address,
+    classes_for_address,
     credential_presence_sets,
     generation_from_address,
+    legacy_v1_adoption_classes,
+    state_addresses,
+    terraform_resource_type as provider_resource_type,
 )
 
 
@@ -33,11 +38,30 @@ def configured_plan(registry: dict, root: str) -> dict:
         for item in registry["credential_activation_resource_addresses"]
         if item["root"] == root
     ]
+    root_addresses = [
+        address for address in addresses if not address.startswith("module.")
+    ]
+    module_addresses = [
+        address
+        for address in addresses
+        if address.startswith("module.reference_data.")
+    ]
+    assert len(root_addresses) + len(module_addresses) == len(addresses)
+    module_calls = {}
+    if module_addresses:
+        module_calls["reference_data"] = {
+            "module": {
+                "resources": [
+                    {"address": address} for address in module_addresses
+                ],
+                "module_calls": {},
+            }
+        }
     return {
         "configuration": {
             "root_module": {
-                "resources": [{"address": address} for address in addresses],
-                "module_calls": {},
+                "resources": [{"address": address} for address in root_addresses],
+                "module_calls": module_calls,
             }
         },
         "prior_state": {"values": {"root_module": {"resources": []}}},
@@ -53,6 +77,183 @@ def test_registry_normatively_covers_all_68_current_and_sai06_addresses() -> Non
         assert GUARD.is_protected_address(
             item["address"], registry=registry, terraform_root=item["root"]
         ), item
+
+
+def test_reference_data_secret_uses_exact_workloads_module_addresses() -> None:
+    registry = GUARD.load_registry()
+    credential = next(
+        item
+        for item in registry["credentials"]
+        if item["id"] == "reference-data-s3-secret"
+    )
+    fixed = "module.reference_data.kubernetes_secret_v1.object_storage"
+    versioned = (
+        "module.reference_data.kubernetes_secret_v1.object_storage_versioned"
+    )
+    raw_fixed = "module.reference_data[0].kubernetes_secret_v1.object_storage"
+    raw_versioned = (
+        'module.reference_data[0].kubernetes_secret_v1.object_storage_versioned["2"]'
+    )
+    assert credential["terraform_root"] == "workloads"
+    assert any(
+        re.fullmatch(pattern, fixed) for pattern in credential["address_regexes"]
+    )
+    assert any(
+        re.fullmatch(pattern, raw_versioned)
+        for pattern in credential["address_regexes"]
+    )
+    assert not any(
+        re.fullmatch(
+            pattern,
+            "module.reference_data[1].kubernetes_secret_v1.object_storage",
+        )
+        for pattern in credential["address_regexes"]
+    )
+    assert base_address(raw_fixed) == fixed
+    assert base_address(raw_versioned) == versioned
+    assert provider_resource_type(raw_fixed) == "kubernetes_secret_v1"
+    assert GUARD.credential_resource_type(raw_fixed) == "kubernetes_secret_v1"
+    assert {
+        item["credential_class"]
+        for item in classes_for_address(registry, "workloads", raw_fixed)
+    } == {"reference-data-s3-secret"}
+    assert not classes_for_address(
+        registry, "workloads", "kubernetes_secret_v1.object_storage"
+    )
+    assert not classes_for_address(
+        registry, "reference-data", "kubernetes_secret_v1.object_storage"
+    )
+    assert legacy_v1_adoption_classes(
+        registry, terraform_root="workloads", address=raw_fixed
+    ) == frozenset({"reference-data-s3-secret"})
+    assert not legacy_v1_adoption_classes(
+        registry, terraform_root="workloads", address=raw_versioned
+    )
+    assert not legacy_v1_adoption_classes(
+        registry,
+        terraform_root="workloads",
+        address="module.reference_data[1].kubernetes_secret_v1.object_storage",
+    )
+
+    raw_state = {
+        "resources": [
+            {
+                "mode": "managed",
+                "module": "module.reference_data[0]",
+                "type": "kubernetes_secret_v1",
+                "name": "object_storage",
+                "instances": [
+                    {
+                        "attributes": {
+                            "id": "fs2-reference-data/object-storage-v1",
+                            "immutable": True,
+                            "metadata": [
+                                {
+                                    "name": "object-storage-v1",
+                                    "namespace": "fs2-reference-data",
+                                    "uid": "uid-v1",
+                                    "resource_version": "1",
+                                    "annotations": {},
+                                }
+                            ],
+                        }
+                    }
+                ],
+            },
+            {
+                "mode": "managed",
+                "module": "module.reference_data[0]",
+                "type": "kubernetes_secret_v1",
+                "name": "object_storage_versioned",
+                "instances": [
+                    {
+                        "index_key": "2",
+                        "attributes": {
+                            "id": "fs2-reference-data/object-storage-v2",
+                            "immutable": True,
+                            "metadata": [
+                                {
+                                    "name": "object-storage-v2",
+                                    "namespace": "fs2-reference-data",
+                                    "uid": "uid-v2",
+                                    "resource_version": "2",
+                                    "annotations": {
+                                        "fs2.nebius.ai/credential-class": "reference-data-s3-secret",
+                                        "fs2.nebius.ai/credential-generation": "2",
+                                        "fs2.nebius.ai/content-sha256": "a" * 64,
+                                    },
+                                }
+                            ],
+                        },
+                    }
+                ],
+            },
+        ]
+    }
+    projected = state_addresses(raw_state)
+    assert [item["address"] for item in projected] == [raw_fixed, raw_versioned]
+    required = registry["credential_presence"]["feature_gated"][
+        "reference-data-s3-secret"
+    ]["groups"]["reference-data"]["required_addresses"]
+    assert {(item["root"], item["address"]) for item in required} == {
+        ("workloads", base_address(projected[0]["address"]))
+    }
+    for path in (
+        ROOT / "scripts/credential_authority_provider.py",
+        ROOT / "scripts/credential_authority_service.py",
+        ROOT / "scripts/secret_migration_guard.py",
+    ):
+        source = path.read_text()
+        assert 'address.startswith("kubernetes_secret_v1.")' not in source
+
+
+def test_nested_module_plan_is_required_and_local_alias_is_rejected() -> None:
+    registry = GUARD.load_registry()
+    deployment_contract = json.loads(
+        (ROOT / "security/credential-authority-deployment-contract.json").read_text()
+    )
+    inventory_contract = deployment_contract["inventory"]
+    assert inventory_contract["nested_module_credential_addresses"] == (
+        "exact-owning-root-and-complete-module-path"
+    )
+    assert inventory_contract["root-level-or-separate-state-alias_allowed"] is False
+    plan = configured_plan(registry, "workloads")
+    configured = GUARD.configuration_resource_addresses(plan["configuration"])
+    fixed = "module.reference_data.kubernetes_secret_v1.object_storage"
+    versioned = (
+        "module.reference_data.kubernetes_secret_v1.object_storage_versioned"
+    )
+    assert {fixed, versioned} <= configured
+    assert fixed not in {
+        item["address"]
+        for item in plan["configuration"]["root_module"]["resources"]
+    }
+    assert GUARD.enforce_registry_resource_inventory(
+        plan, registry=registry, terraform_root="workloads"
+    ) == GUARD.registry_resource_addresses(registry, terraform_root="workloads")
+
+    aliased = json.loads(json.dumps(plan))
+    nested = aliased["configuration"]["root_module"]["module_calls"][
+        "reference_data"
+    ]["module"]["resources"]
+    nested[0]["address"] = "kubernetes_secret_v1.object_storage"
+    with pytest.raises(
+        GUARD.GuardError,
+        match="configuration module path",
+    ):
+        GUARD.enforce_registry_resource_inventory(
+            aliased, registry=registry, terraform_root="workloads"
+        )
+
+    flattened = json.loads(json.dumps(plan))
+    nested = flattened["configuration"]["root_module"]["module_calls"].pop(
+        "reference_data"
+    )["module"]["resources"]
+    flattened["configuration"]["root_module"]["resources"].extend(nested)
+    with pytest.raises(GUARD.GuardError, match="configuration module path"):
+        GUARD.enforce_registry_resource_inventory(
+            flattened, registry=registry, terraform_root="workloads"
+        )
 
 
 def test_state_mv_rm_laundering_reproduction_is_rejected_before_receipt_counting() -> (
@@ -472,6 +673,23 @@ def test_presence_policy_is_exhaustive_and_feature_activation_is_authoritative()
     assert set(presence["optional"]) == {
         "postgresql-backup-s3",
         "postgresql-backup-s3-secret",
+    }
+    assert {
+        credential_class: set(policy["groups"])
+        for credential_class, policy in presence["feature_gated"].items()
+    } == {
+        "pat-scientific": {"academic-assets"},
+        "pat-website": {"academic-assets"},
+        "registry-credentials": {
+            "ngc-api-key",
+            "model-nvcr",
+            "dcgm-nvcr",
+            "modelexpress-nvcr",
+        },
+        "reference-data-s3": {"reference-data"},
+        "reference-data-s3-secret": {"reference-data"},
+        "scientific-artifact-s3": {"scientific-artifacts"},
+        "scientific-artifact-s3-secret": {"scientific-artifacts"},
     }
     for policy in presence["optional"].values():
         assert policy["activation"] == "all-authoritative-addresses-observed"

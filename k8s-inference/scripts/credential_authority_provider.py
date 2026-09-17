@@ -1846,9 +1846,8 @@ def load_registry(policy: dict[str, Any]) -> dict[str, Any]:
             or set(adoption) != {"credential_class", "root", "address"}
             or adoption.get("credential_class") not in identifiers
             or (adoption.get("root"), adoption.get("address")) not in declared
-            or not str(adoption.get("address", "")).startswith(
-                "kubernetes_secret_v1."
-            )
+            or terraform_resource_type(adoption.get("address"))
+            != "kubernetes_secret_v1"
             or "_versioned" in str(adoption.get("address", ""))
             or not any(
                 item["id"] == adoption.get("credential_class")
@@ -1872,7 +1871,7 @@ def load_registry(policy: dict[str, Any]) -> dict[str, Any]:
     legacy_secret_addresses = {
         (root, address)
         for root, address in declared
-        if address.startswith("kubernetes_secret_v1.")
+        if terraform_resource_type(address) == "kubernetes_secret_v1"
         and "_versioned" not in address
     }
     adopted_secret_addresses = {(root, address) for root, address, _ in adoption_keys}
@@ -1886,12 +1885,22 @@ def load_registry(policy: dict[str, Any]) -> dict[str, Any]:
 def legacy_v1_adoption_classes(
     registry: dict[str, Any], *, terraform_root: str, address: str
 ) -> frozenset[str]:
-    """Return exact source-approved classes for one retained fixed predecessor."""
+    """Return classes for one exact root/module/type/name predecessor."""
 
     return frozenset(
         item["credential_class"]
         for item in registry["legacy_v1_secret_adoptions"]
-        if item["root"] == terraform_root and item["address"] == address
+        if item["root"] == terraform_root
+        and base_address(item["address"]) == base_address(address)
+        and any(
+            entry["id"] == item["credential_class"]
+            and entry["terraform_root"] == terraform_root
+            and any(
+                re.fullmatch(pattern, address)
+                for pattern in entry.get("address_regexes", [])
+            )
+            for entry in registry["credentials"]
+        )
     )
 
 
@@ -2073,7 +2082,18 @@ def provider_kind(terraform_type: str) -> str | None:
 
 
 def base_address(address: str) -> str:
-    return re.sub(r"\[.*\]$", "", address)
+    """Return a configuration address while retaining its complete module path."""
+
+    return re.sub(r"\[[^\]]+\]", "", address)
+
+
+def terraform_resource_type(address: Any) -> str | None:
+    """Return the terminal Terraform resource type for root or module addresses."""
+
+    if not isinstance(address, str) or not address:
+        return None
+    parts = base_address(address).rsplit(".", 2)
+    return parts[-2] if len(parts) >= 2 else None
 
 
 def reconcile_global_provider_inventory(
