@@ -52,6 +52,15 @@ Extraction refuses traversal, absolute and nested member names, duplicates,
 symlinks and non-regular members, and verifies the archive digest before writing
 anything. A destination that is not empty is refused rather than merged into.
 
+Source download is equally fail-closed. A contract must name one well-formed
+HTTPS URL, and the localizer requests only that URL with redirects disabled.
+The supported redirect statuses (301, 302, 303, 307, and 308) are terminal,
+including HTTPS-to-HTTPS redirects, so an upstream response cannot move a
+staging job to an unreviewed host, internal address, or plaintext transport.
+Operators must update and review the contract when an upstream object's
+canonical URL changes; the existing byte limit and SHA-256 verification still
+bind the response from the accepted URL.
+
 ## A generation, not a path
 
 A verified tree at a mutable path can change after it was verified. Every

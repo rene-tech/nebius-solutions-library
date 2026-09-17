@@ -19,6 +19,8 @@ import re
 import subprocess
 import sys
 import tarfile
+import urllib.error
+import urllib.request
 import zipfile
 import zlib
 from collections.abc import Mapping
@@ -41,6 +43,7 @@ from fs2_serve.scientific_batch.adapters.localization import (
     LocalizationContract,
     TreeEntry,
     count_generation,
+    fetch_source,
     generation_directory,
     generation_marker,
     interrupted_staging_directories,
@@ -618,6 +621,94 @@ def test_a_traversing_mount_path_is_rejected() -> None:
     document["tree"]["mount_paths"] = ["/opt/fs2/artifacts/../../etc"]
     with pytest.raises(ArtifactLocalizationError, match="absolute POSIX paths"):
         LocalizationContract.parse(document)
+
+
+def test_fetch_source_uses_a_no_redirect_https_opener(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = b"immutable source bytes"
+    contract = LocalizationContract.parse(_raw_document(payload))
+    observed: dict[str, Any] = {}
+
+    class StaticOpener:
+        def open(self, request: urllib.request.Request, *, timeout: float) -> io.BytesIO:
+            observed["url"] = request.full_url
+            observed["timeout"] = timeout
+            return io.BytesIO(payload)
+
+    def build_opener(*handlers: urllib.request.BaseHandler) -> StaticOpener:
+        observed["handlers"] = handlers
+        return StaticOpener()
+
+    monkeypatch.setattr(urllib.request, "build_opener", build_opener)
+    destination = tmp_path / "downloads" / contract.source.filename
+
+    assert fetch_source(destination, contract, timeout_seconds=7.5) == destination
+    assert destination.read_bytes() == payload
+    assert observed["url"] == contract.source.source_uri
+    assert observed["timeout"] == 7.5
+    handlers = observed["handlers"]
+    assert isinstance(handlers, tuple) and len(handlers) == 1
+    redirect_handler = handlers[0]
+    assert isinstance(redirect_handler, urllib.request.HTTPRedirectHandler)
+    assert (
+        redirect_handler.redirect_request(
+            urllib.request.Request(contract.source.source_uri),
+            io.BytesIO(),
+            302,
+            "Found",
+            {},
+            "http://127.0.0.1/internal",
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize("source_uri", ["http://example.invalid/source", "file:///tmp/source", "https:///source"])
+def test_fetch_source_refuses_non_https_or_hostless_urls_before_opening(
+    source_uri: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload = b"immutable source bytes"
+    document = _raw_document(payload)
+    document["file"]["source_uri"] = source_uri
+    contract = LocalizationContract.parse(document)
+
+    def unexpected_build_opener(*handlers: urllib.request.BaseHandler) -> None:
+        raise AssertionError(f"must not construct an opener for {source_uri}: {handlers}")
+
+    monkeypatch.setattr(urllib.request, "build_opener", unexpected_build_opener)
+    with pytest.raises(ArtifactLocalizationError, match="source_uri must be https"):
+        fetch_source(tmp_path / "source", contract)
+
+
+@pytest.mark.parametrize(
+    ("status", "redirect_target"),
+    [(302, "http://example.invalid/plaintext"), (307, "https://127.0.0.1/internal")],
+)
+def test_fetch_source_rejects_redirects_and_leaves_no_partial_file(
+    status: int,
+    redirect_target: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = b"immutable source bytes"
+    contract = LocalizationContract.parse(_raw_document(payload))
+
+    class RedirectingOpener:
+        def open(self, request: urllib.request.Request, *, timeout: float) -> None:
+            raise urllib.error.HTTPError(
+                request.full_url,
+                status,
+                "Redirect",
+                {"Location": redirect_target},
+                io.BytesIO(),
+            )
+
+    monkeypatch.setattr(urllib.request, "build_opener", lambda *handlers: RedirectingOpener())
+    destination = tmp_path / "source"
+    destination.write_bytes(b"stale partial source")
+
+    with pytest.raises(ArtifactLocalizationError, match="redirects are forbidden"):
+        fetch_source(destination, contract)
+    assert not destination.exists()
 
 
 def test_a_bound_tree_no_stage_ever_names_is_rejected() -> None:

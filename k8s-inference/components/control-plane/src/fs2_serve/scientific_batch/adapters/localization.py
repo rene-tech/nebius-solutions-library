@@ -29,6 +29,9 @@ import re
 import tarfile
 import tempfile
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 import zipfile
 import zlib
 from collections.abc import Iterable, Mapping, Sequence
@@ -1330,16 +1333,36 @@ def verify_localized_tree(
 # ---------------------------------------------------------------------------
 
 
+_REDIRECT_STATUS_CODES = frozenset({301, 302, 303, 307, 308})
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Keep a contracted source fetch on its one reviewed URI."""
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: object,
+        code: int,
+        msg: str,
+        headers: object,
+        newurl: str,
+    ) -> None:
+        return None
+
+
 def fetch_source(destination: Path, contract: LocalizationContract, *, timeout_seconds: float = 900.0) -> Path:
     """Download the contracted source and prove its digest and size.
 
     Only the URI the contract declares is fetched, so a staging job cannot be
-    pointed at a different object by its arguments.
+    pointed at a different object by its arguments or an upstream redirect.
     """
 
-    import urllib.request
-
-    if not contract.source.source_uri.startswith("https://"):
+    try:
+        source_url = urllib.parse.urlsplit(contract.source.source_uri)
+    except ValueError as error:
+        raise ArtifactLocalizationError("source_uri must be a well-formed https URL") from error
+    if source_url.scheme != "https" or source_url.hostname is None:
         raise ArtifactLocalizationError("source_uri must be https")
     destination.parent.mkdir(parents=True, exist_ok=True)
     digest = hashlib.sha256()
@@ -1351,8 +1374,9 @@ def fetch_source(destination: Path, contract: LocalizationContract, *, timeout_s
         contract.source.source_uri,
         headers={"User-Agent": "fs2-artifact-localization/1"},
     )
+    opener = urllib.request.build_opener(_NoRedirectHandler())
     try:
-        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:  # noqa: S310
+        with opener.open(request, timeout=timeout_seconds) as response:  # noqa: S310
             with destination.open("wb") as handle:
                 while True:
                     chunk = response.read(_READ_CHUNK)
@@ -1363,6 +1387,11 @@ def fetch_source(destination: Path, contract: LocalizationContract, *, timeout_s
                         raise ArtifactLocalizationError("source download exceeded its contracted byte size")
                     digest.update(chunk)
                     handle.write(chunk)
+    except urllib.error.HTTPError as error:
+        destination.unlink(missing_ok=True)
+        if error.code in _REDIRECT_STATUS_CODES:
+            raise ArtifactLocalizationError("source download redirects are forbidden") from error
+        raise
     except (ArtifactLocalizationError, OSError):
         destination.unlink(missing_ok=True)
         raise
