@@ -145,6 +145,24 @@ records the non-root image's offline fixture encode/normalize/decode check. Its
 local image ID is not a publishable registry manifest digest. This evidence does
 not qualify a deployed GPU workflow or the Apps UI.
 
+The exact CPU image is now published as
+`cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:a725b52d6b53ff377d05bd87e748d1722399140b08a10dde49918a029734cfc5`.
+The [registry publication receipt](activation/registry-publication-20260917.json)
+records the independent manifest/config check. The adjacent execution-map
+projection binds this image but remains candidate/unrouted: its full execution
+identity and qualification fields must be completed through the existing catalog
+promotion contract, not invented from local test results.
+
+Live direct H100 preview tests on 2026-09-17 produced distinct lighting V2V and
+environment transfer MP4s, then rewrote, packaged, extracted and fully decoded
+two 16-frame LeRobot datasets with unchanged action/state/timestamp data. These
+are mechanics checks only: the gradient fixture cannot establish preserved
+robot-scene semantics, and direct preview calls bypass public parent admission.
+A realistic public model-generated robot fixture exposed the Cosmos runtime's
+default 64 MiB shared-memory limit; the serving recipe now provides a bounded
+2 GiB pod-local `/dev/shm` for independent snapshot/media verification. No
+LeRobot semantic or customer-ready claim follows from these preliminary runs.
+
 ## Local validation
 
 Run the complete suite (the LeRobot round trip needs the pinned runtime

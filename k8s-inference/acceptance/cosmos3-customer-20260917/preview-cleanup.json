@@ -1,0 +1,18 @@
+{
+  "schema": "fs2-serve.nebius.ai/qualification-preview-cleanup/v1",
+  "recorded_at": "2026-09-17T14:14:09Z",
+  "historical_runtime_receipt": "snapshot-media-compatibility.json",
+  "historical_runtime_receipt_sha256": "2295434692cec27d200dd9f5151324c27485dbb01d1b6cd9f68156545f29c3c1",
+  "namespace": "fs2-models",
+  "deleted_deployment": "cosmos3-nano-media-snapshot-r20260917",
+  "deleted_configmap": "cosmos3-nano-media-snapshot-r20260917",
+  "pod_absence_verified": true,
+  "localhost_port_forward_18838_stopped": true,
+  "released_gpu_count": 1,
+  "node": "computeinstance-e00m0hsph76ajt9sdb",
+  "evidence_preserved": true,
+  "evidence_directory": "/home/tux/secure-handoff/cosmos-media-dataset-20260917-xlW7r93T",
+  "shared_workloads_changed": false,
+  "node_or_provider_resource_changed": false,
+  "remaining_task_owned_preview_workloads": 0
+}

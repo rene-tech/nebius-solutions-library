@@ -2056,6 +2056,8 @@ spec:
               name: tmp
             - mountPath: /cosmos-control-tmp
               name: cosmos-control-tmp
+            - mountPath: /dev/shm
+              name: runtime-shm
         - name: bounded-json-adapter
           image: docker.io/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587
           imagePullPolicy: IfNotPresent
@@ -2139,6 +2141,10 @@ spec:
         - emptyDir:
             sizeLimit: 512Mi
           name: cosmos-control-tmp
+        - emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
+          name: runtime-shm
 ---
 apiVersion: v1
 kind: Service

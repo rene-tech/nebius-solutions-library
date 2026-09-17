@@ -17,7 +17,7 @@
     },
     "execution_identity": {
       "model_revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
-      "runtime_image_digest": null,
+      "runtime_image_digest": "sha256:a725b52d6b53ff377d05bd87e748d1722399140b08a10dde49918a029734cfc5",
       "runtime_recipe_sha256": "0fd3ecf358d21b05947e08f9d4bdfc387a196d41bdc1045858c60960b8216b52",
       "workload_recipe_sha256": "78f86fb4657c674d90c2384e52d5e0b95779813800157bbdccc79a40f5be0603",
       "artifact_manifest_digest": null,
@@ -110,7 +110,7 @@
       "commercial_use": "allowed",
       "non_clinical": false,
       "limitations": [
-        "Candidate is deliberately unrouted until tenant-delegated child Cosmos admission, a published worker digest, public GPU semantic output, and two distinct LeRobot reload receipts are retained.",
+        "Worker digest and tenant-delegated child admission are implemented; candidate stays unrouted until real public GPU semantic output and two distinct LeRobot reload receipts are retained.",
         "Only LeRobot v3 inputs with integer FPS up to 30, 16 to 400 frames per selected episode, and RGB 256..1280 by 256..720 video dimensions divisible by 16 are admitted.",
         "Forward- and inverse-dynamics are excluded: the pinned H100 runtime exited with SIGBUS under normal load and restored CUDA state returned cudaErrorNotSupported for forward dynamics; source action trajectories are preserved exactly.",
         "Policy-model rollout generation and chunk/stitch of episodes longer than 400 frames are not exposed by this version."

@@ -1,0 +1,17 @@
+{
+  "source_commit": "b33d73149",
+  "published_tag": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation:delegated-b33d73149-20260917",
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:a725b52d6b53ff377d05bd87e748d1722399140b08a10dde49918a029734cfc5",
+  "registry_manifest_digest": "sha256:a725b52d6b53ff377d05bd87e748d1722399140b08a10dde49918a029734cfc5",
+  "configuration_digest": "sha256:e8af3b9c347104418d726042a18af3e25e972b57338ea11d1fb3853cadbbae4d",
+  "upstream_model_artifact_manifest_digest": "49b4bf03d84857892b86366ef2f6c3b68ac575cb1a3f2de4122c41e638f4cc6e",
+  "proposed_execution_identity_sha256": "fac02fbc9933e05e7c7fc28b75aa949d5747d679161033527ac0243edd324e06",
+  "candidate_identity_note": "Candidate profiles require null artifact/execution identities. Proposed identity can be bound only with observed H100 semantic evidence when enabling the existing active-but-unqualified dispatch state.",
+  "manifest_media_type": "application/vnd.docker.distribution.manifest.v2+json",
+  "layer_count": 11,
+  "region": "eu-north1",
+  "verification": "docker push result and independently resolved crane digest; registry manifest config matches the offline-tested local image",
+  "credential_handling": "Sandbox2 IAM token passed over stdin into an isolated private Docker config; docker logout removed the temporary registry credential after verification.",
+  "customer_ready": false,
+  "qualification": "Published CPU coordinator only; no public LeRobot GPU dataset acceptance yet."
+}

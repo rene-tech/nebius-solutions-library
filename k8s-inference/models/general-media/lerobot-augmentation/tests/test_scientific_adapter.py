@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -19,7 +20,9 @@ from fs2_serve.scientific_batch.adapters.staged_workspace import (  # noqa: E402
     STAGE_COMPLETION_SCHEMA,
     unwrapped_stage_argv,
 )
+from fs2_serve.scientific_batch.execution import FileScientificManifestRenderer  # noqa: E402
 from fs2_serve.scientific_batch.models import ScientificInputArtifact  # noqa: E402
+from fs2_serve.scientific_batch.profile_catalog import ScientificProfileCatalog, ScientificProfileError  # noqa: E402
 
 
 def _profile() -> dict[str, Any]:
@@ -40,6 +43,33 @@ def _source_reference() -> ScientificInputArtifact:
         media_type="application/json",
         compression="none",
     )
+
+
+def test_published_candidate_execution_binding_validates_without_exposing_route(tmp_path: Path) -> None:
+    catalog_path = tmp_path / "catalog"
+    shutil.copytree(SOLUTION_ROOT / "catalog/runtime", catalog_path)
+    profiles_path = catalog_path / "contracts/scientific-workload-profiles.json"
+    profiles = json.loads(profiles_path.read_text())
+    profile = _profile()
+    assert not profile["route_exposed"]
+    assert profile["state"] == "candidate-unqualified"
+    assert profile["semantic_validation"]["state"] == "candidate-unqualified"
+    profiles["profiles"].append(profile)
+    profiles_path.write_text(json.dumps(profiles))
+    shutil.copyfile(ROOT / "schema/request.schema.json", catalog_path / "schema/cosmos3-lerobot.schema.json")
+    candidate = json.loads((ROOT / "activation/execution-map.json").read_text())["model"]
+    execution_path = tmp_path / "execution-map.json"
+    execution = json.loads((catalog_path / "contracts/scientific-execution-map.json").read_text())
+    execution["models"].append(candidate)
+    execution_path.write_text(json.dumps(execution))
+    catalog = ScientificProfileCatalog.load(catalog_path)
+    FileScientificManifestRenderer(path=execution_path, profiles=catalog)
+    with pytest.raises(ScientificProfileError, match="not runnable"):
+        catalog.get(cosmos_lerobot.MODEL_ID)
+    publication = json.loads((ROOT / "activation/registry-publication-20260917.json").read_text())
+    assert candidate["stages"][0]["image"] == publication["runtime_image"]
+    assert profile["execution_identity"]["runtime_image_digest"] == publication["registry_manifest_digest"]
+    assert publication["registry_manifest_digest"] != publication["configuration_digest"]
 
 
 def test_candidate_adapter_compiles_exact_source_reference_manifest() -> None:
@@ -147,9 +177,7 @@ def test_collector_binds_reload_receipt_and_bundle_bytes(tmp_path: Path) -> None
         "logical_output_id": invocation.produces,
         "collector_id": invocation.collector_id,
         "validator_id": invocation.validator_id,
-        "argv_sha256": hashlib.sha256(
-            json.dumps(command, sort_keys=True, separators=(",", ":")).encode()
-        ).hexdigest(),
+        "argv_sha256": hashlib.sha256(json.dumps(command, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
     }
     (workspace / ".fs2" / "stage-complete.json").write_text(json.dumps(marker, separators=(",", ":")))
     collected = cosmos_lerobot.collect_companion_output(invocation, workspace)
