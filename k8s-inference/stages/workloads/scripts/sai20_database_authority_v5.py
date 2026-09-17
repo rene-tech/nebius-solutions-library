@@ -44,6 +44,7 @@ REJECTED_COMMITS = {
     "e8ac34b7b9dd670015655d43cb24d14907abf8f1",
     "1d00f13842ea0287b1aefa628bc0f224c461c65c",
     "23aa56e61b5843744636b8112091eaa93ec43407",
+    "7dd0f8951e5eb7ab5e728f6b76b93ccced09b039",
 }
 ROLLOUT_LINEAGE_LABEL = "security.fs2.nebius.ai/sai20-rollout-lineage"
 CREDENTIAL_ROLLOUT_LINEAGE_LABEL = (
@@ -1767,6 +1768,7 @@ def verify_debug_authorizer(
             "credential_boundary_sha256",
             "max_clock_skew_seconds", "failure_policy", "policy_sha256",
             "debug_record_contract_sha256", "debug_record_store",
+            "side_effects", "dry_run_behavior_sha256",
             "attested_at", "operator_principal_id",
         },
         "debug_authorizer",
@@ -1775,11 +1777,34 @@ def verify_debug_authorizer(
         value["schema"] == "fs2-serve.nebius.ai/sai20-debug-authorizer/v1",
         "debug authorizer schema mismatch",
     )
-    source_json(
+    authorizer_contract = source_json(
         query,
         "debug_authorizer_contract_path",
         "expected_debug_authorizer_contract_sha256",
         "debug authorizer contract",
+    )
+    exact_keys(
+        authorizer_contract,
+        {
+            "schema", "admission_review_version", "side_effects",
+            "dry_run_contract", "protected_namespaces",
+            "protected_subresources", "decision_contract",
+            "response_contract",
+        },
+        "debug authorizer contract",
+    )
+    require(
+        authorizer_contract["side_effects"] == "NoneOnDryRun"
+        and authorizer_contract["dry_run_contract"]
+        == {
+            "request_field": "AdmissionRequest.dryRun",
+            "true": "deny_before_authority_evaluation_without_lease_consumption_or_record_store_write",
+            "false_or_absent": "evaluate_exact_authority_and_durably_append_allow_or_deny_before_response",
+        }
+        and value["side_effects"] == authorizer_contract["side_effects"]
+        and value["dry_run_behavior_sha256"]
+        == digest(authorizer_contract["dry_run_contract"]),
+        "debug authorizer does not bind truthful NoneOnDryRun semantics",
     )
     record_contract = source_json(
         query,
@@ -1790,8 +1815,8 @@ def verify_debug_authorizer(
     exact_keys(
         record_contract,
         {
-            "schema", "retention_seconds", "retention_semantics",
-            "commit_order", "decisions", "required_fields",
+            "schema", "retention_seconds", "retention_semantics", "scope",
+            "admission_request_dry_run", "commit_order", "decisions", "required_fields",
             "prohibited_fields",
         },
         "debug record contract",
@@ -1807,9 +1832,16 @@ def verify_debug_authorizer(
         and record_contract["schema"]
         == "fs2-serve.nebius.ai/sai20-debug-record-contract/v1"
         and record_contract["retention_seconds"] == 90 * 24 * 60 * 60
+        and record_contract["scope"] == "non_dry_run_admission_requests_only"
+        and record_contract["admission_request_dry_run"]
+        == {
+            "true": "deny_without_record_write_or_lease_consumption",
+            "false_or_absent": "durably_record_allow_or_deny_before_admission_response",
+        }
         and record_contract["commit_order"]
-        == "durable_record_commit_before_admission_response"
-        and record_contract["decisions"] == ["allow", "deny"],
+        == "non_dry_run_durable_record_commit_before_admission_response"
+        and record_contract["decisions"] == ["allow", "deny"]
+        and "dry_run" in record_contract["required_fields"],
         "debug authorizer does not bind the exact source-owned 90-day record policy",
     )
     attested_at = v3.parse_time(value["attested_at"], "debug_authorizer.attested_at")

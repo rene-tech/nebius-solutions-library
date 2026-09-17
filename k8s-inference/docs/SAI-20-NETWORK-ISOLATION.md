@@ -795,3 +795,37 @@ but were not executed. No parser, formatter, Terraform, Helm, build, package
 manager, scanner, provider, cluster, database, registry, credential, deployment,
 probe, cleanup or deletion action ran. This is a source-only candidate for fresh
 independent review, never a SOURCE GO, integration, deployment or live claim.
+
+## Final independent-review correction after `7dd0f895`
+
+Exact `7dd0f8951e5eb7ab5e728f6b76b93ccced09b039` / tree
+`b9da53e85790b1eefc091e0724a1688d07fe5fc4` is preserved as
+SOURCE/INTEGRATION/LIVE NO-GO evidence. It truthfully required a durable
+allow/deny record append for normal admission decisions, but its webhook
+declared `sideEffects: None` and did not specify `AdmissionRequest.dryRun`.
+That registration falsely asserted that the webhook never caused an external
+side effect.
+
+The successor renders `sideEffects` from the source-owned authorizer contract,
+which now requires `NoneOnDryRun`. For an explicit `dryRun: true` request, the
+authorizer must deny before evaluating debug authority, consuming or replaying
+a lease, or contacting the record store. Only `dryRun: false` or an absent
+field enters normal authorization; those requests still require the durable
+allow/deny append before the admission response and the exact 90-day retention
+contract. A dry-run therefore cannot exercise debug authority or produce a
+record while the normal request path retains its required audit side effect.
+
+The dual-signed authorizer attestation now carries the exact side-effect mode
+and a digest of the dry-run behavior. The verifier recomputes that digest from
+the committed contract, validates the non-dry-run-only record scope, and the
+webhook object records the same digest as an annotation. A future integration
+packet cannot assert a different dry-run behavior without failing source and
+attestation checks.
+
+Exact static regressions were authored for the webhook mode, normal/dry-run
+split, no dry-run lease consumption or record write, signed behavior digest,
+and rejection of the prior `sideEffects: None` declaration. They were not
+executed. No parser, formatter, Terraform, Helm, build, package manager,
+scanner, provider, cluster, database, registry, credential, deployment, probe,
+cleanup or deletion action ran. This remains a source-only candidate for fresh
+independent review, never a SOURCE GO, integration, deployment or live claim.

@@ -1,6 +1,12 @@
 {
   "schema": "fs2-serve.nebius.ai/sai20-debug-authorizer-contract/v1",
   "admission_review_version": "admission.k8s.io/v1",
+  "side_effects": "NoneOnDryRun",
+  "dry_run_contract": {
+    "request_field": "AdmissionRequest.dryRun",
+    "true": "deny_before_authority_evaluation_without_lease_consumption_or_record_store_write",
+    "false_or_absent": "evaluate_exact_authority_and_durably_append_allow_or_deny_before_response"
+  },
   "protected_namespaces": [
     "cnpg-system",
     "fs2-data",
@@ -66,7 +72,7 @@
     "maximum_activation_seconds": 604800,
     "maximum_clock_skew_seconds": 5,
     "activation_scope": "require_exact_dual_signed_customer_request_tenant_model_principal_and_pod_uid",
-    "decision_record": "durably_append_allow_or_deny_before_response_and_retain_exactly_7776000_seconds",
+    "decision_record": "non_dry_run_durably_append_allow_or_deny_before_response_and_retain_exactly_7776000_seconds",
     "stale_or_replayed_lease": "deny",
     "unavailable_or_invalid_evidence": "deny"
   },

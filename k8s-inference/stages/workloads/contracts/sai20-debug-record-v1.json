@@ -2,7 +2,12 @@
   "schema": "fs2-serve.nebius.ai/sai20-debug-record-contract/v1",
   "retention_seconds": 7776000,
   "retention_semantics": "append_only_from_decided_at_through_retention_expires_at_then_exact_ttl_purge",
-  "commit_order": "durable_record_commit_before_admission_response",
+  "scope": "non_dry_run_admission_requests_only",
+  "admission_request_dry_run": {
+    "true": "deny_without_record_write_or_lease_consumption",
+    "false_or_absent": "durably_record_allow_or_deny_before_admission_response"
+  },
+  "commit_order": "non_dry_run_durable_record_commit_before_admission_response",
   "decisions": [
     "allow",
     "deny"
@@ -10,6 +15,7 @@
   "required_fields": [
     "record_id",
     "request_uid",
+    "dry_run",
     "decision",
     "decided_at",
     "retention_expires_at",

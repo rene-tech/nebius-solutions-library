@@ -30,6 +30,9 @@ locals {
   sai20_authority_v5_debug_authorizer_contract_path = abspath(
     "${path.module}/contracts/sai20-debug-authorizer-v1.json"
   )
+  sai20_authority_v5_debug_authorizer_contract = jsondecode(
+    file(local.sai20_authority_v5_debug_authorizer_contract_path)
+  )
   sai20_authority_v5_debug_record_contract_path = abspath(
     "${path.module}/contracts/sai20-debug-record-v1.json"
   )
@@ -1135,6 +1138,7 @@ resource "kubernetes_manifest" "sai20_debug_request_authorizer_v6" {
         "security.fs2.nebius.ai/server-spki-sha256"      = local.sai20_authority_v5_debug_authorizer.server_spki_sha256
         "security.fs2.nebius.ai/debug-record-contract-sha256" = local.sai20_authority_v5_debug_authorizer.debug_record_contract_sha256
         "security.fs2.nebius.ai/debug-record-store-sha256" = sha256(jsonencode(local.sai20_authority_v5_debug_authorizer.debug_record_store))
+        "security.fs2.nebius.ai/dry-run-contract-sha256" = local.sai20_authority_v5_debug_authorizer.dry_run_behavior_sha256
       }
     }
     webhooks = [{
@@ -1143,7 +1147,10 @@ resource "kubernetes_manifest" "sai20_debug_request_authorizer_v6" {
       failurePolicy           = "Fail"
       matchPolicy             = "Equivalent"
       reinvocationPolicy      = "Never"
-      sideEffects             = "None"
+      # Normal requests durably append a decision before response. Dry-run
+      # requests are denied before authority evaluation, lease consumption or
+      # record-store access, so NoneOnDryRun is the truthful API contract.
+      sideEffects             = local.sai20_authority_v5_debug_authorizer_contract.side_effects
       timeoutSeconds          = 2
       clientConfig = {
         url      = local.sai20_authority_v5_debug_authorizer.url

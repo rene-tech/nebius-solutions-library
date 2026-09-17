@@ -9,7 +9,9 @@ e8ac34b7b9dd670015655d43cb24d14907abf8f1, and the four final
 ephemeral-debug, projected-token and rollout-identity blockers reported against
 1d00f13842ea0287b1aefa628bc0f224c461c65c, plus the exclusive-subresource,
 API-injected-token, signer-sign and tenant/model/retention blockers finally
-reported against 23aa56e61b5843744636b8112091eaa93ec43407.
+reported against 23aa56e61b5843744636b8112091eaa93ec43407, plus the false
+webhook-side-effect and missing dry-run semantics finally reported against
+7dd0f8951e5eb7ab5e728f6b76b93ccced09b039.
 They are authored evidence only;
 this task's coordinator boundary forbids executing them.
 """
@@ -80,6 +82,7 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
         self.assertIn("e8ac34b7b9dd670015655d43cb24d14907abf8f1", self.v5_py)
         self.assertIn("1d00f13842ea0287b1aefa628bc0f224c461c65c", self.v5_py)
         self.assertIn("23aa56e61b5843744636b8112091eaa93ec43407", self.v5_py)
+        self.assertIn("7dd0f8951e5eb7ab5e728f6b76b93ccced09b039", self.v5_py)
         self.assertIn("source is a preserved rejected candidate", self.v5_py)
         self.assertIn("sai20_database_authority_v5_plan.output.successor_verified", self.v4_tf)
         self.assertIn("sai20_database_authority_v5_identity.output.bootstrap_reobserved", self.v4_tf)
@@ -539,7 +542,7 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
         self.assertEqual(self.debug_record["retention_seconds"], 7776000)
         self.assertEqual(
             self.debug_record["commit_order"],
-            "durable_record_commit_before_admission_response",
+            "non_dry_run_durable_record_commit_before_admission_response",
         )
         self.assertTrue(
             {"tenant_id", "model_id", "customer_request_sha256"}
@@ -547,8 +550,42 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
         )
         self.assertEqual(
             self.debug_authorizer["decision_contract"]["decision_record"],
-            "durably_append_allow_or_deny_before_response_and_retain_exactly_7776000_seconds",
+            "non_dry_run_durably_append_allow_or_deny_before_response_and_retain_exactly_7776000_seconds",
         )
+
+    def test_debug_webhook_declares_and_binds_truthful_dry_run_semantics(self) -> None:
+        self.assertEqual(self.debug_authorizer["side_effects"], "NoneOnDryRun")
+        self.assertEqual(
+            self.debug_authorizer["dry_run_contract"],
+            {
+                "request_field": "AdmissionRequest.dryRun",
+                "true": "deny_before_authority_evaluation_without_lease_consumption_or_record_store_write",
+                "false_or_absent": "evaluate_exact_authority_and_durably_append_allow_or_deny_before_response",
+            },
+        )
+        self.assertEqual(
+            self.debug_record["scope"], "non_dry_run_admission_requests_only"
+        )
+        self.assertEqual(
+            self.debug_record["admission_request_dry_run"]["true"],
+            "deny_without_record_write_or_lease_consumption",
+        )
+        self.assertEqual(
+            self.debug_record["admission_request_dry_run"]["false_or_absent"],
+            "durably_record_allow_or_deny_before_admission_response",
+        )
+        self.assertIn("dry_run", self.debug_record["required_fields"])
+        self.assertIn(
+            "sideEffects             = "
+            "local.sai20_authority_v5_debug_authorizer_contract.side_effects",
+            self.v5_tf,
+        )
+        self.assertNotIn('sideEffects             = "None"', self.v5_tf)
+        self.assertIn("dry_run_behavior_sha256", self.v5_py)
+        self.assertIn('authorizer_contract["dry_run_contract"]', self.v5_py)
+        self.assertIn('record_contract["scope"]', self.v5_py)
+        self.assertIn("truthful NoneOnDryRun semantics", self.v5_py)
+        self.assertIn("dry-run-contract-sha256", self.v5_tf)
 
     def test_provider_observer_executes_the_authenticated_open_descriptor(self) -> None:
         self.assertIn("os.O_NOFOLLOW", self.v5_py)
