@@ -4000,8 +4000,14 @@ class PostgresStore:
             return result
 
     async def queue_counts(self) -> dict[tuple[str, str], int]:
+        """Model-runtime demand; CPU uploads retain their separate outcome ledger."""
         async with self.pool.acquire() as connection:
-            rows = await connection.fetch("SELECT model_id,status,count(*) AS count FROM fs2_operations GROUP BY 1,2")
+            rows = await connection.fetch(
+                """
+                SELECT model_id,status,count(*) AS count FROM fs2_operations
+                WHERE protocol<>'scientific-artifact-upload-v1' GROUP BY 1,2
+                """
+            )
             return {(row["model_id"], str(row["status"])): row["count"] for row in rows}
 
     async def oldest_queue_age(self) -> dict[str, float]:

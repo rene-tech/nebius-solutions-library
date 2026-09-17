@@ -2530,9 +2530,12 @@ class MemoryStore:
             return [row.model_copy(deep=True) for row in rows[:limit]]
 
     async def queue_counts(self) -> dict[tuple[str, str], int]:
+        """Model-runtime demand; CPU uploads retain their separate outcome ledger."""
         async with self._lock:
             result: dict[tuple[str, str], int] = {}
             for row in self.operations.values():
+                if row.view.protocol == "scientific-artifact-upload-v1":
+                    continue
                 key = (row.view.model_id, str(row.view.status))
                 result[key] = result.get(key, 0) + 1
             return result
