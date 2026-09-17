@@ -220,7 +220,8 @@ class TokenFactoryAdapter:
                     raise GatewayError(
                         f"provider_http_{status}",
                         f"provider rejected request (HTTP {status})",
-                        telemetry={"retries": attempt},
+                        telemetry={"retries": attempt, "invalid_completions": invalid_completions,
+                                   "chat_template_kwargs": template},
                     ) from None
                 retry_codes.append(f"http_{status}")
                 try:
@@ -265,5 +266,7 @@ class TokenFactoryAdapter:
                 "retry_codes": retry_codes,
                 "queue_ms": queue_ms,
                 "latency_ms": (time.monotonic() - started) * 1000,
+                "invalid_completions": invalid_completions,
+                "chat_template_kwargs": template,
             },
         )

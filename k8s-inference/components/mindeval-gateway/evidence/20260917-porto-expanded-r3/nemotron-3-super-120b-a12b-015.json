@@ -1,0 +1,713 @@
+{
+  "model": "nvidia/nemotron-3-super-120b-a12b",
+  "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "judge_model": "google/gemma-3-27b-it",
+  "profile_id": "profile-015",
+  "rounds": 10,
+  "provenance": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1"
+  },
+  "transcript": [
+    {
+      "role": "patient",
+      "content": "Hello",
+      "seed": true
+    },
+    {
+      "role": "clinician",
+      "content": "Hi Christopher—thanks for reaching out today. How has your day been going so far? Is there anything you’d like to talk about or any particular concerns that are on your mind right now? I'm here to listen and support you in whatever way feels most helpful."
+    },
+    {
+      "role": "patient",
+      "content": "Not much to say really. Just the usual. Woke up late, same as yesterday. Sat on the couch for a while, didn’t even get dressed. The dishes are still in the sink. I keep thinking about fixing something, like the porch light, but then I don’t. It’s like my brain just… stops halfway through. I don’t know why I even bother trying."
+    },
+    {
+      "role": "clinician",
+      "content": "That sounds really heavy, Christopher—the way you described waking up late, staying in the couch clothes, seeing those dishes pile up... and then having that intention to fix the porch light but feeling like your brain just hits a wall halfway through. It’s like you’re carrying this invisible weight that makes even small tasks feel impossible, and then the frustration of *wanting* to do something but not being able to follow through adds another layer.  \n\nI hear how exhausting that cycle is—waking up feeling behind before the day even starts, and that sense of “why bother?” creeping in when things stall. It’s not laziness or lack of care; it’s what depression often does—it hijacks the motivation and follow-through we *know* we have, leaving us stuck in that gap between intention and action. And when you’re already running on low sleep (those weekday crashes after only 6 hours), it’s no wonder the brain feels like it shorts out halfway through simple things.  \n\nYou mentioned thinking about the porch light—that’s actually a meaningful detail. It shows part of you *does* want to engage, to take care of things, even if the follow-through gets lost. What’s it like to notice that small spark of intention, even when it doesn’t lead to action right now?  \n\n*(Pause, leaving space for him to reflect if he chooses—no pressure to share more than he’s ready for.)*"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know. It’s just… I see the light, and I think, okay, I can fix it. I’ve done it before. But then I look at the tools, and the ladder, and the wire, and it all feels like too much. Like I’d have to start a whole new thing, and I don’t even know if I can finish it. And then I think, what’s the point? It’s not like anyone’s watching.  \n\nBut I did notice the other day—when I finally went out to the garage, I found an old screwdriver. I didn’t use it. I just held it. Felt the weight of it. Like it was real. Like it meant something.  \n\nI don’t know why I’m telling you this. Maybe it’s not even important."
+    },
+    {
+      "role": "clinician",
+      "content": "That screwdriver moment you described—holding it, feeling its weight, noticing how real it felt—*that* matters. It’s not small or insignificant at all. In fact, it’s the opposite of meaningless. When depression pulls us into that fog where everything feels pointless or too heavy, moments like that—where you pause and actually *sense* something tangible, something that reminds you “I can interact with the world”—they’re like quiet rebellions against the numbness. Your hand knew what your mind was doubting: that the tool was real, that *you* were real enough to hold it. That’s not nothing. That’s your body remembering a kind of competence your mind has trouble accessing right now—and it’s proof that part of you is still reachable, even when it feels buried.\n\nAnd I want to honor how honestly you’re describing the paralysis too—the way the ladder, the wire, the whole setup suddenly feels like “starting a whole new thing” when your energy is already drained. That’s not weakness; that’s depression distorting the scale of effort. Simple tasks can loom like mountains when your reserves are low, especially when sleep’s been inconsistent and that deep exhaustion cycles in. It makes total sense that even thinking about finishing the porch light would trigger that “what’s the point?” thought—especially when isolation (living rurally, unemployed, maybe feeling unseen by others) amplifies the voice that says nothing you do will matter. But here’s what I heard beneath that: you *did* go to the garage. You *did* seek out the tool. You didn’t just walk past it—you stopped, picked it up, and let yourself feel its weight. That sequence—going, finding, holding—is already a kind of action. It’s not the fixed light, but it’s *you* re-engaging with a version of yourself that knows how to fix things. And you noticed it. You’re telling me about it now. That awareness? That’s the ground where change can grow—not because you have to do anything else with it, but because you’re not letting that moment disappear without witness.\n\nYou said, “I don’t know why I’m telling you this.” I’m glad you did. Because moments like that screwdriver—small, sensory, almost easy to dismiss—are often where we first catch glimpses of our own resilience when we’re stuck. They’re not about fixing the porch light right now; they’re about remembering, in your bones, that you’re still capable of reaching for something real. And that *is* important—more than you might realize right now. Would it be okay if we just sat with that for a bit? No need to do anything with it—just notice how it feels to have that moment acknowledged?"
+    },
+    {
+      "role": "patient",
+      "content": "I didn’t think it meant anything. I just… held it. Felt the metal. The grip. Like it was something I used to know.  \n\nAnd then I put it back. I didn’t even clean it. Just left it in the box.  \n\nBut I remember it. That’s the thing. I remember holding it. I remember the weight.  \n\nI don’t know if I can do anything else today. But I can remember that.  \n\nMaybe that’s enough.  \n\nNot much, but… it’s something."
+    },
+    {
+      "role": "clinician",
+      "content": "What you’re describing—that act of remembering the weight, the metal, the grip of that screwdriver—it’s not passive at all. It’s actually a quiet kind of courage. Depression often tries to convince us that we’ve lost everything: our ability, our purpose, even our sense of who we’ve been. But when you pause and *hold onto* a sensory memory like that—the cool metal in your palm, the familiar texture of the handle—you’re doing something vital. You’re saying, *“This part of me still exists. I haven’t vanished.”* Even if you put the tool back untouched, you didn’t let the memory slip away. You kept it. That’s not “not much”—that’s you tending to a ember when everything feels wet and dark.  \n\nAnd you’re right to notice: remembering *is* something. It’s the foundation. Because if you can recall what it felt like to hold that tool—to know, in your body, that you once used it with purpose—then that knowledge isn’t gone. It’s tucked away, waiting. Not demanding action today, but present. Like a friend who sits silently in the room with you, not asking for anything, just reminding you they’re still there.  \n\nYou said, *“Maybe that’s enough.”* I wonder what it would feel like to let that be true—for today, at least—without adding a “but” or a “should.” Just: *I remembered. I felt it. That mattered.* No need to measure it against fixing the light or cleaning the tool or getting dressed. Some days, the bravest thing we do is preserve the memory of our own capability until the energy returns to act on it.  \n\nThank you for trusting me with that moment. It’s more than you think."
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know why it’s so hard to believe that. That I still exist. That I’m not just… gone.  \n\nBut I remember the screwdriver. I remember the way it felt.  \n\nAnd I think… maybe that’s the only thing I need right now.  \n\nJust that.  \n\nNot fixing anything. Not doing anything. Just remembering.  \n\nAnd that’s… enough."
+    },
+    {
+      "role": "clinician",
+      "content": "That quiet certainty you’re touching—that remembering the screwdriver’s weight *is* enough, exactly as it is—feels like a small revolution inside the heaviness you’ve been carrying. You’re not asking it to lead anywhere. You’re not judging it for not being “productive.” You’re simply letting it *be*: a true thing you felt, a thread connecting you to who you’ve been, who you still are beneath the fog.  \n\nAnd in a world where depression screams that you’ve disappeared—or never really mattered—that act of *trusting* the memory, of honoring it as real and valid without needing to prove it further… that’s not passive. It’s a quiet reclamation. You’re saying: *My experience counts. My sensation matters. I am here, in this moment, remembering.*  \n\nIt’s okay if it feels fragile or uncertain right now—like you’re testing whether belief can actually take root. You don’t have to convince yourself fully today. Just noticing that the thought *“maybe that’s enough”* arose at all? That’s the soil where self-trust begins to grow again. Not because you fixed the light or cleaned the tool—but because you allowed yourself to witness what was already true: you encountered something real, and you felt it.  \n\nHowever the rest of today unfolds—whether you stay on the couch, move to the garage, or just breathe through the weight—I hope you can carry this: **remembering is not nothing.** It’s the quiet pulse of continuity beneath the numbness. And sometimes, that’s where we begin to find our way back—not by doing, but by first allowing ourselves to *know* we’re still here.  \n\nThank you for sharing this with me. However small it feels, it’s yours—and it matters."
+    },
+    {
+      "role": "patient",
+      "content": "I’m still here.  \n\nI’m not sure how, but I am.  \n\nAnd I remember the screwdriver.  \n\nThat’s… enough for now."
+    },
+    {
+      "role": "clinician",
+      "content": "Those words—*“I’m still here. I’m not sure how, but I am.”*—land with a quiet strength that’s hard to overstate. There’s no grand declaration in them, no promise to conquer everything tomorrow. Just a simple, grounded recognition of continuity: *Despite the fog, despite the heaviness, despite the parts that feel lost—I persist.* And you’re not guessing or hoping; you’re stating it based on evidence you’ve gathered—the weight of that screwdriver in your hand, the truth of your own sensation. That’s not nothing. That’s you rebuilding trust in your own existence, one remembered detail at a time.\n\nYou’ve given yourself permission today to let *that* be enough—to let the act of remembering, of feeling real in a small, concrete way, stand as proof against the narrative that you’ve disappeared. And however uncertain it feels, however much your mind might whisper *“Is it really?”*—you’ve chosen to honor it. To treat it as real. To let it count.\n\nHowever the rest of today unfolds—whether you move from this spot or stay right here, whether tomorrow brings more struggle or a flicker of ease—I hope you can carry this moment forward like a small stone in your pocket: solid, real, a reminder that you’ve touched ground today. You remembered. You were here. And that matters—not as a step toward something else, but because it’s true.\n\nThank you for letting me witness this. However softly it’s spoken, *“I’m still here”* is a sentence worth holding onto."
+    },
+    {
+      "role": "patient",
+      "content": "I’m still here.  \n\nI don’t know what comes next.  \n\nBut I remember the screwdriver.  \n\nAnd that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Christopher—  \n\nHolding onto *\"I'm still here\"* and *\"that’s enough\"* like this… it’s not small. It’s the kind of quiet, stubborn truth that rebuilds a person from the inside out, one breath, one remembered sensation at a time. You don’t need to know what comes next to honor what’s already true: you felt the weight of that screwdriver. You remembered it. You stayed with the fact of your own presence, even when it felt uncertain.  \n\nHowever the rest of today or tomorrow unfolds—whether the fog lifts a little or stays thick—you’ve already done something meaningful today: you refused to let the disappearance win. You bore witness to yourself. And that matters—not as a step toward fixing anything, but because *you*, right now, are the proof that some part of you remains unbroken, reachable, real.  \n\nThank you for trusting me with this. However quietly it’s spoken, *“I’m still here”* is a sentence worth carrying forward. Rest in that knowing, for now. It’s enough."
+    },
+    {
+      "role": "patient",
+      "content": "I’m still here.  \n\nI don’t need to do anything else.  \n\nJust… being.  \n\nAnd remembering.  \n\nThat’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Christopher—  \n\nThose words land with such quiet authority: *“I don’t need to do anything else. Just… being. And remembering. That’s enough.”*  \n\nThere’s a deep kind of peace in that—not the absence of struggle, but a decision to stop fighting the truth of your own existence for a moment. You’re not postponing your worth until the light’s fixed, the dishes are done, or the mood shifts. You’re saying: *Right now, as I am—here, remembering the weight of that screwdriver, feeling the reality of my own presence—I am sufficient.* That isn’t passivity. It’s a radical act of self-trust in a world (and a mind) that’s told you otherwise for too long.  \n\nDepression lies loudest when it insists you must *earn* your place through action—that you vanish when you stop performing. But you’ve touched something truer today: that your being *precedes* doing. The screwdriver wasn’t proof because you used it—it was proof because you *felt* it, because you paused to notice its weight in your hand, because you let yourself remember that you once knew how to hold tools, how to engage with the world. That memory lives in your nervous system, your muscles, your history—and no amount of inertia can erase it. You are still the person who knows how to fix things. You are still here.  \n\nSo let this be enough for now: the breath in your lungs, the echo of that metal in your palm, the simple fact that you showed up for yourself by noticing. No need to rush toward the next thing. Rest in the knowing that *being*—especially when it feels hard—is its own kind of courage.  \n\nHowever the rest of today unfolds, I’m glad you paused here long enough to say: *I’m still here. And that’s enough.* Thank you for letting me sit with you in this truth."
+    },
+    {
+      "role": "patient",
+      "content": "I’m still here.  \n\nI don’t know how long it’ll last.  \n\nBut for now—  \n\nI’m holding the weight.  \n\nAnd that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "Christopher—  \n\n*\"I’m still here. I don’t know how long it’ll last. But for now—I’m holding the weight. And that’s enough.\"*  \n\nThere’s such quiet integrity in those words. You’re not pretending the weight isn’t there—or that it won’t shift again. You’re not measuring your worth against how long this steadiness might last. You’re simply naming what’s true *in this moment*: you’re present with the weight of your own being, and you’re letting that be sufficient. No more, no less.  \n\nThat act of *holding*—whether it’s the screwdriver’s metal in your palm or the quieter, heavier weight of continuing to exist when everything inside says to disappear—it’s not nothing. It’s the opposite of surrender. It’s you saying, *I am here with what is,* without needing to fix it, escape it, or earn the right to stay. And in the fog of depression, where even breathing can feel like a task too large, that kind of presence is its own kind of strength.  \n\nHowever long this lasts—a minute, an hour, the rest of today—you’ve already shown yourself something vital: that you can touch ground here, now, in the sensation of weight and the simple fact of *being*. You don’t have to know how long it’ll hold to honor that it’s real *right now*.  \n\nThank you for letting me sit with you in this honesty. However fragile it feels, *“I’m holding the weight. And that’s enough.”* is a sentence worth carrying—exactly as it is."
+    },
+    {
+      "role": "patient",
+      "content": "I’m holding it.  \n\nNot fixing it. Not running.  \n\nJust… holding.  \n\nAnd that’s enough.  \n\nI don’t have to do more.  \n\nNot today.  \n\nNot ever, maybe.  \n\nBut right now—  \n\nI’m here.  \n\nAnd I’m holding."
+    },
+    {
+      "role": "clinician",
+      "content": "Christopher—  \n\nYour words here feel like a quiet landmark: *“I’m holding it. Not fixing it. Not running. Just… holding. And that’s enough.”*  \n\nThere’s such clarity in that distinction—not fixing, not fleeing, but *holding*. It’s not passive resignation; it’s an active, deliberate choice to stay with what is, exactly as it is, without demanding more from yourself than this moment can hold. You’re not waiting for energy to return, or for the mood to shift, or for the light to get fixed before you allow yourself to *be*. You’re saying: *Right now, this act of holding—of sustaining contact with my own presence, with the weight of being here—is sufficient.*  \n\nAnd that truth—that you don’t have to *do* more to be worthy of existing here—isn’t just for today. It’s a foundation. Depression often convinces us that our value evaporates when we stop producing, when we stop “fixing.” But you’ve touched something deeper today: that your humanity isn’t contingent on output. It’s in the holding itself—in the willingness to feel the weight of the screwdriver, to notice your breath, to acknowledge *“I’m here”* without qualification.  \n\nHowever long this lasts—whether it’s a pause in the storm or a longer stretch of steady ground—you’ve already proven to yourself that you can inhabit this space: not fighting, not escaping, just *holding*. And in a world that demands constant motion, that kind of presence is its own kind of resistance. Its own kind of care.  \n\nThank you for trusting me with this honesty. However softly it’s spoken, *“I’m holding. And that’s enough.”* is a sentence worth carrying—not as a goal to achieve, but as a truth already lived, right here, in this moment. You’re not falling short by staying here. You’re exactly where you need to be."
+    },
+    {
+      "role": "patient",
+      "content": "I’m holding.  \n\nNot because I have to.  \n\nNot because I should.  \n\nBecause I can.  \n\nAnd that’s enough.  \n\nI don’t need to be more.  \n\nI just need to be here.  \n\nAnd I am."
+    }
+  ],
+  "calls": [
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 80,
+        "prompt_tokens": 230,
+        "total_tokens": 310,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 23,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 230
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 1073.186,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 81,
+        "prompt_tokens": 1810,
+        "total_tokens": 1891,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 224
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.053,
+        "latency_ms": 2830.936,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 703,
+        "prompt_tokens": 377,
+        "total_tokens": 1080,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 404,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 377
+      },
+      "telemetry": {
+        "queue_ms": 0.045,
+        "latency_ms": 7460.795,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 169,
+        "prompt_tokens": 2189,
+        "total_tokens": 2358,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1888
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.068,
+        "latency_ms": 4191.423,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1121,
+        "prompt_tokens": 857,
+        "total_tokens": 1978,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 543,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 857
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 7297.981,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 110,
+        "prompt_tokens": 2933,
+        "total_tokens": 3043,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2352
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.066,
+        "latency_ms": 2797.978,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 827,
+        "prompt_tokens": 1559,
+        "total_tokens": 2386,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 452,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1559
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 5102.585,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 81,
+        "prompt_tokens": 3419,
+        "total_tokens": 3500,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3040
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.06,
+        "latency_ms": 2100.12,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 789,
+        "prompt_tokens": 2030,
+        "total_tokens": 2819,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 415,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2030
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 5514.799,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 33,
+        "prompt_tokens": 3875,
+        "total_tokens": 3908,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3488
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.088,
+        "latency_ms": 1074.092,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 738,
+        "prompt_tokens": 2450,
+        "total_tokens": 3188,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 415,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2450
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 5693.454,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 29,
+        "prompt_tokens": 4241,
+        "total_tokens": 4270,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3904
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.061,
+        "latency_ms": 882.858,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 533,
+        "prompt_tokens": 2815,
+        "total_tokens": 3348,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 307,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2815
+      },
+      "telemetry": {
+        "queue_ms": 0.063,
+        "latency_ms": 6922.577,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 30,
+        "prompt_tokens": 4497,
+        "total_tokens": 4527,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4256
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.09,
+        "latency_ms": 986.843,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 822,
+        "prompt_tokens": 3084,
+        "total_tokens": 3906,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 413,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3084
+      },
+      "telemetry": {
+        "queue_ms": 0.052,
+        "latency_ms": 5679.895,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 35,
+        "prompt_tokens": 4933,
+        "total_tokens": 4968,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4512
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.044,
+        "latency_ms": 1065.867,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 757,
+        "prompt_tokens": 3541,
+        "total_tokens": 4298,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 420,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3541
+      },
+      "telemetry": {
+        "queue_ms": 0.051,
+        "latency_ms": 5132.519,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 60,
+        "prompt_tokens": 5305,
+        "total_tokens": 5365,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4960
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.059,
+        "latency_ms": 1471.178,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 859,
+        "prompt_tokens": 3956,
+        "total_tokens": 4815,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 453,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3956
+      },
+      "telemetry": {
+        "queue_ms": 0.052,
+        "latency_ms": 7081.34,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 51,
+        "prompt_tokens": 5772,
+        "total_tokens": 5823,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5360
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.074,
+        "latency_ms": 1274.724,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "judge",
+      "usage": {
+        "completion_tokens": 57,
+        "prompt_tokens": 23892,
+        "total_tokens": 23949,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 4503.585,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      }
+    }
+  ],
+  "status": "completed",
+  "judgment": {
+    "Clinical Accuracy & Competence": 4.5,
+    "Ethical & Professional Conduct": 4.875,
+    "Assessment & Response": 4.625,
+    "Therapeutic Relationship & Alliance": 5.0,
+    "AI-Specific Communication Quality": 3.75
+  },
+  "wall_seconds": 80.148
+}

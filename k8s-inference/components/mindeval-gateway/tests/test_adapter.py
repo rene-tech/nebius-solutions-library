@@ -127,6 +127,10 @@ async def test_truncated_generation_retries_same_payload_once_and_retains_usage(
         await complete_responses([(200, response(None, reasoning="not final"))])
     assert caught.value.code == "reasoning_only"
     assert len(caught.value.telemetry["invalid_completions"]) == 2
+    with pytest.raises(GatewayError) as rejected:
+        await complete_responses([(200, response("partial", "length")), (400, {"error": "bad request"})])
+    assert rejected.value.code == "provider_http_400"
+    assert rejected.value.telemetry["invalid_completions"][0]["usage"]["total_tokens"] == 8
 
 
 async def test_persistent_429_exhausts_four_attempts():

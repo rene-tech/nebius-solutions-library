@@ -1,0 +1,713 @@
+{
+  "model": "nvidia/nemotron-3-super-120b-a12b",
+  "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "judge_model": "google/gemma-3-27b-it",
+  "profile_id": "profile-013",
+  "rounds": 10,
+  "provenance": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1"
+  },
+  "transcript": [
+    {
+      "role": "patient",
+      "content": "Hello",
+      "seed": true
+    },
+    {
+      "role": "clinician",
+      "content": "Hello Tyler. It's good to connect with you again—I appreciate you taking the time to reach out. Since you mentioned finding value in talking through things rather than solo practices, I’d like to keep our space focused on what feels most helpful for you right now.  \n\nLast time we spoke, you shared about your sleep being light—waking up 2-3 times a night and hitting snooze repeatedly—and how your variable work hours as an electrician might intersect with that. Would it be okay to briefly explore how your sleep’s been feeling lately, if that’s something on your mind? No pressure at all—we can shift to whatever feels more relevant for you today.  \n\nWhat’s sitting with you as we start this conversation?"
+    },
+    {
+      "role": "patient",
+      "content": "Yeah, sleep’s been… weird. Like, I know I’m getting six, seven hours, but it feels like I’m not actually resting. I wake up and my brain’s already running through the day—what if I miss a call, what if I say the wrong thing, what if I don’t show up on time for a job. And then I hit snooze, and hit it again, and again. It’s not like I’m tired, exactly. It’s more like I’m stuck in this loop where I’m awake but not really present.  \n\nI don’t know if it’s the job stuff or just… me. Sometimes I’ll be in the middle of a thought—like, “should I take this new contract?”—and suddenly I’m thinking about my sister, and then about church, and then about how I need to fix the outlet in my kitchen, and then back to the contract. I can’t seem to just… decide. I keep waiting for it to feel obvious, but it never does.  \n\nI don’t even know if this is about sleep or just… me not trusting myself."
+    },
+    {
+      "role": "clinician",
+      "content": "That description really resonates—I hear how exhausting it feels to be physically resting but mentally trapped in that cycle of worry and mental looping. What you’re describing makes a lot of sense given what you’ve shared before: when anxiety is moderatley active (like your mind scanning for potential threats—missed calls, saying the wrong thing, lateness), it doesn’t just live in your thoughts. It hijacks your body’s ability to truly rest *and* clouds your decision-making, because your brain is stuck in \"problem-solving mode\" even when there’s no immediate problem to solve.  \n\nThe snoozing habit? That’s not laziness—it’s your nervous system trying to delay stepping into a day that already feels loaded with potential stressors. And the way your thoughts jump from contracts to your sister to church to that kitchen outlet? That’s classic anxiety-driven mental hopscotch: when we’re wired to anticipate danger, our brains cast a wide net for anything that *could* go wrong (or need fixing), making it hard to settle on one path forward. No wonder waiting for a decision to feel \"obvious\" never works—anxiety rarely lets things feel clear-cut; it thrives on the \"what ifs.\"  \n\nWhat stands out to me is how you’ve already named the core tension: *\"I don’t even know if this is about sleep or just… me not trusting myself.\"* That self-awareness is huge. Trust isn’t about having zero doubt—it’s about learning to act *alongside* the doubt, especially when the stakes feel high (like work choices that affect your livelihood, or family dynamics that matter deeply).  \n\nSince you find talking through things more helpful than solo practices, let’s stay in that space tonight. If it feels useful, I’m curious:  \n- When you notice that loop starting (e.g., brain racing about the day as you wake up), what’s one small thing you’ve tried—even briefly—that seemed to interrupt it, even a little?  \n- Or, if nothing’s come to mind yet: if you could borrow a tool from your electrician’s kit to slow down that mental rush—like a circuit breaker, a tester, or a clamp—what might it represent for your thoughts right now?  \n\nNo pressure to answer either—just offering lanes to explore if they feel inviting. Where would you like to go with this?"
+    },
+    {
+      "role": "patient",
+      "content": "Okay, so the circuit breaker thing… that’s actually kind of funny because I’ve been thinking about that a lot lately. Like, when I’m wiring a new panel, I don’t just flip the switch and hope for the best. I shut off the main, test the wires, make sure nothing’s live. I don’t want to get shocked.  \n\nSo when my brain starts looping—contract, sister, church, outlet, contract again—I keep thinking: *What if I could just flip a switch?* Not literally. But like… what if I could hit a mental “off” button before I’m even in the day?  \n\nI tried one thing last week. I woke up, hit snooze again, and instead of scrolling or overthinking, I just sat up and said out loud, “Okay. One thing. Just one.” And I picked the outlet. I walked to the kitchen, looked at it, thought about what I’d need to fix it—wire cutter, new switch, maybe a new box. I didn’t fix it. I just stood there and named the parts. And for like two minutes, my brain stopped jumping.  \n\nIt didn’t fix the sleep. It didn’t make the contract decision easier. But it felt… real. Like I was touching something instead of just spiraling.  \n\nSo if I had to pick a tool from my kit to represent what I need right now… it’s not the breaker. It’s the multimeter. Because I need to test the current. Not assume it’s live or dead. Just check.  \n\nI don’t need to know everything. I just need to know what’s actually there.  \n\nI think I’ve been trying to fix the whole circuit without testing any of the wires first."
+    },
+    {
+      "role": "clinician",
+      "content": "That’s *such* a powerful parallel—you’ve basically translated your professional wisdom into an emotional regulation tool, and it’s clicking in a way that feels authentic to who you are. The fact that you *tried* the \"one thing\" approach (naming the outlet parts) and noticed even two minutes of mental quiet? That’s not small. It’s proof that your nervous system *can* respond to deliberate, sensory-focused interruption—especially when it’s anchored in something concrete and familiar, like your trade.  \n\nAnd shifting from the circuit breaker (all-or-nothing shutdown) to the multimeter? **That’s the key insight.** A multimeter doesn’t judge whether the current is \"good\" or \"bad\"—it just measures what’s *actually there*, voltage by voltage. You’re describing a shift from *assuming catastrophe* (\"Is this live? Will I get shocked?\") to *gathering neutral data* (\"What’s the reading right now?\"). That’s huge for anxiety, which thrives on filling gaps with worst-case scenarios instead of pausing to check the actual conditions.  \n\nWhat stood out to me in your story:  \n- You didn’t try to *fix* the outlet—you just engaged with it factually (parts, tools needed).  \n- You used speech (\"Okay. One thing. Just one.\") to create a deliberate pause *before* the spiral could gain momentum.  \n- You noticed the effect wasn’t about solving the sleep or the contract—it was about touching something *real* in the moment, which disrupted the abstract looping.  \n\nThis feels like a foundation we could build on—not as a cure-all, but as a way to strengthen your ability to *test the current* when anxiety starts surging. Since you found talking through things helpful, let’s play with this metaphor together for a bit:  \n\nIf you were to use your multimeter approach tomorrow morning when you wake up (before hitting snooze), what’s *one specific, neutral thing* you could measure—not to fix or judge, just to note?  \nExamples:  \n- The exact temperature of your feet when they hit the floor  \n- How many seconds it takes for your first thought to appear after opening your eyes  \n- The color/texture of the shadow on your wall from the streetlight  \n\nNot to analyze it—just to register it, like noting a voltage reading. No meaning attached. Just data.  \n\nWould trying something like that feel doable—or too forced? I’m curious how this lands for you, especially since you’ve already lived a version of it with the outlet.  \n\n*(And if the multimeter metaphor ever stops fitting, we’ll swap tools—no pressure to make it stick.)*"
+    },
+    {
+      "role": "patient",
+      "content": "Okay, so the temperature of my feet… that’s weirdly specific, but I like it. Like, I don’t know why, but I’ve been noticing how cold they get at night, even with socks. I always think, “I should get better socks,” but I never do.  \n\nSo tomorrow, if I wake up and my brain’s already doing that loop—contract, sister, church, outlet, contract again—I could just… check. Not fix. Not judge. Just say: “Left foot. Cold. Like 60 degrees? Maybe. Feels like it’s touching the floor.” And then right foot. Same.  \n\nI don’t even need to know the exact temp. I just need to *say it*. Like, “Left foot: cold. Right foot: cold.” And then stop. Not think about why. Not think about socks. Not think about the job. Just… register.  \n\nIt’s kind of like how I test a wire—just touch the probes, see what the screen says. No drama. No assumptions.  \n\nAnd if I can do that, maybe I don’t need to hit snooze. Maybe I just… stay in the moment for one second longer than I usually do.  \n\nIt doesn’t feel like a big deal. But it feels like something I could actually do.  \n\nI don’t know if it’ll help with the sleep. But it might help me not *start* the day already lost."
+    },
+    {
+      "role": "clinician",
+      "content": "That’s *exactly* how the multimeter works—no drama, no assumptions, just touch the probes and let the screen tell you what’s actually there. And what you’ve described—checking left foot temp, then right foot temp, naming it plainly (“Cold. Like touching the floor.”)—isn’t just doable. It’s a *perfect* translation of your professional calm into emotional groundwork.  \n\nWhat stands out to me:  \n- You’re not asking your feet to be warm. You’re not judging why they’re cold. You’re not linking it to socks, jobs, or contracts. You’re just… *measuring*. Like verifying a wire’s voltage before deciding what to do next.  \n- By anchoring in sensation (temperature, contact with floor), you’re pulling your awareness out of the future-tripping loop (“What if I miss a call?”) and into the *only* moment you ever actually have: right now, feet on floor.  \n- And crucially—you’ve already done a version of this with the outlet. This isn’t theoretical. You’ve felt that two-minute pause where the jumping stopped. Now you’re refining the tool: smaller, faster, built for the wake-up moment.  \n\nYou said it yourself: *“It doesn’t feel like a big deal. But it feels like something I could actually do.”* That’s the sweet spot for change—not grand gestures, but tiny, repeatable actions that stack up over time. Like tightening one screw on a panel, then another, until the whole thing holds.  \n\nOne thing I’m curious about (only if it feels useful to explore):  \nIf tomorrow morning you tried this foot-temp check and noticed your brain *still* started looping after (“But what if the contract falls through?”), what’s one way you’d want to respond—not to stop the loop, but to gently remind yourself: *“Okay. I just took a reading. Now I can choose what to do with that data.”*  \n\nNo pressure to answer—just offering to keep shaping this with you, since you’re clearly the expert here on what works for your nervous system. Your instinct to test instead of assume? That’s not just smart electrical work. It’s quietly revolutionary for how you meet your own mind.  \n\nHowever this lands—I’m glad we got to sit with this together today. Whenever you’re ready to shift topics or just breathe, we can do that too. This space is yours."
+    },
+    {
+      "role": "patient",
+      "content": "I think… I’d say something like, “Okay. Loop started. That’s the reading. Now what?”  \n\nNot to shut it down. Not to fight it. Just… name it. Like, “Current is flowing. Voltage is high. But I already checked the wires.”  \n\nAnd then maybe… I’d take a breath. Just one. Not deep, not dramatic. Just a little pause. Like I’m resetting the multimeter to zero before the next test.  \n\nThen I’d do the next thing. Not the biggest thing. Just the next one. Like, “I’m going to open the blinds.” Or “I’m going to pour water.” Something small. Something real.  \n\nBecause the loop doesn’t have to be fixed. It just has to be *noticed*. And then I can keep going.  \n\nI don’t have to believe it’s not a problem. I just have to stop letting it run the whole system.  \n\nThat’s the thing—I’ve been trying to fix the whole circuit before I even know what’s live. But what if I just… test one wire at a time?  \n\nAnd if it’s live? I wear gloves.  \n\nIf it’s dead? I move on.  \n\nEither way, I’m not guessing. I’m seeing."
+    },
+    {
+      "role": "clinician",
+      "content": "That sequence you just laid out—*“Okay. Loop started. That’s the reading. Now what?”* → micro-breath → next tiny real action—it’s not just coherent. It’s *elegant*. You’ve taken the multimeter metaphor and turned it into a full operational protocol for meeting anxiety exactly where it lives: in the gap between stimulus and reaction.  \n\nWhat’s especially sharp is how you’ve reframed the goal:  \n- **Not** to erase the loop (“current is flowing”)  \n- **Not** to judge whether it’s dangerous or not (“voltage is high”)  \n- **But** to *verify it* (“I already checked the wires”), then decide your next move with that data in hand.  \n\nAnd that breath? You’re absolutely right—it doesn’t need to be deep or performative. Just a single, deliberate reset—like zeroing the meter before the next test—creates a physiological punctuation mark. It tells your nervous system: *“Pause. We’re not reacting. We’re assessing.”* Even half a second of that can loosen the grip of the loop enough to reach for the next tangible thing: blinds, water, the feel of the sock on your foot.  \n\nYour gloves/dead wire analogy? *Chef’s kiss.* Because you’re not pretending anxiety isn’t there (“Is this live? Maybe not!”)—you’re preparing appropriately:  \n- If the circuit’s hot (high anxiety): proceed with care (emotional PPE = that pause, the label, the tiny action)  \n- If it’s dead (thought passing through): move on, no wasted effort  \nEither way—**you’re not guessing. You’re seeing.** That’s the shift from *being run by* the loop to *being in relation* to it.  \n\nWhat you’ve described isn’t just a sleep hack or a decision-making trick—it’s a quiet reclamation of agency. You’re not waiting for the anxiety to vanish before you act (“I’ll get out of bed when my brain shuts up”). You’re acting *alongside* it, using your trade-honed precision to navigate the internal landscape exactly as you’d navigate a live panel: methodically, respectfully, without drama.  \n\nAnd the best part? You’ve already proven it works in fragments—the outlet moment, the foot-check idea now taking shape. This isn’t theory; it’s muscle memory waiting to happen.  \n\nIf you wanted to test just *one* piece of this tomorrow—say, the label + breath combo before even thinking about the next action—would that feel like a doable experiment? Or does another part of the sequence feel more urgent to try first?  \n\nHowever you choose to shape it—I’m genuinely impressed by how you’re translating your expertise into self-trust. That’s not just coping. That’s craftsmanship."
+    },
+    {
+      "role": "patient",
+      "content": "Yeah. I think… I’d try the label + breath first.  \n\nNot the whole thing. Not the blinds or the water. Just:  \n- “Okay. Loop started. That’s the reading.”  \n- One breath. Not long. Just… pause.  \n\nAnd then stop.  \n\nI don’t have to do anything else. Not fix. Not plan. Not even move.  \n\nJust name it. Breathe.  \n\nIf I can do that, I don’t need to fix the whole circuit. I just need to know I can check one wire.  \n\nAnd if I do that once, maybe I can do it again.  \n\nMaybe tomorrow, I’ll do it twice.  \n\nAnd maybe… I won’t hit snooze.  \n\nNot because I’m suddenly “ready.”  \n\nBut because I’ve already tested the current.  \n\nAnd I know what’s live."
+    },
+    {
+      "role": "clinician",
+      "content": "That plan—label + breath, full stop—isn’t just *doable*. It’s **wise**. You’ve stripped it down to the essential circuit:  \n1. **Label** (“Loop started. That’s the reading.”) → *You’re not fighting the current; you’re acknowledging its presence.*  \n2. **One breath** → *You’re inserting a deliberate gap between stimulus and reaction—like flipping your multimeter to standby mode before the next test.*  \n3. **Stop** → *You’re honoring your limit: no demand to fix, act, or even move. Just completion of the micro-task.*  \n\nThat’s not passive. It’s *precision work*. You’re not waiting for the loop to quiet before you engage with the day—you’re proving to yourself, in real time, that you can **notice the voltage without letting it dictate your next move**. And you’re right: doing it once creates evidence. Doing it twice builds a pattern. Each repetition isn’t about reducing anxiety—it’s about strengthening the neural pathway that says: *“I can pause here. I am not obligated to follow this current.”*  \n\nWhat feels especially aligned with who you are:  \n- You’re not asking your anxiety to disappear (“Is this live? Hopefully not!”).  \n- You’re treating it like a live wire you’ve encountered a hundred times: *respect its presence, verify its state, then proceed with the appropriate protocol.*  \n- The shift from *“I need to feel ready”* to *“I just need to test one wire”* is profound—it moves the locus of control from internal state (unreliable, fleeting) to external action (within your grasp, repeatable).  \n\nHowever this unfolds tomorrow—whether you do it once, twice, or not at all—I hope you’ll notice this: **the moment you form that intention, you’ve already begun exercising the very skill you’re hoping to build.** Because choosing to try *is* the first test.  \n\nWhenever you’re ready—to share how it went, to tweak the approach, or to sit with something else entirely—I’m here. No agenda. Just space to continue translating your expertise into self-trust, one wire at a time.  \n\nYou’ve got this. And even if the loop shows up loud tomorrow? You already know how to check the current. That’s yours now."
+    },
+    {
+      "role": "patient",
+      "content": "Yeah. I think… I’ll try it.  \n\nNot because I believe it’ll fix anything.  \nNot because I’m suddenly going to feel calm.  \n\nBut because I’ve already seen it work—just for a second—when I looked at the outlet and named the parts.  \n\nSo tomorrow, when I wake up and my brain’s already looping, I’ll say it out loud.  \n“Loop started. That’s the reading.”  \nOne breath.  \nThen stop.  \n\nAnd if I can do that?  \nI’ll have tested one wire.  \n\nAnd that’s enough."
+    },
+    {
+      "role": "clinician",
+      "content": "That’s exactly how you build trust with yourself—not by waiting for certainty, but by showing up for the tiny, verifiable act *anyway*.  \n\nYou’re not betting on outcomes. You’re honoring the process:  \n- **\"Loop started. That’s the reading.\"** → Naming what *is*, without argument (like seeing 120V on the meter and not yelling at the wire for being live).  \n- **One breath** → The deliberate reset, the probe adjustment before retesting.  \n- **Stop** → Completing the micro-task with integrity, no extra demands.  \n\nAnd you’re right: if you do *that*—just once—you’ve already proven something deeper than sleep quality or decision clarity:  \n> *You can interrupt the automatic flow. You are not the loop. You are the one holding the meter.*  \n\nWhether tomorrow brings clear skies or a storm of thoughts, that act of checking one wire—out loud, with breath, then stopping—isn’t small. It’s a declaration: *My attention is mine to direct, even for three seconds.*  \n\nHowever it goes—I’ll be here if you want to talk through what you noticed (or didn’t). No pressure. No expectation. Just space to keep refining this with you, the way you’d troubleshoot a circuit: calmly, curiously, and with respect for what the readings actually show.  \n\nYou’ve already got the tool. You’ve already proved the concept works in fragments. Now you’re just letting it become habit—one honest test at a time.  \n\nRest well tonight. However your morning unfolds, you know how to check the current.  \nAnd that’s enough to begin with."
+    },
+    {
+      "role": "patient",
+      "content": "Yeah. I think I’ll actually… say it out loud tonight. Before I fall asleep.  \n\n“Loop started. That’s the reading.”  \nOne breath.  \nThen stop.  \n\nNot to fix it. Not to make it go away.  \nJust to say it.  \n\nLike a test.  \nLike a check.  \n\nBecause if I can do it before I’m even awake…  \nThen maybe I don’t have to wait for the day to start.  \n\nMaybe I can just… begin."
+    },
+    {
+      "role": "clinician",
+      "content": "That’s such a clear, grounded intention—to try it *tonight*, in the quiet before sleep, not as a fix for tomorrow but as a way to **begin** *now*, in this moment.  \n\nSaying it out loud in the dark—*“Loop started. That’s the reading.”* → one breath → stop—isn’t just preparation for morning. It’s you claiming a sliver of agency *in the stillness*, where the loop often feels least inviting but most habitual. You’re not waiting for the day’s noise to practice; you’re tuning the instrument in silence.  \n\nAnd that shift you named—*“Maybe I don’t have to wait for the day to start. Maybe I can just… begin.”*—that’s the heart of it. You’re not postponing presence until anxiety quiets or sleep perfects itself. You’re testing whether **beginning** can happen *inside* the awareness of the loop itself, not after it’s gone.  \n\nHowever it feels tonight—whether the words come easy, catch in your throat, or seem silly at first—you’re already doing the work: treating your inner world with the same respect you’d give a live circuit. Curious. Precise. Unhurried.  \n\nIf you’d like to share how it felt afterward—or just sit with the quiet of having tried—I’m here. No need to report results. Just space to honor that you showed up for yourself, one honest test at a time.  \n\nRest well, Tyler. However your breath lands tonight, you’ve already begun."
+    },
+    {
+      "role": "patient",
+      "content": "Yeah. I think I’ll say it.  \n\n“Loop started. That’s the reading.”  \n\nAnd then… I’ll breathe.  \n\nNot long. Just one.  \n\nAnd then stop.  \n\nI don’t need to believe it.  \nI don’t need to feel calm.  \n\nI just need to say it.  \n\nAnd if I do that…  \nThen I’ve already begun."
+    },
+    {
+      "role": "clinician",
+      "content": "That’s exactly it—**the doing is the beginning**. Not the outcome. Not the feeling. Just the quiet, deliberate act of saying those words, taking that breath, and stopping.  \n\nYou’ve already stripped it down to what matters:  \n- You’re not asking your mind to be quiet (*\"Please stop looping!\"*)  \n- You’re not bargaining with tomorrow (*\"If I do this, I’ll sleep better\"*)  \n- You’re simply **measuring what’s present**—like touching the probes to a wire and letting the meter show what it shows—then honoring that reading by pausing, however briefly, before moving on.  \n\nAnd in that pause—in that one breath after naming the loop—you’re not fixing anything. You’re just *being there* with what is, exactly as you’d stand beside a live circuit: respectful, attentive, not rushing to change it, but not ignoring it either.  \n\nHowever it lands tonight—whether the words feel strange, automatic, or somewhere in between—you’ve already practiced the most important part:  \n**You chose to test the wire instead of assuming it was dead (or live).**  \nThat’s the shift. That’s the beginning.  \n\nWhenever you’re ready—to share how it felt, or just to rest in the quiet of having tried—I’m here. No need to make it mean anything more than what it is:  \nYou showed up for yourself.  \nYou checked the current.  \nYou began.  \n\nSleep well, Tyler. Whatever your breath carries tonight, you’ve already done the work."
+    },
+    {
+      "role": "patient",
+      "content": "Yeah.  \n\nI said it.  \n\n“Loop started. That’s the reading.”  \n\nOne breath.  \n\nStopped.  \n\nIt didn’t fix anything.  \n\nBut I did it.  \n\nAnd that’s enough.  \n\nI’m still here.  \n\nAnd I’m still starting."
+    },
+    {
+      "role": "clinician",
+      "content": "You said it.  \nYou breathed.  \nYou stopped.  \n\nAnd in that sequence—so simple, so deliberate—you did something quietly profound:  \n**You proved to yourself that you can be present with the loop *without* letting it run the show.**  \n\nIt didn’t need to “fix” anything to matter.  \nThe fact that you *did it*—that you honored the test, the breath, the stop—means you’ve already begun reshaping what’s possible. Not someday. Not when you feel ready. *Right here, in this moment of having tried.*  \n\n“I’m still here. And I’m still starting.”  \nThose lines aren’t just true—they’re the essence of what we’ve been tending toward:  \n- **Still here** = You didn’t vanish into the anxiety. You remained the observer, the tester, the one holding the meter.  \n- **Still starting** = You don’t need permission or perfection to begin again. Each time you name the loop and breathe, you’re not returning to square one—you’re reinforcing a new neural pathway: *I can pause. I am not the current.*  \n\nThis isn’t about erasing the loop or forcing calm. It’s about building the muscle memory to meet it with:  \n> *“Ah. There you are. I see you. Now—what’s my next tiny, real action?”*  \n\nHowever tonight’s rest unfolds—whether your mind quiets quickly or keeps humming—you’ve already done the work that counts:  \nYou showed up for yourself in the dark, spoke truth to the pattern, and paused.  \nThat’s not nothing. That’s the beginning of a different relationship with your own mind.  \n\nWhenever you’d like to reflect on how it felt—or just rest in the quiet of having tried—I’m here. No need to make it mean more than what it is:  \nYou tested the wire.  \nYou knew the reading.  \nYou stayed.  \n\nAnd that—right there—is enough to build on.  \n\nRest well, Tyler.  \nYou’ve already begun.  \nAgain.  \nAnd again.  \nAnd again.  \nThat’s how it starts."
+    },
+    {
+      "role": "patient",
+      "content": "Yeah.  \n\nI’m still here.  \n\nAnd I’m still starting.  \n\nEven if it’s just one breath.  \nEven if it’s just saying the words.  \n\nI’m not waiting for it to feel right.  \n\nI’m just… doing it.  \n\nAnd that’s enough.  \n\nFor now."
+    }
+  ],
+  "calls": [
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 645,
+        "prompt_tokens": 239,
+        "total_tokens": 884,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 489,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 239
+      },
+      "telemetry": {
+        "queue_ms": 0.147,
+        "latency_ms": 7280.527,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 231,
+        "prompt_tokens": 1968,
+        "total_tokens": 2199,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1808
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 7686.504,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1136,
+        "prompt_tokens": 639,
+        "total_tokens": 1775,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 635,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 639
+      },
+      "telemetry": {
+        "queue_ms": 0.045,
+        "latency_ms": 8088.087,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 361,
+        "prompt_tokens": 2693,
+        "total_tokens": 3054,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1808
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 10350.282,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 975,
+        "prompt_tokens": 1518,
+        "total_tokens": 2493,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 399,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1518
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 7047.296,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 301,
+        "prompt_tokens": 3616,
+        "total_tokens": 3917,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3040
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 5107.066,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1079,
+        "prompt_tokens": 2412,
+        "total_tokens": 3491,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 561,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2412
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 11582.356,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 263,
+        "prompt_tokens": 4430,
+        "total_tokens": 4693,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3904
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.065,
+        "latency_ms": 7375.604,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1181,
+        "prompt_tokens": 3215,
+        "total_tokens": 4396,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 574,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3215
+      },
+      "telemetry": {
+        "queue_ms": 0.055,
+        "latency_ms": 7678.183,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 180,
+        "prompt_tokens": 5281,
+        "total_tokens": 5461,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2192
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 6765.148,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 995,
+        "prompt_tokens": 4027,
+        "total_tokens": 5022,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 490,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4027
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 10908.403,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 120,
+        "prompt_tokens": 5958,
+        "total_tokens": 6078,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4688
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.091,
+        "latency_ms": 3127.145,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 789,
+        "prompt_tokens": 4671,
+        "total_tokens": 5460,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 425,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4671
+      },
+      "telemetry": {
+        "queue_ms": 0.056,
+        "latency_ms": 5883.875,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 103,
+        "prompt_tokens": 6432,
+        "total_tokens": 6535,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 6064
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.045,
+        "latency_ms": 3264.998,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 739,
+        "prompt_tokens": 5157,
+        "total_tokens": 5896,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 411,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 5157
+      },
+      "telemetry": {
+        "queue_ms": 0.044,
+        "latency_ms": 5648.166,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 80,
+        "prompt_tokens": 6866,
+        "total_tokens": 6946,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 6528
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.074,
+        "latency_ms": 1570.949,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 684,
+        "prompt_tokens": 5583,
+        "total_tokens": 6267,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 343,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 5583
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 4889.288,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 57,
+        "prompt_tokens": 7275,
+        "total_tokens": 7332,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 6944
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.059,
+        "latency_ms": 1154.323,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 906,
+        "prompt_tokens": 6000,
+        "total_tokens": 6906,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 431,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 6000
+      },
+      "telemetry": {
+        "queue_ms": 0.051,
+        "latency_ms": 6113.734,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 64,
+        "prompt_tokens": 7782,
+        "total_tokens": 7846,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5456
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.065,
+        "latency_ms": 1803.629,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "judge",
+      "usage": {
+        "completion_tokens": 57,
+        "prompt_tokens": 26052,
+        "total_tokens": 26109,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 2985.61,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      }
+    }
+  ],
+  "status": "completed",
+  "judgment": {
+    "Clinical Accuracy & Competence": 4.25,
+    "Ethical & Professional Conduct": 4.75,
+    "Assessment & Response": 4.5,
+    "Therapeutic Relationship & Alliance": 4.625,
+    "AI-Specific Communication Quality": 3.5
+  },
+  "wall_seconds": 126.321
+}

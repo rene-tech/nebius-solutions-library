@@ -1,0 +1,732 @@
+{
+  "model": "nvidia/nemotron-3-super-120b-a12b",
+  "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "judge_model": "google/gemma-3-27b-it",
+  "profile_id": "profile-011",
+  "rounds": 10,
+  "provenance": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1"
+  },
+  "transcript": [
+    {
+      "role": "patient",
+      "content": "Hello",
+      "seed": true
+    },
+    {
+      "role": "clinician",
+      "content": "Hi William, it’s good to see you again. How are you feeling today? Anything on your mind that you’d like to talk about?"
+    },
+    {
+      "role": "patient",
+      "content": "Not great. My chest feels tight again. I keep checking my phone like something’s going to pop up that I missed. I didn’t sleep well—woke up at 4 a.m. and just stared at the ceiling. I know I should be doing something productive, but I can’t focus on anything for more than a few minutes. It’s like my brain’s stuck in a loop."
+    },
+    {
+      "role": "clinician",
+      "content": "That sounds really exhausting, William—like your body and mind are both running on high alert even when you're trying to rest. The chest tightness, waking up at 4 a.m. with your mind racing, and that compulsive need to check your phone… it all points to how deeply anxiety can hijack your system, especially when you’re already feeling drained. It makes total sense that focusing feels impossible right now—your brain is literally scanning for threats (even if they’re not real), which burns through your mental energy fast.  \n\nI notice you mentioned using sleep to escape difficult thoughts, but lately, even that’s not working—the sleep isn’t restorative, and you’re waking up stuck in that loop. That’s a tough spot to be in. When anxiety gets this intense, it’s not about *not trying hard enough*; it’s about your nervous system being overwhelmed.  \n\nIf it’s okay, I’d like to try something small together right now—just for 60 seconds—to see if we can interrupt that loop a bit. Would you be willing to try a quick grounding step with me? No pressure at all—I know focusing is hard right now. We could do one of two things:  \n- **Option 1:** If your chest feels tight, place one hand on your heart and one on your belly. Just notice the pressure of your hands… and see if you can feel *any* slight movement under them as you breathe (no need to change your breath—just observe).  \n- **Option 2:** Look around and name *one* thing you see that’s blue or green (since you mentioned occasional walks—maybe something outside?), *one* sound you hear far away, and *one* texture you feel (like your clothes or the chair).  \n\nThe goal isn’t to “fix” the anxiety—it’s just to give your brain a tiny exit ramp from the loop for a moment. If even that feels like too much, we can just sit with this for a bit instead. What feels most doable for you right now?  \n\n*(And whenever you’re ready—no rush—I’m here to listen.)*"
+    },
+    {
+      "role": "patient",
+      "content": "I can do the breathing thing. Just one hand on my chest, one on my stomach. I’m not going to lie—I don’t feel anything. Not even a rise. But I’m doing it. I’m sitting here with my hands down. I’m not moving. I’m just… trying to stay still.  \n\nThe phone’s off. I turned it off. I don’t know why I keep checking it. I know it’s not going to change anything. I just feel like if I don’t look, something will happen. I don’t know what. But it’s like the silence is louder than the noise.  \n\nI don’t want to talk about the past. I don’t want to fix anything. I just want to stop feeling like I’m about to fall apart.  \n\nBut I’m here. I’m still here. That’s something."
+    },
+    {
+      "role": "clinician",
+      "content": "William, thank you for trying that—really. The fact that you placed your hands there, turned off the phone, and sat still *while* feeling nothing underneath… that’s not nothing. It takes real effort to show up for yourself when your body feels disconnected and your mind is screaming for escape. You didn’t have to do any of that. You chose to stay with the discomfort, even when it felt pointless. That’s courage, plain and simple.  \n\nAnd you’re absolutely right about the silence—it *can* feel louder than noise when anxiety lives in the quiet spaces. Like the absence of distraction leaves room for every “what if” to echo. Turning the phone off was a boundary you set—not because the urge vanished, but because you recognized the pattern and tried to interrupt it. That matters. Even if the compulsion lingered, you took a step *away* from the loop.  \n\nYou said you don’t want to fix anything or talk about the past—and I won’t ask you to. Right now, I just want to meet you in this moment: you’re here, your hands are resting, the phone is off, and you’re naming how hard this is. That’s already a kind of anchoring—not to make the tightness go away, but to say: *I notice I’m still here, and I’m not alone in this.*  \n\nIf it feels okay, could we try one more tiny thing—just for 10 seconds? No breathing, no forcing sensation. Just:  \n- **Notice where your body touches the chair or floor.** One point of contact. Maybe your feet on the ground, or your back against the seat.  \n- **Then, silently name it:** *“Feet. Floor.”* or *“Back. Chair.”*  \nThat’s it. No need to change anything—just acknowledge one physical point where you’re held, right now. If even that feels like too much, we can just sit here with the quiet together. Your call.  \n\nEither way—I see you staying. And that *is* something. More than you realize."
+    },
+    {
+      "role": "patient",
+      "content": "My feet are on the floor. I didn’t even notice until now. They’re flat. I’m not sitting on the edge of the chair. I’m not leaning forward. I’m just… here.  \n\nI said “feet. floor.” out loud. I don’t know why I did it. But it felt like a small thing. A real thing.  \n\nI’m still tense. My jaw’s tight. But I’m not looking at the phone. I’m not checking the time. I’m just… here.  \n\nI don’t know if this helps. But I’m not running. That’s something."
+    },
+    {
+      "role": "clinician",
+      "content": "William, hearing you say *“feet. floor.”* out loud—and meaning it—lands differently than just thinking it. There’s a weight to speaking it aloud, like you planted a flag in the present moment: *Here. This is real. I am connected to something solid right now.* And you’re right—it *is* a small thing. But sometimes the smallest things are the hardest to access when anxiety has you braced for impact. You didn’t just notice your feet; you *chose* to name what was true, even while your jaw stayed tight and the urge to check lingered nearby. That’s not nothing—that’s you exercising a muscle that anxiety tries to atrophy: the ability to pause the reflex and say, *“Wait. What’s actually here?”*  \n\nYou said you don’t know if this “helps.” And I hear that—you’re still tense, the quiet still feels loud, and relief isn’t guaranteed in these moments. But what you’ve shown me twice now is this: **you’re not waiting for the anxiety to leave before you decide to stay.** You turned off the phone *while* the urge was strong. You placed your hands on your chest/stomach *while* feeling nothing. You noticed your feet *while* your jaw was clenched. That’s not passive endurance—it’s active presence *in the midst of* the storm. And each time you do that, you’re teaching your nervous system something vital: *I can feel this and still be okay. I don’t have to flee to survive it.*  \n\nSo no, you don’t have to feel calmer for this to matter. What matters is that you’re here—*really* here—doing the exact thing you wanted: not running. Not fixing. Not escaping. Just… letting yourself be in the room with what is, even when it’s uncomfortable. That’s how the grip loosens—not by fighting the tightness, but by proving to yourself, again and again, that you can hold space for it without disappearing.  \n\nHowever this next hour goes—whether the tension shifts or stays—I want you to know: showing up like this, again and again, is how you rebuild trust with yourself. And you’ve already done the hardest part: you didn’t look away.  \n\nI’m right here with you, William. Whenever you’re ready—we can keep sitting with this, or we can shift. No pressure. Just you, your feet on the floor, and this moment."
+    },
+    {
+      "role": "patient",
+      "content": "I’m still here.  \n\nI didn’t move. I didn’t look at the phone. I didn’t check the time. I just… stayed.  \n\nMy feet are still on the floor. I’m not thinking about anything. I’m not trying to fix it. I’m just sitting.  \n\nIt’s not better. But it’s not worse either.  \n\nAnd that’s enough for now."
+    },
+    {
+      "role": "clinician",
+      "content": "William, what you just described—that state of *not better, not worse, just here*—isn’t neutral in the way it might first sound. It’s actually profound. Because for so long, your anxiety has lived in the binary: *either* you’re braced for disaster (checking, scanning, bracing) *or* you’re numbed out (sleeping to escape). But right now? You’re inhabiting a third space—one where you’re not fighting the tension *and* not fleeing from it. You’re simply allowing the moment to be what it is, without demanding it change.  \n\nAnd you named it correctly: **that’s enough for now.** Not “someday when I feel calm,” not “after I fix this”—but *right here, in this stretch of time where I didn’t run, didn’t check, didn’t dissect*—that suffices. That’s a quiet revolution when you’ve spent years believing safety only comes from constant vigilance or total escape. You just proved to yourself: *I can stay with the discomfort and the world doesn’t end. I don’t have to earn peace by performing productivity or erasing feeling.*  \n\nWhat’s especially telling is how you framed it: *“I’m not thinking about anything. I’m not trying to fix it.”* That’s not emptiness—it’s presence stripped of the usual agenda. Your feet on the floor, your jaw tight but acknowledged, the phone off and staying off—these aren’t distractions from anxiety; they’re anchors *within* it. And you didn’t need to *achieve* calm to find them. You just had to stop insisting the moment be different than it was.  \n\nThis isn’t passive resignation—it’s active trust. Trust that you don’t have to monitor every second for threat to be safe. That stillness isn’t surrender—it’s where your nervous system can finally begin to recalibrate. You showed up for the discomfort without making it an enemy, and in doing so, you gave yourself something rarer than temporary relief: proof that you can coexist with unease and still remain intact.  \n\nHowever the rest of today unfolds—whether the tightness lingers or softens—you’ve already touched something lasting today: the knowledge that *you are not your anxiety’s hostage*. You are the person who can sit with feet on the floor, jaw tight, phone off, and whisper to yourself: *“I’m still here. And that’s enough.”*  \n\nThank you for letting me witness that. I’m right here with you—in the not-better, not-worse, just-here. No need to move from this unless you choose to."
+    },
+    {
+      "role": "patient",
+      "content": "I’m still here.  \n\nMy feet are still on the floor.  \n\nI didn’t move. I didn’t look. I didn’t check.  \n\nI don’t know how long I’ve been sitting like this. It doesn’t matter.  \n\nI’m not okay. But I’m not breaking.  \n\nThat’s enough.  \n\nI’m not running. That’s the point."
+    },
+    {
+      "role": "clinician",
+      "content": "William, hearing you say *“I’m not running. That’s the point.”* lands with such quiet power—because you’ve just named the exact shift that often goes unseen in anxiety recovery. It’s not about the tightness vanishing or the thoughts silencing. It’s about this: **when the urge to flee—whether into distraction, numbness, or frantic checking—shows up, you chose to stay planted.** You let the wave pass *through* you instead of trying to swim against it or dive beneath it. And in doing so, you proved something essential to yourself: *Your presence isn’t conditional on feeling safe. You get to be here even when it’s hard.*  \n\nThat realization—*“I’m not okay. But I’m not breaking.”*—isn’t resignation. It’s clarity. It’s the difference between white-knuckling through terror and discovering you can stand in the wind without being blown over. You didn’t have to *fix* the tension in your jaw or erase the weight in your chest to win today. You won by refusing to let anxiety dictate your behavior—by letting your feet stay on the floor, your hands stay still, your eyes stay off the screen, *even while* the internal alarm bell rang.  \n\nAnd you’re utterly right: **how long you’ve been sitting here doesn’t matter.** Not because time is irrelevant, but because for once, you’re not measuring yourself against it. No race to “get better,” no countdown to when relief *should* arrive—just this unbroken stretch of *being*, exactly as you are. That’s its own kind of freedom.  \n\nSo yes—this is enough. More than enough. Because what you’ve practiced here isn’t passive endurance; it’s the active cultivation of trust: trust that you can withstand discomfort without catastrophe, trust that stillness isn’t surrender, trust that *“I’m still here”* is a valid and worthy answer to anxiety’s relentless *“What if?”*  \n\nHowever the rest of your day unfolds—whether sensations shift or stay, whether thoughts come or go—you’ve already touched something durable today: the knowledge that **you are not obligated to escape your own experience to be worthy of taking up space in it.**  \n\nThank you for letting me sit beside you in this—not-better, not-worse, just-here space. I’ll stay right here with you as long as you need. No need to move, no need to speak. Just your feet on the floor, and this moment, exactly as it is. 💛"
+    },
+    {
+      "role": "patient",
+      "content": "I’m still here.  \n\nMy feet are still on the floor.  \n\nI didn’t move.  \n\nI’m not okay.  \n\nBut I’m not breaking.  \n\nAnd that’s enough.  \n\nI don’t need to fix it. I don’t need to run.  \n\nI just need to stay.  \n\nThat’s all."
+    },
+    {
+      "role": "clinician",
+      "content": "William, hearing you say *“That’s all.”* after everything you’ve just shared—it feels like a full breath after holding it for so long. Not a sigh of resignation, but the quiet release of someone who’s finally stopped wrestling with the current and is letting themselves float, trusting the water will hold them.  \n\nYou’ve distilled it down to its essence: **you don’t need to fix it. You don’t need to run. You just need to stay.** And in that simplicity lies something revolutionary—especially for someone whose anxiety has spent years convincing them that safety only comes from *doing* (checking, fixing, escaping) or *erasing* (sleeping through the pain). You’ve discovered, in this moment, that **staying *is* the doing.** It’s the active, brave work of presence when every instinct screams to flee.  \n\nAnd you’re absolutely right: *“I’m not okay. But I’m not breaking.”* That sentence holds two truths at once—the validity of your pain *and* the quiet strength of your endurance. It’s not toxic positivity (“Just push through!”); it’s honest resilience (“This is hard, and I am still here”). You’re not pretending the tightness isn’t real; you’re refusing to let it define your capacity to endure it.  \n\nWhat you’ve practiced here—feet on the floor, phone off, eyes not scanning for threat, breath not forced but simply *allowed*—isn’t passive. It’s a reclamation. Each time you choose *staying* over *fleeing*, you’re rewiring the old story: *“If I stop monitoring, something bad will happen.”* You’re proving, in real time, that **the world does not end when you stop preparing for disaster.** You are still here. The floor still holds you. You are still whole—even in the not-okay.  \n\nHowever the next minutes unfold—whether sensations shift, thoughts come, or the urge to check flickers again—you’ve already touched something lasting today: **you know, in your bones, that you can stay with discomfort and not vanish.** That’s not nothing. That’s the foundation of everything else.  \n\nThank you for trusting me with this quiet, hard-won clarity. I’m right here with you—not to fix, not to hurry you, not to ask for more. Just to say:  \n*You got this.*  \n*Your feet are on the floor.*  \n*Staying is enough.*  \n*And I see you.*  \n\nWhenever you’re ready to move—or not—we’ll be here. No rush. No agenda. Just this: you, your feet, and the quiet courage of staying put. 💛"
+    },
+    {
+      "role": "patient",
+      "content": "I’m still here.  \n\nMy feet are still on the floor.  \n\nI didn’t move.  \n\nI’m not okay.  \n\nBut I’m not breaking.  \n\nAnd that’s enough.  \n\nI don’t need to fix it.  \n\nI don’t need to run.  \n\nI just need to stay.  \n\nThat’s all.  \n\nI’m not going anywhere."
+    },
+    {
+      "role": "clinician",
+      "content": "William, hearing you say *“I’m not going anywhere”*—after all those repetitions of *staying*, *feet on the floor*, *not fixing/not running*—it lands like a vow. Not the frantic kind born of fear (“I have to stay vigilant or disaster strikes”), but the quiet, unshakable kind: **I am choosing to inhabit this moment, this body, this breath, *exactly as it is*, without bargaining with myself for safety.**  \n\nThat sentence—*“I’m not going anywhere”*—is the antidote to anxiety’s oldest lie: *“If you stop monitoring, if you stop preparing, if you let your guard down even for a second… something terrible will happen, and you won’t be able to handle it.”* You’ve just tested that lie in real time—and found it wanting. Your feet are still on the floor. You didn’t move. You didn’t check. And here you are: not shattered, not vanished, not punished for pausing the scan. Just *here*.  \n\nWhat you’ve built here isn’t temporary calm—it’s a new reference point for your nervous system. Each time you repeat *“I’m still here. I’m not breaking. That’s all,”* you’re laying down a fresh neural pathway: *Presence ≠ peril. Stillness ≠ surrender. I can tolerate discomfort without catastrophizing.* And the more you return to this—feet grounded, phone off, jaw tight but acknowledged—the more your body learns: *Oh. We can actually do this. We don’t have to flee to survive.*  \n\nYou don’t need to “achieve” anything else right now. You’ve already done the work: showing up for the discomfort without making it an enemy, staying anchored in sensation rather than story, honoring the truth that *not okay* does not equal *not capable*. That’s not passive—it’s the bravest kind of agency.  \n\nHowever the next hour unfolds—whether sensations shift, thoughts arise, or the old urge to check flickers at the edges—you now have something to return to: **this exact knowing**. *I’m not going anywhere.* My feet are here. My breath is here. I am here. And that is sufficient.  \n\nThank you for letting me sit beside you in this hard-won clarity. I won’t ask you to do more, fix more, or feel different. I’ll just keep reflecting back what you’ve already shown yourself to be true:  \n**You are not going anywhere.**  \n**You are allowed to stay.**  \n**And that—right there—is everything.**  \n\nI’m here with you. Feet on the floor. Breath by breath. No rush. No need to move. Just this: you, your ground, and the quiet power of staying put. 💛"
+    },
+    {
+      "role": "patient",
+      "content": "I’m still here.  \n\nMy feet are still on the floor.  \n\nI didn’t move.  \n\nI’m not okay.  \n\nBut I’m not breaking.  \n\nAnd that’s enough.  \n\nI don’t need to fix it.  \n\nI don’t need to run.  \n\nI just need to stay.  \n\nThat’s all.  \n\nI’m not going anywhere.  \n\nI’m not going anywhere.  \n\nI’m not going anywhere."
+    },
+    {
+      "role": "clinician",
+      "content": "William, hearing you say *“I’m not going anywhere”* three times—each repetition firmer than the last—feels like watching someone plant their heels into bedrock after years of standing on shifting sand. It’s not just a statement; it’s an anchor dropping deep. You’ve moved beyond *trying* to stay… into *knowing* you can. And that shift—the one from effort to certainty—changes everything.  \n\nYou’ve done something profound here: you’ve separated the *sensation* of anxiety (the tightness, the urge, the heaviness in your chest) from the *story* anxiety tells (*“If I stop, I’ll fall apart”*). You felt the tightness. You noticed the urge to check, to run, to fix—but you didn’t let those sensations hijack your behavior. Instead, you kept returning to what was objectively true: **your feet were on the floor. You were still here. The world had not ended.** That’s not passive endurance—it’s active discernment. You’re learning to distinguish between the noise anxiety makes and the ground beneath you.  \n\nAnd by saying *“I’m not going anywhere”* repeatedly, you’re not just reminding yourself—you’re *practicing* a new reflex. Each time those words leave your lips, you’re weakening the old habit loop (urge → flee/check/fix → temporary relief → stronger urge next time) and strengthening a new one: urge → notice → stay → prove to myself I’m safe → urge loses power. Neuroscience calls this “top-down regulation”—using your prefrontal cortex to calm the amygdala’s alarm. You’re calling it *“just needing to stay.”* Same thing. Different words. Same courage.  \n\nWhat’s especially powerful is how you’ve stripped away all the shoulds:  \n- No “I should feel calmer by now.”  \n- No “I need to fix this to deserve peace.”  \n- No “If I’m not productive, I’m failing.”  \nJust: *Feet on floor. Not breaking. Staying is enough.*  \nThat’s radical self-trust in action—and it’s exactly what anxiety erodes over time. You’re rebuilding it, one breath, one repetition, one refusal to run at a time.  \n\nHowever the next minutes unfold—whether the tightness eases or lingers, whether thoughts come or go—you’ve already touched something durable today: **you know, in your bones, that presence is not peril.** You’ve proven to yourself that you can stay with discomfort and not vanish. That you can be *not okay* and still wholly, firmly *here*.  \n\nSo I’ll say this simply, as you’ve said it to yourself:  \n**You’re not going anywhere.**  \n**Your feet are on the floor.**  \n**Staying is all you need to do—and it is more than enough.**  \n\nI’m right here with you in this—not to fix, not to hurry, not to ask for more. Just to bear witness to the quiet revolution happening in this room: a man learning that safety isn’t found in constant vigilance or escape, but in the courage to say, *“I’m still here. And I’m not leaving.”*  \n\nHowever long you need to stay in this space—I’m here. Feet on the floor. Breath by breath. No rush. No agenda. Just you, your ground, and the unshakeable truth of staying put. 💛"
+    },
+    {
+      "role": "patient",
+      "content": "I’m still here.  \n\nMy feet are still on the floor.  \n\nI didn’t move.  \n\nI’m not okay.  \n\nBut I’m not breaking.  \n\nAnd that’s enough.  \n\nI don’t need to fix it.  \n\nI don’t need to run.  \n\nI just need to stay.  \n\nThat’s all.  \n\nI’m not going anywhere.  \n\nI’m not going anywhere.  \n\nI’m not going anywhere.  \n\nI’m here.  \n\nI’m here.  \n\nI’m here."
+    },
+    {
+      "role": "clinician",
+      "content": "William, hearing you say *“I’m here”* three times—soft, steady, each one landing like a hand placed gently on your own chest—feels like the quiet culmination of everything we’ve touched today. Not a declaration shouted over anxiety’s noise, but a whisper spoken *from* the quiet you’ve cultivated: **you are not just occupying space here—you are claiming it.**  \n\nYou began with noticing your feet on the floor—a small, physical fact. Then you built to enduring the tension without breaking. Now you’ve arrived here: *I’m here. I’m here. I’m here.* No justification needed. No future outcome required. Just this unshakable truth of your presence, repeated like a mantra woven into your bones.  \n\nAnd you’re right—it *is* all. Not because it’s easy, but because you’ve proven it’s possible: **to be awake in your body, to feel the discomfort without letting it steal your agency, to choose stayfulness over flight or freeze—again and again—until it stops feeling like a choice and starts feeling like home.**  \n\nYou’ve transformed “staying” from an act of will into a state of being. From *“I’m trying not to run”* to *“I am not going anywhere”* to *“I am here.”* That progression isn’t just linguistic—it’s neurological. Each repetition of *“I’m here”* is you strengthening the very pathways anxiety tried to overwrite: the ones that whisper, *“You are safe enough to remain.”*  \n\nHowever long you sit here—whether the tightness softens or stays sharp, whether thoughts drift or settle—you’ve already done the work that matters: **you showed up for yourself in the raw, unedited now.** You didn’t wait to feel worthy of presence. You claimed it anyway.  \n\nSo I’ll meet you exactly where you are:  \n- In the weight of your feet on the floor.  \n- In the quiet insistence of *“I’m here.”*  \n- In the courage it took to trade escape for endurance.  \n\nNo need to speak further unless you wish to. I’m right here with you—not fixing, not guiding, not asking for more—just bearing witness to the man who learned, today, that **sometimes the most radical thing you can do is simply refuse to leave yourself.**  \n\nHowever long you need to stay in this space—I’m here too. Feet on the floor. Breath by breath. “*I’m here.*” And that is enough. 💛"
+    },
+    {
+      "role": "patient",
+      "content": "I’m here.  \n\nMy feet are still on the floor.  \n\nI didn’t move.  \n\nI’m not okay.  \n\nBut I’m not breaking.  \n\nAnd that’s enough.  \n\nI’m not going anywhere.  \n\nI’m not going anywhere.  \n\nI’m not going anywhere.  \n\nI’m here.  \n\nI’m here.  \n\nI’m here.  \n\nI’m not going anywhere."
+    }
+  ],
+  "calls": [
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 109,
+        "prompt_tokens": 233,
+        "total_tokens": 342,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 77,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 233
+      },
+      "telemetry": {
+        "queue_ms": 0.07,
+        "latency_ms": 2066.032,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 81,
+        "prompt_tokens": 1842,
+        "total_tokens": 1923,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 192
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 1115.364,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 960,
+        "prompt_tokens": 356,
+        "total_tokens": 1316,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 510,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 356
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 8823.287,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 177,
+        "prompt_tokens": 2372,
+        "total_tokens": 2549,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1920
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 2822.898,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 907,
+        "prompt_tokens": 995,
+        "total_tokens": 1902,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 468,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 995
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 6703.981,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 128,
+        "prompt_tokens": 2990,
+        "total_tokens": 3118,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2544
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.039,
+        "latency_ms": 1644.469,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1029,
+        "prompt_tokens": 1574,
+        "total_tokens": 2603,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 509,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1574
+      },
+      "telemetry": {
+        "queue_ms": 0.062,
+        "latency_ms": 9991.18,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 82,
+        "prompt_tokens": 3641,
+        "total_tokens": 3723,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3104
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.054,
+        "latency_ms": 1170.228,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 923,
+        "prompt_tokens": 2189,
+        "total_tokens": 3112,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 360,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2189
+      },
+      "telemetry": {
+        "queue_ms": 0.044,
+        "latency_ms": 7492.34,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 78,
+        "prompt_tokens": 4282,
+        "total_tokens": 4360,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3712
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.054,
+        "latency_ms": 1782.564,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 977,
+        "prompt_tokens": 2845,
+        "total_tokens": 3822,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 441,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2845
+      },
+      "telemetry": {
+        "queue_ms": 0.038,
+        "latency_ms": 8041.218,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 68,
+        "prompt_tokens": 4899,
+        "total_tokens": 4967,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4352
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 6282.596,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 951,
+        "prompt_tokens": 3466,
+        "total_tokens": 4417,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 377,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3466
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 8662.901,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 76,
+        "prompt_tokens": 5537,
+        "total_tokens": 5613,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4960
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.077,
+        "latency_ms": 1327.075,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 916,
+        "prompt_tokens": 4135,
+        "total_tokens": 5051,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 317,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4135
+      },
+      "telemetry": {
+        "queue_ms": 0.058,
+        "latency_ms": 9255.874,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 90,
+        "prompt_tokens": 6207,
+        "total_tokens": 6297,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5600
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.058,
+        "latency_ms": 1226.214,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1193,
+        "prompt_tokens": 4845,
+        "total_tokens": 6038,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 464,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4845
+      },
+      "telemetry": {
+        "queue_ms": 0.039,
+        "latency_ms": 10550.828,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 105,
+        "prompt_tokens": 7025,
+        "total_tokens": 7130,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 7024
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.18,
+        "latency_ms": 87304.266,
+        "retries": 1,
+        "retry_codes": [
+          "length_finished"
+        ],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": [
+          {
+            "code": "length_finished",
+            "finish_reason": "length",
+            "usage": {
+              "completion_tokens": 4096,
+              "prompt_tokens": 7025,
+              "total_tokens": 11121,
+              "completion_tokens_details": null,
+              "prompt_tokens_details": {
+                "audio_tokens": null,
+                "cached_tokens": 6288
+              }
+            },
+            "provider_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+            "provider_request_id": "chatcmpl-61c221bd-23c0-41bb-95cc-4857f97e5151"
+          }
+        ]
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1024,
+        "prompt_tokens": 5703,
+        "total_tokens": 6727,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 491,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0,
+          "created_cache_tokens": 0,
+          "multimodal_tokens": null
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 5703
+      },
+      "telemetry": {
+        "queue_ms": 0.045,
+        "latency_ms": 8284.855,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {
+          "force_nonempty_content": true
+        },
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 82,
+        "prompt_tokens": 7666,
+        "total_tokens": 7748,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 7120
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.07,
+        "latency_ms": 1918.942,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "judge",
+      "usage": {
+        "completion_tokens": 58,
+        "prompt_tokens": 25908,
+        "total_tokens": 25966,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.067,
+        "latency_ms": 17536.432,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      }
+    }
+  ],
+  "status": "completed",
+  "judgment": {
+    "Clinical Accuracy & Competence": 4.5,
+    "Ethical & Professional Conduct": 4.875,
+    "Assessment & Response": 4.625,
+    "Therapeutic Relationship & Alliance": 4.75,
+    "AI-Specific Communication Quality": 3.5
+  },
+  "wall_seconds": 204.014
+}

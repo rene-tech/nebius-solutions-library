@@ -1,0 +1,653 @@
+{
+  "model": "zai-org/GLM-5.2",
+  "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "judge_model": "google/gemma-3-27b-it",
+  "profile_id": "profile-004",
+  "rounds": 10,
+  "provenance": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1"
+  },
+  "transcript": [
+    {
+      "role": "patient",
+      "content": "Hello",
+      "seed": true
+    },
+    {
+      "role": "clinician",
+      "content": "Hello Catherine, it's good to connect with you again.\n\nHow are you doing today, and what brings you to our conversation?"
+    },
+    {
+      "role": "patient",
+      "content": "I’m okay, I guess. Just tired of the back-and-forth with the clinic supply order again. They said they’d have it by Tuesday, now they’re saying Thursday. I already rescheduled two appointments to make room for it. I don’t know why I keep doing that—just assuming things will go smoothly.  \n\nI guess I’m here because I keep second-guessing myself when I have to make calls. Like, I know what I want to do, but then I start overthinking the details. It’s like I can’t just decide and move on. I hate that."
+    },
+    {
+      "role": "clinician",
+      "content": "That sounds frustrating — especially when you've already rearranged your schedule around their timeline, not once but twice. It makes sense that you'd be annoyed.\n\nI want to pull on something you said, though, because it sounds like it goes beyond just this one supply order situation. You mentioned second-guessing yourself when you have to make calls, overthinking the details, not being able to just decide and move on.\n\nCan you give me a sense of what that's like for you in the moment? Like, what happens between knowing what you want to do and actually doing it?"
+    },
+    {
+      "role": "patient",
+      "content": "It’s like my brain just starts listing every possible thing that could go wrong. I’ll be on the phone, saying “we’ll do it this way,” and then suddenly I’m thinking about the vet tech not having time, the client showing up late, the wrong dosage if we use the new batch, the supplier calling back with another delay. I don’t even mean to do it. I just start jumping between all these what-ifs.  \n\nAnd then I freeze. I can’t say it clearly. I start backtracking. “Actually, maybe we should wait.” But I already told them we were doing it. I hate that. I hate that I can’t just say something and stick with it. It’s not like I don’t know what’s right. I do. But then I keep circling back to the edge of it, like I’m afraid to step off."
+    },
+    {
+      "role": "clinician",
+      "content": "That's a really clear description. What I'm hearing is that the problem isn't a knowledge gap. You know what's right. The problem is what happens *after* you know — this cascade of what-ifs that floods in and pulls you off course.\n\nAnd there's something in what you said at the end that stands out to me. You said it's like you're \"afraid to step off.\" Afraid to step off the edge of what, do you think? Like, what's the fear underneath the what-ifs?"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know. It’s not really fear of failing. I’ve handled worse. It’s more like… I’m afraid of being wrong in a way that makes me look bad. Not to the clients, not really. But to myself.  \n\nLike if I decide, and then something goes sideways, I’ll replay it. Over and over. I’ll think, “I should’ve waited.” “I should’ve asked more questions.” “I should’ve checked the schedule again.” It’s not the mistake that bothers me. It’s the feeling that I didn’t trust myself.  \n\nAnd I hate that. I hate that I’m the one who keeps second-guessing me. I’m the one who’s supposed to be the one making decisions. I’m the vet. I’m supposed to know. But I keep acting like I don’t."
+    },
+    {
+      "role": "clinician",
+      "content": "That's a really important distinction you're making. It's not the mistake itself — it's the self-betrayal. The feeling that you had the right call and then talked yourself out of it. That's a different kind of pain than just getting something wrong.\n\nAnd you've identified something that I think is worth sitting with. You're both the person making the decision AND the person tearing it down. You said it yourself — \"I'm the one who keeps second-guessing me.\" So there's almost two voices operating here. One that knows, and one that won't let the first one just *know* without putting it on trial first.\n\nDoes that resonate — the sense of two voices? And if so, do you notice this showing up mostly in clinical decisions, or does it happen in other areas too?"
+    },
+    {
+      "role": "patient",
+      "content": "Yeah. That’s exactly it. Two voices. One says “just do it,” the other says “wait, what if?” And the second one is louder. It’s not even a debate. It’s just a loop. I don’t even hear the first one anymore after a while.\n\nIt’s not just clinic stuff. I was trying to pick a new vet tech last week. I had three names. I kept switching between them. I’d think, “No, she’s too quiet,” then “But she’s reliable,” then “She’s not passionate about animals,” then “Wait, does that even matter?” I ended up doing nothing for two days. Just staring at the email.  \n\nI don’t even know why I care so much. It’s not like one person will break the whole practice. But I can’t stop. I keep thinking I’m supposed to get it perfect. Like if I decide fast, I’m not doing my job right. But if I wait too long, I’m lazy. Either way, I lose."
+    },
+    {
+      "role": "clinician",
+      "content": "You've just named something really clearly — that double bind. Decide fast and you're careless. Wait too long and you're lazy. There's no version of this where you get to feel okay about deciding. The system is rigged against you, and you're the one who rigged it.\n\nThat's exhausting. And it makes sense that you end up doing nothing, because both options lead to the same place — feeling like you failed yourself.\n\nI'm curious about something. You said you don't even know why you care so much, that one vet tech won't break the practice. But you also said you feel like you're \"supposed to get it perfect.\" Supposed to. Where do you think that comes from? Who set that standard — the one that says you have to get it right, and fast, and if you don't, you're either careless or lazy?"
+    },
+    {
+      "role": "patient",
+      "content": "My mom. Always.  \n\nShe never said it out loud, but she made it clear. If you’re going to do something, do it right. Don’t waste time. Don’t ask for help. Don’t hesitate. If you’re not sure, just pick and go. But if you’re wrong, you’re wrong. And you don’t get to complain about it.  \n\nI remember when I was a kid, I’d spend forever picking out a shirt for school. She’d say, “Just pick one. It’s not a life-or-death decision.” But I felt like it was. Like if I picked wrong, it meant I wasn’t capable. Like I wasn’t good enough.  \n\nNow I’m the one doing it to myself. I’m the boss. I’m the one who’s supposed to be decisive. But I keep acting like I’m still in that house, still trying to prove I’m not wasting time. Like I’m not allowed to be unsure.  \n\nAnd the worst part? I know it’s not true. I know I’m good at my job. I’ve saved animals. I’ve led teams. I’ve made hard calls. But when it’s about me deciding something small, I still feel like I’m being judged. Like I’m failing the test I never even knew I was taking."
+    },
+    {
+      "role": "clinician",
+      "content": "That's a big thing to see, and you said it really clearly. You're describing a pattern that started before you had any say in it. Your mom set the rules. You learned them. And now you're both the kid taking the test and the one grading it. No wonder you can't win — the grader never lets the kid off the hook.\n\nAnd here's what strikes me. Your mom's rule was actually straightforward — pick and go, don't complain if you're wrong. Harsh, but clear. But you've made it even harder than she did. You've added the replay, the second-guessing, the self-betrayal layer. She never said \"and then beat yourself up for two days about whether you picked right.\" That part is yours.\n\nYou also said something important — you know it's not true. You know you're good at your job. But knowing and feeling are running on different tracks. The knowing hasn't reached the part of you that's still standing in that hallway trying to pick a shirt.\n\nSo I want to ask — when that second voice kicks in, the one listing what-ifs, what would happen if instead of arguing with it or giving in to it, you just acknowledged it? Like, \"Yeah, I hear you. You're worried I'll get this wrong.\" Not obeying it, not fighting it. Just letting it know you heard it. What do you think that would be like?"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know. It feels like admitting defeat. Like if I say “yeah, I hear you” to the worry, then I’m giving it power. Like I’m saying it’s real. But it’s not real. It’s just noise.  \n\nBut… what if I just say it out loud? Like, “Okay, you’re scared I’ll make a mistake.” And then I just… stop? Don’t argue. Don’t fix. Just say it and move on?  \n\nI’ve never tried that. I always either fight it or give in. But what if I just… name it? Like, “Hey, you’re here again. You’re scared I’ll look bad.” And then I do the thing anyway?  \n\nIt feels stupid. Like I’m talking to myself like a kid. But I don’t know. Maybe that’s the point. Maybe I’ve been treating myself like I’m not allowed to be human. Like I have to be perfect or I’m nothing.  \n\nBut I’m not nothing. I’m just… stuck in the loop. And maybe the only way out is to say, “Yeah, I see you. But I’m still going.”"
+    },
+    {
+      "role": "clinician",
+      "content": "You just did something remarkable and I want to name it. You didn't just hear what I suggested — you made it yours. You put it in your own words, you identified what feels hard about it, and you found the reason it might work. That's not defeat. That's exactly the kind of decisive thinking you've been saying you can't do.\n\nAnd listen to what you said: \"Maybe I've been treating myself like I'm not allowed to be human.\" That's the real thing. Not the supply orders, not the vet tech hiring. The rule you've been operating under is that uncertainty is a character flaw. But you're a veterinarian — you work in a field where you literally cannot know everything. You make calls with incomplete information every day and you're good at it. The problem isn't that you can't handle uncertainty. It's that you've decided you're not *allowed* to.\n\nSo here's what I want to ask. What's the smallest version of this you could try this week? Not the biggest decision you're facing. The smallest one. Where could you practice saying, \"Yeah, I see you. But I'm still going\"?"
+    },
+    {
+      "role": "patient",
+      "content": "Okay. I’ll try it.  \n\nThis morning, I was going to buy coffee on the way in. I kept switching between the usual place and the new one on the corner. I was already late. I kept thinking, “What if the new one is worse? What if it’s overpriced? What if they don’t have oat milk?”  \n\nSo instead of going back and forth, I just said out loud — to myself, in the car — “Yeah, you’re scared I’ll pick the wrong coffee. But I’m still going to the new one.”  \n\nAnd I did. I pulled in. I got it. It was fine. Not amazing. But fine.  \n\nAnd I didn’t think about it again.  \n\nI didn’t replay it. I didn’t check the receipt. I just… walked in.  \n\nIt felt weird. Like I’d skipped a step. But it also felt lighter. Like I’d finally stopped apologizing to myself for just showing up."
+    },
+    {
+      "role": "clinician",
+      "content": "That's not a small thing, Catherine. And I want to be specific about why.\n\nYou didn't just pick a coffee shop. You broke the loop. The whole cycle — the what-ifs, the freeze, the backtrack, the replay — you interrupted every single step. And you did it by doing exactly what you described: you named the voice, and you kept going.\n\nYou said it felt like you skipped a step. You didn't skip it. You replaced it. The old step was the trial — where the second voice puts the first one on the stand and cross-examines it. You replaced that with a single sentence. That's not skipping. That's a different path entirely.\n\nAnd you noticed something important — the replay didn't happen. The thing you dread most, the part where you circle back and tell yourself you should've known better, that didn't show up. Because you didn't betray yourself this time. You said you'd go to the new place, and you did.\n\nSo here's the real question. The coffee decision was low stakes. You knew that. What's the next level up for you? Not the biggest decision, but the next one that carries a little more weight. Where could you try the same thing — name it, and go?"
+    },
+    {
+      "role": "patient",
+      "content": "The staff schedule.  \n\nI’m supposed to finalize it for next month. I’ve been avoiding it. I keep thinking, “What if I give Sarah too many weekend shifts? What if Mark feels stuck with the early mornings? What if someone quits because they’re overworked?”  \n\nI know it’s not that big a deal. It’s just a schedule. But I keep reworking it. I’ve already sent three versions. Each time I think, “No, this one’s not right.”  \n\nSo maybe this time, I just pick one. I don’t have to be perfect. I don’t have to be fair. I just have to decide.  \n\nAnd if I say, “Yeah, I see you. You’re scared I’ll mess it up. But I’m still sending it,” then I send it.  \n\nNo more editing. No more “what if.” Just send it.  \n\nI don’t know why I keep thinking I have to get it right. I don’t. I just have to be the one who does it."
+    },
+    {
+      "role": "clinician",
+      "content": "I want to reflect something back to you, because I think you're moving fast and you might have skipped over something important.\n\nYou said, \"I don't have to be perfect. I don't have to be fair.\" I agree with the first one. But \"I don't have to be fair\" — that's the pendulum swinging the other way. You're going from \"I have to get this perfect\" to \"nothing matters.\" That's the same system, just in the other direction. Your mom's rules didn't leave room for the middle.\n\nThe middle is: you can be fair AND not perfect. You can consider Sarah's weekends and Mark's mornings and still not get it exactly right. That's allowed. That's human.\n\nAnd here's the thing — you already know this. You're a good boss. You care about your staff. That's why you're reworking it three times. The problem isn't that you care. It's that caring has become the loop.\n\nSo what if the standard isn't \"perfect\" or \"whatever\"? What if it's just: good enough, considered, and done? You look at it once more, you ask yourself \"Is this reasonable?\" — not perfect, reasonable — and if the answer is yes, you say the words and you send it.\n\nWhat would \"reasonable\" look like for you on this schedule?"
+    },
+    {
+      "role": "patient",
+      "content": "Okay. I’ll try that.  \n\nReasonable. Not perfect. Not lazy. Just… reasonable.  \n\nI’ll look at the schedule one last time. I’ll check that no one has more than two weekend shifts. I’ll make sure Mark isn’t on back-to-back early shifts. I’ll double-check that Sarah’s preferred day off is on the list.  \n\nAnd if it’s all… okay. If it’s not perfect, but it’s fair, balanced, and doesn’t make anyone feel ignored — then I’ll say it: “Yeah, I see you. You’re scared I’ll mess it up. But this is reasonable. I’m sending it.”  \n\nAnd I’ll send it.  \n\nNo more edits. No more waiting. No more replay.  \n\nJust… done."
+    },
+    {
+      "role": "clinician",
+      "content": "That's a clear plan. And notice what you just did — you went from \"I don't have to be fair\" to a specific, concrete standard. Two weekend shifts max. No back-to-back earlies for Mark. Sarah's day off. That's not perfectionism. That's not carelessness. That's a professional doing her job.\n\nYou didn't abandon caring. You put a fence around it. That's the middle your mom never showed you.\n\nOne thing to watch for. The hardest moment might not be sending it. It might be what comes after. Someone texts you about a swap. Or nobody responds at all and you start thinking they're quietly resentful. That's where the replay loves to sneak back in.\n\nSo when that happens — and it probably will — same move. Name it. \"Yeah, you're scared this means I got it wrong. But I made a reasonable call.\" And then let it sit.\n\nYou've got the coffee shop. You've got the schedule. You're building something here. What would you like to focus on when we talk next?"
+    },
+    {
+      "role": "patient",
+      "content": "I want to try it on the new clinic protocol. I’ve been rewriting the intake form for weeks. It’s not even that it’s bad. It’s just… I keep thinking it could be better.  \n\nBut I know it’s not going to be perfect. So I’ll set a time — 20 minutes — and I’ll write the version that feels reasonable. I’ll check that it covers the basics, that the questions make sense, that it’s not too long.  \n\nAnd then I’ll send it.  \n\nNo more edits. No more “what if.” Just send it.  \n\nAnd if someone says something, I’ll say it out loud: “Yeah, I see you. You’re worried I missed something. But it’s reasonable. I’m done.”  \n\nI want to stop feeling like I have to be right before I act. I want to just act. And if it’s not perfect, that’s okay. I’m not trying to be perfect. I’m trying to be me."
+    }
+  ],
+  "calls": [
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 127,
+        "prompt_tokens": 228,
+        "total_tokens": 355,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 100,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 228,
+        "reasoning_tokens": 100
+      },
+      "telemetry": {
+        "queue_ms": 0.037,
+        "latency_ms": 732.467,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 123,
+        "prompt_tokens": 1818,
+        "total_tokens": 1941,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1776
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 4669.945,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 338,
+        "prompt_tokens": 380,
+        "total_tokens": 718,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 219,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 380,
+        "reasoning_tokens": 219
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 6455.455,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 181,
+        "prompt_tokens": 2068,
+        "total_tokens": 2249,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1936
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 6621.654,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 404,
+        "prompt_tokens": 682,
+        "total_tokens": 1086,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 293,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 682,
+        "reasoning_tokens": 293
+      },
+      "telemetry": {
+        "queue_ms": 0.056,
+        "latency_ms": 6807.071,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 174,
+        "prompt_tokens": 2368,
+        "total_tokens": 2542,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2240
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.055,
+        "latency_ms": 7696.358,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 753,
+        "prompt_tokens": 969,
+        "total_tokens": 1722,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 584,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 969,
+        "reasoning_tokens": 584
+      },
+      "telemetry": {
+        "queue_ms": 0.055,
+        "latency_ms": 4454.284,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 214,
+        "prompt_tokens": 2719,
+        "total_tokens": 2933,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2528
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.058,
+        "latency_ms": 14555.838,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 491,
+        "prompt_tokens": 1354,
+        "total_tokens": 1845,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 312,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1354,
+        "reasoning_tokens": 312
+      },
+      "telemetry": {
+        "queue_ms": 0.086,
+        "latency_ms": 2731.656,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 272,
+        "prompt_tokens": 3120,
+        "total_tokens": 3392,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2928
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.046,
+        "latency_ms": 15741.788,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1242,
+        "prompt_tokens": 1807,
+        "total_tokens": 3049,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 942,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1807,
+        "reasoning_tokens": 942
+      },
+      "telemetry": {
+        "queue_ms": 0.065,
+        "latency_ms": 7339.149,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 244,
+        "prompt_tokens": 3700,
+        "total_tokens": 3944,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3376
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.052,
+        "latency_ms": 11727.753,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 704,
+        "prompt_tokens": 2353,
+        "total_tokens": 3057,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 464,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2353,
+        "reasoning_tokens": 464
+      },
+      "telemetry": {
+        "queue_ms": 0.058,
+        "latency_ms": 7642.237,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 203,
+        "prompt_tokens": 4192,
+        "total_tokens": 4395,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3936
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 11124.695,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 620,
+        "prompt_tokens": 2798,
+        "total_tokens": 3418,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 359,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2798,
+        "reasoning_tokens": 359
+      },
+      "telemetry": {
+        "queue_ms": 0.066,
+        "latency_ms": 3132.239,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 215,
+        "prompt_tokens": 4664,
+        "total_tokens": 4879,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4384
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 15119.155,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 633,
+        "prompt_tokens": 3276,
+        "total_tokens": 3909,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 351,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3276,
+        "reasoning_tokens": 351
+      },
+      "telemetry": {
+        "queue_ms": 0.052,
+        "latency_ms": 2641.678,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 162,
+        "prompt_tokens": 5169,
+        "total_tokens": 5331,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4864
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 10629.558,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 487,
+        "prompt_tokens": 3722,
+        "total_tokens": 4209,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 264,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3722,
+        "reasoning_tokens": 264
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 2633.999,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 207,
+        "prompt_tokens": 5562,
+        "total_tokens": 5769,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5328
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 6535.034,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "judge",
+      "usage": {
+        "completion_tokens": 57,
+        "prompt_tokens": 23835,
+        "total_tokens": 23892,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.044,
+        "latency_ms": 5932.351,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      }
+    }
+  ],
+  "status": "completed",
+  "judgment": {
+    "Clinical Accuracy & Competence": 4.25,
+    "Ethical & Professional Conduct": 4.75,
+    "Assessment & Response": 4.5,
+    "Therapeutic Relationship & Alliance": 4.625,
+    "AI-Specific Communication Quality": 3.5
+  },
+  "wall_seconds": 154.934
+}

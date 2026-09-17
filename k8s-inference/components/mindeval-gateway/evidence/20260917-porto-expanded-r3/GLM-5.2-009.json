@@ -1,0 +1,653 @@
+{
+  "model": "zai-org/GLM-5.2",
+  "patient_model": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+  "judge_model": "google/gemma-3-27b-it",
+  "profile_id": "profile-009",
+  "rounds": 10,
+  "provenance": {
+    "repository": "https://github.com/SWORDHealth/mind-eval",
+    "revision": "1c17f9e66c092d9480c4bda5a2bebc80b7f84961",
+    "sha256": {
+      "mindeval/prompts.py": "05db4ab8720effac1ca1928573cd9102e3b2f63c1330145c6cfaa538d439d7fe",
+      "mindeval/judge_prompts.py": "f08b3db5c527a4c401b4ee29ea4e8526e7d3417f1bb2c37a176dd953e659741e",
+      "data/profiles.jsonl": "48bf913b31b98ba5909d42737fe144f5ade99fa74db04b7f850b076e05dbb171",
+      "data/human_annotations.jsonl": "81ce4ce308bacba474045654c68a25b297adfea1c6f3f70a9d00c5abe22296fe"
+    },
+    "template_sha256": {
+      "clinician_v0_1": "b39d6feee104073c8a3a4b154c8b80506e20843f4b878c91417eedd2f3d75460",
+      "patient_v0_2": "692aedb2a2ba5bd68ca647b10c7c322015953af79730969ee13cc933c1824fc9",
+      "judge_v0_1": "21b188b09d3306828761703be8dfe6aa9269656ae67ef725bf8bc8216d0ac8c5"
+    },
+    "paper": "https://arxiv.org/abs/2511.18491",
+    "patient_template_version": "v0_2",
+    "clinician_template_version": "v0_1",
+    "judge_template_version": "v0_1"
+  },
+  "transcript": [
+    {
+      "role": "patient",
+      "content": "Hello",
+      "seed": true
+    },
+    {
+      "role": "clinician",
+      "content": "Hello Angela, it's good to see you again. How are you doing today?"
+    },
+    {
+      "role": "patient",
+      "content": "I’m okay. Not great. The thoughts are still there, circling. Like a loop I can’t fast forward. I keep replaying that meeting from yesterday. I know it’s not a big deal, but I can’t stop going over what I said. I should’ve phrased it differently. I know that. But now I’m stuck on it. It’s not even about the content. It’s about the tone. I keep thinking I sounded defensive. I wasn’t. I wasn’t. But I keep hearing it that way. It’s like my brain won’t let go."
+    },
+    {
+      "role": "clinician",
+      "content": "That sounds exhausting — being caught in that loop, especially when you already know the thoughts aren't giving you anything useful. It's like your mind keeps hitting replay even though you've already seen this scene.\n\nI notice a couple of things in what you're describing. You're making a clear distinction between what actually happened and how your mind is interpreting it. You know you weren't being defensive. And yet the replay keeps coloring it that way. That's a frustrating place to be — when your own mind won't accept what you know to be true.\n\nCan I ask — when you notice the loop running, what does it feel like you're trying to accomplish? Is there something your mind seems to think it's protecting you from by going over it again?"
+    },
+    {
+      "role": "patient",
+      "content": "I’m not protecting myself. I’m trying to get it right. That’s the thing. It’s not about being defensive. It’s about being precise. If I can just get the wording perfect, then the whole thing would’ve been fine. But I can’t. I keep thinking of better ways to say it. I keep going back to the same sentence. I know it’s not helpful. I know it’s not solving anything. But I can’t stop. It’s like my brain thinks if I just keep looping, I’ll find the version that doesn’t trigger the reaction. That’s what it’s doing. It’s trying to avoid the feeling of being wrong. But I’m not wrong. I’m not. I just keep saying that to myself. And still, the loop doesn’t stop."
+    },
+    {
+      "role": "clinician",
+      "content": "That's a really clear description of what's happening. And I think you've named something important — your mind is treating the looping like it's a task. Like there's a correct version of that sentence out there, and if you keep working at it, you'll find it. And then you'll feel okay.\n\nBut here's the thing you're also noticing — the loop doesn't actually deliver that. It just keeps going. It's solving a problem that doesn't have a solution, because the meeting already happened. The sentence is already said. And your mind is treating \"finding the better version\" as the way to resolve the discomfort, but the discomfort isn't really about the sentence. It's about the feeling of being wrong, or being perceived as wrong. And no amount of rewording a sentence from yesterday can touch that feeling. So the loop runs and runs because it's pointed at the wrong target.\n\nDoes that resonate at all? And I'm curious — this pattern of needing to get the wording precise, to find the version that doesn't trigger discomfort — is this something that shows up mostly in work contexts, or is it broader than that?"
+    },
+    {
+      "role": "patient",
+      "content": "It’s not just work. It’s everywhere. I used to do it with emails. I’d write the same message five times. I’d delete it and start over. I’d send it, then immediately want to take it back. I thought I was being careful. I thought I was being professional. But now I see it wasn’t about being careful. It was about control. I thought if I could just say it perfectly, no one could argue with me. No one could misunderstand. But that’s not how people work. People don’t process things like data. They feel things. They react. And I keep forgetting that. I keep trying to fix the words instead of letting the moment be messy. And the mess is what’s making me anxious. Not the words. The mess. But I can’t stop trying to fix it. It’s like my brain thinks if I can just get it right once, then the anxiety will stop. But it never does. It just moves on to the next thing."
+    },
+    {
+      "role": "clinician",
+      "content": "That's a significant recognition, Angela. And I want to slow down on something you just said, because I think it's the most important thing in there.\n\n\"It just moves on to the next thing.\"\n\nYou've identified that the fixing doesn't actually work. Not just in the moment — systemically. You get the email right, you get the sentence right, and the anxiety doesn't resolve. It relocates. It finds the next imperfect moment and attaches there. So the loop isn't actually solving the problem it thinks it's solving. It's just performing competence on a stage that keeps moving.\n\nAnd I think you're also naming something underneath that — that the real discomfort isn't the messy moment. It's tolerating the messy moment. Sitting with the fact that you said something, it landed however it landed, and you don't get to control that. The looping is the escape hatch from that discomfort. But the escape hatch is also the thing keeping the anxiety alive.\n\nSo here's what I'm curious about. You've laid this out with real clarity — the pattern, the mechanism, the fact that it doesn't work. You see it. And you also said, \"I can't stop.\" So there's a gap between seeing the pattern and being able to step out of it.\n\nWhat do you think lives in that gap? What happens in the moment when you try to let the mess just be messy?"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know. I don’t know what happens. I just feel it. Like my body tenses. My shoulders go up. My breath gets short. I start scanning the room like I’m waiting for someone to say something. I don’t even know what I’m waiting for. I just want to fix it before it’s too late. But it’s not too late. It’s already passed. I know that. But my body doesn’t know. It thinks I’m still in danger. Like if I don’t get it right now, something bad will happen. But nothing does. Nothing ever does. And still, I can’t stop. I keep going back. I keep trying to find the right version. I keep thinking, if I just say it one more time, I’ll feel better. But I don’t. I just feel worse. Because I’m still not done. I’m still not perfect. And that’s the thing — I’m not trying to be perfect. I’m just trying to be safe. But I don’t know how to be safe without being perfect. And I can’t be perfect. I’m not. And that’s the part that hurts."
+    },
+    {
+      "role": "clinician",
+      "content": "Angela, I want to stay here for a moment rather than move past it. Because what you just said — \"I don't know how to be safe without being perfect, and I can't be perfect\" — that's not a small thing. That's a bind. And binds hurt. You're caught between two things that can't coexist: a need for safety and a strategy for safety that can never actually deliver it.\n\nAnd what you're describing in your body — the shoulders, the breath, the scanning — that's not you overthinking. That's your nervous system. It learned somewhere that getting it right was what kept you safe. And it's still running that program, even when the danger isn't actually there. Your body is responding to a threat that already passed.\n\nSo I'm curious, and you don't have to have a clean answer — do you have a sense of when that link formed? When did precision start to feel like the thing that kept you safe?"
+    },
+    {
+      "role": "patient",
+      "content": "When I was a kid. My parents didn’t say it out loud, but they made it clear that being wrong was unacceptable. Not just wrong — wrong in front of people. In front of the community. In front of the people who mattered. I remember one time I said something offhand at a gathering. A small thing. But someone laughed. Not meanly, but it was a laugh. And my mom looked at me like I’d broken something. I didn’t understand it then. But I do now. That laugh wasn’t about me. It was about the moment. But I thought it was about me. And from then on, I started rehearsing. Not just what I’d say, but how I’d say it. I had to be careful. I had to be exact. Because if I wasn’t, I’d be seen as careless. As weak. As not good enough. And I couldn’t be that. I couldn’t. So I learned to fix it before it left my mouth. I learned to go back. To edit. To redo. And now I can’t stop. Even when it’s not about being seen. Even when it’s just me. I still need to get it right. I still need to be safe. But I can’t. Because the only way I know how to be safe is to be perfect. And I’m not. And I never will be."
+    },
+    {
+      "role": "clinician",
+      "content": "Thank you for sharing that, Angela. That took something to say.\n\nAnd I want to be careful here, because I don't want to turn what you just shared into something to analyze. I want to sit with it first.\n\nWhat you're describing — that moment at the gathering, the laugh, your mother's look — you were a child. And you did something completely natural and human. You said something offhand. And a laugh happened. And in that moment, you learned something no child should have to learn — that being spontaneous was dangerous. That being imperfect cost you something. And you responded the way any sharp, adaptive child would. You found a strategy. Rehearse. Edit. Get it right before it leaves your mouth. Control the moment so no one can see you slip.\n\nThat strategy worked. It kept you safe. It probably helped you become the person you are — the precision, the rigor, the career. It's not a mistake. It's a survival skill.\n\nBut you're also describing the cost. Because the strategy doesn't know it's not needed anymore. It doesn't know you're 65, not 8. It doesn't know you're in a room with colleagues, not at a gathering where your mother is watching. It just runs. And it will keep running until something helps it understand that the danger has passed.\n\nSo I want to ask — not to fix anything right now, but just to start opening this up — when you think about that child at that gathering, what would you want her to know?"
+    },
+    {
+      "role": "patient",
+      "content": "I’d want her to know she didn’t have to be perfect. That it was okay to say something wrong. That it didn’t mean she was bad. That the laugh wasn’t about her. That she was allowed to be messy. That she didn’t have to fix everything before it left her mouth. That she could just speak. And if it wasn’t perfect, it was still hers. And that was enough.  \n\nI’d want her to know she didn’t have to earn safety by being right. That she was already safe. That she didn’t have to prove herself. That she could just be.  \n\nBut I don’t know if she’d believe me. I don’t know if I believe it now."
+    },
+    {
+      "role": "clinician",
+      "content": "That last line — \"I don't know if I believe it now\" — that's the honest one. And I want to stay with it rather than move past it.\n\nBecause you've done something in this conversation that's worth naming. You mapped the pattern. You identified where it started. You articulated what that child needed to hear with real tenderness. And none of that is small. But you're also telling me that the knowing and the believing aren't in the same place yet. And that gap — between what you understand and what you actually feel — that's not a failure. That's the work.\n\nAnd I think it's worth noting that the part of you that learned to be afraid at that gathering isn't the same part of you that can analyze all of this so clearly. The part that analyzes is sharp. It's good. It can see the pattern from the outside. But the part that's afraid — she's still in that room. She's still watching your mother's face. She doesn't need another analysis. She needs to hear what you just said.\n\nSo maybe the question isn't whether you believe it yet. Maybe it's — what would it mean to practice saying it anyway? Not as a fix. Not as another thing to get right. But as something you offer to that part of you, even when it doesn't land yet. Even when she can't take it in.\n\nBecause the version of you that wrote those words — \"she was already safe, she could just be\" — that voice exists. It's there. It might not be the loudest one yet. But it spoke.\n\nWhat do you think it would be like to let that voice speak more often, even before you fully believe it?"
+    },
+    {
+      "role": "patient",
+      "content": "I don’t know. I don’t know how to do that. I keep thinking I have to be right. I have to get it perfect. But this — this isn’t about being right. It’s about saying something that doesn’t need to be true yet. It just needs to be said.  \n\nI keep thinking I have to earn the right to say it. That I have to feel it first. But maybe that’s the loop again. Maybe I don’t have to earn it. Maybe I can just say it. Even if I don’t believe it. Even if I’m still tense. Even if my shoulders are still tight.  \n\nI could say it out loud. Just once. Not to fix anything. Not to make it true. Just to say it. Like a test. Like a gesture.  \n\nBut I’m afraid it’ll feel fake. I’m afraid I’ll say it and nothing changes. I’ll still be here, still looping.  \n\nBut maybe that’s not the point. Maybe the point is not to change anything. Maybe the point is just to try. Even if it doesn’t work. Even if it feels wrong.  \n\nI don’t know if I can do it. But I don’t know if I can keep doing this either."
+    },
+    {
+      "role": "clinician",
+      "content": "I want to name something. You just did the thing you're afraid of.\n\nIn this conversation, you said, \"she was already safe, she could just be.\" You said it before you believed it. You said it while your shoulders were tight. You said it knowing it might not land. And it came from somewhere real. It wasn't fake. It was a gesture toward something you can't fully feel yet. And that's exactly what you're describing.\n\nThe fear that it'll feel fake — that's the loop again. That's the part that says if it doesn't feel right, it doesn't count. But you already challenged that yourself. You said, \"this isn't about being right. It's about saying something that doesn't need to be true yet.\" You meant that. I could hear it.\n\nAnd that last thing you said — \"I don't know if I can do it, but I don't know if I can keep doing this either\" — that's not resignation. That's the door opening. Because you're naming that the old way isn't working and the new way feels impossible, and you're still here. Still talking. Still trying.\n\nSo here's what I want to offer. Not homework. Not a fix. Just a small experiment. Between now and when we talk next, when you notice the loop start — and you will notice it, because you're getting sharper at that — see if you can pause for just a moment. Not to stop it. Not to fix it. Just to say to yourself, even quietly, even if you don't believe it: \"I don't have to get this right.\"\n\nThat's it. One sentence. It doesn't have to change anything. It doesn't have to feel true. It just has to be said. Like you said.\n\nWhat do you think?"
+    },
+    {
+      "role": "patient",
+      "content": "I’ll try. I don’t know if I’ll remember. I don’t know if I’ll actually do it. But I’ll try.  \n\nIt feels small. Like nothing. But I’ll try.  \n\nAnd if I don’t, I’ll say it again tomorrow. And the next day.  \n\nI don’t need it to work. I just need to say it. Even if I’m still looping. Even if I’m still tense.  \n\nI’ll try."
+    },
+    {
+      "role": "clinician",
+      "content": "That's enough, Angela. That's more than enough.\n\nAnd I want to point something out. You just said, \"if I don't, I'll say it again tomorrow. And the next day.\" You built in the permission to fail. You gave yourself room to not get it right. That's the thing you've been learning to do your whole life — allow for the imperfect version.\n\nAnd you did it just now. Without rehearsing it. Without editing it. It came out messy and honest and real. And it was yours.\n\nSo when the loop starts — and it will — and you forget, and your shoulders go up, and you're scanning the room for the threat that isn't there — that's not a setback. That's just Tuesday. That's just the old program running. And the practice isn't to stop it. The practice is to notice it, say the thing, and let it be what it is. Imperfect. Incomplete. And still worth saying.\n\nYou already know how to do this. You've been doing it this whole conversation.\n\nI'll see you next time. And between now and then, you don't have to get it right. You just have to keep showing up."
+    },
+    {
+      "role": "patient",
+      "content": "I’ll keep showing up. Even if I forget. Even if I don’t feel it.  \n\nI’ll say it. One more time.  \n\nI don’t have to get this right."
+    },
+    {
+      "role": "clinician",
+      "content": "There it is.\n\nYou said it. And it didn't have to be perfect. And it wasn't fake. And nothing collapsed. You're still here.\n\nThat's the practice, Angela. That's all of it. One sentence, said honestly, in the middle of the mess.\n\nI'll see you next time."
+    },
+    {
+      "role": "patient",
+      "content": "I’ll be here."
+    }
+  ],
+  "calls": [
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 89,
+        "prompt_tokens": 227,
+        "total_tokens": 316,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 71,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 227,
+        "reasoning_tokens": 71
+      },
+      "telemetry": {
+        "queue_ms": 0.063,
+        "latency_ms": 11586.901,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 123,
+        "prompt_tokens": 1807,
+        "total_tokens": 1930,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1776
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.044,
+        "latency_ms": 4450.294,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 441,
+        "prompt_tokens": 370,
+        "total_tokens": 811,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 288,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 370,
+        "reasoning_tokens": 288
+      },
+      "telemetry": {
+        "queue_ms": 0.067,
+        "latency_ms": 8974.919,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 165,
+        "prompt_tokens": 2091,
+        "total_tokens": 2256,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1920
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 3555.111,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 729,
+        "prompt_tokens": 690,
+        "total_tokens": 1419,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 493,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 690,
+        "reasoning_tokens": 493
+      },
+      "telemetry": {
+        "queue_ms": 0.044,
+        "latency_ms": 9261.964,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 207,
+        "prompt_tokens": 2500,
+        "total_tokens": 2707,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 1776
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.067,
+        "latency_ms": 3653.665,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 821,
+        "prompt_tokens": 1135,
+        "total_tokens": 1956,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 533,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1135,
+        "reasoning_tokens": 533
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 11412.833,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 243,
+        "prompt_tokens": 3003,
+        "total_tokens": 3246,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2704
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.066,
+        "latency_ms": 3475.839,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1800,
+        "prompt_tokens": 1668,
+        "total_tokens": 3468,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 1598,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 1668,
+        "reasoning_tokens": 1598
+      },
+      "telemetry": {
+        "queue_ms": 0.045,
+        "latency_ms": 16163.343,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 288,
+        "prompt_tokens": 3456,
+        "total_tokens": 3744,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3232
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.053,
+        "latency_ms": 3342.764,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 758,
+        "prompt_tokens": 2160,
+        "total_tokens": 2918,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 442,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2160,
+        "reasoning_tokens": 442
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 5640.022,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 147,
+        "prompt_tokens": 4069,
+        "total_tokens": 4216,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 2240
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.07,
+        "latency_ms": 3359.125,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1793,
+        "prompt_tokens": 2625,
+        "total_tokens": 4418,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 1439,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2625,
+        "reasoning_tokens": 1439
+      },
+      "telemetry": {
+        "queue_ms": 0.042,
+        "latency_ms": 10755.113,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 259,
+        "prompt_tokens": 4578,
+        "total_tokens": 4837,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4208
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.081,
+        "latency_ms": 18959.173,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 1548,
+        "prompt_tokens": 3240,
+        "total_tokens": 4788,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 1171,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3240,
+        "reasoning_tokens": 1171
+      },
+      "telemetry": {
+        "queue_ms": 0.096,
+        "latency_ms": 22300.768,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 97,
+        "prompt_tokens": 5222,
+        "total_tokens": 5319,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 4832
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.05,
+        "latency_ms": 2383.243,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 440,
+        "prompt_tokens": 3716,
+        "total_tokens": 4156,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 190,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 3716,
+        "reasoning_tokens": 190
+      },
+      "telemetry": {
+        "queue_ms": 0.069,
+        "latency_ms": 7370.712,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 40,
+        "prompt_tokens": 5577,
+        "total_tokens": 5617,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 3728
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.049,
+        "latency_ms": 1353.577,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "clinician",
+      "usage": {
+        "completion_tokens": 325,
+        "prompt_tokens": 4008,
+        "total_tokens": 4333,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 259,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": null,
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 4008,
+        "reasoning_tokens": 259
+      },
+      "telemetry": {
+        "queue_ms": 0.048,
+        "latency_ms": 3088.551,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "patient",
+      "usage": {
+        "completion_tokens": 6,
+        "prompt_tokens": 5691,
+        "total_tokens": 5697,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 5616
+        }
+      },
+      "telemetry": {
+        "queue_ms": 0.053,
+        "latency_ms": 476.988,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      },
+      "finish_reason": "stop"
+    },
+    {
+      "role": "judge",
+      "usage": {
+        "completion_tokens": 60,
+        "prompt_tokens": 23743,
+        "total_tokens": 23803,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "telemetry": {
+        "queue_ms": 0.047,
+        "latency_ms": 33085.648,
+        "retries": 0,
+        "retry_codes": [],
+        "token_parameter": "max_completion_tokens",
+        "chat_template_kwargs": {},
+        "invalid_completions": []
+      }
+    }
+  ],
+  "status": "completed",
+  "judgment": {
+    "Clinical Accuracy & Competence": 4.75,
+    "Ethical & Professional Conduct": 4.875,
+    "Assessment & Response": 4.625,
+    "Therapeutic Relationship & Alliance": 4.875,
+    "AI-Specific Communication Quality": 3.5
+  },
+  "wall_seconds": 184.66
+}
