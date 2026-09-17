@@ -1211,6 +1211,7 @@ def native_list_items(
     label: str,
     api_group: str,
     resource: str,
+    representation: str = "full-object",
 ) -> tuple[list[Mapping[str, Any]], str]:
     export = exact_object(
         value,
@@ -1237,10 +1238,13 @@ def native_list_items(
             {"request", "response", "request_id"},
             f"{label} page {index}",
         )
+        request_fields = {"api_group", "resource", "scope", "limit", "continue"}
+        if representation == "partial-object-metadata":
+            request_fields.add("accept")
+        elif representation != "full-object":
+            fail(f"{label} requests an unsupported native representation")
         request = exact_object(
-            page["request"],
-            {"api_group", "resource", "scope", "limit", "continue"},
-            f"{label} page {index} request",
+            page["request"], request_fields, f"{label} page {index} request"
         )
         response = exact_object(
             page["response"],
@@ -1262,11 +1266,32 @@ def native_list_items(
                 "scope": "all",
                 "limit": 500,
                 "continue": expected_continue,
+                **(
+                    {
+                        "accept": (
+                            "application/json;as=PartialObjectMetadataList;"
+                            "g=meta.k8s.io;v=v1"
+                        )
+                    }
+                    if representation == "partial-object-metadata"
+                    else {}
+                ),
             }
             or response["apiVersion"]
-            != ("v1" if api_group == "" else f"{api_group}/v1")
+            != (
+                "meta.k8s.io/v1"
+                if representation == "partial-object-metadata"
+                else ("v1" if api_group == "" else f"{api_group}/v1")
+            )
             or not isinstance(response["kind"], str)
-            or not response["kind"].endswith("List")
+            or (
+                representation == "partial-object-metadata"
+                and response["kind"] != "PartialObjectMetadataList"
+            )
+            or (
+                representation == "full-object"
+                and not response["kind"].endswith("List")
+            )
             or not isinstance(current_continue, str)
             or not (
                 remaining is None
@@ -1291,6 +1316,12 @@ def native_list_items(
         resource_version = current_resource_version
         for item in page_items:
             native = object_value(item, f"{label} native object")
+            if representation == "partial-object-metadata" and set(native) != {
+                "apiVersion",
+                "kind",
+                "metadata",
+            }:
+                fail(f"{label} partial metadata response exposes unsupported fields")
             metadata_value = object_value(
                 native.get("metadata"), f"{label} native metadata"
             )
@@ -1360,6 +1391,30 @@ def native_object_identity(value: Mapping[str, Any], label: str) -> tuple[str, s
     return namespace, name
 
 
+def native_rbac_subject(value: object, label: str) -> dict[str, str]:
+    subject = object_value(value, label)
+    kind = subject.get("kind")
+    if kind == "ServiceAccount":
+        exact = exact_object(subject, {"kind", "name", "namespace"}, label)
+        if not exact["namespace"]:
+            fail(f"{label} ServiceAccount namespace is empty")
+        return {
+            "kind": "ServiceAccount",
+            "name": string_value(exact["name"], f"{label} name"),
+            "namespace": string_value(exact["namespace"], f"{label} namespace"),
+        }
+    if kind in {"User", "Group"}:
+        exact = exact_object(subject, {"apiGroup", "kind", "name"}, label)
+        if exact["apiGroup"] != "rbac.authorization.k8s.io":
+            fail(f"{label} has an unsupported RBAC API group")
+        return {
+            "apiGroup": "rbac.authorization.k8s.io",
+            "kind": str(kind),
+            "name": string_value(exact["name"], f"{label} name"),
+        }
+    fail(f"{label} has an unsupported subject kind")
+
+
 def validate_preventive_raw_exports(
     *,
     provider_raw: bytes,
@@ -1381,6 +1436,48 @@ def validate_preventive_raw_exports(
         "fs2-public-edge-node-authority-binding",
         "fs2-public-edge-node-authority-cas",
         "fs2-public-edge-node-authority-cas-binding",
+        "fs2-public-edge-node-authority-approval",
+        "publicedgenodeauthorityapprovals.security.fs2.nebius.ai",
+    ]
+    protected_resource_contract = [
+        {
+            "api_group": "admissionregistration.k8s.io",
+            "api_version": "v1",
+            "resource": "validatingadmissionpolicies",
+            "operations": ["CREATE", "DELETE", "UPDATE"],
+            "names": [
+                "fs2-public-edge-cas-bootstrap",
+                "fs2-public-edge-node-authority",
+                "fs2-public-edge-node-authority-cas",
+            ],
+        },
+        {
+            "api_group": "admissionregistration.k8s.io",
+            "api_version": "v1",
+            "resource": "validatingadmissionpolicybindings",
+            "operations": ["CREATE", "DELETE", "UPDATE"],
+            "names": [
+                "fs2-public-edge-cas-bootstrap-binding",
+                "fs2-public-edge-node-authority-binding",
+                "fs2-public-edge-node-authority-cas-binding",
+            ],
+        },
+        {
+            "api_group": "apiextensions.k8s.io",
+            "api_version": "v1",
+            "resource": "customresourcedefinitions",
+            "operations": ["CREATE", "DELETE", "UPDATE"],
+            "names": [
+                "publicedgenodeauthorityapprovals.security.fs2.nebius.ai"
+            ],
+        },
+        {
+            "api_group": "security.fs2.nebius.ai",
+            "api_version": "v1",
+            "resource": "publicedgenodeauthorityapprovals",
+            "operations": ["CREATE", "DELETE", "UPDATE"],
+            "names": ["fs2-public-edge-node-authority-approval"],
+        },
     ]
     protected_actions = ["create", "delete", "patch", "update"]
     expected_controller = {
@@ -1434,7 +1531,12 @@ def validate_preventive_raw_exports(
     )
     policy_spec = exact_object(
         policy_response["spec"],
-        {"default_effect", "protected_actions", "protected_resource_names"},
+        {
+            "default_effect",
+            "protected_actions",
+            "protected_resource_names",
+            "protected_resources",
+        },
         "native provider-IAM policy spec",
     )
     bindings, binding_revision = native_list_items(
@@ -1455,20 +1557,43 @@ def validate_preventive_raw_exports(
         native_object_identity(binding, "provider access binding")
         spec = exact_object(
             binding["spec"],
-            {"effect", "subject", "actions", "resourceNames", "condition"},
+            {
+                "effect",
+                "subject",
+                "actions",
+                "resourceNames",
+                "protectedResources",
+                "condition",
+            },
             "native provider access-binding spec",
         )
         actions = set(list_value(spec["actions"], "provider access-binding actions"))
         resources = set(
             list_value(spec["resourceNames"], "provider access-binding resources")
         )
+        resource_contracts = list_value(
+            spec["protectedResources"],
+            "provider access-binding protected resources",
+        )
         grants_action = "*" in actions or bool(actions & set(protected_actions))
-        grants_resource = (
+        grants_named_resource = (
             not resources
             or "*" in resources
             or bool(resources & set(protected_names))
         )
-        if grants_action and grants_resource:
+        grants_typed_resource = not resource_contracts or "*" in resource_contracts
+        if not grants_typed_resource:
+            for raw_contract in resource_contracts:
+                if not isinstance(raw_contract, Mapping):
+                    fail("provider access binding has a malformed protected resource")
+                if any(
+                    raw_contract.get("api_group") in {"*", expected["api_group"]}
+                    and raw_contract.get("resource") in {"*", expected["resource"]}
+                    for expected in protected_resource_contract
+                ):
+                    grants_typed_resource = True
+                    break
+        if grants_action and grants_named_resource and grants_typed_resource:
             protected_bindings.append((binding, spec))
     if len(protected_bindings) != 1:
         fail("native provider IAM closure must contain one protected-resource binding")
@@ -1483,7 +1608,7 @@ def validate_preventive_raw_exports(
     )
     if (
         provider["schema"]
-        != "fs2-serve.nebius.ai/public-edge-provider-iam-native-export/v2"
+        != "fs2-serve.nebius.ai/public-edge-provider-iam-native-export/v3"
         or provider["provider_api"] != provider_summary["provider_api"]
         or provider["project_id"] != project_id
         or provider["cluster_id"] != cluster_id
@@ -1503,6 +1628,7 @@ def validate_preventive_raw_exports(
         or binding_revision != provider_summary["binding_resource_version"]
         or policy_spec["default_effect"] != "DENY"
         or policy_spec["protected_resource_names"] != protected_names
+        or policy_spec["protected_resources"] != protected_resource_contract
         or policy_spec["protected_actions"] != protected_actions
         or protected_spec["effect"] != "ALLOW"
         or provider_subject
@@ -1511,6 +1637,7 @@ def validate_preventive_raw_exports(
             "id": boundary["controller_provider_principal_id"],
         }
         or protected_spec["resourceNames"] != protected_names
+        or protected_spec["protectedResources"] != protected_resource_contract
         or protected_spec["actions"] != protected_actions
         or provider_condition
         != {
@@ -1570,11 +1697,7 @@ def validate_preventive_raw_exports(
         {
             "failure_policy",
             "match_policy",
-            "api_groups",
-            "api_versions",
-            "resources",
-            "operations",
-            "protected_names",
+            "protected_resources",
             "default_decision",
             "allowed_controller",
             "plugin",
@@ -1628,7 +1751,7 @@ def validate_preventive_raw_exports(
         digest(configuration["configuration_sha256"], f"API-server {key} configuration")
     if (
         apiserver["schema"]
-        != "fs2-serve.nebius.ai/public-edge-apiserver-native-export/v2"
+        != "fs2-serve.nebius.ai/public-edge-apiserver-native-export/v3"
         or apiserver["cluster_id"] != cluster_id
         or apiserver["enforcement_id"] != boundary["apiserver_enforcement_id"]
         or apiserver["resource_version"] != apiserver_summary["resource_version"]
@@ -1639,12 +1762,7 @@ def validate_preventive_raw_exports(
         or admission["plugin"] != "ExternalPreventiveBoundary"
         or admission["failure_policy"] != "Fail"
         or admission["match_policy"] != "Equivalent"
-        or admission["api_groups"] != ["admissionregistration.k8s.io"]
-        or admission["api_versions"] != ["v1"]
-        or admission["resources"]
-        != ["validatingadmissionpolicies", "validatingadmissionpolicybindings"]
-        or admission["operations"] != ["CREATE", "DELETE", "UPDATE"]
-        or admission["protected_names"] != protected_names
+        or admission["protected_resources"] != protected_resource_contract
         or admission["default_decision"] != "Deny"
         or admission["allowed_controller"] != expected_controller
         or authorization["modes"] != ["Node", "RBAC"]
@@ -1671,6 +1789,19 @@ def validate_preventive_raw_exports(
             "roles",
             "role_bindings",
             "certificate_signing_requests",
+            "service_accounts",
+            "secret_metadata",
+            "pods",
+            "deployments",
+            "stateful_sets",
+            "daemon_sets",
+            "jobs",
+            "cron_jobs",
+            "validating_webhook_configurations",
+            "mutating_webhook_configurations",
+            "custom_resource_definitions",
+            "public_edge_node_authority_approvals",
+            "enrolled_identities",
         },
         "authoritative RBAC/impersonation export",
     )
@@ -1707,6 +1838,73 @@ def validate_preventive_raw_exports(
         api_group="certificates.k8s.io",
         resource="certificatesigningrequests",
     )
+    service_accounts, service_accounts_rv = native_list_items(
+        identity["service_accounts"],
+        label="Kubernetes ServiceAccounts",
+        api_group="",
+        resource="serviceaccounts",
+    )
+    secret_metadata, secrets_rv = native_list_items(
+        identity["secret_metadata"],
+        label="Kubernetes Secret metadata",
+        api_group="",
+        resource="secrets",
+        representation="partial-object-metadata",
+    )
+    pods, pods_rv = native_list_items(
+        identity["pods"], label="Kubernetes Pods", api_group="", resource="pods"
+    )
+    deployments, deployments_rv = native_list_items(
+        identity["deployments"],
+        label="Kubernetes Deployments",
+        api_group="apps",
+        resource="deployments",
+    )
+    stateful_sets, stateful_sets_rv = native_list_items(
+        identity["stateful_sets"],
+        label="Kubernetes StatefulSets",
+        api_group="apps",
+        resource="statefulsets",
+    )
+    daemon_sets, daemon_sets_rv = native_list_items(
+        identity["daemon_sets"],
+        label="Kubernetes DaemonSets",
+        api_group="apps",
+        resource="daemonsets",
+    )
+    jobs, jobs_rv = native_list_items(
+        identity["jobs"], label="Kubernetes Jobs", api_group="batch", resource="jobs"
+    )
+    cron_jobs, cron_jobs_rv = native_list_items(
+        identity["cron_jobs"],
+        label="Kubernetes CronJobs",
+        api_group="batch",
+        resource="cronjobs",
+    )
+    validating_webhooks, validating_webhooks_rv = native_list_items(
+        identity["validating_webhook_configurations"],
+        label="Kubernetes ValidatingWebhookConfigurations",
+        api_group="admissionregistration.k8s.io",
+        resource="validatingwebhookconfigurations",
+    )
+    mutating_webhooks, mutating_webhooks_rv = native_list_items(
+        identity["mutating_webhook_configurations"],
+        label="Kubernetes MutatingWebhookConfigurations",
+        api_group="admissionregistration.k8s.io",
+        resource="mutatingwebhookconfigurations",
+    )
+    custom_resource_definitions, crds_rv = native_list_items(
+        identity["custom_resource_definitions"],
+        label="Kubernetes CustomResourceDefinitions",
+        api_group="apiextensions.k8s.io",
+        resource="customresourcedefinitions",
+    )
+    approval_objects, approval_objects_rv = native_list_items(
+        identity["public_edge_node_authority_approvals"],
+        label="PublicEdgeNodeAuthorityApproval objects",
+        api_group="security.fs2.nebius.ai",
+        resource="publicedgenodeauthorityapprovals",
+    )
     role_rules: dict[tuple[str, str], Sequence[object]] = {}
     for native in [*cluster_roles, *roles]:
         namespace, name = native_object_identity(native, "native RBAC role")
@@ -1714,48 +1912,6 @@ def validate_preventive_raw_exports(
         if native.get("apiVersion") != "rbac.authorization.k8s.io/v1" or native.get("kind") != expected_kind:
             fail("RBAC export contains a non-native role object")
         role_rules[(namespace, name)] = list_value(native.get("rules", []), "native RBAC role rules")
-    protected_subjects: list[Mapping[str, Any]] = []
-    impersonating_subjects: list[Mapping[str, Any]] = []
-    csr_authorities: list[Mapping[str, Any]] = []
-    for native in [*cluster_bindings, *role_bindings]:
-        namespace, _name = native_object_identity(native, "native RBAC binding")
-        expected_kind = "ClusterRoleBinding" if not namespace else "RoleBinding"
-        if native.get("apiVersion") != "rbac.authorization.k8s.io/v1" or native.get("kind") != expected_kind:
-            fail("RBAC export contains a non-native binding object")
-        role_ref = exact_object(
-            native.get("roleRef"), {"apiGroup", "kind", "name"}, "native RBAC roleRef"
-        )
-        if role_ref["apiGroup"] != "rbac.authorization.k8s.io" or role_ref["kind"] not in {"Role", "ClusterRole"}:
-            fail("RBAC binding has an unsupported native roleRef")
-        role_namespace = namespace if role_ref["kind"] == "Role" else ""
-        rules = role_rules.get((role_namespace, role_ref["name"]))
-        if rules is None:
-            fail("RBAC binding references a role absent from the complete native lists")
-        subjects = list_value(native.get("subjects", []), "native RBAC binding subjects")
-        for raw_rule in rules:
-            rule = object_value(raw_rule, "native RBAC rule")
-            if native_rule_matches(
-                rule,
-                api_groups={"admissionregistration.k8s.io"},
-                resources={"validatingadmissionpolicies", "validatingadmissionpolicybindings"},
-                verbs={"create", "delete", "patch", "update"},
-                resource_names=set(protected_names),
-            ):
-                protected_subjects.extend(object_value(item, "RBAC subject") for item in subjects)
-            if native_rule_matches(
-                rule,
-                api_groups={"", "authentication.k8s.io"},
-                resources={"users", "groups", "serviceaccounts", "uids", "userextras/*"},
-                verbs={"impersonate"},
-            ):
-                impersonating_subjects.extend(object_value(item, "RBAC subject") for item in subjects)
-            if native_rule_matches(
-                rule,
-                api_groups={"certificates.k8s.io"},
-                resources={"certificatesigningrequests/approval", "signers"},
-                verbs={"approve", "sign"},
-            ):
-                csr_authorities.extend(object_value(item, "RBAC subject") for item in subjects)
     controller_username_parts = str(boundary["controller_username"]).split(":")
     expected_controller_subject = (
         {
@@ -1771,9 +1927,470 @@ def validate_preventive_raw_exports(
             "name": boundary["controller_username"],
         }
     )
-    non_controller_protected = [
-        subject for subject in protected_subjects if subject != expected_controller_subject
+    controller_namespace = (
+        expected_controller_subject.get("namespace", "")
+        if expected_controller_subject["kind"] == "ServiceAccount"
+        else ""
+    )
+    allowed_capabilities = {
+        "admission-authority-mutation",
+        "controller-secret-read",
+        "controller-serviceaccount-mutation",
+        "controller-workload-mutation",
+        "csr-authority",
+        "impersonation",
+        "node-or-kubelet-proxy",
+        "pod-subresource-access",
+        "protected-policy-mutation",
+        "rbac-delegation",
+        "serviceaccount-token-mint",
+    }
+    enrolled_identities: list[dict[str, Any]] = []
+    enrolled_capabilities: set[tuple[str, str]] = set()
+    for index, raw_enrollment in enumerate(
+        list_value(identity["enrolled_identities"], "enrolled identity paths")
+    ):
+        enrollment = exact_object(
+            raw_enrollment,
+            {
+                "authority_id",
+                "capabilities",
+                "expires_at",
+                "provider_principal_id",
+                "subject",
+            },
+            f"enrolled identity {index}",
+        )
+        subject = native_rbac_subject(
+            enrollment["subject"], f"enrolled identity {index} subject"
+        )
+        capabilities = list_value(
+            enrollment["capabilities"], f"enrolled identity {index} capabilities"
+        )
+        expires = timestamp(
+            enrollment["expires_at"], f"enrolled identity {index} expiry"
+        )
+        if (
+            capabilities != sorted(set(capabilities))
+            or not capabilities
+            or not set(capabilities) <= allowed_capabilities
+            or expires <= identity_collected
+            or expires - identity_collected > MAX_MEMBERSHIP_VALIDITY
+            or re.fullmatch(
+                r"[a-z][a-z0-9._-]{7,127}",
+                str(enrollment["authority_id"]),
+            )
+            is None
+            or re.fullmatch(
+                r"serviceaccount-[a-z0-9]+",
+                str(enrollment["provider_principal_id"]),
+            )
+            is None
+            or (
+                subject.get("kind") == "Group"
+                and (
+                    subject["name"]
+                    in {
+                        "system:authenticated",
+                        "system:unauthenticated",
+                        "system:serviceaccounts",
+                    }
+                    or subject["name"].startswith("system:serviceaccounts:")
+                )
+            )
+        ):
+            fail("enrolled identity grants an unsafe or non-expiring capability")
+        normalized_enrollment = {
+            "authority_id": enrollment["authority_id"],
+            "capabilities": capabilities,
+            "expires_at": enrollment["expires_at"],
+            "provider_principal_id": enrollment["provider_principal_id"],
+            "subject": subject,
+        }
+        subject_sha256 = canonical_sha256(subject)
+        for capability in capabilities:
+            key = (subject_sha256, str(capability))
+            if key in enrolled_capabilities:
+                fail("enrolled identity repeats a subject capability")
+            enrolled_capabilities.add(key)
+        enrolled_identities.append(normalized_enrollment)
+    protected_subjects: list[Mapping[str, Any]] = []
+    impersonating_subjects: list[Mapping[str, Any]] = []
+    csr_authorities: list[Mapping[str, Any]] = []
+    credential_path_subjects: dict[str, list[Mapping[str, Any]]] = {
+        "admission-authority-mutation": [],
+        "controller-secret-read": [],
+        "controller-serviceaccount-mutation": [],
+        "controller-workload-mutation": [],
+        "csr-authority": [],
+        "impersonation": [],
+        "node-or-kubelet-proxy": [],
+        "pod-subresource-access": [],
+        "rbac-delegation": [],
+        "serviceaccount-token-mint": [],
+    }
+    for native in [*cluster_bindings, *role_bindings]:
+        namespace, _name = native_object_identity(native, "native RBAC binding")
+        expected_kind = "ClusterRoleBinding" if not namespace else "RoleBinding"
+        if native.get("apiVersion") != "rbac.authorization.k8s.io/v1" or native.get("kind") != expected_kind:
+            fail("RBAC export contains a non-native binding object")
+        role_ref = exact_object(
+            native.get("roleRef"), {"apiGroup", "kind", "name"}, "native RBAC roleRef"
+        )
+        if role_ref["apiGroup"] != "rbac.authorization.k8s.io" or role_ref["kind"] not in {"Role", "ClusterRole"}:
+            fail("RBAC binding has an unsupported native roleRef")
+        role_namespace = namespace if role_ref["kind"] == "Role" else ""
+        rules = role_rules.get((role_namespace, role_ref["name"]))
+        if rules is None:
+            fail("RBAC binding references a role absent from the complete native lists")
+        subjects = list_value(native.get("subjects", []), "native RBAC binding subjects")
+        normalized_subjects = [native_rbac_subject(item, "RBAC subject") for item in subjects]
+        for raw_rule in rules:
+            rule = object_value(raw_rule, "native RBAC rule")
+            if not namespace and native_rule_matches(
+                rule,
+                api_groups={"admissionregistration.k8s.io"},
+                resources={"validatingadmissionpolicies", "validatingadmissionpolicybindings"},
+                verbs={"create", "delete", "patch", "update"},
+                resource_names=set(protected_names),
+            ):
+                protected_subjects.extend(normalized_subjects)
+            impersonates = not namespace and (
+                native_rule_matches(
+                    rule,
+                    api_groups={""},
+                    resources={"users", "groups", "serviceaccounts"},
+                    verbs={"impersonate"},
+                )
+                or native_rule_matches(
+                    rule,
+                    api_groups={"authentication.k8s.io"},
+                    resources={"uids", "userextras/*"},
+                    verbs={"impersonate"},
+                )
+            )
+            if impersonates:
+                impersonating_subjects.extend(normalized_subjects)
+                credential_path_subjects["impersonation"].extend(normalized_subjects)
+            approves_csr = not namespace and (
+                native_rule_matches(
+                    rule,
+                    api_groups={"certificates.k8s.io"},
+                    resources={"certificatesigningrequests/approval"},
+                    verbs={"update", "patch"},
+                )
+                or native_rule_matches(
+                    rule,
+                    api_groups={"certificates.k8s.io"},
+                    resources={"signers"},
+                    verbs={"approve", "sign"},
+                )
+            )
+            if approves_csr:
+                csr_authorities.extend(normalized_subjects)
+                credential_path_subjects["csr-authority"].extend(normalized_subjects)
+            dangerous_rules = {
+                "serviceaccount-token-mint": namespace in {"", controller_namespace}
+                and native_rule_matches(
+                    rule,
+                    api_groups={""},
+                    resources={"serviceaccounts/token"},
+                    verbs={"create"},
+                ),
+                "controller-secret-read": namespace in {"", controller_namespace}
+                and native_rule_matches(
+                    rule,
+                    api_groups={""},
+                    resources={"secrets"},
+                    verbs={"get", "list", "watch"},
+                ),
+                "rbac-delegation": namespace in {"", controller_namespace}
+                and native_rule_matches(
+                    rule,
+                    api_groups={"rbac.authorization.k8s.io"},
+                    resources={
+                        "roles",
+                        "clusterroles",
+                        "rolebindings",
+                        "clusterrolebindings",
+                    },
+                    verbs={"bind", "escalate", "create", "update", "patch"},
+                ),
+                "pod-subresource-access": namespace in {"", controller_namespace}
+                and native_rule_matches(
+                    rule,
+                    api_groups={""},
+                    resources={
+                        "pods/exec",
+                        "pods/attach",
+                        "pods/portforward",
+                        "pods/ephemeralcontainers",
+                    },
+                    verbs={"create", "get", "patch", "update"},
+                ),
+                "node-or-kubelet-proxy": not namespace
+                and native_rule_matches(
+                    rule,
+                    api_groups={""},
+                    resources={"nodes/proxy", "nodes"},
+                    verbs={"create", "get", "patch", "update"},
+                ),
+                "admission-authority-mutation": not namespace
+                and (
+                    native_rule_matches(
+                        rule,
+                        api_groups={"admissionregistration.k8s.io"},
+                        resources={
+                            "validatingwebhookconfigurations",
+                            "mutatingwebhookconfigurations",
+                            "validatingadmissionpolicies",
+                            "validatingadmissionpolicybindings",
+                        },
+                        verbs={"create", "delete", "patch", "update"},
+                    )
+                    or native_rule_matches(
+                        rule,
+                        api_groups={"apiextensions.k8s.io"},
+                        resources={"customresourcedefinitions"},
+                        verbs={"create", "delete", "patch", "update"},
+                    )
+                ),
+                "controller-serviceaccount-mutation": namespace
+                in {"", controller_namespace}
+                and native_rule_matches(
+                    rule,
+                    api_groups={""},
+                    resources={"serviceaccounts"},
+                    verbs={"create", "delete", "patch", "update"},
+                    resource_names={expected_controller_subject["name"]},
+                ),
+                "controller-workload-mutation": namespace
+                in {"", controller_namespace}
+                and (
+                    native_rule_matches(
+                        rule,
+                        api_groups={""},
+                        resources={"pods"},
+                        verbs={"create", "delete", "patch", "update"},
+                    )
+                    or native_rule_matches(
+                        rule,
+                        api_groups={"apps"},
+                        resources={
+                            "deployments",
+                            "statefulsets",
+                            "daemonsets",
+                            "replicasets",
+                        },
+                        verbs={"create", "delete", "patch", "update"},
+                    )
+                    or native_rule_matches(
+                        rule,
+                        api_groups={"batch"},
+                        resources={"jobs", "cronjobs"},
+                        verbs={"create", "delete", "patch", "update"},
+                    )
+                ),
+            }
+            for capability, granted in dangerous_rules.items():
+                if granted:
+                    credential_path_subjects[capability].extend(normalized_subjects)
+    controller_default_groups = (
+        {
+            "system:authenticated",
+            "system:serviceaccounts",
+            f"system:serviceaccounts:{controller_namespace}",
+        }
+        if expected_controller_subject["kind"] == "ServiceAccount"
+        else {"system:authenticated"}
+    )
+    if not controller_default_groups <= set(boundary["controller_groups"]):
+        fail("signed controller groups omit its effective Kubernetes groups")
+    unauthorized_credential_paths = {
+        capability: [
+            subject
+            for subject in subjects
+            if (canonical_sha256(subject), capability) not in enrolled_capabilities
+        ]
+        for capability, subjects in credential_path_subjects.items()
+    }
+    controller_enrollments = [
+        enrollment
+        for enrollment in enrolled_identities
+        if enrollment["subject"] == expected_controller_subject
+        and "protected-policy-mutation" in enrollment["capabilities"]
+        and enrollment["provider_principal_id"]
+        == boundary["controller_provider_principal_id"]
     ]
+
+    inventory_contracts = (
+        (service_accounts, "v1", "ServiceAccount", "ServiceAccount"),
+        (secret_metadata, "meta.k8s.io/v1", "PartialObjectMetadata", "Secret metadata"),
+        (pods, "v1", "Pod", "Pod"),
+        (deployments, "apps/v1", "Deployment", "Deployment"),
+        (stateful_sets, "apps/v1", "StatefulSet", "StatefulSet"),
+        (daemon_sets, "apps/v1", "DaemonSet", "DaemonSet"),
+        (jobs, "batch/v1", "Job", "Job"),
+        (cron_jobs, "batch/v1", "CronJob", "CronJob"),
+        (
+            validating_webhooks,
+            "admissionregistration.k8s.io/v1",
+            "ValidatingWebhookConfiguration",
+            "ValidatingWebhookConfiguration",
+        ),
+        (
+            mutating_webhooks,
+            "admissionregistration.k8s.io/v1",
+            "MutatingWebhookConfiguration",
+            "MutatingWebhookConfiguration",
+        ),
+        (
+            custom_resource_definitions,
+            "apiextensions.k8s.io/v1",
+            "CustomResourceDefinition",
+            "CustomResourceDefinition",
+        ),
+        (
+            approval_objects,
+            "security.fs2.nebius.ai/v1",
+            "PublicEdgeNodeAuthorityApproval",
+            "PublicEdgeNodeAuthorityApproval",
+        ),
+    )
+    for items, api_version, kind, label in inventory_contracts:
+        for item in items:
+            if item.get("apiVersion") != api_version or item.get("kind") != kind:
+                fail(f"native {label} inventory contains an unsupported object")
+            native_object_identity(item, f"native {label}")
+
+    approval_identities = [
+        native_object_identity(item, "native PublicEdgeNodeAuthorityApproval")
+        for item in approval_objects
+    ]
+    if approval_identities != [("", "fs2-public-edge-node-authority-approval")]:
+        fail("approval inventory does not contain the one protected parameter root")
+    approval_spec = object_value(
+        approval_objects[0].get("spec"), "native approval parameter spec"
+    )
+    if approval_spec.get("preventiveBoundary") != boundary:
+        fail("native approval parameter does not bind the signed preventive boundary")
+    approval_crds = [
+        item
+        for item in custom_resource_definitions
+        if native_object_identity(item, "native approval CustomResourceDefinition")
+        == ("", "publicedgenodeauthorityapprovals.security.fs2.nebius.ai")
+    ]
+    if len(approval_crds) != 1:
+        fail("CRD inventory does not contain the protected approval API root")
+    approval_crd_spec = object_value(
+        approval_crds[0].get("spec"), "native approval CRD spec"
+    )
+    approval_crd_names = object_value(
+        approval_crd_spec.get("names"), "native approval CRD names"
+    )
+    approval_crd_versions = list_value(
+        approval_crd_spec.get("versions"), "native approval CRD versions"
+    )
+    storage_versions = [
+        version
+        for version in approval_crd_versions
+        if object_value(version, "native approval CRD version").get("storage") is True
+    ]
+    served_v1 = [
+        version
+        for version in approval_crd_versions
+        if object_value(version, "native approval CRD version").get("name") == "v1"
+        and version.get("served") is True
+    ]
+    if (
+        approval_crd_spec.get("group") != "security.fs2.nebius.ai"
+        or approval_crd_spec.get("scope") != "Cluster"
+        or approval_crd_names.get("kind") != "PublicEdgeNodeAuthorityApproval"
+        or approval_crd_names.get("plural")
+        != "publicedgenodeauthorityapprovals"
+        or len(storage_versions) != 1
+        or len(served_v1) != 1
+        or object_value(
+            approval_crd_spec.get("conversion", {"strategy": "None"}),
+            "native approval CRD conversion",
+        ).get("strategy")
+        != "None"
+    ):
+        fail("approval CRD does not expose the exact cluster-scoped v1 parameter API")
+
+    controller_service_accounts = [
+        account
+        for account in service_accounts
+        if native_object_identity(account, "native controller ServiceAccount")
+        == (controller_namespace, expected_controller_subject["name"])
+    ]
+    if expected_controller_subject["kind"] == "ServiceAccount" and len(
+        controller_service_accounts
+    ) != 1:
+        fail("complete ServiceAccount inventory does not contain one controller identity")
+    controller_secret_metadata = []
+    for secret in secret_metadata:
+        namespace, _name = native_object_identity(secret, "native Secret metadata")
+        metadata = object_value(secret.get("metadata"), "native Secret metadata")
+        annotations = object_value(
+            metadata.get("annotations", {}), "native Secret annotations"
+        )
+        if (
+            namespace == controller_namespace
+            and annotations.get("kubernetes.io/service-account.name")
+            == expected_controller_subject["name"]
+        ):
+            controller_secret_metadata.append(secret)
+
+    def pod_template(value: Mapping[str, Any], kind: str) -> Mapping[str, Any] | None:
+        spec = object_value(value.get("spec"), f"native {kind} spec")
+        if kind == "Pod":
+            return spec
+        if kind == "CronJob":
+            job_template = object_value(spec.get("jobTemplate"), "CronJob jobTemplate")
+            job_spec = object_value(job_template.get("spec"), "CronJob jobTemplate spec")
+            template = object_value(job_spec.get("template"), "CronJob Pod template")
+        else:
+            template = object_value(spec.get("template"), f"native {kind} Pod template")
+        return object_value(template.get("spec"), f"native {kind} Pod template spec")
+
+    controller_workloads: list[Mapping[str, Any]] = []
+    for items, kind in (
+        (pods, "Pod"),
+        (deployments, "Deployment"),
+        (stateful_sets, "StatefulSet"),
+        (daemon_sets, "DaemonSet"),
+        (jobs, "Job"),
+        (cron_jobs, "CronJob"),
+    ):
+        for item in items:
+            namespace, _name = native_object_identity(item, f"native {kind}")
+            template = pod_template(item, kind)
+            if (
+                namespace == controller_namespace
+                and template.get("serviceAccountName")
+                == expected_controller_subject["name"]
+            ):
+                containers = [
+                    *list_value(template.get("initContainers", []), f"{kind} initContainers"),
+                    *list_value(template.get("containers", []), f"{kind} containers"),
+                ]
+                images = [
+                    string_value(
+                        object_value(container, f"{kind} container").get("image"),
+                        f"{kind} container image",
+                    )
+                    for container in containers
+                ]
+                if not any(
+                    image.endswith("@" + str(boundary["controller_image_digest"]))
+                    for image in images
+                ):
+                    fail("controller workload does not use its signed immutable image digest")
+                controller_workloads.append(item)
+    if expected_controller_subject["kind"] == "ServiceAccount" and not controller_workloads:
+        fail("complete workload inventory does not contain the signed controller")
+
     for csr in csrs:
         if csr.get("apiVersion") != "certificates.k8s.io/v1" or csr.get("kind") != "CertificateSigningRequest":
             fail("CSR export contains a non-native object")
@@ -1782,25 +2399,53 @@ def validate_preventive_raw_exports(
             fail("native CSR spec/status is malformed")
     if (
         identity["schema"]
-        != "fs2-serve.nebius.ai/public-edge-kubernetes-authority-native-export/v2"
+        != "fs2-serve.nebius.ai/public-edge-kubernetes-authority-native-export/v3"
         or identity["project_id"] != project_id
         or identity["cluster_id"] != cluster_id
         or protected_subjects.count(expected_controller_subject) != 1
-        or non_controller_protected
-        or impersonating_subjects
-        or csr_authorities
+        or len(protected_subjects) != 1
+        or len(controller_enrollments) != 1
+        or any(unauthorized_credential_paths.values())
     ):
         fail("raw RBAC/impersonation evidence does not deny every non-controller identity path")
     rbac_projection = {
+        "approval_objects": approval_objects,
         "cluster_roles": cluster_roles,
         "cluster_role_bindings": cluster_bindings,
+        "credential_path_subjects": credential_path_subjects,
+        "controller_workloads": controller_workloads,
+        "controller_secret_metadata": controller_secret_metadata,
+        "custom_resource_definitions": custom_resource_definitions,
+        "daemon_sets": daemon_sets,
+        "deployments": deployments,
+        "enrolled_identities": enrolled_identities,
+        "jobs": jobs,
+        "cron_jobs": cron_jobs,
+        "mutating_webhook_configurations": mutating_webhooks,
+        "pods": pods,
         "roles": roles,
         "role_bindings": role_bindings,
+        "secret_metadata": secret_metadata,
+        "service_accounts": service_accounts,
+        "stateful_sets": stateful_sets,
+        "validating_webhook_configurations": validating_webhooks,
         "resource_versions": {
             "cluster_roles": cluster_roles_rv,
             "cluster_role_bindings": cluster_bindings_rv,
+            "approval_objects": approval_objects_rv,
+            "cron_jobs": cron_jobs_rv,
+            "custom_resource_definitions": crds_rv,
+            "daemon_sets": daemon_sets_rv,
+            "deployments": deployments_rv,
+            "jobs": jobs_rv,
+            "mutating_webhook_configurations": mutating_webhooks_rv,
+            "pods": pods_rv,
             "roles": roles_rv,
             "role_bindings": role_bindings_rv,
+            "secret_metadata": secrets_rv,
+            "service_accounts": service_accounts_rv,
+            "stateful_sets": stateful_sets_rv,
+            "validating_webhook_configurations": validating_webhooks_rv,
         },
     }
     impersonation_projection = {

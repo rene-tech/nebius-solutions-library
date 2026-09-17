@@ -669,6 +669,53 @@ def test_request_debug_tombstones_are_terminal_but_allow_distinct_reenable() -> 
     assert "SAI-19 owns 0032 and 0033" in documentation
 
 
+def test_preventive_boundary_reconstructs_transitive_native_credential_paths() -> None:
+    verifier = (
+        ROOT
+        / "stages/foundation/scripts/verify-public-edge-node-eligibility.py"
+    ).read_text(encoding="utf-8")
+
+    assert "public-edge-kubernetes-authority-native-export/v3" in verifier
+    assert "public-edge-provider-iam-native-export/v3" in verifier
+    assert "public-edge-apiserver-native-export/v3" in verifier
+    for inventory in (
+        'identity["service_accounts"]',
+        'identity["secret_metadata"]',
+        'identity["pods"]',
+        'identity["deployments"]',
+        'identity["stateful_sets"]',
+        'identity["daemon_sets"]',
+        'identity["jobs"]',
+        'identity["cron_jobs"]',
+        'identity["validating_webhook_configurations"]',
+        'identity["mutating_webhook_configurations"]',
+        'identity["custom_resource_definitions"]',
+        'identity["public_edge_node_authority_approvals"]',
+    ):
+        assert inventory in verifier
+    for capability in (
+        "serviceaccount-token-mint",
+        "controller-secret-read",
+        "rbac-delegation",
+        "pod-subresource-access",
+        "node-or-kubelet-proxy",
+        "admission-authority-mutation",
+        "controller-serviceaccount-mutation",
+        "controller-workload-mutation",
+    ):
+        assert f'"{capability}"' in verifier
+    assert "unauthorized_credential_paths" in verifier
+    assert "any(unauthorized_credential_paths.values())" in verifier
+    assert '"enrolled_identities": enrolled_identities' in verifier
+    assert '"credential_path_subjects": credential_path_subjects' in verifier
+    assert "enrolled_capabilities" in verifier
+    assert "controller_default_groups" in verifier
+    assert "PartialObjectMetadataList" in verifier
+    assert "publicedgenodeauthorityapprovals.security.fs2.nebius.ai" in verifier
+    assert '"api_group": "security.fs2.nebius.ai"' in verifier
+    assert '"resource": "publicedgenodeauthorityapprovals"' in verifier
+
+
 def test_debug_authority_lookup_cannot_delay_customer_requests() -> None:
     middleware = (
         ROOT / "components/control-plane/src/fs2_serve/request_debug.py"

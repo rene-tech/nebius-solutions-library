@@ -313,6 +313,23 @@ is rejected. The v2 proxy/broker schemas and their enrolled
 integration boundary; the empty production broker registry remains fail
 closed until an independently reviewed broker implements the same contract.
 
+The preventive-boundary evidence adapter now consumes complete, terminal,
+content-addressed native inventories for RBAC roles/bindings, ServiceAccounts,
+Secret metadata (using the API server's `PartialObjectMetadataList` media type,
+never Secret values), Pods and controller workloads, webhooks, CRDs, CSRs, and
+the `PublicEdgeNodeAuthorityApproval` objects. It reconstructs effective
+namespace and cluster bindings and classifies token minting, Secret reads,
+RBAC bind/escalate or mutation, pod subresource access, node proxying,
+admission-root mutation, and controller ServiceAccount/workload mutation.
+Every observed subject/capability pair must appear in the independently signed,
+expiring native identity enrollment; broad service-account/authenticated groups
+cannot be enrolled. The canonical RBAC projection binds every reopened object,
+resourceVersion, enrollment, derived controller workload/Secret link, and
+dangerous subject set. The external API-server boundary separately protects
+the exact approval CR instance and its CRD in addition to the VAP/VAPBinding
+objects; treating the approval name as an admissionregistration object is
+explicitly rejected by the v3 evidence shape.
+
 For cloud-authorized commands, the brokered token descriptor is not part of
 the global child FD set. Only a child whose environment carries the exact
 current signed delegated-auth envelope receives that one descriptor; local
