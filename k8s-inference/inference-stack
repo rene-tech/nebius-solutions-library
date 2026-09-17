@@ -187,14 +187,16 @@ def clean_environment() -> dict[str, str]:
     }
 
 
-def authority_observation(operation: str) -> dict[str, Any]:
+def authority_observation(operation: str, **parameters: Any) -> dict[str, Any]:
     if CREDENTIAL_PROVIDER_ADAPTER.is_symlink() or not CREDENTIAL_PROVIDER_ADAPTER.is_file():
         raise DeploymentError("credential provider adapter is absent or unsafe")
     response = run(
         [sys.executable, str(CREDENTIAL_PROVIDER_ADAPTER)],
         env=clean_environment(),
         capture=True,
-        input_text=json.dumps({"operation": operation}, separators=(",", ":")),
+        input_text=json.dumps(
+            {"operation": operation, **parameters}, separators=(",", ":")
+        ),
     )
     try:
         document = json.loads(response.stdout)
@@ -211,6 +213,8 @@ def attested_file(
     *,
     label: str,
     private: bool,
+    reader_uid: int | None = None,
+    reader_gid: int | None = None,
 ) -> str:
     if not isinstance(path_value, str) or not Path(path_value).is_absolute():
         raise DeploymentError(f"{label} path is not absolute")
@@ -218,8 +222,22 @@ def attested_file(
     if path.is_symlink() or not path.is_file():
         raise DeploymentError(f"{label} is absent or unsafe")
     metadata = path.stat()
-    disallowed = 0o077 if private else 0o022
-    if metadata.st_uid != 0 or stat.S_IMODE(metadata.st_mode) & disallowed:
+    if private:
+        if (
+            not isinstance(reader_uid, int)
+            or reader_uid < 1
+            or not isinstance(reader_gid, int)
+            or reader_gid < 1
+            or os.geteuid() != reader_uid
+            or os.getegid() != reader_gid
+            or metadata.st_uid != 0
+            or metadata.st_gid != reader_gid
+            or stat.S_IMODE(metadata.st_mode) != 0o640
+        ):
+            raise DeploymentError(
+                f"{label} is not an exact root-custodied authorized-reader file"
+            )
+    elif metadata.st_uid != 0 or stat.S_IMODE(metadata.st_mode) & 0o022:
         raise DeploymentError(f"{label} ownership or mode is unsafe")
     for parent in path.parents:
         parent_metadata = parent.stat()
@@ -303,6 +321,8 @@ def release_identity(command: str) -> dict[str, Any]:
         identity.get("config_sha256"),
         label="release workload identity configuration",
         private=True,
+        reader_uid=identity.get("reader_uid"),
+        reader_gid=identity.get("reader_gid"),
     )
     identity["executables"] = attested_executables(identity)
     return identity
@@ -334,6 +354,8 @@ def operator_proxy_identity() -> dict[str, Any]:
         document.get("kubeconfig_sha256"),
         label="operator viewer kubeconfig",
         private=True,
+        reader_uid=document.get("reader_uid"),
+        reader_gid=document.get("reader_gid"),
     )
     document["executables"] = attested_executables(document)
     return document
@@ -450,12 +472,18 @@ def terraform_init(
     if root_name is None:
         raise DeploymentError(f"Terraform root is not registered for remote state: {root}")
     backend_config = TERRAFORM_BACKEND_CONFIG_ROOT / f"{root_name}.s3.hcl"
+    active_reader = ACTIVE_RELEASE_IDENTITY or ACTIVE_OPERATOR_IDENTITY
     chain = [backend_config.parent, *backend_config.parent.parents]
     if (
         not backend_config.is_file()
         or backend_config.is_symlink()
         or backend_config.stat().st_uid != 0
-        or stat.S_IMODE(backend_config.stat().st_mode) != 0o600
+        or active_reader is None
+        or backend_config.stat().st_gid
+        != active_reader.get("reader_gid")
+        or os.geteuid() != active_reader.get("reader_uid")
+        or os.getegid() != backend_config.stat().st_gid
+        or stat.S_IMODE(backend_config.stat().st_mode) != 0o640
         or any(
             path.is_symlink()
             or not path.is_dir()
@@ -465,7 +493,7 @@ def terraform_init(
         )
     ):
         raise DeploymentError(
-            "root-owned mode-0600 remote backend configuration is required at "
+            "root-custodied mode-0640 remote backend configuration for the exact release group is required at "
             f"{backend_config}; local state fallback is forbidden"
         )
     source = backend_config.read_text(encoding="utf-8")
@@ -477,6 +505,27 @@ def terraform_init(
     ):
         raise DeploymentError(
             "remote backend must declare encryption, locking, bucket and object key"
+        )
+    migration = authority_observation(
+        "state-migration-readiness", terraform_root_name=root_name
+    )
+    if (
+        migration.get("terraform_root_name") != root_name
+        or migration.get("status") != "copy-verified-source-retained"
+        or migration.get("destination_object_present") is not True
+        or not isinstance(migration.get("destination_object_version_id"), str)
+        or not migration["destination_object_version_id"]
+        or migration.get("source_retained") is not True
+        or migration.get("overwrite_performed") is not False
+        or migration.get("destination_canonical_state_sha256")
+        != migration.get("source_canonical_state_sha256")
+        or not isinstance(migration.get("source_lineage"), str)
+        or not migration["source_lineage"]
+        or not isinstance(migration.get("source_serial"), int)
+        or migration["source_serial"] < 1
+    ):
+        raise DeploymentError(
+            "remote backend initialization is blocked until an externally anchored exact-copy observation preserves the legacy source"
         )
     custody = run(
         [sys.executable, str(CREDENTIAL_PROVIDER_ADAPTER)],

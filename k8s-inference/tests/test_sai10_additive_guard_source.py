@@ -331,7 +331,7 @@ def test_readiness_and_inventory_fail_closed_on_exact_live_bindings() -> None:
     )
     assert '"credential_bindings"' in service
     assert 'canonical_sha256(bindings) != parameters["bindings_sha256"]' in service
-    assert '"credential_bindings": bindings' in guard_source
+    assert '"credential_bindings": class_bindings' in guard_source
     assert "reconcile_global_provider_inventory" in provider
     assert "all-cluster-secrets-and-all-project-iam" in provider
     assert registry["provider_inventory_exemptions"] == {
@@ -340,3 +340,98 @@ def test_readiness_and_inventory_fail_closed_on_exact_live_bindings() -> None:
     }
     assert registry["pending_credential_ids"] == []
     assert contracts["pending_contract_ids"] == registry["pending_credential_ids"]
+
+
+def test_all_credential_contracts_use_current_schema_and_checked_source_trust() -> None:
+    contracts = json.loads(
+        (ROOT / "security/credential-consumer-contracts.json").read_text()
+    )
+    guard = (ROOT / "scripts/secret_migration_guard.py").read_text()
+    rotation = (ROOT / "scripts/credential_rotation.py").read_text()
+    assert contracts["pending_contract_ids"] == []
+    assert len(contracts["contracts"]) == 21
+    for contract in contracts["contracts"].values():
+        assert set(contract) == {
+            "adapter",
+            "authority",
+            "consumers",
+            "readiness",
+            "required_operations",
+        }
+        assert {"consumer-readiness", "rotation-readiness"} <= set(
+            contract["required_operations"]
+        )
+    assert guard.count('source_trust=policy["source_trust"]') >= 1
+    assert rotation.count('source_trust=policy["source_trust"]') >= 1
+    assert '"source_trust": source_trust' in guard
+    assert '"credential_bindings": class_bindings' in guard
+    assert "consumer_readiness_observation" in rotation
+
+
+def test_class_adapters_receive_only_exact_class_source_material() -> None:
+    provider = (ROOT / "scripts/credential_authority_provider.py").read_text()
+    dispatch = provider[
+        provider.index("def class_adapter_result(") : provider.index(
+            "\ndef backend_custody_result", provider.index("def class_adapter_result(")
+        )
+    ]
+    assert '"credential_sources": class_sources' in dispatch
+    assert '"terraform_states": states' not in dispatch
+    assert '"kubernetes_secrets": secrets' not in dispatch
+    assert '"nebius_inventory": provider_inventory' not in dispatch
+    assert 'parameters.get("source_trust") != source_trust' in dispatch
+    assert "exact_requested_secret_bindings(parameters, expected_bindings, secrets)" in dispatch
+
+
+def test_authorized_reader_files_are_narrow_and_global_inventory_is_root_private() -> None:
+    service = (ROOT / "scripts/credential_authority_service.py").read_text()
+    provider = (ROOT / "scripts/credential_authority_provider.py").read_text()
+    wrapper = (ROOT / "inference-stack").read_text()
+    schema = json.loads(
+        (ROOT / "security/credential-authority-config.schema.json").read_text()
+    )
+    assert "allowed_client_gids" in schema["required"]
+    policy = schema["$defs"]["policy"]
+    for field in (
+        "authorized_reader_uid",
+        "authorized_reader_gid",
+        "kubeconfig_sha256",
+        "cluster_inventory_identity",
+        "cluster_authorization_adapter",
+    ):
+        assert field in policy["required"]
+    assert "def root_reader_file(" in service
+    assert "stat.S_IMODE(metadata.st_mode) != 0o640" in service
+    assert 'root_private_file(global_kubeconfig, label="global Secret inventory kubeconfig")' in service
+    assert "cluster_inventory_identity_proof" in provider
+    assert 'expected_sha256=policy["kubeconfig_sha256"]' in provider
+    assert 'metadata.st_gid != reader_gid' in wrapper
+    assert 'os.geteuid() != reader_uid' in wrapper
+
+
+def test_registry_presence_and_secret_state_identity_are_mandatory() -> None:
+    guard = (ROOT / "scripts/secret_migration_guard.py").read_text()
+    provider = (ROOT / "scripts/credential_authority_provider.py").read_text()
+    assert "authoritative Terraform state omits reviewed credential addresses" in guard
+    assert "authoritative Terraform states omit reviewed credential addresses" in provider
+    assert 'binding.get("immutable") is not True' in provider
+    assert 'binding.get("uid") != item["metadata"]["uid"]' in provider
+    assert 'binding.get("credential_class") not in matching_classes' in provider
+    assert 'values.get("immutable") is not True' in guard
+    assert 'binding["credential_class"] not in matching_classes' in guard
+
+
+def test_every_remote_init_requires_verified_additive_state_copy() -> None:
+    wrapper = (ROOT / "inference-stack").read_text()
+    init = wrapper[
+        wrapper.index("def terraform_init(") : wrapper.index(
+            "\ndef validate_stage_roots", wrapper.index("def terraform_init(")
+        )
+    ]
+    migration_gate = init.index('"state-migration-readiness"')
+    terraform_init = init.index('"init",')
+    assert migration_gate < terraform_init
+    assert 'migration.get("status") != "copy-verified-source-retained"' in init
+    assert 'migration.get("source_retained") is not True' in init
+    assert 'migration.get("overwrite_performed") is not False' in init
+    assert 'migration.get("destination_canonical_state_sha256")' in init

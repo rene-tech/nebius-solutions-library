@@ -69,6 +69,14 @@ REGISTRY_BASE_ADDRESS_PROBES = (
     '["storage"]',
     '["storage_name"]',
 )
+CONSUMER_OPERATIONS = frozenset(
+    {
+        "consumer-readiness",
+        "rotation-readiness",
+        "ciphertext-migration",
+        "authentication-continuity",
+    }
+)
 
 
 class GuardError(RuntimeError):
@@ -94,8 +102,7 @@ def load_consumer_contracts(
         document.get("schema") != "fs2-serve.nebius.ai/credential-consumer-contracts/v1"
         or not isinstance(contracts, dict)
         or len(contracts) != 21
-        or pending
-        != ["postgresql-backup-s3", "postgresql-backup-s3-secret"]
+        or pending != []
     ):
         raise GuardError("credential consumer contract inventory is incomplete")
     for credential_class, contract in contracts.items():
@@ -103,7 +110,14 @@ def load_consumer_contracts(
             not isinstance(credential_class, str)
             or not credential_class
             or not isinstance(contract, dict)
-            or set(contract) != {"adapter", "authority", "consumers", "readiness"}
+            or set(contract)
+            != {
+                "adapter",
+                "authority",
+                "consumers",
+                "readiness",
+                "required_operations",
+            }
             or not all(
                 isinstance(contract[field], str) and contract[field]
                 for field in ("adapter", "authority", "readiness")
@@ -115,15 +129,18 @@ def load_consumer_contracts(
                 for consumer in contract["consumers"]
             )
             or len(contract["consumers"]) != len(set(contract["consumers"]))
+            or not isinstance(contract["required_operations"], list)
+            or not contract["required_operations"]
+            or len(contract["required_operations"])
+            != len(set(contract["required_operations"]))
+            or not set(contract["required_operations"]) <= CONSUMER_OPERATIONS
+            or "consumer-readiness" not in contract["required_operations"]
+            or "rotation-readiness" not in contract["required_operations"]
         ):
             raise GuardError(
                 f"credential consumer contract is malformed: {credential_class}"
             )
-    return {
-        credential_class: contract
-        for credential_class, contract in contracts.items()
-        if credential_class not in pending
-    }
+    return dict(sorted(contracts.items()))
 
 
 def utc_now() -> datetime:
@@ -739,6 +756,7 @@ def verify_external_evidence(document: dict[str, Any]) -> dict[str, Any]:
             expected_nonce=str(claim.get("request_nonce", "")),
             evidence_public_key_sha256=policy["evidence_public_key_sha256"],
             anchor_public_key_sha256=policy["anchor_public_key_sha256"],
+            source_trust=policy["source_trust"],
         )
     except (EvidenceVerificationError, RuntimeError) as error:
         raise GuardError("external evidence verification failed") from error
@@ -1179,6 +1197,21 @@ def protected_state_fingerprints(
         if address in fingerprints:
             raise GuardError(f"protected state resource is duplicated: {address}")
         fingerprints[address] = canonical_sha256(values)
+    if registry is not None and terraform_root is not None:
+        required = registry_resource_addresses(
+            registry, terraform_root=terraform_root
+        )
+        observed = {
+            base
+            for address in fingerprints
+            if (base := base_resource_address(address)) is not None
+        }
+        missing = required - observed
+        if missing:
+            raise GuardError(
+                "authoritative Terraform state omits reviewed credential addresses: "
+                + ",".join(sorted(missing))
+            )
     return dict(sorted(fingerprints.items()))
 
 
@@ -1308,19 +1341,33 @@ def live_secret_bindings(
             )
         state_uid = metadata.get("uid")
         state_rv = metadata.get("resource_version")
-        if state_uid not in (None, "", binding["uid"]) or state_rv not in (
-            None,
-            "",
-            binding["resource_version"],
+        state_annotations = metadata.get("annotations")
+        matching_classes = {
+            entry["id"]
+            for entry in registry["credentials"]
+            if entry["terraform_root"] == terraform_root
+            and any(
+                re.fullmatch(pattern, address)
+                for pattern in entry["address_regexes"]
+            )
+        }
+        if (
+            state_uid != binding["uid"]
+            or str(state_rv) != binding["resource_version"]
+            or not isinstance(state_annotations, dict)
+            or state_annotations.get("fs2.nebius.ai/credential-class")
+            != binding["credential_class"]
+            or binding["credential_class"] not in matching_classes
+            or state_annotations.get("fs2.nebius.ai/credential-generation")
+            != binding["generation"]
+            or state_annotations.get("fs2.nebius.ai/content-sha256")
+            != binding["content_sha256"]
+            or values.get("immutable") is not True
+            or binding["immutable"] != "true"
         ):
             raise GuardError(
-                f"live Secret UID/resourceVersion differs from Terraform state: {address}"
+                f"live Secret UID/RV/class/generation/content/immutable binding differs from Terraform state: {address}"
             )
-        if (
-            base_resource_address(address).endswith("_versioned")
-            and binding["immutable"] != "true"
-        ):
-            raise GuardError(f"versioned live Secret is not immutable: {address}")
         bindings[address] = binding
     return dict(sorted(bindings.items()))
 
@@ -1653,6 +1700,7 @@ def validate_consumer_readiness_payload(
             "contracts_sha256",
             "bindings",
             "bindings_sha256",
+            "sources",
             "classes",
         }
         or payload.get("schema")
@@ -1664,14 +1712,64 @@ def validate_consumer_readiness_payload(
         or canonical_sha256(payload["bindings"]) != expected_bindings_sha256
         or not isinstance(payload.get("classes"), dict)
         or set(payload["classes"]) != set(contracts)
+        or not isinstance(payload.get("sources"), dict)
+        or set(payload["sources"]) != set(contracts)
     ):
         raise GuardError(
             "consumer readiness authority returned an incomplete inventory"
         )
     now = utc_now()
     evidence_ids: set[str] = set()
+    assigned_addresses: set[str] = set()
     for credential_class, contract in contracts.items():
         item = payload["classes"][credential_class]
+        source = payload["sources"][credential_class]
+        if (
+            not isinstance(source, dict)
+            or set(source) != {"source_trust", "credential_bindings"}
+            or not isinstance(source.get("source_trust"), dict)
+            or not isinstance(source.get("credential_bindings"), dict)
+            or any(
+                address in assigned_addresses
+                for address in source["credential_bindings"]
+            )
+        ):
+            raise GuardError(
+                f"consumer readiness source binding is malformed: {credential_class}"
+            )
+        source_trust = source["source_trust"]
+        if (
+            set(source_trust)
+            != {
+                "credential_class",
+                "generation",
+                "retained_generations",
+                "registry_sha256",
+                "credential_identities_sha256",
+                "terraform_bindings_sha256",
+                "secret_bindings_sha256",
+            }
+            or source_trust.get("credential_class") != credential_class
+            or not isinstance(source_trust.get("generation"), int)
+            or source_trust.get("retained_generations")
+            != list(range(1, source_trust["generation"] + 1))
+            or any(
+                re.fullmatch(r"[0-9a-f]{64}", str(source_trust.get(field, "")))
+                is None
+                for field in (
+                    "registry_sha256",
+                    "credential_identities_sha256",
+                    "terraform_bindings_sha256",
+                    "secret_bindings_sha256",
+                )
+            )
+            or source_trust.get("secret_bindings_sha256")
+            != canonical_sha256(source["credential_bindings"])
+        ):
+            raise GuardError(
+                f"consumer readiness source trust is malformed: {credential_class}"
+            )
+        assigned_addresses.update(source["credential_bindings"])
         if (
             not isinstance(item, dict)
             or not isinstance(item.get("externalEvidence"), dict)
@@ -1683,10 +1781,13 @@ def validate_consumer_readiness_payload(
             or item.get("ready") is not True
             or not isinstance(item.get("generation"), int)
             or item["generation"] < 1
+            or item["generation"] != source_trust["generation"]
             or not isinstance(item.get("consumer_bindings"), list)
-            or item.get("credential_bindings") != payload["bindings"]
+            or item.get("source_trust") != source["source_trust"]
+            or item.get("credential_bindings")
+            != source["credential_bindings"]
             or item.get("credential_bindings_sha256")
-            != expected_bindings_sha256
+            != canonical_sha256(source["credential_bindings"])
             or not isinstance(item.get("observed_at"), str)
         ):
             raise GuardError(
@@ -1698,6 +1799,7 @@ def validate_consumer_readiness_payload(
             raise GuardError("consumer readiness reuses or omits external evidence")
         evidence_ids.add(evidence_id)
         bindings = item["consumer_bindings"]
+        source_identity = canonical_sha256(source)
         if (
             len(bindings) != len(contract["consumers"])
             or {binding.get("consumer") for binding in bindings if isinstance(binding, dict)}
@@ -1722,7 +1824,7 @@ def validate_consumer_readiness_payload(
                 or binding.get("generation") != item["generation"]
                 or binding.get("ready") is not True
                 or binding.get("credential_identity")
-                != expected_bindings_sha256
+                != source_identity
                 or not all(
                     isinstance(binding.get(field), str) and binding[field]
                     for field in (
@@ -1750,6 +1852,10 @@ def validate_consumer_readiness_payload(
             raise GuardError(
                 f"consumer readiness class evidence is stale: {credential_class}"
             )
+    if assigned_addresses != set(payload["bindings"]):
+        raise GuardError(
+            "consumer readiness class sources do not partition the exact Secret bindings"
+        )
     return payload
 
 
@@ -1769,21 +1875,66 @@ def write_consumer_readiness_receipt(
     if inventory.get("registry_sha256") != identity.get("registry_sha256"):
         raise GuardError("consumer inventory registry differs from custody identity")
     generations = inventory.get("classes")
-    if not isinstance(generations, dict) or set(generations) != set(contracts):
+    inventory_items = inventory.get("items")
+    if (
+        not isinstance(generations, dict)
+        or set(generations) != set(contracts)
+        or not isinstance(inventory_items, list)
+    ):
         raise GuardError("credential inventory omits a registered class")
     classes: dict[str, Any] = {}
+    sources: dict[str, Any] = {}
     for credential_class in sorted(contracts):
-        generation = generations[credential_class].get("current_generation")
+        class_source = generations[credential_class]
+        generation = (
+            class_source.get("current_generation")
+            if isinstance(class_source, dict)
+            else None
+        )
         if not isinstance(generation, int) or generation < 1:
             raise GuardError(f"credential generation is absent: {credential_class}")
+        matches = [
+            item
+            for item in inventory_items
+            if isinstance(item, dict)
+            and item.get("credential_class") == credential_class
+            and item.get("generation") == generation
+        ]
+        if len(matches) != 1:
+            raise GuardError(
+                f"credential source is absent or ambiguous: {credential_class}"
+            )
+        source_trust = class_source.get("source_trust")
+        class_bindings = class_source.get("secret_bindings")
+        if (
+            not isinstance(source_trust, dict)
+            or not isinstance(class_bindings, dict)
+            or any(
+                not isinstance(bindings.get(address), dict)
+                or {
+                    key: bindings[address].get(key)
+                    for key in binding
+                }
+                != binding
+                for address, binding in class_bindings.items()
+            )
+        ):
+            raise GuardError(
+                f"credential source differs from the exact custody receipt: {credential_class}"
+            )
+        sources[credential_class] = {
+            "source_trust": source_trust,
+            "credential_bindings": class_bindings,
+        }
         classes[credential_class] = authority_json(
             {
                 "operation": "consumer-readiness",
                 "credential_class": credential_class,
                 "generation": generation,
                 "phase": phase,
-                "bindings_sha256": bindings_sha256,
-                "credential_bindings": bindings,
+                "source_trust": source_trust,
+                "bindings_sha256": canonical_sha256(class_bindings),
+                "credential_bindings": class_bindings,
             }
         )
     payload = {
@@ -1792,6 +1943,7 @@ def write_consumer_readiness_receipt(
         "contracts_sha256": canonical_sha256(contracts),
         "bindings": bindings,
         "bindings_sha256": bindings_sha256,
+        "sources": sources,
         "classes": classes,
     }
     validate_consumer_readiness_payload(

@@ -90,6 +90,41 @@ def root_private_file(path: Path, *, label: str, expected_sha256: str | None = N
     return digest
 
 
+def root_reader_file(
+    path: Path,
+    *,
+    label: str,
+    reader_gid: int,
+    expected_sha256: str | None = None,
+) -> str:
+    """Bind a root-owned file readable only by the authorized client group."""
+
+    if not path.is_absolute() or path.is_symlink() or not path.is_file():
+        raise ProviderError(f"{label} is absent or unsafe")
+    metadata = path.stat()
+    if (
+        metadata.st_uid != 0
+        or metadata.st_gid != reader_gid
+        or stat.S_IMODE(metadata.st_mode) != 0o640
+    ):
+        raise ProviderError(
+            f"{label} is not root-owned, reader-group-owned mode 0640"
+        )
+    for parent in path.parents:
+        parent_metadata = parent.stat()
+        if (
+            parent.is_symlink()
+            or not parent.is_dir()
+            or parent_metadata.st_uid != 0
+            or stat.S_IMODE(parent_metadata.st_mode) & 0o022
+        ):
+            raise ProviderError(f"{label} parent chain is mutable")
+    digest = file_sha256(path)
+    if expected_sha256 is not None and digest != expected_sha256:
+        raise ProviderError(f"{label} digest differs from root policy")
+    return digest
+
+
 def executable(policy: dict[str, Any], name: str) -> str:
     configured = policy["provider_executables"][name]
     path = Path(configured["path"])
@@ -446,7 +481,114 @@ def secret_commitment(data: Any) -> str:
     return canonical_sha256(commitments)
 
 
+def cluster_inventory_identity_proof(policy: dict[str, Any]) -> dict[str, Any]:
+    """Bind global Secret reads to one short-lived, exact Kubernetes principal."""
+
+    kubeconfig = Path(policy["kubeconfig"])
+    kubeconfig_sha256 = root_private_file(
+        kubeconfig,
+        label="global Secret inventory kubeconfig",
+        expected_sha256=policy["kubeconfig_sha256"],
+    )
+    configured = policy["cluster_inventory_identity"]
+    adapter = policy["cluster_authorization_adapter"]
+    command = verified_adapter_command(
+        adapter, label="global Secret inventory identity and RBAC closure"
+    )
+    response = command_json_input(
+        command,
+        label="global Secret inventory identity and RBAC closure",
+        payload={
+            "schema": "fs2-serve.nebius.ai/cluster-inventory-identity-request/v1",
+            "cluster_id": policy["cluster_id"],
+            "kubeconfig_sha256": kubeconfig_sha256,
+            "expected_identity": configured,
+        },
+        timeout=adapter["timeout_seconds"],
+    )
+    fields = {
+        "schema",
+        "cluster_id",
+        "kubeconfig_sha256",
+        "service_account_id",
+        "namespace",
+        "name",
+        "uid",
+        "credential_id",
+        "issuer",
+        "audience",
+        "issued_at",
+        "expires_at",
+        "allowed_permissions",
+        "denied_permissions",
+        "observed_at",
+        "complete",
+        "data_fields_returned",
+    }
+    if (
+        not isinstance(response, dict)
+        or set(response) != fields
+        or response.get("schema")
+        != "fs2-serve.nebius.ai/cluster-inventory-identity/v1"
+        or response.get("cluster_id") != policy["cluster_id"]
+        or response.get("kubeconfig_sha256") != kubeconfig_sha256
+        or any(
+            response.get(field) != configured[field]
+            for field in (
+                "service_account_id",
+                "namespace",
+                "name",
+                "uid",
+                "credential_id",
+                "issuer",
+                "audience",
+            )
+        )
+        or not isinstance(response.get("allowed_permissions"), list)
+        or not isinstance(response.get("denied_permissions"), list)
+        or sorted(response["allowed_permissions"])
+        != sorted(configured["allowed_permissions"])
+        or set(response["denied_permissions"])
+        != set(configured["denied_permissions"])
+        or len(response["denied_permissions"])
+        != len(configured["denied_permissions"])
+        or response.get("complete") is not True
+        or response.get("data_fields_returned") != 0
+    ):
+        raise ProviderError(
+            "global Secret inventory identity or RBAC closure differs from policy"
+        )
+    issued = provider_time(response["issued_at"], label="cluster inventory issue time")
+    expires = provider_time(response["expires_at"], label="cluster inventory expiry")
+    now = datetime.now(UTC)
+    if (
+        issued > now
+        or expires <= now
+        or expires - issued
+        > timedelta(seconds=configured["maximum_lifetime_seconds"])
+    ):
+        raise ProviderError("global Secret inventory credential lifetime is invalid")
+    return {
+        "cluster_id": response["cluster_id"],
+        "kubeconfig_sha256": kubeconfig_sha256,
+        "service_account_id": response["service_account_id"],
+        "uid": response["uid"],
+        "credential_id": response["credential_id"],
+        "expires_at": response["expires_at"],
+        "allowed_permissions": response["allowed_permissions"],
+        "denied_permissions": response["denied_permissions"],
+        "observed_at": response["observed_at"],
+        "proof_sha256": canonical_sha256(response),
+    }
+
+
 def kubernetes_secrets(policy: dict[str, Any], *, kubeconfig: str | None = None) -> list[dict[str, Any]]:
+    if kubeconfig is None:
+        root_private_file(
+            Path(policy["kubeconfig"]),
+            label="global Secret inventory kubeconfig",
+            expected_sha256=policy["kubeconfig_sha256"],
+        )
     document = command_json(
         [
             executable(policy, "kubectl"),
@@ -531,6 +673,11 @@ def kubernetes_secrets(policy: dict[str, Any], *, kubeconfig: str | None = None)
 def kubernetes_service_accounts(policy: dict[str, Any]) -> list[dict[str, str]]:
     """Return exact ServiceAccount identities without token or Secret data."""
 
+    root_private_file(
+        Path(policy["kubeconfig"]),
+        label="global Secret inventory kubeconfig",
+        expected_sha256=policy["kubeconfig_sha256"],
+    )
     document = command_json(
         [
             executable(policy, "kubectl"),
@@ -917,9 +1064,10 @@ def release_identity_proof(
     """Prove one provider-enforced workload session and its complete grant closure."""
 
     configured = policy["release_identity"]
-    config_sha256 = root_private_file(
+    config_sha256 = root_reader_file(
         Path(configured["config_path"]),
         label="release workload identity configuration",
+        reader_gid=policy["authorized_reader_gid"],
         expected_sha256=configured["config_sha256"],
     )
     adapter = policy["release_identity_adapter"]
@@ -1075,6 +1223,8 @@ def release_identity_proof(
         "profile": configured["profile"],
         "config_path": configured["config_path"],
         "config_sha256": config_sha256,
+        "reader_uid": configured["reader_uid"],
+        "reader_gid": configured["reader_gid"],
         "allowed_roles": observed_roles,
         "allowed_commands": configured["allowed_commands"],
         "interactive_login_allowed": False,
@@ -1212,6 +1362,7 @@ def reconcile_global_provider_inventory(
     evidence_identity: dict[str, Any],
     release_identity: dict[str, Any],
     operator_identity: dict[str, Any],
+    cluster_inventory_identity: dict[str, Any],
     approved_namespaces: list[str],
 ) -> dict[str, Any]:
     """Reject any cluster Secret or project IAM object without exact custody."""
@@ -1306,14 +1457,22 @@ def reconcile_global_provider_inventory(
         raise ProviderError("provider inventory rules are incomplete")
     state_secret_ids: set[str] = set()
     state_secret_bindings: dict[str, dict[str, Any]] = {}
+    state_secret_sources: dict[str, tuple[str, str]] = {}
     state_nebius_ids: set[str] = set()
+    observed_declared_addresses: set[tuple[str, str]] = set()
     for state in states:
         root = state["root"]
         for resource in state["resources"]:
-            if (root, base_address(resource["address"])) not in declared:
+            declared_identity = (root, base_address(resource["address"]))
+            if declared_identity not in declared:
                 continue
+            observed_declared_addresses.add(declared_identity)
             provider_id = resource.get("provider_id")
             if not isinstance(provider_id, str) or not provider_id:
+                if resource.get("type") not in {"random_id", "random_password"}:
+                    raise ProviderError(
+                        f"declared provider resource lacks an exact live identity: {resource['address']}"
+                    )
                 continue
             if resource.get("type") == "kubernetes_secret_v1":
                 state_secret_ids.add(provider_id)
@@ -1323,8 +1482,18 @@ def reconcile_global_provider_inventory(
                         f"Terraform Secret lacks one exact state binding: {resource['address']}"
                     )
                 state_secret_bindings[provider_id] = binding
+                state_secret_sources[provider_id] = (root, resource["address"])
             elif provider_kind(str(resource.get("type", ""))) is not None:
                 state_nebius_ids.add(provider_id)
+    missing_declared_addresses = sorted(declared - observed_declared_addresses)
+    if missing_declared_addresses:
+        raise ProviderError(
+            "authoritative Terraform states omit reviewed credential addresses: "
+            + ",".join(
+                f"{root}:{address}"
+                for root, address in missing_declared_addresses
+            )
+        )
     live_secret_ids = {
         f"{item['metadata']['namespace']}/{item['metadata']['name']}"
         for item in secrets
@@ -1373,6 +1542,13 @@ def reconcile_global_provider_inventory(
         if identity in state_secret_ids:
             binding = state_secret_bindings[identity]
             annotations = item["metadata"].get("annotations", {})
+            source_root, source_address = state_secret_sources[identity]
+            matching_classes = {
+                value["id"]
+                for value in classes_for_address(
+                    registry, source_root, source_address
+                )
+            }
             if (
                 binding.get("namespace") != item["metadata"]["namespace"]
                 or binding.get("name") != item["metadata"]["name"]
@@ -1385,15 +1561,18 @@ def reconcile_global_provider_inventory(
                 or str(binding.get("credential_generation"))
                 != annotations.get("fs2.nebius.ai/credential-generation")
                 or binding.get("immutable") != item.get("immutable")
-                or (
-                    binding.get("uid") not in (None, "")
-                    and binding.get("uid") != item["metadata"]["uid"]
-                )
-                or (
-                    binding.get("resource_version") not in (None, "")
-                    and str(binding.get("resource_version"))
-                    != item["metadata"]["resourceVersion"]
-                )
+                or binding.get("immutable") is not True
+                or not isinstance(binding.get("uid"), str)
+                or binding.get("uid") != item["metadata"]["uid"]
+                or not isinstance(binding.get("resource_version"), str)
+                or binding.get("resource_version")
+                != item["metadata"]["resourceVersion"]
+                or not isinstance(binding.get("credential_class"), str)
+                or binding.get("credential_class") not in matching_classes
+                or not isinstance(binding.get("credential_generation"), str)
+                or not binding["credential_generation"].isdigit()
+                or binding["credential_generation"]
+                != str(generation_from_address(source_address))
             ):
                 raise ProviderError(
                     f"Terraform Secret state differs from live UID/RV/content binding: {identity}"
@@ -1466,6 +1645,7 @@ def reconcile_global_provider_inventory(
                 "helm_release_records": helm_release_records,
                 "service_accounts": service_accounts,
                 "state_secret_bindings": state_secret_bindings,
+                "cluster_inventory_identity": cluster_inventory_identity,
             }
         ),
         "inventory_sha256": canonical_sha256(
@@ -1478,8 +1658,13 @@ def credential_inventory(
     policy: dict[str, Any],
     states: list[dict[str, Any]],
     provider_inventory: dict[str, Any],
+    secrets: list[dict[str, Any]],
 ) -> dict[str, Any]:
     registry = load_registry(policy)
+    live_secrets = {
+        (item["metadata"]["namespace"], item["metadata"]["name"]): item
+        for item in secrets
+    }
     grouped: dict[tuple[str, int], list[dict[str, Any]]] = {}
     for state in states:
         for resource in state["resources"]:
@@ -1490,6 +1675,7 @@ def credential_inventory(
                 continue
             generation = generation_from_address(resource["address"])
             binding: dict[str, Any] | None = None
+            secret_binding: dict[str, Any] | None = None
             kind = provider_kind(str(resource.get("type", "")))
             if kind is not None:
                 provider_id = resource.get("provider_id")
@@ -1508,6 +1694,46 @@ def credential_inventory(
                     "provider_id": provider_id,
                     "provider_object_sha256": matches[0]["provider_object_sha256"],
                 }
+            elif resource.get("type") == "kubernetes_secret_v1":
+                state_binding = resource.get("provider_binding")
+                if not isinstance(state_binding, dict):
+                    raise ProviderError(
+                        f"Terraform Secret lacks an exact state binding: {resource['address']}"
+                    )
+                live = live_secrets.get(
+                    (state_binding.get("namespace"), state_binding.get("name"))
+                )
+                metadata = live.get("metadata") if isinstance(live, dict) else None
+                if (
+                    not isinstance(metadata, dict)
+                    or state_binding.get("uid") != metadata.get("uid")
+                    or str(state_binding.get("resource_version"))
+                    != metadata.get("resourceVersion")
+                    or state_binding.get("content_sha256")
+                    != live.get("authorityContentSha256")
+                    or state_binding.get("immutable") is not True
+                    or live.get("immutable") is not True
+                    or not isinstance(state_binding.get("credential_class"), str)
+                    or not state_binding["credential_class"]
+                    or not isinstance(
+                        state_binding.get("credential_generation"), str
+                    )
+                    or not state_binding["credential_generation"].isdigit()
+                ):
+                    raise ProviderError(
+                        f"Terraform Secret state is not an exact immutable live binding: {resource['address']}"
+                    )
+                secret_binding = {
+                    "namespace": metadata["namespace"],
+                    "name": metadata["name"],
+                    "uid": metadata["uid"],
+                    "resource_version": metadata["resourceVersion"],
+                    "content_sha256": live["authorityContentSha256"],
+                    "authority_evidence_id": live["authorityEvidenceId"],
+                    "credential_class": state_binding["credential_class"],
+                    "generation": state_binding["credential_generation"],
+                    "immutable": "true",
+                }
             for credential_class in credential_classes:
                 grouped.setdefault((credential_class["id"], generation), []).append(
                     {
@@ -1517,6 +1743,14 @@ def credential_inventory(
                         "state_lineage": state["lineage"],
                         "state_serial": state["serial"],
                         "provider_binding": binding,
+                        "secret_binding": (
+                            secret_binding
+                            if secret_binding is not None
+                            and secret_binding["credential_class"]
+                            == credential_class["id"]
+                            and secret_binding["generation"] == str(generation)
+                            else None
+                        ),
                     }
                 )
     pending = set(registry.get("pending_credential_ids", []))
@@ -1528,8 +1762,27 @@ def credential_inventory(
     items: list[dict[str, Any]] = []
     for (credential_class, generation), resources in sorted(grouped.items()):
         resources = sorted(resources, key=lambda item: (item["terraform_root"], item["terraform_address"]))
-        fingerprint = canonical_sha256(resources)
         policy_entry = policies[credential_class]
+        secret_bindings = {
+            item["terraform_address"]: item["secret_binding"]
+            for item in resources
+            if item["secret_binding"] is not None
+        }
+        terraform_bindings = [
+            {key: value for key, value in item.items() if key != "secret_binding"}
+            for item in resources
+        ]
+        fingerprint = canonical_sha256(
+            [
+                {
+                    "terraform_address": item["terraform_address"],
+                    "terraform_root": item["terraform_root"],
+                    "identity_sha256": item["identity_sha256"],
+                    "provider_binding": item["provider_binding"],
+                }
+                for item in terraform_bindings
+            ]
+        )
         items.append(
             {
                 "id": canonical_sha256(
@@ -1552,7 +1805,8 @@ def credential_inventory(
                 # source supplies an enforceable expiry.  Never synthesize one.
                 "expires_at": None,
                 "readers": policy_entry["readers"],
-                "terraform_bindings": resources,
+                "terraform_bindings": terraform_bindings,
+                "secret_bindings": dict(sorted(secret_bindings.items())),
             }
         )
     classes: dict[str, dict[str, Any]] = {}
@@ -1567,16 +1821,82 @@ def credential_inventory(
             raise ProviderError(
                 f"credential class has a reduced generation history: {policy_entry['id']}"
             )
+        class_secret_bindings: dict[str, Any] = {}
+        for item in matches:
+            for address, binding in item["secret_bindings"].items():
+                if address in class_secret_bindings:
+                    raise ProviderError(
+                        f"credential class repeats a Secret address across generations: {policy_entry['id']}"
+                    )
+                class_secret_bindings[address] = binding
+        class_terraform_bindings = [
+            {
+                "generation": item["generation"],
+                "bindings": item["terraform_bindings"],
+            }
+            for item in sorted(matches, key=lambda value: value["generation"])
+        ]
+        class_source_trust = {
+            "credential_class": policy_entry["id"],
+            "generation": max(generations),
+            "retained_generations": generations,
+            "registry_sha256": canonical_sha256(registry),
+            "credential_identities_sha256": canonical_sha256(
+                [item["id"] for item in matches]
+            ),
+            "terraform_bindings_sha256": canonical_sha256(
+                class_terraform_bindings
+            ),
+            "secret_bindings_sha256": canonical_sha256(
+                class_secret_bindings
+            ),
+        }
         classes[policy_entry["id"]] = {
             "current_generation": max(generations),
             "retained_generations": generations,
             "identities_sha256": canonical_sha256(matches),
+            "source_trust": class_source_trust,
+            "secret_bindings": dict(sorted(class_secret_bindings.items())),
         }
     ids = [item["id"] for item in items]
     fingerprints = [item["fingerprint"] for item in items]
     if len(ids) != len(set(ids)) or len(fingerprints) != len(set(fingerprints)):
         raise ProviderError("credential IDs or fingerprints are reused")
     return {"items": items, "classes": classes}
+
+
+def exact_class_source_material(
+    *,
+    policy: dict[str, Any],
+    states: list[dict[str, Any]],
+    secrets: list[dict[str, Any]],
+    provider_inventory: dict[str, Any],
+    credential_class: str,
+    generation: int,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    """Return one provider-derived class/generation binding, never a global map."""
+
+    inventory = credential_inventory(policy, states, provider_inventory, secrets)
+    matches = [
+        item
+        for item in inventory["items"]
+        if item["credential_class"] == credential_class
+    ]
+    class_entry = inventory["classes"].get(credential_class)
+    if (
+        not matches
+        or not isinstance(class_entry, dict)
+        or class_entry.get("current_generation") != generation
+    ):
+        raise ProviderError(
+            f"credential source is absent or ambiguous: {credential_class} generation {generation}"
+        )
+    return class_entry["source_trust"], class_entry["secret_bindings"], {
+        "credential_class": credential_class,
+        "current_generation": generation,
+        "retained_generations": class_entry["retained_generations"],
+        "identities": matches,
+    }
 
 
 def artifact_inventory(policy: dict[str, Any]) -> dict[str, Any]:
@@ -2050,16 +2370,22 @@ def load_consumer_contracts(policy: dict[str, Any]) -> dict[str, Any]:
 
 
 def exact_requested_secret_bindings(
-    parameters: dict[str, Any], secrets: list[dict[str, Any]]
+    parameters: dict[str, Any], expected: dict[str, Any], secrets: list[dict[str, Any]]
 ) -> dict[str, Any]:
     supplied = parameters.get("credential_bindings")
-    if not isinstance(supplied, dict) or not supplied:
+    if not isinstance(supplied, dict) or supplied != expected:
         raise ProviderError("consumer readiness requires exact Secret bindings")
     by_identity = {
         (item["metadata"]["namespace"], item["metadata"]["name"]): item
         for item in secrets
     }
     verified: dict[str, Any] = {}
+    retained_generations = {
+        str(value)
+        for value in parameters.get("source_trust", {}).get(
+            "retained_generations", []
+        )
+    }
     for address, binding in supplied.items():
         if not isinstance(binding, dict):
             raise ProviderError("consumer Secret binding is malformed")
@@ -2075,7 +2401,7 @@ def exact_requested_secret_bindings(
             != binding.get("authority_evidence_id")
             or binding.get("credential_class")
             != parameters.get("credential_class")
-            or binding.get("generation") != str(parameters.get("generation"))
+            or binding.get("generation") not in retained_generations
         ):
             raise ProviderError(
                 f"consumer Secret binding is stale or belongs to another class: {address}"
@@ -2116,7 +2442,32 @@ def class_adapter_result(
             f"{operation} has no accepted adapter for {credential_class}"
         )
     if operation == "consumer-readiness":
-        exact_requested_secret_bindings(parameters, secrets)
+        if not isinstance(parameters.get("generation"), int):
+            raise ProviderError("consumer readiness generation is invalid")
+        source_trust, expected_bindings, exact_source = exact_class_source_material(
+            policy=policy,
+            states=states,
+            secrets=secrets,
+            provider_inventory=provider_inventory,
+            credential_class=credential_class,
+            generation=parameters["generation"],
+        )
+        if parameters.get("source_trust") != source_trust:
+            raise ProviderError("consumer readiness source trust differs from authority state")
+        exact_requested_secret_bindings(parameters, expected_bindings, secrets)
+        class_sources = [exact_source]
+    else:
+        class_sources = [
+            item
+            for item in credential_inventory(
+                policy, states, provider_inventory, secrets
+            )["items"]
+            if item["credential_class"] == credential_class
+        ]
+        if not class_sources:
+            raise ProviderError(
+                f"{operation} has no exact provider-derived source for {credential_class}"
+            )
     adapter = configured["adapter"]
     command = verified_adapter_command(
         adapter, label=f"{credential_class} {operation}"
@@ -2128,9 +2479,7 @@ def class_adapter_result(
         "parameters": parameters,
         "contract": contract,
         "contract_sha256": canonical_sha256(contract),
-        "terraform_states": states,
-        "kubernetes_secrets": secrets,
-        "nebius_inventory": provider_inventory,
+        "credential_sources": class_sources,
         "evidence_identity": evidence_identity,
         "registry_sha256": canonical_sha256(registry),
     }
@@ -2165,7 +2514,22 @@ def class_adapter_result(
         raise ProviderError(
             f"{credential_class} adapter returned an incomplete observation"
         )
-    return response
+    result = response["result"]
+    if operation == "consumer-readiness":
+        result = {
+            **result,
+            "source_trust": source_trust,
+            "credential_bindings": expected_bindings,
+            "credential_bindings_sha256": canonical_sha256(expected_bindings),
+        }
+    return {
+        **result,
+        "adapter_observation": {
+            "schema": response["schema"],
+            "observed_at": response["observed_at"],
+            "contract_sha256": response["contract_sha256"],
+        },
+    }
 
 
 def backend_custody_result(
@@ -2175,8 +2539,10 @@ def backend_custody_result(
 
     root = policy["terraform_roots"][root_name]
     config_path = Path(root["backend_config_path"])
-    config_sha256 = root_private_file(
-        config_path, label=f"{root_name} Terraform backend configuration"
+    config_sha256 = root_reader_file(
+        config_path,
+        label=f"{root_name} Terraform backend configuration",
+        reader_gid=policy["authorized_reader_gid"],
     )
     adapter = policy["backend_custody_adapter"]
     command = verified_adapter_command(adapter, label="Terraform backend custody")
@@ -2415,9 +2781,10 @@ def operation_result(request: dict[str, Any]) -> dict[str, Any]:
         ):
             raise ProviderError("operator proxy identity differs from fixed viewer policy")
         kubeconfig = Path(configured["kubeconfig"])
-        kubeconfig_sha256 = root_private_file(
+        kubeconfig_sha256 = root_reader_file(
             kubeconfig,
             label="operator viewer kubeconfig",
+            reader_gid=policy["authorized_reader_gid"],
             expected_sha256=configured["kubeconfig_sha256"],
         )
         return {
@@ -2425,6 +2792,8 @@ def operation_result(request: dict[str, Any]) -> dict[str, Any]:
             "kubeconfig": str(kubeconfig),
             "kubeconfig_sha256": kubeconfig_sha256,
             "context_name": configured["context_name"],
+            "reader_uid": configured["reader_uid"],
+            "reader_gid": configured["reader_gid"],
             "provider_executables": policy["provider_executables"],
             "denials": authorization_denials(policy),
             "inventory": viewer_inventory_proof(policy),
@@ -2434,6 +2803,7 @@ def operation_result(request: dict[str, Any]) -> dict[str, Any]:
     states = terraform_inventory(policy)
     if operation == "artifact-inventory":
         return artifact_inventory(policy)
+    cluster_inventory_identity = cluster_inventory_identity_proof(policy)
     secrets = kubernetes_secrets(policy)
     service_accounts = kubernetes_service_accounts(policy)
     helm_release_records = helm_release_secret_inventory(policy, secrets)
@@ -2457,6 +2827,7 @@ def operation_result(request: dict[str, Any]) -> dict[str, Any]:
         evidence_identity=evidence_identity,
         release_identity=release_identity,
         operator_identity=operator_identity,
+        cluster_inventory_identity=cluster_inventory_identity,
         approved_namespaces=policy["namespaces"],
     )
     if operation == "custody-snapshot":
@@ -2466,16 +2837,18 @@ def operation_result(request: dict[str, Any]) -> dict[str, Any]:
             "kubernetes_secrets": secrets,
             "nebius_inventory": provider_inventory,
             "evidence_identity": evidence_identity,
+            "cluster_inventory_identity": cluster_inventory_identity,
             "provider_inventory_reconciliation": provider_reconciliation,
             "credential_inventory": credential_inventory(
-                policy, states, provider_inventory
+                policy, states, provider_inventory, secrets
             ),
         }
     if operation == "credential-inventory":
         return {
-            **credential_inventory(policy, states, provider_inventory),
+            **credential_inventory(policy, states, provider_inventory, secrets),
             "registry_sha256": registry_sha256,
             "evidence_identity": evidence_identity,
+            "cluster_inventory_identity": cluster_inventory_identity,
             "provider_inventory_reconciliation": provider_reconciliation,
         }
     if operation == "planned-generation-admission":

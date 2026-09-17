@@ -37,6 +37,14 @@ from scripts.append_only_evidence import (
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REGISTRY = ROOT / "security/durable-credential-registry.json"
 DEFAULT_CONSUMER_CONTRACTS = ROOT / "security/credential-consumer-contracts.json"
+CONSUMER_OPERATIONS = frozenset(
+    {
+        "consumer-readiness",
+        "rotation-readiness",
+        "ciphertext-migration",
+        "authentication-continuity",
+    }
+)
 PRODUCTION_PROVIDER_COMMAND = (
     "/usr/bin/python3",
     str(ROOT / "scripts" / "credential_provider_adapter.py"),
@@ -137,14 +145,25 @@ def load_consumer_contracts(
         raise RotationError("credential consumer contracts have the wrong schema")
     contracts = document.get("contracts")
     expected = {item["id"] for item in registry["credentials"]}
-    if not isinstance(contracts, dict) or set(contracts) != expected:
+    if (
+        document.get("pending_contract_ids") != []
+        or not isinstance(contracts, dict)
+        or set(contracts) != expected
+    ):
         raise RotationError(
             "credential consumer contracts must cover every registered class exactly"
         )
     for credential_class, contract in contracts.items():
         if (
             not isinstance(contract, dict)
-            or set(contract) != {"adapter", "authority", "consumers", "readiness"}
+            or set(contract)
+            != {
+                "adapter",
+                "authority",
+                "consumers",
+                "readiness",
+                "required_operations",
+            }
             or not all(
                 isinstance(contract.get(field), str) and contract[field]
                 for field in ("adapter", "authority", "readiness")
@@ -156,6 +175,13 @@ def load_consumer_contracts(
                 for consumer in contract["consumers"]
             )
             or len(contract["consumers"]) != len(set(contract["consumers"]))
+            or not isinstance(contract.get("required_operations"), list)
+            or not contract["required_operations"]
+            or len(contract["required_operations"])
+            != len(set(contract["required_operations"]))
+            or not set(contract["required_operations"]) <= CONSUMER_OPERATIONS
+            or "consumer-readiness" not in contract["required_operations"]
+            or "rotation-readiness" not in contract["required_operations"]
         ):
             raise RotationError(
                 f"credential consumer contract is malformed for {credential_class}"
@@ -192,6 +218,53 @@ def require_consumer_readiness(
         )
     if not isinstance(response.get("observed_at"), str) or not response["observed_at"]:
         raise RotationError("consumer readiness lacks authoritative evidence identity")
+    source_trust = response.get("source_trust")
+    credential_bindings = response.get("credential_bindings")
+    if (
+        not isinstance(source_trust, dict)
+        or set(source_trust)
+        != {
+            "credential_class",
+            "generation",
+            "retained_generations",
+            "registry_sha256",
+            "credential_identities_sha256",
+            "terraform_bindings_sha256",
+            "secret_bindings_sha256",
+        }
+        or source_trust.get("credential_class") != journal["credential_class"]
+        or source_trust.get("generation") != successor["generation"]
+        or source_trust.get("retained_generations")
+        != list(range(1, successor["generation"] + 1))
+        or any(
+            not isinstance(source_trust.get(field), str)
+            or len(source_trust[field]) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in source_trust[field]
+            )
+            for field in (
+                "registry_sha256",
+                "credential_identities_sha256",
+                "terraform_bindings_sha256",
+                "secret_bindings_sha256",
+            )
+        )
+        or not isinstance(credential_bindings, dict)
+        or source_trust.get("secret_bindings_sha256")
+        != canonical_sha256(credential_bindings)
+        or response.get("credential_bindings_sha256")
+        != canonical_sha256(credential_bindings)
+    ):
+        raise RotationError(
+            "consumer readiness lacks exact class-specific source bindings"
+        )
+    source_identity = canonical_sha256(
+        {
+            "source_trust": source_trust,
+            "credential_bindings": credential_bindings,
+        }
+    )
     bindings = response.get("consumer_bindings")
     if not isinstance(bindings, list):
         raise RotationError("consumer readiness lacks exact consumer bindings")
@@ -227,6 +300,7 @@ def require_consumer_readiness(
             )
             or binding["generation"] != successor["generation"]
             or binding["ready"] is not True
+            or binding["credential_identity"] != source_identity
         ):
             raise RotationError("consumer readiness has an invalid live binding")
         bound_consumers.add(binding["consumer"])
@@ -274,6 +348,7 @@ def provider_call(command: Sequence[str], request: dict[str, Any]) -> dict[str, 
             expected_nonce=str(claim.get("request_nonce", "")),
             evidence_public_key_sha256=policy["evidence_public_key_sha256"],
             anchor_public_key_sha256=policy["anchor_public_key_sha256"],
+            source_trust=policy["source_trust"],
         )
     except (EvidenceVerificationError, RuntimeError) as error:
         raise RotationError("credential provider external evidence failed") from error
@@ -458,8 +533,56 @@ def operation_request(
             "credential_class": journal["credential_class"],
             "generation": journal["successor_generation"],
             "phase": extra["phase"],
+            "source_trust": extra["source_trust"],
+            "bindings_sha256": canonical_sha256(extra["credential_bindings"]),
+            "credential_bindings": extra["credential_bindings"],
         }
     raise RotationError("rotation requested an unreviewed authority operation")
+
+
+def consumer_readiness_observation(
+    journal: dict[str, Any], command: Sequence[str], *, phase: str
+) -> dict[str, Any]:
+    """Bind a readiness request to one externally verified class generation."""
+
+    inventory = provider_call(command, {"operation": "credential-inventory"})
+    items = inventory.get("items")
+    classes = inventory.get("classes")
+    if not isinstance(items, list) or not isinstance(classes, dict):
+        raise RotationError("credential inventory omitted source bindings")
+    matches = [
+        item
+        for item in items
+        if isinstance(item, dict)
+        and item.get("credential_class") == journal["credential_class"]
+        and item.get("generation") == journal["successor_generation"]
+        and item.get("id") == journal["successor"]["id"]
+    ]
+    if len(matches) != 1:
+        raise RotationError("successor source binding is absent or ambiguous")
+    class_source = classes.get(journal["credential_class"])
+    if (
+        not isinstance(class_source, dict)
+        or class_source.get("current_generation")
+        != journal["successor_generation"]
+    ):
+        raise RotationError("successor is not the class current-write generation")
+    source_trust = class_source.get("source_trust")
+    credential_bindings = class_source.get("secret_bindings")
+    if not isinstance(source_trust, dict) or not isinstance(
+        credential_bindings, dict
+    ):
+        raise RotationError("successor source binding is incomplete")
+    return provider_call(
+        command,
+        operation_request(
+            journal,
+            "consumer-readiness",
+            phase=phase,
+            source_trust=source_trust,
+            credential_bindings=credential_bindings,
+        ),
+    )
 
 
 def reconcile_created(
@@ -516,13 +639,8 @@ def reconcile_pending_transition(
         raise RotationError("pending transition has no provider-reconciled successor")
     phase = journal.get("phase")
     if phase == "dual-read-pending":
-        response = provider_call(
-            command,
-            operation_request(
-                journal,
-                "consumer-readiness",
-                phase="dual-read-ready",
-            ),
+        response = consumer_readiness_observation(
+            journal, command, phase="dual-read-ready"
         )
         require_consumer_readiness(
             journal,
@@ -532,13 +650,8 @@ def reconcile_pending_transition(
         )
         return "dual-read"
     if phase == "switch-write-pending":
-        response = provider_call(
-            command,
-            operation_request(
-                journal,
-                "consumer-readiness",
-                phase="current-write-ready",
-            ),
+        response = consumer_readiness_observation(
+            journal, command, phase="current-write-ready"
         )
         require_consumer_readiness(
             journal, successor, response, expected_write_id=successor["id"]
@@ -719,13 +832,8 @@ def transition(args: argparse.Namespace) -> dict[str, Any]:
             if journal["phase"] != "successor-active":
                 raise RotationError("dual-read proof is out of order")
             record_phase(journal_path, journal, "dual-read-pending", "dual-read-intent")
-            response = provider_call(
-                args.provider_command,
-                operation_request(
-                    journal,
-                    "consumer-readiness",
-                    phase="dual-read-ready",
-                ),
+            response = consumer_readiness_observation(
+                journal, args.provider_command, phase="dual-read-ready"
             )
             require_consumer_readiness(
                 journal,
@@ -741,13 +849,8 @@ def transition(args: argparse.Namespace) -> dict[str, Any]:
             record_phase(
                 journal_path, journal, "switch-write-pending", "switch-write-intent"
             )
-            response = provider_call(
-                args.provider_command,
-                operation_request(
-                    journal,
-                    "consumer-readiness",
-                    phase="current-write-ready",
-                ),
+            response = consumer_readiness_observation(
+                journal, args.provider_command, phase="current-write-ready"
             )
             require_consumer_readiness(
                 journal, successor, response, expected_write_id=successor["id"]

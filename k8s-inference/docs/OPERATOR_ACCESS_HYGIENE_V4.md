@@ -24,6 +24,16 @@ config, every executable, every adapter, and their parent paths are fixed by
 root-owned policy and digest. Wrapper CLI flags cannot select alternate
 executables, profiles, projects, or configuration files.
 
+The authority service remains root-only, but the Terraform wrapper is not.
+Release configuration, operator kubeconfig, and remote-backend configuration
+therefore use an exact root-owned, mode-`0640`, dedicated-reader-group custody
+contract. The authority binds both the sole client UID and GID through
+`SO_PEERCRED`; the wrapper requires that same effective UID and group before it
+opens a file. No file is world-readable and no ambient profile or caller path
+is accepted. The authority's own configuration, evidence configuration,
+legacy states, and global Secret-inventory kubeconfig remain root-owned mode
+`0600`.
+
 The retained operator proxy uses a separate existing viewer authentication key
 and a fixed root-owned kubeconfig. The authority proves its provider expiry,
 service-account/project/group/permit lineage, complete authorization closure,
@@ -34,6 +44,16 @@ impersonation), and semantic CIDR equality. The proxy never calls
 identity. Customer request-debug traffic remains available through that
 read-only tunnel; its application-level scoped capture contract is unchanged.
 
+Global Secret inventory does not reuse the operator handoff. It requires a
+separate root-private kubeconfig with an exact digest and a pinned adapter that
+proves the Kubernetes ServiceAccount ID/name/namespace/UID, projected
+credential ID, issuer, `credential-inventory` audience, issue/expiry times,
+and an at-most-one-hour lifetime. The observed RBAC closure must equal only
+Secret get/list and ServiceAccount list, while explicitly denying Secret and
+workload mutation, pod execution, token creation, impersonation, and RBAC
+escalation. An unrelated, group-readable, expired, or unpinned kubeconfig
+cannot enumerate custody.
+
 `scripts/operator_handoff_readonly.py verify` is the only production handoff
 entrypoint named by the deployment contract. The older
 `scripts/operator_handoff.py` is retained as rejected-lineage evidence under
@@ -42,10 +62,13 @@ issuance/revocation implementation must not be invoked.
 
 ## Exhaustive inventory
 
-Terraform-managed Secrets are admitted only when the remote state address and
-provider ID join one live namespace/name and the state metadata agrees with the
-live UID/resourceVersion when present, immutable bit, credential class,
-generation, and canonical decoded-value commitment. A name-only state match is
+Terraform-managed Secrets are admitted only when every reviewed base address
+is present in the authoritative remote state and its provider ID joins one
+live namespace/name. UID, resourceVersion, immutable=`true`, credential class,
+generation, and canonical decoded-value commitment are all mandatory and must
+equal live metadata. Missing/blank UID or resourceVersion, mutable Secrets,
+class laundering, and a create at a reviewed address paired with a move/remove
+to an unreviewed address all fail closed. A name-only state match is
 insufficient.
 
 Helm storage Secrets require an exact digest-pinned provider-adapter binding of
@@ -64,6 +87,17 @@ production adapter. SAI-06 integration/live acceptance is still pending; SAI-08
 and SAI-09 still lack accepted source successors in this lineage. Those facts
 block operation and are not papered over as acceptance.
 
+The guard and rotation journal parse the same five-field contract for all 21
+classes, with no pending-class exception. Each readiness request carries the
+current externally verified class source trust, its complete contiguous
+retained-generation set, and only that class's exact Secret bindings; an empty
+Secret set is valid only for a provider-only class whose exact
+Terraform/provider bindings prove its source.
+The authority independently recomputes both maps from its remote states and
+live inventory. Class adapters receive only those scoped sources, never the
+global Terraform, Kubernetes Secret, or IAM maps. Consumer evidence binds each
+declared consumer to the hash of that exact class source.
+
 ## Legacy state copy and backend binding
 
 Each Terraform root must identify one quarantined, root-owned legacy state by
@@ -76,6 +110,14 @@ and retention expiry. Migration is an additive copy protocol:
    state digest, lineage, and serial equal the retained source; and
 4. cut consumers over only after the externally anchored observation is
    accepted.
+
+`inference-stack` invokes `state-migration-readiness` before every remote
+backend initialization. Initialization requires status
+`copy-verified-source-retained`, a nonempty destination object version, equal
+source/destination canonical state hashes, exact lineage and serial,
+`source_retained=true`, and `overwrite_performed=false`. An empty destination
+is valid pre-copy evidence but cannot initialize, plan, apply, proxy, or cut
+over the remote root.
 
 The read-only authority implements the pre-copy and post-copy observation. It
 does not perform the copy. It rejects overwrite evidence and requires the

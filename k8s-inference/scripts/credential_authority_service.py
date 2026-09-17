@@ -66,6 +66,7 @@ CLIENT_FIELDS: dict[str, frozenset[str]] = {
             "phase",
             "bindings_sha256",
             "credential_bindings",
+            "source_trust",
         }
     ),
     "credential-inventory": frozenset(),
@@ -146,6 +147,34 @@ def root_private_file(path: Path, *, label: str) -> os.stat_result:
     return metadata
 
 
+def root_reader_file(
+    path: Path, *, label: str, reader_gid: int
+) -> os.stat_result:
+    """Allow one kernel-authorized client group to read a root-custodied file."""
+
+    if path.is_symlink() or not path.is_file():
+        raise AuthorityServiceError(f"{label} must be a regular file")
+    metadata = path.stat()
+    if (
+        metadata.st_uid != 0
+        or metadata.st_gid != reader_gid
+        or stat.S_IMODE(metadata.st_mode) != 0o640
+    ):
+        raise AuthorityServiceError(
+            f"{label} must be root-owned, reader-group-owned and mode 0640"
+        )
+    for parent in path.parents:
+        parent_metadata = parent.stat()
+        if (
+            parent.is_symlink()
+            or not parent.is_dir()
+            or parent_metadata.st_uid != 0
+            or stat.S_IMODE(parent_metadata.st_mode) & 0o022
+        ):
+            raise AuthorityServiceError(f"{label} parent chain is mutable")
+    return metadata
+
+
 def _validate_adapter(adapter: Any, *, label: str) -> None:
     if (
         not isinstance(adapter, dict)
@@ -190,11 +219,15 @@ def _validate_policy(policy: Any) -> None:
     required = {
         "schema",
         "project_id",
+        "authorized_reader_uid",
+        "authorized_reader_gid",
         "evidence_identity",
         "release_identity",
         "operator_identity",
         "cluster_id",
         "kubeconfig",
+        "kubeconfig_sha256",
+        "cluster_inventory_identity",
         "handoff_kubeconfig",
         "namespaces",
         "approved_control_plane_cidrs",
@@ -207,6 +240,7 @@ def _validate_policy(policy: Any) -> None:
         "backend_custody_adapter",
         "release_identity_adapter",
         "authorization_closure_adapter",
+        "cluster_authorization_adapter",
         "controller_inventory_adapters",
         "state_migration_adapter",
     }
@@ -219,6 +253,10 @@ def _validate_policy(policy: Any) -> None:
             isinstance(policy.get(field), str) and policy[field]
             for field in ("project_id", "cluster_id")
         )
+        or not isinstance(policy.get("authorized_reader_uid"), int)
+        or policy["authorized_reader_uid"] < 1
+        or not isinstance(policy.get("authorized_reader_gid"), int)
+        or policy["authorized_reader_gid"] < 1
         or not isinstance(policy.get("namespaces"), list)
         or not policy["namespaces"]
         or not all(isinstance(item, str) and item for item in policy["namespaces"])
@@ -289,6 +327,8 @@ def _validate_policy(policy: Any) -> None:
         "allowed_commands",
         "interactive_login_allowed",
         "human_principal_allowed",
+        "reader_uid",
+        "reader_gid",
     }
     if (
         not isinstance(release, dict)
@@ -308,6 +348,8 @@ def _validate_policy(policy: Any) -> None:
                 "maximum_lifetime_seconds",
                 "interactive_login_allowed",
                 "human_principal_allowed",
+                "reader_uid",
+                "reader_gid",
             }
         )
         or not isinstance(release.get("allowed_roles"), list)
@@ -316,12 +358,18 @@ def _validate_policy(policy: Any) -> None:
         or not isinstance(release.get("allowed_commands"), list)
         or set(release["allowed_commands"]) != {"preflight", "plan", "apply"}
         or release.get("maximum_lifetime_seconds") != 3600
+        or release.get("reader_uid") != policy["authorized_reader_uid"]
+        or release.get("reader_gid") != policy["authorized_reader_gid"]
     ):
         raise AuthorityServiceError("automation-only release identity is incomplete")
     release_path = Path(release["config_path"])
     if not release_path.is_absolute():
         raise AuthorityServiceError("release identity config path must be absolute")
-    root_private_file(release_path, label="release workload identity configuration")
+    root_reader_file(
+        release_path,
+        label="release workload identity configuration",
+        reader_gid=policy["authorized_reader_gid"],
+    )
     if file_sha256(release_path) != release["config_sha256"]:
         raise AuthorityServiceError("release workload identity configuration differs")
     operator = policy.get("operator_identity")
@@ -334,6 +382,8 @@ def _validate_policy(policy: Any) -> None:
         "kubeconfig_sha256",
         "context_name",
         "maximum_lifetime_seconds",
+        "reader_uid",
+        "reader_gid",
     }
     if (
         not isinstance(operator, dict)
@@ -341,16 +391,85 @@ def _validate_policy(policy: Any) -> None:
         or operator.get("project_id") != policy["project_id"]
         or operator.get("credential_kind") != "auth_public_keys"
         or operator.get("maximum_lifetime_seconds") != 86400
+        or operator.get("reader_uid") != policy["authorized_reader_uid"]
+        or operator.get("reader_gid") != policy["authorized_reader_gid"]
         or not all(
             isinstance(operator.get(field), str) and operator[field]
-            for field in operator_fields - {"maximum_lifetime_seconds"}
+            for field in operator_fields
+            - {"maximum_lifetime_seconds", "reader_uid", "reader_gid"}
         )
     ):
         raise AuthorityServiceError("operator viewer identity is incomplete")
     operator_kubeconfig = Path(operator["kubeconfig"])
-    root_private_file(operator_kubeconfig, label="operator viewer kubeconfig")
+    root_reader_file(
+        operator_kubeconfig,
+        label="operator viewer kubeconfig",
+        reader_gid=policy["authorized_reader_gid"],
+    )
     if file_sha256(operator_kubeconfig) != operator["kubeconfig_sha256"]:
         raise AuthorityServiceError("operator viewer kubeconfig differs")
+    cluster_identity = policy.get("cluster_inventory_identity")
+    cluster_identity_fields = {
+        "service_account_id",
+        "namespace",
+        "name",
+        "uid",
+        "credential_id",
+        "issuer",
+        "audience",
+        "maximum_lifetime_seconds",
+        "allowed_permissions",
+        "denied_permissions",
+    }
+    if (
+        not isinstance(cluster_identity, dict)
+        or set(cluster_identity) != cluster_identity_fields
+        or not all(
+            isinstance(cluster_identity.get(field), str) and cluster_identity[field]
+            for field in cluster_identity_fields
+            - {
+                "maximum_lifetime_seconds",
+                "allowed_permissions",
+                "denied_permissions",
+            }
+        )
+        or cluster_identity.get("audience") != "credential-inventory"
+        or cluster_identity.get("maximum_lifetime_seconds") != 3600
+        or not isinstance(cluster_identity.get("allowed_permissions"), list)
+        or not all(
+            isinstance(value, str)
+            for value in cluster_identity["allowed_permissions"]
+        )
+        or sorted(cluster_identity["allowed_permissions"])
+        != ["serviceaccounts:list", "secrets:get", "secrets:list"]
+        or not isinstance(cluster_identity.get("denied_permissions"), list)
+        or not all(
+            isinstance(value, str)
+            for value in cluster_identity["denied_permissions"]
+        )
+        or set(cluster_identity["denied_permissions"])
+        != {
+            "impersonate:*",
+            "pods:create",
+            "pods:exec",
+            "secrets:create",
+            "secrets:delete",
+            "secrets:patch",
+            "secrets:update",
+            "serviceaccounts/token:create",
+            "workloads:create",
+            "workloads:delete",
+            "workloads:patch",
+            "workloads:update",
+        }
+    ):
+        raise AuthorityServiceError(
+            "global Secret inventory identity or RBAC closure is incomplete"
+        )
+    global_kubeconfig = Path(policy["kubeconfig"])
+    root_private_file(global_kubeconfig, label="global Secret inventory kubeconfig")
+    if file_sha256(global_kubeconfig) != policy.get("kubeconfig_sha256"):
+        raise AuthorityServiceError("global Secret inventory kubeconfig differs")
     cidrs = policy.get("approved_control_plane_cidrs")
     if not isinstance(cidrs, list) or not cidrs or len(cidrs) != len(set(cidrs)):
         raise AuthorityServiceError("authority approved CIDR set is incomplete")
@@ -364,7 +483,6 @@ def _validate_policy(policy: Any) -> None:
     ):
         raise AuthorityServiceError("authority approved CIDRs are semantically overbroad")
     for field in (
-        "kubeconfig",
         "handoff_kubeconfig",
         "credential_registry_path",
         "consumer_contracts_path",
@@ -491,15 +609,11 @@ def _validate_policy(policy: Any) -> None:
             raise AuthorityServiceError(f"authority Terraform root is malformed: {name}")
         backend_config = Path(root["backend_config_path"])
         terraform_data_dir = Path(root["terraform_data_dir"])
-        if (
-            backend_config.is_symlink()
-            or not backend_config.is_file()
-            or backend_config.stat().st_uid != 0
-            or stat.S_IMODE(backend_config.stat().st_mode) != 0o600
-        ):
-            raise AuthorityServiceError(
-                f"authority backend config must be root-owned mode 0600: {name}"
-            )
+        root_reader_file(
+            backend_config,
+            label=f"{name} Terraform backend configuration",
+            reader_gid=policy["authorized_reader_gid"],
+        )
         if (
             terraform_data_dir.is_symlink()
             or not terraform_data_dir.is_dir()
@@ -597,6 +711,10 @@ def _validate_policy(policy: Any) -> None:
         policy.get("authorization_closure_adapter"),
         label="provider authorization closure",
     )
+    _validate_adapter(
+        policy.get("cluster_authorization_adapter"),
+        label="global Secret inventory identity and RBAC closure",
+    )
     controller_adapters = policy.get("controller_inventory_adapters")
     if not isinstance(controller_adapters, dict) or set(controller_adapters) != {
         "helm_release_records"
@@ -664,9 +782,11 @@ def _validate_policy(policy: Any) -> None:
 def load_config(path: Path = CONFIG_PATH) -> dict[str, Any]:
     root_private_file(path, label="authority configuration")
     document = json.loads(path.read_text(encoding="utf-8"))
+    policy = document.get("policy") if isinstance(document, dict) else None
     required = {
         "schema",
         "allowed_client_uids",
+        "allowed_client_gids",
         "operations",
         "configuration_id",
         "policy",
@@ -685,13 +805,22 @@ def load_config(path: Path = CONFIG_PATH) -> dict[str, Any]:
         or len(document["allowed_client_uids"]) != 1
         or not isinstance(document["allowed_client_uids"][0], int)
         or document["allowed_client_uids"][0] < 1
+        or not isinstance(document.get("allowed_client_gids"), list)
+        or len(document["allowed_client_gids"]) != 1
+        or not isinstance(document["allowed_client_gids"][0], int)
+        or document["allowed_client_gids"][0] < 1
+        or not isinstance(policy, dict)
+        or policy.get("authorized_reader_uid")
+        != document["allowed_client_uids"][0]
+        or policy.get("authorized_reader_gid")
+        != document["allowed_client_gids"][0]
         or not isinstance(document.get("operations"), dict)
         or set(document["operations"]) != READ_ONLY_OPERATIONS
         or not isinstance(document.get("evidence_producer_key_id"), str)
         or not document["evidence_producer_key_id"]
     ):
         raise AuthorityServiceError("authority configuration is incomplete")
-    _validate_policy(document["policy"])
+    _validate_policy(policy)
     for operation, adapter in document["operations"].items():
         _validate_adapter(adapter, label=operation)
     _validate_adapter(document["evidence_signer"], label="evidence signer")
@@ -711,10 +840,10 @@ def recv_exact(connection: socket.socket, length: int) -> bytes:
     return b"".join(chunks)
 
 
-def receive_request(connection: socket.socket) -> tuple[int, dict[str, Any]]:
+def receive_request(connection: socket.socket) -> tuple[int, int, dict[str, Any]]:
     if not hasattr(socket, "SO_PEERCRED"):
         raise AuthorityServiceError("kernel peer credentials are unavailable")
-    _pid, uid, _gid = struct.unpack(
+    _pid, uid, gid = struct.unpack(
         "3i", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12)
     )
     size = struct.unpack("!I", recv_exact(connection, 4))[0]
@@ -737,7 +866,7 @@ def receive_request(connection: socket.socket) -> tuple[int, dict[str, Any]]:
         or envelope["request"].get("request_nonce") != envelope["nonce"]
     ):
         raise AuthorityServiceError("authority request binding is invalid")
-    return uid, envelope
+    return uid, gid, envelope
 
 
 def normalized_parameters(request: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
@@ -750,7 +879,9 @@ def normalized_parameters(request: dict[str, Any], config: dict[str, Any]) -> di
         raise AuthorityServiceError("credential authority request schema is invalid")
     parameters = {field: request[field] for field in sorted(allowed)}
     scalar_parameters = {
-        key: value for key, value in parameters.items() if key != "credential_bindings"
+        key: value
+        for key, value in parameters.items()
+        if key not in {"credential_bindings", "source_trust"}
     }
     if any(not isinstance(value, (str, int)) for value in scalar_parameters.values()):
         raise AuthorityServiceError("credential authority parameters must be scalar")
@@ -774,6 +905,7 @@ def normalized_parameters(request: dict[str, Any], config: dict[str, Any]) -> di
         raise AuthorityServiceError("consumer readiness phase is invalid")
     if operation == "consumer-readiness":
         bindings = parameters.get("credential_bindings")
+        source_trust = parameters.get("source_trust")
         binding_fields = {
             "namespace",
             "name",
@@ -781,20 +913,57 @@ def normalized_parameters(request: dict[str, Any], config: dict[str, Any]) -> di
             "resource_version",
             "content_sha256",
             "authority_evidence_id",
-            "authority_observed_at",
             "credential_class",
             "generation",
             "immutable",
         }
         if (
             not isinstance(bindings, dict)
-            or not bindings
             or len(bindings) > 256
             or not isinstance(parameters.get("bindings_sha256"), str)
             or len(parameters["bindings_sha256"]) != 64
             or canonical_sha256(bindings) != parameters["bindings_sha256"]
         ):
             raise AuthorityServiceError("consumer readiness bindings are incomplete")
+        source_trust_fields = {
+            "credential_class",
+            "generation",
+            "retained_generations",
+            "registry_sha256",
+            "credential_identities_sha256",
+            "terraform_bindings_sha256",
+            "secret_bindings_sha256",
+        }
+        if (
+            not isinstance(source_trust, dict)
+            or set(source_trust) != source_trust_fields
+            or source_trust.get("credential_class")
+            != parameters.get("credential_class")
+            or source_trust.get("generation") != parameters.get("generation")
+            or not isinstance(source_trust.get("retained_generations"), list)
+            or not source_trust["retained_generations"]
+            or source_trust["retained_generations"]
+            != list(range(1, parameters["generation"] + 1))
+            or any(
+                not isinstance(source_trust.get(field), str)
+                or len(source_trust[field]) != 64
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in source_trust[field]
+                )
+                for field in (
+                    "registry_sha256",
+                    "credential_identities_sha256",
+                    "terraform_bindings_sha256",
+                    "secret_bindings_sha256",
+                )
+            )
+            or source_trust["secret_bindings_sha256"]
+            != parameters["bindings_sha256"]
+        ):
+            raise AuthorityServiceError(
+                "consumer readiness source trust is incomplete"
+            )
         for address, binding in bindings.items():
             if (
                 not isinstance(address, str)
@@ -1078,6 +1247,7 @@ def audit_event(
     *,
     config: dict[str, Any],
     uid: int,
+    gid: int,
     request: dict[str, Any],
     evidence: dict[str, Any],
 ) -> None:
@@ -1102,6 +1272,7 @@ def audit_event(
         "configuration_id": config["configuration_id"],
         "configuration_sha256": canonical_sha256(config),
         "client_uid": uid,
+        "client_gid": gid,
         "operation": request["operation"],
         "request_sha256": canonical_sha256(request),
         "evidence_id": evidence["claim"]["evidence_id"],
@@ -1122,12 +1293,14 @@ def audit_event(
 
 
 def handle(connection: socket.socket, config: dict[str, Any]) -> None:
-    uid, envelope = receive_request(connection)
+    uid, gid, envelope = receive_request(connection)
     if (
         len(config["allowed_client_uids"]) != 1
         or uid != config["allowed_client_uids"][0]
+        or len(config["allowed_client_gids"]) != 1
+        or gid != config["allowed_client_gids"][0]
     ):
-        raise AuthorityServiceError("client uid is not authorized by root policy")
+        raise AuthorityServiceError("client uid/gid is not authorized by root policy")
     request = envelope["request"]
     parameters = normalized_parameters(request, config)
     payload = provider_call(config, request, parameters=parameters)
@@ -1137,7 +1310,7 @@ def handle(connection: socket.socket, config: dict[str, Any]) -> None:
         request_sha256=envelope["request_sha256"],
         payload=payload,
     )
-    audit_event(config=config, uid=uid, request=request, evidence=response)
+    audit_event(config=config, uid=uid, gid=gid, request=request, evidence=response)
     encoded = json.dumps(response, sort_keys=True, separators=(",", ":")).encode()
     if len(encoded) > MAX_MESSAGE_BYTES:
         raise AuthorityServiceError("authority response is too large")
