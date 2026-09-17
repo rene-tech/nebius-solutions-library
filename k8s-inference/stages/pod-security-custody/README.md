@@ -10,8 +10,13 @@ The canonical successor is the non-state-forgetting v3 preflight plus external
 executor: `scripts/run_sai07_retained_state_custody_v3.py` and
 `scripts/run_sai07_external_execution_v3.py`. The v3 design leaves every
 existing address in the platform state, independently downloads the exact
-versioned state object read-only, derives its complete custody address set,
-and binds that set to immediate live UID/resourceVersion/full-object reads.
+versioned state object read-only, and derives a complete per-instance
+projection: exact count/for_each address, API identity, Terraform attribute
+digest, UID/resourceVersion where the provider records them, and canonical
+security-relevant desired semantics. Dynamic keys must equal their raw object
+names. The signed bundle must bind that projection and immediate live reads
+must match the same desired semantics plus UID/resourceVersion/full-object
+hashes.
 The external field manager owns no fields on those retained objects. It may
 only server-side apply a new immutable, content-bound acknowledgement object
 that raw platform state and the live pre-read both prove absent. Immediate
@@ -50,10 +55,12 @@ backend-control and versioned-state projections before emitting a handoff.
 The preflight performs no Terraform or Kubernetes mutation. The pinned executor
 is a distinct entrypoint. Immediately before and after its additive writes, it
 runs SelfSubjectReview, the exhaustive SelfSubjectAccessReview matrix and a
-complete SelfSubjectRulesReview for every signed namespace under the actual
-owner kubeconfig. A second ten-minute Kubernetes-API-audience owner token,
-received only through an inherited descriptor, must authenticate as that exact
-same username/group set with its JTI exposed by the authenticator. Secret reads
+complete SelfSubjectRulesReview for every signed namespace using one
+ten-minute, Kubernetes-API-audience epoch token received only through an
+inherited descriptor. The repository binds its issuer and JWT subject to the
+unique provider service-account epoch; the authenticator must expose the exact
+signed username/groups and JTI. No stable owner kubeconfig is accepted. Every
+live read, token-anchor operation and acknowledgement SSA uses that token. Secret reads
 use only PartialObjectMetadataList. The empty immutable token anchor is created
 by atomic typed POST whose response must be PartialObjectMetadata, behind the
 signed fail-closed exact-shape admission policy. That policy evaluates every
@@ -64,15 +71,24 @@ external phase-ledger consumer, creates only the immutable acknowledgement
 through non-forcing SSA, performs immediate before/after reads, and emits a
 signed acknowledgement. Its name is generation-addressed, its exact field set
 is hashed, and it is absent from the complete raw platform state. The platform
-rollout gate verifies the exact acknowledgement both at plan time and again in
-an apply-time provisioner, binding its planned digest and ten-minute lifetime.
+rollout gate has a retained `terraform_data` freshness clock whose `timestamp()`
+input updates in place on every attempt. The acknowledgement data source
+depends on that pending update and therefore runs during apply even for an
+unchanged-phase saved plan. The create/replace-only provisioner is defense in
+depth, not the ongoing freshness boundary. Every baseline-label owner in the
+foundation, scientific, academic, ModelExpress, and reference-data paths is
+ordered after that verified output.
 
 The platform state retains every original address, including the count-indexed
 admission objects. Active `prevent_destroy` declarations replace the prior
 comment-only gap; no `removed`, state-forget, import, or second-state ownership
 exists. The raw state receipt binds its complete byte hash plus all managed
-address count/digest, and any resource using the retention-only provider that
-is not in the exhaustive static/dynamic custody inventory fails closed.
+address count/digest and the complete derived object-semantic aggregate. Any
+resource using the retention-only provider that is not in the exhaustive
+static/dynamic custody inventory fails closed. Provider exclusion is computed
+from mandatory categories rather than an optional caller list: tenancy,
+backend group/bucket, epoch identities, identity groups and permit targets,
+all signer principals/signing resources, and external Kubernetes authorization.
 The tokenless Secret-metadata reader and its exact list/TokenRequest RBAC are
 additive platform-state resources created before the retained custody boundary;
 the manifest contract accepts them absent only during that first preparation
@@ -84,6 +100,20 @@ bucket, state, epoch, dependency acceptance, or cluster facts. SAI-03 and
 SAI-04 are both explicitly unaccepted dependencies. A later independently
 reviewed deployment-bound commit is still required. Until then SAI-07 remains
 SOURCE/INTEGRATION/LIVE NO-GO.
+
+`custody-source-lock-v3.json` closes the executable dependency set used by the
+external executor: raw-state semantic reconstruction, v1/v2/v3 manifest
+validation, v2/v3 trust verification, retained-state preflight, and the
+metadata-only Secret transport each have a fixed path and content digest. The
+main trust lock pins the source-lock digest. Runtime activation must therefore
+match this reviewed source graph as well as the deployment facts.
+
+The no-delete source contract retains both legacy and exception OTel, DCGM,
+node-exporter and GPU-observer generations in every phase. Their releases,
+DCGM registry Secrets and immutable configuration are destruction-protected.
+Baseline enforcement therefore remains blocked while any incompatible legacy
+object is present; source does not manufacture closure by disabling or
+uninstalling a predecessor.
 
 The rejected v2 proposal intended this standalone Terraform root to become the
 only owner of SAI-07 admission, custody RBAC, token-anchor, ledger, and

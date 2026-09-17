@@ -83,7 +83,14 @@ def load_json(
 def authority(contract: dict[str, Any], name: str) -> tuple[bytes, str, str]:
     value = evidence.exact(
         contract["authorities"][name],
-        {"key_id", "principal_id", "public_key_path", "public_key_sha256"},
+        {
+            "key_id",
+            "principal_id",
+            "protected_resource_ids",
+            "public_key_path",
+            "public_key_sha256",
+            "signing_resource_id",
+        },
         f"{name} authority",
     )
     configured_path = Path(evidence.nonempty(value["public_key_path"], f"{name} public-key path"))
@@ -271,6 +278,9 @@ def validate(query: dict[str, str]) -> dict[str, str]:
         "custody_epoch_principal_id": contract["custody_epoch"]["principal_id"],
         "custody_epoch_sha256": provider_projection["custody_epoch_sha256"],
         "custody_addresses_json": json.dumps(state["custody_addresses"], separators=(",", ":")),
+        "custody_state_objects_json": json.dumps(
+            state["custody_objects"], sort_keys=True, separators=(",", ":")
+        ),
         "iam_receipt_sha256": provider_receipt_sha256,
         "kube_system_uid": expected["kube_system_uid"],
         "namespace_inventory_json": json.dumps(
@@ -294,6 +304,7 @@ def validate(query: dict[str, str]) -> dict[str, str]:
         "state_etag": state["etag"],
         "state_lineage": state["lineage"],
         "state_object_count": str(state["custody_object_count"]),
+        "state_objects_sha256": state["custody_objects_sha256"],
         "state_object_version": state["version_id"],
         "state_serial": str(state["serial"]),
         "state_sha256": state["sha256"],

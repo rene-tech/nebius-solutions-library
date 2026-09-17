@@ -32,8 +32,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import audit_sai07_effective_authority_v2 as authority_audit
 import run_sai07_retained_state_custody_v3 as preflight
 import sai07_authoritative_evidence as evidence
+import sai07_custody_state_semantics as state_semantics
 from sai07_owner_secret_transport_v3 import OwnerApi, OwnerTransportError, validate_owner_token
 import verify_sai07_custody_manifest_bundle as bundle_v1
 import verify_sai07_custody_manifest_bundle_v2 as bundle_v2
@@ -41,6 +43,7 @@ import verify_sai07_custody_trust_v3 as trust_v3
 
 ROOT = Path(__file__).resolve().parents[1]
 TRUST_LOCK = ROOT / "stages" / "pod-security-custody" / "custody-trust-lock-v3.json"
+SOURCE_LOCK = ROOT / "stages" / "pod-security-custody" / "custody-source-lock-v3.json"
 SCHEMA = "fs2-serve.nebius.ai/sai07-external-execution-acknowledgement/v3"
 INTENT_SCHEMA = "fs2-serve.nebius.ai/sai07-external-execution-intent/v3"
 PHASE_RE = re.compile(r"^[a-z][a-z0-9-]{2,63}$")
@@ -135,8 +138,10 @@ def repository_contract() -> tuple[bytes, dict[str, Any], dict[str, Any]]:
             "acknowledgement_namespace",
             "authority_audit_path",
             "authority_audit_sha256",
+            "dependency_lock_sha256",
             "field_manager",
             "owner_token_audience",
+            "owner_token_issuer",
             "owner_token_max_seconds",
             "secret_transport_path",
             "secret_transport_sha256",
@@ -185,11 +190,57 @@ def repository_contract() -> tuple[bytes, dict[str, Any], dict[str, Any]]:
         ).hexdigest()
         if actual != evidence.sha256(expected, f"{label} source SHA-256"):
             raise ExecutionV3Error(f"{label} differs from the repository-pinned source")
+    dependency_bytes, dependency_lock = trust_v3.load_json(
+        SOURCE_LOCK,
+        "v3 custody source lock",
+        1024 * 1024,
+        repository_document=True,
+    )
+    if hashlib.sha256(dependency_bytes).hexdigest() != evidence.sha256(
+        executor["dependency_lock_sha256"], "dependency source-lock SHA-256"
+    ):
+        raise ExecutionV3Error(
+            "custody dependency source lock differs from the repository trust pin"
+        )
+    evidence.exact(
+        dependency_lock,
+        {"schema", "sources"},
+        "v3 custody dependency source lock",
+    )
+    if dependency_lock["schema"] != "fs2-serve.nebius.ai/sai07-custody-source-lock/v3":
+        raise ExecutionV3Error("custody dependency source-lock schema is unsupported")
+    expected_dependencies = {
+        "authoritative_evidence": "scripts/sai07_authoritative_evidence.py",
+        "custody_manifest_v1": "scripts/verify_sai07_custody_manifest_bundle.py",
+        "custody_manifest_v2": "scripts/verify_sai07_custody_manifest_bundle_v2.py",
+        "custody_manifest_v3": "scripts/verify_sai07_custody_manifest_bundle_v3.py",
+        "custody_preflight_v3": "scripts/run_sai07_retained_state_custody_v3.py",
+        "custody_state_semantics": "scripts/sai07_custody_state_semantics.py",
+        "custody_trust_v2": "scripts/verify_sai07_custody_trust.py",
+        "custody_trust_v3": "scripts/verify_sai07_custody_trust_v3.py",
+        "secret_metadata_transport": "scripts/collect_sai07_secret_metadata.py",
+    }
+    sources = evidence.exact(
+        dependency_lock["sources"],
+        set(expected_dependencies),
+        "v3 custody dependency sources",
+    )
+    for label, expected_path in expected_dependencies.items():
+        pin = evidence.exact(sources[label], {"path", "sha256"}, f"{label} pin")
+        if pin["path"] != expected_path:
+            raise ExecutionV3Error(f"{label} source path differs from the closed contract")
+        actual = hashlib.sha256(
+            read_regular(ROOT / expected_path, f"{label} source", 4 * 1024 * 1024)
+        ).hexdigest()
+        if actual != evidence.sha256(pin["sha256"], f"{label} source SHA-256"):
+            raise ExecutionV3Error(
+                f"{label} differs from the repository-pinned dependency source"
+            )
     return contract_bytes, contract, executor
 
 
 def full_snapshot(
-    reader: bundle_v2.LiveReader, bundle: dict[str, Any], *, label: str
+    reader: OwnerApi, bundle: dict[str, Any], *, label: str
 ) -> list[dict[str, Any]]:
     snapshots: list[dict[str, Any]] = []
     for index, raw in enumerate(bundle.get("objects", [])):
@@ -235,6 +286,12 @@ def full_snapshot(
         else:
             if live is None:
                 raise ExecutionV3Error(f"{label} lost a retained object: {'/'.join(identity)}")
+            try:
+                state_semantics.assert_live_matches_manifest(manifest, live)
+            except state_semantics.StateSemanticsError as error:
+                raise ExecutionV3Error(
+                    f"{label} secure desired manifest differs: {'/'.join(identity)}"
+                ) from error
             live_metadata = live.get("metadata", {})
             observed = {
                 "identity": list(identity),
@@ -259,50 +316,42 @@ def full_snapshot(
 
 
 def run_owner_authority_audit(
-    args: argparse.Namespace, trust: dict[str, str]
+    owner_api: OwnerApi,
+    args: argparse.Namespace,
+    trust: dict[str, str],
+    owner_token_jti_sha256: str,
 ) -> tuple[dict[str, Any], str]:
-    command = [
-        sys.executable,
-        str(ROOT / "scripts" / "audit_sai07_effective_authority_v2.py"),
-        "--kubeconfig",
-        str(args.owner_kubeconfig),
-        "--context",
-        args.owner_context,
-        "--cluster-id",
-        trust["cluster_id"],
-        "--kube-system-uid",
-        trust["kube_system_uid"],
-        "--profile",
-        "external-executor",
-        "--expected-username",
-        trust["owner_username"],
-        "--expected-groups-json",
-        trust["owner_groups_json"],
-        "--namespace-inventory-json",
-        trust["namespace_inventory_json"],
-        "--persistent-volume-names-json",
-        trust["persistent_volume_names_json"],
-    ]
-    completed = subprocess.run(
-        command,
-        check=False,
-        capture_output=True,
-        timeout=600,
-    )
-    if completed.returncode != 0:
-        raise ExecutionV3Error("external owner effective-authority audit failed")
     try:
-        audit = json.loads(completed.stdout)
-    except (UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise ExecutionV3Error("external owner authority audit is invalid JSON") from error
+        audit = authority_audit.run(
+            argparse.Namespace(
+                bound_jti_sha256=owner_token_jti_sha256,
+                cluster_id=trust["cluster_id"],
+                context=None,
+                expected_groups_json=trust["owner_groups_json"],
+                expected_username=trust["owner_username"],
+                kube_system_uid=trust["kube_system_uid"],
+                kubeconfig=None,
+                namespace_inventory_json=trust["namespace_inventory_json"],
+                persistent_volume_names_json=trust["persistent_volume_names_json"],
+                profile="external-executor",
+            ),
+            client=owner_api,
+        )
+    except authority_audit.AuditError as error:
+        raise ExecutionV3Error("epoch-token effective-authority audit failed") from error
     if (
         not isinstance(audit, dict)
         or audit.get("schema") != "fs2-serve.nebius.ai/sai07-effective-authority-audit/v2"
         or audit.get("profile") != "external-executor"
         or audit.get("username") != trust["owner_username"]
         or audit.get("groups") != json.loads(trust["owner_groups_json"])
+        or audit.get("authenticated_groups")
+        != sorted(
+            [*json.loads(trust["owner_groups_json"]), "system:authenticated"]
+        )
+        or audit.get("credential_jti_sha256") != owner_token_jti_sha256
     ):
-        raise ExecutionV3Error("external owner authority audit differs from signed trust")
+        raise ExecutionV3Error("epoch-token authority audit differs from signed trust")
     projection = {key: value for key, value in audit.items() if key != "observed_at"}
     return audit, hashlib.sha256(canonical(projection)).hexdigest()
 
@@ -546,6 +595,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         ("collection_id", "collection_id"),
         ("contract_sha256", "contract_sha256"),
         ("platform_state_addresses_sha256", "state_addresses_sha256"),
+        ("platform_state_objects_sha256", "state_objects_sha256"),
         ("platform_state_lineage", "state_lineage"),
         ("platform_state_serial", "state_serial"),
         ("platform_state_version", "state_object_version"),
@@ -557,16 +607,17 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
     )
     if hashlib.sha256(manifest_bytes).hexdigest() != prepared["manifest_bundle_sha256"]:
         raise ExecutionV3Error("manifest bundle changed after preflight verification")
-    owner_audit_before, owner_authority_before_sha256 = run_owner_authority_audit(
-        args, trust
-    )
     owner_api = OwnerApi(args.owner_api_server, args.owner_ca_file, args.owner_token_fd)
     owner_token_jti_sha256, owner_token_jti = validate_owner_token(
-        owner_api.token, trust["owner_username"]
+        owner_api.token,
+        trust["owner_username"],
+        trust["custody_epoch_principal_id"],
+        executor["owner_token_issuer"],
     )
     if (
         executor["owner_token_audience"] != "https://kubernetes.default.svc"
         or executor["owner_token_max_seconds"] != 600
+        or not evidence.nonempty(executor["owner_token_issuer"], "owner token issuer")
     ):
         raise ExecutionV3Error(
             "repository owner-token boundary differs from the reviewed contract"
@@ -574,19 +625,23 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
     token_review = owner_api.self_subject_review()
     token_user_info = token_review.get("status", {}).get("userInfo", {})
     token_extra = token_user_info.get("extra", {}) if isinstance(token_user_info, dict) else {}
+    token_groups = sorted(token_user_info.get("groups", [])) if isinstance(
+        token_user_info, dict
+    ) else []
+    provider_groups = [
+        group for group in token_groups if group != "system:authenticated"
+    ]
     if (
         not isinstance(token_user_info, dict)
         or token_user_info.get("username") != trust["owner_username"]
-        or sorted(token_user_info.get("groups", []))
-        != json.loads(trust["owner_groups_json"])
-        or token_user_info.get("username") != owner_audit_before["username"]
-        or sorted(token_user_info.get("groups", [])) != owner_audit_before["groups"]
+        or "system:authenticated" not in token_groups
+        or provider_groups != json.loads(trust["owner_groups_json"])
         or not isinstance(token_extra, dict)
         or token_extra.get("authentication.kubernetes.io/credential-id")
         != [f"JTI={owner_token_jti}"]
     ):
         raise ExecutionV3Error(
-            "owner token and owner kubeconfig do not authenticate the same signed identity"
+            "epoch token does not authenticate the signed owner identity and JTI"
         )
 
     receipt_bundle_sha256 = ZERO_SHA256
@@ -624,14 +679,16 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         trust["state_sha256"],
     )
 
-    reader = bundle_v2.LiveReader(str(args.owner_kubeconfig), args.owner_context)
-    kube_system = reader.raw("/api/v1/namespaces/kube-system")
+    owner_audit_before, owner_authority_before_sha256 = run_owner_authority_audit(
+        owner_api, args, trust, owner_token_jti_sha256
+    )
+    kube_system = owner_api.raw("/api/v1/namespaces/kube-system")
     if (
         kube_system is None
         or kube_system.get("metadata", {}).get("uid") != trust["kube_system_uid"]
     ):
         raise ExecutionV3Error("external executor selected another cluster")
-    before = full_snapshot(reader, manifest_bundle, label="pre-SSA read")
+    before = full_snapshot(owner_api, manifest_bundle, label="pre-SSA read")
     before_sha256 = hashlib.sha256(canonical(before)).hexdigest()
     token_anchor = owner_api.ensure_empty_immutable_anchor(
         prepared["custody_epoch_sha256"]
@@ -667,6 +724,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             "platform_state_all_object_count"
         ],
         "platform_state_addresses_sha256": prepared["platform_state_addresses_sha256"],
+        "platform_state_objects_sha256": prepared["platform_state_objects_sha256"],
         "platform_state_lineage": prepared["platform_state_lineage"],
         "platform_state_serial": prepared["platform_state_serial"],
         "platform_state_version": prepared["platform_state_version"],
@@ -696,41 +754,20 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
     }
     field_set_sha256 = hashlib.sha256(canonical(desired)).hexdigest()
     ack_path = bundle_v2.api_path(("v1", "ConfigMap", namespace, name))
-    existing = reader.raw(ack_path, allow_absent=True)
+    existing = owner_api.raw(ack_path, allow_absent=True)
     if existing is None:
-        completed = subprocess.run(
-            [
-                "kubectl",
-                "--kubeconfig",
-                str(args.owner_kubeconfig),
-                "--context",
-                args.owner_context,
-                "apply",
-                "--server-side",
-                f"--field-manager={executor['field_manager']}",
-                "--force-conflicts=false",
-                "--validate=strict",
-                "-f",
-                "-",
-            ],
-            input=canonical(desired),
-            check=False,
-            capture_output=True,
-            timeout=60,
-        )
-        if completed.returncode != 0:
-            raise ExecutionV3Error("additive acknowledgement SSA failed")
-        existing = reader.raw(ack_path)
+        owner_api.server_side_apply(ack_path, desired, executor["field_manager"])
+        existing = owner_api.raw(ack_path)
     if existing is None:
         raise ExecutionV3Error("acknowledgement is absent after SSA")
     ack_identity = validate_live_ack(existing, desired, executor["field_manager"])
 
-    after = full_snapshot(reader, manifest_bundle, label="post-SSA read")
+    after = full_snapshot(owner_api, manifest_bundle, label="post-SSA read")
     after_sha256 = hashlib.sha256(canonical(after)).hexdigest()
     if after != before:
         raise ExecutionV3Error("a Terraform-retained object changed across acknowledgement SSA")
     owner_audit_after, owner_authority_after_sha256 = run_owner_authority_audit(
-        args, trust
+        owner_api, args, trust, owner_token_jti_sha256
     )
     if owner_authority_after_sha256 != owner_authority_before_sha256:
         raise ExecutionV3Error(
@@ -782,6 +819,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             "platform_state_all_object_count"
         ],
         "platform_state_addresses_sha256": prepared["platform_state_addresses_sha256"],
+        "platform_state_objects_sha256": prepared["platform_state_objects_sha256"],
         "platform_state_lineage": prepared["platform_state_lineage"],
         "platform_state_serial": prepared["platform_state_serial"],
         "platform_state_version": prepared["platform_state_version"],
@@ -845,7 +883,6 @@ def main() -> int:
         for path in (
             args.expected_context,
             args.current_platform_state,
-            args.owner_kubeconfig,
             args.owner_ca_file,
             args.ack_output,
         ):

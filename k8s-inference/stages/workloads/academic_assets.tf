@@ -105,6 +105,11 @@ locals {
 module "academic_assets" {
   source = "../../modules/academic-assets"
 
+  # Namespace PSA labels are rendered inside the module. Keep the whole module
+  # behind the apply-time acknowledgement verifier so a saved plan cannot
+  # enforce the namespace after its signed acknowledgement expires.
+  depends_on = [terraform_data.pod_security_rollout_contract]
+
   academic_assets                  = var.academic_assets
   pod_security_enforcement_enabled = var.pod_security_rollout_phase == "enforce"
   pod_security_version             = var.pod_security_version

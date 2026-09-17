@@ -46,8 +46,13 @@ class OwnerTransportError(ValueError):
     pass
 
 
-def validate_owner_token(token: str, expected_username: str) -> tuple[str, str]:
-    """Validate bounded claims; live SelfSubjectReview authenticates the JWT."""
+def validate_owner_token(
+    token: str,
+    expected_username: str,
+    expected_principal_id: str,
+    expected_issuer: str,
+) -> tuple[str, str]:
+    """Validate bounded epoch claims; live SelfSubjectReview authenticates it."""
 
     try:
         header_segment, claims_segment, _signature = token.split(".")
@@ -70,11 +75,14 @@ def validate_owner_token(token: str, expected_username: str) -> tuple[str, str]:
         or issued_at > now + 30
         or expires_at <= now
         or expires_at - issued_at > 600
-        or claims.get("sub") != expected_username
+        or claims.get("sub") != expected_principal_id
+        or claims.get("iss") != expected_issuer
     ):
         raise OwnerTransportError(
-            "external owner JWT identity, audience, algorithm, or lifetime differs"
+            "external owner JWT epoch subject, issuer, audience, algorithm, or lifetime differs"
         )
+    if not expected_username:
+        raise OwnerTransportError("external owner Kubernetes username is empty")
     jti = claims.get("jti")
     if not isinstance(jti, str) or not jti:
         raise OwnerTransportError("external owner JWT omits its one-time identifier")
@@ -112,6 +120,8 @@ class OwnerApi:
         body: dict[str, Any] | None = None,
         accept: str = "application/json",
         allow_conflict: bool = False,
+        allow_not_found: bool = False,
+        content_type: str = "application/json",
     ) -> tuple[int, dict[str, Any]]:
         if not path.startswith("/") or ".." in urllib.parse.urlsplit(path).path.split("/"):
             raise OwnerTransportError("Kubernetes API path is malformed")
@@ -119,7 +129,7 @@ class OwnerApi:
         payload = None
         if body is not None:
             payload = canonical(body)
-            headers["Content-Type"] = "application/json"
+            headers["Content-Type"] = content_type
         request = urllib.request.Request(
             self.origin + path,
             data=payload,
@@ -134,6 +144,8 @@ class OwnerApi:
         except urllib.error.HTTPError as error:
             if allow_conflict and error.code == 409:
                 return 409, {}
+            if allow_not_found and error.code == 404:
+                return 404, {}
             raise OwnerTransportError(
                 f"Kubernetes {method} request failed with HTTP {error.code}"
             ) from error
@@ -158,6 +170,66 @@ class OwnerApi:
         if not isinstance(value, dict):
             raise OwnerTransportError("Kubernetes owner response is not an object")
         return status, value
+
+    def raw(self, path: str, *, allow_absent: bool = False) -> dict[str, Any] | None:
+        if "/secrets/" in path or path.rstrip("/").endswith("/secrets"):
+            raise OwnerTransportError(
+                "generic owner reads may not request Secret payload endpoints"
+            )
+        status, result = self.request(
+            path, method="GET", allow_not_found=allow_absent
+        )
+        return None if status == 404 else result
+
+    def review(self, path: str, value: dict[str, Any]) -> dict[str, Any]:
+        _, result = self.request(path, method="POST", body=value)
+        return result
+
+    def allowed(
+        self,
+        verb: str,
+        group: str,
+        resource: str,
+        namespace: str,
+        subresource: str = "",
+        name: str = "",
+    ) -> bool:
+        attributes = {
+            "verb": verb,
+            "group": group,
+            "resource": resource,
+            **({"namespace": namespace} if namespace else {}),
+            **({"subresource": subresource} if subresource else {}),
+            **({"name": name} if name else {}),
+        }
+        result = self.review(
+            "/apis/authorization.k8s.io/v1/selfsubjectaccessreviews",
+            {
+                "apiVersion": "authorization.k8s.io/v1",
+                "kind": "SelfSubjectAccessReview",
+                "spec": {"resourceAttributes": attributes},
+            },
+        )
+        status = result.get("status")
+        return isinstance(status, dict) and status.get("allowed") is True
+
+    def server_side_apply(
+        self, path: str, body: dict[str, Any], field_manager: str
+    ) -> dict[str, Any]:
+        query = urllib.parse.urlencode(
+            {
+                "fieldManager": field_manager,
+                "fieldValidation": "Strict",
+                "force": "false",
+            }
+        )
+        _, result = self.request(
+            f"{path}?{query}",
+            method="PATCH",
+            body=body,
+            content_type="application/apply-patch+yaml",
+        )
+        return result
 
     def self_subject_review(self) -> dict[str, Any]:
         _, result = self.request(

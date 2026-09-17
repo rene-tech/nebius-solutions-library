@@ -27,6 +27,10 @@ locals {
   pod_security_rollout_manager_username   = "system:serviceaccount:fs2-system:fs2-pod-security-rollout-manager"
   pod_security_rollout_custodian_username = "system:serviceaccount:fs2-system:fs2-pod-security-rollout-custodian"
   pod_security_rollout_custodian_group    = "fs2-pod-security-receipt-custodians"
+  pod_security_rollout_custodian_external_username = coalesce(
+    var.pod_security_rollout_receipt.custody_username,
+    "pod-security-receipt-operator-not-configured",
+  )
   pod_security_custody_owner_username = coalesce(
     var.pod_security_rollout_receipt.custody_owner_username,
     "pod-security-custody-owner-not-configured",
@@ -964,6 +968,7 @@ resource "kubernetes_manifest" "pod_security_rollout_token_policy" {
   provider = kubernetes.pod_security_custody
   depends_on = [
     kubernetes_manifest.pod_security_custody_boundary_binding,
+    kubernetes_service_account_v1.pod_security_metadata_reader,
     kubernetes_service_account_v1.pod_security_rollout_custodian,
   ]
 
@@ -988,10 +993,14 @@ resource "kubernetes_manifest" "pod_security_rollout_token_policy" {
         }]
       }
       matchConditions = [{
-        name       = "exact-custodian-token"
-        expression = "request.name == 'fs2-pod-security-rollout-custodian'"
+        name       = "exact-bounded-reader-token"
+        expression = "request.name in ['fs2-pod-security-metadata-reader','fs2-pod-security-rollout-custodian']"
       }]
       validations = [
+        {
+          expression = "request.userInfo.username == '${local.pod_security_rollout_custodian_external_username}'"
+          message    = "Only the exact current external receipt operator may request a bounded reader token."
+        },
         {
           expression = "request.userInfo.groups.exists(group, group == '${local.pod_security_rollout_custodian_group}')"
           message    = "Only the external receipt-custodian group may request a rollout token."
@@ -1003,6 +1012,10 @@ resource "kubernetes_manifest" "pod_security_rollout_token_policy" {
         {
           expression = "object.spec.audiences == ['${local.pod_security_rollout_token_audience}'] && object.spec.expirationSeconds > 0 && object.spec.expirationSeconds <= 600"
           message    = "The rollout token must be API-audience bound and expire within ten minutes."
+        },
+        {
+          expression = "has(object.spec.boundObjectRef) && object.spec.boundObjectRef.apiVersion == 'v1' && object.spec.boundObjectRef.kind == 'Secret' && object.spec.boundObjectRef.name == 'fs2-pod-security-token-anchor' && object.spec.boundObjectRef.uid != ''"
+          message    = "Every bounded reader token must be bound to the exact immutable custody-epoch anchor Secret."
         },
       ]
     }

@@ -275,8 +275,12 @@ def review(client: Client, reviews: list[dict[str, Any]], verb: str, group: str,
         raise AuditError(f"effective authority differs for {identifier}")
 
 
-def run(args: argparse.Namespace) -> dict[str, Any]:
-    client = Client(args.kubeconfig, args.context)
+def run(args: argparse.Namespace, client: Any | None = None) -> dict[str, Any]:
+    # The external executor injects the API client backed by its inherited,
+    # epoch-bound token. CLI users retain the kubeconfig client for the other
+    # read-only profiles; the executor never falls back to it.
+    if client is None:
+        client = Client(args.kubeconfig, args.context)
     identity_review = client.review(
         "/apis/authentication.k8s.io/v1beta1/selfsubjectreviews",
         {"apiVersion": "authentication.k8s.io/v1beta1", "kind": "SelfSubjectReview", "spec": {}},
@@ -285,11 +289,24 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     username = identity.get("username") if isinstance(identity, dict) else None
     groups = sorted(identity.get("groups", [])) if isinstance(identity, dict) else []
     expected_groups = json.loads(args.expected_groups_json)
-    if username != args.expected_username or groups != expected_groups or "system:masters" in groups:
+    compared_groups = groups
+    if args.profile == "external-executor":
+        if "system:authenticated" not in groups:
+            raise AuditError("external epoch identity lacks system:authenticated")
+        compared_groups = [group for group in groups if group != "system:authenticated"]
+    if (
+        username != args.expected_username
+        or compared_groups != expected_groups
+        or "system:masters" in groups
+    ):
         raise AuditError("authenticated identity differs from the exact claimed subject")
-    if args.profile in {"receipt-service-account", "metadata-reader"}:
+    if args.profile in {
+        "external-executor",
+        "receipt-service-account",
+        "metadata-reader",
+    }:
         if not args.bound_jti_sha256 or not SHA256_RE.fullmatch(args.bound_jti_sha256):
-            raise AuditError("short-lived service-account audit requires an exact token JTI digest")
+            raise AuditError("short-lived identity audit requires an exact token JTI digest")
     elif args.bound_jti_sha256 is not None:
         raise AuditError("external identity audit may not claim a service-account token JTI")
 
@@ -367,12 +384,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         if not isinstance(status, dict) or status.get("incomplete") is not False:
             raise AuditError(f"SelfSubjectRulesReview is incomplete in {namespace}")
         rules.append({"namespace": namespace, "status": status})
-    return {
+    result = {
         "schema": SCHEMA,
         "matrix_version": MATRIX_VERSION,
         "profile": args.profile,
         "username": username,
-        "groups": groups,
+        "groups": compared_groups,
         "credential_jti_sha256": args.bound_jti_sha256,
         "cluster_id": args.cluster_id,
         "kube_system_uid": args.kube_system_uid,
@@ -385,6 +402,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "self_subject_access_reviews_sha256": hashlib.sha256(canonical(reviews)).hexdigest(),
         "observed_at": dt.datetime.now(dt.UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
     }
+    if args.profile == "external-executor":
+        result["authenticated_groups"] = groups
+    return result
 
 
 def parser() -> argparse.ArgumentParser:

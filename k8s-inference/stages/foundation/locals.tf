@@ -117,20 +117,21 @@ locals {
     "fs2.nebius.ai/run-id"         = var.run_id
   }
 
-  node_agents_use_exception_namespace = var.pod_security_rollout_phase != "rollback-remove-exception"
+  node_agents_use_exception_namespace = true
   # Exception namespaces, their exact admission policies, and every immutable
   # content-addressed ConfigMap generation are retained across every phase.
   # The final rollback token disables exception host agents only; making the
   # namespace itself phase-conditional would force destruction of retained
   # ConfigMaps and make both forward migration and rollback unplannable.
   node_observability_exception_enabled = true
-  legacy_host_agents_enabled = contains([
-    "prepare",
-    "bootstrap-baseline",
-    "rollback-restore-host-agents",
-    "rollback-remove-exception",
-  ], var.pod_security_rollout_phase)
-  exception_host_agents_enabled = var.pod_security_rollout_phase != "rollback-remove-exception"
+  # The active no-delete contract retains both generations in every phase.
+  # Phase selection may verify readiness but may not turn a Helm address off:
+  # count removal would uninstall the release and delete its owned objects.
+  # Consequently baseline enforcement remains blocked while an incompatible
+  # retained legacy agent exists; source must not manufacture closure by
+  # destroying it.
+  legacy_host_agents_enabled    = true
+  exception_host_agents_enabled = true
   node_observability_namespace = (
     local.node_agents_use_exception_namespace ?
     "fs2-node-observability" :

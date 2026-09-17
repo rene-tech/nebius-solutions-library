@@ -24,6 +24,7 @@ import verify_sai07_custody_trust_v3 as trust_v3
 
 ROOT = Path(__file__).resolve().parents[1]
 TRUST_LOCK = ROOT / "stages" / "pod-security-custody" / "custody-trust-lock-v3.json"
+SOURCE_LOCK = ROOT / "stages" / "pod-security-custody" / "custody-source-lock-v3.json"
 SCHEMA = "fs2-serve.nebius.ai/sai07-external-execution-acknowledgement/v3"
 SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 ZERO_SHA256 = "0" * 64
@@ -74,8 +75,10 @@ def validate(query: dict[str, str]) -> dict[str, str]:
             "acknowledgement_namespace",
             "authority_audit_path",
             "authority_audit_sha256",
+            "dependency_lock_sha256",
             "field_manager",
             "owner_token_audience",
+            "owner_token_issuer",
             "owner_token_max_seconds",
             "secret_transport_path",
             "secret_transport_sha256",
@@ -89,6 +92,7 @@ def validate(query: dict[str, str]) -> dict[str, str]:
     if (
         executor["owner_token_audience"] != "https://kubernetes.default.svc"
         or executor["owner_token_max_seconds"] != 600
+        or not evidence.nonempty(executor["owner_token_issuer"], "owner token issuer")
     ):
         raise AckV3Error("repository owner-token boundary differs from the reviewed contract")
     source_relative = Path(evidence.nonempty(executor["source_path"], "executor source path"))
@@ -127,6 +131,54 @@ def validate(query: dict[str, str]) -> dict[str, str]:
         ).hexdigest()
         if actual != digest(expected, f"{label} source SHA-256"):
             raise AckV3Error(f"{label} differs from the repository-pinned source")
+    dependency_bytes, dependency_lock = trust_v3.load_json(
+        SOURCE_LOCK,
+        "v3 custody source lock",
+        1024 * 1024,
+        repository_document=True,
+    )
+    if hashlib.sha256(dependency_bytes).hexdigest() != digest(
+        executor["dependency_lock_sha256"], "dependency source-lock SHA-256"
+    ):
+        raise AckV3Error(
+            "custody dependency source lock differs from the repository trust pin"
+        )
+    exact(
+        dependency_lock,
+        {"schema", "sources"},
+        "v3 custody dependency source lock",
+    )
+    if dependency_lock["schema"] != "fs2-serve.nebius.ai/sai07-custody-source-lock/v3":
+        raise AckV3Error("custody dependency source-lock schema is unsupported")
+    expected_dependencies = {
+        "authoritative_evidence": "scripts/sai07_authoritative_evidence.py",
+        "custody_manifest_v1": "scripts/verify_sai07_custody_manifest_bundle.py",
+        "custody_manifest_v2": "scripts/verify_sai07_custody_manifest_bundle_v2.py",
+        "custody_manifest_v3": "scripts/verify_sai07_custody_manifest_bundle_v3.py",
+        "custody_preflight_v3": "scripts/run_sai07_retained_state_custody_v3.py",
+        "custody_state_semantics": "scripts/sai07_custody_state_semantics.py",
+        "custody_trust_v2": "scripts/verify_sai07_custody_trust.py",
+        "custody_trust_v3": "scripts/verify_sai07_custody_trust_v3.py",
+        "secret_metadata_transport": "scripts/collect_sai07_secret_metadata.py",
+    }
+    sources = exact(
+        dependency_lock["sources"],
+        set(expected_dependencies),
+        "v3 custody dependency sources",
+    )
+    for label, expected_path in expected_dependencies.items():
+        pin = exact(sources[label], {"path", "sha256"}, f"{label} pin")
+        if pin["path"] != expected_path:
+            raise AckV3Error(f"{label} source path differs from the closed contract")
+        actual = hashlib.sha256(
+            trust_v3.read_regular(
+                ROOT / expected_path, f"{label} source", 4 * 1024 * 1024
+            )
+        ).hexdigest()
+        if actual != digest(pin["sha256"], f"{label} source SHA-256"):
+            raise AckV3Error(
+                f"{label} differs from the repository-pinned dependency source"
+            )
 
     ack_bytes, ack = trust_v3.load_json(
         Path(query["ack_path"]),
@@ -167,6 +219,7 @@ def validate(query: dict[str, str]) -> dict[str, str]:
             "platform_state_all_addresses_sha256",
             "platform_state_all_object_count",
             "platform_state_addresses_sha256",
+            "platform_state_objects_sha256",
             "platform_state_lineage",
             "platform_state_serial",
             "platform_state_version",
@@ -182,7 +235,14 @@ def validate(query: dict[str, str]) -> dict[str, str]:
         raise AckV3Error("external execution acknowledgement schema is unsupported")
     authority = exact(
         contract["authorities"]["manifest"],
-        {"key_id", "principal_id", "public_key_path", "public_key_sha256"},
+        {
+            "key_id",
+            "principal_id",
+            "protected_resource_ids",
+            "public_key_path",
+            "public_key_sha256",
+            "signing_resource_id",
+        },
         "manifest authority",
     )
     key_path = Path(evidence.nonempty(authority["public_key_path"], "manifest public-key path"))
@@ -227,6 +287,7 @@ def validate(query: dict[str, str]) -> dict[str, str]:
         "platform_objects_after_sha256",
         "platform_objects_before_sha256",
         "platform_state_addresses_sha256",
+        "platform_state_objects_sha256",
         "platform_state_all_addresses_sha256",
         "receipt_consumption_sha256",
         "custody_epoch_sha256",

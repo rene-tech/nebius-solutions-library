@@ -467,6 +467,10 @@ resource "helm_release" "monitoring" {
 resource "helm_release" "node_exporter_exception" {
   count = local.exception_host_agents_enabled ? 1 : 0
 
+  lifecycle {
+    prevent_destroy = true
+  }
+
   name             = "fs2-node-exporter-psa"
   namespace        = kubernetes_namespace_v1.platform["fs2-node-observability"].metadata[0].name
   repository       = "https://prometheus-community.github.io/helm-charts"
@@ -579,6 +583,10 @@ resource "helm_release" "otel_gateway" {
 resource "helm_release" "otel_node_legacy" {
   count = local.legacy_host_agents_enabled ? 1 : 0
 
+  lifecycle {
+    prevent_destroy = true
+  }
+
   name             = "fs2-${var.run_id}-otel-node"
   namespace        = kubernetes_namespace_v1.platform["fs2-observability"].metadata[0].name
   repository       = "https://open-telemetry.github.io/opentelemetry-helm-charts"
@@ -608,6 +616,10 @@ moved {
 
 resource "helm_release" "otel_node_exception" {
   count = local.exception_host_agents_enabled ? 1 : 0
+
+  lifecycle {
+    prevent_destroy = true
+  }
 
   name             = "fs2-${var.run_id}-otel-node-psa"
   namespace        = kubernetes_namespace_v1.platform["fs2-node-observability"].metadata[0].name

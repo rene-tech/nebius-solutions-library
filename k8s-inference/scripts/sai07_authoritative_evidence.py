@@ -14,6 +14,7 @@ import json
 import re
 from typing import Any
 
+import sai07_custody_state_semantics as state_semantics
 import verify_sai07_custody_manifest_bundle_v2 as manifest_v2
 
 PROVIDER_SCHEMA = "fs2-serve.nebius.ai/sai07-authoritative-provider-evidence/v3"
@@ -272,6 +273,7 @@ def provider_projection(artifact: dict[str, Any], contract: dict[str, Any]) -> d
             "backend_access_group_id",
             "backend_collector_principal_id",
             "cluster_id",
+            "external_kubernetes_authorization_resource_ids",
             "kube_system_uid",
             "minimum_retention_days",
             "namespace_inventory",
@@ -727,18 +729,71 @@ def provider_projection(artifact: dict[str, Any], contract: dict[str, Any]) -> d
     if expected["owner"]["principal_ids"] != [current_principal]:
         raise EvidenceError("Kubernetes custody owner is not bound to the unique current provider epoch")
 
-    authorities = contract["authorities"]
+    authority_permits = expected["authority_required_permits"]
+    if not isinstance(authority_permits, dict) or set(authority_permits) != {
+        "backend_receipt",
+        "manifest",
+        "provider_receipt",
+    }:
+        raise EvidenceError("authority required-permit contract is incomplete")
+    authority_permit_resources: dict[str, set[str]] = {}
+    for label, required in authority_permits.items():
+        if not isinstance(required, list) or not required:
+            raise EvidenceError(f"{label} authority required permit set is empty")
+        normalized = [
+            exact(
+                item,
+                {"resource_id", "role", "subject_id"},
+                f"{label} required permit",
+            )
+            for item in required
+        ]
+        authority_permit_resources[label] = {
+            nonempty(item["resource_id"], f"{label} permit resource ID")
+            for item in normalized
+        }
+
+    authorities = exact(
+        contract["authorities"],
+        {"backend_receipt", "manifest", "provider_receipt"},
+        "custody signing authorities",
+    )
     authority_principals = []
+    authority_resource_ids: set[str] = set()
     for label in ("provider_receipt", "backend_receipt", "manifest"):
         authority = exact(
             authorities[label],
-            {"key_id", "principal_id", "public_key_path", "public_key_sha256"},
+            {
+                "key_id",
+                "principal_id",
+                "protected_resource_ids",
+                "public_key_path",
+                "public_key_sha256",
+                "signing_resource_id",
+            },
             f"{label} authority",
         )
         principal_id = nonempty(authority["principal_id"], f"{label} authority principal")
         if principal_id not in principals:
             raise EvidenceError(f"{label} authority is absent from the exhaustive principal enumeration")
         authority_principals.append(principal_id)
+        signing_resource_id = nonempty(
+            authority["signing_resource_id"], f"{label} signing resource ID"
+        )
+        if signing_resource_id not in authority_permit_resources[label]:
+            raise EvidenceError(
+                f"{label} signing resource is not an exact provider permit target"
+            )
+        resources = authority["protected_resource_ids"]
+        required_resources = sorted(
+            {principal_id, signing_resource_id, *authority_permit_resources[label]}
+        )
+        if resources != required_resources:
+            raise EvidenceError(
+                f"{label} authority signing-resource closure is not derived from its "
+                "principal and exact provider permit targets"
+            )
+        authority_resource_ids.update(resources)
     if len(set(authority_principals)) != 3 or set(authority_principals).intersection(
         expected["platform"]["principal_ids"]
     ):
@@ -761,10 +816,61 @@ def provider_projection(artifact: dict[str, Any], contract: dict[str, Any]) -> d
     if backend_members != [backend_principal]:
         raise EvidenceError("backend access group is not the exact singleton collector boundary")
 
-    protected = set(expected["protected_resource_ids"])
-    scope_ancestors = {tenant_id, project_id, bucket_id}
-    if not scope_ancestors.issubset(protected):
-        raise EvidenceError("protected resource set omits a custody scope or inheritance ancestor")
+    external_kubernetes_resources = expected[
+        "external_kubernetes_authorization_resource_ids"
+    ]
+    if (
+        not isinstance(external_kubernetes_resources, list)
+        or not external_kubernetes_resources
+        or external_kubernetes_resources
+        != sorted(set(external_kubernetes_resources))
+        or not all(isinstance(item, str) and item for item in external_kubernetes_resources)
+        or external_kubernetes_resources != [expected["cluster_id"]]
+    ):
+        raise EvidenceError(
+            "external Kubernetes authorization closure must include its exact cluster resource"
+        )
+    identity_resource_ids = set().union(
+        *(
+            set(identity["principal_ids"]) | set(identity["group_ids"])
+            for identity in identities.values()
+        )
+    )
+    declared_permit_resources = {
+        item.get("resource_id")
+        for permit_set in (
+            epoch["required_permits"],
+            expected["owner_required_permits"],
+            expected["receipt_required_permits"],
+            *authority_permits.values(),
+        )
+        if isinstance(permit_set, list)
+        for item in permit_set
+        if isinstance(item, dict) and isinstance(item.get("resource_id"), str)
+    }
+    mandatory_protected = {
+        tenant_id,
+        project_id,
+        bucket_id,
+        backend_group,
+        current_principal,
+        *authority_principals,
+        *authority_resource_ids,
+        *external_kubernetes_resources,
+        *identity_resource_ids,
+        *epoch["required_group_ids"],
+        *declared_permit_resources,
+    }
+    configured_protected = expected["protected_resource_ids"]
+    if (
+        not isinstance(configured_protected, list)
+        or configured_protected != sorted(mandatory_protected)
+    ):
+        raise EvidenceError(
+            "protected resource closure is not the exact source-mandated "
+            "tenant/project/backend/signing/Kubernetes set"
+        )
+    protected = mandatory_protected
     platform_subjects = set(expected["platform"]["principal_ids"]) | set(expected["platform"]["group_ids"])
     if not protected or any(
         item["subject_id"] in platform_subjects and item["resource_id"] in protected for item in permits
@@ -779,19 +885,21 @@ def provider_projection(artifact: dict[str, Any], contract: dict[str, Any]) -> d
             raise EvidenceError(f"{label} required permit set is empty")
         identity = expected[identity_field]
         identity_subjects = set(identity["principal_ids"]) | set(identity["group_ids"])
+        if {
+            item.get("resource_id")
+            for item in required
+            if isinstance(item, dict)
+        } != set(external_kubernetes_resources):
+            raise EvidenceError(
+                f"{label} permit closure is not limited to the exact external "
+                "Kubernetes authorization resource"
+            )
         for item in required:
             entry = exact(item, {"resource_id", "role", "subject_id"}, f"{label} required permit")
             if entry["subject_id"] not in identity_subjects:
                 raise EvidenceError(f"{label} required permit is not bound to its claimed identity")
             if (entry["subject_id"], entry["resource_id"], entry["role"]) not in permit_edges:
                 raise EvidenceError(f"{label} required provider permit is absent")
-    authority_permits = expected.get("authority_required_permits")
-    if not isinstance(authority_permits, dict) or set(authority_permits) != {
-        "backend_receipt",
-        "manifest",
-        "provider_receipt",
-    }:
-        raise EvidenceError("authority required-permit contract is incomplete")
     for label, principal_id in zip(
         ("provider_receipt", "backend_receipt", "manifest"), authority_principals, strict=True
     ):
@@ -926,6 +1034,7 @@ def state_projection(state_bytes: bytes) -> dict[str, Any]:
         raise EvidenceError("platform state resources are missing")
     all_addresses: set[str] = set()
     custody_addresses: set[str] = set()
+    custody_objects: list[dict[str, Any]] = []
     for resource in resources:
         if not isinstance(resource, dict) or resource.get("mode") != "managed":
             continue
@@ -957,8 +1066,42 @@ def state_projection(state_bytes: bytes) -> dict[str, Any]:
                 )
             if classified:
                 custody_addresses.add(address)
+                try:
+                    projected = state_semantics.state_instance_projection(
+                        address,
+                        nonempty(resource.get("type"), f"{address} resource type"),
+                        instance,
+                    )
+                except state_semantics.StateSemanticsError as error:
+                    raise EvidenceError(str(error)) from error
+                identity = (
+                    projected["api_version"],
+                    projected["kind"],
+                    projected["namespace"],
+                    projected["name"],
+                )
+                if address in manifest_v2.STATIC_STATE:
+                    if identity != manifest_v2.STATIC_STATE[address]:
+                        raise EvidenceError(
+                            f"raw state identity differs at static address {address}"
+                        )
+                else:
+                    index_key = instance.get("index_key")
+                    if not isinstance(index_key, str) or index_key != projected["name"]:
+                        raise EvidenceError(
+                            "dynamic custody address key does not equal its raw "
+                            f"object name at {address}"
+                        )
+                    if projected["namespace"] != "fs2-models":
+                        raise EvidenceError(
+                            f"dynamic custody address escaped fs2-models at {address}"
+                        )
+                custody_objects.append(projected)
     if not manifest_v2.REQUIRED_STATIC_STATE.issubset(custody_addresses):
         raise EvidenceError("platform state omits an unconditional retained custody address")
+    custody_objects.sort(key=lambda item: item["state_address"])
+    if [item["state_address"] for item in custody_objects] != sorted(custody_addresses):
+        raise EvidenceError("raw custody object projection is not exactly one-to-one with state")
     return {
         "all_managed_addresses_sha256": hashlib.sha256(
             canonical(sorted(all_addresses))
@@ -966,6 +1109,8 @@ def state_projection(state_bytes: bytes) -> dict[str, Any]:
         "all_managed_object_count": len(all_addresses),
         "custody_addresses": sorted(custody_addresses),
         "custody_addresses_sha256": hashlib.sha256(canonical(sorted(custody_addresses))).hexdigest(),
+        "custody_objects": custody_objects,
+        "custody_objects_sha256": hashlib.sha256(canonical(custody_objects)).hexdigest(),
         "custody_object_count": len(custody_addresses),
         "lineage": lineage,
         "serial": serial,

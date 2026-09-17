@@ -199,7 +199,11 @@ resource "kubernetes_secret_v1" "nvcrio_cred" {
 }
 
 resource "kubernetes_secret_v1" "dcgm_exporter_nvcrio_legacy" {
-  count = local.dcgm_nvcr_credentials_required && local.legacy_host_agents_enabled ? 1 : 0
+  count = local.dcgm_nvcr_credentials_required ? 1 : 0
+
+  lifecycle {
+    prevent_destroy = true
+  }
 
   metadata {
     name      = "fs2-dcgm-exporter-nvcrio"
@@ -219,7 +223,11 @@ moved {
 }
 
 resource "kubernetes_secret_v1" "dcgm_exporter_nvcrio_exception" {
-  count = local.dcgm_nvcr_credentials_required && local.exception_host_agents_enabled ? 1 : 0
+  count = local.dcgm_nvcr_credentials_required ? 1 : 0
+
+  lifecycle {
+    prevent_destroy = true
+  }
 
   metadata {
     name      = "fs2-dcgm-exporter-nvcrio"

@@ -10,14 +10,12 @@ locals {
   dcgm_cold_config                    = local.dcgm_cadence_contract.profiles.coldStartCampaign.helmValues.config.data
   dcgm_cold_config_sha256             = sha256(local.dcgm_cold_config)
   dcgm_cold_config_map_name           = "fs2-dcgm-config-${substr(local.dcgm_cold_config_sha256, 0, 16)}"
-  node_agents_use_exception_namespace = var.pod_security_rollout_phase != "rollback-remove-exception"
-  legacy_host_agents_enabled = contains([
-    "prepare",
-    "bootstrap-baseline",
-    "rollback-restore-host-agents",
-    "rollback-remove-exception",
-  ], var.pod_security_rollout_phase)
-  exception_host_agents_enabled = var.pod_security_rollout_phase != "rollback-remove-exception"
+  node_agents_use_exception_namespace = true
+  # Both Helm generations remain state- and cluster-retained under the active
+  # no-delete contract. An enforcement receipt cannot pass until independent
+  # evidence establishes a non-destructive successor for every legacy object.
+  legacy_host_agents_enabled    = true
+  exception_host_agents_enabled = true
   node_observability_namespace = (
     local.node_agents_use_exception_namespace ?
     "fs2-node-observability" :
@@ -28,11 +26,10 @@ locals {
     "fs2-node-observability" :
     "fs2-system"
   )
-  gpu_observer_additional_namespaces = contains([
-    "prepare",
-    "bootstrap-baseline",
-    "rollback-restore-host-agents",
-  ], var.pod_security_rollout_phase) ? ["fs2-system"] : []
+  # Keep the predecessor observer address alongside the additive exception
+  # generation. Removing this namespace from controller values would delete
+  # the retained DaemonSet and is forbidden by the active contract.
+  gpu_observer_additional_namespaces = ["fs2-system"]
   # The foundation contract exposes either the fresh run-scoped Grafana
   # Service or the retained Service override. Both share the same Helm release
   # prefix as Loki, so this keeps the selector exact without a topology flag or
@@ -269,6 +266,10 @@ resource "kubernetes_network_policy_v1" "grafana_observability_egress" {
 resource "helm_release" "dcgm_exporter_legacy" {
   count = var.deployment_profile == "full_catalog" && local.legacy_host_agents_enabled ? 1 : 0
 
+  lifecycle {
+    prevent_destroy = true
+  }
+
   name             = "fs2-dcgm-exporter"
   namespace        = "fs2-observability"
   repository       = "https://nvidia.github.io/dcgm-exporter/helm-charts"
@@ -321,6 +322,10 @@ moved {
 
 resource "helm_release" "dcgm_exporter_exception" {
   count = var.deployment_profile == "full_catalog" && local.exception_host_agents_enabled ? 1 : 0
+
+  lifecycle {
+    prevent_destroy = true
+  }
 
   name             = "fs2-dcgm-exporter-psa"
   namespace        = "fs2-node-observability"

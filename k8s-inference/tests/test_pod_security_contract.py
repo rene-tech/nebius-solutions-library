@@ -166,6 +166,9 @@ def test_rollout_gate_consumes_prior_signed_state_without_phase_skips() -> None:
     assert '"downstream-acknowledgement"' in verifier
     assert 'resource "kubernetes_config_map_v1" "ledger"' not in active_gate
     assert 'resource "terraform_data" "verified"' in active_gate
+    assert 'resource "terraform_data" "apply_freshness_clock"' in active_gate
+    assert "attempted_at" in active_gate and "timestamp()" in active_gate
+    assert "depends_on = [terraform_data.apply_freshness_clock]" in active_gate
     assert 'provisioner "local-exec"' in active_gate
     assert "FS2_SAI07_APPLY_QUERY" in active_gate
     assert "expected_acknowledgement_sha256" in active_gate
@@ -187,6 +190,18 @@ def test_rollout_gate_consumes_prior_signed_state_without_phase_skips() -> None:
     assert "serviceaccounts/token" in admission
     assert "fs2-pod-security-receipt-custodians" in admission
     assert "directly authenticated external OIDC identity" in admission
+    assert "pod_security_rollout_custodian_external_username" in admission
+    assert "Only the exact current external receipt operator" in admission
+    assert (
+        "request.name in ['fs2-pod-security-metadata-reader',"
+        "'fs2-pod-security-rollout-custodian']"
+    ) in admission
+    assert "has(object.spec.boundObjectRef)" in admission
+    assert "object.spec.boundObjectRef.kind == 'Secret'" in admission
+    assert (
+        "object.spec.boundObjectRef.name == 'fs2-pod-security-token-anchor'"
+        in admission
+    )
     token_binding = admission.split(
         'resource "kubernetes_manifest" "pod_security_rollout_token_binding"', 1
     )[1].split('resource "kubernetes_manifest" "pod_security_enforcement_fence_policy"', 1)[0]
@@ -212,6 +227,10 @@ def test_rollout_gate_consumes_prior_signed_state_without_phase_skips() -> None:
     assert "fs2-platform-terraform" in admission
     assert "system:masters" in admission
     assert "legacy ServiceAccount token Secrets" in admission
+    academic = _source("stages/workloads/academic_assets.tf")
+    modelexpress = _source("stages/workloads/modelexpress.tf")
+    assert "depends_on = [terraform_data.pod_security_rollout_contract]" in academic
+    assert "terraform_data.pod_security_rollout_contract" in modelexpress
 
     reference = _source("reference-data/terraform/main.tf")
     for phase, terminal in expected.items():
@@ -221,22 +240,34 @@ def test_rollout_gate_consumes_prior_signed_state_without_phase_skips() -> None:
     assert "csi_readiness_receipt_sha256" not in reference
 
 
-def test_host_agents_dual_run_before_enforcement_and_restore_before_removal() -> None:
+def test_host_agent_generations_are_retained_without_phase_deletion() -> None:
     foundation = _source("stages/foundation/releases.tf")
     workloads = _source("stages/workloads/observability.tf")
     control_plane = _source("stages/workloads/control_plane.tf")
+    secrets = _source("stages/workloads/secrets.tf")
     foundation_locals = _source("stages/foundation/locals.tf")
     for source in (foundation_locals, workloads):
-        assert "legacy_host_agents_enabled" in source
-        assert "exception_host_agents_enabled" in source
-        assert '"prepare"' in source
-        assert '"bootstrap-baseline"' in source
-        assert '"rollback-restore-host-agents"' in source
-        assert '"rollback-remove-exception"' in source
+        assert "legacy_host_agents_enabled    = true" in source
+        assert "exception_host_agents_enabled = true" in source
+        assert "node_agents_use_exception_namespace = true" in source
     assert 'resource "helm_release" "node_exporter_exception"' in foundation
     assert 'resource "helm_release" "otel_node_exception"' in foundation
     assert 'resource "helm_release" "dcgm_exporter_exception"' in workloads
+    assert foundation.count("prevent_destroy = true") >= 3
+    assert workloads.count("prevent_destroy = true") >= 2
     assert "additionalDaemonSetNamespaces = local.gpu_observer_additional_namespaces" in control_plane
+    assert 'gpu_observer_additional_namespaces = ["fs2-system"]' in workloads
+    for resource in (
+        "dcgm_exporter_nvcrio_legacy",
+        "dcgm_exporter_nvcrio_exception",
+    ):
+        block = secrets.split(
+            f'resource "kubernetes_secret_v1" "{resource}"', 1
+        )[1].split("\n}\n", 1)[0]
+        assert "local.dcgm_nvcr_credentials_required ? 1 : 0" in block
+        assert "prevent_destroy = true" in block
+        assert "legacy_host_agents_enabled" not in block
+        assert "exception_host_agents_enabled" not in block
 
 
 def test_quiesce_acknowledgement_rechecks_clean_inventory_after_fence_cas() -> None:
@@ -508,9 +539,13 @@ def test_v3_custody_uses_raw_authoritative_evidence_and_retains_platform_state()
     acknowledgement = _source("scripts/verify_sai07_external_execution_ack_v3.py")
     owner_transport = _source("scripts/sai07_owner_secret_transport_v3.py")
     authority_audit = _source("scripts/audit_sai07_effective_authority_v2.py")
+    state_semantics = _source("scripts/sai07_custody_state_semantics.py")
     retained_snapshot = _source("stages/foundation/pod_security_retained_snapshot_custody.tf")
     readme = _source("stages/pod-security-custody/README.md")
     lock = json.loads(_source("stages/pod-security-custody/custody-trust-lock-v3.json"))
+    source_lock = json.loads(
+        _source("stages/pod-security-custody/custody-source-lock-v3.json")
+    )
 
     assert lock["activation"] == "blocked"
     assert lock["custody_epoch"]["status"] == "blocked-awaiting-authoritative-epoch"
@@ -522,6 +557,24 @@ def test_v3_custody_uses_raw_authoritative_evidence_and_retains_platform_state()
     assert lock["executor"]["verifier_path"] == "scripts/verify_sai07_external_execution_ack_v3.py"
     assert re.fullmatch(r"[a-f0-9]{64}", lock["executor"]["source_sha256"])
     assert re.fullmatch(r"[a-f0-9]{64}", lock["executor"]["verifier_sha256"])
+    assert re.fullmatch(r"[a-f0-9]{64}", lock["executor"]["dependency_lock_sha256"])
+    assert source_lock["schema"] == "fs2-serve.nebius.ai/sai07-custody-source-lock/v3"
+    assert set(source_lock["sources"]) == {
+        "authoritative_evidence",
+        "custody_manifest_v1",
+        "custody_manifest_v2",
+        "custody_manifest_v3",
+        "custody_preflight_v3",
+        "custody_state_semantics",
+        "custody_trust_v2",
+        "custody_trust_v3",
+        "secret_metadata_transport",
+    }
+    assert all(
+        re.fullmatch(r"[a-f0-9]{64}", item["sha256"])
+        and item["sha256"] != "0" * 64
+        for item in source_lock["sources"].values()
+    )
     assert "provider_receipt" in lock["authorities"]
     assert "backend_receipt" in lock["authorities"]
     assert "manifest" in lock["authorities"]
@@ -544,13 +597,18 @@ def test_v3_custody_uses_raw_authoritative_evidence_and_retains_platform_state()
     assert "forward and reverse group membership enumerations differ" in evidence
     assert "does not cover every tenant project" in evidence
     assert "platform authority reaches an external custody resource" in evidence
-    assert "protected resource set omits a custody scope or inheritance ancestor" in evidence
+    assert "protected resource closure is not the exact source-mandated" in evidence
+    assert "external Kubernetes authorization closure" in evidence
+    assert "authority signing-resource closure is not derived" in evidence
+    assert "signing resource is not an exact provider permit target" in evidence
     assert "required permit is not bound to its provider identity" in evidence
     assert "backend access group is not the exact singleton collector boundary" in evidence
     assert "backend provider-native policy is not limited to the singleton access group" in evidence
     assert "provider request ID" in evidence and "S3 {field} request ID" in evidence
     assert "platform Terraform state is not version 4" in evidence
     assert "custody_addresses_sha256" in evidence
+    assert "custody_objects_sha256" in evidence
+    assert "state_instance_projection" in evidence
     assert "all_managed_addresses_sha256" in evidence
     assert "pod_security_custody provider has unclassified managed address" in evidence
     assert "provider_evidence_path" in trust and "backend_evidence_path" in trust
@@ -558,15 +616,22 @@ def test_v3_custody_uses_raw_authoritative_evidence_and_retains_platform_state()
     assert "repository-pinned contract path" in trust
     assert "cryptographically distinct" in trust
     assert "independently reconstructed evidence" in trust
-    assert "raw backend state addresses" in manifest
+    assert "raw Terraform desired semantics" in state_semantics
+    assert "assert_manifest_matches_state" in manifest
+    assert 'STATE_SCHEMA = "fs2-serve.nebius.ai/sai07-platform-state-inventory/v3"' in manifest
+    assert 'SCHEMA = "fs2-serve.nebius.ai/sai07-custody-manifest-bundle/v3"' in manifest
+    assert '"derived_objects_sha256"' in manifest
+    assert '"custody_state_objects_json"' in manifest
+    assert "TokenRequest admission is not bound to the exact current receipt identity" in manifest
     assert '"state_ownership": "platform-retained-no-import-no-forget"' in pipeline
     assert '"custody_field_ownership": "zero-fields-on-platform-state"' in pipeline
     assert "two independently collected generation IDs" in pipeline
     assert '"provider_backend_drift_fenced": "true"' in pipeline
     assert '"terraform",' not in pipeline
     assert "state rm" in pipeline and "terraform import" in pipeline
-    assert "--server-side" in executor
-    assert "--force-conflicts=false" in executor
+    assert "owner_kubeconfig" not in executor
+    assert "server_side_apply" in executor
+    assert "force_conflicts" not in executor
     assert 'managed_fields[0].get("fieldsV1") != expected_fields_v1' in executor
     assert "state_omits_ack" in executor
     assert "a Terraform-retained object changed across acknowledgement SSA" in executor
@@ -575,9 +640,16 @@ def test_v3_custody_uses_raw_authoritative_evidence_and_retains_platform_state()
     assert "run_owner_authority_audit" in executor
     assert "ensure_empty_immutable_anchor" in executor
     assert "identity == (\"v1\", \"Secret\", \"fs2-system\", \"fs2-pod-security-token-anchor\")" in executor
+    assert "custody_epoch_principal_id" in executor
+    assert "owner_token_issuer" in executor
+    assert "client=owner_api" in executor
+    assert 'group != "system:authenticated"' in executor
+    assert "external epoch identity lacks system:authenticated" in authority_audit
     assert "PartialObjectMetadataList" in owner_transport
     assert "METADATA_MEDIA_TYPE" in owner_transport
     assert "token-anchor POST returned Secret payload fields" in owner_transport
+    assert 'claims.get("sub") != expected_principal_id' in owner_transport
+    assert 'claims.get("iss") != expected_issuer' in owner_transport
     assert "external execution identity may create only" in admission
     assert '"external-executor"' in authority_audit
     assert 'snapshot_pod_policy" {' in retained_snapshot

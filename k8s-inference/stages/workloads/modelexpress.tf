@@ -158,7 +158,11 @@ resource "kubernetes_namespace_v1" "modelexpress" {
     )
   }
 
-  depends_on = [terraform_data.cluster_contract, terraform_data.modelexpress_contract]
+  depends_on = [
+    terraform_data.cluster_contract,
+    terraform_data.modelexpress_contract,
+    terraform_data.pod_security_rollout_contract,
+  ]
 }
 
 resource "kubernetes_secret_v1" "modelexpress_nvcrio" {

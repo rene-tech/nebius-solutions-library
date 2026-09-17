@@ -238,6 +238,26 @@ locals {
   }
 }
 
+# This clock updates in place on every plan/apply attempt. It is retained and
+# never replaced or destroyed. Because the acknowledgement data source depends
+# on a pending clock update, Terraform defers the read until apply even when
+# phase, context and acknowledgement digest are unchanged. A delayed saved plan
+# therefore evaluates the ten-minute expiry at apply time, not only at plan or
+# at the first creation of terraform_data.verified.
+resource "terraform_data" "apply_freshness_clock" {
+  input = {
+    attempted_at            = timestamp()
+    acknowledgement_sha256 = local.external_acknowledgement_sha256
+    action                  = var.action
+    consumer                = var.consumer_role
+    phase                   = var.phase
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
 # The platform invocation has no custody provider and receives no receipt,
 # owner, or token-minting kubeconfig.  It can only validate a short-lived,
 # whole-file signed v3 acknowledgement emitted by the independently
@@ -249,6 +269,8 @@ data "external" "verified_execution_acknowledgement" {
   program = ["python3", "${path.module}/../../scripts/verify_sai07_external_execution_ack_v3.py"]
 
   query = local.external_acknowledgement_query
+
+  depends_on = [terraform_data.apply_freshness_clock]
 }
 
 resource "terraform_data" "verified" {
@@ -263,10 +285,10 @@ resource "terraform_data" "verified" {
     verifier_sha256        = filesha256("${path.module}/../../scripts/verify_sai07_external_execution_ack_v3.py")
   }
 
-  # A data.external result is a plan-time check and is replayable in a saved
-  # plan. Re-run the same exact-file verifier during apply; its ten-minute
-  # freshness check and planned file digest make a stale/swapped acknowledgement
-  # fail before any dependent namespace label or workload resource can change.
+  # Defense in depth for the initial resource creation. Ongoing freshness does
+  # not rely on this create/replace-only provisioner: apply_freshness_clock
+  # makes data.external run during every apply attempt, including same-phase
+  # saved-plan execution after an acknowledgement expires.
   provisioner "local-exec" {
     command = "python3 \"${path.module}/../../scripts/verify_sai07_external_execution_ack_v3.py\""
     quiet   = true

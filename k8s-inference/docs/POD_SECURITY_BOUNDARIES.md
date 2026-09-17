@@ -51,6 +51,10 @@ workload movement. Advance only after the checks for the current phase pass:
    only after immediate reads prove exact UID, resourceVersion, spec hash,
    immutable configuration content, and readiness of every old/new agent plus
    the exception admission and RBAC objects.
+   Under the active no-delete constraint, both generations remain enabled and
+   destruction-protected in every later phase. Source does not authorize Helm
+   count removal, registry-Secret removal, or controller-value removal of a
+   legacy observer.
 5. `cleanup-legacy-resources` consumes `exception-ready` and advances to
    `reference-data-ready` only after the canonical retained RWX claim, every
    BioIR reference-data successor, and the snapshot reference and checkpoint
@@ -80,9 +84,11 @@ workload movement. Advance only after the checks for the current phase pass:
    admission/token fence has outlived the externally reviewed maximum prior
    bound-token lifetime. The signed result preserves every frozen UID and permits no
    removed or absent object. Any active or permissive object remains a hard
-   integration blocker. The verified retained finding counts, rather than a
-   manufactured zero, advance the ledger to `enforcement-quiesced`; the CAS
-   then activates the fail-closed admission fence for Pod-producing writes.
+   integration blocker. Verified retained finding counts, rather than a
+   manufactured zero, may advance the ledger only after a separately accepted
+   non-destructive quiescence contract exists. This checked-in source retains
+   the legacy agents, so enforcement remains blocked instead of claiming that
+   retained privileged workloads are baseline-compatible.
 7. `enforce` consumes `enforcement-quiesced` and applies `baseline` enforcement
    plus pinned-minor restricted warn/audit labels to
    the foundation, reference-data, academic, ModelExpress, and explicitly listed
@@ -109,21 +115,17 @@ live cluster, and PSA rollout must stop while any successor is absent.
 
 ## Ordered rollback
 
-Rollback is also phased; do not delete the exception namespace while an agent
-still uses it:
-
-1. `rollback-remove-enforcement` consumes `baseline-enforced` and removes
-   application-namespace enforcement while exception agents remain Ready.
-2. `rollback-restore-host-agents` consumes `enforcement-removed`, recreates the
-   old-namespace agents while the exception copies continue running, and signs
-   `host-agents-restored` only after all restored agents are Ready.
-3. `rollback-remove-exception` consumes `host-agents-restored` and first refuses
-   active snapshot Pods or unexported checkpoints. It disables the exception
-   agents only after their legacy copies are Ready. The exception namespaces,
-   admission boundaries, and content-addressed immutable telemetry/tooling
-   ConfigMaps remain as a retained generation; they are not phase-conditioned
-   away and every one is protected by `prevent_destroy`. The retained
-   reference-data CSI claim is likewise not destroyed by rollback.
+The receipt state machine retains the historical rollback phase names, but the
+current no-delete source does not implement a destructive rollback. In all
+three rollback phases it keeps both legacy and exception agent releases,
+registry Secrets, exception namespaces, admission boundaries,
+content-addressed telemetry/tooling ConfigMaps, and retained reference-data CSI
+claims present with `prevent_destroy`. `rollback-remove-enforcement` may remove
+only the reversible PSA namespace label after an exact authorization;
+`rollback-restore-host-agents` can only verify the already-retained legacy
+generation; and `rollback-remove-exception` cannot disable or uninstall the
+exception generation. Any future cleanup/removal design requires a separate
+review and is outside this source candidate.
 
 Use plans and the stable Helm revision captured at the serialized rollout slot,
 and reject any rollback candidate with request debugging enabled. Never use a
@@ -275,8 +277,12 @@ receipts, uses distinct provider/backend authorities, and reconstructs the
 semantics rather than trusting receipt fields. It proves the provider hierarchy,
 epoch lineage and complete group graph, binds each permit to its identity,
 excludes platform paths to protected custody resources, evaluates native/S3
-controls, and parses the complete raw Terraform state. The raw byte hash plus
-all managed address count/digest are bound; every instance using the
+controls, and parses the complete raw Terraform state. The platform exclusion
+set is derived from mandatory tenancy, backend, epoch, identity/group, permit,
+signer/key and external-Kubernetes authorization categories rather than an
+optional caller list. The raw byte hash plus all managed address count/digest
+and each custody instance's API identity, attribute digest, UID/resourceVersion
+and canonical desired security semantics are bound; every instance using the
 retention-only custody provider must be in the exhaustive static/dynamic
 inventory. Count-backed addresses retain their `[0]` instance key. Two fresh,
 distinct collections must have identical reconstructed IAM, backend and state
@@ -291,12 +297,13 @@ The external executor has no RBAC mutation authority.
 The handoff is non-state-forgetting. Every platform address remains in the
 platform state through active, count-correct `prevent_destroy` declarations;
 no `removed`, state rm, import, second Terraform state or dual ownership is
-allowed. The preflight binds that raw-state address set to immediate live
-UID/resourceVersion/full-object reads. Before and after additive writes, the
-source-pinned executor authenticates the actual owner kubeconfig with
-SelfSubjectReview plus exhaustive SSRR/SSAR. A separate ten-minute,
-Kubernetes-API-audience owner token arrives only through an inherited descriptor
-and must resolve to the same username/groups and authenticator JTI. Secret reads
+allowed. The preflight binds signed desired manifests one-to-one to that raw
+semantic projection. Before and after additive writes, one ten-minute,
+Kubernetes-API-audience epoch token arrives only through an inherited
+descriptor and performs every live read, SelfSubjectReview, exhaustive
+SSRR/SSAR, anchor request and acknowledgement SSA. Its issuer and JWT subject
+must bind the unique provider epoch principal, and the authenticator must expose
+the same exact username/groups and JTI. No stable owner kubeconfig is accepted. Secret reads
 use PartialObjectMetadataList only. The exact empty immutable anchor is an
 atomic typed POST whose response must be PartialObjectMetadata and whose signed
 admission policy rejects a non-empty/mutable/renamed or later rewritten form.
@@ -311,8 +318,13 @@ absent from the complete raw state. A second read must exactly match the first.
 The signed acknowledgement binds its UID/resourceVersion/full-object and field
 set, phase/action/consumer/context, custody epoch, complete state aggregate,
 owner authority audits, token-anchor metadata and ledger-consumption digest.
-The platform gate verifies the planned exact acknowledgement at plan time and
-again during apply, so a saved plan cannot swap or replay a stale file.
+The platform gate uses an in-place `timestamp()` freshness clock. Its pending
+update defers the exact acknowledgement data source until every apply attempt,
+so a same-phase saved plan presented after expiry fails before any dependent
+resource can change. Foundation labels, scientific namespace labels, the
+academic-assets module, ModelExpress namespace, and reference-data namespace
+all depend on that verified output. The create/replace-only provisioner is not
+trusted as the ongoing freshness mechanism.
 
 The checked-in v3 lock remains `activation=blocked` with null deployment facts.
 Provider IAM must deny platform mutation, and independent review must pin the
@@ -320,6 +332,10 @@ exact epoch, identities, backend controls, keys, cluster, collector/executor
 digests, plus accepted exact SAI-03 and SAI-04 commits before activation. Both
 dependencies remain explicitly unaccepted. No deployment-bound facts were
 invented, so this source cannot authorize a rollout and makes no GO claim.
+The main lock also digest-pins a closed dependency source lock for raw-state
+semantics, every manifest/trust verifier generation used by v3, the preflight,
+and metadata-only Secret handling; an unpinned helper cannot silently redefine
+the execution contract.
 
 ### Retained rejected v2 archive (not operational)
 

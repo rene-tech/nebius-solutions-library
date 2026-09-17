@@ -87,6 +87,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "custody_epoch_principal_id",
         "custody_epoch_sha256",
         "custody_addresses_json",
+        "custody_state_objects_json",
         "kube_system_uid",
         "namespace_inventory_json",
         "owner_groups_json",
@@ -104,6 +105,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "state_lineage",
         "state_object_count",
         "state_object_version",
+        "state_objects_sha256",
         "state_serial",
         "state_sha256",
     }
@@ -116,8 +118,6 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         raise PipelineV3Error("current evidence does not follow the completed prior collection")
     manifest_query = {
         "bundle_path": str(args.manifest_bundle),
-        "owner_context": args.owner_context,
-        "owner_kubeconfig_path": str(args.owner_kubeconfig),
         "verified_trust_json": json.dumps(trust, sort_keys=True, separators=(",", ":")),
     }
     manifests = run_verifier("verify_sai07_custody_manifest_bundle_v3.py", manifest_query)
@@ -139,6 +139,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "manifest_bundle_sha256": manifests["bundle_sha256"],
         "manifest_objects_sha256": manifests["objects_sha256"],
         "platform_state_addresses_sha256": trust["state_addresses_sha256"],
+        "platform_state_objects_sha256": trust["state_objects_sha256"],
         "platform_state_all_addresses_sha256": trust["state_all_addresses_sha256"],
         "platform_state_all_object_count": trust["state_all_object_count"],
         "platform_state_lineage": trust["state_lineage"],
@@ -160,8 +161,6 @@ def parser() -> argparse.ArgumentParser:
         result.add_argument(f"--{prefix}-provider-receipt", required=True, type=Path)
         result.add_argument(f"--{prefix}-backend-receipt", required=True, type=Path)
     result.add_argument("--manifest-bundle", required=True, type=Path)
-    result.add_argument("--owner-kubeconfig", required=True, type=Path)
-    result.add_argument("--owner-context", required=True)
     return result
 
 
@@ -179,7 +178,7 @@ def main() -> int:
                 "backend_receipt",
             )
         )
-        for path in (*evidence_paths, args.manifest_bundle, args.owner_kubeconfig):
+        for path in (*evidence_paths, args.manifest_bundle):
             if not path.is_absolute() or ".." in path.parts:
                 raise PipelineV3Error("all evidence/credential paths must be absolute without traversal")
         result = prepare(args)
