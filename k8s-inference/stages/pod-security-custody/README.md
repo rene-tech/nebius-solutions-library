@@ -52,8 +52,12 @@ do not establish any fact. The retained-state preflight requires two fresh,
 distinct signed collections and exact equality of their reconstructed IAM,
 backend-control and versioned-state projections before emitting a handoff.
 
-The preflight performs no Terraform or Kubernetes mutation. The pinned executor
-is a distinct entrypoint. Immediately before and after its additive writes, it
+The preflight performs no Terraform or Kubernetes mutation. It invokes only a
+repository-pinned Terraform executable's read-only `version -json` and
+`show -json` commands against the exact saved plan. The resulting contract
+binds the complete canonical plan, configuration, variables, planned values,
+prior state, drift, outputs and normalized no-delete resource changes. The
+pinned executor is a distinct entrypoint. Immediately before and after its additive writes, it
 runs SelfSubjectReview, the exhaustive SelfSubjectAccessReview matrix and a
 complete SelfSubjectRulesReview for every signed namespace using one
 ten-minute, Kubernetes-API-audience epoch token received only through an
@@ -61,7 +65,10 @@ inherited descriptor. The repository binds its issuer and JWT subject to the
 unique provider service-account epoch; the authenticator must expose the exact
 signed username/groups and JTI. No stable owner kubeconfig is accepted. Every
 live read, token-anchor operation and acknowledgement SSA uses that token. Secret reads
-use only PartialObjectMetadataList. The empty immutable token anchor is created
+use only PartialObjectMetadataList. Each custody epoch has its own retained,
+immutable `fs2-pod-security-token-anchor-v3-<epoch-sha256>` Secret; old epochs
+remain protected and a new epoch never updates or replaces an old anchor. The
+empty immutable current anchor is created
 by atomic typed POST whose response must be PartialObjectMetadata, behind the
 signed fail-closed exact-shape admission policy. That policy evaluates every
 write by the external execution identity, so its namespace-wide CREATE/PATCH
@@ -70,12 +77,20 @@ or generation acknowledgement is admitted. The executor then invokes the
 external phase-ledger consumer, creates only the immutable acknowledgement
 through non-forcing SSA, performs immediate before/after reads, and emits a
 signed acknowledgement. Its name is generation-addressed, its exact field set
-is hashed, and it is absent from the complete raw platform state. The platform
+and saved-plan/config contract are hashed, and it is absent from the complete raw platform state. The platform
 rollout gate has a retained `terraform_data` freshness clock whose `timestamp()`
 input updates in place on every attempt. The acknowledgement data source
 depends on that pending update and therefore runs during apply even for an
-unchanged-phase saved plan. The create/replace-only provisioner is defense in
-depth, not the ongoing freshness boundary. Every baseline-label owner in the
+unchanged-phase saved plan. Planning never requires the acknowledgement file;
+the external executor signs the resulting plan first. Apply must export
+`FS2_SAI07_APPLY_PLAN_PATH` for that exact plan, and the apply-time verifier
+reconstructs the plan contract and rejects any byte/config/variable/semantic
+change. It also authenticates the actual platform kubeconfig with the
+repository-pinned kubectl executable,
+SelfSubjectReview, rejects kubectl impersonation, and exact-compares every
+SSRR resource and non-resource atom with the separately pinned platform
+authority artifact. The retained state-only gate updates in place and has no
+replacement trigger or local-exec provisioner. Every baseline-label owner in the
 foundation, scientific, academic, ModelExpress, and reference-data paths is
 ordered after that verified output.
 
@@ -101,10 +116,19 @@ SAI-04 are both explicitly unaccepted dependencies. A later independently
 reviewed deployment-bound commit is still required. Until then SAI-07 remains
 SOURCE/INTEGRATION/LIVE NO-GO.
 
+`platform-authority-contract-v3.json` is likewise `activation=blocked` with no
+invented cluster, identity, context, namespace, PV or authorization facts. A
+future deployment-bound commit must populate its complete atomic SSRR closure
+from separately reviewed authoritative evidence and pin its digest in the main
+lock before the executor or apply-time verifier can run.
+
 `custody-source-lock-v3.json` closes the executable dependency set used by the
 external executor: raw-state semantic reconstruction, v1/v2/v3 manifest
 validation, v2/v3 trust verification, retained-state preflight, and the
-metadata-only Secret transport each have a fixed path and content digest. The
+metadata-only Secret transport each have a fixed path and content digest. It
+also pins the receipt-transition verifier invoked as a child process and the
+v1 audit client imported by the v2 authority auditor, and the saved-plan
+contract module, closing those transitive execution edges. The
 main trust lock pins the source-lock digest. Runtime activation must therefore
 match this reviewed source graph as well as the deployment facts.
 

@@ -138,6 +138,7 @@ def validate_audit(raw: object, profile: str, username: str, groups: list[str], 
             "namespace_inventory", "namespace_inventory_sha256",
             "persistent_volume_names",
             "self_subject_rules_reviews", "self_subject_rules_reviews_sha256",
+            "exact_rule_closure", "exact_rule_closure_sha256",
             "self_subject_access_reviews", "self_subject_access_reviews_sha256",
             "observed_at",
         },
@@ -166,11 +167,34 @@ def validate_audit(raw: object, profile: str, username: str, groups: list[str], 
     reviews = audit["self_subject_access_reviews"]
     if hashlib.sha256(manifest_v1.canonical(rules)).hexdigest() != audit["self_subject_rules_reviews_sha256"]:
         raise HandoffV2Error(f"authority audit {profile} full SSRR evidence differs")
+    exact_rule_closure = audit["exact_rule_closure"]
+    if (
+        not isinstance(exact_rule_closure, list)
+        or hashlib.sha256(manifest_v1.canonical(exact_rule_closure)).hexdigest()
+        != audit["exact_rule_closure_sha256"]
+    ):
+        raise HandoffV2Error(f"authority audit {profile} exact rule closure differs")
     if hashlib.sha256(manifest_v1.canonical(reviews)).hexdigest() != audit["self_subject_access_reviews_sha256"]:
         raise HandoffV2Error(f"authority audit {profile} full SSAR evidence differs")
     if not isinstance(rules, list) or [item.get("namespace") for item in rules if isinstance(item, dict)] != namespaces:
         raise HandoffV2Error(f"authority audit {profile} does not contain one SSRR per namespace")
-    validate_full_rules(profile, namespaces, persistent_volume_names, rules)
+    reconstructed_closure = []
+    for entry in rules:
+        namespace = entry["namespace"]
+        reconstructed_closure.append(
+            {
+                "namespace": namespace,
+                **authority.validate_exact_rule_closure(
+                    profile,
+                    namespace,
+                    namespaces,
+                    persistent_volume_names,
+                    entry["status"],
+                ),
+            }
+        )
+    if reconstructed_closure != exact_rule_closure:
+        raise HandoffV2Error(f"authority audit {profile} normalized rule closure differs")
     expected = authority.expected_reviews(profile, namespaces, persistent_volume_names)
     observed: dict[str, bool] = {}
     for item in reviews if isinstance(reviews, list) else []:

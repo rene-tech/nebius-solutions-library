@@ -301,12 +301,20 @@ allowed. The preflight binds signed desired manifests one-to-one to that raw
 semantic projection. Before and after additive writes, one ten-minute,
 Kubernetes-API-audience epoch token arrives only through an inherited
 descriptor and performs every live read, SelfSubjectReview, exhaustive
-SSRR/SSAR, anchor request and acknowledgement SSA. Its issuer and JWT subject
+SSRR/SSAR, anchor request and acknowledgement SSA. Every SSRR resource rule is
+expanded to atomic verb/API/resource/subresource/name authority and must equal
+the complete source profile; every non-resource URL must equal the literal
+read-only Kubernetes discovery set. Unknown CRDs/APIs/subresources/URLs and
+wildcards fail even when two observations are stable. Its issuer and JWT subject
 must bind the unique provider epoch principal, and the authenticator must expose
 the same exact username/groups and JTI. No stable owner kubeconfig is accepted. Secret reads
-use PartialObjectMetadataList only. The exact empty immutable anchor is an
+use PartialObjectMetadataList only. The exact empty immutable,
+custody-epoch-addressed anchor is an
 atomic typed POST whose response must be PartialObjectMetadata and whose signed
 admission policy rejects a non-empty/mutable/renamed or later rewritten form.
+Every prior epoch anchor is retained and protected; a new epoch creates a new
+`fs2-pod-security-token-anchor-v3-<epoch-sha256>` name, avoiding replacement or
+deletion while preventing old credentials from minting a current token.
 The same fail-closed policy evaluates every write from the external execution
 identity and rejects any ConfigMap or Secret outside the exact anchor and
 generation-acknowledgement profiles.
@@ -317,14 +325,28 @@ applies one immutable generation-addressed acknowledgement ConfigMap proven
 absent from the complete raw state. A second read must exactly match the first.
 The signed acknowledgement binds its UID/resourceVersion/full-object and field
 set, phase/action/consumer/context, custody epoch, complete state aggregate,
+the exact canonical saved-plan/config/variables/planned-values projection,
 owner authority audits, token-anchor metadata and ledger-consumption digest.
-The platform gate uses an in-place `timestamp()` freshness clock. Its pending
+The saved plan is created before the acknowledgement; planning does not read a
+handoff file. Apply must provide that exact plan through
+`FS2_SAI07_APPLY_PLAN_PATH`. The platform gate uses an in-place `timestamp()` freshness clock. Its pending
 update defers the exact acknowledgement data source until every apply attempt,
-so a same-phase saved plan presented after expiry fails before any dependent
+where it re-runs the pinned read-only plan projection and rejects any different
+plan/config or expired acknowledgement before any dependent
 resource can change. Foundation labels, scientific namespace labels, the
 academic-assets module, ModelExpress namespace, and reference-data namespace
-all depend on that verified output. The create/replace-only provisioner is not
-trusted as the ongoing freshness mechanism.
+all depend on that verified output. The retained state-only gate updates in
+place and has no replacement trigger or local-exec provisioner.
+
+The apply-time verifier also uses the exact platform kubeconfig/context from
+the saved plan. A redacted `kubectl config view --minify` projection must show
+no impersonation directive; the kubectl executable itself is digest-pinned.
+SelfSubjectReview must authenticate the separately
+pinned platform username and groups, and every atomic SSRR resource and
+non-resource rule in every frozen namespace must equal the repository-pinned
+platform authority closure. Extra verbs, APIs, CRDs, subresources, named or
+unnamed authority, wildcard grants and non-resource URLs fail closed; the SSAR
+matrix is defense in depth rather than the completeness claim.
 
 The checked-in v3 lock remains `activation=blocked` with null deployment facts.
 Provider IAM must deny platform mutation, and independent review must pin the
@@ -334,8 +356,10 @@ dependencies remain explicitly unaccepted. No deployment-bound facts were
 invented, so this source cannot authorize a rollout and makes no GO claim.
 The main lock also digest-pins a closed dependency source lock for raw-state
 semantics, every manifest/trust verifier generation used by v3, the preflight,
-and metadata-only Secret handling; an unpinned helper cannot silently redefine
-the execution contract.
+metadata-only Secret handling, the phase-receipt verifier executed as a child
+process, and the v1 audit client imported by the v2 authority auditor; an
+unpinned direct or transitive helper cannot silently redefine the execution
+contract.
 
 ### Retained rejected v2 archive (not operational)
 
@@ -408,7 +432,8 @@ identity across one identical namespace inventory.
 The two short-lived automation identities are tokenless ServiceAccounts.
 Their distinct TokenRequest credentials use exactly the Kubernetes API
 audience, at most ten minutes, and `boundObjectRef` to the immutable empty
-`fs2-system/fs2-pod-security-token-anchor` Secret UID. JWT subject, audience,
+generation-addressed `fs2-system/fs2-pod-security-token-anchor-v3-<epoch-sha256>`
+Secret UID. JWT subject, audience,
 lifetime, ServiceAccount UID, bound Secret UID, and JTI are checked before each
 token is held in anonymous memory-backed storage. Fail-closed admission limits
 TokenRequests to those two exact ServiceAccounts and requires the anchor

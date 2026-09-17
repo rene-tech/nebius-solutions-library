@@ -26,6 +26,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import stat
 import subprocess
 import sys
@@ -36,6 +37,7 @@ import audit_sai07_effective_authority_v2 as authority_audit
 import run_sai07_retained_state_custody_v3 as preflight
 import sai07_authoritative_evidence as evidence
 import sai07_custody_state_semantics as state_semantics
+import sai07_saved_plan_contract as saved_plan
 from sai07_owner_secret_transport_v3 import OwnerApi, OwnerTransportError, validate_owner_token
 import verify_sai07_custody_manifest_bundle as bundle_v1
 import verify_sai07_custody_manifest_bundle_v2 as bundle_v2
@@ -102,8 +104,11 @@ def load_canonical(path: Path, label: str, maximum: int) -> tuple[bytes, dict[st
 def write_exclusive(path: Path, payload: bytes, maximum: int) -> None:
     if not path.is_absolute() or ".." in path.parts or len(payload) > maximum:
         raise ExecutionV3Error("acknowledgement output path or size violates the contract")
+    candidate = path.with_name(
+        f".{path.name}.retained-{hashlib.sha256(payload).hexdigest()}-{secrets.token_hex(16)}"
+    )
     descriptor = os.open(
-        path,
+        candidate,
         os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW,
         0o600,
     )
@@ -119,12 +124,26 @@ def write_exclusive(path: Path, payload: bytes, maximum: int) -> None:
         os.close(descriptor)
     directory = os.open(path.parent, os.O_RDONLY | os.O_CLOEXEC | os.O_DIRECTORY)
     try:
+        # The completed candidate is retained deliberately. Fsync its directory
+        # entry before the no-replace hard-link promotion so a crash can never
+        # expose a short final file or require deletion for recovery.
+        os.fsync(directory)
+        try:
+            os.link(candidate, path, follow_symlinks=False)
+        except FileExistsError:
+            existing = read_regular(path, "existing acknowledgement", maximum)
+            if existing != payload:
+                raise ExecutionV3Error(
+                    "acknowledgement output exists with different bytes"
+                )
         os.fsync(directory)
     finally:
         os.close(directory)
 
 
-def repository_contract() -> tuple[bytes, dict[str, Any], dict[str, Any]]:
+def repository_contract() -> tuple[
+    bytes, dict[str, Any], dict[str, Any], bytes, dict[str, Any]
+]:
     contract_bytes, contract = trust_v3.load_json(
         TRUST_LOCK, "v3 trust lock", 1024 * 1024, repository_document=True
     )
@@ -140,13 +159,20 @@ def repository_contract() -> tuple[bytes, dict[str, Any], dict[str, Any]]:
             "authority_audit_sha256",
             "dependency_lock_sha256",
             "field_manager",
+            "kubectl_cli_path",
+            "kubectl_cli_sha256",
             "owner_token_audience",
             "owner_token_issuer",
             "owner_token_max_seconds",
+            "platform_authority_contract_path",
+            "platform_authority_contract_sha256",
             "secret_transport_path",
             "secret_transport_sha256",
             "source_path",
             "source_sha256",
+            "terraform_cli_path",
+            "terraform_cli_sha256",
+            "terraform_cli_version",
             "verifier_path",
             "verifier_sha256",
         },
@@ -162,21 +188,30 @@ def repository_contract() -> tuple[bytes, dict[str, Any], dict[str, Any]]:
     transport_relative = Path(
         evidence.nonempty(executor["secret_transport_path"], "Secret transport path")
     )
+    platform_authority_relative = Path(
+        evidence.nonempty(
+            executor["platform_authority_contract_path"],
+            "platform authority contract path",
+        )
+    )
     if (
         source_relative.is_absolute()
         or verifier_relative.is_absolute()
         or audit_relative.is_absolute()
         or transport_relative.is_absolute()
+        or platform_authority_relative.is_absolute()
         or ".." in source_relative.parts
         or ".." in verifier_relative.parts
         or ".." in audit_relative.parts
         or ".." in transport_relative.parts
+        or ".." in platform_authority_relative.parts
     ):
         raise ExecutionV3Error("executor source pins must be repository-relative without traversal")
     source = ROOT / source_relative
     verifier = ROOT / verifier_relative
     audit = ROOT / audit_relative
     transport = ROOT / transport_relative
+    platform_authority_path = ROOT / platform_authority_relative
     if source.resolve() != Path(__file__).resolve():
         raise ExecutionV3Error("repository contract selects another executor")
     for path, expected, label in (
@@ -190,13 +225,16 @@ def repository_contract() -> tuple[bytes, dict[str, Any], dict[str, Any]]:
         ).hexdigest()
         if actual != evidence.sha256(expected, f"{label} source SHA-256"):
             raise ExecutionV3Error(f"{label} differs from the repository-pinned source")
-    dependency_bytes, dependency_lock = trust_v3.load_json(
+    dependency_file_bytes = read_regular(
+        SOURCE_LOCK, "v3 custody source-lock bytes", 1024 * 1024
+    )
+    _dependency_document, dependency_lock = trust_v3.load_json(
         SOURCE_LOCK,
         "v3 custody source lock",
         1024 * 1024,
         repository_document=True,
     )
-    if hashlib.sha256(dependency_bytes).hexdigest() != evidence.sha256(
+    if hashlib.sha256(dependency_file_bytes).hexdigest() != evidence.sha256(
         executor["dependency_lock_sha256"], "dependency source-lock SHA-256"
     ):
         raise ExecutionV3Error(
@@ -218,6 +256,9 @@ def repository_contract() -> tuple[bytes, dict[str, Any], dict[str, Any]]:
         "custody_state_semantics": "scripts/sai07_custody_state_semantics.py",
         "custody_trust_v2": "scripts/verify_sai07_custody_trust.py",
         "custody_trust_v3": "scripts/verify_sai07_custody_trust_v3.py",
+        "effective_authority_v1": "scripts/audit_sai07_effective_authority.py",
+        "receipt_transition": "scripts/verify_pod_security_receipts.py",
+        "saved_plan_contract": "scripts/sai07_saved_plan_contract.py",
         "secret_metadata_transport": "scripts/collect_sai07_secret_metadata.py",
     }
     sources = evidence.exact(
@@ -236,7 +277,118 @@ def repository_contract() -> tuple[bytes, dict[str, Any], dict[str, Any]]:
             raise ExecutionV3Error(
                 f"{label} differs from the repository-pinned dependency source"
             )
-    return contract_bytes, contract, executor
+    terraform_path = Path(
+        evidence.nonempty(executor["terraform_cli_path"], "Terraform CLI path")
+    )
+    if not terraform_path.is_absolute() or ".." in terraform_path.parts:
+        raise ExecutionV3Error("Terraform CLI path must be absolute without traversal")
+    if hashlib.sha256(
+        read_regular(terraform_path, "Terraform CLI", saved_plan.MAX_TERRAFORM_BYTES)
+    ).hexdigest() != evidence.sha256(
+        executor["terraform_cli_sha256"], "Terraform CLI SHA-256"
+    ):
+        raise ExecutionV3Error("Terraform CLI differs from the repository pin")
+    evidence.nonempty(executor["terraform_cli_version"], "Terraform CLI version")
+    kubectl_path = Path(
+        evidence.nonempty(executor["kubectl_cli_path"], "kubectl CLI path")
+    )
+    if not kubectl_path.is_absolute() or ".." in kubectl_path.parts:
+        raise ExecutionV3Error("kubectl CLI path must be absolute without traversal")
+    if hashlib.sha256(
+        read_regular(kubectl_path, "kubectl CLI", 256 * 1024 * 1024)
+    ).hexdigest() != evidence.sha256(
+        executor["kubectl_cli_sha256"], "kubectl CLI SHA-256"
+    ):
+        raise ExecutionV3Error("kubectl CLI differs from the repository pin")
+
+    platform_authority_bytes = read_regular(
+        platform_authority_path, "platform authority contract", 32 * 1024 * 1024
+    )
+    try:
+        platform_authority = json.loads(platform_authority_bytes)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ExecutionV3Error("platform authority contract is not JSON") from error
+    if (
+        not isinstance(platform_authority, dict)
+        or platform_authority_bytes != canonical(platform_authority) + b"\n"
+    ):
+        raise ExecutionV3Error(
+            "platform authority contract must be canonical JSON with one terminal LF"
+        )
+    if hashlib.sha256(platform_authority_bytes).hexdigest() != evidence.sha256(
+        executor["platform_authority_contract_sha256"],
+        "platform authority contract SHA-256",
+    ):
+        raise ExecutionV3Error("platform authority contract differs from its repository pin")
+    evidence.exact(
+        platform_authority,
+        {
+            "activation",
+            "cluster_id",
+            "exact_rule_closure",
+            "exact_rule_closure_sha256",
+            "groups",
+            "kube_context",
+            "kube_system_uid",
+            "namespace_inventory",
+            "persistent_volume_names",
+            "schema",
+            "username",
+        },
+        "platform authority contract",
+    )
+    if platform_authority["activation"] != "active":
+        raise ExecutionV3Error("repository-pinned platform authority contract is blocked")
+    if (
+        platform_authority["schema"]
+        != "fs2-serve.nebius.ai/sai07-platform-authority-contract/v3"
+        or platform_authority["cluster_id"] != contract["expected"]["cluster_id"]
+        or platform_authority["kube_system_uid"]
+        != contract["expected"]["kube_system_uid"]
+        or platform_authority["username"]
+        != contract["expected"]["platform"]["username"]
+        or platform_authority["username"]
+        in {
+            contract["expected"]["owner"]["username"],
+            contract["expected"]["receipt_operator"]["username"],
+        }
+        or platform_authority["namespace_inventory"]
+        != contract["expected"]["namespace_inventory"]
+        or platform_authority["persistent_volume_names"]
+        != contract["expected"]["persistent_volume_names"]
+        or not isinstance(platform_authority["kube_context"], str)
+        or not platform_authority["kube_context"]
+        or not isinstance(platform_authority["groups"], list)
+        or not all(
+            isinstance(group, str) and group for group in platform_authority["groups"]
+        )
+        or platform_authority["groups"]
+        != sorted(set(platform_authority["groups"]))
+        or "system:authenticated" not in platform_authority["groups"]
+        or not set(contract["expected"]["platform"]["group_ids"]).issubset(
+            platform_authority["groups"]
+        )
+        or not set(platform_authority["groups"]).isdisjoint(
+            set(contract["expected"]["owner"]["group_ids"])
+            | set(contract["expected"]["receipt_operator"]["group_ids"])
+        )
+        or not isinstance(platform_authority["exact_rule_closure"], list)
+        or hashlib.sha256(
+            canonical(platform_authority["exact_rule_closure"])
+        ).hexdigest()
+        != evidence.sha256(
+            platform_authority["exact_rule_closure_sha256"],
+            "platform exact-rule closure SHA-256",
+        )
+    ):
+        raise ExecutionV3Error("platform authority contract differs from pinned custody facts")
+    return (
+        contract_bytes,
+        contract,
+        executor,
+        platform_authority_bytes,
+        platform_authority,
+    )
 
 
 def full_snapshot(
@@ -266,7 +418,12 @@ def full_snapshot(
         # The anchor is deliberately outside platform Terraform state. It is
         # observed only through metadata-only content negotiation below; a
         # generic object GET could retrieve Secret payload bytes.
-        if identity == ("v1", "Secret", "fs2-system", "fs2-pod-security-token-anchor"):
+        if (
+            identity[0:3] == ("v1", "Secret", "fs2-system")
+            and re.fullmatch(
+                r"fs2-pod-security-token-anchor-v3-[a-f0-9]{64}", identity[3]
+            )
+        ):
             continue
         live = reader.raw(
             bundle_v2.api_path(identity), allow_absent=expected.get("present") is False
@@ -469,6 +626,8 @@ def consume_phase_receipt(
     args: argparse.Namespace,
     trust: dict[str, str],
     context: dict[str, Any],
+    kubectl_path: str,
+    token_anchor_name: str,
     token_anchor_uid: str,
 ) -> tuple[str, str]:
     if args.phase == "prepare":
@@ -495,10 +654,12 @@ def consume_phase_receipt(
         raise ExecutionV3Error("phase receipt query differs from the exact execution edge")
     environment = {
         "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+        "FS2_KUBECTL_PATH": kubectl_path,
         "FS2_KUBECONFIG": str(args.receipt_kubeconfig),
         "FS2_KUBE_CONTEXT": args.receipt_context,
         "FS2_POD_SECURITY_CUSTODY_USER": trust["receipt_username"],
         "FS2_POD_SECURITY_TOKEN_AUDIENCE": "https://kubernetes.default.svc",
+        "FS2_POD_SECURITY_TOKEN_ANCHOR_NAME": token_anchor_name,
         "FS2_POD_SECURITY_TOKEN_ANCHOR_UID": token_anchor_uid,
         "FS2_POD_SECURITY_QUERY": query_bytes.decode(),
     }
@@ -571,7 +732,13 @@ def sign(unsigned: dict[str, Any], private_key_fd: int) -> dict[str, str]:
 
 
 def execute(args: argparse.Namespace) -> dict[str, Any]:
-    contract_bytes, contract, executor = repository_contract()
+    (
+        contract_bytes,
+        contract,
+        executor,
+        platform_authority_bytes,
+        platform_authority,
+    ) = repository_contract()
     if args.phase != "prepare" and not PHASE_RE.fullmatch(args.phase):
         raise ExecutionV3Error("phase is malformed")
     if args.action not in {"authorize", "acknowledge"} or args.consumer_role not in {
@@ -588,6 +755,18 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         raise ExecutionV3Error("rollout context differs from repository-pinned cluster identity")
 
     prepared = preflight.prepare(args)
+    if (
+        prepared["platform_plan_contract"]["rollout_phase"] != args.phase
+        or prepared["platform_plan_contract"]["custody_epoch_sha256"]
+        != prepared["custody_epoch_sha256"]
+        or prepared["platform_plan_contract"]["external_handoff_path_sha256"]
+        != hashlib.sha256(str(args.ack_output).encode()).hexdigest()
+        or prepared["platform_plan_contract"]["platform_kube_context"]
+        != platform_authority["kube_context"]
+    ):
+        raise ExecutionV3Error(
+            "saved platform plan phase, epoch, handoff path, or context differs"
+        )
     trust = preflight.run_verifier(
         "verify_sai07_custody_trust_v3.py", preflight.trust_query(args, "current")
     )
@@ -665,6 +844,12 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
                 "manifest_bundle_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
                 "owner_token_jti_sha256": owner_token_jti_sha256,
                 "phase": args.phase,
+                "platform_authority_contract_sha256": hashlib.sha256(
+                    platform_authority_bytes
+                ).hexdigest(),
+                "platform_plan_contract_sha256": prepared[
+                    "platform_plan_contract_sha256"
+                ],
                 "receipt_bundle_sha256": receipt_bundle_sha256,
             }
         )
@@ -698,7 +883,12 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             "supplied token-anchor UID differs from metadata-only observation"
         )
     receipt_sha256, receipt_consumption_sha256 = consume_phase_receipt(
-        args, trust, context, token_anchor["uid"]
+        args,
+        trust,
+        context,
+        executor["kubectl_cli_path"],
+        token_anchor["name"],
+        token_anchor["uid"],
     )
     if receipt_sha256 != receipt_bundle_sha256:
         raise ExecutionV3Error("phase receipt changed between generation and consumption")
@@ -716,7 +906,12 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "manifest_bundle_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
         "manifest_objects_sha256": prepared["manifest_objects_sha256"],
         "phase": args.phase,
+        "platform_authority_contract_sha256": hashlib.sha256(
+            platform_authority_bytes
+        ).hexdigest(),
         "platform_objects_before_sha256": before_sha256,
+        "platform_plan_contract": prepared["platform_plan_contract"],
+        "platform_plan_contract_sha256": prepared["platform_plan_contract_sha256"],
         "platform_state_all_addresses_sha256": prepared[
             "platform_state_all_addresses_sha256"
         ],
@@ -773,12 +968,23 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         raise ExecutionV3Error(
             "external owner authority changed across acknowledgement SSA"
         )
-    final_anchor = owner_api.anchor_metadata()
+    final_anchor = owner_api.anchor_metadata(prepared["custody_epoch_sha256"])
     if final_anchor != {
         key: token_anchor[key]
-        for key in ("custody_epoch_sha256", "resource_version", "uid")
+        for key in ("custody_epoch_sha256", "name", "resource_version", "uid")
     }:
         raise ExecutionV3Error("token anchor changed across acknowledgement SSA")
+    try:
+        refreshed_plan_contract = saved_plan.inspect_saved_plan(
+            args.platform_saved_plan,
+            Path(executor["terraform_cli_path"]),
+            executor["terraform_cli_sha256"],
+            executor["terraform_cli_version"],
+        )
+    except saved_plan.SavedPlanError as error:
+        raise ExecutionV3Error("saved platform plan changed or became invalid") from error
+    if refreshed_plan_contract != prepared["platform_plan_contract"]:
+        raise ExecutionV3Error("saved platform plan changed across external execution")
 
     issued = dt.datetime.now(dt.UTC).replace(microsecond=0)
     authority = contract["authorities"]["manifest"]
@@ -810,8 +1016,13 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "owner_authority_before_sha256": owner_authority_before_sha256,
         "owner_token_jti_sha256": owner_token_jti_sha256,
         "phase": args.phase,
+        "platform_authority_contract_sha256": hashlib.sha256(
+            platform_authority_bytes
+        ).hexdigest(),
         "platform_objects_after_sha256": after_sha256,
         "platform_objects_before_sha256": before_sha256,
+        "platform_plan_contract": prepared["platform_plan_contract"],
+        "platform_plan_contract_sha256": prepared["platform_plan_contract_sha256"],
         "platform_state_all_addresses_sha256": prepared[
             "platform_state_all_addresses_sha256"
         ],
@@ -828,7 +1039,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "schema": SCHEMA,
         "token_anchor": {
             "custody_epoch_sha256": token_anchor["custody_epoch_sha256"],
-            "name": "fs2-pod-security-token-anchor",
+            "name": token_anchor["name"],
             "namespace": "fs2-system",
             "resource_version": token_anchor["resource_version"],
             "uid": token_anchor["uid"],

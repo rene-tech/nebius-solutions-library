@@ -173,6 +173,15 @@ variable "platform_group" {
   default     = "fs2-platform-terraform"
 }
 
+variable "custody_epoch_sha256" {
+  description = "Exact active external-custody epoch digest that generation-addresses the immutable token anchor."
+  type        = string
+  validation {
+    condition     = can(regex("^[a-f0-9]{64}$", var.custody_epoch_sha256))
+    error_message = "custody_epoch_sha256 must be a lowercase SHA-256."
+  }
+}
+
 variable "token_audience" {
   description = "Exact Kubernetes API audience for the ten-minute rollout-custodian TokenRequest."
   type        = string

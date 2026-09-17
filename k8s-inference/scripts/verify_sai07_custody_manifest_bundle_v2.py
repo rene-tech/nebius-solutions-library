@@ -270,7 +270,12 @@ def validate(bundle: dict[str, Any], query: dict[str, str], trust: dict[str, str
     if present_addresses != set(by_address):
         raise BundleV2Error("adoption is not an exhaustive one-to-one projection of platform state")
 
-    token_identity = ("v1", "Secret", "fs2-system", "fs2-pod-security-token-anchor")
+    token_identity = (
+        "v1",
+        "Secret",
+        "fs2-system",
+        f"fs2-pod-security-token-anchor-v3-{trust['custody_epoch_sha256']}",
+    )
     token_manifest = entries[token_identity]["manifest"]
     if (
         token_manifest.get("metadata", {})

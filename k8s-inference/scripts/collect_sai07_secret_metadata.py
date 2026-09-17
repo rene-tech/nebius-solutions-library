@@ -30,7 +30,7 @@ SCHEMA = "fs2-serve.nebius.ai/sai07-secret-metadata/v1"
 MEDIA_TYPE = "application/json;as=PartialObjectMetadataList;g=meta.k8s.io;v=v1"
 AUDIENCE = "https://kubernetes.default.svc"
 ANCHOR_NAMESPACE = "fs2-system"
-ANCHOR_NAME = "fs2-pod-security-token-anchor"
+ANCHOR_NAME_PREFIX = "fs2-pod-security-token-anchor-v3-"
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 
@@ -85,6 +85,7 @@ def validate_token(
     service_account_namespace: str,
     service_account_name: str,
     service_account_uid: str,
+    anchor_name: str,
     anchor_uid: str,
 ) -> str:
     header_segment, claims_segment, _signature = token.split(".")
@@ -116,7 +117,8 @@ def validate_token(
     if (
         kubernetes.get("namespace") != service_account_namespace
         or service_account != {"name": service_account_name, "uid": service_account_uid}
-        or secret != {"name": ANCHOR_NAME, "uid": anchor_uid}
+        or not re.fullmatch(r"fs2-pod-security-token-anchor-v3-[a-f0-9]{64}", anchor_name)
+        or secret != {"name": anchor_name, "uid": anchor_uid}
         or claims.get("sub")
         != f"system:serviceaccount:{service_account_namespace}:{service_account_name}"
     ):
@@ -257,6 +259,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--reader-service-account-name", default="fs2-pod-security-metadata-reader")
     result.add_argument("--reader-service-account-uid", required=True)
     result.add_argument("--anchor-uid", required=True)
+    result.add_argument("--anchor-name", required=True)
     result.add_argument("--service-account", action="append", default=[])
     return result
 
@@ -272,6 +275,7 @@ def main() -> int:
             service_account_namespace=args.reader_service_account_namespace,
             service_account_name=args.reader_service_account_name,
             service_account_uid=args.reader_service_account_uid,
+            anchor_name=args.anchor_name,
             anchor_uid=args.anchor_uid,
         )
         collection = request_metadata(args.api_server, read_ca(args.ca_file), token, args.namespace)
@@ -281,7 +285,7 @@ def main() -> int:
             "api_version": "v1",
             "kind": "Secret",
             "namespace": ANCHOR_NAMESPACE,
-            "name": ANCHOR_NAME,
+            "name": args.anchor_name,
             "uid": args.anchor_uid,
         }
         artifact["token_jti_sha256"] = jti_sha256

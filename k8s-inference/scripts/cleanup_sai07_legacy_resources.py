@@ -476,7 +476,10 @@ def legacy_service_account_token_secrets(
         bound["api_version"] != "v1"
         or bound["kind"] != "Secret"
         or bound["namespace"] != "fs2-system"
-        or bound["name"] != "fs2-pod-security-token-anchor"
+        or not re.fullmatch(
+            r"fs2-pod-security-token-anchor-v3-[a-f0-9]{64}",
+            str(bound["name"]),
+        )
         or not isinstance(bound["uid"], str)
         or not bound["uid"]
     ):

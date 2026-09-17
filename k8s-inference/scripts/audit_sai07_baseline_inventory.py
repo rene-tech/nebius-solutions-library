@@ -469,13 +469,19 @@ def validate_secret_metadata_artifact(
     ):
         raise InventoryError("Secret metadata item count or digest differs")
     bound = value["token_bound_object_ref"]
-    if not isinstance(bound, dict) or bound != {
-        "api_version": "v1",
-        "kind": "Secret",
-        "namespace": "fs2-system",
-        "name": "fs2-pod-security-token-anchor",
-        "uid": bound.get("uid"),
-    } or not isinstance(bound["uid"], str) or not bound["uid"]:
+    if (
+        not isinstance(bound, dict)
+        or set(bound) != {"api_version", "kind", "namespace", "name", "uid"}
+        or bound["api_version"] != "v1"
+        or bound["kind"] != "Secret"
+        or bound["namespace"] != "fs2-system"
+        or not re.fullmatch(
+            r"fs2-pod-security-token-anchor-v3-[a-f0-9]{64}",
+            str(bound["name"]),
+        )
+        or not isinstance(bound["uid"], str)
+        or not bound["uid"]
+    ):
         raise InventoryError("metadata reader token is not bound to the exact custody anchor")
     if not isinstance(value["reader_service_account_uid"], str) or not value["reader_service_account_uid"]:
         raise InventoryError("metadata reader ServiceAccount UID is missing")

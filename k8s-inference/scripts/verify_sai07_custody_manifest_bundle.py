@@ -46,7 +46,6 @@ REQUIRED_OBJECTS = {
         "",
         "fs2-pod-security-custody-boundary",
     ),
-    ("v1", "Secret", "fs2-system", "fs2-pod-security-token-anchor"),
     ("v1", "ServiceAccount", "fs2-system", "fs2-pod-security-rollout-custodian"),
     ("v1", "ServiceAccount", "fs2-system", "fs2-pod-security-metadata-reader"),
     (
@@ -335,6 +334,7 @@ def validate(bundle: dict[str, Any], query: dict[str, str]) -> dict[str, str]:
     manifests: dict[str, dict[str, Any]] = {}
     existing_imports: dict[str, str] = {}
     observed: set[tuple[str, str, str, str]] = set()
+    token_anchor_identities: list[tuple[str, str, str, str]] = []
     for index, entry_raw in enumerate(objects):
         entry = exact(entry_raw, {"manifest", "live_identity"}, f"objects[{index}]")
         manifest = entry["manifest"]
@@ -357,9 +357,13 @@ def validate(bundle: dict[str, Any], query: dict[str, str]) -> dict[str, str]:
             raise BundleError("every custody manifest must carry the external-owner label")
         if kind == "Secret":
             annotations = metadata.get("annotations")
+            epoch_sha256 = (
+                annotations.get("security.fs2.nebius.ai/custody-epoch-sha256")
+                if isinstance(annotations, dict)
+                else None
+            )
             if (
-                identity not in REQUIRED_OBJECTS
-                or labels
+                labels
                 != {
                     "security.fs2.nebius.ai/custody-owner": "external",
                     "security.fs2.nebius.ai/role": "token-anchor",
@@ -367,15 +371,16 @@ def validate(bundle: dict[str, Any], query: dict[str, str]) -> dict[str, str]:
                 or not isinstance(annotations, dict)
                 or set(annotations)
                 != {"security.fs2.nebius.ai/custody-epoch-sha256"}
-                or not SHA256_RE.fullmatch(
-                    str(annotations["security.fs2.nebius.ai/custody-epoch-sha256"])
-                )
+                or not SHA256_RE.fullmatch(str(epoch_sha256))
+                or namespace != "fs2-system"
+                or name != f"fs2-pod-security-token-anchor-v3-{epoch_sha256}"
                 or manifest.get("immutable") is not True
                 or manifest.get("type") != "Opaque"
                 or manifest.get("data", {}) != {}
                 or "stringData" in manifest
             ):
                 raise BundleError("only the immutable empty token-anchor Secret is permitted")
+            token_anchor_identities.append(identity)
         if kind == "ServiceAccount" and (
             manifest.get("automountServiceAccountToken") is not False
             or manifest.get("secrets", []) != []
@@ -576,7 +581,7 @@ def validate(bundle: dict[str, Any], query: dict[str, str]) -> dict[str, str]:
             import_components.append(f"name={name}")
             existing_imports[key] = ",".join(import_components)
         observed.add(identity)
-    if not REQUIRED_OBJECTS.issubset(observed):
+    if not REQUIRED_OBJECTS.issubset(observed) or len(token_anchor_identities) != 1:
         raise BundleError("manifest bundle omits mandatory custody, ledger, token, or fence objects")
     custody_policy = manifests[
         "/".join(
@@ -607,7 +612,7 @@ def validate(bundle: dict[str, Any], query: dict[str, str]) -> dict[str, str]:
         if isinstance(item, dict) and isinstance(item.get("expression"), str)
     ]
     anchor_fragments = (
-        "fs2-pod-security-token-anchor",
+        "fs2-pod-security-token-anchor-v3-",
         "request.operation == 'CREATE'",
         "request.userInfo.username !=",
         "object.metadata.namespace == 'fs2-system'",
@@ -663,6 +668,7 @@ def validate(bundle: dict[str, Any], query: dict[str, str]) -> dict[str, str]:
     validation_expressions = {
         item.get("expression") for item in validations or [] if isinstance(item, dict)
     }
+    token_anchor_name = token_anchor_identities[0][3]
     required_fragments = (
         "fs2-pod-security-receipt-custodians",
         "authentication.kubernetes.io/credential-id",
@@ -671,7 +677,7 @@ def validate(bundle: dict[str, Any], query: dict[str, str]) -> dict[str, str]:
         "has(object.spec.boundObjectRef)",
         "object.spec.boundObjectRef.apiVersion == 'v1'",
         "object.spec.boundObjectRef.kind == 'Secret'",
-        "object.spec.boundObjectRef.name == 'fs2-pod-security-token-anchor'",
+        f"object.spec.boundObjectRef.name == '{token_anchor_name}'",
         "object.spec.boundObjectRef.uid != ''",
     )
     if not validation_expressions or any(

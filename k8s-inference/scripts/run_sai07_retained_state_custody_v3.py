@@ -3,9 +3,11 @@
 
 This v3 entrypoint is deliberately verification-only.  It verifies raw
 provider/backend evidence and the immediately refreshed manifest bundle, then
-emits a canonical preflight for the separately administered v3 executor.
-It never invokes Terraform, imports an object, removes a state address, writes
-the rollout ledger, or mutates Kubernetes.  The executor owns zero fields on
+uses the repository-pinned Terraform executable only for read-only
+``version -json`` and ``show -json`` projection of one exact saved plan. It
+emits a canonical preflight for the separately administered v3 executor and
+never plans, applies, imports, forgets state, writes the rollout ledger, or
+mutates Kubernetes. The executor owns zero fields on
 Terraform-retained objects: it may create only one immutable,
 generation-addressed acknowledgement and must prove every retained object is
 byte-for-byte unchanged across that SSA.  Activation remains blocked until the
@@ -15,11 +17,15 @@ executor and provider-native custody facts are reviewed and pinned.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+
+import sai07_saved_plan_contract as saved_plan
+import verify_sai07_custody_trust_v3 as trust_v3
 
 ROOT = Path(__file__).resolve().parents[1]
 TRUST_LOCK = ROOT / "stages" / "pod-security-custody" / "custody-trust-lock-v3.json"
@@ -123,6 +129,39 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     manifests = run_verifier("verify_sai07_custody_manifest_bundle_v3.py", manifest_query)
     if manifests.get("platform_state_retained") != "true":
         raise PipelineV3Error("manifest verifier did not retain platform state ownership")
+    lock_bytes, repository_lock = trust_v3.load_json(
+        TRUST_LOCK,
+        "v3 trust lock",
+        1024 * 1024,
+        repository_document=True,
+    )
+    if repository_lock.get("activation") != "active":
+        raise PipelineV3Error("repository-pinned external custody is not active")
+    executor = repository_lock.get("executor")
+    if not isinstance(executor, dict):
+        raise PipelineV3Error("repository executor contract is malformed")
+    terraform_cli_path = executor.get("terraform_cli_path")
+    terraform_cli_sha256 = executor.get("terraform_cli_sha256")
+    terraform_cli_version = executor.get("terraform_cli_version")
+    if (
+        not isinstance(terraform_cli_path, str)
+        or not terraform_cli_path.startswith("/")
+        or ".." in Path(terraform_cli_path).parts
+        or not isinstance(terraform_cli_sha256, str)
+        or len(terraform_cli_sha256) != 64
+        or not isinstance(terraform_cli_version, str)
+        or not terraform_cli_version
+    ):
+        raise PipelineV3Error("repository Terraform CLI pin is incomplete")
+    try:
+        platform_plan = saved_plan.inspect_saved_plan(
+            args.platform_saved_plan,
+            Path(terraform_cli_path),
+            terraform_cli_sha256,
+            terraform_cli_version,
+        )
+    except saved_plan.SavedPlanError as error:
+        raise PipelineV3Error("saved platform plan/config projection is invalid") from error
     active_handoff_source = active_source_without_archive(STATE_HANDOFF)
     forbidden = ("removed {", "terraform state rm", "terraform import", "import {")
     if any(item in active_handoff_source for item in forbidden):
@@ -145,6 +184,11 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "platform_state_lineage": trust["state_lineage"],
         "platform_state_serial": trust["state_serial"],
         "platform_state_version": trust["state_object_version"],
+        "platform_plan_contract": platform_plan,
+        "platform_plan_contract_sha256": hashlib.sha256(
+            canonical(platform_plan)
+        ).hexdigest(),
+        "repository_contract_sha256": hashlib.sha256(lock_bytes).hexdigest(),
         "state_ownership": "platform-retained-no-import-no-forget",
         "prior_collection_id": prior["collection_id"],
         "provider_backend_drift_fenced": "true",
@@ -161,6 +205,7 @@ def parser() -> argparse.ArgumentParser:
         result.add_argument(f"--{prefix}-provider-receipt", required=True, type=Path)
         result.add_argument(f"--{prefix}-backend-receipt", required=True, type=Path)
     result.add_argument("--manifest-bundle", required=True, type=Path)
+    result.add_argument("--platform-saved-plan", required=True, type=Path)
     return result
 
 
@@ -178,7 +223,7 @@ def main() -> int:
                 "backend_receipt",
             )
         )
-        for path in (*evidence_paths, args.manifest_bundle):
+        for path in (*evidence_paths, args.manifest_bundle, args.platform_saved_plan):
             if not path.is_absolute() or ".." in path.parts:
                 raise PipelineV3Error("all evidence/credential paths must be absolute without traversal")
         result = prepare(args)

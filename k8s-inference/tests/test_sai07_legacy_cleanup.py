@@ -337,7 +337,7 @@ def test_metadata_only_annotated_service_account_token_secrets_block_closure(
             "api_version": "v1",
             "kind": "Secret",
             "namespace": "fs2-system",
-            "name": "fs2-pod-security-token-anchor",
+            "name": f"fs2-pod-security-token-anchor-v3-{'a' * 64}",
             "uid": "anchor-uid",
         },
         "token_jti_sha256": "a" * 64,

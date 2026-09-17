@@ -220,37 +220,41 @@ locals {
   # state address is transferred: the separately pinned executor owns only one
   # additive immutable acknowledgement object and proves every retained object
   # unchanged across that SSA. A prepare acknowledgement binds the zero digest.
-  receipt_required                = var.phase != "prepare"
-  receipt_bundle_sha256           = local.receipt_required ? filesha256(var.receipt_bundle_path) : null
-  expected_bundle_sha256          = local.receipt_required ? local.receipt_bundle_sha256 : strrep("0", 64)
-  external_acknowledgement_sha256 = filesha256(var.external_handoff_path)
+  receipt_required       = var.phase != "prepare"
+  receipt_bundle_sha256  = local.receipt_required ? filesha256(var.receipt_bundle_path) : null
+  expected_bundle_sha256 = local.receipt_required ? local.receipt_bundle_sha256 : strrep("0", 64)
   external_acknowledgement_query = {
-    ack_path                           = var.external_handoff_path
-    trust_lock_path                    = "${path.module}/../../stages/pod-security-custody/custody-trust-lock-v3.json"
-    receipt_bundle_sha256              = local.expected_bundle_sha256
-    expected_acknowledgement_sha256    = local.external_acknowledgement_sha256
-    expected_context_sha256            = sha256(jsonencode(var.expected_context))
-    expected_phase                     = var.phase
-    expected_consumer                  = var.consumer_role
-    expected_action                    = var.action
-    cluster_id                         = var.expected_context.cluster_id
-    kube_system_uid                    = var.expected_context.kube_system_uid
+    ack_path                      = var.external_handoff_path
+    trust_lock_path               = "${path.module}/../../stages/pod-security-custody/custody-trust-lock-v3.json"
+    receipt_bundle_sha256         = local.expected_bundle_sha256
+    expected_context_sha256       = sha256(jsonencode(var.expected_context))
+    expected_custody_epoch_sha256 = var.custody_epoch_sha256
+    expected_phase                = var.phase
+    expected_consumer             = var.consumer_role
+    expected_action               = var.action
+    cluster_id                    = var.expected_context.cluster_id
+    kube_system_uid               = var.expected_context.kube_system_uid
+    platform_kubeconfig_path      = var.kubeconfig_path
+    platform_context              = var.kube_context
   }
 }
 
 # This clock updates in place on every plan/apply attempt. It is retained and
 # never replaced or destroyed. Because the acknowledgement data source depends
 # on a pending clock update, Terraform defers the read until apply even when
-# phase, context and acknowledgement digest are unchanged. A delayed saved plan
-# therefore evaluates the ten-minute expiry at apply time, not only at plan or
-# at the first creation of terraform_data.verified.
+# phase and context are unchanged. A delayed saved plan therefore evaluates the
+# acknowledgement, exact saved-plan bytes and ten-minute expiry at apply time.
+# Planning does not read an acknowledgement: the external executor receives
+# that saved plan, signs its full projection, and writes the generation file
+# before apply. The apply process must export FS2_SAI07_APPLY_PLAN_PATH pointing
+# at the exact saved plan it is executing.
 resource "terraform_data" "apply_freshness_clock" {
   input = {
-    attempted_at            = timestamp()
-    acknowledgement_sha256 = local.external_acknowledgement_sha256
-    action                  = var.action
-    consumer                = var.consumer_role
-    phase                   = var.phase
+    attempted_at         = timestamp()
+    acknowledgement_path = var.external_handoff_path
+    action               = var.action
+    consumer             = var.consumer_role
+    phase                = var.phase
   }
 
   lifecycle {
@@ -264,7 +268,9 @@ resource "terraform_data" "apply_freshness_clock" {
 # administered executor after phase-ledger consumption and immediate before/
 # after full-object reads. The signing key and provider/backend trust facts come
 # only from the repository v3 lock; legacy key variables are ignored and cannot
-# select authority. This verifier is offline and cannot mutate Kubernetes.
+# select authority. At apply it performs only authenticated Kubernetes
+# SelfSubjectReview/SSRR/SSAR reads for the actual platform transport; it has no
+# mutation path.
 data "external" "verified_execution_acknowledgement" {
   program = ["python3", "${path.module}/../../scripts/verify_sai07_external_execution_ack_v3.py"]
 
@@ -276,35 +282,18 @@ data "external" "verified_execution_acknowledgement" {
 resource "terraform_data" "verified" {
   input = data.external.verified_execution_acknowledgement.result
 
-  triggers_replace = {
-    acknowledgement_sha256 = local.external_acknowledgement_sha256
-    action                 = var.action
-    consumer               = var.consumer_role
-    context_sha256         = sha256(jsonencode(var.expected_context))
-    phase                  = var.phase
-    verifier_sha256        = filesha256("${path.module}/../../scripts/verify_sai07_external_execution_ack_v3.py")
-  }
-
-  # Defense in depth for the initial resource creation. Ongoing freshness does
-  # not rely on this create/replace-only provisioner: apply_freshness_clock
-  # makes data.external run during every apply attempt, including same-phase
-  # saved-plan execution after an acknowledgement expires.
-  provisioner "local-exec" {
-    command = "python3 \"${path.module}/../../scripts/verify_sai07_external_execution_ack_v3.py\""
-    quiet   = true
-
-    environment = {
-      FS2_SAI07_APPLY_QUERY = jsonencode(local.external_acknowledgement_query)
-    }
-  }
-
   lifecycle {
+    # A new signed generation updates this state-only gate in place. Replacement
+    # would violate the no-delete contract and is unnecessary because the
+    # apply-deferred external data source performs the full verification.
+    prevent_destroy = true
     precondition {
       condition = (
         var.external_handoff_path != null &&
+        var.custody_epoch_sha256 != strrep("0", 64) &&
         data.external.verified_execution_acknowledgement.result.valid == "true" &&
-        data.external.verified_execution_acknowledgement.result.acknowledgement_sha256 == local.external_acknowledgement_sha256 &&
         data.external.verified_execution_acknowledgement.result.bundle_sha256 == local.expected_bundle_sha256 &&
+        data.external.verified_execution_acknowledgement.result.custody_epoch_sha256 == var.custody_epoch_sha256 &&
         data.external.verified_execution_acknowledgement.result.phase == var.phase &&
         data.external.verified_execution_acknowledgement.result.consumer == var.consumer_role &&
         data.external.verified_execution_acknowledgement.result.action == var.action

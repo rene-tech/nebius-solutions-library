@@ -67,6 +67,7 @@ variable "pod_security_rollout_receipt" {
     custody_owner_group                = optional(string, "fs2-pod-security-custody-owners")
     platform_username                  = optional(string)
     platform_group                     = optional(string, "fs2-platform-terraform")
+    custody_epoch_sha256               = optional(string, "0000000000000000000000000000000000000000000000000000000000000000")
     external_handoff_path              = optional(string)
     external_handoff_public_key_path   = optional(string)
     external_handoff_public_key_sha256 = optional(string)

@@ -169,16 +169,21 @@ def test_rollout_gate_consumes_prior_signed_state_without_phase_skips() -> None:
     assert 'resource "terraform_data" "apply_freshness_clock"' in active_gate
     assert "attempted_at" in active_gate and "timestamp()" in active_gate
     assert "depends_on = [terraform_data.apply_freshness_clock]" in active_gate
-    assert 'provisioner "local-exec"' in active_gate
-    assert "FS2_SAI07_APPLY_QUERY" in active_gate
-    assert "expected_acknowledgement_sha256" in active_gate
-    assert "external_acknowledgement_sha256" in active_gate
+    assert 'provisioner "local-exec"' not in active_gate
+    assert "triggers_replace" not in active_gate.split("*/", 1)[1]
+    assert "prevent_destroy = true" in active_gate.split("*/", 1)[1]
+    assert "expected_acknowledgement_sha256" not in active_gate
+    assert "external_acknowledgement_sha256" not in active_gate
+    assert "FS2_SAI07_APPLY_PLAN_PATH" in active_gate
+    assert "platform_kubeconfig_path" in active_gate
+    assert "expected_custody_epoch_sha256" in active_gate
     assert "receipt_bundle_sha256" in active_gate
     assert "platform_objects_before_sha256" in execution_ack
     assert "platform_objects_after_sha256" in execution_ack
     assert "Terraform-retained objects changed" in execution_ack
     assert "--bound-object-kind=Secret" in verifier
     assert "FS2_POD_SECURITY_TOKEN_ANCHOR_UID" in verifier
+    assert "FS2_KUBECTL_PATH" in verifier
     assert 'operations  = ["UPDATE", "DELETE"]' in admission
     assert "The monotonic pod-security rollout ledger may not be deleted" in admission
     assert "object.data.size() == 19" in admission
@@ -198,10 +203,7 @@ def test_rollout_gate_consumes_prior_signed_state_without_phase_skips() -> None:
     ) in admission
     assert "has(object.spec.boundObjectRef)" in admission
     assert "object.spec.boundObjectRef.kind == 'Secret'" in admission
-    assert (
-        "object.spec.boundObjectRef.name == 'fs2-pod-security-token-anchor'"
-        in admission
-    )
+    assert "object.spec.boundObjectRef.name == '${local.pod_security_token_anchor_name}'" in admission
     token_binding = admission.split(
         'resource "kubernetes_manifest" "pod_security_rollout_token_binding"', 1
     )[1].split('resource "kubernetes_manifest" "pod_security_enforcement_fence_policy"', 1)[0]
@@ -539,15 +541,21 @@ def test_v3_custody_uses_raw_authoritative_evidence_and_retains_platform_state()
     acknowledgement = _source("scripts/verify_sai07_external_execution_ack_v3.py")
     owner_transport = _source("scripts/sai07_owner_secret_transport_v3.py")
     authority_audit = _source("scripts/audit_sai07_effective_authority_v2.py")
+    saved_plan = _source("scripts/sai07_saved_plan_contract.py")
     state_semantics = _source("scripts/sai07_custody_state_semantics.py")
     retained_snapshot = _source("stages/foundation/pod_security_retained_snapshot_custody.tf")
     readme = _source("stages/pod-security-custody/README.md")
     lock = json.loads(_source("stages/pod-security-custody/custody-trust-lock-v3.json"))
+    platform_authority_contract = json.loads(
+        _source("stages/pod-security-custody/platform-authority-contract-v3.json")
+    )
     source_lock = json.loads(
         _source("stages/pod-security-custody/custody-source-lock-v3.json")
     )
 
     assert lock["activation"] == "blocked"
+    assert platform_authority_contract["activation"] == "blocked"
+    assert platform_authority_contract["exact_rule_closure"] == []
     assert lock["custody_epoch"]["status"] == "blocked-awaiting-authoritative-epoch"
     assert lock["custody_epoch"]["retirement_mode"] == "authorization-denied-in-place-credentials-preserved"
     assert lock["dependencies"]["sai03"]["status"] == "blocked-unaccepted"
@@ -558,7 +566,28 @@ def test_v3_custody_uses_raw_authoritative_evidence_and_retains_platform_state()
     assert re.fullmatch(r"[a-f0-9]{64}", lock["executor"]["source_sha256"])
     assert re.fullmatch(r"[a-f0-9]{64}", lock["executor"]["verifier_sha256"])
     assert re.fullmatch(r"[a-f0-9]{64}", lock["executor"]["dependency_lock_sha256"])
+    assert (
+        lock["executor"]["platform_authority_contract_path"]
+        == "stages/pod-security-custody/platform-authority-contract-v3.json"
+    )
+    assert re.fullmatch(
+        r"[a-f0-9]{64}",
+        lock["executor"]["platform_authority_contract_sha256"],
+    )
+    assert lock["executor"]["terraform_cli_path"] is None
+    assert lock["executor"]["terraform_cli_sha256"] is None
+    assert lock["executor"]["terraform_cli_version"] is None
+    assert lock["executor"]["kubectl_cli_path"] is None
+    assert lock["executor"]["kubectl_cli_sha256"] is None
     assert source_lock["schema"] == "fs2-serve.nebius.ai/sai07-custody-source-lock/v3"
+    assert hashlib.sha256(
+        _source("stages/pod-security-custody/custody-source-lock-v3.json").encode()
+    ).hexdigest() == lock["executor"]["dependency_lock_sha256"]
+    assert hashlib.sha256(
+        _source(
+            "stages/pod-security-custody/platform-authority-contract-v3.json"
+        ).encode()
+    ).hexdigest() == lock["executor"]["platform_authority_contract_sha256"]
     assert set(source_lock["sources"]) == {
         "authoritative_evidence",
         "custody_manifest_v1",
@@ -568,6 +597,9 @@ def test_v3_custody_uses_raw_authoritative_evidence_and_retains_platform_state()
         "custody_state_semantics",
         "custody_trust_v2",
         "custody_trust_v3",
+        "effective_authority_v1",
+        "receipt_transition",
+        "saved_plan_contract",
         "secret_metadata_transport",
     }
     assert all(
@@ -639,12 +671,40 @@ def test_v3_custody_uses_raw_authoritative_evidence_and_retains_platform_state()
     assert "receipt_consumption_sha256" in executor
     assert "run_owner_authority_audit" in executor
     assert "ensure_empty_immutable_anchor" in executor
-    assert "identity == (\"v1\", \"Secret\", \"fs2-system\", \"fs2-pod-security-token-anchor\")" in executor
+    assert "fs2-pod-security-token-anchor-v3-[a-f0-9]{64}" in executor
+    assert "platform_plan_contract_sha256" in executor
+    assert "platform_authority_contract_sha256" in executor
     assert "custody_epoch_principal_id" in executor
     assert "owner_token_issuer" in executor
     assert "client=owner_api" in executor
     assert 'group != "system:authenticated"' in executor
+    assert "saved Terraform plan changed across external execution" in executor
+    assert "terraform show -json" in saved_plan
+    assert '"configuration_sha256"' in saved_plan
+    assert '"variables_sha256"' in saved_plan
+    assert '"planned_values_sha256"' in saved_plan
+    assert "delete/replacement" in saved_plan
     assert "external epoch identity lacks system:authenticated" in authority_audit
+    assert "validate_exact_rule_closure" in authority_audit
+    assert "observed_resources != expected_resources" in authority_audit
+    assert "observed_non_resources != expected_non_resources" in authority_audit
+    assert "contains wildcard authority" in authority_audit
+    assert "unknown API groups, CRDs" in authority_audit
+    assert "validate_unimpersonated_platform_transport" in authority_audit
+    assert "platform expected rule closure omits the exact namespace inventory" in authority_audit
+    assert "effective resource-rule closure differs" in authority_audit
+    assert (
+        source_lock["sources"]["receipt_transition"]["path"]
+        == "scripts/verify_pod_security_receipts.py"
+    )
+    assert (
+        source_lock["sources"]["effective_authority_v1"]["path"]
+        == "scripts/audit_sai07_effective_authority.py"
+    )
+    assert (
+        source_lock["sources"]["saved_plan_contract"]["path"]
+        == "scripts/sai07_saved_plan_contract.py"
+    )
     assert "PartialObjectMetadataList" in owner_transport
     assert "METADATA_MEDIA_TYPE" in owner_transport
     assert "token-anchor POST returned Secret payload fields" in owner_transport
@@ -658,6 +718,8 @@ def test_v3_custody_uses_raw_authoritative_evidence_and_retains_platform_state()
     assert "platform_objects_after_sha256" in acknowledgement
     assert "repository-pinned v3 custody activation is blocked" in acknowledgement
     assert "FS2_SAI07_APPLY_QUERY" in acknowledgement
+    assert "FS2_SAI07_APPLY_PLAN_PATH" in acknowledgement
+    assert "apply-time platform identity/effective-authority audit failed" in acknowledgement
     assert "RETAINED REJECTED V2 ROOT" in readme
     assert "SOURCE/INTEGRATION/LIVE NO-GO" in readme
 

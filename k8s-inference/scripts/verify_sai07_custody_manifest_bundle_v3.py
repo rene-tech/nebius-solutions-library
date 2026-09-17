@@ -342,7 +342,12 @@ def validate(
             "TokenRequest admission is not bound to the exact current receipt identity"
         )
 
-    token_identity = ("v1", "Secret", "fs2-system", "fs2-pod-security-token-anchor")
+    token_identity = (
+        "v1",
+        "Secret",
+        "fs2-system",
+        f"fs2-pod-security-token-anchor-v3-{trust['custody_epoch_sha256']}",
+    )
     token = entries[token_identity]
     if (
         token["manifest"].get("metadata", {})

@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from collect_sai07_secret_metadata import (
-    ANCHOR_NAME,
+    ANCHOR_NAME_PREFIX,
     ANCHOR_NAMESPACE,
     AUDIENCE,
     MAX_RESPONSE_BYTES,
@@ -44,6 +44,16 @@ METADATA_MEDIA_TYPE = "application/json;as=PartialObjectMetadata;g=meta.k8s.io;v
 
 class OwnerTransportError(ValueError):
     pass
+
+
+def anchor_name(custody_epoch_sha256: str) -> str:
+    if (
+        not isinstance(custody_epoch_sha256, str)
+        or len(custody_epoch_sha256) != 64
+        or any(character not in "0123456789abcdef" for character in custody_epoch_sha256)
+    ):
+        raise OwnerTransportError("token anchor epoch digest is malformed")
+    return f"{ANCHOR_NAME_PREFIX}{custody_epoch_sha256}"
 
 
 def validate_owner_token(
@@ -243,9 +253,10 @@ class OwnerApi:
         )
         return result
 
-    def anchor_metadata(self) -> dict[str, str] | None:
+    def anchor_metadata(self, custody_epoch_sha256: str) -> dict[str, str] | None:
+        expected_name = anchor_name(custody_epoch_sha256)
         query = urllib.parse.urlencode(
-            {"fieldSelector": f"metadata.name={ANCHOR_NAME}", "limit": "2"}
+            {"fieldSelector": f"metadata.name={expected_name}", "limit": "2"}
         )
         _, collection = self.request(
             f"/api/v1/namespaces/{ANCHOR_NAMESPACE}/secrets?{query}",
@@ -273,16 +284,16 @@ class OwnerApi:
             ):
                 raise OwnerTransportError("anchor response contains Secret payload fields")
             metadata = item["metadata"]
-            if metadata.get("name") == ANCHOR_NAME:
+            if metadata.get("name") == expected_name:
                 selected.append(metadata)
         if len(selected) > 1:
             raise OwnerTransportError("token anchor identity is duplicated")
         if not selected:
             return None
-        return self._anchor_identity(selected[0])
+        return self._anchor_identity(selected[0], expected_name)
 
     @staticmethod
-    def _anchor_identity(metadata: dict[str, Any]) -> dict[str, str]:
+    def _anchor_identity(metadata: dict[str, Any], expected_name: str) -> dict[str, str]:
         labels = metadata.get("labels")
         annotations = metadata.get("annotations")
         expected_labels = {
@@ -292,7 +303,7 @@ class OwnerApi:
         required_annotation = "security.fs2.nebius.ai/custody-epoch-sha256"
         if (
             metadata.get("namespace") != ANCHOR_NAMESPACE
-            or metadata.get("name") != ANCHOR_NAME
+            or metadata.get("name") != expected_name
             or labels != expected_labels
             or not isinstance(annotations, dict)
             or set(annotations) != {required_annotation}
@@ -313,12 +324,14 @@ class OwnerApi:
             raise OwnerTransportError("token anchor epoch digest is malformed")
         return {
             "custody_epoch_sha256": epoch_sha256,
+            "name": expected_name,
             "resource_version": resource_version,
             "uid": uid,
         }
 
     def ensure_empty_immutable_anchor(self, custody_epoch_sha256: str) -> dict[str, str]:
-        existing = self.anchor_metadata()
+        expected_name = anchor_name(custody_epoch_sha256)
+        existing = self.anchor_metadata(custody_epoch_sha256)
         if existing is not None:
             if existing["custody_epoch_sha256"] != custody_epoch_sha256:
                 raise OwnerTransportError("existing token anchor belongs to another custody epoch")
@@ -336,7 +349,7 @@ class OwnerApi:
                     "security.fs2.nebius.ai/custody-owner": "external",
                     "security.fs2.nebius.ai/role": "token-anchor",
                 },
-                "name": ANCHOR_NAME,
+                "name": expected_name,
                 "namespace": ANCHOR_NAMESPACE,
             },
             "type": "Opaque",
@@ -350,7 +363,7 @@ class OwnerApi:
             allow_conflict=True,
         )
         if status == 409:
-            existing = self.anchor_metadata()
+            existing = self.anchor_metadata(custody_epoch_sha256)
             if existing is None or existing["custody_epoch_sha256"] != custody_epoch_sha256:
                 raise OwnerTransportError("token-anchor create raced with another identity")
             return {**existing, "created": "false"}
@@ -361,10 +374,10 @@ class OwnerApi:
             or not isinstance(response.get("metadata"), dict)
         ):
             raise OwnerTransportError("token-anchor POST returned Secret payload fields")
-        created = self._anchor_identity(response["metadata"])
+        created = self._anchor_identity(response["metadata"], expected_name)
         if created["custody_epoch_sha256"] != custody_epoch_sha256:
             raise OwnerTransportError("created token anchor has another custody epoch")
-        reread = self.anchor_metadata()
+        reread = self.anchor_metadata(custody_epoch_sha256)
         if reread != created:
             raise OwnerTransportError("token anchor changed after atomic creation")
         return {**created, "created": "true"}

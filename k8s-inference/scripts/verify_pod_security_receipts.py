@@ -3930,17 +3930,20 @@ def verify_and_consume(query: dict[str, Any], client: KubeClient, now: dt.dateti
 class KubectlClient:
     CUSTODIAN_NAMESPACE = "fs2-system"
     CUSTODIAN_NAME = "fs2-pod-security-rollout-custodian"
-    TOKEN_ANCHOR_NAME = "fs2-pod-security-token-anchor"
     CUSTODIAN_GROUP = "fs2-pod-security-receipt-custodians"
 
     def __init__(
         self,
+        kubectl_path: Path,
         kubeconfig: Path,
         context: str,
         audience: str,
         expected_username: str,
+        token_anchor_name: str,
         token_anchor_uid: str,
     ) -> None:
+        if not kubectl_path.is_absolute() or ".." in kubectl_path.parts:
+            raise ReceiptError("kubectl executable path must be absolute without traversal")
         if not kubeconfig.is_absolute() or ".." in kubeconfig.parts:
             raise ReceiptError("custody kubeconfig path must be absolute without parent traversal")
         if not IDENTIFIER_RE.fullmatch(context):
@@ -3949,10 +3952,15 @@ class KubectlClient:
             raise ReceiptError("external custody username must identify one non-system principal")
         if audience != "https://kubernetes.default.svc":
             raise ReceiptError("rollout token audience differs from the reviewed API audience")
+        if not re.fullmatch(
+            r"fs2-pod-security-token-anchor-v3-[a-f0-9]{64}", token_anchor_name
+        ):
+            raise ReceiptError("rollout TokenRequest anchor name is malformed")
         if not IDENTIFIER_RE.fullmatch(token_anchor_uid):
             raise ReceiptError("rollout TokenRequest anchor UID is malformed")
+        self.token_anchor_name = token_anchor_name
         bootstrap = [
-            "kubectl",
+            str(kubectl_path),
             "--kubeconfig",
             str(kubeconfig),
             "--context",
@@ -3977,7 +3985,7 @@ class KubectlClient:
                 f"--audience={audience}",
                 "--duration=10m",
                 "--bound-object-kind=Secret",
-                f"--bound-object-name={self.TOKEN_ANCHOR_NAME}",
+                f"--bound-object-name={self.token_anchor_name}",
                 f"--bound-object-uid={token_anchor_uid}",
             ],
             check=False,
@@ -3988,7 +3996,9 @@ class KubectlClient:
         if token_request.returncode != 0:
             raise ReceiptError("short-lived rollout custodian TokenRequest failed")
         token = token_request.stdout.strip()
-        claims = self._validate_token_claims(token, audience, token_anchor_uid)
+        claims = self._validate_token_claims(
+            token, audience, token_anchor_name, token_anchor_uid
+        )
 
         rendered = subprocess.run(
             [*bootstrap, "config", "view", "--raw", "--minify", "-o", "json"],
@@ -4320,7 +4330,7 @@ class KubectlClient:
             (
                 False,
                 {
-                    "group": "authentication.k8s.io",
+                    "group": "",
                     "resource": "users",
                     "verb": "impersonate",
                     "name": f"system:serviceaccount:{cls.CUSTODIAN_NAMESPACE}:{cls.CUSTODIAN_NAME}",
@@ -4330,12 +4340,21 @@ class KubectlClient:
             (
                 False,
                 {
-                    "group": "authentication.k8s.io",
+                    "group": "",
                     "resource": "groups",
                     "verb": "impersonate",
                     "name": f"system:serviceaccounts:{cls.CUSTODIAN_NAMESPACE}",
                 },
                 "ambient identity may impersonate groups",
+            ),
+            (
+                False,
+                {
+                    "group": "authentication.k8s.io",
+                    "resource": "uids",
+                    "verb": "impersonate",
+                },
+                "ambient identity may impersonate UIDs",
             ),
             (
                 False,
@@ -4352,9 +4371,12 @@ class KubectlClient:
             if cls._subject_access_allowed(bootstrap, attributes) is not required:
                 raise ReceiptError(error_message)
 
-    @classmethod
     def _validate_token_claims(
-        cls, token: str, audience: str, token_anchor_uid: str
+        self,
+        token: str,
+        audience: str,
+        token_anchor_name: str,
+        token_anchor_uid: str,
     ) -> dict[str, Any]:
         segments = token.split(".")
         if len(segments) != 3:
@@ -4371,7 +4393,7 @@ class KubectlClient:
         kubernetes = claims.get("kubernetes.io")
         if (
             claims.get("sub")
-            != f"system:serviceaccount:{cls.CUSTODIAN_NAMESPACE}:{cls.CUSTODIAN_NAME}"
+            != f"system:serviceaccount:{self.CUSTODIAN_NAMESPACE}:{self.CUSTODIAN_NAME}"
             or audiences != [audience]
             or not isinstance(issued, int)
             or isinstance(issued, bool)
@@ -4381,12 +4403,12 @@ class KubectlClient:
             or expires <= now
             or expires - issued > 600
             or not isinstance(kubernetes, dict)
-            or kubernetes.get("namespace") != cls.CUSTODIAN_NAMESPACE
+            or kubernetes.get("namespace") != self.CUSTODIAN_NAMESPACE
             or not isinstance(kubernetes.get("serviceaccount"), dict)
-            or kubernetes["serviceaccount"].get("name") != cls.CUSTODIAN_NAME
+            or kubernetes["serviceaccount"].get("name") != self.CUSTODIAN_NAME
             or not IDENTIFIER_RE.fullmatch(str(kubernetes["serviceaccount"].get("uid", "")))
             or kubernetes.get("secret")
-            != {"name": cls.TOKEN_ANCHOR_NAME, "uid": token_anchor_uid}
+            != {"name": token_anchor_name, "uid": token_anchor_uid}
         ):
             raise ReceiptError("TokenRequest is not exact, short-lived, and API-audience bound")
         return claims
@@ -4484,21 +4506,30 @@ def _query_from_environment() -> dict[str, Any]:
 def main() -> int:
     try:
         query = _query_from_environment()
+        kubectl_path = Path(
+            _string(os.environ.get("FS2_KUBECTL_PATH"), "FS2_KUBECTL_PATH")
+        )
         kubeconfig = Path(_string(os.environ.get("FS2_KUBECONFIG"), "FS2_KUBECONFIG"))
         kube_context = _string(os.environ.get("FS2_KUBE_CONTEXT"), "FS2_KUBE_CONTEXT")
         custody_username = _string(
             os.environ.get("FS2_POD_SECURITY_CUSTODY_USER"), "FS2_POD_SECURITY_CUSTODY_USER"
         )
         audience = _string(os.environ.get("FS2_POD_SECURITY_TOKEN_AUDIENCE"), "token audience")
+        token_anchor_name = _string(
+            os.environ.get("FS2_POD_SECURITY_TOKEN_ANCHOR_NAME"),
+            "FS2_POD_SECURITY_TOKEN_ANCHOR_NAME",
+        )
         token_anchor_uid = _string(
             os.environ.get("FS2_POD_SECURITY_TOKEN_ANCHOR_UID"),
             "FS2_POD_SECURITY_TOKEN_ANCHOR_UID",
         )
         with KubectlClient(
+            kubectl_path,
             kubeconfig,
             kube_context,
             audience,
             custody_username,
+            token_anchor_name,
             token_anchor_uid,
         ) as client:
             result = verify_and_consume(query, client)

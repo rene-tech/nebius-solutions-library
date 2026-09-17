@@ -206,6 +206,7 @@ module "pod_security_rollout_gate" {
   custody_owner_group                = var.pod_security_rollout_receipt.custody_owner_group
   platform_username                  = var.pod_security_rollout_receipt.platform_username
   platform_group                     = var.pod_security_rollout_receipt.platform_group
+  custody_epoch_sha256               = var.pod_security_rollout_receipt.custody_epoch_sha256
   phase                              = var.pod_security_rollout_phase
   receipt_bundle_path                = var.pod_security_rollout_receipt.bundle_path
   external_handoff_path              = var.pod_security_rollout_receipt.external_handoff_path

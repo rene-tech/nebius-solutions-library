@@ -72,10 +72,15 @@ def canonical(value: object) -> bytes:
 
 
 class Client:
-    def __init__(self, kubeconfig: Path, context: str) -> None:
+    def __init__(
+        self, kubeconfig: Path, context: str, kubectl_path: Path | None = None
+    ) -> None:
         if not kubeconfig.is_absolute() or ".." in kubeconfig.parts:
             raise AuditError("kubeconfig must be absolute without parent traversal")
-        self.base = ["kubectl", "--kubeconfig", str(kubeconfig), "--context", context]
+        executable = kubectl_path or Path("/usr/bin/kubectl")
+        if not executable.is_absolute() or ".." in executable.parts:
+            raise AuditError("kubectl executable path must be absolute without traversal")
+        self.base = [str(executable), "--kubeconfig", str(kubeconfig), "--context", context]
 
     def raw(self, path: str) -> dict[str, Any]:
         completed = subprocess.run(
@@ -133,7 +138,7 @@ class Client:
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
-    client = Client(args.kubeconfig, args.context)
+    client = Client(args.kubeconfig, args.context, args.kubectl_path)
     identity = client.review(
         "/apis/authentication.k8s.io/v1beta1/selfsubjectreviews",
         {"apiVersion": "authentication.k8s.io/v1beta1", "kind": "SelfSubjectReview", "spec": {}},
@@ -211,6 +216,7 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("--kubeconfig", required=True, type=Path)
     result.add_argument("--context", required=True)
+    result.add_argument("--kubectl-path", required=True, type=Path)
     result.add_argument("--cluster-id", required=True)
     result.add_argument("--kube-system-uid", required=True)
     result.add_argument("--expected-username", required=True)

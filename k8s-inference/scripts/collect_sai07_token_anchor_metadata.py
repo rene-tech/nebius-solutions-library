@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 from collect_sai07_secret_metadata import (
-    ANCHOR_NAME,
+    ANCHOR_NAME_PREFIX,
     ANCHOR_NAMESPACE,
     MEDIA_TYPE,
     MetadataError,
@@ -32,6 +32,7 @@ def main() -> int:
     parser.add_argument("--token-fd", required=True, type=int)
     parser.add_argument("--reader-service-account-uid", required=True)
     parser.add_argument("--anchor-uid", required=True)
+    parser.add_argument("--anchor-name", required=True)
     args = parser.parse_args()
     try:
         token = read_token(args.token_fd)
@@ -40,6 +41,7 @@ def main() -> int:
             service_account_namespace="fs2-system",
             service_account_name="fs2-pod-security-metadata-reader",
             service_account_uid=args.reader_service_account_uid,
+            anchor_name=args.anchor_name,
             anchor_uid=args.anchor_uid,
         )
         collection = request_metadata(
@@ -55,7 +57,7 @@ def main() -> int:
             if not isinstance(item, dict) or set(item) != {"apiVersion", "kind", "metadata"}:
                 raise MetadataError("token-anchor response contains Secret payload fields")
             metadata = item.get("metadata")
-            if not isinstance(metadata, dict) or metadata.get("name") != ANCHOR_NAME:
+            if not isinstance(metadata, dict) or metadata.get("name") != args.anchor_name:
                 continue
             selected.append(
                 {
@@ -82,10 +84,12 @@ def main() -> int:
                 "api_version": "v1",
                 "kind": "Secret",
                 "namespace": ANCHOR_NAMESPACE,
-                "name": ANCHOR_NAME,
+                "name": args.anchor_name,
                 "uid": args.anchor_uid,
             },
         }
+        if not args.anchor_name.startswith(ANCHOR_NAME_PREFIX):
+            raise MetadataError("token-anchor name is outside the generation-addressed prefix")
     except (MetadataError, OSError, UnicodeDecodeError) as error:
         print(f"SAI-07 token-anchor metadata rejected: {error}", file=sys.stderr)
         return 1
