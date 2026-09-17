@@ -498,26 +498,77 @@ def suppressed_body(content_type: str | None, observed_bytes: int, complete: boo
     )
 
 
-def normalize_exchange_for_read(exchange: DebugExchange) -> DebugExchange:
-    """Apply the CURRENT withhold / whole-or-withhold contract to a stored exchange AT READ TIME,
-    without mutating or deleting the stored row.
+# Fixed, payload-independent marker served in place of any stored error_detail on read. Legacy rows
+# may hold a raw-ish detail (an SDK could have embedded a prompt/URL/credential); the actionable
+# classification is carried by error_type + http_status + the MCP failure signal, so the free-text
+# detail is never disclosed on egress.
+_READ_WITHHELD_DETAIL = "[detail withheld on read]"
+
+
+def normalize_exchange_for_read(exchange: DebugExchange, max_body_bytes: int | None = None) -> DebugExchange:
+    """Full current-contract EGRESS SANITIZER for a stored exchange, applied on EVERY serve path
+    (detail read, list-derived summary via ``normalize_summary_for_read``, UI render, copy, export/
+    download) WITHOUT mutating or deleting the stored row.
 
     The no-delete retention preserves rows for 90 days, INCLUDING legacy rows captured under an
-    earlier contract whose payload may still hold a response body or a wire-incomplete request body.
-    Serving those verbatim (API detail, download, or UI render) would disclose exactly what the
-    current contract withholds. So on EVERY read: the response body is always served withheld, and a
-    wire-INCOMPLETE request body is served withheld (whole-or-withhold). An already-withheld body
-    normalizes to the same marker (idempotent), and a wire-complete request body — the debugging
-    target, redacted at capture — is served as stored. This is redaction on the way OUT; the stored
-    ciphertext is never rewritten or deleted (a separately owned purge handles TTL)."""
-    response = exchange.response_body
+    earlier, narrower contract. Serving those verbatim would disclose what the current contract
+    withholds/redacts, so every legacy disclosure field is failed closed on the way OUT:
+      - response body: ALWAYS withheld;
+      - request body: withheld when wire-incomplete, a legacy stored prefix (``truncated``), or over
+        the CURRENT cap; otherwise re-scrubbed with the current credential/format rules (a legacy row
+        scrubbed under older, narrower rules is re-scrubbed, and one over today's cap is withheld);
+      - error_detail: replaced with a fixed generic marker (never the stored free-text);
+      - response headers: reduced to structural-only (canonical name, typed/redacted value);
+      - request headers + query string: re-scrubbed with the current name/format rules.
+    Idempotent on an already-normalized exchange. The stored ciphertext is never rewritten or deleted
+    (a separately owned purge handles TTL)."""
     request = exchange.request_body
+    over_cap = max_body_bytes is not None and request.observed_bytes > max_body_bytes
+    if (not request.complete) or request.truncated or over_cap:
+        request_body = suppressed_body(request.content_type, request.observed_bytes, request.complete)
+    else:
+        try:
+            raw = _body_bytes(request)
+        except (ValueError, UnicodeError):
+            request_body = suppressed_body(request.content_type, request.observed_bytes, request.complete)
+        else:
+            # Re-scrub with current rules; bounded_body_capture also withholds if the whole body is
+            # over the current cap or if redaction expands it past the cap.
+            request_body = bounded_body_capture(
+                raw,
+                request.content_type,
+                True,
+                (),
+                max_bytes=max_body_bytes,
+                observed_bytes=request.observed_bytes,
+            )
+    response = exchange.response_body
     return exchange.model_copy(
         update={
+            "request_body": request_body,
             "response_body": suppressed_body(response.content_type, response.observed_bytes, response.complete),
-            "request_body": request
-            if request.complete
-            else suppressed_body(request.content_type, request.observed_bytes, request.complete),
+            "query_string": redact_query(exchange.query_string),
+            "request_headers": redact_headers(exchange.request_headers),
+            "response_headers": redact_response_headers(exchange.response_headers),
+            "error_detail": None if exchange.error_detail is None else _READ_WITHHELD_DETAIL,
+        }
+    )
+
+
+def normalize_summary_for_read(
+    summary: DebugExchangeSummary, max_body_bytes: int | None = None
+) -> DebugExchangeSummary:
+    """Egress-sanitize a LIST summary's disclosure FLAGS so they match what detail-read now serves
+    (a summary carries no body/header content, only booleans + observed lengths). The response is
+    always withheld (redacted), and the request is redacted whenever it will be withheld on read
+    (wire-incomplete or over the current cap) or was already redacted. Factual fields (observed
+    lengths, wire-completeness) are unchanged."""
+    return summary.model_copy(
+        update={
+            "response_redacted": True,
+            "request_redacted": summary.request_redacted
+            or (not summary.request_complete)
+            or (max_body_bytes is not None and summary.request_observed_bytes > max_body_bytes),
         }
     )
 
@@ -760,8 +811,10 @@ def _pagination(limit: int, cursor: str | None) -> tuple[datetime, UUID] | None:
 
 
 class InMemoryDebugStore:
-    def __init__(self) -> None:
+    def __init__(self, *, max_body_bytes: int | None = None) -> None:
         self.exchanges: dict[UUID, DebugExchange] = {}
+        # Current cap, used to withhold legacy request bodies over today's cap on the read/list path.
+        self._max_body_bytes = max_body_bytes
 
     async def record(self, exchange: DebugExchange) -> None:
         # The exchange is already sanitized exactly once, off the event loop, by the
@@ -795,17 +848,18 @@ class InMemoryDebugStore:
             key=lambda row: (row.started_at, row.id),
             reverse=True,
         )
-        items = [_summary(row) for row in rows[:limit]]
+        # Egress-sanitize the list flags too, so they match what detail-read now serves.
+        items = [normalize_summary_for_read(_summary(row), self._max_body_bytes) for row in rows[:limit]]
         return DebugExchangeList(items=items, next_cursor=_cursor(items[-1]) if len(rows) > limit else None)
 
     async def get(self, exchange_id: UUID, tenant_id: str | None = None) -> DebugExchange | None:
         row = self.exchanges.get(exchange_id)
         if row is None or (tenant_id is not None and row.tenant_id != tenant_id):
             return None
-        # Redact-on-read: apply the current withhold contract so a preserved (possibly legacy) row
-        # never discloses a stored response / wire-incomplete request body. Deep-copy first so the
-        # stored row is never mutated by the caller.
-        return normalize_exchange_for_read(row.model_copy(deep=True))
+        # Egress-sanitize on read: apply the current contract so a preserved (possibly legacy) row
+        # never discloses a stored response/incomplete/over-cap body, raw error_detail, broad headers,
+        # or under-scrubbed query/headers. Deep-copy first so the stored row is never mutated.
+        return normalize_exchange_for_read(row.model_copy(deep=True), self._max_body_bytes)
 
     async def retention_preflight(self, *, now: datetime, tenant_id: str | None = None) -> RetentionPreflight:
         # Cutoff is fixed at the 90-day TTL, never caller-supplied. tenant_id (when set)
@@ -825,8 +879,10 @@ class InMemoryDebugStore:
 
 
 class PostgresDebugStore:
-    def __init__(self, pool: asyncpg.Pool[Any], cipher: PayloadCipher) -> None:
+    def __init__(self, pool: asyncpg.Pool[Any], cipher: PayloadCipher, *, max_body_bytes: int | None = None) -> None:
         self.pool, self.cipher = pool, cipher
+        # Current cap, used to withhold legacy request bodies over today's cap on the read/list path.
+        self._max_body_bytes = max_body_bytes
 
     @staticmethod
     def _aad(exchange_id: UUID, tenant_id: str | None, model_id: str | None) -> bytes:
@@ -886,7 +942,11 @@ class PostgresDebugStore:
                 after[1] if after else None,
                 limit + 1,
             )
-        items = [DebugExchangeSummary.model_validate(dict(row)) for row in rows[:limit]]
+        # Egress-sanitize the list flags too, so they match what detail-read now serves.
+        items = [
+            normalize_summary_for_read(DebugExchangeSummary.model_validate(dict(row)), self._max_body_bytes)
+            for row in rows[:limit]
+        ]
         return DebugExchangeList(items=items, next_cursor=_cursor(items[-1]) if len(rows) > limit else None)
 
     async def get(self, exchange_id: UUID, tenant_id: str | None = None) -> DebugExchange | None:
@@ -902,10 +962,10 @@ class PostgresDebugStore:
             Ciphertext(row["key_id"], bytes(row["nonce"]), bytes(row["ciphertext"])),
             aad=self._aad(row["id"], row["tenant_id"], row["model_id"]),
         )
-        # Redact-on-read: apply the current withhold contract so a preserved (possibly legacy) row
-        # never discloses a stored response / wire-incomplete request body. The stored ciphertext is
-        # never rewritten — only the returned view is normalized.
-        return normalize_exchange_for_read(DebugExchange.model_validate_json(raw))
+        # Egress-sanitize on read: apply the current contract so a preserved (possibly legacy) row
+        # never discloses a stored response/incomplete/over-cap body, raw error_detail, broad headers,
+        # or under-scrubbed query/headers. The stored ciphertext is never rewritten.
+        return normalize_exchange_for_read(DebugExchange.model_validate_json(raw), self._max_body_bytes)
 
     async def retention_preflight(self, *, now: datetime, tenant_id: str | None = None) -> RetentionPreflight:
         # Payload-free: aggregates over the clear started_at column only. No ciphertext is
@@ -1090,15 +1150,26 @@ class DebugPersistQueue:
             return False
         try:
             self._ensure_worker()
+        except Exception:
+            self.dropped += 1  # worker could not be (re)started; token stays reserved, freed on exit
+            return False
+        if self._queue.full():
+            self.dropped += 1  # overload shed; token stays reserved, the handle frees it on exit
+            return False
+        # Commit BEFORE inserting. The queue was just observed not-full and asyncio is single-threaded
+        # (no await between the check and the put), so put_nowait's internal _put WILL append the item;
+        # the only way it can still raise is a post-append bookkeeping/wakeup error, by which point the
+        # item is already queued. Committing first makes the worker the SOLE releaser in every path, so
+        # the ownership count always matches the queue contents: inserted work can never be released
+        # by context exit while it sits queued (no undercount / bound drift). The flip is a
+        # non-allocating, cannot-raise update of an existing key.
+        self._slots[token] = True
+        try:
             self._queue.put_nowait((builder, token))
         except Exception:
-            # Fail closed on ANY enqueue failure — QueueFull overload, or an allocation error while
-            # building/appending the queue item (MemoryError). Drop the capture and LEAVE the token
-            # RESERVED (unchanged), so the handle's context exit releases it exactly once: no orphaned
-            # queue item, no undercount, and no exception surfaced onto the request path.
-            self.dropped += 1
-            return False
-        self._slots[token] = True  # in-place update of an existing key: non-allocating, cannot raise
+            # Past the not-full guard the item is appended; keep the token committed (the worker frees
+            # it after draining the item) and never re-raise onto the request path.
+            LOGGER.warning("request debug enqueue raised after insert; capture will still persist")
         return True
 
     def _release(self, token: object) -> None:

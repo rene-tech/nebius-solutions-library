@@ -1576,6 +1576,11 @@ async def test_read_withholds_preserved_legacy_response_and_incomplete_request_w
             redacted=False,
             truncated=False,
         ),
+        # Legacy disclosure fields the old contract retained more broadly / scrubbed narrowly.
+        error_detail="upstream raised ValueError: secret token sk-LEGACYDETAILLEAK in prompt",
+        query_string="authorization=QUERYLEAK&ok=1",
+        request_headers=[("authorization", "Bearer REQHEADERLEAK"), ("content-type", "application/json")],
+        response_headers=[("x-trace", "RESPHEADERLEAK"), ("content-type", "application/json")],
     )
     await store.record(legacy)
     got = await store.get(legacy.id)
@@ -1586,10 +1591,18 @@ async def test_read_withholds_preserved_legacy_response_and_incomplete_request_w
     # Wire-incomplete request body is served withheld (whole-or-withhold), true length preserved.
     assert got.request_body.truncated and "partial-legacy-INPUT" not in got.request_body.data
     assert got.request_body.data == "[REDACTED]" and got.request_body.observed_bytes == 64
+    # error_detail is failed closed to a generic marker (never the raw stored free-text).
+    assert got.error_detail == "[detail withheld on read]" and "LEGACYDETAILLEAK" not in (got.error_detail or "")
+    # query + request-auth headers are re-scrubbed under current rules; response headers are structural-only.
+    assert "QUERYLEAK" not in got.query_string
+    assert ["authorization", "[REDACTED]"] in [list(pair) for pair in got.request_headers]
+    dumped = got.model_dump_json()
+    assert "REQHEADERLEAK" not in dumped and "RESPHEADERLEAK" not in dumped
     # The stored row itself is NOT rewritten or deleted (a separately owned purge handles TTL).
     assert len(store.exchanges) == 1
     stored = store.exchanges[legacy.id]
     assert stored.response_body.data == '{"secret":"LEGACY-RESPONSE-LEAK"}' and not stored.response_body.truncated
+    assert "LEGACYDETAILLEAK" in (stored.error_detail or "")  # stored ciphertext content is preserved
     # A wire-COMPLETE request body (the debugging target, redacted at capture) is served as stored.
     fresh = row()
     await store.record(fresh)
@@ -1597,3 +1610,75 @@ async def test_read_withholds_preserved_legacy_response_and_incomplete_request_w
     assert got_fresh is not None and got_fresh.request_body.data == fresh.request_body.data
     # normalize_exchange_for_read is idempotent on an already-normalized exchange.
     assert normalize_exchange_for_read(got) == got
+
+
+async def test_read_and_list_withhold_legacy_over_cap_request_and_normalize_flags():
+    """SAI-01 egress: a preserved legacy request body that is wire-complete but OVER the CURRENT cap
+    is withheld on read (a smaller cap applies now), and list() summary flags are normalized to match
+    (response always redacted; request redacted when it will be withheld). Authored; not executed."""
+    cap = 16
+    store = InMemoryDebugStore(max_body_bytes=cap)
+    over = row(
+        request_body=DebugBody(
+            encoding="utf-8",
+            data='{"input":"X"}',
+            content_type="application/json",
+            observed_bytes=4096,  # far over the current cap, even though the stored prefix is small
+            complete=True,
+            redacted=False,
+            truncated=False,
+        ),
+        response_body=DebugBody(
+            encoding="utf-8",
+            data='{"r":"LEGACY-RAW"}',
+            content_type="application/json",
+            observed_bytes=18,
+            complete=True,
+            redacted=False,  # legacy stored a raw, non-redacted response
+            truncated=False,
+        ),
+    )
+    await store.record(over)
+    got = await store.get(over.id)
+    assert got is not None
+    # Over the current cap -> withheld on read, even though wire-complete.
+    assert got.request_body.truncated and got.request_body.data == "[REDACTED]"
+    assert got.request_body.observed_bytes == 4096
+    assert got.response_body.truncated and "LEGACY-RAW" not in got.response_body.data
+    # list() flags reflect the withheld reality even for a legacy row stored with redacted=False.
+    listing = await store.list()
+    (summary,) = listing.items
+    assert summary.response_redacted is True and summary.request_redacted is True
+
+
+async def test_commit_post_insert_exception_keeps_count_matching_queue_contents():
+    """SAI-01 regression: asyncio.Queue.put_nowait appends the item BEFORE its bookkeeping/wakeup, so
+    a post-insert exception can leave work queued. With commit-before-insert behind a not-full guard,
+    the token is already committed when such an exception fires, so the count matches the queue
+    contents (no undercount) and the worker is the sole releaser. Simulated; not executed here."""
+    from fs2_serve.request_debug import DebugPersistQueue
+
+    store = InMemoryDebugStore()
+    queue = DebugPersistQueue(store, maxsize=4, max_inflight=4)
+    reservation = queue.reserve()
+    assert reservation is not None and queue._inflight() == 1
+
+    # Simulate a post-insert failure: the real put_nowait fully inserts + bookkeeps (queue stays
+    # consistent), then a later step "raises". The item IS queued when the exception propagates.
+    real_put = queue._queue.put_nowait
+
+    def put_then_raise(item: object) -> None:
+        real_put(item)
+        raise MemoryError("simulated post-insert failure")
+
+    queue._queue.put_nowait = put_then_raise  # type: ignore[method-assign]
+    try:
+        assert reservation.submit(lambda: row(id=uuid4())) is True  # committed despite the raise
+    finally:
+        queue._queue.put_nowait = real_put  # type: ignore[method-assign]
+    with reservation:  # context exit must NOT free the committed (worker-owned) slot
+        pass
+    assert queue._inflight() == 1  # count matches the one queued item (no undercount)
+    await queue.drain()
+    assert queue._inflight() == 0 and len(store.exchanges) == 1
+    await queue.aclose()

@@ -261,9 +261,16 @@ HTTP 0 or success.
   wire bytes, transport framing, advertised `Content-Length` or GPU work.
 - Authentication secrets are removed before persistence: authorization/cookie
   headers, credential-bearing query/body fields, known credential values and
-  recognizable token forms are redacted. Other model/customer inputs and outputs
-  remain debugging data, not anonymized data. `redacted=true` means the retained
-  representation differs; it is not an exact unredacted byte replay.
+  recognizable token forms are redacted. The retained request INPUT is debugging data (redacted),
+  not anonymized data; the response/upstream OUTPUT is never retained — it is withheld.
+  `redacted=true` means the retained representation differs; it is not an exact unredacted byte replay.
+- Reads are egress-sanitized: because the 90-day no-delete retention preserves rows (including legacy
+  rows captured under an earlier, narrower contract), every serve path (detail read, list summary
+  flags, UI render, copy, export/download) re-applies the CURRENT contract on the way out via
+  `normalize_exchange_for_read` — response withheld; a wire-incomplete, legacy-prefixed, or over-cap
+  request body withheld; `error_detail` replaced with a generic marker; response headers reduced to
+  structural-only; request headers/query re-scrubbed. The stored ciphertext is never rewritten or
+  deleted (the separately owned purge handles TTL), so this is redaction on the way out only.
 - Full detail documents are encrypted in PostgreSQL using the existing payload
   cipher/keyring. Searchable summary metadata is stored separately. Preserve the
   existing keyring needed to decrypt historical records; no key material enters
@@ -289,11 +296,13 @@ HTTP 0 or success.
 
 ## Verification status
 
-The UI has passed its focused tests and the complete 217-test console suite plus
-TypeScript/production build. Offline cases include upstream 422 details, operation-
-less failures, historical absence, null metadata, binary/partial/redacted capture,
-plaintext rendering, duplicate headers, lazy loading and JSON export. These are
-synthetic technical fixtures, not evidence of arbitrary customer capture.
+The UI/console test suite, the TypeScript check and the production build are AUTHORED for the cases
+below but are NOT run in this static-only remediation round — they, and the control-plane runtime /
+MCP / routes suites, must be run by the reviewer/CI before a pass is relied upon; do not read this
+section as an executed result. The authored cases include upstream 422 details, operation-less
+failures, historical absence, null metadata, binary/partial/redacted capture, plaintext rendering,
+duplicate headers, lazy loading and JSON export. These are synthetic technical fixtures, not evidence
+of arbitrary customer capture.
 
 The following describes the **pre-remediation** deployed baseline and does NOT reflect
 the current contract: on 2026-09-09, release `88520758f90a7e171abd86a4a94787a6739d6ba7`

@@ -614,9 +614,11 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             payload_cipher = getattr(runtime.store, "cipher", None)
             if payload_cipher is None:
                 raise RuntimeError("PostgreSQL request debugging requires the existing payload cipher")
-            debug_store = PostgresDebugStore(pool, payload_cipher)
+            debug_store = PostgresDebugStore(
+                pool, payload_cipher, max_body_bytes=runtime.settings.request_debug_max_body_bytes
+            )
         else:
-            debug_store = InMemoryDebugStore()
+            debug_store = InMemoryDebugStore(max_body_bytes=runtime.settings.request_debug_max_body_bytes)
         runtime.request_debug_store = debug_store
     app.state.request_debug = debug_store
     if runtime.settings.request_debug_enabled:

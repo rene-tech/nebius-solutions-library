@@ -295,32 +295,32 @@ describe("actual request debug viewer", () => {
     expect(container.querySelector("img,script")).toBeNull();
   });
 
-  it("shows base64, incomplete and redacted bodies without pretending displayed length is wire bytes", async () => {
+  it("shows a complete redacted binary request body as copyable base64, never executed", async () => {
+    // A binary body is only rendered/copyable when it was stored whole and within the cap — i.e. a
+    // COMPLETE (request) body. An incomplete or over-cap body is withheld, so the UI never renders or
+    // copies raw incomplete/response bytes; observed_bytes equals the decoded length for a whole body.
     const body: DebugBody = {
       encoding: "base64",
       data: "AAH/",
       content_type: "application/octet-stream",
-      observed_bytes: 2048,
-      complete: false,
+      observed_bytes: 3,
+      complete: true,
       redacted: true,
     };
-    renderPanel(<DebugBodyView label="Response body" body={body} />);
-    expect(screen.getByLabelText("Response body content")).toHaveTextContent(
+    renderPanel(<DebugBodyView label="Request body" body={body} />);
+    expect(screen.getByLabelText("Request body content")).toHaveTextContent(
       "AAH/",
     );
-    expect(screen.getByText("2,048")).toBeInTheDocument();
-    expect(screen.getByText("Partial / incomplete")).toBeInTheDocument();
+    expect(screen.getByText("3")).toBeInTheDocument();
+    expect(screen.getByText("Complete")).toBeInTheDocument();
     expect(screen.getByText("Redacted")).toBeInTheDocument();
     expect(
       screen.getByText(/Binary body displayed as base64/),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText(/did not complete on the wire/),
-    ).toBeInTheDocument();
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     fireEvent.click(
-      screen.getByRole("button", { name: "Copy response body (base64)" }),
+      screen.getByRole("button", { name: "Copy request body (base64)" }),
     );
     expect(await screen.findByText("Base64 copied.")).toBeInTheDocument();
     expect(writeText).toHaveBeenCalledWith("AAH/");
