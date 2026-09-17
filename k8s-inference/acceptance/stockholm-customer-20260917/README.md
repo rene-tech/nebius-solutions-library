@@ -6,7 +6,60 @@ bounded resumable OpenFold2/Boltz2 SDK/HTTP driver with representative ESMFold2
 batch readback. This is **not a complete customer release gate**. Raw client
 passes never establish actual LibreChat or all-App readiness.
 
-## Final bounded release-145 result
+## Final bounded release-146 result
+
+Two fresh consecutive cohorts passed on 2026-09-17, 16:00:28–16:17:21 UTC,
+after the CPU-only artifact-upload demand fix. Exact CP/controller image:
+`sha256:25438d07ec2caae07ae30209f6267d215b6a037b453aa9f0a3a5a76cb5b6e37e`;
+image source `bce48ba034675eaf17bec473e3990fd4003185f2`, collector checkout
+`7ff4d9e6f7242079733eb395fe67fd0b501c4592`. Schema, model/scaling configuration,
+admin image and team policy were unchanged. A new disposable same-policy key
+was used; none of the release-145 receipts were relabeled or reused as 146 proof.
+
+Each cohort passed eight OpenFold2/Boltz2 named/generic/legacy-nested/HTTP cases,
+five mixed operations with actual outstanding overlap five, and an ESMFold2
+batch with semantic validation, released resources and three artifact size/SHA
+checks. Totals: 26 protein operations, two batches, four input uploads and six
+verified HTTPS downloads. Both batch journals contain zero transport failures
+and zero retries. Before/after release, catalog and target runtime identities
+matched. Batch IDs are `06086d7c-dc53-4468-a6ab-b30b6f1409f6` and
+`64ea3620-a7ba-4a0a-a762-e59feba08d9e`.
+
+First-batch preparation waited for normal CPU scale-up from one to two nodes,
+scheduled at 16:06:23, then pulled the 3.82-GB ESMFold2 image for 2m23s before
+starting at 16:09:04. Exact scheduling/pull events are retained. This is visible
+customer waiting, not hidden GPU processing or a GPU billing claim. No manual
+recovery, cancellation or resubmission was performed.
+
+The scoped read-only usage export matches all 28 inference operations and 30
+terminal/reconciled lifecycle subjects, with no missing lifecycle and zero
+reservations. Scientific occupancy is application-observed, estimated 129
+GPU-seconds (55 active, 74 startup), not billing; all 26 shared serving subjects
+are excluded from additive totals. **Five serving operations have unavailable
+runtime attribution.** No sentinel zero or independent Pod snapshot fills that
+gap. The final runtime snapshot lists two operation-correlated serving Pods and
+their running/ready observer containers, with restart counts two and three;
+restart timing was not assessed. Four completed batch Pod UIDs are absent from
+that current snapshot. No continuous, zero-restart or fleet-wide telemetry
+qualification is claimed.
+
+All 32 operations under the new canary were terminal before revocation. Only
+`8a277c70-60f9-4b9c-ae12-221f80f8b3b9` was revoked, at 16:18:51.327413 UTC;
+its public read then returned HTTP 401 and other key metadata was unchanged.
+No customer key, scientific history or artifact was deleted. Sibling public
+checks again preserved five speech entries, disabled own-user Stockholm storage
+and MindEval catalog HTTP 200; optional internal MindEval health remains
+unavailable. No hosted LibreChat configuration was changed.
+
+Private evidence: `/home/tux/secure-handoff/stockholm-demand-followup-20260917/`
+(0700), with `cohorts/partial-receipt.json`, `finalization/completed.json`,
+`finalization/usage.json`, `finalization/runtime-observers.json` and
+`sibling-preservation-release146.json` (0600). Outcome remains
+`partial_scope_passed`, `customer_ready: false`: bounded three-model backend
+success does not establish all-App or actual LibreChat readiness. Local collector,
+verifier and shared-gate tests passed **82 tests in 0.63s**; Ruff/diff checks passed.
+
+## Historical bounded release-145 result
 
 Two consecutive bounded cohorts passed on 2026-09-17, 15:30:54–15:48:40 UTC,
 on CP `sha256:849020eabbcf07d07112bcebae4032639e8e995a9eda078410ccf4879a188ee8`,
@@ -391,7 +444,7 @@ collector receipts are retained, including pagination and redaction corrections;
 use `librechat-final-readback.json` for the complete 32-skill inventory. No
 historical scientific data or customer key was deleted.
 
-Latest bounded collector/verifier/shared-gate suite: **82 passed in 0.61s**;
+Latest bounded collector/verifier/shared-gate suite: **82 passed in 0.63s**;
 Ruff and diff checks passed. This includes persisted GET-only transport retry
 failures, POST/PUT no-retry negatives, concurrency-five validation and explicit
 missing-runtime-identity handling. Acceptance-only source commits include
