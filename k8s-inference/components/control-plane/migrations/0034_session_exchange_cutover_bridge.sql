@@ -1,7 +1,9 @@
 -- Mixed-version bridge for the rejected 0032 -> 0033 cutover.  The migration
 -- runner publishes the last schema version which existed before this release
--- transaction.  Missing provenance is treated as an upgrade and therefore
--- takes the fail-closed path.
+-- transaction. Only a previously runnable 0032/0033 limiter can have a
+-- legacy budget to bridge. Missing provenance is treated as ambiguous and
+-- therefore takes the fail-closed path; an observed 0029/0030/0031 database
+-- did not have either limiter and must not incur an invented outage.
 ALTER FUNCTION fs2_consume_session_exchange_sliding(text,integer,integer,integer)
     RENAME TO fs2_consume_session_exchange_exact_v2;
 
@@ -36,7 +38,12 @@ INSERT INTO fs2_session_exchange_cutover_state(
     1,
     clock_timestamp(),
     nullif(current_setting('fs2.preexisting_schema_version', true), '__fresh__'),
-    coalesce(current_setting('fs2.preexisting_schema_version', true), '') <> '__fresh__'
+    CASE coalesce(current_setting('fs2.preexisting_schema_version', true), '')
+        WHEN '0032_session_exchange_buckets.sql' THEN true
+        WHEN '0033_session_exchange_sliding_window.sql' THEN true
+        WHEN '' THEN true
+        ELSE false
+    END
 );
 
 COMMENT ON TABLE fs2_session_exchange_cutover_state IS

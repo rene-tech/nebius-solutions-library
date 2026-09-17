@@ -70,12 +70,20 @@ and verification policies with model bootstrap disabled and root deployment
 creates a four-object stable epoch-router policy/lifecycle boundary. It rejects
 protected names without an authority label, denies every protected update or
 delete using request namespace/name matching, and admits CREATE only from a
-bound-token automation release ServiceAccount. Every assertion generation then
-gets six uniquely named policy/binding pairs. Their CREATE rules are bound to
-that generation's release ServiceAccount username, exact Kubernetes UID, and
-one bound short-lived-token credential ID; their object match conditions select
-only the same `fs2.nebius.ai/authority-epoch` (or assertion-generation) label.
-An expired old policy therefore cannot deny a later generation. The old
+bound-token automation release ServiceAccount. Assertion generations are
+8–32-character DNS labels, and every generation gets six literal
+`fs2-bootstrap-<purpose>-<generation>` policy/binding pairs. The stable router
+requires the caller username to be exactly
+`system:serviceaccount:fs2-system:fs2-release-identity-<generation>`, where the
+suffix is read from the object authority label. Its lifecycle rule also
+requires each reserved policy name to end in that same label. An older
+still-valid bound token can therefore address only its own already occupied,
+append-only names; it cannot preoccupy a future epoch or install a policy under
+another epoch. The exact generation rules additionally bind the canonical
+ServiceAccount UID and one bound short-lived-token credential ID, and their
+object match conditions select only that same
+`fs2.nebius.ai/authority-epoch` (or assertion-generation) label. An expired old
+policy therefore cannot deny a later generation. The old
 reusable `fs2-release-identity` username is refused. These three public current
 identifiers are root `dynamic_models.bootstrap_authority`; no bearer token is a
 Terraform value. The lifecycle policy makes its own generation's policies and
@@ -142,25 +150,33 @@ shared secret.
 Limiter rollout is also source-forward. Migration `0034` keeps both old and
 new SQL entry points behind one bridge. Its first post-commit caller locks the
 cutover state, validates the limiter configuration, and imports every visible
-current aligned-bucket admission into the exact ring at that call's timestamp.
-Because legacy state may already have overwritten a still-active prior bucket,
-the bridge denies admission only until that prior bucket's latest possible
-aligned-boundary expiry. The imported current budget then remains active for a
-complete window. There is no empty-ring reset or claim that lost legacy event
-timestamps were reconstructed exactly.
+current aligned-bucket admission into the exact ring at that call's timestamp
+only when the transaction began at pre-existing schema `0032` or `0033` (or
+when provenance is missing and therefore ambiguous). Because that legacy state
+may already have overwritten a still-active prior bucket, the bridge denies
+admission only until that prior bucket's latest possible aligned-boundary
+expiry. The imported current budget then remains active for a complete window.
+A fresh database or an observed `0029`/`0030`/`0031` database could not have
+served the rejected limiter, so it opens the exact limiter immediately without
+an invented outage. There is no empty-ring reset or claim that lost legacy
+event timestamps were reconstructed exactly.
 The migration explicitly removes inherited execute privileges from the
 internal exact and bridge functions before granting only the legacy and exact
 public wrappers.
 
 Terraform always supplies Helm `migration.compatibilityImage` from the
 independent root `applications.control_plane.schema_compatibility_image`.
-The chart itself also refuses an upgrade or rollback when either compatibility
-repository or digest is absent; only a fresh install may fall back to the
-application image.
-During application
-rollback, retain that successor image for the migration Job and schema-wait
-init container and change only `control_plane_image`. This preserves forward
-schema checks and the legacy wrapper.
+The current chart refuses an upgrade when either compatibility repository or
+digest is absent; only a fresh install may fall back to the application image.
+Because Helm rollback renders an older stored chart, Terraform also installs
+the `fs2-control-plane-schema-compatibility` ValidatingAdmissionPolicy and Deny
+binding before the Helm release. That non-chart boundary survives revision
+rollback and rejects the migration Job or gateway Deployment unless `migrate`
+and `wait-schema` use the exact independently pinned compatibility image. A
+direct rollback to a pre-guard chart therefore fails closed instead of using
+the old application binary against the newer schema. During an application
+rollback, retain that successor image and change only `control_plane_image`.
+This preserves forward schema checks and the legacy wrapper.
 
 Rollback is otherwise data-preserving: retain the release assertion
 receipts, operator principals, credential verifier rows, sessions, audit rows,

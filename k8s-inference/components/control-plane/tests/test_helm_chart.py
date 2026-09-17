@@ -918,6 +918,18 @@ def test_terraform_wires_schema_compatibility_image_independently_from_applicati
     assert "schema_compatibility_image = object" in root_variables
     assert "var.deployment.applications.control_plane.schema_compatibility_image" in root_locals
     assert '"application/control-plane-schema-compatibility"' in wrapper
+    assert 'resource "kubernetes_manifest" "control_plane_schema_compatibility_policy"' in source
+    assert (
+        'resource "kubernetes_manifest" "control_plane_schema_compatibility_policy_binding"'
+        in source
+    )
+    assert "fs2-control-plane-schema-compatibility" in source
+    assert "fs2-serve-control-plane-migrate" in source
+    assert "container.name == 'wait-schema'" in source
+    assert "container.name == 'migrate'" in source
+    assert "container.image == ${jsonencode(local.control_plane_schema_compatibility_image_ref)}" in source
+    assert "kubernetes_manifest.control_plane_schema_compatibility_policy_binding" in source
+    assert source.count("lifecycle { prevent_destroy = true }") >= 2
 
 
 def test_activation_controller_is_owned_by_the_separate_child_and_absent_from_the_gateway_chart() -> None:

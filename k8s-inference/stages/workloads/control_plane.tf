@@ -1,6 +1,7 @@
 locals {
   acme_issuer_name      = "fs2-serve-ip-acme-${var.acme_environment}"
   admin_model_namespace = "fs2-models"
+  control_plane_schema_compatibility_image_ref = "${var.control_plane_schema_compatibility_image.repository}@${var.control_plane_schema_compatibility_image.digest}"
   # Read exactly the namespaces from the validated scheduling contract,
   # including operator-defined and externally-owned scientific queues. The
   # reference-data and batch owners can also place Pods outside that contract,
@@ -232,6 +233,73 @@ locals {
   }
 }
 
+# Helm rollback renders the stored target revision, so a check which exists
+# only in the current chart cannot protect a rollback to a pre-check revision.
+# This Terraform-owned, append-only admission boundary is installed before the
+# release and survives every Helm revision. It refuses both the pre-upgrade
+# migration Job and the gateway Deployment unless their schema-sensitive
+# containers retain the independently pinned compatibility image.
+resource "kubernetes_manifest" "control_plane_schema_compatibility_policy" {
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicy"
+    metadata = {
+      name   = "fs2-control-plane-schema-compatibility"
+      labels = local.common_labels
+    }
+    spec = {
+      failurePolicy = "Fail"
+      matchConstraints = {
+        resourceRules = [
+          {
+            apiGroups   = ["apps"]
+            apiVersions = ["v1"]
+            operations  = ["CREATE", "UPDATE"]
+            resources   = ["deployments"]
+            scope       = "Namespaced"
+          },
+          {
+            apiGroups   = ["batch"]
+            apiVersions = ["v1"]
+            operations  = ["CREATE", "UPDATE"]
+            resources   = ["jobs"]
+            scope       = "Namespaced"
+          },
+        ]
+      }
+      matchConditions = [{
+        name       = "schema-sensitive-control-plane-workload"
+        expression = "request.namespace == 'fs2-system' && ((request.resource.group == 'apps' && request.resource.resource == 'deployments' && request.name == 'fs2-serve-control-plane') || (request.resource.group == 'batch' && request.resource.resource == 'jobs' && request.name == 'fs2-serve-control-plane-migrate'))"
+      }]
+      validations = [{
+        expression = "(object.kind != 'Deployment' || (has(object.spec.template.spec.initContainers) && object.spec.template.spec.initContainers.filter(container, container.name == 'wait-schema' && container.image == ${jsonencode(local.control_plane_schema_compatibility_image_ref)}).size() == 1)) && (object.kind != 'Job' || object.spec.template.spec.containers.filter(container, container.name == 'migrate' && container.image == ${jsonencode(local.control_plane_schema_compatibility_image_ref)}).size() == 1)"
+        message    = "control-plane migration and schema-wait containers must use the Terraform-pinned schema compatibility image; rollback to an application-image fallback is refused"
+      }]
+    }
+  }
+
+  lifecycle { prevent_destroy = true }
+  depends_on = [terraform_data.cluster_contract]
+}
+
+resource "kubernetes_manifest" "control_plane_schema_compatibility_policy_binding" {
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicyBinding"
+    metadata = {
+      name   = "fs2-control-plane-schema-compatibility"
+      labels = local.common_labels
+    }
+    spec = {
+      policyName        = "fs2-control-plane-schema-compatibility"
+      validationActions = ["Deny"]
+    }
+  }
+
+  lifecycle { prevent_destroy = true }
+  depends_on = [kubernetes_manifest.control_plane_schema_compatibility_policy]
+}
+
 resource "helm_release" "control_plane" {
   name             = "fs2-serve-control-plane"
   namespace        = "fs2-system"
@@ -291,6 +359,7 @@ resource "helm_release" "control_plane" {
   }
 
   depends_on = [
+    kubernetes_manifest.control_plane_schema_compatibility_policy_binding,
     kubernetes_manifest.model_deployment_crd,
     kubernetes_manifest.control_database,
     kubernetes_secret_v1.database_consumer,

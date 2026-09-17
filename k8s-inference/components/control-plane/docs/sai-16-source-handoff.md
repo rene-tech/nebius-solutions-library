@@ -3,14 +3,16 @@
 This document describes a static source candidate. It is not integration,
 deployment, live verification, or security acceptance evidence.
 
-The exact parent `74aac745affe1cdbbf80b64c9f9c35a9b99c6ce1` / tree
-`23fdaad04c70fff26f6bd7cd5130e93f2c722d3a` is preserved as
-SOURCE/INTEGRATION/LIVE NO-GO. Its bridge could omit a still-active previous
-fixed-bucket tail; its immutable admission rules bound every future generation
-to one expiring credential ID; its assertion-Secret DELETE match dereferenced a
-missing request object; and direct Helm upgrades could silently reuse the old
-application image as schema compatibility. Every prior rejected commit remains
-provenance; this successor corrects those findings additively.
+The exact parent `dfb996a070a85381bc9a5619e21196fcdf010374` / tree
+`bfcc1b782f33241a561228dff8a388fe55ef0d5d` is preserved as
+SOURCE/INTEGRATION/LIVE NO-GO. Its stable routers let any prior still-valid
+release ServiceAccount operate under an arbitrary epoch label and preoccupy a
+future reserved policy name; its compatibility-image check lived only in the
+chart being rolled back; and its bridge unnecessarily fenced a normal upgrade
+whose pre-existing schema had never served `0032`. The rejected direct parent
+`74aac745affe1cdbbf80b64c9f9c35a9b99c6ce1` and every earlier rejected commit
+also remain provenance. This successor corrects only those three findings
+additively.
 
 ## Session-exchange admission
 
@@ -34,8 +36,13 @@ historical window.
 
 Migration `0034` repairs the `0032`/`0033` rollout boundary without rewriting
 either rejected migration. The migration runner publishes the schema version
-which existed before its serialized transaction. The first post-commit call
-locks one shared bridge and binds the limiter configuration. Legacy `0032` has
+which existed before its serialized transaction. A cutover fence is required
+only when that value is `0032_session_exchange_buckets.sql` or
+`0033_session_exchange_sliding_window.sql`; missing provenance remains
+fail-closed. A fresh schema and observed `0029`, `0030`, or `0031` schema could
+not have served the legacy limiter, so the exact limiter opens immediately.
+For a real legacy cutover, the first post-commit call locks one shared bridge
+and binds the limiter configuration. Legacy `0032` has
 only one aligned bucket per slot, so a current bucket can have overwritten a
 still-active prior tail. The bridge imports only authoritatively visible current
 source/aggregate counts, timestamps them at the bridge call, and denies all
@@ -53,16 +60,22 @@ and forwards the independent immutable
 `control_plane_schema_compatibility_image`, which Terraform maps to Helm
 `migration.compatibilityImage`. Rollback retains that successor
 migration/schema-wait image while selecting the prior application image; it
-never reverses schema or discards limiter state. The chart independently
-requires the compatibility repository and digest for every Helm upgrade or
-rollback; only a fresh install retains the application-image fallback.
+never reverses schema or discards limiter state. The current chart independently
+requires the compatibility repository and digest for every Helm upgrade; only
+a fresh install retains the application-image fallback. Because rollback
+renders the stored older chart, Terraform now owns the durable
+`fs2-control-plane-schema-compatibility` ValidatingAdmissionPolicy and Deny
+binding outside Helm and orders the release after it. The guard matches the
+exact migration Job and gateway Deployment and admits only the Terraform-pinned
+image in the `migrate` and `wait-schema` containers. A stored pre-fix chart can
+therefore neither bypass the guard nor remove it.
 
 The regenerated `0034` SHA-256 is
-`1101f12b14be71454a02081ce9559236d82426dfeb1d4f20144e9297fb99f404`;
+`2aabc8efc578a90e115af56e78a2dbb2864920abc9b0fd11f7ce024647b033a0`;
 the ordered migration-set SHA-256 is
-`be86591a208bb3247539838960b7618403ea5376f1cccc34e4e18bc3cfc50ff6`;
+`219269587f16e05583d5b6c2261081a61d02ecc3ae39aedffb81316acf3dbb48`;
 and the release-contract payload SHA-256 is
-`fec202c5834668f3aa41119329da90d79eb0a111db64d2e92e37bbb0ccdbb5be`.
+`223d07b4923abcf3f2647cf967fa95dbb4b4bad478ed634459c11fcaea8f9819`.
 The exact successor commit/tree is recorded in the Task Deck handoff after the
 additive commit is sealed.
 
@@ -97,13 +110,18 @@ Recovery now requires a policy-first apply. A four-object stable epoch-router
 lifecycle/policy boundary first rejects unlabeled protected names, denies
 protected mutation/deletion, and admits new epochs only from bound-token
 automation release ServiceAccounts. Every assertion generation then gets six
-uniquely named lifecycle/history/trust/receipt/assertion/verification policy and
-binding pairs. Their immutable Deny rules match only objects carrying that same
-authority epoch, and every CREATE is bound to that generation's release
-ServiceAccount username, canonical UID, and exact Kubernetes bound-token
-credential ID. A retained old policy cannot match or deny a later generation,
-and a reusable username alone is insufficient. Rotation retains all prior
-authority tuples, appends the next epoch's policies, and then extends the UID
+literal `fs2-bootstrap-<purpose>-<generation>`
+lifecycle/history/trust/receipt/assertion/verification policy and binding
+pairs. Generations are 8–32-character DNS labels. The router requires the
+object epoch label, reserved policy-name suffix, and caller username suffix to
+be identical, while each immutable exact Deny rule additionally binds the
+canonical ServiceAccount UID and exact Kubernetes bound-token credential ID.
+A prior still-valid credential can therefore address only its own already
+occupied append-only names and cannot preoccupy or attach an arbitrary policy
+to a future epoch. A retained old policy cannot match or deny a later
+generation, and a reusable username alone is insufficient. Rotation retains
+all prior authority tuples, appends the next epoch's policies, and then extends
+the UID
 pin containing the four shared router objects with that complete 12-object set
 before bootstrap can run. Partial epoch
 pins fail closed. The trust binding separately
@@ -151,6 +169,8 @@ both denied.
 The coordinator's static-only boundary prohibited executing authored tests,
 Terraform, builds, formatters, scanners, package managers, or live probes; none
 were executed. Two stdout-only Python standard-library calculations read the
-edited SQL and committed JSON contract to derive the immutable SHA-256 values
-above. They imported no project code and created, overwrote, or removed no
+prior candidate's edited SQL and committed JSON contract. This successor used
+one read-only `sha256sum` invocation for `0034` and one stdout-only Python
+standard-library calculation for the ordered set and canonical contract
+payload. None imported project code or created, overwrote, or removed an
 artifact.

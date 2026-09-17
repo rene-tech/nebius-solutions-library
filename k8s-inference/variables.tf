@@ -1779,7 +1779,7 @@ variable "deployment" {
       (
         length(var.deployment.dynamic_models.bootstrap_model_ids) == 0 || (
           can(regex(
-            "^[a-z0-9][a-z0-9.-]{6,61}[a-z0-9]$",
+            "^[a-z0-9][a-z0-9-]{6,30}[a-z0-9]$",
             var.deployment.dynamic_models.bootstrap_assertion_generation,
           )) &&
           can(regex(

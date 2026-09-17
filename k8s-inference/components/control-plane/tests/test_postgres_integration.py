@@ -1115,6 +1115,40 @@ async def test_migration_and_schema_wait_entrypoints_need_only_database_credenti
 
 @pytest.mark.postgres
 @pytest.mark.asyncio
+async def test_nonlegacy_schema_cutover_opens_without_an_invented_fence(
+    postgres_store: PostgresStore,
+) -> None:
+    async with postgres_store.pool.acquire() as connection:
+        await connection.execute(
+            """
+            UPDATE fs2_session_exchange_cutover_state
+            SET cutover_required=false,
+                prior_schema_version='0029_request_debug.sql',
+                first_bridge_at=NULL,
+                legacy_admissions_imported=false,
+                window_seconds=NULL,
+                maximum_source_attempts=NULL,
+                maximum_aggregate_attempts=NULL
+            WHERE singleton=1
+            """
+        )
+        decision = await connection.fetchrow(
+            "SELECT * FROM fs2_consume_session_exchange($1,60,5,200)",
+            "6" * 64,
+        )
+        assert decision["admission"] == "admitted"
+        assert decision["evidence_kind"] == "admitted"
+        state = await connection.fetchrow(
+            "SELECT * FROM fs2_session_exchange_cutover_state WHERE singleton=1"
+        )
+        assert state["prior_schema_version"] == "0029_request_debug.sql"
+        assert state["cutover_required"] is False
+        assert state["legacy_admissions_imported"] is False
+        assert state["first_bridge_at"] is not None
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
 async def test_legacy_and_exact_callers_share_conservative_cutover_fence_and_current_budget(
     postgres_store: PostgresStore,
 ) -> None:

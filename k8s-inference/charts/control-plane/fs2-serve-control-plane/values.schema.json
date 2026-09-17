@@ -1666,8 +1666,8 @@
           ],
           "properties": {
             "schema": {"const": "fs2-serve.nebius.ai/postgresql-release-contract/v1"},
-            "contractPayloadSha256": {"const": "fec202c5834668f3aa41119329da90d79eb0a111db64d2e92e37bbb0ccdbb5be"},
-            "migrationSetSha256": {"const": "be86591a208bb3247539838960b7618403ea5376f1cccc34e4e18bc3cfc50ff6"},
+            "contractPayloadSha256": {"const": "223d07b4923abcf3f2647cf967fa95dbb4b4bad478ed634459c11fcaea8f9819"},
+            "migrationSetSha256": {"const": "219269587f16e05583d5b6c2261081a61d02ecc3ae39aedffb81316acf3dbb48"},
             "migrationCount": {"const": 34},
             "firstMigrationVersion": {"const": "0001_initial.sql"},
             "lastMigrationVersion": {"const": "0034_session_exchange_cutover_bridge.sql"},

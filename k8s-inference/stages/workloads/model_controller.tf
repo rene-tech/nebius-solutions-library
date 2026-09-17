@@ -1375,6 +1375,10 @@ locals {
       false,
     )
   )
+  model_controller_bootstrap_authority_epoch_names_consistent = alltrue([
+    for generation, authority in local.model_controller_bootstrap_authority_epochs :
+    authority.username == "system:serviceaccount:fs2-system:fs2-release-identity-${generation}"
+  ])
   model_controller_bootstrap_authority_cel = {
     for generation, authority in local.model_controller_bootstrap_authority_epochs : generation => join(" && ", [
       "request.userInfo.username == ${jsonencode(authority.username)}",
@@ -1386,7 +1390,23 @@ locals {
     ])
   }
   model_controller_bootstrap_rotatable_authority_cel = join(" && ", [
-    "request.userInfo.username.matches('^system:serviceaccount:fs2-system:fs2-release-identity-[a-z0-9]([-a-z0-9]{0,49}[a-z0-9])?$')",
+    "has(object.metadata.labels)",
+    "((object.kind == 'Secret' && 'fs2.nebius.ai/assertion-generation' in object.metadata.labels) || (object.kind != 'Secret' && 'fs2.nebius.ai/authority-epoch' in object.metadata.labels))",
+    "(object.kind == 'Secret' ? object.metadata.labels['fs2.nebius.ai/assertion-generation'] : object.metadata.labels['fs2.nebius.ai/authority-epoch']).matches('^[a-z0-9][a-z0-9-]{6,30}[a-z0-9]$')",
+    "request.userInfo.username == 'system:serviceaccount:fs2-system:fs2-release-identity-' + (object.kind == 'Secret' ? object.metadata.labels['fs2.nebius.ai/assertion-generation'] : object.metadata.labels['fs2.nebius.ai/authority-epoch'])",
+    "request.userInfo.uid.matches('^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')",
+    "has(request.userInfo.extra)",
+    "'authentication.kubernetes.io/credential-id' in request.userInfo.extra",
+    "request.userInfo.extra['authentication.kubernetes.io/credential-id'].size() == 1",
+    "request.userInfo.extra['authentication.kubernetes.io/credential-id'][0].size() >= 8",
+  ])
+  # The two stable routers are created exactly once, before a per-epoch policy
+  # exists to protect its own creation. Their lifecycle rule makes their fixed
+  # names immutable. Every later generation-scoped object uses the stricter
+  # label-to-ServiceAccount equality above, so an old still-valid credential
+  # can address only its already occupied append-only epoch names.
+  model_controller_bootstrap_initial_router_authority_cel = join(" && ", [
+    "request.userInfo.username.matches('^system:serviceaccount:fs2-system:fs2-release-identity-[a-z0-9][a-z0-9-]{6,30}[a-z0-9]$')",
     "request.userInfo.uid.matches('^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')",
     "has(request.userInfo.extra)",
     "'authentication.kubernetes.io/credential-id' in request.userInfo.extra",
@@ -1405,12 +1425,12 @@ locals {
   ]))
   model_controller_bootstrap_policy_names = {
     for generation, authority in local.model_controller_bootstrap_authority_epochs : generation => {
-      lifecycle = "fs2-bootstrap-policy-${substr(sha256(jsonencode({ generation = generation, authority = authority })), 0, 16)}"
-      history   = "fs2-bootstrap-history-${substr(sha256(jsonencode({ generation = generation, authority = authority })), 0, 16)}"
-      receipts  = "fs2-bootstrap-receipts-${substr(sha256(jsonencode({ generation = generation, authority = authority })), 0, 16)}"
-      trust     = "fs2-bootstrap-trust-${substr(sha256(jsonencode({ generation = generation, authority = authority })), 0, 16)}"
-      secrets   = "fs2-bootstrap-secrets-${substr(sha256(jsonencode({ generation = generation, authority = authority })), 0, 16)}"
-      verify    = "fs2-bootstrap-verify-${substr(sha256(jsonencode({ generation = generation, authority = authority })), 0, 16)}"
+      lifecycle = "fs2-bootstrap-policy-${generation}"
+      history   = "fs2-bootstrap-history-${generation}"
+      receipts  = "fs2-bootstrap-receipts-${generation}"
+      trust     = "fs2-bootstrap-trust-${generation}"
+      secrets   = "fs2-bootstrap-secrets-${generation}"
+      verify    = "fs2-bootstrap-verify-${generation}"
     }
   }
   model_controller_bootstrap_admission_keys_by_epoch = {
@@ -2189,10 +2209,11 @@ resource "terraform_data" "model_controller_contract" {
       condition = !local.model_controller_bootstrap_security_enabled || (
         length(local.model_controller_bootstrap_authority_epochs) > 0 &&
         local.model_controller_bootstrap_current_authority_consistent &&
+        local.model_controller_bootstrap_authority_epoch_names_consistent &&
         length(local.model_controller_bootstrap_all_policy_names) ==
         2 + 6 * length(local.model_controller_bootstrap_authority_epochs)
       )
-      error_message = "Model-bootstrap security resources require at least one exact generation-scoped release service-account UID and bound-token credential ID; retained epochs are append-only, a current epoch cannot redefine its authority, and derived policy names must remain collision-free."
+      error_message = "Model-bootstrap security resources require at least one exact generation-scoped release ServiceAccount whose username suffix equals its authority epoch, plus its UID and bound-token credential ID; retained epochs are append-only, a current epoch cannot redefine its authority, and literal epoch policy names must remain collision-free."
     }
 
     precondition {
@@ -2266,7 +2287,7 @@ resource "terraform_data" "model_controller_contract" {
 
     precondition {
       condition = !local.model_controller_bootstrap_enabled || (
-        can(regex("^[a-z0-9][a-z0-9.-]{6,61}[a-z0-9]$", var.release_identity_model_bootstrap_assertion_generation)) &&
+        can(regex("^[a-z0-9][a-z0-9-]{6,30}[a-z0-9]$", var.release_identity_model_bootstrap_assertion_generation)) &&
         var.release_identity_model_bootstrap_assertion_secret_name == "fs2-release-model-bootstrap-${var.release_identity_model_bootstrap_assertion_generation}" &&
         (
           !contains(
@@ -2390,7 +2411,7 @@ resource "kubernetes_manifest" "model_controller_bootstrap_epoch_router_lifecycl
       }
       matchConditions = [{
         name       = "model-bootstrap-epoch-router-lifecycle"
-        expression = "request.name in [${jsonencode(local.model_controller_bootstrap_router_policy_names.lifecycle)},${jsonencode(local.model_controller_bootstrap_router_policy_names.router)}] || request.name.matches('^fs2-bootstrap-(policy|history|receipts|trust|secrets|verify)-[a-f0-9]{16}$')"
+        expression = "request.name in [${jsonencode(local.model_controller_bootstrap_router_policy_names.lifecycle)},${jsonencode(local.model_controller_bootstrap_router_policy_names.router)}] || request.name.startsWith('fs2-bootstrap-')"
       }]
       validations = [
         {
@@ -2398,8 +2419,24 @@ resource "kubernetes_manifest" "model_controller_bootstrap_epoch_router_lifecycl
           message    = "model-bootstrap epoch router policy and binding are append-only"
         },
         {
-          expression = local.model_controller_bootstrap_rotatable_authority_cel
-          message    = "only a bound-token automation release identity may create the epoch router boundary"
+          expression = "request.name in [${jsonencode(local.model_controller_bootstrap_router_policy_names.lifecycle)},${jsonencode(local.model_controller_bootstrap_router_policy_names.router)}] || (has(object.metadata.labels) && 'fs2.nebius.ai/authority-epoch' in object.metadata.labels && object.metadata.labels['fs2.nebius.ai/authority-epoch'].matches('^[a-z0-9][a-z0-9-]{6,30}[a-z0-9]$') && request.name in ['fs2-bootstrap-policy-' + object.metadata.labels['fs2.nebius.ai/authority-epoch'],'fs2-bootstrap-history-' + object.metadata.labels['fs2.nebius.ai/authority-epoch'],'fs2-bootstrap-receipts-' + object.metadata.labels['fs2.nebius.ai/authority-epoch'],'fs2-bootstrap-trust-' + object.metadata.labels['fs2.nebius.ai/authority-epoch'],'fs2-bootstrap-secrets-' + object.metadata.labels['fs2.nebius.ai/authority-epoch'],'fs2-bootstrap-verify-' + object.metadata.labels['fs2.nebius.ai/authority-epoch']])"
+          message    = "generation policy and binding names must contain the exact authority epoch label"
+        },
+        {
+          expression = "request.name in [${jsonencode(local.model_controller_bootstrap_router_policy_names.lifecycle)},${jsonencode(local.model_controller_bootstrap_router_policy_names.router)}] || (${local.model_controller_bootstrap_rotatable_authority_cel})"
+          message    = "generation policy creation requires a bound token whose ServiceAccount name exactly matches the authority epoch label"
+        },
+        {
+          expression = "!(request.name in [${jsonencode(local.model_controller_bootstrap_router_policy_names.lifecycle)},${jsonencode(local.model_controller_bootstrap_router_policy_names.router)}]) || (${local.model_controller_bootstrap_initial_router_authority_cel})"
+          message    = "only a generation-named bound-token automation identity may create the one-time stable epoch routers"
+        },
+        {
+          expression = "object.kind != 'ValidatingAdmissionPolicyBinding' || (object.spec.policyName == object.metadata.name && object.spec.validationActions == ['Deny'])"
+          message    = "model-bootstrap admission bindings must deny with the identically named policy"
+        },
+        {
+          expression = "object.kind != 'ValidatingAdmissionPolicy' || object.spec.failurePolicy == 'Fail'"
+          message    = "model-bootstrap admission policies must fail closed"
         },
       ]
     }
@@ -2470,11 +2507,11 @@ resource "kubernetes_manifest" "model_controller_bootstrap_epoch_router" {
         },
         {
           expression = local.model_controller_bootstrap_rotatable_authority_cel
-          message    = "only a bound-token automation release identity may create an authority epoch"
+          message    = "only a bound-token automation release identity whose ServiceAccount name equals the object authority epoch may create routed bootstrap objects"
         },
         {
-          expression = "has(object.metadata.labels) && ((object.kind == 'Secret' && 'fs2.nebius.ai/assertion-generation' in object.metadata.labels && object.metadata.labels['fs2.nebius.ai/assertion-generation'].matches('^[a-z0-9][a-z0-9.-]{6,61}[a-z0-9]$') && object.metadata.name == 'fs2-release-model-bootstrap-' + object.metadata.labels['fs2.nebius.ai/assertion-generation']) || (object.kind != 'Secret' && 'fs2.nebius.ai/authority-epoch' in object.metadata.labels && object.metadata.labels['fs2.nebius.ai/authority-epoch'].matches('^[a-z0-9][a-z0-9.-]{6,61}[a-z0-9]$')))"
-          message    = "model-bootstrap routed objects require a well-formed authority epoch before exact credential admission"
+          expression = "has(object.metadata.labels) && ((object.kind == 'Secret' && 'fs2.nebius.ai/assertion-generation' in object.metadata.labels && object.metadata.labels['fs2.nebius.ai/assertion-generation'].matches('^[a-z0-9][a-z0-9-]{6,30}[a-z0-9]$') && object.metadata.name == 'fs2-release-model-bootstrap-' + object.metadata.labels['fs2.nebius.ai/assertion-generation']) || (object.kind != 'Secret' && 'fs2.nebius.ai/authority-epoch' in object.metadata.labels && object.metadata.labels['fs2.nebius.ai/authority-epoch'].matches('^[a-z0-9][a-z0-9-]{6,30}[a-z0-9]$')))"
+          message    = "model-bootstrap routed objects require an 8-32 character authority epoch which is also the release ServiceAccount suffix"
         },
       ]
     }
@@ -2907,7 +2944,7 @@ resource "kubernetes_manifest" "model_controller_bootstrap_secret_policy" {
           message    = "model-bootstrap assertion Secrets must be immutable"
         },
         {
-          expression = "has(object.metadata.labels) && 'fs2.nebius.ai/assertion-generation' in object.metadata.labels && object.metadata.labels['fs2.nebius.ai/assertion-generation'].matches('^[a-z0-9][a-z0-9.-]{6,61}[a-z0-9]$') && object.metadata.name == 'fs2-release-model-bootstrap-' + object.metadata.labels['fs2.nebius.ai/assertion-generation']"
+          expression = "has(object.metadata.labels) && 'fs2.nebius.ai/assertion-generation' in object.metadata.labels && object.metadata.labels['fs2.nebius.ai/assertion-generation'].matches('^[a-z0-9][a-z0-9-]{6,30}[a-z0-9]$') && object.metadata.name == 'fs2-release-model-bootstrap-' + object.metadata.labels['fs2.nebius.ai/assertion-generation']"
           message    = "model-bootstrap assertion Secret name and generation label must be identical"
         },
         {

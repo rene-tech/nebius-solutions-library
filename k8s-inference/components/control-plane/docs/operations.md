@@ -258,14 +258,16 @@ The complete issuer, enrollment/recovery, model-bootstrap, rollout, and
 rollback contract is in
 [`release-identity-enrollment.md`](release-identity-enrollment.md).
 Model-bootstrap assertion rotation is generation-keyed and append-only. Supply
-a new signed public assertion generation whose Secret is exactly
+a new signed 8–32-character DNS-label assertion generation whose Secret is exactly
 `fs2-release-model-bootstrap-<generation>`; do not copy prior specs into input.
 The Kubernetes provider inventories retained ConfigMap/Job generations, but
 imports only generations carrying a release-authority-signed receipt bound to
 their exact ConfigMap/Job UIDs and full observed object digests. Install the
 append-only policy-lifecycle, history, receipt, trust, assertion-Secret, and
 verification policies before Secret creation. Creation requires the exact
-generation-specific automation ServiceAccount username, immutable UID, and
+generation-specific automation ServiceAccount username
+`fs2-release-identity-<generation>`, with the same generation in the object
+label and reserved admission-policy name, plus the immutable UID and
 bound-token credential ID configured for that release; the reusable
 `fs2-release-identity` username alone is refused. No identity may update or
 delete the policies, trust, receipts, assertions, or their bound history.

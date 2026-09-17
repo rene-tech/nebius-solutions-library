@@ -71,6 +71,16 @@ def test_release_assertion_is_short_lived_audience_and_capability_bound() -> Non
     with pytest.raises(ReleaseIdentityError):
         authority.verifier.verify(
             authority.bearer(
+                ReleaseIdentityCapability.MODELS_BOOTSTRAP,
+                resource_sha256="2" * 64,
+                resource_generation="release.test-01",
+            ),
+            capability=ReleaseIdentityCapability.MODELS_BOOTSTRAP,
+            purpose=ReleaseIdentityPurpose.ADMIN_AUTOMATION,
+        )
+    with pytest.raises(ReleaseIdentityError):
+        authority.verifier.verify(
+            authority.bearer(
                 ReleaseIdentityCapability.OPERATOR_ENROLL,
                 operator={
                     "principal_id": str(uuid4()),
@@ -192,7 +202,11 @@ def test_postgres_session_exchange_cutover_is_shared_fail_closed_and_rollback_co
     store = (REPOSITORY_ROOT / "components/control-plane/src/fs2_serve/postgres.py").read_text(encoding="utf-8")
     normalized = " ".join(migration.split())
     assert "fs2.preexisting_schema_version" in migration
-    assert "<> '__fresh__'" in migration
+    assert "WHEN '0032_session_exchange_buckets.sql' THEN true" in migration
+    assert "WHEN '0033_session_exchange_sliding_window.sql' THEN true" in migration
+    assert "WHEN '' THEN true" in migration
+    assert "ELSE false" in migration
+    assert "<> '__fresh__'" not in migration
     assert ">= '0032_session_exchange_buckets.sql'" not in migration
     assert "cutover_required" in migration
     assert "first_bridge_at" in migration
@@ -276,13 +290,23 @@ def test_model_bootstrap_assertion_secret_is_append_only_and_credential_bound() 
     assert "model_controller_bootstrap_bound_authority_epochs" in bootstrap
     assert "model_controller_bootstrap_bound_admission_keys" in bootstrap
     assert "model_controller_bootstrap_current_authority_consistent" in bootstrap
+    assert "model_controller_bootstrap_authority_epoch_names_consistent" in bootstrap
     assert "admission_object_uids) - 4) % 12 == 0" in variables
     assert "model_controller_bootstrap_epoch_router_lifecycle" in bootstrap
     assert "model_controller_bootstrap_epoch_router_binding" in bootstrap
-    assert "model-bootstrap routed objects require a well-formed authority epoch" in bootstrap
+    assert "ServiceAccount name equals the object authority epoch" in bootstrap
     assert "model_controller_bootstrap_rotatable_authority_cel" in bootstrap
+    assert "model_controller_bootstrap_initial_router_authority_cel" in bootstrap
+    assert (
+        "request.userInfo.username == 'system:serviceaccount:fs2-system:fs2-release-identity-' +"
+        in bootstrap
+    )
     assert '"fs2.nebius.ai/authority-epoch" = each.key' in bootstrap
-    assert 'lifecycle = "fs2-bootstrap-policy-${substr(sha256' in bootstrap
+    assert 'lifecycle = "fs2-bootstrap-policy-${generation}"' in bootstrap
+    assert "generation policy and binding names must contain the exact authority epoch label" in bootstrap
+    assert "object.spec.policyName == object.metadata.name" in bootstrap
+    assert "object.spec.validationActions == ['Deny']" in bootstrap
+    assert "substr(sha256(jsonencode({ generation = generation, authority = authority }))" not in bootstrap
     assert "an expired retained epoch cannot authorize a later generation" in bootstrap
     assert "request.namespace == 'fs2-system' && request.name.startsWith('fs2-release-model-bootstrap-')" in bootstrap
     assert "request.operation == 'DELETE' && has(oldObject.metadata.labels)" in bootstrap
