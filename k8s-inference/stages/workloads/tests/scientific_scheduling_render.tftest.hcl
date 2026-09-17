@@ -13,6 +13,8 @@ mock_provider "helm" {}
 mock_provider "random" {}
 
 variables {
+  # Mock-only inherited descriptor; production remains sealed-memfd only.
+  nebius_iam_token_file = "/proc/self/fd/0"
   run_root        = "/tmp/fs2-modelexpress-test"
   kubeconfig_path = "/tmp/fs2-modelexpress-test/kubeconfig"
   run_id          = "mxtest01"

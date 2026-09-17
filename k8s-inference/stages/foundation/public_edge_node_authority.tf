@@ -130,28 +130,108 @@ locals {
     jsondecode(local.public_edge_existing_node_authority.metadata.annotations["fs2.nebius.ai/retiring-member-instance-ids"]),
     [],
   )
+  public_edge_predecessor_phase = local.public_edge_existing_node_authority == null ? "genesis" : local.public_edge_existing_phase
+  public_edge_predecessor_serving_member_instance_ids = local.public_edge_existing_node_authority == null ? [] : local.public_edge_existing_serving_member_instance_ids
+  public_edge_predecessor_joining_member_instance_ids = local.public_edge_existing_node_authority == null ? [] : local.public_edge_existing_joining_member_instance_ids
+  public_edge_predecessor_retiring_member_instance_ids = local.public_edge_existing_node_authority == null ? [] : local.public_edge_existing_retiring_member_instance_ids
 }
 
 locals {
-  public_edge_node_authority_policy_manifest = {
+  # This small, stable policy is the apply-time compare-and-swap anchor for the
+  # dynamic signed membership policy below. It compares every successor to the
+  # API server's actual oldObject, so two saved plans derived from the same
+  # epoch cannot both commit. It also makes both policies and both bindings
+  # non-deletable through ordinary Kubernetes admission. An independently
+  # reviewed break-glass control-plane procedure is required to retire them.
+  public_edge_node_authority_cas_policy_manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
     kind       = "ValidatingAdmissionPolicy"
     metadata = {
-      name = "fs2-public-edge-node-authority"
+      name = "fs2-public-edge-node-authority-cas"
       annotations = {
+        "fs2.nebius.ai/contract" = "apply-time-membership-epoch-cas/v1"
+      }
+    }
+    spec = {
+      failurePolicy = "Fail"
+      matchConstraints = {
+        matchPolicy = "Equivalent"
+        resourceRules = [{
+          apiGroups   = ["admissionregistration.k8s.io"]
+          apiVersions = ["v1"]
+          operations  = ["CREATE", "UPDATE", "DELETE"]
+          resources = [
+            "validatingadmissionpolicies",
+            "validatingadmissionpolicybindings",
+          ]
+          scope = "Cluster"
+        }]
+      }
+      validations = [
+        {
+          expression = "request.operation == 'CREATE' || !(oldObject.metadata.name in ['fs2-public-edge-node-authority-cas', 'fs2-public-edge-node-authority-cas-binding'])"
+          message    = "The public-edge epoch CAS policy and binding are immutable after activation."
+          reason     = "Forbidden"
+        },
+        {
+          expression = "request.operation != 'DELETE' || oldObject.metadata.name != 'fs2-public-edge-node-authority'"
+          message    = "The protected public-edge Node-authority policy cannot be deleted."
+          reason     = "Forbidden"
+        },
+        {
+          expression = "request.resource.resource != 'validatingadmissionpolicybindings' || request.operation != 'CREATE' || object.metadata.name != 'fs2-public-edge-node-authority' || (object.spec.policyName == 'fs2-public-edge-node-authority' && object.spec.validationActions == ['Deny'])"
+          message    = "The public-edge Node-authority binding must activate its exact policy with Deny."
+          reason     = "Forbidden"
+        },
+        {
+          expression = "request.resource.resource != 'validatingadmissionpolicybindings' || request.operation == 'CREATE' || oldObject.metadata.name != 'fs2-public-edge-node-authority'"
+          message    = "The active public-edge Node-authority binding cannot be updated or deleted."
+          reason     = "Forbidden"
+        },
+        {
+          expression = "request.resource.resource != 'validatingadmissionpolicies' || request.operation != 'CREATE' || object.metadata.name != 'fs2-public-edge-node-authority' || (object.metadata.annotations['fs2.nebius.ai/membership-epoch-sequence'] == '1' && object.metadata.annotations['fs2.nebius.ai/predecessor-payload-sha256'] == '${strrep("0", 64)}' && object.metadata.annotations['fs2.nebius.ai/predecessor-phase'] == 'genesis' && object.metadata.annotations['fs2.nebius.ai/predecessor-serving-member-instance-ids'] == '[]' && object.metadata.annotations['fs2.nebius.ai/predecessor-joining-member-instance-ids'] == '[]' && object.metadata.annotations['fs2.nebius.ai/predecessor-retiring-member-instance-ids'] == '[]')"
+          message    = "A public-edge Node-authority policy can be created only as the exact genesis epoch."
+          reason     = "Forbidden"
+        },
+        {
+          expression = "request.resource.resource != 'validatingadmissionpolicies' || request.operation != 'UPDATE' || object.metadata.name != 'fs2-public-edge-node-authority' || (int(object.metadata.annotations['fs2.nebius.ai/membership-epoch-sequence']) == int(oldObject.metadata.annotations['fs2.nebius.ai/membership-epoch-sequence']) + 1 && object.metadata.annotations['fs2.nebius.ai/predecessor-payload-sha256'] == oldObject.metadata.annotations['fs2.nebius.ai/membership-payload-sha256'] && object.metadata.annotations['fs2.nebius.ai/predecessor-phase'] == oldObject.metadata.annotations['fs2.nebius.ai/membership-phase'] && object.metadata.annotations['fs2.nebius.ai/predecessor-serving-member-instance-ids'] == oldObject.metadata.annotations['fs2.nebius.ai/serving-member-instance-ids'] && object.metadata.annotations['fs2.nebius.ai/predecessor-joining-member-instance-ids'] == oldObject.metadata.annotations['fs2.nebius.ai/joining-member-instance-ids'] && object.metadata.annotations['fs2.nebius.ai/predecessor-retiring-member-instance-ids'] == oldObject.metadata.annotations['fs2.nebius.ai/retiring-member-instance-ids'])"
+          message    = "The public-edge Node-authority successor must be the exact next sequence and compare-and-swap every predecessor identity and member set against current API-server oldObject. Re-plan from the installed epoch."
+          reason     = "Forbidden"
+        },
+      ]
+    }
+  }
+  public_edge_node_authority_cas_binding_manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicyBinding"
+    metadata = {
+      name = "fs2-public-edge-node-authority-cas-binding"
+    }
+    spec = {
+      policyName        = "fs2-public-edge-node-authority-cas"
+      validationActions = ["Deny"]
+      matchResources = {
+        matchPolicy = "Equivalent"
+      }
+    }
+  }
+  public_edge_node_authority_policy_annotations = {
         "fs2.nebius.ai/membership-payload-sha256"  = local.public_edge_membership_authority.payload_sha256
         "fs2.nebius.ai/membership-receipt-sha256"  = local.public_edge_membership_authority.receipt_sha256
         "fs2.nebius.ai/membership-epoch"            = local.public_edge_membership_authority.epoch_id
         "fs2.nebius.ai/membership-epoch-sequence"   = tostring(local.public_edge_membership_authority.epoch_sequence)
         "fs2.nebius.ai/membership-phase"            = local.public_edge_membership_authority.phase
         "fs2.nebius.ai/predecessor-payload-sha256"  = local.public_edge_membership_authority.predecessor_payload_sha256
+        "fs2.nebius.ai/predecessor-phase"            = local.public_edge_predecessor_phase
+        "fs2.nebius.ai/predecessor-serving-member-instance-ids" = jsonencode(local.public_edge_predecessor_serving_member_instance_ids)
+        "fs2.nebius.ai/predecessor-joining-member-instance-ids" = jsonencode(local.public_edge_predecessor_joining_member_instance_ids)
+        "fs2.nebius.ai/predecessor-retiring-member-instance-ids" = jsonencode(local.public_edge_predecessor_retiring_member_instance_ids)
         "fs2.nebius.ai/serving-member-instance-ids" = jsonencode(local.public_edge_membership_authority.serving_member_instance_ids)
         "fs2.nebius.ai/joining-member-instance-ids" = jsonencode(local.public_edge_membership_authority.joining_member_instance_ids)
         "fs2.nebius.ai/retiring-member-instance-ids" = jsonencode(local.public_edge_membership_authority.retiring_member_instance_ids)
         "fs2.nebius.ai/provider-adapter-sha256"     = try(local.public_edge_membership_authority.provider_observer.adapter_sha256, "")
-      }
-    }
-    spec = {
+  }
+  public_edge_node_authority_policy_spec = {
       failurePolicy = "Fail"
       matchConstraints = {
         matchPolicy = "Equivalent"
@@ -191,7 +271,25 @@ locals {
           reason  = "Forbidden"
         },
       ]
+  }
+  # Platform Security's persistent parameter object contains these exact maps,
+  # their digest, the external signature evidence and the one accepted actor.
+  # Admission compares the submitted policy to that live parameter; annotations
+  # alone are never treated as proof.
+  public_edge_node_authority_policy_content_sha256 = sha256(jsonencode({
+    annotations = local.public_edge_node_authority_policy_annotations
+    spec        = local.public_edge_node_authority_policy_spec
+  }))
+  public_edge_node_authority_policy_manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicy"
+    metadata = {
+      name = "fs2-public-edge-node-authority"
+      annotations = merge(local.public_edge_node_authority_policy_annotations, {
+        "fs2.nebius.ai/policy-content-sha256" = local.public_edge_node_authority_policy_content_sha256
+      })
     }
+    spec = local.public_edge_node_authority_policy_spec
   }
   public_edge_node_authority_binding_manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
@@ -209,6 +307,40 @@ locals {
   }
   public_edge_node_authority_policy_sha256  = sha256(jsonencode(local.public_edge_node_authority_policy_manifest))
   public_edge_node_authority_binding_sha256 = sha256(jsonencode(local.public_edge_node_authority_binding_manifest))
+  public_edge_node_authority_cas_policy_sha256  = sha256(jsonencode(local.public_edge_node_authority_cas_policy_manifest))
+  public_edge_node_authority_cas_binding_sha256 = sha256(jsonencode(local.public_edge_node_authority_cas_binding_manifest))
+}
+
+resource "kubernetes_manifest" "public_edge_node_authority_cas_policy" {
+  count = local.public_edge_enabled ? 1 : 0
+
+  manifest = local.public_edge_node_authority_cas_policy_manifest
+
+  lifecycle {
+    prevent_destroy = true
+
+    precondition {
+      condition     = local.public_edge_cas_bootstrap_exact && local.public_edge_node_authority_approval_exact
+      error_message = "The live security-owned admission parameter must contain the exact signed Node-authority spec, annotations, actor, membership receipt, RBAC review and impersonation review for this epoch."
+    }
+
+    precondition {
+      condition     = local.public_edge_cas_bootstrap_exact && local.public_edge_node_authority_approval_exact
+      error_message = "Public mode requires the exact externally installed Platform Security CAS bootstrap plus a signed exact-policy approval parameter bound to the reviewed actor/RBAC/impersonation closure before Terraform may create or update Node authority."
+    }
+  }
+}
+
+resource "kubernetes_manifest" "public_edge_node_authority_cas_binding" {
+  count = local.public_edge_enabled ? 1 : 0
+
+  manifest = local.public_edge_node_authority_cas_binding_manifest
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [kubernetes_manifest.public_edge_node_authority_cas_policy]
 }
 
 # A fresh fence cannot make mutable Node labels authoritative after it exits.
@@ -223,7 +355,16 @@ resource "kubernetes_manifest" "public_edge_node_authority_policy" {
 
   manifest = local.public_edge_node_authority_policy_manifest
 
+  depends_on = [kubernetes_manifest.public_edge_node_authority_cas_binding]
+
   lifecycle {
+    prevent_destroy = true
+
+    precondition {
+      condition     = local.public_edge_cas_bootstrap_exact && local.public_edge_node_authority_approval_exact
+      error_message = "The live security-owned admission parameter must contain the exact signed Node-authority spec, annotations, actor, membership receipt, RBAC review and impersonation review for this epoch."
+    }
+
     precondition {
       condition = (
         local.public_edge_membership_authority.verified &&
@@ -313,6 +454,10 @@ resource "kubernetes_manifest" "public_edge_node_authority_binding" {
   count = local.public_edge_enabled ? 1 : 0
 
   manifest = local.public_edge_node_authority_binding_manifest
+
+  lifecycle {
+    prevent_destroy = true
+  }
 
   depends_on = [kubernetes_manifest.public_edge_node_authority_policy]
 }

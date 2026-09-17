@@ -26,12 +26,13 @@ from pathlib import Path
 from typing import Any
 
 
-MANIFEST_SCHEMA = "fs2-serve.nebius.ai/public-edge-execution-capsule/v1"
+MANIFEST_SCHEMA = "fs2-serve.nebius.ai/public-edge-execution-capsule/v2"
 TRUST_SCHEMA = "fs2-serve.nebius.ai/trusted-public-edge-capsule-issuers/v1"
 POLICY_SCHEMA = "fs2-serve.nebius.ai/public-edge-capsule-acceptance/v1"
 ISSUER_ROLE = "platform-security-public-edge-capsule"
 FIXED_TRUST_STORE = Path("/etc/fs2/public-edge-capsule-issuers.json")
 FIXED_ACCEPTANCE_POLICY = Path("/etc/fs2/public-edge-capsule-acceptance.json")
+FIXED_STATIC_OPENSSL = Path("/usr/local/libexec/fs2-public-edge-installer-openssl-static")
 HEX_40 = re.compile(r"^[a-f0-9]{40}$")
 HEX_64 = re.compile(r"^[a-f0-9]{64}$")
 KEY_ID = re.compile(r"^sha256:[a-f0-9]{64}$")
@@ -187,9 +188,34 @@ def sha256_file(path: Path, label: str) -> str:
     return hasher.hexdigest()
 
 
+def require_static_elf(raw: bytes, label: str) -> None:
+    if (
+        len(raw) < 64
+        or raw[:4] != b"\x7fELF"
+        or raw[4] != 2
+        or raw[5] != 1
+        or raw[6] != 1
+    ):
+        fail(f"{label} is not one supported ELF64 little-endian executable")
+    program_offset = int.from_bytes(raw[32:40], "little")
+    entry_size = int.from_bytes(raw[54:56], "little")
+    entry_count = int.from_bytes(raw[56:58], "little")
+    if entry_size < 56 or entry_count < 1 or program_offset + entry_size * entry_count > len(raw):
+        fail(f"{label} has a malformed ELF program-header table")
+    program_types = {
+        int.from_bytes(
+            raw[program_offset + index * entry_size : program_offset + index * entry_size + 4],
+            "little",
+        )
+        for index in range(entry_count)
+    }
+    if 2 in program_types or 3 in program_types:
+        fail(f"{label} must be fully static with no PT_DYNAMIC or PT_INTERP")
+
+
 def pinned_openssl(expected_sha256: str) -> tuple[int, str]:
-    path = Path("/usr/bin/openssl")
-    for parent in (Path("/usr"), Path("/usr/bin")):
+    path = FIXED_STATIC_OPENSSL
+    for parent in (Path("/usr"), Path("/usr/local"), Path("/usr/local/libexec")):
         details = os.stat(parent, follow_symlinks=False)
         if (
             not stat.S_ISDIR(details.st_mode)
@@ -212,12 +238,12 @@ def pinned_openssl(expected_sha256: str) -> tuple[int, str]:
     ):
         os.close(descriptor)
         fail("fixed OpenSSL executable is not root-owned and protected")
-    hasher = hashlib.sha256()
+    chunks: list[bytes] = []
     while True:
         chunk = os.read(descriptor, 1024 * 1024)
         if not chunk:
             break
-        hasher.update(chunk)
+        chunks.append(chunk)
     after = os.fstat(descriptor)
     if (
         before.st_dev,
@@ -231,7 +257,12 @@ def pinned_openssl(expected_sha256: str) -> tuple[int, str]:
         after.st_size,
         after.st_mtime_ns,
         after.st_ctime_ns,
-    ) or hasher.hexdigest() != expected_sha256:
+    ):
+        os.close(descriptor)
+        fail("fixed static OpenSSL executable changed while read")
+    raw = b"".join(chunks)
+    require_static_elf(raw, "fixed installer OpenSSL")
+    if hashlib.sha256(raw).hexdigest() != expected_sha256:
         os.close(descriptor)
         fail("fixed OpenSSL executable differs from the root acceptance policy")
     os.lseek(descriptor, 0, os.SEEK_SET)
@@ -376,8 +407,16 @@ def main() -> int:
     parser.add_argument("--launcher-binary", required=True, type=Path)
     parser.add_argument("--bootstrap", required=True, type=Path)
     arguments = parser.parse_args()
+    for value, label in (
+        (arguments.bundle, "capsule bundle"),
+        (arguments.manifest, "capsule manifest"),
+        (arguments.launcher_binary, "launcher binary"),
+        (arguments.bootstrap, "capsule bootstrap"),
+    ):
+        if not value.is_absolute() or value.is_symlink():
+            fail(f"{label} argument must be absolute and must not be a symlink")
     manifest, manifest_raw = canonical_file(
-        arguments.manifest.resolve(), "capsule manifest"
+        arguments.manifest, "capsule manifest"
     )
     trust, trust_raw = root_policy_file(FIXED_TRUST_STORE, "capsule trust store")
     policy_raw, policy_bytes = root_policy_file(
@@ -393,6 +432,7 @@ def main() -> int:
             "trust_store_sha256",
             "launcher_sha256",
             "bootstrap_sha256",
+            "installer_sha256",
             "openssl_sha256",
             "approved_by",
             "approved_at",
@@ -413,11 +453,13 @@ def main() -> int:
             "accepted_tree",
             "installed_source_root",
             "capsule_group",
+            "installer_sha256",
             "launcher_sha256",
             "bootstrap_sha256",
             "sources",
             "tools",
             "terraform",
+            "nebius_auth",
             "release_files",
             "installation_receipt",
         },
@@ -442,6 +484,8 @@ def main() -> int:
         != digest(policy["launcher_sha256"], "policy launcher digest")
         or accepted["bootstrap_sha256"]
         != digest(policy["bootstrap_sha256"], "policy bootstrap digest")
+        or accepted["installer_sha256"]
+        != digest(policy["installer_sha256"], "policy installer digest")
         or not isinstance(policy["approved_by"], str)
         or not policy["approved_by"]
         or not isinstance(policy["approved_at"], str)
@@ -478,12 +522,12 @@ def main() -> int:
         openssl_path=openssl_path,
     )
     os.close(openssl_fd)
-    verify_bundle(arguments.bundle.resolve(), accepted)
-    if sha256_file(arguments.launcher_binary.resolve(), "launcher binary") != digest(
+    verify_bundle(arguments.bundle, accepted)
+    if sha256_file(arguments.launcher_binary, "launcher binary") != digest(
         accepted["launcher_sha256"], "accepted launcher digest"
     ):
         fail("launcher binary differs from the accepted digest")
-    if sha256_file(arguments.bootstrap.resolve(), "bootstrap") != digest(
+    if sha256_file(arguments.bootstrap, "bootstrap") != digest(
         accepted["bootstrap_sha256"], "accepted bootstrap digest"
     ):
         fail("bootstrap differs from the accepted digest")

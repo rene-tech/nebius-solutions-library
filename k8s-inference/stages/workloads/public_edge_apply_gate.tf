@@ -3,7 +3,7 @@
 # before Helm, so neither the foundation receipt nor plan-time Node data can be
 # replayed after a cordon, taint, replacement, provider rollout, or group move.
 locals {
-  public_edge_gate_launcher_path = "/usr/local/libexec/fs2-public-edge-gate-launcher"
+  public_edge_gate_launcher_path = "/usr/local/libexec/fs2-public-edge-current/launcher"
   public_edge_gate_verifier_path = "${path.module}/../foundation/scripts/verify-public-edge-node-eligibility.py"
   public_edge_gate_verifier_sha256 = filesha256(local.public_edge_gate_verifier_path)
   public_edge_membership_trust_sha256 = filesha256("${path.module}/../foundation/trusted-public-edge-membership-issuers.json")
@@ -61,6 +61,15 @@ resource "terraform_data" "public_edge_apply_eligibility" {
       FS2_EDGE_GATE_VERIFIER_SHA256        = self.input.verifier_sha256
       FS2_EDGE_GATE_POLICY_SHA256          = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_policy_sha256
       FS2_EDGE_GATE_BINDING_SHA256         = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_binding_sha256
+      FS2_EDGE_GATE_CAS_POLICY_SHA256      = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_cas_policy_sha256
+      FS2_EDGE_GATE_CAS_BINDING_SHA256     = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_cas_binding_sha256
+      FS2_EDGE_GATE_BOOTSTRAP_POLICY_SHA256  = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_bootstrap_policy_sha256
+      FS2_EDGE_GATE_BOOTSTRAP_BINDING_SHA256 = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_bootstrap_binding_sha256
+      FS2_EDGE_GATE_BOUNDARY_APPROVAL_API_VERSION = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_boundary_approval.api_version
+      FS2_EDGE_GATE_BOUNDARY_APPROVAL_KIND        = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_boundary_approval.kind
+      FS2_EDGE_GATE_BOUNDARY_APPROVAL_NAME        = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_boundary_approval.name
+      FS2_EDGE_GATE_BOUNDARY_APPROVAL_RESOURCE    = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_boundary_approval.resource
+      FS2_EDGE_GATE_BOUNDARY_APPROVAL_SHA256      = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_boundary_approval.sha256
       FS2_EDGE_GATE_MEMBERSHIP_TRUST_SHA256 = local.public_edge_membership_trust_sha256
       FS2_EDGE_GATE_PROVIDER_ADAPTER_TRUST_SHA256 = local.public_edge_provider_adapter_trust_sha256
     }
@@ -138,6 +147,15 @@ data "external" "public_edge_mutation_fence" {
     FS2_EDGE_GATE_NODE_SELECTOR_JSON          = jsonencode(var.public_edge_availability_contract.node_selector)
     FS2_EDGE_GATE_POLICY_SHA256                = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_policy_sha256
     FS2_EDGE_GATE_BINDING_SHA256               = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_binding_sha256
+    FS2_EDGE_GATE_CAS_POLICY_SHA256            = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_cas_policy_sha256
+    FS2_EDGE_GATE_CAS_BINDING_SHA256           = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_cas_binding_sha256
+    FS2_EDGE_GATE_BOOTSTRAP_POLICY_SHA256      = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_bootstrap_policy_sha256
+    FS2_EDGE_GATE_BOOTSTRAP_BINDING_SHA256     = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_bootstrap_binding_sha256
+    FS2_EDGE_GATE_BOUNDARY_APPROVAL_API_VERSION = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_boundary_approval.api_version
+    FS2_EDGE_GATE_BOUNDARY_APPROVAL_KIND        = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_boundary_approval.kind
+    FS2_EDGE_GATE_BOUNDARY_APPROVAL_NAME        = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_boundary_approval.name
+    FS2_EDGE_GATE_BOUNDARY_APPROVAL_RESOURCE    = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_boundary_approval.resource
+    FS2_EDGE_GATE_BOUNDARY_APPROVAL_SHA256      = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_boundary_approval.sha256
     FS2_EDGE_GATE_MEMBERSHIP_TRUST_SHA256       = local.public_edge_membership_trust_sha256
     FS2_EDGE_GATE_PROVIDER_ADAPTER_TRUST_SHA256 = local.public_edge_provider_adapter_trust_sha256
   }

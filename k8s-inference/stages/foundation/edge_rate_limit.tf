@@ -20,6 +20,8 @@ locals {
     "kubernetes_network_policy_v1.edge_rate_limit_redis",
   ], local.public_edge_enabled ? [
     "terraform_data.public_edge_apply_eligibility[0]",
+    "kubernetes_manifest.public_edge_node_authority_cas_policy[0]",
+    "kubernetes_manifest.public_edge_node_authority_cas_binding[0]",
     "kubernetes_manifest.public_edge_node_authority_policy[0]",
     "kubernetes_manifest.public_edge_node_authority_binding[0]",
   ] : [])
@@ -374,6 +376,11 @@ resource "kubernetes_stateful_set_v1" "edge_rate_limit_redis" {
           data.external.public_edge_mutation_fence[0].result.membership_receipt_sha256 == local.public_edge_membership_authority.receipt_sha256 &&
           data.external.public_edge_mutation_fence[0].result.admission_policy_sha256 == local.public_edge_node_authority_policy_sha256 &&
           data.external.public_edge_mutation_fence[0].result.admission_binding_sha256 == local.public_edge_node_authority_binding_sha256 &&
+          data.external.public_edge_mutation_fence[0].result.admission_cas_policy_sha256 == local.public_edge_node_authority_cas_policy_sha256 &&
+          data.external.public_edge_mutation_fence[0].result.admission_cas_binding_sha256 == local.public_edge_node_authority_cas_binding_sha256 &&
+          data.external.public_edge_mutation_fence[0].result.admission_bootstrap_policy_sha256 == local.public_edge_cas_bootstrap_policy_sha256 &&
+          data.external.public_edge_mutation_fence[0].result.admission_bootstrap_binding_sha256 == local.public_edge_cas_bootstrap_binding_sha256 &&
+          data.external.public_edge_mutation_fence[0].result.admission_boundary_approval_sha256 == local.public_edge_node_authority_approval_sha256 &&
           tonumber(data.external.public_edge_mutation_fence[0].result.provider_member_count) >= 3 &&
           tonumber(data.external.public_edge_mutation_fence[0].result.eligible_node_count) >= 3 &&
           tonumber(data.external.public_edge_mutation_fence[0].result.hostname_domain_count) >= 3,

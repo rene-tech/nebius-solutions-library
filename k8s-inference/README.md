@@ -135,11 +135,14 @@ the operator instead of changing limits or broad project roles.
 Prerequisites are Terraform 1.11 or newer (but older than 2.0), `kubectl`,
 `helm` 3.9 or newer for the digest-pinned OCI charts, `jq`,
 [`crane`](https://github.com/google/go-containerregistry/tree/main/cmd/crane),
-Git, and authenticated Nebius CLI access to the target project. The optional
+Git, and an enrolled short-lived Nebius token broker for the target project.
+The optional
 local Kueue and JobSet server tests additionally need
-[`kind`](https://kind.sigs.k8s.io/). Authentication is
-runtime context, not desired state, so select it with `NEBIUS_PROFILE` or
-`--nebius-profile` rather than putting credentials in Terraform variables.
+[`kind`](https://kind.sigs.k8s.io/). The profile name is only a non-secret,
+signed authority selector, supplied with `NEBIUS_PROFILE` or
+`--nebius-profile`. The accepted capsule obtains actual authentication from a
+root-owned broker as a signed, sealed, short-lived token; it never loads caller
+`HOME`, an ambient profile file, or an ambient `NEBIUS_*` credential.
 
 Operator commands have one additional prerequisite: install the independently accepted
 execution capsule described in
@@ -148,9 +151,14 @@ The capsule is required for validation, planning, apply, destroy, status,
 output, and proxy flows because edge mode and provider inputs are not trusted
 until the accepted Terraform configuration has been evaluated.
 It binds an exact accepted commit/tree, complete root-owned source inventory,
-CLI binaries, Terraform CLI configuration, and provider mirror. The production
-capsule-issuer registry is intentionally empty in source; Platform Security
-must enroll and sign an exact package before installation. The public command
+CLI binaries, Terraform CLI configuration, provider mirror, token-broker
+authority, and the root-owned signed mutation-ledger authority used before
+every Terraform spawn. Public edge additionally requires an external
+provider-IAM/API-server admission boundary; an in-cluster VAP is not its own
+deletion authority. The production capsule-issuer, auth-broker, settlement,
+and admission-boundary registries are intentionally empty in source; Platform
+Security must enroll and sign an exact package and each external authority
+before installation. The public command
 surface and arguments remain unchanged; non-apply commands retain their prior
 read-only behavior while using the same accepted source and tool custody.
 
@@ -324,8 +332,9 @@ sources resolve from `models.image_overrides` first and otherwise from the
 checked-in runtime catalog. Every effective source must be digest-pinned and
 deployable; unresolved `.invalid` catalog sources fail before cloud mutation.
 The non-secret receipt is stored as `registry-mirror.receipt.json` in the
-private run root. Registry credentials are read from the selected Nebius
-profile and optional configured Docker-config environment reference; they are
+private run root. Nebius registry authorization uses the brokered short-lived
+token. Optional NVCR Docker-config data is returned only through its exact
+post-configuration secret-broker slot; it is
 materialized only in a temporary directory and never written to Terraform
 inputs or state.
 

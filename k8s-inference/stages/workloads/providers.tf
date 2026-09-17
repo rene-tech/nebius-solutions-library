@@ -11,8 +11,8 @@ provider "helm" {
 }
 
 provider "nebius" {
-  profile = {
-    name            = var.nebius_profile
-    no_browser_open = true
-  }
+  # The profile remains a signed authority selector in the handoff. Provider
+  # authentication comes only from the accepted capsule's sealed, short-lived
+  # token descriptor and never from ambient HOME/profile configuration.
+  token = chomp(file(var.nebius_iam_token_file))
 }

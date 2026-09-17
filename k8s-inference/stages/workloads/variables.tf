@@ -1,11 +1,22 @@
 variable "nebius_profile" {
-  description = "Exact authenticated Nebius CLI profile used by the staged wrapper; required only to read the MysteryBox-delivered reference-data S3 secret ephemerally."
+  description = "Exact signed Nebius authority selector used by the staged wrapper; required only to bind ephemeral MysteryBox reads to the brokered identity."
   type        = string
   default     = "sandbox"
 
   validation {
     condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$", var.nebius_profile))
     error_message = "nebius_profile must be a bounded CLI profile name."
+  }
+}
+
+variable "nebius_iam_token_file" {
+  description = "Inherited sealed-memory descriptor containing the accepted capsule's signed short-lived Nebius token."
+  type        = string
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^/proc/self/fd/[0-9]+$", var.nebius_iam_token_file))
+    error_message = "nebius_iam_token_file must be an inherited /proc/self/fd descriptor path."
   }
 }
 

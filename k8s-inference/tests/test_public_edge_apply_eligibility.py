@@ -442,6 +442,89 @@ def test_transition_epoch_cannot_drop_a_serving_domain_or_exceed_surge() -> None
         )
 
 
+def test_apply_time_epoch_cas_rejects_second_saved_plan_from_same_predecessor() -> None:
+    """Model the oldObject comparisons embedded in the immutable CAS policy."""
+
+    epoch_n = {
+        "sequence": "7",
+        "payload": "a" * 64,
+        "phase": "stable",
+        "serving": '["computeinstance-test1","computeinstance-test2","computeinstance-test3"]',
+        "joining": "[]",
+        "retiring": "[]",
+    }
+
+    def successor(payload: str, joining: str) -> dict[str, str]:
+        return {
+            "sequence": "8",
+            "payload": payload,
+            "predecessor_payload": epoch_n["payload"],
+            "predecessor_phase": epoch_n["phase"],
+            "predecessor_serving": epoch_n["serving"],
+            "predecessor_joining": epoch_n["joining"],
+            "predecessor_retiring": epoch_n["retiring"],
+            "phase": "prepare",
+            "serving": epoch_n["serving"],
+            "joining": joining,
+            "retiring": "[]",
+        }
+
+    def apply_time_cas(old: dict[str, str], new: dict[str, str]) -> bool:
+        return (
+            int(new["sequence"]) == int(old["sequence"]) + 1
+            and new["predecessor_payload"] == old["payload"]
+            and new["predecessor_phase"] == old["phase"]
+            and new["predecessor_serving"] == old["serving"]
+            and new["predecessor_joining"] == old["joining"]
+            and new["predecessor_retiring"] == old["retiring"]
+        )
+
+    plan_a = successor("b" * 64, '["computeinstance-test4"]')
+    plan_b = successor("c" * 64, '["computeinstance-test5"]')
+    assert apply_time_cas(epoch_n, plan_a)
+    installed_a = {
+        "sequence": plan_a["sequence"],
+        "payload": plan_a["payload"],
+        "phase": plan_a["phase"],
+        "serving": plan_a["serving"],
+        "joining": plan_a["joining"],
+        "retiring": plan_a["retiring"],
+    }
+    assert not apply_time_cas(installed_a, plan_b)
+
+
+def test_external_admission_binds_exact_dynamic_policy_and_actor() -> None:
+    source = (ROOT / "stages/foundation/public_edge_cas_bootstrap.tf").read_text(
+        encoding="utf-8"
+    )
+    assert "paramKind" in source
+    assert 'parameterNotFoundAction = "Deny"' in source
+    assert "object.spec == params.spec.policySpec" in source
+    assert "object.metadata.annotations == params.spec.policyAnnotations" in source
+    assert "public_edge_cas_bootstrap_creator_cel" in source
+    assert "rbac_review_sha256 != strrep" in source
+    assert 'kind == "provider-iam+apiserver-admission"' in source
+    assert "public_edge_required_identity_paths" in source
+    assert "provenance_attestation_sha256" in source
+    assert "controller_image_digest" in source
+    assert "spec.preventiveBoundary" in source
+    assert source.count(
+        "(request.operation == 'DELETE' ? oldObject.metadata.name : object.metadata.name)"
+    ) == 2
+    assert (
+        "request.resource.resource != 'validatingadmissionpolicies' || "
+        "(request.operation == 'DELETE' ? oldObject.metadata.name : object.metadata.name) "
+        "!= 'fs2-public-edge-node-authority'"
+    ) in source
+    assert (
+        "request.resource.resource != 'validatingadmissionpolicybindings' || "
+        "(request.operation == 'DELETE' ? oldObject.metadata.name : object.metadata.name) "
+        "!= 'fs2-public-edge-node-authority'"
+    ) in source
+    assert "impersonation_review_sha256 != strrep" in source
+    assert "public_edge_node_authority_approval_exact" in source
+
+
 def test_empty_source_issuer_registry_fails_closed() -> None:
     receipt, _trust, adapter_trust, evidence_raw = membership_receipt()
     with pytest.raises(GATE.GateError, match="source-trusted authority"):

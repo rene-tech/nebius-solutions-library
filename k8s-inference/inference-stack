@@ -4,15 +4,22 @@
 from __future__ import annotations
 
 import argparse
+import array
+import base64
+import binascii
 import fcntl
 import hashlib
 import json
 import os
 import pwd
 import re
+import socket
+import stat
+import struct
 import subprocess
 import sys
 import tempfile
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator, Mapping, Sequence
@@ -42,7 +49,7 @@ STAGE_COMPLETION_OUTPUTS = {
     "foundation": "cluster_contract",
     "workloads": "deployment_contract",
 }
-CAPSULE_LAUNCHER = Path("/usr/local/libexec/fs2-public-edge-gate-launcher")
+CAPSULE_LAUNCHER = Path("/usr/local/libexec/fs2-public-edge-current/launcher")
 CAPSULE_TOOL_NAMES = {
     "crane",
     "git",
@@ -58,6 +65,15 @@ CAPSULE_TOOL_NAMES = {
 }
 CAPSULE_TOOL_PATHS: dict[str, str] = {}
 CAPSULE_PASS_FDS: tuple[int, ...] = ()
+CAPSULE_NEBIUS_AUTH: dict[str, Any] = {}
+CAPSULE_NEBIUS_AUTH_ENVELOPE = ""
+CAPSULE_AUTH_REFRESH_FD = -1
+CAPSULE_SECRET_BROKER_FD = -1
+CAPSULE_SECRET_VALUES: dict[str, str | None] = {}
+MUTATION_SETTLEMENT_ROOT = Path("/var/lib/fs2/public-edge-mutation-settlements")
+MUTATION_LEDGER_SOCKET = Path("/run/fs2/public-edge-mutation-ledger.sock")
+MUTATION_LEDGER_EXECUTABLE = Path("/usr/local/libexec/fs2-public-edge-mutation-ledger")
+MUTATION_LEDGER_CONFIG = Path("/etc/fs2/public-edge-mutation-ledger.json")
 CAPSULE_COMMANDS = {
     "validate",
     "preflight",
@@ -67,21 +83,12 @@ CAPSULE_COMMANDS = {
     "status",
     "output",
     "proxy",
+    "reconcile",
 }
 
 
 class DeploymentError(RuntimeError):
     """A bounded, user-actionable deployment failure."""
-
-
-def _safe_capsule_environment_name(name: str) -> bool:
-    """Match the launcher's bounded secret-reference name contract."""
-
-    return bool(re.fullmatch(r"[A-Z][A-Z0-9_]{2,127}", name)) and not (
-        name.startswith(("LD_", "DYLD_", "PYTHON", "TF_", "NEBIUS_", "FS2_CAPSULE_"))
-        or name in {"HOME", "PATH"}
-        or "PROXY" in name
-    )
 
 
 def enter_accepted_capsule(argv: Sequence[str]) -> None:
@@ -90,8 +97,9 @@ def enter_accepted_capsule(argv: Sequence[str]) -> None:
     This function performs no parsing, external execution, or run-root write.
     The fixed launcher chooses the accepted source and all executable bytes.
     The mutable checkout supplies only operator arguments and environment
-    *names*; the accepted source later reads only names selected by its exact
-    deployment contract.
+    *selectors*. The launcher retains ambient secret values in a separate
+    broker process; the accepted source can request only the four logical
+    secret slots selected by its exact deployment contract.
     """
 
     if (
@@ -116,14 +124,10 @@ def enter_accepted_capsule(argv: Sequence[str]) -> None:
         for value in forwarded
     ) and os.environ.get("NEBIUS_PROFILE"):
         forwarded.extend(["--nebius-profile", os.environ["NEBIUS_PROFILE"]])
-    preserved_names = sorted(
-        name for name in os.environ if _safe_capsule_environment_name(name)
-    )
     command = [
         str(CAPSULE_LAUNCHER),
         "inference-stack",
         "operator",
-        *(f"--preserve-env={name}" for name in preserved_names),
         "--",
         *forwarded,
     ]
@@ -136,7 +140,11 @@ def enter_accepted_capsule(argv: Sequence[str]) -> None:
 def load_capsule_contract() -> None:
     """Validate the inherited capsule proof and pin subprocess descriptors."""
 
+    global CAPSULE_NEBIUS_AUTH
+    global CAPSULE_NEBIUS_AUTH_ENVELOPE
+    global CAPSULE_AUTH_REFRESH_FD
     global CAPSULE_PASS_FDS
+    global CAPSULE_SECRET_BROKER_FD
     if os.environ.get("FS2_CAPSULE_LAUNCHER") != "fs2-public-edge-capsule-v1":
         raise DeploymentError("accepted capsule launcher proof is absent")
     if os.getegid() == os.getgid() or os.getegid() in os.getgroups():
@@ -186,11 +194,93 @@ def load_capsule_contract() -> None:
     if int(cli_config.rsplit("/", 1)[1]) not in parsed_fds:
         raise DeploymentError("accepted Terraform CLI descriptor is not inherited")
     CAPSULE_TOOL_PATHS["terraform_cli_config"] = cli_config
+    token_path = raw_paths.get("nebius_token")
+    if not isinstance(token_path, str) or not re.fullmatch(
+        r"/proc/self/fd/[0-9]+", token_path
+    ):
+        raise DeploymentError("brokered Nebius token descriptor is absent")
+    token_fd = int(token_path.rsplit("/", 1)[1])
+    if token_fd not in parsed_fds:
+        raise DeploymentError("brokered Nebius token descriptor is not inherited")
+    CAPSULE_TOOL_PATHS["nebius_token"] = token_path
     tool_bin = raw_paths.get("tool_bin")
     if not isinstance(tool_bin, str) or not tool_bin.startswith("/opt/fs2/"):
         raise DeploymentError("accepted capsule tool bin is absent")
     CAPSULE_TOOL_PATHS["tool_bin"] = tool_bin
-    CAPSULE_PASS_FDS = tuple(sorted(set(parsed_fds)))
+    settlement_trust = raw_paths.get("mutation_settlement_trust")
+    if not isinstance(settlement_trust, str) or re.fullmatch(
+        r"/proc/self/fd/[0-9]+", settlement_trust
+    ) is None:
+        raise DeploymentError("mutation-settlement trust registry is not descriptor-pinned")
+    if int(settlement_trust.rsplit("/", 1)[1]) not in parsed_fds:
+        raise DeploymentError("mutation-settlement trust descriptor is not inherited")
+    CAPSULE_TOOL_PATHS["mutation_settlement_trust"] = settlement_trust
+    try:
+        authentication = json.loads(os.environ["FS2_CAPSULE_NEBIUS_AUTH_JSON"])
+        envelope = os.environ["FS2_CAPSULE_DELEGATED_AUTH_ENVELOPE"]
+        auth_refresh_fd = int(os.environ["FS2_CAPSULE_AUTH_REFRESH_FD"])
+        secret_broker_fd = int(os.environ["FS2_CAPSULE_SECRET_BROKER_FD"])
+    except (KeyError, ValueError, json.JSONDecodeError) as exc:
+        raise DeploymentError("capsule authentication handoff is absent") from exc
+    if not isinstance(authentication, dict) or set(authentication) != {
+        "accepted_commit",
+        "accepted_tree",
+        "audience",
+        "authority_id",
+        "broker_config_sha256",
+        "broker_executable_sha256",
+        "caller_gid",
+        "caller_uid",
+        "endpoint",
+        "expires_at",
+        "issued_at",
+        "key_id",
+        "manifest_sha256",
+        "operator_identity",
+        "peer_credential_mode",
+        "profile",
+        "project_id",
+        "request_nonce",
+        "schema",
+        "subject_id",
+        "tenant_id",
+        "token_sha256",
+    }:
+        raise DeploymentError("capsule authentication metadata is malformed")
+    if (
+        authentication["schema"]
+        != "fs2-serve.nebius.ai/short-lived-nebius-auth/v2"
+        or authentication["accepted_commit"] != accepted_commit
+        or authentication["accepted_tree"] != accepted_tree
+        or authentication["manifest_sha256"] != manifest_sha256
+        or authentication["audience"] != "fs2-public-edge-operator"
+        or authentication["endpoint"] != "api.nebius.cloud"
+        or authentication["caller_uid"] != os.getuid()
+        or authentication["caller_gid"] != os.getgid()
+        or not isinstance(authentication["operator_identity"], str)
+        or re.fullmatch(r"[a-z][a-z0-9._-]{2,127}", authentication["operator_identity"])
+        is None
+        or not isinstance(authentication["expires_at"], int)
+        or authentication["expires_at"] - int(time.time()) < 2 * 60 * 60
+        or not isinstance(envelope, str)
+        or not envelope
+        or auth_refresh_fd < 3
+        or not stat.S_ISSOCK(os.fstat(auth_refresh_fd).st_mode)
+        or secret_broker_fd < 3
+        or not stat.S_ISSOCK(os.fstat(secret_broker_fd).st_mode)
+    ):
+        raise DeploymentError("capsule authentication handoff is not current and exact")
+    if secret_broker_fd not in parsed_fds:
+        raise DeploymentError("operator secret broker descriptor is not inherited")
+    if auth_refresh_fd not in parsed_fds:
+        raise DeploymentError("Nebius auth refresh descriptor is not inherited")
+    CAPSULE_NEBIUS_AUTH = authentication
+    CAPSULE_NEBIUS_AUTH_ENVELOPE = envelope
+    CAPSULE_AUTH_REFRESH_FD = auth_refresh_fd
+    CAPSULE_SECRET_BROKER_FD = secret_broker_fd
+    CAPSULE_PASS_FDS = tuple(
+        sorted(set(parsed_fds) - {auth_refresh_fd, secret_broker_fd})
+    )
 
 
 def capsule_subprocess_options() -> dict[str, object]:
@@ -255,6 +345,32 @@ def private_json(path: Path, value: Any) -> None:
             temporary.unlink()
 
 
+def append_only_private_json(path: Path, value: Any) -> None:
+    """Write one durable evidence object without replacement or cleanup."""
+
+    descriptor = os.open(
+        path,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0),
+        0o600,
+    )
+    raw = json.dumps(value, indent=2, sort_keys=True).encode("utf-8") + b"\n"
+    try:
+        offset = 0
+        while offset < len(raw):
+            written = os.write(descriptor, raw[offset:])
+            if written <= 0:
+                raise DeploymentError("cannot write append-only reconciliation evidence")
+            offset += written
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    parent_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+    try:
+        os.fsync(parent_fd)
+    finally:
+        os.close(parent_fd)
+
+
 def private_text(path: Path, value: str) -> None:
     temporary = path.with_name(f".{path.name}.tmp-{os.getpid()}")
     descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -290,6 +406,253 @@ def clean_environment() -> dict[str, str]:
     return environment
 
 
+def _sealed_descriptor_bytes(
+    descriptor: int, *, label: str, maximum_bytes: int
+) -> bytes:
+    details = os.fstat(descriptor)
+    required_seals = (
+        fcntl.F_SEAL_SEAL
+        | fcntl.F_SEAL_SHRINK
+        | fcntl.F_SEAL_GROW
+        | fcntl.F_SEAL_WRITE
+    )
+    if (
+        not stat.S_ISREG(details.st_mode)
+        or details.st_size < 1
+        or details.st_size > maximum_bytes
+        or fcntl.fcntl(descriptor, fcntl.F_GET_SEALS) & required_seals
+        != required_seals
+    ):
+        raise DeploymentError(f"{label} is not one bounded fully sealed descriptor")
+    value = os.pread(descriptor, details.st_size, 0)
+    after = os.fstat(descriptor)
+    if len(value) != details.st_size or (
+        details.st_dev,
+        details.st_ino,
+        details.st_size,
+        details.st_ctime_ns,
+    ) != (
+        after.st_dev,
+        after.st_ino,
+        after.st_size,
+        after.st_ctime_ns,
+    ):
+        raise DeploymentError(f"{label} changed while read")
+    return value
+
+
+def brokered_nebius_token() -> str:
+    """Return only the signed capsule-delivered short-lived token."""
+
+    if not CAPSULE_NEBIUS_AUTH:
+        raise DeploymentError("brokered Nebius authentication is absent")
+    if CAPSULE_NEBIUS_AUTH["expires_at"] - int(time.time()) < 2 * 60 * 60:
+        raise DeploymentError(
+            "brokered Nebius authentication has less than two hours remaining; "
+            "start a new accepted capsule command"
+        )
+    descriptor = int(CAPSULE_TOOL_PATHS["nebius_token"].rsplit("/", 1)[1])
+    value = _sealed_descriptor_bytes(
+        descriptor, label="brokered Nebius IAM token", maximum_bytes=64 * 1024
+    )
+    if hashlib.sha256(value).hexdigest() != CAPSULE_NEBIUS_AUTH["token_sha256"]:
+        raise DeploymentError("brokered Nebius token differs from its signed envelope")
+    try:
+        token = value.decode("ascii")
+    except UnicodeDecodeError as exc:
+        raise DeploymentError("brokered Nebius token is not ASCII") from exc
+    if not token or any(character.isspace() for character in token):
+        raise DeploymentError("brokered Nebius token is empty or contains whitespace")
+    return token
+
+
+def refresh_brokered_auth() -> None:
+    """Replace the stable token descriptor with one freshly brokered lease."""
+
+    global CAPSULE_NEBIUS_AUTH
+    global CAPSULE_NEBIUS_AUTH_ENVELOPE
+    if CAPSULE_AUTH_REFRESH_FD < 3:
+        raise DeploymentError("Nebius auth refresh agent is absent")
+    broker = socket.socket(fileno=CAPSULE_AUTH_REFRESH_FD)
+    try:
+        broker.sendall(b"\x01")
+        ancillary_size = socket.CMSG_SPACE(array.array("i", [0]).itemsize)
+        envelope_raw, ancillary, flags, _address = broker.recvmsg(
+            128 * 1024 + 1, ancillary_size
+        )
+    finally:
+        broker.detach()
+    if flags & (socket.MSG_TRUNC | socket.MSG_CTRUNC) or len(envelope_raw) > 128 * 1024:
+        raise DeploymentError("Nebius auth refresh response is truncated or oversized")
+    descriptors: list[int] = []
+    for level, kind, data in ancillary:
+        if level == socket.SOL_SOCKET and kind == socket.SCM_RIGHTS:
+            values = array.array("i")
+            values.frombytes(data[: len(data) - (len(data) % values.itemsize)])
+            descriptors.extend(values.tolist())
+    if len(descriptors) != 1:
+        for descriptor in descriptors:
+            os.close(descriptor)
+        raise DeploymentError("Nebius auth refresh did not return one sealed token")
+    refreshed_fd = descriptors[0]
+    try:
+        token_bytes = _sealed_descriptor_bytes(
+            refreshed_fd,
+            label="refreshed Nebius IAM token",
+            maximum_bytes=64 * 1024,
+        )
+        envelope = json.loads(envelope_raw.decode("utf-8"))
+        if not isinstance(envelope, dict) or set(envelope) != {"payload", "signature"}:
+            raise DeploymentError("refreshed Nebius auth envelope is malformed")
+        payload = envelope["payload"]
+        if not isinstance(payload, dict) or set(payload) != set(CAPSULE_NEBIUS_AUTH):
+            raise DeploymentError("refreshed Nebius auth payload schema changed")
+        if (
+            payload["schema"] != "fs2-serve.nebius.ai/short-lived-nebius-auth/v2"
+            or payload["accepted_commit"] != CAPSULE_NEBIUS_AUTH["accepted_commit"]
+            or payload["accepted_tree"] != CAPSULE_NEBIUS_AUTH["accepted_tree"]
+            or payload["manifest_sha256"] != CAPSULE_NEBIUS_AUTH["manifest_sha256"]
+            or payload["authority_id"] != CAPSULE_NEBIUS_AUTH["authority_id"]
+            or payload["key_id"] != CAPSULE_NEBIUS_AUTH["key_id"]
+            or payload["profile"] != CAPSULE_NEBIUS_AUTH["profile"]
+            or payload["caller_uid"] != os.getuid()
+            or payload["caller_gid"] != os.getgid()
+            or payload["operator_identity"] != CAPSULE_NEBIUS_AUTH["operator_identity"]
+            or payload["subject_id"] != CAPSULE_NEBIUS_AUTH["subject_id"]
+            or payload["project_id"] != CAPSULE_NEBIUS_AUTH["project_id"]
+            or payload["tenant_id"] != CAPSULE_NEBIUS_AUTH["tenant_id"]
+            or payload["broker_executable_sha256"]
+            != CAPSULE_NEBIUS_AUTH["broker_executable_sha256"]
+            or payload["broker_config_sha256"]
+            != CAPSULE_NEBIUS_AUTH["broker_config_sha256"]
+            or payload["peer_credential_mode"]
+            != CAPSULE_NEBIUS_AUTH["peer_credential_mode"]
+            or payload["expires_at"] - int(time.time()) < 2 * 60 * 60
+            or payload["token_sha256"] != hashlib.sha256(token_bytes).hexdigest()
+        ):
+            raise DeploymentError("refreshed Nebius auth lease changed accepted authority")
+        stable_fd = int(CAPSULE_TOOL_PATHS["nebius_token"].rsplit("/", 1)[1])
+        os.dup2(refreshed_fd, stable_fd, inheritable=True)
+        CAPSULE_NEBIUS_AUTH = payload
+        CAPSULE_NEBIUS_AUTH_ENVELOPE = base64.urlsafe_b64encode(
+            envelope_raw
+        ).rstrip(b"=").decode("ascii")
+    except (UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise DeploymentError("refreshed Nebius auth response is invalid") from exc
+    finally:
+        os.close(refreshed_fd)
+
+
+def brokered_auth_environment(
+    environment: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    """Add only the capsule-verified token and its delegated signed proof."""
+
+    refresh_brokered_auth()
+    result = dict(environment) if environment is not None else clean_environment()
+    token_fd = CAPSULE_TOOL_PATHS["nebius_token"].rsplit("/", 1)[1]
+    result["NEBIUS_IAM_TOKEN"] = brokered_nebius_token()
+    result["FS2_CAPSULE_NEBIUS_PROFILE"] = CAPSULE_NEBIUS_AUTH["profile"]
+    result["FS2_CAPSULE_DELEGATED_AUTH_FD"] = token_fd
+    result["FS2_CAPSULE_DELEGATED_AUTH_ENVELOPE"] = CAPSULE_NEBIUS_AUTH_ENVELOPE
+    return result
+
+
+def require_brokered_profile(profile: str) -> None:
+    if (
+        re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", profile) is None
+        or CAPSULE_NEBIUS_AUTH.get("profile") != profile
+    ):
+        raise DeploymentError(
+            "the selected Nebius profile differs from the signed capsule auth authority"
+        )
+
+
+def require_brokered_target(project_id: str) -> None:
+    """Keep a profile-scoped lease from crossing its enrolled cloud project."""
+
+    if CAPSULE_NEBIUS_AUTH.get("project_id") != project_id:
+        raise DeploymentError(
+            "the target project differs from the signed profile/subject authority"
+        )
+
+
+def operator_secret(slot: str, environment_name: str) -> str | None:
+    """Resolve one contract-selected secret as one sealed broker descriptor."""
+
+    if slot not in {
+        "grafana_username",
+        "grafana_password",
+        "ngc_api_key",
+        "nvcr_dockerconfig",
+    }:
+        raise DeploymentError("operator secret slot is outside the four-slot contract")
+    if re.fullmatch(r"[A-Z][A-Z0-9_]{2,127}", environment_name) is None or (
+        environment_name.startswith(
+            (
+                "LD_",
+                "DYLD_",
+                "PYTHON",
+                "TF_",
+                "NEBIUS_",
+                "FS2_CAPSULE_",
+                "AWS_",
+                "GITHUB_",
+                "OPENAI_",
+            )
+        )
+        or environment_name in {"HOME", "PATH"}
+        or "PROXY" in environment_name
+    ):
+        raise DeploymentError("operator secret environment reference is unsafe")
+    cache_key = f"{slot}:{environment_name}"
+    if cache_key in CAPSULE_SECRET_VALUES:
+        return CAPSULE_SECRET_VALUES[cache_key]
+    if CAPSULE_SECRET_BROKER_FD < 3:
+        raise DeploymentError("operator secret broker descriptor is absent")
+    request = slot.encode("ascii") + b"\0" + environment_name.encode("ascii") + b"\0"
+    broker = socket.socket(fileno=CAPSULE_SECRET_BROKER_FD)
+    try:
+        broker.sendall(request)
+        ancillary_size = socket.CMSG_SPACE(array.array("i", [0]).itemsize)
+        response, ancillary, flags, _address = broker.recvmsg(1, ancillary_size)
+    finally:
+        broker.detach()
+    if flags & (socket.MSG_TRUNC | socket.MSG_CTRUNC) or response not in {b"\0", b"\1"}:
+        raise DeploymentError("operator secret broker returned a malformed response")
+    descriptors: list[int] = []
+    for level, kind, data in ancillary:
+        if level == socket.SOL_SOCKET and kind == socket.SCM_RIGHTS:
+            values = array.array("i")
+            values.frombytes(data[: len(data) - (len(data) % values.itemsize)])
+            descriptors.extend(values.tolist())
+    if response == b"\0":
+        if descriptors:
+            for descriptor in descriptors:
+                os.close(descriptor)
+            raise DeploymentError("absent operator secret unexpectedly included a descriptor")
+        CAPSULE_SECRET_VALUES[cache_key] = None
+        return None
+    if len(descriptors) != 1:
+        for descriptor in descriptors:
+            os.close(descriptor)
+        raise DeploymentError("operator secret broker did not return one descriptor")
+    descriptor = descriptors[0]
+    try:
+        raw = _sealed_descriptor_bytes(
+            descriptor,
+            label=f"operator secret slot {slot}",
+            maximum_bytes=1024 * 1024,
+        )
+        value = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise DeploymentError(f"operator secret slot {slot} is not UTF-8") from exc
+    finally:
+        os.close(descriptor)
+    CAPSULE_SECRET_VALUES[cache_key] = value
+    return value
+
+
 def require_protected_apply_start() -> None:
     """Reject operator execution outside the installed accepted capsule."""
 
@@ -313,6 +676,10 @@ def require_protected_apply_start() -> None:
         or os.getegid() == os.getgid()
         or os.getegid() in os.getgroups()
         or not CAPSULE_TOOL_NAMES.issubset(CAPSULE_TOOL_PATHS)
+        or "nebius_token" not in CAPSULE_TOOL_PATHS
+        or not CAPSULE_NEBIUS_AUTH
+        or not CAPSULE_NEBIUS_AUTH_ENVELOPE
+        or CAPSULE_SECRET_BROKER_FD < 3
         or not CAPSULE_PASS_FDS
         or sys.flags.isolated != 1
         or not sys.dont_write_bytecode
@@ -340,6 +707,7 @@ def require_public_edge_protected_start(contract: Mapping[str, Any]) -> None:
 # older binary they are silently unknown attributes, which would put credential
 # material back into state, so the whole flow refuses to run below 1.11.
 MINIMUM_TERRAFORM_VERSION = (1, 11, 0)
+MAXIMUM_MUTATION_SECONDS = 90 * 60
 
 
 def require_terraform_version(terraform: str) -> tuple[int, int, int]:
@@ -368,7 +736,7 @@ def require_terraform_version(terraform: str) -> tuple[int, int, int]:
 
 
 def terraform_environment(run_root: Path, stage: str) -> dict[str, str]:
-    environment = clean_environment()
+    environment = brokered_auth_environment(clean_environment())
     data_directory = run_root / "terraform-data" / stage
     private_directory(data_directory)
     environment["TF_DATA_DIR"] = str(data_directory)
@@ -603,8 +971,6 @@ def preflight_accelerators(
         platform_result = run(
             [
                 args.nebius,
-                "--profile",
-                args.nebius_profile,
                 "compute",
                 "platform",
                 "get-by-name",
@@ -616,7 +982,7 @@ def preflight_accelerators(
                 "json",
             ],
             capture=True,
-            env=clean_environment(),
+            env=brokered_auth_environment(),
         )
         platform = json.loads(platform_result.stdout)
         presets = {
@@ -649,8 +1015,6 @@ def preflight_accelerators(
         compatibility_result = run(
             [
                 args.nebius,
-                "--profile",
-                args.nebius_profile,
                 "mk8s",
                 "node-group",
                 "get-compatibility-matrix",
@@ -662,7 +1026,7 @@ def preflight_accelerators(
                 "json",
             ],
             capture=True,
-            env=clean_environment(),
+            env=brokered_auth_environment(),
         )
         compatibility = json.loads(compatibility_result.stdout)
         items = [
@@ -699,8 +1063,6 @@ def preflight_accelerators(
                 group_result = run(
                     [
                         args.nebius,
-                        "--profile",
-                        args.nebius_profile,
                         "capacity",
                         "capacity-block-group",
                         "get",
@@ -710,7 +1072,7 @@ def preflight_accelerators(
                         "json",
                     ],
                     capture=True,
-                    env=clean_environment(),
+                    env=brokered_auth_environment(),
                 )
                 group = json.loads(group_result.stdout)
                 metadata = group.get("metadata", {})
@@ -1499,10 +1861,10 @@ def registry_client_environment(
     nebius_profile: str,
 ) -> Iterator[dict[str, str]]:
     """Materialize optional private registry auth only in an ephemeral directory."""
-    environment = clean_environment()
-    environment["NEBIUS_PROFILE"] = nebius_profile
+    require_brokered_profile(nebius_profile)
+    environment = brokered_auth_environment()
     secret_name = contract["secret_environment"]["nvcr_dockerconfig"]
-    encoded_extra = os.environ.get(secret_name)
+    encoded_extra = operator_secret("nvcr_dockerconfig", secret_name)
     if not encoded_extra:
         yield environment
         return
@@ -1707,8 +2069,12 @@ def stage_environment(
     secret_names = contract["secret_environment"]
 
     if stage == "foundation":
-        username = os.environ.get(secret_names["grafana_username"])
-        password = os.environ.get(secret_names["grafana_password"])
+        username = operator_secret(
+            "grafana_username", secret_names["grafana_username"]
+        )
+        password = operator_secret(
+            "grafana_password", secret_names["grafana_password"]
+        )
         if not username or not password:
             raise DeploymentError(
                 "fresh foundation deployment requires both configured Grafana bootstrap username and password environment references"
@@ -1719,8 +2085,10 @@ def stage_environment(
         )
 
     if stage == "workloads":
-        ngc_key = os.environ.get(secret_names["ngc_api_key"])
-        docker_config = os.environ.get(secret_names["nvcr_dockerconfig"])
+        ngc_key = operator_secret("ngc_api_key", secret_names["ngc_api_key"])
+        docker_config = operator_secret(
+            "nvcr_dockerconfig", secret_names["nvcr_dockerconfig"]
+        )
         requirements = contract["secret_requirements"]
         if requirements["ngc_api_key"] and not ngc_key:
             raise DeploymentError(
@@ -1747,6 +2115,7 @@ def write_infrastructure_variables(
     variables = dict(contract["stages"]["infrastructure"])
     variables["source_commit"] = commit
     variables["nebius_profile"] = nebius_profile
+    variables["nebius_iam_token_file"] = CAPSULE_TOOL_PATHS["nebius_token"]
     path = run_root / "infrastructure.tfvars.json"
     private_json(path, variables)
     return path
@@ -1761,16 +2130,15 @@ def ensure_kubeconfig(
     cluster_id: str,
     cluster_name: str,
 ) -> tuple[Path, str]:
+    require_brokered_profile(nebius_profile)
     kubeconfig = run_root / "kubeconfig"
     if kubeconfig.is_symlink():
         raise DeploymentError(f"kubeconfig path must not be a symlink: {kubeconfig}")
-    environment = clean_environment()
+    environment = brokered_auth_environment()
     environment["KUBECONFIG"] = str(kubeconfig)
     run(
         [
             nebius,
-            "--profile",
-            nebius_profile,
             "mk8s",
             "cluster",
             "get-credentials",
@@ -2089,6 +2457,7 @@ def write_downstream_variables(
         **rewritten_workloads(contract, dynamic),
         **identity,
         "nebius_profile": dynamic.get("nebius_profile", "sandbox"),
+        "nebius_iam_token_file": CAPSULE_TOOL_PATHS["nebius_token"],
         "public_edge_contract": dynamic["public_edge_contract"],
     }
     controller = workloads.get("model_controller")
@@ -2340,9 +2709,959 @@ def apply_plan(
     plan_path: Path,
     environment: Mapping[str, str],
 ) -> None:
-    run(
-        [terraform, f"-chdir={root}", "apply", "-input=false", str(plan_path)],
-        env=environment,
+    run_root = plan_path.parent
+    stage = {
+        DEPLOY_ROOT: "configuration",
+        INFRA_ROOT: "infrastructure",
+        FOUNDATION_ROOT: "foundation",
+        WORKLOADS_ROOT: "workloads",
+    }.get(root)
+    if stage is None:
+        raise DeploymentError("Terraform mutation root is outside the staged contract")
+    run_root_descriptor = os.open(
+        run_root,
+        os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0),
+    )
+    try:
+        # Serialize the check/intent/spawn/terminal sequence. A crash releases
+        # the kernel lock but leaves the fsynced intent for the next caller.
+        fcntl.flock(run_root_descriptor, fcntl.LOCK_EX)
+        require_reconciled_mutations(run_root)
+        started = record_mutation_started(
+            run_root,
+            stage=stage,
+            root=root,
+            plan_path=plan_path,
+        )
+        refreshed_environment = brokered_auth_environment(environment)
+        command = [terraform, f"-chdir={root}", "apply", "-input=false", str(plan_path)]
+        print(f"+ {command_text(command)}", file=sys.stderr)
+        try:
+            result = subprocess.run(
+                command,
+                env=refreshed_environment,
+                text=True,
+                check=False,
+                timeout=MAXIMUM_MUTATION_SECONDS,
+                **capsule_subprocess_options(),
+            )
+        except (subprocess.TimeoutExpired, KeyboardInterrupt, OSError) as exc:
+            record_mutation_outcome(
+                run_root,
+                started=started,
+                outcome=type(exc).__name__,
+            )
+            raise DeploymentError(
+                "Terraform mutation ended without a terminal result; run the accepted "
+                "reconcile command before any later mutation"
+            ) from exc
+        if result.returncode != 0:
+            record_mutation_outcome(
+                run_root,
+                started=started,
+                outcome=f"exit-{result.returncode}",
+            )
+            raise DeploymentError(
+                f"Terraform mutation returned {result.returncode}; run the accepted "
+                "reconcile command before any later mutation"
+            )
+        record_mutation_terminal_success(run_root, started=started)
+    finally:
+        os.close(run_root_descriptor)
+
+
+def indeterminate_mutation_records(
+    run_root: Path,
+) -> list[tuple[Path, dict[str, Any], str]]:
+    records: list[tuple[Path, dict[str, Any], str]] = []
+    for path in sorted(MUTATION_SETTLEMENT_ROOT.glob("*.started.json")):
+        record = _external_signed_record(
+            path,
+            "fs2-serve.nebius.ai/mutation-ledger-receipt/v1",
+        )
+        if record.get("run_root") != str(run_root):
+            continue
+        raw = path.read_bytes()
+        receipt_sha256 = hashlib.sha256(raw).hexdigest()
+        if (
+            record.get("action") != "started"
+            or record.get("event_status") != "pending"
+            or record.get("stage") not in {"configuration", "infrastructure", "foundation", "workloads"}
+            or not isinstance(record.get("recorded_at_unix"), int)
+            or not isinstance(record.get("attempt_id"), str)
+            or path != MUTATION_SETTLEMENT_ROOT / f"{record.get('attempt_id')}.started.json"
+            or record.get("predecessor_receipt_sha256") != "0" * 64
+        ):
+            raise DeploymentError("external mutation-started ledger record is malformed")
+        terminal_path = MUTATION_SETTLEMENT_ROOT / f"{record['attempt_id']}.terminal.json"
+        if terminal_path.exists():
+            terminal = _external_signed_record(
+                terminal_path,
+                "fs2-serve.nebius.ai/mutation-ledger-receipt/v1",
+            )
+            if (
+                terminal.get("action") != "terminal"
+                or terminal.get("event_status") != "success"
+                or terminal.get("accepted_commit") != record["accepted_commit"]
+                or terminal.get("accepted_tree") != record["accepted_tree"]
+                or terminal.get("attempt_id") != record["attempt_id"]
+                or terminal.get("stage") != record["stage"]
+                or terminal.get("run_root") != record["run_root"]
+                or terminal.get("project_id") != record["project_id"]
+                or terminal.get("predecessor_receipt_sha256") != receipt_sha256
+                or terminal.get("recorded_at_unix", 0) < record["recorded_at_unix"]
+            ):
+                raise DeploymentError("external mutation terminal does not close its exact intent")
+            continue
+        records.append((path, record, receipt_sha256))
+    return records
+
+
+def _canonical_bytes(value: object) -> bytes:
+    return json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    ).encode("ascii")
+
+
+def _sealed_memfd(label: str, value: bytes) -> int:
+    descriptor = os.memfd_create(label, os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING)
+    offset = 0
+    while offset < len(value):
+        written = os.write(descriptor, value[offset:])
+        if written <= 0:
+            os.close(descriptor)
+            raise DeploymentError(f"cannot write sealed {label}")
+        offset += written
+    seals = fcntl.F_SEAL_SEAL | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_GROW | fcntl.F_SEAL_WRITE
+    if fcntl.fcntl(descriptor, fcntl.F_ADD_SEALS, seals) != 0:
+        os.close(descriptor)
+        raise DeploymentError(f"cannot seal {label}")
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    return descriptor
+
+
+def _verify_settlement_signature(
+    payload: Mapping[str, Any], signature_text: object
+) -> Mapping[str, Any]:
+    trust_fd = int(CAPSULE_TOOL_PATHS["mutation_settlement_trust"].rsplit("/", 1)[1])
+    trust_raw = os.pread(trust_fd, os.fstat(trust_fd).st_size, 0)
+    try:
+        trust = json.loads(trust_raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise DeploymentError("mutation-settlement trust registry is malformed") from exc
+    if _canonical_bytes(trust) + b"\n" != trust_raw or not isinstance(trust, dict) or set(trust) != {"authorities", "schema"} or trust["schema"] != "fs2-serve.nebius.ai/trusted-mutation-settlement-authorities/v1" or not isinstance(trust["authorities"], list):
+        raise DeploymentError("mutation-settlement trust registry is not canonical v1")
+    authority_id = payload.get("authority_id")
+    key_id = payload.get("key_id")
+    project_id = payload.get("project_id")
+    matches = [
+        item
+        for item in trust["authorities"]
+        if isinstance(item, dict)
+        and set(item) == {
+            "id", "key_id", "ledger", "project_ids", "providers", "public_key",
+            "role", "settlement_root",
+        }
+        and item.get("id") == authority_id
+        and item.get("key_id") == key_id
+        and item.get("role") == "public-edge-provider-settlement-authority"
+        and item.get("settlement_root") == str(MUTATION_SETTLEMENT_ROOT)
+        and isinstance(item.get("project_ids"), list)
+        and item["project_ids"] == sorted(set(item["project_ids"]))
+        and project_id in item["project_ids"]
+    ]
+    if len(matches) != 1:
+        raise DeploymentError("mutation settlement is not bound to one enrolled authority/project")
+    authority = matches[0]
+    ledger = authority["ledger"]
+    if (
+        not isinstance(ledger, dict)
+        or set(ledger) != {
+            "config_path", "config_sha256", "executable_path", "executable_sha256",
+            "peer_credential_mode", "peer_gid", "peer_uid", "runtime_review_sha256",
+            "socket_path",
+        }
+        or ledger.get("socket_path") != str(MUTATION_LEDGER_SOCKET)
+        or ledger.get("executable_path") != str(MUTATION_LEDGER_EXECUTABLE)
+        or ledger.get("config_path") != str(MUTATION_LEDGER_CONFIG)
+        or ledger.get("peer_credential_mode") != "SO_PEERCRED"
+        or not isinstance(ledger.get("peer_uid"), int)
+        or not isinstance(ledger.get("peer_gid"), int)
+        or any(
+            not isinstance(ledger.get(key), str)
+            or re.fullmatch(r"[a-f0-9]{64}", ledger[key]) is None
+            or ledger[key] == "0" * 64
+            for key in (
+                "config_sha256", "executable_sha256", "runtime_review_sha256",
+            )
+        )
+    ):
+        raise DeploymentError("mutation ledger authority is malformed or not fixed")
+    if payload.get("schema") == "fs2-serve.nebius.ai/mutation-ledger-receipt/v1" and (
+        payload.get("ledger_executable_sha256") != ledger["executable_sha256"]
+        or payload.get("ledger_config_sha256") != ledger["config_sha256"]
+        or payload.get("ledger_runtime_review_sha256") != ledger["runtime_review_sha256"]
+        or payload.get("ledger_peer_credential_mode") != ledger["peer_credential_mode"]
+        or payload.get("ledger_peer_uid") != ledger["peer_uid"]
+        or payload.get("ledger_peer_gid") != ledger["peer_gid"]
+    ):
+        raise DeploymentError("mutation-ledger receipt differs from its enrolled runtime")
+    providers = authority["providers"]
+    if not isinstance(providers, list):
+        raise DeploymentError("mutation-settlement provider authority list is malformed")
+    provider_keys = {
+        "class", "endpoint", "observer_config_sha256", "observer_executable_sha256",
+        "observer_id", "observer_runtime_review_sha256",
+    }
+    if any(
+        not isinstance(provider, dict)
+        or set(provider) != provider_keys
+        or provider.get("class") not in {"terraform-local", "nebius", "kubernetes-helm"}
+        or not isinstance(provider.get("endpoint"), str)
+        or not provider["endpoint"]
+        or not isinstance(provider.get("observer_id"), str)
+        or not provider["observer_id"]
+        or any(
+            not isinstance(provider.get(key), str)
+            or re.fullmatch(r"[a-f0-9]{64}", provider[key]) is None
+            or provider[key] == "0" * 64
+            for key in (
+                "observer_executable_sha256",
+                "observer_config_sha256",
+                "observer_runtime_review_sha256",
+            )
+        )
+        for provider in providers
+    ):
+        raise DeploymentError("mutation-settlement provider authority list is malformed")
+    provider_identities = [
+        (provider["class"], provider["endpoint"], provider["observer_id"])
+        for provider in providers
+    ]
+    if provider_identities != sorted(set(provider_identities)):
+        raise DeploymentError("mutation-settlement provider authority list is ambiguous")
+    provider_matches = [
+        provider
+        for provider in providers
+        if provider.get("class") == payload.get("provider_class")
+        and provider.get("endpoint") == payload.get("provider_endpoint")
+        and provider.get("observer_id") == payload.get("observer_id")
+        and provider.get("observer_executable_sha256") == payload.get("observer_executable_sha256")
+        and provider.get("observer_config_sha256") == payload.get("observer_config_sha256")
+        and provider.get("observer_runtime_review_sha256") == payload.get("observer_runtime_review_sha256")
+    ]
+    if len(provider_matches) != 1:
+        raise DeploymentError("settlement is not bound to one exact provider observer/runtime")
+    try:
+        public_key = base64.urlsafe_b64decode(
+            str(authority["public_key"]) + "=" * (-len(str(authority["public_key"])) % 4)
+        )
+        signature = base64.urlsafe_b64decode(
+            str(signature_text) + "=" * (-len(str(signature_text)) % 4)
+        )
+    except (ValueError, binascii.Error) as exc:
+        raise DeploymentError("mutation-settlement signature encoding is invalid") from exc
+    if len(public_key) != 32 or len(signature) != 64 or authority["key_id"] != "sha256:" + hashlib.sha256(public_key).hexdigest():
+        raise DeploymentError("mutation-settlement signing key is invalid")
+    key_fd = _sealed_memfd("settlement-key", bytes.fromhex("302a300506032b6570032100") + public_key)
+    payload_fd = _sealed_memfd("settlement-payload", _canonical_bytes(payload))
+    signature_fd = _sealed_memfd("settlement-signature", signature)
+    try:
+        result = subprocess.run(
+            [
+                CAPSULE_TOOL_PATHS["openssl"],
+                "pkeyutl",
+                "-verify",
+                "-pubin",
+                "-keyform",
+                "DER",
+                "-inkey",
+                f"/proc/self/fd/{key_fd}",
+                "-rawin",
+                "-in",
+                f"/proc/self/fd/{payload_fd}",
+                "-sigfile",
+                f"/proc/self/fd/{signature_fd}",
+            ],
+            env=clean_environment(),
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            pass_fds=tuple(sorted({*CAPSULE_PASS_FDS, key_fd, payload_fd, signature_fd})),
+            close_fds=True,
+        )
+    finally:
+        os.close(key_fd)
+        os.close(payload_fd)
+        os.close(signature_fd)
+    if result.returncode != 0:
+        raise DeploymentError("mutation-settlement signature is invalid")
+    return authority
+
+
+def _external_signed_record(path: Path, schema: str) -> dict[str, Any]:
+    for parent in (Path("/var"), Path("/var/lib"), Path("/var/lib/fs2"), MUTATION_SETTLEMENT_ROOT):
+        details = os.stat(parent, follow_symlinks=False)
+        if not stat.S_ISDIR(details.st_mode) or details.st_uid != 0 or stat.S_IMODE(details.st_mode) & 0o022:
+            raise DeploymentError("mutation-settlement authority directory is not protected")
+    descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        details = os.fstat(descriptor)
+        if not stat.S_ISREG(details.st_mode) or details.st_uid != 0 or stat.S_IMODE(details.st_mode) != 0o444:
+            raise DeploymentError("mutation-settlement receipt is not root-owned mode 0444")
+        raw = os.pread(descriptor, details.st_size, 0)
+    finally:
+        os.close(descriptor)
+    try:
+        envelope = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise DeploymentError("mutation-settlement receipt is malformed") from exc
+    if _canonical_bytes(envelope) + b"\n" != raw or not isinstance(envelope, dict) or set(envelope) != {"payload", "signature"} or not isinstance(envelope["payload"], dict) or envelope["payload"].get("schema") != schema:
+        raise DeploymentError("mutation-settlement receipt is not canonical or has the wrong schema")
+    _verify_settlement_signature(envelope["payload"], envelope["signature"])
+    return envelope["payload"]
+
+
+def _protected_root_file_sha256(path: Path, *, label: str) -> str:
+    current = Path("/")
+    for part in path.parent.parts[1:]:
+        current /= part
+        details = os.stat(current, follow_symlinks=False)
+        if (
+            not stat.S_ISDIR(details.st_mode)
+            or details.st_uid != 0
+            or stat.S_IMODE(details.st_mode) & 0o022
+        ):
+            raise DeploymentError(f"{label} parent chain is not root-owned and protected")
+    descriptor = os.open(
+        path,
+        os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0),
+    )
+    try:
+        before = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_uid != 0
+            or stat.S_IMODE(before.st_mode) & 0o022
+        ):
+            raise DeploymentError(f"{label} is not a protected root-owned regular file")
+        digest = hashlib.sha256()
+        while True:
+            chunk = os.read(descriptor, 128 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+        after = os.fstat(descriptor)
+        if (
+            before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns,
+            before.st_ctime_ns,
+        ) != (
+            after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns,
+            after.st_ctime_ns,
+        ):
+            raise DeploymentError(f"{label} changed while it was hashed")
+        return digest.hexdigest()
+    finally:
+        os.close(descriptor)
+
+
+def _request_mutation_ledger_event(
+    *,
+    action: str,
+    attempt_id: str,
+    run_root: Path,
+    stage: str,
+    record: Mapping[str, Any],
+) -> tuple[dict[str, Any], str]:
+    if action not in {"started", "terminal", "outcome"}:
+        raise DeploymentError("mutation-ledger action is outside the exact contract")
+    if re.fullmatch(r"[0-9]+-[0-9]+-[0-9]+", attempt_id) is None:
+        raise DeploymentError("mutation-ledger attempt identity is malformed")
+    project_id = CAPSULE_NEBIUS_AUTH.get("project_id")
+    if not isinstance(project_id, str) or not project_id:
+        raise DeploymentError("mutation ledger requires the capsule-bound cloud project")
+    request = {
+        "accepted_commit": os.environ["FS2_CAPSULE_ACCEPTED_COMMIT"],
+        "accepted_tree": os.environ["FS2_CAPSULE_ACCEPTED_TREE"],
+        "action": action,
+        "attempt_id": attempt_id,
+        "caller_gid": os.getgid(),
+        "caller_uid": os.getuid(),
+        "project_id": project_id,
+        "record": dict(record),
+        "request_nonce": base64.urlsafe_b64encode(os.getrandom(32)).rstrip(b"=").decode("ascii"),
+        "run_root": str(run_root),
+        "schema": "fs2-serve.nebius.ai/mutation-ledger-request/v1",
+        "stage": stage,
+    }
+    request_raw = _canonical_bytes(request) + b"\n"
+    if len(request_raw) > 128 * 1024:
+        raise DeploymentError("mutation-ledger request exceeds the bounded contract")
+    for parent in (Path("/run"), MUTATION_LEDGER_SOCKET.parent):
+        details = os.stat(parent, follow_symlinks=False)
+        if (
+            not stat.S_ISDIR(details.st_mode)
+            or details.st_uid != 0
+            or stat.S_IMODE(details.st_mode) & 0o022
+        ):
+            raise DeploymentError("mutation-ledger socket parent is not protected")
+    socket_details = os.stat(MUTATION_LEDGER_SOCKET, follow_symlinks=False)
+    if (
+        not stat.S_ISSOCK(socket_details.st_mode)
+        or socket_details.st_uid != 0
+        or stat.S_IMODE(socket_details.st_mode) & 0o007
+    ):
+        raise DeploymentError("mutation-ledger socket is not root-owned and private")
+    connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    connection.settimeout(30)
+    try:
+        connection.connect(str(MUTATION_LEDGER_SOCKET))
+        peer_pid, peer_uid, peer_gid = struct.unpack(
+            "3i",
+            connection.getsockopt(
+                socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i")
+            ),
+        )
+        connection.sendall(request_raw)
+        connection.shutdown(socket.SHUT_WR)
+        chunks: list[bytes] = []
+        length = 0
+        while True:
+            chunk = connection.recv(64 * 1024)
+            if not chunk:
+                break
+            length += len(chunk)
+            if length > 256 * 1024:
+                raise DeploymentError("mutation-ledger response exceeds its bound")
+            chunks.append(chunk)
+    finally:
+        connection.close()
+    response_raw = b"".join(chunks)
+    try:
+        envelope = json.loads(response_raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise DeploymentError("mutation-ledger response is malformed") from exc
+    if (
+        _canonical_bytes(envelope) + b"\n" != response_raw
+        or not isinstance(envelope, dict)
+        or set(envelope) != {"payload", "signature"}
+        or not isinstance(envelope["payload"], dict)
+    ):
+        raise DeploymentError("mutation-ledger response is not one canonical envelope")
+    payload = envelope["payload"]
+    expected_keys = {
+        "accepted_commit", "accepted_tree", "action", "conflicting_active_count",
+        "attempt_id", "authority_id", "caller_gid", "caller_uid", "entry_sha256",
+        "event_status",
+        "key_id", "ledger_config_sha256", "ledger_executable_sha256",
+        "ledger_peer_credential_mode", "ledger_peer_gid", "ledger_peer_uid",
+        "ledger_runtime_review_sha256", "ledger_sequence", "observer_config_sha256",
+        "observer_executable_sha256", "observer_id", "observer_runtime_review_sha256",
+        "predecessor_receipt_sha256", "previous_head_sha256", "project_id",
+        "provider_class", "provider_endpoint", "record_path", "record_sha256",
+        "recorded_at_unix", "request_sha256", "run_root", "schema", "stage",
+    }
+    if set(payload) != expected_keys:
+        raise DeploymentError("mutation-ledger receipt violates its exact schema")
+    authority = _verify_settlement_signature(payload, envelope["signature"])
+    ledger = authority["ledger"]
+    expected_provider_class = {
+        "configuration": "terraform-local",
+        "infrastructure": "nebius",
+        "foundation": "kubernetes-helm",
+        "workloads": "kubernetes-helm",
+    }.get(stage)
+    unsigned_entry = dict(payload)
+    del unsigned_entry["entry_sha256"]
+    expected_record_path = MUTATION_SETTLEMENT_ROOT / f"{attempt_id}.{action}.json"
+    if (
+        payload["schema"] != "fs2-serve.nebius.ai/mutation-ledger-receipt/v1"
+        or payload["accepted_commit"] != request["accepted_commit"]
+        or payload["accepted_tree"] != request["accepted_tree"]
+        or payload["action"] != action
+        or payload["attempt_id"] != attempt_id
+        or payload["caller_uid"] != request["caller_uid"]
+        or payload["caller_gid"] != request["caller_gid"]
+        or payload["project_id"] != project_id
+        or payload["run_root"] != str(run_root)
+        or payload["stage"] != stage
+        or payload["provider_class"] != expected_provider_class
+        or payload["request_sha256"] != hashlib.sha256(request_raw).hexdigest()
+        or payload["record_path"] != str(expected_record_path)
+        or payload["conflicting_active_count"] != 0
+        or payload["event_status"]
+        != ({"started": "pending", "terminal": "success"}.get(action, str(record.get("outcome", ""))))
+        or payload["record_sha256"] != hashlib.sha256(_canonical_bytes(record)).hexdigest()
+        or payload["predecessor_receipt_sha256"]
+        != (str(record.get("mutation_started_sha256", "0" * 64)))
+        or not isinstance(payload["ledger_sequence"], int)
+        or payload["ledger_sequence"] < 1
+        or not isinstance(payload["recorded_at_unix"], int)
+        or re.fullmatch(r"[a-f0-9]{64}", str(payload["previous_head_sha256"])) is None
+        or payload["entry_sha256"] != hashlib.sha256(_canonical_bytes(unsigned_entry)).hexdigest()
+        or payload["ledger_executable_sha256"] != ledger["executable_sha256"]
+        or payload["ledger_config_sha256"] != ledger["config_sha256"]
+        or payload["ledger_runtime_review_sha256"] != ledger["runtime_review_sha256"]
+        or payload["ledger_peer_credential_mode"] != "SO_PEERCRED"
+        or payload["ledger_peer_uid"] != ledger["peer_uid"]
+        or payload["ledger_peer_gid"] != ledger["peer_gid"]
+        or peer_uid != ledger["peer_uid"]
+        or peer_gid != ledger["peer_gid"]
+        or peer_pid <= 0
+        or _protected_root_file_sha256(
+            MUTATION_LEDGER_EXECUTABLE, label="mutation-ledger executable"
+        )
+        != ledger["executable_sha256"]
+        or _protected_root_file_sha256(
+            MUTATION_LEDGER_CONFIG, label="mutation-ledger configuration"
+        )
+        != ledger["config_sha256"]
+    ):
+        raise DeploymentError("mutation-ledger receipt is not bound to the exact request/runtime")
+    persisted = _external_signed_record(
+        expected_record_path,
+        "fs2-serve.nebius.ai/mutation-ledger-receipt/v1",
+    )
+    if persisted != payload:
+        raise DeploymentError("mutation-ledger response differs from its protected durable record")
+    persisted_sha256 = hashlib.sha256(expected_record_path.read_bytes()).hexdigest()
+    return payload, persisted_sha256
+
+
+def reconciled_mutation_digests(run_root: Path) -> set[str]:
+    result: set[str] = set()
+    for _journal_path, record, receipt_sha256 in indeterminate_mutation_records(run_root):
+        acceptance_path = MUTATION_SETTLEMENT_ROOT / f"{receipt_sha256}.reconciled.json"
+        if not acceptance_path.exists():
+            continue
+        payload = _external_signed_record(
+            acceptance_path,
+            "fs2-serve.nebius.ai/terraform-mutation-reconciliation-acceptance/v1",
+        )
+        expected_keys = {
+            "accepted_commit", "accepted_tree", "authority_id", "completed_at",
+            "evidence_sha256", "indeterminate_receipt_sha256", "key_id", "project_id",
+            "observer_config_sha256", "observer_executable_sha256", "observer_id",
+            "observer_runtime_review_sha256", "provider_class", "provider_endpoint",
+            "provider_settlement_sha256", "schema", "stage",
+        }
+        evidence_path = run_root / f"mutation-reconciliation-evidence-{receipt_sha256}.json"
+        try:
+            evidence_raw = evidence_path.read_bytes()
+            evidence = json.loads(evidence_raw)
+        except (OSError, json.JSONDecodeError) as exc:
+            raise DeploymentError("external acceptance references malformed local evidence") from exc
+        evidence_keys = {
+            "accepted_commit", "accepted_tree", "indeterminate_receipt_sha256",
+            "no_drift_plan_sha256", "output_postconditions_sha256",
+            "provider_settlement_sha256", "refresh_only_exit_code",
+            "refresh_only_plan_sha256", "refreshed_state_sha256", "schema", "stage",
+        }
+        settlement_path = MUTATION_SETTLEMENT_ROOT / f"{receipt_sha256}.settlement.json"
+        settlement = _external_signed_record(
+            settlement_path,
+            "fs2-serve.nebius.ai/provider-operation-settlement/v1",
+        )
+        provider_binding_keys = (
+            "authority_id", "key_id", "project_id", "provider_class",
+            "provider_endpoint", "observer_id", "observer_executable_sha256",
+            "observer_config_sha256", "observer_runtime_review_sha256",
+        )
+        if (
+            set(payload) != expected_keys
+            or payload["accepted_commit"] != os.environ["FS2_CAPSULE_ACCEPTED_COMMIT"]
+            or payload["accepted_tree"] != os.environ["FS2_CAPSULE_ACCEPTED_TREE"]
+            or payload["indeterminate_receipt_sha256"] != receipt_sha256
+            or payload["stage"] != record.get("stage")
+            or not evidence_path.is_file()
+            or evidence_path.is_symlink()
+            or hashlib.sha256(evidence_raw).hexdigest() != payload["evidence_sha256"]
+            or not isinstance(evidence, dict)
+            or set(evidence) != evidence_keys
+            or evidence["schema"] != "fs2-serve.nebius.ai/terraform-mutation-reconciliation-evidence/v2"
+            or evidence["accepted_commit"] != payload["accepted_commit"]
+            or evidence["accepted_tree"] != payload["accepted_tree"]
+            or evidence["indeterminate_receipt_sha256"] != receipt_sha256
+            or evidence["stage"] != record.get("stage")
+            or payload["provider_settlement_sha256"] != evidence["provider_settlement_sha256"]
+            or hashlib.sha256(settlement_path.read_bytes()).hexdigest()
+            != evidence["provider_settlement_sha256"]
+            or any(payload[key] != settlement.get(key) for key in provider_binding_keys)
+            or settlement.get("indeterminate_receipt_sha256") != receipt_sha256
+            or settlement.get("stage") != record.get("stage")
+            or evidence["refresh_only_exit_code"] not in {0, 2}
+            or any(
+                not isinstance(evidence[key], str)
+                or re.fullmatch(r"[a-f0-9]{64}", evidence[key]) is None
+                or evidence[key] == "0" * 64
+                for key in (
+                    "no_drift_plan_sha256",
+                    "output_postconditions_sha256",
+                    "provider_settlement_sha256",
+                    "refresh_only_plan_sha256",
+                    "refreshed_state_sha256",
+                )
+            )
+        ):
+            raise DeploymentError("external reconciliation acceptance does not bind exact local evidence")
+        result.add(receipt_sha256)
+    return result
+
+
+def unresolved_mutation_records(
+    run_root: Path,
+) -> list[tuple[Path, dict[str, Any], str]]:
+    resolved = reconciled_mutation_digests(run_root)
+    return [
+        item for item in indeterminate_mutation_records(run_root) if item[2] not in resolved
+    ]
+
+
+def require_reconciled_mutations(run_root: Path) -> None:
+    pending = unresolved_mutation_records(run_root)
+    if pending:
+        raise DeploymentError(
+            f"{len(pending)} Terraform mutation(s) have indeterminate state; run the "
+            "accepted reconcile command and re-plan before mutation"
+        )
+
+
+def record_mutation_started(
+    run_root: Path,
+    *,
+    stage: str,
+    root: Path,
+    plan_path: Path,
+) -> dict[str, Any]:
+    if not plan_path.is_file() or plan_path.is_symlink():
+        raise DeploymentError("cannot start mutation without an exact regular saved plan")
+    started_at = int(time.time())
+    attempt_id = f"{started_at}-{time.time_ns()}-{os.getpid()}"
+    record = {
+        "accepted_commit": os.environ["FS2_CAPSULE_ACCEPTED_COMMIT"],
+        "accepted_tree": os.environ["FS2_CAPSULE_ACCEPTED_TREE"],
+        "attempt_id": attempt_id,
+        "maximum_mutation_seconds": MAXIMUM_MUTATION_SECONDS,
+        "plan_path": str(plan_path),
+        "plan_sha256": hashlib.sha256(plan_path.read_bytes()).hexdigest(),
+        "root": str(root),
+        "schema": "fs2-serve.nebius.ai/terraform-mutation-started/v2",
+        "stage": stage,
+        "started_at_unix": started_at,
+    }
+    # The external root-owned signed ledger is the authority. The local file is
+    # only a durable operator-readable cache and is never used to clear a fence.
+    ledger_payload, receipt_sha256 = _request_mutation_ledger_event(
+        action="started",
+        attempt_id=attempt_id,
+        run_root=run_root,
+        stage=stage,
+        record=record,
+    )
+    append_only_private_json(
+        run_root / f"mutation-started-{attempt_id}.json",
+        {
+            **record,
+            "external_ledger_entry_sha256": ledger_payload["entry_sha256"],
+            "external_ledger_receipt_sha256": receipt_sha256,
+        },
+    )
+    return {
+        "attempt_id": attempt_id,
+        "record": record,
+        "receipt_sha256": receipt_sha256,
+    }
+
+
+def record_mutation_outcome(
+    run_root: Path,
+    *,
+    started: Mapping[str, Any],
+    outcome: str,
+) -> None:
+    record = started["record"]
+    outcome_record = {
+        "mutation_started_sha256": started["receipt_sha256"],
+        "observed_at_unix": int(time.time()),
+        "outcome": outcome,
+    }
+    ledger_payload, ledger_receipt_sha256 = _request_mutation_ledger_event(
+        action="outcome",
+        attempt_id=started["attempt_id"],
+        run_root=run_root,
+        stage=record["stage"],
+        record=outcome_record,
+    )
+    append_only_private_json(
+        run_root / f"mutation-outcome-{started['attempt_id']}.json",
+        {
+            "accepted_commit": record["accepted_commit"],
+            "accepted_tree": record["accepted_tree"],
+            "attempt_id": started["attempt_id"],
+            "mutation_started_sha256": started["receipt_sha256"],
+            "external_ledger_entry_sha256": ledger_payload["entry_sha256"],
+            "external_ledger_receipt_sha256": ledger_receipt_sha256,
+            "observed_at_unix": outcome_record["observed_at_unix"],
+            "outcome": outcome,
+            "schema": "fs2-serve.nebius.ai/terraform-mutation-outcome/v1",
+            "stage": record["stage"],
+        },
+    )
+
+
+def record_mutation_terminal_success(
+    run_root: Path,
+    *,
+    started: Mapping[str, Any],
+) -> None:
+    record = started["record"]
+    terminal_record = {
+        "completed_at_unix": int(time.time()),
+        "exit_code": 0,
+        "mutation_started_sha256": started["receipt_sha256"],
+    }
+    ledger_payload, ledger_receipt_sha256 = _request_mutation_ledger_event(
+        action="terminal",
+        attempt_id=started["attempt_id"],
+        run_root=run_root,
+        stage=record["stage"],
+        record=terminal_record,
+    )
+    append_only_private_json(
+        run_root / f"mutation-terminal-{started['attempt_id']}.json",
+        {
+            "accepted_commit": record["accepted_commit"],
+            "accepted_tree": record["accepted_tree"],
+            "attempt_id": started["attempt_id"],
+            "completed_at_unix": terminal_record["completed_at_unix"],
+            "external_ledger_entry_sha256": ledger_payload["entry_sha256"],
+            "external_ledger_receipt_sha256": ledger_receipt_sha256,
+            "exit_code": 0,
+            "mutation_started_sha256": started["receipt_sha256"],
+            "schema": "fs2-serve.nebius.ai/terraform-mutation-terminal/v1",
+            "stage": record["stage"],
+        },
+    )
+
+
+def reconcile_indeterminate_mutations(
+    args: argparse.Namespace,
+    run_root: Path,
+    contract: Mapping[str, Any],
+    configuration_variable_file: Path,
+) -> None:
+    pending = unresolved_mutation_records(run_root)
+    if not pending:
+        print(json.dumps({"status": "no-indeterminate-mutations"}, sort_keys=True))
+        return
+    roots = {
+        "configuration": (
+            DEPLOY_ROOT,
+            configuration_variable_file,
+            run_root / "configuration.tfstate",
+        ),
+        "infrastructure": (
+            INFRA_ROOT,
+            run_root / "infrastructure.tfvars.json",
+            run_root / "terraform.tfstate",
+        ),
+        "foundation": (
+            FOUNDATION_ROOT,
+            run_root / "foundation.tfvars.json",
+            run_root / "foundation.tfstate",
+        ),
+        "workloads": (
+            WORKLOADS_ROOT,
+            run_root / "workloads.tfvars.json",
+            run_root / "workloads.tfstate",
+        ),
+    }
+    for _journal_path, record, receipt_sha256 in pending:
+        stage = record.get("stage")
+        if (
+            stage not in roots
+            or record.get("schema")
+            != "fs2-serve.nebius.ai/mutation-ledger-receipt/v1"
+        ):
+            raise DeploymentError(
+                "indeterminate mutation journal is outside the staged contract"
+            )
+        root, variable_file, state = roots[stage]
+        evidence_path = run_root / f"mutation-reconciliation-evidence-{receipt_sha256}.json"
+        if evidence_path.exists():
+            if evidence_path.is_symlink() or not evidence_path.is_file():
+                raise DeploymentError("retained reconciliation evidence path is unsafe")
+            # Evidence is append-only. An external authority must now verify it
+            # and publish the root-owned signed acceptance; do not repeat a
+            # refresh/apply sequence while that decision is pending.
+            continue
+        settlement = _external_signed_record(
+            MUTATION_SETTLEMENT_ROOT / f"{receipt_sha256}.settlement.json",
+            "fs2-serve.nebius.ai/provider-operation-settlement/v1",
+        )
+        settlement_keys = {
+            "accepted_commit", "accepted_tree", "authority_id", "indeterminate_receipt_sha256",
+            "key_id", "observed_at_unix", "operations", "outstanding_operation_ids",
+            "observer_config_sha256", "observer_executable_sha256", "observer_id",
+            "observer_runtime_review_sha256", "project_id", "provider_class",
+            "provider_endpoint", "schema", "stage",
+        }
+        operations = settlement.get("operations")
+        expected_provider_class = {
+            "configuration": "terraform-local",
+            "infrastructure": "nebius",
+            "foundation": "kubernetes-helm",
+            "workloads": "kubernetes-helm",
+        }[stage]
+        if (
+            set(settlement) != settlement_keys
+            or settlement["accepted_commit"] != os.environ["FS2_CAPSULE_ACCEPTED_COMMIT"]
+            or settlement["accepted_tree"] != os.environ["FS2_CAPSULE_ACCEPTED_TREE"]
+            or settlement["indeterminate_receipt_sha256"] != receipt_sha256
+            or settlement["stage"] != stage
+            or settlement["project_id"] != contract["target"]["project_id"]
+            or settlement["provider_class"] != expected_provider_class
+            or not isinstance(settlement["observed_at_unix"], int)
+            or settlement["observed_at_unix"] < record["recorded_at_unix"]
+            or settlement["outstanding_operation_ids"] != []
+            or not isinstance(operations, list)
+            or (stage == "infrastructure" and not operations)
+            or any(
+                not isinstance(operation, dict)
+                or set(operation) != {"id", "settled_at_unix", "status"}
+                or not isinstance(operation["id"], str)
+                or not operation["id"]
+                or operation["status"] not in {"SUCCEEDED", "FAILED", "CANCELLED"}
+                or not isinstance(operation["settled_at_unix"], int)
+                or operation["settled_at_unix"] < record["recorded_at_unix"]
+                for operation in operations
+            )
+        ):
+            raise DeploymentError(
+                f"authoritative provider settlement for {stage} is incomplete or mismatched"
+            )
+        if not variable_file.is_file() or variable_file.is_symlink():
+            raise DeploymentError(
+                f"cannot reconcile {stage}: exact variable input is unavailable"
+            )
+        environment = stage_environment(
+            run_root,
+            "configuration" if stage == "configuration" else stage,
+            contract,
+            # Reacquire only the four accepted one-shot broker slots so the
+            # exact full no-drift plan sees the same credential-presence
+            # booleans as normal apply. Values stay process-local and are not
+            # serialized into settlement or reconciliation evidence.
+            include_secrets=True,
+        )
+        terraform_init(args.terraform, root, state, environment)
+        refresh_plan = run_root / f"mutation-reconcile-{receipt_sha256}.tfplan"
+        command = [
+            args.terraform,
+            f"-chdir={root}",
+            "plan",
+            "-refresh-only",
+            "-detailed-exitcode",
+            "-input=false",
+            "-lock=true",
+            f"-var-file={variable_file}",
+            f"-out={refresh_plan}",
+        ]
+        result = subprocess.run(
+            command,
+            env=brokered_auth_environment(environment),
+            text=True,
+            check=False,
+            timeout=MAXIMUM_MUTATION_SECONDS,
+            **capsule_subprocess_options(),
+        )
+        if result.returncode not in {0, 2} or not refresh_plan.is_file():
+            raise DeploymentError(
+                f"refresh-state reconciliation plan for {stage} did not complete"
+            )
+        refresh_sha256 = hashlib.sha256(refresh_plan.read_bytes()).hexdigest()
+        refresh_apply = subprocess.run(
+            [args.terraform, f"-chdir={root}", "apply", "-input=false", "-lock=true", str(refresh_plan)],
+            env=brokered_auth_environment(environment),
+            text=True,
+            check=False,
+            timeout=MAXIMUM_MUTATION_SECONDS,
+            **capsule_subprocess_options(),
+        )
+        if refresh_apply.returncode != 0:
+            raise DeploymentError(
+                f"refresh-only state application for {stage} did not complete; mutation remains indeterminate"
+            )
+        no_drift_plan = run_root / f"mutation-postcondition-{receipt_sha256}.tfplan"
+        no_drift = subprocess.run(
+            [
+                args.terraform,
+                f"-chdir={root}",
+                "plan",
+                "-detailed-exitcode",
+                "-input=false",
+                "-lock=true",
+                f"-var-file={variable_file}",
+                f"-out={no_drift_plan}",
+            ],
+            env=brokered_auth_environment(environment),
+            text=True,
+            check=False,
+            timeout=MAXIMUM_MUTATION_SECONDS,
+            **capsule_subprocess_options(),
+        )
+        if no_drift.returncode != 0 or not no_drift_plan.is_file():
+            raise DeploymentError(
+                f"exact desired-state postcondition for {stage} is not a no-op; mutation remains indeterminate"
+            )
+        state_result = run(
+            [args.terraform, f"-chdir={root}", "show", "-json", str(state)],
+            env=brokered_auth_environment(environment),
+            capture=True,
+        )
+        output_result = run(
+            [args.terraform, f"-chdir={root}", "output", "-json"],
+            env=brokered_auth_environment(environment),
+            capture=True,
+        )
+        try:
+            state_projection = json.loads(state_result.stdout)
+            output_projection = json.loads(output_result.stdout)
+        except json.JSONDecodeError as exc:
+            raise DeploymentError("refreshed Terraform state/output projection is malformed") from exc
+        required_output = STAGE_COMPLETION_OUTPUTS.get(stage)
+        if required_output is not None and (
+            not isinstance(output_projection, dict) or required_output not in output_projection
+        ):
+            raise DeploymentError(
+                f"refreshed {stage} state lacks the exact completion postcondition output"
+            )
+        settlement_path = MUTATION_SETTLEMENT_ROOT / f"{receipt_sha256}.settlement.json"
+        settlement_sha256 = hashlib.sha256(settlement_path.read_bytes()).hexdigest()
+        append_only_private_json(
+            evidence_path,
+            {
+                "accepted_commit": os.environ["FS2_CAPSULE_ACCEPTED_COMMIT"],
+                "accepted_tree": os.environ["FS2_CAPSULE_ACCEPTED_TREE"],
+                "indeterminate_receipt_sha256": receipt_sha256,
+                "no_drift_plan_sha256": hashlib.sha256(no_drift_plan.read_bytes()).hexdigest(),
+                "output_postconditions_sha256": hashlib.sha256(_canonical_bytes(output_projection)).hexdigest(),
+                "provider_settlement_sha256": settlement_sha256,
+                "refresh_only_exit_code": result.returncode,
+                "refresh_only_plan_sha256": refresh_sha256,
+                "refreshed_state_sha256": hashlib.sha256(_canonical_bytes(state_projection)).hexdigest(),
+                "schema": "fs2-serve.nebius.ai/terraform-mutation-reconciliation-evidence/v2",
+                "stage": stage,
+            },
+        )
+    print(
+        json.dumps(
+            {
+                "status": "awaiting-external-reconciliation-acceptance",
+                "count": len(pending),
+            },
+            sort_keys=True,
+        )
     )
 
 
@@ -3419,6 +4738,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "status",
             "output",
             "proxy",
+            "reconcile",
         ),
     )
     parser.add_argument(
@@ -3454,8 +4774,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--nebius-profile",
-        default=os.environ.get("NEBIUS_PROFILE", "sandbox"),
-        help="authenticated Nebius CLI profile (default: NEBIUS_PROFILE or sandbox)",
+        default="sandbox",
+        help="signed Nebius authority selector (default: sandbox; caller NEBIUS_PROFILE is converted into this argument before capsule entry)",
     )
     return parser.parse_args(argv)
 
@@ -3472,6 +4792,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     # every operator command takes the same protected path and public mode
     # checks it again.
     require_protected_apply_start()
+    require_brokered_profile(args.nebius_profile)
     args.terraform = CAPSULE_TOOL_PATHS["terraform"]
     args.kubectl = CAPSULE_TOOL_PATHS["kubectl"]
     args.nebius = CAPSULE_TOOL_PATHS["nebius"]
@@ -3500,6 +4821,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         contract, configuration_environment = validate_configuration(
             args.terraform, variable_file, run_root
         )
+        require_brokered_target(contract["target"]["project_id"])
         proxy_arguments: list[str] | None = None
         commit = source_commit()
         if args.command == "validate":
@@ -3536,11 +4858,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             output_stack(args, run_root, contract)
         elif args.command == "proxy":
             proxy_arguments = internal_proxy_command(args, run_root, contract)
+        elif args.command == "reconcile":
+            reconcile_indeterminate_mutations(
+                args, run_root, contract, variable_file
+            )
         else:
             status_stack(args, run_root, contract)
     if proxy_arguments is not None:
         try:
-            run(proxy_arguments, env=clean_environment())
+            run(proxy_arguments, env=brokered_auth_environment())
         except KeyboardInterrupt:
             pass
     return 0

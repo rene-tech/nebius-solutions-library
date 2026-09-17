@@ -138,14 +138,53 @@ quiescence, deletion, or rollback. A rollback is another exact next epoch that
 restores the old serving set while retaining the other member as retiring.
 Genesis must be sequence one/stable/zero-predecessor. Every later policy update
 must be the exact next sequence and name the payload digest currently installed
-on the policy. The policy also records its exact serving, joining, and retiring
-sets. Terraform admits only these predecessor-relative transitions: stable may
+on the policy. A separate fail-closed admission policy and binding express the
+update semantics but are not trusted to protect their own
+admissionregistration objects. On every API-server UPDATE the semantic guard
+compares the new sequence, predecessor payload, predecessor phase, and exact
+predecessor serving/joining/retiring annotation strings with `oldObject`.
+Consequently, if two saved plans both derive different N+1 successors from
+epoch N, the first may commit and the second is denied against the now-current
+N+1 object even though its plan-time precondition once passed. The guardian
+also denies update/deletion of either binding and deletion of either policy as
+defense in depth; Terraform `prevent_destroy` mirrors that check. The
+preventive authority is the external provider-IAM plus API-server boundary
+described below. The policy also records its
+exact serving, joining, and retiring sets. Terraform admits only these
+predecessor-relative transitions: stable may
 retain its exact serving set or enter prepare without changing it; prepare may
 roll back to that serving set or promote exactly its joining set while retaining
 only displaced old servers; cutover may finalize without changing its serving
 set or reverse within the same admitted union. Thus a fresh signed receipt
 cannot use a valid predecessor digest to jump directly to an unrelated serving
-set. The empty issuer and adapter registries remain external enrollment gates.
+set. Rollback never decrements a sequence: it is another signed exact-next
+epoch whose predecessor fields compare with the current `oldObject`. The empty
+issuer and adapter registries remain external enrollment gates.
+
+The CAS objects cannot bootstrap or preserve their own names. Before Terraform
+may create them, Platform Security must install an external preventive boundary
+that combines provider IAM with API-server admission enforcement. Source
+enrollment pins its provider policy ID, API-server enforcement ID, controller
+username/UID/groups, image digest, configuration digest, exact source
+repository/commit/tree, provenance-attestation digest, and an exhaustive sorted
+identity-path set covering direct users, service-account tokens, client
+certificates, OIDC, provider control-plane identities, and every Kubernetes
+impersonation dimension (user, group, UID, and userextra). The signed approval
+must repeat that exact boundary receipt. Opaque review hashes alone are not
+authority, and the in-cluster VAP remains defense in depth. Source enrollment
+also pins one creator's username, UID, complete group and `userInfo.extra`
+sets, plus an independent impersonation-review digest and a nonzero independent
+RBAC review. Its fail-closed parameter is a
+security-owned signed epoch approval containing the exact dynamic Node-policy
+spec, complete annotations, content digest, membership receipt, actor
+username/UID/groups/extras, and both review digests. The persistent external
+policy compares the submitted object and authenticated actor to those exact
+values, permits only the exact Deny binding CREATE, and rejects update/deletion.
+Terraform has read-only custody and cannot create or repair that approval. A
+copied digest or plausible sequence cannot authorize an allow-all policy. The
+production registry is empty here, so this candidate cannot self-enroll the
+external boundary. Both mutation fences reread and hash the
+external policy/binding together with both CAS objects, so drift fails closed.
 
 Terraform never launches a verifier pathname. The fixed launcher accepts only
 logical source/mode pairs and chooses the canonical root-owned manifest,
@@ -154,13 +193,14 @@ a static PIE and installs it root-owned mode 2755 to the dedicated no-member
 `fs2-public-edge-capsule` group. The manifest/bootstrap are unreadable to the
 ordinary caller. The launcher and bootstrap both prove the real/effective GID
 transition and absence of capsule-group membership; direct environment markers
-cannot reproduce it. The signed root-owned manifest binds exact accepted
-commit/tree, launcher/bootstrap digests, every regular release file, executable
+cannot reproduce it. The signed root-owned v2 manifest binds exact accepted
+commit/tree, installer/launcher/bootstrap digests, every regular release file, executable
 digests, a no-network Terraform provider mirror, and sealed CLI configuration.
 Every operator invocation re-enumerates and hashes that complete tree before
 source execution.
 
-`./inference-stack <command>` immediately re-execs the installed launcher before
+`./inference-stack <command>` immediately re-execs the atomically selected
+activation-unit launcher before
 argument parsing, Terraform probing, or run-root creation. The accepted source
 then replaces apply-time Terraform, kubectl, Nebius, and crane arguments with
 manifest-pinned `/proc/self/fd` paths. All child calls preserve only the capsule
@@ -170,8 +210,32 @@ finite logical capsule entries too; none starts through a caller shell,
 `/usr/bin/env`, or a caller path. The reviewed invocation shape is:
 
 ```text
-/usr/local/libexec/fs2-public-edge-gate-launcher inference-stack operator [--preserve-env=CONTRACT_SECRET_NAME ...] -- apply --var-file ... --run-root ... --nebius-profile ...
+/usr/local/libexec/fs2-public-edge-current/launcher inference-stack operator -- apply --var-file ... --run-root ... --nebius-profile ...
 ```
+
+The caller supplies only the non-secret profile selector. A fixed root-owned
+broker returns one short-lived Nebius token as a sealed descriptor and a signed
+v2 exact-subject envelope. It binds caller UID/GID, operator, exact
+profile/project/tenant/service-account subject, broker executable/config
+digests, peer mode, and external runtime review. Terraform providers read that descriptor and never
+load an ambient profile or caller `HOME`. The production broker-authority
+registry is empty in source. Grafana/NGC/NVCR values remain in the launcher's
+separate parent and are released after accepted config parsing only for four
+exact logical slots. Generic uppercase environment inheritance is forbidden,
+including unrelated AWS, GitHub, OpenAI, loader, Python, Terraform, proxy, and
+Nebius secrets.
+Each actual cloud-operation boundary obtains a fresh lease with at least two
+hours remaining. Mutating Terraform is capped at 90 minutes. Before Terraform
+starts, a fixed root-owned service records a signed, hash-chained/WORM mutation
+intent under the external settlement root and refuses a conflicting active
+predecessor. Only a signed external terminal record closes it. Caller-owned
+run-root JSON is a cache and cannot clear the fence, so SIGKILL, power loss, a
+nonterminal result, or a failed apply blocks later mutation.
+A root-owned signed settlement first proves stage-appropriate provider
+operations terminal (including authenticated zero-operation proof when true).
+Reconciliation applies refreshed state, requires a full exit-zero no-drift plan
+with ephemeral accepted secret slots, and records state/output digests. Resume
+requires a second external signature over that exact evidence.
 
 The membership receipt additionally binds the absolute path, resolved path,
 and SHA-256 of the capsule Python interpreter, provider observer, and kubectl.
@@ -219,12 +283,13 @@ to its exact value; it cannot change or remove an initialized field. Ordinary
 status updates remain valid. The policy contains no `request.userInfo`
 authorization branch, so impersonating any controller tuple cannot extend
 membership.
-Each mutation fence also reads the exact ValidatingAdmissionPolicy and binding
+Each mutation fence also reads the exact membership and CAS
+ValidatingAdmissionPolicies and both bindings
 before the provider/Node sandwich and again after the terminal provider reads.
 It requires stable UID and resourceVersion plus an exact canonical hash match
 with the Terraform manifest, including membership payload/receipt, epoch,
 sequence, predecessor, and provider-adapter digest annotations. Removing,
-weakening, replacing, or racing either admission object therefore fails the
+weakening, replacing, or racing any admission object therefore fails the
 StatefulSet or Helm lifecycle precondition rather than leaving an unprotected
 TOCTOU interval.
 Redis/Sentinel, Envoy Gateway, RLS, and the Envoy proxy also receive required
@@ -240,7 +305,8 @@ token or Linux capabilities, and has read-only root storage. The image still
 requires the normal independent vulnerability/SBOM/promotion gate before any
 deployment. The six always-present Terraform addresses (ConfigMap, StatefulSet,
 headless Service, Sentinel discovery Service, PDB, and NetworkPolicy), plus the
-public-only apply gate, Node-authority policy, and policy binding addresses,
+public-only apply gate, Node-authority policy/binding, and immutable CAS
+policy/binding addresses,
 are included by exact name in
 `managed_resource_count` and exposed as a closed evidence output.
 
@@ -323,9 +389,23 @@ Terraform and provider tooling, depended on an undocumented external launcher
 installation for ordinary apply, asserted controller impersonation closure,
 and lacked a nondisruptive exact-member replacement epoch.
 
+Exact `6b406acc083e5a7a0ff7a88b8636089770044fed` (tree
+`04d861eccdeef7febf5a88b104d74b1316f60455`) is also preserved as rejected
+evidence. Its accepted capsule stripped the credential material required by the
+Nebius CLI and Terraform provider while still importing unrelated ambient
+uppercase secrets; its documented install preview closed verified inputs before
+a separate, unimplemented copy; and its epoch transition remained only a
+saved-plan check. Two different saved N-to-N+1 plans could therefore both pass
+planning and the later apply could replace the first successor.
+
 This direct additive successor replaces those assertions with the accepted
 release capsule, documented build/install/re-exec contract, identity-free Node
-admission, and chained stable/prepare/cutover epochs with `maxUnavailable=0`.
+admission, a descriptor-pinned privileged installer, brokered signed short-lived
+authentication, and chained stable/prepare/cutover epochs with
+`maxUnavailable=0`. The immutable guardian admission policy performs the epoch
+compare-and-swap against the API server's current `oldObject`, so a stale second
+successor is rejected at mutation time rather than trusted because its plan was
+once current.
 It retains sealed kubeconfig bytes, authoritative provider membership,
 four-hour plan identity plus fresh fence observation, terminal exact admission
 hashes, public three-domain HA, RLS fail-closed behavior, and exact audio
@@ -395,13 +475,23 @@ Accepted execution packages have a separate source registry at
 offline package verifier requires both a valid Ed25519 installation receipt and
 fixed protected root-owned issuer and acceptance files under `/etc/fs2`. The
 acceptance file binds the registry digest, accepted commit/tree, manifest
-digest, launcher/bootstrap digests, and fixed package-verification OpenSSL
+digest, installer/launcher/bootstrap digests, and fixed package-verification OpenSSL
 digest; none is a verifier CLI input. The verifier checks the digest against
 the same stable manifest bytes it parsed and executes the pinned OpenSSL file
 descriptor. Runtime
 apply inputs cannot select an authority. Build, packaging, privileged
 installation, atomic activation, and rollback are specified in
 `public-edge-execution-capsule.md`.
+
+Short-lived cloud authentication has a separate source registry at
+`stages/foundation/trusted-public-edge-auth-broker-authorities.json`, also
+empty. A future entry binds one root-owned broker socket, exact
+profile/project/tenant/subject/operator matrix, fixed executable/config
+digests, peer UID/GID/mode and runtime-review digest, Nebius endpoint, audience,
+authority/key, and token-signing role. The signed v2 response binds those facts
+plus commit/tree/manifest, nonce, token digest and bounded timestamps. Neither an ambient profile name nor an
+untrusted environment token can populate this registry or satisfy the
+signature.
 
 The receipt is canonical JSON followed by one newline and contains exactly the
 receipt schema, `ed25519` algorithm, payload, recomputed payload SHA-256, and
@@ -447,7 +537,8 @@ the coordinator's static-only boundary. A later reviewed integration must:
    allowlisted provider-command environment, stable
    cluster/NodeGroup/instance and NodeList revisions, `spec.providerID` equality
    with the exact signed Compute member set, terminal before/after exact hashes
-   of the ValidatingAdmissionPolicy and binding, fail-closed Node admission, rejection of
+   of both ValidatingAdmissionPolicies and both bindings, apply-time epoch CAS
+   rejection of two concurrent saved N-to-N+1 plans, fail-closed Node admission, rejection of
    spoof-labeled/cordoned/hard-tainted Nodes, valid
    internal soft spread, the retained-capacity update strategy, and equality
    between the plan count and address allowlist.
@@ -457,13 +548,23 @@ the coordinator's static-only boundary. A later reviewed integration must:
 4. Stage the foundation store and prove one primary, two replicas, three
    agreeing Sentinels, quorum failover, and RLS recovery before enabling policy;
    retain the previous Helm revision and state-backed plan for rollback.
-5. Onboard the exact Platform Security capsule, client-identity, and
+5. Onboard the exact Platform Security capsule, short-lived auth broker,
+   client-identity, and
    provider-membership signing public keys plus the exact provider-observer
    entry by reviewed source commit. Bind the capsule package to the accepted
-   commit/tree, exhaustive release inventory, launcher/bootstrap/tool/provider
+   commit/tree, exhaustive release inventory, installer/launcher/bootstrap/tool/provider
    digests, and bind the observer endpoint, credential
    authority/subject/audience, immutable configuration, adapter and executable
-   digests. Prove the admission policy contains no identity-based bypass.
+   digests. Prove the admission policies contain no identity-based bypass,
+   reject a stale concurrent policy overwrite against API-server `oldObject`,
+   and protect both bindings against update/deletion. Install and independently
+   accept the external security-owned CAS bootstrap first; prove its exact
+   creator UID/groups/extras and impersonation review, then prove an ordinary
+   VAP creator cannot preoccupy either CAS name. Prove fresh auth renewal, the
+   90-minute mutation bound, and indeterminate reconciliation before retry.
+   Verify both signature paths use static OpenSSL with no interpreter/dynamic
+   runtime closure, and inject a failure at each installer phase to prove a new
+   append-only attempt completes without removing the preserved partial one.
    Produce a fresh
    authoritative NodeGroup membership export and signed membership receipt,
    then produce a fresh signed client-identity receipt from independent provider/LB,

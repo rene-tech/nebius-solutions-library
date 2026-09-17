@@ -14,8 +14,9 @@ terraform {
 }
 
 provider "nebius" {
-  profile = {
-    name            = var.nebius_profile
-    no_browser_open = true
-  }
+  # The accepted capsule writes no credential into configuration or state.
+  # It passes a sealed, signed, short-lived token descriptor whose exact
+  # authority/profile binding is independently verified before Terraform
+  # starts. file() reads only that inherited /proc/self/fd snapshot.
+  token = chomp(file(var.nebius_iam_token_file))
 }

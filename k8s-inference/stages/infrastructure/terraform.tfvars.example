@@ -3,8 +3,10 @@ project_id = "project-REPLACE-WITH-EXACT-APPROVED-ID"
 run_id     = "r20260827a"
 source_commit = "0000000000000000000000000000000000000000"
 
-# Optional wrapper-owned naming/authentication inputs. The legacy defaults are
-# cluster_name=null and nebius_profile="sandbox". Credentials are never tfvars.
+# Optional wrapper-owned naming/authority inputs. The legacy defaults are
+# cluster_name=null and nebius_profile="sandbox". The profile is only a signed
+# short-lived-token authority selector; credentials are never tfvars or ambient
+# profile files. nebius_iam_token_file is capsule-owned and must not be set here.
 # cluster_name   = "customer-inference"
 # nebius_profile = "customer-profile"
 

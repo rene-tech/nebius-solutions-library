@@ -60,6 +60,7 @@ PINNED_COMMAND_FDS: tuple[int, ...] = ()
 CAPSULE_COMMAND_FDS: tuple[int, ...] = ()
 CAPSULE_TOOL_PATHS: dict[str, str] = {}
 CAPSULE_TOOL_BIN = ""
+CAPSULE_NEBIUS_TOKEN = ""
 
 
 class GateError(RuntimeError):
@@ -1001,7 +1002,7 @@ def environment(name: str) -> str:
 
 
 def require_verified_source(expected: object) -> str:
-    global CAPSULE_COMMAND_FDS, CAPSULE_TOOL_BIN
+    global CAPSULE_COMMAND_FDS, CAPSULE_NEBIUS_TOKEN, CAPSULE_TOOL_BIN
     expected_digest = digest(expected, "planned verifier digest")
     if (
         os.environ.get("FS2_CAPSULE_LAUNCHER") != "fs2-public-edge-capsule-v1"
@@ -1046,6 +1047,64 @@ def require_verified_source(expected: object) -> str:
         if descriptor < 3:
             fail("capsule descriptor set is malformed")
         os.fstat(descriptor)
+    token_path = raw_paths.get("nebius_token")
+    if (
+        not isinstance(token_path, str)
+        or re.fullmatch(r"/proc/self/fd/[0-9]+", token_path) is None
+        or int(token_path.rsplit("/", 1)[1]) not in descriptors
+    ):
+        fail("capsule Nebius token is not descriptor-pinned")
+    token_descriptor = int(token_path.rsplit("/", 1)[1])
+    token_details = os.fstat(token_descriptor)
+    required_seals = (
+        fcntl.F_SEAL_SEAL
+        | fcntl.F_SEAL_SHRINK
+        | fcntl.F_SEAL_GROW
+        | fcntl.F_SEAL_WRITE
+    )
+    if (
+        not stat.S_ISREG(token_details.st_mode)
+        or token_details.st_size < 1
+        or token_details.st_size > 64 * 1024
+        or fcntl.fcntl(token_descriptor, fcntl.F_GET_SEALS) & required_seals
+        != required_seals
+    ):
+        fail("capsule Nebius token is not one bounded sealed descriptor")
+    token_bytes = os.pread(token_descriptor, token_details.st_size, 0)
+    try:
+        authentication = json.loads(os.environ["FS2_CAPSULE_NEBIUS_AUTH_JSON"])
+        token = token_bytes.decode("ascii")
+    except (KeyError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise GateError("capsule Nebius authentication proof is absent") from exc
+    if (
+        not isinstance(authentication, dict)
+        or authentication.get("schema")
+        != "fs2-serve.nebius.ai/short-lived-nebius-auth/v2"
+        or authentication.get("accepted_commit")
+        != os.environ.get("FS2_CAPSULE_ACCEPTED_COMMIT")
+        or authentication.get("manifest_sha256")
+        != os.environ.get("FS2_CAPSULE_MANIFEST_SHA256")
+        or authentication.get("endpoint") != "api.nebius.cloud"
+        or re.fullmatch(r"serviceaccount-[a-z0-9]+", str(authentication.get("subject_id", ""))) is None
+        or re.fullmatch(r"project-[a-z0-9]+", str(authentication.get("project_id", ""))) is None
+        or re.fullmatch(r"tenant-[a-z0-9]+", str(authentication.get("tenant_id", ""))) is None
+        or re.fullmatch(r"[a-f0-9]{64}", str(authentication.get("broker_executable_sha256", ""))) is None
+        or re.fullmatch(r"[a-f0-9]{64}", str(authentication.get("broker_config_sha256", ""))) is None
+        or authentication.get("peer_credential_mode") != "linux-so-peercred-pid-uid-gid/v1"
+        or authentication.get("caller_uid") != os.getuid()
+        or authentication.get("caller_gid") != os.getgid()
+        or not isinstance(authentication.get("operator_identity"), str)
+        or re.fullmatch(
+            r"[a-z][a-z0-9._-]{2,127}", authentication["operator_identity"]
+        )
+        is None
+        or authentication.get("token_sha256")
+        != hashlib.sha256(token_bytes).hexdigest()
+        or not token
+        or any(character.isspace() for character in token)
+    ):
+        fail("capsule Nebius authentication is not bound to this accepted source")
+    CAPSULE_NEBIUS_TOKEN = token
     CAPSULE_TOOL_PATHS.clear()
     CAPSULE_TOOL_PATHS.update(
         {name: str(raw_paths[name]) for name in required_tools}
@@ -1144,6 +1203,7 @@ def run_json(command: Sequence[str], label: str) -> Mapping[str, Any]:
                 "PATH": CAPSULE_TOOL_BIN or "/usr/bin:/bin",
                 "LANG": "C.UTF-8",
                 "LC_ALL": "C.UTF-8",
+                "NEBIUS_IAM_TOKEN": CAPSULE_NEBIUS_TOKEN,
             },
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -1223,7 +1283,7 @@ def resource_revision(resource: Mapping[str, Any], label: str) -> str:
 
 
 def admission_contract_projection(
-    resource: Mapping[str, Any], *, kind: str
+    resource: Mapping[str, Any], *, kind: str, name: str = "fs2-public-edge-node-authority"
 ) -> tuple[str, str, dict[str, object]]:
     label = kind
     if resource.get("apiVersion") != "admissionregistration.k8s.io/v1":
@@ -1231,7 +1291,7 @@ def admission_contract_projection(
     if resource.get("kind") != kind:
         fail(f"{label} has the wrong kind")
     item_metadata = metadata(resource, label)
-    if item_metadata.get("name") != "fs2-public-edge-node-authority":
+    if item_metadata.get("name") != name:
         fail(f"{label} has the wrong name")
     annotations = item_metadata.get("annotations", {})
     if not isinstance(annotations, Mapping):
@@ -1262,12 +1322,13 @@ def validate_admission_contract(
     *,
     kind: str,
     expected_sha256: str,
+    name: str = "fs2-public-edge-node-authority",
 ) -> tuple[str, str, str]:
     before_revision, before_uid, before_contract = admission_contract_projection(
-        before, kind=kind
+        before, kind=kind, name=name
     )
     after_revision, after_uid, after_contract = admission_contract_projection(
-        after, kind=kind
+        after, kind=kind, name=name
     )
     if (
         before_revision != after_revision
@@ -1279,6 +1340,54 @@ def validate_admission_contract(
     if contract_sha256 != expected_sha256:
         fail(f"{kind} differs from the exact Terraform admission contract")
     return after_revision, after_uid, contract_sha256
+
+
+def validate_boundary_approval(
+    before: Mapping[str, Any],
+    after: Mapping[str, Any],
+    *,
+    api_version: str,
+    kind: str,
+    name: str,
+    expected_sha256: str,
+) -> tuple[str, str, str]:
+    projections: list[tuple[str, str, dict[str, Any]]] = []
+    for label, resource in (("before", before), ("after", after)):
+        item_metadata = metadata(resource, f"boundary approval {label}")
+        if (
+            resource.get("apiVersion") != api_version
+            or resource.get("kind") != kind
+            or item_metadata.get("name") != name
+        ):
+            fail("preventive-boundary approval identity changed or is not exact")
+        projection = {
+            "apiVersion": api_version,
+            "kind": kind,
+            "metadata": {"name": name},
+            "spec": object_value(
+                resource.get("spec"), f"boundary approval {label}.spec"
+            ),
+        }
+        projections.append(
+            (
+                string_value(
+                    item_metadata.get("resourceVersion"),
+                    f"boundary approval {label}.metadata.resourceVersion",
+                    r"[1-9][0-9]*",
+                ),
+                string_value(
+                    item_metadata.get("uid"),
+                    f"boundary approval {label}.metadata.uid",
+                ),
+                projection,
+            )
+        )
+    if projections[0] != projections[1]:
+        fail("preventive-boundary approval changed during the final observation")
+    approval_sha256 = terraform_json_sha256(projections[1][2])
+    if approval_sha256 != expected_sha256:
+        fail("preventive-boundary approval differs from the exact enrolled receipt")
+    return projections[1][0], projections[1][1], approval_sha256
 
 
 def node_group_revision(group: Mapping[str, Any], label: str) -> str:
@@ -1945,6 +2054,46 @@ def main() -> int:
     expected_binding_sha256 = digest(
         environment("FS2_EDGE_GATE_BINDING_SHA256"), "admission binding digest"
     )
+    expected_cas_policy_sha256 = digest(
+        environment("FS2_EDGE_GATE_CAS_POLICY_SHA256"),
+        "admission CAS policy digest",
+    )
+    expected_cas_binding_sha256 = digest(
+        environment("FS2_EDGE_GATE_CAS_BINDING_SHA256"),
+        "admission CAS binding digest",
+    )
+    expected_bootstrap_policy_sha256 = digest(
+        environment("FS2_EDGE_GATE_BOOTSTRAP_POLICY_SHA256"),
+        "admission bootstrap policy digest",
+    )
+    expected_bootstrap_binding_sha256 = digest(
+        environment("FS2_EDGE_GATE_BOOTSTRAP_BINDING_SHA256"),
+        "admission bootstrap binding digest",
+    )
+    boundary_approval_api_version = string_value(
+        environment("FS2_EDGE_GATE_BOUNDARY_APPROVAL_API_VERSION"),
+        "preventive-boundary approval API version",
+        r"[a-z0-9.-]+/v[0-9]+[a-z0-9]*",
+    )
+    boundary_approval_kind = string_value(
+        environment("FS2_EDGE_GATE_BOUNDARY_APPROVAL_KIND"),
+        "preventive-boundary approval kind",
+        r"[A-Z][A-Za-z0-9]{2,127}",
+    )
+    boundary_approval_name = string_value(
+        environment("FS2_EDGE_GATE_BOUNDARY_APPROVAL_NAME"),
+        "preventive-boundary approval name",
+        r"[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?",
+    )
+    boundary_approval_resource = string_value(
+        environment("FS2_EDGE_GATE_BOUNDARY_APPROVAL_RESOURCE"),
+        "preventive-boundary approval resource",
+        r"[a-z][a-z0-9.-]{2,127}",
+    )
+    expected_boundary_approval_sha256 = digest(
+        environment("FS2_EDGE_GATE_BOUNDARY_APPROVAL_SHA256"),
+        "preventive-boundary approval digest",
+    )
     membership = load_membership_contract(
         root,
         membership_subject(
@@ -2061,6 +2210,58 @@ def main() -> int:
         ],
         "ValidatingAdmissionPolicyBinding before",
     )
+    cas_policy_before = run_json(
+        [
+            *kubectl,
+            "get",
+            "validatingadmissionpolicy",
+            "fs2-public-edge-node-authority-cas",
+            "-o",
+            "json",
+        ],
+        "CAS ValidatingAdmissionPolicy before",
+    )
+    cas_binding_before = run_json(
+        [
+            *kubectl,
+            "get",
+            "validatingadmissionpolicybinding",
+            "fs2-public-edge-node-authority-cas-binding",
+            "-o",
+            "json",
+        ],
+        "CAS ValidatingAdmissionPolicyBinding before",
+    )
+    bootstrap_policy_before = run_json(
+        [
+            *kubectl,
+            "get",
+            "validatingadmissionpolicy",
+            "fs2-public-edge-cas-bootstrap",
+            "-o",
+            "json",
+        ],
+        "bootstrap ValidatingAdmissionPolicy before",
+    )
+    bootstrap_binding_before = run_json(
+        [
+            *kubectl,
+            "get",
+            "validatingadmissionpolicybinding",
+            "fs2-public-edge-cas-bootstrap-binding",
+            "-o",
+            "json",
+        ],
+        "bootstrap ValidatingAdmissionPolicyBinding before",
+    )
+    boundary_approval_path = (
+        f"/apis/{boundary_approval_api_version}/"
+        f"{boundary_approval_resource}/{boundary_approval_name}"
+    )
+    boundary_approval_before = run_json(
+        [*kubectl, "get", "--raw", boundary_approval_path],
+        "preventive-boundary approval before",
+    )
 
     cluster_before = run_json(
         [*cluster_cli, "get", "--id", cluster_id], "cluster before"
@@ -2157,6 +2358,54 @@ def main() -> int:
         ],
         "ValidatingAdmissionPolicyBinding after",
     )
+    cas_policy_after = run_json(
+        [
+            *kubectl,
+            "get",
+            "validatingadmissionpolicy",
+            "fs2-public-edge-node-authority-cas",
+            "-o",
+            "json",
+        ],
+        "CAS ValidatingAdmissionPolicy after",
+    )
+    cas_binding_after = run_json(
+        [
+            *kubectl,
+            "get",
+            "validatingadmissionpolicybinding",
+            "fs2-public-edge-node-authority-cas-binding",
+            "-o",
+            "json",
+        ],
+        "CAS ValidatingAdmissionPolicyBinding after",
+    )
+    bootstrap_policy_after = run_json(
+        [
+            *kubectl,
+            "get",
+            "validatingadmissionpolicy",
+            "fs2-public-edge-cas-bootstrap",
+            "-o",
+            "json",
+        ],
+        "bootstrap ValidatingAdmissionPolicy after",
+    )
+    bootstrap_binding_after = run_json(
+        [
+            *kubectl,
+            "get",
+            "validatingadmissionpolicybinding",
+            "fs2-public-edge-cas-bootstrap-binding",
+            "-o",
+            "json",
+        ],
+        "bootstrap ValidatingAdmissionPolicyBinding after",
+    )
+    boundary_approval_after = run_json(
+        [*kubectl, "get", "--raw", boundary_approval_path],
+        "preventive-boundary approval after",
+    )
 
     if metadata(namespace, "kube-system Namespace").get("uid") != expected_namespace_uid:
         fail("selected Kubernetes API has a different kube-system UID")
@@ -2216,6 +2465,42 @@ def main() -> int:
         kind="ValidatingAdmissionPolicyBinding",
         expected_sha256=expected_binding_sha256,
     )
+    cas_policy_revision, cas_policy_uid, cas_policy_sha256 = validate_admission_contract(
+        cas_policy_before,
+        cas_policy_after,
+        kind="ValidatingAdmissionPolicy",
+        expected_sha256=expected_cas_policy_sha256,
+        name="fs2-public-edge-node-authority-cas",
+    )
+    cas_binding_revision, cas_binding_uid, cas_binding_sha256 = validate_admission_contract(
+        cas_binding_before,
+        cas_binding_after,
+        kind="ValidatingAdmissionPolicyBinding",
+        expected_sha256=expected_cas_binding_sha256,
+        name="fs2-public-edge-node-authority-cas-binding",
+    )
+    bootstrap_policy_revision, bootstrap_policy_uid, bootstrap_policy_sha256 = validate_admission_contract(
+        bootstrap_policy_before,
+        bootstrap_policy_after,
+        kind="ValidatingAdmissionPolicy",
+        expected_sha256=expected_bootstrap_policy_sha256,
+        name="fs2-public-edge-cas-bootstrap",
+    )
+    bootstrap_binding_revision, bootstrap_binding_uid, bootstrap_binding_sha256 = validate_admission_contract(
+        bootstrap_binding_before,
+        bootstrap_binding_after,
+        kind="ValidatingAdmissionPolicyBinding",
+        expected_sha256=expected_bootstrap_binding_sha256,
+        name="fs2-public-edge-cas-bootstrap-binding",
+    )
+    boundary_approval_revision, boundary_approval_uid, boundary_approval_sha256 = validate_boundary_approval(
+        boundary_approval_before,
+        boundary_approval_after,
+        api_version=boundary_approval_api_version,
+        kind=boundary_approval_kind,
+        name=boundary_approval_name,
+        expected_sha256=expected_boundary_approval_sha256,
+    )
     # Re-evaluate the bounded saved-plan window after every provider and
     # Kubernetes read. The short-lived mutation observation is timestamped
     # here, after the prerequisites and fresh reads, rather than at plan time.
@@ -2256,6 +2541,21 @@ def main() -> int:
             "admission_binding_resource_version": binding_revision,
             "admission_binding_uid": binding_uid,
             "admission_binding_sha256": binding_sha256,
+            "admission_cas_policy_resource_version": cas_policy_revision,
+            "admission_cas_policy_uid": cas_policy_uid,
+            "admission_cas_policy_sha256": cas_policy_sha256,
+            "admission_cas_binding_resource_version": cas_binding_revision,
+            "admission_cas_binding_uid": cas_binding_uid,
+            "admission_cas_binding_sha256": cas_binding_sha256,
+            "admission_bootstrap_policy_resource_version": bootstrap_policy_revision,
+            "admission_bootstrap_policy_uid": bootstrap_policy_uid,
+            "admission_bootstrap_policy_sha256": bootstrap_policy_sha256,
+            "admission_bootstrap_binding_resource_version": bootstrap_binding_revision,
+            "admission_bootstrap_binding_uid": bootstrap_binding_uid,
+            "admission_bootstrap_binding_sha256": bootstrap_binding_sha256,
+            "admission_boundary_approval_resource_version": boundary_approval_revision,
+            "admission_boundary_approval_uid": boundary_approval_uid,
+            "admission_boundary_approval_sha256": boundary_approval_sha256,
             "eligible_node_count": eligible_count,
             "distinct_hostname_count": domain_count,
             "observed_at": observed_at.isoformat().replace("+00:00", "Z"),
@@ -2276,6 +2576,21 @@ def main() -> int:
         "admission_binding_resource_version": binding_revision,
         "admission_binding_uid": binding_uid,
         "admission_binding_sha256": binding_sha256,
+        "admission_cas_policy_resource_version": cas_policy_revision,
+        "admission_cas_policy_uid": cas_policy_uid,
+        "admission_cas_policy_sha256": cas_policy_sha256,
+        "admission_cas_binding_resource_version": cas_binding_revision,
+        "admission_cas_binding_uid": cas_binding_uid,
+        "admission_cas_binding_sha256": cas_binding_sha256,
+        "admission_bootstrap_policy_resource_version": bootstrap_policy_revision,
+        "admission_bootstrap_policy_uid": bootstrap_policy_uid,
+        "admission_bootstrap_policy_sha256": bootstrap_policy_sha256,
+        "admission_bootstrap_binding_resource_version": bootstrap_binding_revision,
+        "admission_bootstrap_binding_uid": bootstrap_binding_uid,
+        "admission_bootstrap_binding_sha256": bootstrap_binding_sha256,
+        "admission_boundary_approval_resource_version": boundary_approval_revision,
+        "admission_boundary_approval_uid": boundary_approval_uid,
+        "admission_boundary_approval_sha256": boundary_approval_sha256,
         "provider_member_count": str(len(provider_ids)),
         "eligible_node_count": str(eligible_count),
         "hostname_domain_count": str(domain_count),
@@ -2329,6 +2644,15 @@ if __name__ == "__main__":
                 "FS2_EDGE_GATE_NODE_SELECTOR_JSON",
                 "FS2_EDGE_GATE_POLICY_SHA256",
                 "FS2_EDGE_GATE_BINDING_SHA256",
+                "FS2_EDGE_GATE_CAS_POLICY_SHA256",
+                "FS2_EDGE_GATE_CAS_BINDING_SHA256",
+                "FS2_EDGE_GATE_BOOTSTRAP_POLICY_SHA256",
+                "FS2_EDGE_GATE_BOOTSTRAP_BINDING_SHA256",
+                "FS2_EDGE_GATE_BOUNDARY_APPROVAL_API_VERSION",
+                "FS2_EDGE_GATE_BOUNDARY_APPROVAL_KIND",
+                "FS2_EDGE_GATE_BOUNDARY_APPROVAL_NAME",
+                "FS2_EDGE_GATE_BOUNDARY_APPROVAL_RESOURCE",
+                "FS2_EDGE_GATE_BOUNDARY_APPROVAL_SHA256",
                 "FS2_EDGE_GATE_MEMBERSHIP_TRUST_SHA256",
                 "FS2_EDGE_GATE_PROVIDER_ADAPTER_TRUST_SHA256",
             }

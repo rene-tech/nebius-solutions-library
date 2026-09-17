@@ -42,6 +42,17 @@ resource "terraform_data" "cluster_contract" {
     public_edge_membership_authority = merge(local.public_edge_membership_authority, {
       admission_policy_sha256  = local.public_edge_node_authority_policy_sha256
       admission_binding_sha256 = local.public_edge_node_authority_binding_sha256
+      admission_cas_policy_sha256  = local.public_edge_node_authority_cas_policy_sha256
+      admission_cas_binding_sha256 = local.public_edge_node_authority_cas_binding_sha256
+      admission_bootstrap_policy_sha256  = local.public_edge_cas_bootstrap_policy_sha256
+      admission_bootstrap_binding_sha256 = local.public_edge_cas_bootstrap_binding_sha256
+      admission_boundary_approval = {
+        api_version = try(local.public_edge_cas_bootstrap_authority.approval_api_version, "")
+        kind        = try(local.public_edge_cas_bootstrap_authority.approval_kind, "")
+        name        = try(local.public_edge_cas_bootstrap_authority.approval_name, "")
+        resource    = try(local.public_edge_cas_bootstrap_authority.approval_resource, "")
+        sha256      = local.public_edge_node_authority_approval_sha256
+      }
     })
     kueue_teardown_cleanup = {
       cluster_id      = var.cluster_id

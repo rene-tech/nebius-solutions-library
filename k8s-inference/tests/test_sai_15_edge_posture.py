@@ -79,6 +79,8 @@ def test_foundation_configures_one_ha_rate_limit_authority_and_closed_count() ->
         "kubernetes_pod_disruption_budget_v1.edge_rate_limit_redis",
         "kubernetes_network_policy_v1.edge_rate_limit_redis",
         "terraform_data.public_edge_apply_eligibility[0]",
+        "kubernetes_manifest.public_edge_node_authority_cas_policy[0]",
+        "kubernetes_manifest.public_edge_node_authority_cas_binding[0]",
         "kubernetes_manifest.public_edge_node_authority_policy[0]",
         "kubernetes_manifest.public_edge_node_authority_binding[0]",
     )
@@ -215,6 +217,9 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
     node_authority = (
         ROOT / "stages/foundation/public_edge_node_authority.tf"
     ).read_text(encoding="utf-8")
+    cas_bootstrap = (
+        ROOT / "stages/foundation/public_edge_cas_bootstrap.tf"
+    ).read_text(encoding="utf-8")
     infrastructure_outputs = (ROOT / "stages/infrastructure/outputs.tf").read_text(
         encoding="utf-8"
     )
@@ -347,11 +352,13 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
         assert "verify-public-edge-node-eligibility.py" in apply_gate
         assert '"external"' in apply_gate
         assert "gate_id" in apply_gate
-        assert 'public_edge_gate_launcher_path = "/usr/local/libexec/fs2-public-edge-gate-launcher"' in apply_gate
+        assert 'public_edge_gate_launcher_path = "/usr/local/libexec/fs2-public-edge-current/launcher"' in apply_gate
         assert "public_edge_gate_verifier_sha256" in apply_gate
         assert "interpreter = [local.public_edge_gate_launcher_path" in apply_gate
         assert "FS2_EDGE_GATE_POLICY_SHA256" in apply_gate
         assert "FS2_EDGE_GATE_BINDING_SHA256" in apply_gate
+        assert "FS2_EDGE_GATE_CAS_POLICY_SHA256" in apply_gate
+        assert "FS2_EDGE_GATE_CAS_BINDING_SHA256" in apply_gate
         assert "FS2_EDGE_GATE_PROVIDER_ADAPTER_TRUST_SHA256" in apply_gate
         assert "FS2_EDGE_GATE_NEBIUS_PROFILE" not in apply_gate
         assert '"/usr/bin/env"' not in apply_gate
@@ -362,7 +369,7 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
     assert 'child[output++] = "-I"' in protected_launcher
     assert 'child[output++] = "-B"' in protected_launcher
     assert protected_launcher.index("clearenv()") < protected_launcher.index(
-        "cannot restore explicit operator secret environment"
+        "cannot restore allowed gate environment"
     )
     assert '"HOME": "/nonexistent"' in inference_stack
     assert inference_stack.index('if args.command == "apply":') < inference_stack.index(
@@ -414,6 +421,8 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
     assert '"PATH": CAPSULE_TOOL_BIN or "/usr/bin:/bin"' in apply_gate_verifier
     assert "signed kubectl differs from the accepted capsule executable" in apply_gate_verifier
     assert '"HOME": "/nonexistent"' in apply_gate_verifier
+    assert '"NEBIUS_IAM_TOKEN": CAPSULE_NEBIUS_TOKEN' in apply_gate_verifier
+    assert "capsule Nebius token is not one bounded sealed descriptor" in apply_gate_verifier
     assert "sealed_memfd(\"public-edge-kubeconfig\"" in apply_gate_verifier
     assert "FS2_CAPSULE_SOURCE_SHA256" in apply_gate_verifier
     assert '"ValidatingAdmissionPolicy after"' in apply_gate_verifier
@@ -425,8 +434,10 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
     assert 'data "external" "public_edge_membership_contract"' in node_authority
     assert 'resource "kubernetes_manifest" "public_edge_node_authority_policy"' in node_authority
     assert 'resource "kubernetes_manifest" "public_edge_node_authority_binding"' in node_authority
+    assert 'resource "kubernetes_manifest" "public_edge_node_authority_cas_policy"' in node_authority
+    assert 'resource "kubernetes_manifest" "public_edge_node_authority_cas_binding"' in node_authority
     assert 'failurePolicy = "Fail"' in node_authority
-    assert node_authority.count('matchPolicy = "Equivalent"') == 2
+    assert node_authority.count('matchPolicy = "Equivalent"') == 4
     assert 'operations  = ["CREATE", "UPDATE"]' in node_authority
     assert "object.spec.providerID == 'nebius://' + object.metadata.name" in node_authority
     assert "public_edge_protected_labels_unchanged_cel" in node_authority
@@ -449,6 +460,38 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
     assert '"kubernetes_node_controller",' not in apply_gate_verifier
     assert "public_edge_node_authority_policy_sha256" in node_authority
     assert "public_edge_node_authority_binding_sha256" in node_authority
+    assert "public_edge_node_authority_cas_policy_sha256" in node_authority
+    assert "public_edge_node_authority_cas_binding_sha256" in node_authority
+    assert "int(object.metadata.annotations['fs2.nebius.ai/membership-epoch-sequence']) == int(oldObject.metadata.annotations['fs2.nebius.ai/membership-epoch-sequence']) + 1" in node_authority
+    assert "object.metadata.annotations['fs2.nebius.ai/predecessor-payload-sha256'] == oldObject.metadata.annotations['fs2.nebius.ai/membership-payload-sha256']" in node_authority
+    for membership_set in ("serving", "joining", "retiring"):
+        assert (
+            f"object.metadata.annotations['fs2.nebius.ai/predecessor-{membership_set}-member-instance-ids'] == oldObject.metadata.annotations['fs2.nebius.ai/{membership_set}-member-instance-ids']"
+            in node_authority
+        )
+    assert "The active public-edge Node-authority binding cannot be updated or deleted" in node_authority
+    assert node_authority.count("prevent_destroy = true") == 4
+    assert "trusted-public-edge-cas-bootstrap-authorities.json" in cas_bootstrap
+    assert "security-owned-cas-bootstrap/v1" in cas_bootstrap
+    assert "request.userInfo.username" in cas_bootstrap
+    assert "request.userInfo.uid" in cas_bootstrap
+    assert "request.userInfo.groups" in cas_bootstrap
+    assert "request.userInfo.extra" in cas_bootstrap
+    assert "impersonation-review-sha256" in cas_bootstrap
+    assert 'data "kubernetes_resources" "public_edge_cas_bootstrap_policy"' in cas_bootstrap
+    assert 'data "kubernetes_resources" "public_edge_cas_bootstrap_binding"' in cas_bootstrap
+    assert "public_edge_cas_bootstrap_exact" in node_authority
+    assert "FS2_EDGE_GATE_BOOTSTRAP_POLICY_SHA256" in apply_gate_verifier
+    assert "FS2_EDGE_GATE_BOOTSTRAP_BINDING_SHA256" in apply_gate_verifier
+    assert "FS2_EDGE_GATE_BOUNDARY_APPROVAL_SHA256" in apply_gate_verifier
+    assert "boundary_approval_before = run_json" in apply_gate_verifier
+    assert "boundary_approval_after = run_json" in apply_gate_verifier
+    assert "validate_boundary_approval(" in apply_gate_verifier
+    assert "admission_boundary_approval_sha256" in foundation_apply_gate
+    assert "admission_boundary_approval" in workloads_apply_gate
+    assert "admission_boundary_approval_sha256" in (
+        ROOT / "stages/workloads/control_plane.tf"
+    ).read_text(encoding="utf-8")
     for prerequisite in (
         "kubernetes_config_map_v1.edge_rate_limit_redis",
         "kubernetes_service_v1.edge_rate_limit_redis_headless",

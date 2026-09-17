@@ -6,7 +6,7 @@
 # waits; the mutation fence timestamps fresh provider/Node reads after those
 # prerequisites instead of incorrectly spending a five-minute window on them.
 locals {
-  public_edge_gate_launcher_path = "/usr/local/libexec/fs2-public-edge-gate-launcher"
+  public_edge_gate_launcher_path = "/usr/local/libexec/fs2-public-edge-current/launcher"
   public_edge_gate_verifier_path = "${path.module}/scripts/verify-public-edge-node-eligibility.py"
   public_edge_gate_verifier_sha256 = filesha256(local.public_edge_gate_verifier_path)
   public_edge_membership_trust_sha256 = filesha256("${path.module}/trusted-public-edge-membership-issuers.json")
@@ -67,6 +67,15 @@ resource "terraform_data" "public_edge_apply_eligibility" {
       FS2_EDGE_GATE_VERIFIER_SHA256        = self.input.verifier_sha256
       FS2_EDGE_GATE_POLICY_SHA256          = local.public_edge_node_authority_policy_sha256
       FS2_EDGE_GATE_BINDING_SHA256         = local.public_edge_node_authority_binding_sha256
+      FS2_EDGE_GATE_CAS_POLICY_SHA256      = local.public_edge_node_authority_cas_policy_sha256
+      FS2_EDGE_GATE_CAS_BINDING_SHA256     = local.public_edge_node_authority_cas_binding_sha256
+      FS2_EDGE_GATE_BOOTSTRAP_POLICY_SHA256  = local.public_edge_cas_bootstrap_policy_sha256
+      FS2_EDGE_GATE_BOOTSTRAP_BINDING_SHA256 = local.public_edge_cas_bootstrap_binding_sha256
+      FS2_EDGE_GATE_BOUNDARY_APPROVAL_API_VERSION = local.public_edge_cas_bootstrap_authority.approval_api_version
+      FS2_EDGE_GATE_BOUNDARY_APPROVAL_KIND        = local.public_edge_cas_bootstrap_authority.approval_kind
+      FS2_EDGE_GATE_BOUNDARY_APPROVAL_NAME        = local.public_edge_cas_bootstrap_authority.approval_name
+      FS2_EDGE_GATE_BOUNDARY_APPROVAL_RESOURCE    = local.public_edge_cas_bootstrap_authority.approval_resource
+      FS2_EDGE_GATE_BOUNDARY_APPROVAL_SHA256      = local.public_edge_node_authority_approval_sha256
       FS2_EDGE_GATE_MEMBERSHIP_TRUST_SHA256 = local.public_edge_membership_trust_sha256
       FS2_EDGE_GATE_PROVIDER_ADAPTER_TRUST_SHA256 = local.public_edge_provider_adapter_trust_sha256
     }
@@ -120,6 +129,15 @@ data "external" "public_edge_mutation_fence" {
     FS2_EDGE_GATE_NODE_SELECTOR_JSON          = jsonencode(var.public_edge_availability_contract.node_selector)
     FS2_EDGE_GATE_POLICY_SHA256                = local.public_edge_node_authority_policy_sha256
     FS2_EDGE_GATE_BINDING_SHA256               = local.public_edge_node_authority_binding_sha256
+    FS2_EDGE_GATE_CAS_POLICY_SHA256            = local.public_edge_node_authority_cas_policy_sha256
+    FS2_EDGE_GATE_CAS_BINDING_SHA256           = local.public_edge_node_authority_cas_binding_sha256
+    FS2_EDGE_GATE_BOOTSTRAP_POLICY_SHA256      = local.public_edge_cas_bootstrap_policy_sha256
+    FS2_EDGE_GATE_BOOTSTRAP_BINDING_SHA256     = local.public_edge_cas_bootstrap_binding_sha256
+    FS2_EDGE_GATE_BOUNDARY_APPROVAL_API_VERSION = local.public_edge_cas_bootstrap_authority.approval_api_version
+    FS2_EDGE_GATE_BOUNDARY_APPROVAL_KIND        = local.public_edge_cas_bootstrap_authority.approval_kind
+    FS2_EDGE_GATE_BOUNDARY_APPROVAL_NAME        = local.public_edge_cas_bootstrap_authority.approval_name
+    FS2_EDGE_GATE_BOUNDARY_APPROVAL_RESOURCE    = local.public_edge_cas_bootstrap_authority.approval_resource
+    FS2_EDGE_GATE_BOUNDARY_APPROVAL_SHA256      = local.public_edge_node_authority_approval_sha256
     FS2_EDGE_GATE_MEMBERSHIP_TRUST_SHA256       = local.public_edge_membership_trust_sha256
     FS2_EDGE_GATE_PROVIDER_ADAPTER_TRUST_SHA256 = local.public_edge_provider_adapter_trust_sha256
   }

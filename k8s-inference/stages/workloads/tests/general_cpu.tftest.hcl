@@ -68,6 +68,8 @@ run "native_formula_is_a_managed_zero_gpu_app_with_full_resources" {
 
 # Reuse the stage-wide inputs the existing stage tests already pin.
 variables {
+  # Mock-only inherited descriptor; production remains sealed-memfd only.
+  nebius_iam_token_file = "/proc/self/fd/0"
   run_root        = "/tmp/fs2-modelexpress-test"
   kubeconfig_path = "/tmp/fs2-modelexpress-test/kubeconfig"
   run_id          = "mxtest01"

@@ -32,6 +32,13 @@ def test_launcher_has_no_caller_source_path_or_digest_contract() -> None:
     assert "getresgid" in source
     assert "getgroups" in source
     assert "02755" in source
+    assert "FS2_EXPECTED_BOOTSTRAP_SHA256" in source
+    assert "FS2_EXPECTED_PYTHON_SHA256" in source
+    assert "require_fd_digest(bootstrap_fd" in source
+    assert "require_fd_digest(python_fd" in source
+    assert "program.p_type == PT_INTERP || program.p_type == PT_DYNAMIC" in source
+    assert 'child[output++] = "-S"' in source
+    assert "sys.path[:]=[]" in source
 
 
 def test_bootstrap_manifest_binds_release_launcher_tools_and_providers() -> None:
@@ -41,6 +48,8 @@ def test_bootstrap_manifest_binds_release_launcher_tools_and_providers() -> None
         '"accepted_tree"',
         '"launcher_sha256"',
         '"bootstrap_sha256"',
+        '"installer_sha256"',
+        '"nebius_auth"',
         '"release_files"',
         '"provider_files"',
         '"provider_mirror_relative_path"',
@@ -54,6 +63,65 @@ def test_bootstrap_manifest_binds_release_launcher_tools_and_providers() -> None
     assert "SOURCE_PATHS" in source
     assert "is not mapped to its canonical release path" in source
     assert "direct" in source and "network_mirror" in source
+
+
+def test_operator_auth_and_secrets_are_brokered_not_ambient() -> None:
+    bootstrap = BOOTSTRAP_PATH.read_text(encoding="utf-8")
+    launcher = (
+        ROOT / "stages/foundation/scripts/public-edge-capsule-launcher.c"
+    ).read_text(encoding="utf-8")
+    stack = (ROOT / "inference-stack").read_text(encoding="utf-8")
+    infrastructure_provider = (
+        ROOT / "stages/infrastructure/versions.tf"
+    ).read_text(encoding="utf-8")
+    workloads_provider = (
+        ROOT / "stages/workloads/providers.tf"
+    ).read_text(encoding="utf-8")
+    assert "public-edge-nebius-auth.sock" in bootstrap
+    assert "SO_PEERCRED" in bootstrap
+    assert '"caller_uid"' in bootstrap
+    assert '"caller_gid"' in bootstrap
+    assert '"operator_identity"' in bootstrap
+    assert 'profile_record["operators"]' in bootstrap
+    assert 'profile_record["subject_id"]' in bootstrap
+    assert 'profile_record["project_id"]' in bootstrap
+    assert 'profile_record["tenant_id"]' in bootstrap
+    assert 'record["broker_executable_sha256"]' in bootstrap
+    assert 'record["broker_config_sha256"]' in bootstrap
+    assert 'record["peer_runtime_review_sha256"]' in bootstrap
+    assert "token_sha256" in bootstrap
+    assert "minimum_remaining_seconds" in bootstrap
+    assert "PT_DYNAMIC or PT_INTERP" in bootstrap
+    assert "trusted-public-edge-auth-broker-authorities.json" in bootstrap
+    assert "FS2_CAPSULE_SECRET_BROKER_FD" in launcher
+    assert "operator_secret_slots" in launcher
+    for forbidden in ("AWS_", "GITHUB_", "OPENAI_", "NEBIUS_"):
+        assert forbidden in launcher
+    assert "operator_secret(" in stack
+    assert 'result["NEBIUS_IAM_TOKEN"] = brokered_nebius_token()' in stack
+    assert "refresh_brokered_auth" in stack
+    assert "MAXIMUM_MUTATION_SECONDS = 90 * 60" in stack
+    assert "terraform-mutation-started/v2" in stack
+    assert "mutation-ledger-receipt/v1" in stack
+    assert "record_mutation_started(" in stack
+    assert stack.index("record_mutation_started(", stack.index("def apply_plan(")) < stack.index(
+        "subprocess.run(", stack.index("def apply_plan(")
+    )
+    assert '_request_mutation_ledger_event(\n        action="started"' in stack
+    assert 'MUTATION_SETTLEMENT_ROOT.glob("*.started.json")' in stack
+    assert 'f"{record[\'attempt_id\']}.terminal.json"' in stack
+    assert "external mutation terminal does not close its exact intent" in stack
+    assert "fcntl.flock(run_root_descriptor, fcntl.LOCK_EX)" in stack
+    assert "terraform-mutation-reconciliation-evidence/v2" in stack
+    assert "public-edge-mutation-settlements" in stack
+    assert '"apply", "-input=false", "-lock=true", str(refresh_plan)' in stack
+    assert 'or (stage == "infrastructure" and not operations)' in stack
+    assert "include_secrets=True" in stack
+    assert '!= "fs2-serve.nebius.ai/short-lived-nebius-auth/v2"' in stack
+    assert "token = chomp(file(var.nebius_iam_token_file))" in infrastructure_provider
+    assert "token = chomp(file(var.nebius_iam_token_file))" in workloads_provider
+    assert "profile = {" not in infrastructure_provider
+    assert "profile = {" not in workloads_provider
 
 
 def test_apply_reexecs_before_argument_parsing_or_terraform_probe() -> None:
@@ -122,8 +190,123 @@ def test_install_verifier_uses_only_fixed_root_acceptance_authorities() -> None:
     assert 'parser.add_argument("--expected-trust-store-sha256"' not in source
     assert "differs from the root acceptance policy" in source
     assert '"openssl_sha256"' in source
+    assert "fs2-public-edge-installer-openssl-static" in source
+    assert "PT_DYNAMIC or PT_INTERP" in source
     assert "manifest_sha256 = hashlib.sha256(manifest_raw).hexdigest()" in source
     assert 'return descriptor, f"/proc/self/fd/{descriptor}"' in source
     assert "pass_fds=(openssl_fd,)" in source
     assert "installation receipt signature is invalid" in source
+    assert "fs2-public-edge-installer-openssl-static" in source
+    assert "PT_DYNAMIC or PT_INTERP" in source
     assert "bundle file set differs" in source
+
+
+def test_privileged_installer_pins_inputs_and_atomically_preserves_prior_unit() -> None:
+    source = (
+        ROOT / "stages/foundation/scripts/install-public-edge-capsule.py"
+    ).read_text(encoding="utf-8")
+    assert 'FIXED_INSTALLER = Path("/usr/local/sbin/fs2-install-public-edge-capsule")' in source
+    assert 'FIXED_INSTALLER_SOURCE = Path("/usr/local/libexec/fs2-public-edge-installer.py")' in source
+    assert "reject_symlink_argument" in source
+    assert 'getattr(os, "O_NOFOLLOW", 0)' in source
+    assert "enumerate_bundle(bundle_fd)" in source
+    assert "bundle_files" in source
+    assert "os.O_EXCL" in source
+    assert "installer_sha256" in source
+    assert "installation receipt signature is invalid" in source
+    assert "RENAME_EXCHANGE" in source
+    assert "RENAME_NOREPLACE" in source
+    assert "fs2-public-edge-previous-" in source
+    assert "RELEASE_ATTEMPT_ROOT" in source
+    assert "ACTIVATION_ATTEMPT_ROOT" in source
+    assert "public-edge-release-completion/v1" in source
+    assert "public-edge-activation-completion/v1" in source
+    assert "verify_release_tree(destination, manifest, gid)" in source
+    assert "verify_activation_unit(" in source
+    assert "shutil.rmtree" not in source
+    assert "os.unlink" not in source
+    assert "os.remove" not in source
+    assert "Path.unlink" not in source
+    assert "fsync_tree_directories(payload)" in source
+    assert "fsync_directory(RELEASE_ROOT)" in source
+    assert "fsync_directory(ACTIVATION_ROOT)" in source
+    assert "activation-exchange-prepared/v1" in source
+    assert "recover_activation_transitions(gid)" in source
+
+
+def test_privileged_installer_has_static_pre_python_gate() -> None:
+    source = (
+        ROOT / "stages/foundation/scripts/public-edge-capsule-installer-launcher.c"
+    ).read_text(encoding="utf-8")
+    assert "FS2_EXPECTED_INSTALLER_SOURCE_SHA256" in source
+    assert "FS2_EXPECTED_INSTALLER_PYTHON_SHA256" in source
+    assert "FS2_EXPECTED_INSTALLER_FROZEN_RUNTIME_REVIEW_SHA256" in source
+    assert "/usr/local/libexec/fs2-public-edge-installer.py" in source
+    assert "PT_INTERP || program.p_type == PT_DYNAMIC" in source
+    assert 'open("/proc/self/exe", O_RDONLY)' in source
+    assert 'open("/proc/self/exe", O_RDONLY | O_NOFOLLOW)' not in source
+    assert "sys.path[:]=[]" in source
+    assert 'child[output++] = "-S"' in source
+    launcher = (
+        ROOT / "stages/foundation/scripts/public-edge-capsule-launcher.c"
+    ).read_text(encoding="utf-8")
+    assert "FS2_EXPECTED_FROZEN_RUNTIME_REVIEW_SHA256" in launcher
+    assert "external reviewer must enumerate and inspect" in launcher
+    assert "FS2_FROZEN_STDLIB_SHA256" not in launcher
+
+
+def test_reconciliation_requires_external_signed_settlement_and_acceptance() -> None:
+    source = (ROOT / "inference-stack").read_text(encoding="utf-8")
+    assert 'MUTATION_SETTLEMENT_ROOT = Path("/var/lib/fs2/public-edge-mutation-settlements")' in source
+    assert 'f"{receipt_sha256}.settlement.json"' in source
+    assert 'f"{receipt_sha256}.reconciled.json"' in source
+    assert 'f"mutation-reconciliation-evidence-{receipt_sha256}.json"' in source
+    assert '"-keyform",\n                "DER"' in source
+    assert 'run_root.glob("mutation-reconciled-*.json")' not in source
+    assert '"outstanding_operation_ids"] != []' in source
+    assert 'no_drift.returncode != 0' in source
+    assert "refreshed_state_sha256" in source
+    assert '"provider_settlement_sha256", "schema", "stage"' in source
+    assert "payload[key] != settlement.get(key) for key in provider_binding_keys" in source
+    assert 'provider.get("class") not in {"terraform-local", "nebius", "kubernetes-helm"}' in source
+    assert 'MUTATION_LEDGER_SOCKET = Path("/run/fs2/public-edge-mutation-ledger.sock")' in source
+    assert "socket.SO_PEERCRED" in source
+    assert 'payload["conflicting_active_count"] != 0' in source
+    assert 'persisted != payload' in source
+
+
+def test_installer_durably_publishes_candidate_before_prepared_journal() -> None:
+    source = (
+        ROOT / "stages/foundation/scripts/install-public-edge-capsule.py"
+    ).read_text(encoding="utf-8")
+    candidate_fsync = source.index(
+        "# The candidate directory entry must be durable before a durable journal"
+    )
+    prepared_journal = source.index(
+        'attempt / "activation-exchange-prepared.json"', candidate_fsync
+    )
+    assert source.index("fsync_directory(CURRENT_LINK.parent)", candidate_fsync) < prepared_journal
+    assert 'disposition = "candidate-absent-before-exchange"' in source
+    assert "os.readlink(CURRENT_LINK) if CURRENT_LINK.is_symlink() else None" in source
+
+
+def test_every_stage_test_supplies_mock_only_token_descriptor() -> None:
+    stage_tests = sorted((ROOT / "stages/infrastructure/tests").glob("*.tftest.hcl"))
+    stage_tests += sorted((ROOT / "stages/workloads/tests").glob("*.tftest.hcl"))
+    assert len(stage_tests) == 10
+    for path in stage_tests:
+        assert 'nebius_iam_token_file = "/proc/self/fd/0"' in path.read_text(
+            encoding="utf-8"
+        )
+
+
+def test_launcher_opens_one_atomically_selected_activation_unit() -> None:
+    source = (
+        ROOT / "stages/foundation/scripts/public-edge-capsule-launcher.c"
+    ).read_text(encoding="utf-8")
+    assert "/usr/local/libexec/fs2-public-edge-current/launcher" in source
+    assert "/usr/local/libexec/fs2-public-edge-activations" in source
+    assert 'open_protected_at(activation_directory, "bootstrap.py"' in source
+    assert 'open_protected_at(activation_directory, "manifest.json"' in source
+    assert 'open_protected_at(activation_directory, "python3"' in source
+    assert "fixed activation does not select this exact launcher" in source

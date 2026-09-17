@@ -27,13 +27,25 @@ The fixed launcher accepts only these logical source/mode pairs:
 - `kueue-destroy-cleanup local-exec`
 
 It accepts no source path, expected digest, Python path, Terraform path, or
-provider path. It must be installed at
-`/usr/local/libexec/fs2-public-edge-gate-launcher` as a static PIE owned by
-`root:fs2-public-edge-capsule`, mode `2755`. The capsule group must have no
-members. The canonical accepted manifest and bootstrap are fixed
-`root:fs2-public-edge-capsule` mode `0440` files. The capsule Python executable
-is a fixed mode `0550` file. Parent directories are root-owned and not writable
-by group or other.
+provider path. One activation unit holds an exact launcher, bootstrap, Python,
+and manifest. The root-owned
+`/usr/local/libexec/fs2-public-edge-current` symlink selects that unit, so the
+entry point is `/usr/local/libexec/fs2-public-edge-current/launcher`. The
+launcher is a static PIE owned by `root:fs2-public-edge-capsule`, mode `2755`;
+the bootstrap and manifest are mode `0440`, and Python is mode `0550`. The
+capsule group has no members. Every activation directory is root-owned mode
+`0550`, and parent directories are not writable by group or other. The launcher
+opens all four files relative to its already-open activation directory and
+proves that the fixed symlink still selects its exact inode. A concurrent
+activation can therefore never mix files from two releases.
+
+Before any Python instruction executes, the static launcher hashes the opened
+bootstrap and interpreter against digests compiled into the independently
+accepted launcher. It rejects Python with `PT_INTERP` or `PT_DYNAMIC`. The
+interpreter is a single-file static build with its required stdlib frozen into
+those exact bytes. It starts with `-I -S -B`; a compiled prelude clears
+`sys.path` before executing the already-open bootstrap. A missing frozen module
+fails closed instead of falling back to host runtime bytes.
 
 Each logical name is also fixed to its canonical relative release path in the
 bootstrap. A signed manifest cannot relabel some other enrolled release file as
@@ -50,11 +62,11 @@ the dedicated no-member group, are unsupported and fail closed.
 ## Accepted package
 
 Integration constructs a versioned package whose canonical manifest uses
-`fs2-serve.nebius.ai/public-edge-execution-capsule/v1`. It binds:
+`fs2-serve.nebius.ai/public-edge-execution-capsule/v2`. It binds:
 
 - exact accepted Git commit and tree;
 - versioned destination under `/opt/fs2/`;
-- launcher and bootstrap SHA-256;
+- privileged installer, launcher, and bootstrap SHA-256;
 - a sorted, exhaustive path/SHA-256 inventory of every regular release file;
 - the `inference-stack` and provider-membership verifier source records;
 - exact awk, Bash, cat, crane, date, find, Git, grep, Helm, id, install, jq,
@@ -62,6 +74,8 @@ Integration constructs a versioned package whose canonical manifest uses
   stat, tar, Terraform, timeout, tr, and wc executable records;
 - every Terraform provider-mirror file and a CLI configuration that permits
   only that filesystem mirror; and
+- a fixed short-lived Nebius-auth broker socket, audience, TTL bounds, and
+  source-owned authority registry; and
 - a Platform-Security Ed25519 installation receipt over the whole payload.
 
 No symlink is permitted in the installed release. Every parent and regular
@@ -74,6 +88,63 @@ those explicit descriptors. The accepted source replaces apply-time
 `--terraform`, `--kubectl`, `--nebius`, and `--crane` values before even the
 Terraform version probe.
 
+The accepted process never imports a Nebius profile file, caller `HOME`, or an
+ambient `NEBIUS_*` secret. The fixed root-owned broker socket returns a token
+only as a sealed memfd plus an Ed25519 envelope binding exact profile selector,
+broker authority/key, service-account subject, project, tenant, endpoint, audience,
+commit/tree, manifest digest, request nonce, caller UID/GID, source-enrolled
+operator identity, token digest, and issuance/expiry. The broker verifies the
+request identity against Unix `SO_PEERCRED`; the bootstrap independently joins
+the signed response to its real UID/GID and the authority's per-profile
+operator matrix. Enrollment also binds the fixed root-owned broker executable
+and config digests, expected peer UID/GID and peer mode, plus a nonzero external
+runtime review of the service unit. No `/proc/<root-pid>/exe` read is required.
+The source registry
+`stages/foundation/trusted-public-edge-auth-broker-authorities.json` is empty
+until an owner-approved authority is enrolled, so source alone cannot
+authenticate. Terraform reads the token through the inherited
+`/proc/self/fd/<n>` path; nested external/local-exec capsule entries request a
+fresh envelope from the same broker because Terraform does not promise to
+forward arbitrary parent descriptors.
+The accepted bootstrap retains a separate refresh agent. Every cloud/Terraform
+operation requests a fresh lease with at least two hours remaining. Terraform
+mutation is capped at 90 minutes. Before Terraform is spawned, the capsule must
+obtain a signed `started` receipt from the fixed root-owned mutation-ledger
+service. That service authenticates the capsule caller with `SO_PEERCRED`,
+appends a hash-chained/WORM record under
+`/var/lib/fs2/public-edge-mutation-settlements`, and refuses a conflicting
+active predecessor. Successful completion requires a second signed external
+`terminal` record referring to the exact started-receipt digest. Caller-owned
+run-root files are evidence caches only: deleting them or forging a local
+terminal JSON cannot clear the external fence. A crash, SIGKILL, timeout,
+interruption, OS error, or nonzero apply therefore leaves the root-owned intent
+pending until two-stage reconciliation completes. A root-owned signed external receipt
+first proves stage-specific provider settlement, including honest zero-operation
+proof for local and Kubernetes/Helm stages. Reconciliation then applies the
+refresh-only plan to state, reacquires accepted secret slots only in memory,
+requires a full exit-zero no-drift plan, and records exact state/output digests.
+Resume requires a second external signature over that append-only evidence;
+caller-owned reconciliation files are ignored.
+
+The mutation-settlement authority registry is likewise empty in production
+source. An enrolled authority must bind the protected settlement root, exact
+project set, Ed25519 key, and a sorted, unique provider matrix. Every provider
+entry binds its class (`terraform-local`, `nebius`, or `kubernetes-helm`),
+endpoint, observer identity, executable/configuration digests, and independent
+runtime-review digest. The same authority binds the mutation-ledger socket,
+fixed root-owned executable and configuration paths/digests, peer UID/GID and
+`SO_PEERCRED` mode, plus a nonzero service-runtime review. The ledger service
+is an external Platform Security component and is not manufactured by this
+repository. Until its reviewed implementation, registry enrollment, protected
+storage, and signed receipts exist, mutation fails closed before Terraform.
+
+Operator configuration may still name the Grafana, NGC, and NVCR environment
+references. Values remain in a separate launcher parent and are returned once,
+only for the four exact logical slots, as sealed memfds after accepted
+configuration parsing. There is no generic uppercase-variable import;
+`AWS_*`, `GITHUB_*`, `OPENAI_*`, loader, Python, Terraform, proxy, `HOME`, and
+Nebius credential namespaces are rejected.
+
 The proposed source registry
 `stages/foundation/trusted-public-edge-capsule-issuers.json` is intentionally
 empty. A separate owner-approved commit must enroll exactly one issuer with
@@ -82,7 +153,10 @@ exact registry as protected root-owned
 `/etc/fs2/public-edge-capsule-issuers.json` and a separately owner-issued,
 root-owned `/etc/fs2/public-edge-capsule-acceptance.json`. The acceptance
 policy binds the registry digest, accepted commit/tree, manifest digest, and
-launcher/bootstrap digests plus the fixed package-verification OpenSSL digest.
+installer/launcher/bootstrap digests plus the fixed package-verification
+OpenSSL digest. Both signature boundaries require fully static OpenSSL ELF
+bytes with neither `PT_INTERP` nor `PT_DYNAMIC`; pinning only an executable
+while leaving its loader, libraries, or provider modules mutable is rejected.
 The verifier stable-reads the manifest once, hashes those exact parsed bytes,
 and invokes only the policy-pinned OpenSSL descriptor. It accepts neither authority path nor
 expected digest from its caller. Ordinary apply inputs never select the
@@ -94,10 +168,15 @@ Perform these steps only from an independently accepted exact commit in an
 isolated packaging environment. They were not performed for this source
 candidate.
 
-1. Build a new output path with
-   `stages/foundation/scripts/build-public-edge-capsule-launcher.sh`. The build
+1. Build a new output path with exactly four arguments:
+   `stages/foundation/scripts/build-public-edge-capsule-launcher.sh /absolute/new-launcher BOOTSTRAP_SHA256 STATIC_FROZEN_PYTHON_SHA256 FROZEN_RUNTIME_CLOSURE_REVIEW_SHA256`. The build
    script invokes fixed `/usr/bin/cc`, requests static PIE and hardening flags,
    and refuses to replace an existing output.
+   The fourth value is only a binding to an independent review receipt for the
+   exact whole-binary digest. The C marker check does not enumerate CPython's
+   frozen-module table; enrollment must separately prove required modules,
+   excluded/unreviewed modules, toolchain provenance, and the complete frozen
+   runtime closure.
 2. Assemble the versioned release bundle and complete exhaustive manifest. Do
    not include a symlink, socket, device, secret, credential, state, plan,
    customer payload, or mutable cache.
@@ -106,20 +185,44 @@ candidate.
    their fixed `/etc/fs2` paths. The policy records exact commit/tree,
    manifest, registry, launcher, bootstrap, and package-verification OpenSSL
    digests.
-4. Run `verify-public-edge-capsule-install.py` with absolute paths to only the
-   bundle, manifest, launcher binary, and bootstrap. It opens the two fixed
-   root authorities itself. Its only successful result is
-   `VERIFIED_FOR_INSTALL`; an empty issuer registry, absent policy, caller
-   substitute, or digest mismatch fails closed.
-5. A privileged package owner—not Terraform—creates the no-member group and
-   installs the new versioned tree, fixed Python copy, bootstrap, canonical
-   manifest, and launcher with the ownership/modes above. The installer must
-   first prove every destination is absent or belongs to the recorded previous
-   package. Never merge a new bundle into an existing version directory.
-6. Record the prior fixed-file package identities and new manifest/launcher
-   digests. Switch fixed files atomically only after verification. Preserve the
-   prior versioned tree and manifest for rollback; do not delete them in the
-   rollout.
+4. The package authority builds and installs the reviewed static C installer
+   gate at `/usr/local/sbin/fs2-install-public-edge-capsule`, root-owned mode
+   `0555`, using `build-public-edge-capsule-installer-launcher.sh`. Its accepted
+   digest is recorded in the manifest/policy. It embeds the digests of mode-0444
+   `/usr/local/libexec/fs2-public-edge-installer.py` and the no-`PT_INTERP`,
+   no-`PT_DYNAMIC`, frozen-stdlib
+   `/usr/local/libexec/fs2-public-edge-installer-python-static`. Build the gate
+   with exactly
+   `stages/foundation/scripts/build-public-edge-capsule-installer-launcher.sh /absolute/new-installer INSTALLER_SOURCE_SHA256 STATIC_FROZEN_PYTHON_SHA256 FROZEN_RUNTIME_CLOSURE_REVIEW_SHA256`.
+   Its fourth value has the same external-review-only meaning; it is not a
+   runtime enumeration proof. The standalone
+   `verify-public-edge-capsule-install.py` remains an audit-only preview; its
+   `VERIFIED_FOR_INSTALL` output is never an installation authority.
+
+   ```text
+   /usr/local/sbin/fs2-install-public-edge-capsule --bundle /absolute/bundle --manifest /absolute/manifest.json --launcher-binary /absolute/launcher --bootstrap /absolute/bootstrap.py --python /absolute/static-frozen-python3
+   ```
+5. The privileged installer itself opens the two fixed root authorities. It
+   rejects symlink arguments before any resolution, descriptor-walks and pins
+   the exhaustive bundle, stable-opens every other input, verifies the signed
+   receipt and policy-pinned installer/OpenSSL, and copies only from those same
+   retained descriptors. It creates only absent files with `O_EXCL`. Release
+   and activation bytes are first written under unique append-only attempt
+   directories; a completion journal is written last and the complete payload
+   is independently reread before one atomic no-replace rename installs the
+   fixed identity. Every file and directory is fsynced in dependency order and
+   both parents of cross-directory renames are fsynced. A crash leaves a preserved non-active attempt and a retry
+   uses a new attempt. An already installed identity is reused only after an
+   exact full-tree verification. It never reopens mutable caller paths for the
+   later copy, deletes a partial attempt, or overwrites a destination.
+6. After destination digest/mode/owner verification, the installer writes an
+   exact install receipt into the activation unit and atomically switches the
+   single current symlink with Linux `renameat2`. On upgrade it uses
+   `RENAME_EXCHANGE`, then preserves the old symlink under a new
+   `fs2-public-edge-previous-*` name. No prior version, activation unit, or
+   pointer is deleted or overwritten. Prepared, exchanged, and pointer-preserved
+   journals make retry finish or preserve either side of an interrupted exchange
+   before the already-active fast path; no candidate or prior pointer is cleaned.
 7. Invoke the documented `./inference-stack <command> ...` command. The checkout
    immediately re-executes the fixed launcher and injects an absolute default
    tfvars path when needed, so existing run-root, inference, operations,
@@ -131,7 +234,9 @@ this source candidate or by a manifest supplied by an ordinary caller.
 ## Rollback
 
 Rollback is package selection, not mutation of an accepted version directory.
-Restore the recorded prior fixed launcher/bootstrap/Python/manifest package as
-one atomic unit, verify their exact recorded digests and modes, then rerun the
-normal customer/operator smoke set. Do not combine a launcher or manifest from
-one package with source/tools/providers from another.
+The preserved previous pointer and its install receipt identify the complete
+prior activation unit. The package authority first restores an acceptance
+policy for that exact signed manifest, verifies the retained release and unit,
+then atomically exchanges the current pointer as a whole. It never copies
+individual fixed files or combines launcher/manifest/Python/bootstrap from
+different packages. The normal customer/operator smoke set remains mandatory.

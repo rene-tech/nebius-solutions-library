@@ -269,6 +269,11 @@ resource "helm_release" "control_plane" {
           data.external.public_edge_mutation_fence[0].result.membership_receipt_sha256 == data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.receipt_sha256 &&
           data.external.public_edge_mutation_fence[0].result.admission_policy_sha256 == data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_policy_sha256 &&
           data.external.public_edge_mutation_fence[0].result.admission_binding_sha256 == data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_binding_sha256 &&
+          data.external.public_edge_mutation_fence[0].result.admission_cas_policy_sha256 == data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_cas_policy_sha256 &&
+          data.external.public_edge_mutation_fence[0].result.admission_cas_binding_sha256 == data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_cas_binding_sha256 &&
+          data.external.public_edge_mutation_fence[0].result.admission_bootstrap_policy_sha256 == data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_bootstrap_policy_sha256 &&
+          data.external.public_edge_mutation_fence[0].result.admission_bootstrap_binding_sha256 == data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_bootstrap_binding_sha256 &&
+          data.external.public_edge_mutation_fence[0].result.admission_boundary_approval_sha256 == data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_boundary_approval.sha256 &&
           tonumber(data.external.public_edge_mutation_fence[0].result.provider_member_count) >= 3 &&
           tonumber(data.external.public_edge_mutation_fence[0].result.eligible_node_count) >= 3 &&
           tonumber(data.external.public_edge_mutation_fence[0].result.hostname_domain_count) >= 3,

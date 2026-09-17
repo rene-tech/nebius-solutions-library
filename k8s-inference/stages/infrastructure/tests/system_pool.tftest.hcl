@@ -63,6 +63,8 @@ mock_provider "nebius" {
 }
 
 variables {
+  # Mock-only inherited descriptor; no credential fixture is persisted.
+  nebius_iam_token_file = "/proc/self/fd/0"
   project_id    = "project-syntheticlocal"
   source_commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   run_id        = "systest1"

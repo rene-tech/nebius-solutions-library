@@ -442,6 +442,14 @@ class DisposableTerraformContractTests(unittest.TestCase):
         self.assertIn("[A-Za-z0-9._-]", profile_block)
         self.assertNotIn('var.nebius_profile == "sandbox"', profile_block)
 
+    def test_nebius_provider_uses_only_capsule_token_descriptor(self) -> None:
+        variables = (ROOT / "variables.tf").read_text(encoding="utf-8")
+        provider = (ROOT / "versions.tf").read_text(encoding="utf-8")
+        self.assertIn('variable "nebius_iam_token_file"', variables)
+        self.assertIn('^/proc/self/fd/[0-9]+$', variables)
+        self.assertIn("token = chomp(file(var.nebius_iam_token_file))", provider)
+        self.assertNotIn("profile = {", provider)
+
     def test_subnet_contract_normalizes_provider_0628_private_pool_shape(
         self,
     ) -> None:

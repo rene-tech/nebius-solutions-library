@@ -272,6 +272,38 @@ def regional_dynamic(run_root: Path) -> dict:
 
 
 class InferenceStackTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._original_capsule_paths = dict(STACK.CAPSULE_TOOL_PATHS)
+        STACK.CAPSULE_TOOL_PATHS["nebius_token"] = "/proc/self/fd/999"
+        STACK.CAPSULE_TOOL_PATHS["terraform_cli_config"] = "/proc/self/fd/998"
+        self.addCleanup(
+            lambda: (
+                STACK.CAPSULE_TOOL_PATHS.clear(),
+                STACK.CAPSULE_TOOL_PATHS.update(self._original_capsule_paths),
+            )
+        )
+        auth_patch = mock.patch.object(
+            STACK,
+            "brokered_auth_environment",
+            side_effect=lambda environment=None: {
+                **(dict(environment) if environment is not None else STACK.clean_environment()),
+                "NEBIUS_IAM_TOKEN": "test-only-brokered-token",
+                "FS2_CAPSULE_NEBIUS_PROFILE": "explicit-profile",
+            },
+        )
+        profile_patch = mock.patch.object(STACK, "require_brokered_profile")
+        secret_patch = mock.patch.object(
+            STACK,
+            "operator_secret",
+            side_effect=lambda _slot, environment_name: os.environ.get(environment_name),
+        )
+        auth_patch.start()
+        profile_patch.start()
+        secret_patch.start()
+        self.addCleanup(auth_patch.stop)
+        self.addCleanup(profile_patch.stop)
+        self.addCleanup(secret_patch.stop)
+
     def test_completed_model_handoff_survives_catalog_additions(self) -> None:
         def resource(name, value):
             return {"mode": "managed", "type": "terraform_data", "name": name,
@@ -1078,7 +1110,7 @@ class InferenceStackTests(unittest.TestCase):
             ):
                 STACK.preflight_accelerators(arguments(), configuration)
 
-    def test_nebius_profile_is_used_for_kubeconfig_retrieval(self) -> None:
+    def test_brokered_token_is_used_for_kubeconfig_retrieval(self) -> None:
         calls: list[list[str]] = []
         with tempfile.TemporaryDirectory(
             prefix="inference-stack-profile-"
@@ -1106,16 +1138,8 @@ class InferenceStackTests(unittest.TestCase):
                     cluster_name="fs2-wrapper-test",
                 )
 
-        self.assertEqual(
-            calls[0][:5],
-            [
-                "nebius-test",
-                "--profile",
-                "explicit-profile",
-                "mk8s",
-                "cluster",
-            ],
-        )
+        self.assertEqual(calls[0][:3], ["nebius-test", "mk8s", "cluster"])
+        self.assertNotIn("--profile", calls[0])
 
     def test_infrastructure_outputs_accepts_omitted_legacy_contract(self) -> None:
         configuration = contract()
@@ -2472,7 +2496,12 @@ class InferenceStackTests(unittest.TestCase):
         expected_digests = {f"sha256:{character * 64}" for character in ("a", "b", "c")}
 
         def digest_from_reference(_crane, reference, environment, **_kwargs):
-            self.assertEqual(environment["NEBIUS_PROFILE"], "explicit-profile")
+            self.assertEqual(
+                environment["FS2_CAPSULE_NEBIUS_PROFILE"], "explicit-profile"
+            )
+            self.assertEqual(
+                environment["NEBIUS_IAM_TOKEN"], "test-only-brokered-token"
+            )
             digest = f"sha256:{reference[-64:]}"
             self.assertIn(digest, expected_digests)
             return digest

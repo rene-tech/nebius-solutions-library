@@ -1,11 +1,22 @@
 variable "nebius_profile" {
-  description = "Existing authenticated Nebius CLI profile name. The wrapper supplies it; credentials never enter Terraform configuration or state."
+  description = "Signed Nebius authority selector. The accepted capsule binds this name to a separately brokered short-lived token; no ambient profile configuration or credential is used."
   type        = string
   default     = "sandbox"
 
   validation {
     condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$", var.nebius_profile))
     error_message = "nebius_profile must be a nonempty, bounded CLI profile name containing only letters, digits, dot, underscore, or hyphen."
+  }
+}
+
+variable "nebius_iam_token_file" {
+  description = "Inherited sealed-memory descriptor containing the short-lived Nebius IAM token authenticated by the accepted capsule. The wrapper supplies the /proc/self/fd path; token bytes are never serialized into tfvars."
+  type        = string
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^/proc/self/fd/[0-9]+$", var.nebius_iam_token_file))
+    error_message = "nebius_iam_token_file must be an inherited /proc/self/fd descriptor path supplied by the accepted capsule."
   }
 }
 
