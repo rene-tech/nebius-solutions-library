@@ -1,0 +1,32 @@
+{
+  "observed_at_utc": "2026-09-16T21:53:58Z",
+  "project": "project-e00rene",
+  "region": "eu-north1",
+  "context": "fs2-storage-h100",
+  "namespace": "fs2-models",
+  "method": "kubectl --context fs2-storage-h100 -n fs2-models exec <pod> -- nvidia-smi --query-gpu=name,uuid,driver_version,memory.total --format=csv,noheader",
+  "configuration_changes": "None; existing resident workers and ordinary request-driven autoscaling",
+  "workers": [
+    {
+      "model": "parakeet-realtime-eou-120m-v1",
+      "pod": "parakeet-realtime-eou-120m-v1-6497d49575-th628",
+      "pod_uid": "c0e1254f-210d-42e4-b608-b754465ccb95",
+      "node": "computeinstance-e00vt3d3s01p9xsrwt",
+      "nvidia_smi": "NVIDIA L40S, GPU-1e6143c2-cb17-b90d-45cb-1b99b7d07168, 580.173.02, 46068 MiB"
+    },
+    {
+      "model": "nemotron-speech-en-0-6b",
+      "pod": "nemotron-speech-en-0-6b-hot-h100-reserved-8x-5fcb547dc6-mmtmb",
+      "pod_uid": "c7d2f95b-af74-432d-ab93-8bf2936d1c1a",
+      "node": "computeinstance-e00m0hsph76ajt9sdb",
+      "nvidia_smi": "NVIDIA H100 80GB HBM3, GPU-237a8e9f-8ab5-6eff-d4d6-1c02fdcbbc02, 580.159.04, 81559 MiB"
+    },
+    {
+      "model": "nemotron-speech-multilingual-0-6b",
+      "pod": "nemotron-speech-multilingual-0-6b-hot-h100-reserved-8x-74cdxpgr",
+      "pod_uid": "7c7785b2-a403-44cd-b335-aad4ba0c0faf",
+      "node": "computeinstance-e00p3acr87k9k4mckj",
+      "nvidia_smi": "NVIDIA H100 80GB HBM3, GPU-b1a62569-6a84-851e-8340-1a31f1a20de1, 580.159.04, 81559 MiB"
+    }
+  ]
+}
