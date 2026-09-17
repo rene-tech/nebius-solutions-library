@@ -3281,6 +3281,31 @@ class DeploymentContractTests(unittest.TestCase):
         )
         self.assertIs(values["monitoring"]["serviceMonitor"]["enabled"], True)
         self.assertIs(values["monitoring"]["dashboards"]["enabled"], True)
+        self.assertIs(values["loki"]["auth_enabled"], True)
+
+        gateway = yaml.safe_load(
+            (DEPLOY_ROOT / "stages/foundation/values/otel-gateway.yaml").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            gateway["config"]["exporters"]["otlphttp/loki"]["headers"],
+            {"X-Scope-OrgID": "fs2-platform"},
+        )
+
+        foundation = (DEPLOY_ROOT / "stages/foundation/observability_backends.tf").read_text(encoding="utf-8")
+        for expected in (
+            'resource "kubernetes_network_policy_v1" "loki_ingress"',
+            '"app.kubernetes.io/name" = "grafana"',
+            '"app.kubernetes.io/name"     = "opentelemetry-collector"',
+            '"kubernetes.io/metadata.name" = "fs2-system"',
+            '"app.kubernetes.io/part-of"   = "fs2-serve"',
+            'port     = "3100"',
+            'tenant_id              = local.loki_tenant_id',
+        ):
+            self.assertIn(expected, foundation)
+
+        workloads = (DEPLOY_ROOT / "stages/workloads/database.tf").read_text(encoding="utf-8")
+        self.assertIn('httpHeaderName1 = "X-Scope-OrgID"', workloads)
+        self.assertIn("httpHeaderValue1 = local.observability_operator.loki.tenant_id", workloads)
 
     def test_lean_route_config_map_name_covers_its_complete_data_map(self) -> None:
         locals_source = (DEPLOY_ROOT / "stages" / "workloads" / "locals.tf").read_text(

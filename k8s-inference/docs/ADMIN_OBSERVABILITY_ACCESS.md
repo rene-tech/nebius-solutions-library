@@ -5,6 +5,38 @@ observability application. Prometheus, Loki, Tempo, and Alertmanager remain
 cluster-private. The admin portal exposes launch actions only after the
 component's bounded Prometheus target, health, and data probes pass.
 
+## SAI-22 access boundaries
+
+The control plane treats application metrics and logs as different privilege
+classes. Global `VIEWER` principals may retain the bounded metrics and
+container-status views. Reading `/admin/api/v1/apps/{id}/logs` requires a
+global `OPERATOR` or `ADMIN` principal and records the distinct
+`app.logs.read` authorization action. A tenant-scoped principal cannot use the
+global observability routes.
+
+Loki runs with multi-tenancy enabled. Grafana, the OTel gateway, and the
+control plane use the fixed `fs2-platform` tenant header. Loki ingress is
+selected by an explicit NetworkPolicy and admits port 3100 only from those
+three application consumers plus the Prometheus health scraper. The policy
+also admits only the Loki self-traffic needed by its single-binary workload.
+Scientific and model-runtime namespaces are not Loki peers and must not be
+given an exception to this policy.
+
+Prometheus scrapes the control plane through the dedicated `metrics` service
+port (8081), which is served by a same-Pod, fixed-loopback proxy. The
+application listener on port 8080 returns 404 for non-loopback `/metrics`
+requests. The runtime NetworkPolicy admits model workloads and the public
+gateway only to port 8080; only the selected Prometheus Pod may reach port
+8081. The proxy mounts no application volumes or credentials and accepts no
+caller-selected destination.
+
+The source tree does not log inference request or response bodies in the
+first-party control-plane access path. That does not establish the behavior of
+every third-party model-runtime image. Promotion therefore remains gated on a
+private, exact-image review and payload-marker negative test for every runtime
+image in the release. The test must record only the marker's absence and must
+not copy customer data or raw runtime logs into evidence.
+
 ## Terraform configuration
 
 Alertmanager is controlled only from the customer `terraform.tfvars`:
@@ -77,6 +109,12 @@ not a second public backend.
 
 ## Verification and rollback
 
+The SAI-22 source candidate adds regressions for all of these contracts, but
+the coordinator's static-source boundary for its authoring task prohibited
+executing tests, Helm/Terraform commands, scanners, builds, live probes, or
+deployment. A later authorized integration review must execute the checks
+below from the exact candidate descendant before any rollout.
+
 Before apply, run Terraform formatting/validation, the deployment-contract and
 observability tests, and Helm lint/template for the control-plane chart. On the
 target cluster verify all of the following without port forwarding:
@@ -97,7 +135,23 @@ target cluster verify all of the following without port forwarding:
 6. existing Grafana, Prometheus, Loki, OTel, DCGM, Kueue, and KEDA cards remain
    healthy.
 
+For SAI-22 specifically, also verify that a `VIEWER` receives 403 from the app
+logs route while an `OPERATOR` still receives the bounded response; the
+ServiceMonitor scrapes the named `metrics` port; a model/scientific workload
+receives a network denial when connecting to Loki port 3100; Grafana, the OTel
+gateway, the control plane, and Prometheus retain their required Loki flows;
+and a model workload cannot retrieve tenant-labelled samples from either
+control-plane port. Run the exact-image payload-marker negative test without
+displaying or retaining payloads.
+
 Rollback is a reviewed Terraform change that restores the previous application
 digests and/or sets `deployment.observability.alertmanager.enabled = false`,
 then applies foundation before workloads. The StatefulSet claim remains
 retained; rollback must not delete the namespace or PVC.
+
+For an SAI-22 rollout, capture the prior control-plane image digest and Helm
+revision first. Roll back the workload release to that revision and restore
+the prior reviewed foundation configuration as one serialized operation. Do
+not remove the Loki policy in isolation while multi-tenant clients are active,
+and do not collapse metrics back onto the workload-reachable listener. Re-run
+both the operator-positive and workload-negative checks after rollback.

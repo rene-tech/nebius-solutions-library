@@ -13,6 +13,8 @@ config:
     otlphttp/loki:
       compression: gzip
       endpoint: http://fs2-loki.fs2-observability.svc.cluster.local:3100/otlp
+      headers:
+        X-Scope-OrgID: fs2-platform
       retry_on_failure: {enabled: true, initial_interval: 1s, max_elapsed_time: 60s, max_interval: 10s}
       sending_queue: {enabled: true, queue_size: 2048}
     otlp/tempo:

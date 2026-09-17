@@ -273,6 +273,20 @@ def test_gateway_service_monitor_matches_only_gateway_service() -> None:
         service["metadata"]["name"] for service in services if selector.items() <= service["metadata"]["labels"].items()
     }
     assert selected_services == {"fs2-serve-control-plane"}
+    assert service_monitor["spec"]["endpoints"] == [
+        {"port": "metrics", "path": "/metrics", "interval": "30s", "scheme": "http"}
+    ]
+    gateway_service = next(service for service in services if service["metadata"]["name"] == "fs2-serve-control-plane")
+    assert gateway_service["spec"]["ports"] == [
+        {"name": "http", "port": 8080, "targetPort": "http", "protocol": "TCP"},
+        {"name": "metrics", "port": 8081, "targetPort": "metrics", "protocol": "TCP"},
+    ]
+    containers = gateway_deployment(documents)["spec"]["template"]["spec"]["containers"]
+    assert [container["name"] for container in containers] == ["control-plane", "metrics-proxy"]
+    proxy = containers[1]
+    assert proxy["args"] == ["metrics-proxy"]
+    assert proxy["ports"] == [{"name": "metrics", "containerPort": 8081, "protocol": "TCP"}]
+    assert "volumeMounts" not in proxy
     assert (
         next(service for service in services if service["metadata"]["name"] == "fs2-serve-control-plane-admin-console")[
             "metadata"
@@ -1807,7 +1821,8 @@ def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -
         "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "fs2-observability"}},
         "podSelector": {"matchLabels": {"app.kubernetes.io/name": "prometheus"}},
     }
-    assert all(rule["ports"] == [{"port": 8080, "protocol": "TCP"}] for rule in runtime["ingress"])
+    assert runtime["ingress"][0]["ports"] == [{"port": 8080, "protocol": "TCP"}]
+    assert runtime["ingress"][1]["ports"] == [{"port": 8081, "protocol": "TCP"}]
 
     egress_by_port = {tuple(port["port"] for port in rule["ports"]): rule["to"][0] for rule in runtime["egress"]}
     assert egress_by_port[(53, 53)] == {
@@ -2997,6 +3012,17 @@ def test_chart_rejects_incoherent_sync_wait_limits() -> None:
         assert expected in result.stderr
 
 
+def test_chart_rejects_metrics_port_on_application_listener() -> None:
+    result = subprocess.run(  # noqa: S603 - fixed Helm binary and bounded adversarial value
+        render_command("--set", "service.metricsPort=8080"),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "service.metricsPort must differ from service.port" in result.stderr
+
+
 def test_grafana_dashboard_is_valid_and_separates_estimate_dcgm_and_principal_ledger() -> None:
     documents = render()
     dashboard_map = next(
@@ -3271,6 +3297,8 @@ def test_observability_adapter_has_explicit_prometheus_peer_and_optional_config(
     volume = next(item for item in pod["volumes"] if item["name"] == "admin-observability")
 
     assert env["FS2_ADMIN_PROMETHEUS_URL"].endswith(".fs2-observability.svc:9090")
+    assert env["FS2_ADMIN_LOKI_URL"].endswith(".fs2-observability.svc:3100")
+    assert env["FS2_ADMIN_LOKI_TENANT_ID"] == "fs2-platform"
     assert env["FS2_ADMIN_OBSERVABILITY_CONFIG_FILE"].endswith("/config.json")
     assert volume == {
         "name": "admin-observability",

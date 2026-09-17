@@ -129,6 +129,7 @@ async def test_gpu_attribution_requires_uuid_and_allocation_time_not_exporter_po
     queries = []
 
     def handler(request):
+        assert request.headers["X-Scope-OrgID"] == "fs2-platform"
         queries.append(request.url.params["query"])
         return httpx.Response(
             200,

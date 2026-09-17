@@ -200,7 +200,11 @@ resource "kubernetes_secret_v1" "grafana_datasource" {
           editable  = false
           version   = 1
           jsonData = {
-            maxLines = 1000
+            maxLines        = 1000
+            httpHeaderName1 = "X-Scope-OrgID"
+          }
+          secureJsonData = {
+            httpHeaderValue1 = local.observability_operator.loki.tenant_id
           }
         },
       ]

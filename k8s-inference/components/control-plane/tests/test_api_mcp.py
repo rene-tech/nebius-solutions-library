@@ -387,7 +387,7 @@ def test_api_auth_model_list_openai_admission_revoke_and_nonleak(registry, ciphe
     runtime = build_runtime(registry, cipher, hasher)
     app = create_app(runtime)
     caplog.set_level(logging.INFO, logger="fs2_serve.access")
-    with TestClient(app) as client:
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
         assert client.get("/v1/models").status_code == 401
         token = issue(
             client,
@@ -490,7 +490,7 @@ def test_public_catalog_reports_the_admitted_pool_accelerator_class(registry, ci
     runtime = build_runtime(registry, cipher, hasher, store=store)
     assert asyncio.run(_pool_accelerator_classes(runtime)) == {admitted_pool: "nvidia-h100-sxm5-80gb"}
     app = create_app(runtime)
-    with TestClient(app) as client:
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
         token = issue(client, principal="rene", scopes=["catalog.read", "inference.invoke", "mcp.invoke"])
         auth = {"authorization": f"Bearer {token}"}
         listed = client.get("/v1/models", headers=auth)
@@ -668,7 +668,7 @@ def test_ip_public_authority_is_enforced_on_v1_mcp_and_both_metadata_paths(regis
 
 def test_terminal_metrics_project_cancel_and_revoke_exactly_once(registry, cipher, hasher) -> None:
     runtime = build_runtime(registry, cipher, hasher)
-    with TestClient(create_app(runtime)) as client:
+    with TestClient(create_app(runtime), client=("127.0.0.1", 50000)) as client:
         token = issue(client, principal="terminal-accounting", scopes=["inference.invoke"])
         headers = {"authorization": f"Bearer {token}", "x-fs2-wait-seconds": "0"}
         first = client.post(
@@ -695,6 +695,14 @@ def test_terminal_metrics_project_cancel_and_revoke_exactly_once(registry, ciphe
     for outcome in ("cancelled", "token_revoked"):
         sample = f'fs2_serve_requests_total{{model="qwen3-8b",outcome="{outcome}",protocol="openai-chat"}} 1.0'
         assert sample in first_scrape and sample in second_scrape
+
+
+def test_metrics_on_application_listener_is_loopback_only(registry, cipher, hasher) -> None:
+    runtime = build_runtime(registry, cipher, hasher)
+    with TestClient(create_app(runtime)) as remote_client:
+        assert remote_client.get("/metrics").status_code == 404
+    with TestClient(create_app(runtime), client=("127.0.0.1", 50000)) as loopback_client:
+        assert loopback_client.get("/metrics").status_code == 200
 
 
 def test_fatal_fenced_release_failure_flips_liveness_for_pod_restart(registry, cipher, hasher) -> None:

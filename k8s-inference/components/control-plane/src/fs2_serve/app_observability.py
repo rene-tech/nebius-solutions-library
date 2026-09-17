@@ -39,6 +39,7 @@ from .runtime_kubernetes import GPU_ALLOCATION_OBSERVED_AT_ANNOTATION, GPU_UUIDS
 MAX_PODS = 2000
 MAX_POINTS = 720
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+DEFAULT_LOKI_TENANT_ID = "fs2-platform"
 
 
 def _timestamp(value: object) -> datetime | None:
@@ -236,6 +237,7 @@ class AppObservabilityService:
         kubernetes: KubernetesListReader | None,
         prometheus_url: str | None,
         loki_url: str | None,
+        loki_tenant_id: str = DEFAULT_LOKI_TENANT_ID,
         history: AppObservationHistory | None = None,
         timeout_seconds: float = 8,
         transport: httpx.AsyncBaseTransport | None = None,
@@ -243,6 +245,7 @@ class AppObservabilityService:
         self.kubernetes = kubernetes
         self.prometheus_url = prometheus_url
         self.loki_url = loki_url
+        self.loki_tenant_id = loki_tenant_id
         self.history = history
         self.timeout_seconds = timeout_seconds
         self.transport = transport
@@ -311,7 +314,14 @@ class AppObservabilityService:
             warnings.append(str(exc))
         return list(identities.values()), warnings
 
-    async def _get(self, base: str, path: str, params: dict[str, str]) -> dict[str, Any]:
+    async def _get(
+        self,
+        base: str,
+        path: str,
+        params: dict[str, str],
+        *,
+        headers: Mapping[str, str] | None = None,
+    ) -> dict[str, Any]:
         try:
             async with httpx.AsyncClient(
                 base_url=base.rstrip("/"),
@@ -319,7 +329,7 @@ class AppObservabilityService:
                 trust_env=False,
                 transport=self.transport,
             ) as client:
-                response = await client.get(path, params=params)
+                response = await client.get(path, params=params, headers=headers)
                 response.raise_for_status()
                 if len(response.content) > MAX_RESPONSE_BYTES:
                     raise AdminAdapterUnavailableError("Observability response is too large; shorten the time range")
@@ -581,6 +591,7 @@ class AppObservabilityService:
                     "limit": "5000",
                     "direction": "backward",
                 },
+                headers={"X-Scope-OrgID": self.loki_tenant_id},
             )
             if data.get("resultType") != "streams":
                 raise AdminAdapterUnavailableError("Loki returned an unexpected log format")

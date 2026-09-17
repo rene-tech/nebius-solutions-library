@@ -67,6 +67,7 @@ from .federation import FederationRouter
 from .gpu_allocation_observer import KubernetesGpuAllocationPublisher, run_gpu_allocation_observer
 from .lifecycle import PostgresLifecycleRepository
 from .mcp_server import mount_mcp
+from .metrics_proxy import create_metrics_proxy_app
 from .model_deployment_admin import ModelDeploymentReadService, StoreModelDeploymentRepository
 from .model_deployment_bridge import ModelDeploymentRuntimeBridge
 from .model_deployment_controller import ControllerFiles, run_model_controller
@@ -657,6 +658,14 @@ async def serve(settings: Settings) -> None:
     await server.serve()
 
 
+async def serve_metrics_proxy(settings: Settings) -> None:
+    app = create_metrics_proxy_app(application_port=settings.port)
+    server = uvicorn.Server(
+        uvicorn.Config(app, host=settings.host, port=settings.metrics_port, log_level=settings.log_level.lower())
+    )
+    await server.serve()
+
+
 async def maintain(settings: Settings) -> None:
     store = await PostgresMaintenanceStore.connect(settings.database_url)
     try:
@@ -758,6 +767,7 @@ def main() -> None:
         "command",
         choices=(
             "serve",
+            "metrics-proxy",
             "maintenance",
             "migrate",
             "wait-schema",
@@ -785,6 +795,7 @@ def main() -> None:
     else:
         action = {
             "serve": serve,
+            "metrics-proxy": serve_metrics_proxy,
             "maintenance": maintain,
             "migrate": migrate,
             "wait-schema": wait_schema,

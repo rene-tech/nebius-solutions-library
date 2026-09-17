@@ -1,6 +1,9 @@
 {{- if lt (.Values.config.maxSyncWaiters | int) (.Values.config.workerConcurrency | int) }}
 {{- fail "config.maxSyncWaiters must be greater than or equal to config.workerConcurrency" }}
 {{- end }}
+{{- if eq (.Values.service.port | int) (.Values.service.metricsPort | int) }}
+{{- fail "service.metricsPort must differ from service.port" }}
+{{- end }}
 {{- if .Values.adminConfiguration.enabled }}
 {{- if not (regexMatch "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$" .Values.adminConfiguration.configMapName) }}
 {{- fail "adminConfiguration.configMapName is required when enabled" }}
@@ -331,6 +334,46 @@ spec:
             failureThreshold: 3
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+        - name: metrics-proxy
+          image: {{ include "fs2-serve.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["metrics-proxy"]
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.service.metricsPort }}
+              protocol: TCP
+          env:
+            - name: FS2_PORT
+              value: "8080"
+            - name: FS2_METRICS_PORT
+              value: {{ .Values.service.metricsPort | quote }}
+          startupProbe:
+            httpGet:
+              path: /livez
+              port: metrics
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: metrics
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /livez
+              port: metrics
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.metricsProxy.resources | nindent 12 }}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

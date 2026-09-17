@@ -605,3 +605,9 @@ def test_public_authority_mode_rejects_dns_ip_ambiguity(url: str, mode: str) -> 
 def test_public_gateway_url_rejects_ambiguous_or_unbounded_authorities(public_base_url: str) -> None:
     with pytest.raises(ValueError, match="public_base_url"):
         Settings(public_base_url=public_base_url)
+
+
+def test_metrics_listener_must_be_separate_from_application_listener() -> None:
+    assert Settings().metrics_port == 8081
+    with pytest.raises(ValueError, match="metrics_port must differ"):
+        Settings(port=8080, metrics_port=8080)

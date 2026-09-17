@@ -324,6 +324,8 @@ app.kubernetes.io/component: model-controller
 {{- if .Values.adminReadAdapters.observability.lokiUrl }}
 - name: FS2_ADMIN_LOKI_URL
   value: {{ .Values.adminReadAdapters.observability.lokiUrl | quote }}
+- name: FS2_ADMIN_LOKI_TENANT_ID
+  value: {{ .Values.adminReadAdapters.observability.lokiTenantId | quote }}
 {{- end }}
 - name: FS2_ADMIN_OBSERVABILITY_CONFIG_FILE
   value: /etc/fs2-serve/admin-observability/config.json

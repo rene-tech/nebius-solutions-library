@@ -46,7 +46,7 @@ spec:
             matchLabels:
               {{- toYaml $network.metrics.podLabels | nindent 14 }}
       ports:
-        - port: {{ .Values.service.port }}
+        - port: {{ .Values.service.metricsPort }}
           protocol: TCP
   egress:
     - to:

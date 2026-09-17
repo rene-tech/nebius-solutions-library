@@ -11,7 +11,7 @@ spec:
       {{- include "fs2-serve.labels" . | nindent 6 }}
       app.kubernetes.io/component: gateway
   endpoints:
-    - port: http
+    - port: metrics
       path: /metrics
       interval: {{ .Values.serviceMonitor.interval }}
       scheme: http

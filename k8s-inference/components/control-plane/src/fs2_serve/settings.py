@@ -58,6 +58,7 @@ class Settings(BaseSettings):
 
     host: str = "0.0.0.0"  # noqa: S104
     port: int = Field(default=8080, ge=1, le=65535)
+    metrics_port: int = Field(default=8081, ge=1, le=65535)
     database_url: str = "postgresql://fs2_serve@postgres/fs2_serve"
     catalog_dir: Path = Path("/etc/fs2-serve/catalog")
     bindings_file: Path = Path("/etc/fs2-serve/serving-bindings.json")
@@ -156,6 +157,12 @@ class Settings(BaseSettings):
     admin_node_scaler_provider: Literal["nebius-managed-node-group-autoscaler"] | None = None
     admin_prometheus_url: str | None = Field(default=None, max_length=2048)
     admin_loki_url: str | None = Field(default=None, max_length=2048)
+    admin_loki_tenant_id: str = Field(
+        default="fs2-platform",
+        min_length=1,
+        max_length=150,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+    )
     admin_observability_config_file: Path | None = None
     admin_adapter_timeout_seconds: float = Field(default=2.0, ge=0.1, le=10)
     admin_source_max_age_seconds: float = Field(default=90.0, ge=1, le=3600)
@@ -362,6 +369,8 @@ class Settings(BaseSettings):
             raise ValueError("authorization_server_url must use HTTPS")
         if self.sync_wait_seconds > self.max_sync_wait_seconds:
             raise ValueError("sync_wait_seconds cannot exceed max_sync_wait_seconds")
+        if self.metrics_port == self.port:
+            raise ValueError("metrics_port must differ from the application port")
         if self.wait_poll_initial_seconds > self.wait_poll_max_seconds:
             raise ValueError("wait_poll_initial_seconds cannot exceed wait_poll_max_seconds")
         if self.max_sync_waiters < self.worker_concurrency:

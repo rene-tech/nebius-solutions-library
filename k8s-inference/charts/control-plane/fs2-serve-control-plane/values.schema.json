@@ -12,6 +12,8 @@
     "scientificAccess",
     "serviceAccounts",
     "runtimeAttribution",
+    "service",
+    "metricsProxy",
     "catalog",
     "federation",
     "secrets",
@@ -31,6 +33,51 @@
     "replicaCount": {
       "type": "integer",
       "minimum": 2
+    },
+    "service": {
+      "type": "object",
+      "required": [
+        "port",
+        "metricsPort"
+      ],
+      "properties": {
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "metricsPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      },
+      "additionalProperties": false
+    },
+    "metricsProxy": {
+      "type": "object",
+      "required": [
+        "resources"
+      ],
+      "properties": {
+        "resources": {
+          "type": "object",
+          "required": [
+            "requests",
+            "limits"
+          ],
+          "properties": {
+            "requests": {
+              "$ref": "#/$defs/controllerResources"
+            },
+            "limits": {
+              "$ref": "#/$defs/controllerResources"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     },
     "image": {
       "type": "object",
@@ -1405,6 +1452,7 @@
           "required": [
             "enabled",
             "prometheusUrl",
+            "lokiTenantId",
             "installed",
             "datasourceUids",
             "links"
@@ -1423,6 +1471,12 @@
               "type": "string",
               "maxLength": 2048,
               "pattern": "^$|^https?://[^/?#]+$"
+            },
+            "lokiTenantId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 150,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$"
             },
             "installed": {
               "type": "object",

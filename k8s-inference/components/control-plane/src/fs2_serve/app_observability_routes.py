@@ -27,19 +27,19 @@ def app_observability_router(
 ) -> APIRouter:
     router = APIRouter(prefix="/admin/api/v1/apps", dependencies=[Depends(operator_dependency)])
 
-    async def authorize(request: Request) -> None:
+    async def authorize(request: Request, role: OperatorRole, *, action: str) -> None:
         identity = getattr(request.state, "operator_principal", None)
         if not isinstance(identity, OperatorPrincipal):
             raise AdminProblemError(401, "operator_session_required", "operator session is required")
         # Pod/device observations and unredacted runtime logs are app-wide,
         # unlike the tenant-filtered logical Runs and Usage tabs.
-        await access.authorize_global(identity, OperatorRole.VIEWER, action="app.observability.read")
+        await access.authorize_global(identity, role, action=action)
 
     @router.get("/{app_id}/metrics", response_model=AdminEnvelope[AppMetrics], responses=problem_responses)
     async def metrics(
         request: Request, app_id: UUID, context: Annotated[AdminContext, Depends(context_dependency)]
     ) -> Any:
-        await authorize(request)
+        await authorize(request, OperatorRole.VIEWER, action="app.observability.read")
         return envelope(
             await service.metrics(
                 await apps.resolve_observability(app_id),
@@ -53,7 +53,7 @@ def app_observability_router(
     async def containers(
         request: Request, app_id: UUID, context: Annotated[AdminContext, Depends(context_dependency)]
     ) -> Any:
-        await authorize(request)
+        await authorize(request, OperatorRole.VIEWER, action="app.observability.read")
         return envelope(await service.containers(await apps.resolve_observability(app_id)), context)
 
     @router.get("/{app_id}/logs", response_model=AdminEnvelope[AppLogs], responses=problem_responses)
@@ -67,7 +67,7 @@ def app_observability_router(
         limit: int = Query(200, ge=1, le=500),
         cursor: str | None = Query(None, pattern=r"^[0-9]{1,20}:[0-9]{1,4}$", max_length=25),
     ) -> Any:
-        await authorize(request)
+        await authorize(request, OperatorRole.OPERATOR, action="app.logs.read")
         return envelope(
             await service.logs(
                 await apps.resolve_observability(app_id),

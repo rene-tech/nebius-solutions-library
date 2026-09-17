@@ -6,6 +6,120 @@ locals {
   alertmanager_grafana_datasource = "alertmanager"
   tempo_service_name              = "fs2-tempo"
   tempo_grafana_datasource        = "fs2-${var.run_id}-tempo"
+  loki_tenant_id                  = "fs2-platform"
+}
+
+# Loki's tenant header is meaningful only behind a network identity boundary.
+# Select the single-binary workload and admit the three application consumers,
+# its Prometheus health scraper, and Loki's own cluster ports. Model/scientific
+# namespaces match none of these peers and therefore cannot query port 3100.
+resource "kubernetes_network_policy_v1" "loki_ingress" {
+  metadata {
+    name      = "fs2-loki-ingress"
+    namespace = kubernetes_namespace_v1.platform["fs2-observability"].metadata[0].name
+    labels    = local.common_labels
+  }
+
+  spec {
+    pod_selector {
+      match_labels = {
+        "app.kubernetes.io/component" = "single-binary"
+        "app.kubernetes.io/instance"  = "fs2-${var.run_id}-loki"
+        "app.kubernetes.io/name"      = "loki"
+      }
+    }
+    policy_types = ["Ingress"]
+
+    ingress {
+      from {
+        pod_selector {
+          match_labels = {
+            "app.kubernetes.io/name" = "grafana"
+          }
+        }
+      }
+      ports {
+        port     = "3100"
+        protocol = "TCP"
+      }
+    }
+
+    ingress {
+      from {
+        pod_selector {
+          match_labels = {
+            "app.kubernetes.io/instance" = "fs2-${var.run_id}-otel-gateway"
+            "app.kubernetes.io/name"     = "opentelemetry-collector"
+          }
+        }
+      }
+      ports {
+        port     = "3100"
+        protocol = "TCP"
+      }
+    }
+
+    ingress {
+      from {
+        namespace_selector {
+          match_labels = {
+            "kubernetes.io/metadata.name" = "fs2-system"
+          }
+        }
+        pod_selector {
+          match_labels = {
+            "app.kubernetes.io/component" = "gateway"
+            "app.kubernetes.io/part-of"   = "fs2-serve"
+          }
+        }
+      }
+      ports {
+        port     = "3100"
+        protocol = "TCP"
+      }
+    }
+
+    # Preserve Loki self-monitoring without admitting any workload namespace.
+    ingress {
+      from {
+        pod_selector {
+          match_labels = {
+            "app.kubernetes.io/name" = "prometheus"
+          }
+        }
+      }
+      ports {
+        port     = "3100"
+        protocol = "TCP"
+      }
+    }
+
+    ingress {
+      from {
+        pod_selector {
+          match_labels = {
+            "app.kubernetes.io/component" = "single-binary"
+            "app.kubernetes.io/instance"  = "fs2-${var.run_id}-loki"
+            "app.kubernetes.io/name"      = "loki"
+          }
+        }
+      }
+      ports {
+        port     = "7946"
+        protocol = "TCP"
+      }
+      ports {
+        port     = "7946"
+        protocol = "UDP"
+      }
+      ports {
+        port     = "9095"
+        protocol = "TCP"
+      }
+    }
+  }
+
+  depends_on = [helm_release.loki]
 }
 
 # Single-binary Tempo is deliberately sized for the cluster-local seven-day
@@ -125,6 +239,13 @@ output "observability_operator_contract" {
       service_name           = local.tempo_service_name
       service_port           = 3200
       grafana_datasource_uid = local.tempo_grafana_datasource
+    }
+    loki = {
+      auth_enabled           = true
+      service_name           = "fs2-loki"
+      service_port           = 3100
+      tenant_id              = local.loki_tenant_id
+      ingress_policy_name    = kubernetes_network_policy_v1.loki_ingress.metadata[0].name
     }
     raw_backends_public = false
     operator_surface    = "grafana-native-auth"

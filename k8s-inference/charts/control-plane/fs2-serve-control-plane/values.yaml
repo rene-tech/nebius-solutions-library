@@ -249,6 +249,16 @@ runtimeAttribution:
 
 service:
   port: 8080
+  metricsPort: 8081
+
+metricsProxy:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
 
 catalog:
   # Models-lane read-only filesystem tree. A ConfigMap cannot preserve the
@@ -525,6 +535,7 @@ adminReadAdapters:
     enabled: false
     prometheusUrl: http://fs2-monitoring-prometheus.fs2-observability.svc:9090
     lokiUrl: http://fs2-loki.fs2-observability.svc:3100
+    lokiTenantId: fs2-platform
     # Only explicit absences are configured. Installed/health/data for active
     # components still require successful bounded Prometheus probes.
     installed:

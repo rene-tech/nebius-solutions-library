@@ -1,6 +1,7 @@
 """FastAPI public/admin surface for durable fs2-serve admission."""
 
 import asyncio
+import ipaddress
 import json
 import logging
 import math
@@ -586,6 +587,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         kubernetes=getattr(admin_read.capacity_adapter, "reader", None),
         prometheus_url=runtime.settings.admin_prometheus_url,
         loki_url=runtime.settings.admin_loki_url,
+        loki_tenant_id=runtime.settings.admin_loki_tenant_id,
         history=AppObservationHistory(pool) if pool is not None else None,
     )
     app.state.apps = apps_service
@@ -975,7 +977,16 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         )
 
     @app.get("/metrics", include_in_schema=False)
-    async def metrics() -> Response:
+    async def metrics(request: Request) -> Response:
+        # Prometheus enters through the separately policy-bound metrics port.
+        # Keep the collector on the application listener only for the same-Pod
+        # proxy, so workload ingress cannot enumerate tenant-labelled samples.
+        try:
+            loopback = request.client is not None and ipaddress.ip_address(request.client.host).is_loopback
+        except ValueError:
+            loopback = False
+        if not loopback:
+            raise HTTPException(status_code=404, detail="not found")
         runtime.metrics.sync_models(
             runtime.registry.list(), pool_accelerator_classes=await _pool_accelerator_classes(runtime)
         )

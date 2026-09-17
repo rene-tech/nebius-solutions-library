@@ -118,6 +118,7 @@ locals {
         enabled       = true
         prometheusUrl = local.prometheus_server_address
         lokiUrl       = local.grafana_loki_datasource_url
+        lokiTenantId  = local.observability_operator.loki.tenant_id
         installed = {
           alertmanager = local.observability_operator.alertmanager.enabled
           tempo        = local.observability_operator.tempo.enabled
@@ -249,6 +250,11 @@ resource "helm_release" "control_plane" {
         local.observability_operator.tempo.enabled &&
         local.observability_operator.tempo.service_port == 3200 &&
         length(local.observability_operator.tempo.grafana_datasource_uid) > 0 &&
+        local.observability_operator.loki.auth_enabled &&
+        local.observability_operator.loki.service_name == "fs2-loki" &&
+        local.observability_operator.loki.service_port == 3100 &&
+        length(local.observability_operator.loki.tenant_id) > 0 &&
+        length(local.observability_operator.loki.ingress_policy_name) > 0 &&
         local.observability_operator.alertmanager.service_port == 9093 &&
         (
           !local.observability_operator.alertmanager.enabled ||
