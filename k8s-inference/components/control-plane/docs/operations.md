@@ -572,6 +572,10 @@ PAT verification reads current token state and rejects revoked or expired rows
 before scheduling Argon2id. Active-token verification runs outside the event
 loop behind four cancellation-safe worker slots, so a disconnected caller
 cannot release a slot while its Argon worker still consumes CPU and memory.
+The internal verification view carries the durable expiration-audit marker.
+Only an expired row without that marker attempts the conditional audit write;
+ordinary expired-token replays remain a read plus a generic denial and do not
+take the token advisory lock.
 Successful checks have a five-second, 4,096-entry process-local cache keyed by
 a domain-separated HMAC of the bearer and the stored verifier identity; raw
 bearer material and reusable prehashes are never cache keys or values. Every
@@ -579,13 +583,24 @@ cache use still rereads the row and evaluates revocation, expiry, prefix,
 current verifier, current policy, and principal policy, so it cannot extend
 credential lifetime or authorization state.
 
-Argon mismatches are limited independently per token ID after five failures in
-a rolling 30-second process-local window. A success clears that token's
-failure window, and a different token ID retains its own verification budget.
-The limit returns the same generic authentication failure as every other bad
-bearer; it adds no token identifiers or credential material to logs or metrics.
-The process-local gate composes with, but does not replace, the public edge and
+The SHA-256 fingerprint already stored for each high-entropy PAT is compared
+before Argon. A mismatch is denied cheaply and counted independently per token
+ID, with at most five failures in a rolling 30-second process-local window;
+the matching bearer bypasses that failure window and therefore cannot be
+locked out by someone who knows only its token UUID. A fingerprint match is
+only a prefilter and still requires the stored Argon verifier. A legacy row
+with no fingerprint remains eligible for bounded Argon verification so it cannot be
+locked out, then atomically binds its fingerprint after the first successful
+check. All denial paths return the same generic authentication failure and add
+no token identifiers or credential material to logs or metrics. The
+process-local gate composes with, but does not replace, the public edge and
 PostgreSQL token request limits.
+
+Pepper rotation hashes a replacement verifier off the event loop under those
+same four Argon worker slots. Concurrent requests for one old verifier share a
+single cancellation-shielded rehash task, and the store installs its result
+only when the source pepper ID and digest still match. A late worker therefore
+cannot overwrite a newer verifier written by another replica.
 
 Natural PAT expiry cannot become a queue head. Each claim first terminalizes a
 bounded batch of inactive-token queued rows and atomically releases their

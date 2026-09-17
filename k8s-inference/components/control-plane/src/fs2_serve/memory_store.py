@@ -459,6 +459,49 @@ class MemoryStore:
             row.digest = digest
             row.view = row.view.model_copy(update={"pepper_key_id": pepper_key_id})
 
+    async def rehash_token_if_current(
+        self,
+        token_id: UUID,
+        *,
+        expected_pepper_key_id: str,
+        expected_digest: str,
+        pepper_key_id: str,
+        digest: str,
+    ) -> bool:
+        async with self._lock:
+            row = self.tokens.get(token_id)
+            if (
+                row is None
+                or row.view.revoked_at is not None
+                or (row.view.expires_at is not None and row.view.expires_at <= datetime.now(UTC))
+                or row.view.pepper_key_id != expected_pepper_key_id
+                or not secrets.compare_digest(row.digest, expected_digest)
+            ):
+                return False
+            row.digest = digest
+            row.view = row.view.model_copy(update={"pepper_key_id": pepper_key_id})
+            return True
+
+    async def bind_token_fingerprint(self, token_id: UUID, *, fingerprint: str) -> bool:
+        async with self._lock:
+            row = self.tokens.get(token_id)
+            if (
+                row is None
+                or row.view.revoked_at is not None
+                or (row.view.expires_at is not None and row.view.expires_at <= datetime.now(UTC))
+            ):
+                return False
+            if row.view.fingerprint is not None:
+                return secrets.compare_digest(row.view.fingerprint, fingerprint)
+            if any(
+                candidate.view.fingerprint == fingerprint
+                for candidate in self.tokens.values()
+                if candidate is not row
+            ):
+                return False
+            row.view = row.view.model_copy(update={"fingerprint": fingerprint})
+            return True
+
     async def list_tokens(self, *, tenant_id: str | None = None, limit: int = 200) -> list[TokenView]:
         if not 1 <= limit <= 1000:
             raise ValueError("token list limit is outside the bound")
@@ -476,9 +519,11 @@ class MemoryStore:
             row = self.tokens.get(token_id)
             if row is None or row.view.expires_at is None:
                 return
-            if row.expiration_recorded:
+            if row.expiration_recorded or row.view.expiration_recorded_at is not None:
                 return
+            recorded_at = datetime.now(UTC)
             row.expiration_recorded = True
+            row.view = row.view.model_copy(update={"expiration_recorded_at": recorded_at})
             self._audit(
                 actor=actor,
                 tenant_id=row.view.tenant_id,

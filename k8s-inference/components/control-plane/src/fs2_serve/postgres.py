@@ -773,6 +773,7 @@ class PostgresStore:
             revoked_at=row["revoked_at"],
             name=row["name"],
             fingerprint=row["fingerprint"],
+            expiration_recorded_at=row["expiration_recorded_at"],
             last_used_at=row["last_used_at"],
             rotation_parent_id=row["rotation_parent_id"],
             rotated_at=row["rotated_at"],
@@ -1049,6 +1050,60 @@ class PostgresStore:
                 digest,
             )
 
+    @retry_serialization
+    async def rehash_token_if_current(
+        self,
+        token_id: UUID,
+        *,
+        expected_pepper_key_id: str,
+        expected_digest: str,
+        pepper_key_id: str,
+        digest: str,
+    ) -> bool:
+        async with self.pool.acquire() as connection:
+            updated = await connection.fetchval(
+                """
+                UPDATE fs2_tokens SET pepper_key_id=$4,digest=$5
+                WHERE id=$1 AND pepper_key_id=$2 AND digest=$3 AND revoked_at IS NULL
+                  AND (expires_at IS NULL OR expires_at>clock_timestamp())
+                RETURNING 1
+                """,
+                token_id,
+                expected_pepper_key_id,
+                expected_digest,
+                pepper_key_id,
+                digest,
+            )
+        return updated is not None
+
+    @retry_serialization
+    async def bind_token_fingerprint(self, token_id: UUID, *, fingerprint: str) -> bool:
+        async with self.pool.acquire() as connection:
+            try:
+                updated = await connection.fetchval(
+                    """
+                    UPDATE fs2_tokens SET fingerprint=$2
+                    WHERE id=$1 AND fingerprint IS NULL AND revoked_at IS NULL
+                      AND (expires_at IS NULL OR expires_at>clock_timestamp())
+                    RETURNING 1
+                    """,
+                    token_id,
+                    fingerprint,
+                )
+            except asyncpg.UniqueViolationError:
+                return False
+            if updated is not None:
+                return True
+            existing = await connection.fetchval(
+                """
+                SELECT fingerprint FROM fs2_tokens
+                WHERE id=$1 AND revoked_at IS NULL
+                  AND (expires_at IS NULL OR expires_at>clock_timestamp())
+                """,
+                token_id,
+            )
+        return existing is not None and secrets.compare_digest(cast(str, existing), fingerprint)
+
     async def list_tokens(self, *, tenant_id: str | None = None, limit: int = 200) -> list[TokenView]:
         if not 1 <= limit <= 1000:
             raise ValueError("token list limit is outside the bound")
@@ -1066,7 +1121,6 @@ class PostgresStore:
     @retry_serialization
     async def record_token_expired(self, token_id: UUID, *, actor: str) -> None:
         async with self.pool.acquire() as connection, connection.transaction():
-            await self._token_lock(connection, token_id)
             row = await connection.fetchrow(
                 """
                 UPDATE fs2_tokens SET expiration_recorded_at=clock_timestamp()

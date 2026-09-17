@@ -225,6 +225,7 @@ class TokenView(StrictModel):
     revoked_at: AwareDatetime | None
     name: str | None = None
     fingerprint: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    expiration_recorded_at: AwareDatetime | None = Field(default=None, exclude=True)
     last_used_at: AwareDatetime | None = None
     rotation_parent_id: UUID | None = None
     rotated_at: AwareDatetime | None = None

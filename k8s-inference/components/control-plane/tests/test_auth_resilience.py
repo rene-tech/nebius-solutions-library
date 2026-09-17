@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import threading
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -71,6 +72,31 @@ class BlockingHasher(DeterministicHasher):
                 self.active -= 1
 
 
+class BlockingRehashHasher(DeterministicHasher):
+    def __init__(self) -> None:
+        super().__init__()
+        self.hash_calls = 0
+        self.hash_thread_ids: set[int] = set()
+        self.hash_started = threading.Event()
+        self.release_hash = threading.Event()
+
+    def hash(self, prehash: str) -> str:
+        self.hash_calls += 1
+        self.hash_thread_ids.add(threading.get_ident())
+        self.hash_started.set()
+        if not self.release_hash.wait(timeout=2):
+            raise AssertionError("test did not release the Argon rehash worker")
+        return prehash
+
+
+class ExpirationCountingStore(MemoryStore):
+    expiration_record_calls = 0
+
+    async def record_token_expired(self, token_id: UUID, *, actor: str) -> None:
+        self.expiration_record_calls += 1
+        await super().record_token_expired(token_id, actor=actor)
+
+
 def service(store: MemoryStore, **overrides: Any) -> TokenService:
     return TokenService(
         store,
@@ -85,14 +111,16 @@ async def add_token(
     *,
     secret: str,
     expires_at: datetime | None = None,
+    pepper_key_id: str = "pepper-v1",
+    with_fingerprint: bool = True,
 ) -> tuple[UUID, str]:
     token_id = uuid4()
     token = f"fs2_pat_{token_id.hex}_{secret}"
     await store.issue_token(
         token_id=token_id,
         prefix=f"fs2_pat_{token_id.hex[:12]}",
-        pepper_key_id="pepper-v1",
-        digest=tokens._prehash(token, "pepper-v1"),
+        pepper_key_id=pepper_key_id,
+        digest=tokens._prehash(token, pepper_key_id),
         request=TokenCreate(
             principal_id=f"principal-{token_id.hex[:8]}",
             tenant_id="tenant-a",
@@ -101,6 +129,7 @@ async def add_token(
             expires_at=expires_at,
         ),
         created_by="test",
+        fingerprint=hashlib.sha256(token.encode()).hexdigest() if with_fingerprint else None,
     )
     return token_id, token
 
@@ -126,6 +155,27 @@ async def test_revoked_and_expired_tokens_are_rejected_before_argon(cipher, hash
         await tokens.verify(expired)
 
     assert fake.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_expired_token_replay_records_expiration_once(cipher, hasher) -> None:
+    store = ExpirationCountingStore(cipher, hasher)
+    tokens = service(store)
+    token_id, expired = await add_token(
+        store,
+        tokens,
+        secret="e" * 32,
+        expires_at=datetime.now(UTC) - timedelta(seconds=1),
+    )
+
+    for _ in range(20):
+        with pytest.raises(AuthenticationError, match="invalid bearer token"):
+            await tokens.verify(expired)
+
+    stored = await store.token_for_verification(token_id)
+    assert stored is not None
+    assert stored[0].expiration_recorded_at is not None
+    assert store.expiration_record_calls == 1
 
 
 @pytest.mark.asyncio
@@ -196,6 +246,87 @@ async def test_cancelled_request_keeps_argon_slot_until_worker_finishes(cipher, 
 
 
 @pytest.mark.asyncio
+async def test_old_pepper_rehash_is_off_loop_bounded_coalesced_and_cancellation_safe(cipher, hasher) -> None:
+    store = MemoryStore(cipher, hasher)
+    tokens = TokenService(
+        store,
+        PepperRing(active_key_id="pepper-v2", keys={"pepper-v1": PEPPER, "pepper-v2": b"q" * 32}),
+        verification_concurrency=1,
+    )
+    token_id, token = await add_token(
+        store,
+        tokens,
+        secret="o" * 32,
+        pepper_key_id="pepper-v1",
+    )
+    other_id, other = await add_token(
+        store,
+        tokens,
+        secret="n" * 32,
+        pepper_key_id="pepper-v2",
+    )
+    fake = BlockingRehashHasher()
+    tokens._hasher = fake  # type: ignore[assignment]
+
+    leader = asyncio.create_task(tokens.verify(token))
+    assert await asyncio.wait_for(asyncio.to_thread(fake.hash_started.wait, 1), timeout=1.5)
+    heartbeat = asyncio.Event()
+    asyncio.get_running_loop().call_soon(heartbeat.set)
+    await asyncio.wait_for(heartbeat.wait(), timeout=0.1)
+
+    leader.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await leader
+    follower = asyncio.create_task(tokens.verify(token))
+    waiting = asyncio.create_task(tokens.verify(other))
+    await asyncio.sleep(0)
+    assert fake.hash_calls == 1
+    assert fake.calls == 1
+
+    fake.release_hash.set()
+    assert (await follower).token_id == token_id
+    assert (await waiting).token_id == other_id
+    stored = await store.token_for_verification(token_id)
+    assert stored is not None
+    assert stored[0].pepper_key_id == "pepper-v2"
+    assert stored[1] == tokens._prehash(token, "pepper-v2")
+    assert threading.get_ident() not in fake.hash_thread_ids
+
+
+@pytest.mark.asyncio
+async def test_rehash_compare_and_swap_preserves_a_newer_verifier(cipher, hasher) -> None:
+    store = MemoryStore(cipher, hasher)
+    tokens = TokenService(
+        store,
+        PepperRing(active_key_id="pepper-v2", keys={"pepper-v1": PEPPER, "pepper-v2": b"q" * 32}),
+    )
+    token_id, token = await add_token(
+        store,
+        tokens,
+        secret="c" * 32,
+        pepper_key_id="pepper-v1",
+    )
+    original = await store.token_for_verification(token_id)
+    assert original is not None
+    newer_digest = tokens._prehash(token, "pepper-v2")
+    await store.rehash_token(token_id, pepper_key_id="pepper-v2", digest=newer_digest)
+
+    updated = await store.rehash_token_if_current(
+        token_id,
+        expected_pepper_key_id="pepper-v1",
+        expected_digest=original[1],
+        pepper_key_id="pepper-v2",
+        digest="stale-worker-digest",
+    )
+
+    assert not updated
+    current = await store.token_for_verification(token_id)
+    assert current is not None
+    assert current[0].pepper_key_id == "pepper-v2"
+    assert current[1] == newer_digest
+
+
+@pytest.mark.asyncio
 async def test_success_cache_is_short_lived_hmac_keyed_and_never_stores_bearer(cipher, hasher) -> None:
     store = MemoryStore(cipher, hasher)
     clock = FakeClock()
@@ -215,7 +346,7 @@ async def test_success_cache_is_short_lived_hmac_keyed_and_never_stores_bearer(c
 
 
 @pytest.mark.asyncio
-async def test_failed_verification_throttle_is_per_token_id_and_recovers(cipher, hasher) -> None:
+async def test_failure_throttle_never_locks_out_stored_fingerprint(cipher, hasher) -> None:
     store = MemoryStore(cipher, hasher)
     clock = FakeClock()
     tokens = service(store, failure_limit=2, failure_window_seconds=30, monotonic_clock=clock)
@@ -230,11 +361,42 @@ async def test_failed_verification_throttle_is_per_token_id_and_recovers(cipher,
             await tokens.verify(wrong)
     with pytest.raises(AuthenticationError, match="invalid bearer token"):
         await tokens.verify(wrong)
-    assert fake.calls == 2
+    assert fake.calls == 0
+    assert tokens._verification_is_throttled(first_id)
 
     assert (await tokens.verify(second)).token_id == second_id
-    assert fake.calls == 3
+    assert fake.calls == 1
+    assert (await tokens.verify(first)).token_id == first_id
+    assert fake.calls == 2
+    assert not tokens._verification_is_throttled(first_id)
 
     clock.advance(31)
-    assert (await tokens.verify(first)).token_id == first_id
-    assert fake.calls == 4
+    with pytest.raises(AuthenticationError, match="invalid bearer token"):
+        await tokens.verify(wrong)
+    assert fake.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_legacy_token_binds_fingerprint_without_failure_lockout(cipher, hasher) -> None:
+    store = MemoryStore(cipher, hasher)
+    tokens = service(store, failure_limit=1)
+    token_id, token = await add_token(store, tokens, secret="l" * 32, with_fingerprint=False)
+    wrong = f"fs2_pat_{token_id.hex}_{'x' * 32}"
+    fake = DeterministicHasher()
+    tokens._hasher = fake  # type: ignore[assignment]
+
+    with pytest.raises(AuthenticationError, match="invalid bearer token"):
+        await tokens.verify(wrong)
+    assert (await tokens.verify(token)).token_id == token_id
+
+    stored = await store.token_for_verification(token_id)
+    assert stored is not None
+    assert stored[0].fingerprint == hashlib.sha256(token.encode()).hexdigest()
+    assert fake.calls == 2
+
+    with pytest.raises(AuthenticationError, match="invalid bearer token"):
+        await tokens.verify(wrong)
+    with pytest.raises(AuthenticationError, match="invalid bearer token"):
+        await tokens.verify(wrong)
+    assert tokens._verification_is_throttled(token_id)
+    assert fake.calls == 2

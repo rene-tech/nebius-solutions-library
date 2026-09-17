@@ -37,6 +37,7 @@ MAX_OPERATOR_SESSION_LENGTH = 256
 OPERATOR_SESSION_DIGEST_CONTEXT = b"fs2-serve.admin-session/v1\0"
 
 VerificationCacheKey = tuple[UUID, str, str, str]
+RehashKey = tuple[UUID, str, str]
 
 
 class AuthenticationError(PermissionError):
@@ -141,6 +142,7 @@ class TokenService:
         self._failure_window_seconds = failure_window_seconds
         self._failure_bucket_max_entries = failure_bucket_max_entries
         self._failed_verifications: OrderedDict[UUID, deque[float]] = OrderedDict()
+        self._rehash_tasks: dict[RehashKey, asyncio.Task[None]] = {}
         self._monotonic_clock = monotonic_clock
 
     def _prehash(self, token: str, key_id: str) -> str:
@@ -214,6 +216,8 @@ class TokenService:
             failures = deque()
             self._failed_verifications[token_id] = failures
         failures.append(self._monotonic_clock())
+        while len(failures) > self._failure_limit:
+            failures.popleft()
         self._failed_verifications.move_to_end(token_id)
         while len(self._failed_verifications) > self._failure_bucket_max_entries:
             self._failed_verifications.popitem(last=False)
@@ -237,7 +241,7 @@ class TokenService:
         self._failed_verifications.pop(token_id, None)
         self._cache_verification(cache_key)
 
-    def _verification_finished(self, task: asyncio.Task[None]) -> None:
+    def _argon_worker_finished(self, task: asyncio.Task[Any]) -> None:
         self._verification_slots.release()
         if not task.cancelled():
             task.exception()
@@ -253,16 +257,11 @@ class TokenService:
         if self._verification_is_cached(cache_key):
             self._failed_verifications.pop(token_id, None)
             return
-        if self._verification_is_throttled(token_id):
-            raise AuthenticationError("invalid bearer token")
         await self._verification_slots.acquire()
         if self._verification_is_cached(cache_key):
             self._failed_verifications.pop(token_id, None)
             self._verification_slots.release()
             return
-        if self._verification_is_throttled(token_id):
-            self._verification_slots.release()
-            raise AuthenticationError("invalid bearer token")
         task = asyncio.create_task(
             self._verify_digest(
                 token_id=token_id,
@@ -274,7 +273,68 @@ class TokenService:
         # A disconnected request cannot release a slot while its worker thread
         # still consumes Argon2 memory and CPU. The callback releases only when
         # the actual worker finishes; shield keeps caller cancellation local.
-        task.add_done_callback(self._verification_finished)
+        task.add_done_callback(self._argon_worker_finished)
+        await asyncio.shield(task)
+
+    async def _hash_prehash_bounded(self, prehash: str) -> str:
+        await self._verification_slots.acquire()
+        task = asyncio.create_task(asyncio.to_thread(self._hasher.hash, prehash))
+        task.add_done_callback(self._argon_worker_finished)
+        return await asyncio.shield(task)
+
+    async def _rehash_verified_token(
+        self,
+        *,
+        token_id: UUID,
+        token: str,
+        source_key_id: str,
+        source_digest: str,
+        source_cache_key: VerificationCacheKey,
+    ) -> None:
+        active_id = self._peppers.active_key_id
+        replacement = await self._hash_prehash_bounded(self._prehash(token, active_id))
+        updated = await self.store.rehash_token_if_current(
+            token_id,
+            expected_pepper_key_id=source_key_id,
+            expected_digest=source_digest,
+            pepper_key_id=active_id,
+            digest=replacement,
+        )
+        self._verification_cache.pop(source_cache_key, None)
+        if updated:
+            self._cache_verification(self._verification_cache_key(token_id, token, active_id, replacement))
+
+    def _rehash_finished(self, key: RehashKey, task: asyncio.Task[None]) -> None:
+        if self._rehash_tasks.get(key) is task:
+            self._rehash_tasks.pop(key, None)
+        if not task.cancelled():
+            task.exception()
+
+    async def _rehash_after_verification(
+        self,
+        *,
+        token_id: UUID,
+        token: str,
+        source_key_id: str,
+        source_digest: str,
+        source_cache_key: VerificationCacheKey,
+    ) -> None:
+        key = token_id, source_key_id, hashlib.sha256(source_digest.encode()).hexdigest()
+        task = self._rehash_tasks.get(key)
+        if task is None:
+            if len(self._rehash_tasks) >= self._verification_cache_max_entries:
+                return
+            task = asyncio.create_task(
+                self._rehash_verified_token(
+                    token_id=token_id,
+                    token=token,
+                    source_key_id=source_key_id,
+                    source_digest=source_digest,
+                    source_cache_key=source_cache_key,
+                )
+            )
+            self._rehash_tasks[key] = task
+            task.add_done_callback(lambda completed: self._rehash_finished(key, completed))
         await asyncio.shield(task)
 
     @staticmethod
@@ -410,9 +470,17 @@ class TokenService:
             raise AuthenticationError("invalid bearer token")
         if view.expires_at is not None and view.expires_at <= now:
             self._failed_verifications.pop(view.id, None)
-            await self.store.record_token_expired(view.id, actor="token-verifier")
+            if view.expiration_recorded_at is None:
+                await self.store.record_token_expired(view.id, actor="token-verifier")
             raise AuthenticationError("invalid bearer token")
         if not secrets.compare_digest(expected_prefix, view.prefix):
+            raise AuthenticationError("invalid bearer token")
+        fingerprint = hashlib.sha256(token.encode()).hexdigest()
+        # PATs carry 256 bits of generated secret. The durable fingerprint is
+        # only a cheap rejection gate; a match still requires Argon below.
+        if view.fingerprint is not None and not secrets.compare_digest(fingerprint, view.fingerprint):
+            if not self._verification_is_throttled(view.id):
+                self._record_failed_verification(view.id)
             raise AuthenticationError("invalid bearer token")
         prehash = self._prehash(token, view.pepper_key_id)
         cache_key = self._verification_cache_key(view.id, token, view.pepper_key_id, digest)
@@ -422,12 +490,20 @@ class TokenService:
             digest=digest,
             prehash=prehash,
         )
+        if view.fingerprint is None and not await self.store.bind_token_fingerprint(
+            view.id,
+            fingerprint=fingerprint,
+        ):
+            self._discard_token_auth_state(view.id)
+            raise AuthenticationError("invalid bearer token")
         if view.pepper_key_id != self._peppers.active_key_id:
-            active_id = self._peppers.active_key_id
-            replacement = self._hasher.hash(self._prehash(token, active_id))
-            await self.store.rehash_token(view.id, pepper_key_id=active_id, digest=replacement)
-            self._verification_cache.pop(cache_key, None)
-            self._cache_verification(self._verification_cache_key(view.id, token, active_id, replacement))
+            await self._rehash_after_verification(
+                token_id=view.id,
+                token=token,
+                source_key_id=view.pepper_key_id,
+                source_digest=digest,
+                source_cache_key=cache_key,
+            )
         principal = Principal(
             token_id=view.id,
             token_prefix=view.prefix,
