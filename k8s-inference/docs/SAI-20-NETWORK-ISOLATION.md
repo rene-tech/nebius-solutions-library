@@ -381,3 +381,62 @@ test, parser, formatter, Terraform, Helm, build, package-manager, scanner,
 cluster, provider, database, registry, credential, deployment, probe or
 cleanup action. This is a candidate for independent static review only and
 makes no SOURCE GO, integration, deployment or live claim.
+
+## Final independent-review correction after `a51b1d80`
+
+Final independent review rejected exact commit
+`a51b1d80738a66774eaef945c6870ba79549a816` / tree
+`619749dd238006526eeebfbfb1f151dc136740df`. Preserve it as negative
+evidence. Its future-Pod exception trusted a known lineage and ReplicaSet name
+prefix without an exact live ReplicaSet UID; any enrolled controller could
+use any rollout root. Its authority closure covered only four namespaces,
+represented TokenRequest and impersonation without the target namespace/name,
+classified namespaced token-mint bindings incompletely, constrained only
+ClusterRoleBinding subjects, and refreshed only the executor's authorization
+at final apply. Its provider observer closed pathname replacement but still
+executed mutable bytes after hashing them.
+
+The additive successor keeps the accepted singleton reread, old/new label
+checks, authenticated UID, current exact owner chain, external enrollment and
+bootstrap design, while replacing those three rejected boundaries:
+
+- A future CNPG rollout is two-pass. The exact controller named on an exact
+  signed Deployment root may create only a zero-replica ReplicaSet carrying
+  that root's source-derived lineage and exact Deployment name/UID owner
+  reference. No future Pod is accepted by prefix or lineage alone. A fresh
+  evidence packet must inventory and sign the API-assigned ReplicaSet name,
+  UID, owner chain and controller actor before that exact ReplicaSet can be
+  updated and before it can create Pods. Existing signed ReplicaSets and Pods
+  continue through their exact live name/UID chain.
+- The signed Namespace list now drives Roles, RoleBindings, SSRRs and
+  ServiceAccount lists for **every** live namespace, in addition to the
+  cluster-scoped Role and binding lists. TokenRequest reviews use the correct
+  `serviceaccounts` plus `token` subresource and include the exact namespace
+  and every inventoried ServiceAccount name, so resource-name grants cannot
+  hide behind a name-less review. Exact custodian user, UID, group, extra-key
+  and ServiceAccount impersonation targets are separate reviews. Token, CSR,
+  signer and impersonation decisions must be denied for every non-custodian
+  admitted principal and for the collector. At final apply the exact
+  authenticated subject tuple for **every** admitted principal is submitted
+  in fresh SubjectAccessReviews for the complete signed dangerous-action set;
+  the response must match the signed decision and remain denied for every
+  non-custodian. Raw namespace, ServiceAccount and RBAC lists are re-read in
+  the same unknown-nonce apply gate. Dangerous RoleBinding and
+  ClusterRoleBinding records may name only exact custodian subjects;
+  sensitive mutation records may name only exact admitted subjects.
+- The provider observer source must be a root-owned regular executable with
+  no group/world write bit. Its authenticated bytes are copied into a new
+  anonymous memory file, the digest is checked, all write/grow/shrink and
+  further-seal operations are sealed, and only that immutable descriptor is
+  executed. Source-descriptor metadata is still compared afterward as
+  additional detection, but acceptance no longer depends on detecting a
+  mutation after mutable bytes have already run.
+
+The expanded packet shape intentionally invalidates prior evidence. The empty
+source-owned enrollment registries still authorize no roots, and no successor
+bundle or live prerequisite was manufactured. The regression assertions were
+authored but not executed. No test, parser, formatter, Terraform, Helm, build,
+package manager, scanner, cluster, provider, database, registry, credential,
+deployment, probe, cleanup or deletion action ran. This remains an additive
+candidate for independent static review only and makes no SOURCE GO,
+integration, deployment or live claim.

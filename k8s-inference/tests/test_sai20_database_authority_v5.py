@@ -1,8 +1,8 @@
 """Unexecuted regressions for the additive SAI-20 v5 successor gate.
 
 The coordinator explicitly forbids executing tests or parsers in this task.
-These assertions encode the eight deterministic blockers reported against
-efb29e684e0c91b06553d76b43c487a8531016f2. They are authored evidence only;
+These assertions include the final three blocker groups reported against
+a51b1d80738a66774eaef945c6870ba79549a816. They are authored evidence only;
 this task's coordinator boundary forbids executing them.
 """
 
@@ -41,6 +41,7 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
     def test_rejected_v4_source_cannot_be_reused(self) -> None:
         self.assertIn("d5c19b3a8b3345acbec7b16bd5a2c00a455874d8", self.v5_py)
         self.assertIn("efb29e684e0c91b06553d76b43c487a8531016f2", self.v5_py)
+        self.assertIn("a51b1d80738a66774eaef945c6870ba79549a816", self.v5_py)
         self.assertIn("source is a preserved rejected candidate", self.v5_py)
         self.assertIn("sai20_database_authority_v5_plan.output.successor_verified", self.v4_tf)
         self.assertIn("sai20_database_authority_v5_identity.output.bootstrap_reobserved", self.v4_tf)
@@ -134,7 +135,8 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
         self.assertIn('(\"cnpg-system\", \"roles\")', self.v4_py)
         self.assertIn('(\"cnpg-system\", \"rolebindings\")', self.v4_py)
         self.assertIn('record["binding_resource"] == "clusterrolebindings"', self.v5_py)
-        self.assertIn("dangerous or sensitive ClusterRoleBinding authority is not constrained", self.v5_py)
+        self.assertIn("dangerous RoleBinding/ClusterRoleBinding authority is not constrained to an exact custodian", self.v5_py)
+        self.assertIn("sensitive RoleBinding/ClusterRoleBinding authority is not constrained to an exact admitted principal", self.v5_py)
         self.assertIn("admitted_subjects", self.v5_py)
 
     def test_update_cannot_strip_a_protected_peer_label(self) -> None:
@@ -148,8 +150,14 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
         self.assertIn("CNPG ReplicaSet does not resolve to one exact signed Deployment root", self.v5_py)
         self.assertIn("rollout_lineages_json", self.v5_py)
         self.assertIn("sai20_authority_v5_rollout_child_cel", self.v5_tf)
-        self.assertIn("owner.name.startsWith", self.v5_tf)
-        self.assertIn("variables.exactOperatorParent || variables.signedRolloutChild", self.v5_tf)
+        self.assertNotIn("owner.name.startsWith", self.v5_tf)
+        self.assertNotIn("signedRolloutChild", self.v5_tf)
+        self.assertIn('request.resource.resource == \'replicasets\'', self.v5_tf)
+        self.assertIn("variables.targetObject.spec.replicas == 0", self.v5_tf)
+        self.assertIn("request.userInfo.username", self.v5_tf)
+        self.assertIn('"controller_username"', self.v5_py)
+        self.assertIn("exactSignedOperatorObject", self.v5_tf)
+        self.assertIn("request.operation != 'CREATE'", self.v5_tf)
 
     def test_authenticator_uid_is_signed_reobserved_and_admitted(self) -> None:
         self.assertIn('uid = text(user_info.get("uid")', self.v4_py)
@@ -175,10 +183,31 @@ class Sai20DatabaseAuthorityV5Tests(unittest.TestCase):
     def test_provider_observer_executes_the_authenticated_open_descriptor(self) -> None:
         self.assertIn("os.O_NOFOLLOW", self.v5_py)
         self.assertIn("os.fstat(observer_fd)", self.v5_py)
-        self.assertIn('f"/proc/self/fd/{observer_fd}"', self.v5_py)
-        self.assertIn("pass_fds=(observer_fd,)", self.v5_py)
+        self.assertIn("before.st_uid == 0", self.v5_py)
+        self.assertIn("before.st_mode & 0o022 == 0", self.v5_py)
+        self.assertIn("os.memfd_create", self.v5_py)
+        self.assertIn("fcntl.F_ADD_SEALS", self.v5_py)
+        self.assertIn("fcntl.F_SEAL_WRITE", self.v5_py)
+        self.assertIn('f"/proc/self/fd/{sealed_fd}"', self.v5_py)
+        self.assertIn("pass_fds=(sealed_fd,)", self.v5_py)
         self.assertIn("provider group observer changed while it was executing", self.v5_py)
         self.assertNotIn("[str(observer)]", self.v5_py)
+
+    def test_authority_closure_is_cluster_wide_name_exact_and_fresh_for_every_principal(self) -> None:
+        self.assertIn('NAMESPACE_ENDPOINT = "/api/v1/namespaces"', self.v4_py)
+        self.assertIn("service_account_endpoints(namespaces)", self.v4_py)
+        self.assertIn('f"k8s/rbac/{namespace or \'_cluster\'}/{resource}"', self.v4_py)
+        self.assertIn('"subresource": "token"', self.v4_py)
+        self.assertIn('"name": account["name"]', self.v4_py)
+        self.assertIn("impersonate-exact-custodian-user", self.v4_py)
+        self.assertIn("impersonate-exact-custodian-uid", self.v4_py)
+        self.assertIn("impersonate-exact-custodian-group", self.v4_py)
+        self.assertIn("impersonate-exact-custodian-extra", self.v4_py)
+        self.assertIn("SUBJECT_ACCESS_REVIEW_ENDPOINT", self.v4_py)
+        self.assertIn('for principal_id, identity in sorted(context["principal_identities"].items())', self.v4_py)
+        self.assertIn("non-custodian gained dangerous authority at apply", self.v4_py)
+        self.assertIn("service_account_inventory_sha256", self.v4_tf)
+        self.assertIn("service_account_inventory_sha256", self.v5_tf)
 
     def test_existing_database_clients_and_debugging_paths_remain_present(self) -> None:
         serialized = json.dumps(self.ingress, sort_keys=True)

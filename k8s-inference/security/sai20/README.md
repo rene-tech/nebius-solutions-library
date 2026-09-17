@@ -93,3 +93,31 @@ Deployment root, inherited rollout lineage and exact authenticated controller
 identity. These additions do not enroll a root or authorize activation; the
 source-owned registries remain empty and fail closed pending independent
 external enrollment and review.
+
+## Post-`a51b1d80` exact actor and authority closure
+
+Exact `a51b1d80738a66774eaef945c6870ba79549a816` remains rejected. A replacement
+packet must derive its namespaces from the complete signed Kubernetes
+Namespace response, list Roles, RoleBindings and ServiceAccounts in every
+namespace, and bind that complete inventory into all plan/identity/apply
+phases. TokenRequest reviews identify the `token` subresource and exact
+namespace/ServiceAccount name. Exact custodian user, UID, groups, extra keys
+and ServiceAccount identity are explicit impersonation targets. Every
+non-custodian and the evidence collector must be denied the complete dangerous
+review set; final apply uses fresh SubjectAccessReviews for every exact
+admitted subject, rather than treating an admitted RoleBinding subject or the
+executor's own review as proof about another principal. Dangerous namespaced
+and cluster bindings may resolve only to exact custodian subjects.
+
+Rollout lineage is not Pod authority. Only the root's exact signed controller
+actor may create a zero-replica ReplicaSet beneath the exact signed Deployment
+name and UID. A later packet must sign the live ReplicaSet name, UID and owner
+chain before it can be updated or own a Pod. Name-prefix and lineage-only Pod
+branches are forbidden.
+
+The apply-time provider observer must be root-owned and not group/world
+writable. The verifier copies its authenticated bytes to an anonymous memory
+file, applies write/grow/shrink/seal seals, and executes only that immutable
+descriptor. The original open descriptor is retained solely for a secondary
+metadata-stability check. No observer, credential, packet or root is included
+here; the empty registries continue to fail closed.

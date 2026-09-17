@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Fail-closed successor gate for the rejected SAI-20 v4 authority path.
 
-The v4 verifier remains immutable negative evidence.  This wrapper first runs
-all of its checks, then adds the independent root-enrollment chain, complete
+Rejected v4 commits remain immutable Git evidence.  This wrapper first runs
+the inherited v4 checks, then adds the independent root-enrollment chain, complete
 cluster-binding derivation, CNPG peer custody, pre-existing bootstrap guard and
 apply-time provider-group re-observation required by the v5 successor.
 """
@@ -10,6 +10,7 @@ apply-time provider-group re-observation required by the v5 successor.
 from __future__ import annotations
 
 import base64
+import fcntl
 import hashlib
 import json
 import os
@@ -34,6 +35,7 @@ REJECTED_COMMITS = {
     *v4.REJECTED_COMMITS,
     "d5c19b3a8b3345acbec7b16bd5a2c00a455874d8",
     "efb29e684e0c91b06553d76b43c487a8531016f2",
+    "a51b1d80738a66774eaef945c6870ba79549a816",
 }
 ROLLOUT_LINEAGE_LABEL = "security.fs2.nebius.ai/sai20-rollout-lineage"
 PEER_NAMESPACES = ("fs2-data", "cnpg-system")
@@ -275,10 +277,14 @@ def verify_successor_signatures(packet: dict[str, Any], roots: dict[str, dict[st
     return payload
 
 
-def binding_authority_records(v4_entries: dict[str, dict[str, Any]], mode: str) -> list[dict[str, Any]]:
+def binding_authority_records(
+    v4_entries: dict[str, dict[str, Any]],
+    namespaces: list[str],
+    mode: str,
+) -> list[dict[str, Any]]:
     raw: dict[tuple[str, str], list[dict[str, Any]]] = {}
     roles: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
-    for namespace, resource in sorted(v4.RBAC_ENDPOINTS):
+    for namespace, resource in sorted(v4.rbac_endpoints(namespaces)):
         items = v4_entries[f"k8s/rbac/{namespace or '_cluster'}/{resource}"]["body"]["items"]
         raw[(namespace, resource)] = items
         if resource in {"roles", "clusterroles"}:
@@ -467,6 +473,26 @@ def verify_peer_inventory(
     )
     deployment_objects = [item for item in operator_objects if item["resource"] == "deployments"]
     require(deployment_objects, "CNPG operator inventory has no Deployment rollout root")
+    signed_rollout_lineages = authorization["rollout_lineages"]
+    require(isinstance(signed_rollout_lineages, list), "signed CNPG rollout lineages must be a list")
+    signed_lineages_by_root: dict[tuple[str, str, str, str, str], dict[str, str]] = {}
+    for index, signed_lineage in enumerate(signed_rollout_lineages):
+        where = f"rollout_lineages[{index}]"
+        require(isinstance(signed_lineage, dict), f"{where} must be an object")
+        exact_keys(
+            signed_lineage,
+            {"namespace", "api_version", "kind", "name", "uid", "lineage", "controller_username"},
+            where,
+        )
+        key = (
+            signed_lineage["namespace"],
+            signed_lineage["api_version"],
+            signed_lineage["kind"],
+            signed_lineage["name"],
+            signed_lineage["uid"],
+        )
+        require(key not in signed_lineages_by_root, f"{where} duplicates a rollout root")
+        signed_lineages_by_root[key] = signed_lineage
     rollout_lineages: list[dict[str, str]] = []
     deployments_by_owner = {}
     for deployment in deployment_objects:
@@ -478,16 +504,27 @@ def verify_peer_inventory(
             "uid": deployment["uid"],
         }
         lineage = digest(lineage_identity)
+        root_key = (
+            lineage_identity["namespace"],
+            lineage_identity["api_version"],
+            lineage_identity["kind"],
+            lineage_identity["name"],
+            lineage_identity["uid"],
+        )
+        require(root_key in signed_lineages_by_root, "CNPG Deployment rollout root is absent from signed authorization")
+        signed_lineage = signed_lineages_by_root[root_key]
+        controller_username = text(signed_lineage["controller_username"], "rollout lineage controller_username")
+        require(signed_lineage["lineage"] == lineage, "CNPG rollout lineage digest is not source-derived")
         require(
             deployment["labels"].get(ROLLOUT_LINEAGE_LABEL) == lineage,
             "CNPG Deployment template lacks its source-derived rollout lineage",
         )
-        rollout_lineages.append({**lineage_identity, "lineage": lineage})
+        rollout_lineages.append({**lineage_identity, "lineage": lineage, "controller_username": controller_username})
         deployments_by_owner[(deployment["api_version"], deployment["kind"], deployment["name"], deployment["uid"])] = lineage
     rollout_lineages = sorted(rollout_lineages, key=lambda item: (item["namespace"], item["name"], item["uid"]))
     require(
-        isinstance(authorization["rollout_lineages"], list)
-        and rollout_lineages == authorization["rollout_lineages"],
+        len(signed_lineages_by_root) == len(rollout_lineages)
+        and rollout_lineages == signed_rollout_lineages,
         "CNPG rollout lineage closure differs from the signed authorization",
     )
 
@@ -528,6 +565,10 @@ def verify_peer_inventory(
         if principal["class"] == "controller"
     }
     require(set(controller_usernames) <= admitted_controllers, "CNPG controller identity is outside the authenticated principal inventory")
+    require(
+        all(item["controller_username"] in controller_usernames for item in rollout_lineages),
+        "CNPG rollout lineage actor is outside the exact authenticated controller set",
+    )
     controller_identities: list[dict[str, Any]] = []
     principals_by_username = {
         principal["username"]: principal
@@ -734,8 +775,8 @@ def verify_supplemental_bundle(
         "provider_observer_credential_subject_sha256",
     ):
         sha256(authorization[field], f"v5 authorization.{field}")
-    dangerous = binding_authority_records(v4_context["entries"], "dangerous")
-    sensitive = binding_authority_records(v4_context["entries"], "sensitive")
+    dangerous = binding_authority_records(v4_context["entries"], v4_context["namespaces"], "dangerous")
+    sensitive = binding_authority_records(v4_context["entries"], v4_context["namespaces"], "sensitive")
     require(dangerous == authorization["all_dangerous_rbac_bindings"], "cluster-inclusive dangerous RBAC closure differs")
     require(sensitive == authorization["all_sensitive_mutation_bindings"], "cluster-inclusive sensitive mutation closure differs")
     cluster_review = {
@@ -747,18 +788,26 @@ def verify_supplemental_bundle(
         (principal["subject"]["kind"], principal["subject"]["namespace"], principal["subject"]["name"])
         for principal in v4_context["legacy"]["rbac_inventory"]["principals"]
     }
-    inherited_cluster_records = [
-        record
-        for record in dangerous + sensitive
-        if record["binding_resource"] == "clusterrolebindings"
-    ]
+    custodian_subjects = {
+        (principal["subject"]["kind"], principal["subject"]["namespace"], principal["subject"]["name"])
+        for principal in v4_context["legacy"]["rbac_inventory"]["principals"]
+        if principal["class"] == "custodian"
+    }
+    require(
+        all(
+            (record["subject_kind"], record["subject_namespace"], record["subject_name"])
+            in custodian_subjects
+            for record in dangerous
+        ),
+        "dangerous RoleBinding/ClusterRoleBinding authority is not constrained to an exact custodian subject",
+    )
     require(
         all(
             (record["subject_kind"], record["subject_namespace"], record["subject_name"])
             in admitted_subjects
-            for record in inherited_cluster_records
+            for record in sensitive
         ),
-        "dangerous or sensitive ClusterRoleBinding authority is not constrained to an exact admitted principal",
+        "sensitive RoleBinding/ClusterRoleBinding authority is not constrained to an exact admitted principal",
     )
     principal_uids = {
         principal["id"]: v4.subject_from_review(
@@ -885,21 +934,35 @@ def reobserve_provider_group(query: dict[str, str], context: dict[str, Any]) -> 
     require(observer.is_absolute(), "provider_group_observer_path must be absolute")
     flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
     observer_fd = os.open(str(observer), flags)
+    sealed_fd = -1
     try:
         before = os.fstat(observer_fd)
         require(stat.S_ISREG(before.st_mode), "provider group observer must be a regular file")
         require(before.st_size > 0 and before.st_size <= 256 * 1024 * 1024, "provider group observer size is invalid")
         require(before.st_mode & 0o111 != 0, "provider group observer is not executable")
+        require(before.st_uid == 0, "provider group observer must be owned by root")
+        require(before.st_mode & 0o022 == 0, "provider group observer must not be group- or world-writable")
+        sealed_fd = os.memfd_create("sai20-provider-observer", os.MFD_ALLOW_SEALING)
         observer_hash = hashlib.sha256()
         remaining = before.st_size
         while remaining > 0:
             chunk = os.read(observer_fd, min(1024 * 1024, remaining))
             require(chunk != b"", "provider group observer changed during authenticated read")
             observer_hash.update(chunk)
+            offset = 0
+            while offset < len(chunk):
+                written = os.write(sealed_fd, chunk[offset:])
+                require(written > 0, "provider group observer sealed copy write failed")
+                offset += written
             remaining -= len(chunk)
         require(os.read(observer_fd, 1) == b"", "provider group observer exceeds its authenticated size")
         authorization = context["authorization"]
         require(observer_hash.hexdigest() == authorization["provider_observer_sha256"], "apply provider observer differs from the signed executable")
+        os.fchmod(sealed_fd, before.st_mode & 0o555)
+        seal_mask = fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_SEAL
+        fcntl.fcntl(sealed_fd, fcntl.F_ADD_SEALS, seal_mask)
+        require(fcntl.fcntl(sealed_fd, fcntl.F_GET_SEALS) == seal_mask, "provider group observer snapshot is not immutable")
+        os.lseek(sealed_fd, 0, os.SEEK_SET)
         legacy_entry = context["v4"]["entries"]["nebius/legacy-group-membership"]
         request = {
             "schema": "fs2-serve.nebius.ai/sai20-provider-group-observer-request/v1",
@@ -912,12 +975,12 @@ def reobserve_provider_group(query: dict[str, str], context: dict[str, Any]) -> 
         }
         started = datetime.now(timezone.utc)
         completed = subprocess.run(
-            [f"/proc/self/fd/{observer_fd}"],
+            [f"/proc/self/fd/{sealed_fd}"],
             input=v3.canonical(request),
             check=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            pass_fds=(observer_fd,),
+            pass_fds=(sealed_fd,),
         )
         after = os.fstat(observer_fd)
         require(
@@ -926,6 +989,8 @@ def reobserve_provider_group(query: dict[str, str], context: dict[str, Any]) -> 
             "provider group observer changed while it was executing",
         )
     finally:
+        if sealed_fd >= 0:
+            os.close(sealed_fd)
         os.close(observer_fd)
     require(completed.returncode == 0, "apply-time provider group observer failed")
     observed_entry = v4.verify_transcript_entry(

@@ -127,6 +127,10 @@ resource "terraform_data" "sai20_database_authority_v4_identity" {
         data.external.sai20_database_authority_v4_identity.result.bundle_sha256 == terraform_data.sai20_database_authority_v4_plan.output.bundle_sha256 &&
         data.external.sai20_database_authority_v4_identity.result.source_commit == terraform_data.sai20_database_authority_v4_plan.output.source_commit &&
         data.external.sai20_database_authority_v4_identity.result.source_tree == terraform_data.sai20_database_authority_v4_plan.output.source_tree &&
+        data.external.sai20_database_authority_v4_identity.result.namespace_inventory_sha256 == terraform_data.sai20_database_authority_v4_plan.output.namespace_inventory_sha256 &&
+        data.external.sai20_database_authority_v4_identity.result.namespace_names_json == terraform_data.sai20_database_authority_v4_plan.output.namespace_names_json &&
+        data.external.sai20_database_authority_v4_identity.result.service_account_inventory_sha256 == terraform_data.sai20_database_authority_v4_plan.output.service_account_inventory_sha256 &&
+        data.external.sai20_database_authority_v4_identity.result.service_account_names_json == terraform_data.sai20_database_authority_v4_plan.output.service_account_names_json &&
         data.external.sai20_database_authority_v4_identity.result.executor_uid == terraform_data.sai20_database_authority_v4_plan.output.executor_uid &&
         data.external.sai20_database_authority_v4_identity.result.executor_uid == terraform_data.sai20_database_authority_v5_identity.output.executor_uid &&
         data.external.sai20_database_authority_v4_identity.result.executor_username == terraform_data.sai20_database_authority_v4_plan.output.executor_username &&
@@ -196,6 +200,10 @@ resource "terraform_data" "sai20_database_authority_v4_apply" {
         data.external.sai20_database_authority_v4_apply.result.source_commit == terraform_data.sai20_database_authority_v4_plan.output.source_commit &&
         data.external.sai20_database_authority_v4_apply.result.source_tree == terraform_data.sai20_database_authority_v4_plan.output.source_tree &&
         data.external.sai20_database_authority_v4_apply.result.ingress_spec_sha256 == local.sai20_authority_v4_ingress_spec_sha256 &&
+        data.external.sai20_database_authority_v4_apply.result.namespace_inventory_sha256 == terraform_data.sai20_database_authority_v4_plan.output.namespace_inventory_sha256 &&
+        data.external.sai20_database_authority_v4_apply.result.namespace_names_json == terraform_data.sai20_database_authority_v4_plan.output.namespace_names_json &&
+        data.external.sai20_database_authority_v4_apply.result.service_account_inventory_sha256 == terraform_data.sai20_database_authority_v4_plan.output.service_account_inventory_sha256 &&
+        data.external.sai20_database_authority_v4_apply.result.service_account_names_json == terraform_data.sai20_database_authority_v4_plan.output.service_account_names_json &&
         data.external.sai20_database_authority_v4_apply.result.executor_uid == terraform_data.sai20_database_authority_v4_plan.output.executor_uid &&
         data.external.sai20_database_authority_v4_apply.result.executor_uid == terraform_data.sai20_database_authority_v4_identity.output.executor_uid &&
         data.external.sai20_database_authority_v4_apply.result.executor_uid == terraform_data.sai20_database_authority_v5_apply.output.executor_uid &&
@@ -205,6 +213,8 @@ resource "terraform_data" "sai20_database_authority_v4_apply" {
         data.external.sai20_database_authority_v4_apply.result.authorized_parents_json == terraform_data.sai20_database_authority_v4_plan.output.authorized_parents_json &&
         data.external.sai20_database_authority_v4_apply.result.network_policy_specs_json == terraform_data.sai20_database_authority_v4_plan.output.network_policy_specs_json &&
         data.external.sai20_database_authority_v4_apply.result.bundle_sha256 == terraform_data.sai20_database_authority_v4_identity.output.bundle_sha256 &&
+        data.external.sai20_database_authority_v4_apply.result.namespace_inventory_sha256 == terraform_data.sai20_database_authority_v4_identity.output.namespace_inventory_sha256 &&
+        data.external.sai20_database_authority_v4_apply.result.service_account_inventory_sha256 == terraform_data.sai20_database_authority_v4_identity.output.service_account_inventory_sha256 &&
         data.external.sai20_database_authority_v4_apply.result.executor_username == terraform_data.sai20_database_authority_v4_identity.output.executor_username &&
         data.external.sai20_database_authority_v4_apply.result.executor_groups_json == terraform_data.sai20_database_authority_v4_identity.output.executor_groups_json &&
         data.external.sai20_database_authority_v4_apply.result.executor_extra_json == terraform_data.sai20_database_authority_v4_identity.output.executor_extra_json,

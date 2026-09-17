@@ -58,14 +58,9 @@ V4_RBAC_LISTS = v3.RBAC_LISTS | {
     ("cnpg-system", "roles"),
     ("cnpg-system", "rolebindings"),
 }
-RBAC_ENDPOINTS = {
-    (namespace, resource): (
-        f"/apis/rbac.authorization.k8s.io/v1/namespaces/{namespace}/{resource}"
-        if namespace
-        else f"/apis/rbac.authorization.k8s.io/v1/{resource}"
-    )
-    for namespace, resource in V4_RBAC_LISTS
-}
+NAMESPACE_ENDPOINT = "/api/v1/namespaces"
+NAMESPACED_RBAC_RESOURCES = ("roles", "rolebindings")
+CLUSTER_RBAC_RESOURCES = ("clusterroles", "clusterrolebindings")
 NETWORK_POLICY_ENDPOINT = "/apis/networking.k8s.io/v1/namespaces/fs2-data/networkpolicies"
 DATABASE_POD_ENDPOINT = (
     "/api/v1/namespaces/fs2-data/pods?labelSelector="
@@ -74,13 +69,13 @@ DATABASE_POD_ENDPOINT = (
 SELF_SUBJECT_REVIEW_ENDPOINT = "/apis/authentication.k8s.io/v1/selfsubjectreviews"
 SELF_SUBJECT_RULES_REVIEW_ENDPOINT = "/apis/authorization.k8s.io/v1/selfsubjectrulesreviews"
 SELF_SUBJECT_ACCESS_REVIEW_ENDPOINT = "/apis/authorization.k8s.io/v1/selfsubjectaccessreviews"
+SUBJECT_ACCESS_REVIEW_ENDPOINT = "/apis/authorization.k8s.io/v1/subjectaccessreviews"
 DANGEROUS_REVIEWS = {
     "impersonate-users": {"group": "", "resource": "users", "verb": "impersonate"},
     "impersonate-groups": {"group": "", "resource": "groups", "verb": "impersonate"},
     "impersonate-serviceaccounts": {"group": "", "resource": "serviceaccounts", "verb": "impersonate"},
     "impersonate-uids": {"group": "authentication.k8s.io", "resource": "uids", "verb": "impersonate"},
     "impersonate-userextras": {"group": "authentication.k8s.io", "resource": "userextras", "verb": "impersonate"},
-    "create-serviceaccount-tokens": {"group": "", "resource": "serviceaccounts/token", "verb": "create"},
     "create-certificate-signing-requests": {"group": "certificates.k8s.io", "resource": "certificatesigningrequests", "verb": "create"},
     "update-certificate-signing-request-approval": {"group": "certificates.k8s.io", "resource": "certificatesigningrequests/approval", "verb": "update"},
     "patch-certificate-signing-request-approval": {"group": "certificates.k8s.io", "resource": "certificatesigningrequests/approval", "verb": "patch"},
@@ -90,6 +85,91 @@ DANGEROUS_REVIEWS = {
     "bind-roles": {"group": "rbac.authorization.k8s.io", "resource": "roles", "verb": "bind"},
     "bind-clusterroles": {"group": "rbac.authorization.k8s.io", "resource": "clusterroles", "verb": "bind"},
 }
+
+
+def rbac_endpoints(namespaces: list[str]) -> dict[tuple[str, str], str]:
+    endpoints = {
+        ("", resource): f"/apis/rbac.authorization.k8s.io/v1/{resource}"
+        for resource in CLUSTER_RBAC_RESOURCES
+    }
+    endpoints.update(
+        {
+            (namespace, resource): f"/apis/rbac.authorization.k8s.io/v1/namespaces/{namespace}/{resource}"
+            for namespace in namespaces
+            for resource in NAMESPACED_RBAC_RESOURCES
+        }
+    )
+    return endpoints
+
+
+def service_account_endpoints(namespaces: list[str]) -> dict[str, str]:
+    return {
+        namespace: f"/api/v1/namespaces/{namespace}/serviceaccounts"
+        for namespace in namespaces
+    }
+
+
+def dangerous_reviews(
+    namespaces: list[str],
+    service_accounts: list[dict[str, str]],
+    custodians: list[dict[str, Any]],
+) -> dict[str, dict[str, str]]:
+    reviews = dict(DANGEROUS_REVIEWS)
+    for namespace in namespaces:
+        reviews[f"create-serviceaccount-tokens/{namespace}/_all"] = {
+            "group": "",
+            "resource": "serviceaccounts",
+            "subresource": "token",
+            "verb": "create",
+            "namespace": namespace,
+        }
+    for account in service_accounts:
+        reviews[f"create-serviceaccount-token/{account['namespace']}/{account['name']}"] = {
+            "group": "",
+            "resource": "serviceaccounts",
+            "subresource": "token",
+            "verb": "create",
+            "namespace": account["namespace"],
+            "name": account["name"],
+        }
+    for custodian in custodians:
+        principal_id = custodian["id"]
+        reviews[f"impersonate-exact-custodian-user/{principal_id}"] = {
+            "group": "",
+            "resource": "users",
+            "verb": "impersonate",
+            "name": custodian["username"],
+        }
+        reviews[f"impersonate-exact-custodian-uid/{principal_id}"] = {
+            "group": "authentication.k8s.io",
+            "resource": "uids",
+            "verb": "impersonate",
+            "name": custodian["uid"],
+        }
+        for group in custodian["groups"]:
+            reviews[f"impersonate-exact-custodian-group/{principal_id}/{digest(group)[:16]}"] = {
+                "group": "",
+                "resource": "groups",
+                "verb": "impersonate",
+                "name": group,
+            }
+        for extra_key in custodian["extra"]:
+            reviews[f"impersonate-exact-custodian-extra/{principal_id}/{digest(extra_key)[:16]}"] = {
+                "group": "authentication.k8s.io",
+                "resource": "userextras",
+                "verb": "impersonate",
+                "name": extra_key,
+            }
+        subject = custodian["subject"]
+        if subject["kind"] == "ServiceAccount":
+            reviews[f"impersonate-exact-custodian-serviceaccount/{principal_id}"] = {
+                "group": "",
+                "resource": "serviceaccounts",
+                "verb": "impersonate",
+                "namespace": subject["namespace"],
+                "name": subject["name"],
+            }
+    return dict(sorted(reviews.items()))
 REQUIRED_SOURCE_PATHS = {
     "k8s-inference/security/sai20/README.md",
     "k8s-inference/security/sai20/authority-roots-v1.json",
@@ -344,10 +424,86 @@ def verify_transcript_entry(entry: Any, cluster: dict[str, Any], where: str) -> 
     }
 
 
-def expected_transcript_names(principals: list[dict[str, Any]]) -> set[str]:
+def verify_namespace_inventory(entries: dict[str, dict[str, Any]]) -> tuple[list[str], str]:
+    name = "k8s/namespaces/_cluster"
+    require(name in entries, "authoritative Namespace list is missing")
+    body = list_body(entries[name], NAMESPACE_ENDPOINT, name)
+    normalized = []
+    for index, item in enumerate(body["items"]):
+        metadata = item.get("metadata", {})
+        where = f"Namespace list item[{index}]"
+        require(isinstance(metadata, dict), f"{where} metadata missing")
+        normalized.append(
+            {
+                "name": text(metadata.get("name"), f"{where}.name"),
+                "uid": text(metadata.get("uid"), f"{where}.uid"),
+                "resource_version": text(metadata.get("resourceVersion"), f"{where}.resourceVersion"),
+                "content_sha256": digest(stable_object(item)),
+            }
+        )
+    normalized.sort(key=lambda item: (item["name"], item["uid"]))
+    namespaces = [item["name"] for item in normalized]
+    require(namespaces and len(namespaces) == len(set(namespaces)), "Namespace inventory must be non-empty and unique")
+    return namespaces, digest(normalized)
+
+
+def verify_service_account_inventory(
+    entries: dict[str, dict[str, Any]],
+    namespaces: list[str],
+) -> tuple[list[dict[str, str]], str]:
+    normalized: list[dict[str, str]] = []
+    for namespace, endpoint in sorted(service_account_endpoints(namespaces).items()):
+        entry_name = f"k8s/serviceaccounts/{namespace}"
+        require(entry_name in entries, f"authoritative ServiceAccount list is missing for {namespace}")
+        body = list_body(entries[entry_name], endpoint, entry_name)
+        for index, item in enumerate(body["items"]):
+            metadata = item.get("metadata", {})
+            where = f"{entry_name}.items[{index}]"
+            require(isinstance(metadata, dict), f"{where} metadata missing")
+            require(metadata.get("namespace") == namespace, f"{where} namespace mismatch")
+            normalized.append(
+                {
+                    "namespace": namespace,
+                    "name": text(metadata.get("name"), f"{where}.name"),
+                    "uid": text(metadata.get("uid"), f"{where}.uid"),
+                    "resource_version": text(metadata.get("resourceVersion"), f"{where}.resourceVersion"),
+                    "content_sha256": digest(stable_object(item)),
+                }
+            )
+    normalized.sort(key=lambda item: (item["namespace"], item["name"], item["uid"]))
+    identities = [(item["namespace"], item["name"]) for item in normalized]
+    require(len(identities) == len(set(identities)), "ServiceAccount inventory contains duplicate identities")
+    return normalized, digest(normalized)
+
+
+def custodian_identities(
+    entries: dict[str, dict[str, Any]],
+    principals: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    custodians: list[dict[str, Any]] = []
+    for principal in principals:
+        if principal["class"] != "custodian":
+            continue
+        identity_name = f"k8s/identity/{principal['id']}/selfsubjectreview"
+        require(identity_name in entries, f"custodian identity transcript is missing: {principal['id']}")
+        identity = subject_from_review(
+            entries[identity_name]["body"],
+            f"custodian {principal['id']}",
+        )
+        custodians.append({"id": principal["id"], "subject": principal["subject"], **identity})
+    require(custodians, "principal inventory has no exact custodian")
+    return custodians
+
+
+def expected_transcript_names(
+    principals: list[dict[str, Any]],
+    namespaces: list[str],
+    review_names: set[str],
+) -> set[str]:
     names = {
         "k8s/database-pods/fs2-data",
         "k8s/networkpolicies/fs2-data",
+        "k8s/namespaces/_cluster",
         "k8s/collector/selfsubjectreview",
         "nebius/legacy-group-membership",
     }
@@ -357,26 +513,27 @@ def expected_transcript_names(principals: list[dict[str, Any]]) -> set[str]:
     )
     names.update(
         f"k8s/rbac/{namespace or '_cluster'}/{resource}"
-        for namespace, resource in RBAC_ENDPOINTS
+        for namespace, resource in rbac_endpoints(namespaces)
     )
+    names.update(f"k8s/serviceaccounts/{namespace}" for namespace in namespaces)
     for principal in principals:
         principal_id = principal["id"]
         names.add(f"k8s/identity/{principal_id}/selfsubjectreview")
         names.update(
             f"k8s/identity/{principal_id}/selfsubjectrulesreview/{namespace}"
-            for namespace in ("fs2-system", "fs2-observability", "fs2-data", "cnpg-system")
+            for namespace in namespaces
         )
         names.update(
             f"k8s/identity/{principal_id}/selfsubjectaccessreview/{review_name}"
-            for review_name in DANGEROUS_REVIEWS
+            for review_name in review_names
         )
     names.update(
         f"k8s/collector/selfsubjectrulesreview/{namespace}"
-        for namespace in ("fs2-system", "fs2-observability", "fs2-data", "cnpg-system")
+        for namespace in namespaces
     )
     names.update(
         f"k8s/collector/selfsubjectaccessreview/{review_name}"
-        for review_name in DANGEROUS_REVIEWS
+        for review_name in review_names
     )
     return names
 
@@ -405,6 +562,8 @@ def require_collector_credential(
 def verify_collector_identity(
     entries: dict[str, dict[str, Any]],
     collector: dict[str, Any],
+    namespaces: list[str],
+    reviews: dict[str, dict[str, str]],
 ) -> None:
     subject = {
         "uid": collector["uid"],
@@ -432,7 +591,7 @@ def verify_collector_identity(
         and observed["extra_sha256"] == collector["extra_sha256"],
         "collector identity is not authenticator-derived",
     )
-    for namespace in ("fs2-system", "fs2-observability", "fs2-data", "cnpg-system"):
+    for namespace in namespaces:
         name = f"k8s/collector/selfsubjectrulesreview/{namespace}"
         entry = entries[name]
         request = {
@@ -449,7 +608,7 @@ def verify_collector_identity(
             and entry["body"].get("status", {}).get("incomplete") is False,
             f"collector SSRR is incomplete or unauthenticated in {namespace}",
         )
-    for review_name, attributes in sorted(DANGEROUS_REVIEWS.items()):
+    for review_name, attributes in reviews.items():
         name = f"k8s/collector/selfsubjectaccessreview/{review_name}"
         entry = entries[name]
         request = {
@@ -465,6 +624,11 @@ def verify_collector_identity(
             and entry["request"]["credential_subject_sha256"] == subject_digest
             and type(entry["body"].get("status", {}).get("allowed")) is bool,
             f"collector SSAR is incomplete or unauthenticated: {review_name}",
+        )
+        require(
+            entry["body"]["status"]["allowed"] is False
+            and not entry["body"]["status"].get("evaluationError"),
+            f"evidence collector retains dangerous authority: {review_name}",
         )
 
 
@@ -629,7 +793,17 @@ def dangerous_rbac_subjects(raw_objects: dict[tuple[str, str], list[dict[str, An
             role_scope = namespace if role_resource == "roles" else ""
             rules = roles.get((role_resource, role_scope, role_ref.get("name", "")), [])
             dangerous = any(
-                ({"impersonate", "bind", "escalate", "*"} & set(rule.get("verbs", [])))
+                ({"impersonate", "bind", "escalate", "approve", "*"} & set(rule.get("verbs", [])))
+                or (
+                    {"create", "*"} & set(rule.get("verbs", []))
+                    and {"serviceaccounts/token", "certificatesigningrequests", "*"}
+                    & set(rule.get("resources", []))
+                )
+                or (
+                    {"update", "patch", "*"} & set(rule.get("verbs", []))
+                    and {"certificatesigningrequests/approval", "signers", "*"}
+                    & set(rule.get("resources", []))
+                )
                 for rule in rules
             )
             if not dangerous:
@@ -681,12 +855,17 @@ def sensitive_mutation_subjects(raw_objects: dict[tuple[str, str], list[dict[str
     ]
 
 
-def verify_rbac(entries: dict[str, dict[str, Any]], legacy: dict[str, Any], authorization: dict[str, Any]) -> None:
+def verify_rbac(
+    entries: dict[str, dict[str, Any]],
+    legacy: dict[str, Any],
+    authorization: dict[str, Any],
+    namespaces: list[str],
+) -> None:
     inventory = legacy["rbac_inventory"]
     expected_lists = {(item["namespace"], item["resource"]): item["list"] for item in inventory["lists"]}
     raw_objects: dict[tuple[str, str], list[dict[str, Any]]] = {}
     normalized_all: list[dict[str, Any]] = []
-    for key, endpoint in sorted(RBAC_ENDPOINTS.items()):
+    for key, endpoint in sorted(rbac_endpoints(namespaces).items()):
         namespace, resource = key
         name = f"k8s/rbac/{namespace or '_cluster'}/{resource}"
         body = list_body(entries[name], endpoint, name)
@@ -745,10 +924,18 @@ def subject_from_review(body: dict[str, Any], where: str) -> dict[str, Any]:
     }
 
 
-def verify_identities(entries: dict[str, dict[str, Any]], legacy: dict[str, Any], authorization: dict[str, Any]) -> dict[str, Any]:
+def verify_identities(
+    entries: dict[str, dict[str, Any]],
+    legacy: dict[str, Any],
+    authorization: dict[str, Any],
+    namespaces: list[str],
+    reviews: dict[str, dict[str, str]],
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]], dict[str, dict[str, bool]]]:
     principals = legacy["rbac_inventory"]["principals"]
     rules_evidence: dict[str, Any] = {}
     access_evidence: dict[str, Any] = {}
+    verified_identities: dict[str, dict[str, Any]] = {}
+    signed_decisions: dict[str, dict[str, bool]] = {}
     capable: list[dict[str, Any]] = []
     for principal in principals:
         principal_id = principal["id"]
@@ -774,8 +961,14 @@ def verify_identities(entries: dict[str, dict[str, Any]], legacy: dict[str, Any]
             }
         )
         require(identity_entry["request"]["credential_subject_sha256"] == subject_digest, f"{principal_id} transcript credential mismatch")
+        verified_identities[principal_id] = {
+            "id": principal_id,
+            "class": principal["class"],
+            "subject": principal["subject"],
+            **identity,
+        }
         rules_evidence[principal_id] = {}
-        for namespace in ("fs2-system", "fs2-observability", "fs2-data", "cnpg-system"):
+        for namespace in namespaces:
             rules_name = f"k8s/identity/{principal_id}/selfsubjectrulesreview/{namespace}"
             rules_entry = entries[rules_name]
             require(
@@ -799,7 +992,8 @@ def verify_identities(entries: dict[str, dict[str, Any]], legacy: dict[str, Any]
             rules_evidence[principal_id][namespace] = status
         allowed: list[str] = []
         review_bodies: list[dict[str, Any]] = []
-        for review_name, attributes in sorted(DANGEROUS_REVIEWS.items()):
+        signed_decisions[principal_id] = {}
+        for review_name, attributes in reviews.items():
             access_name = f"k8s/identity/{principal_id}/selfsubjectaccessreview/{review_name}"
             access_entry = entries[access_name]
             require(
@@ -818,16 +1012,15 @@ def verify_identities(entries: dict[str, dict[str, Any]], legacy: dict[str, Any]
             body = access_entry["body"]
             require(body.get("kind") == "SelfSubjectAccessReview", f"{access_name} kind mismatch")
             spec_attributes = body.get("spec", {}).get("resourceAttributes", {})
-            require(
-                spec_attributes.get("group", "") == attributes["group"]
-                and spec_attributes.get("resource") == attributes["resource"]
-                and spec_attributes.get("verb") == attributes["verb"],
-                f"{access_name} request attributes mismatch",
-            )
+            require(spec_attributes == attributes, f"{access_name} request attributes mismatch")
             require(type(body.get("status", {}).get("allowed")) is bool, f"{access_name} has no authoritative decision")
+            require(not body.get("status", {}).get("evaluationError"), f"{access_name} has an authorization evaluation error")
+            signed_decisions[principal_id][review_name] = body["status"]["allowed"]
             if body["status"]["allowed"]:
                 allowed.append(review_name)
             review_bodies.append(body)
+        if principal["class"] != "custodian":
+            require(not allowed, f"non-custodian principal {principal_id} retains token, certificate or impersonation authority")
         if allowed:
             capable.append(
                 {
@@ -867,7 +1060,7 @@ def verify_identities(entries: dict[str, dict[str, Any]], legacy: dict[str, Any]
     executor_id = authorization["executor_principal_id"]
     by_id = {principal["id"]: principal for principal in principals}
     require(executor_id in by_id and by_id[executor_id]["class"] == "custodian", "executor must be the exact signed custodian")
-    return {"id": executor_id, **subject_from_review(entries[f"k8s/identity/{executor_id}/selfsubjectreview"]["body"], "executor")}
+    return verified_identities[executor_id], verified_identities, signed_decisions
 
 
 def verify_authorized_parents(parents: Any, workloads: list[dict[str, Any]], legacy: dict[str, Any]) -> list[dict[str, str]]:
@@ -1066,12 +1259,20 @@ def verify_bundle(query: dict[str, str]) -> tuple[dict[str, str], dict[str, Any]
         entries[entry["name"]] = entry
         observed_times.append(entry["observed"])
     require(observed_times and min(observed_times) >= observed and max(observed_times) <= valid_until, "transcript observations fall outside bundle window")
+    namespaces, namespace_inventory_sha256 = verify_namespace_inventory(entries)
+    service_accounts, service_account_inventory_sha256 = verify_service_account_inventory(entries, namespaces)
+    custodians = custodian_identities(entries, legacy["rbac_inventory"]["principals"])
+    reviews = dangerous_reviews(namespaces, service_accounts, custodians)
     require(
-        set(entries) == expected_transcript_names(legacy["rbac_inventory"]["principals"]),
+        set(entries) == expected_transcript_names(
+            legacy["rbac_inventory"]["principals"],
+            namespaces,
+            set(reviews),
+        ),
         "transcript does not have the exact source-defined request closure",
     )
     require_collector_credential(entries, collector)
-    verify_collector_identity(entries, collector)
+    verify_collector_identity(entries, collector, namespaces, reviews)
 
     workloads = verify_workloads(entries, legacy)
     verify_network(entries, legacy, ingress_sha)
@@ -1081,18 +1282,34 @@ def verify_bundle(query: dict[str, str]) -> tuple[dict[str, str], dict[str, Any]
         authorization,
         {
             "executor_principal_id", "dangerous_rbac_subjects", "sensitive_mutation_subjects",
+            "namespace_inventory_sha256", "service_account_inventory_sha256",
             "rbac_inventory_sha256", "effective_permissions_sha256",
             "impersonation_receipts_sha256", "provider_group_response_sha256",
         },
         "authorization",
     )
     for field in (
+        "namespace_inventory_sha256", "service_account_inventory_sha256",
         "rbac_inventory_sha256", "effective_permissions_sha256",
         "impersonation_receipts_sha256", "provider_group_response_sha256",
     ):
         sha256(authorization[field], f"authorization.{field}")
-    verify_rbac(entries, legacy, authorization)
-    executor = verify_identities(entries, legacy, authorization)
+    require(
+        namespace_inventory_sha256 == authorization["namespace_inventory_sha256"],
+        "Namespace inventory digest is not content-derived",
+    )
+    require(
+        service_account_inventory_sha256 == authorization["service_account_inventory_sha256"],
+        "ServiceAccount inventory digest is not content-derived",
+    )
+    verify_rbac(entries, legacy, authorization, namespaces)
+    executor, principal_identities, signed_decisions = verify_identities(
+        entries,
+        legacy,
+        authorization,
+        namespaces,
+        reviews,
+    )
     parents = verify_authorized_parents(payload["authorized_parents"], workloads, legacy)
 
     review_body = payload["independent_review"]
@@ -1121,6 +1338,17 @@ def verify_bundle(query: dict[str, str]) -> tuple[dict[str, str], dict[str, Any]
         "source_commit": commit,
         "source_tree": tree,
         "ingress_spec_sha256": ingress_sha,
+        "namespace_inventory_sha256": namespace_inventory_sha256,
+        "namespace_names_json": json.dumps(namespaces, separators=(",", ":")),
+        "service_account_inventory_sha256": service_account_inventory_sha256,
+        "service_account_names_json": json.dumps(
+            [
+                {"namespace": account["namespace"], "name": account["name"], "uid": account["uid"]}
+                for account in service_accounts
+            ],
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
         "executor_principal_id": executor["id"],
         "executor_uid": executor["uid"],
         "executor_username": executor["username"],
@@ -1151,7 +1379,16 @@ def verify_bundle(query: dict[str, str]) -> tuple[dict[str, str], dict[str, Any]
         "ca_sha256": cluster["ca_sha256"],
         "valid_until": payload["valid_until"],
     }
-    return result, {"payload": payload, "legacy": legacy, "entries": entries, "executor": executor}, roots
+    return result, {
+        "payload": payload,
+        "legacy": legacy,
+        "entries": entries,
+        "executor": executor,
+        "namespaces": namespaces,
+        "principal_identities": principal_identities,
+        "authority_reviews": reviews,
+        "signed_authority_decisions": signed_decisions,
+    }, roots
 
 
 def kubectl(query: dict[str, str], args: list[str], stdin: bytes | None = None) -> bytes:
@@ -1220,7 +1457,7 @@ def verify_apply(query: dict[str, str], context: dict[str, Any], _roots: dict[st
         current = parse_json_bytes(live_get(query, path), f"apply {name}")
         require(digest(stable_object(current)) == digest(stable_object(entry["body"])), f"apply-time re-observation differs: {name}")
 
-    for namespace in ("fs2-system", "fs2-observability", "fs2-data", "cnpg-system"):
+    for namespace in context["namespaces"]:
         request = {
             "apiVersion": "authorization.k8s.io/v1",
             "kind": "SelfSubjectRulesReview",
@@ -1230,15 +1467,34 @@ def verify_apply(query: dict[str, str], context: dict[str, Any], _roots: dict[st
         require(body.get("status", {}).get("incomplete") is False, f"apply SSRR {namespace} is incomplete")
         signed = context["entries"][f"k8s/identity/{context['executor']['id']}/selfsubjectrulesreview/{namespace}"]["body"]
         require(digest(body.get("status", {})) == digest(signed.get("status", {})), f"apply SSRR changed in {namespace}")
-    for review_name, attributes in DANGEROUS_REVIEWS.items():
-        request = {
-            "apiVersion": "authorization.k8s.io/v1",
-            "kind": "SelfSubjectAccessReview",
-            "spec": {"resourceAttributes": attributes},
-        }
-        body = parse_json_bytes(live_post(query, SELF_SUBJECT_ACCESS_REVIEW_ENDPOINT, request), f"apply SSAR {review_name}")
-        signed = context["entries"][f"k8s/identity/{context['executor']['id']}/selfsubjectaccessreview/{review_name}"]["body"]
-        require(body.get("status", {}).get("allowed") == signed.get("status", {}).get("allowed"), f"apply dangerous authority changed: {review_name}")
+    for principal_id, identity in sorted(context["principal_identities"].items()):
+        for review_name, attributes in context["authority_reviews"].items():
+            request = {
+                "apiVersion": "authorization.k8s.io/v1",
+                "kind": "SubjectAccessReview",
+                "spec": {
+                    "user": identity["username"],
+                    "uid": identity["uid"],
+                    "groups": identity["groups"],
+                    "extra": identity["extra"],
+                    "resourceAttributes": attributes,
+                },
+            }
+            body = parse_json_bytes(
+                live_post(query, SUBJECT_ACCESS_REVIEW_ENDPOINT, request),
+                f"apply SAR {principal_id}/{review_name}",
+            )
+            require(body.get("kind") == "SubjectAccessReview", f"apply SAR kind mismatch: {principal_id}/{review_name}")
+            require(body.get("spec") == request["spec"], f"apply SAR subject or attributes changed: {principal_id}/{review_name}")
+            status = body.get("status", {})
+            require(type(status.get("allowed")) is bool, f"apply SAR has no decision: {principal_id}/{review_name}")
+            require(not status.get("evaluationError"), f"apply SAR evaluation failed: {principal_id}/{review_name}")
+            require(
+                status["allowed"] == context["signed_authority_decisions"][principal_id][review_name],
+                f"apply dangerous authority changed: {principal_id}/{review_name}",
+            )
+            if identity["class"] != "custodian":
+                require(not status["allowed"], f"non-custodian gained dangerous authority at apply: {principal_id}/{review_name}")
 
 
 def main() -> int:
