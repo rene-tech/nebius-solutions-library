@@ -1132,8 +1132,8 @@
             }
           ],
           "service_account_name": "default",
-          "workspace_uid": 10001,
-          "workspace_gid": 10001,
+          "workspace_uid": 11001,
+          "workspace_gid": 11001,
           "resources": {
             "requests": {
               "cpu": "8000m",
@@ -1175,8 +1175,8 @@
             }
           ],
           "service_account_name": "default",
-          "workspace_uid": 10001,
-          "workspace_gid": 10001,
+          "workspace_uid": 11001,
+          "workspace_gid": 11001,
           "resources": {
             "requests": {
               "cpu": "1000m",
@@ -1792,8 +1792,8 @@
             }
           ],
           "service_account_name": "default",
-          "workspace_uid": 10001,
-          "workspace_gid": 10001,
+          "workspace_uid": 11002,
+          "workspace_gid": 11002,
           "resources": {
             "requests": {
               "cpu": "4000m",
@@ -1855,8 +1855,8 @@
             }
           ],
           "service_account_name": "default",
-          "workspace_uid": 10001,
-          "workspace_gid": 10001,
+          "workspace_uid": 11002,
+          "workspace_gid": 11002,
           "resources": {
             "requests": {
               "cpu": "8000m",
@@ -1974,8 +1974,8 @@
             }
           ],
           "service_account_name": "default",
-          "workspace_uid": 10001,
-          "workspace_gid": 10001,
+          "workspace_uid": 11003,
+          "workspace_gid": 11003,
           "resources": {
             "requests": {
               "cpu": "4000m",
@@ -2035,8 +2035,8 @@
             }
           ],
           "service_account_name": "default",
-          "workspace_uid": 10001,
-          "workspace_gid": 10001,
+          "workspace_uid": 11003,
+          "workspace_gid": 11003,
           "resources": {
             "requests": {
               "cpu": "8000m",
@@ -2173,8 +2173,8 @@
             }
           ],
           "service_account_name": "fs2-academic-runner",
-          "workspace_uid": 1001,
-          "workspace_gid": 1001,
+          "workspace_uid": 11004,
+          "workspace_gid": 11004,
           "resources": {
             "requests": {
               "cpu": "16000m",
@@ -2229,8 +2229,8 @@
             }
           ],
           "service_account_name": "fs2-academic-runner",
-          "workspace_uid": 1001,
-          "workspace_gid": 1001,
+          "workspace_uid": 11004,
+          "workspace_gid": 11004,
           "resources": {
             "requests": {
               "cpu": "8000m",

@@ -718,7 +718,16 @@ def test_renderer_uses_selected_pool_resource_and_safe_derived_metadata() -> Non
     first = renderer().render(spec, render_context())
     assert first == renderer().render(spec, render_context())
     deployment = next(item.manifest for item in first.resources if item.kind == "Deployment")
-    container = deployment["spec"]["template"]["spec"]["containers"][0]
+    pod = deployment["spec"]["template"]["spec"]
+    container = pod["containers"][0]
+    assert pod["securityContext"]["runAsNonRoot"] is True
+    assert pod["securityContext"]["seccompProfile"] == {"type": "RuntimeDefault"}
+    assert container["securityContext"] == {
+        "allowPrivilegeEscalation": False,
+        "runAsNonRoot": True,
+        "readOnlyRootFilesystem": True,
+        "capabilities": {"drop": ["ALL"], "add": []},
+    }
     assert container["resources"]["requests"] == {"vendor.example/gpu": "1"}
     assert container["resources"]["limits"] == {"vendor.example/gpu": "1"}
     assert deployment["metadata"]["ownerReferences"][0]["uid"] == "cr-uid-1"
@@ -883,7 +892,8 @@ def test_renderer_requests_only_the_explicit_modelexpress_rdma_resource() -> Non
 
     assert container["resources"]["requests"]["example.com/rdma_shared_device_a"] == 4
     assert container["resources"]["limits"]["example.com/rdma_shared_device_a"] == 4
-    assert container["securityContext"]["capabilities"]["add"] == ["IPC_LOCK"]
+    assert container["securityContext"]["capabilities"] == {"drop": ["ALL"], "add": []}
+    assert container["securityContext"]["readOnlyRootFilesystem"] is True
     assert environment["MX_RDMA_NIC_PIN"] == "auto"
     assert environment["UCX_RNDV_SCHEME"] == "get_zcopy"
     assert environment["UCX_RNDV_THRESH"] == "0"
@@ -1926,6 +1936,14 @@ def test_the_renderer_configures_the_pinned_regional_cache() -> None:
     assert volumes["runtime-cache"]["persistentVolumeClaim"] == {"claimName": "fsm-compile-cache-rwx"}
     assert pod["metadata"]["annotations"]["fast-start.fs2.nebius/mechanism"] == "regional-cache"
     assert any(item["name"] == "fs2-warm-page-cache" for item in pod["spec"]["initContainers"])
+    assert pod["spec"]["securityContext"]["seccompProfile"] == {"type": "RuntimeDefault"}
+    for container in (*pod["spec"]["initContainers"], *pod["spec"]["containers"]):
+        security = container["securityContext"]
+        assert security["allowPrivilegeEscalation"] is False
+        assert security["runAsNonRoot"] is True
+        assert security["capabilities"] == {"drop": ["ALL"], "add": []}
+    runtime = next(item for item in pod["spec"]["containers"] if item["name"] == "runtime")
+    assert runtime["securityContext"]["readOnlyRootFilesystem"] is True
 
 
 def test_the_renderer_owns_the_host_memory_holder_it_depends_on() -> None:

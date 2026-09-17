@@ -265,7 +265,7 @@
       "h100_semantic_receipt_sha256": "e52236de244cfb52ec5e6d6486812e1518d0f6c9e0ade18608b9d063cc8971c2",
       "public_completion_receipt_sha256": "1f3b9ef318fdaa3a00108a772dcced96d65490fd3dae00a241388a76e16905a3",
       "scheduler_eligibility_receipt_sha256": "ed35358de43ba630f13ba6a990ba9d446b191d5f58932fd1f60ed70c36b2d0cd",
-      "execution_map_sha256": "840e0d0970ac3806e24d3666893e3a4c78ce26f08d3f9cc57e52b8db67902521",
+      "execution_map_sha256": "0d0baff84eff6ff6db3654a2231d7286f10eebe0436295ada264578047224709",
       "qualified_at": "2026-09-06T22:45:13.300156Z"
     }
   }

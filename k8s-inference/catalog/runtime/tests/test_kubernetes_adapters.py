@@ -1040,6 +1040,15 @@ class KubernetesAdapterTests(unittest.TestCase):
         )
         self.assertNotIn("hostPath", json.dumps(native_pod))
         self.assertEqual([GPU_TOLERATION], native_pod["tolerations"])
+        self.assertEqual(
+            {"type": "RuntimeDefault"},
+            native_pod["securityContext"]["seccompProfile"],
+        )
+        native_security = native_pod["containers"][0]["securityContext"]
+        self.assertTrue(native_security["runAsNonRoot"])
+        self.assertTrue(native_security["readOnlyRootFilesystem"])
+        self.assertFalse(native_security["allowPrivilegeEscalation"])
+        self.assertEqual(["ALL"], native_security["capabilities"]["drop"])
         offline_env = {
             item["name"]: item["value"]
             for item in native_pod["containers"][0]["env"]

@@ -324,6 +324,9 @@ class FileScientificManifestRenderer:
         workload_namespaces: dict[str, str] = {}
         access_profiles: dict[str, str] = {}
         plan_adapters: dict[str, tuple[str, str]] = {}
+        runtime_cache_identities: dict[str, tuple[int, int]] = {}
+        runtime_cache_uid_owners: dict[int, str] = {}
+        runtime_cache_gid_owners: dict[int, str] = {}
         for raw_model in models:
             model = _object(raw_model, "scientific execution model")
             model_required = {
@@ -735,6 +738,19 @@ class FileScientificManifestRenderer:
                 workspace_gid = _positive_integer(
                     stage["workspace_gid"], "scientific workspace GID", maximum=2_147_483_647
                 )
+                if "runtime-cache" in kinds:
+                    identity = (workspace_uid, workspace_gid)
+                    prior_identity = runtime_cache_identities.setdefault(model_id, identity)
+                    if prior_identity != identity:
+                        raise ScientificExecutionMapError(
+                            "one model must use one stable runtime-cache UID/GID across every stage"
+                        )
+                    prior_uid_owner = runtime_cache_uid_owners.setdefault(workspace_uid, model_id)
+                    prior_gid_owner = runtime_cache_gid_owners.setdefault(workspace_gid, model_id)
+                    if prior_uid_owner != model_id or prior_gid_owner != model_id:
+                        raise ScientificExecutionMapError(
+                            "scientific runtime-cache UID/GID identities must be unique per model"
+                        )
                 if model_id == "bindcraft":
                     by_path = {mount.mount_path: mount for mount in mounts}
                     required_paths = {"/models/alphafold2", BINDCRAFT_PYROSETTA_PATH}
@@ -1881,6 +1897,8 @@ class FileScientificManifestRenderer:
                     "securityContext": {
                         "allowPrivilegeEscalation": False,
                         "capabilities": {"drop": ["ALL"]},
+                        "readOnlyRootFilesystem": True,
+                        "runAsNonRoot": True,
                         "runAsUser": execution.workspace_uid,
                         "runAsGroup": execution.workspace_gid,
                     },

@@ -1369,6 +1369,9 @@ spec:
       securityContext:
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
         seccompProfile:
           type: RuntimeDefault
       serviceAccountName: cosmos3-nano
@@ -1380,7 +1383,7 @@ spec:
           value: fs2-inference
       initContainers:
         - name: localize-model
-          image: docker.io/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587
+          image: registry.example.invalid/k8s-inference/models/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587
           imagePullPolicy: IfNotPresent
           command:
             - python3
@@ -1394,6 +1397,8 @@ spec:
               value: "1"
             - name: HF_HOME
               value: /model-cache/huggingface
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
           resources:
             limits:
               cpu: "16"
@@ -1408,15 +1413,19 @@ spec:
             capabilities:
               drop:
                 - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
           volumeMounts:
             - mountPath: /contract
               name: adapter
               readOnly: true
             - mountPath: /model-cache
               name: model-cache
+            - mountPath: /tmp
+              name: tmp
       containers:
         - name: vllm-omni
-          image: docker.io/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587
+          image: registry.example.invalid/k8s-inference/models/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587
           imagePullPolicy: IfNotPresent
           command:
             - vllm
@@ -1476,6 +1485,8 @@ spec:
             capabilities:
               drop:
                 - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
           startupProbe:
             failureThreshold: 240
             httpGet:
@@ -1505,7 +1516,7 @@ spec:
             - mountPath: /tmp
               name: tmp
         - name: bounded-json-adapter
-          image: docker.io/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587
+          image: registry.example.invalid/k8s-inference/models/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587
           imagePullPolicy: IfNotPresent
           command:
             - python3
@@ -1538,6 +1549,7 @@ spec:
               drop:
                 - ALL
             readOnlyRootFilesystem: true
+            runAsNonRoot: true
           startupProbe:
             failureThreshold: 30
             httpGet:

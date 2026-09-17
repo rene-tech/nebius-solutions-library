@@ -438,8 +438,12 @@ resource "kubernetes_namespace_v1" "reference_data" {
   metadata {
     name = var.namespace
     labels = merge(local.common_labels, {
-      "kubernetes.io/metadata.name"        = var.namespace
-      "reference-data.fs2.nebius.ai/plane" = "private"
+      "kubernetes.io/metadata.name"                  = var.namespace
+      "pod-security.kubernetes.io/audit"             = "restricted"
+      "pod-security.kubernetes.io/audit-version"     = "latest"
+      "pod-security.kubernetes.io/warn"              = "restricted"
+      "pod-security.kubernetes.io/warn-version"      = "latest"
+      "reference-data.fs2.nebius.ai/plane"           = "private"
     })
   }
 

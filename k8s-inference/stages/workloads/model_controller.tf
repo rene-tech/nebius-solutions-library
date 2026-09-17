@@ -741,6 +741,13 @@ locals {
         (!local.inventory.routes[model_id].mcp.enabled || local.catalog_models[model_id].interface.mcp.discoverable),
         false,
       )
+      private_runtime_image = try(
+        startswith(
+          var.model_image_overrides[model_id],
+          "${var.accelerator_pool_contract.artifact_source.registry.fqdn}/",
+        ),
+        false,
+      )
       retained_runtime = try(
         # An explicitly named upstream variant can become the canonical runtime.
         # Compare its actual source/image/service identities, not a null label;

@@ -215,7 +215,7 @@
         "h100_semantic_receipt_sha256": "f4a36ad7b8367e3383f584f96377313d39a26b5a08343d789311a41b04b79a46",
         "public_completion_receipt_sha256": "7c116e90853b0e0edfe0d6451f327813338716dde285af2239d506d0c3c9f5cd",
         "scheduler_eligibility_receipt_sha256": "3e2a06c9f1410764243c34899fc885365c7df03a683a60d5ac1114e6bcf91953",
-        "execution_map_sha256": "840e0d0970ac3806e24d3666893e3a4c78ce26f08d3f9cc57e52b8db67902521",
+        "execution_map_sha256": "0d0baff84eff6ff6db3654a2231d7286f10eebe0436295ada264578047224709",
         "qualified_at": "2026-09-06T22:56:12.051501Z"
       },
       "runtime_artifacts": [
@@ -398,7 +398,7 @@
         "h100_semantic_receipt_sha256": "380441981a4170c8f2427a47ef4b25898f0ab14e33cc5efe7fdd65ebc1b45c4b",
         "public_completion_receipt_sha256": "89a7b449264d6a3b1ff8087c9331fd82b6e65732985d5cd160ccc101651a21db",
         "scheduler_eligibility_receipt_sha256": "c70673443bbf84f95d1b952db970ae5cb0f6026623e73a5c34893158fdc071fd",
-        "execution_map_sha256": "840e0d0970ac3806e24d3666893e3a4c78ce26f08d3f9cc57e52b8db67902521",
+        "execution_map_sha256": "0d0baff84eff6ff6db3654a2231d7286f10eebe0436295ada264578047224709",
         "qualified_at": "2026-09-06T22:54:26.453447Z"
       },
       "policy": {
@@ -583,7 +583,7 @@
         "h100_semantic_receipt_sha256": "9f4d97dd49666b2a67fd54d0ff5ba2133b99757a6e6e794bdebd003df540c66f",
         "public_completion_receipt_sha256": "5e105c7c53f129a7a7719ae720811c14f167217db5d9c55b780e3f77737cf189",
         "scheduler_eligibility_receipt_sha256": "4381714913c69643c3ef0fe2cc32734b8367c21a58c9e066651e8fff44e12a8e",
-        "execution_map_sha256": "840e0d0970ac3806e24d3666893e3a4c78ce26f08d3f9cc57e52b8db67902521",
+        "execution_map_sha256": "0d0baff84eff6ff6db3654a2231d7286f10eebe0436295ada264578047224709",
         "qualified_at": "2026-09-06T22:53:07.977893Z"
       },
       "policy": {
@@ -766,7 +766,7 @@
         "h100_semantic_receipt_sha256": "9eeef6c219c3ee0e9754e9d45be9de3f77ccec7824ce9e6b3f0fa17405aef339",
         "public_completion_receipt_sha256": "df57f86a7e936b9dc693879c3af084121e591f7c8febc9b7e0600e7c6fe3ff5f",
         "scheduler_eligibility_receipt_sha256": "db8e9a979429a1cff6cd4803faa850729ce33de659152beb6a62e0ba194c5dd2",
-        "execution_map_sha256": "840e0d0970ac3806e24d3666893e3a4c78ce26f08d3f9cc57e52b8db67902521",
+        "execution_map_sha256": "0d0baff84eff6ff6db3654a2231d7286f10eebe0436295ada264578047224709",
         "qualified_at": "2026-09-06T22:52:32.995117Z"
       },
       "policy": {
@@ -940,7 +940,7 @@
         "h100_semantic_receipt_sha256": "1f392018020143dbc81695632cdfef02b9582f49e0187f72e6a172c0e8b80765",
         "public_completion_receipt_sha256": "80c3759306c6d10817ca9f31876607b02426a66732cb54d163d93e1f3f12bd4a",
         "scheduler_eligibility_receipt_sha256": "a09fc3116de46369353308e418aea6ee570a93f570475ea1220a7d8442b592c1",
-        "execution_map_sha256": "840e0d0970ac3806e24d3666893e3a4c78ce26f08d3f9cc57e52b8db67902521",
+        "execution_map_sha256": "0d0baff84eff6ff6db3654a2231d7286f10eebe0436295ada264578047224709",
         "qualified_at": "2026-09-06T22:48:25.077842Z"
       },
       "policy": {
@@ -1228,7 +1228,7 @@
         "h100_semantic_receipt_sha256": "e52236de244cfb52ec5e6d6486812e1518d0f6c9e0ade18608b9d063cc8971c2",
         "public_completion_receipt_sha256": "1f3b9ef318fdaa3a00108a772dcced96d65490fd3dae00a241388a76e16905a3",
         "scheduler_eligibility_receipt_sha256": "ed35358de43ba630f13ba6a990ba9d446b191d5f58932fd1f60ed70c36b2d0cd",
-        "execution_map_sha256": "840e0d0970ac3806e24d3666893e3a4c78ce26f08d3f9cc57e52b8db67902521",
+        "execution_map_sha256": "0d0baff84eff6ff6db3654a2231d7286f10eebe0436295ada264578047224709",
         "qualified_at": "2026-09-06T22:45:13.300156Z"
       }
     },
@@ -1497,7 +1497,7 @@
         "h100_semantic_receipt_sha256": "b78dce5a942472b9427ca4f84a2a0b00baed1c3beca40d230913f1745c7df545",
         "public_completion_receipt_sha256": "d970dad8f184c15f09d1c6556dfa2ac5492f6b66eea9b7f92babc7e671b1571b",
         "scheduler_eligibility_receipt_sha256": "f32ad35d5c3992bc6255e15ce97fda84f854e54fe69180a8d8ed9e5a8d14b6d3",
-        "execution_map_sha256": "840e0d0970ac3806e24d3666893e3a4c78ce26f08d3f9cc57e52b8db67902521",
+        "execution_map_sha256": "0d0baff84eff6ff6db3654a2231d7286f10eebe0436295ada264578047224709",
         "qualified_at": "2026-09-06T22:51:46.640834Z"
       }
     },
@@ -1633,7 +1633,7 @@
         "h100_semantic_receipt_sha256": "2590708d8932ddef795957a91215dd20ca7e8f8666b4aa9d50e782b212029d09",
         "public_completion_receipt_sha256": "0ae693f45e04c06f14de8ad7b2c36a09568a11b88bd8c5f57ce2c83046de67db",
         "scheduler_eligibility_receipt_sha256": "3689fffba1de4d6ded8eaeb2f65b5ba770492e4f152ef5e991d8892a19495b40",
-        "execution_map_sha256": "840e0d0970ac3806e24d3666893e3a4c78ce26f08d3f9cc57e52b8db67902521",
+        "execution_map_sha256": "0d0baff84eff6ff6db3654a2231d7286f10eebe0436295ada264578047224709",
         "qualified_at": "2026-09-06T22:53:31.879853Z"
       },
       "policy": {
@@ -1817,7 +1817,7 @@
         "h100_semantic_receipt_sha256": "e2935d0c8596573d7934a25468a6740dace8cb1e53fec3b8bf8cd5c5e52cb33a",
         "public_completion_receipt_sha256": "07578f238ccb4a2ecc540b083ec0c1609f66369acd5d49db13aeaf80200386d1",
         "scheduler_eligibility_receipt_sha256": "9a06de39243ff565e4e44032f912d1bb102e7052d2c61b225ffd742fef4ac085",
-        "execution_map_sha256": "840e0d0970ac3806e24d3666893e3a4c78ce26f08d3f9cc57e52b8db67902521",
+        "execution_map_sha256": "0d0baff84eff6ff6db3654a2231d7286f10eebe0436295ada264578047224709",
         "qualified_at": "2026-09-06T22:46:13.905481Z"
       },
       "policy": {
@@ -2019,7 +2019,7 @@
         "h100_semantic_receipt_sha256": "095e4d8da54621329d65a1bdae0e9f5b70d9bb305165d7d3f8e26315fe604b75",
         "public_completion_receipt_sha256": "533836c49169edaadbcce9dc587e1b40aafb196bab4165e5cb2fc893aea6058c",
         "scheduler_eligibility_receipt_sha256": "db490a792ade3513474b09194b3c6bb1d09c4797a76bdb1bd2876b76cca88a36",
-        "execution_map_sha256": "840e0d0970ac3806e24d3666893e3a4c78ce26f08d3f9cc57e52b8db67902521",
+        "execution_map_sha256": "0d0baff84eff6ff6db3654a2231d7286f10eebe0436295ada264578047224709",
         "qualified_at": "2026-09-06T22:44:00.468714Z"
       },
       "policy": {

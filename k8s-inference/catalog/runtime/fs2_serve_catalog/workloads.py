@@ -166,7 +166,8 @@ def _container(
         "resources": resources,
         "securityContext": {
             "allowPrivilegeEscalation": False,
-            "readOnlyRootFilesystem": False,
+            "readOnlyRootFilesystem": True,
+            "runAsNonRoot": True,
             "capabilities": {"drop": ["ALL"]},
         },
         "volumeMounts": [

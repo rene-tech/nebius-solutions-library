@@ -59,6 +59,18 @@ locals {
       ]) == 1
     ]
   ])
+  scientific_runtime_cache_identities_by_model = {
+    for consumer in local.scientific_runtime_cache_consumers : consumer.model_id => {
+      uid = consumer.workspace_uid
+      gid = consumer.workspace_gid
+    }...
+  }
+  scientific_runtime_cache_models_by_uid = {
+    for consumer in local.scientific_runtime_cache_consumers : tostring(consumer.workspace_uid) => consumer.model_id...
+  }
+  scientific_runtime_cache_models_by_gid = {
+    for consumer in local.scientific_runtime_cache_consumers : tostring(consumer.workspace_gid) => consumer.model_id...
+  }
   scientific_runtime_cache_directory_claims = flatten([
     for consumer in local.scientific_runtime_cache_consumers : [
       for name in distinct([
@@ -708,10 +720,23 @@ resource "terraform_data" "scientific_artifacts_contract" {
             for claims in values(local.scientific_runtime_cache_directory_claims_by_name) :
             length(distinct([for claim in claims : claim.uid])) == 1 &&
             length(distinct([for claim in claims : claim.gid])) == 1
+          ]) &&
+          alltrue([
+            for identities in values(local.scientific_runtime_cache_identities_by_model) :
+            length(distinct([for identity in identities : identity.uid])) == 1 &&
+            length(distinct([for identity in identities : identity.gid])) == 1
+          ]) &&
+          alltrue([
+            for model_ids in values(local.scientific_runtime_cache_models_by_uid) :
+            length(distinct(model_ids)) == 1
+          ]) &&
+          alltrue([
+            for model_ids in values(local.scientific_runtime_cache_models_by_gid) :
+            length(distinct(model_ids)) == 1
           ])
         )
       )
-      error_message = "Every runtime-cache stage must declare one safe first-level /cache directory whose exact non-root UID/GID agrees across consumers."
+      error_message = "Every runtime-cache stage must declare one safe first-level /cache directory, use one stable non-root UID/GID per model, and never share either identity with another model."
     }
     precondition {
       condition = (

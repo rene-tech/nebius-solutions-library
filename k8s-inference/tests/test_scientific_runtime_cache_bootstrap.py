@@ -120,17 +120,19 @@ def test_terraform_uses_execution_map_owners_and_blocks_control_plane() -> None:
                 namespace_claims[cache_root] = owner
 
     assert claims == {
-        "alphafold3": (1001, 1001),
-        "mosaic": (10001, 10001),
-        "openfold3": (10001, 10001),
-        "protenix": (10001, 10001),
+        "alphafold3": (11004, 11004),
+        "mosaic": (11001, 11001),
+        "openfold3": (11002, 11002),
+        "protenix": (11003, 11003),
     }
+    assert len({owner[0] for owner in claims.values()}) == len(claims)
+    assert len({owner[1] for owner in claims.values()}) == len(claims)
     assert claims_by_namespace == {
-        "fs2-academic-poc": {"alphafold3": (1001, 1001)},
+        "fs2-academic-poc": {"alphafold3": (11004, 11004)},
         "fs2-models": {
-            "mosaic": (10001, 10001),
-            "openfold3": (10001, 10001),
-            "protenix": (10001, 10001),
+            "mosaic": (11001, 11001),
+            "openfold3": (11002, 11002),
+            "protenix": (11003, 11003),
         },
     }
 
@@ -153,6 +155,10 @@ def test_terraform_uses_execution_map_owners_and_blocks_control_plane() -> None:
     assert "namespace_claims = local.scientific_runtime_cache_namespace_claims" in cache_source
     assert "workspace_uid      = try(stage.workspace_uid, null)" in cache_source
     assert "workspace_gid      = try(stage.workspace_gid, null)" in cache_source
+    assert "scientific_runtime_cache_identities_by_model" in cache_source
+    assert "scientific_runtime_cache_models_by_uid" in cache_source
+    assert "scientific_runtime_cache_models_by_gid" in cache_source
+    assert "never share either identity with another model" in cache_source
     assert cache_source.count('mode = "2770"') == 2
     assert cache_source.count('"FSETID",') == 2
     assert '"storage.fs2.nebius/shared-cache" = "true"' in cache_source

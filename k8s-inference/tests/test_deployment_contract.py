@@ -2902,10 +2902,32 @@ class DeploymentContractTests(unittest.TestCase):
         pod_spec = manifest["spec"]["template"]["spec"]
         self.assertNotIn("nodeSelector", pod_spec)
         exact_image = model["runtime"]["image"]["reference"]
+        self.assertTrue(
+            exact_image.startswith(
+                "registry.example.invalid/k8s-inference/models/vllm-omni@sha256:"
+            )
+        )
+        self.assertNotIn("docker.io/", exact_image)
         self.assertEqual(
             {container["image"] for container in pod_spec["containers"]},
             {exact_image},
         )
+        self.assertEqual(
+            pod_spec["securityContext"]["seccompProfile"],
+            {"type": "RuntimeDefault"},
+        )
+        self.assertTrue(pod_spec["securityContext"]["runAsNonRoot"])
+        for container in (*pod_spec["initContainers"], *pod_spec["containers"]):
+            security = container["securityContext"]
+            self.assertFalse(security["allowPrivilegeEscalation"])
+            self.assertTrue(security["runAsNonRoot"])
+            self.assertTrue(security["readOnlyRootFilesystem"])
+            self.assertEqual(security["capabilities"]["drop"], ["ALL"])
+        localizer_mounts = {
+            mount["mountPath"]
+            for mount in pod_spec["initContainers"][0]["volumeMounts"]
+        }
+        self.assertIn("/tmp", localizer_mounts)
 
         mirror = "cr.eu-north1.nebius.cloud/registry/fs2-models/vllm-omni@sha256:" + "1" * 64
 
@@ -2948,6 +2970,26 @@ class DeploymentContractTests(unittest.TestCase):
             2,
         )
         self.assertNotIn("regexreplace(container.image", source)
+
+        qualification_source = (
+            DEPLOY_ROOT / "stages" / "workloads" / "model_controller.tf"
+        ).read_text(encoding="utf-8")
+        self.assertIn("private_runtime_image", qualification_source)
+        self.assertIn(
+            '"${var.accelerator_pool_contract.artifact_source.registry.fqdn}/"',
+            qualification_source,
+        )
+
+        namespace_sources = (
+            DEPLOY_ROOT / "stages" / "foundation" / "namespaces.tf",
+            DEPLOY_ROOT / "modules" / "academic-assets" / "main.tf",
+            DEPLOY_ROOT / "reference-data" / "terraform" / "main.tf",
+        )
+        for namespace_source in namespace_sources:
+            value = namespace_source.read_text(encoding="utf-8")
+            self.assertIn('"pod-security.kubernetes.io/audit"', value)
+            self.assertIn('"pod-security.kubernetes.io/warn"', value)
+            self.assertIn('= "restricted"', value)
 
         placement = next(
             item

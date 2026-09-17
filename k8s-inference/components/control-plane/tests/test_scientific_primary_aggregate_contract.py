@@ -246,6 +246,7 @@ def test_primary_active_bridge_is_schema_valid_and_exactly_evidence_anchored() -
         assert execution["execution_identity_sha256"] == profile["execution_identity"]["execution_identity_sha256"]
         assert tuple(stage["stage_id"] for stage in execution["stages"]) == expected["stages"]
         assert {item["artifact_id"] for item in execution["runtime_artifacts"]} == expected["artifacts"]
+        expected_workspace_id = 11001 if model_id == "mosaic" else 10001
         profile_artifacts = {item["artifact_id"]: item for item in profile["runtime_artifacts"]}
         for localization in execution["runtime_artifacts"]:
             requirement = profile_artifacts[localization["artifact_id"]]
@@ -257,8 +258,8 @@ def test_primary_active_bridge_is_schema_valid_and_exactly_evidence_anchored() -
                 assert localization["file_manifest"] == requirement["file_manifest"]
         for stage in execution["stages"]:
             assert stage["image"].endswith("@" + expected["digest"])
-            assert stage["workspace_uid"] == 10001
-            assert stage["workspace_gid"] == 10001
+            assert stage["workspace_uid"] == expected_workspace_id
+            assert stage["workspace_gid"] == expected_workspace_id
             assert stage["collector_id"]
             assert stage["validator_id"]
             assert stage["active_deadline_seconds"] > stage["termination_grace_seconds"] > 0

@@ -1853,6 +1853,43 @@ def bounded_label_value(value: str) -> str:
     return f"{stem}-{suffix}"
 
 
+def _enforce_restricted_runtime_security(pod_spec: dict[str, Any], runtime_container_name: str) -> None:
+    """Apply the non-negotiable restricted profile to a rendered model Pod.
+
+    Legacy bundles are evidence inputs, not security-policy inputs. Applying
+    this envelope after every cache/transport adapter prevents an older bundle
+    (or a capability requested by an adapter) from weakening the final Pod.
+    Writable model data, compiler caches and scratch space remain explicit
+    volume mounts; the image filesystem itself is immutable at runtime.
+    """
+
+    pod_security = pod_spec.setdefault("securityContext", {})
+    if not isinstance(pod_security, dict):
+        raise ValueError("primary Deployment Pod securityContext is invalid")
+    pod_security["runAsNonRoot"] = True
+    pod_security["seccompProfile"] = {"type": "RuntimeDefault"}
+
+    runtime_matches = 0
+    for field in ("initContainers", "containers"):
+        containers = pod_spec.get(field, [])
+        if not isinstance(containers, list) or any(not isinstance(item, dict) for item in containers):
+            raise ValueError(f"primary Deployment {field} is invalid")
+        for container in containers:
+            security = container.setdefault("securityContext", {})
+            if not isinstance(security, dict):
+                raise ValueError("model Pod container securityContext is invalid")
+            if security.get("privileged") is True or security.get("runAsUser") == 0:
+                raise ValueError("model Pod container conflicts with the restricted security profile")
+            security["allowPrivilegeEscalation"] = False
+            security["runAsNonRoot"] = True
+            security["capabilities"] = {"drop": ["ALL"], "add": []}
+            if field == "containers" and container.get("name") == runtime_container_name:
+                security["readOnlyRootFilesystem"] = True
+                runtime_matches += 1
+    if runtime_matches != 1:
+        raise ValueError("runtime container identity is ambiguous after security hardening")
+
+
 def _modelexpress_transfer_identity(
     config_digest: str,
     accelerator_class: str,
@@ -2813,6 +2850,7 @@ class LegacyManifestRenderer:
                         role="serving" if segment.role == "hot" else "standby",
                         runtime_container_name=bundle.runtime_container_name,
                     )
+            _enforce_restricted_runtime_security(pod_spec, bundle.runtime_container_name)
             if spec.placement.cpu_resources is not None:
                 actual = effective_pod_requests(pod_spec)
                 if actual.accelerators:
