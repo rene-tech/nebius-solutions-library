@@ -8,6 +8,12 @@ variable "credential_migration_gate_managed_by_parent" {
   }
 }
 
+variable "credential_migration_gate_parent_token" {
+  description = "Opaque ID of the workloads-owned native gate. Only the child marker and protected credential resources consume it."
+  type        = string
+  default     = ""
+}
+
 variable "credential_migration_gate_receipt_path" {
   description = "Owner-only, short-lived SAI-10 gate receipt. Direct plans/applies fail closed when it is absent."
   type        = string
@@ -51,7 +57,7 @@ variable "credential_migration_phase" {
 }
 
 data "external" "credential_migration_gate" {
-  program = ["/usr/bin/python3", "/opt/fs2/k8s-inference/scripts/secret_migration_guard.py", "native-gate"]
+  program = ["/usr/bin/python3", "/opt/fs2/k8s-inference/scripts/secret_migration_guard.py", "forwarded-native-gate"]
   query = {
     receipt_path            = var.credential_migration_gate_receipt_path
     terraform_configuration = path.root
@@ -61,7 +67,10 @@ data "external" "credential_migration_gate" {
 }
 
 resource "terraform_data" "credential_migration_gate" {
-  input = data.external.credential_migration_gate.result.receipt_sha256
+  input = {
+    parent_gate_token = var.credential_migration_gate_parent_token
+    receipt_sha256    = data.external.credential_migration_gate.result.receipt_sha256
+  }
 
   lifecycle {
     prevent_destroy = true
@@ -69,6 +78,7 @@ resource "terraform_data" "credential_migration_gate" {
     precondition {
       condition = (
         var.credential_migration_gate_managed_by_parent &&
+        var.credential_migration_gate_parent_token != "" &&
         path.root != path.module &&
         data.external.credential_migration_gate.result.status == "pass" &&
         data.external.credential_migration_gate.result.receipt_sha256 == var.credential_migration_gate_receipt_sha256 &&

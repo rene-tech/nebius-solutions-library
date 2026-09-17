@@ -116,13 +116,25 @@ The customer reference-data plane is part of the workloads Terraform state,
 not a second state root. When `module.reference_data` is enabled, workloads is
 the sole native gate owner: the module receives the exact receipt path, source
 commit, receipt hash, complete gate history and migration phase from workloads,
-and the entire module depends on the workloads gate token. The child keeps its
-read-only external verification active and validates that forwarded receipt as
+and an opaque ID from the workloads marker. The child runs a receipt-only
+external verification during planning and validates the forwarded receipt as
 `terraform_root=workloads` against `path.root`. The guard accepts only the
 exact registered workloads directory, so another embedding root cannot turn a
-Boolean into parent authority even if it copies all forwarded values. The
-child retains its protected dependency token for credential resources but has
-no apply generation or local-exec; workloads is the only such owner.
+Boolean into parent authority even if it copies all forwarded values. This
+child verifier checks the write-once receipt's root, source, registry,
+configuration, state/bootstrap custody shape, lifetime and hash without
+running Terraform, contacting the provider authority or re-entering the
+workloads backend.
+
+The module has no module-wide dependency on the parent marker. Only its child
+gate marker consumes both the verified receipt result and the explicit parent
+gate ID; the two protected object-storage Secret resources already depend on
+that child marker. The read-only verification therefore completes during
+planning, before the outer apply acquires or advances the workloads backend,
+while the parent saved-plan apply gate remains the sole fresh state/provider
+check and the sole additive generation/local-exec owner. This prevents a
+nested state pull from deadlocking on the outer backend lock or comparing an
+intermediate serial with the exact pre-plan identity.
 
 Standalone reference-data Terraform is explicitly unsupported. The reusable
 directory is absent from the wrapper and guard root registries, from the
@@ -132,6 +144,10 @@ workloads parent ownership. The normal three-stage stack therefore has one
 authoritative workloads state and no dead or ambient standalone route.
 This supersedes v2's historical six-root description without rewriting that
 preserved predecessor.
+
+The deployed external authority policy must be migrated independently to the
+five supported roots before integration; this source change does not mutate or
+silently reinterpret an installed authority configuration.
 
 Preflight validation retains the original canonical path solely to match the
 write-once receipt. Runtime validation compares the sealed snapshot's path

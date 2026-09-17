@@ -947,6 +947,26 @@ class OperatorAccessHygieneTests(unittest.TestCase):
                 )["status"],
                 "pass",
             )
+            with (
+                mock.patch.object(
+                    GUARD,
+                    "command_json",
+                    side_effect=AssertionError(
+                        "forwarded receipt verification must not read Terraform state"
+                    ),
+                ),
+                mock.patch.object(
+                    GUARD,
+                    "authority_json",
+                    side_effect=AssertionError(
+                        "forwarded receipt verification must not contact the provider authority"
+                    ),
+                ),
+            ):
+                self.assertEqual(
+                    GUARD.validate_forwarded_native_gate(query)["status"],
+                    "pass",
+                )
             hostile = owner / "hostile-embedding"
             hostile.mkdir(mode=0o700)
             (hostile / "main.tf").write_text(
@@ -959,6 +979,12 @@ class OperatorAccessHygieneTests(unittest.TestCase):
                 GUARD.validate_native_gate(
                     {**query, "terraform_configuration": str(hostile)},
                     authoritative_state_document=raw_state,
+                )
+            with self.assertRaisesRegex(
+                GUARD.GuardError, "registered workloads root"
+            ):
+                GUARD.validate_forwarded_native_gate(
+                    {**query, "terraform_configuration": str(hostile)}
                 )
             with self.assertRaises(GUARD.GuardError):
                 GUARD.validate_native_gate(

@@ -494,12 +494,13 @@ def write_apply_gate_receipt(
     return receipt
 
 
-def validate_native_gate(
+def validate_native_gate_receipt(
     query: dict[str, Any],
     *,
-    authoritative_state_document: dict[str, Any] | None,
     registry: dict[str, Any] | None = None,
-) -> dict[str, str]:
+) -> tuple[dict[str, Any], Path, Path]:
+    """Authenticate and validate a planning receipt without reading its backend."""
+
     registry = registry or load_registry()
     required = {
         "receipt_path",
@@ -511,6 +512,7 @@ def validate_native_gate(
         not isinstance(query, dict)
         or set(query) != required
         or not all(isinstance(query[key], str) and query[key] for key in required)
+        or re.fullmatch(r"[0-9a-f]{40}", query["source_commit"]) is None
     ):
         raise GuardError("native Terraform gate query is incomplete")
     root = require_supported_terraform_configuration(
@@ -518,7 +520,32 @@ def validate_native_gate(
     )
     receipt_path = Path(query["receipt_path"])
     receipt = load_private_document(receipt_path, label="Terraform gate receipt")
-    if receipt.get("schema") != "fs2-serve.nebius.ai/terraform-plan-gate/v4":
+    required_receipt_fields = {
+        "schema",
+        "terraform_root",
+        "source_commit",
+        "registry_sha256",
+        "configuration_sha256",
+        "state_fingerprints_sha256",
+        "state_initialization",
+        "state_identity",
+        "authority_state",
+        "bootstrap_identity",
+        "custody_evidence_sha256",
+        "custody_evidence_id",
+        "issued_at",
+        "expires_at",
+    }
+    if (
+        not isinstance(receipt, dict)
+        or set(receipt) != required_receipt_fields
+        or receipt.get("schema")
+        != "fs2-serve.nebius.ai/terraform-plan-gate/v4"
+        or re.fullmatch(
+            r"[0-9a-f]{64}", receipt.get("state_fingerprints_sha256", "")
+        )
+        is None
+    ):
         raise GuardError("Terraform gate receipt has the wrong schema")
     expected = {
         "terraform_root": query["terraform_root"],
@@ -530,6 +557,143 @@ def validate_native_gate(
         raise GuardError(
             "Terraform gate receipt does not bind this source and registry"
         )
+    issued_at = parse_timestamp(receipt.get("issued_at"))
+    expires_at = parse_timestamp(receipt.get("expires_at"))
+    now = utc_now()
+    if (
+        expires_at <= now
+        or issued_at > now
+        or expires_at - issued_at > timedelta(seconds=900)
+    ):
+        raise GuardError("Terraform gate receipt is expired or has an invalid lifetime")
+    reject_protected_moved_blocks(
+        root, registry=registry, terraform_root=query["terraform_root"]
+    )
+    return receipt, root, receipt_path
+
+
+def validate_forwarded_native_gate(
+    query: dict[str, Any],
+    *,
+    registry: dict[str, Any] | None = None,
+) -> dict[str, str]:
+    """Verify a parent receipt in an embedded module without backend re-entry.
+
+    The owning root performs the fresh state, provider-custody and exact saved-plan
+    checks.  An embedded module authenticates the same write-once receipt during
+    planning, then carries its digest and the parent's explicit gate token only
+    into the protected child resources.
+    """
+
+    registry = registry or load_registry()
+    receipt, _, receipt_path = validate_native_gate_receipt(
+        query, registry=registry
+    )
+    initialization_mode = receipt["state_initialization"]
+    if initialization_mode == "greenfield-empty":
+        bootstrap_identity = receipt.get("bootstrap_identity")
+        if (
+            receipt.get("state_identity") is not None
+            or receipt.get("authority_state") is not None
+            or receipt.get("custody_evidence_sha256") is not None
+            or receipt.get("custody_evidence_id") is not None
+            or not isinstance(bootstrap_identity, dict)
+            or set(bootstrap_identity)
+            != {
+                "terraform_root",
+                "registry_sha256",
+                "backend_binding_sha256",
+                "live_inventory_scope_sha256",
+                "bootstrap_evidence_id",
+                "external_evidence_id",
+                "inventory_sources",
+            }
+            or bootstrap_identity.get("terraform_root") != query["terraform_root"]
+            or bootstrap_identity.get("registry_sha256")
+            != registry_sha256(registry)
+            or any(
+                re.fullmatch(r"[0-9a-f]{64}", bootstrap_identity.get(field, ""))
+                is None
+                for field in (
+                    "backend_binding_sha256",
+                    "live_inventory_scope_sha256",
+                    "bootstrap_evidence_id",
+                )
+            )
+            or not isinstance(bootstrap_identity.get("external_evidence_id"), str)
+            or not bootstrap_identity["external_evidence_id"]
+            or not isinstance(bootstrap_identity.get("inventory_sources"), dict)
+            or set(bootstrap_identity["inventory_sources"])
+            != {"backend", "kubernetes", "nebius"}
+            or not all(
+                isinstance(value, str) and value
+                for value in bootstrap_identity["inventory_sources"].values()
+            )
+        ):
+            raise GuardError(
+                "forwarded greenfield receipt lacks exact bootstrap custody"
+            )
+    elif initialization_mode == "remote-established":
+        state_identity = receipt.get("state_identity")
+        authority_state = receipt.get("authority_state")
+        if (
+            not isinstance(state_identity, dict)
+            or set(state_identity)
+            != {"lineage", "serial", "terraform_version", "raw_state_sha256"}
+            or not isinstance(state_identity.get("lineage"), str)
+            or not isinstance(state_identity.get("serial"), int)
+            or state_identity["serial"] < 1
+            or not isinstance(state_identity.get("terraform_version"), str)
+            or not state_identity["terraform_version"]
+            or re.fullmatch(
+                r"[0-9a-f]{64}", state_identity.get("raw_state_sha256", "")
+            )
+            is None
+            or receipt.get("bootstrap_identity") is not None
+            or not isinstance(authority_state, dict)
+            or authority_state.get("root") != query["terraform_root"]
+            or authority_state.get("lineage") != state_identity["lineage"]
+            or authority_state.get("serial") != state_identity["serial"]
+            or authority_state.get("state_json_sha256")
+            != state_identity["raw_state_sha256"]
+            or authority_state.get("configuration_sha256")
+            != receipt["configuration_sha256"]
+            or authority_state.get("initialization_mode") != "remote-established"
+            or re.fullmatch(
+                r"[0-9a-f]{64}", receipt.get("custody_evidence_sha256", "")
+            )
+            is None
+            or not isinstance(receipt.get("custody_evidence_id"), str)
+            or not receipt["custody_evidence_id"]
+        ):
+            raise GuardError(
+                "forwarded established-state receipt lacks exact authority custody"
+            )
+    else:
+        raise GuardError("Terraform gate receipt has an unknown initialization mode")
+    return {
+        "status": "pass",
+        "receipt_sha256": file_sha256(receipt_path),
+        "expires_at": receipt["expires_at"],
+    }
+
+
+def validate_native_gate(
+    query: dict[str, Any],
+    *,
+    authoritative_state_document: dict[str, Any] | None,
+    registry: dict[str, Any] | None = None,
+) -> dict[str, str]:
+    registry = registry or load_registry()
+    receipt, root, receipt_path = validate_native_gate_receipt(
+        query, registry=registry
+    )
+    expected = {
+        "terraform_root": query["terraform_root"],
+        "source_commit": query["source_commit"],
+        "registry_sha256": registry_sha256(registry),
+        "configuration_sha256": configuration_sha256(root),
+    }
     initialization_mode = receipt.get("state_initialization")
     if initialization_mode == "greenfield-empty":
         if (
@@ -612,18 +776,6 @@ def validate_native_gate(
             )
     else:
         raise GuardError("Terraform gate receipt has an unknown initialization mode")
-    issued_at = parse_timestamp(receipt.get("issued_at"))
-    expires_at = parse_timestamp(receipt.get("expires_at"))
-    now = utc_now()
-    if (
-        expires_at <= now
-        or issued_at > now
-        or expires_at - issued_at > timedelta(seconds=900)
-    ):
-        raise GuardError("Terraform gate receipt is expired or has an invalid lifetime")
-    reject_protected_moved_blocks(
-        root, registry=registry, terraform_root=query["terraform_root"]
-    )
     return {
         "status": "pass",
         "receipt_sha256": file_sha256(receipt_path),
@@ -4440,6 +4592,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     apply_gate.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
     native_gate = subparsers.add_parser("native-gate")
     native_gate.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
+    forwarded_native_gate = subparsers.add_parser("forwarded-native-gate")
+    forwarded_native_gate.add_argument(
+        "--registry", type=Path, default=DEFAULT_REGISTRY
+    )
     saved_gate = subparsers.add_parser("capture-saved-plan-gate")
     saved_gate.add_argument("plan_json", type=Path)
     saved_gate.add_argument("saved_plan", type=Path)
@@ -4491,11 +4647,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
-    if args.command == "native-gate":
+    if args.command == "forwarded-native-gate":
         query = json.loads(os.sys.stdin.read())
-        terraform_configuration = Path(query.get("terraform_configuration", ""))
-        gate_receipt = load_private_document(
-            Path(query.get("receipt_path", "")), label="Terraform gate receipt"
+        result = validate_forwarded_native_gate(
+            query, registry=load_registry(args.registry)
+        )
+    elif args.command == "native-gate":
+        query = json.loads(os.sys.stdin.read())
+        registry = load_registry(args.registry)
+        gate_receipt, terraform_configuration, _ = validate_native_gate_receipt(
+            query, registry=registry
         )
         result = validate_native_gate(
             query,
@@ -4512,7 +4673,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     label="authoritative Terraform state inspection",
                 )
             ),
-            registry=load_registry(args.registry),
+            registry=registry,
         )
     elif args.command == "apply-saved-plan-gate":
         result = validate_saved_plan_gate_from_environment(

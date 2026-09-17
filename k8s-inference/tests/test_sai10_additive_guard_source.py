@@ -475,6 +475,7 @@ def test_apply_gate_is_additive_and_authority_is_not_caller_selected() -> None:
 
 def test_embedded_reference_data_uses_the_workloads_native_gate() -> None:
     wrapper = (ROOT / "inference-stack").read_text()
+    guard = (ROOT / "scripts/secret_migration_guard.py").read_text()
     workloads = (ROOT / "stages/workloads/reference_data.tf").read_text()
     child = (ROOT / "reference-data/terraform/credential_migration_gate.tf").read_text()
     contract = json.loads(
@@ -484,6 +485,10 @@ def test_embedded_reference_data_uses_the_workloads_native_gate() -> None:
     assert "REFERENCE_DATA_ROOT" not in wrapper
     assert 'REFERENCE_DATA_ROOT.resolve(): "reference-data"' not in wrapper
     assert "credential_migration_gate_managed_by_parent = true" in workloads
+    assert (
+        "credential_migration_gate_parent_token       = "
+        "terraform_data.credential_migration_gate.id"
+    ) in workloads
     for name in (
         "credential_migration_gate_receipt_path",
         "credential_migration_gate_source_commit",
@@ -493,9 +498,22 @@ def test_embedded_reference_data_uses_the_workloads_native_gate() -> None:
     ):
         assert f"{name}" in workloads
         assert f"var.{name}" in workloads
-    assert "depends_on = [terraform_data.credential_migration_gate]" in workloads
+    module_source = workloads.split(
+        'module "reference_data"', 1
+    )[1].split('resource "terraform_data" "reference_data_contract"', 1)[0]
+    assert "depends_on = [terraform_data.credential_migration_gate]" not in module_source
 
     assert "condition     = var.credential_migration_gate_managed_by_parent" in child
+    assert '"forwarded-native-gate"' in child
+    assert "credential_migration_gate_parent_token" in child
+    data_source = child.split(
+        'data "external" "credential_migration_gate"', 1
+    )[1].split('resource "terraform_data" "credential_migration_gate"', 1)[0]
+    assert "credential_migration_gate_parent_token" not in data_source
+    marker_source = child.split(
+        'resource "terraform_data" "credential_migration_gate"', 1
+    )[1]
+    assert "parent_gate_token = var.credential_migration_gate_parent_token" in marker_source
     assert 'terraform_root          = "workloads"' in child
     assert "count =" not in child
     assert (
@@ -506,22 +524,43 @@ def test_embedded_reference_data_uses_the_workloads_native_gate() -> None:
     assert "terraform_configuration = path.root" in child
     assert "path.root != path.module" in child
     assert "terraform_configuration = path.module" not in child
+    forwarded_verifier = guard.split(
+        "def validate_forwarded_native_gate(", 1
+    )[1].split("def validate_native_gate(", 1)[0]
+    assert "command_json(" not in forwarded_verifier
+    assert "authority_json(" not in forwarded_verifier
+    assert "greenfield_bootstrap_identity(" not in forwarded_verifier
+    forwarded_cli = guard.split(
+        'if args.command == "forwarded-native-gate":', 1
+    )[1].split('elif args.command == "native-gate":', 1)[0]
+    assert "validate_forwarded_native_gate(" in forwarded_cli
+    assert "PRODUCTION_TERRAFORM_COMMAND" not in forwarded_cli
+    assert "command_json(" not in forwarded_cli
 
     assert contract == {
         "module": "module.reference_data",
         "owning_root": "workloads",
         "child_read_only_receipt_verification_enabled": True,
         "child_receipt_verification_root": "workloads",
+        "child_receipt_verification_phase": "plan",
+        "child_backend_or_provider_read_enabled": False,
         "child_apply_generation_enabled": False,
         "embedded_mode_requires": "exact-registered-workloads-path-root-and-receipt",
         "parent_gate_inputs_forwarded": [
+            "credential_migration_gate_parent_token",
             "credential_migration_gate_receipt_path",
             "credential_migration_gate_source_commit",
             "credential_migration_gate_receipt_sha256",
             "credential_migration_gate_history",
             "credential_migration_phase",
         ],
-        "module_depends_on": "terraform_data.credential_migration_gate",
+        "parent_gate_token": "terraform_data.credential_migration_gate.id",
+        "parent_gate_token_consumers": [
+            "module.reference_data.terraform_data.credential_migration_gate",
+            "module.reference_data.kubernetes_secret_v1.object_storage",
+            "module.reference_data.kubernetes_secret_v1.object_storage_versioned",
+        ],
+        "state_freshness_owner": "workloads-saved-plan-apply-gate",
         "standalone_supported": False,
         "standalone_rejection": "not-present-in-wrapper-authority-or-guard-root-registries",
     }
