@@ -26,7 +26,53 @@ locals {
   ])
   pod_security_rollout_custodian_username = "system:serviceaccount:fs2-system:fs2-pod-security-rollout-custodian"
   pod_security_rollout_custodian_group    = "fs2-pod-security-receipt-custodians"
-  pod_security_rollout_token_audience     = "https://kubernetes.default.svc"
+  pod_security_custody_owner_username = coalesce(
+    var.pod_security_rollout_receipt.custody_owner_username,
+    "pod-security-custody-owner-not-configured",
+  )
+  pod_security_custody_owner_group = var.pod_security_rollout_receipt.custody_owner_group
+  pod_security_platform_username = coalesce(
+    var.pod_security_rollout_receipt.platform_username,
+    "pod-security-platform-not-configured",
+  )
+  pod_security_platform_group         = var.pod_security_rollout_receipt.platform_group
+  pod_security_rollout_token_audience = "https://kubernetes.default.svc"
+  pod_security_custody_protected_names = {
+    serviceaccounts = [
+      "fs2-pod-security-rollout-custodian",
+      "fs2-pod-security-rollout-manager",
+    ]
+    configmaps = ["fs2-pod-security-rollout-ledger"]
+    roles = [
+      "fs2-pod-security-rollout-ledger",
+      "fs2-pod-security-rollout-token-request",
+    ]
+    rolebindings = [
+      "fs2-pod-security-rollout-custodian-ledger",
+      "fs2-pod-security-rollout-ledger",
+      "fs2-pod-security-rollout-token-request",
+    ]
+    clusterroles = [
+      "fs2-pod-security-external-custody-audit",
+      "fs2-pod-security-rollout-reader",
+    ]
+    clusterrolebindings = [
+      "fs2-pod-security-external-custody-audit",
+      "fs2-pod-security-rollout-custodian-reader",
+      "fs2-pod-security-rollout-reader",
+    ]
+    admission = [
+      "fs2-node-observability-configs",
+      "fs2-node-observability-daemonsets",
+      "fs2-node-observability-pods",
+      "fs2-pod-security-custody-boundary",
+      "fs2-pod-security-enforcement-fence",
+      "fs2-pod-security-legacy-cleanup-fence",
+      "fs2-pod-security-rollout-ledger",
+      "fs2-pod-security-rollout-token-request",
+      "fs2-snapshot-exact-profile",
+    ]
+  }
   pod_security_rollout_persistent_volumes = sort(distinct(concat(
     [
       "fs2-sai07-ref-bioir-boltz2",
@@ -144,10 +190,137 @@ locals {
   ])
 }
 
+# Custody has its own Kubernetes provider identity. This policy is deliberately
+# self-protecting: once its binding exists, neither the platform Terraform
+# identity, the receipt operator, system:masters, nor a service account may
+# rewrite or remove custody RBAC, admission, identity, or ledger objects.
+resource "kubernetes_manifest" "pod_security_custody_boundary_policy" {
+  provider = kubernetes.pod_security_custody
+
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicy"
+    metadata = {
+      name   = "fs2-pod-security-custody-boundary"
+      labels = local.common_labels
+    }
+    spec = {
+      failurePolicy = "Fail"
+      matchConstraints = {
+        resourceRules = [
+          {
+            apiGroups   = [""]
+            apiVersions = ["v1"]
+            operations  = ["CREATE", "UPDATE", "DELETE"]
+            resources   = ["configmaps", "serviceaccounts"]
+          },
+          {
+            apiGroups   = ["rbac.authorization.k8s.io"]
+            apiVersions = ["v1"]
+            operations  = ["CREATE", "UPDATE", "DELETE"]
+            resources   = ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+          },
+          {
+            apiGroups   = ["admissionregistration.k8s.io"]
+            apiVersions = ["v1"]
+            operations  = ["CREATE", "UPDATE", "DELETE"]
+            resources   = ["validatingadmissionpolicies", "validatingadmissionpolicybindings"]
+          },
+        ]
+      }
+      matchConditions = [{
+        name = "exact-custody-object"
+        expression = format(
+          "request.operation == 'DELETE' ? (((oldObject.kind == 'ServiceAccount' && oldObject.metadata.name in %s) || (oldObject.kind == 'ConfigMap' && oldObject.metadata.name in %s) || (oldObject.kind == 'Role' && oldObject.metadata.name in %s) || (oldObject.kind == 'RoleBinding' && oldObject.metadata.name in %s)) && oldObject.metadata.namespace == 'fs2-system' || (oldObject.kind == 'ClusterRole' && oldObject.metadata.name in %s) || (oldObject.kind == 'ClusterRoleBinding' && oldObject.metadata.name in %s) || (oldObject.kind in ['ValidatingAdmissionPolicy','ValidatingAdmissionPolicyBinding'] && oldObject.metadata.name in %s)) : ((((object.kind == 'ServiceAccount' && object.metadata.name in %s) || (object.kind == 'ConfigMap' && object.metadata.name in %s) || (object.kind == 'Role' && object.metadata.name in %s) || (object.kind == 'RoleBinding' && object.metadata.name in %s)) && object.metadata.namespace == 'fs2-system') || (object.kind == 'ClusterRole' && object.metadata.name in %s) || (object.kind == 'ClusterRoleBinding' && object.metadata.name in %s) || (object.kind in ['ValidatingAdmissionPolicy','ValidatingAdmissionPolicyBinding'] && object.metadata.name in %s))",
+          jsonencode(local.pod_security_custody_protected_names.serviceaccounts),
+          jsonencode(local.pod_security_custody_protected_names.configmaps),
+          jsonencode(local.pod_security_custody_protected_names.roles),
+          jsonencode(local.pod_security_custody_protected_names.rolebindings),
+          jsonencode(local.pod_security_custody_protected_names.clusterroles),
+          jsonencode(local.pod_security_custody_protected_names.clusterrolebindings),
+          jsonencode(local.pod_security_custody_protected_names.admission),
+          jsonencode(local.pod_security_custody_protected_names.serviceaccounts),
+          jsonencode(local.pod_security_custody_protected_names.configmaps),
+          jsonencode(local.pod_security_custody_protected_names.roles),
+          jsonencode(local.pod_security_custody_protected_names.rolebindings),
+          jsonencode(local.pod_security_custody_protected_names.clusterroles),
+          jsonencode(local.pod_security_custody_protected_names.clusterrolebindings),
+          jsonencode(local.pod_security_custody_protected_names.admission),
+        )
+      }]
+      validations = [
+        {
+          expression = "request.operation != 'DELETE'"
+          message    = "Custody objects are retained and may not be deleted."
+        },
+        {
+          expression = "request.userInfo.username == '${local.pod_security_custody_owner_username}' && !request.userInfo.username.startsWith('system:')"
+          message    = "Only the separately administered custody owner may write custody objects."
+        },
+        {
+          expression = "request.userInfo.groups.exists(g, g == '${local.pod_security_custody_owner_group}') && !request.userInfo.groups.exists(g, g in ['system:masters','${local.pod_security_platform_group}','${local.pod_security_rollout_custodian_group}'])"
+          message    = "Custody writes require the dedicated owner group and exclude platform, receipt, and system:masters groups."
+        },
+        {
+          expression = "has(request.userInfo.extra) && 'authentication.kubernetes.io/credential-id' in request.userInfo.extra && request.userInfo.extra['authentication.kubernetes.io/credential-id'].size() == 1 && request.userInfo.extra['authentication.kubernetes.io/credential-id'][0].startsWith('JTI=')"
+          message    = "Custody writes require a directly authenticated, non-impersonated credential."
+        },
+      ]
+    }
+  }
+
+  lifecycle {
+    prevent_destroy = true
+    precondition {
+      condition = (
+        var.pod_security_rollout_receipt.custody_owner_kubeconfig_path != null &&
+        var.pod_security_rollout_receipt.custody_owner_context != null &&
+        var.pod_security_rollout_receipt.custody_owner_username != null &&
+        var.pod_security_rollout_receipt.platform_username != null &&
+        local.pod_security_custody_owner_username != local.pod_security_platform_username &&
+        local.pod_security_custody_owner_username != var.pod_security_rollout_receipt.custody_username &&
+        local.pod_security_custody_owner_group != local.pod_security_platform_group &&
+        local.pod_security_custody_owner_group != local.pod_security_rollout_custodian_group &&
+        try(abspath(var.pod_security_rollout_receipt.custody_owner_kubeconfig_path) != abspath(var.kubeconfig_path), false) &&
+        try(abspath(var.pod_security_rollout_receipt.custody_owner_kubeconfig_path) != abspath(var.pod_security_rollout_receipt.custody_kubeconfig_path), false)
+      )
+      error_message = "Custody requires a third kubeconfig, username, and group distinct from platform Terraform and the receipt operator."
+    }
+  }
+}
+
+resource "kubernetes_manifest" "pod_security_custody_boundary_binding" {
+  provider = kubernetes.pod_security_custody
+
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicyBinding"
+    metadata = {
+      name   = "fs2-pod-security-custody-boundary"
+      labels = local.common_labels
+    }
+    spec = {
+      policyName        = "fs2-pod-security-custody-boundary"
+      validationActions = ["Deny"]
+    }
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [kubernetes_manifest.pod_security_custody_boundary_policy]
+}
+
 # Privileged host agents may consume only content-addressed immutable
 # configuration. Admission binds the complete data map on CREATE and refuses
 # later UPDATE/DELETE operations, including metadata-only rewrites.
 resource "kubernetes_manifest" "node_observability_config_policy" {
+  provider = kubernetes.pod_security_custody
+
+  lifecycle {
+    prevent_destroy = true
+  }
   count = local.node_observability_exception_enabled ? 1 : 0
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
@@ -197,10 +370,18 @@ resource "kubernetes_manifest" "node_observability_config_policy" {
     }
   }
 
-  depends_on = [terraform_data.cluster_contract]
+  depends_on = [
+    kubernetes_manifest.pod_security_custody_boundary_binding,
+    terraform_data.cluster_contract,
+  ]
 }
 
 resource "kubernetes_manifest" "node_observability_config_binding" {
+  provider = kubernetes.pod_security_custody
+
+  lifecycle {
+    prevent_destroy = true
+  }
   count = local.node_observability_exception_enabled ? 1 : 0
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
@@ -233,6 +414,11 @@ resource "kubernetes_manifest" "node_observability_config_binding" {
 # only four exact DaemonSets may create Pods, only their exact SAs may run, and
 # host namespaces/capabilities/paths remain bounded to the reviewed contracts.
 resource "kubernetes_manifest" "node_observability_pod_policy" {
+  provider = kubernetes.pod_security_custody
+
+  lifecycle {
+    prevent_destroy = true
+  }
   count = local.node_observability_exception_enabled ? 1 : 0
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
@@ -284,10 +470,18 @@ resource "kubernetes_manifest" "node_observability_pod_policy" {
     }
   }
 
-  depends_on = [terraform_data.cluster_contract]
+  depends_on = [
+    kubernetes_manifest.pod_security_custody_boundary_binding,
+    terraform_data.cluster_contract,
+  ]
 }
 
 resource "kubernetes_manifest" "node_observability_pod_binding" {
+  provider = kubernetes.pod_security_custody
+
+  lifecycle {
+    prevent_destroy = true
+  }
   count = local.node_observability_exception_enabled ? 1 : 0
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
@@ -316,6 +510,11 @@ resource "kubernetes_manifest" "node_observability_pod_binding" {
 }
 
 resource "kubernetes_manifest" "node_observability_daemonset_policy" {
+  provider = kubernetes.pod_security_custody
+
+  lifecycle {
+    prevent_destroy = true
+  }
   count = local.node_observability_exception_enabled ? 1 : 0
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
@@ -347,10 +546,18 @@ resource "kubernetes_manifest" "node_observability_daemonset_policy" {
     }
   }
 
-  depends_on = [terraform_data.cluster_contract]
+  depends_on = [
+    kubernetes_manifest.pod_security_custody_boundary_binding,
+    terraform_data.cluster_contract,
+  ]
 }
 
 resource "kubernetes_manifest" "node_observability_daemonset_binding" {
+  provider = kubernetes.pod_security_custody
+
+  lifecycle {
+    prevent_destroy = true
+  }
   count = local.node_observability_exception_enabled ? 1 : 0
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
@@ -383,6 +590,12 @@ resource "kubernetes_manifest" "node_observability_daemonset_binding" {
 # admission rejects that username. Receipt consumption uses the separately
 # authenticated rollout-custodian identity below.
 resource "kubernetes_service_account_v1" "pod_security_rollout_manager" {
+  provider = kubernetes.pod_security_custody
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
   metadata {
     name      = "fs2-pod-security-rollout-manager"
     namespace = "fs2-system"
@@ -390,12 +603,20 @@ resource "kubernetes_service_account_v1" "pod_security_rollout_manager" {
   }
   automount_service_account_token = false
 
-  depends_on = [kubernetes_namespace_v1.platform]
+  depends_on = [
+    kubernetes_manifest.pod_security_custody_boundary_binding,
+    kubernetes_namespace_v1.platform,
+  ]
 }
 
 # A distinct tokenless identity owns receipt consumption. New, separately
 # named bindings avoid replacing the retained predecessor RBAC objects.
 resource "kubernetes_service_account_v1" "pod_security_rollout_custodian" {
+  provider = kubernetes.pod_security_custody
+
+  lifecycle {
+    prevent_destroy = true
+  }
   metadata {
     name      = "fs2-pod-security-rollout-custodian"
     namespace = "fs2-system"
@@ -403,10 +624,19 @@ resource "kubernetes_service_account_v1" "pod_security_rollout_custodian" {
   }
   automount_service_account_token = false
 
-  depends_on = [kubernetes_namespace_v1.platform]
+  depends_on = [
+    kubernetes_manifest.pod_security_custody_boundary_binding,
+    kubernetes_namespace_v1.platform,
+  ]
 }
 
 resource "kubernetes_cluster_role_v1" "pod_security_rollout_reader" {
+  provider   = kubernetes.pod_security_custody
+  depends_on = [kubernetes_manifest.pod_security_custody_boundary_binding]
+
+  lifecycle {
+    prevent_destroy = true
+  }
   metadata {
     name   = "fs2-pod-security-rollout-reader"
     labels = local.common_labels
@@ -452,16 +682,23 @@ resource "kubernetes_cluster_role_v1" "pod_security_rollout_reader" {
     verbs      = ["get", "list"]
   }
   rule {
-    api_groups     = ["rbac.authorization.k8s.io"]
-    resources      = ["clusterroles"]
-    resource_names = ["fs2-pod-security-rollout-reader"]
-    verbs          = ["get"]
+    api_groups = ["rbac.authorization.k8s.io"]
+    resources  = ["clusterroles"]
+    resource_names = [
+      "fs2-pod-security-external-custody-audit",
+      "fs2-pod-security-rollout-reader",
+    ]
+    verbs = ["get"]
   }
   rule {
-    api_groups     = ["rbac.authorization.k8s.io"]
-    resources      = ["clusterrolebindings"]
-    resource_names = ["fs2-pod-security-rollout-custodian-reader"]
-    verbs          = ["get"]
+    api_groups = ["rbac.authorization.k8s.io"]
+    resources  = ["clusterrolebindings"]
+    resource_names = [
+      "fs2-pod-security-external-custody-audit",
+      "fs2-pod-security-rollout-custodian-reader",
+      "fs2-pod-security-rollout-reader",
+    ]
+    verbs = ["get"]
   }
   rule {
     api_groups = ["storage.k8s.io"]
@@ -491,6 +728,12 @@ resource "kubernetes_cluster_role_v1" "pod_security_rollout_reader" {
 }
 
 resource "kubernetes_cluster_role_binding_v1" "pod_security_rollout_reader" {
+  provider   = kubernetes.pod_security_custody
+  depends_on = [kubernetes_manifest.pod_security_custody_boundary_binding]
+
+  lifecycle {
+    prevent_destroy = true
+  }
   metadata {
     name   = "fs2-pod-security-rollout-reader"
     labels = local.common_labels
@@ -508,6 +751,12 @@ resource "kubernetes_cluster_role_binding_v1" "pod_security_rollout_reader" {
 }
 
 resource "kubernetes_cluster_role_binding_v1" "pod_security_rollout_custodian_reader" {
+  provider   = kubernetes.pod_security_custody
+  depends_on = [kubernetes_manifest.pod_security_custody_boundary_binding]
+
+  lifecycle {
+    prevent_destroy = true
+  }
   metadata {
     name   = "fs2-pod-security-rollout-custodian-reader"
     labels = local.common_labels
@@ -525,6 +774,12 @@ resource "kubernetes_cluster_role_binding_v1" "pod_security_rollout_custodian_re
 }
 
 resource "kubernetes_role_v1" "pod_security_rollout_ledger" {
+  provider   = kubernetes.pod_security_custody
+  depends_on = [kubernetes_manifest.pod_security_custody_boundary_binding]
+
+  lifecycle {
+    prevent_destroy = true
+  }
   metadata {
     name      = "fs2-pod-security-rollout-ledger"
     namespace = "fs2-system"
@@ -539,6 +794,12 @@ resource "kubernetes_role_v1" "pod_security_rollout_ledger" {
 }
 
 resource "kubernetes_role_binding_v1" "pod_security_rollout_ledger" {
+  provider   = kubernetes.pod_security_custody
+  depends_on = [kubernetes_manifest.pod_security_custody_boundary_binding]
+
+  lifecycle {
+    prevent_destroy = true
+  }
   metadata {
     name      = "fs2-pod-security-rollout-ledger"
     namespace = "fs2-system"
@@ -557,6 +818,12 @@ resource "kubernetes_role_binding_v1" "pod_security_rollout_ledger" {
 }
 
 resource "kubernetes_role_binding_v1" "pod_security_rollout_custodian_ledger" {
+  provider   = kubernetes.pod_security_custody
+  depends_on = [kubernetes_manifest.pod_security_custody_boundary_binding]
+
+  lifecycle {
+    prevent_destroy = true
+  }
   metadata {
     name      = "fs2-pod-security-rollout-custodian-ledger"
     namespace = "fs2-system"
@@ -577,7 +844,57 @@ resource "kubernetes_role_binding_v1" "pod_security_rollout_custodian_ledger" {
 # The external receipt-custodian OIDC group may mint only a short-lived token
 # for the exact rollout custodian service account.  It receives no impersonate
 # verb, no direct ledger permission, and no reusable token Secret.
+resource "kubernetes_cluster_role_v1" "pod_security_external_custody_audit" {
+  provider = kubernetes.pod_security_custody
+
+  metadata {
+    name   = "fs2-pod-security-external-custody-audit"
+    labels = local.common_labels
+  }
+
+  rule {
+    api_groups = [""]
+    resources  = ["namespaces"]
+    verbs      = ["get", "list"]
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  depends_on = [kubernetes_manifest.pod_security_custody_boundary_binding]
+}
+
+resource "kubernetes_cluster_role_binding_v1" "pod_security_external_custody_audit" {
+  provider = kubernetes.pod_security_custody
+
+  metadata {
+    name   = "fs2-pod-security-external-custody-audit"
+    labels = local.common_labels
+  }
+  role_ref {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "ClusterRole"
+    name      = kubernetes_cluster_role_v1.pod_security_external_custody_audit.metadata[0].name
+  }
+  subject {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "Group"
+    name      = local.pod_security_rollout_custodian_group
+  }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
 resource "kubernetes_role_v1" "pod_security_rollout_token_request" {
+  provider   = kubernetes.pod_security_custody
+  depends_on = [kubernetes_manifest.pod_security_custody_boundary_binding]
+
+  lifecycle {
+    prevent_destroy = true
+  }
   metadata {
     name      = "fs2-pod-security-rollout-token-request"
     namespace = "fs2-system"
@@ -592,6 +909,12 @@ resource "kubernetes_role_v1" "pod_security_rollout_token_request" {
 }
 
 resource "kubernetes_role_binding_v1" "pod_security_rollout_token_request" {
+  provider   = kubernetes.pod_security_custody
+  depends_on = [kubernetes_manifest.pod_security_custody_boundary_binding]
+
+  lifecycle {
+    prevent_destroy = true
+  }
   metadata {
     name      = "fs2-pod-security-rollout-token-request"
     namespace = "fs2-system"
@@ -610,6 +933,15 @@ resource "kubernetes_role_binding_v1" "pod_security_rollout_token_request" {
 }
 
 resource "kubernetes_manifest" "pod_security_rollout_token_policy" {
+  provider = kubernetes.pod_security_custody
+  depends_on = [
+    kubernetes_manifest.pod_security_custody_boundary_binding,
+    kubernetes_service_account_v1.pod_security_rollout_custodian,
+  ]
+
+  lifecycle {
+    prevent_destroy = true
+  }
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
     kind       = "ValidatingAdmissionPolicy"
@@ -648,10 +980,18 @@ resource "kubernetes_manifest" "pod_security_rollout_token_policy" {
     }
   }
 
-  depends_on = [kubernetes_service_account_v1.pod_security_rollout_custodian]
 }
 
 resource "kubernetes_manifest" "pod_security_rollout_token_binding" {
+  provider = kubernetes.pod_security_custody
+  depends_on = [
+    kubernetes_manifest.pod_security_custody_boundary_binding,
+    kubernetes_manifest.pod_security_rollout_token_policy,
+  ]
+
+  lifecycle {
+    prevent_destroy = true
+  }
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
     kind       = "ValidatingAdmissionPolicyBinding"
@@ -672,7 +1012,6 @@ resource "kubernetes_manifest" "pod_security_rollout_token_binding" {
     }
   }
 
-  depends_on = [kubernetes_manifest.pod_security_rollout_token_policy]
 }
 
 # Installed during the signed baseline bootstrap and inactive in ordinary
@@ -681,6 +1020,11 @@ resource "kubernetes_manifest" "pod_security_rollout_token_binding" {
 # transition. No Pod-producing object can race into a namespace between the
 # final signed read and the pinned PSA label apply.
 resource "kubernetes_manifest" "pod_security_enforcement_fence_policy" {
+  provider = kubernetes.pod_security_custody
+
+  lifecycle {
+    prevent_destroy = true
+  }
   count = local.pod_security_receipt_required ? 1 : 0
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
@@ -740,6 +1084,11 @@ resource "kubernetes_manifest" "pod_security_enforcement_fence_policy" {
 }
 
 resource "kubernetes_manifest" "pod_security_enforcement_fence_binding" {
+  provider = kubernetes.pod_security_custody
+
+  lifecycle {
+    prevent_destroy = true
+  }
   count = local.pod_security_receipt_required ? 1 : 0
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
@@ -783,6 +1132,11 @@ resource "kubernetes_manifest" "pod_security_enforcement_fence_binding" {
 # read-only verifier accepts only inert deny-only/tokenless/zero-Pod objects;
 # no delete or rewrite is part of this closure.
 resource "kubernetes_manifest" "pod_security_legacy_cleanup_fence_policy" {
+  provider = kubernetes.pod_security_custody
+
+  lifecycle {
+    prevent_destroy = true
+  }
   count = local.pod_security_receipt_required ? 1 : 0
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
@@ -802,8 +1156,8 @@ resource "kubernetes_manifest" "pod_security_legacy_cleanup_fence_policy" {
           {
             apiGroups   = [""]
             apiVersions = ["v1"]
-            operations  = ["CREATE", "UPDATE"]
-            resources   = ["pods", "podtemplates", "replicationcontrollers", "serviceaccounts"]
+            operations  = ["CREATE", "UPDATE", "DELETE"]
+            resources   = ["pods", "podtemplates", "replicationcontrollers", "secrets", "serviceaccounts"]
           },
           {
             apiGroups   = ["apps"]
@@ -868,15 +1222,27 @@ resource "kubernetes_manifest" "pod_security_legacy_cleanup_fence_policy" {
       validations = [
         {
           expression = format(
-            "!variables.cleanupActive || (request.operation == 'DELETE' ? !((oldObject.kind == 'NetworkPolicy' && oldObject.metadata.name in %s) || (oldObject.kind == 'ServiceAccount' && oldObject.metadata.name in %s) || (oldObject.kind == 'DaemonSet' && oldObject.metadata.name in %s)) : !((object.kind == 'NetworkPolicy' && object.metadata.name in %s) || (object.kind == 'ServiceAccount' && object.metadata.name in %s) || (object.kind == 'DaemonSet' && object.metadata.name in %s)))",
+            "!variables.cleanupActive || (request.operation == 'DELETE' ? !((oldObject.kind == 'NetworkPolicy' && oldObject.metadata.name in %s) || (oldObject.kind == 'ServiceAccount' && oldObject.metadata.name in %s) || (oldObject.kind == 'DaemonSet' && oldObject.metadata.name in %s)) : object.kind == 'NetworkPolicy' && object.metadata.name in %s ? (request.operation == 'UPDATE' && request.userInfo.username == '%s' && request.userInfo.groups.exists(g, g == '%s') && !request.userInfo.groups.exists(g, g in ['system:masters','%s','%s']) && object.metadata.labels['security.fs2.nebius.ai/retained-quarantine'] == 'true' && object.metadata.annotations['security.fs2.nebius.ai/baseline-uid'] == oldObject.metadata.uid && object.metadata.annotations['security.fs2.nebius.ai/baseline-object-sha256'].matches('^[a-f0-9]{64}$') && object.spec == {'podSelector':{'matchLabels':{'security.fs2.nebius.ai/retained-quarantine':'true'}},'policyTypes':['Ingress','Egress'],'ingress':[],'egress':[]}) : object.kind == 'ServiceAccount' && object.metadata.name in %s ? (request.operation == 'UPDATE' && request.userInfo.username == '%s' && request.userInfo.groups.exists(g, g == '%s') && !request.userInfo.groups.exists(g, g in ['system:masters','%s','%s']) && object.metadata.labels['security.fs2.nebius.ai/retained-quarantine'] == 'true' && object.metadata.annotations['security.fs2.nebius.ai/baseline-uid'] == oldObject.metadata.uid && object.metadata.annotations['security.fs2.nebius.ai/baseline-object-sha256'].matches('^[a-f0-9]{64}$') && object.automountServiceAccountToken == false && (!has(object.secrets) || object.secrets.size() == 0) && (!has(object.imagePullSecrets) || object.imagePullSecrets.size() == 0)) : object.kind == 'DaemonSet' && object.metadata.name in %s ? (request.operation == 'UPDATE' && request.userInfo.username == '%s' && request.userInfo.groups.exists(g, g == '%s') && !request.userInfo.groups.exists(g, g in ['system:masters','%s','%s']) && object.spec == oldObject.spec && object.metadata.labels['security.fs2.nebius.ai/retained-quarantine'] == 'true' && object.metadata.labels['security.fs2.nebius.ai/baseline-uid'] == oldObject.metadata.uid && object.metadata.labels['security.fs2.nebius.ai/baseline-object-sha256'].matches('^[a-f0-9]{64}$')) : true)",
             jsonencode(local.pod_security_legacy_cleanup_names.networkpolicies),
             jsonencode(local.pod_security_legacy_cleanup_names.serviceaccounts),
             jsonencode(local.pod_security_legacy_cleanup_names.daemonsets),
             jsonencode(local.pod_security_legacy_cleanup_names.networkpolicies),
+            local.pod_security_custody_owner_username,
+            local.pod_security_custody_owner_group,
+            local.pod_security_platform_group,
+            local.pod_security_rollout_custodian_group,
             jsonencode(local.pod_security_legacy_cleanup_names.serviceaccounts),
+            local.pod_security_custody_owner_username,
+            local.pod_security_custody_owner_group,
+            local.pod_security_platform_group,
+            local.pod_security_rollout_custodian_group,
             jsonencode(local.pod_security_legacy_cleanup_names.daemonsets),
+            local.pod_security_custody_owner_username,
+            local.pod_security_custody_owner_group,
+            local.pod_security_platform_group,
+            local.pod_security_rollout_custodian_group,
           )
-          message = "Exact legacy cleanup identities are frozen while their UID/resourceVersion-bound transition is active."
+          message = "Legacy identities may only receive the exact custody-owner deny-only/tokenless quarantine update; deletion, recreation, DaemonSet mutation, and every later rewrite are denied."
         },
         {
           expression = format(
@@ -904,6 +1270,14 @@ resource "kubernetes_manifest" "pod_security_legacy_cleanup_fence_policy" {
           )
           message = "TokenRequest is forbidden for every retained legacy ServiceAccount."
         },
+        {
+          expression = format(
+            "!variables.cleanupActive || object.kind != 'Secret' || (request.operation == 'DELETE' ? !(oldObject.type == 'kubernetes.io/service-account-token' && has(oldObject.metadata.annotations) && oldObject.metadata.annotations['kubernetes.io/service-account.name'] in %s) : !(object.type == 'kubernetes.io/service-account-token' && has(object.metadata.annotations) && object.metadata.annotations['kubernetes.io/service-account.name'] in %s))",
+            jsonencode(local.pod_security_legacy_cleanup_names.serviceaccounts),
+            jsonencode(local.pod_security_legacy_cleanup_names.serviceaccounts),
+          )
+          message = "Legacy ServiceAccount token Secrets may neither be created, changed, nor deleted during retained quarantine; any pre-existing credential blocks closure."
+        },
       ]
     }
   }
@@ -912,6 +1286,11 @@ resource "kubernetes_manifest" "pod_security_legacy_cleanup_fence_policy" {
 }
 
 resource "kubernetes_manifest" "pod_security_legacy_cleanup_fence_binding" {
+  provider = kubernetes.pod_security_custody
+
+  lifecycle {
+    prevent_destroy = true
+  }
   count = local.pod_security_receipt_required ? 1 : 0
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
@@ -947,6 +1326,15 @@ resource "kubernetes_manifest" "pod_security_legacy_cleanup_fence_binding" {
 # principal can impersonate the service-account username.  The one legacy-v2
 # edge atomically performs the signed predecessor adoption and next phase.
 resource "kubernetes_manifest" "pod_security_ledger_policy" {
+  provider = kubernetes.pod_security_custody
+  depends_on = [
+    kubernetes_manifest.pod_security_custody_boundary_binding,
+    terraform_data.cluster_contract,
+  ]
+
+  lifecycle {
+    prevent_destroy = true
+  }
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
     kind       = "ValidatingAdmissionPolicy"
@@ -1013,10 +1401,18 @@ resource "kubernetes_manifest" "pod_security_ledger_policy" {
     }
   }
 
-  depends_on = [terraform_data.cluster_contract]
 }
 
 resource "kubernetes_manifest" "pod_security_ledger_binding" {
+  provider = kubernetes.pod_security_custody
+  depends_on = [
+    kubernetes_manifest.pod_security_custody_boundary_binding,
+    kubernetes_manifest.pod_security_ledger_policy,
+  ]
+
+  lifecycle {
+    prevent_destroy = true
+  }
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
     kind       = "ValidatingAdmissionPolicyBinding"
@@ -1037,7 +1433,4 @@ resource "kubernetes_manifest" "pod_security_ledger_binding" {
     }
   }
 
-  depends_on = [
-    kubernetes_manifest.pod_security_ledger_policy,
-  ]
 }

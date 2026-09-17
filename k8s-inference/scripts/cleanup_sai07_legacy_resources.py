@@ -12,6 +12,7 @@ owned by a retained DaemonSet. Anything active or permissive fails closed.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import hashlib
 import json
 import subprocess
@@ -22,8 +23,8 @@ from urllib.parse import quote
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sai07_inventory_projection import ProjectionError, live_projection  # noqa: E402
 
-SCHEMA = "fs2-serve.nebius.ai/sai07-retained-quarantine/v5"
-RESULT_SCHEMA = "fs2-serve.nebius.ai/sai07-retained-quarantine-result/v5"
+SCHEMA = "fs2-serve.nebius.ai/sai07-retained-quarantine/v6"
+RESULT_SCHEMA = "fs2-serve.nebius.ai/sai07-retained-quarantine-result/v7"
 NAMESPACE = "fs2-models"
 MAX_OBJECTS = 128
 KINDS = {
@@ -49,6 +50,18 @@ class CleanupError(ValueError):
 
 def canonical(value: object) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+
+
+def instant(value: object, label: str) -> dt.datetime:
+    if not isinstance(value, str) or not value.endswith("Z"):
+        raise CleanupError(f"{label} must be a UTC RFC3339 instant")
+    try:
+        parsed = dt.datetime.fromisoformat(value.removesuffix("Z") + "+00:00")
+    except ValueError as error:
+        raise CleanupError(f"{label} is malformed") from error
+    if parsed.tzinfo != dt.UTC:
+        raise CleanupError(f"{label} must use UTC")
+    return parsed
 
 
 def path_for(kind: str, name: str) -> str:
@@ -93,6 +106,9 @@ def validate_manifest(raw: object) -> tuple[dict[str, object], list[dict[str, st
         "kube_system_uid",
         "baseline_artifact_sha256",
         "prior_inventory_sha256",
+        "token_fence_observed_at",
+        "service_account_max_token_expiration_seconds",
+        "legacy_service_account_token_secrets",
         "fence_objects",
         "objects",
     }:
@@ -109,6 +125,20 @@ def validate_manifest(raw: object) -> tuple[dict[str, object], list[dict[str, st
             or any(character not in "0123456789abcdef" for character in raw[field])
         ):
             raise CleanupError(f"{field} must be a lowercase SHA-256")
+    token_fence_observed_at = instant(raw["token_fence_observed_at"], "token_fence_observed_at")
+    maximum_token_lifetime = raw["service_account_max_token_expiration_seconds"]
+    if (
+        not isinstance(maximum_token_lifetime, int)
+        or isinstance(maximum_token_lifetime, bool)
+        or maximum_token_lifetime < 600
+        or maximum_token_lifetime > 31_622_400
+    ):
+        raise CleanupError("service-account maximum token expiration must be 600 seconds through 366 days")
+    if raw["legacy_service_account_token_secrets"] != []:
+        raise CleanupError("an annotated legacy ServiceAccount token Secret blocks retained quarantine")
+    now = dt.datetime.now(dt.UTC)
+    if now < token_fence_observed_at + dt.timedelta(seconds=maximum_token_lifetime + 120):
+        raise CleanupError("the signed token fence has not outlived every previously issued bound token")
     fence_objects = raw["fence_objects"]
     if not isinstance(fence_objects, list) or len(fence_objects) != 3:
         raise CleanupError("fence_objects must contain the exact policy, binding, and ledger")
@@ -346,6 +376,54 @@ def daemonset_owned_pods(client: Kubectl, name: str, uid: str) -> list[str]:
     return sorted(owned)
 
 
+def legacy_service_account_token_secrets(
+    client: Kubectl, service_accounts: frozenset[str]
+) -> tuple[str, list[dict[str, str]]]:
+    """Read the complete live Secret collection and return metadata only.
+
+    The caller needs Secret-list authority, but neither token bytes nor any
+    other Secret data are copied into the result.  The admission fence must be
+    active before this read, so the collection resourceVersion plus an empty
+    exact result closes the create-after-baseline race.
+    """
+
+    collection = client.raw(f"/api/v1/namespaces/{NAMESPACE}/secrets")
+    if collection is None:  # pragma: no cover - mandatory read
+        raise CleanupError("legacy token Secret inventory disappeared")
+    metadata = collection.get("metadata")
+    items = collection.get("items")
+    if not isinstance(metadata, dict) or not isinstance(items, list):
+        raise CleanupError("legacy token Secret collection is malformed")
+    resource_version = metadata.get("resourceVersion")
+    if not isinstance(resource_version, str) or not resource_version:
+        raise CleanupError("legacy token Secret collection resourceVersion is absent")
+    result: list[dict[str, str]] = []
+    for secret in items:
+        if not isinstance(secret, dict) or secret.get("type") != "kubernetes.io/service-account-token":
+            continue
+        secret_metadata = secret.get("metadata")
+        if not isinstance(secret_metadata, dict):
+            raise CleanupError("legacy token Secret metadata is malformed")
+        annotations = secret_metadata.get("annotations") or {}
+        if not isinstance(annotations, dict):
+            raise CleanupError("legacy token Secret annotations are malformed")
+        service_account_name = annotations.get("kubernetes.io/service-account.name")
+        if service_account_name not in service_accounts:
+            continue
+        identity = {
+            "name": str(secret_metadata.get("name", "")),
+            "uid": str(secret_metadata.get("uid", "")),
+            "resource_version": str(secret_metadata.get("resourceVersion", "")),
+            "service_account_name": str(service_account_name),
+        }
+        if not all(identity.values()):
+            raise CleanupError("legacy token Secret exact identity is incomplete")
+        result.append(identity)
+    return resource_version, sorted(
+        result, key=lambda item: (item["service_account_name"], item["name"])
+    )
+
+
 def validate_quarantined_object(
     client: Kubectl,
     item: dict[str, str],
@@ -411,6 +489,14 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         raise CleanupError("selected cluster kube-system UID differs from the cleanup manifest")
 
     validate_cleanup_fence(client, manifest)
+    retained_service_accounts = frozenset(
+        item["name"] for item in objects if item["kind"] == "ServiceAccount"
+    )
+    token_secret_collection_resource_version, token_secrets = (
+        legacy_service_account_token_secrets(client, retained_service_accounts)
+    )
+    if token_secrets:
+        raise CleanupError("a live annotated legacy ServiceAccount token Secret blocks retained quarantine")
     checked: list[dict[str, str]] = []
     retained_daemonsets = frozenset(item["name"] for item in objects if item["kind"] == "DaemonSet")
     for item in objects:
@@ -427,6 +513,15 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         "manifest_sha256": digest,
         "baseline_artifact_sha256": manifest["baseline_artifact_sha256"],
         "prior_inventory_sha256": manifest["prior_inventory_sha256"],
+        "token_fence_observed_at": manifest["token_fence_observed_at"],
+        "service_account_max_token_expiration_seconds": manifest[
+            "service_account_max_token_expiration_seconds"
+        ],
+        "token_drain_observed_at": dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
+        "legacy_service_account_token_secret_collection_resource_version": (
+            token_secret_collection_resource_version
+        ),
+        "legacy_service_account_token_secrets": [],
         "cluster_id": manifest["cluster_id"],
         "run_id": manifest["run_id"],
         "kube_system_uid": manifest["kube_system_uid"],

@@ -79,9 +79,10 @@ locals {
   } : null
 }
 
-# The foundation state owns the only rollout ledger. Its data is initialized
-# once, then changed exclusively by the verifier's resourceVersion-guarded
-# replace. Terraform must neither reset nor destroy the monotonic history.
+# The separately authenticated custody provider owns the only rollout ledger.
+# Its data is initialized once, then changed exclusively by the verifier's
+# resourceVersion-guarded replace. Platform Terraform must have no authority to
+# reset or destroy the monotonic history.
 resource "kubernetes_config_map_v1" "ledger" {
   count = var.consumer_role == "owner" && var.action == "authorize" && local.receipt_required ? 1 : 0
 
@@ -159,6 +160,12 @@ resource "terraform_data" "verified" {
       FS2_PLATFORM_KUBECONFIG         = var.kubeconfig_path
       FS2_PLATFORM_KUBE_CONTEXT       = var.kube_context
       FS2_POD_SECURITY_CUSTODY_USER   = coalesce(var.custody_username, "prepare")
+      FS2_CUSTODY_OWNER_KUBECONFIG    = coalesce(var.custody_owner_kubeconfig_path, "/prepare-not-authorized")
+      FS2_CUSTODY_OWNER_KUBE_CONTEXT  = coalesce(var.custody_owner_context, "prepare")
+      FS2_CUSTODY_OWNER_USER          = coalesce(var.custody_owner_username, "prepare")
+      FS2_CUSTODY_OWNER_GROUP         = var.custody_owner_group
+      FS2_PLATFORM_USER               = coalesce(var.platform_username, "prepare")
+      FS2_PLATFORM_GROUP              = var.platform_group
       FS2_POD_SECURITY_TOKEN_AUDIENCE = var.token_audience
       FS2_POD_SECURITY_QUERY          = jsonencode(local.consume_query)
     }
@@ -176,10 +183,22 @@ resource "terraform_data" "verified" {
         && var.custody_kubeconfig_path != null
         && var.custody_context != null
         && var.custody_username != null
+        && var.custody_owner_kubeconfig_path != null
+        && var.custody_owner_context != null
+        && var.custody_owner_username != null
+        && var.platform_username != null
         && try(abspath(var.custody_kubeconfig_path) != abspath(var.kubeconfig_path), false)
+        && try(abspath(var.custody_owner_kubeconfig_path) != abspath(var.kubeconfig_path), false)
+        && try(abspath(var.custody_owner_kubeconfig_path) != abspath(var.custody_kubeconfig_path), false)
+        && var.custody_owner_username != var.custody_username
+        && var.custody_owner_username != var.platform_username
+        && var.custody_username != var.platform_username
+        && var.custody_owner_group != var.platform_group
+        && var.custody_owner_group != "fs2-pod-security-receipt-custodians"
+        && var.platform_group != "fs2-pod-security-receipt-custodians"
         && (var.phase != "quiesce-enforcement" || var.cleanup_result_path != null)
       )
-      error_message = "Every post-prepare phase requires a whole-bundle signature, descriptor-fenced baseline artifact, and a distinct externally administered custody kubeconfig and username."
+      error_message = "Every post-prepare phase requires a whole-bundle signature plus three distinct identities and kubeconfigs: platform Terraform, external receipt operator, and separately administered custody owner."
     }
   }
 

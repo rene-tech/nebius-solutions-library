@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import quote, urlencode
 
-BUNDLE_SCHEMA = "fs2-serve.nebius.ai/pod-security-rollout-receipt/v4"
+BUNDLE_SCHEMA = "fs2-serve.nebius.ai/pod-security-rollout-receipt/v5"
 LEDGER_SCHEMA = "fs2-serve.nebius.ai/pod-security-rollout-ledger/v3"
 LEGACY_LEDGER_SCHEMA = "fs2-serve.nebius.ai/pod-security-rollout-ledger/v2"
 LEDGER_DATA_KEYS = {
@@ -213,7 +213,20 @@ EXCEPTION_SERVICE_ACCOUNTS = {
     "fs2-serve-control-plane-gpu-observer",
 }
 ROLLOUT_CUSTODY_OBJECTS = {
+    ("v1", "ServiceAccount", "fs2-system", "fs2-pod-security-rollout-manager"),
     ("v1", "ServiceAccount", "fs2-system", "fs2-pod-security-rollout-custodian"),
+    (
+        "rbac.authorization.k8s.io/v1",
+        "ClusterRole",
+        "",
+        "fs2-pod-security-external-custody-audit",
+    ),
+    (
+        "rbac.authorization.k8s.io/v1",
+        "ClusterRoleBinding",
+        "",
+        "fs2-pod-security-external-custody-audit",
+    ),
     (
         "rbac.authorization.k8s.io/v1",
         "ClusterRole",
@@ -225,6 +238,12 @@ ROLLOUT_CUSTODY_OBJECTS = {
         "ClusterRoleBinding",
         "",
         "fs2-pod-security-rollout-custodian-reader",
+    ),
+    (
+        "rbac.authorization.k8s.io/v1",
+        "ClusterRoleBinding",
+        "",
+        "fs2-pod-security-rollout-reader",
     ),
     ("rbac.authorization.k8s.io/v1", "Role", "fs2-system", "fs2-pod-security-rollout-ledger"),
     (
@@ -244,6 +263,18 @@ ROLLOUT_CUSTODY_OBJECTS = {
         "RoleBinding",
         "fs2-system",
         "fs2-pod-security-rollout-token-request",
+    ),
+    (
+        "admissionregistration.k8s.io/v1",
+        "ValidatingAdmissionPolicy",
+        "",
+        "fs2-pod-security-custody-boundary",
+    ),
+    (
+        "admissionregistration.k8s.io/v1",
+        "ValidatingAdmissionPolicyBinding",
+        "",
+        "fs2-pod-security-custody-boundary",
     ),
     (
         "admissionregistration.k8s.io/v1",
@@ -970,10 +1001,12 @@ def _validate_context(context: dict[str, Any], expected: dict[str, Any]) -> None
             "reference_host_paths",
             "baseline_incompatible_objects",
             "restricted_incompatible_objects",
+            "legacy_token_secret_collection_resource_version",
+            "legacy_token_secret_count",
         },
         "context.baseline",
     )
-    if baseline["schema"] != "fs2-serve.nebius.ai/sai07-baseline-inventory/v4":
+    if baseline["schema"] != "fs2-serve.nebius.ai/sai07-baseline-inventory/v5":
         raise ReceiptError("context.baseline.schema is unsupported")
     for field in ("artifact_sha256", "inventory_sha256"):
         if not SHA256_RE.fullmatch(_string(baseline[field], f"context.baseline.{field}")):
@@ -984,6 +1017,11 @@ def _validate_context(context: dict[str, Any], expected: dict[str, Any]) -> None
         "restricted_incompatible_objects",
     ):
         _integer(baseline[field], f"context.baseline.{field}")
+    _string(
+        baseline["legacy_token_secret_collection_resource_version"],
+        "context.baseline.legacy_token_secret_collection_resource_version",
+    )
+    _integer(baseline["legacy_token_secret_count"], "context.baseline.legacy_token_secret_count")
 
 
 def _validate_baseline_artifact(payload: bytes, context: dict[str, Any]) -> dict[str, Any]:
@@ -1006,11 +1044,13 @@ def _validate_baseline_artifact(payload: bytes, context: dict[str, Any]) -> dict
         "baseline_incompatible_objects",
         "restricted_incompatible_objects",
         "legacy_controller_objects",
+        "legacy_service_account_token_secret_collection_resource_version",
+        "legacy_service_account_token_secrets",
         "unauthorized_exception_objects",
         "inventory_sha256",
     }
     _exact_keys(artifact, expected_fields, "baseline artifact")
-    if artifact["schema"] != "fs2-serve.nebius.ai/sai07-baseline-inventory/v4":
+    if artifact["schema"] != "fs2-serve.nebius.ai/sai07-baseline-inventory/v5":
         raise ReceiptError("baseline artifact schema is unsupported")
     unsigned = dict(artifact)
     self_digest = unsigned.pop("inventory_sha256")
@@ -1087,12 +1127,40 @@ def _validate_baseline_artifact(payload: bytes, context: dict[str, Any]) -> dict
         ):
             raise ReceiptError("baseline legacy inventory is duplicated or not bound to an exact object")
         legacy_seen.add(identity)
+    legacy_service_accounts = {
+        identity[3] for identity in legacy_seen if identity[1] == "ServiceAccount"
+    }
+    token_secrets = artifact["legacy_service_account_token_secrets"]
+    if not isinstance(token_secrets, list):
+        raise ReceiptError("baseline legacy token Secret inventory is malformed")
+    token_secret_names: set[str] = set()
+    for index, item_raw in enumerate(token_secrets):
+        item = _object(item_raw, f"baseline legacy token Secret[{index}]")
+        _exact_keys(
+            item,
+            {"name", "uid", "resource_version", "service_account_name"},
+            f"baseline legacy token Secret[{index}]",
+        )
+        name = _string(item["name"], f"baseline legacy token Secret[{index}].name")
+        if (
+            name in token_secret_names
+            or item["service_account_name"] not in legacy_service_accounts
+            or not IDENTIFIER_RE.fullmatch(_string(item["uid"], "baseline legacy token Secret UID"))
+            or not IDENTIFIER_RE.fullmatch(
+                _string(item["resource_version"], "baseline legacy token Secret resourceVersion")
+            )
+        ):
+            raise ReceiptError("baseline legacy token Secret is duplicated or outside the legacy SA inventory")
+        token_secret_names.add(name)
     if (
         artifact["schema"] != baseline["schema"]
         or self_digest != baseline["inventory_sha256"]
         or artifact["reference_host_paths"] != baseline["reference_host_paths"]
         or artifact["baseline_incompatible_objects"] != baseline["baseline_incompatible_objects"]
         or artifact["restricted_incompatible_objects"] != baseline["restricted_incompatible_objects"]
+        or artifact["legacy_service_account_token_secret_collection_resource_version"]
+        != baseline["legacy_token_secret_collection_resource_version"]
+        or len(token_secrets) != baseline["legacy_token_secret_count"]
         or artifact["scientific_namespaces"] != context["scientific_namespaces"]
         or artifact.get("cluster", {}).get("kube_system_uid") != context["kube_system_uid"]
         or artifact["inspected_namespaces"] != inspected_namespaces
@@ -1140,6 +1208,11 @@ def _validate_cleanup_result(
         "manifest_sha256",
         "baseline_artifact_sha256",
         "prior_inventory_sha256",
+        "token_fence_observed_at",
+        "service_account_max_token_expiration_seconds",
+        "token_drain_observed_at",
+        "legacy_service_account_token_secret_collection_resource_version",
+        "legacy_service_account_token_secrets",
         "cluster_id",
         "run_id",
         "kube_system_uid",
@@ -1153,7 +1226,7 @@ def _validate_cleanup_result(
     unsigned = dict(result)
     result_self_digest = unsigned.pop("result_sha256")
     if (
-        result["schema"] != "fs2-serve.nebius.ai/sai07-retained-quarantine-result/v5"
+        result["schema"] != "fs2-serve.nebius.ai/sai07-retained-quarantine-result/v7"
         or result["mode"] != "retained-quarantine"
         or result_self_digest != _sha256(_canonical(unsigned))
         or result["manifest_sha256"] != assertions["cleanup_manifest_sha256"]
@@ -1162,12 +1235,37 @@ def _validate_cleanup_result(
         or result["cluster_id"] != context["cluster_id"]
         or result["run_id"] != context["run_id"]
         or result["kube_system_uid"] != context["kube_system_uid"]
+        or result["legacy_service_account_token_secrets"] != []
+        or baseline_artifact["legacy_service_account_token_secrets"] != []
+        or result["token_fence_observed_at"] != assertions["token_fence_observed_at"]
+        or result["service_account_max_token_expiration_seconds"]
+        != assertions["service_account_max_token_expiration_seconds"]
+        or result["token_drain_observed_at"] != assertions["token_drain_observed_at"]
+        or result["legacy_service_account_token_secret_collection_resource_version"]
+        != assertions["legacy_service_account_token_secret_collection_resource_version"]
+        or result["legacy_service_account_token_secrets"]
+        != assertions["legacy_service_account_token_secrets"]
         or not isinstance(result["fence_objects"], list)
         or len(result["fence_objects"]) != 3
         or result["removed_objects"] != []
         or assertions["removed_objects"] != []
     ):
         raise ReceiptError("retained quarantine identity or no-delete result is invalid")
+    token_fence_observed_at = _instant(
+        result["token_fence_observed_at"], "retained quarantine token_fence_observed_at"
+    )
+    token_drain_observed_at = _instant(
+        result["token_drain_observed_at"], "retained quarantine token_drain_observed_at"
+    )
+    maximum_token_lifetime = _integer(
+        result["service_account_max_token_expiration_seconds"],
+        "retained quarantine service_account_max_token_expiration_seconds",
+        600,
+    )
+    if maximum_token_lifetime > 31_622_400 or token_drain_observed_at < token_fence_observed_at + dt.timedelta(
+        seconds=maximum_token_lifetime + 120
+    ):
+        raise ReceiptError("retained quarantine did not outlive every previously issued ServiceAccount token")
     for expected_raw in result["fence_objects"]:
         expected = _object(expected_raw, "retained quarantine fence object")
         live = client.get_object(
@@ -1671,6 +1769,11 @@ def _validate_observation_contract(
                 "live_baseline_incompatible_objects",
                 "live_restricted_incompatible_objects",
                 "live_legacy_controller_objects",
+                "legacy_service_account_token_secrets",
+                "legacy_service_account_token_secret_collection_resource_version",
+                "token_fence_observed_at",
+                "service_account_max_token_expiration_seconds",
+                "token_drain_observed_at",
             },
             "cleanup-complete assertions",
         )
@@ -1698,6 +1801,27 @@ def _validate_observation_contract(
             _integer(assertions[field], f"cleanup-complete {field}")
         if assertions["retained_objects"] != assertions["live_legacy_controller_objects"]:
             raise ReceiptError("cleanup-complete legacy inventory differs from retained quarantine")
+        if assertions["legacy_service_account_token_secrets"] != []:
+            raise ReceiptError("an annotated legacy ServiceAccount token Secret blocks cleanup closure")
+        _string(
+            assertions["legacy_service_account_token_secret_collection_resource_version"],
+            "cleanup-complete legacy token Secret collection resourceVersion",
+        )
+        token_fence_observed_at = _instant(
+            assertions["token_fence_observed_at"], "cleanup-complete token_fence_observed_at"
+        )
+        token_drain_observed_at = _instant(
+            assertions["token_drain_observed_at"], "cleanup-complete token_drain_observed_at"
+        )
+        maximum_token_lifetime = _integer(
+            assertions["service_account_max_token_expiration_seconds"],
+            "cleanup-complete service_account_max_token_expiration_seconds",
+            600,
+        )
+        if maximum_token_lifetime > 31_622_400 or token_drain_observed_at < token_fence_observed_at + dt.timedelta(
+            seconds=maximum_token_lifetime + 120
+        ):
+            raise ReceiptError("cleanup-complete does not outlive every previously issued ServiceAccount token")
         removed = assertions["removed_objects"]
         if removed != [] or absent:
             raise ReceiptError("retained quarantine may not claim removed or absent objects")
@@ -3777,34 +3901,8 @@ class KubectlClient:
     CUSTODIAN_NAMESPACE = "fs2-system"
     CUSTODIAN_NAME = "fs2-pod-security-rollout-custodian"
     CUSTODIAN_GROUP = "fs2-pod-security-receipt-custodians"
-    PROTECTED_NAMESPACES = (
-        "fs2-academic-poc",
-        "fs2-bioir-boltz2",
-        "fs2-bioir-coverage",
-        "fs2-bioir-openfold",
-        "fs2-bioir-protenix",
-        "fs2-bioir-snapshot",
-        "fs2-data",
-        "fs2-models",
-        "fs2-node-observability",
-        "fs2-observability",
-        "fs2-reference-data",
-        "fs2-snapshot-operations",
-        "fs2-system",
-    )
-    MUTATING_VERBS = {
-        "*",
-        "approve",
-        "bind",
-        "create",
-        "delete",
-        "deletecollection",
-        "escalate",
-        "impersonate",
-        "patch",
-        "sign",
-        "update",
-    }
+    CUSTODY_OWNER_GROUP = "fs2-pod-security-custody-owners"
+    PLATFORM_GROUP = "fs2-platform-terraform"
 
     def __init__(
         self,
@@ -3814,21 +3912,51 @@ class KubectlClient:
         expected_username: str,
         platform_kubeconfig: Path,
         platform_context: str,
+        custody_owner_kubeconfig: Path,
+        custody_owner_context: str,
+        expected_custody_owner_username: str,
+        expected_custody_owner_group: str,
+        expected_platform_username: str,
+        expected_platform_group: str,
     ) -> None:
         if not kubeconfig.is_absolute() or ".." in kubeconfig.parts:
             raise ReceiptError("custody kubeconfig path must be absolute without parent traversal")
         if not platform_kubeconfig.is_absolute() or ".." in platform_kubeconfig.parts:
             raise ReceiptError("platform kubeconfig path must be absolute without parent traversal")
-        if kubeconfig.resolve(strict=True) == platform_kubeconfig.resolve(strict=True):
-            raise ReceiptError("external custody and platform Terraform must not share a kubeconfig")
+        if not custody_owner_kubeconfig.is_absolute() or ".." in custody_owner_kubeconfig.parts:
+            raise ReceiptError("custody-owner kubeconfig path must be absolute without parent traversal")
+        resolved_kubeconfigs = {
+            kubeconfig.resolve(strict=True),
+            platform_kubeconfig.resolve(strict=True),
+            custody_owner_kubeconfig.resolve(strict=True),
+        }
+        if len(resolved_kubeconfigs) != 3:
+            raise ReceiptError("receipt, platform, and custody-owner identities must use three distinct kubeconfigs")
         if not IDENTIFIER_RE.fullmatch(context):
             raise ReceiptError("custody kube_context is malformed")
         if not IDENTIFIER_RE.fullmatch(platform_context):
             raise ReceiptError("platform kube_context is malformed")
+        if not IDENTIFIER_RE.fullmatch(custody_owner_context):
+            raise ReceiptError("custody-owner kube_context is malformed")
         if not expected_username or len(expected_username) > 512 or expected_username.startswith("system:"):
             raise ReceiptError("external custody username must identify one non-system principal")
         if audience != "https://kubernetes.default.svc":
             raise ReceiptError("rollout token audience differs from the reviewed API audience")
+        for label, value in (
+            ("custody-owner username", expected_custody_owner_username),
+            ("platform username", expected_platform_username),
+            ("custody-owner group", expected_custody_owner_group),
+            ("platform group", expected_platform_group),
+        ):
+            if not value or len(value) > 512:
+                raise ReceiptError(f"{label} is malformed")
+        if expected_custody_owner_username.startswith("system:") or expected_platform_username.startswith("system:"):
+            raise ReceiptError("custody-owner and platform identities must be directly authenticated non-system principals")
+        if (
+            expected_custody_owner_group != self.CUSTODY_OWNER_GROUP
+            or expected_platform_group != self.PLATFORM_GROUP
+        ):
+            raise ReceiptError("custody-owner or platform group differs from the reviewed trust boundary")
         bootstrap = [
             "kubectl",
             "--kubeconfig",
@@ -3843,14 +3971,40 @@ class KubectlClient:
             "--context",
             platform_context,
         ]
+        custody_owner = [
+            "kubectl",
+            "--kubeconfig",
+            str(custody_owner_kubeconfig),
+            "--context",
+            custody_owner_context,
+        ]
         custody_identity = self._authenticated_identity(bootstrap)
         platform_identity = self._authenticated_identity(platform)
+        custody_owner_identity = self._authenticated_identity(custody_owner)
         if (
             custody_identity["username"] != expected_username
             or self.CUSTODIAN_GROUP not in custody_identity["groups"]
-            or custody_identity["username"] == platform_identity["username"]
+            or expected_custody_owner_group in custody_identity["groups"]
+            or expected_platform_group in custody_identity["groups"]
+            or platform_identity["username"] != expected_platform_username
+            or expected_platform_group not in platform_identity["groups"]
+            or expected_custody_owner_group in platform_identity["groups"]
+            or self.CUSTODIAN_GROUP in platform_identity["groups"]
+            or custody_owner_identity["username"] != expected_custody_owner_username
+            or expected_custody_owner_group not in custody_owner_identity["groups"]
+            or expected_platform_group in custody_owner_identity["groups"]
+            or self.CUSTODIAN_GROUP in custody_owner_identity["groups"]
+            or "system:masters" in custody_owner_identity["groups"]
+            or len(
+                {
+                    custody_identity["username"],
+                    platform_identity["username"],
+                    custody_owner_identity["username"],
+                }
+            )
+            != 3
         ):
-            raise ReceiptError("external custody is not an exact identity distinct from platform Terraform")
+            raise ReceiptError("receipt, platform, and custody-owner identities or groups overlap")
         self._require_external_custody(bootstrap)
         token_request = subprocess.run(
             [
@@ -3989,13 +4143,45 @@ class KubectlClient:
         return status["allowed"]
 
     @classmethod
+    def _all_namespaces(cls, bootstrap: list[str]) -> tuple[str, ...]:
+        completed = subprocess.run(
+            [*bootstrap, "get", "--raw", "/api/v1/namespaces"],
+            check=False,
+            capture_output=True,
+            timeout=30,
+        )
+        if completed.returncode != 0:
+            raise ReceiptError("external custody cannot enumerate the complete namespace inventory")
+        try:
+            response = _object(json.loads(completed.stdout), "NamespaceList")
+        except (UnicodeDecodeError, json.JSONDecodeError, ReceiptError) as error:
+            raise ReceiptError("namespace inventory is malformed") from error
+        metadata = _object(response.get("metadata"), "NamespaceList metadata")
+        items = response.get("items")
+        if (
+            response.get("kind") != "NamespaceList"
+            or not metadata.get("resourceVersion")
+            or metadata.get("continue") not in (None, "")
+            or not isinstance(items, list)
+        ):
+            raise ReceiptError("namespace inventory is incomplete or paginated")
+        names = []
+        for item_raw in items:
+            item = _object(item_raw, "Namespace")
+            name = _string(_object(item.get("metadata"), "Namespace metadata").get("name"), "namespace name")
+            names.append(name)
+        if len(names) != len(set(names)) or "kube-system" not in names or cls.CUSTODIAN_NAMESPACE not in names:
+            raise ReceiptError("namespace inventory is duplicated or omits custody anchors")
+        return tuple(sorted(names))
+
+    @classmethod
     def _require_external_custody(cls, bootstrap: list[str]) -> None:
         """Reject every persisted mutation/pivot except the exact token edge.
 
-        SelfSubjectRulesReview is evaluated in every protected namespace so an
-        overlooked RoleBinding cannot hide behind a short hand-picked deny
-        list. The individual reviews below independently pin the critical edge
-        and common escalation paths even if a non-RBAC authorizer contributes.
+        SelfSubjectRulesReview is evaluated in every live namespace. Every
+        resource rule is compared with an exact allowlist, including read-only
+        verbs, so Secret reads, Pod proxy/exec/log edges, and RoleBindings in
+        unrelated namespaces cannot hide behind a mutating-verb filter.
         """
 
         allowed_self_reviews = {
@@ -4003,7 +4189,20 @@ class KubectlClient:
             ("authorization.k8s.io", "selfsubjectrulesreviews"),
             ("authentication.k8s.io", "selfsubjectreviews"),
         }
-        for namespace in cls.PROTECTED_NAMESPACES:
+        allowed_non_resource_urls = {
+            "/api",
+            "/api/*",
+            "/apis",
+            "/apis/*",
+            "/healthz",
+            "/livez",
+            "/openapi",
+            "/openapi/*",
+            "/readyz",
+            "/version",
+            "/version/",
+        }
+        for namespace in cls._all_namespaces(bootstrap):
             review = {
                 "apiVersion": "authorization.k8s.io/v1",
                 "kind": "SelfSubjectRulesReview",
@@ -4025,33 +4224,40 @@ class KubectlClient:
             for rule_raw in rules:
                 rule = _object(rule_raw, "external custody resource rule")
                 verbs = set(rule.get("verbs", []))
-                mutating = verbs & cls.MUTATING_VERBS
-                if not mutating:
-                    continue
                 groups = set(rule.get("apiGroups", []))
                 resources = set(rule.get("resources", []))
                 names = set(rule.get("resourceNames", []))
                 exact_token = (
                     namespace == cls.CUSTODIAN_NAMESPACE
-                    and mutating == {"create"}
+                    and verbs == {"create"}
                     and groups == {""}
                     and resources == {"serviceaccounts/token"}
                     and names == {cls.CUSTODIAN_NAME}
                 )
                 exact_self_reviews = (
-                    mutating == {"create"}
+                    verbs == {"create"}
                     and bool(groups)
                     and bool(resources)
                     and not names
                     and all((group, resource) in allowed_self_reviews for group in groups for resource in resources)
                 )
-                if not (exact_token or exact_self_reviews):
-                    raise ReceiptError("external custody has a persisted mutation, RBAC, admission, or workload pivot")
+                exact_namespace_inventory = (
+                    verbs.issubset({"get", "list"})
+                    and bool(verbs)
+                    and groups == {""}
+                    and resources == {"namespaces"}
+                    and not names
+                )
+                if not (exact_token or exact_self_reviews or exact_namespace_inventory):
+                    raise ReceiptError(
+                        "external custody has authority outside namespace inventory, self-review, and exact token minting"
+                    )
             for rule_raw in non_resource_rules:
                 rule = _object(rule_raw, "external custody non-resource rule")
                 verbs = set(rule.get("verbs", []))
-                if verbs & {"*", "post", "put", "patch", "delete"}:
-                    raise ReceiptError("external custody has a mutating non-resource URL edge")
+                urls = set(rule.get("nonResourceURLs", []))
+                if verbs != {"get"} or not urls or not urls.issubset(allowed_non_resource_urls):
+                    raise ReceiptError("external custody has a non-discovery non-resource URL edge")
 
         checks = [
             (
@@ -4322,6 +4528,20 @@ def main() -> int:
         custody_username = _string(
             os.environ.get("FS2_POD_SECURITY_CUSTODY_USER"), "FS2_POD_SECURITY_CUSTODY_USER"
         )
+        custody_owner_kubeconfig = Path(
+            _string(os.environ.get("FS2_CUSTODY_OWNER_KUBECONFIG"), "FS2_CUSTODY_OWNER_KUBECONFIG")
+        )
+        custody_owner_context = _string(
+            os.environ.get("FS2_CUSTODY_OWNER_KUBE_CONTEXT"), "FS2_CUSTODY_OWNER_KUBE_CONTEXT"
+        )
+        custody_owner_username = _string(
+            os.environ.get("FS2_CUSTODY_OWNER_USER"), "FS2_CUSTODY_OWNER_USER"
+        )
+        custody_owner_group = _string(
+            os.environ.get("FS2_CUSTODY_OWNER_GROUP"), "FS2_CUSTODY_OWNER_GROUP"
+        )
+        platform_username = _string(os.environ.get("FS2_PLATFORM_USER"), "FS2_PLATFORM_USER")
+        platform_group = _string(os.environ.get("FS2_PLATFORM_GROUP"), "FS2_PLATFORM_GROUP")
         audience = _string(os.environ.get("FS2_POD_SECURITY_TOKEN_AUDIENCE"), "token audience")
         with KubectlClient(
             kubeconfig,
@@ -4330,6 +4550,12 @@ def main() -> int:
             custody_username,
             platform_kubeconfig,
             platform_context,
+            custody_owner_kubeconfig,
+            custody_owner_context,
+            custody_owner_username,
+            custody_owner_group,
+            platform_username,
+            platform_group,
         ) as client:
             result = verify_and_consume(query, client)
     except (OSError, ReceiptError, json.JSONDecodeError, subprocess.SubprocessError) as error:

@@ -26,7 +26,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sai07_inventory_projection import ProjectionError, live_projection  # noqa: E402
 
-SCHEMA = "fs2-serve.nebius.ai/sai07-baseline-inventory/v4"
+SCHEMA = "fs2-serve.nebius.ai/sai07-baseline-inventory/v5"
 VERIFICATION_SCHEMA = "fs2-serve.nebius.ai/sai07-baseline-verification/v1"
 SCIENTIFIC_NAMESPACES = (
     "fs2-academic-poc",
@@ -320,6 +320,8 @@ def validate_artifact(value: object) -> dict[str, Any]:
         "baseline_incompatible_objects",
         "restricted_incompatible_objects",
         "legacy_controller_objects",
+        "legacy_service_account_token_secret_collection_resource_version",
+        "legacy_service_account_token_secrets",
         "unauthorized_exception_objects",
         "inventory_sha256",
     }
@@ -384,6 +386,33 @@ def validate_artifact(value: object) -> dict[str, Any]:
             raise InventoryError("baseline artifact finding counts are malformed")
     if not isinstance(value["legacy_controller_objects"], list):
         raise InventoryError("baseline artifact legacy controller inventory must be a list")
+    token_secret_resource_version = value["legacy_service_account_token_secret_collection_resource_version"]
+    token_secrets = value["legacy_service_account_token_secrets"]
+    if not isinstance(token_secret_resource_version, str) or not token_secret_resource_version:
+        raise InventoryError("legacy token Secret collection resourceVersion is missing")
+    if not isinstance(token_secrets, list):
+        raise InventoryError("legacy token Secret inventory must be a list")
+    legacy_service_accounts = {
+        item.get("name")
+        for item in value["legacy_controller_objects"]
+        if isinstance(item, dict) and item.get("kind") == "ServiceAccount"
+    }
+    seen_token_secrets: set[str] = set()
+    for item in token_secrets:
+        if not isinstance(item, dict) or set(item) != {
+            "name",
+            "uid",
+            "resource_version",
+            "service_account_name",
+        }:
+            raise InventoryError("legacy token Secret metadata fields differ")
+        if (
+            not all(isinstance(item[field], str) and item[field] for field in item)
+            or item["name"] in seen_token_secrets
+            or item["service_account_name"] not in legacy_service_accounts
+        ):
+            raise InventoryError("legacy token Secret metadata is malformed or outside the legacy SA inventory")
+        seen_token_secrets.add(item["name"])
     if value["unauthorized_exception_objects"] != []:
         raise InventoryError("baseline artifact contains unauthorized exception objects")
     return value
@@ -525,6 +554,34 @@ def inventory(client: Kubectl) -> dict[str, Any]:
                     legacy["object_sha256"] = hashlib.sha256(canonical(projection)).hexdigest()
                     legacy_controller_objects.append(legacy)
 
+    legacy_service_account_names = {
+        item["name"] for item in legacy_controller_objects if item["kind"] == "ServiceAccount"
+    }
+    secret_collection = client.raw("/api/v1/namespaces/fs2-models/secrets")
+    secret_collection_metadata = secret_collection.get("metadata", {})
+    secret_collection_resource_version = str(secret_collection_metadata.get("resourceVersion", ""))
+    if not secret_collection_resource_version:
+        raise InventoryError("legacy token Secret collection has no resourceVersion")
+    legacy_token_secrets: list[dict[str, str]] = []
+    for secret in secret_collection.get("items", []):
+        if not isinstance(secret, dict) or secret.get("type") != "kubernetes.io/service-account-token":
+            continue
+        metadata = secret.get("metadata", {})
+        annotations = metadata.get("annotations", {}) if isinstance(metadata, dict) else {}
+        service_account_name = (
+            annotations.get("kubernetes.io/service-account.name") if isinstance(annotations, dict) else None
+        )
+        if service_account_name not in legacy_service_account_names:
+            continue
+        legacy_token_secrets.append(
+            {
+                "name": str(metadata.get("name", "")),
+                "uid": str(metadata.get("uid", "")),
+                "resource_version": str(metadata.get("resourceVersion", "")),
+                "service_account_name": str(service_account_name),
+            }
+        )
+
     unauthorized_exception: list[str] = []
     for exception_namespace in (EXCEPTION_NAMESPACE, SNAPSHOT_EXCEPTION_NAMESPACE):
         for kind, (_, uri, path) in COLLECTIONS.items():
@@ -592,6 +649,11 @@ def inventory(client: Kubectl) -> dict[str, Any]:
             legacy_controller_objects,
             key=lambda item: (item["api_version"], item["kind"], item["namespace"], item["name"]),
         ),
+        "legacy_service_account_token_secret_collection_resource_version": secret_collection_resource_version,
+        "legacy_service_account_token_secrets": sorted(
+            legacy_token_secrets,
+            key=lambda item: (item["service_account_name"], item["name"]),
+        ),
         "unauthorized_exception_objects": sorted(unauthorized_exception),
     }
     result["inventory_sha256"] = hashlib.sha256(canonical(result)).hexdigest()
@@ -620,6 +682,8 @@ def verify_against_artifact(
             "baseline_incompatible_objects",
             "restricted_incompatible_objects",
             "legacy_controller_objects",
+            "legacy_service_account_token_secret_collection_resource_version",
+            "legacy_service_account_token_secrets",
             "unauthorized_exception_objects",
         )
         if any(live[field] != artifact[field] for field in comparable):
@@ -630,6 +694,7 @@ def verify_against_artifact(
             or live["baseline_incompatible_objects"] != 0
             or live["restricted_incompatible_objects"] != 0
             or live["legacy_controller_objects"]
+            or live["legacy_service_account_token_secrets"]
             or live["unauthorized_exception_objects"]
         ):
             raise InventoryError("live pre-enforcement inventory is not clean")
@@ -648,6 +713,7 @@ def verify_against_artifact(
         "live_baseline_incompatible_objects": live["baseline_incompatible_objects"],
         "live_restricted_incompatible_objects": live["restricted_incompatible_objects"],
         "live_legacy_controller_objects": live["legacy_controller_objects"],
+        "live_legacy_service_account_token_secrets": live["legacy_service_account_token_secrets"],
     }
 
 
@@ -688,6 +754,7 @@ def main() -> int:
             or live["baseline_incompatible_objects"] != 0
             or live["restricted_incompatible_objects"] != 0
             or live["legacy_controller_objects"]
+            or live["legacy_service_account_token_secrets"]
             or live["unauthorized_exception_objects"]
         ):
             raise InventoryError("pre-enforcement inventory is not clean")

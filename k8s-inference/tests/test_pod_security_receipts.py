@@ -1043,7 +1043,7 @@ def query(public_key: Path, context: dict[str, object], mode: str = "owner-trans
         *context["scientific_namespaces"],  # type: ignore[misc]
     ]
     artifact: dict[str, object] = {
-        "schema": "fs2-serve.nebius.ai/sai07-baseline-inventory/v4",
+        "schema": "fs2-serve.nebius.ai/sai07-baseline-inventory/v5",
         "captured_at": NOW.isoformat().replace("+00:00", "Z"),
         "cluster": {"kube_system_uid": context["kube_system_uid"]},
         "scientific_namespaces": context["scientific_namespaces"],
@@ -1064,6 +1064,8 @@ def query(public_key: Path, context: dict[str, object], mode: str = "owner-trans
         "baseline_incompatible_objects": 103,
         "restricted_incompatible_objects": 716,
         "legacy_controller_objects": [],
+        "legacy_service_account_token_secret_collection_resource_version": "1",
+        "legacy_service_account_token_secrets": [],
         "unauthorized_exception_objects": [],
     }
     artifact["inventory_sha256"] = hashlib.sha256(canonical(artifact)).hexdigest()
@@ -1076,6 +1078,8 @@ def query(public_key: Path, context: dict[str, object], mode: str = "owner-trans
         "reference_host_paths": 103,
         "baseline_incompatible_objects": 103,
         "restricted_incompatible_objects": 716,
+        "legacy_token_secret_collection_resource_version": "1",
+        "legacy_token_secret_count": 0,
     }
     return {
         "mode": mode,
@@ -1207,14 +1211,16 @@ def setup_case(
     return query_value, FakeClient(objects, ledger), path, objects
 
 
-def test_receipt_context_rejects_legacy_v3_baseline(context: dict[str, object]) -> None:
+def test_receipt_context_rejects_legacy_v4_baseline(context: dict[str, object]) -> None:
     context["baseline"] = {
-        "schema": "fs2-serve.nebius.ai/sai07-baseline-inventory/v3",
+        "schema": "fs2-serve.nebius.ai/sai07-baseline-inventory/v4",
         "artifact_sha256": "a" * 64,
         "inventory_sha256": "b" * 64,
         "reference_host_paths": 103,
         "baseline_incompatible_objects": 103,
         "restricted_incompatible_objects": 716,
+        "legacy_token_secret_collection_resource_version": "1",
+        "legacy_token_secret_count": 0,
     }
     with pytest.raises(verifier.ReceiptError, match="baseline.schema is unsupported"):
         verifier._validate_context(context, deepcopy(context))
@@ -1224,12 +1230,14 @@ def test_receipt_context_rejects_more_than_eight_proof_generations(
     context: dict[str, object],
 ) -> None:
     context["baseline"] = {
-        "schema": "fs2-serve.nebius.ai/sai07-baseline-inventory/v4",
+        "schema": "fs2-serve.nebius.ai/sai07-baseline-inventory/v5",
         "artifact_sha256": "a" * 64,
         "inventory_sha256": "b" * 64,
         "reference_host_paths": 80,
         "baseline_incompatible_objects": 91,
         "restricted_incompatible_objects": 151,
+        "legacy_token_secret_collection_resource_version": "1",
+        "legacy_token_secret_count": 0,
     }
     storage = context["successor_storage"]
     assert isinstance(storage, dict)

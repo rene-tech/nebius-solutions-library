@@ -129,8 +129,9 @@ def test_rollout_gate_consumes_prior_signed_state_without_phase_skips() -> None:
     assert "SelfSubjectAccessReview" in verifier
     assert "SelfSubjectRulesReview" in verifier
     assert "SelfSubjectReview" in verifier
-    assert "external custody and platform Terraform must not share a kubeconfig" in verifier
-    assert "external custody has a persisted mutation, RBAC, admission, or workload pivot" in verifier
+    assert "receipt, platform, and custody-owner identities must use three distinct kubeconfigs" in verifier
+    assert "external custody has authority outside namespace inventory, self-review, and exact token minting" in verifier
+    assert "external custody has a non-discovery non-resource URL edge" in verifier
     assert "ambient identity has direct rollout-ledger authority" in verifier
     assert "ambient identity can dismantle rollout-ledger admission" in verifier
     assert "ambient identity may impersonate service accounts" in verifier
@@ -138,6 +139,8 @@ def test_rollout_gate_consumes_prior_signed_state_without_phase_skips() -> None:
     assert "os.memfd_create" in verifier
     assert "FS2_PLATFORM_KUBECONFIG" in gate
     assert "FS2_POD_SECURITY_CUSTODY_USER" in gate
+    assert "FS2_CUSTODY_OWNER_KUBECONFIG" in gate
+    assert "FS2_CUSTODY_OWNER_GROUP" in gate
     assert "foundation resources have not acknowledged this authorization" in verifier
     assert "prior phase has not been acknowledged by both Terraform stages" in verifier
     assert '"owner-acknowledgement"' in verifier
@@ -179,6 +182,11 @@ def test_rollout_gate_consumes_prior_signed_state_without_phase_skips() -> None:
     assert "authorization_downstream_acknowledged != 'true'" in admission
     assert "Pods owned by a retained legacy DaemonSet are permanently quarantined" in admission
     assert "TokenRequest is forbidden for every retained legacy ServiceAccount" in admission
+    assert "fs2-pod-security-custody-boundary" in admission
+    assert "fs2-pod-security-custody-owners" in admission
+    assert "fs2-platform-terraform" in admission
+    assert "system:masters" in admission
+    assert "legacy ServiceAccount token Secrets" in admission
 
     reference = _source("reference-data/terraform/main.tf")
     for phase, terminal in expected.items():
@@ -280,6 +288,7 @@ def test_non_test_iac_owns_every_retained_storage_successor_and_exact_proof() ->
     assert "proof_generation_ledger" in variables
     assert "maximum_generations == 8" in variables
     assert 'sai07-baseline-inventory/v3' not in verifier
+    assert 'sai07-baseline-inventory/v4' not in verifier
     assert 'persistent_volume_reclaim_policy = "Retain"' in source
     assert 'reclaim_policy      = "Retain"' in source
     assert 'read_only         = true' in source
@@ -403,6 +412,42 @@ def test_legacy_cleanup_is_exactly_fenced_and_never_touches_finite_profiles() ->
     assert "ServiceAccount" in cleanup and "DaemonSet" in cleanup and "NetworkPolicy" in cleanup
     assert 'item["name"].startswith("fs2-network-profile-")' in cleanup
     assert "Terraform-owned finite profile policies may never be cleaned" in cleanup
-    assert "no-delete closure is blocked by retained legacy objects" in cleanup
+    assert "a live annotated legacy ServiceAccount token Secret blocks retained quarantine" in cleanup
+    assert "legacy_service_account_token_secret_collection_resource_version" in cleanup
     assert '"delete"' not in cleanup
     assert '"--execute"' not in cleanup
+
+
+def test_custody_provider_is_distinct_and_legacy_objects_are_adopted_without_delete() -> None:
+    providers = _source("stages/foundation/providers.tf")
+    admission = _source("stages/foundation/pod_security_admission.tf")
+    quarantine = _source("stages/foundation/pod_security_legacy_quarantine.tf")
+    verifier = _source("scripts/verify_pod_security_receipts.py")
+
+    assert 'alias = "pod_security_custody"' in providers
+    assert "custody_owner_kubeconfig_path" in providers
+    for resource in (
+        "pod_security_rollout_custodian",
+        "pod_security_rollout_reader",
+        "pod_security_rollout_ledger",
+        "pod_security_external_custody_audit",
+        "pod_security_rollout_token_request",
+        "pod_security_legacy_cleanup_fence_policy",
+    ):
+        block = admission.split(f'"{resource}"', 1)[1]
+        assert "provider = kubernetes.pod_security_custody" in block[:500]
+
+    assert 'resource "kubernetes_manifest" "pod_security_legacy_networkpolicy_quarantine"' in quarantine
+    assert 'resource "kubernetes_manifest" "pod_security_legacy_serviceaccount_quarantine"' in quarantine
+    assert 'resource "kubernetes_labels" "pod_security_legacy_daemonset_quarantine"' in quarantine
+    assert quarantine.count("prevent_destroy = true") == 3
+    assert quarantine.count("force_conflicts = false") == 2
+    assert 'force = false' in quarantine
+    assert "retained-quarantine" in quarantine
+    assert "for namespace in cls._all_namespaces(bootstrap)" in verifier
+    assert 'resources == {"namespaces"}' in verifier
+    assert 'resources == {"serviceaccounts/token"}' in verifier
+    assert 'allowed_non_resource_urls' in verifier
+    assert '"/api/*"' in verifier and '"/apis/*"' in verifier
+    authority_audit = verifier.split("allowed_self_reviews", 1)[1].split("checks = [", 1)[0]
+    assert 'resources == {"secrets"}' not in authority_audit

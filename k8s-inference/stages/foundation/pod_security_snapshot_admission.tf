@@ -198,6 +198,11 @@ resource "kubernetes_role_binding_v1" "snapshot_manager" {
 }
 
 resource "kubernetes_manifest" "snapshot_pod_policy" {
+  provider = kubernetes.pod_security_custody
+
+  lifecycle {
+    prevent_destroy = true
+  }
   count = local.node_observability_exception_enabled ? 1 : 0
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
@@ -223,10 +228,18 @@ resource "kubernetes_manifest" "snapshot_pod_policy" {
       ]
     }
   }
-  depends_on = [terraform_data.cluster_contract]
+  depends_on = [
+    kubernetes_manifest.pod_security_custody_boundary_binding,
+    terraform_data.cluster_contract,
+  ]
 }
 
 resource "kubernetes_manifest" "snapshot_pod_binding" {
+  provider = kubernetes.pod_security_custody
+
+  lifecycle {
+    prevent_destroy = true
+  }
   count = local.node_observability_exception_enabled ? 1 : 0
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"

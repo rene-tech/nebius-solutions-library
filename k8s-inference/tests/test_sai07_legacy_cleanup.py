@@ -21,6 +21,9 @@ def manifest(objects: list[dict[str, str]]) -> dict[str, object]:
         "kube_system_uid": "kube-system-uid",
         "baseline_artifact_sha256": "a" * 64,
         "prior_inventory_sha256": "b" * 64,
+        "token_fence_observed_at": "2020-01-01T00:00:00Z",
+        "service_account_max_token_expiration_seconds": 600,
+        "legacy_service_account_token_secrets": [],
         "fence_objects": [
             {
                 "api_version": api_version,
@@ -245,3 +248,41 @@ def test_service_account_consumer_scan_includes_podtemplates_and_custom_controll
     assert cleanup.nested_service_account_names(
         {"items": [{"serviceAccountName": "one"}, {"nested": {"serviceAccountName": "two"}}]}
     ) == {"one", "two"}
+
+
+def test_live_annotated_service_account_token_secrets_block_closure() -> None:
+    class FakeClient:
+        def raw(self, uri: str, *, allow_absent: bool = False) -> dict[str, object]:
+            del allow_absent
+            assert uri.endswith("/secrets")
+            return {
+                "metadata": {"resourceVersion": "91"},
+                "items": [
+                    {
+                        "type": "kubernetes.io/service-account-token",
+                        "metadata": {
+                            "name": "legacy-token",
+                            "uid": "secret-uid",
+                            "resourceVersion": "90",
+                            "annotations": {
+                                "kubernetes.io/service-account.name": "legacy-runtime",
+                            },
+                        },
+                        "data": {"token": "must-not-enter-result"},
+                    }
+                ],
+            }
+
+    resource_version, secrets = cleanup.legacy_service_account_token_secrets(
+        FakeClient(), frozenset({"legacy-runtime"})
+    )
+    assert resource_version == "91"
+    assert secrets == [
+        {
+            "name": "legacy-token",
+            "uid": "secret-uid",
+            "resource_version": "90",
+            "service_account_name": "legacy-runtime",
+        }
+    ]
+    assert "data" not in secrets[0]

@@ -11,14 +11,16 @@ locals {
   pod_security_baseline_artifact = local.pod_security_receipt_required ? jsondecode(
     file(var.pod_security_rollout_receipt.baseline_artifact_path)
     ) : {
-    schema                          = "fs2-serve.nebius.ai/sai07-baseline-inventory/v4"
-    inventory_sha256                = ""
-    reference_host_paths            = 0
-    baseline_incompatible_objects   = 0
-    restricted_incompatible_objects = 0
-    collections                     = []
-    objects                         = []
-    legacy_controller_objects       = []
+    schema                                                          = "fs2-serve.nebius.ai/sai07-baseline-inventory/v5"
+    inventory_sha256                                                = ""
+    reference_host_paths                                            = 0
+    baseline_incompatible_objects                                   = 0
+    restricted_incompatible_objects                                 = 0
+    collections                                                     = []
+    objects                                                         = []
+    legacy_controller_objects                                       = []
+    legacy_service_account_token_secret_collection_resource_version = "prepare"
+    legacy_service_account_token_secrets                            = []
   }
   pod_security_host_agent_images = {
     dcgm-exporter = "nvcr.io/nvidia/k8s/dcgm-exporter@sha256:b4df763de9558e5b3f1f1d79bc65b772fcf65b8a9c3664ea7173e47153112b4a"
@@ -68,6 +70,10 @@ locals {
       rollout_custodian      = "system:serviceaccount:fs2-system:fs2-pod-security-rollout-custodian"
       external_custody_user  = coalesce(var.pod_security_rollout_receipt.custody_username, "prepare")
       external_custody_group = "fs2-pod-security-receipt-custodians"
+      custody_owner_user     = coalesce(var.pod_security_rollout_receipt.custody_owner_username, "prepare")
+      custody_owner_group    = var.pod_security_rollout_receipt.custody_owner_group
+      platform_user          = coalesce(var.pod_security_rollout_receipt.platform_username, "prepare")
+      platform_group         = var.pod_security_rollout_receipt.platform_group
       rollout_token_audience = "https://kubernetes.default.svc"
       host_agent_images      = local.pod_security_host_agent_images
       storage_probe_image    = local.pod_security_active_proof_generation.probe_image
@@ -153,12 +159,14 @@ locals {
     )
     successor_storage = var.pod_security_successor_storage
     baseline = {
-      schema                          = local.pod_security_baseline_artifact.schema
-      artifact_sha256                 = local.pod_security_receipt_required ? filesha256(var.pod_security_rollout_receipt.baseline_artifact_path) : ""
-      inventory_sha256                = local.pod_security_baseline_artifact.inventory_sha256
-      reference_host_paths            = local.pod_security_baseline_artifact.reference_host_paths
-      baseline_incompatible_objects   = local.pod_security_baseline_artifact.baseline_incompatible_objects
-      restricted_incompatible_objects = local.pod_security_baseline_artifact.restricted_incompatible_objects
+      schema                                          = local.pod_security_baseline_artifact.schema
+      artifact_sha256                                 = local.pod_security_receipt_required ? filesha256(var.pod_security_rollout_receipt.baseline_artifact_path) : ""
+      inventory_sha256                                = local.pod_security_baseline_artifact.inventory_sha256
+      reference_host_paths                            = local.pod_security_baseline_artifact.reference_host_paths
+      baseline_incompatible_objects                   = local.pod_security_baseline_artifact.baseline_incompatible_objects
+      restricted_incompatible_objects                 = local.pod_security_baseline_artifact.restricted_incompatible_objects
+      legacy_token_secret_collection_resource_version = local.pod_security_baseline_artifact.legacy_service_account_token_secret_collection_resource_version
+      legacy_token_secret_count                       = length(local.pod_security_baseline_artifact.legacy_service_account_token_secrets)
     }
   }
 }
@@ -174,42 +182,54 @@ data "kubernetes_persistent_volume_claim_v1" "reference_data" {
 module "pod_security_rollout_gate" {
   source = "../../modules/pod-security-rollout-gate"
 
-  consumer_role             = "downstream"
-  kubeconfig_path           = var.kubeconfig_path
-  kube_context              = var.kube_context
-  custody_kubeconfig_path   = var.pod_security_rollout_receipt.custody_kubeconfig_path
-  custody_context           = var.pod_security_rollout_receipt.custody_context
-  custody_username          = var.pod_security_rollout_receipt.custody_username
-  phase                     = var.pod_security_rollout_phase
-  receipt_bundle_path       = var.pod_security_rollout_receipt.bundle_path
-  receipt_public_key_path   = var.pod_security_rollout_receipt.public_key_path
-  receipt_public_key_sha256 = var.pod_security_rollout_receipt.public_key_sha256
-  baseline_artifact_path    = var.pod_security_rollout_receipt.baseline_artifact_path
-  cleanup_result_path       = var.pod_security_rollout_receipt.cleanup_result_path
-  receipt_key_id            = var.pod_security_rollout_receipt.key_id
-  receipt_signer_identity   = var.pod_security_rollout_receipt.signer_identity
-  expected_context          = local.pod_security_receipt_context
+  consumer_role                 = "downstream"
+  kubeconfig_path               = var.kubeconfig_path
+  kube_context                  = var.kube_context
+  custody_kubeconfig_path       = var.pod_security_rollout_receipt.custody_kubeconfig_path
+  custody_context               = var.pod_security_rollout_receipt.custody_context
+  custody_username              = var.pod_security_rollout_receipt.custody_username
+  custody_owner_kubeconfig_path = var.pod_security_rollout_receipt.custody_owner_kubeconfig_path
+  custody_owner_context         = var.pod_security_rollout_receipt.custody_owner_context
+  custody_owner_username        = var.pod_security_rollout_receipt.custody_owner_username
+  custody_owner_group           = var.pod_security_rollout_receipt.custody_owner_group
+  platform_username             = var.pod_security_rollout_receipt.platform_username
+  platform_group                = var.pod_security_rollout_receipt.platform_group
+  phase                         = var.pod_security_rollout_phase
+  receipt_bundle_path           = var.pod_security_rollout_receipt.bundle_path
+  receipt_public_key_path       = var.pod_security_rollout_receipt.public_key_path
+  receipt_public_key_sha256     = var.pod_security_rollout_receipt.public_key_sha256
+  baseline_artifact_path        = var.pod_security_rollout_receipt.baseline_artifact_path
+  cleanup_result_path           = var.pod_security_rollout_receipt.cleanup_result_path
+  receipt_key_id                = var.pod_security_rollout_receipt.key_id
+  receipt_signer_identity       = var.pod_security_rollout_receipt.signer_identity
+  expected_context              = local.pod_security_receipt_context
 }
 
 module "pod_security_rollout_ack" {
   source = "../../modules/pod-security-rollout-gate"
 
-  consumer_role             = "downstream"
-  action                    = "acknowledge"
-  kubeconfig_path           = var.kubeconfig_path
-  kube_context              = var.kube_context
-  custody_kubeconfig_path   = var.pod_security_rollout_receipt.custody_kubeconfig_path
-  custody_context           = var.pod_security_rollout_receipt.custody_context
-  custody_username          = var.pod_security_rollout_receipt.custody_username
-  phase                     = var.pod_security_rollout_phase
-  receipt_bundle_path       = var.pod_security_rollout_receipt.bundle_path
-  receipt_public_key_path   = var.pod_security_rollout_receipt.public_key_path
-  receipt_public_key_sha256 = var.pod_security_rollout_receipt.public_key_sha256
-  baseline_artifact_path    = var.pod_security_rollout_receipt.baseline_artifact_path
-  cleanup_result_path       = var.pod_security_rollout_receipt.cleanup_result_path
-  receipt_key_id            = var.pod_security_rollout_receipt.key_id
-  receipt_signer_identity   = var.pod_security_rollout_receipt.signer_identity
-  expected_context          = local.pod_security_receipt_context
+  consumer_role                 = "downstream"
+  action                        = "acknowledge"
+  kubeconfig_path               = var.kubeconfig_path
+  kube_context                  = var.kube_context
+  custody_kubeconfig_path       = var.pod_security_rollout_receipt.custody_kubeconfig_path
+  custody_context               = var.pod_security_rollout_receipt.custody_context
+  custody_username              = var.pod_security_rollout_receipt.custody_username
+  custody_owner_kubeconfig_path = var.pod_security_rollout_receipt.custody_owner_kubeconfig_path
+  custody_owner_context         = var.pod_security_rollout_receipt.custody_owner_context
+  custody_owner_username        = var.pod_security_rollout_receipt.custody_owner_username
+  custody_owner_group           = var.pod_security_rollout_receipt.custody_owner_group
+  platform_username             = var.pod_security_rollout_receipt.platform_username
+  platform_group                = var.pod_security_rollout_receipt.platform_group
+  phase                         = var.pod_security_rollout_phase
+  receipt_bundle_path           = var.pod_security_rollout_receipt.bundle_path
+  receipt_public_key_path       = var.pod_security_rollout_receipt.public_key_path
+  receipt_public_key_sha256     = var.pod_security_rollout_receipt.public_key_sha256
+  baseline_artifact_path        = var.pod_security_rollout_receipt.baseline_artifact_path
+  cleanup_result_path           = var.pod_security_rollout_receipt.cleanup_result_path
+  receipt_key_id                = var.pod_security_rollout_receipt.key_id
+  receipt_signer_identity       = var.pod_security_rollout_receipt.signer_identity
+  expected_context              = local.pod_security_receipt_context
 
   depends_on = [
     kubernetes_labels.existing_scientific_pod_security,

@@ -81,6 +81,47 @@ variable "custody_username" {
   nullable    = true
 }
 
+variable "custody_owner_kubeconfig_path" {
+  description = "Absolute kubeconfig for the separately administered Terraform owner of custody objects."
+  type        = string
+  default     = null
+  nullable    = true
+  sensitive   = true
+}
+
+variable "custody_owner_context" {
+  description = "Exact context selected from the custody-owner kubeconfig."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "custody_owner_username" {
+  description = "Exact non-system identity that owns custody RBAC, admission, and ledger resources."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "custody_owner_group" {
+  description = "Dedicated group required on the custody-owner identity."
+  type        = string
+  default     = "fs2-pod-security-custody-owners"
+}
+
+variable "platform_username" {
+  description = "Exact platform Terraform identity excluded from custody ownership."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "platform_group" {
+  description = "Dedicated platform Terraform group excluded from custody ownership."
+  type        = string
+  default     = "fs2-platform-terraform"
+}
+
 variable "token_audience" {
   description = "Exact Kubernetes API audience for the ten-minute rollout-custodian TokenRequest."
   type        = string

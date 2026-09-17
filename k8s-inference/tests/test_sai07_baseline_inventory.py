@@ -150,13 +150,15 @@ def baseline_artifact(
         "baseline_incompatible_objects": baseline_incompatible_objects,
         "restricted_incompatible_objects": restricted_incompatible_objects,
         "legacy_controller_objects": [],
+        "legacy_service_account_token_secret_collection_resource_version": "1",
+        "legacy_service_account_token_secrets": [],
         "unauthorized_exception_objects": [],
     }
     value["inventory_sha256"] = hashlib.sha256(inventory.canonical(value)).hexdigest()
     return value
 
 
-def test_v4_bootstrap_accepts_the_exact_current_authoritative_counts() -> None:
+def test_v5_bootstrap_accepts_the_exact_current_authoritative_counts() -> None:
     artifact = baseline_artifact()
     payload = inventory.canonical(artifact)
     live = {**artifact, "captured_at": "2026-09-16T20:00:30Z"}
@@ -198,9 +200,9 @@ def test_inventory_covers_native_and_custom_workload_controllers() -> None:
     }.issubset(inventory.COLLECTIONS)
 
 
-def test_legacy_v3_is_rejected_even_when_historical_counts_match() -> None:
+def test_legacy_v4_is_rejected_even_when_historical_counts_match() -> None:
     artifact = baseline_artifact(
-        "fs2-serve.nebius.ai/sai07-baseline-inventory/v3",
+        "fs2-serve.nebius.ai/sai07-baseline-inventory/v4",
         reference_host_paths=103,
         baseline_incompatible_objects=103,
         restricted_incompatible_objects=716,
@@ -230,6 +232,23 @@ def test_v4_projection_is_shared_with_cleanup_and_binds_deletion_timestamp() -> 
         "spec": {"selector": {"matchLabels": {"app": "legacy"}}},
     }
     assert inventory.live_projection(value)["metadata"]["deletionTimestamp"] is None
+
+
+def test_v5_artifact_binds_legacy_service_account_token_secret_inventory() -> None:
+    artifact = baseline_artifact()
+    artifact["legacy_service_account_token_secrets"] = [
+        {
+            "name": "legacy-token",
+            "uid": "secret-uid",
+            "resource_version": "22",
+            "service_account_name": "missing-legacy-sa",
+        }
+    ]
+    unsigned = dict(artifact)
+    unsigned.pop("inventory_sha256")
+    artifact["inventory_sha256"] = hashlib.sha256(inventory.canonical(unsigned)).hexdigest()
+    with pytest.raises(inventory.InventoryError, match="outside the legacy ServiceAccount inventory"):
+        inventory.validate_artifact(artifact)
 
 
 def test_frozen_artifact_refuses_an_omitted_namespace_controller_collection() -> None:
