@@ -227,18 +227,17 @@ serviceAccounts:
 runtimeAttribution:
   enabled: false
   # Terraform owns this privileged-PSS exception namespace exclusively for
-  # host-integrated, read-only node observers.
-  observerNamespace: fs2-node-observability
+  # the GPU allocation checkpoint observer. DCGM uses a separate namespace.
+  observerNamespace: fs2-gpu-allocation-observer
   # `modelNamespace` is retained as the fallback for older values files.
   # New callers pass the complete, bounded namespace set through `namespaces`.
   modelNamespace: fs2-models
   namespaces: []
-  kubernetesApiUrl: https://kubernetes.default.svc
-  # Exact Kubernetes Service and ready API endpoint addresses only. This is
-  # deliberately narrower than the control plane's shared API egress list.
-  kubernetesApiCidrs: []
+  kubernetesApiUrl: https://kubernetes.default.svc:443
   tokenExpirationSeconds: 600
   pollSeconds: "1"
+  publicationTtlSeconds: 30
+  maxPublications: 256
   checkpointHostPath: /var/lib/kubelet/device-plugins/kubelet_internal_checkpoint
   nodeSelector:
     nebius.com/gpu: "true"

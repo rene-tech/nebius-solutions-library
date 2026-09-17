@@ -294,27 +294,44 @@ def test_gpu_allocation_observer_is_opt_in_and_has_exact_node_local_contract() -
         "runtimeAttribution.enabled=true",
         "--set",
         "runtimeAttribution.namespaces={fs2-models,fs2-academic-poc}",
-        "--set-string",
-        "runtimeAttribution.kubernetesApiCidrs[0]=192.0.2.10/32",
     )
     daemonset = next(document for document in documents if document["kind"] == "DaemonSet")
     pod_spec = daemonset["spec"]["template"]["spec"]
     container = pod_spec["containers"][0]
     assert daemonset["metadata"]["name"] == "fs2-serve-control-plane-gpu-observer"
-    assert daemonset["metadata"]["namespace"] == "fs2-node-observability"
+    observer_namespace = "fs2-gpu-allocation-observer"
+    assert daemonset["metadata"]["namespace"] == observer_namespace
+    assert observer_namespace != "fs2-node-observability"
     assert pod_spec["nodeSelector"] == {"nebius.com/gpu": "true"}
+    assert pod_spec["automountServiceAccountToken"] is False
     assert container["args"] == ["gpu-allocation-observer"]
     environment = {item["name"]: item.get("value") for item in container["env"]}
     assert environment["FS2_GPU_ALLOCATION_OBSERVER_NAMESPACES"] == '["fs2-academic-poc","fs2-models"]'
-    assert environment["FS2_GPU_ALLOCATION_OBSERVER_PUBLICATION_NAMESPACE"] == "fs2-node-observability"
+    assert environment["FS2_GPU_ALLOCATION_OBSERVER_PUBLICATION_NAMESPACE"] == observer_namespace
+    assert environment["FS2_GPU_ALLOCATION_OBSERVER_API_URL"] == "https://kubernetes.default.svc:443"
+    assert environment["FS2_GPU_ALLOCATION_OBSERVER_PUBLICATION_TTL_SECONDS"] == "30"
+    value_from = {
+        item["name"]: item["valueFrom"]
+        for item in container["env"]
+        if "valueFrom" in item
+    }
+    assert value_from["FS2_GPU_ALLOCATION_OBSERVER_NODE_NAME"] == {
+        "fieldRef": {"fieldPath": "spec.nodeName"}
+    }
+    assert value_from["FS2_GPU_ALLOCATION_OBSERVER_POD_NAME"] == {
+        "fieldRef": {"fieldPath": "metadata.name"}
+    }
+    assert value_from["FS2_GPU_ALLOCATION_OBSERVER_POD_UID"] == {
+        "fieldRef": {"fieldPath": "metadata.uid"}
+    }
     assert container["volumeMounts"][0] == {
-        "name": "kubelet-device-plugins",
-        "mountPath": "/var/lib/kubelet/device-plugins",
+        "name": "kubelet-device-checkpoint",
+        "mountPath": "/var/lib/kubelet/device-plugins/kubelet_internal_checkpoint",
         "readOnly": True,
     }
     assert pod_spec["volumes"][0]["hostPath"] == {
-        "path": "/var/lib/kubelet/device-plugins",
-        "type": "Directory",
+        "path": "/var/lib/kubelet/device-plugins/kubelet_internal_checkpoint",
+        "type": "File",
     }
     roles = [
         document
@@ -334,14 +351,14 @@ def test_gpu_allocation_observer_is_opt_in_and_has_exact_node_local_contract() -
     assert {binding["metadata"]["namespace"] for binding in bindings} == {"fs2-models", "fs2-academic-poc"}
     assert {
         subject["namespace"] for binding in bindings for subject in binding["subjects"]
-    } == {"fs2-node-observability"}
+    } == {observer_namespace}
     observer_account = next(
         document
         for document in documents
         if document["kind"] == "ServiceAccount"
         and document["metadata"]["name"] == "fs2-serve-control-plane-gpu-observer"
     )
-    assert observer_account["metadata"]["namespace"] == "fs2-node-observability"
+    assert observer_account["metadata"]["namespace"] == observer_namespace
     serialized_rbac = json.dumps(
         [document for document in documents if document["kind"] in {"Role", "ClusterRole"}]
     )
@@ -349,7 +366,7 @@ def test_gpu_allocation_observer_is_opt_in_and_has_exact_node_local_contract() -
     publication_roles = {
         document["metadata"]["name"]: document
         for document in documents
-        if document["kind"] == "Role" and document["metadata"]["namespace"] == "fs2-node-observability"
+        if document["kind"] == "Role" and document["metadata"]["namespace"] == observer_namespace
     }
     assert publication_roles[f"{daemonset['metadata']['name']}-publication-writer"]["rules"] == [
         {"apiGroups": [""], "resources": ["configmaps"], "verbs": ["get", "create", "update"]}
@@ -357,23 +374,60 @@ def test_gpu_allocation_observer_is_opt_in_and_has_exact_node_local_contract() -
     assert publication_roles[f"{daemonset['metadata']['name']}-publication-reader"]["rules"] == [
         {"apiGroups": [""], "resources": ["configmaps"], "verbs": ["get"]}
     ]
+    custody_policy = next(
+        document for document in documents if document["kind"] == "ValidatingAdmissionPolicy"
+    )
+    assert custody_policy["metadata"]["name"] == f"{daemonset['metadata']['name']}-publication-custody"
+    assert custody_policy["spec"]["failurePolicy"] == "Fail"
+    custody_expressions = "\n".join(
+        validation["expression"] for validation in custody_policy["spec"]["validations"]
+    )
+    for claim in (
+        "authentication.kubernetes.io/node-name",
+        "authentication.kubernetes.io/pod-name",
+        "authentication.kubernetes.io/pod-uid",
+    ):
+        assert claim in custody_expressions
+    assert "system:serviceaccount:fs2-gpu-allocation-observer:" in custody_expressions
+    assert "object.metadata.name == request.userInfo.extra['authentication.kubernetes.io/node-name'][0]" in (
+        custody_expressions
+    )
+    assert "object.metadata.name == 'kube-root-ca.crt'" in custody_expressions
+    assert "oldObject.metadata.annotations['telemetry.fs2.nebius.ai/node-name']" in custody_expressions
+    custody_binding = next(
+        document for document in documents if document["kind"] == "ValidatingAdmissionPolicyBinding"
+    )
+    assert custody_binding["spec"]["validationActions"] == ["Deny"]
+    assert custody_binding["spec"]["matchResources"]["namespaceSelector"] == {
+        "matchLabels": {"kubernetes.io/metadata.name": observer_namespace}
+    }
+    publication_quota = next(document for document in documents if document["kind"] == "ResourceQuota")
+    assert publication_quota["metadata"]["namespace"] == observer_namespace
+    assert publication_quota["spec"]["hard"] == {"count/configmaps": "257"}
     observer_policy = next(
         document
         for document in documents
         if document["kind"] == "NetworkPolicy"
-        and document["metadata"]["namespace"] == "fs2-node-observability"
+        and document["metadata"]["namespace"] == observer_namespace
     )
     assert "169.254.169.254" not in json.dumps(observer_policy)
     assert observer_policy["spec"]["ingress"] == []
-    assert observer_policy["spec"]["egress"][1]["to"] == [{"ipBlock": {"cidr": "192.0.2.10/32"}}]
+    assert len(observer_policy["spec"]["egress"]) == 1
+    assert "ipBlock" not in json.dumps(observer_policy)
+    api_policy = next(document for document in documents if document["kind"] == "CiliumNetworkPolicy")
+    assert api_policy["metadata"]["namespace"] == observer_namespace
+    assert api_policy["spec"]["egress"] == [
+        {
+            "toEntities": ["kube-apiserver"],
+            "toPorts": [{"ports": [{"port": "443", "protocol": "TCP"}]}],
+        }
+    ]
 
     legacy_documents = render(
         "--set",
         "runtimeAttribution.enabled=true",
         "--set",
         "runtimeAttribution.modelNamespace=legacy-models",
-        "--set-string",
-        "runtimeAttribution.kubernetesApiCidrs[0]=192.0.2.10/32",
     )
     legacy_daemonset = next(document for document in legacy_documents if document["kind"] == "DaemonSet")
     legacy_environment = {
@@ -387,21 +441,25 @@ def test_gpu_allocation_observer_is_opt_in_and_has_exact_node_local_contract() -
     } == {"legacy-models"}
 
 
-def test_gpu_allocation_observer_rejects_imds_and_broad_api_egress() -> None:
-    for cidr in ("169.254.169.254/32", "0.0.0.0/0", "10.0.0.0/24"):
+def test_gpu_allocation_observer_rejects_noncanonical_api_url_or_port() -> None:
+    for api_url in (
+        "https://kubernetes.default.svc",
+        "https://kubernetes.default.svc:8443",
+        "https://example.invalid:443",
+    ):
         result = subprocess.run(  # noqa: S603 - fixed Helm binary and bounded adversarial values.
             render_command(
                 "--set",
                 "runtimeAttribution.enabled=true",
                 "--set-string",
-                f"runtimeAttribution.kubernetesApiCidrs[0]={cidr}",
+                f"runtimeAttribution.kubernetesApiUrl={api_url}",
             ),
             check=False,
             capture_output=True,
             text=True,
         )
         assert result.returncode != 0
-        assert "exact non-IMDS host CIDRs" in result.stderr
+        assert "kubernetesApiUrl" in result.stderr or "exact in-cluster API service" in result.stderr
 
 
 def test_admin_console_renders_digest_bound_workload_route_and_network_boundary() -> None:

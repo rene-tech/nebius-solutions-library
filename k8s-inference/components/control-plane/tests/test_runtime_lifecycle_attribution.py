@@ -12,14 +12,27 @@ import pytest
 
 from fs2_serve.admission import AdmissionService
 from fs2_serve.gpu_allocation_contract import (
+    COMPONENT_LABEL,
+    COMPONENT_VALUE,
+    EXPIRES_AT_ANNOTATION,
+    GpuAllocationObservation,
+    NODE_NAME_ANNOTATION,
+    POD_NAME_ANNOTATION,
+    POD_UID_ANNOTATION,
+    PUBLISHED_AT_ANNOTATION,
+    SCHEMA_LABEL,
+    SCHEMA_LABEL_VALUE,
     allocation_config_map_name,
     encode_observations,
     parse_observations,
+    publication_window,
 )
 from fs2_serve.gpu_allocation_observer import (
+    MAX_CHECKPOINT_BYTES,
     SCIENTIFIC_MODEL_ID_LABEL,
     KubernetesGpuAllocationPublisher,
     parse_kubelet_device_checkpoint,
+    read_kubelet_device_checkpoint,
 )
 from fs2_serve.lifecycle import (
     LifecycleSubject,
@@ -48,6 +61,9 @@ from fs2_serve.settings import Settings
 
 NOW = datetime(2026, 9, 4, 17, 39, tzinfo=UTC)
 GPU_UUID = "GPU-29f2b6df-1bed-2192-f0a0-e60439b77c8d"
+OBSERVER_NAMESPACE = "fs2-gpu-allocation-observer"
+OBSERVER_POD_NAME = "fs2-gpu-observer-abcde"
+OBSERVER_POD_UID = "observer-pod-uid-1"
 EVIDENCE = (
     Path(__file__).resolve().parents[3] / "catalog/profiles/evidence/h100-qwen-cosmos-live-benchmark-20260904.json"
 )
@@ -55,6 +71,55 @@ EVIDENCE = (
 
 def _iso(offset: float) -> str:
     return (NOW + timedelta(seconds=offset)).isoformat().replace("+00:00", "Z")
+
+
+def _publication(
+    *,
+    observed_at: datetime,
+    prior: Mapping[str, GpuAllocationObservation] | None = None,
+    ttl_seconds: int = 30,
+) -> dict[str, Any]:
+    published_at, expires_at = publication_window(
+        published_at=observed_at,
+        ttl_seconds=ttl_seconds,
+    )
+    return {
+        "metadata": {
+            "name": allocation_config_map_name("gpu-node-1"),
+            "namespace": OBSERVER_NAMESPACE,
+            "labels": {
+                COMPONENT_LABEL: COMPONENT_VALUE,
+                SCHEMA_LABEL: SCHEMA_LABEL_VALUE,
+            },
+            "annotations": {
+                NODE_NAME_ANNOTATION: "gpu-node-1",
+                POD_NAME_ANNOTATION: OBSERVER_POD_NAME,
+                POD_UID_ANNOTATION: OBSERVER_POD_UID,
+                PUBLISHED_AT_ANNOTATION: published_at,
+                EXPIRES_AT_ANNOTATION: expires_at,
+            },
+            "ownerReferences": [
+                {
+                    "apiVersion": "v1",
+                    "kind": "Pod",
+                    "name": OBSERVER_POD_NAME,
+                    "uid": OBSERVER_POD_UID,
+                    "controller": False,
+                    "blockOwnerDeletion": False,
+                }
+            ],
+        },
+        "data": {
+            "observations.json": encode_observations(
+                node_name="gpu-node-1",
+                allocations={"pod-uid-1": (GPU_UUID,)},
+                observed_at=observed_at,
+                resolution_seconds=1,
+                ttl_seconds=ttl_seconds,
+                prior=prior,
+            )
+        },
+    }
 
 
 def _pod(
@@ -193,19 +258,11 @@ async def test_runtime_attribution_fails_closed_when_multiple_ready_replicas_are
 
 @pytest.mark.asyncio
 async def test_runtime_attribution_reads_observer_owned_publication_without_pod_mutation() -> None:
-    config_map = {
-        "data": {
-            "observations.json": encode_observations(
-                node_name="gpu-node-1",
-                allocations={"pod-uid-1": (GPU_UUID,)},
-                observed_at=NOW + timedelta(seconds=12),
-                resolution_seconds=1,
-            )
-        }
-    }
+    config_map = _publication(observed_at=NOW + timedelta(seconds=12))
     provider = KubernetesRuntimeMetadataProvider(
         FakeReader(pods=[_pod("qwen3-8b")], allocation_config_map=config_map),
-        allocation_namespace="fs2-node-observability",
+        allocation_namespace=OBSERVER_NAMESPACE,
+        clock=lambda: NOW + timedelta(seconds=20),
     )
 
     observation = await provider.resolve_lifecycle(operation_id=uuid4(), model_id="qwen3-8b")
@@ -239,6 +296,20 @@ def test_kubelet_checkpoint_parser_extracts_only_exact_nvidia_allocations() -> N
     assert parse_kubelet_device_checkpoint(json.dumps(checkpoint).encode()) == {"pod-uid-1": (GPU_UUID,)}
 
 
+def test_gpu_publication_name_is_the_exact_node_identity() -> None:
+    assert allocation_config_map_name("gpu-node-1") == "gpu-node-1"
+    with pytest.raises(ValueError, match="node name"):
+        allocation_config_map_name("kube-root-ca.crt")
+
+
+def test_kubelet_checkpoint_descriptor_read_refuses_oversized_file(tmp_path: Path) -> None:
+    checkpoint_file = tmp_path / "kubelet_internal_checkpoint"
+    checkpoint_file.write_bytes(b"x" * (MAX_CHECKPOINT_BYTES + 1))
+
+    with pytest.raises(ValueError, match="checkpoint size"):
+        read_kubelet_device_checkpoint(checkpoint_file)
+
+
 def test_gpu_observer_settings_use_plural_namespaces_with_legacy_fallback() -> None:
     assert Settings().gpu_allocation_observer_namespace_set() == ("fs2-models",)
     assert Settings(
@@ -256,33 +327,73 @@ def test_database_url_file_is_loaded_without_environment_secret(tmp_path: Path) 
     assert settings.database_url == "postgresql://runtime:secret@postgres/fs2_serve"
 
 
-def test_gpu_observer_contract_preserves_first_observation_for_unchanged_allocation() -> None:
-    first_document = {
-        "data": {
-            "observations.json": encode_observations(
-                node_name="gpu-node-1",
-                allocations={"pod-uid-1": (GPU_UUID,)},
-                observed_at=NOW,
-                resolution_seconds=1,
-            )
-        }
-    }
-    first = parse_observations(first_document, expected_node_name="gpu-node-1")
-    next_document = {
-        "data": {
-            "observations.json": encode_observations(
-                node_name="gpu-node-1",
-                allocations={"pod-uid-1": (GPU_UUID,)},
-                observed_at=NOW + timedelta(seconds=12),
-                resolution_seconds=1,
-                prior=first,
-            )
-        }
-    }
+def test_database_url_file_refuses_more_than_the_bounded_descriptor_read(tmp_path: Path) -> None:
+    database_url_file = tmp_path / "url"
+    database_url_file.write_bytes(b"x" * (16 * 1024 + 1))
 
-    observed = parse_observations(next_document, expected_node_name="gpu-node-1")
+    with pytest.raises(ValueError, match="secret file size"):
+        Settings(database_url_file=database_url_file)
+
+
+def test_gpu_observer_contract_preserves_first_observation_for_unchanged_allocation() -> None:
+    first_document = _publication(observed_at=NOW)
+    first = parse_observations(first_document, expected_node_name="gpu-node-1", observed_at=NOW)
+    next_document = _publication(observed_at=NOW + timedelta(seconds=12), prior=first)
+
+    observed = parse_observations(
+        next_document,
+        expected_node_name="gpu-node-1",
+        observed_at=NOW + timedelta(seconds=20),
+    )
 
     assert observed["pod-uid-1"].observed_at == NOW
+
+
+def test_gpu_observer_contract_refuses_expired_publication() -> None:
+    publication = _publication(observed_at=NOW, ttl_seconds=5)
+
+    with pytest.raises(ValueError, match="stale or future-dated"):
+        parse_observations(
+            publication,
+            expected_node_name="gpu-node-1",
+            observed_at=NOW + timedelta(seconds=5),
+        )
+
+
+def test_gpu_observer_contract_refuses_owner_custody_mismatch() -> None:
+    publication = _publication(observed_at=NOW)
+    publication["metadata"]["ownerReferences"][0]["uid"] = "different-observer-pod"
+
+    with pytest.raises(ValueError, match="owner"):
+        parse_observations(
+            publication,
+            expected_node_name="gpu-node-1",
+            observed_at=NOW + timedelta(seconds=1),
+        )
+
+
+@pytest.mark.parametrize(
+    "api_url",
+    (
+        "https://kubernetes.default.svc",
+        "https://kubernetes.default.svc:8443",
+        "https://example.invalid:443",
+    ),
+)
+def test_gpu_observer_refuses_noncanonical_api_url_or_port(api_url: str) -> None:
+    with pytest.raises(ValueError, match="Kubernetes API URL"):
+        KubernetesGpuAllocationPublisher(
+            base_url=api_url,
+            token_file=Path("/unused/token"),
+            ca_file=Path("/unused/ca.crt"),
+            namespaces=("fs2-models",),
+            publication_namespace=OBSERVER_NAMESPACE,
+            node_name="gpu-node-1",
+            pod_name=OBSERVER_POD_NAME,
+            pod_uid=OBSERVER_POD_UID,
+            poll_seconds=1,
+            publication_ttl_seconds=30,
+        )
 
 
 @pytest.mark.asyncio
@@ -302,13 +413,16 @@ async def test_gpu_observer_publishes_first_observation_without_pod_mutation(tmp
     token_file = tmp_path / "token"
     token_file.write_text("t" * 32, encoding="utf-8")
     publisher = KubernetesGpuAllocationPublisher(
-        base_url="https://kubernetes.default.svc",
+        base_url="https://kubernetes.default.svc:443",
         token_file=token_file,
         ca_file=Path("/unused"),
         namespaces=("fs2-models",),
-        publication_namespace="fs2-node-observability",
+        publication_namespace=OBSERVER_NAMESPACE,
         node_name="gpu-node-1",
+        pod_name=OBSERVER_POD_NAME,
+        pod_uid=OBSERVER_POD_UID,
         poll_seconds=1,
+        publication_ttl_seconds=30,
     )
     async with httpx.AsyncClient(
         base_url=publisher.base_url,
@@ -321,8 +435,12 @@ async def test_gpu_observer_publishes_first_observation_without_pod_mutation(tmp
             observed_at=NOW + timedelta(seconds=12),
         )
     assert published == 1
-    assert publications[0]["metadata"]["namespace"] == "fs2-node-observability"
-    parsed = parse_observations(publications[0], expected_node_name="gpu-node-1")
+    assert publications[0]["metadata"]["namespace"] == OBSERVER_NAMESPACE
+    parsed = parse_observations(
+        publications[0],
+        expected_node_name="gpu-node-1",
+        observed_at=NOW + timedelta(seconds=20),
+    )
     assert parsed["pod-uid-1"].gpu_uuids == (GPU_UUID,)
     assert parsed["pod-uid-1"].observed_at == NOW + timedelta(seconds=12)
 
@@ -346,13 +464,16 @@ async def test_gpu_observer_publishes_scientific_pod_allocation(tmp_path: Path) 
     token_file = tmp_path / "token"
     token_file.write_text("t" * 32, encoding="utf-8")
     publisher = KubernetesGpuAllocationPublisher(
-        base_url="https://kubernetes.default.svc",
+        base_url="https://kubernetes.default.svc:443",
         token_file=token_file,
         ca_file=Path("/unused"),
         namespaces=("fs2-models",),
-        publication_namespace="fs2-node-observability",
+        publication_namespace=OBSERVER_NAMESPACE,
         node_name="gpu-node-1",
+        pod_name=OBSERVER_POD_NAME,
+        pod_uid=OBSERVER_POD_UID,
         poll_seconds=1,
+        publication_ttl_seconds=30,
     )
     async with httpx.AsyncClient(
         base_url=publisher.base_url,
@@ -390,13 +511,16 @@ async def test_gpu_observer_publishes_across_exact_namespaces(tmp_path: Path) ->
     token_file = tmp_path / "token"
     token_file.write_text("t" * 32, encoding="utf-8")
     publisher = KubernetesGpuAllocationPublisher(
-        base_url="https://kubernetes.default.svc",
+        base_url="https://kubernetes.default.svc:443",
         token_file=token_file,
         ca_file=Path("/unused"),
         namespaces=("fs2-models", "fs2-academic-poc"),
-        publication_namespace="fs2-node-observability",
+        publication_namespace=OBSERVER_NAMESPACE,
         node_name="gpu-node-1",
+        pod_name=OBSERVER_POD_NAME,
+        pod_uid=OBSERVER_POD_UID,
         poll_seconds=1,
+        publication_ttl_seconds=30,
     )
     async with httpx.AsyncClient(
         base_url=publisher.base_url,
@@ -413,9 +537,9 @@ async def test_gpu_observer_publishes_across_exact_namespaces(tmp_path: Path) ->
     assert paths == [
         "/api/v1/namespaces/fs2-models/pods",
         "/api/v1/namespaces/fs2-academic-poc/pods",
-        "/api/v1/namespaces/fs2-node-observability/configmaps/"
+        f"/api/v1/namespaces/{OBSERVER_NAMESPACE}/configmaps/"
         f"{allocation_config_map_name('gpu-node-1')}",
-        "/api/v1/namespaces/fs2-node-observability/configmaps",
+        f"/api/v1/namespaces/{OBSERVER_NAMESPACE}/configmaps",
     ]
 
 
@@ -436,13 +560,16 @@ async def test_gpu_observer_rejects_conflicting_model_labels(tmp_path: Path) -> 
     token_file = tmp_path / "token"
     token_file.write_text("t" * 32, encoding="utf-8")
     publisher = KubernetesGpuAllocationPublisher(
-        base_url="https://kubernetes.default.svc",
+        base_url="https://kubernetes.default.svc:443",
         token_file=token_file,
         ca_file=Path("/unused"),
         namespaces=("fs2-models",),
-        publication_namespace="fs2-node-observability",
+        publication_namespace=OBSERVER_NAMESPACE,
         node_name="gpu-node-1",
+        pod_name=OBSERVER_POD_NAME,
+        pod_uid=OBSERVER_POD_UID,
         poll_seconds=1,
+        publication_ttl_seconds=30,
     )
     async with httpx.AsyncClient(
         base_url=publisher.base_url,

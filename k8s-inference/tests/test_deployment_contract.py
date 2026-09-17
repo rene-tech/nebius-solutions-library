@@ -2512,6 +2512,35 @@ class DeploymentContractTests(unittest.TestCase):
             r'name\s*=\s*var\.namespace',
         )
 
+    def test_gpu_observer_namespace_is_exclusive_and_counted(self) -> None:
+        foundation_locals = (
+            DEPLOY_ROOT / "stages/foundation/locals.tf"
+        ).read_text(encoding="utf-8")
+        namespace_block_start = foundation_locals.index("namespaces = toset([")
+        namespace_block_end = foundation_locals.index("])", namespace_block_start)
+        foundation_namespaces = set(
+            re.findall(
+                r'"([a-z0-9-]+)"',
+                foundation_locals[namespace_block_start:namespace_block_end],
+            )
+        )
+        foundation_outputs = (
+            DEPLOY_ROOT / "stages/foundation/outputs.tf"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("fs2-gpu-allocation-observer", foundation_namespaces)
+        self.assertNotIn("fs2-node-observability", foundation_namespaces)
+        self.assertRegex(
+            foundation_locals,
+            r'(?s)pod_security_labels\s*=\s*\{.*?'
+            r'"fs2-gpu-allocation-observer"\s*=\s*\{.*?'
+            r'"pod-security\.kubernetes\.io/enforce"\s*=\s*"privileged"',
+        )
+        self.assertRegex(
+            foundation_outputs,
+            r'(?s)output "managed_resource_count".*?value\s*=\s*\(\s*32\s*\+',
+        )
+
     def test_reference_data_capacity_below_af3_plus_one_tib_is_rejected(self) -> None:
         deployment = {
             "schema_version": 1,

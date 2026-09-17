@@ -1,16 +1,15 @@
 {{- if .Values.runtimeAttribution.enabled }}
-{{- if or (not .Values.networkPolicy.enabled) (eq (len .Values.runtimeAttribution.kubernetesApiCidrs) 0) }}
-{{- fail "runtimeAttribution requires bounded Kubernetes API egress" }}
+{{- if not .Values.networkPolicy.enabled }}
+{{- fail "runtimeAttribution requires networkPolicy.enabled=true" }}
 {{- end }}
-{{- range .Values.runtimeAttribution.kubernetesApiCidrs }}
-{{- if or (eq . "169.254.169.254/32") (not (regexMatch "^(([0-9]{1,3}\\.){3}[0-9]{1,3}/32|[0-9A-Fa-f:]+/128)$" .)) }}
-{{- fail "runtimeAttribution Kubernetes API egress must contain exact non-IMDS host CIDRs" }}
-{{- end }}
+{{- if ne .Values.runtimeAttribution.kubernetesApiUrl "https://kubernetes.default.svc:443" }}
+{{- fail "runtimeAttribution.kubernetesApiUrl must use the exact in-cluster API service on port 443" }}
 {{- end }}
 {{- $name := printf "%s-gpu-observer" (include "fs2-serve.fullname" .) }}
 {{- $serviceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "gpu-observer") }}
 {{- $runtimeServiceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "runtime") }}
 {{- $observerNamespace := .Values.runtimeAttribution.observerNamespace }}
+{{- $observerUsername := printf "system:serviceaccount:%s:%s" $observerNamespace $serviceAccount }}
 {{- $namespaces := .Values.runtimeAttribution.namespaces }}
 {{- if eq (len $namespaces) 0 }}
 {{- $namespaces = list .Values.runtimeAttribution.modelNamespace }}
@@ -108,6 +107,103 @@ subjects:
     name: {{ $runtimeServiceAccount }}
     namespace: {{ .Release.Namespace }}
 ---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ $name }}-publication-custody
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gpu-allocation-observer
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["configmaps"]
+        scope: Namespaced
+  validations:
+    - expression: >-
+        request.userInfo.username != '{{ $observerUsername }}' ||
+        ('authentication.kubernetes.io/node-name' in request.userInfo.extra &&
+         size(request.userInfo.extra['authentication.kubernetes.io/node-name']) == 1 &&
+         object.metadata.name == request.userInfo.extra['authentication.kubernetes.io/node-name'][0] &&
+         object.metadata.name != 'kube-root-ca.crt' &&
+         has(object.metadata.labels) &&
+         object.metadata.labels['app.kubernetes.io/component'] == 'gpu-allocation-observer' &&
+         object.metadata.labels['telemetry.fs2.nebius.ai/publication-schema'] == 'gpu-allocation-v2' &&
+         has(object.data) && size(object.data) == 1 && 'observations.json' in object.data)
+      message: The GPU observer may write only its bounded publication objects
+      reason: Forbidden
+    - expression: >-
+        object.metadata.name == 'kube-root-ca.crt' ||
+        request.userInfo.username == '{{ $observerUsername }}'
+      message: Non-CA ConfigMaps in the GPU observer namespace are owned exclusively by the observer ServiceAccount
+      reason: Forbidden
+    - expression: >-
+        request.userInfo.username != '{{ $observerUsername }}' ||
+        (has(object.metadata.annotations) &&
+         'authentication.kubernetes.io/node-name' in request.userInfo.extra &&
+         'authentication.kubernetes.io/pod-name' in request.userInfo.extra &&
+         'authentication.kubernetes.io/pod-uid' in request.userInfo.extra &&
+         size(request.userInfo.extra['authentication.kubernetes.io/node-name']) == 1 &&
+         size(request.userInfo.extra['authentication.kubernetes.io/pod-name']) == 1 &&
+         size(request.userInfo.extra['authentication.kubernetes.io/pod-uid']) == 1 &&
+         object.metadata.annotations['telemetry.fs2.nebius.ai/node-name'] ==
+           request.userInfo.extra['authentication.kubernetes.io/node-name'][0] &&
+         object.metadata.annotations['telemetry.fs2.nebius.ai/observer-pod-name'] ==
+           request.userInfo.extra['authentication.kubernetes.io/pod-name'][0] &&
+         object.metadata.annotations['telemetry.fs2.nebius.ai/observer-pod-uid'] ==
+           request.userInfo.extra['authentication.kubernetes.io/pod-uid'][0] &&
+         'telemetry.fs2.nebius.ai/published-at' in object.metadata.annotations &&
+         'telemetry.fs2.nebius.ai/expires-at' in object.metadata.annotations &&
+         has(object.metadata.ownerReferences) && size(object.metadata.ownerReferences) == 1 &&
+         object.metadata.ownerReferences[0].apiVersion == 'v1' &&
+         object.metadata.ownerReferences[0].kind == 'Pod' &&
+         object.metadata.ownerReferences[0].name ==
+           request.userInfo.extra['authentication.kubernetes.io/pod-name'][0] &&
+         string(object.metadata.ownerReferences[0].uid) ==
+           request.userInfo.extra['authentication.kubernetes.io/pod-uid'][0] &&
+         object.metadata.ownerReferences[0].controller == false &&
+         object.metadata.ownerReferences[0].blockOwnerDeletion == false)
+      message: GPU allocation publication custody must match the bound observer Pod and node
+      reason: Forbidden
+    - expression: >-
+        oldObject == null ||
+        object.metadata.name == 'kube-root-ca.crt' ||
+        (oldObject.metadata.annotations['telemetry.fs2.nebius.ai/node-name'] ==
+           object.metadata.annotations['telemetry.fs2.nebius.ai/node-name'])
+      message: GPU allocation publication node custody is immutable
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ $name }}-publication-custody
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gpu-allocation-observer
+spec:
+  policyName: {{ $name }}-publication-custody
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ $observerNamespace }}
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: {{ $name }}-publication-bound
+  namespace: {{ $observerNamespace }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gpu-allocation-observer
+spec:
+  hard:
+    count/configmaps: {{ add .Values.runtimeAttribution.maxPublications 1 | quote }}
+---
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -149,6 +245,14 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
+            - name: FS2_GPU_ALLOCATION_OBSERVER_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: FS2_GPU_ALLOCATION_OBSERVER_POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
             - name: FS2_GPU_ALLOCATION_OBSERVER_NAMESPACES
               value: {{ toJson $namespaces | quote }}
             - name: FS2_GPU_ALLOCATION_OBSERVER_PUBLICATION_NAMESPACE
@@ -163,9 +267,11 @@ spec:
               value: {{ .Values.runtimeAttribution.checkpointHostPath | quote }}
             - name: FS2_GPU_ALLOCATION_OBSERVER_POLL_SECONDS
               value: {{ .Values.runtimeAttribution.pollSeconds | quote }}
+            - name: FS2_GPU_ALLOCATION_OBSERVER_PUBLICATION_TTL_SECONDS
+              value: {{ .Values.runtimeAttribution.publicationTtlSeconds | quote }}
           volumeMounts:
-            - name: kubelet-device-plugins
-              mountPath: /var/lib/kubelet/device-plugins
+            - name: kubelet-device-checkpoint
+              mountPath: {{ .Values.runtimeAttribution.checkpointHostPath | quote }}
               readOnly: true
             - name: kubernetes-token
               mountPath: /var/run/secrets/fs2-serve/gpu-observer
@@ -182,10 +288,10 @@ spec:
             seccompProfile:
               type: RuntimeDefault
       volumes:
-        - name: kubelet-device-plugins
+        - name: kubelet-device-checkpoint
           hostPath:
-            path: /var/lib/kubelet/device-plugins
-            type: Directory
+            path: {{ .Values.runtimeAttribution.checkpointHostPath | quote }}
+            type: File
         - name: kubernetes-token
           projected:
             defaultMode: 0400
@@ -235,12 +341,24 @@ spec:
           protocol: UDP
         - port: {{ .Values.networkPolicy.dns.port }}
           protocol: TCP
-    - to:
-        {{- range .Values.runtimeAttribution.kubernetesApiCidrs }}
-        - ipBlock:
-            cidr: {{ . | quote }}
-        {{- end }}
-      ports:
-        - port: 443
-          protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ $name }}-apiserver
+  namespace: {{ $observerNamespace }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gpu-allocation-observer
+spec:
+  endpointSelector:
+    matchLabels:
+      {{- include "fs2-serve.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: gpu-allocation-observer
+  egress:
+    - toEntities: [kube-apiserver]
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
 {{- end }}

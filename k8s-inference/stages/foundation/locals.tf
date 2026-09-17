@@ -106,7 +106,7 @@ locals {
   }
 
   pod_security_labels = {
-    "fs2-node-observability" = {
+    "fs2-gpu-allocation-observer" = {
       "pod-security.kubernetes.io/enforce" = "privileged"
       "pod-security.kubernetes.io/audit"   = "restricted"
       "pod-security.kubernetes.io/warn"    = "restricted"
@@ -114,8 +114,8 @@ locals {
   }
 
   pod_security_annotations = {
-    "fs2-node-observability" = {
-      "security.fs2.nebius.ai/pod-security-exception" = "node-observability-host-integration"
+    "fs2-gpu-allocation-observer" = {
+      "security.fs2.nebius.ai/pod-security-exception" = "gpu-allocation-checkpoint-reader"
     }
   }
 
@@ -125,7 +125,7 @@ locals {
     "envoy-gateway-system",
     "fs2-data",
     "fs2-models",
-    "fs2-node-observability",
+    "fs2-gpu-allocation-observer",
     "fs2-observability",
     "fs2-system",
     "kserve",

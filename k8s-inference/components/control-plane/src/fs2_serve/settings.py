@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import os
 import re
+import stat
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal
@@ -18,6 +20,30 @@ from .models import ModelId, Scope
 _PUBLIC_HOST_MAX_LENGTH = 253
 _PUBLIC_URL_MAX_LENGTH = 2048
 _DNS_LABEL = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?")
+
+
+def _read_bounded_text_file(path: Path, *, max_bytes: int) -> str:
+    descriptor = -1
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC)
+        status = os.fstat(descriptor)
+        if not stat.S_ISREG(status.st_mode) or not 1 <= status.st_size <= max_bytes:
+            raise ValueError("secret file size is invalid")
+        value = bytearray()
+        while len(value) <= max_bytes:
+            chunk = os.read(descriptor, min(4096, max_bytes + 1 - len(value)))
+            if not chunk:
+                break
+            value.extend(chunk)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    if not 1 <= len(value) <= max_bytes:
+        raise ValueError("secret file size changed during read")
+    try:
+        return bytes(value).decode("utf-8")
+    except UnicodeDecodeError:
+        raise ValueError("secret file is not valid UTF-8") from None
 
 
 def _default_migrations_dir() -> Path:
@@ -155,11 +181,26 @@ class Settings(BaseSettings):
         max_length=63,
         pattern=r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$",
     )
-    gpu_allocation_observer_api_url: str = Field(default="https://kubernetes.default.svc", max_length=2048)
+    gpu_allocation_observer_pod_name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=253,
+        pattern=r"^[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?$",
+    )
+    gpu_allocation_observer_pod_uid: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+    )
+    gpu_allocation_observer_api_url: Literal["https://kubernetes.default.svc:443"] = (
+        "https://kubernetes.default.svc:443"
+    )
     gpu_allocation_observer_token_file: Path = Path("/var/run/secrets/fs2-serve/gpu-observer/token")
     gpu_allocation_observer_ca_file: Path = Path("/var/run/secrets/fs2-serve/gpu-observer/ca.crt")
     gpu_allocation_observer_checkpoint_file: Path = Path("/var/lib/kubelet/device-plugins/kubelet_internal_checkpoint")
     gpu_allocation_observer_poll_seconds: float = Field(default=1, ge=0.1, le=30)
+    gpu_allocation_observer_publication_ttl_seconds: int = Field(default=30, ge=5, le=300)
     admin_node_scaler_provider: Literal["nebius-managed-node-group-autoscaler"] | None = None
     admin_prometheus_url: str | None = Field(default=None, max_length=2048)
     admin_loki_url: str | None = Field(default=None, max_length=2048)
@@ -351,10 +392,10 @@ class Settings(BaseSettings):
         self.gpu_allocation_observer_namespace_set()
         if self.database_url_file is not None:
             try:
-                size = self.database_url_file.stat().st_size
-                if not 1 <= size <= 16 * 1024:
-                    raise ValueError("database URL file size is invalid")
-                self.database_url = self.database_url_file.read_text(encoding="utf-8").strip()
+                self.database_url = _read_bounded_text_file(
+                    self.database_url_file,
+                    max_bytes=16 * 1024,
+                ).strip()
             except OSError as error:
                 raise ValueError("database URL file is unavailable") from error
         if not self.database_url.startswith(("postgresql://", "postgresql+asyncpg://")):

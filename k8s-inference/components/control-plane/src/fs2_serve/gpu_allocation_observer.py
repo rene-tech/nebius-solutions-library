@@ -11,7 +11,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
+import stat
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -22,10 +24,20 @@ from urllib.parse import urlsplit
 import httpx
 
 from .gpu_allocation_contract import (
+    COMPONENT_LABEL,
+    COMPONENT_VALUE,
     DATA_KEY,
+    EXPIRES_AT_ANNOTATION,
+    NODE_NAME_ANNOTATION,
+    POD_NAME_ANNOTATION,
+    POD_UID_ANNOTATION,
+    PUBLISHED_AT_ANNOTATION,
+    SCHEMA_LABEL,
+    SCHEMA_LABEL_VALUE,
     allocation_config_map_name,
     encode_observations,
     parse_observations,
+    publication_window,
 )
 from .model_deployment import MODEL_ID_LABEL
 from .runtime_kubernetes import pod_gpu_count
@@ -39,6 +51,7 @@ MAX_NAMESPACES = 32
 SCIENTIFIC_MODEL_ID_LABEL = "fs2.nebius.ai/model-id"
 _GPU_UUID = re.compile(r"^(?:GPU|MIG)-[A-Za-z0-9_.:/-]{1,123}$")
 _POD_UID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
+_POD_NAME = re.compile(r"^[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?$")
 _NAMESPACE = re.compile(r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$")
 
 
@@ -90,14 +103,26 @@ def parse_kubelet_device_checkpoint(payload: bytes) -> dict[str, tuple[str, ...]
 
 
 def read_kubelet_device_checkpoint(path: Path) -> dict[str, tuple[str, ...]]:
+    descriptor = -1
     try:
-        size = path.stat().st_size
-        if not 1 <= size <= MAX_CHECKPOINT_BYTES:
+        descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC)
+        status = os.fstat(descriptor)
+        if not stat.S_ISREG(status.st_mode) or not 1 <= status.st_size <= MAX_CHECKPOINT_BYTES:
             raise ValueError("kubelet device checkpoint size is invalid")
-        payload = path.read_bytes()
+        payload = bytearray()
+        while len(payload) <= MAX_CHECKPOINT_BYTES:
+            chunk = os.read(descriptor, min(64 * 1024, MAX_CHECKPOINT_BYTES + 1 - len(payload)))
+            if not chunk:
+                break
+            payload.extend(chunk)
     except OSError as exc:
         raise ValueError("kubelet device checkpoint is unavailable") from exc
-    return parse_kubelet_device_checkpoint(payload)
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    if not 1 <= len(payload) <= MAX_CHECKPOINT_BYTES:
+        raise ValueError("kubelet device checkpoint size changed during read")
+    return parse_kubelet_device_checkpoint(bytes(payload))
 
 
 def _has_unambiguous_model_label(labels: Mapping[str, Any]) -> bool:
@@ -117,12 +142,16 @@ class KubernetesGpuAllocationPublisher:
     namespaces: tuple[str, ...]
     publication_namespace: str
     node_name: str
+    pod_name: str
+    pod_uid: str
     poll_seconds: float
+    publication_ttl_seconds: int
 
     def __post_init__(self) -> None:
         parsed = urlsplit(self.base_url)
         if (
-            parsed.scheme != "https"
+            self.base_url != "https://kubernetes.default.svc:443"
+            or parsed.scheme != "https"
             or parsed.username is not None
             or parsed.password is not None
             or parsed.query
@@ -136,6 +165,9 @@ class KubernetesGpuAllocationPublisher:
             or len(set(self.namespaces)) != len(self.namespaces)
             or any(_NAMESPACE.fullmatch(namespace) is None for namespace in self.namespaces)
             or _NAMESPACE.fullmatch(self.publication_namespace) is None
+            or _POD_NAME.fullmatch(self.pod_name) is None
+            or _POD_UID.fullmatch(self.pod_uid) is None
+            or not 5 <= self.publication_ttl_seconds <= 300
         ):
             raise ValueError("GPU observer namespaces are invalid")
 
@@ -234,21 +266,41 @@ class KubernetesGpuAllocationPublisher:
             except (json.JSONDecodeError, UnicodeDecodeError, RecursionError):
                 raise RuntimeError("GPU observer publication is invalid") from None
             metadata = _mapping(existing.get("metadata"))
-            labels = _mapping(metadata.get("labels"))
             resource_version = metadata.get("resourceVersion")
-            if (
-                labels.get("app.kubernetes.io/component") != "gpu-allocation-observer"
-                or not isinstance(resource_version, str)
-            ):
+            if not isinstance(resource_version, str):
                 raise RuntimeError("GPU observer publication has different ownership")
             try:
                 prior = parse_observations(existing, expected_node_name=self.node_name)
             except ValueError:
                 raise RuntimeError("GPU observer publication contract is invalid") from None
+        published_at, expires_at = publication_window(
+            published_at=observed_at,
+            ttl_seconds=self.publication_ttl_seconds,
+        )
         metadata: dict[str, Any] = {
             "name": name,
             "namespace": self.publication_namespace,
-            "labels": {"app.kubernetes.io/component": "gpu-allocation-observer"},
+            "labels": {
+                COMPONENT_LABEL: COMPONENT_VALUE,
+                SCHEMA_LABEL: SCHEMA_LABEL_VALUE,
+            },
+            "annotations": {
+                NODE_NAME_ANNOTATION: self.node_name,
+                POD_NAME_ANNOTATION: self.pod_name,
+                POD_UID_ANNOTATION: self.pod_uid,
+                PUBLISHED_AT_ANNOTATION: published_at,
+                EXPIRES_AT_ANNOTATION: expires_at,
+            },
+            "ownerReferences": [
+                {
+                    "apiVersion": "v1",
+                    "kind": "Pod",
+                    "name": self.pod_name,
+                    "uid": self.pod_uid,
+                    "controller": False,
+                    "blockOwnerDeletion": False,
+                }
+            ],
         }
         if resource_version is not None:
             metadata["resourceVersion"] = resource_version
@@ -262,6 +314,7 @@ class KubernetesGpuAllocationPublisher:
                     allocations=allocations,
                     observed_at=observed_at,
                     resolution_seconds=self.poll_seconds,
+                    ttl_seconds=self.publication_ttl_seconds,
                     prior=prior,
                 )
             },

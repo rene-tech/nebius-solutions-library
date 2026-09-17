@@ -129,6 +129,8 @@ async def observe_gpu_allocations(settings: Settings) -> None:
         raise RuntimeError("GPU allocation observer requires its Kubernetes node name")
     if settings.gpu_allocation_observer_publication_namespace is None:
         raise RuntimeError("GPU allocation observer requires its publication namespace")
+    if settings.gpu_allocation_observer_pod_name is None or settings.gpu_allocation_observer_pod_uid is None:
+        raise RuntimeError("GPU allocation observer requires its bound Pod identity")
     await run_gpu_allocation_observer(
         publisher=KubernetesGpuAllocationPublisher(
             base_url=settings.gpu_allocation_observer_api_url,
@@ -137,7 +139,10 @@ async def observe_gpu_allocations(settings: Settings) -> None:
             namespaces=settings.gpu_allocation_observer_namespace_set(),
             publication_namespace=settings.gpu_allocation_observer_publication_namespace,
             node_name=settings.gpu_allocation_observer_node_name,
+            pod_name=settings.gpu_allocation_observer_pod_name,
+            pod_uid=settings.gpu_allocation_observer_pod_uid,
             poll_seconds=settings.gpu_allocation_observer_poll_seconds,
+            publication_ttl_seconds=settings.gpu_allocation_observer_publication_ttl_seconds,
         ),
         checkpoint_file=settings.gpu_allocation_observer_checkpoint_file,
     )

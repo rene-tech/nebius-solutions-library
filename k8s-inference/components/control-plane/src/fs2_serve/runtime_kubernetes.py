@@ -17,7 +17,7 @@ from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Callable
 from uuid import UUID
 
 from .admin import AdminAdapterUnavailableError
@@ -42,6 +42,10 @@ _GPU_RESOURCE = re.compile(
 )
 _GPU_UUID = re.compile(r"^(?:GPU|MIG)-[A-Za-z0-9_.:/-]{1,123}$")
 _DNS_LABEL = re.compile(r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$")
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
 
 
 def _mapping(value: object) -> Mapping[str, Any]:
@@ -228,6 +232,7 @@ class KubernetesRuntimeMetadataProvider:
     reader: KubernetesListReader
     namespace: str = "fs2-models"
     allocation_namespace: str | None = None
+    clock: Callable[[], datetime] = _utcnow
 
     def __post_init__(self) -> None:
         if _DNS_LABEL.fullmatch(self.namespace) is None:
@@ -293,6 +298,7 @@ class KubernetesRuntimeMetadataProvider:
                 allocation = parse_observations(
                     allocation_map,
                     expected_node_name=str(node_name),
+                    observed_at=self.clock(),
                 ).get(str(pod_uid))
                 if allocation is not None and len(allocation.gpu_uuids) == gpu_count:
                     gpu_uuids = allocation.gpu_uuids

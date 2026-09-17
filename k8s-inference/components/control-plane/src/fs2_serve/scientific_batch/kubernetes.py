@@ -1166,6 +1166,7 @@ class HttpScientificBatchCluster:
                             allocation_documents[node_name] = parse_observations(
                                 cast(dict[str, Any], allocation_response.json()),
                                 expected_node_name=node_name,
+                                observed_at=observed_at,
                             )
                         else:
                             allocation_documents[node_name] = {}

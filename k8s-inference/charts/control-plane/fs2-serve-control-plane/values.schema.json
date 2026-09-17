@@ -947,9 +947,10 @@
         "modelNamespace",
         "namespaces",
         "kubernetesApiUrl",
-        "kubernetesApiCidrs",
         "tokenExpirationSeconds",
         "pollSeconds",
+        "publicationTtlSeconds",
+        "maxPublications",
         "checkpointHostPath",
         "nodeSelector",
         "tolerations",
@@ -957,7 +958,7 @@
       ],
       "properties": {
         "enabled": {"type": "boolean"},
-        "observerNamespace": {"const": "fs2-node-observability"},
+        "observerNamespace": {"const": "fs2-gpu-allocation-observer"},
         "modelNamespace": {"$ref": "#/$defs/dnsName"},
         "namespaces": {
           "type": "array",
@@ -966,25 +967,15 @@
           "items": {"$ref": "#/$defs/dnsName"}
         },
         "kubernetesApiUrl": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 2048,
-          "pattern": "^https://[^/?#]+$"
-        },
-        "kubernetesApiCidrs": {
-          "type": "array",
-          "maxItems": 32,
-          "uniqueItems": true,
-          "items": {
-            "type": "string",
-            "pattern": "^(([0-9]{1,3}\\.){3}[0-9]{1,3}/32|[0-9A-Fa-f:]+/128)$"
-          }
+          "const": "https://kubernetes.default.svc:443"
         },
         "tokenExpirationSeconds": {"type": "integer", "minimum": 600, "maximum": 3600},
         "pollSeconds": {
           "type": "string",
           "pattern": "^(0\\.[1-9][0-9]*|[1-9](\\.[0-9]+)?|[12][0-9](\\.[0-9]+)?|30(\\.0+)?)$"
         },
+        "publicationTtlSeconds": {"type": "integer", "minimum": 5, "maximum": 300},
+        "maxPublications": {"type": "integer", "minimum": 1, "maximum": 1024},
         "checkpointHostPath": {
           "const": "/var/lib/kubelet/device-plugins/kubelet_internal_checkpoint"
         },
