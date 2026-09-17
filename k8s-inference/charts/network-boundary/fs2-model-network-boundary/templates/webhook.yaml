@@ -7,7 +7,7 @@ metadata:
     fs2-serve.nebius.ai/policy-owner: independent-network-boundary
   annotations:
     {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
-    cert-manager.io/inject-ca-from: {{ .Values.authorityNamespace }}/fs2-model-network-boundary
+    cert-manager.io/inject-ca-from-secret: {{ .Values.authorityNamespace }}/{{ .Values.certificate.caSecretName }}
 webhooks:
   - name: children.network.fs2.nebius.ai
     admissionReviewVersions: [v1]
@@ -148,6 +148,44 @@ webhooks:
         operations: ["CREATE", "UPDATE", "DELETE"]
         resources: ["roles", "rolebindings"]
         scope: Namespaced
+  # These two hooks scope the otherwise broad Helm writer RBAC by authenticated
+  # identity. Only the release-writer identities invoke them; the distinct
+  # external recovery identity bypasses this Service and can repair authority
+  # objects under the API-server-native static-custody policy.
+  - name: release-writers.network.fs2.nebius.ai
+    admissionReviewVersions: [v1]
+    sideEffects: None
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    timeoutSeconds: 3
+    clientConfig: *client
+    namespaceSelector:
+      matchLabels: {kubernetes.io/metadata.name: {{ .Values.systemNamespace }}}
+    matchConditions:
+      - name: exact-release-writer
+        expression: "request.userInfo.username in [{{ .Values.maintenanceWriterUsername | quote }}, {{ .Values.transitionWriterUsername | quote }}]"
+    rules:
+      - apiGroups: ["*"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["*"]
+        scope: Namespaced
+  - name: release-writers-cluster.network.fs2.nebius.ai
+    admissionReviewVersions: [v1]
+    sideEffects: None
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    timeoutSeconds: 3
+    clientConfig: *client
+    matchConditions:
+      - name: exact-release-writer
+        expression: "request.userInfo.username in [{{ .Values.maintenanceWriterUsername | quote }}, {{ .Values.transitionWriterUsername | quote }}]"
+    rules:
+      - apiGroups: ["admissionregistration.k8s.io", "gateway.networking.k8s.io", "rbac.authorization.k8s.io"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["*"]
+        scope: Cluster
   - name: lease.network.fs2.nebius.ai
     admissionReviewVersions: [v1]
     sideEffects: None
@@ -160,93 +198,11 @@ webhooks:
     objectSelector:
       matchLabels: {fs2-serve.nebius.ai/network-boundary-object: "true"}
     matchConditions:
-      - name: exact-transition-lease
-        expression: "request.name == 'fs2-model-network-transition'"
+      - name: exact-boundary-lease
+        expression: "request.name in ['fs2-model-network-transition', 'fs2-model-network-maintenance']"
     rules:
       - apiGroups: ["coordination.k8s.io"]
         apiVersions: ["v1"]
         operations: ["CREATE", "UPDATE", "DELETE"]
         resources: ["leases"]
         scope: Namespaced
-  - name: custody.network.fs2.nebius.ai
-    admissionReviewVersions: [v1]
-    sideEffects: None
-    failurePolicy: Fail
-    matchPolicy: Equivalent
-    timeoutSeconds: 3
-    clientConfig: *client
-    namespaceSelector:
-      matchExpressions:
-        - key: kubernetes.io/metadata.name
-          operator: In
-          values: [{{ .Values.modelNamespace }}, {{ .Values.systemNamespace }}, {{ .Values.authorityNamespace }}]
-    objectSelector:
-      matchLabels: {fs2-serve.nebius.ai/network-boundary-authority: "true"}
-    rules:
-      - apiGroups: [""]
-        apiVersions: ["v1"]
-        operations: ["CREATE", "UPDATE", "DELETE"]
-        resources: ["serviceaccounts", "services", "secrets"]
-        scope: Namespaced
-      - apiGroups: ["apps"]
-        apiVersions: ["v1"]
-        operations: ["CREATE", "UPDATE", "DELETE"]
-        resources: ["deployments"]
-        scope: Namespaced
-      - apiGroups: ["policy"]
-        apiVersions: ["v1"]
-        operations: ["CREATE", "UPDATE", "DELETE"]
-        resources: ["poddisruptionbudgets"]
-        scope: Namespaced
-      - apiGroups: ["networking.k8s.io"]
-        apiVersions: ["v1"]
-        operations: ["CREATE", "UPDATE", "DELETE"]
-        resources: ["networkpolicies"]
-        scope: Namespaced
-      - apiGroups: ["rbac.authorization.k8s.io"]
-        apiVersions: ["v1"]
-        operations: ["CREATE", "UPDATE", "DELETE"]
-        resources: ["roles", "rolebindings"]
-        scope: Namespaced
-      - apiGroups: ["cert-manager.io"]
-        apiVersions: ["v1"]
-        operations: ["CREATE", "UPDATE", "DELETE"]
-        resources: ["issuers", "certificates"]
-        scope: Namespaced
-  - name: cluster-custody.network.fs2.nebius.ai
-    admissionReviewVersions: [v1]
-    sideEffects: None
-    failurePolicy: Fail
-    matchPolicy: Equivalent
-    timeoutSeconds: 3
-    clientConfig: *client
-    objectSelector:
-      matchLabels: {fs2-serve.nebius.ai/network-boundary-authority: "true"}
-    matchConditions:
-      - name: exact-custody-rbac
-        expression: "request.name in ['fs2-model-network-admission-author', 'fs2-model-network-custody-reader', 'fs2-model-network-helm-rollback']"
-    rules:
-      - apiGroups: ["rbac.authorization.k8s.io"]
-        apiVersions: ["v1"]
-        operations: ["CREATE", "UPDATE", "DELETE"]
-        resources: ["clusterroles", "clusterrolebindings"]
-        scope: Cluster
-  - name: admission.network.fs2.nebius.ai
-    admissionReviewVersions: [v1]
-    sideEffects: None
-    failurePolicy: Fail
-    matchPolicy: Equivalent
-    timeoutSeconds: 3
-    clientConfig: *client
-    objectSelector:
-      matchLabels:
-        fs2-serve.nebius.ai/network-boundary-object: "true"
-    matchConditions:
-      - name: exact-network-admission-object
-        expression: "request.name == 'fs2-model-network-boundary' || request.name.startsWith('fs2-model-network-')"
-    rules:
-      - apiGroups: ["admissionregistration.k8s.io"]
-        apiVersions: ["v1"]
-        operations: ["CREATE", "UPDATE", "DELETE"]
-        resources: ["validatingadmissionpolicies", "validatingadmissionpolicybindings", "validatingwebhookconfigurations"]
-        scope: Cluster

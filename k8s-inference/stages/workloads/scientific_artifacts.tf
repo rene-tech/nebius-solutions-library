@@ -251,6 +251,11 @@ locals {
       leaseSeconds           = var.scientific_batch.lease_seconds
       apiTimeoutSeconds      = var.scientific_batch.api_timeout_seconds
       tokenExpirationSeconds = var.scientific_batch.token_expiration_seconds
+      writer = {
+        replicaCount   = 2
+        port           = 8082
+        callerAudience = "fs2-scientific-writer"
+      }
     }
   }
 

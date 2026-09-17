@@ -292,7 +292,15 @@ class InferenceStackTests(unittest.TestCase):
             args=["kubectl-test", "auth", "whoami"],
             returncode=0,
             stdout=json.dumps(
-                {"status": {"userInfo": {"username": "reviewer@example.test"}}}
+                {
+                    "status": {
+                        "userInfo": {
+                            "username": "reviewer@example.test",
+                            "groups": ["system:authenticated"],
+                            "extra": {},
+                        }
+                    }
+                }
             ),
             stderr="",
         )
@@ -320,7 +328,20 @@ class InferenceStackTests(unittest.TestCase):
             subprocess.CompletedProcess(
                 args=["kubectl-test", "auth", "whoami"],
                 returncode=0,
-                stdout=json.dumps({"status": {"userInfo": {"username": username}}}),
+                stdout=json.dumps(
+                    {
+                        "status": {
+                            "userInfo": {
+                                "username": username,
+                                "groups": [
+                                    "fs2:model-network-transition",
+                                    "system:authenticated",
+                                ],
+                                "extra": {},
+                            }
+                        }
+                    }
+                ),
                 stderr="",
             ),
             subprocess.CompletedProcess(
@@ -381,7 +402,20 @@ class InferenceStackTests(unittest.TestCase):
             subprocess.CompletedProcess(
                 args=["kubectl-test", "auth", "whoami"],
                 returncode=0,
-                stdout=json.dumps({"status": {"userInfo": {"username": username}}}),
+                stdout=json.dumps(
+                    {
+                        "status": {
+                            "userInfo": {
+                                "username": username,
+                                "groups": [
+                                    "fs2:model-network-transition",
+                                    "system:authenticated",
+                                ],
+                                "extra": {},
+                            }
+                        }
+                    }
+                ),
                 stderr="",
             ),
             subprocess.CompletedProcess(
@@ -558,6 +592,39 @@ class InferenceStackTests(unittest.TestCase):
             },
             current,
         )
+
+    def test_maintenance_allows_only_exact_helm_and_transition_state_updates(
+        self,
+    ) -> None:
+        current = contract()
+        current["stages"]["workloads"]["model_runtime_network_policy"] = {
+            "phase": "maintenance"
+        }
+        safe = {
+            "resource_changes": [
+                {
+                    "mode": "managed",
+                    "address": "helm_release.control_plane",
+                    "change": {"actions": ["update"]},
+                },
+                {
+                    "mode": "managed",
+                    "address": "terraform_data.model_runtime_network_policy_transition",
+                    "change": {"actions": ["update"]},
+                },
+                {
+                    "mode": "managed",
+                    "address": "kubernetes_network_policy_v1.model_namespace_default_deny[0]",
+                    "change": {"actions": ["no-op"]},
+                },
+            ]
+        }
+        STACK.validate_model_network_maintenance_plan(safe, current)
+
+        unsafe = json.loads(json.dumps(safe))
+        unsafe["resource_changes"][2]["change"]["actions"] = ["delete"]
+        with self.assertRaisesRegex(STACK.DeploymentError, "maintenance may update only"):
+            STACK.validate_model_network_maintenance_plan(unsafe, current)
 
     def test_completed_model_handoff_survives_catalog_additions(self) -> None:
         def resource(name, value):

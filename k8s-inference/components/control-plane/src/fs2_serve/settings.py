@@ -232,7 +232,7 @@ class Settings(BaseSettings):
         max_length=1024,
     )
     network_boundary_admission_direct_job_writer: str = Field(
-        default="system:serviceaccount:fs2-system:fs2-serve-control-plane-runtime",
+        default="system:serviceaccount:fs2-system:fs2-scientific-job-writer",
         min_length=1,
         max_length=1024,
     )
@@ -241,8 +241,18 @@ class Settings(BaseSettings):
         min_length=1,
         max_length=1024,
     )
+    network_boundary_admission_model_controller_writer: str = Field(
+        default="system:serviceaccount:fs2-system:fs2-serve-control-plane-controller",
+        min_length=1,
+        max_length=1024,
+    )
     network_boundary_admission_transition_writer: str = Field(
         default="fs2-model-network-transition",
+        min_length=1,
+        max_length=1024,
+    )
+    network_boundary_admission_maintenance_writer: str = Field(
+        default="fs2-model-network-maintenance",
         min_length=1,
         max_length=1024,
     )
@@ -250,6 +260,23 @@ class Settings(BaseSettings):
         default="system:serviceaccount:cert-manager:cert-manager",
         min_length=1,
         max_length=1024,
+    )
+    network_boundary_admission_authorizer_groups: tuple[str, ...] = (
+        "fs2:model-network-authorizer",
+        "system:authenticated",
+    )
+    network_boundary_admission_transition_groups: tuple[str, ...] = (
+        "fs2:model-network-transition",
+        "system:authenticated",
+    )
+    network_boundary_admission_maintenance_groups: tuple[str, ...] = (
+        "fs2:model-network-maintenance",
+        "system:authenticated",
+    )
+    network_boundary_admission_certificate_groups: tuple[str, ...] = (
+        "system:serviceaccounts",
+        "system:serviceaccounts:cert-manager",
+        "system:authenticated",
     )
     network_boundary_admission_api_timeout_seconds: float = Field(default=2, ge=0.1, le=10)
     scientific_batch_enabled: bool = False
@@ -266,6 +293,30 @@ class Settings(BaseSettings):
     )
     scientific_batch_kubernetes_token_file: Path = Path("/var/run/secrets/fs2-scientific-batch/token")
     scientific_batch_kubernetes_ca_file: Path = Path("/var/run/secrets/fs2-scientific-batch/ca.crt")
+    scientific_batch_writer_url: str = Field(
+        default="http://fs2-serve-control-plane-scientific-writer.fs2-system.svc:8082",
+        min_length=1,
+        max_length=2048,
+    )
+    scientific_batch_writer_token_file: Path = Path(
+        "/var/run/secrets/fs2-scientific-writer-caller/token"
+    )
+    scientific_writer_enabled: bool = False
+    scientific_writer_host: str = "0.0.0.0"  # noqa: S104
+    scientific_writer_port: int = Field(default=8082, ge=1024, le=65535)
+    scientific_writer_kubernetes_token_file: Path = Path(
+        "/var/run/secrets/fs2-scientific-writer/token"
+    )
+    scientific_writer_caller_username: str = Field(
+        default="system:serviceaccount:fs2-system:fs2-serve-control-plane-runtime",
+        min_length=1,
+        max_length=1024,
+    )
+    scientific_writer_caller_audience: str = Field(
+        default="fs2-scientific-writer",
+        pattern=r"^[a-z0-9](?:[-a-z0-9.]{0,126}[a-z0-9])?$",
+    )
+    scientific_writer_allowed_namespaces: tuple[str, ...] = ("fs2-models",)
     scientific_batch_scheduling_contract_file: Path = Path("/etc/fs2-scientific-batch/kueue-scheduling.json")
     scientific_batch_scheduling_contract_schema: Literal["fs2-serve.nebius.ai/kueue-scheduling/v1"] = (
         "fs2-serve.nebius.ai/kueue-scheduling/v1"
@@ -474,6 +525,28 @@ class Settings(BaseSettings):
             or internal_api.fragment
         ):
             raise ValueError("scientific batch internal API URL must be an in-cluster HTTP origin")
+        writer_api = urlsplit(self.scientific_batch_writer_url)
+        if self.scientific_batch_enabled and (
+            writer_api.scheme != "http"
+            or writer_api.hostname is None
+            or not writer_api.hostname.endswith(".svc")
+            or writer_api.port != 8082
+            or writer_api.path not in {"", "/"}
+            or writer_api.query
+            or writer_api.fragment
+        ):
+            raise ValueError("scientific writer URL must be the exact in-cluster HTTP service origin")
+        if (
+            not self.scientific_writer_allowed_namespaces
+            or len(set(self.scientific_writer_allowed_namespaces))
+            != len(self.scientific_writer_allowed_namespaces)
+            or any(
+                re.fullmatch(r"[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?", namespace)
+                is None
+                for namespace in self.scientific_writer_allowed_namespaces
+            )
+        ):
+            raise ValueError("scientific writer namespaces must be finite and canonical")
         if not self.scientific_batch_kubernetes_api_url.startswith("https://"):
             raise ValueError("scientific batch Kubernetes API URL must use HTTPS")
         if self.scientific_batch_enabled and not self.scientific_artifacts_enabled:

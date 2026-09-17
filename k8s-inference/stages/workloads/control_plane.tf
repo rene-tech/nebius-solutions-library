@@ -192,7 +192,7 @@ locals {
       authorizerUsername        = "fs2-model-network-authorizer"
       transitionWriterUsername  = "fs2-model-network-transition"
       acquisitionWriterUsername = "system:serviceaccount:fs2-system:fs2-catalog-acquisition"
-      directJobWriterUsername   = "system:serviceaccount:fs2-system:fs2-serve-control-plane-runtime"
+      directJobWriterUsername   = "system:serviceaccount:fs2-system:fs2-scientific-job-writer"
       jobsetWriterUsername = format(
         "system:serviceaccount:jobset-system:%s",
         try(
@@ -264,10 +264,11 @@ resource "helm_release" "control_plane" {
   lifecycle {
     precondition {
       condition = (
-        var.model_runtime_network_policy.phase != "rollback-helm" ||
+        !contains(["maintenance", "rollback-helm"], var.model_runtime_network_policy.phase) ||
+        terraform_data.model_runtime_network_policy_transition.output.helm_maintenance_authorized ||
         terraform_data.model_runtime_network_policy_transition.output.helm_rollback_authorized
       )
-      error_message = "The control-plane Helm release cannot roll back until the model-runtime transition contract proves default-deny was removed in an earlier apply."
+      error_message = "The control-plane Helm release requires either an armed-boundary maintenance phase or a deny-absent rollback authorization."
     }
 
     precondition {

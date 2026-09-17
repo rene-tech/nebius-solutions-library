@@ -9,11 +9,35 @@ systemNamespace: fs2-system
 authorityNamespace: fs2-network-security
 authorizerUsername: fs2-model-network-authorizer
 transitionWriterUsername: fs2-model-network-transition
+maintenanceWriterUsername: fs2-model-network-maintenance
+custodianUsername: fs2-model-network-custodian
+recoveryUsername: fs2-model-network-recovery
+auditorUsername: fs2-model-network-auditor
+custodyTrustDomain: ""
+custodianPrincipalId: ""
+recoveryPrincipalId: ""
 certificateWriterUsername: system:serviceaccount:cert-manager:cert-manager
+cainjectorUsername: system:serviceaccount:cert-manager:cert-manager-cainjector
+custodianGroups: [fs2:model-network-custodian, system:authenticated]
+recoveryGroups: [fs2:model-network-recovery, system:authenticated]
+auditorGroups: [fs2:model-network-auditor, system:authenticated]
+authorizerGroups: [fs2:model-network-authorizer, system:authenticated]
+transitionWriterGroups: [fs2:model-network-transition, system:authenticated]
+maintenanceWriterGroups: [fs2:model-network-maintenance, system:authenticated]
+certificateWriterGroups: [system:serviceaccounts, system:serviceaccounts:cert-manager, system:authenticated]
+cainjectorGroups: [system:serviceaccounts, system:serviceaccounts:cert-manager, system:authenticated]
 acquisitionServiceAccountName: fs2-catalog-acquisition
-directJobWriterUsername: system:serviceaccount:fs2-system:fs2-serve-control-plane-runtime
+scientificWriterServiceAccountName: fs2-scientific-job-writer
+directJobWriterUsername: system:serviceaccount:fs2-system:fs2-scientific-job-writer
 jobsetWriterUsername: system:serviceaccount:jobset-system:jobset-controller
+modelControllerWriterUsername: system:serviceaccount:fs2-system:fs2-serve-control-plane-controller
 transitionHolder: ""
+maintenanceHolder: ""
+# This list is produced by the signed RBAC census. The static API-server guard
+# prevents any new binding to an already impersonation-capable role and
+# prevents any role from acquiring impersonate/* after the receipt is signed.
+impersonationCapableClusterRoles: [cluster-admin]
+impersonationCapableRoles: []
 kubernetesApiUrl: https://kubernetes.default.svc
 kubernetesApiCidrs: []
 apiTimeoutSeconds: "2"
@@ -23,7 +47,10 @@ service:
   targetPort: 8443
 certificate:
   secretName: fs2-model-network-boundary-tls
-  issuerName: fs2-model-network-boundary-selfsigned
+  caSecretName: fs2-model-network-boundary-ca
+  bootstrapIssuerName: fs2-model-network-boundary-selfsigned
+  caCertificateName: fs2-model-network-boundary-ca
+  servingIssuerName: fs2-model-network-boundary-ca
 resources:
   requests:
     cpu: 25m
@@ -33,4 +60,31 @@ resources:
     memory: 256Mi
 nodeSelector: {}
 tolerations: []
-affinity: {}
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          topologyKey: kubernetes.io/hostname
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: fs2-model-network-boundary
+              app.kubernetes.io/instance: fs2-model-network-boundary
+              app.kubernetes.io/component: admission
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: fs2-model-network-boundary
+        app.kubernetes.io/instance: fs2-model-network-boundary
+        app.kubernetes.io/component: admission
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: fs2-model-network-boundary
+        app.kubernetes.io/instance: fs2-model-network-boundary
+        app.kubernetes.io/component: admission

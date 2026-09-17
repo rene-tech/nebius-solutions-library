@@ -1,0 +1,157 @@
+{{- if .Values.scientificBatch.enabled }}
+{{- $writerAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "scientific-writer") }}
+{{- $runtimeAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "runtime") }}
+{{- $namespaces := include "fs2-serve.scientificWorkloadNamespaces" . | fromJsonArray }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-scientific-writer
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scientific-writer
+spec:
+  replicas: {{ .Values.scientificBatch.writer.replicaCount }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+  selector:
+    matchLabels:
+      {{- include "fs2-serve.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: scientific-writer
+  template:
+    metadata:
+      labels:
+        {{- include "fs2-serve.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: scientific-writer
+      annotations:
+        fs2.nebius.ai/image-digest: {{ .Values.image.digest | quote }}
+    spec:
+      serviceAccountName: {{ $writerAccount }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: scientific-writer
+          image: {{ include "fs2-serve.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["fs2-scientific-writer"]
+          ports:
+            - {name: http, containerPort: {{ .Values.scientificBatch.writer.port }}, protocol: TCP}
+          env:
+            - {name: FS2_SCIENTIFIC_WRITER_ENABLED, value: "true"}
+            - {name: FS2_SCIENTIFIC_WRITER_PORT, value: {{ .Values.scientificBatch.writer.port | quote }}}
+            - {name: FS2_SCIENTIFIC_BATCH_KUBERNETES_API_URL, value: {{ .Values.scientificBatch.kubernetesApiUrl | quote }}}
+            - {name: FS2_SCIENTIFIC_WRITER_KUBERNETES_TOKEN_FILE, value: /var/run/secrets/fs2-scientific-writer/token}
+            - {name: FS2_SCIENTIFIC_BATCH_KUBERNETES_CA_FILE, value: /var/run/secrets/fs2-scientific-writer/ca.crt}
+            - {name: FS2_SCIENTIFIC_WRITER_CALLER_USERNAME, value: {{ printf "system:serviceaccount:%s:%s" .Release.Namespace $runtimeAccount | quote }}}
+            - {name: FS2_SCIENTIFIC_WRITER_CALLER_AUDIENCE, value: {{ .Values.scientificBatch.writer.callerAudience | quote }}}
+            - {name: FS2_SCIENTIFIC_WRITER_ALLOWED_NAMESPACES, value: {{ $namespaces | toJson | quote }}}
+            - {name: FS2_SCIENTIFIC_BATCH_API_TIMEOUT_SECONDS, value: {{ .Values.scientificBatch.apiTimeoutSeconds | quote }}}
+          volumeMounts:
+            - {name: kubernetes, mountPath: /var/run/secrets/fs2-scientific-writer, readOnly: true}
+          startupProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: {path: /livez, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.scientificBatch.writer.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+      volumes:
+        - name: kubernetes
+          projected:
+            defaultMode: 0400
+            sources:
+              - serviceAccountToken:
+                  audience: kubernetes.default.svc
+                  expirationSeconds: {{ .Values.scientificBatch.tokenExpirationSeconds }}
+                  path: token
+              - configMap:
+                  name: kube-root-ca.crt
+                  items: [{key: ca.crt, path: ca.crt}]
+      affinity:
+        {{- toYaml .Values.scientificBatch.writer.affinity | nindent 8 }}
+      topologySpreadConstraints:
+        {{- toYaml .Values.scientificBatch.writer.topologySpreadConstraints | nindent 8 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-scientific-writer
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scientific-writer
+spec:
+  selector:
+    {{- include "fs2-serve.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: scientific-writer
+  ports:
+    - {name: http, port: {{ .Values.scientificBatch.writer.port }}, targetPort: http, protocol: TCP}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-scientific-writer
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "fs2-serve.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: scientific-writer
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-scientific-writer
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "fs2-serve.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: scientific-writer
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "fs2-serve.runtimeSelectorLabels" . | nindent 14 }}
+      ports:
+        - {port: {{ .Values.scientificBatch.writer.port }}, protocol: TCP}
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchExpressions:
+              - {key: k8s-app, operator: In, values: [coredns, kube-dns]}
+      ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
+    {{- range .Values.networkPolicy.kubernetesApiCidrs }}
+    - to:
+        - ipBlock: {cidr: {{ . | quote }}}
+      ports:
+        - {port: 443, protocol: TCP}
+    {{- end }}
+{{- end }}

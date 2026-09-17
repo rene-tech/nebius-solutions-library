@@ -782,10 +782,11 @@ variable "deployment" {
       "prepare",
       "inventory",
       "enforce",
+      "maintenance",
       "rollback-remove-deny",
       "rollback-helm",
     ], var.deployment.models.network_policy.phase)
-    error_message = "deployment.models.network_policy.phase must be prepare, inventory, enforce, rollback-remove-deny, or rollback-helm."
+    error_message = "deployment.models.network_policy.phase must be prepare, inventory, enforce, maintenance, rollback-remove-deny, or rollback-helm."
   }
 
   validation {
@@ -809,7 +810,7 @@ variable "deployment" {
         var.deployment.models.network_policy.deny_absent_receipt == null
       )
     )
-    error_message = "prepare and inventory accept no NetworkPolicy receipts; enforce and rollback-remove-deny require only the inventory receipt; rollback-helm requires both receipts."
+    error_message = "prepare and inventory accept no NetworkPolicy receipts; enforce, maintenance, and rollback-remove-deny require only the inventory receipt; rollback-helm requires both receipts."
   }
 
   validation {

@@ -787,6 +787,8 @@ class HttpScientificBatchCluster:
         base_url: str,
         token_file: Path,
         ca_file: Path,
+        writer_base_url: str | None = None,
+        writer_token_file: Path | None = None,
         controller_id: str,
         fence: ScientificFenceAuthority,
         renderer: ScientificManifestRenderer,
@@ -797,6 +799,7 @@ class HttpScientificBatchCluster:
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.token_file = token_file
+        self.writer_token_file = writer_token_file
         self.controller_id = controller_id
         self.fence = fence
         self.renderer = renderer
@@ -808,10 +811,21 @@ class HttpScientificBatchCluster:
         self.client = client or httpx.AsyncClient(
             base_url=base_url.rstrip("/"), verify=str(ca_file), timeout=httpx.Timeout(timeout_seconds)
         )
+        self.writer_client = (
+            httpx.AsyncClient(
+                base_url=writer_base_url.rstrip("/"),
+                timeout=httpx.Timeout(timeout_seconds),
+                trust_env=False,
+            )
+            if writer_base_url is not None
+            else None
+        )
 
     async def close(self) -> None:
         if self._owns_client:
             await self.client.aclose()
+        if self.writer_client is not None:
+            await self.writer_client.aclose()
 
     def _headers(self) -> dict[str, str]:
         try:
@@ -823,6 +837,40 @@ class HttpScientificBatchCluster:
         return {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
+        if method in {"POST", "DELETE"}:
+            if self.writer_client is None or self.writer_token_file is None:
+                # A supplied in-memory client is the existing unit-test seam;
+                # production construction owns its Kubernetes client and must
+                # always route mutations through the separate writer.
+                if self._owns_client:
+                    raise ScientificKubernetesError("the separate scientific writer is unavailable")
+                try:
+                    return await self.client.request(
+                        method,
+                        path,
+                        headers=self._headers(),
+                        **kwargs,
+                    )
+                except (OSError, httpx.HTTPError) as error:
+                    raise ScientificKubernetesError("Kubernetes API request failed") from error
+            try:
+                caller_token = self.writer_token_file.read_text(encoding="utf-8").strip()
+            except OSError as error:
+                raise ScientificKubernetesError("scientific writer caller token is unavailable") from error
+            if len(caller_token) < 16:
+                raise ScientificKubernetesError("scientific writer caller token is unavailable")
+            try:
+                return await self.writer_client.post(
+                    "/v1/mutate",
+                    headers={"Authorization": f"Bearer {caller_token}"},
+                    json={
+                        "method": method,
+                        "path": path,
+                        "body": kwargs.get("json", {}),
+                    },
+                )
+            except httpx.HTTPError as error:
+                raise ScientificKubernetesError("scientific writer request failed") from error
         try:
             response = await self.client.request(method, path, headers=self._headers(), **kwargs)
         except (OSError, httpx.HTTPError) as error:

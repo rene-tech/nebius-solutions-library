@@ -438,6 +438,8 @@ async def build_runtime(settings: Settings) -> AppRuntime:
                 base_url=settings.scientific_batch_kubernetes_api_url,
                 token_file=settings.scientific_batch_kubernetes_token_file,
                 ca_file=settings.scientific_batch_kubernetes_ca_file,
+                writer_base_url=settings.scientific_batch_writer_url,
+                writer_token_file=settings.scientific_batch_writer_token_file,
                 renderer=scientific_renderer,
                 fence=scientific_repository,
                 controller_id=settings.scientific_batch_controller_id or "scientific-batch-controller",
@@ -684,14 +686,32 @@ async def serve_network_boundary_admission(settings: Settings) -> None:
             acquisition_writer=settings.network_boundary_admission_acquisition_writer,
             direct_job_writer=settings.network_boundary_admission_direct_job_writer,
             jobset_writer=settings.network_boundary_admission_jobset_writer,
+            model_controller_writer=settings.network_boundary_admission_model_controller_writer,
             transition_writer=settings.network_boundary_admission_transition_writer,
+            maintenance_writer=settings.network_boundary_admission_maintenance_writer,
             certificate_writer=settings.network_boundary_admission_certificate_writer,
+            authorizer_groups=frozenset(settings.network_boundary_admission_authorizer_groups),
+            transition_groups=frozenset(settings.network_boundary_admission_transition_groups),
+            maintenance_groups=frozenset(settings.network_boundary_admission_maintenance_groups),
+            certificate_groups=frozenset(settings.network_boundary_admission_certificate_groups),
         ),
         reader=reader,
     )
     server = uvicorn.Server(
         uvicorn.Config(
-            create_network_boundary_app(admission),
+            create_network_boundary_app(
+                admission,
+                readiness_files=(
+                    settings.network_boundary_admission_token_file,
+                    settings.network_boundary_admission_ca_file,
+                    settings.network_boundary_admission_tls_cert_file,
+                    settings.network_boundary_admission_tls_key_file,
+                ),
+                restart_on_change_files=(
+                    settings.network_boundary_admission_tls_cert_file,
+                    settings.network_boundary_admission_tls_key_file,
+                ),
+            ),
             host=settings.network_boundary_admission_host,
             port=settings.network_boundary_admission_port,
             log_level=settings.log_level.lower(),

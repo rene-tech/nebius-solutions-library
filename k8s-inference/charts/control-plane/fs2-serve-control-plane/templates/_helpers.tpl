@@ -350,6 +350,10 @@ app.kubernetes.io/component: network-boundary-admission
   value: /var/run/secrets/fs2-scientific-batch/token
 - name: FS2_SCIENTIFIC_BATCH_KUBERNETES_CA_FILE
   value: /var/run/secrets/fs2-scientific-batch/ca.crt
+- name: FS2_SCIENTIFIC_BATCH_WRITER_URL
+  value: http://{{ include "fs2-serve.fullname" . }}-scientific-writer.{{ .Release.Namespace }}.svc:{{ .Values.scientificBatch.writer.port }}
+- name: FS2_SCIENTIFIC_BATCH_WRITER_TOKEN_FILE
+  value: /var/run/secrets/fs2-scientific-writer-caller/token
 - name: FS2_SCIENTIFIC_BATCH_SCHEDULING_CONTRACT_FILE
   value: /etc/fs2-scientific-batch/{{ .Values.scientificBatch.schedulingContractKey }}
 - name: FS2_SCIENTIFIC_BATCH_SCHEDULING_CONTRACT_SCHEMA
@@ -513,6 +517,9 @@ app.kubernetes.io/component: network-boundary-admission
 - name: scientific-batch-kubernetes
   mountPath: /var/run/secrets/fs2-scientific-batch
   readOnly: true
+- name: scientific-writer-caller
+  mountPath: /var/run/secrets/fs2-scientific-writer-caller
+  readOnly: true
 - name: scientific-batch-scheduling
   mountPath: /etc/fs2-scientific-batch/{{ .Values.scientificBatch.schedulingContractKey }}
   subPath: {{ .Values.scientificBatch.schedulingContractKey }}
@@ -668,6 +675,14 @@ app.kubernetes.io/component: network-boundary-admission
           items:
             - key: ca.crt
               path: ca.crt
+- name: scientific-writer-caller
+  projected:
+    defaultMode: 0400
+    sources:
+      - serviceAccountToken:
+          audience: {{ .Values.scientificBatch.writer.callerAudience | quote }}
+          expirationSeconds: {{ .Values.scientificBatch.tokenExpirationSeconds }}
+          path: token
 - name: scientific-batch-scheduling
   configMap:
     name: {{ .Values.scientificBatch.schedulingContractConfigMapName }}

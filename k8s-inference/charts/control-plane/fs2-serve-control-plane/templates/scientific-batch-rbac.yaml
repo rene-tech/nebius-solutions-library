@@ -1,6 +1,7 @@
 {{- if .Values.scientificBatch.enabled }}
 {{- $root := . }}
-{{- $serviceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "runtime") }}
+{{- $runtimeServiceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "runtime") }}
+{{- $writerServiceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "scientific-writer") }}
 {{- $workloadNamespaces := include "fs2-serve.scientificWorkloadNamespaces" . | fromJsonArray }}
 {{- range $workloadNamespace := $workloadNamespaces }}
 apiVersion: rbac.authorization.k8s.io/v1
@@ -13,10 +14,10 @@ metadata:
 rules:
   - apiGroups: ["batch"]
     resources: ["jobs"]
-    verbs: ["get", "create", "delete"]
+    verbs: ["get"]
   - apiGroups: ["jobset.x-k8s.io"]
     resources: ["jobsets"]
-    verbs: ["get", "create", "delete"]
+    verbs: ["get"]
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list"]
@@ -38,12 +39,43 @@ metadata:
     {{- include "fs2-serve.labels" $root | nindent 4 }}
 subjects:
   - kind: ServiceAccount
-    name: {{ $serviceAccount }}
+    name: {{ $runtimeServiceAccount }}
     namespace: {{ $root.Release.Namespace }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: {{ include "fs2-serve.fullname" $root }}-scientific-batch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "fs2-serve.fullname" $root }}-scientific-writer
+  namespace: {{ $workloadNamespace }}
+  labels:
+    {{- include "fs2-serve.labels" $root | nindent 4 }}
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "delete"]
+  - apiGroups: ["jobset.x-k8s.io"]
+    resources: ["jobsets"]
+    verbs: ["create", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "fs2-serve.fullname" $root }}-scientific-writer
+  namespace: {{ $workloadNamespace }}
+  labels:
+    {{- include "fs2-serve.labels" $root | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $writerServiceAccount }}
+    namespace: {{ $root.Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "fs2-serve.fullname" $root }}-scientific-writer
 ---
 {{- end }}
 apiVersion: rbac.authorization.k8s.io/v1
@@ -68,10 +100,36 @@ metadata:
     {{- include "fs2-serve.labels" . | nindent 4 }}
 subjects:
   - kind: ServiceAccount
-    name: {{ $serviceAccount }}
+    name: {{ $runtimeServiceAccount }}
     namespace: {{ .Release.Namespace }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: {{ include "fs2-serve.fullname" . }}-scientific-batch-flavors
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-scientific-writer-tokenreview
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-scientific-writer-tokenreview
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $writerServiceAccount }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "fs2-serve.fullname" . }}-scientific-writer-tokenreview
 {{- end }}

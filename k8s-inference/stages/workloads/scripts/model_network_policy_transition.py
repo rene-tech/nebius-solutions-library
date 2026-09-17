@@ -216,7 +216,7 @@ def _contract(contract: dict[str, Any], *, phases: set[str]) -> dict[str, Any]:
     )
     if (
         authority.get("schema")
-        != "fs2-serve.nebius.ai/model-network-boundary-authority/v1"
+        != "fs2-serve.nebius.ai/model-network-boundary-authority/v2"
         or authority.get("cluster_id") != cluster_id
         or authority.get("authority_namespace") != "fs2-network-security"
     ):
@@ -975,15 +975,14 @@ def _boundary_webhook_state(
         raise ReceiptError("boundary webhook list is malformed")
     by_name = {item.get("name"): item for item in raw}
     expected_names = {
-        "admission.network.fs2.nebius.ai",
         "children.network.fs2.nebius.ai",
         "control-plane.network.fs2.nebius.ai",
-        "cluster-custody.network.fs2.nebius.ai",
-        "custody.network.fs2.nebius.ai",
         "helm.network.fs2.nebius.ai",
         "lease.network.fs2.nebius.ai",
         "marker.network.fs2.nebius.ai",
         "models.network.fs2.nebius.ai",
+        "release-writers.network.fs2.nebius.ai",
+        "release-writers-cluster.network.fs2.nebius.ai",
     }
     if set(by_name) != expected_names or len(raw) != len(expected_names):
         raise ReceiptError("boundary webhook does not contain the exact bounded hooks")
@@ -1010,20 +1009,13 @@ def _boundary_webhook_state(
         "control-plane.network.fs2.nebius.ai": {
             "matchLabels": {"kubernetes.io/metadata.name": SYSTEM_NAMESPACE}
         },
+        "release-writers.network.fs2.nebius.ai": {
+            "matchLabels": {"kubernetes.io/metadata.name": SYSTEM_NAMESPACE}
+        },
+        "release-writers-cluster.network.fs2.nebius.ai": {},
         "lease.network.fs2.nebius.ai": {
             "matchLabels": {"kubernetes.io/metadata.name": SYSTEM_NAMESPACE}
         },
-        "custody.network.fs2.nebius.ai": {
-            "matchExpressions": [
-                {
-                    "key": "kubernetes.io/metadata.name",
-                    "operator": "In",
-                    "values": [NAMESPACE, SYSTEM_NAMESPACE, "fs2-network-security"],
-                }
-            ]
-        },
-        "cluster-custody.network.fs2.nebius.ai": {},
-        "admission.network.fs2.nebius.ai": {},
     }
     expected_object_selectors = {
         "children.network.fs2.nebius.ai": {
@@ -1045,16 +1037,9 @@ def _boundary_webhook_state(
         "control-plane.network.fs2.nebius.ai": {
             "matchLabels": {"app.kubernetes.io/instance": "fs2-serve-control-plane"}
         },
+        "release-writers.network.fs2.nebius.ai": {},
+        "release-writers-cluster.network.fs2.nebius.ai": {},
         "lease.network.fs2.nebius.ai": {
-            "matchLabels": {"fs2-serve.nebius.ai/network-boundary-object": "true"}
-        },
-        "custody.network.fs2.nebius.ai": {
-            "matchLabels": {"fs2-serve.nebius.ai/network-boundary-authority": "true"}
-        },
-        "cluster-custody.network.fs2.nebius.ai": {
-            "matchLabels": {"fs2-serve.nebius.ai/network-boundary-authority": "true"}
-        },
-        "admission.network.fs2.nebius.ai": {
             "matchLabels": {"fs2-serve.nebius.ai/network-boundary-object": "true"}
         },
     }
@@ -1069,30 +1054,28 @@ def _boundary_webhook_state(
         ],
         "helm.network.fs2.nebius.ai": [],
         "control-plane.network.fs2.nebius.ai": [],
+        "release-writers.network.fs2.nebius.ai": [
+            {
+                "name": "exact-release-writer",
+                "expression": (
+                    'request.userInfo.username in ["fs2-model-network-maintenance", '
+                    '"fs2-model-network-transition"]'
+                ),
+            }
+        ],
+        "release-writers-cluster.network.fs2.nebius.ai": [
+            {
+                "name": "exact-release-writer",
+                "expression": (
+                    'request.userInfo.username in ["fs2-model-network-maintenance", '
+                    '"fs2-model-network-transition"]'
+                ),
+            }
+        ],
         "lease.network.fs2.nebius.ai": [
             {
-                "name": "exact-transition-lease",
-                "expression": "request.name == 'fs2-model-network-transition'",
-            }
-        ],
-        "custody.network.fs2.nebius.ai": [],
-        "cluster-custody.network.fs2.nebius.ai": [
-            {
-                "name": "exact-custody-rbac",
-                "expression": (
-                    "request.name in ['fs2-model-network-admission-author', "
-                    "'fs2-model-network-custody-reader', "
-                    "'fs2-model-network-helm-rollback']"
-                ),
-            }
-        ],
-        "admission.network.fs2.nebius.ai": [
-            {
-                "name": "exact-network-admission-object",
-                "expression": (
-                    "request.name == 'fs2-model-network-boundary' || "
-                    "request.name.startsWith('fs2-model-network-')"
-                ),
+                "name": "exact-boundary-lease",
+                "expression": "request.name in ['fs2-model-network-transition', 'fs2-model-network-maintenance']",
             }
         ],
     }
@@ -1229,6 +1212,28 @@ def _boundary_webhook_state(
                 "scope": "Namespaced",
             },
         ],
+        "release-writers.network.fs2.nebius.ai": [
+            {
+                "apiGroups": ["*"],
+                "apiVersions": ["*"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["*"],
+                "scope": "Namespaced",
+            }
+        ],
+        "release-writers-cluster.network.fs2.nebius.ai": [
+            {
+                "apiGroups": [
+                    "admissionregistration.k8s.io",
+                    "gateway.networking.k8s.io",
+                    "rbac.authorization.k8s.io",
+                ],
+                "apiVersions": ["*"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["*"],
+                "scope": "Cluster",
+            }
+        ],
         "lease.network.fs2.nebius.ai": [
             {
                 "apiGroups": ["coordination.k8s.io"],
@@ -1238,73 +1243,8 @@ def _boundary_webhook_state(
                 "scope": "Namespaced",
             }
         ],
-        "custody.network.fs2.nebius.ai": [
-            {
-                "apiGroups": [""],
-                "apiVersions": ["v1"],
-                "operations": ["CREATE", "UPDATE", "DELETE"],
-                "resources": ["serviceaccounts", "services", "secrets"],
-                "scope": "Namespaced",
-            },
-            {
-                "apiGroups": ["apps"],
-                "apiVersions": ["v1"],
-                "operations": ["CREATE", "UPDATE", "DELETE"],
-                "resources": ["deployments"],
-                "scope": "Namespaced",
-            },
-            {
-                "apiGroups": ["policy"],
-                "apiVersions": ["v1"],
-                "operations": ["CREATE", "UPDATE", "DELETE"],
-                "resources": ["poddisruptionbudgets"],
-                "scope": "Namespaced",
-            },
-            {
-                "apiGroups": ["networking.k8s.io"],
-                "apiVersions": ["v1"],
-                "operations": ["CREATE", "UPDATE", "DELETE"],
-                "resources": ["networkpolicies"],
-                "scope": "Namespaced",
-            },
-            {
-                "apiGroups": ["rbac.authorization.k8s.io"],
-                "apiVersions": ["v1"],
-                "operations": ["CREATE", "UPDATE", "DELETE"],
-                "resources": ["roles", "rolebindings"],
-                "scope": "Namespaced",
-            },
-            {
-                "apiGroups": ["cert-manager.io"],
-                "apiVersions": ["v1"],
-                "operations": ["CREATE", "UPDATE", "DELETE"],
-                "resources": ["issuers", "certificates"],
-                "scope": "Namespaced",
-            },
-        ],
-        "cluster-custody.network.fs2.nebius.ai": [
-            {
-                "apiGroups": ["rbac.authorization.k8s.io"],
-                "apiVersions": ["v1"],
-                "operations": ["CREATE", "UPDATE", "DELETE"],
-                "resources": ["clusterroles", "clusterrolebindings"],
-                "scope": "Cluster",
-            }
-        ],
-        "admission.network.fs2.nebius.ai": [
-            {
-                "apiGroups": ["admissionregistration.k8s.io"],
-                "apiVersions": ["v1"],
-                "operations": ["CREATE", "UPDATE", "DELETE"],
-                "resources": [
-                    "validatingadmissionpolicies",
-                    "validatingadmissionpolicybindings",
-                    "validatingwebhookconfigurations",
-                ],
-                "scope": "Cluster",
-            }
-        ],
     }
+    ca_bundle_hashes: set[str] = set()
     for name in sorted(expected_names):
         item = by_name[name]
         if set(item) - allowed_keys:
@@ -1331,6 +1271,7 @@ def _boundary_webhook_state(
         ca_bundle = client.get("caBundle")
         if not isinstance(ca_bundle, str) or not ca_bundle:
             raise ReceiptError(f"boundary webhook {name} has no injected CA bundle")
+        ca_bundle_hashes.add(_sha256({"caBundle": ca_bundle}))
         if client.get("service") != {
             "name": "fs2-model-network-boundary",
             "namespace": "fs2-network-security",
@@ -1340,6 +1281,12 @@ def _boundary_webhook_state(
             raise ReceiptError(f"boundary webhook {name} service target is not exact")
         if item.get("rules") != expected_rules[name]:
             raise ReceiptError(f"boundary webhook {name} resource rules are not exact")
+    expected_ca_hash = _object(
+        contract["boundary_authority"].get("tls"),
+        "contract.boundary_authority.tls",
+    ).get("webhook_ca_bundle_sha256")
+    if ca_bundle_hashes != {expected_ca_hash}:
+        raise ReceiptError("live webhook CA bundles differ from signed live TLS custody")
     state = {
         "uid": uid,
         "resource_version": resource_version,
@@ -1365,7 +1312,7 @@ def inventory_receipt(
     captured_at: str,
     expected_lock_holder: str | None = None,
 ) -> dict[str, Any]:
-    contract = _contract(contract, phases={"inventory", "enforce"})
+    contract = _contract(contract, phases={"inventory", "enforce", "maintenance"})
     workloads, resource_apis = _workload_inventory(contract, resources)
     pod_inventory = _pod_inventory(contract, pods)
     _verify_pod_owners(workloads, pod_inventory)

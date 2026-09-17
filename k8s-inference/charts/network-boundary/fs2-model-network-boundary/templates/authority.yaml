@@ -12,10 +12,24 @@ spec:
   leaseDurationSeconds: 1
   leaseTransitions: 0
 ---
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  name: fs2-model-network-maintenance
+  namespace: {{ .Values.systemNamespace }}
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+  annotations:
+    fs2-serve.nebius.ai/network-transition-writer: {{ .Values.maintenanceWriterUsername | quote }}
+spec:
+  holderIdentity: ""
+  leaseDurationSeconds: 1
+  leaseTransitions: 0
+---
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: {{ .Values.certificate.issuerName }}
+  name: {{ .Values.certificate.bootstrapIssuerName }}
   namespace: {{ .Values.authorityNamespace }}
   labels:
     {{- include "fs2-network-boundary.labels" . | nindent 4 }}
@@ -27,6 +41,44 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
+  name: {{ .Values.certificate.caCertificateName }}
+  namespace: {{ .Values.authorityNamespace }}
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+  annotations:
+    {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
+spec:
+  isCA: true
+  commonName: fs2-model-network-boundary-ca
+  duration: 8760h
+  renewBefore: 720h
+  secretName: {{ .Values.certificate.caSecretName }}
+  issuerRef:
+    group: cert-manager.io
+    kind: Issuer
+    name: {{ .Values.certificate.bootstrapIssuerName }}
+  secretTemplate:
+    labels:
+      {{- include "fs2-network-boundary.labels" . | nindent 6 }}
+    annotations:
+      {{- include "fs2-network-boundary.annotations" . | nindent 6 }}
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ .Values.certificate.servingIssuerName }}
+  namespace: {{ .Values.authorityNamespace }}
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+  annotations:
+    {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
+spec:
+  ca:
+    secretName: {{ .Values.certificate.caSecretName }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
   name: fs2-model-network-boundary
   namespace: {{ .Values.authorityNamespace }}
   labels:
@@ -34,6 +86,8 @@ metadata:
   annotations:
     {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
 spec:
+  duration: 720h
+  renewBefore: 168h
   secretName: {{ .Values.certificate.secretName }}
   dnsNames:
     - fs2-model-network-boundary.{{ .Values.authorityNamespace }}.svc
@@ -41,7 +95,7 @@ spec:
   issuerRef:
     group: cert-manager.io
     kind: Issuer
-    name: {{ .Values.certificate.issuerName }}
+    name: {{ .Values.certificate.servingIssuerName }}
   secretTemplate:
     labels:
       {{- include "fs2-network-boundary.labels" . | nindent 6 }}
@@ -118,10 +172,22 @@ spec:
               value: {{ .Values.directJobWriterUsername | quote }}
             - name: FS2_NETWORK_BOUNDARY_ADMISSION_JOBSET_WRITER
               value: {{ .Values.jobsetWriterUsername | quote }}
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_MODEL_CONTROLLER_WRITER
+              value: {{ .Values.modelControllerWriterUsername | quote }}
             - name: FS2_NETWORK_BOUNDARY_ADMISSION_TRANSITION_WRITER
               value: {{ .Values.transitionWriterUsername | quote }}
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_MAINTENANCE_WRITER
+              value: {{ .Values.maintenanceWriterUsername | quote }}
             - name: FS2_NETWORK_BOUNDARY_ADMISSION_CERTIFICATE_WRITER
               value: {{ .Values.certificateWriterUsername | quote }}
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_AUTHORIZER_GROUPS
+              value: {{ .Values.authorizerGroups | toJson | quote }}
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_TRANSITION_GROUPS
+              value: {{ .Values.transitionWriterGroups | toJson | quote }}
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_MAINTENANCE_GROUPS
+              value: {{ .Values.maintenanceWriterGroups | toJson | quote }}
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_CERTIFICATE_GROUPS
+              value: {{ .Values.certificateWriterGroups | toJson | quote }}
             - name: FS2_NETWORK_BOUNDARY_ADMISSION_API_TIMEOUT_SECONDS
               value: {{ .Values.apiTimeoutSeconds | quote }}
           volumeMounts:
@@ -141,7 +207,7 @@ spec:
             timeoutSeconds: 2
             failureThreshold: 3
           readinessProbe:
-            httpGet: {path: /livez, port: https, scheme: HTTPS}
+            httpGet: {path: /readyz, port: https, scheme: HTTPS}
             periodSeconds: 5
             timeoutSeconds: 2
             failureThreshold: 3
@@ -176,6 +242,10 @@ spec:
       {{- end }}
       {{- with .Values.affinity }}
       affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
         {{- toYaml . | nindent 8 }}
       {{- end }}
 ---

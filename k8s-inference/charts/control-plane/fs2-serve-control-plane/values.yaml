@@ -104,7 +104,7 @@ networkBoundaryAdmission:
   authorizerUsername: fs2-model-network-authorizer
   transitionWriterUsername: fs2-model-network-transition
   acquisitionWriterUsername: system:serviceaccount:fs2-system:fs2-catalog-acquisition
-  directJobWriterUsername: system:serviceaccount:fs2-system:fs2-serve-control-plane-runtime
+  directJobWriterUsername: system:serviceaccount:fs2-system:fs2-scientific-job-writer
   jobsetWriterUsername: ""
   kubernetesApiUrl: https://kubernetes.default.svc
   apiTimeoutSeconds: "2"
@@ -154,6 +154,31 @@ scientificBatch:
   leaseSeconds: "30"
   apiTimeoutSeconds: "5"
   tokenExpirationSeconds: 600
+  writer:
+    replicaCount: 2
+    port: 8082
+    callerAudience: fs2-scientific-writer
+    resources:
+      requests: {cpu: 25m, memory: 64Mi}
+      limits: {cpu: 250m, memory: 256Mi}
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: fs2-serve-control-plane
+                  app.kubernetes.io/component: scientific-writer
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: fs2-serve-control-plane
+            app.kubernetes.io/component: scientific-writer
 
 # Canonical artifact service used by scientific controller jobs. Credentials
 # are read only from an existing Secret; signed locations are never persisted.
@@ -248,6 +273,10 @@ serviceAccounts:
   controller:
     create: true
     name: ""
+    annotations: {}
+  scientific-writer:
+    create: true
+    name: fs2-scientific-job-writer
     annotations: {}
   network-boundary:
     create: true

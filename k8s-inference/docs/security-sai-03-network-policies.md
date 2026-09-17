@@ -1,13 +1,15 @@
 # SAI-03 model-runtime network isolation
 
 Status: unreviewed additive corrective successor whose direct parent is rejected
-source commit `6eb6d7afb3365658da5d7ab51b7b152e66b8237a` / tree
-`1ead86c4b43b684bf3c4fc2574316517eb8df893`; that exact commit remains
-preserved as negative evidence. Rejected commits
+source commit `fe0f71034af842df8782f3c7f52d74bcf4ad8d48` / tree
+`cbd32b1df34d9b4e9bd718cb825e570fa17c6569`; that exact commit and every
+predecessor remain preserved as negative evidence. Rejected commits
 `6dc67038698ed4d0412873e02baa1d50b179ff3c` and
 `093798f53cb4249887e59513a3b0114246f7e94c`, plus final-NO-GO
 `9b71b8a58b1e23a1d5f9d9ac11243dbad9a4652f` and
-`518c60c34439e4a2f7dafc6c218de58af6a0c2a9`, are ancestors of this successor
+`518c60c34439e4a2f7dafc6c218de58af6a0c2a9`,
+`6eb6d7afb3365658da5d7ab51b7b152e66b8237a`, and
+`fe0f71034af842df8782f3c7f52d74bcf4ad8d48` are ancestors of this successor
 and remain negative evidence; `92f9394cb3eb76b9b02f7682c96c056ae600e9ed` and
 `89b5cfe17cffd0a1924fcb4f1af52c8a449c4d1e` remain separate rejected evidence.
 No commit in this lineage has been deployed. Production rollout remains gated
@@ -15,11 +17,11 @@ on independent exact-commit source review, the future accepted SAI-07/KEDA
 successor, a clean integration review, and execution of the real saved rollback
 plan gate when deletion-capable testing is authorized.
 
-This change closes the source-side causes of SAI-03 without relying on runtime
+This unreviewed successor addresses the known source-side causes of SAI-03 without relying on runtime
 pods to carry the historical `app.kubernetes.io/instance` label:
 
-- `fs2-models` has Terraform-owned finite allow profiles, but its ingress-and-
-  egress `default-deny` exists only in the explicit `enforce` phase. A permanent
+- `fs2-models` has Terraform-owned finite allow profiles, and its ingress-and-
+  egress `default-deny` remains live in both `enforce` and `maintenance`. A retained
   deny-mode ValidatingAdmissionPolicy fence first rejects any Deployment,
   StatefulSet, DaemonSet, ReplicaSet, ReplicationController, Job, CronJob,
   JobSet, or Pod that lacks one of the finite profiles. Enforcement then runs a
@@ -45,13 +47,13 @@ pods to carry the historical `app.kubernetes.io/instance` label:
   the support profile label.
 - Network-profile admission also binds **who may create** each parent workload.
   Arbitrary namespace Job writers cannot self-select public acquisition or
-  support egress: scientific Job/JobSet creation is limited to the exact
-  control-plane runtime service account; App/Deployment creation is limited to
+  support egress: scientific Job/JobSet creation is limited to the distinct
+  `fs2-scientific-job-writer` service account; App/Deployment creation is limited to
   the exact model-controller service account; JobSet and Kubernetes child
   objects are limited to their exact controller identities; cache, acceptance,
   CronJob, ReplicationController, and other transition-owned parents require
   the exact authenticated writer while it holds the retained transition Lease.
-- CEL performs the finite object-shape check, while an independent fail-closed
+- CEL performs the finite object-shape check, while a separately released fail-closed
   TLS admission service dereferences each ReplicaSet, Job, and Pod's single
   controller owner. It requires the live parent's exact apiVersion, kind, name,
   UID, non-deleting state, workload class, profile, and child-template profile;
@@ -66,6 +68,13 @@ pods to carry the historical `app.kubernetes.io/instance` label:
   included in the signed custody receipt. Acquisition remains available after
   the transition Lease is released without granting the transition authorizer
   a second acquisition path.
+- Internal scientific Job/JobSet mutation is also removed from the general
+  runtime ServiceAccount. Runtime keeps read-only observation RBAC and calls a
+  two-replica bounded writer with an audience-scoped projected token. That
+  writer TokenReviews the exact runtime username, complete group set, audience,
+  and bounded extras; admits only the finite internal-job profile in configured
+  namespaces; and writes with the distinct
+  `fs2-system/fs2-scientific-job-writer` ServiceAccount.
 - The model controller renders no `NetworkPolicy`, has no NetworkPolicy HTTP
   endpoint, and receives no NetworkPolicy RBAC verbs. A compromised controller
   therefore cannot create an allow-all policy. Serving ingress is limited to
@@ -150,28 +159,34 @@ the rule before either can integrate.
    `Dockerfile.network-boundary` and `fs2-network-boundary` entrypoint and never
    starts the general control-plane CLI. It also has a separate ServiceAccount,
    certificate, RBAC, Service, and two-replica Deployment. Every authority
-   object is selected by the custody hook; the exact cert-manager identity may
-   rotate only the complete TLS Secret. Platform Security signs a short-lived
-   receipt containing every live UID, resourceVersion and full semantic hash.
-   The root deployment contract pins the offline signing public-key digest.
-2. Platform Security supplies two mode-0600 kubeconfigs with different
-   server-authenticated usernames: `fs2-model-network-authorizer` for prepare
-   and `fs2-model-network-transition` for the retained Lease and later phases.
+   object is selected by an API-server-native static custody policy that never
+   calls the authority Service. Exact cert-manager Secret/Certificate/Issuer
+   rotation and cainjector caBundle-only changes are explicit exceptions.
+   Platform Security signs a receipt valid for at most 15 minutes containing
+   every live UID, resourceVersion and full semantic hash, complete RBAC and
+   impersonation census, exact TLS Secret hashes, and the webhook CA hash. The
+   root deployment contract pins the offline signing public-key digest.
+2. Platform Security supplies six mode-0600 kubeconfigs with different
+   provider-bound, server-authenticated usernames: custodian, recovery, auditor,
+   authorizer, transition, and maintenance. The wrapper verifies exact usernames,
+   group sets, bounded extras, kubeconfig/certificate hashes, Nebius IAM trust
+   domain and distinct principal IDs against the signed receipt.
    The wrapper rejects the shared deployment kubeconfig, symlinks,
    group/world-readable files, a mismatched server-side username, and any
-   credential not bound to the signed X.509 certificate and kubeconfig digests.
-   The receipt declares impersonation forbidden. Both credentials are external
-   prerequisites; this task does not mint or commit them.
-3. The external webhook permanently freezes the exact Helm release-storage
-   records and every labeled `fs2-serve-control-plane` object, including its
-   image, RBAC and controller Deployments, even while the transition Lease is
-   idle. It is installed before any SAI-03 phase, not by `helm_release.control_plane`.
-   A normal shared kubeconfig therefore cannot start a release in the old
-   precheck-to-fence window. Release mutation is admitted only for the dedicated
-   transition identity while its unexpired random holder is active, the immutable
-   enforcement marker exists, and `fs2-models/default-deny` is live-confirmed
-   absent. The wrapper also rejects `pending-*` Helm status and any non-no-op
-   control-plane Helm plan during prepare, inventory, enforce, or deny removal.
+   credential not bound to the signed receipt. A live census enumerates every
+   Role/ClusterRole capable of impersonating users, groups, serviceaccounts,
+   uids, userextras, or `*`, rejects any binding to one, and binds that census to
+   a static policy that prevents new grants or bindings. These credentials are
+   external prerequisites; this task does not mint or commit them.
+3. The bounded webhook freezes exact Helm storage and release objects outside
+   an active operation Lease. Routine upgrades use the distinct `maintenance`
+   identity and Lease while the marker, apply fence, finite profiles, and
+   `fs2-models/default-deny` all remain live. Rollback uses the transition
+   identity and is admitted only after default deny is live-confirmed absent.
+   The two Leases cannot be active together. The wrapper rejects pre-existing
+   `pending-*` Helm state before acquiring either Lease and rechecks immediately
+   before Terraform; all admitted release writes are constrained by exact
+   identity and release labels.
 4. `prepare` creates or updates finite profiles, the inert admission-policy
    definitions, and every label-producing controller/manifest while both the
    admission bindings and `fs2-models/default-deny` remain absent.
@@ -218,7 +233,7 @@ the rule before either can integrate.
    naked/orphaned Pods, unknown profiles, and incomplete rollouts. It includes
    old ReplicaSets, core ReplicationControllers, CronJobs, workload class,
    exact admission-policy/binding UIDs, resourceVersions, and complete stored
-   specs, plus the webhook configuration UID, resourceVersion, exact nine-hook
+   specs, plus the webhook configuration UID, resourceVersion, exact eight-hook
    bounded fail-closed semantics and complete live spec hash, the live controller, and the
    retained transition-Lease UID rather than desired values. Receipt capture is
    refused while another transition owns the Lease.
@@ -234,7 +249,11 @@ the rule before either can integrate.
    only with a finite immutable profile. The receipt can be refreshed while the
    phase remains `enforce`, so normal App additions and recreations do not force
    rollback.
-8. To roll back, set `rollback-remove-deny` with the same inventory receipt and
+8. Normal control-plane maintenance uses phase `maintenance`, a fresh receipt,
+   and the separate maintenance Lease. The plan gate permits only the exact
+   Helm release update and transition-state update while enforcement stays
+   armed; post-apply inventory refresh captures the new live controller image.
+9. To roll back, set `rollback-remove-deny` with the same inventory receipt and
    without changing the enforced image. The supported `inference-stack`
    workflow rejects the saved plan unless every managed change is deletion of
    `default-deny`, deletion of the one-shot apply fence, the transition-state
@@ -247,7 +266,7 @@ the rule before either can integrate.
    saved-plan proof has not been run under the current no-test/no-delete
    constraint; rollback remains an integration gate rather than accepted
    evidence.
-9. After that exact plan is applied, generate a `deny-absent` receipt. The tool
+10. After that exact plan is applied, generate a `deny-absent` receipt. The tool
    refuses it while the deny exists or any finite allow policy is missing. Set
    `rollback-helm` with both receipts. Terraform independently re-reads the live
    policies and enforcement marker; only then are both freeze bindings removed
@@ -314,21 +333,21 @@ resource was created, patched, deleted, or restarted by this task.
 ## Verification
 
 Independent review of exact rejected parent
-`6eb6d7afb3365658da5d7ab51b7b152e66b8237a` / tree
-`1ead86c4b43b684bf3c4fc2574316517eb8df893` was final
-**SOURCE/INTEGRATION/LIVE NO-GO**. It confirmed exact live parent/UID/profile
-and child-writer checks, a 128-bit Lease holder with resourceVersion CAS,
-comprehensive v5 receipt semantics, bounded rollback and clean SAI-03-only
-ancestry. It rejected the stale-holder deadlock; the embedded/same-image
-authority and impersonation-capable custody story; lack of a distinct catalog
-acquisition identity; the Helm precheck-to-fence race; and a cluster-wide
-failure domain for the webhook. This unreviewed additive successor addresses
-those source findings with expiry-consistent takeover, an externally released
-and signed authority, a dedicated acquisition ServiceAccount, a permanent
-full-release freeze, and nine exact namespace/object-scoped hooks. No claim is
-made that independent review has accepted this successor, and the real saved
-rollback plan remains deliberately unexecuted under the no-test/no-delete
-constraint.
+`fe0f71034af842df8782f3c7f52d74bcf4ad8d48` / tree
+`cbd32b1df34d9b4e9bd718cb825e570fa17c6569` was final
+**SOURCE/INTEGRATION/LIVE NO-GO**. It confirmed expiry-consistent Lease takeover
+and that webhook scope was narrower, but rejected circular self-custody and
+certificate repair, username-only/impersonation-vulnerable authority, shared
+scientific/runtime writers, maintenance that required reducing the boundary,
+insufficient authority placement/readiness, and stale or incomplete TLS
+evidence. This unreviewed successor addresses those source findings with
+API-server-native external custody and a non-destructive update-only recovery
+path, exact cert-manager/cainjector exceptions, a full signed RBAC census plus
+static impersonation guard, distinct acquisition/scientific writers, enforced
+maintenance, two-replica topology controls and Kubernetes/certificate-aware
+readiness, and a maximum-15-minute v2 receipt that binds both TLS Secrets and
+the live webhook CA. No claim is made that independent review has accepted this
+successor, and no integration or live evidence exists.
 
 Run from `k8s-inference` unless a command changes directory:
 
@@ -406,12 +425,11 @@ are preserved below. They do not qualify this additive successor:
 - Helm lint, Terraform formatting/validation, focused Ruff lint/format, focused
   mypy, and `git diff --check`: passed.
 
-No test, build, mutating formatter, Terraform plan/test/init, Helm, pytest, or
+No test, build, formatter, Terraform plan/test/init, Helm, pytest, or
 cleanup-capable command was run for this additive successor. Deletion-free
-static checks passed: Python AST parsing for nine changed executable/test files;
-focused Ruff lint and format-check with `--no-cache`;
-`terraform fmt -check -diff` for all six changed HCL files; `jq empty` for all three changed JSON
-schemas; and `git diff --check`. Historical executable results are not promoted.
+static verification is limited to Python AST parsing of changed Python sources,
+JSON parsing of changed schemas, targeted source-contract inspection, and
+`git diff --check`. Historical executable results are not promoted.
 The user's hard no-delete constraint permits only read-only inspection,
 additive source edits, and a normal versioned commit. Independent exact-commit
 review must run the executable suites in an environment where their temp/cache
@@ -446,10 +464,9 @@ an integration branch must contain the currently deployed source, this change,
 and the completed MindGuard/voice sibling changes. Wait for the in-progress Helm
 rollback to settle before planning anything.
 
-No pre-existing user, product, or live file/resource was successfully deleted
-after that constraint. The only observed cleanup activity before the stricter
-reminder was pytest attempting and failing to remove its own scratch paths;
-there was no live/cloud/cluster/database/registry mutation. All remaining
+No pre-existing user, product, live, test-created, ignored, or untracked
+file/resource was deleted after that constraint, and no cleanup attempt ran.
+There was no live/cloud/cluster/database/registry mutation. All remaining
 ignored and untracked artifacts are preserved.
 
 The safe order is:
@@ -458,11 +475,13 @@ The safe order is:
    scan, sign and roll out the integrated controller image before the boundary
    authority is installed. Confirm the release is idle and converged.
 2. Platform Security installs the independent authority chart with its distinct
-   digest-pinned image and credentials, waits for both replicas/certificate/all
-   hooks, captures the exact protected-object inventory, and signs the bounded
-   receipt. From that point the control-plane release is permanently frozen.
-3. Supply the signed receipt and two independently issued boundary kubeconfigs,
-   verify both exact usernames and receipt-bound certificate hashes, and apply
+   digest-pinned image and six externally issued credentials, waits for both
+   replicas, the CA/serving certificate hierarchy and all eight hooks, captures
+   the full protected-object/RBAC/TLS inventory, and signs the bounded receipt.
+   Static API-server custody then remains active independently of the webhook.
+3. Supply the signed receipt and independently issued phase kubeconfigs, verify
+   exact usernames/groups/provider principals and receipt-bound certificate,
+   RBAC, protected-object, and webhook hashes, and apply
    `prepare` while the random transition Lease is held. The Helm release must be
    a no-op; this phase changes only finite profiles and label-producing objects
    while workload-profile/deny bindings and `fs2-models/default-deny` remain
@@ -476,6 +495,10 @@ The safe order is:
    and from an isolated model pod that public HTTPS egress fails while DNS and
    gateway inference continue to work. Recheck operations, observability, and
    current sibling models.
+6. For a later normal control-plane upgrade, use `maintenance` with a fresh
+   receipt and the separate maintenance credential. Review that the saved plan
+   changes only the exact Helm release plus transition state and leaves every
+   enforcement object, including default deny, present.
 
 The designed failure recovery enters `rollback-remove-deny` first; the wrapper
 proves that every remaining change is one of the three allowed crash-resumable

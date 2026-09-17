@@ -105,18 +105,20 @@ locals {
   model_runtime_lease_guard_admission_policy_name       = "fs2-model-network-transition-lease-guard"
   model_runtime_transition_guard_admission_policy_name  = "fs2-model-network-transition-guard"
   model_runtime_transition_lease_name                   = "fs2-model-network-transition"
+  model_runtime_maintenance_lease_name                  = "fs2-model-network-maintenance"
   model_runtime_transition_lease_namespace              = "fs2-system"
   model_runtime_transition_writer_annotation            = "fs2-serve.nebius.ai/network-transition-writer"
   model_runtime_transition_holder_annotation            = "fs2-serve.nebius.ai/network-transition-holder"
   model_runtime_authorizer_writer                       = "fs2-model-network-authorizer"
   model_runtime_transition_writer                       = "fs2-model-network-transition"
+  model_runtime_maintenance_writer                      = "fs2-model-network-maintenance"
   model_runtime_acquisition_writer                      = "system:serviceaccount:fs2-system:fs2-catalog-acquisition"
   model_runtime_boundary_webhook_name                   = "fs2-model-network-boundary"
   model_runtime_controller_writer = (
     "system:serviceaccount:fs2-system:fs2-serve-control-plane-controller"
   )
   model_runtime_scientific_writer = (
-    "system:serviceaccount:fs2-system:fs2-serve-control-plane-runtime"
+    "system:serviceaccount:fs2-system:fs2-scientific-job-writer"
   )
   model_runtime_jobset_writer = format(
     "system:serviceaccount:jobset-system:%s",
@@ -142,12 +144,31 @@ locals {
     "system:serviceaccount:kube-system:replication-controller",
     "system:serviceaccount:kube-system:statefulset-controller",
   ]
-  model_runtime_active_transition_writer_expression = trimspace(<<-CEL
+  model_runtime_transition_writer_identity_expression = trimspace(<<-CEL
     request.userInfo.username == ${jsonencode(local.model_runtime_transition_writer)} &&
+    request.userInfo.groups.size() == 2 &&
+    request.userInfo.groups.all(group, group in ['fs2:model-network-transition', 'system:authenticated']) &&
+    (!has(request.userInfo.extra) || request.userInfo.extra.size() == 0)
+  CEL
+  )
+  model_runtime_active_transition_writer_expression = trimspace(<<-CEL
+    (${local.model_runtime_transition_writer_identity_expression}) &&
     has(params.spec.holderIdentity) &&
     params.spec.holderIdentity.matches('^[a-z][a-z0-9]{5,11}:[1-9][0-9]*:[a-f0-9]{32}$') &&
     has(params.metadata.annotations) &&
     params.metadata.annotations[${jsonencode(local.model_runtime_transition_writer_annotation)}] == request.userInfo.username
+  CEL
+  )
+  model_runtime_active_maintenance_writer_expression = trimspace(<<-CEL
+    request.userInfo.username == ${jsonencode(local.model_runtime_maintenance_writer)} &&
+    request.userInfo.groups.size() == 2 &&
+    request.userInfo.groups.all(group, group in ['fs2:model-network-maintenance', 'system:authenticated']) &&
+    (!has(request.userInfo.extra) || request.userInfo.extra.size() == 0) &&
+    has(params.spec.holderIdentity) &&
+    params.spec.holderIdentity.matches('^[a-z][a-z0-9]{5,11}:[1-9][0-9]*:[a-f0-9]{32}$') &&
+    has(params.metadata.annotations) &&
+    params.metadata.annotations[${jsonencode(local.model_runtime_transition_writer_annotation)}] == request.userInfo.username &&
+    params.metadata.annotations[${jsonencode(local.model_runtime_transition_holder_annotation)}] == params.spec.holderIdentity
   CEL
   )
   model_runtime_admission_policy_names = sort(concat(
@@ -421,6 +442,10 @@ locals {
   }
   model_runtime_controller_freeze_admission_policy_spec = {
     failurePolicy = "Fail"
+    paramKind = {
+      apiVersion = "coordination.k8s.io/v1"
+      kind       = "Lease"
+    }
     matchConstraints = {
       matchPolicy = "Equivalent"
       resourceRules = [{
@@ -432,8 +457,8 @@ locals {
       }]
     }
     validations = [{
-      expression = "oldObject.metadata.name != '${local.model_runtime_controller_deployment_name}'"
-      message    = "the live model-controller is frozen while the fs2-models network boundary is armed"
+      expression = "oldObject.metadata.name != '${local.model_runtime_controller_deployment_name}' || (request.operation == 'UPDATE' && (${local.model_runtime_active_maintenance_writer_expression}))"
+      message    = "the live model-controller may change only under the exact active maintenance identity while the boundary remains armed"
       reason     = "Forbidden"
     }]
   }
@@ -490,7 +515,7 @@ locals {
       expression = trimspace(<<-CEL
         oldObject.metadata.name != ${jsonencode(local.model_runtime_transition_lease_name)} ||
         (request.operation == 'UPDATE' &&
-         request.userInfo.username == ${jsonencode(local.model_runtime_transition_writer)} &&
+         (${local.model_runtime_transition_writer_identity_expression}) &&
          has(oldObject.metadata.annotations) &&
          oldObject.metadata.annotations[${jsonencode(local.model_runtime_transition_writer_annotation)}] == request.userInfo.username &&
          (oldObject.spec.holderIdentity == '' ||
@@ -568,10 +593,7 @@ locals {
            variables.targetMetadata.name in ${jsonencode(local.model_runtime_admission_policy_names)}) ||
           (request.resource.group == 'admissionregistration.k8s.io' &&
            request.resource.resource == 'validatingadmissionpolicybindings' &&
-           variables.targetMetadata.name in ${jsonencode(local.model_runtime_admission_binding_names)}) ||
-          (request.resource.group == 'admissionregistration.k8s.io' &&
-           request.resource.resource == 'validatingwebhookconfigurations' &&
-           variables.targetMetadata.name == ${jsonencode(local.model_runtime_boundary_webhook_name)})
+           variables.targetMetadata.name in ${jsonencode(local.model_runtime_admission_binding_names)})
         CEL
         )
       },
@@ -579,7 +601,7 @@ locals {
     validations = [{
       expression = trimspace(<<-CEL
         !variables.protectedObject ||
-        (request.userInfo.username == ${jsonencode(local.model_runtime_transition_writer)} &&
+        ((${local.model_runtime_active_transition_writer_expression}) &&
          has(params.spec.holderIdentity) &&
          params.spec.holderIdentity.matches('^[a-z][a-z0-9]{5,11}:[1-9][0-9]*:[a-f0-9]{32}$') &&
          has(params.metadata.annotations) &&
@@ -635,6 +657,11 @@ locals {
       "${local.model_runtime_controller_freeze_admission_policy_name}-fs2-system" = {
         policyName        = local.model_runtime_controller_freeze_admission_policy_name
         validationActions = ["Deny"]
+        paramRef = {
+          name                    = local.model_runtime_maintenance_lease_name
+          namespace               = local.model_runtime_transition_lease_namespace
+          parameterNotFoundAction = "Deny"
+        }
         matchResources = {
           matchPolicy = "Equivalent"
           namespaceSelector = {
@@ -785,7 +812,8 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
     control_plane_image           = var.control_plane_image
     inventory_receipt_sha256      = try(var.model_runtime_network_policy.inventory_receipt.payload_sha256, null)
     deny_absent_receipt_sha256    = try(var.model_runtime_network_policy.deny_absent_receipt.payload_sha256, null)
-    default_deny_planned          = var.model_runtime_network_policy.phase == "enforce"
+    default_deny_planned          = contains(["enforce", "maintenance"], var.model_runtime_network_policy.phase)
+    helm_maintenance_authorized   = var.model_runtime_network_policy.phase == "maintenance"
     helm_rollback_authorized      = var.model_runtime_network_policy.phase == "rollback-helm"
     deny_removal_apply_isolation  = var.model_runtime_network_policy.phase == "rollback-remove-deny"
   }
@@ -794,7 +822,7 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
     precondition {
       condition = nonsensitive(var.model_network_boundary_kubeconfig_path) == "/var/run/fs2-network-boundary/credential-required" || try(
         var.model_network_boundary_trust_root_sha256 != "" &&
-        var.model_network_boundary_authority_receipt.schema == "fs2-serve.nebius.ai/model-network-boundary-authority/v1" &&
+        var.model_network_boundary_authority_receipt.schema == "fs2-serve.nebius.ai/model-network-boundary-authority/v2" &&
         var.model_network_boundary_authority_receipt.cluster_id == var.cluster_id &&
         var.model_network_boundary_authority_receipt.authority_namespace == "fs2-network-security" &&
         var.model_network_boundary_authority_receipt.webhook.name == local.model_runtime_boundary_webhook_name &&
@@ -806,24 +834,36 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
         var.model_network_boundary_authority_receipt.acquisition_writer.username == local.model_runtime_acquisition_writer &&
         var.model_network_boundary_authority_receipt.acquisition_writer.username != local.model_runtime_scientific_writer &&
         var.model_network_boundary_authority_receipt.acquisition_writer.username != local.model_runtime_controller_writer &&
+        var.model_network_boundary_authority_receipt.scientific_writer.username == local.model_runtime_scientific_writer &&
+        var.model_network_boundary_authority_receipt.scientific_writer.username != local.model_runtime_acquisition_writer &&
+        var.model_network_boundary_authority_receipt.scientific_writer.username != local.model_runtime_controller_writer &&
         var.model_network_boundary_authority_receipt.custody.trust_root_sha256 == var.model_network_boundary_trust_root_sha256 &&
-        var.model_network_boundary_authority_receipt.custody.impersonation_allowed == false &&
+        var.model_network_boundary_authority_receipt.custody.provider.kind == "nebius-iam" &&
+        length(var.model_network_boundary_authority_receipt.rbac_census.bound_impersonation_roles) == 0 &&
+        length(var.model_network_boundary_authority_receipt.rbac_census.impersonation_capable_cluster_roles) > 0 &&
         var.model_network_boundary_authority_receipt.payload_sha256 == sha256(jsonencode({
           for key, value in var.model_network_boundary_authority_receipt : key => value
           if key != "payload_sha256"
         })),
         false,
       )
-      error_message = "Every live model-network phase requires a signature-verified external authority receipt bound to this cluster, a distinct digest-pinned image, exact VWC semantics, a distinct catalog acquisition writer, and the root-pinned non-impersonating custody key."
+      error_message = "Every live model-network phase requires a signature-verified v2 external authority receipt bound to this cluster, live TLS/VWC/RBAC semantics, distinct acquisition and scientific writers, an empty impersonation-binding census, and the root-pinned provider custody key."
     }
 
     precondition {
       condition = nonsensitive(var.model_network_boundary_kubeconfig_path) == "/var/run/fs2-network-boundary/credential-required" || (
         var.model_network_transition_lock_required &&
+        var.model_network_operation_lock_identity != "" &&
         var.model_network_transition_lock_identity != "" &&
-        var.model_network_transition_writer_username == local.model_runtime_transition_writer
+        (
+          var.model_network_transition_writer_username == local.model_runtime_transition_writer ||
+          (
+            var.model_runtime_network_policy.phase == "maintenance" &&
+            var.model_network_transition_writer_username == local.model_runtime_maintenance_writer
+          )
+        )
       )
-      error_message = "Every model-network phase, including prepare, must run through inference-stack with separate authorizer/transition credentials while the random transition Lease holder is active."
+      error_message = "Every model-network phase must run through inference-stack with a separate phase credential while its operation Lease is active."
     }
 
     precondition {
@@ -844,6 +884,7 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
     precondition {
       condition = !contains([
         "enforce",
+        "maintenance",
         "rollback-remove-deny",
         "rollback-helm",
         ], var.model_runtime_network_policy.phase) || try(
@@ -854,7 +895,10 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
         var.model_runtime_network_policy.inventory_receipt.profiles_sha256 == local.model_runtime_profiles_sha256 &&
         length(var.model_runtime_network_policy.inventory_receipt.workloads) > 0 &&
         var.model_runtime_network_policy.inventory_receipt.live_controller.deployment_name == local.model_runtime_controller_deployment_name &&
-        var.model_runtime_network_policy.inventory_receipt.live_controller.image == "${var.control_plane_image.repository}@${var.control_plane_image.digest}" &&
+        (
+          var.model_runtime_network_policy.phase == "maintenance" ||
+          var.model_runtime_network_policy.inventory_receipt.live_controller.image == "${var.control_plane_image.repository}@${var.control_plane_image.digest}"
+        ) &&
         var.model_runtime_network_policy.inventory_receipt.transition_lock_uid != "" &&
         jsonencode(sort(keys(var.model_runtime_network_policy.inventory_receipt.admission_policies))) == jsonencode(local.model_runtime_admission_policy_names) &&
         jsonencode(sort(keys(var.model_runtime_network_policy.inventory_receipt.admission_bindings))) == jsonencode(local.model_runtime_admission_binding_names) &&
@@ -1242,6 +1286,7 @@ resource "kubernetes_manifest" "model_runtime_network_controller_freeze_admissio
   count = contains([
     "inventory",
     "enforce",
+    "maintenance",
     "rollback-remove-deny",
   ], var.model_runtime_network_policy.phase) ? 1 : 0
 
@@ -1280,6 +1325,7 @@ resource "kubernetes_manifest" "model_runtime_network_helm_freeze_admission_bind
     "prepare",
     "inventory",
     "enforce",
+    "maintenance",
     "rollback-remove-deny",
   ], var.model_runtime_network_policy.phase) ? 1 : 0
 
@@ -1780,13 +1826,12 @@ resource "kubernetes_network_policy_v1" "model_namespace_support_profile" {
 # producer and the admission bindings exist. It runs on the first enforcement
 # and whenever the receipt, release image, profile catalog, or verifier changes.
 resource "terraform_data" "model_runtime_network_policy_apply_fence" {
-  count = var.model_runtime_network_policy.phase == "enforce" ? 1 : 0
+  count = contains(["enforce", "maintenance"], var.model_runtime_network_policy.phase) ? 1 : 0
 
   triggers_replace = [
     var.model_runtime_network_policy.inventory_receipt.payload_sha256,
     local.model_runtime_profiles_sha256,
-    var.control_plane_image.digest,
-    filesha256("${path.module}/scripts/model_network_policy_transition.py"),
+    var.model_runtime_network_policy.inventory_receipt.live_controller.image,
   ]
 
   provisioner "local-exec" {
@@ -1815,7 +1860,7 @@ resource "terraform_data" "model_runtime_network_policy_apply_fence" {
 
 resource "kubernetes_network_policy_v1" "model_namespace_default_deny" {
   provider = kubernetes.network_boundary
-  count    = var.model_runtime_network_policy.phase == "enforce" ? 1 : 0
+  count    = contains(["enforce", "maintenance"], var.model_runtime_network_policy.phase) ? 1 : 0
 
   metadata {
     name      = "default-deny"

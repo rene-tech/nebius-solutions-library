@@ -1063,17 +1063,24 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
         "expirationSeconds": 600,
         "path": "token",
     }
+    assert volumes["scientific-writer-caller"]["projected"]["sources"][0][
+        "serviceAccountToken"
+    ] == {
+        "audience": "fs2-scientific-writer",
+        "expirationSeconds": 600,
+        "path": "token",
+    }
     assert volumes["scientific-batch-scheduling"]["configMap"]["name"] == "scientific-scheduling-a1"
 
     role = namespaced[("Role", "fs2-serve-control-plane-scientific-batch", "fs2-models")]
     binding = namespaced[("RoleBinding", "fs2-serve-control-plane-scientific-batch", "fs2-models")]
     assert role["metadata"]["namespace"] == "fs2-models"
     assert role["rules"] == [
-        {"apiGroups": ["batch"], "resources": ["jobs"], "verbs": ["get", "create", "delete"]},
+        {"apiGroups": ["batch"], "resources": ["jobs"], "verbs": ["get"]},
         {
             "apiGroups": ["jobset.x-k8s.io"],
             "resources": ["jobsets"],
-            "verbs": ["get", "create", "delete"],
+            "verbs": ["get"],
         },
         {"apiGroups": [""], "resources": ["pods"], "verbs": ["get", "list"]},
         {"apiGroups": [""], "resources": ["pods/log"], "verbs": ["get"]},
@@ -1082,10 +1089,46 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
     assert binding["subjects"] == [
         {"kind": "ServiceAccount", "name": "fs2-serve-control-plane-runtime", "namespace": "fs2-system"}
     ]
+    writer_role = namespaced[
+        ("Role", "fs2-serve-control-plane-scientific-writer", "fs2-models")
+    ]
+    writer_binding = namespaced[
+        ("RoleBinding", "fs2-serve-control-plane-scientific-writer", "fs2-models")
+    ]
+    assert writer_role["rules"] == [
+        {
+            "apiGroups": ["batch"],
+            "resources": ["jobs"],
+            "verbs": ["create", "delete"],
+        },
+        {
+            "apiGroups": ["jobset.x-k8s.io"],
+            "resources": ["jobsets"],
+            "verbs": ["create", "delete"],
+        },
+    ]
+    assert writer_binding["subjects"] == [
+        {
+            "kind": "ServiceAccount",
+            "name": "fs2-scientific-job-writer",
+            "namespace": "fs2-system",
+        }
+    ]
     academic_role = namespaced[("Role", "fs2-serve-control-plane-scientific-batch", "fs2-academic-poc")]
     academic_binding = namespaced[("RoleBinding", "fs2-serve-control-plane-scientific-batch", "fs2-academic-poc")]
     assert academic_role["rules"] == role["rules"]
     assert academic_binding["subjects"] == binding["subjects"]
+    scientific_writer = named[("Deployment", "fs2-serve-control-plane-scientific-writer")]
+    assert scientific_writer["spec"]["replicas"] == 2
+    writer_pod = scientific_writer["spec"]["template"]["spec"]
+    assert writer_pod["serviceAccountName"] == "fs2-scientific-job-writer"
+    assert writer_pod["automountServiceAccountToken"] is False
+    assert writer_pod["affinity"]["podAntiAffinity"][
+        "preferredDuringSchedulingIgnoredDuringExecution"
+    ]
+    assert writer_pod["topologySpreadConstraints"]
+    writer_policy = named[("NetworkPolicy", "fs2-serve-control-plane-scientific-writer")]
+    assert writer_policy["spec"]["policyTypes"] == ["Ingress", "Egress"]
     execution_map = next(
         document
         for document in documents

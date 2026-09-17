@@ -48,6 +48,12 @@ subjects:
   - kind: User
     name: {{ $.Values.transitionWriterUsername | quote }}
     apiGroup: rbac.authorization.k8s.io
+  - kind: User
+    name: {{ $.Values.maintenanceWriterUsername | quote }}
+    apiGroup: rbac.authorization.k8s.io
+  - kind: User
+    name: {{ $.Values.auditorUsername | quote }}
+    apiGroup: rbac.authorization.k8s.io
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -64,15 +70,15 @@ metadata:
     {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
 rules:
   - apiGroups: ["admissionregistration.k8s.io"]
-    resources: ["validatingwebhookconfigurations"]
-    resourceNames: ["fs2-model-network-boundary"]
+    resources: ["validatingwebhookconfigurations", "validatingadmissionpolicies", "validatingadmissionpolicybindings"]
     verbs: ["get"]
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["clusterroles", "clusterrolebindings"]
     resourceNames:
       - fs2-model-network-admission-author
       - fs2-model-network-custody-reader
-      - fs2-model-network-helm-rollback
+      - fs2-model-network-helm-writer
+      - fs2-model-network-rbac-auditor
     verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -90,7 +96,78 @@ subjects:
   - kind: User
     name: {{ .Values.transitionWriterUsername | quote }}
     apiGroup: rbac.authorization.k8s.io
+  - kind: User
+    name: {{ .Values.maintenanceWriterUsername | quote }}
+    apiGroup: rbac.authorization.k8s.io
+  - kind: User
+    name: {{ .Values.auditorUsername | quote }}
+    apiGroup: rbac.authorization.k8s.io
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: fs2-model-network-custody-reader
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fs2-model-network-secret-auditor
+  namespace: {{ .Values.authorityNamespace }}
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+  annotations:
+    {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames:
+      - {{ .Values.certificate.secretName }}
+      - {{ .Values.certificate.caSecretName }}
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fs2-model-network-secret-auditor
+  namespace: {{ .Values.authorityNamespace }}
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+  annotations:
+    {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
+subjects:
+  - kind: User
+    name: {{ .Values.auditorUsername | quote }}
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: fs2-model-network-secret-auditor
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fs2-model-network-rbac-auditor
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+  annotations:
+    {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
+rules:
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fs2-model-network-rbac-auditor
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+  annotations:
+    {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
+subjects:
+  - kind: User
+    name: {{ .Values.auditorUsername | quote }}
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fs2-model-network-rbac-auditor

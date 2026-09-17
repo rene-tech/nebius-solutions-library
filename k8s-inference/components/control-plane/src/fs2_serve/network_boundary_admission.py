@@ -10,6 +10,7 @@ Terraform writers.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -27,6 +28,7 @@ CLASS_LABEL = "fs2-serve.nebius.ai/network-workload-class"
 TRANSITION_WRITER_ANNOTATION = "fs2-serve.nebius.ai/network-transition-writer"
 TRANSITION_HOLDER_ANNOTATION = "fs2-serve.nebius.ai/network-transition-holder"
 TRANSITION_LEASE = "fs2-model-network-transition"
+MAINTENANCE_LEASE = "fs2-model-network-maintenance"
 BOUNDARY_MARKER = "fs2-runtime-network-policy-boundary-v2"
 BOUNDARY_OBJECT_LABEL = "fs2-serve.nebius.ai/network-boundary-object"
 BOUNDARY_AUTHORITY_LABEL = "fs2-serve.nebius.ai/network-boundary-authority"
@@ -53,9 +55,15 @@ class NetworkBoundaryConfig:
     acquisition_writer: str
     direct_job_writer: str
     jobset_writer: str
+    model_controller_writer: str
     authorizer_writer: str
     transition_writer: str
+    maintenance_writer: str
     certificate_writer: str
+    authorizer_groups: frozenset[str]
+    transition_groups: frozenset[str]
+    maintenance_groups: frozenset[str]
+    certificate_groups: frozenset[str]
     controller_manager_writer: str = "system:kube-controller-manager"
 
     def parent_kinds(self) -> Mapping[tuple[str, str], ParentKind]:
@@ -255,6 +263,65 @@ class NetworkBoundaryAdmission:
         self.reader = reader
         self.clock = clock or (lambda: datetime.now(UTC))
 
+    @staticmethod
+    def _service_account_groups(username: str) -> frozenset[str] | None:
+        prefix = "system:serviceaccount:"
+        if not username.startswith(prefix):
+            return None
+        parts = username.removeprefix(prefix).split(":", 1)
+        if len(parts) != 2 or not all(parts):
+            raise NetworkBoundaryError("service-account username is malformed")
+        return frozenset(
+            {
+                "system:authenticated",
+                "system:serviceaccounts",
+                f"system:serviceaccounts:{parts[0]}",
+            }
+        )
+
+    def _expected_groups(self, username: str) -> frozenset[str]:
+        configured = {
+            self.config.authorizer_writer: self.config.authorizer_groups,
+            self.config.transition_writer: self.config.transition_groups,
+            self.config.maintenance_writer: self.config.maintenance_groups,
+            self.config.certificate_writer: self.config.certificate_groups,
+        }.get(username)
+        if configured is not None:
+            return configured
+        service_account = self._service_account_groups(username)
+        if service_account is not None:
+            return service_account
+        if username == self.config.controller_manager_writer:
+            return frozenset({"system:authenticated"})
+        raise NetworkBoundaryError("the authenticated writer has no exact group contract")
+
+    def _authorize_identity(self, user_info: Mapping[str, Any], expected_username: str) -> None:
+        username = user_info.get("username")
+        groups = user_info.get("groups", [])
+        extra = user_info.get("extra", {})
+        if username != expected_username or not isinstance(groups, list) or not all(
+            isinstance(group, str) for group in groups
+        ):
+            raise NetworkBoundaryError("the authenticated writer identity is not exact")
+        if frozenset(groups) != self._expected_groups(expected_username):
+            raise NetworkBoundaryError("the authenticated writer group set is not exact")
+        if not isinstance(extra, Mapping):
+            raise NetworkBoundaryError("the authenticated writer extras are malformed")
+        allowed_service_account_extras = {
+            "authentication.kubernetes.io/credential-id",
+            "authentication.kubernetes.io/node-name",
+            "authentication.kubernetes.io/node-uid",
+            "authentication.kubernetes.io/pod-name",
+            "authentication.kubernetes.io/pod-uid",
+        }
+        allowed = (
+            allowed_service_account_extras
+            if expected_username.startswith("system:serviceaccount:")
+            else set()
+        )
+        if not set(extra).issubset(allowed):
+            raise NetworkBoundaryError("the authenticated writer has unapproved identity extras")
+
     def _lease_expires_at(self, value: Mapping[str, Any], label: str) -> datetime:
         spec = _mapping(value.get("spec"), f"{label}.spec")
         duration = spec.get("leaseDurationSeconds")
@@ -275,10 +342,10 @@ class NetworkBoundaryAdmission:
             raise NetworkBoundaryError(f"{label} renewTime has no timezone")
         return renewed.astimezone(UTC) + timedelta(seconds=duration)
 
-    async def _active_transition_holder(self) -> str:
+    async def _active_holder(self, *, lease_name: str, writer: str) -> str:
         lease = await self.reader.get(
             "apis/coordination.k8s.io/v1/namespaces/"
-            f"{quote(self.config.system_namespace, safe='')}/leases/{TRANSITION_LEASE}"
+            f"{quote(self.config.system_namespace, safe='')}/leases/{lease_name}"
         )
         metadata = _mapping(lease.get("metadata"), "transition Lease.metadata")
         annotations = _mapping(metadata.get("annotations"), "transition Lease.annotations")
@@ -287,7 +354,7 @@ class NetworkBoundaryAdmission:
         if not isinstance(holder, str) or HOLDER_PATTERN.fullmatch(holder) is None:
             raise NetworkBoundaryError("the request has no valid transition holder")
         if (
-            annotations.get(TRANSITION_WRITER_ANNOTATION) != self.config.transition_writer
+            annotations.get(TRANSITION_WRITER_ANNOTATION) != writer
             or annotations.get(TRANSITION_HOLDER_ANNOTATION) != holder
         ):
             raise NetworkBoundaryError("the transition Lease identity is not exact")
@@ -295,16 +362,31 @@ class NetworkBoundaryAdmission:
             raise NetworkBoundaryError("the request has an expired transition holder")
         return holder
 
+    async def _active_transition_holder(self) -> str:
+        return await self._active_holder(
+            lease_name=TRANSITION_LEASE,
+            writer=self.config.transition_writer,
+        )
+
+    async def _active_maintenance_holder(self) -> str:
+        return await self._active_holder(
+            lease_name=MAINTENANCE_LEASE,
+            writer=self.config.maintenance_writer,
+        )
+
     async def _authorize_child(
         self,
         *,
         kind: str,
         namespace: str,
         operation: str,
-        username: str,
+        user_info: Mapping[str, Any],
         value: Mapping[str, Any],
         old_value: Mapping[str, Any],
     ) -> None:
+        username = user_info.get("username")
+        if not isinstance(username, str):
+            raise NetworkBoundaryError("the authenticated child writer is malformed")
         owner = _controller_owner(value)
         if owner is None:
             if kind != "Job":
@@ -317,6 +399,8 @@ class NetworkBoundaryAdmission:
             )
             if operation == "CREATE" and username != expected_writer:
                 raise NetworkBoundaryError("a direct Job requires its exact platform writer")
+            if operation == "CREATE":
+                self._authorize_identity(user_info, expected_writer)
             if operation == "UPDATE":
                 if _controller_owner(old_value) is not None:
                     raise NetworkBoundaryError("a direct Job cannot drop its controller owner")
@@ -329,6 +413,8 @@ class NetworkBoundaryAdmission:
             raise NetworkBoundaryError("the controller owner kind is not admitted for this child")
         if operation == "CREATE" and username not in parent.writers:
             raise NetworkBoundaryError("the child request did not come from its exact Kubernetes controller")
+        if operation == "CREATE":
+            self._authorize_identity(user_info, username)
         if owner.get("apiVersion") != parent.api_version:
             raise NetworkBoundaryError("the child owner apiVersion is not exact")
         owner_name = owner.get("name")
@@ -403,18 +489,23 @@ class NetworkBoundaryAdmission:
                     return True
         return False
 
-    def _is_transition_lease(
+    def _lease_identity(
         self,
         resource: Mapping[str, Any],
         namespace: str,
         name: str,
-    ) -> bool:
-        return (
+    ) -> tuple[str, str] | None:
+        if not (
             resource.get("group") == "coordination.k8s.io"
             and resource.get("resource") == "leases"
             and namespace == self.config.system_namespace
-            and name == TRANSITION_LEASE
-        )
+        ):
+            return None
+        if name == TRANSITION_LEASE:
+            return TRANSITION_LEASE, self.config.transition_writer
+        if name == MAINTENANCE_LEASE:
+            return MAINTENANCE_LEASE, self.config.maintenance_writer
+        return None
 
     def _is_control_plane_helm_storage(
         self,
@@ -456,64 +547,35 @@ class NetworkBoundaryAdmission:
             if not isinstance(metadata, Mapping):
                 continue
             labels = metadata.get("labels")
-            if isinstance(labels, Mapping) and labels.get("app.kubernetes.io/instance") == "fs2-serve-control-plane":
+            if (
+                isinstance(labels, Mapping)
+                and labels.get("app.kubernetes.io/instance") == "fs2-serve-control-plane"
+                and labels.get("app.kubernetes.io/part-of") == "fs2-serve"
+                and labels.get("app.kubernetes.io/managed-by") == "Helm"
+            ):
                 return True
         return False
 
-    def _is_certificate_rotation(
+    async def _authorize_lease_mutation(
         self,
         *,
-        username: str,
-        operation: str,
-        resource: Mapping[str, Any],
-        namespace: str,
-        name: str,
-        value: Mapping[str, Any],
-        old_value: Mapping[str, Any],
-    ) -> bool:
-        if not (
-            username == self.config.certificate_writer
-            and operation == "UPDATE"
-            and resource.get("group", "") == ""
-            and resource.get("resource") == "secrets"
-            and namespace == self.config.authority_namespace
-            and name == "fs2-model-network-boundary-tls"
-        ):
-            return False
-        if value.get("type") != "kubernetes.io/tls" or old_value.get("type") != "kubernetes.io/tls":
-            raise NetworkBoundaryError("boundary certificate Secret type cannot change")
-        for label, candidate in (("new", value), ("old", old_value)):
-            metadata = _mapping(candidate.get("metadata"), f"{label} certificate Secret.metadata")
-            labels = _mapping(metadata.get("labels"), f"{label} certificate Secret.labels")
-            if (
-                metadata.get("name") != name
-                or metadata.get("namespace") != namespace
-                or labels.get(BOUNDARY_AUTHORITY_LABEL) != "true"
-            ):
-                raise NetworkBoundaryError("boundary certificate rotation lost its exact identity")
-            data = _mapping(candidate.get("data"), f"{label} certificate Secret.data")
-            if not {"tls.crt", "tls.key"}.issubset(data):
-                raise NetworkBoundaryError("boundary certificate Secret is incomplete")
-        return True
-
-    def _authorize_lease_mutation(
-        self,
-        *,
-        username: str,
+        user_info: Mapping[str, Any],
+        lease_name: str,
+        expected_writer: str,
         operation: str,
         value: Mapping[str, Any],
         old_value: Mapping[str, Any],
     ) -> None:
-        if username != self.config.transition_writer:
-            raise NetworkBoundaryError("only the dedicated transition principal may mutate the Lease")
+        self._authorize_identity(user_info, expected_writer)
+        username = user_info.get("username")
         if operation == "DELETE":
-            raise NetworkBoundaryError("the retained transition Lease cannot be deleted")
+            raise NetworkBoundaryError("the retained network-boundary Lease cannot be deleted")
         new_metadata = _mapping(value.get("metadata"), "transition Lease.metadata")
         new_annotations = _mapping(new_metadata.get("annotations"), "transition Lease.annotations")
         new_spec = _mapping(value.get("spec"), "transition Lease.spec")
         new_holder = new_spec.get("holderIdentity", "")
         if not isinstance(new_holder, str):
-            raise NetworkBoundaryError("transition Lease holder is malformed")
+            raise NetworkBoundaryError(f"{lease_name} holder is malformed")
         if new_annotations.get(TRANSITION_WRITER_ANNOTATION) != username:
             raise NetworkBoundaryError("transition Lease writer annotation is not exact")
         if operation == "CREATE":
@@ -543,69 +605,102 @@ class NetworkBoundaryAdmission:
             raise NetworkBoundaryError("transition Lease update lacks its random holder token")
         if not old_holder and not new_holder:
             raise NetworkBoundaryError("an idle transition Lease update is not authorized")
+        if new_holder and new_holder != old_holder:
+            other_name = MAINTENANCE_LEASE if lease_name == TRANSITION_LEASE else TRANSITION_LEASE
+            other = await self.reader.get_optional(
+                "apis/coordination.k8s.io/v1/namespaces/"
+                f"{quote(self.config.system_namespace, safe='')}/leases/{other_name}"
+            )
+            if other is not None:
+                other_spec = _mapping(other.get("spec"), "other boundary Lease.spec")
+                other_holder = other_spec.get("holderIdentity", "")
+                if (
+                    isinstance(other_holder, str)
+                    and other_holder
+                    and self._lease_expires_at(other, "other boundary Lease") > self.clock()
+                ):
+                    raise NetworkBoundaryError(
+                        "transition and maintenance Leases cannot be active concurrently"
+                    )
 
     async def _authorize_transition(
         self,
         *,
-        username: str,
+        user_info: Mapping[str, Any],
         operation: str,
         resource: Mapping[str, Any],
         namespace: str,
         value: Mapping[str, Any],
         old_value: Mapping[str, Any],
     ) -> None:
+        username = user_info.get("username")
+        if not isinstance(username, str):
+            raise NetworkBoundaryError("the authenticated transition writer is malformed")
         metadata = _mapping((old_value if operation == "DELETE" else value).get("metadata"), "target.metadata")
         name = metadata.get("name")
         if not isinstance(name, str):
             raise NetworkBoundaryError("protected object has no name")
-        if self._is_transition_lease(resource, namespace, name):
-            self._authorize_lease_mutation(
-                username=username,
+        lease_identity = self._lease_identity(resource, namespace, name)
+        if lease_identity is not None:
+            await self._authorize_lease_mutation(
+                user_info=user_info,
+                lease_name=lease_identity[0],
+                expected_writer=lease_identity[1],
                 operation=operation,
                 value=value,
                 old_value=old_value,
             )
             return
-        if self._is_certificate_rotation(
-            username=username,
-            operation=operation,
-            resource=resource,
-            namespace=namespace,
-            name=name,
-            value=value,
-            old_value=old_value,
-        ):
-            return
         helm_storage = self._is_control_plane_helm_storage(resource, namespace, value, old_value)
         control_plane_release = self._is_control_plane_release_object(resource, namespace, value, old_value)
+        protected = self._is_protected(resource, namespace, name, value, old_value)
+        if username in {self.config.maintenance_writer, self.config.transition_writer} and not (
+            helm_storage or control_plane_release or protected
+        ):
+            self._authorize_identity(user_info, username)
+            raise NetworkBoundaryError(
+                "the externally custodied release writer cannot mutate an object "
+                "outside the exact control-plane release"
+            )
         if (
             not helm_storage
             and not control_plane_release
-            and not self._is_protected(resource, namespace, name, value, old_value)
+            and not protected
         ):
             return
         marker = await self.reader.get_optional(
             f"api/v1/namespaces/{quote(self.config.model_namespace, safe='')}/configmaps/{BOUNDARY_MARKER}"
         )
-        lease = await self.reader.get(
-            "apis/coordination.k8s.io/v1/namespaces/"
-            f"{quote(self.config.system_namespace, safe='')}/leases/{TRANSITION_LEASE}"
-        )
-        lease_spec = _mapping(lease.get("spec"), "transition Lease.spec")
-        holder = lease_spec.get("holderIdentity")
-        if (helm_storage or control_plane_release) and holder in {None, ""}:
-            raise NetworkBoundaryError("the control-plane release is frozen outside deny-absent rollback")
-        holder = await self._active_transition_holder()
         if helm_storage or control_plane_release:
-            if username != self.config.transition_writer or marker is None:
-                raise NetworkBoundaryError("only the deny-absent transition may change the control-plane release")
             default_deny = await self.reader.get_optional(
                 "apis/networking.k8s.io/v1/namespaces/"
                 f"{quote(self.config.model_namespace, safe='')}/networkpolicies/default-deny"
             )
-            if default_deny is None:
+            if username == self.config.maintenance_writer:
+                self._authorize_identity(user_info, self.config.maintenance_writer)
+                await self._active_maintenance_holder()
+                if marker is not None and default_deny is not None:
+                    return
+                raise NetworkBoundaryError(
+                    "release maintenance requires the armed marker and live default-deny"
+                )
+            if username == self.config.transition_writer:
+                self._authorize_identity(user_info, self.config.transition_writer)
+                await self._active_transition_holder()
+                if marker is not None and default_deny is None:
+                    return
+                raise NetworkBoundaryError(
+                    "rollback release mutation requires the armed marker and absent default-deny"
+                )
+            raise NetworkBoundaryError(
+                "control-plane release mutation requires an active maintenance or rollback identity"
+            )
+        holder = await self._active_transition_holder()
+        if username in {self.config.authorizer_writer, self.config.transition_writer}:
+            self._authorize_identity(user_info, username)
+        if operation == "DELETE":
+            if username == self.config.transition_writer:
                 return
-            raise NetworkBoundaryError("the control-plane release cannot change before default-deny is absent")
         target_annotations = _mapping(metadata.get("annotations"), "protected object annotations")
         allowed_writers = (
             {self.config.authorizer_writer, self.config.transition_writer}
@@ -648,10 +743,29 @@ class NetworkBoundaryAdmission:
                 kind=kind_value,
                 namespace=namespace,
                 operation=operation,
-                username=username,
+                user_info=user_info,
                 value=value,
                 old_value=old_value,
             )
+        if operation == "CREATE" and namespace == self.config.model_namespace:
+            if kind_value in {"Deployment", "StatefulSet", "DaemonSet"}:
+                if username == self.config.model_controller_writer:
+                    self._authorize_identity(user_info, self.config.model_controller_writer)
+                elif username != self.config.transition_writer:
+                    raise NetworkBoundaryError(
+                        "a profiled runtime parent requires the exact model-controller writer"
+                    )
+            elif kind_value == "JobSet":
+                if username == self.config.direct_job_writer:
+                    self._authorize_identity(user_info, self.config.direct_job_writer)
+                elif username != self.config.transition_writer:
+                    raise NetworkBoundaryError(
+                        "a scientific JobSet requires the exact scientific writer"
+                    )
+            elif kind_value in {"CronJob", "ReplicationController"} and username != self.config.transition_writer:
+                raise NetworkBoundaryError(
+                    "a profiled compatibility parent requires the exact transition writer"
+                )
         if (
             operation in {"CREATE", "UPDATE"}
             and namespace == self.config.model_namespace
@@ -669,9 +783,10 @@ class NetworkBoundaryAdmission:
                 "StatefulSet",
             }
         ):
+            self._authorize_identity(user_info, self.config.transition_writer)
             await self._active_transition_holder()
         await self._authorize_transition(
-            username=username,
+            user_info=user_info,
             operation=operation,
             resource=resource,
             namespace=namespace,
@@ -684,13 +799,50 @@ class NetworkBoundaryAdmission:
             "response": {"uid": uid, "allowed": True},
         }
 
+    async def ready(self) -> None:
+        """Prove the projected reader can reach both retained authority Leases."""
 
-def create_network_boundary_app(admission: NetworkBoundaryAdmission) -> FastAPI:
+        for name in (TRANSITION_LEASE, MAINTENANCE_LEASE):
+            await self.reader.get(
+                "apis/coordination.k8s.io/v1/namespaces/"
+                f"{quote(self.config.system_namespace, safe='')}/leases/{name}"
+            )
+
+
+def create_network_boundary_app(
+    admission: NetworkBoundaryAdmission,
+    *,
+    readiness_files: tuple[Path, ...] = (),
+    restart_on_change_files: tuple[Path, ...] = (),
+) -> FastAPI:
     app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
+    startup_digests = {
+        path: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in restart_on_change_files
+    }
 
     @app.get("/livez")
-    async def livez() -> dict[str, str]:
-        return {"status": "ok"}
+    async def livez() -> JSONResponse:
+        try:
+            if any(
+                hashlib.sha256(path.read_bytes()).hexdigest() != digest
+                for path, digest in startup_digests.items()
+            ):
+                raise NetworkBoundaryError("serving certificate rotated; restart required")
+        except (NetworkBoundaryError, OSError) as exc:
+            return JSONResponse({"status": "restart-required", "detail": str(exc)}, status_code=503)
+        return JSONResponse({"status": "ok"})
+
+    @app.get("/readyz")
+    async def readyz() -> JSONResponse:
+        try:
+            for path in readiness_files:
+                if not path.is_file() or path.stat().st_size < 1:
+                    raise NetworkBoundaryError("a projected certificate or token is unavailable")
+            await admission.ready()
+        except (NetworkBoundaryError, OSError, httpx.HTTPError) as exc:
+            return JSONResponse({"status": "not-ready", "detail": str(exc)}, status_code=503)
+        return JSONResponse({"status": "ok"})
 
     @app.post("/validate")
     async def validate(request: Request) -> JSONResponse:

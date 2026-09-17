@@ -438,7 +438,7 @@ variable "kubeconfig_path" {
 }
 
 variable "model_network_boundary_kubeconfig_path" {
-  description = "Separate Platform-Security-issued kubeconfig for the exact network authorizer (prepare) or transition writer (post-prepare). It must not be the shared deployment kubeconfig and must not rely on impersonation."
+  description = "Separate Platform-Security-issued kubeconfig for the exact network authorizer, transition writer, or maintenance writer selected by the phase. It must not be the shared deployment kubeconfig and must not rely on impersonation."
   type        = string
   default     = "/var/run/fs2-network-boundary/credential-required"
   nullable    = false
@@ -476,7 +476,7 @@ variable "model_network_boundary_authority_receipt" {
 }
 
 variable "model_network_helm_kubeconfig_path" {
-  description = "Shared deployment kubeconfig normally; the externally custodied transition kubeconfig only for deny-absent rollback-helm."
+  description = "Shared deployment kubeconfig before custody; an externally custodied maintenance or rollback credential after the boundary is armed."
   type        = string
   default     = ""
   nullable    = false
@@ -1408,10 +1408,11 @@ variable "model_runtime_network_policy" {
       "prepare",
       "inventory",
       "enforce",
+      "maintenance",
       "rollback-remove-deny",
       "rollback-helm",
     ], var.model_runtime_network_policy.phase)
-    error_message = "model_runtime_network_policy.phase must be prepare, inventory, enforce, rollback-remove-deny, or rollback-helm."
+    error_message = "model_runtime_network_policy.phase must be prepare, inventory, enforce, maintenance, rollback-remove-deny, or rollback-helm."
   }
 
   validation {
@@ -1427,7 +1428,7 @@ variable "model_runtime_network_policy" {
         var.model_runtime_network_policy.deny_absent_receipt == null
       )
     )
-    error_message = "prepare and inventory accept no receipts; enforce and rollback-remove-deny require only the inventory receipt; rollback-helm requires both receipts."
+    error_message = "prepare and inventory accept no receipts; enforce, maintenance, and rollback-remove-deny require only the inventory receipt; rollback-helm requires both receipts."
   }
 }
 
@@ -1448,17 +1449,33 @@ variable "model_network_transition_lock_identity" {
 }
 
 variable "model_network_transition_writer_username" {
-  description = "Exact Kubernetes-authenticated username that acquired the retained model-network transition Lease; supplied only by inference-stack."
+  description = "Exact Kubernetes-authenticated username that acquired the phase-specific transition or maintenance Lease; supplied only by inference-stack."
   type        = string
   default     = ""
   nullable    = false
 
   validation {
     condition = (
-      (var.model_runtime_network_policy.phase == "prepare" && var.model_network_transition_writer_username == "") ||
-      var.model_network_transition_writer_username == "fs2-model-network-transition"
+      var.model_network_transition_writer_username == "fs2-model-network-transition" ||
+      (var.model_runtime_network_policy.phase == "maintenance" && var.model_network_transition_writer_username == "fs2-model-network-maintenance")
     )
-    error_message = "Every held model-network transition requires the exact separately authenticated fs2-model-network-transition username."
+    error_message = "A held model-network operation requires the exact separately authenticated transition writer, or the maintenance writer in maintenance phase."
+  }
+}
+
+variable "model_network_operation_lock_identity" {
+  description = "Ephemeral holder of the phase-specific transition or maintenance Lease; distinct from the stable boundary holder annotation during maintenance."
+  type        = string
+  default     = ""
+  nullable    = false
+  sensitive   = true
+
+  validation {
+    condition = (
+      var.model_network_operation_lock_identity == "" ||
+      can(regex("^[a-z][a-z0-9]{5,11}:[1-9][0-9]*:[a-f0-9]{32}$", nonsensitive(var.model_network_operation_lock_identity)))
+    )
+    error_message = "A model-network operation holder must be empty or the wrapper's run:pid:128-bit-token identity."
   }
 }
 
@@ -1472,11 +1489,15 @@ variable "model_network_transition_lock_required" {
     condition = (
       !var.model_network_transition_lock_required ||
       (
+        var.model_network_operation_lock_identity != "" &&
         var.model_network_transition_lock_identity != "" &&
-        var.model_network_transition_writer_username == "fs2-model-network-transition"
+        (
+          var.model_network_transition_writer_username == "fs2-model-network-transition" ||
+          (var.model_runtime_network_policy.phase == "maintenance" && var.model_network_transition_writer_username == "fs2-model-network-maintenance")
+        )
       )
     )
-    error_message = "A required model-network transition lock needs the wrapper's random holder identity and exact separately authenticated transition writer."
+    error_message = "A required model-network operation needs both active and boundary holder identities plus the exact phase-specific writer."
   }
 }
 

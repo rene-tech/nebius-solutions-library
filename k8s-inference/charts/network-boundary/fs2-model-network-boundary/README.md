@@ -1,62 +1,69 @@
 # Model-network boundary authority
 
-This chart is a Platform Security release, not a subchart of
-`fs2-serve-control-plane`. It must be installed and accepted before any SAI-03
-`prepare` apply. The control-plane chart hard-disables its preserved embedded
-copy.
+This is a separately released Platform Security chart. It must be accepted
+before any SAI-03 `prepare` apply. The control-plane chart's historical embedded
+authority is hard-disabled.
 
-Release requirements:
+## Independent custody
 
-- use namespace `fs2-network-security` and a dedicated
-  `*/network-boundary-authority@sha256:...` image whose repository and digest
-  differ from the control-plane image; build it only from
-  `components/control-plane/Dockerfile.network-boundary`, whose dedicated
-  entrypoint does not import the general control-plane CLI;
-- use Platform-Security-issued X.509 authorizer and transition credentials;
-  neither credential may use Kubernetes impersonation;
-- bind the transition identity to the exact control-plane Helm rollback
-  permissions outside this chart, with no ordinary runtime or model-controller
-  subject in that binding;
-- keep `fs2-system/fs2-catalog-acquisition` as the sole subject of the narrow
-  acquisition Job writer RoleBinding; use a short-lived TokenRequest credential
-  for that identity rather than the control-plane runtime or transition
-  kubeconfig;
-- render `kubernetesApiCidrs` only from canonical `/32` or `/128` API endpoints;
-- wait for both replicas, certificate injection, and all nine fail-closed
-  hooks, then capture every labeled authority/RBAC/certificate object into the
-  v1 custody receipt;
-- sign the exact JSON receipt bytes with the offline key whose public-key
-  SHA-256 is pinned in `deployment.models.network_policy`; publish the detached
-  signature and public key separately from both kubeconfigs.
+The authority image must be an immutable
+`*/network-boundary-authority@sha256:...` artifact that differs from the
+control-plane image. Install the chart in `fs2-network-security` with distinct,
+externally issued Nebius IAM identities for custody, recovery, audit,
+authorization, transition, and maintenance. The values bind their exact
+Kubernetes usernames and group sets to provider principal IDs and a trust
+domain; neither a shared deployment kubeconfig nor an in-cluster ServiceAccount
+is a valid substitute.
 
-The supported `inference-stack` wrapper verifies the detached signature,
-receipt validity window, kubeconfig hashes and X.509/non-impersonation claims,
-live UID/resourceVersion/semantic hashes, dedicated acquisition identity,
-digest-pinned authority image, and the exact bounded Helm/Lease/control-plane
-hooks before it acquires the transition Lease. The TLS Secret content remains
-under Platform Security custody and is never readable by either transition
-credential.
+Two API-server-native `ValidatingAdmissionPolicy` objects provide the static
+boundary. They do not call this chart's Service:
 
-Normal control-plane Helm rollouts happen before this authority is bootstrapped.
-Once installed, the webhook permanently freezes both Helm release storage and
-every object labeled `app.kubernetes.io/instance=fs2-serve-control-plane`, even
-when the transition Lease is idle. `prepare`, `inventory`, `enforce`, and deny
-removal therefore require a no-op control-plane Helm plan and cannot contain the
-old precheck-to-fence race. After a deny-absent receipt, `rollback-helm`
-deliberately switches only that Helm provider to the externally custodied
-transition credential; the webhook independently requires its unexpired random
-Lease holder and rechecks that `fs2-models/default-deny` is absent before
-allowing release mutation.
+- `fs2-model-network-static-custody` makes authority resources update-only and
+  admits repair only from the external custodian/recovery identities. Exact
+  cert-manager Secret/Certificate/Issuer rotation and cainjector caBundle-only
+  updates are explicit exceptions.
+- `fs2-model-network-impersonation-guard` prevents new grants for
+  `impersonate`/`*` over users, groups, serviceaccounts, uids, userextras, or
+  `*`, and rejects bindings to receipt-enumerated impersonation-capable roles.
 
-All nine `failurePolicy: Fail` hooks are bounded by an exact namespace and/or
-object selector. They cover only profiled `fs2-models` workloads, labeled
-SAI-03 policies/markers, the retained transition Lease, the exact control-plane
-release, and labeled authority/RBAC/admission objects. An authority outage does
-not intercept unrelated namespaces, generic ConfigMaps, generic Leases, or
-unrelated admission policies.
+The signed v2 receipt must be no more than 15 minutes old. It binds every
+protected object's UID, resourceVersion and complete semantic hash; the full
+Role/ClusterRole and binding census; all impersonation-capable roles and the
+absence of bindings to them; exact credential username/group/extra/provider
+claims; the distinct acquisition and scientific writers; the live authority
+image ID; both TLS Secret byte hashes; and the exact webhook CA bundle. The
+wrapper re-reads all of that live with a distinct read-only auditor credential
+before a phase Lease can be acquired.
 
-The model-policy hook intentionally covers every `NetworkPolicy` only inside
-`fs2-models`, without an object selector: a policy author cannot bypass custody
-by omitting the boundary label. The marker uses a separate exact-name hook so
-ordinary ConfigMaps in that namespace remain outside the authority failure
-domain.
+Break glass is non-destructive: the external recovery identity may update the
+static guard, certificate, Deployment, Service, RBAC, or webhook configuration
+in place. It cannot delete a protected authority object. The eight in-cluster
+webhooks invoke their release-writer hooks only for the separate transition and
+maintenance identities; the recovery and cert-controller identities are
+authorized directly by API-server-native custody, so an authority outage does
+not deadlock repair or certificate renewal.
+
+## Runtime and maintenance boundary
+
+The eight `failurePolicy: Fail` hooks cover only profiled `fs2-models`
+workloads, all `fs2-models` NetworkPolicies, the exact marker, both retained
+phase Leases, exact control-plane Helm storage/release objects, and mutations
+made by the two external release-writer identities. They do not intercept
+unrelated namespaces or generic cluster resources.
+
+The normal `maintenance` phase keeps the enforcement marker, apply fence,
+finite allow profiles, and `fs2-models/default-deny` live. A distinct random
+maintenance Lease holder admits the exact control-plane Helm release only;
+transition and maintenance Leases cannot be active together. Rollback uses the
+separate transition identity and may change Helm only after a signed receipt
+and live API check prove default deny absent.
+
+The authority runs at least two replicas with preferred hostname anti-affinity
+and hostname/zone topology spread. Readiness verifies its projected reader
+credential, both retained Leases, CA material and serving keypair. A serving
+certificate change fails liveness so a rolling restart reloads the new keypair.
+
+`fs2-system/fs2-catalog-acquisition` remains the sole public-acquisition Job
+writer. Internal scientific Job/JobSet mutation uses the separate
+`fs2-system/fs2-scientific-job-writer` ServiceAccount behind a bounded proxy;
+the general runtime ServiceAccount is read-only for workload observation.

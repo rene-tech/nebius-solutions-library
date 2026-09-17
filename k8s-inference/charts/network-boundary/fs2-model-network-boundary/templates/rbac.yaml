@@ -81,7 +81,7 @@ metadata:
 rules:
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
-    resourceNames: ["fs2-model-network-transition"]
+    resourceNames: ["fs2-model-network-transition", "fs2-model-network-maintenance"]
     verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -169,3 +169,36 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: fs2-model-network-transition
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fs2-model-network-maintenance
+  namespace: {{ .Values.systemNamespace }}
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+  annotations:
+    {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    resourceNames: ["fs2-model-network-maintenance"]
+    verbs: ["get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fs2-model-network-maintenance
+  namespace: {{ .Values.systemNamespace }}
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+  annotations:
+    {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
+subjects:
+  - kind: User
+    name: {{ .Values.maintenanceWriterUsername | quote }}
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: fs2-model-network-maintenance

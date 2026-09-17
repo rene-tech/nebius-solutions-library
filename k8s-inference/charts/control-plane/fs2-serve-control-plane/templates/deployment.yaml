@@ -133,6 +133,10 @@
 {{- fail "scientificBatch.writesEnabled requires scientificBatch.enabled" }}
 {{- end }}
 {{- if .Values.scientificBatch.enabled }}
+{{- $scientificWriterServiceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "scientific-writer") }}
+{{- if has $scientificWriterServiceAccount (list $runtimeServiceAccount $maintenanceServiceAccount $migrationServiceAccount) }}
+{{- fail "scientific Job/JobSet writer must use a distinct service account" }}
+{{- end }}
 {{- if not .Values.scientificArtifacts.enabled }}
 {{- fail "scientificBatch requires scientificArtifacts.enabled" }}
 {{- end }}

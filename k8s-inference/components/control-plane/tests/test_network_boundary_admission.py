@@ -15,6 +15,7 @@ from fs2_serve.network_boundary_admission import (
 PROFILE = "job-public-acquisition-v1"
 CLASS = "public-acquisition"
 MANAGER = "system:kube-controller-manager"
+SCIENTIFIC_WRITER = "system:serviceaccount:fs2-system:fs2-scientific-job-writer"
 
 
 class FakeReader:
@@ -38,11 +39,25 @@ def admission(reader: FakeReader, *, now: datetime | None = None) -> NetworkBoun
             system_namespace="fs2-system",
             authority_namespace="fs2-network-security",
             acquisition_writer=("system:serviceaccount:fs2-system:fs2-catalog-acquisition"),
-            direct_job_writer=("system:serviceaccount:fs2-system:fs2-serve-control-plane-runtime"),
+            direct_job_writer=SCIENTIFIC_WRITER,
             jobset_writer="system:serviceaccount:jobset-system:jobset-controller",
+            model_controller_writer=(
+                "system:serviceaccount:fs2-system:fs2-serve-control-plane-controller"
+            ),
             authorizer_writer="fs2-model-network-authorizer",
             transition_writer="fs2-model-network-transition",
+            maintenance_writer="fs2-model-network-maintenance",
             certificate_writer="system:serviceaccount:cert-manager:cert-manager",
+            authorizer_groups=frozenset({"fs2:model-network-authorizer", "system:authenticated"}),
+            transition_groups=frozenset({"fs2:model-network-transition", "system:authenticated"}),
+            maintenance_groups=frozenset({"fs2:model-network-maintenance", "system:authenticated"}),
+            certificate_groups=frozenset(
+                {
+                    "system:authenticated",
+                    "system:serviceaccounts",
+                    "system:serviceaccounts:cert-manager",
+                }
+            ),
         ),
         reader=reader,  # type: ignore[arg-type]
         clock=(lambda: now) if now is not None else None,
@@ -67,7 +82,26 @@ def review(
     old_value: dict[str, Any] | None = None,
     group: str | None = None,
     namespace: str = "fs2-models",
+    groups: list[str] | None = None,
 ) -> dict[str, Any]:
+    if groups is None:
+        if username.startswith("system:serviceaccount:"):
+            service_account_namespace = username.split(":", 3)[2]
+            groups = [
+                "system:authenticated",
+                "system:serviceaccounts",
+                f"system:serviceaccounts:{service_account_namespace}",
+            ]
+        elif username == MANAGER:
+            groups = ["system:authenticated"]
+        elif username in {
+            "fs2-model-network-authorizer",
+            "fs2-model-network-transition",
+            "fs2-model-network-maintenance",
+        }:
+            groups = [username.replace("fs2-", "fs2:", 1), "system:authenticated"]
+        else:
+            groups = [f"fs2:{username}", "system:authenticated"]
     return {
         "request": {
             "uid": "request-uid",
@@ -78,7 +112,7 @@ def review(
             },
             "kind": {"kind": kind},
             "namespace": namespace,
-            "userInfo": {"username": username},
+            "userInfo": {"username": username, "groups": groups},
             "object": value,
             "oldObject": old_value,
         }
@@ -108,6 +142,74 @@ async def test_direct_public_acquisition_job_requires_normal_catalog_writer() ->
                     username=rejected_writer,
                 )
             )
+
+
+@pytest.mark.asyncio
+async def test_direct_scientific_job_requires_distinct_writer_and_exact_groups() -> None:
+    internal = labels(workload_class="internal-job", profile="job-internal-v1")
+    job = {
+        "metadata": {"name": "scientific", "labels": internal},
+        "spec": {"template": {"metadata": {"labels": internal}}},
+    }
+    result = await admission(FakeReader()).review(
+        review(kind="Job", resource="jobs", value=job, username=SCIENTIFIC_WRITER)
+    )
+    assert result["response"]["allowed"] is True
+
+    with pytest.raises(NetworkBoundaryError, match="group set"):
+        await admission(FakeReader()).review(
+            review(
+                kind="Job",
+                resource="jobs",
+                value=job,
+                username=SCIENTIFIC_WRITER,
+                groups=["system:authenticated"],
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_jobset_and_runtime_parent_require_separate_exact_writers() -> None:
+    internal = labels(workload_class="internal-job", profile="job-internal-v1")
+    jobset = {"metadata": {"name": "scientific", "labels": internal}}
+    result = await admission(FakeReader()).review(
+        review(
+            kind="JobSet",
+            resource="jobsets",
+            value=jobset,
+            username=SCIENTIFIC_WRITER,
+            group="jobset.x-k8s.io",
+        )
+    )
+    assert result["response"]["allowed"] is True
+
+    runtime = labels(workload_class="runtime", profile="gateway-dns-tcp-8000-v1")
+    deployment = {
+        "metadata": {"name": "runtime", "labels": runtime},
+        "spec": {"template": {"metadata": {"labels": runtime}}},
+    }
+    controller = "system:serviceaccount:fs2-system:fs2-serve-control-plane-controller"
+    result = await admission(FakeReader()).review(
+        review(
+            kind="Deployment",
+            resource="deployments",
+            value=deployment,
+            username=controller,
+            group="apps",
+        )
+    )
+    assert result["response"]["allowed"] is True
+
+    with pytest.raises(NetworkBoundaryError, match="model-controller writer"):
+        await admission(FakeReader()).review(
+            review(
+                kind="Deployment",
+                resource="deployments",
+                value=deployment,
+                username=SCIENTIFIC_WRITER,
+                group="apps",
+            )
+        )
 
 
 @pytest.mark.asyncio

@@ -49,6 +49,16 @@ spec:
         - port: {{ .Values.service.port }}
           protocol: TCP
   egress:
+    {{- if .Values.scientificBatch.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "fs2-serve.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: scientific-writer
+      ports:
+        - port: {{ .Values.scientificBatch.writer.port }}
+          protocol: TCP
+    {{- end }}
     - to:
         - namespaceSelector:
             matchLabels:
