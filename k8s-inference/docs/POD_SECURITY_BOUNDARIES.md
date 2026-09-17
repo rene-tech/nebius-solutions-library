@@ -340,6 +340,11 @@ The signed acknowledgement binds its UID/resourceVersion/full-object and field
 set, phase/action/consumer/context, custody epoch, complete state aggregate,
 the exact canonical saved-plan/config/variables/planned-values projection,
 owner authority audits, token-anchor metadata and ledger-consumption digest.
+It also carries the sorted, complete retained-object inventory with each state
+address, API path, UID, resourceVersion and canonical full-object hash. The
+apply-time verifier reconstructs that inventory from live API reads as its last
+pre-apply operation and again as its first post-apply custody fence; aggregate
+hash equality alone is not accepted.
 The saved plan is created before the acknowledgement; planning does not read a
 handoff file. The v4 PID-1 `plan-apply` capsule creates and applies the same
 sealed descriptor, publishes a generation-addressed read-only copy for the
@@ -353,6 +358,15 @@ resource can change. Foundation labels, scientific namespace labels, the
 academic-assets module, ModelExpress namespace, and reference-data namespace
 all depend on that verified output. The retained state-only gate updates in
 place and has no replacement trigger or local-exec provisioner.
+
+Plan, acknowledgement wait, acknowledgement verification and apply each have
+source-owned finite deadlines. Immediately before mutation the PID-1 wrapper
+requires both the plan-capsule attestation and the external acknowledgement
+lease to remain valid for the complete maximum apply, post-verifier and Pod
+identity windows. The exact sealed apply is killed at its bound and the
+retained inventory is fenced even on timeout or nonzero exit. Such an attempt
+is not replayed: recovery requires a new nonce and a fresh plan from the newly
+observed state; no cleanup, state forgetting or force-unlock is performed.
 
 The apply-time verifier also uses the exact sealed platform kubeconfig/context
 from the saved plan. Before any authenticated request, PID 1 parses the sealed

@@ -151,7 +151,12 @@ def check_id(verb: str, group: str, resource: str, subresource: str, namespace: 
     return f"{verb}:{api}:{target}:{scope}:{name or '*'}"
 
 
-def expected_allowed(profile: str, namespaces: list[str], persistent_volume_names: list[str]) -> set[str]:
+def expected_allowed(
+    profile: str,
+    namespaces: list[str],
+    persistent_volume_names: list[str],
+    capsule_pod_identity: dict[str, str] | None = None,
+) -> set[str]:
     result = {
         check_id("create", "authentication.k8s.io", "selfsubjectreviews", "", ""),
         check_id("create", "authorization.k8s.io", "selfsubjectaccessreviews", "", ""),
@@ -210,6 +215,18 @@ def expected_allowed(profile: str, namespaces: list[str], persistent_volume_name
                 check_id("create", "", "secrets", "", "fs2-system"),
                 check_id("list", "", "secrets", "", "fs2-system"),
             }
+        )
+        if capsule_pod_identity is None:
+            raise AuditError("external executor omits its exact capsule Pod identity")
+        result.add(
+            check_id(
+                "get",
+                "",
+                "pods",
+                "",
+                capsule_pod_identity["namespace"],
+                capsule_pod_identity["name"],
+            )
         )
         return result
     if profile == "token-issuer":
@@ -280,8 +297,15 @@ def expected_allowed(profile: str, namespaces: list[str], persistent_volume_name
     return result
 
 
-def expected_reviews(profile: str, namespaces: list[str], persistent_volume_names: list[str]) -> dict[str, bool]:
-    allowed = expected_allowed(profile, namespaces, persistent_volume_names)
+def expected_reviews(
+    profile: str,
+    namespaces: list[str],
+    persistent_volume_names: list[str],
+    capsule_pod_identity: dict[str, str] | None = None,
+) -> dict[str, bool]:
+    allowed = expected_allowed(
+        profile, namespaces, persistent_volume_names, capsule_pod_identity
+    )
     identifiers: set[str] = set()
     for group, resource, subresource in CLUSTER_RESOURCES:
         for verb in (*READING, *MUTATING):
@@ -307,6 +331,17 @@ def expected_reviews(profile: str, namespaces: list[str], persistent_volume_name
         identifiers.add(check_id(verb, group, resource, subresource, namespace, name))
     for name in persistent_volume_names:
         identifiers.add(check_id("get", "", "persistentvolumes", "", "", name))
+    if capsule_pod_identity is not None:
+        identifiers.add(
+            check_id(
+                "get",
+                "",
+                "pods",
+                "",
+                capsule_pod_identity["namespace"],
+                capsule_pod_identity["name"],
+            )
+        )
     for resource, names in (
         ("clusterroles", ("fs2-pod-security-external-custody-audit", "fs2-pod-security-rollout-reader")),
         ("clusterrolebindings", ("fs2-pod-security-external-custody-audit", "fs2-pod-security-rollout-custodian-reader", "fs2-pod-security-rollout-reader")),
@@ -345,9 +380,12 @@ def _expected_resource_atoms(
     namespace: str,
     namespaces: list[str],
     persistent_volume_names: list[str],
+    capsule_pod_identity: dict[str, str] | None,
 ) -> set[tuple[str, str, str, str, str]]:
     atoms: set[tuple[str, str, str, str, str]] = set()
-    for identifier in expected_allowed(profile, namespaces, persistent_volume_names):
+    for identifier in expected_allowed(
+        profile, namespaces, persistent_volume_names, capsule_pod_identity
+    ):
         verb, api, target, scope, name = identifier.split(":", 4)
         if scope not in {"_cluster", namespace}:
             continue
@@ -371,6 +409,7 @@ def validate_exact_rule_closure(
     persistent_volume_names: list[str],
     status: object,
     expected_closure: object | None = None,
+    capsule_pod_identity: dict[str, str] | None = None,
 ) -> dict[str, list[dict[str, str]]]:
     """Reject every effective rule outside or missing from the exact profile.
 
@@ -427,7 +466,11 @@ def validate_exact_rule_closure(
 
     if expected_closure is None:
         expected_resources = _expected_resource_atoms(
-            profile, namespace, namespaces, persistent_volume_names
+            profile,
+            namespace,
+            namespaces,
+            persistent_volume_names,
+            capsule_pod_identity,
         )
         expected_non_resources = DISCOVERY_NON_RESOURCE_RULES
     else:
@@ -830,6 +873,29 @@ def run(args: argparse.Namespace, client: Any | None = None) -> dict[str, Any]:
         or not all(isinstance(name, str) and name for name in persistent_volume_names)
     ):
         raise AuditError("exact persistent-volume inventory is malformed")
+    capsule_pod_identity_json = getattr(args, "capsule_pod_identity_json", None)
+    capsule_pod_identity: dict[str, str] | None = None
+    if args.profile == "external-executor":
+        if not isinstance(capsule_pod_identity_json, str):
+            raise AuditError("external executor requires its exact capsule Pod identity")
+        capsule_pod_identity = json.loads(capsule_pod_identity_json)
+        if (
+            not isinstance(capsule_pod_identity, dict)
+            or set(capsule_pod_identity) != {"name", "namespace"}
+            or canonical(capsule_pod_identity).decode() != capsule_pod_identity_json
+            or capsule_pod_identity["namespace"] not in namespaces
+            or not all(
+                isinstance(capsule_pod_identity[field], str)
+                and re.fullmatch(
+                    r"[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?",
+                    capsule_pod_identity[field],
+                )
+                for field in ("name", "namespace")
+            )
+        ):
+            raise AuditError("external capsule Pod identity is malformed")
+    elif capsule_pod_identity_json is not None:
+        raise AuditError("only the external executor may bind a capsule Pod identity")
     expected_closure_by_namespace: dict[str, dict[str, Any]] = {}
     supplied_closure_json = getattr(args, "expected_rule_closure_json", None)
     if args.profile == "platform":
@@ -869,7 +935,12 @@ def run(args: argparse.Namespace, client: Any | None = None) -> dict[str, Any]:
         raise AuditError("selected cluster identity differs")
 
     reviews: list[dict[str, Any]] = []
-    expected_matrix = expected_reviews(args.profile, namespaces, persistent_volume_names)
+    expected_matrix = expected_reviews(
+        args.profile,
+        namespaces,
+        persistent_volume_names,
+        capsule_pod_identity,
+    )
 
     def expected_for(
         verb: str,
@@ -963,7 +1034,19 @@ def run(args: argparse.Namespace, client: Any | None = None) -> dict[str, Any]:
         ("delete", "", "configmaps", "", "fs2-system", "fs2-pod-security-rollout-ledger"),
         ("list", "", "secrets", "", "fs2-models", ""),
     )
-    for verb, group, resource, subresource, namespace, name in named_edges:
+    dynamic_named_edges = list(named_edges)
+    if capsule_pod_identity is not None:
+        dynamic_named_edges.append(
+            (
+                "get",
+                "",
+                "pods",
+                "",
+                capsule_pod_identity["namespace"],
+                capsule_pod_identity["name"],
+            )
+        )
+    for verb, group, resource, subresource, namespace, name in dynamic_named_edges:
         review(
             client,
             reviews,
@@ -1023,6 +1106,7 @@ def run(args: argparse.Namespace, client: Any | None = None) -> dict[str, Any]:
             expected_closure_by_namespace.get(namespace)
             if args.profile == "platform"
             else None,
+            capsule_pod_identity,
         )
         rules.append({"namespace": namespace, "status": status})
         exact_rule_closure.append({"namespace": namespace, **closure})
@@ -1071,6 +1155,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--persistent-volume-names-json", required=True)
     result.add_argument("--bound-jti-sha256")
     result.add_argument("--expected-rule-closure-json")
+    result.add_argument("--capsule-pod-identity-json")
     return result
 
 

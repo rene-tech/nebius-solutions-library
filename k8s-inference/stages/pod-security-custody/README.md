@@ -162,6 +162,19 @@ digest, image/Pod/admission identities, API origin and CA, capsule role,
 handoff identity, nonce and expiry. Runtime activation must match this reviewed
 source graph as well as the deployment facts.
 
+The v4 capsule also carries the exact, role-specific set of admission objects
+that each capsule must read. The signed runtime attestation must contain that
+set exactly, including every UID, resourceVersion and canonical full-object
+hash. Both the plan/apply and external-ack roles live-read their own Pod and
+bind a canonical projection containing the complete Pod spec plus security
+metadata. The projection covers every regular, init and ephemeral container,
+commands, arguments, environment, volumes and mounts; source-owned invariants
+also reject host namespaces/hostPath/hostPort, writable roots, privilege,
+capability additions, non-digest images and non-RuntimeDefault seccomp.
+The external epoch role must have only a resourceNames-scoped `get pods` edge
+for its attested Pod; its exhaustive SSAR/SSRR contract rejects namespace-wide
+Pod reads as well as any additional rule.
+
 The no-delete source contract retains both legacy and exception OTel, DCGM,
 node-exporter and GPU-observer generations in every phase. Their releases,
 DCGM registry Secrets and immutable configuration are destruction-protected.
@@ -211,6 +224,10 @@ Safe non-destructive order:
    POST whose response is metadata-only, run the acknowledgement SSA without
    force, reread all retained objects and the anchor metadata, and issue an
    exact signed acknowledgement for the same raw-state version.
+   The acknowledgement carries the canonical per-object inventory itself, not
+   only its aggregate digest. The platform verifier reconstructs every API
+   path/UID/resourceVersion/full hash as its final operation immediately before
+   the apply and repeats the same reconstruction immediately afterward.
 4. The platform root retains every state address in this revision through
    active, count-correct `prevent_destroy` declarations. The archived `removed`
    design is inactive. No relinquishment, partial handoff or count-flattening

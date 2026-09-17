@@ -68,6 +68,142 @@ def instant(value: object, label: str) -> dt.datetime:
     return parsed
 
 
+def reconstruct_retained_inventory(
+    acknowledgement: dict[str, Any], platform_client: Any
+) -> str:
+    inventory = acknowledgement["platform_object_inventory"]
+    if (
+        not isinstance(inventory, list)
+        or not inventory
+        or inventory != sorted(inventory, key=evidence.canonical)
+        or acknowledgement["platform_object_inventory_count"] != str(len(inventory))
+    ):
+        raise AckV3Error(
+            "signed Terraform-retained object inventory is absent or unordered"
+        )
+    inventory_sha256 = hashlib.sha256(evidence.canonical(inventory)).hexdigest()
+    if (
+        inventory_sha256 != acknowledgement["platform_objects_before_sha256"]
+        or inventory_sha256 != acknowledgement["platform_objects_after_sha256"]
+    ):
+        raise AckV3Error(
+            "signed Terraform-retained object inventory differs from its fences"
+        )
+    api_paths: set[str] = set()
+    identities: set[tuple[str, str, str, str]] = set()
+    state_addresses: set[str] = set()
+    for index, entry in enumerate(inventory):
+        item = exact(
+            entry,
+            {
+                "api_path",
+                "identity",
+                "object_sha256",
+                "present",
+                "resource_version",
+                "state_address",
+                "uid",
+            },
+            f"retained object inventory {index}",
+        )
+        identity_value = item["identity"]
+        if (
+            item["present"] is not True
+            or not isinstance(identity_value, list)
+            or len(identity_value) != 4
+            or not all(isinstance(value, str) for value in identity_value)
+            or not identity_value[0]
+            or not identity_value[1]
+            or not identity_value[3]
+            or not isinstance(item["api_path"], str)
+            or not isinstance(item["state_address"], str)
+            or not item["state_address"]
+            or not isinstance(item["resource_version"], str)
+            or not item["resource_version"]
+            or not isinstance(item["uid"], str)
+            or not item["uid"]
+        ):
+            raise AckV3Error("retained object inventory identity is incomplete")
+        identity = tuple(identity_value)
+        expected_path = bundle_v2.api_path(identity)
+        if item["api_path"] != expected_path:
+            raise AckV3Error("retained object inventory API path differs from identity")
+        digest(item["object_sha256"], f"retained object inventory {index} SHA-256")
+        if (
+            item["api_path"] in api_paths
+            or identity in identities
+            or item["state_address"] in state_addresses
+        ):
+            raise AckV3Error("retained object inventory contains a duplicate identity")
+        api_paths.add(item["api_path"])
+        identities.add(identity)
+        state_addresses.add(item["state_address"])
+        live = platform_client.raw(item["api_path"])
+        metadata = live.get("metadata", {})
+        if (
+            live.get("apiVersion") != identity[0]
+            or live.get("kind") != identity[1]
+            or metadata.get("namespace", "") != identity[2]
+            or metadata.get("name") != identity[3]
+            or metadata.get("uid") != item["uid"]
+            or metadata.get("resourceVersion") != item["resource_version"]
+            or hashlib.sha256(evidence.canonical(live)).hexdigest()
+            != item["object_sha256"]
+        ):
+            raise AckV3Error(
+                "live Terraform-retained object differs from the signed inventory"
+            )
+    return inventory_sha256
+
+
+def validate_capsule_admission(capsule: dict[str, Any]) -> None:
+    admission = exact(
+        capsule.get("admission"),
+        {
+            "pod_security_contract",
+            "pod_security_projection",
+            "required_objects_by_role",
+        },
+        "capsule admission contract",
+    )
+    expected_profile = {
+        "automount_service_account_token": False,
+        "capabilities_drop_all": True,
+        "forbid_capability_additions": True,
+        "forbid_host_namespaces": True,
+        "forbid_host_path": True,
+        "forbid_host_ports": True,
+        "forbid_privileged": True,
+        "require_allow_privilege_escalation_false": True,
+        "require_digest_images": True,
+        "require_read_only_root_filesystem": True,
+        "require_run_as_non_root": True,
+        "required_seccomp_type": "RuntimeDefault",
+    }
+    roles = exact(
+        admission["required_objects_by_role"],
+        {"external-ack", "plan-apply"},
+        "capsule role admission objects",
+    )
+    if (
+        admission["pod_security_contract"] != expected_profile
+        or admission["pod_security_projection"]
+        != "canonical-v1-full-spec-and-security-metadata"
+        or any(
+            not isinstance(paths, list)
+            or not paths
+            or len(paths) > 8
+            or paths != sorted(set(paths))
+            or any(
+                not isinstance(path, str) or not path.startswith("/api")
+                for path in paths
+            )
+            for paths in roles.values()
+        )
+    ):
+        raise AckV3Error("capsule admission contract is incomplete")
+
+
 def validate(query: dict[str, str]) -> dict[str, str]:
     supplied_lock = Path(query["trust_lock_path"])
     supplied_capsule = Path(query["execution_capsule_contract_path"])
@@ -99,6 +235,7 @@ def validate(query: dict[str, str]) -> dict[str, str]:
         != query["execution_source_bundle_sha256"]
     ):
         raise AckV3Error("immutable execution capsule identity is absent or differs")
+    validate_capsule_admission(capsule)
     capsule_runtime = exact(
         capsule.get("runtime"),
         {
@@ -399,6 +536,8 @@ def validate(query: dict[str, str]) -> dict[str, str]:
             "owner_token_jti_sha256",
             "phase",
             "platform_authority_contract_sha256",
+            "platform_object_inventory",
+            "platform_object_inventory_count",
             "platform_objects_after_sha256",
             "platform_objects_before_sha256",
             "platform_plan_contract",
@@ -744,6 +883,12 @@ def validate(query: dict[str, str]) -> dict[str, str]:
         raise AckV3Error(
             "signed anchor inventory does not contain the exact current anchor identity"
         )
+    # Keep the complete retained-object reconstruction as the final API fence:
+    # the caller invokes this verifier immediately before and after the bounded
+    # apply, so no aggregate-only or stale external observation is accepted.
+    retained_inventory_sha256 = reconstruct_retained_inventory(
+        ack, platform_client
+    )
     if ack["authority_key_id"] != authority["key_id"]:
         raise AckV3Error("acknowledgement authority key differs from the repository pin")
     return {
@@ -770,6 +915,11 @@ def validate(query: dict[str, str]) -> dict[str, str]:
         "phase": ack["phase"],
         "platform_authority_audit_sha256": platform_authority_audit_sha256,
         "platform_plan_contract_sha256": ack["platform_plan_contract_sha256"],
+        "platform_object_inventory_sha256": retained_inventory_sha256,
+        "lease_expires_at": ack["expires_at"],
+        "verified_at": dt.datetime.now(dt.UTC)
+        .isoformat(timespec="seconds")
+        .replace("+00:00", "Z"),
         "valid": "true",
     }
 

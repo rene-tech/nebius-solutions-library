@@ -81,6 +81,11 @@ def read_regular(path: Path, label: str, maximum: int) -> bytes:
     descriptor = os.open(
         path, os.O_RDONLY | os.O_CLOEXEC | (0 if capsule_fd else os.O_NOFOLLOW)
     )
+    if not all(
+        isinstance(claims[field], str) and claims[field].endswith("Z")
+        for field in ("issued_at", "expires_at")
+    ):
+        raise ExecutionV3Error("external runtime attestation time is malformed")
     try:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode) or before.st_size > maximum:
@@ -498,6 +503,7 @@ def repository_contract_v4() -> tuple[
     dict[str, Any],
     bytes,
     dict[str, Any],
+    dict[str, Any],
 ]:
     """Load only descriptor-sealed contracts from the attested v4 capsule."""
 
@@ -738,6 +744,7 @@ def repository_contract_v4() -> tuple[
         platform_authority_bytes,
         platform_authority,
         capsule_bytes,
+        capsule,
         capsule_runtime,
     )
 
@@ -780,17 +787,9 @@ def full_snapshot(
             bundle_v2.api_path(identity), allow_absent=expected.get("present") is False
         )
         if expected.get("present") is False:
-            if live is not None:
-                raise ExecutionV3Error(
-                    f"{label} found an object signed as absent: {'/'.join(identity)}"
-                )
-            observed = {
-                "identity": list(identity),
-                "object_sha256": None,
-                "present": False,
-                "resource_version": None,
-                "uid": None,
-            }
+            raise ExecutionV3Error(
+                "Terraform-retained inventory may not contain absent objects"
+            )
         else:
             if live is None:
                 raise ExecutionV3Error(f"{label} lost a retained object: {'/'.join(identity)}")
@@ -802,10 +801,12 @@ def full_snapshot(
                 ) from error
             live_metadata = live.get("metadata", {})
             observed = {
+                "api_path": bundle_v2.api_path(identity),
                 "identity": list(identity),
                 "object_sha256": hashlib.sha256(canonical(live)).hexdigest(),
                 "present": True,
                 "resource_version": live_metadata.get("resourceVersion"),
+                "state_address": entry["state_address"],
                 "uid": live_metadata.get("uid"),
             }
             signed = {
@@ -823,16 +824,300 @@ def full_snapshot(
     return snapshots
 
 
+def pod_security_projection(pod: dict[str, Any]) -> dict[str, Any]:
+    metadata = pod.get("metadata")
+    spec = pod.get("spec")
+    if not isinstance(metadata, dict) or not isinstance(spec, dict):
+        raise ExecutionV3Error("external capsule Pod is malformed")
+    return {
+        "apiVersion": pod.get("apiVersion"),
+        "kind": pod.get("kind"),
+        "metadata": {
+            "annotations": metadata.get("annotations", {}),
+            "finalizers": metadata.get("finalizers", []),
+            "labels": metadata.get("labels", {}),
+            "name": metadata.get("name"),
+            "namespace": metadata.get("namespace"),
+            "ownerReferences": metadata.get("ownerReferences", []),
+            "uid": metadata.get("uid"),
+        },
+        "spec": spec,
+    }
+
+
+def verify_external_capsule_live(
+    owner_api: OwnerApi, capsule: dict[str, Any], capsule_bytes: bytes
+) -> dict[str, str]:
+    attestation_bytes, attestation = load_canonical(
+        V4_RUNTIME_ATTESTATION, "external runtime attestation", 8 * 1024 * 1024
+    )
+    evidence.exact(attestation, {"claims", "signature"}, "external runtime attestation")
+    claims = evidence.exact(
+        attestation["claims"],
+        {
+            "admission_objects",
+            "api",
+            "capsule_contract_sha256",
+            "expires_at",
+            "handoff",
+            "image",
+            "issued_at",
+            "nonce",
+            "pod",
+            "role",
+            "schema",
+            "signing_principal_id",
+        },
+        "external runtime attestation claims",
+    )
+    if (
+        claims["role"] != "external-ack"
+        or claims["capsule_contract_sha256"]
+        != hashlib.sha256(capsule_bytes).hexdigest()
+        or hashlib.sha256(attestation_bytes).hexdigest()
+        != os.environ.get("FS2_SAI07_RUNTIME_ATTESTATION_SHA256")
+    ):
+        raise ExecutionV3Error("external runtime attestation identity differs")
+    try:
+        issued = dt.datetime.fromisoformat(
+            str(claims["issued_at"]).replace("Z", "+00:00")
+        )
+        expires = dt.datetime.fromisoformat(
+            str(claims["expires_at"]).replace("Z", "+00:00")
+        )
+    except ValueError as error:
+        raise ExecutionV3Error("external runtime attestation time is malformed") from error
+    now = dt.datetime.now(dt.UTC)
+    if (
+        issued.tzinfo != dt.UTC
+        or expires.tzinfo != dt.UTC
+        or issued > now + dt.timedelta(seconds=30)
+        or now > expires
+        or expires <= issued
+        or expires - issued > dt.timedelta(minutes=10)
+    ):
+        raise ExecutionV3Error("external runtime attestation is stale or overlong")
+    admission_contract = evidence.exact(
+        capsule.get("admission"),
+        {
+            "pod_security_contract",
+            "pod_security_projection",
+            "required_objects_by_role",
+        },
+        "v4 capsule admission contract",
+    )
+    profile = evidence.exact(
+        admission_contract["pod_security_contract"],
+        {
+            "automount_service_account_token",
+            "capabilities_drop_all",
+            "forbid_capability_additions",
+            "forbid_host_namespaces",
+            "forbid_host_path",
+            "forbid_host_ports",
+            "forbid_privileged",
+            "require_allow_privilege_escalation_false",
+            "require_digest_images",
+            "require_read_only_root_filesystem",
+            "require_run_as_non_root",
+            "required_seccomp_type",
+        },
+        "v4 capsule Pod security contract",
+    )
+    required_by_role = evidence.exact(
+        admission_contract["required_objects_by_role"],
+        {"external-ack", "plan-apply"},
+        "v4 capsule role admission objects",
+    )
+    required_paths = required_by_role["external-ack"]
+    expected_profile = {
+        "automount_service_account_token": False,
+        "capabilities_drop_all": True,
+        "forbid_capability_additions": True,
+        "forbid_host_namespaces": True,
+        "forbid_host_path": True,
+        "forbid_host_ports": True,
+        "forbid_privileged": True,
+        "require_allow_privilege_escalation_false": True,
+        "require_digest_images": True,
+        "require_read_only_root_filesystem": True,
+        "require_run_as_non_root": True,
+        "required_seccomp_type": "RuntimeDefault",
+    }
+    if (
+        admission_contract["pod_security_projection"]
+        != "canonical-v1-full-spec-and-security-metadata"
+        or profile != expected_profile
+        or not isinstance(required_paths, list)
+        or not required_paths
+        or len(required_paths) > 8
+        or required_paths != sorted(set(required_paths))
+    ):
+        raise ExecutionV3Error("external capsule admission contract is incomplete")
+    pod_claim = evidence.exact(
+        claims["pod"],
+        {
+            "container_name",
+            "image_digest",
+            "image_id",
+            "name",
+            "namespace",
+            "resource_version",
+            "security_projection_sha256",
+            "service_account_name",
+            "uid",
+        },
+        "external capsule Pod identity",
+    )
+    image = evidence.exact(
+        claims["image"],
+        {"digest", "provenance_sha256", "reference", "sbom_sha256"},
+        "external capsule image identity",
+    )
+    if not all(
+        isinstance(pod_claim[field], str) and pod_claim[field]
+        for field in (
+            "name",
+            "namespace",
+            "resource_version",
+            "security_projection_sha256",
+            "service_account_name",
+            "uid",
+        )
+    ) or not all(
+        re.fullmatch(r"[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?", pod_claim[field])
+        for field in ("name", "namespace")
+    ):
+        raise ExecutionV3Error("external capsule Pod identity is incomplete")
+    pod = owner_api.raw(
+        f"/api/v1/namespaces/{pod_claim['namespace']}/pods/{pod_claim['name']}"
+    )
+    metadata = pod.get("metadata", {})
+    spec = pod.get("spec", {})
+    containers = [
+        *spec.get("initContainers", []),
+        *spec.get("containers", []),
+        *spec.get("ephemeralContainers", []),
+    ]
+    named_containers = [
+        item
+        for item in spec.get("containers", [])
+        if isinstance(item, dict)
+        and item.get("name") == pod_claim["container_name"]
+    ]
+    named_statuses = [
+        item
+        for item in pod.get("status", {}).get("containerStatuses", [])
+        if isinstance(item, dict)
+        and item.get("name") == pod_claim["container_name"]
+    ]
+    pod_run_as_non_root = spec.get("securityContext", {}).get("runAsNonRoot") is True
+    pod_seccomp = spec.get("securityContext", {}).get("seccompProfile", {}).get("type")
+    if (
+        pod.get("apiVersion") != "v1"
+        or pod.get("kind") != "Pod"
+        or metadata.get("uid") != pod_claim["uid"]
+        or metadata.get("resourceVersion") != pod_claim["resource_version"]
+        or spec.get("serviceAccountName") != pod_claim["service_account_name"]
+        or spec.get("automountServiceAccountToken")
+        is not profile["automount_service_account_token"]
+        or any(spec.get(field) is True for field in ("hostNetwork", "hostPID", "hostIPC"))
+        or spec.get("shareProcessNamespace") is True
+        or not containers
+        or len(named_containers) != 1
+        or len(named_statuses) != 1
+        or named_containers[0].get("image") != image["reference"]
+        or named_statuses[0].get("imageID") != pod_claim["image_id"]
+        or image["digest"] != pod_claim["image_digest"]
+        or any(
+            not isinstance(volume, dict) or "hostPath" in volume
+            for volume in spec.get("volumes", [])
+        )
+        or hashlib.sha256(canonical(pod_security_projection(pod))).hexdigest()
+        != evidence.sha256(
+            pod_claim["security_projection_sha256"],
+            "external Pod security projection SHA-256",
+        )
+    ):
+        raise ExecutionV3Error("live external capsule Pod differs from attestation")
+    for container in containers:
+        if not isinstance(container, dict):
+            raise ExecutionV3Error("external capsule container is malformed")
+        security = container.get("securityContext", {})
+        capabilities = security.get("capabilities", {})
+        if (
+            not isinstance(container.get("image"), str)
+            or "@sha256:" not in container["image"]
+            or security.get("privileged") is not False
+            or security.get("allowPrivilegeEscalation") is not False
+            or security.get("readOnlyRootFilesystem") is not True
+            or not (security.get("runAsNonRoot") is True or pod_run_as_non_root)
+            or capabilities.get("drop") != ["ALL"]
+            or capabilities.get("add") not in (None, [])
+            or security.get("seccompProfile", {}).get("type", pod_seccomp)
+            != profile["required_seccomp_type"]
+            or any(
+                not isinstance(port, dict)
+                or port.get("hostPort") not in (None, 0)
+                for port in container.get("ports", [])
+            )
+        ):
+            raise ExecutionV3Error(
+                "external capsule container violates the complete security profile"
+            )
+    admission = claims["admission_objects"]
+    if not isinstance(admission, list):
+        raise ExecutionV3Error("external attestation omits admission objects")
+    observed_paths: list[str] = []
+    for index, entry in enumerate(admission):
+        item = evidence.exact(
+            entry,
+            {"api_path", "object_sha256", "resource_version", "uid"},
+            f"external admission identity {index}",
+        )
+        if (
+            not isinstance(item["api_path"], str)
+            or not item["api_path"].startswith("/api")
+            or not isinstance(item["uid"], str)
+            or not item["uid"]
+            or not isinstance(item["resource_version"], str)
+            or not item["resource_version"]
+        ):
+            raise ExecutionV3Error("external admission identity is incomplete")
+        observed_paths.append(item["api_path"])
+        observed = owner_api.raw(item["api_path"])
+        observed_metadata = observed.get("metadata", {})
+        if (
+            observed_metadata.get("uid") != item["uid"]
+            or observed_metadata.get("resourceVersion") != item["resource_version"]
+            or hashlib.sha256(canonical(observed)).hexdigest()
+            != evidence.sha256(
+                item["object_sha256"],
+                f"external admission identity {index} SHA-256",
+            )
+        ):
+            raise ExecutionV3Error(
+                "live external admission object differs from attestation"
+            )
+    if observed_paths != required_paths:
+        raise ExecutionV3Error(
+            "external admission objects differ from the exact capsule set"
+        )
+    return {"name": pod_claim["name"], "namespace": pod_claim["namespace"]}
+
+
 def run_owner_authority_audit(
     owner_api: OwnerApi,
     args: argparse.Namespace,
     trust: dict[str, str],
     owner_token_jti_sha256: str,
+    capsule_pod_identity: dict[str, str],
 ) -> tuple[dict[str, Any], str]:
     try:
         audit = authority_audit.run(
             argparse.Namespace(
                 bound_jti_sha256=owner_token_jti_sha256,
+                capsule_pod_identity_json=canonical(capsule_pod_identity).decode(),
                 cluster_id=trust["cluster_id"],
                 context=None,
                 expected_groups_json=trust["owner_groups_json"],
@@ -1158,6 +1443,7 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         platform_authority_bytes,
         platform_authority,
         capsule_bytes,
+        capsule,
         capsule_runtime,
     ) = repository_contract_v4()
     if args.phase != "prepare" and not PHASE_RE.fullmatch(args.phase):
@@ -1323,15 +1609,31 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         trust["state_sha256"],
     )
 
-    owner_audit_before, owner_authority_before_sha256 = run_owner_authority_audit(
-        owner_api, args, trust, owner_token_jti_sha256
-    )
     kube_system = owner_api.raw("/api/v1/namespaces/kube-system")
     if (
         kube_system is None
         or kube_system.get("metadata", {}).get("uid") != trust["kube_system_uid"]
     ):
         raise ExecutionV3Error("external executor selected another cluster")
+    # The external role has no platform kubeconfig. Its epoch-bound API client
+    # must nevertheless reconstruct its own complete Pod security projection
+    # and the exact source-required admission set immediately before the first
+    # admission, anchor, ledger, or acknowledgement mutation.
+    capsule_pod_identity = verify_external_capsule_live(
+        owner_api, capsule, capsule_bytes
+    )
+    owner_audit_before, owner_authority_before_sha256 = run_owner_authority_audit(
+        owner_api,
+        args,
+        trust,
+        owner_token_jti_sha256,
+        capsule_pod_identity,
+    )
+    if (
+        verify_external_capsule_live(owner_api, capsule, capsule_bytes)
+        != capsule_pod_identity
+    ):
+        raise ExecutionV3Error("external capsule Pod identity changed before mutation")
     epoch_admission_objects = ensure_epoch_admission(
         owner_api,
         epoch_contract,
@@ -1449,7 +1751,11 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
     if after != before:
         raise ExecutionV3Error("a Terraform-retained object changed across acknowledgement SSA")
     owner_audit_after, owner_authority_after_sha256 = run_owner_authority_audit(
-        owner_api, args, trust, owner_token_jti_sha256
+        owner_api,
+        args,
+        trust,
+        owner_token_jti_sha256,
+        capsule_pod_identity,
     )
     if owner_authority_after_sha256 != owner_authority_before_sha256:
         raise ExecutionV3Error(
@@ -1531,6 +1837,8 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "platform_authority_contract_sha256": hashlib.sha256(
             platform_authority_bytes
         ).hexdigest(),
+        "platform_object_inventory": after,
+        "platform_object_inventory_count": str(len(after)),
         "platform_objects_after_sha256": after_sha256,
         "platform_objects_before_sha256": before_sha256,
         "platform_plan_contract": prepared["platform_plan_contract"],

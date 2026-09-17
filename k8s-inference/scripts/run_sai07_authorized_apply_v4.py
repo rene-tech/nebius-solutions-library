@@ -55,6 +55,13 @@ MAX_JSON_BYTES = 8 * 1024 * 1024
 MAX_KUBECONFIG_BYTES = 4 * 1024 * 1024
 MAX_PLAN_BYTES = 512 * 1024 * 1024
 MAX_RUNTIME_FILE_BYTES = 512 * 1024 * 1024
+PLAN_TIMEOUT_SECONDS = 180
+ACK_WAIT_SECONDS = 180
+APPLY_TIMEOUT_SECONDS = 180
+POST_APPLY_FENCE_SECONDS = 30
+VERIFIER_TIMEOUT_SECONDS = 120
+KUBERNETES_READ_TIMEOUT_SECONDS = 10
+MAX_ADMISSION_OBJECTS = 8
 SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 OCI_DIGEST_RE = re.compile(r"^sha256:[a-f0-9]{64}$")
 SEALS = (
@@ -106,6 +113,199 @@ def exact(value: object, fields: set[str], label: str) -> dict[str, Any]:
             f"{label} fields differ from the reviewed v4 contract"
         )
     return value
+
+
+def instant(value: object, label: str) -> dt.datetime:
+    if not isinstance(value, str) or not value.endswith("Z"):
+        raise AuthorizedApplyV4Error(f"{label} must be a UTC RFC3339 instant")
+    try:
+        parsed = dt.datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError as error:
+        raise AuthorizedApplyV4Error(f"{label} is malformed") from error
+    if parsed.tzinfo != dt.UTC:
+        raise AuthorizedApplyV4Error(f"{label} is not UTC")
+    return parsed
+
+
+def capsule_admission_contract(
+    capsule: dict[str, Any], role: str
+) -> tuple[dict[str, Any], list[str]]:
+    admission = exact(
+        capsule.get("admission"),
+        {
+            "pod_security_contract",
+            "pod_security_projection",
+            "required_objects_by_role",
+        },
+        "capsule admission contract",
+    )
+    profile = exact(
+        admission["pod_security_contract"],
+        {
+            "automount_service_account_token",
+            "capabilities_drop_all",
+            "forbid_capability_additions",
+            "forbid_host_namespaces",
+            "forbid_host_path",
+            "forbid_host_ports",
+            "forbid_privileged",
+            "require_allow_privilege_escalation_false",
+            "require_digest_images",
+            "require_read_only_root_filesystem",
+            "require_run_as_non_root",
+            "required_seccomp_type",
+        },
+        "capsule Pod security contract",
+    )
+    expected_profile = {
+        "automount_service_account_token": False,
+        "capabilities_drop_all": True,
+        "forbid_capability_additions": True,
+        "forbid_host_namespaces": True,
+        "forbid_host_path": True,
+        "forbid_host_ports": True,
+        "forbid_privileged": True,
+        "require_allow_privilege_escalation_false": True,
+        "require_digest_images": True,
+        "require_read_only_root_filesystem": True,
+        "require_run_as_non_root": True,
+        "required_seccomp_type": "RuntimeDefault",
+    }
+    roles = exact(
+        admission["required_objects_by_role"],
+        {"external-ack", "plan-apply"},
+        "capsule role admission objects",
+    )
+    paths = roles[role]
+    if (
+        admission["pod_security_projection"]
+        != "canonical-v1-full-spec-and-security-metadata"
+        or profile != expected_profile
+        or not isinstance(paths, list)
+        or not paths
+        or len(paths) > MAX_ADMISSION_OBJECTS
+        or paths != sorted(set(paths))
+        or any(
+            not isinstance(path, str) or not path.startswith("/api")
+            for path in paths
+        )
+    ):
+        raise AuthorizedApplyV4Error(
+            "capsule admission or Pod security contract is incomplete"
+        )
+    return profile, paths
+
+
+def validate_admission_claims(
+    claims: dict[str, Any], capsule: dict[str, Any], role: str
+) -> None:
+    _profile, required_paths = capsule_admission_contract(capsule, role)
+    admission = claims["admission_objects"]
+    if not isinstance(admission, list) or not admission:
+        raise AuthorizedApplyV4Error("attestation omits admission objects")
+    observed_paths: list[str] = []
+    for entry in admission:
+        item = exact(
+            entry,
+            {"api_path", "object_sha256", "resource_version", "uid"},
+            "admission identity",
+        )
+        if (
+            not isinstance(item["api_path"], str)
+            or not item["api_path"].startswith("/api")
+            or not isinstance(item["uid"], str)
+            or not item["uid"]
+            or not isinstance(item["resource_version"], str)
+            or not item["resource_version"]
+            or not isinstance(item["object_sha256"], str)
+            or not SHA256_RE.fullmatch(item["object_sha256"])
+        ):
+            raise AuthorizedApplyV4Error("admission identity is incomplete")
+        observed_paths.append(item["api_path"])
+    if observed_paths != required_paths:
+        raise AuthorizedApplyV4Error(
+            "attested admission objects differ from the exact capsule set"
+        )
+
+
+def pod_security_projection(pod: dict[str, Any]) -> dict[str, Any]:
+    metadata = pod.get("metadata")
+    spec = pod.get("spec")
+    if not isinstance(metadata, dict) or not isinstance(spec, dict):
+        raise AuthorizedApplyV4Error("live capsule Pod is malformed")
+    return {
+        "apiVersion": pod.get("apiVersion"),
+        "kind": pod.get("kind"),
+        "metadata": {
+            "annotations": metadata.get("annotations", {}),
+            "finalizers": metadata.get("finalizers", []),
+            "labels": metadata.get("labels", {}),
+            "name": metadata.get("name"),
+            "namespace": metadata.get("namespace"),
+            "ownerReferences": metadata.get("ownerReferences", []),
+            "uid": metadata.get("uid"),
+        },
+        "spec": spec,
+    }
+
+
+def validate_pod_security_profile(pod: dict[str, Any], profile: dict[str, Any]) -> None:
+    spec = pod.get("spec", {})
+    pod_security = spec.get("securityContext", {})
+    containers = [
+        *spec.get("initContainers", []),
+        *spec.get("containers", []),
+        *spec.get("ephemeralContainers", []),
+    ]
+    if (
+        pod.get("apiVersion") != "v1"
+        or pod.get("kind") != "Pod"
+        or spec.get("automountServiceAccountToken")
+        is not profile["automount_service_account_token"]
+        or any(spec.get(field) is True for field in ("hostNetwork", "hostPID", "hostIPC"))
+        or spec.get("shareProcessNamespace") is True
+        or not containers
+        or any(
+            not isinstance(volume, dict) or "hostPath" in volume
+            for volume in spec.get("volumes", [])
+        )
+    ):
+        raise AuthorizedApplyV4Error("capsule Pod violates its Pod-level contract")
+    pod_run_as_non_root = pod_security.get("runAsNonRoot") is True
+    pod_seccomp = pod_security.get("seccompProfile", {}).get("type")
+    for container in containers:
+        if not isinstance(container, dict):
+            raise AuthorizedApplyV4Error(
+                "capsule container violates the complete security profile"
+            )
+        security = container.get("securityContext", {})
+        capabilities = security.get("capabilities", {})
+        ports = container.get("ports", [])
+        if (
+            not isinstance(container.get("image"), str)
+            or "@sha256:" not in container["image"]
+            or security.get("privileged") is not False
+            or security.get("allowPrivilegeEscalation") is not False
+            or security.get("readOnlyRootFilesystem") is not True
+            or not (security.get("runAsNonRoot") is True or pod_run_as_non_root)
+            or capabilities.get("drop") != ["ALL"]
+            or capabilities.get("add") not in (None, [])
+            or security.get("seccompProfile", {}).get("type", pod_seccomp)
+            != profile["required_seccomp_type"]
+            or any(
+                not isinstance(port, dict)
+                or port.get("hostPort") not in (None, 0)
+                for port in ports
+            )
+        ):
+            raise AuthorizedApplyV4Error(
+                "capsule container violates the complete security profile"
+            )
+
+
+def require_fresh_until(value: object, seconds: int, label: str) -> None:
+    if instant(value, label) < dt.datetime.now(dt.UTC) + dt.timedelta(seconds=seconds):
+        raise AuthorizedApplyV4Error(f"{label} does not cover the bounded operation")
 
 
 def read_regular(path: Path, label: str, maximum: int) -> bytes:
@@ -384,6 +584,8 @@ def verify_attestation(
             "image_id",
             "name",
             "namespace",
+            "resource_version",
+            "security_projection_sha256",
             "service_account_name",
             "uid",
         },
@@ -432,6 +634,7 @@ def verify_attestation(
         raise AuthorizedApplyV4Error(
             "signed attestation does not select this active capsule"
         )
+    validate_admission_claims(claims, capsule, expected_role)
     seal_bytes(
         capsule_bytes,
         FDS["capsule_contract"],
@@ -599,6 +802,7 @@ def run_json(
     label: str,
     *,
     input_bytes: bytes | None = None,
+    timeout_seconds: int = VERIFIER_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
     completed = subprocess.run(
         command,
@@ -607,7 +811,7 @@ def run_json(
         capture_output=True,
         env=environment,
         pass_fds=pass_fds,
-        timeout=900,
+        timeout=timeout_seconds,
     )
     if completed.returncode != 0 or len(completed.stdout) > MAX_JSON_BYTES:
         raise AuthorizedApplyV4Error(
@@ -872,7 +1076,7 @@ def publish_plan(path: Path, plan_sha256: str) -> None:
         raise AuthorizedApplyV4Error("published plan handoff is incomplete")
 
 
-def await_acknowledgement(path: Path, maximum_seconds: int = 600) -> None:
+def await_acknowledgement(path: Path, maximum_seconds: int = ACK_WAIT_SECONDS) -> None:
     deadline = time.monotonic() + maximum_seconds
     while True:
         try:
@@ -888,6 +1092,7 @@ def await_acknowledgement(path: Path, maximum_seconds: int = 600) -> None:
 
 def verify_live_identity(
     claims: dict[str, Any],
+    capsule: dict[str, Any],
     embedded_kubeconfig: dict[str, Any],
     base_environment: dict[str, str],
 ) -> bytes:
@@ -900,6 +1105,8 @@ def verify_live_identity(
             "image_id",
             "name",
             "namespace",
+            "resource_version",
+            "security_projection_sha256",
             "service_account_name",
             "uid",
         },
@@ -1026,21 +1233,25 @@ def verify_live_identity(
         (FDS["kubectl"], FDS["platform_kubeconfig"]),
         base_environment,
         "live capsule Pod",
+        timeout_seconds=KUBERNETES_READ_TIMEOUT_SECONDS,
     )
     metadata = pod.get("metadata", {})
     spec = pod.get("spec", {})
     containers = [
         item
         for item in spec.get("containers", [])
-        if item.get("name") == pod_claim["container_name"]
+        if isinstance(item, dict)
+        and item.get("name") == pod_claim["container_name"]
     ]
     statuses = [
         item
         for item in pod.get("status", {}).get("containerStatuses", [])
-        if item.get("name") == pod_claim["container_name"]
+        if isinstance(item, dict)
+        and item.get("name") == pod_claim["container_name"]
     ]
     if (
         metadata.get("uid") != pod_claim["uid"]
+        or metadata.get("resourceVersion") != pod_claim["resource_version"]
         or spec.get("serviceAccountName") != pod_claim["service_account_name"]
         or spec.get("automountServiceAccountToken") is not False
         or len(containers) != 1
@@ -1050,9 +1261,15 @@ def verify_live_identity(
         or containers[0].get("securityContext", {}).get("readOnlyRootFilesystem") is not True
     ):
         raise AuthorizedApplyV4Error("live capsule Pod differs from attestation")
+    profile, _required_paths = capsule_admission_contract(capsule, claims["role"])
+    validate_pod_security_profile(pod, profile)
+    if sha256(canonical(pod_security_projection(pod))) != pod_claim[
+        "security_projection_sha256"
+    ]:
+        raise AuthorizedApplyV4Error(
+            "live complete Pod security projection differs from attestation"
+        )
     admission = claims["admission_objects"]
-    if not isinstance(admission, list) or not admission:
-        raise AuthorizedApplyV4Error("attestation omits admission objects")
     for entry in admission:
         item = exact(
             entry,
@@ -1073,6 +1290,7 @@ def verify_live_identity(
             (FDS["kubectl"], FDS["platform_kubeconfig"]),
             base_environment,
             "live admission identity",
+            timeout_seconds=KUBERNETES_READ_TIMEOUT_SECONDS,
         )
         observed_metadata = observed.get("metadata", {})
         if (
@@ -1197,7 +1415,7 @@ def execute(args: argparse.Namespace) -> dict[str, str]:
             "capsule and signed attestation select different handoff roots"
         )
     base_environment = {"PATH": "/nonexistent"}
-    verify_live_identity(claims, embedded_kubeconfig, base_environment)
+    verify_live_identity(claims, capsule, embedded_kubeconfig, base_environment)
     capsule_sha256 = sha256(capsule_bytes)
     attestation_sha256 = sha256(attestation_bytes)
     source_bundle_sha256 = runtime["runtime_files"]["source_bundle"]["sha256"]
@@ -1265,6 +1483,7 @@ def execute(args: argparse.Namespace) -> dict[str, str]:
         stderr=subprocess.DEVNULL,
         env=environment,
         pass_fds=plan_fds,
+        timeout=PLAN_TIMEOUT_SECONDS,
     )
     if planned.returncode != 0:
         raise AuthorizedApplyV4Error("capsule-owned Terraform plan failed")
@@ -1305,38 +1524,86 @@ def execute(args: argparse.Namespace) -> dict[str, str]:
     )
     query_bytes = canonical(query)
     verifier = ["/proc/1/fd/191", "/proc/1/fd/190", "verify-ack"]
-    run_json(
+    # The external acknowledgement is the short-lived apply lease. Re-read the
+    # capsule Pod/admission identities, then make the complete retained-object
+    # reconstruction the last operation before Terraform can mutate anything.
+    verify_live_identity(claims, capsule, embedded_kubeconfig, base_environment)
+    pre_apply = run_json(
         verifier,
         public_fds,
         environment,
         "pre-apply acknowledgement verifier",
         input_bytes=query_bytes,
     )
-    applied = subprocess.run(
-        [
-            "/proc/1/fd/194",
-            f"-chdir={terraform_root}",
-            "apply",
-            "-input=false",
-            "-auto-approve",
-            "/proc/1/fd/197",
-        ],
-        check=False,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        env=environment,
-        pass_fds=public_fds,
+    lease_seconds = (
+        APPLY_TIMEOUT_SECONDS
+        + VERIFIER_TIMEOUT_SECONDS
+        + (MAX_ADMISSION_OBJECTS + 1) * KUBERNETES_READ_TIMEOUT_SECONDS
+        + POST_APPLY_FENCE_SECONDS
     )
-    if applied.returncode != 0:
-        raise AuthorizedApplyV4Error("exact sealed Terraform apply failed")
-    run_json(
+    require_fresh_until(
+        claims["expires_at"], lease_seconds, "plan capsule attestation expiry"
+    )
+    require_fresh_until(
+        pre_apply.get("lease_expires_at"),
+        lease_seconds,
+        "external apply lease expiry",
+    )
+    apply_timed_out = False
+    try:
+        applied = subprocess.run(
+            [
+                "/proc/1/fd/194",
+                f"-chdir={terraform_root}",
+                "apply",
+                "-input=false",
+                "-auto-approve",
+                "/proc/1/fd/197",
+            ],
+            check=False,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=environment,
+            pass_fds=public_fds,
+            timeout=APPLY_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        apply_timed_out = True
+        applied = None
+    # Always reconstruct the complete retained inventory after an attempted
+    # apply, including a bounded timeout/failure. No old plan is replayable:
+    # the retained generation handoff forces a fresh nonce and plan from the
+    # newly observed state before any resume.
+    post_apply = run_json(
         verifier,
         public_fds,
         environment,
         "post-apply acknowledgement verifier",
         input_bytes=query_bytes,
     )
+    require_fresh_until(
+        claims["expires_at"],
+        (MAX_ADMISSION_OBJECTS + 1) * KUBERNETES_READ_TIMEOUT_SECONDS,
+        "post-apply capsule attestation expiry",
+    )
+    verify_live_identity(claims, capsule, embedded_kubeconfig, base_environment)
+    require_fresh_until(
+        claims["expires_at"], 0, "post-apply capsule attestation expiry"
+    )
+    require_fresh_until(
+        post_apply.get("lease_expires_at"), 0, "post-apply lease expiry"
+    )
+    if apply_timed_out:
+        raise AuthorizedApplyV4Error(
+            "bounded Terraform apply timed out; post-fence completed and a "
+            "fresh generation is required"
+        )
+    if applied is None or applied.returncode != 0:
+        raise AuthorizedApplyV4Error(
+            "exact sealed Terraform apply failed; post-fence completed and a "
+            "fresh generation is required"
+        )
     runtime_after_apply, _root, _data_root, immutable_after_apply = runtime_files(
         capsule, args.stage
     )

@@ -710,6 +710,8 @@ def test_v3_custody_uses_raw_authoritative_evidence_and_retains_platform_state()
     assert "delete/replacement" in saved_plan
     assert "external epoch identity lacks system:authenticated" in authority_audit
     assert "validate_exact_rule_closure" in authority_audit
+    assert "capsule_pod_identity_json" in authority_audit
+    assert "external executor omits its exact capsule Pod identity" in authority_audit
     assert "observed_resources != expected_resources" in authority_audit
     assert "observed_non_resources != expected_non_resources" in authority_audit
     assert "contains wildcard authority" in authority_audit
@@ -751,12 +753,32 @@ def test_v3_custody_uses_raw_authoritative_evidence_and_retains_platform_state()
     assert "prevent_destroy = true" in retained_snapshot
     assert "platform_objects_before_sha256" in acknowledgement
     assert "platform_objects_after_sha256" in acknowledgement
+    assert "platform_object_inventory" in acknowledgement
+    assert "reconstruct_retained_inventory" in acknowledgement
+    assert "live Terraform-retained object differs" in acknowledgement
     assert "repository-pinned v3 custody activation is blocked" in acknowledgement
     assert "query = json.load(sys.stdin)" in acknowledgement
     assert "FS2_SAI07_APPLY_QUERY" not in acknowledgement
     assert "FS2_SAI07_APPLY_PLAN_PATH" not in acknowledgement
     assert '"plan-apply"' in authorized_apply
     assert '"external-ack"' in authorized_apply
+    assert capsule["admission"]["required_objects_by_role"] == {
+        "external-ack": [],
+        "plan-apply": [],
+    }
+    assert (
+        capsule["admission"]["pod_security_projection"]
+        == "canonical-v1-full-spec-and-security-metadata"
+    )
+    assert "validate_admission_claims" in authorized_apply
+    assert "pod_security_projection" in authorized_apply
+    assert "initContainers" in authorized_apply
+    assert "ephemeralContainers" in authorized_apply
+    assert "verify_external_capsule_live" in executor
+    assert "PLAN_TIMEOUT_SECONDS" in authorized_apply
+    assert "APPLY_TIMEOUT_SECONDS" in authorized_apply
+    assert "lease_expires_at" in authorized_apply
+    assert "a fresh generation is required" in authorized_apply
     assert "executor_arguments" not in authorized_apply.split(
         "def execute(args:", 1
     )[1].split("def execute_external", 1)[0]
