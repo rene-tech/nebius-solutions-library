@@ -137,7 +137,14 @@ class PolicyManifestTest(unittest.TestCase):
     def test_policy_reads_exactly_the_rendered_allowlist_keys(self) -> None:
         rendered_keys = set(
             TOOL.render_allowlist(
-                [REGISTRY_PREFIX], PLATFORM_PREFIX, [DIGEST_A], ["deployer"]
+                [REGISTRY_PREFIX],
+                PLATFORM_PREFIX,
+                [DIGEST_A],
+                ["deployer"],
+                token_audience="fs2-release",
+                automation_service_accounts=[
+                    "fs2-system:fs2-release-automation"
+                ],
             )["data"]
         )
         variable_expressions = " ".join(
@@ -164,6 +171,8 @@ class PolicyManifestTest(unittest.TestCase):
                 "platform-digests",
                 "deploy-principals",
                 "namespaces",
+                "token-audience",
+                "automation-service-accounts",
             )
             if f"params.data['{key}']" in variable_expressions
         }
@@ -233,7 +242,7 @@ class PolicyManifestTest(unittest.TestCase):
             validation["expression"]
             for validation in self.policy["spec"]["validations"]
         ]
-        self.assertEqual(len(expressions), 4)
+        self.assertEqual(len(expressions), 6)
         # The request namespace must be part of the owner-approved scope
         # recorded in the rendered allow-list, so claimed and enforced
         # coverage can never drift apart silently.
@@ -243,14 +252,33 @@ class PolicyManifestTest(unittest.TestCase):
         self.assertIn("registryPrefixes.exists", expressions[2])
         self.assertIn("platformDigests.exists", expressions[3])
         self.assertIn("!i.startsWith(variables.platformRepositoryPrefix)", expressions[3])
+        # Automation-identity token hardening: pod-level automount off, the
+        # exact bounded audience, and no Secret volume/env paths — enforced
+        # in admission, so a workload-create grant cannot pivot into
+        # identity-credential access.
+        self.assertIn("isAutomationPod", expressions[4])
+        self.assertIn("automountServiceAccountToken == false", expressions[4])
+        self.assertIn("expirationSeconds <= 3600", expressions[4])
+        self.assertIn("!variables.usesSecretEnv", expressions[4])
+        # Audience exclusivity: nobody else may project the release audience.
+        self.assertIn("serviceAccountToken.audience != variables.tokenAudience", expressions[5])
         for validation in self.policy["spec"]["validations"]:
             self.assertIn("SAI-09", validation["message"])
             self.assertEqual(validation["reason"], "Forbidden")
 
 
+def render_allowlist_fixture(*args, **kwargs):
+    """render_allowlist with the required identity keys defaulted."""
+    kwargs.setdefault("token_audience", "fs2-release")
+    kwargs.setdefault(
+        "automation_service_accounts", ["fs2-system:fs2-release-automation"]
+    )
+    return TOOL.render_allowlist(*args, **kwargs)
+
+
 class AllowlistRenderingTest(unittest.TestCase):
     def test_renders_sorted_unique_digests(self) -> None:
-        manifest = TOOL.render_allowlist(
+        manifest = render_allowlist_fixture(
             [REGISTRY_PREFIX],
             PLATFORM_PREFIX,
             [DIGEST_B, DIGEST_A, DIGEST_B],
@@ -263,32 +291,67 @@ class AllowlistRenderingTest(unittest.TestCase):
         )
         self.assertEqual(manifest["data"]["registry-prefixes"], REGISTRY_PREFIX)
         self.assertEqual(manifest["data"]["deploy-principals"], "deployer")
+        self.assertEqual(manifest["data"]["token-audience"], "fs2-release")
+        self.assertEqual(
+            manifest["data"]["automation-service-accounts"],
+            "fs2-system:fs2-release-automation",
+        )
 
     def test_rejects_malformed_digests_prefixes_and_principals(self) -> None:
         with self.assertRaises(TOOL.ProvenanceError):
-            TOOL.render_allowlist(
+            render_allowlist_fixture(
                 [REGISTRY_PREFIX], PLATFORM_PREFIX, ["sha256:short"], ["deployer"]
             )
         with self.assertRaises(TOOL.ProvenanceError):
-            TOOL.render_allowlist(
+            render_allowlist_fixture(
                 [REGISTRY_PREFIX], PLATFORM_PREFIX, ["latest"], ["deployer"]
             )
         with self.assertRaises(TOOL.ProvenanceError):
-            TOOL.render_allowlist(
+            render_allowlist_fixture(
                 ["cr.example.invalid/no-trailing-slash"],
                 PLATFORM_PREFIX,
                 [DIGEST_A],
                 ["deployer"],
             )
         with self.assertRaises(TOOL.ProvenanceError):
-            TOOL.render_allowlist([], PLATFORM_PREFIX, [DIGEST_A], ["deployer"])
+            render_allowlist_fixture([], PLATFORM_PREFIX, [DIGEST_A], ["deployer"])
         with self.assertRaises(TOOL.ProvenanceError):
-            TOOL.render_allowlist([REGISTRY_PREFIX], PLATFORM_PREFIX, [], ["deployer"])
+            render_allowlist_fixture(
+                [REGISTRY_PREFIX], PLATFORM_PREFIX, [], ["deployer"]
+            )
         with self.assertRaises(TOOL.ProvenanceError):
-            TOOL.render_allowlist([REGISTRY_PREFIX], PLATFORM_PREFIX, [DIGEST_A], [])
+            render_allowlist_fixture(
+                [REGISTRY_PREFIX], PLATFORM_PREFIX, [DIGEST_A], []
+            )
         with self.assertRaises(TOOL.ProvenanceError):
-            TOOL.render_allowlist(
+            render_allowlist_fixture(
                 [REGISTRY_PREFIX], PLATFORM_PREFIX, [DIGEST_A], ["bad\nprincipal"]
+            )
+        # The identity keys fail closed too: a missing/invalid audience or an
+        # empty/malformed automation account list never renders.
+        with self.assertRaises(TOOL.ProvenanceError):
+            render_allowlist_fixture(
+                [REGISTRY_PREFIX],
+                PLATFORM_PREFIX,
+                [DIGEST_A],
+                ["deployer"],
+                token_audience="",
+            )
+        with self.assertRaises(TOOL.ProvenanceError):
+            render_allowlist_fixture(
+                [REGISTRY_PREFIX],
+                PLATFORM_PREFIX,
+                [DIGEST_A],
+                ["deployer"],
+                automation_service_accounts=[],
+            )
+        with self.assertRaises(TOOL.ProvenanceError):
+            render_allowlist_fixture(
+                [REGISTRY_PREFIX],
+                PLATFORM_PREFIX,
+                [DIGEST_A],
+                ["deployer"],
+                automation_service_accounts=["no-colon-row"],
             )
 
 
@@ -636,16 +699,24 @@ AUTOMATION_PRINCIPAL = "system:serviceaccount:fs2-system:fs2-release-automation"
 SECURITY_PRINCIPAL = "system:serviceaccount:fs2-security:fs2-admission-guard"
 AUTHORITY_IMAGE = PLATFORM_PREFIX + "fs2-serve-control-plane@sha256:" + "a" * 64
 AUTHORITY_ROW_DIGEST = "d" * 64
+AUTHORITY_RS_NAME = "fs2-serve-control-plane-0a1b2c3d4e"
+AUTHORITY_RS_UID = "0a1b2c3d-0000-4000-8000-fixture00003"
 AUTHORITY_FIXTURE = {
     "workload_uid": "0a1b2c3d-0000-4000-8000-fixture00001",
     "workload_resource_version": "424242",
     "pod_name": "fs2-serve-control-plane-0a1b2c3d4e-abcde",
     "pod_uid": "0a1b2c3d-0000-4000-8000-fixture00002",
+    "pod_resource_version": "515151",
+    "pod_controller": f"ReplicaSet/{AUTHORITY_RS_NAME}/{AUTHORITY_RS_UID}",
+    "container_name": "control-plane",
     "image": AUTHORITY_IMAGE,
     "database": "fs2_serve",
     "role": "fs2_serve",
     "search_path": '"$user", public',
+    "current_schema": "public",
     "server_version_sha256": "e" * 64,
+    "server_version_num": "160004",
+    "system_identifier": "7300000000000000001",
     "migration_version": "0024_scientific_model_policies.sql",
     "migration_sha256": "f" * 64,
     "table_oid": "16385",
@@ -665,7 +736,13 @@ def write_attestation_fixture(
     name: str = "provider-attestation.json",
     **overrides,
 ) -> Path:
-    """Owner-signed provider attestation (fixture signature registry)."""
+    """Attestor-signed provider attestation (fixture signature registry).
+
+    The default anchored-heads snapshot is a REAL export of the run root's
+    current chains (all required chains enumerated), and the evidence object
+    binds a fixture provider IAM export digest — matching the loader's
+    refusal of empty/omitted chains and bare provider-held strings.
+    """
     import hashlib
     from datetime import UTC, datetime, timedelta
 
@@ -677,8 +754,11 @@ def write_attestation_fixture(
         "apiserver_control": "provider-held",
         "etcd_access": "provider-held",
         "worm_store": "https://worm.example.invalid/fs2/anchored-heads",
-        "anchored_heads": anchored
-        or {"chains": {}},
+        "evidence": {
+            "provider_iam_export_sha256": "9" * 64,
+            "reference": "ticket:FS2-SAI-09-boundary",
+        },
+        "anchored_heads": anchored or TOOL._anchor_snapshot(base),
         "issued_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "expires_at": (now + timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
@@ -705,6 +785,9 @@ def default_scope_fixture(key_sha256: str) -> dict:
         "deploy_principals": [AUTOMATION_PRINCIPAL],
         "security_principals": [SECURITY_PRINCIPAL],
         "verification_key_sha256": key_sha256,
+        "attestation_key_sha256": hashlib.sha256(
+            ATTESTOR_KEY_CONTENT.encode("utf-8")
+        ).hexdigest(),
         "iam_exempt_subjects": [],
         "token_audience": "fs2-release",
         "stage_binding_authority": {
@@ -760,12 +843,21 @@ def authority_checking_verifier(command):
         document = json.loads(payload)
     except (json.JSONDecodeError, UnicodeDecodeError):
         return
-    if isinstance(document, dict) and document.get("schema") == TOOL.SCOPE_SCHEMA:
+    if isinstance(document, dict) and document.get("schema") in (
+        TOOL.SCOPE_SCHEMA,
+        TOOL.PROVIDER_ATTESTATION_SCHEMA,
+    ):
         if hashlib.sha256(payload).hexdigest() not in SIGNED_AUTHORITY_HASHES:
             raise sp.CalledProcessError(1, command)
 
 
 TEST_KEY_CONTENT = "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----\n"
+# SEPARATE attestor key: the provider attestation must never verify against
+# the release pipeline's own key (self-attestation), so the fixtures carry a
+# second key identity pinned by the scope's attestation_key_sha256.
+ATTESTOR_KEY_CONTENT = (
+    "-----BEGIN PUBLIC KEY-----\nattestor\n-----END PUBLIC KEY-----\n"
+)
 
 
 def no_registry_capture(command):
@@ -865,6 +957,14 @@ class VerifiedAllowlistTest(unittest.TestCase):
         self._tmp.write(TEST_KEY_CONTENT)
         self._tmp.close()
         self.addCleanup(lambda: Path(self._tmp.name).unlink(missing_ok=True))
+        self._attestor_key = tempfile.NamedTemporaryFile(
+            "w", suffix=".pub", delete=False
+        )
+        self._attestor_key.write(ATTESTOR_KEY_CONTENT)
+        self._attestor_key.close()
+        self.addCleanup(
+            lambda: Path(self._attestor_key.name).unlink(missing_ok=True)
+        )
         self.key_sha256 = h.sha256(TEST_KEY_CONTENT.encode("utf-8")).hexdigest()
         # The fixture key is pinned exactly as production pins the committed
         # key: by patching the source constant for this test's lifetime.
@@ -1005,21 +1105,38 @@ class VerifiedAllowlistTest(unittest.TestCase):
                 )
             if command[:3] == ["kubectl", "get", "pods"]:
                 namespace = command[command.index("-n") + 1]
+                authority_pod = {
+                    "metadata": {
+                        "name": AUTHORITY_FIXTURE["pod_name"],
+                        "uid": AUTHORITY_FIXTURE["pod_uid"],
+                        "resourceVersion": AUTHORITY_FIXTURE[
+                            "pod_resource_version"
+                        ],
+                        "ownerReferences": [
+                            {
+                                "kind": "ReplicaSet",
+                                "name": AUTHORITY_RS_NAME,
+                                "uid": AUTHORITY_RS_UID,
+                                "controller": True,
+                            }
+                        ],
+                    },
+                    "spec": {
+                        "containers": [
+                            {
+                                "name": AUTHORITY_FIXTURE["container_name"],
+                                "image": AUTHORITY_FIXTURE["image"],
+                            }
+                        ]
+                    },
+                    "status": {"phase": "Running"},
+                }
                 if "-l" in command:
                     # Authority pod resolution by selector.
-                    return json.dumps(
-                        {
-                            "items": [
-                                {
-                                    "metadata": {
-                                        "name": AUTHORITY_FIXTURE["pod_name"],
-                                        "uid": AUTHORITY_FIXTURE["pod_uid"],
-                                    },
-                                    "status": {"phase": "Running"},
-                                }
-                            ]
-                        }
-                    )
+                    return json.dumps({"items": [authority_pod]})
+                if command[3] == AUTHORITY_FIXTURE["pod_name"]:
+                    # Post-dump re-fetch of the exact pod by name.
+                    return json.dumps(authority_pod)
                 if namespace != "fs2-system":
                     return json.dumps({"items": []})
                 return json.dumps(
@@ -1031,6 +1148,23 @@ class VerifiedAllowlistTest(unittest.TestCase):
                             }
                             for index, image in enumerate(live)
                         ]
+                    }
+                )
+            if command[:3] == ["kubectl", "get", "replicaset"]:
+                return json.dumps(
+                    {
+                        "metadata": {
+                            "name": AUTHORITY_RS_NAME,
+                            "uid": AUTHORITY_RS_UID,
+                            "ownerReferences": [
+                                {
+                                    "kind": "Deployment",
+                                    "name": "fs2-serve-control-plane",
+                                    "uid": AUTHORITY_FIXTURE["workload_uid"],
+                                    "controller": True,
+                                }
+                            ],
+                        }
                     }
                 )
             if command[:3] == ["kubectl", "get", "configmap"]:
@@ -1085,7 +1219,10 @@ class VerifiedAllowlistTest(unittest.TestCase):
                         "database",
                         "role",
                         "search_path",
+                        "current_schema",
                         "server_version_sha256",
+                        "server_version_num",
+                        "system_identifier",
                         "migration_version",
                         "migration_sha256",
                         "table_oid",
@@ -1097,6 +1234,8 @@ class VerifiedAllowlistTest(unittest.TestCase):
                         "rows_sha256",
                     )
                 }
+                # Same-snapshot regclass cross-check served by the dump.
+                payload["expected_table_oid"] = AUTHORITY_FIXTURE["table_oid"]
                 payload["rows"] = [
                     [f"fixture-{index}", 1, ref, AUTHORITY_ROW_DIGEST]
                     for index, ref in enumerate(frozen_refs)
@@ -1169,6 +1308,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
         deploy_principals=(AUTOMATION_PRINCIPAL,),
         live_runner=None,
         attestation_path=None,
+        attestation_key_path=None,
     ):
         return TOOL.verified_allowlist(
             self._tmp.name,
@@ -1179,6 +1319,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
             inventory or self.inventory,
             scope_path or self.scope_path,
             attestation_path or self.attestation_path,
+            attestation_key_path or self._attestor_key.name,
             deploy_principals=list(deploy_principals),
             key_path="release.key",
             verifier=verifier,
@@ -1194,9 +1335,10 @@ class VerifiedAllowlistTest(unittest.TestCase):
             verified.append(command[-1])
 
         manifest = self.render(verifier=counting_verifier)
-        # Owner-scope signature, inventory signature, per reference a
-        # receipt sig + image sig, and the newly appended acceptance head.
-        self.assertEqual(len(verified), 7)
+        # Owner-scope signature, attestor-signed provider attestation,
+        # inventory signature, per reference a receipt sig + image sig, and
+        # the newly appended acceptance head.
+        self.assertEqual(len(verified), 8)
         self.assertEqual(
             manifest["data"]["platform-digests"], self.expected_digests()
         )
@@ -1323,6 +1465,47 @@ class VerifiedAllowlistTest(unittest.TestCase):
             current["chains"]["acceptance-heads"]["count"],
             regressed["chains"]["acceptance-heads"]["count"],
         )
+
+    def test_anchored_head_must_be_a_prefix_of_the_local_chain(self) -> None:
+        # A count comparison alone would accept a REWRITTEN history that has
+        # since grown past the anchored count; the anchored head must equal
+        # the hash of the local element AT the anchored position.
+        self.render()
+        earlier = TOOL._anchor_snapshot(self.run_root)
+        second = write_inventory_fixture(
+            self.run_root,
+            [self.REFERENCE_A, self.REFERENCE_B],
+            generation=2,
+            name="gen2-prefix.json",
+        )
+        self.render(inventory=second)
+        grown = TOOL._anchor_snapshot(self.run_root)
+        self.assertGreater(
+            grown["chains"]["acceptance-heads"]["count"],
+            earlier["chains"]["acceptance-heads"]["count"],
+        )
+        # The honest older anchor verifies as a strict prefix.
+        TOOL._assert_anchored_heads(self.run_root, earlier)
+        # A forged anchor at the same older count (history rewritten beneath
+        # the growth) refuses.
+        forged = json.loads(json.dumps(earlier))
+        forged["chains"]["acceptance-heads"]["head"] = "0" * 64
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "NOT a prefix"):
+            TOOL._assert_anchored_heads(self.run_root, forged)
+        # Same for the hash-chained JSONL ledgers.
+        TOOL._record_consumed(self.run_root, "3" * 64, "test")
+        mid = TOOL._anchor_snapshot(self.run_root)
+        TOOL._record_consumed(self.run_root, "4" * 64, "test")
+        TOOL._assert_anchored_heads(self.run_root, mid)
+        forged_ledger = json.loads(json.dumps(mid))
+        forged_ledger["chains"]["consumed"]["head"] = "1" * 64
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "NOT a prefix"):
+            TOOL._assert_anchored_heads(self.run_root, forged_ledger)
+        # A snapshot omitting a required chain anchors nothing and refuses.
+        omitting = json.loads(json.dumps(mid))
+        del omitting["chains"]["consumed"]
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "OMITTED"):
+            TOOL._assert_anchored_heads(self.run_root, omitting)
 
     def test_authority_identity_mismatch_refuses_rendering(self) -> None:
         # The signed inventory pins the authority workload/database identity;
@@ -1467,6 +1650,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
             inventory,
             self.scope_path,
             self.attestation_path,
+            self._attestor_key.name,
             deploy_principals=[AUTOMATION_PRINCIPAL],
             key_path="release.key",
             verifier=authority_checking_verifier,
@@ -1598,6 +1782,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
             kwargs.pop("inventory", None) or self.inventory,
             self.scope_path,
             self.attestation_path,
+            self._attestor_key.name,
             deploy_principals=[AUTOMATION_PRINCIPAL],
             key_path="release.key",
             capture=self.randomized_signing_capture(),
@@ -1954,7 +2139,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
         rogue.write("-----BEGIN PUBLIC KEY-----\nrogue\n-----END PUBLIC KEY-----\n")
         rogue.close()
         self.addCleanup(lambda: Path(rogue.name).unlink(missing_ok=True))
-        with self.assertRaisesRegex(TOOL.ProvenanceError, "source-pinned"):
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "pinned key fingerprint"):
             TOOL.verified_allowlist(
                 rogue.name,
                 [],
@@ -1964,12 +2149,20 @@ class VerifiedAllowlistTest(unittest.TestCase):
                 self.inventory,
                 self.scope_path,
                 self.attestation_path,
+                self._attestor_key.name,
                 deploy_principals=["deployer"],
                 key_path="release.key",
                 verifier=authority_checking_verifier,
                 capture=self.capture,
                 live_runner=self.live_runner(),
             )
+        # The ATTESTOR key is pinned by the owner-signed scope: a rogue
+        # attestor key (or the release key itself) never verifies the
+        # provider attestation.
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "pinned key fingerprint"):
+            self.render(attestation_key_path=rogue.name)
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "pinned key fingerprint"):
+            self.render(attestation_key_path=self._tmp.name)
 
     def test_substituted_scope_never_renders(self) -> None:
         # The reproduced attack: locally edit the scope (or re-commit it, or
@@ -2076,6 +2269,191 @@ class VerifiedAllowlistTest(unittest.TestCase):
             ),
         )
 
+    def test_security_principal_allowance_is_function_scoped(self) -> None:
+        # The security identity is permitted its FUNCTION (admission-config
+        # writes) and nothing else: the same principal holding impersonation
+        # violates like any other subject — no blanket identity exemption.
+        security_subject = {
+            "kind": "ServiceAccount",
+            "namespace": "fs2-security",
+            "name": "fs2-admission-guard",
+        }
+        reconciler_role = {
+            "metadata": {"name": "fs2-security-boundary-operator"},
+            "rules": [
+                {
+                    "apiGroups": ["admissionregistration.k8s.io"],
+                    "resources": [
+                        "validatingadmissionpolicies",
+                        "validatingadmissionpolicybindings",
+                    ],
+                    "verbs": ["get", "list", "create", "update", "patch"],
+                }
+            ],
+        }
+        reconciler_binding = {
+            "metadata": {"name": "fs2-security-boundary-operator"},
+            "roleRef": {
+                "kind": "ClusterRole",
+                "name": "fs2-security-boundary-operator",
+            },
+            "subjects": [dict(security_subject)],
+        }
+        self.render(
+            live_runner=self.live_runner(
+                cluster_roles=[reconciler_role],
+                cluster_role_bindings=[reconciler_binding],
+            )
+        )
+        impersonator_role = {
+            "metadata": {"name": "security-impersonator"},
+            "rules": [
+                {
+                    "apiGroups": [""],
+                    "resources": ["users"],
+                    "verbs": ["impersonate"],
+                }
+            ],
+        }
+        impersonator_binding = {
+            "metadata": {"name": "security-can-impersonate"},
+            "roleRef": {"kind": "ClusterRole", "name": "security-impersonator"},
+            "subjects": [dict(security_subject)],
+        }
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "identity boundary"):
+            self.render(
+                live_runner=self.live_runner(
+                    cluster_roles=[impersonator_role],
+                    cluster_role_bindings=[impersonator_binding],
+                )
+            )
+
+    def _security_pod_runner(self, pod: dict):
+        base = self.live_runner()
+
+        def runner(command):
+            if (
+                command[:3] == ["kubectl", "get", "pods"]
+                and command[3] == "-n"
+                and command[4] == "fs2-security"
+                and "-l" not in command
+            ):
+                return json.dumps({"items": [pod]})
+            return base(command)
+
+        return runner
+
+    def test_identity_pod_token_and_secret_hygiene(self) -> None:
+        # Pods running as an automation identity must be token-hardened:
+        # pod-level automount false, the REQUIRED bounded projection, and no
+        # stored-credential paths (Secret volumes / env). The admission
+        # policy enforces the same contract preventively; this is the live
+        # re-verification.
+        def principal_pod() -> dict:
+            return {
+                "metadata": {"name": "guard-pod"},
+                "spec": {
+                    "serviceAccountName": "fs2-admission-guard",
+                    "automountServiceAccountToken": False,
+                    "volumes": [
+                        {
+                            "projected": {
+                                "sources": [
+                                    {
+                                        "serviceAccountToken": {
+                                            "audience": "fs2-release",
+                                            "expirationSeconds": 600,
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ],
+                    "containers": [{"name": "guard", "image": "img"}],
+                },
+            }
+
+        self.render(live_runner=self._security_pod_runner(principal_pod()))
+        implicit = principal_pod()
+        del implicit["spec"]["automountServiceAccountToken"]
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "POD level"):
+            self.render(live_runner=self._security_pod_runner(implicit))
+        projectionless = principal_pod()
+        projectionless["spec"]["volumes"] = []
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "REQUIRED"):
+            self.render(live_runner=self._security_pod_runner(projectionless))
+        secret_mount = principal_pod()
+        secret_mount["spec"]["volumes"].append(
+            {"secret": {"secretName": "stolen"}}
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "Secret volume"):
+            self.render(live_runner=self._security_pod_runner(secret_mount))
+        secret_env = principal_pod()
+        secret_env["spec"]["containers"][0]["env"] = [
+            {
+                "name": "TOKEN",
+                "valueFrom": {"secretKeyRef": {"name": "s", "key": "k"}},
+            }
+        ]
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "env/envFrom"):
+            self.render(live_runner=self._security_pod_runner(secret_env))
+        foreign_audience = principal_pod()
+        foreign_audience["spec"]["volumes"][0]["projected"]["sources"][0][
+            "serviceAccountToken"
+        ]["audience"] = "kubernetes.default"
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "EXACT token_audience"):
+            self.render(
+                live_runner=self._security_pod_runner(foreign_audience)
+            )
+
+    def test_recovery_action_override_permits_only_the_annotated_toggle(
+        self,
+    ) -> None:
+        # Post-check semantics: a live Audit/Warn binding is drift UNLESS the
+        # override names exactly that binding with exactly those authorized
+        # actions AND the live object carries the authorizing recovery
+        # annotation — so a completed break-glass passes its own post-check
+        # while any unannotated or unauthorized weakening still refuses.
+        import copy
+
+        recovery_sha = "5" * 64
+        documents = load_policy_documents()
+        weakened = copy.deepcopy(
+            next(
+                document
+                for document in documents
+                if document.get("kind") == "ValidatingAdmissionPolicyBinding"
+                and document["metadata"]["name"] == "fs2-image-provenance"
+            )
+        )
+        weakened["spec"]["validationActions"] = ["Audit", "Warn"]
+        weakened["metadata"].setdefault("annotations", {})[
+            "security.fs2.nebius.ai/recovery-authorization"
+        ] = recovery_sha
+        runner = self.live_runner(live_binding=weakened)
+        overrides = {"fs2-image-provenance": (["Audit", "Warn"], recovery_sha)}
+        TOOL._assert_policy_matches_scope(
+            self.scope, runner, binding_action_overrides=overrides
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "does not equal"):
+            TOOL._assert_policy_matches_scope(self.scope, runner)
+        unannotated = copy.deepcopy(weakened)
+        del unannotated["metadata"]["annotations"]
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "annotation"):
+            TOOL._assert_policy_matches_scope(
+                self.scope,
+                self.live_runner(live_binding=unannotated),
+                binding_action_overrides=overrides,
+            )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "protected bindings"):
+            TOOL._assert_policy_matches_scope(
+                self.scope,
+                runner,
+                binding_action_overrides={
+                    "not-a-protected-binding": (["Audit"], recovery_sha)
+                },
+            )
+
     def test_bootstrap_masters_recognition_is_attestation_driven(self) -> None:
         # The one bootstrap cluster-admin -> system:masters binding is
         # tolerated because the REQUIRED owner-signed provider attestation
@@ -2132,6 +2510,19 @@ class VerifiedAllowlistTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(TOOL.ProvenanceError, "provider-held"):
             self.render(attestation_path=weak)
+        # Empty/omitted anchored chains anchor nothing: refused at load.
+        hollow = write_attestation_fixture(
+            self.run_root, anchored={"chains": {}}, name="hollow-attest.json"
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "omits required"):
+            self.render(attestation_path=hollow)
+        # Bare provider-held strings without the bound provider IAM export
+        # digest are assertions, not evidence: refused at load.
+        bare = write_attestation_fixture(
+            self.run_root, name="bare-attest.json", evidence=None
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "not evidence"):
+            self.render(attestation_path=bare)
 
     def test_anchored_heads_regression_refuses_rendering(self) -> None:
         # The attestation embeds the off-host anchor; local chains BEHIND it
@@ -2215,6 +2606,84 @@ class VerifiedAllowlistTest(unittest.TestCase):
                 TOOL.load_recovery_authorization(
                     recovery, self._tmp.name, NOOP_VERIFIER
                 )
+
+    def test_rollout_authorization_embeds_and_pins_the_exact_plan(self) -> None:
+        import hashlib as h
+        from datetime import UTC, datetime, timedelta
+
+        now = datetime.now(UTC)
+        plan = [
+            {"argv": ["kubectl", "apply", "-f", "-"], "stdin_sha256": "6" * 64,
+             "verify": None}
+        ]
+        plan_sha = h.sha256(
+            json.dumps(plan, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+
+        def write_authorization(name: str, **overrides) -> Path:
+            document = {
+                "schema": TOOL.ROLLOUT_AUTHORIZATION_SCHEMA,
+                "cluster": "fixture-cluster",
+                "plan": plan,
+                "plan_sha256": plan_sha,
+                "reason": "change:CH-9 boundary rollout",
+                "issued_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "expires_at": (now + timedelta(hours=4)).strftime(
+                    "%Y-%m-%dT%H:%M:%SZ"
+                ),
+            }
+            document.update(overrides)
+            payload = json.dumps(document).encode("utf-8")
+            path = self.run_root / name
+            path.write_bytes(payload)
+            path.chmod(0o644)
+            signature = self.run_root / (name + ".sig")
+            signature.write_text("fixture-owner-signature\n", encoding="utf-8")
+            signature.chmod(0o644)
+            return path
+
+        good = write_authorization("authorization.json")
+        document, document_sha = TOOL.load_rollout_authorization(
+            good, self._tmp.name, "fixture-cluster", plan_sha, self.run_root,
+            NOOP_VERIFIER,
+        )
+        self.assertEqual(document["plan_sha256"], plan_sha)
+        # The embedded plan must hash to its own recorded digest.
+        lying = write_authorization("lying.json", plan_sha256="7" * 64)
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "EXACT actions"):
+            TOOL.load_rollout_authorization(
+                lying, self._tmp.name, "fixture-cluster", None, self.run_root,
+                NOOP_VERIFIER,
+            )
+        # A live recomputation that differs from the signed plan refuses.
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "freshly recomputed"):
+            TOOL.load_rollout_authorization(
+                good, self._tmp.name, "fixture-cluster", "8" * 64,
+                self.run_root, NOOP_VERIFIER,
+            )
+        # Foreign cluster refuses.
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "not the live"):
+            TOOL.load_rollout_authorization(
+                good, self._tmp.name, "other-cluster", plan_sha,
+                self.run_root, NOOP_VERIFIER,
+            )
+        # Resume (allow_consumed) requires the document to BE consumed…
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "never consumed"):
+            TOOL.load_rollout_authorization(
+                good, self._tmp.name, "fixture-cluster", None, self.run_root,
+                NOOP_VERIFIER, allow_consumed=True,
+            )
+        # …and after consumption, first-use is refused while resume proceeds.
+        TOOL._record_consumed(self.run_root, document_sha, "rollout-authorization")
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "SINGLE-USE"):
+            TOOL.load_rollout_authorization(
+                good, self._tmp.name, "fixture-cluster", plan_sha,
+                self.run_root, NOOP_VERIFIER,
+            )
+        TOOL.load_rollout_authorization(
+            good, self._tmp.name, "fixture-cluster", None, self.run_root,
+            NOOP_VERIFIER, allow_consumed=True,
+        )
 
     def test_sigkill_hardlink_remnants_do_not_wedge_the_chain(self) -> None:
         # A SIGKILL between link(2) and staging cleanup leaves published

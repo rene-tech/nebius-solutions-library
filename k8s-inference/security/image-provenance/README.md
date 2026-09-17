@@ -14,26 +14,28 @@ an unreviewed local build cannot reach the platform namespaces unnoticed.
 | Release receipt | `provenance.py receipt` | Digest ↔ source binding via the content-addressed chain: the **exactly one** linux/amd64 image manifest is resolved from the index (never "the first entry"), its config blob is fetched, hash-verified, platform-checked, and must carry exact 40-hex revision and source-tree labels; the anchor's current annotated **tag object** must equal the recorded target and be present in the verified bundle; ancestry and tree equality are proven inside a fresh clone restored **from the bundle**; SBOM evidence is the attestation selected for that exact amd64 manifest — a fetched, hash-verified (blob = layer digest) in-toto Statement (v0.1/v1) with `predicateType` exactly `https://spdx.dev/Document`, a named subject whose sha256 equals the amd64 manifest, and an SPDX-2.x predicate with valid unique SPDXIDs and a resolving SPDXRef-DOCUMENT DESCRIBES — or a standalone SPDX document that binds the digest as an exact SHA256 checksum or purl version on a described package (substring mentions never bind); the verified manifest/config/attestation/layer/statement digests are recorded and the receipt itself is cosign-signed and signature-verified before no-replace publication. Receipts are **write-once**: identity-equal re-runs re-verify the signature and return the original bytes; any difference is refused | Images without exact revision/tree labels (refused); superseding requires explicitly archiving the old receipt directory first |
 | Signing / verification | `provenance.py sign` / `verify` | `sign` refuses any reference without a signed, validated receipt; key-based cosign signatures with `--use-signing-config=false --new-bundle-format=false --tlog-upload=false` (the regional registry rejects the new bundle media type, and private repo names/digests must not reach the public Rekor log) | Signature ≠ provenance by itself: a signature without a receipt is artifact presence only |
 | Admission: image rules | `policy.yaml` (`fs2-image-provenance`) | For Pods **and** Deployments/DaemonSets/StatefulSets/Jobs/CronJobs in `fs2-system`/`fs2-models`: digest pinning, registry prefix allow-list, and the platform-repository digest allow-list, so a direct `helm upgrade`/`kubectl apply` with a bad image fails at the workload write | Config-only changes that reuse allow-listed images |
-| Admission: Helm release writes | `policy.yaml` (`fs2-helm-release-governance`) | Secrets of type `helm.sh/release.v1` in `fs2-system` may only be written by the `deploy-principals` recorded in the allow-list ConfigMap | This is a **compensating control**, not closure: a deploy-principal holder can still run direct `helm upgrade`, and arbitrary config-only `kubectl` writes are not gated |
+| Admission: Helm release writes | `policy.yaml` (`fs2-helm-release-governance`) | Secrets of type `helm.sh/release.v1` in `fs2-system` may only be written by the `deploy-principals` recorded in the allow-list ConfigMap; under the decided HELM_DRIVER=sql contract that list is EMPTY and every such write is denied outright | Config-only `kubectl` writes outside admission's matched resources are not gated; Terraform no-drift remains the detective control for those |
 
-**Closure prerequisite (owner-level IAM):** real enforcement of "one governed
-deploy path" requires a distinct, automation-only, non-impersonable deploy
-identity whose credentials are only reachable through the wrapper after the
-gate and receipt checks, with interactive operators holding a role that cannot
-write the platform namespaces. Today every operator authenticates as one
-shared cluster-admin principal, so the deploy-principal list documents rather
-than separates authority. The same applies to the allow-list ConfigMap: the
-governed renderer refuses unreceipted/unverified digests, but the ConfigMap is
-**not mutation-protected** — any principal with ConfigMap update can add
-digests or deploy principals directly, bypassing the renderer. Closure
-therefore depends on (a) exclusive automation-identity RBAC on the allow-list
-ConfigMap, (b) admission protection of the ConfigMap and of the policy objects
-themselves, and (c) removal of human workload/ConfigMap-mutation/impersonation
-rights — the parent program's deploy-identity proposal, an owner-gated IAM
-decision. Until that split exists, Terraform's no-drift plan is the
-compensating detective control for config drift, and no claim is made that
-admission alone gates every mutating deploy or that the ConfigMap can only be
-produced by the renderer.
+**Closure status (owner decisions 2026-09-16, DEFINED in source; live
+application happens only at the separately authorized rollout window):** the
+owner decided (a) an automation-only, short-lived, non-impersonable release
+identity and a DISJOINT security identity (`iam-boundary.yaml` defines both,
+with the release Role holding no Secret verbs under the HELM_DRIVER=sql
+contract), (b) admission protection of the two parameter ConfigMaps through
+`fs2-provenance-guard` (once applied, only the security identity writes
+them), and (c) removal of human workload/ConfigMap-mutation/impersonation
+rights, which the renderer's read-only IAM audit ENFORCES at every render —
+rendering refuses while any non-exempt subject holds a forbidden identity
+path, with allowances scoped to each identity's exact function. The policy
+OBJECTS themselves are architecturally exempt from in-cluster admission
+(anti-lockout), so their non-removability is the external provider/IAM arm:
+attested by the ATTESTOR-SIGNED provider attestation and re-checked
+detectively by the renderer's live-equality comparison. Until the rollout
+window executes the live IAM/boundary application, the shared cluster-admin
+reality persists on the cluster and NOTHING in this tree claims live
+prevention before then; Terraform's no-drift plan remains the compensating
+detective control for config-only drift outside admission's matched
+resources.
 
 **Coherent anchoring contract:** every *receipted* release requires a durable
 `release/*`/`deploy/*` tag with a verified private bundle — including commits
@@ -76,7 +78,7 @@ bump — in order:
    <cosign.key> --public-key security/image-provenance/cosign.pub --run-root
    <run> <repo>@sha256:<digest>`.
 5. Assemble and sign the **complete inventory**
-   (`fs2-serve.nebius.ai/release-inventory/v5`): enumerate the current live
+   (`fs2-serve.nebius.ai/release-inventory/v7`): enumerate the current live
    workloads in the matched namespaces, the Helm rollback window
    (`helm history` digests), and frozen scientific-stage bindings as its three
    `sources`, each with `observed_at` and the unique, structured
@@ -100,11 +102,14 @@ bump — in order:
    entries, and unreceipted or unsigned digests all abort:
    `provenance.py render-allowlist --public-key … --key <cosign.key>
    --run-root <run> --inventory inventory.json --scope
-   security/image-provenance/release-scope.json --registry-prefix …
-   --platform-repository-prefix … --deploy-principal
+   security/image-provenance/release-scope.json --attestation
+   <provider-attestation.json> --attestation-key <attestor.pub>
+   --registry-prefix … --platform-repository-prefix … --deploy-principal
    system:serviceaccount:<ns>:<name>` (`--key` signs the acceptance-chain
    head on success; deploy principals are AUTOMATION ServiceAccounts by
-   owner decision — a human username is refused; optional
+   owner decision — a human username is refused; the attestation verifies
+   ONLY against the SEPARATE attestor key pinned by the scope's
+   `attestation_key_sha256`, never the release key; optional
    `--image` arguments must equal the inventory exactly and exist only as a
    cross-check). The inventory additionally carries a strictly increasing
    integer `generation` and a typed collector
@@ -443,7 +448,13 @@ policies; only new admissions are.
   only enumerated Kubernetes bootstrap identities and kube-system controller
   ServiceAccounts are exemptible, Group:system:masters never is, and the
   single bootstrap cluster-admin binding is tolerated only under the
-  OWNER-SIGNED provider attestation. The security principals
+  ATTESTOR-SIGNED provider attestation. Allowances inside the audit are
+  FUNCTION-SCOPED, never identity-blanket: the deploy identity is permitted
+  exactly the workload-write rule in the scope namespaces and the security
+  identity exactly admission-configuration writes (its reconciler
+  function); either principal holding any OTHER forbidden verb —
+  impersonation, token minting, secret access included — is a violation
+  like any other subject. The security principals
   themselves are verified LIVE: each ServiceAccount must exist and carry no
   long-lived token Secret (TokenRequest-only, so "short-lived automation
   identity" is checked against the cluster, not asserted). External
@@ -454,10 +465,29 @@ policies; only new admissions are.
   UID/resourceVersion-fenced annotated recovery patch; `--execute` is not an
   environment flag — it requires the caller's AUTHENTICATED identity to be a
   scope security principal, an OWNER-SIGNED single-use rollout authorization
-  pinning the exact plan hash and cluster UID (consumed through a chained
-  ledger), zero identity-path violations, and it writes chained
-  intent/complete journal records with a post-check that the applied state
-  equals the authorized intent. Recovery authorizations (schema v2) pin the
+  EMBEDDING the byte-bound plan and pinning its hash and the cluster UID
+  (consumed through a chained ledger), the attestor-signed provider
+  attestation (whose anchored-heads snapshot and cluster pin are enforced;
+  `--execute`/`--resume` refuse without it), zero identity-path violations,
+  and it writes chained intent/complete journal records with a post-check
+  that the applied state equals the authorized intent. `--resume` completes
+  ONLY a post-consume crash and re-binds everything live under the lock:
+  the re-presented signed authorization (its embedded plan digest must
+  equal the journaled intent's), the journaled caller (must be a scope
+  security principal), the original recovery document (required when the
+  plan carries a recovery action; its hash must equal the intent's and the
+  signed plan entry's annotation, and it must already be consumed), the
+  live cluster UID, and a fresh plan recomputation whose every outstanding
+  entry must be one the owner signed — new live drift never executes under
+  an old authorization. A plan entry counts as already satisfied only when
+  the live actions AND the recovery-authorization annotation match the
+  signed entry; a same-actions state from any other patch is unaccounted
+  drift and is re-patched under the pinned fences. The post-check accepts
+  exactly ONE divergence from the committed policy: the recovery target
+  carrying the authorized actions plus the authorizing annotation
+  (everything else must equal the committed definitions) — so a sanctioned
+  Audit/Warn break-glass can COMPLETE its own post-check while any
+  unannotated weakening still refuses. Recovery authorizations (schema v2) pin the
   cluster UID, the target object's UID, resourceVersion, and prior actions,
   are single-use, and the emitted patch carries the UID/resourceVersion
   preconditions so the API server itself refuses replay against moved
@@ -466,9 +496,16 @@ policies; only new admissions are.
   and before every append — rewriting, splicing, and suffix truncation all
   fail closed, so a truncated consume ledger can never silently un-consume
   an authorization; `export-anchored-heads` emits the canonical chain-head
-  snapshot for the owner's off-host WORM store and `verify-anchored-heads`
-  fails closed when local chains regress behind the anchored copy (whole-
-  store deletion detection). kubectl and helm are OWNER-PINNED absolute
+  snapshot for the owner's off-host WORM store (EVERY required chain is
+  always enumerated, count 0 included) and `verify-anchored-heads` — the
+  same enforcement that runs inside every render and every
+  execute/resume — fails closed when a required chain is omitted from the
+  snapshot, when local chains regress behind the anchored copy
+  (whole-store deletion), when equal-length heads diverge (in-place
+  rewrite), and when a LONGER local chain's element at the anchored
+  position no longer hashes to the anchored head — the anchor must be a
+  strict PREFIX, so history rewritten beneath new growth is refused, not
+  just counted past. kubectl and helm are OWNER-PINNED absolute
   paths in the signed scope (`tooling`), executed with a from-scratch
   environment (only KUBECONFIG/HOME pass through, and the authenticated
   identity they select is then proven via whoami) — ambient PATH is never a
@@ -480,12 +517,23 @@ policies; only new admissions are.
   every row identity carries a content digest
   (batch/<id>/rev/<n>/<sha12-of-bindings-jsonb>) — all compared against the
   live dump on every render — including the workload resourceVersion, the
-  exact resolved pod (name + UID; the dump execs into that pod, never the
-  deployment alias, and the pod's UID is re-checked afterwards), the
-  database name/role/search_path, a server-version digest, the latest
-  applied migration, the trigger's relation/function/full-DEFINITION
-  digests and enabled state, per-row FULL sha256 digests
-  (batch/<id>/rev/<n>/<sha256>), and an aggregate rows digest. The
+  exact resolved pod (name + UID + resourceVersion; the dump execs into
+  that pod, never the deployment alias; the pod is re-fetched BY NAME
+  afterwards and the WORKLOAD's UID and resourceVersion are re-checked
+  post-dump too), the pod's controller ownership chain (Pod -> ReplicaSet
+  -> the exact Deployment UID, or StatefulSet -> Pod — copied labels never
+  select a foreign pod) and the container that actually runs the
+  workload's digest-pinned image, the database
+  name/role/search_path/current_schema, the server identity (version
+  digest, server_version_num, and the pg_control_system() system
+  identifier — a cluster-unique physical identity, not just a version
+  string), the latest applied migration, the trigger's
+  relation/function/full-DEFINITION digests and enabled state (bound in
+  code to the exact fs2_scientific_batches relation and its same-snapshot
+  regclass OID), per-row FULL sha256 digests (batch/<id>/rev/<n>/<sha256>),
+  and an aggregate rows digest — with EVERY database query executed inside
+  one REPEATABLE READ read-only transaction, so identity facts and rows
+  always come from a single database snapshot. The
   boundary-definition files in this directory are exactly that —
   DEFINITIONS, consistent with the residual note below: `iam-boundary.yaml`
   carries the Kubernetes-applicable subset (namespace, both automation
@@ -495,16 +543,36 @@ policies; only new admissions are.
   separated owner/security duty) which becomes PREVENTIVE only when applied
   at the authorized rollout window, while the PROVIDER-HELD arm
   (system:masters certificate issuance, apiserver/static admission, etcd)
-  enters as the OWNER-SIGNED provider attestation (`--attestation`,
-  required by every render): a signed, cluster-pinned, time-bounded
-  document that also embeds the latest off-host anchored-heads snapshot and
-  WORM store URI, which the renderer enforces against the local chains —
-  nothing here is a comment or a manual export, and nothing in this tree
-  claims source-applied prevention. Identity hygiene is verified for BOTH
+  enters as the ATTESTOR-SIGNED provider attestation (`--attestation` +
+  `--attestation-key`, required by every render and by every
+  execute/resume): a cluster-pinned, time-bounded document verified ONLY
+  against the SEPARATE attestor key whose fingerprint the owner-signed
+  scope pins (`attestation_key_sha256`, REQUIRED to differ from the
+  release verification key — the pipeline can never attest its own
+  boundary), binding the exported provider IAM policy by SHA-256 plus a
+  tracking reference, and embedding the latest off-host anchored-heads
+  snapshot (every required chain enumerated; empty/omitted chains refuse)
+  and WORM store URI, which the renderer and the reconciler enforce
+  against the local chains with strict PREFIX continuity — nothing here is
+  a comment or a manual export, and nothing in this tree claims
+  source-applied prevention: key separation makes the attestation
+  non-self-attestable BY CONSTRUCTION in source, and the remaining step —
+  custody of the attestor private key outside the pipeline — is completed
+  by the owner at the rollout window. Identity hygiene is verified for BOTH
   automation identities (security and deploy): existence, automount
-  disabled, no legacy token Secret, and any pod running as them may mount
-  identity only through pod-bound projections carrying the scope's EXACT
-  `token_audience` with expirationSeconds <= 3600. The wholesale
+  disabled on the ServiceAccount AND explicitly on every pod running as
+  it, no legacy token Secret, at least one REQUIRED pod-bound projection
+  carrying the scope's EXACT `token_audience` with expirationSeconds <=
+  3600 (projected tokens are pod-bound by the API server's TokenRequest
+  boundObjectRef; direct serviceaccounts/token minting is a forbidden
+  identity path for every subject), and NO other credential path on those
+  pods — no Secret volumes and no env/envFrom Secret references. The same
+  contract is enforced PREVENTIVELY in admission: the fs2-image-provenance
+  policy denies automation-identity pods that automount, project a foreign
+  audience, or mount Secret material, and denies EVERY other pod that
+  projects the automation token-audience — so the deploy identity's
+  workload-create right cannot be pivoted into identity-token minting or
+  stored-credential exfiltration. The wholesale
   kube-system ServiceAccount GROUP is not exemptible (controllers are
   exempted individually by name), Secret READS AND WRITES in protected
   namespaces are forbidden identity paths (exfiltration and legacy token

@@ -12,6 +12,18 @@
 #   3. Platform application images (control plane, admin console, website —
 #      anything under the platform repository prefix) must additionally use a
 #      digest present in the signed release allow-list.
+#   4. Pods running as an AUTOMATION identity (the deploy/security
+#      ServiceAccounts listed in the allow-list's automation-service-accounts
+#      key) must be token-hardened: automountServiceAccountToken false at the
+#      pod level, every serviceAccountToken projection bound to the exact
+#      token-audience with <=3600s expiry, and NO Secret volumes or
+#      env/envFrom Secret references — a workload-create grant can no longer
+#      be pivoted into identity-token minting or stored-credential
+#      exfiltration through the automation identity's own pods.
+#   5. No OTHER pod may project a serviceAccountToken carrying the automation
+#      token-audience: the release audience is exclusive to the automation
+#      identities, so an app pod cannot mint a token that impersonates the
+#      release identity toward its verifiers.
 #
 # Matching workload controllers as well as Pods means a direct `helm upgrade`
 # or `kubectl apply` that introduces an unpinned or non-allow-listed image
@@ -136,6 +148,40 @@ spec:
         ('namespaces' in params.data
          ? params.data['namespaces'] : '')
         .split("\n").filter(n, n != '')
+    - name: tokenAudience
+      expression: >-
+        'token-audience' in params.data
+        ? params.data['token-audience'] : ''
+    - name: automationServiceAccounts
+      expression: >-
+        ('automation-service-accounts' in params.data
+         ? params.data['automation-service-accounts'] : '')
+        .split("\n").filter(a, a != '')
+    - name: serviceAccountRow
+      expression: >-
+        request.namespace + ':' +
+        (has(variables.podSpec.serviceAccountName)
+         ? variables.podSpec.serviceAccountName : 'default')
+    - name: isAutomationPod
+      expression: >-
+        variables.automationServiceAccounts.exists(
+          a, a == variables.serviceAccountRow)
+    - name: usesSecretEnv
+      expression: >-
+        variables.podSpec.containers.exists(c,
+          (has(c.envFrom) && c.envFrom.exists(e, has(e.secretRef))) ||
+          (has(c.env) && c.env.exists(e,
+            has(e.valueFrom) && has(e.valueFrom.secretKeyRef))))
+        || (has(variables.podSpec.initContainers) &&
+            variables.podSpec.initContainers.exists(c,
+              (has(c.envFrom) && c.envFrom.exists(e, has(e.secretRef))) ||
+              (has(c.env) && c.env.exists(e,
+                has(e.valueFrom) && has(e.valueFrom.secretKeyRef)))))
+        || (has(variables.podSpec.ephemeralContainers) &&
+            variables.podSpec.ephemeralContainers.exists(c,
+              (has(c.envFrom) && c.envFrom.exists(e, has(e.secretRef))) ||
+              (has(c.env) && c.env.exists(e,
+                has(e.valueFrom) && has(e.valueFrom.secretKeyRef)))))
   validations:
     - expression: >-
         variables.allowedNamespaces.exists(n, n == request.namespace)
@@ -167,6 +213,40 @@ spec:
         fs2-image-provenance-allowlist; sign and allow-list the release before
         deploying it (SAI-09)
       reason: Forbidden
+    - expression: >-
+        !variables.isAutomationPod || (
+          has(variables.podSpec.automountServiceAccountToken) &&
+          variables.podSpec.automountServiceAccountToken == false &&
+          (!has(variables.podSpec.volumes) ||
+           variables.podSpec.volumes.all(v,
+             !has(v.secret) &&
+             (!has(v.projected) || !has(v.projected.sources) ||
+              v.projected.sources.all(s,
+                !has(s.serviceAccountToken) || (
+                  has(s.serviceAccountToken.audience) &&
+                  s.serviceAccountToken.audience == variables.tokenAudience &&
+                  has(s.serviceAccountToken.expirationSeconds) &&
+                  s.serviceAccountToken.expirationSeconds <= 3600))))) &&
+          !variables.usesSecretEnv)
+      message: >-
+        pods running as an automation identity must disable token automount,
+        project only the exact bounded token-audience (<=3600s), and mount no
+        Secret volumes or Secret env values; workload-create rights never
+        become identity-credential or stored-credential access (SAI-09)
+      reason: Forbidden
+    - expression: >-
+        variables.isAutomationPod ||
+        !has(variables.podSpec.volumes) ||
+        variables.podSpec.volumes.all(v,
+          !has(v.projected) || !has(v.projected.sources) ||
+          v.projected.sources.all(s,
+            !has(s.serviceAccountToken) ||
+            !has(s.serviceAccountToken.audience) ||
+            s.serviceAccountToken.audience != variables.tokenAudience))
+      message: >-
+        the automation token-audience is exclusive to the automation
+        identities; no other pod may project a token carrying it (SAI-09)
+      reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
@@ -194,14 +274,16 @@ spec:
 # reuses allow-listed images while changing Services, routes, or chart
 # behavior. Helm records every release version as a Secret of type
 # helm.sh/release.v1, so restricting who may write those Secrets makes such an
-# upgrade admission-visible. This is a COMPENSATING control, not closure: a
-# deploy-principal holder can still run direct helm upgrades, config-only
-# kubectl writes are not gated, and the wrapper release gate remains a
-# source-side boundary only, until the owner provisions the automation-only,
-# non-impersonable deploy identity and strips human mutation rights (owner
-# IAM decision, pending). While every operator shares one cluster-admin
-# principal this rule documents rather than separates authority. Terraform's
-# no-drift plan remains the compensating detective control for config drift.
+# upgrade admission-visible. Under the DECIDED release-identity contract
+# (owner decision 2026-09-16; defined in iam-boundary.yaml and applied at the
+# separately authorized rollout window), Helm release state moves out of
+# Secrets entirely (HELM_DRIVER=sql against the control-plane PostgreSQL) and
+# the release Role holds NO Secret verbs — the allow-list's deploy-principals
+# key is then EMPTY, and this policy denies EVERY helm.sh/release.v1 Secret
+# write outright, strictly stronger than principal pinning. Until that
+# rollout executes, the policy enforces the pinned deploy-principal list and
+# Terraform's no-drift plan remains the compensating detective control for
+# config-only kubectl drift outside admission's view.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:

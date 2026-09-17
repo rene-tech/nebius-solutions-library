@@ -1,5 +1,5 @@
 {
-  "schema": "fs2-serve.nebius.ai/release-scope/v8",
+  "schema": "fs2-serve.nebius.ai/release-scope/v9",
   "scope": {
     "cluster": "<kube-system-namespace-uid>",
     "namespaces": [
@@ -29,6 +29,7 @@
       "helm": "/usr/bin/helm"
     },
     "verification_key_sha256": "<sha256 of cosign.pub>",
+    "attestation_key_sha256": "<sha256 of the SEPARATE attestor public key; must differ from verification_key_sha256>",
     "policy_sha256": "<sha256 of policy.yaml>"
   }
 }

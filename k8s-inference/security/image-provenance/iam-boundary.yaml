@@ -24,11 +24,23 @@
 #     create/approve/sign, secrets read/write in the protected namespaces,
 #     pods/exec|attach|ephemeralcontainers in the protected namespaces, or
 #     workload/ServiceAccount writes in fs2-security.
-#   * PROVIDER attestations (outside the RBAC surface, owner-held):
-#     system:masters client-certificate issuance is provider-controlled
-#     (scope.provider_attested_masters), apiserver flags/etcd/node access are
-#     provider-held, and the WORM anchor export (export-anchored-heads) is
-#     stored off-host so ledger/chain deletion is detectable.
+#   * PROVIDER attestations (outside the RBAC surface): system:masters
+#     client-certificate issuance, apiserver flags/etcd/node access are
+#     provider-held facts that enter ONLY as the ATTESTOR-SIGNED provider
+#     attestation document — verified against the SEPARATE attestor key
+#     pinned by the owner-signed scope's attestation_key_sha256 (required to
+#     differ from the release verification key, so the pipeline can never
+#     attest its own boundary), binding the exported provider IAM policy by
+#     SHA-256 and embedding the anchored-heads snapshot for EVERY
+#     tamper-evident chain. The WORM anchor export (export-anchored-heads)
+#     is stored off-host so chain deletion AND history rewrite beneath new
+#     growth are detectable (prefix-verified).
+#   * IDENTITY allowances in the audit are FUNCTION-SCOPED, never blanket:
+#     the security identity is permitted admission-configuration writes ONLY
+#     (its reconciler function), the deploy identity workload writes in the
+#     scope namespaces ONLY; either identity holding any other forbidden
+#     verb — impersonation, token minting, secret access included — fails
+#     the audit like any other subject.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -71,8 +83,11 @@ rules:
       - validatingadmissionpolicies
       - validatingadmissionpolicybindings
     verbs: ["get", "list", "create", "update", "patch"]
+  # NO secrets verbs: the reconciler never reads stored credentials, and the
+  # function-scoped audit would refuse a security identity holding
+  # secret access (the allowance covers admission-configuration writes only).
   - apiGroups: [""]
-    resources: ["namespaces", "pods", "serviceaccounts", "secrets"]
+    resources: ["namespaces", "pods", "serviceaccounts"]
     verbs: ["get", "list"]
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["clusterroles", "clusterrolebindings", "roles", "rolebindings"]
@@ -102,6 +117,17 @@ subjects:
 # integration requirement), and with an EMPTY deploy-principals list the
 # fs2-helm-release-governance policy then denies every helm.sh/release.v1
 # Secret write outright, strictly stronger than principal pinning.
+#
+# INDIRECT-pivot closure (workload rights are still identity-adjacent: a pod
+# spec can mount Secrets or project tokens without any Secret/token RBAC):
+# the fs2-image-provenance policy enforces, IN ADMISSION, that any pod
+# running as an automation identity disables token automount, projects only
+# the exact bounded token-audience, and mounts no Secret volumes or Secret
+# env values — and that NO other pod projects the automation token-audience.
+# The render-time hygiene audit re-verifies the same facts live. So the
+# workload-create grant below cannot be pivoted into minting an
+# apiserver-audience token for the release identity or exfiltrating stored
+# credentials through an identity pod.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
