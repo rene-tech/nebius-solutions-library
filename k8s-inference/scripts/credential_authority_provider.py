@@ -22,7 +22,7 @@ import re
 import stat
 import subprocess
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +39,18 @@ def canonical_sha256(value: Any) -> str:
 
 def observed_at() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def provider_time(value: Any, *, label: str) -> datetime:
+    if not isinstance(value, str):
+        raise ProviderError(f"{label} is not RFC3339")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ProviderError(f"{label} is not RFC3339") from error
+    if parsed.tzinfo is None:
+        raise ProviderError(f"{label} has no timezone")
+    return parsed.astimezone(UTC)
 
 
 def file_sha256(path: Path) -> str:
@@ -99,6 +111,90 @@ def command_json(
         raise ProviderError(f"{label} did not return authoritative JSON") from error
 
 
+def command_success(
+    command: list[str], *, label: str, environment: dict[str, str]
+) -> None:
+    if not command or not Path(command[0]).is_absolute():
+        raise ProviderError(f"{label} command is unsafe")
+    try:
+        subprocess.run(
+            command,
+            text=True,
+            capture_output=True,
+            check=True,
+            timeout=120,
+            env={
+                "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "LANG": "C.UTF-8",
+                **environment,
+            },
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise ProviderError(f"{label} failed") from error
+
+
+def command_json_input(
+    command: list[str],
+    *,
+    label: str,
+    payload: dict[str, Any],
+    timeout: int,
+) -> Any:
+    """Run one policy-pinned adapter with a schema-bounded JSON request."""
+
+    if not command or not Path(command[0]).is_absolute() or any(
+        value in {"-c", "-m"} or value.startswith("-") for value in command
+    ):
+        raise ProviderError(f"{label} command is unsafe")
+    try:
+        completed = subprocess.run(
+            command,
+            input=json.dumps(payload, sort_keys=True, separators=(",", ":")),
+            text=True,
+            capture_output=True,
+            check=True,
+            timeout=timeout,
+            env={
+                "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "LANG": "C.UTF-8",
+            },
+        )
+        return json.loads(completed.stdout)
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as error:
+        raise ProviderError(f"{label} did not return authoritative JSON") from error
+
+
+def verified_adapter_command(adapter: dict[str, Any], *, label: str) -> list[str]:
+    if (
+        not isinstance(adapter, dict)
+        or set(adapter) != {"command", "file_sha256", "timeout_seconds"}
+        or not isinstance(adapter.get("command"), list)
+        or not 1 <= len(adapter["command"]) <= 2
+        or not isinstance(adapter.get("file_sha256"), dict)
+        or not isinstance(adapter.get("timeout_seconds"), int)
+        or not 1 <= adapter["timeout_seconds"] <= 120
+    ):
+        raise ProviderError(f"{label} adapter policy is malformed")
+    command = [str(Path(value).resolve()) for value in adapter["command"]]
+    if (
+        any(not Path(value).is_absolute() for value in adapter["command"])
+        or len(set(command)) != len(command)
+        or set(adapter["file_sha256"]) != set(command)
+    ):
+        raise ProviderError(f"{label} adapter command is not exactly pinned")
+    for value in command:
+        path = Path(value)
+        if (
+            path.is_symlink()
+            or not path.is_file()
+            or path.stat().st_uid != 0
+            or stat.S_IMODE(path.stat().st_mode) & 0o022
+            or file_sha256(path) != adapter["file_sha256"][value]
+        ):
+            raise ProviderError(f"{label} adapter executable differs from policy")
+    return command
+
+
 def stable_json(path: Path, *, label: str) -> dict[str, Any]:
     if not path.is_absolute() or path.is_symlink() or not path.is_file():
         raise ProviderError(f"{label} is absent or unsafe")
@@ -126,6 +222,7 @@ def safe_labels(value: Any) -> dict[str, str]:
         "handoff_generation",
         "credential_class",
         "credential_generation",
+        "audience",
     }
     return {
         key: item
@@ -204,10 +301,28 @@ def terraform_inventory(policy: dict[str, Any]) -> list[dict[str, Any]]:
             raise ProviderError(
                 f"{root_name} Terraform backend differs from root policy"
             )
+        terraform_environment = {
+            "TF_DATA_DIR": root["terraform_data_dir"],
+            "TF_WORKSPACE": root["workspace"],
+            "TF_IN_AUTOMATION": "1",
+        }
+        command_success(
+            [
+                terraform,
+                f"-chdir={configuration}",
+                "init",
+                "-input=false",
+                "-reconfigure",
+                "-lockfile=readonly",
+                f"-backend-config={root['backend_config_path']}",
+            ],
+            label=f"{root_name} canonical Terraform backend initialization",
+            environment=terraform_environment,
+        )
         state = command_json(
             [terraform, f"-chdir={configuration}", "state", "pull"],
             label=f"{root_name} canonical Terraform backend",
-            environment={"TF_WORKSPACE": root["workspace"]},
+            environment=terraform_environment,
         )
         lineage = state.get("lineage") if isinstance(state, dict) else None
         serial = state.get("serial") if isinstance(state, dict) else None
@@ -275,9 +390,11 @@ def kubernetes_secrets(policy: dict[str, Any], *, kubeconfig: str | None = None)
     for item in document["items"]:
         metadata = item.get("metadata") if isinstance(item, dict) else None
         annotations = metadata.get("annotations", {}) if isinstance(metadata, dict) else None
+        owners = metadata.get("ownerReferences", []) if isinstance(metadata, dict) else None
         if (
             not isinstance(metadata, dict)
             or not isinstance(annotations, dict)
+            or not isinstance(owners, list)
             or not all(
                 isinstance(metadata.get(field), str) and metadata[field]
                 for field in ("namespace", "name", "uid", "resourceVersion")
@@ -295,8 +412,34 @@ def kubernetes_secrets(policy: dict[str, Any], *, kubeconfig: str | None = None)
                         key: value
                         for key, value in annotations.items()
                         if key.startswith("fs2.nebius.ai/")
+                        or key
+                        in {
+                            "kubernetes.io/service-account.name",
+                            "kubernetes.io/service-account.uid",
+                        }
                     },
+                    "owners": sorted(
+                        [
+                            {
+                                "apiVersion": owner.get("apiVersion"),
+                                "kind": owner.get("kind"),
+                                "name": owner.get("name"),
+                                "uid": owner.get("uid"),
+                                "controller": owner.get("controller") is True,
+                            }
+                            for owner in owners
+                            if isinstance(owner, dict)
+                            and all(
+                                isinstance(owner.get(field), str) and owner[field]
+                                for field in ("apiVersion", "kind", "name", "uid")
+                            )
+                        ],
+                        key=lambda value: (
+                            str(value["kind"]), str(value["name"]), str(value["uid"])
+                        ),
+                    ),
                 },
+                "type": item.get("type", "Opaque"),
                 "authorityContentSha256": secret_commitment(item.get("data", {})),
                 "authorityEvidenceId": canonical_sha256(
                     [metadata["uid"], metadata["resourceVersion"]]
@@ -388,7 +531,7 @@ def normalize_nebius_items(document: Any, *, kind: str) -> list[dict[str, Any]]:
 
 
 def nebius_inventory(policy: dict[str, Any]) -> dict[str, Any]:
-    automation = policy["automation_identity"]
+    automation = policy["evidence_identity"]
     common = [
         "--profile",
         automation["profile"],
@@ -416,22 +559,108 @@ def nebius_inventory(policy: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def automation_identity_proof(
+def evidence_identity_proof(
     policy: dict[str, Any], inventory: dict[str, Any]
 ) -> dict[str, Any]:
     """Bind every provider read to one expiring viewer-only automation lineage."""
 
-    configured = policy["automation_identity"]
+    configured = policy["evidence_identity"]
+    remaining = provider_time(
+        configured["expires_at"], label="evidence identity expiry"
+    ) - datetime.now(UTC)
+    if remaining <= timedelta(0) or remaining > timedelta(hours=24):
+        raise ProviderError("read-only evidence identity lifetime is invalid")
     accounts = [
         item
         for item in inventory["service_accounts"]
         if item["id"] == configured["service_account_id"]
     ]
     if len(accounts) != 1 or accounts[0].get("parent_id") != policy["project_id"]:
-        raise ProviderError("release automation service account is absent or ambiguous")
+        raise ProviderError("read-only evidence service account is absent or ambiguous")
     labels = accounts[0].get("labels", {})
-    if labels.get("purpose") != "credential-release-automation":
-        raise ProviderError("release automation service account has the wrong purpose")
+    if labels.get("purpose") != "credential-evidence-reader":
+        raise ProviderError("read-only evidence service account has the wrong purpose")
+    credentials = [
+        item
+        for item in inventory[configured["credential_kind"]]
+        if item["id"] == configured["credential_id"]
+    ]
+    if (
+        len(credentials) != 1
+        or credentials[0].get("parent_id") != policy["project_id"]
+        or credentials[0].get("service_account_id")
+        != configured["service_account_id"]
+        or credentials[0].get("expires_at") != configured["expires_at"]
+    ):
+        raise ProviderError("read-only evidence credential lineage or expiry differs")
+    memberships = [
+        item
+        for item in inventory["group_memberships"]
+        if item.get("member_id") == configured["service_account_id"]
+    ]
+    if len(memberships) != 1:
+        raise ProviderError("read-only evidence identity has an ambiguous group set")
+    groups = [
+        item
+        for item in inventory["groups"]
+        if item["id"] == memberships[0].get("group_id")
+    ]
+    if (
+        len(groups) != 1
+        or groups[0].get("parent_id") != policy["project_id"]
+        or groups[0].get("labels", {}).get("purpose")
+        != "credential-evidence-reader"
+    ):
+        raise ProviderError("read-only evidence viewer group is not exact")
+    permits = [
+        item
+        for item in inventory["access_permits"]
+        if item.get("group_id") == groups[0]["id"]
+    ]
+    if len(permits) != 1 or (
+        permits[0].get("resource_id"), permits[0].get("role")
+    ) != (policy["project_id"], "viewer"):
+        raise ProviderError("read-only evidence identity is not viewer-only")
+    return {
+        "service_account_id": configured["service_account_id"],
+        "credential_kind": configured["credential_kind"],
+        "credential_id": configured["credential_id"],
+        "expires_at": configured["expires_at"],
+        "group_id": groups[0]["id"],
+        "membership_id": memberships[0]["id"],
+        "permit_id": permits[0]["id"],
+        "role": "viewer",
+        "provider_identity_sha256": canonical_sha256(
+            [accounts[0], credentials[0], groups[0], memberships[0], permits[0]]
+        ),
+    }
+
+
+def release_identity_proof(
+    policy: dict[str, Any], inventory: dict[str, Any]
+) -> dict[str, Any]:
+    """Prove the separate, expiring, non-human release automation lineage."""
+
+    configured = policy["release_identity"]
+    issued = provider_time(configured["issued_at"], label="release identity issue time")
+    expires = provider_time(configured["expires_at"], label="release identity expiry")
+    now = datetime.now(UTC)
+    if issued > now or expires <= now or expires - issued > timedelta(hours=1):
+        raise ProviderError("release automation identity lifetime is invalid")
+    accounts = [
+        item
+        for item in inventory["service_accounts"]
+        if item["id"] == configured["service_account_id"]
+    ]
+    if (
+        len(accounts) != 1
+        or accounts[0].get("parent_id") != policy["project_id"]
+        or accounts[0].get("labels", {}).get("purpose")
+        != "credential-release-automation"
+        or accounts[0].get("labels", {}).get("audience")
+        != configured["audience"]
+    ):
+        raise ProviderError("release automation service account lineage differs")
     credentials = [
         item
         for item in inventory[configured["credential_kind"]]
@@ -462,28 +691,42 @@ def automation_identity_proof(
         or groups[0].get("parent_id") != policy["project_id"]
         or groups[0].get("labels", {}).get("purpose")
         != "credential-release-automation"
+        or groups[0].get("labels", {}).get("audience")
+        != configured["audience"]
     ):
-        raise ProviderError("release automation viewer group is not exact")
+        raise ProviderError("release automation group lineage differs")
     permits = [
         item
         for item in inventory["access_permits"]
         if item.get("group_id") == groups[0]["id"]
     ]
-    if len(permits) != 1 or (
-        permits[0].get("resource_id"), permits[0].get("role")
-    ) != (policy["project_id"], "viewer"):
-        raise ProviderError("release automation identity is not viewer-only")
+    observed_roles = sorted(
+        item["role"]
+        for item in permits
+        if item.get("resource_id") == policy["project_id"]
+        and isinstance(item.get("role"), str)
+    )
+    if observed_roles != sorted(configured["allowed_roles"]):
+        raise ProviderError("release automation role set differs from policy")
     return {
+        "project_id": policy["project_id"],
         "service_account_id": configured["service_account_id"],
         "credential_kind": configured["credential_kind"],
         "credential_id": configured["credential_id"],
+        "issued_at": configured["issued_at"],
         "expires_at": configured["expires_at"],
+        "audience": configured["audience"],
+        "profile": configured["profile"],
+        "config_path": configured["config_path"],
+        "allowed_roles": observed_roles,
+        "allowed_commands": configured["allowed_commands"],
+        "interactive_login_allowed": False,
+        "human_principal_allowed": False,
         "group_id": groups[0]["id"],
         "membership_id": memberships[0]["id"],
-        "permit_id": permits[0]["id"],
-        "role": "viewer",
+        "permit_ids": sorted(item["id"] for item in permits),
         "provider_identity_sha256": canonical_sha256(
-            [accounts[0], credentials[0], groups[0], memberships[0], permits[0]]
+            [accounts[0], credentials[0], groups[0], memberships[0], permits]
         ),
     }
 
@@ -535,13 +778,19 @@ def reconcile_global_provider_inventory(
     secrets: list[dict[str, Any]],
     provider_inventory: dict[str, Any],
     registry: dict[str, Any],
-    automation_identity: dict[str, Any],
+    evidence_identity: dict[str, Any],
+    release_identity: dict[str, Any],
+    approved_namespaces: list[str],
 ) -> dict[str, Any]:
     """Reject any cluster Secret or project IAM object without exact custody."""
 
     declared = {
         (item["root"], item["address"])
-        for item in registry.get("terraform_resource_addresses", [])
+        for field in (
+            "terraform_resource_addresses",
+            "provider_managed_resource_addresses",
+        )
+        for item in registry.get(field, [])
     }
     exemptions = registry.get("provider_inventory_exemptions")
     if not isinstance(exemptions, dict) or set(exemptions) != {
@@ -578,6 +827,43 @@ def reconcile_global_provider_inventory(
             raise ProviderError(
                 f"provider inventory classification is incomplete: {family}"
             )
+    rules = registry.get("provider_inventory_rules")
+    if not isinstance(rules, dict) or set(rules) != {
+        "kubernetes_secrets",
+        "nebius_iam",
+    }:
+        raise ProviderError("provider inventory rule registry is malformed")
+    secret_rule_fields = {
+        "id",
+        "type",
+        "name_regex",
+        "namespace_scope",
+        "owner",
+        "purpose",
+        "readers",
+        "expiry",
+        "source",
+    }
+    secret_rules = rules["kubernetes_secrets"]
+    if (
+        not isinstance(secret_rules, list)
+        or not secret_rules
+        or any(
+            not isinstance(rule, dict)
+            or set(rule) != secret_rule_fields
+            or rule.get("namespace_scope") != "authority-approved"
+            or not all(
+                isinstance(rule.get(field), str) and rule[field]
+                for field in secret_rule_fields - {"readers"}
+            )
+            or not isinstance(rule.get("readers"), list)
+            or not rule["readers"]
+            or re.fullmatch(rule["name_regex"], "") is not None
+            for rule in secret_rules
+        )
+        or rules["nebius_iam"] != []
+    ):
+        raise ProviderError("provider inventory rules are incomplete")
     state_secret_ids: set[str] = set()
     state_nebius_ids: set[str] = set()
     for state in states:
@@ -609,11 +895,16 @@ def reconcile_global_provider_inventory(
         for item in provider_inventory[kind]
     }
     automation_ids = {
-        automation_identity["service_account_id"],
-        automation_identity["credential_id"],
-        automation_identity["group_id"],
-        automation_identity["membership_id"],
-        automation_identity["permit_id"],
+        evidence_identity["service_account_id"],
+        evidence_identity["credential_id"],
+        evidence_identity["group_id"],
+        evidence_identity["membership_id"],
+        evidence_identity["permit_id"],
+        release_identity["service_account_id"],
+        release_identity["credential_id"],
+        release_identity["group_id"],
+        release_identity["membership_id"],
+        *release_identity["permit_ids"],
     }
     classified_secret_ids = {
         item["id"] for item in exemptions["kubernetes_secrets"]
@@ -621,8 +912,39 @@ def reconcile_global_provider_inventory(
     classified_nebius_ids = {item["id"] for item in exemptions["nebius_iam"]}
     if not classified_secret_ids <= live_secret_ids or not classified_nebius_ids <= live_nebius_ids:
         raise ProviderError("provider classification names an absent live object")
+    rule_classifications: dict[str, str] = {}
+    approved_namespace_set = set(approved_namespaces)
+    for item in secrets:
+        identity = f"{item['metadata']['namespace']}/{item['metadata']['name']}"
+        if identity in state_secret_ids or identity in classified_secret_ids:
+            continue
+        matches = [
+            rule
+            for rule in secret_rules
+            if item["metadata"]["namespace"] in approved_namespace_set
+            and item.get("type") == rule["type"]
+            and re.fullmatch(rule["name_regex"], item["metadata"]["name"])
+            is not None
+        ]
+        if len(matches) == 1 and matches[0]["id"] == "bound-service-account-token":
+            annotations = item["metadata"].get("annotations", {})
+            owners = item["metadata"].get("owners", [])
+            service_account = annotations.get("kubernetes.io/service-account.name")
+            if not isinstance(service_account, str) or not service_account:
+                matches = []
+            elif owners and not any(
+                owner.get("kind") == "ServiceAccount"
+                and owner.get("name") == service_account
+                for owner in owners
+            ):
+                matches = []
+        if len(matches) == 1:
+            rule_classifications[identity] = matches[0]["id"]
     unmanaged_secrets = sorted(
-        live_secret_ids - state_secret_ids - classified_secret_ids
+        live_secret_ids
+        - state_secret_ids
+        - classified_secret_ids
+        - set(rule_classifications)
     )
     unmanaged_nebius = sorted(
         live_nebius_ids - state_nebius_ids - automation_ids - classified_nebius_ids
@@ -639,7 +961,9 @@ def reconcile_global_provider_inventory(
         "nebius_iam_count": len(live_nebius_ids),
         "unmanaged_kubernetes_secret_count": 0,
         "unmanaged_nebius_iam_count": 0,
-        "classified_inventory_sha256": canonical_sha256(exemptions),
+        "classified_inventory_sha256": canonical_sha256(
+            {"exemptions": exemptions, "rules": rules, "matches": rule_classifications}
+        ),
         "inventory_sha256": canonical_sha256(
             [sorted(live_secret_ids), sorted(live_nebius_ids)]
         ),
@@ -1160,7 +1484,7 @@ def normalized_host_cidrs(values: Any) -> list[str]:
 
 
 def cluster_cidrs(policy: dict[str, Any]) -> list[str]:
-    automation = policy["automation_identity"]
+    automation = policy["evidence_identity"]
     document = command_json(
         [
             executable(policy, "nebius"),
@@ -1190,16 +1514,239 @@ def cluster_cidrs(policy: dict[str, Any]) -> list[str]:
     return normalized
 
 
+def load_consumer_contracts(policy: dict[str, Any]) -> dict[str, Any]:
+    contracts = stable_json(
+        Path(policy["consumer_contracts_path"]), label="credential consumer contracts"
+    )
+    if (
+        contracts.get("schema")
+        != "fs2-serve.nebius.ai/credential-consumer-contracts/v1"
+        or not isinstance(contracts.get("contracts"), dict)
+        or not isinstance(contracts.get("pending_contract_ids"), list)
+    ):
+        raise ProviderError("credential consumer contracts are malformed")
+    return contracts
+
+
+def exact_requested_secret_bindings(
+    parameters: dict[str, Any], secrets: list[dict[str, Any]]
+) -> dict[str, Any]:
+    supplied = parameters.get("credential_bindings")
+    if not isinstance(supplied, dict) or not supplied:
+        raise ProviderError("consumer readiness requires exact Secret bindings")
+    by_identity = {
+        (item["metadata"]["namespace"], item["metadata"]["name"]): item
+        for item in secrets
+    }
+    verified: dict[str, Any] = {}
+    for address, binding in supplied.items():
+        if not isinstance(binding, dict):
+            raise ProviderError("consumer Secret binding is malformed")
+        live = by_identity.get((binding.get("namespace"), binding.get("name")))
+        live_metadata = live.get("metadata") if isinstance(live, dict) else None
+        if (
+            not isinstance(live_metadata, dict)
+            or live_metadata.get("uid") != binding.get("uid")
+            or live_metadata.get("resourceVersion")
+            != binding.get("resource_version")
+            or live.get("authorityContentSha256") != binding.get("content_sha256")
+            or live.get("authorityEvidenceId")
+            != binding.get("authority_evidence_id")
+            or binding.get("credential_class")
+            != parameters.get("credential_class")
+            or binding.get("generation") != str(parameters.get("generation"))
+        ):
+            raise ProviderError(
+                f"consumer Secret binding is stale or belongs to another class: {address}"
+            )
+        verified[address] = binding
+    if canonical_sha256(verified) != parameters.get("bindings_sha256"):
+        raise ProviderError("consumer Secret binding digest differs after live comparison")
+    return verified
+
+
+def class_adapter_result(
+    *,
+    policy: dict[str, Any],
+    operation: str,
+    parameters: dict[str, Any],
+    states: list[dict[str, Any]],
+    secrets: list[dict[str, Any]],
+    provider_inventory: dict[str, Any],
+    evidence_identity: dict[str, Any],
+    registry: dict[str, Any],
+) -> dict[str, Any]:
+    """Dispatch to the exact class-specific, digest-pinned read-only adapter."""
+
+    credential_class = parameters.get("credential_class")
+    contracts = load_consumer_contracts(policy)
+    pending = set(contracts["pending_contract_ids"])
+    contract = contracts["contracts"].get(credential_class)
+    configured = policy.get("class_adapters", {}).get(credential_class)
+    if (
+        not isinstance(credential_class, str)
+        or credential_class in pending
+        or not isinstance(contract, dict)
+        or not isinstance(configured, dict)
+        or set(configured) != {"operations", "adapter"}
+        or operation not in configured.get("operations", [])
+    ):
+        raise ProviderError(
+            f"{operation} has no accepted adapter for {credential_class}"
+        )
+    if operation == "consumer-readiness":
+        exact_requested_secret_bindings(parameters, secrets)
+    adapter = configured["adapter"]
+    command = verified_adapter_command(
+        adapter, label=f"{credential_class} {operation}"
+    )
+    request = {
+        "schema": "fs2-serve.nebius.ai/credential-class-observation-request/v1",
+        "operation": operation,
+        "credential_class": credential_class,
+        "parameters": parameters,
+        "contract": contract,
+        "contract_sha256": canonical_sha256(contract),
+        "terraform_states": states,
+        "kubernetes_secrets": secrets,
+        "nebius_inventory": provider_inventory,
+        "evidence_identity": evidence_identity,
+        "registry_sha256": canonical_sha256(registry),
+    }
+    response = command_json_input(
+        command,
+        label=f"{credential_class} {operation}",
+        payload=request,
+        timeout=adapter["timeout_seconds"],
+    )
+    required = {
+        "schema",
+        "operation",
+        "credential_class",
+        "contract_sha256",
+        "observed_at",
+        "complete",
+        "data_fields_returned",
+        "result",
+    }
+    if (
+        not isinstance(response, dict)
+        or set(response) != required
+        or response.get("schema")
+        != "fs2-serve.nebius.ai/credential-class-observation/v1"
+        or response.get("operation") != operation
+        or response.get("credential_class") != credential_class
+        or response.get("contract_sha256") != canonical_sha256(contract)
+        or response.get("complete") is not True
+        or response.get("data_fields_returned") != 0
+        or not isinstance(response.get("result"), dict)
+    ):
+        raise ProviderError(
+            f"{credential_class} adapter returned an incomplete observation"
+        )
+    return response
+
+
+def backend_custody_result(
+    policy: dict[str, Any], root_name: str
+) -> dict[str, Any]:
+    """Obtain provider-native encryption, logging and endpoint custody facts."""
+
+    root = policy["terraform_roots"][root_name]
+    config_path = Path(root["backend_config_path"])
+    if (
+        config_path.is_symlink()
+        or not config_path.is_file()
+        or config_path.stat().st_uid != 0
+        or stat.S_IMODE(config_path.stat().st_mode) != 0o600
+    ):
+        raise ProviderError("Terraform backend configuration is not root-owned mode 0600")
+    adapter = policy["backend_custody_adapter"]
+    command = verified_adapter_command(adapter, label="Terraform backend custody")
+    request = {
+        "schema": "fs2-serve.nebius.ai/backend-custody-request/v1",
+        "terraform_root_name": root_name,
+        "backend_type": root["backend_type"],
+        "backend_config_path": str(config_path),
+        "backend_config_sha256": file_sha256(config_path),
+        "project_id": policy["project_id"],
+    }
+    response = command_json_input(
+        command,
+        label=f"{root_name} backend custody",
+        payload=request,
+        timeout=adapter["timeout_seconds"],
+    )
+    fields = {
+        "schema",
+        "terraform_root_name",
+        "backend_type",
+        "backend_config_sha256",
+        "bucket_id",
+        "object_key",
+        "endpoint",
+        "encryption",
+        "access_logging",
+        "versioning_enabled",
+        "object_lock_enabled",
+        "observed_at",
+        "complete",
+        "data_fields_returned",
+    }
+    encryption = response.get("encryption") if isinstance(response, dict) else None
+    logging = response.get("access_logging") if isinstance(response, dict) else None
+    if (
+        not isinstance(response, dict)
+        or set(response) != fields
+        or response.get("schema")
+        != "fs2-serve.nebius.ai/backend-custody-observation/v1"
+        or response.get("terraform_root_name") != root_name
+        or response.get("backend_type") != root["backend_type"]
+        or response.get("backend_config_sha256") != file_sha256(config_path)
+        or response.get("complete") is not True
+        or response.get("data_fields_returned") != 0
+        or not isinstance(encryption, dict)
+        or encryption.get("enabled") is not True
+        or not isinstance(encryption.get("kms_key_id"), str)
+        or not encryption["kms_key_id"]
+        or not isinstance(logging, dict)
+        or logging.get("enabled") is not True
+        or not isinstance(logging.get("destination_bucket_id"), str)
+        or not logging["destination_bucket_id"]
+        or response.get("versioning_enabled") is not True
+        or not isinstance(response.get("endpoint"), str)
+        or not response["endpoint"].startswith("https://")
+        or not isinstance(response.get("bucket_id"), str)
+        or not response["bucket_id"]
+        or not isinstance(response.get("object_key"), str)
+        or not response["object_key"]
+    ):
+        raise ProviderError("Terraform backend custody is incomplete")
+    return response
+
+
 def operation_result(request: dict[str, Any]) -> dict[str, Any]:
     policy = request["policy"]
     operation = request["operation"]
     parameters = request["parameters"]
+    if operation == "backend-custody":
+        return backend_custody_result(
+            policy, str(parameters["terraform_root_name"])
+        )
+    if operation == "release-identity":
+        provider_inventory = nebius_inventory(policy)
+        return {
+            "release_identity": release_identity_proof(policy, provider_inventory),
+            "evidence_identity": evidence_identity_proof(policy, provider_inventory),
+            "observed_at": observed_at(),
+        }
     states = terraform_inventory(policy)
     if operation == "artifact-inventory":
         return artifact_inventory(policy)
     secrets = kubernetes_secrets(policy)
     provider_inventory = nebius_inventory(policy)
-    automation_identity = automation_identity_proof(policy, provider_inventory)
+    evidence_identity = evidence_identity_proof(policy, provider_inventory)
+    release_identity = release_identity_proof(policy, provider_inventory)
     registry = load_registry(policy)
     registry_sha256 = canonical_sha256(registry)
     provider_reconciliation = reconcile_global_provider_inventory(
@@ -1207,7 +1754,9 @@ def operation_result(request: dict[str, Any]) -> dict[str, Any]:
         secrets=secrets,
         provider_inventory=provider_inventory,
         registry=registry,
-        automation_identity=automation_identity,
+        evidence_identity=evidence_identity,
+        release_identity=release_identity,
+        approved_namespaces=policy["namespaces"],
     )
     if operation == "custody-snapshot":
         return {
@@ -1215,7 +1764,7 @@ def operation_result(request: dict[str, Any]) -> dict[str, Any]:
             "terraform_states": states,
             "kubernetes_secrets": secrets,
             "nebius_inventory": provider_inventory,
-            "automation_identity": automation_identity,
+            "evidence_identity": evidence_identity,
             "provider_inventory_reconciliation": provider_reconciliation,
             "credential_inventory": credential_inventory(
                 policy, states, provider_inventory
@@ -1225,7 +1774,7 @@ def operation_result(request: dict[str, Any]) -> dict[str, Any]:
         return {
             **credential_inventory(policy, states, provider_inventory),
             "registry_sha256": registry_sha256,
-            "automation_identity": automation_identity,
+            "evidence_identity": evidence_identity,
             "provider_inventory_reconciliation": provider_reconciliation,
         }
     if operation == "planned-generation-admission":
@@ -1246,11 +1795,24 @@ def operation_result(request: dict[str, Any]) -> dict[str, Any]:
             "allowed_cidrs": cluster_cidrs(policy),
             "observed_at": observed_at(),
         }
-    # These operations require class-specific accepted producers from SAI-06,
-    # SAI-08, and SAI-09.  Failing here is intentional: a generic or locally
-    # self-attested substitute must never authorize rotation or rollout.
+    if operation in {
+        "consumer-readiness",
+        "rotation-readiness",
+        "ciphertext-migration",
+        "authentication-continuity",
+    }:
+        return class_adapter_result(
+            policy=policy,
+            operation=operation,
+            parameters=parameters,
+            states=states,
+            secrets=secrets,
+            provider_inventory=provider_inventory,
+            evidence_identity=evidence_identity,
+            registry=registry,
+        )
     raise ProviderError(
-        f"{operation} requires an accepted class-specific production adapter"
+        f"unsupported read-only credential observation: {operation}"
     )
 
 

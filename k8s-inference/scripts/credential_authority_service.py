@@ -49,6 +49,8 @@ READ_ONLY_OPERATIONS = frozenset(
         "viewer-handoff-inventory",
         "ciphertext-migration",
         "authentication-continuity",
+        "release-identity",
+        "backend-custody",
     }
 )
 CLIENT_FIELDS: dict[str, frozenset[str]] = {
@@ -73,6 +75,8 @@ CLIENT_FIELDS: dict[str, frozenset[str]] = {
     "authentication-continuity": frozenset(
         {"credential_class", "predecessor_id", "successor_id"}
     ),
+    "release-identity": frozenset(),
+    "backend-custody": frozenset({"terraform_root_name"}),
 }
 FORBIDDEN_CLIENT_FIELDS = frozenset(
     {
@@ -173,7 +177,8 @@ def _validate_policy(policy: Any) -> None:
     required = {
         "schema",
         "project_id",
-        "automation_identity",
+        "evidence_identity",
+        "release_identity",
         "cluster_id",
         "kubeconfig",
         "handoff_kubeconfig",
@@ -184,6 +189,8 @@ def _validate_policy(policy: Any) -> None:
         "credential_registry_path",
         "consumer_contracts_path",
         "provider_executables",
+        "class_adapters",
+        "backend_custody_adapter",
     }
     if (
         not isinstance(policy, dict)
@@ -200,7 +207,7 @@ def _validate_policy(policy: Any) -> None:
         or len(policy["namespaces"]) != len(set(policy["namespaces"]))
     ):
         raise AuthorityServiceError("authority production policy is incomplete")
-    automation = policy.get("automation_identity")
+    automation = policy.get("evidence_identity")
     if (
         not isinstance(automation, dict)
         or set(automation)
@@ -228,20 +235,83 @@ def _validate_policy(policy: Any) -> None:
         or automation.get("credential_kind")
         not in {"access_keys", "auth_public_keys"}
     ):
-        raise AuthorityServiceError("release automation identity is incomplete")
+        raise AuthorityServiceError("read-only evidence identity is incomplete")
     config_path = Path(automation["config_path"])
     if not config_path.is_absolute():
-        raise AuthorityServiceError("release automation config path must be absolute")
+        raise AuthorityServiceError("read-only evidence config path must be absolute")
     try:
         automation_expiry = datetime.fromisoformat(
             automation["expires_at"].replace("Z", "+00:00")
         ).astimezone(UTC)
     except ValueError as error:
-        raise AuthorityServiceError("release automation identity expiry is invalid") from error
+        raise AuthorityServiceError("read-only evidence identity expiry is invalid") from error
     remaining = automation_expiry - datetime.now(UTC)
     if remaining <= timedelta(0) or remaining > timedelta(hours=24):
         raise AuthorityServiceError(
-            "release automation identity must have a provider-enforced expiry within 24 hours"
+            "read-only evidence identity must have a provider-enforced expiry within 24 hours"
+        )
+    release = policy.get("release_identity")
+    release_fields = {
+        "config_path",
+        "profile",
+        "project_id",
+        "service_account_id",
+        "credential_kind",
+        "credential_id",
+        "issued_at",
+        "expires_at",
+        "audience",
+        "allowed_roles",
+        "allowed_commands",
+        "interactive_login_allowed",
+        "human_principal_allowed",
+    }
+    if (
+        not isinstance(release, dict)
+        or set(release) != release_fields
+        or release.get("project_id") != policy["project_id"]
+        or release.get("audience") != "terraform-release"
+        or release.get("interactive_login_allowed") is not False
+        or release.get("human_principal_allowed") is not False
+        or release.get("credential_kind")
+        not in {"access_keys", "auth_public_keys"}
+        or not all(
+            isinstance(release.get(field), str) and release[field]
+            for field in release_fields
+            - {
+                "allowed_roles",
+                "allowed_commands",
+                "interactive_login_allowed",
+                "human_principal_allowed",
+            }
+        )
+        or not isinstance(release.get("allowed_roles"), list)
+        or not release["allowed_roles"]
+        or not set(release["allowed_roles"]) <= {"editor", "admin"}
+        or not isinstance(release.get("allowed_commands"), list)
+        or set(release["allowed_commands"]) != {"preflight", "plan", "apply"}
+    ):
+        raise AuthorityServiceError("automation-only release identity is incomplete")
+    release_path = Path(release["config_path"])
+    if not release_path.is_absolute():
+        raise AuthorityServiceError("release identity config path must be absolute")
+    try:
+        release_issued = datetime.fromisoformat(
+            release["issued_at"].replace("Z", "+00:00")
+        ).astimezone(UTC)
+        release_expiry = datetime.fromisoformat(
+            release["expires_at"].replace("Z", "+00:00")
+        ).astimezone(UTC)
+    except ValueError as error:
+        raise AuthorityServiceError("release identity lifetime is invalid") from error
+    now = datetime.now(UTC)
+    if (
+        release_issued > now
+        or release_expiry <= now
+        or release_expiry - release_issued > timedelta(hours=1)
+    ):
+        raise AuthorityServiceError(
+            "release identity must have a provider-enforced lifetime of at most one hour"
         )
     cidrs = policy.get("approved_control_plane_cidrs")
     if not isinstance(cidrs, list) or not cidrs or len(cidrs) != len(set(cidrs)):
@@ -287,6 +357,8 @@ def _validate_policy(policy: Any) -> None:
             != {
                 "configuration_dir",
                 "backend_type",
+                "backend_config_path",
+                "terraform_data_dir",
                 "workspace",
                 "saved_plan_paths",
                 "lineage_id",
@@ -294,6 +366,10 @@ def _validate_policy(policy: Any) -> None:
             or not isinstance(root.get("configuration_dir"), str)
             or not Path(root["configuration_dir"]).is_absolute()
             or root.get("backend_type") not in {"remote", "s3"}
+            or not isinstance(root.get("backend_config_path"), str)
+            or not Path(root["backend_config_path"]).is_absolute()
+            or not isinstance(root.get("terraform_data_dir"), str)
+            or not Path(root["terraform_data_dir"]).is_absolute()
             or not isinstance(root.get("workspace"), str)
             or not root["workspace"]
             or not isinstance(root.get("saved_plan_paths"), list)
@@ -307,6 +383,26 @@ def _validate_policy(policy: Any) -> None:
             or not root["lineage_id"]
         ):
             raise AuthorityServiceError(f"authority Terraform root is malformed: {name}")
+        backend_config = Path(root["backend_config_path"])
+        terraform_data_dir = Path(root["terraform_data_dir"])
+        if (
+            backend_config.is_symlink()
+            or not backend_config.is_file()
+            or backend_config.stat().st_uid != 0
+            or stat.S_IMODE(backend_config.stat().st_mode) != 0o600
+        ):
+            raise AuthorityServiceError(
+                f"authority backend config must be root-owned mode 0600: {name}"
+            )
+        if (
+            terraform_data_dir.is_symlink()
+            or not terraform_data_dir.is_dir()
+            or terraform_data_dir.stat().st_uid != 0
+            or stat.S_IMODE(terraform_data_dir.stat().st_mode) & 0o077
+        ):
+            raise AuthorityServiceError(
+                f"authority Terraform data directory must be root-only: {name}"
+            )
         configuration = Path(root["configuration_dir"])
         if configuration.is_symlink() or not configuration.is_dir():
             raise AuthorityServiceError(
@@ -348,6 +444,40 @@ def _validate_policy(policy: Any) -> None:
             or len(executable["sha256"]) != 64
         ):
             raise AuthorityServiceError(f"authority provider executable is malformed: {name}")
+    contracts = json.loads(Path(policy["consumer_contracts_path"]).read_text(encoding="utf-8"))
+    pending = set(contracts.get("pending_contract_ids", []))
+    contract_ids = set(contracts.get("contracts", {})) - pending
+    class_adapters = policy.get("class_adapters")
+    if not isinstance(class_adapters, dict) or set(class_adapters) != contract_ids:
+        raise AuthorityServiceError(
+            "authority must configure one pinned adapter for every active credential class"
+        )
+    allowed_adapter_operations = {
+        "consumer-readiness",
+        "rotation-readiness",
+        "ciphertext-migration",
+        "authentication-continuity",
+    }
+    for credential_class, class_adapter in class_adapters.items():
+        if (
+            not isinstance(class_adapter, dict)
+            or set(class_adapter) != {"operations", "adapter"}
+            or not isinstance(class_adapter.get("operations"), list)
+            or not class_adapter["operations"]
+            or len(class_adapter["operations"])
+            != len(set(class_adapter["operations"]))
+            or not set(class_adapter["operations"]) <= allowed_adapter_operations
+        ):
+            raise AuthorityServiceError(
+                f"credential class adapter operations are malformed: {credential_class}"
+            )
+        _validate_adapter(
+            class_adapter.get("adapter"),
+            label=f"credential class {credential_class}",
+        )
+    _validate_adapter(
+        policy.get("backend_custody_adapter"), label="Terraform backend custody"
+    )
     scopes = policy.get("artifact_inventory_scopes")
     if not isinstance(scopes, list) or not scopes:
         raise AuthorityServiceError("authority artifact inventory is absent")
@@ -572,6 +702,10 @@ def normalized_parameters(request: dict[str, Any], config: dict[str, Any]) -> di
         "pat-website",
     }:
         raise AuthorityServiceError("credential class has no authentication continuity contract")
+    if operation == "backend-custody" and parameters["terraform_root_name"] not in config[
+        "policy"
+    ]["terraform_roots"]:
+        raise AuthorityServiceError("Terraform backend custody root is not registered")
     return parameters
 
 
@@ -684,12 +818,27 @@ def externally_anchored_response(
     )
     if (
         set(reservation)
-        != {"schema", "reservation_id", "log_id", "entry_index", "sequence", "expires_at"}
+        != {
+            "schema",
+            "reservation_id",
+            "log_id",
+            "endpoint",
+            "entry_index",
+            "sequence",
+            "prior_checkpoint_sha256",
+            "expires_at",
+        }
         or reservation.get("schema")
-        != "fs2-serve.nebius.ai/external-evidence-reservation/v1"
+        != "fs2-serve.nebius.ai/external-evidence-reservation/v2"
         or not all(
             isinstance(reservation.get(field), str) and reservation[field]
-            for field in ("reservation_id", "log_id", "expires_at")
+            for field in (
+                "reservation_id",
+                "log_id",
+                "endpoint",
+                "prior_checkpoint_sha256",
+                "expires_at",
+            )
         )
         or not isinstance(reservation.get("entry_index"), int)
         or reservation["entry_index"] < 0
@@ -743,32 +892,40 @@ def externally_anchored_response(
     )
     anchor_fields = {
         "schema",
+        "endpoint",
         "log_id",
-        "checkpoint_id",
         "entry_index",
         "claim_sha256",
         "record_sha256",
+        "leaf_sha256",
         "anchored_at",
         "retention_until",
-        "anchor_key_id",
-        "signature",
+        "checkpoint",
+        "inclusion_proof",
+        "consistency_proof",
+        "witnesses",
     }
     if (
         set(anchor) != anchor_fields
         or anchor.get("schema")
-        != "fs2-serve.nebius.ai/external-evidence-anchor/v1"
+        != "fs2-serve.nebius.ai/external-evidence-anchor/v2"
         or anchor.get("claim_sha256") != record["claim_sha256"]
         or anchor.get("record_sha256") != canonical_sha256(record)
         or anchor.get("log_id") != reservation["log_id"]
+        or anchor.get("endpoint") != reservation["endpoint"]
         or anchor.get("entry_index") != reservation["entry_index"]
+        or not isinstance(anchor.get("checkpoint"), dict)
+        or anchor["checkpoint"].get("previous_checkpoint_sha256")
+        != reservation["prior_checkpoint_sha256"]
+        or not isinstance(anchor.get("inclusion_proof"), list)
+        or not isinstance(anchor.get("consistency_proof"), list)
+        or not isinstance(anchor.get("witnesses"), list)
         or not all(
             isinstance(anchor.get(field), str) and anchor[field]
             for field in (
-                "checkpoint_id",
                 "anchored_at",
                 "retention_until",
-                "anchor_key_id",
-                "signature",
+                "leaf_sha256",
             )
         )
     ):
@@ -815,7 +972,9 @@ def audit_event(
         "evidence_id": evidence["claim"]["evidence_id"],
         "evidence_sha256": canonical_sha256(evidence),
         "external_log_id": evidence["external_anchor"]["log_id"],
-        "external_checkpoint_id": evidence["external_anchor"]["checkpoint_id"],
+        "external_checkpoint_sha256": canonical_sha256(
+            evidence["external_anchor"]["checkpoint"]
+        ),
         "external_entry_index": evidence["external_anchor"]["entry_index"],
     }
     append_event(

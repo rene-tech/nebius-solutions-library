@@ -42,6 +42,9 @@ POOL_PROFILES_PATH = (
 )
 INTERNAL_EDGE_PROXY = WORKLOADS_ROOT / "scripts" / "internal_edge_proxy.py"
 SECRET_MIGRATION_GUARD = SOLUTION_ROOT / "scripts" / "secret_migration_guard.py"
+CREDENTIAL_PROVIDER_ADAPTER = (
+    SOLUTION_ROOT / "scripts" / "credential_provider_adapter.py"
+)
 DURABLE_CREDENTIAL_REGISTRY = (
     SOLUTION_ROOT / "security" / "durable-credential-registry.json"
 )
@@ -57,6 +60,7 @@ STAGE_COMPLETION_OUTPUTS = {
     "foundation": "cluster_contract",
     "workloads": "deployment_contract",
 }
+ACTIVE_RELEASE_IDENTITY: dict[str, Any] | None = None
 
 
 class DeploymentError(RuntimeError):
@@ -166,8 +170,80 @@ def clean_environment() -> dict[str, str]:
         for key, value in os.environ.items()
         if not key.startswith("TF_VAR_")
         and not key.startswith("TF_CLI_ARGS")
-        and key not in {"TF_DATA_DIR", "TF_WORKSPACE"}
+        and key
+        not in {
+            "TF_DATA_DIR",
+            "TF_WORKSPACE",
+            "NEBIUS_PROFILE",
+            "NEBIUS_CONFIG",
+        }
     }
+
+
+def release_identity(command: str) -> dict[str, Any]:
+    """Obtain the provider-derived, externally anchored release identity.
+
+    No command-line flag or inherited environment can choose a Nebius profile,
+    project, credential, or config path.  The root authority observes the exact
+    short-lived non-human identity and returns value-free evidence.
+    """
+
+    if command not in {"preflight", "plan", "apply"}:
+        raise DeploymentError(
+            f"{command} is not authorized for the release automation identity"
+        )
+    if (
+        CREDENTIAL_PROVIDER_ADAPTER.is_symlink()
+        or not CREDENTIAL_PROVIDER_ADAPTER.is_file()
+    ):
+        raise DeploymentError("credential provider adapter is absent or unsafe")
+    response = run(
+        [sys.executable, str(CREDENTIAL_PROVIDER_ADAPTER)],
+        env=clean_environment(),
+        capture=True,
+        input_text=json.dumps(
+            {"operation": "release-identity"}, separators=(",", ":")
+        ),
+    )
+    try:
+        document = json.loads(response.stdout)
+        identity = document["release_identity"]
+        issued = datetime.fromisoformat(
+            identity["issued_at"].replace("Z", "+00:00")
+        ).astimezone(UTC)
+        expires = datetime.fromisoformat(
+            identity["expires_at"].replace("Z", "+00:00")
+        ).astimezone(UTC)
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+        raise DeploymentError("release identity evidence is malformed") from error
+    now = datetime.now(UTC)
+    if (
+        identity.get("audience") != "terraform-release"
+        or identity.get("interactive_login_allowed") is not False
+        or identity.get("human_principal_allowed") is not False
+        or command not in identity.get("allowed_commands", [])
+        or issued > now
+        or expires <= now
+        or expires - issued > timedelta(hours=1)
+        or not isinstance(identity.get("config_path"), str)
+        or not Path(identity["config_path"]).is_absolute()
+        or not isinstance(identity.get("profile"), str)
+        or not identity["profile"]
+    ):
+        raise DeploymentError(
+            "release identity is not an active automation-only credential for this command"
+        )
+    return identity
+
+
+def nebius_identity_arguments(args: argparse.Namespace) -> list[str]:
+    return [
+        args.nebius,
+        "--config",
+        args.nebius_config,
+        "--profile",
+        args.nebius_profile,
+    ]
 
 
 # Write-only Secret arguments (`data_wo`) are a Terraform 1.11 feature. On an
@@ -209,6 +285,9 @@ def terraform_environment(run_root: Path, stage: str) -> dict[str, str]:
     private_directory(data_directory)
     environment["TF_DATA_DIR"] = str(data_directory)
     environment["TF_IN_AUTOMATION"] = "1"
+    if ACTIVE_RELEASE_IDENTITY is not None:
+        environment["NEBIUS_CONFIG"] = ACTIVE_RELEASE_IDENTITY["config_path"]
+        environment["NEBIUS_PROFILE"] = ACTIVE_RELEASE_IDENTITY["profile"]
     return environment
 
 
@@ -261,34 +340,71 @@ def validate_versioned_access_pat_ids(
 def terraform_init(
     terraform: str,
     root: Path,
-    legacy_backend: Path,
     environment: Mapping[str, str],
 ) -> None:
-    """Initialize only the root-owned encrypted remote backend.
-
-    ``legacy_backend`` remains in the call contract so existing state can be
-    inventoried and migrated under a separately authorized procedure.  It is
-    deliberately never passed to Terraform and must not be repurposed as a
-    local backend.
-    """
-
-    if legacy_backend.is_symlink():
-        raise DeploymentError(
-            f"legacy Terraform state path must not be a symlink: {legacy_backend}"
-        )
+    """Initialize only a provider-attested encrypted remote backend."""
     root_name = TERRAFORM_ROOT_NAMES.get(root.resolve())
     if root_name is None:
         raise DeploymentError(f"Terraform root is not registered for remote state: {root}")
     backend_config = TERRAFORM_BACKEND_CONFIG_ROOT / f"{root_name}.s3.hcl"
+    chain = [backend_config.parent, *backend_config.parent.parents]
     if (
         not backend_config.is_file()
         or backend_config.is_symlink()
-        or backend_config.parent.is_symlink()
-        or stat.S_IMODE(backend_config.stat().st_mode) & 0o077
+        or backend_config.stat().st_uid != 0
+        or stat.S_IMODE(backend_config.stat().st_mode) != 0o600
+        or any(
+            path.is_symlink()
+            or not path.is_dir()
+            or path.stat().st_uid != 0
+            or stat.S_IMODE(path.stat().st_mode) & 0o022
+            for path in chain
+        )
     ):
         raise DeploymentError(
             "root-owned mode-0600 remote backend configuration is required at "
             f"{backend_config}; local state fallback is forbidden"
+        )
+    source = backend_config.read_text(encoding="utf-8")
+    if (
+        re.search(r"(?m)^\s*encrypt\s*=\s*true\s*$", source) is None
+        or re.search(r'(?m)^\s*bucket\s*=\s*"[^"\n]+"\s*$', source) is None
+        or re.search(r'(?m)^\s*key\s*=\s*"[^"\n]+"\s*$', source) is None
+        or re.search(r"(?m)^\s*use_lockfile\s*=\s*true\s*$", source) is None
+    ):
+        raise DeploymentError(
+            "remote backend must declare encryption, locking, bucket and object key"
+        )
+    custody = run(
+        [sys.executable, str(CREDENTIAL_PROVIDER_ADAPTER)],
+        env=clean_environment(),
+        capture=True,
+        input_text=json.dumps(
+            {
+                "operation": "backend-custody",
+                "terraform_root_name": root_name,
+            },
+            separators=(",", ":"),
+        ),
+    )
+    try:
+        observation = json.loads(custody.stdout)
+    except json.JSONDecodeError as error:
+        raise DeploymentError("backend custody evidence is invalid JSON") from error
+    if (
+        observation.get("terraform_root_name") != root_name
+        or observation.get("backend_type") != "s3"
+        or observation.get("backend_config_sha256")
+        != hashlib.sha256(backend_config.read_bytes()).hexdigest()
+        or observation.get("encryption", {}).get("enabled") is not True
+        or not observation.get("encryption", {}).get("kms_key_id")
+        or observation.get("access_logging", {}).get("enabled") is not True
+        or not observation.get("access_logging", {}).get("destination_bucket_id")
+        or observation.get("versioning_enabled") is not True
+        or not str(observation.get("endpoint", "")).startswith("https://")
+    ):
+        raise DeploymentError(
+            "provider-attested backend encryption, logging, versioning or endpoint is incomplete"
         )
     run(
         [
@@ -490,12 +606,50 @@ def authoritative_state_json(
     return result.stdout
 
 
+def normalized_remote_state(document: Mapping[str, Any]) -> dict[str, Any]:
+    """Convert `state pull` JSON into the value shape used by the guard."""
+
+    resources: list[dict[str, Any]] = []
+    raw_resources = document.get("resources")
+    if not isinstance(raw_resources, list):
+        raise DeploymentError("Terraform remote state has no resource inventory")
+    for resource in raw_resources:
+        if not isinstance(resource, Mapping):
+            raise DeploymentError("Terraform remote state resource is malformed")
+        module = resource.get("module")
+        prefix = f"{module}." if isinstance(module, str) and module else ""
+        base = f"{prefix}{resource.get('type')}.{resource.get('name')}"
+        instances = resource.get("instances")
+        if not isinstance(instances, list):
+            raise DeploymentError("Terraform remote state instance list is malformed")
+        for instance in instances:
+            if not isinstance(instance, Mapping) or not isinstance(
+                instance.get("attributes"), Mapping
+            ):
+                raise DeploymentError("Terraform remote state instance is malformed")
+            index = instance.get("index_key")
+            suffix = (
+                ""
+                if index is None
+                else f"[{json.dumps(index, separators=(',', ':'))}]"
+            )
+            resources.append(
+                {
+                    "address": f"{base}{suffix}",
+                    "mode": resource.get("mode", "managed"),
+                    "type": resource.get("type"),
+                    "name": resource.get("name"),
+                    "values": instance["attributes"],
+                }
+            )
+    return {"values": {"root_module": {"resources": resources, "child_modules": []}}}
+
+
 def prepare_credential_migration_gate(
     terraform: str,
     *,
     run_root: Path,
     root: Path,
-    state: Path,
     environment: dict[str, str],
 ) -> Path:
     """Create the short-lived receipt consumed by Terraform's native gate."""
@@ -509,17 +663,9 @@ def prepare_credential_migration_gate(
     gate_receipt = (
         run_root / f"{stage}-credential-migration-gate-{uuid4().hex}.receipt.json"
     )
-    if not state.exists():
-        raise DeploymentError(
-            f"{stage} has no authoritative state; empty or fabricated state cannot "
-            "authorize credential migration"
-        )
-    state_result = run(
-        [terraform, f"-chdir={root}", "show", "-json", str(state)],
-        env=environment,
-        capture=True,
-    )
     raw_state = authoritative_state_json(terraform, root, environment)
+    raw_state_document = json.loads(raw_state)
+    state_document = normalized_remote_state(raw_state_document)
     command = [
         sys.executable,
         str(SECRET_MIGRATION_GUARD),
@@ -541,8 +687,8 @@ def prepare_credential_migration_gate(
         command,
         input_text=json.dumps(
             {
-                "state_document": json.loads(state_result.stdout),
-                "raw_state_document": json.loads(raw_state),
+                "state_document": state_document,
+                "raw_state_document": raw_state_document,
             },
             separators=(",", ":"),
         ),
@@ -733,8 +879,7 @@ def validate_configuration(
     run_root: Path,
 ) -> tuple[dict[str, Any], dict[str, str]]:
     environment = terraform_environment(run_root, "configuration")
-    backend = run_root / "configuration.tfstate"
-    terraform_init(terraform, DEPLOY_ROOT, backend, environment)
+    terraform_init(terraform, DEPLOY_ROOT, environment)
     document = plan_json(
         terraform,
         root=DEPLOY_ROOT,
@@ -766,9 +911,7 @@ def preflight_accelerators(
     for pool_id, pool in sorted(pools.items()):
         platform_result = run(
             [
-                args.nebius,
-                "--profile",
-                args.nebius_profile,
+                *nebius_identity_arguments(args),
                 "compute",
                 "platform",
                 "get-by-name",
@@ -812,9 +955,7 @@ def preflight_accelerators(
 
         compatibility_result = run(
             [
-                args.nebius,
-                "--profile",
-                args.nebius_profile,
+                *nebius_identity_arguments(args),
                 "mk8s",
                 "node-group",
                 "get-compatibility-matrix",
@@ -862,9 +1003,7 @@ def preflight_accelerators(
             for reservation_id in reservation_ids:
                 group_result = run(
                     [
-                        args.nebius,
-                        "--profile",
-                        args.nebius_profile,
+                        *nebius_identity_arguments(args),
                         "capacity",
                         "capacity-block-group",
                         "get",
@@ -1709,10 +1848,12 @@ def merge_docker_config(base: Any, extra: Any) -> dict[str, Any]:
 @contextmanager
 def registry_client_environment(
     contract: Mapping[str, Any],
+    nebius_config: str,
     nebius_profile: str,
 ) -> Iterator[dict[str, str]]:
     """Materialize optional private registry auth only in an ephemeral directory."""
     environment = clean_environment()
+    environment["NEBIUS_CONFIG"] = nebius_config
     environment["NEBIUS_PROFILE"] = nebius_profile
     secret_name = contract["secret_environment"]["nvcr_dockerconfig"]
     encoded_extra = os.environ.get(secret_name)
@@ -1815,7 +1956,9 @@ def mirror_selected_images(
     )
     receipt_images: list[dict[str, str]] = []
     completed_targets: dict[str, str] = {}
-    with registry_client_environment(contract, args.nebius_profile) as environment:
+    with registry_client_environment(
+        contract, args.nebius_config, args.nebius_profile
+    ) as environment:
         for artifact in artifacts:
             expected = artifact["digest"]
             target_reference = artifact["target_reference"]
@@ -2021,6 +2164,7 @@ def write_infrastructure_variables(
 def ensure_kubeconfig(
     *,
     nebius: str,
+    nebius_config: str,
     nebius_profile: str,
     kubectl: str,
     run_root: Path,
@@ -2035,6 +2179,8 @@ def ensure_kubeconfig(
     run(
         [
             nebius,
+            "--config",
+            nebius_config,
             "--profile",
             nebius_profile,
             "mk8s",
@@ -2125,18 +2271,19 @@ def infrastructure_outputs(
     contract: Mapping[str, Any],
     *,
     nebius: str,
+    nebius_config: str,
     nebius_profile: str,
     kubectl: str,
 ) -> dict[str, Any]:
     environment = stage_environment(run_root, "infrastructure", contract)
-    state, _, _ = stage_paths(run_root, "infrastructure")
-    terraform_init(terraform, INFRA_ROOT, state, environment)
+    terraform_init(terraform, INFRA_ROOT, environment)
     cluster_id = terraform_json_output(terraform, INFRA_ROOT, "cluster_id", environment)
     cluster_name = terraform_json_output(
         terraform, INFRA_ROOT, "cluster_name", environment
     )
     kubeconfig, kube_system_uid = ensure_kubeconfig(
         nebius=nebius,
+        nebius_config=nebius_config,
         nebius_profile=nebius_profile,
         kubectl=kubectl,
         run_root=run_root,
@@ -2257,7 +2404,11 @@ def infrastructure_outputs(
 
 
 def existing_controller_ownership(
-    run_root: Path, cluster_id: str, handoff_receipt: str | None
+    terraform: str,
+    run_root: Path,
+    contract: Mapping[str, Any],
+    cluster_id: str,
+    handoff_receipt: str | None,
 ) -> bool:
     """Recognize a completed handoff without repeating it for every new model.
 
@@ -2266,11 +2417,23 @@ def existing_controller_ownership(
     already has a single GPU controller owner and no legacy GPU serving objects.
     Exact static CPU services are a separate Terraform-owned lane.
     """
-    state_path = run_root / "workloads.tfstate"
-    if not handoff_receipt or state_path.is_symlink() or not state_path.is_file():
+    if not handoff_receipt:
         return False
     try:
-        state = json.loads(state_path.read_text(encoding="utf-8"))
+        environment = stage_environment(
+            run_root, "workloads", contract, include_secrets=False
+        )
+        terraform_init(terraform, WORKLOADS_ROOT, environment)
+        result = subprocess.run(
+            [terraform, f"-chdir={WORKLOADS_ROOT}", "state", "pull"],
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            return False
+        state = json.loads(result.stdout)
         resources = state["resources"]
         inputs = {
             resource["name"]: resource["instances"][0]["attributes"]["input"]["value"]
@@ -2346,6 +2509,7 @@ def existing_controller_ownership(
 
 
 def write_downstream_variables(
+    terraform: str,
     run_root: Path,
     contract: Mapping[str, Any],
     dynamic: Mapping[str, Any],
@@ -2376,7 +2540,11 @@ def write_downstream_variables(
         workloads["model_controller"] = {
             **controller,
             "existing_controller_ownership": existing_controller_ownership(
-                run_root, dynamic["cluster_id"], controller.get("handoff_receipt")
+                terraform,
+                run_root,
+                contract,
+                dynamic["cluster_id"],
+                controller.get("handoff_receipt"),
             ),
         }
     reference_data = workloads.get("reference_data")
@@ -2590,19 +2758,17 @@ def plan_stage(
                     "configuration; regenerate staged inputs with inference-stack"
                 )
     root = stage_root(stage)
-    state, _, _ = stage_paths(run_root, stage)
     environment = stage_environment(
         run_root,
         stage,
         contract,
         include_secrets=not destroy,
     )
-    terraform_init(terraform, root, state, environment)
+    terraform_init(terraform, root, environment)
     planning_receipt = prepare_credential_migration_gate(
         terraform,
         run_root=run_root,
         root=root,
-        state=state,
         environment=environment,
     )
     suffix = "destroy" if destroy else "plan"
@@ -2921,11 +3087,8 @@ def state_ready(
     stage: str,
     contract: Mapping[str, Any],
 ) -> bool:
-    state, _, _ = stage_paths(run_root, stage)
-    if not state.exists():
-        return False
     environment = stage_environment(run_root, stage, contract, include_secrets=False)
-    terraform_init(terraform, stage_root(stage), state, environment)
+    terraform_init(terraform, stage_root(stage), environment)
     result = subprocess.run(
         [
             terraform,
@@ -2953,11 +3116,8 @@ def state_has_resources(
     stage: str,
     contract: Mapping[str, Any],
 ) -> bool:
-    state, _, _ = stage_paths(run_root, stage)
-    if not state.exists():
-        return False
     environment = stage_environment(run_root, stage, contract, include_secrets=False)
-    terraform_init(terraform, stage_root(stage), state, environment)
+    terraform_init(terraform, stage_root(stage), environment)
     return bool(state_addresses(terraform, stage_root(stage), environment))
 
 
@@ -2985,12 +3145,13 @@ def apply_stack(
         run_root,
         contract,
         nebius=args.nebius,
+        nebius_config=args.nebius_config,
         nebius_profile=args.nebius_profile,
         kubectl=args.kubectl,
     )
     mirror_selected_images(args, run_root, contract, dynamic)
     foundation_variables, workloads_variables = write_downstream_variables(
-        run_root, contract, dynamic
+        args.terraform, run_root, contract, dynamic
     )
 
     plan_path, _, environment = plan_stage(
@@ -3063,6 +3224,7 @@ def plan_stack(
         run_root,
         contract,
         nebius=args.nebius,
+        nebius_config=args.nebius_config,
         nebius_profile=args.nebius_profile,
         kubectl=args.kubectl,
     )
@@ -3079,7 +3241,7 @@ def plan_stack(
         )
         return
     foundation_variables, workloads_variables = write_downstream_variables(
-        run_root, contract, dynamic
+        args.terraform, run_root, contract, dynamic
     )
     if not state_ready(args.terraform, run_root, "foundation", contract):
         plan_stage(
@@ -3180,6 +3342,7 @@ def destroy_stack(
             run_root,
             contract,
             nebius=args.nebius,
+            nebius_config=args.nebius_config,
             nebius_profile=args.nebius_profile,
             kubectl=args.kubectl,
         )
@@ -3226,10 +3389,13 @@ def destroy_stack(
                     run_root,
                     contract,
                     nebius=args.nebius,
+                    nebius_config=args.nebius_config,
                     nebius_profile=args.nebius_profile,
                     kubectl=args.kubectl,
                 )
-            downstream = write_downstream_variables(run_root, contract, dynamic)
+            downstream = write_downstream_variables(
+                args.terraform, run_root, contract, dynamic
+            )
         else:
             raise DeploymentError(
                 "downstream resources exist but their private generated tfvars and a complete infrastructure handoff are both unavailable"
@@ -3409,14 +3575,10 @@ def status_stack(
     infrastructure_reference_data_contract: Any | None = None
     infrastructure_scientific_artifacts: Any | None = None
     for stage in ("infrastructure", "foundation", "workloads"):
-        state, _, _ = stage_paths(run_root, stage)
-        if not state.exists():
-            stages[stage] = {"state": "absent", "addresses": 0, "complete": False}
-            continue
         environment = stage_environment(
             run_root, stage, contract, include_secrets=False
         )
-        terraform_init(args.terraform, stage_root(stage), state, environment)
+        terraform_init(args.terraform, stage_root(stage), environment)
         addresses = state_addresses(args.terraform, stage_root(stage), environment)
         complete = state_ready(args.terraform, run_root, stage, contract)
         stages[stage] = {
@@ -3635,11 +3797,9 @@ def internal_proxy_command(
     infrastructure_environment = stage_environment(
         run_root, "infrastructure", contract, include_secrets=False
     )
-    infrastructure_state, _, _ = stage_paths(run_root, "infrastructure")
     terraform_init(
         args.terraform,
         INFRA_ROOT,
-        infrastructure_state,
         infrastructure_environment,
     )
     cluster_id = terraform_json_output(
@@ -3656,6 +3816,7 @@ def internal_proxy_command(
     )
     kubeconfig, _ = ensure_kubeconfig(
         nebius=args.nebius,
+        nebius_config=args.nebius_config,
         nebius_profile=args.nebius_profile,
         kubectl=args.kubectl,
         run_root=run_root,
@@ -3765,11 +3926,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="OCI registry client used for digest-preserving regional mirrors",
     )
     parser.add_argument(
-        "--nebius-profile",
-        default=os.environ.get("NEBIUS_PROFILE", "sandbox"),
-        help="authenticated Nebius CLI profile (default: NEBIUS_PROFILE or sandbox)",
-    )
-    parser.add_argument(
         "--credential-file",
         type=Path,
         help="owner-only destination required by the output command; secret values are never printed",
@@ -3789,8 +3945,24 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    global ACTIVE_RELEASE_IDENTITY
     os.umask(0o077)
     args = parse_args(argv)
+    if "NEBIUS_PROFILE" in os.environ or "NEBIUS_CONFIG" in os.environ:
+        raise DeploymentError(
+            "caller-controlled Nebius profile/configuration is forbidden; use the provider-attested release identity"
+        )
+    if args.command == "destroy":
+        raise DeploymentError(
+            "destroy is disabled while the program-wide no-delete constraint is active"
+        )
+    if args.command in {"preflight", "plan", "apply"}:
+        ACTIVE_RELEASE_IDENTITY = release_identity(args.command)
+        args.nebius_profile = ACTIVE_RELEASE_IDENTITY["profile"]
+        args.nebius_config = ACTIVE_RELEASE_IDENTITY["config_path"]
+    else:
+        args.nebius_profile = None
+        args.nebius_config = None
     os.environ["FS2_KUBECTL_EXECUTABLE"] = args.kubectl
     require_terraform_version(args.terraform)
     variable_file = args.var_file.expanduser().resolve()
@@ -3820,6 +3992,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             contract, configuration_environment = validate_configuration(
                 args.terraform, variable_file, run_root
             )
+            if ACTIVE_RELEASE_IDENTITY is not None and (
+                ACTIVE_RELEASE_IDENTITY["project_id"]
+                != contract["target"]["project_id"]
+            ):
+                raise DeploymentError(
+                    "release identity project differs from the deployment target"
+                )
             proxy_arguments: list[str] | None = None
             commit = source_commit()
             if args.command == "validate":

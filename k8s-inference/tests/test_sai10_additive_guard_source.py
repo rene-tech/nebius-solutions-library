@@ -124,7 +124,8 @@ def test_authority_uses_canonical_backend_and_external_anchor() -> None:
     assert '"backend_type"' in service
     assert '"remote", "s3"' in service
     assert '"state", "pull"' in provider
-    assert 'environment={"TF_WORKSPACE": root["workspace"]}' in provider
+    assert '"TF_DATA_DIR": root["terraform_data_dir"]' in provider
+    assert 'f"-backend-config={root[\'backend_config_path\']}"' in provider
     assert '"registry_sha256": registry_sha256' in provider
     assert "local durable registry differs from root authority policy" in guard_source
     assert "credential-evidence-record/v1" in evidence
@@ -305,12 +306,14 @@ def test_authority_requires_source_trust_and_exact_automation_identity() -> None
     service = (ROOT / "scripts/credential_authority_service.py").read_text()
     provider = (ROOT / "scripts/credential_authority_provider.py").read_text()
     client = (ROOT / "scripts/credential_provider_adapter.py").read_text()
-    assert trust["deployment_authorized"] is False
+    assert trust["accepted_trust_bundles"] == []
     assert trust["minimum_witnesses"] == 2
-    assert "source-authorized; local pins cannot authorize it" in client
+    assert "not accepted by checked source" in client
     assert 'len(config["allowed_client_uids"]) != 1' in service
     assert "timedelta(hours=24)" in service
-    assert "automation_identity_proof" in provider
+    assert "evidence_identity_proof" in provider
+    assert "release_identity_proof" in provider
+    assert '"credential-evidence-reader"' in provider
     assert '"credential-release-automation"' in provider
     assert '(policy["project_id"], "viewer")' in provider
     assert 'policy["profile"]' not in provider

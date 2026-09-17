@@ -28,12 +28,18 @@ from cryptography.hazmat.primitives.serialization import (
     load_pem_public_key,
 )
 
+from credential_transparency import (
+    TransparencyVerificationError,
+    verify_checkpoint,
+)
+
 EVIDENCE_PUBLIC_KEY = Path(
     "/etc/fs2-credential-authority/evidence-producer-ed25519-public.pem"
 )
 ANCHOR_PUBLIC_KEY = Path(
     "/etc/fs2-credential-authority/external-anchor-ed25519-public.pem"
 )
+WITNESS_PUBLIC_KEY_ROOT = Path("/etc/fs2-credential-authority/witnesses")
 MAX_EVIDENCE_AGE = timedelta(minutes=5)
 MIN_ANCHOR_RETENTION = timedelta(days=365)
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
@@ -108,6 +114,7 @@ def verify_evidence_envelope(
     expected_nonce: str,
     evidence_public_key_sha256: str,
     anchor_public_key_sha256: str,
+    source_trust: dict[str, Any],
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Verify producer signature, external-log inclusion and freshness."""
@@ -186,60 +193,50 @@ def verify_evidence_envelope(
         raise EvidenceVerificationError("producer signature is invalid") from error
 
     anchor = envelope["external_anchor"]
-    anchor_fields = {
-        "schema",
-        "log_id",
-        "checkpoint_id",
-        "entry_index",
-        "claim_sha256",
-        "record_sha256",
-        "anchored_at",
-        "retention_until",
-        "anchor_key_id",
-        "signature",
+    record = {
+        "schema": "fs2-serve.nebius.ai/credential-evidence-record/v1",
+        "claim_sha256": canonical_sha256(claim),
+        "producer_signature": producer_signature,
     }
     if (
         not isinstance(anchor, dict)
-        or set(anchor) != anchor_fields
-        or anchor.get("schema")
-        != "fs2-serve.nebius.ai/external-evidence-anchor/v1"
-        or not all(
-            isinstance(anchor.get(field), str) and anchor[field]
-            for field in ("log_id", "checkpoint_id", "anchor_key_id")
-        )
-        or not isinstance(anchor.get("entry_index"), int)
-        or anchor["entry_index"] < 0
-        or claim["sequence"] != anchor["entry_index"] + 1
         or anchor.get("claim_sha256") != canonical_sha256(claim)
-        or anchor.get("record_sha256")
-        != canonical_sha256(
-            {
-                "schema": "fs2-serve.nebius.ai/credential-evidence-record/v1",
-                "claim_sha256": canonical_sha256(claim),
-                "producer_signature": producer_signature,
-            }
-        )
+        or anchor.get("record_sha256") != canonical_sha256(record)
+        or claim["sequence"] != anchor.get("entry_index", -1) + 1
     ):
         raise EvidenceVerificationError("external evidence anchor is malformed")
     anchored = parse_time(anchor.get("anchored_at"), label="anchor time")
     retention = parse_time(anchor.get("retention_until"), label="anchor retention")
     if anchored < observed or anchored > current or retention < current + MIN_ANCHOR_RETENTION:
         raise EvidenceVerificationError("external evidence anchor is stale or not durable")
-    unsigned_anchor = {
-        key: value for key, value in anchor.items() if key != "signature"
-    }
-    anchor_key = _load_public_key(
-        ANCHOR_PUBLIC_KEY, expected_sha256=anchor_public_key_sha256
-    )
-    if anchor["anchor_key_id"] != _public_key_id(anchor_key):
-        raise EvidenceVerificationError("anchor key ID differs from the pinned key")
+    if source_trust.get("producer_public_key_sha256") != evidence_public_key_sha256:
+        raise EvidenceVerificationError("producer pin differs from source trust")
+    if source_trust.get("anchor_public_key_sha256") != anchor_public_key_sha256:
+        raise EvidenceVerificationError("anchor pin differs from source trust")
+    if source_trust.get("authority_policy_sha256") != claim["policy_sha256"]:
+        raise EvidenceVerificationError("authority policy differs from source trust")
+
+    def transparency_key(label: str, expected_sha256: str) -> Any:
+        if label == "anchor":
+            path = ANCHOR_PUBLIC_KEY
+        elif label.startswith("witness:"):
+            witness_id = label.removeprefix("witness:")
+            if re.fullmatch(r"[a-z0-9][a-z0-9-]{0,62}", witness_id) is None:
+                raise EvidenceVerificationError("witness ID is unsafe")
+            path = WITNESS_PUBLIC_KEY_ROOT / f"{witness_id}.ed25519-public.pem"
+        else:
+            raise EvidenceVerificationError("unknown transparency key role")
+        return _load_public_key(path, expected_sha256=expected_sha256)
+
     try:
-        anchor_key.verify(
-            _signature(anchor["signature"], label="anchor signature"),
-            canonical_bytes(unsigned_anchor),
+        verify_checkpoint(
+            anchor=anchor,
+            record=record,
+            trust=source_trust,
+            load_public_key=transparency_key,
         )
-    except InvalidSignature as error:
-        raise EvidenceVerificationError("external anchor signature is invalid") from error
+    except TransparencyVerificationError as error:
+        raise EvidenceVerificationError(str(error)) from error
     return payload
 
 

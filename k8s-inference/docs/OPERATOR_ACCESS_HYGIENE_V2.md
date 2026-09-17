@@ -1,5 +1,9 @@
 # Operator credential custody: additive migration procedure
 
+> Source contract v3 supersedes the admission details in this document. See
+> `OPERATOR_ACCESS_HYGIENE_V3.md`; this v2 text remains historical context and
+> is not deployment authorization.
+
 This is the canonical operator procedure. It permits read-only inspection and
 additive immutable generations only. It does not authorize deletion, disable,
 revocation, replacement, force, history rewrite, state removal, credential
@@ -11,9 +15,9 @@ data, and predecessor credentials remain retained.
 This document is a fail-closed target procedure, not readiness or deployment
 evidence. No test, Terraform initialization, state migration, provider read,
 cluster read, credential action, or deployment was performed for this source
-successor. The checked-in source trust policy has
-`deployment_authorized=false`; no independent anchor/witness keys, genesis
-checkpoint, production endpoint, or consistency proof has been accepted. The
+successor. The checked-in v2 source-trust allowlist is empty; no independent
+anchor/witness keys, prior checkpoint, production endpoint, inclusion proof, or
+consistency proof has been accepted. The
 authority therefore cannot admit evidence. SAI-06 has static SOURCE GO only;
 SAI-08 and SAI-09 remain without an accepted source successor, and none of the
 three is integration/live accepted.

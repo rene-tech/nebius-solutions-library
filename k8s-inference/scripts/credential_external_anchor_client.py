@@ -30,6 +30,8 @@ READ_ONLY_OPERATIONS = frozenset(
         "viewer-handoff-inventory",
         "ciphertext-migration",
         "authentication-continuity",
+        "release-identity",
+        "backend-custody",
     }
 )
 
@@ -141,12 +143,14 @@ def main() -> int:
                 "schema",
                 "reservation_id",
                 "log_id",
+                "endpoint",
                 "entry_index",
                 "sequence",
+                "prior_checkpoint_sha256",
                 "expires_at",
             }
             or reservation.get("schema")
-            != "fs2-serve.nebius.ai/external-evidence-reservation/v1"
+            != "fs2-serve.nebius.ai/external-evidence-reservation/v2"
             or not isinstance(record, dict)
             or set(record) != {"schema", "claim_sha256", "producer_signature"}
             or record.get("schema")
