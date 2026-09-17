@@ -27,11 +27,16 @@ grafana_admin_secret_ref = {
 # SAI-22 serialized Loki migration. Keep the initial apply auth-off. The
 # independently reviewed rollout may advance both phase and floor only after
 # an independent verifier seals exact target/source/tree/revision and
-# marker-only ingest/read evidence, and both that evidence digest and SAI-03
-# identity custody have independently accepted digests pinned in source.
+# auth-off legacy-read readiness, and both that evidence digest and SAI-03
+# identity custody have independently accepted digests pinned in source. The
+# first auth-on apply uses phase/floor auth-enforced-validation; a later apply
+# may use enforced-dual-read only with distinct post-auth scoped proof.
 loki_access_phase   = "network-bound"
 loki_rollback_floor = "network-bound"
-# loki_deployed_client_acknowledgement  = { ...exact accepted record... }
+# loki_migration_acknowledgements = {
+#   pretransition  = { ...auth-off legacy-read record... }
+#   posttransition = { ...auth-on scoped-read record... }
+# }
 # loki_identity_custody_receipt         = "<exact source-pinned SAI-03 receipt>"
 # loki_prometheus_health_exception_receipt = "<exact source-pinned exception receipt>"
 

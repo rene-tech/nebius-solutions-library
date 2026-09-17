@@ -413,7 +413,7 @@ output "managed_resource_count" {
   value = (
     # Profile-independent identity, credential, database, queue, control-plane,
     # and Grafana egress addresses. Profile-shaped collections stay explicit.
-    47 +
+    48 +
     (local.ngc_api_key_required ? 1 : 0) +
     (local.model_nvcr_credentials_required ? 1 : 0) +
     (local.dcgm_nvcr_credentials_required ? 1 : 0) +
@@ -426,6 +426,7 @@ output "managed_resource_count" {
     (var.model_controller.enabled ? 2 : 0) +
     (local.model_controller_bootstrap_enabled ? 3 : 0) +
     (local.admin_configuration_enabled ? 1 : 0) +
+    (local.runtime_log_payload_safety_ready ? 1 : 0) +
     (data.terraform_remote_state.foundation.outputs.grafana_publication_contract.enabled ? 2 : 0) +
     (var.run_acceptance_job ? 4 : 0) +
     (var.run_acceptance_job && var.deployment_profile == "full_catalog" ? 1 : 0)
@@ -499,42 +500,74 @@ output "loki_client_configuration_claim" {
 }
 
 output "loki_deployed_client_acknowledgement_requirements" {
-  description = "Non-secret target and schema requirements for the independent post-deployment acknowledgement; this output is not evidence and cannot authorize auth."
+  description = "DEPRECATED deadlocking acknowledgement requirements. Auth-off Loki cannot create fs2-platform proof; use loki_migration_acknowledgement_requirements."
   value = {
-    schema = "fs2-serve.nebius.ai/loki-deployed-client-acknowledgement/v1"
+    accepted = false
+    reason   = "auth-off Loki stores all writes in fake"
+    replacement = "loki_migration_acknowledgement_requirements"
+  }
+}
+
+output "loki_migration_acknowledgement_requirements" {
+  description = "Non-secret staged evidence contract. This output is not evidence and cannot authorize auth."
+  value = {
+    schema = "fs2-serve.nebius.ai/loki-migration-acknowledgement/v2"
     target = {
       run_id          = var.run_id
       cluster_id      = var.cluster_id
       kube_system_uid = var.kube_system_uid
     }
-    required_binding = {
-      namespace        = "fs2-observability"
-      config_map_name  = "fs2-loki-deployed-client-ack-<record-sha256-prefix-12>"
-      immutable        = true
-      data_key         = "acknowledgement.json"
-      uid              = "<API-assigned immutable object UID>"
-      resource_version = "<API-assigned value captured after creation>"
-      record_sha256    = "<SHA-256 of the canonical acknowledgement JSON>"
+    stages = {
+      pretransition = {
+        auth_enabled          = false
+        marker_storage_tenant = "fake"
+        required_write        = "fs2-otel-gateway:marker-ingested-with-scoped-header"
+        required_reads        = ["grafana:fake", "control-plane:fake"]
+        forbidden_claims      = ["fs2-platform-ingested", "fs2-platform-readable"]
+      }
+      posttransition = {
+        auth_enabled          = true
+        marker_storage_tenant = "fs2-platform"
+        required_write        = "fs2-otel-gateway:marker-ingested-with-scoped-header"
+        required_reads        = ["grafana:fake", "grafana:fs2-platform", "control-plane:fake", "control-plane:fs2-platform"]
+      }
     }
-    required_revision_fields = [
+    required_current_revision_fields = [
+      "loki_helm",
       "otel_gateway_helm",
       "control_plane_helm",
       "grafana_helm",
-      "grafana_datasource_resource_version",
     ]
-    required_proof_fields = [
-      "scoped_writer_ingested",
-      "grafana_legacy_read",
-      "grafana_scoped_read",
-      "control_plane_legacy_read",
-      "control_plane_scoped_read",
-      "no_customer_payload_recorded",
+    required_current_object_fingerprints = [
+      "loki",
+      "otel_gateway",
+      "control_plane",
+      "grafana",
+      "grafana_datasource",
     ]
+    required_freshness_markers = [
+      "fs2-observability/fs2-loki-foundation-freshness",
+      "fs2-system/fs2-loki-workloads-freshness",
+    ]
+    required_custody = [
+      "immutable acknowledgement ConfigMap UID/resourceVersion/content",
+      "immutable runtime payload-safety inventory UID/resourceVersion/content",
+      "source-pinned full-envelope SHA-256",
+      "unexpired valid_until",
+    ]
+    runtime_payload_safety = {
+      ready                     = local.runtime_log_payload_safety_ready
+      expected_image_count      = length(local.expected_runtime_log_image_inventory)
+      expected_inventory_sha256 = local.expected_runtime_log_image_inventory_sha256
+      accepted_inventory_sha256 = local.accepted_runtime_log_payload_safety_inventory_sha256
+    }
   }
 
   depends_on = [
     helm_release.control_plane,
     kubernetes_secret_v1.grafana_datasource,
+    kubernetes_config_map_v1.runtime_log_payload_safety,
+    kubernetes_config_map_v1.loki_client_freshness,
   ]
 }
 

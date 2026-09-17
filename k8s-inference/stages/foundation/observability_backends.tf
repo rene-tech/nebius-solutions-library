@@ -10,10 +10,11 @@ locals {
   loki_write_tenant_id            = "fs2-platform"
   loki_read_tenant_header         = "${local.loki_legacy_tenant_id}|${local.loki_write_tenant_id}"
   loki_legacy_retention_hours     = 168
-  loki_auth_enforced              = var.loki_access_phase == "enforced-dual-read"
+  loki_auth_enforced              = var.loki_access_phase != "network-bound"
   loki_phase_rank = {
-    network-bound      = 0
-    enforced-dual-read = 1
+    network-bound            = 0
+    auth-enforced-validation = 1
+    enforced-dual-read       = 2
   }
   loki_client_configuration_payload = {
     schema                      = "fs2-serve.nebius.ai/loki-client-compatibility/v1"
@@ -26,51 +27,56 @@ locals {
   }
   expected_loki_client_configuration_claim = sha256(jsonencode(local.loki_client_configuration_payload))
 
-  # A phase-2 configuration claim is caller-reproducible and therefore cannot
-  # authorize auth enforcement. A later independently reviewed successor must
-  # pin the digest of one exact target-bound acknowledgement containing the
-  # deployed source/tree, Helm revisions, datasource resourceVersion, scoped
-  # writer ingestion, and Grafana/control-plane dual-read proof.
-  accepted_loki_deployed_client_acknowledgement_sha256 = null
-  loki_deployed_client_acknowledgement_record = (
-    var.loki_deployed_client_acknowledgement == null ? null : {
-      schema    = var.loki_deployed_client_acknowledgement.schema
-      target    = var.loki_deployed_client_acknowledgement.target
-      source    = var.loki_deployed_client_acknowledgement.source
-      revisions = var.loki_deployed_client_acknowledgement.revisions
-      proof     = var.loki_deployed_client_acknowledgement.proof
+  # Auth-off Loki assigns every write to `fake`, even when the writer sends a
+  # tenant header. Pretransition evidence therefore proves exact client/image
+  # readiness plus legacy reads only. Posttransition evidence is a distinct,
+  # later envelope that proves scoped ingestion after auth is already enabled.
+  accepted_loki_migration_acknowledgement_sha256 = {
+    pretransition  = null
+    posttransition = null
+  }
+  loki_migration_acknowledgement_records = {
+    for stage, acknowledgement in var.loki_migration_acknowledgements : stage => {
+      schema                   = acknowledgement.schema
+      stage                    = acknowledgement.stage
+      target                   = acknowledgement.target
+      source                   = acknowledgement.source
+      revisions                = acknowledgement.revisions
+      deployments              = acknowledgement.deployments
+      grafana_datasource       = acknowledgement.grafana_datasource
+      freshness_markers        = acknowledgement.freshness_markers
+      payload_safety_inventory = acknowledgement.payload_safety_inventory
+      proof                    = acknowledgement.proof
     }
-  )
-  loki_deployed_client_acknowledgement_record_json = (
-    local.loki_deployed_client_acknowledgement_record == null ? null :
-    jsonencode(local.loki_deployed_client_acknowledgement_record)
-  )
-  loki_deployed_client_acknowledgement_sha256 = (
-    var.loki_deployed_client_acknowledgement == null ? null :
-    sha256(jsonencode(var.loki_deployed_client_acknowledgement))
-  )
-  loki_deployed_clients_ready = (
-    local.accepted_loki_deployed_client_acknowledgement_sha256 != null &&
-    local.loki_deployed_client_acknowledgement_sha256 == local.accepted_loki_deployed_client_acknowledgement_sha256 &&
-    try(
-      var.loki_deployed_client_acknowledgement.target.run_id == var.run_id &&
-      var.loki_deployed_client_acknowledgement.target.cluster_id == var.cluster_id &&
-      var.loki_deployed_client_acknowledgement.target.kube_system_uid == var.kube_system_uid &&
-      var.loki_deployed_client_acknowledgement.binding.namespace == "fs2-observability" &&
-      var.loki_deployed_client_acknowledgement.binding.record_sha256 == sha256(local.loki_deployed_client_acknowledgement_record_json) &&
-      var.loki_deployed_client_acknowledgement.binding.config_map_name == "fs2-loki-deployed-client-ack-${substr(var.loki_deployed_client_acknowledgement.binding.record_sha256, 0, 12)}" &&
-      data.kubernetes_resource.loki_deployed_client_acknowledgement[0].object.immutable == true &&
-      data.kubernetes_resource.loki_deployed_client_acknowledgement[0].object.metadata.uid == var.loki_deployed_client_acknowledgement.binding.uid &&
-      data.kubernetes_resource.loki_deployed_client_acknowledgement[0].object.metadata.resourceVersion == var.loki_deployed_client_acknowledgement.binding.resource_version &&
-      data.kubernetes_resource.loki_deployed_client_acknowledgement[0].object.data["acknowledgement.json"] == local.loki_deployed_client_acknowledgement_record_json &&
-      var.loki_deployed_client_acknowledgement.proof.scoped_writer_ingested &&
-      var.loki_deployed_client_acknowledgement.proof.grafana_legacy_read &&
-      var.loki_deployed_client_acknowledgement.proof.grafana_scoped_read &&
-      var.loki_deployed_client_acknowledgement.proof.control_plane_legacy_read &&
-      var.loki_deployed_client_acknowledgement.proof.control_plane_scoped_read &&
-      var.loki_deployed_client_acknowledgement.proof.no_customer_payload_recorded,
-      false,
+  }
+  loki_migration_acknowledgement_record_json = {
+    for stage, record in local.loki_migration_acknowledgement_records :
+    stage => jsonencode(record)
+  }
+  loki_migration_acknowledgement_sha256 = {
+    for stage, acknowledgement in var.loki_migration_acknowledgements :
+    stage => sha256(jsonencode(acknowledgement))
+  }
+  loki_migration_acknowledgement_source_accepted = {
+    for stage in ["pretransition", "posttransition"] : stage => (
+      local.accepted_loki_migration_acknowledgement_sha256[stage] != null &&
+      try(
+        local.loki_migration_acknowledgement_sha256[stage] == local.accepted_loki_migration_acknowledgement_sha256[stage],
+        false,
+      )
     )
+  }
+  loki_active_acknowledgement_stage = (
+    var.loki_access_phase == "auth-enforced-validation" ? "pretransition" :
+    var.loki_access_phase == "enforced-dual-read" ? "posttransition" : null
+  )
+  loki_active_acknowledgement = (
+    local.loki_active_acknowledgement_stage == null ? null :
+    try(var.loki_migration_acknowledgements[local.loki_active_acknowledgement_stage], null)
+  )
+  loki_active_acknowledgement_source_accepted = (
+    local.loki_active_acknowledgement_stage != null &&
+    try(local.loki_migration_acknowledgement_source_accepted[local.loki_active_acknowledgement_stage], false)
   )
 
   # SAI-03 admission/label custody remains independently NO-GO. Do not replace
@@ -94,23 +100,276 @@ locals {
   )
 }
 
-# This object is created only by the later independent verifier after its
-# marker-only writer and reader checks. It must be immutable. Binding its
-# API-assigned resourceVersion and exact canonical JSON into the source-pinned
-# acknowledgement prevents a caller from fabricating desired configuration or
-# replacing the acknowledged proof object before auth enforcement.
-data "kubernetes_resource" "loki_deployed_client_acknowledgement" {
-  count = (
-    local.accepted_loki_deployed_client_acknowledgement_sha256 != null &&
-    var.loki_deployed_client_acknowledgement != null
-  ) ? 1 : 0
+# Non-secret current-state marker. It exposes only release names/revisions and
+# is rewritten after a successful Helm change, avoiding reads of Helm Secrets.
+resource "kubernetes_config_map_v1" "loki_release_freshness" {
+  metadata {
+    name      = "fs2-loki-foundation-freshness"
+    namespace = kubernetes_namespace_v1.platform["fs2-observability"].metadata[0].name
+    labels    = local.common_labels
+  }
 
+  data = {
+    "revisions.json" = jsonencode({
+      schema = "fs2-serve.nebius.ai/loki-foundation-freshness/v1"
+      target = {
+        run_id          = var.run_id
+        cluster_id      = var.cluster_id
+        kube_system_uid = var.kube_system_uid
+      }
+      revisions = {
+        loki_helm         = helm_release.loki.metadata.revision
+        otel_gateway_helm = helm_release.otel_gateway.metadata.revision
+        grafana_helm      = helm_release.monitoring.metadata.revision
+      }
+    })
+  }
+}
+
+# Independent verifiers create immutable stage envelopes only after marker
+# checks. Current deployment reads below are instantiated only when a later
+# reviewed source pins the exact full-envelope SHA-256.
+data "kubernetes_resource" "loki_migration_acknowledgement" {
+  for_each = {
+    for stage, acknowledgement in var.loki_migration_acknowledgements :
+    stage => acknowledgement
+    if local.loki_migration_acknowledgement_source_accepted[stage]
+  }
   api_version = "v1"
   kind        = "ConfigMap"
   metadata {
-    name      = var.loki_deployed_client_acknowledgement.binding.config_map_name
-    namespace = var.loki_deployed_client_acknowledgement.binding.namespace
+    name      = each.value.binding.config_map_name
+    namespace = each.value.binding.namespace
   }
+}
+
+data "kubernetes_resource" "loki_payload_safety_inventory" {
+  for_each = {
+    for stage, acknowledgement in var.loki_migration_acknowledgements :
+    stage => acknowledgement
+    if local.loki_migration_acknowledgement_source_accepted[stage]
+  }
+  api_version = "v1"
+  kind        = "ConfigMap"
+  metadata {
+    name      = each.value.payload_safety_inventory.name
+    namespace = each.value.payload_safety_inventory.namespace
+  }
+}
+
+data "kubernetes_resource" "loki_current_control_plane" {
+  for_each    = local.loki_active_acknowledgement_source_accepted ? { active = local.loki_active_acknowledgement } : {}
+  api_version = "apps/v1"
+  kind        = "Deployment"
+  metadata {
+    name      = "fs2-serve-control-plane"
+    namespace = "fs2-system"
+  }
+}
+
+data "kubernetes_resource" "loki_current_otel_gateway" {
+  for_each    = local.loki_active_acknowledgement_source_accepted ? { active = local.loki_active_acknowledgement } : {}
+  api_version = "apps/v1"
+  kind        = "Deployment"
+  metadata {
+    name      = "fs2-otel-gateway"
+    namespace = "fs2-observability"
+  }
+}
+
+data "kubernetes_resource" "loki_current_grafana" {
+  for_each    = local.loki_active_acknowledgement_source_accepted ? { active = local.loki_active_acknowledgement } : {}
+  api_version = "apps/v1"
+  kind        = "Deployment"
+  metadata {
+    name      = "fs2-${var.run_id}-monitoring-grafana"
+    namespace = "fs2-observability"
+  }
+}
+
+data "kubernetes_resource" "loki_current_loki" {
+  for_each    = local.loki_active_acknowledgement_source_accepted ? { active = local.loki_active_acknowledgement } : {}
+  api_version = "apps/v1"
+  kind        = "StatefulSet"
+  metadata {
+    name      = "fs2-loki"
+    namespace = "fs2-observability"
+  }
+}
+
+data "kubernetes_resource" "loki_current_foundation_freshness" {
+  for_each    = local.loki_active_acknowledgement_source_accepted ? { active = local.loki_active_acknowledgement } : {}
+  api_version = "v1"
+  kind        = "ConfigMap"
+  metadata {
+    name      = "fs2-loki-foundation-freshness"
+    namespace = "fs2-observability"
+  }
+}
+
+data "kubernetes_resource" "loki_current_workloads_freshness" {
+  for_each    = local.loki_active_acknowledgement_source_accepted ? { active = local.loki_active_acknowledgement } : {}
+  api_version = "v1"
+  kind        = "ConfigMap"
+  metadata {
+    name      = "fs2-loki-workloads-freshness"
+    namespace = "fs2-system"
+  }
+}
+
+locals {
+  loki_migration_acknowledgement_bound = {
+    for stage, acknowledgement in var.loki_migration_acknowledgements : stage => (
+      local.loki_migration_acknowledgement_source_accepted[stage] &&
+      try(
+        acknowledgement.target.run_id == var.run_id &&
+        acknowledgement.target.cluster_id == var.cluster_id &&
+        acknowledgement.target.kube_system_uid == var.kube_system_uid &&
+        acknowledgement.binding.record_sha256 == sha256(local.loki_migration_acknowledgement_record_json[stage]) &&
+        acknowledgement.binding.config_map_name == "fs2-loki-${stage}-ack-${substr(acknowledgement.binding.record_sha256, 0, 12)}" &&
+        data.kubernetes_resource.loki_migration_acknowledgement[stage].object.immutable == true &&
+        data.kubernetes_resource.loki_migration_acknowledgement[stage].object.metadata.uid == acknowledgement.binding.uid &&
+        data.kubernetes_resource.loki_migration_acknowledgement[stage].object.metadata.resourceVersion == acknowledgement.binding.resource_version &&
+        data.kubernetes_resource.loki_migration_acknowledgement[stage].object.data["acknowledgement.json"] == local.loki_migration_acknowledgement_record_json[stage],
+        false,
+      )
+    )
+  }
+  loki_migration_proof_semantics_valid = {
+    pretransition = try(
+      !var.loki_migration_acknowledgements.pretransition.proof.auth_enabled &&
+      var.loki_migration_acknowledgements.pretransition.proof.writer_identity == "fs2-otel-gateway" &&
+      var.loki_migration_acknowledgements.pretransition.proof.writer_scoped_header_configured &&
+      var.loki_migration_acknowledgements.pretransition.proof.writer_marker_ingested &&
+      var.loki_migration_acknowledgements.pretransition.proof.marker_storage_tenant == local.loki_legacy_tenant_id &&
+      var.loki_migration_acknowledgements.pretransition.proof.grafana_legacy_read &&
+      !var.loki_migration_acknowledgements.pretransition.proof.grafana_scoped_read &&
+      var.loki_migration_acknowledgements.pretransition.proof.control_plane_legacy_read &&
+      !var.loki_migration_acknowledgements.pretransition.proof.control_plane_scoped_read,
+      false,
+    )
+    posttransition = try(
+      var.loki_migration_acknowledgements.posttransition.proof.auth_enabled &&
+      var.loki_migration_acknowledgements.posttransition.proof.writer_identity == "fs2-otel-gateway" &&
+      var.loki_migration_acknowledgements.posttransition.proof.writer_scoped_header_configured &&
+      var.loki_migration_acknowledgements.posttransition.proof.writer_marker_ingested &&
+      var.loki_migration_acknowledgements.posttransition.proof.marker_storage_tenant == local.loki_write_tenant_id &&
+      var.loki_migration_acknowledgements.posttransition.proof.grafana_legacy_read &&
+      var.loki_migration_acknowledgements.posttransition.proof.grafana_scoped_read &&
+      var.loki_migration_acknowledgements.posttransition.proof.control_plane_legacy_read &&
+      var.loki_migration_acknowledgements.posttransition.proof.control_plane_scoped_read,
+      false,
+    )
+  }
+  loki_current_deployment_fingerprints = {
+    control_plane = try({
+      uid                     = data.kubernetes_resource.loki_current_control_plane["active"].object.metadata.uid
+      generation              = data.kubernetes_resource.loki_current_control_plane["active"].object.metadata.generation
+      resource_version        = data.kubernetes_resource.loki_current_control_plane["active"].object.metadata.resourceVersion
+      pod_template_sha256     = sha256(jsonencode(data.kubernetes_resource.loki_current_control_plane["active"].object.spec.template))
+      container_images_sha256 = sha256(jsonencode({
+        for container in data.kubernetes_resource.loki_current_control_plane["active"].object.spec.template.spec.containers :
+        container.name => container.image
+      }))
+    }, null)
+    otel_gateway = try({
+      uid                     = data.kubernetes_resource.loki_current_otel_gateway["active"].object.metadata.uid
+      generation              = data.kubernetes_resource.loki_current_otel_gateway["active"].object.metadata.generation
+      resource_version        = data.kubernetes_resource.loki_current_otel_gateway["active"].object.metadata.resourceVersion
+      pod_template_sha256     = sha256(jsonencode(data.kubernetes_resource.loki_current_otel_gateway["active"].object.spec.template))
+      container_images_sha256 = sha256(jsonencode({
+        for container in data.kubernetes_resource.loki_current_otel_gateway["active"].object.spec.template.spec.containers :
+        container.name => container.image
+      }))
+    }, null)
+    grafana = try({
+      uid                     = data.kubernetes_resource.loki_current_grafana["active"].object.metadata.uid
+      generation              = data.kubernetes_resource.loki_current_grafana["active"].object.metadata.generation
+      resource_version        = data.kubernetes_resource.loki_current_grafana["active"].object.metadata.resourceVersion
+      pod_template_sha256     = sha256(jsonencode(data.kubernetes_resource.loki_current_grafana["active"].object.spec.template))
+      container_images_sha256 = sha256(jsonencode({
+        for container in data.kubernetes_resource.loki_current_grafana["active"].object.spec.template.spec.containers :
+        container.name => container.image
+      }))
+    }, null)
+    loki = try({
+      uid                     = data.kubernetes_resource.loki_current_loki["active"].object.metadata.uid
+      generation              = data.kubernetes_resource.loki_current_loki["active"].object.metadata.generation
+      resource_version        = data.kubernetes_resource.loki_current_loki["active"].object.metadata.resourceVersion
+      pod_template_sha256     = sha256(jsonencode(data.kubernetes_resource.loki_current_loki["active"].object.spec.template))
+      container_images_sha256 = sha256(jsonencode({
+        for container in data.kubernetes_resource.loki_current_loki["active"].object.spec.template.spec.containers :
+        container.name => container.image
+      }))
+    }, null)
+  }
+  loki_active_foundation_revisions = local.loki_active_acknowledgement == null ? {} : {
+    loki_helm         = local.loki_active_acknowledgement.revisions.loki_helm
+    otel_gateway_helm = local.loki_active_acknowledgement.revisions.otel_gateway_helm
+    grafana_helm      = local.loki_active_acknowledgement.revisions.grafana_helm
+  }
+  loki_active_foundation_freshness = {
+    schema = "fs2-serve.nebius.ai/loki-foundation-freshness/v1"
+    target = {
+      run_id          = var.run_id
+      cluster_id      = var.cluster_id
+      kube_system_uid = var.kube_system_uid
+    }
+    revisions = local.loki_active_foundation_revisions
+  }
+  loki_active_deployment_state_current = try(
+    alltrue([
+      for name, fingerprint in local.loki_active_acknowledgement.deployments :
+      local.loki_current_deployment_fingerprints[name] == fingerprint
+    ]) &&
+    data.kubernetes_resource.loki_current_foundation_freshness["active"].object.metadata.uid == local.loki_active_acknowledgement.freshness_markers.foundation.uid &&
+    data.kubernetes_resource.loki_current_foundation_freshness["active"].object.metadata.resourceVersion == local.loki_active_acknowledgement.freshness_markers.foundation.resource_version &&
+    sha256(data.kubernetes_resource.loki_current_foundation_freshness["active"].object.data["revisions.json"]) == local.loki_active_acknowledgement.freshness_markers.foundation.content_sha256 &&
+    jsondecode(data.kubernetes_resource.loki_current_foundation_freshness["active"].object.data["revisions.json"]) == local.loki_active_foundation_freshness &&
+    data.kubernetes_resource.loki_current_workloads_freshness["active"].object.metadata.uid == local.loki_active_acknowledgement.freshness_markers.workloads.uid &&
+    data.kubernetes_resource.loki_current_workloads_freshness["active"].object.metadata.resourceVersion == local.loki_active_acknowledgement.freshness_markers.workloads.resource_version &&
+    sha256(data.kubernetes_resource.loki_current_workloads_freshness["active"].object.data["client.json"]) == local.loki_active_acknowledgement.freshness_markers.workloads.content_sha256 &&
+    jsondecode(data.kubernetes_resource.loki_current_workloads_freshness["active"].object.data["client.json"]).schema == "fs2-serve.nebius.ai/loki-workloads-freshness/v1" &&
+    jsondecode(data.kubernetes_resource.loki_current_workloads_freshness["active"].object.data["client.json"]).target.run_id == var.run_id &&
+    jsondecode(data.kubernetes_resource.loki_current_workloads_freshness["active"].object.data["client.json"]).target.cluster_id == var.cluster_id &&
+    jsondecode(data.kubernetes_resource.loki_current_workloads_freshness["active"].object.data["client.json"]).target.kube_system_uid == var.kube_system_uid &&
+    jsondecode(data.kubernetes_resource.loki_current_workloads_freshness["active"].object.data["client.json"]).control_plane_helm == local.loki_active_acknowledgement.revisions.control_plane_helm &&
+    contains(
+      [
+        for container in data.kubernetes_resource.loki_current_control_plane["active"].object.spec.template.spec.containers :
+        container.image
+      ],
+      jsondecode(data.kubernetes_resource.loki_current_workloads_freshness["active"].object.data["client.json"]).control_plane_image,
+    ) &&
+    jsondecode(data.kubernetes_resource.loki_current_workloads_freshness["active"].object.data["client.json"]).grafana_datasource.uid == local.loki_active_acknowledgement.grafana_datasource.uid &&
+    jsondecode(data.kubernetes_resource.loki_current_workloads_freshness["active"].object.data["client.json"]).grafana_datasource.resource_version == local.loki_active_acknowledgement.grafana_datasource.resource_version &&
+    jsonencode(jsondecode(data.kubernetes_resource.loki_current_workloads_freshness["active"].object.data["client.json"]).payload_safety_inventory) == jsonencode(local.loki_active_acknowledgement.payload_safety_inventory) &&
+    data.kubernetes_resource.loki_payload_safety_inventory[local.loki_active_acknowledgement_stage].object.immutable == true &&
+    data.kubernetes_resource.loki_payload_safety_inventory[local.loki_active_acknowledgement_stage].object.metadata.uid == local.loki_active_acknowledgement.payload_safety_inventory.uid &&
+    data.kubernetes_resource.loki_payload_safety_inventory[local.loki_active_acknowledgement_stage].object.metadata.resourceVersion == local.loki_active_acknowledgement.payload_safety_inventory.resource_version &&
+    local.loki_active_acknowledgement.payload_safety_inventory.name == "fs2-runtime-log-safety-${substr(local.loki_active_acknowledgement.payload_safety_inventory.inventory_sha256, 0, 12)}" &&
+    sha256(data.kubernetes_resource.loki_payload_safety_inventory[local.loki_active_acknowledgement_stage].object.data["inventory.json"]) == local.loki_active_acknowledgement.payload_safety_inventory.inventory_sha256 &&
+    length(jsondecode(data.kubernetes_resource.loki_payload_safety_inventory[local.loki_active_acknowledgement_stage].object.data["inventory.json"]).images) == local.loki_active_acknowledgement.payload_safety_inventory.image_count &&
+    jsondecode(data.kubernetes_resource.loki_payload_safety_inventory[local.loki_active_acknowledgement_stage].object.data["inventory.json"]).target.run_id == var.run_id &&
+    jsondecode(data.kubernetes_resource.loki_payload_safety_inventory[local.loki_active_acknowledgement_stage].object.data["inventory.json"]).target.cluster_id == var.cluster_id &&
+    jsondecode(data.kubernetes_resource.loki_payload_safety_inventory[local.loki_active_acknowledgement_stage].object.data["inventory.json"]).target.kube_system_uid == var.kube_system_uid &&
+    timecmp(plantimestamp(), local.loki_active_acknowledgement.proof.observed_at) >= 0 &&
+    timecmp(local.loki_active_acknowledgement.proof.valid_until, plantimestamp()) > 0,
+    false,
+  )
+  loki_active_migration_acknowledgement_ready = (
+    local.loki_active_acknowledgement_stage != null &&
+    try(local.loki_migration_acknowledgement_bound[local.loki_active_acknowledgement_stage], false) &&
+    try(local.loki_migration_proof_semantics_valid[local.loki_active_acknowledgement_stage], false) &&
+    local.loki_active_deployment_state_current
+  )
+  loki_migration_authorized = (
+    !local.loki_auth_enforced || local.loki_active_migration_acknowledgement_ready
+  )
+  loki_active_migration_acknowledgement_sha256 = (
+    local.loki_active_acknowledgement_stage == null ? null :
+    try(local.loki_migration_acknowledgement_sha256[local.loki_active_acknowledgement_stage], null)
+  )
 }
 
 # Loki's tenant header is meaningful only behind a network identity boundary.
@@ -138,7 +397,8 @@ resource "kubernetes_network_policy_v1" "loki_ingress" {
       from {
         pod_selector {
           match_labels = {
-            "app.kubernetes.io/name" = "grafana"
+            "app.kubernetes.io/instance" = "fs2-${var.run_id}-monitoring"
+            "app.kubernetes.io/name"     = "grafana"
           }
         }
       }
@@ -189,7 +449,8 @@ resource "kubernetes_network_policy_v1" "loki_ingress" {
       from {
         pod_selector {
           match_labels = {
-            "app.kubernetes.io/name" = "prometheus"
+            "app.kubernetes.io/instance" = "fs2-${var.run_id}-monitoring-prometheus"
+            "app.kubernetes.io/name"     = "prometheus"
           }
         }
       }
@@ -378,11 +639,13 @@ output "observability_operator_contract" {
       ingress_policy_name                   = kubernetes_network_policy_v1.loki_ingress.metadata[0].name
       identity_custody_ready                = local.loki_identity_custody_ready
       prometheus_health_exception_ready     = local.loki_prometheus_health_exception_ready
-      deployed_client_acknowledgement_ready = local.loki_deployed_clients_ready
-      enforcement_authorized                = local.loki_identity_custody_ready && local.loki_prometheus_health_exception_ready && local.loki_deployed_clients_ready
+      active_acknowledgement_stage          = local.loki_active_acknowledgement_stage
+      active_acknowledgement_ready          = local.loki_active_migration_acknowledgement_ready
+      current_deployment_state_matches      = local.loki_active_deployment_state_current
+      enforcement_authorized                = local.loki_identity_custody_ready && local.loki_prometheus_health_exception_ready && local.loki_migration_authorized
       expected_client_configuration_claim   = local.expected_loki_client_configuration_claim
       caller_reproducible_receipts_accepted = false
-      transition_order                      = ["network-policy-auth-off", "scoped-writer-and-dual-read-clients", "auth-enforced-dual-read"]
+      transition_order                      = ["network-policy-auth-off", "header-capable-clients-and-legacy-proof", "auth-enforced-validation", "post-auth-scoped-proof-and-enforced-dual-read"]
     }
     raw_backends_public = false
     operator_surface    = "grafana-native-auth"

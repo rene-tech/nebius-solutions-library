@@ -250,7 +250,7 @@ resource "helm_release" "control_plane" {
         local.observability_operator.tempo.enabled &&
         local.observability_operator.tempo.service_port == 3200 &&
         length(local.observability_operator.tempo.grafana_datasource_uid) > 0 &&
-        contains(["network-bound", "enforced-dual-read"], local.observability_operator.loki.access_phase) &&
+        contains(["network-bound", "auth-enforced-validation", "enforced-dual-read"], local.observability_operator.loki.access_phase) &&
         local.observability_operator.loki.service_name == "fs2-loki" &&
         local.observability_operator.loki.service_port == 3100 &&
         local.observability_operator.loki.legacy_tenant_id == "fake" &&
@@ -270,6 +270,14 @@ resource "helm_release" "control_plane" {
         local.observability_operator.operator_surface == "grafana-native-auth"
       )
       error_message = "The foundation observability handoff must retain private raw backends, bounded Loki legacy/scoped dual-read, and the reviewed Grafana-native Alertmanager/Tempo operator surface."
+    }
+
+    precondition {
+      condition = (
+        !local.observability_operator.loki.auth_enabled ||
+        local.runtime_log_payload_safety_ready
+      )
+      error_message = "Auth-enabled Loki requires the source-pinned exact-image runtime log payload-safety inventory; documentation or a single acknowledgement boolean is insufficient."
     }
 
     precondition {

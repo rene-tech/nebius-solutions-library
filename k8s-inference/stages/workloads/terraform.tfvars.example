@@ -34,6 +34,18 @@ hot_model_ids      = []
 # keda_polling_interval_seconds      = 5
 # keda_cooldown_period_seconds       = 300
 
+# SAI-22 auth migration requires a source-pinned evidence object covering the
+# exact digest-qualified control-plane, selected model, and enabled scientific
+# runtime image inventory. Populate only from independently sealed synthetic-
+# marker tests; never place raw runtime logs or customer payloads here.
+# runtime_log_payload_safety_evidence = {
+#   schema        = "fs2-serve.nebius.ai/runtime-log-payload-safety/v1"
+#   source_commit = "<40 lowercase hex>"
+#   source_tree   = "<40 lowercase hex>"
+#   reviewed_at   = "<UTC RFC3339>"
+#   images        = { ...one exact entry per generated image-reference SHA-256... }
+# }
+
 # Generated from deployment.scheduling by the root workflow. The stable
 # inference-accelerators/inference-models identities remain present even when
 # additional customer/model lanes are configured. Physical accelerator quota

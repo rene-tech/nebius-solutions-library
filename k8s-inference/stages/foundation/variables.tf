@@ -229,29 +229,29 @@ variable "bootstrap_grafana_credentials" {
 }
 
 variable "loki_access_phase" {
-  description = "Serialized SAI-22 transition phase. Start network-bound with auth off; use enforced-dual-read only after accepted identity custody, Prometheus exception, and authoritative deployed-client acknowledgement gates pass."
+  description = "Serialized SAI-22 transition phase: auth-off network-bound readiness, auth-on validation, then independently proven enforced dual-read."
   type        = string
   default     = "network-bound"
 
   validation {
-    condition     = contains(["network-bound", "enforced-dual-read"], var.loki_access_phase)
-    error_message = "loki_access_phase must be network-bound or enforced-dual-read."
+    condition     = contains(["network-bound", "auth-enforced-validation", "enforced-dual-read"], var.loki_access_phase)
+    error_message = "loki_access_phase must be network-bound, auth-enforced-validation, or enforced-dual-read."
   }
 }
 
 variable "loki_rollback_floor" {
-  description = "Lowest safe Loki phase for this data cohort. Raise to enforced-dual-read in the same reviewed change that enables auth; never lower it while fs2-platform data may remain."
+  description = "Lowest safe Loki phase for this data cohort. Raise to auth-enforced-validation with the first auth-on write, then to enforced-dual-read only after scoped proof."
   type        = string
   default     = "network-bound"
 
   validation {
-    condition     = contains(["network-bound", "enforced-dual-read"], var.loki_rollback_floor)
-    error_message = "loki_rollback_floor must be network-bound or enforced-dual-read."
+    condition     = contains(["network-bound", "auth-enforced-validation", "enforced-dual-read"], var.loki_rollback_floor)
+    error_message = "loki_rollback_floor must be network-bound, auth-enforced-validation, or enforced-dual-read."
   }
 }
 
 variable "loki_client_compatibility_receipt" {
-  description = "Deprecated caller-reproducible phase-2 configuration claim. It is not deployment evidence and must remain null; use the source-pinned deployed-client acknowledgement gate."
+  description = "Deprecated caller-reproducible configuration claim. It is not deployment evidence and must remain null; use staged source-pinned migration acknowledgements."
   type        = string
   default     = null
   nullable    = true
@@ -263,82 +263,14 @@ variable "loki_client_compatibility_receipt" {
 }
 
 variable "loki_deployed_client_acknowledgement" {
-  description = "Target-bound independent acknowledgement of exact deployed writer/readers and sealed marker-only ingestion/read proof. Its digest is unusable until an accepted value is pinned in source."
-  type = object({
-    schema = string
-    binding = object({
-      namespace        = string
-      config_map_name  = string
-      uid               = string
-      resource_version = string
-      record_sha256    = string
-    })
-    target = object({
-      run_id          = string
-      cluster_id      = string
-      kube_system_uid = string
-    })
-    source = object({
-      commit                     = string
-      tree                       = string
-      control_plane_image_digest = string
-    })
-    revisions = object({
-      otel_gateway_helm                    = number
-      control_plane_helm                   = number
-      grafana_helm                         = number
-      grafana_datasource_resource_version = string
-    })
-    proof = object({
-      observed_at                  = string
-      sealed_evidence_sha256       = string
-      scoped_marker_sha256         = string
-      scoped_writer_ingested       = bool
-      grafana_legacy_read          = bool
-      grafana_scoped_read          = bool
-      control_plane_legacy_read    = bool
-      control_plane_scoped_read    = bool
-      no_customer_payload_recorded = bool
-    })
-  })
+  description = "Deprecated deadlocking acknowledgement shape. It cannot distinguish auth-off readiness from post-auth scoped proof and must remain null."
+  type     = any
   default  = null
   nullable = true
 
   validation {
-    condition = var.loki_deployed_client_acknowledgement == null || try(
-      var.loki_deployed_client_acknowledgement.schema == "fs2-serve.nebius.ai/loki-deployed-client-acknowledgement/v1" &&
-      var.loki_deployed_client_acknowledgement.binding.namespace == "fs2-observability" &&
-      can(regex("^fs2-loki-deployed-client-ack-[0-9a-f]{12}$", var.loki_deployed_client_acknowledgement.binding.config_map_name)) &&
-      can(regex("^[0-9a-fA-F-]{20,}$", var.loki_deployed_client_acknowledgement.binding.uid)) &&
-      length(trimspace(var.loki_deployed_client_acknowledgement.binding.resource_version)) >= 1 &&
-      length(var.loki_deployed_client_acknowledgement.binding.resource_version) <= 128 &&
-      can(regex("^[0-9a-f]{64}$", var.loki_deployed_client_acknowledgement.binding.record_sha256)) &&
-      can(regex("^[a-z][a-z0-9]{5,11}$", var.loki_deployed_client_acknowledgement.target.run_id)) &&
-      can(regex("^mk8scluster-[a-z0-9]+$", var.loki_deployed_client_acknowledgement.target.cluster_id)) &&
-      can(regex("^[0-9a-fA-F-]{20,}$", var.loki_deployed_client_acknowledgement.target.kube_system_uid)) &&
-      can(regex("^[0-9a-f]{40}$", var.loki_deployed_client_acknowledgement.source.commit)) &&
-      can(regex("^[0-9a-f]{40}$", var.loki_deployed_client_acknowledgement.source.tree)) &&
-      can(regex("^sha256:[0-9a-f]{64}$", var.loki_deployed_client_acknowledgement.source.control_plane_image_digest)) &&
-      floor(var.loki_deployed_client_acknowledgement.revisions.otel_gateway_helm) == var.loki_deployed_client_acknowledgement.revisions.otel_gateway_helm &&
-      var.loki_deployed_client_acknowledgement.revisions.otel_gateway_helm >= 1 &&
-      floor(var.loki_deployed_client_acknowledgement.revisions.control_plane_helm) == var.loki_deployed_client_acknowledgement.revisions.control_plane_helm &&
-      var.loki_deployed_client_acknowledgement.revisions.control_plane_helm >= 1 &&
-      floor(var.loki_deployed_client_acknowledgement.revisions.grafana_helm) == var.loki_deployed_client_acknowledgement.revisions.grafana_helm &&
-      var.loki_deployed_client_acknowledgement.revisions.grafana_helm >= 1 &&
-      length(trimspace(var.loki_deployed_client_acknowledgement.revisions.grafana_datasource_resource_version)) >= 1 &&
-      length(var.loki_deployed_client_acknowledgement.revisions.grafana_datasource_resource_version) <= 128 &&
-      can(regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$", var.loki_deployed_client_acknowledgement.proof.observed_at)) &&
-      can(regex("^[0-9a-f]{64}$", var.loki_deployed_client_acknowledgement.proof.sealed_evidence_sha256)) &&
-      can(regex("^[0-9a-f]{64}$", var.loki_deployed_client_acknowledgement.proof.scoped_marker_sha256)) &&
-      var.loki_deployed_client_acknowledgement.proof.scoped_writer_ingested &&
-      var.loki_deployed_client_acknowledgement.proof.grafana_legacy_read &&
-      var.loki_deployed_client_acknowledgement.proof.grafana_scoped_read &&
-      var.loki_deployed_client_acknowledgement.proof.control_plane_legacy_read &&
-      var.loki_deployed_client_acknowledgement.proof.control_plane_scoped_read &&
-      var.loki_deployed_client_acknowledgement.proof.no_customer_payload_recorded,
-      false,
-    )
-    error_message = "loki_deployed_client_acknowledgement must bind the exact target, source/tree/image, positive deployed revisions, datasource resourceVersion, sealed marker-only evidence, and successful scoped ingest plus legacy/scoped reads through Grafana and the control plane."
+    condition     = var.loki_deployed_client_acknowledgement == null
+    error_message = "loki_deployed_client_acknowledgement is deprecated because auth-off Loki cannot produce scoped proof; use staged loki_migration_acknowledgements."
   }
 }
 

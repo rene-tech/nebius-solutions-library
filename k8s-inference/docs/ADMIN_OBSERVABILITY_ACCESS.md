@@ -14,12 +14,13 @@ global `OPERATOR` or `ADMIN` principal and records the distinct
 `app.logs.read` authorization action. A tenant-scoped principal cannot use the
 global observability routes.
 
-Loki migration is a serialized two-state protocol, not a one-apply flag flip.
+Loki migration is a serialized three-state protocol, not a one-apply flag flip.
 Retained data written while Loki authentication was disabled belongs to Loki's
 implicit `fake` tenant. New OTel writes use the distinct `fs2-platform` tenant.
 During migration, Grafana and the control plane send the exact bounded
 multi-tenant read header `fake|fs2-platform`; Loki enables
-`multi_tenant_queries_enabled`. No caller can add a third tenant. The legacy
+the official `querier.multi_tenant_queries_enabled` setting. No caller can add
+a third tenant. The legacy
 read cohort must remain for at least 168 hours after auth enforcement, matching
 the configured retention period and maximum lookback. Removing `fake` requires
 a later reviewed source change and evidence that the entire legacy TTL has
@@ -28,31 +29,39 @@ elapsed.
 The transition order is executable in Terraform and must not be collapsed:
 
 1. apply the Loki ingress policy while `loki_access_phase = "network-bound"`
-   keeps Loki auth disabled, then update the OTel gateway to write with
-   `X-Scope-OrgID: fs2-platform`;
-2. apply workloads so the control-plane and Grafana readers use
-   `fake|fs2-platform`. The resulting `loki_client_configuration_claim` is
-   diagnostic only and cannot authorize auth;
-3. an independent verifier must bind the exact cluster/run, deployed source
-   commit and tree, immutable control-plane image, OTel/control-plane/Grafana
-   Helm revisions, Grafana datasource resourceVersion, and sealed marker-only
-   proof that scoped writes were ingested and both the legacy and scoped
-   cohorts were read through Grafana and the control plane. No customer
-   payload may enter that evidence. The verifier writes the canonical record
-   to an immutable `fs2-observability` ConfigMap whose name includes the first
-   12 hex characters of the record digest;
-4. a later reviewed source successor pins the acknowledgement's SHA-256. Only
-   that exact target-bound record, immutable ConfigMap, API-assigned
-   UID/`resourceVersion`, digest-derived name, and byte-identical
-   `acknowledgement.json` may be passed to foundation while both
-   `loki_access_phase` and `loki_rollback_floor` advance to
-   `"enforced-dual-read"`.
+   keeps Loki auth disabled, then update the OTel gateway to send
+   `X-Scope-OrgID: fs2-platform` and apply the bounded readers;
+2. while auth is still disabled, collect a **pretransition** marker record.
+   Loki necessarily stores that marker under `fake`; the record proves the
+   scoped header is configured and both readers can still read the legacy
+   cohort. It must not claim that `fs2-platform` was ingested or read;
+3. after independent acceptance pins that pretransition envelope, advance
+   both phase and rollback floor to `"auth-enforced-validation"`. This is the
+   first auth-on apply. The rollback sentinel now forbids any return to an
+   auth-off release, while readers continue using `fake|fs2-platform`;
+4. only after auth is on can an independent verifier create a
+   **posttransition** record proving a new marker was stored under
+   `fs2-platform` and both legacy and scoped cohorts were read through Grafana
+   and the control plane. A later source successor pins that separate envelope
+   before phase and floor advance to `"enforced-dual-read"`.
+
+Each stage envelope binds the exact cluster/run, deployed source commit/tree,
+Loki/OTel/control-plane/Grafana Helm revisions, current Pod-template and image
+fingerprints, Grafana datasource UID/resourceVersion, and sealed marker-only
+proof. It is stored in a digest-named immutable ConfigMap. An immutable record
+is historical evidence, not perpetual authority: every auth-on plan re-reads
+the current deployments and two non-secret, target-bound revision/datasource
+freshness ConfigMaps, then compares their UID, `resourceVersion`, and exact
+content digest along with the evidence inventory and acknowledgement custody.
+It never reads Helm release or datasource Secrets for this check, and rejects
+drift, replacement, or an expired `valid_until`.
 
 The old `loki_client_compatibility_receipt` is a SHA-256 of public constants.
 It remains only as a deprecated workloads diagnostic, is rejected as a
 foundation input, and is not part of any enforcement predicate.
 
-The policy admits port 3100 only from Grafana, the OTel gateway, the exact
+The policy admits port 3100 only from exact run-scoped Grafana and Prometheus
+release identities, the OTel gateway, the exact
 rendered control-plane identity (`fs2-system`, name and instance
 `fs2-serve-control-plane`, component `gateway`), and the Prometheus health
 scraper, plus Loki self-traffic. Scientific and model-runtime namespaces are
@@ -81,10 +90,15 @@ caller-selected destination.
 
 The source tree does not log inference request or response bodies in the
 first-party control-plane access path. That does not establish the behavior of
-every third-party model-runtime image. Promotion therefore remains gated on a
-private, exact-image review and payload-marker negative test for every runtime
-image in the release. The test must record only the marker's absence and must
-not copy customer data or raw runtime logs into evidence.
+every third-party model-runtime image. Terraform therefore derives the exact
+digest-qualified control-plane, selected model, and enabled scientific-stage
+runtime-image inventory. A source-pinned evidence digest must cover exactly
+that key set, with per-image normal, streaming, error, response, and startup
+synthetic-marker negative results. Only then may Terraform create the
+immutable inventory ConfigMap that a migration acknowledgement must bind by
+digest, UID, resourceVersion, content, and image count. Documentation or one
+acknowledgement boolean cannot satisfy this gate. Evidence records marker
+absence only and must never contain customer payloads or raw runtime logs.
 
 ## Terraform configuration
 
@@ -114,10 +128,13 @@ deployment = {
 
 # SAI-22 starts in the auth-off preparation phase. These values cannot advance
 # until source-pinned SAI-03 custody and Prometheus-exception dependencies are
-# accepted and an independent target-bound deployed-client record is sealed.
+# accepted and an independent pretransition record is sealed.
 loki_access_phase    = "network-bound"
 loki_rollback_floor  = "network-bound"
-# loki_deployed_client_acknowledgement     = { ...exact accepted record... }
+# loki_migration_acknowledgements = {
+#   pretransition  = { ...auth-off legacy-read record... }
+#   posttransition = { ...auth-on scoped-read record... }
+# }
 # loki_identity_custody_receipt            = "<source-pinned SAI-03 receipt>"
 # loki_prometheus_health_exception_receipt = "<source-pinned exception receipt>"
 ```
@@ -171,7 +188,8 @@ The SAI-22 source candidate authors regressions for all of these contracts, but
 the coordinator's static-source boundary for its authoring task prohibited
 executing tests, Helm/Terraform commands, scanners, builds, live probes, or
 deployment. SAI-03 custody, the Prometheus health exception or its mediated
-replacement, and authoritative deployed-client proof are also unresolved. A
+replacement, exact-image payload-safety inventory, and both stage-specific
+migration acknowledgements are also unresolved. A
 later authorized integration review must first accept and pin those
 dependencies, then execute the checks below from the exact candidate
 descendant before any rollout.
@@ -202,12 +220,15 @@ ServiceMonitor scrapes the named `metrics` port; a model/scientific workload
 receives a network denial when connecting to Loki port 3100; Grafana, the OTel
 gateway, the control plane, and Prometheus retain their required Loki flows;
 and a model workload cannot retrieve tenant-labelled samples from either
-control-plane port. Confirm that the control-plane Pod's exact rendered labels
-match the Loki ingress peer. Before auth enforcement, use only non-sensitive
-random markers to prove the scoped OTel write and legacy/scoped reads through
-both Grafana and the control plane; seal the exact target, source/tree, image,
-release revisions, datasource resourceVersion, time, and evidence digest. Run
-the exact-image payload-marker negative test without displaying or retaining
+control-plane port. Confirm that exact run-scoped Grafana, Prometheus, OTel,
+and control-plane Pod labels match their Loki ingress peers. Before auth
+enforcement, use only a non-sensitive random marker to prove the header-capable
+writer and legacy reads; because auth is off, require storage under `fake` and
+reject any scoped ingestion/read claim. After the first auth-on apply, use a
+different marker to prove `fs2-platform` ingestion and both legacy/scoped
+reads. Seal the exact target, source/tree, current object fingerprints, release
+revisions, datasource identity, validity window, and evidence digest. Run every
+exact-image payload-marker negative test without displaying or retaining
 payloads.
 
 Alertmanager-only rollback is a reviewed Terraform change that restores the
@@ -220,10 +241,15 @@ For an SAI-22 rollout, capture the prior control-plane image digest and Helm
 revision first. Before auth enforcement, rollback may return to the exact
 auth-off `network-bound` cohort while retaining the policy and scoped writer.
 Auth enforcement begins `fs2-platform` data, so the same change must raise
-`loki_rollback_floor` to `enforced-dual-read`. After that point, rollback may
+`loki_rollback_floor` to `auth-enforced-validation`. A later independently
+accepted scoped-proof change raises phase and floor to `enforced-dual-read`.
+After the first auth-on point, rollback may
 use only header-capable control-plane/Grafana versions and must retain Loki
 auth, `fake|fs2-platform`, and the NetworkPolicy. A pre-migration release is
-not a valid rollback target because it would hide the scoped cohort. Auth
+not a valid rollback target because it would hide the scoped cohort. The
+rollback target needs a newly sealed, source-pinned acknowledgement whose
+deployment/image/revision/datasource fingerprints match that target; a stale
+pretransition or posttransition envelope is rejected. Auth
 enforcement creates the state-retained
 `terraform_data.loki_enforced_dual_read_floor` sentinel with
 `prevent_destroy`; a normal downgrade plan therefore fails. Never bypass that

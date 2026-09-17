@@ -493,13 +493,13 @@ resource "terraform_data" "loki_enforced_dual_read_floor" {
   count = local.loki_auth_enforced ? 1 : 0
 
   input = {
-    schema                                 = "fs2-serve.nebius.ai/loki-rollback-floor/v1"
-    run_id                                 = var.run_id
-    phase                                  = "enforced-dual-read"
-    read_tenant_header                     = local.loki_read_tenant_header
-    deployed_client_acknowledgement_sha256 = local.loki_deployed_client_acknowledgement_sha256
-    identity_custody_receipt               = var.loki_identity_custody_receipt
-    prometheus_health_exception_receipt    = var.loki_prometheus_health_exception_receipt
+    schema                                    = "fs2-serve.nebius.ai/loki-rollback-floor/v2"
+    run_id                                    = var.run_id
+    phase                                     = var.loki_access_phase
+    read_tenant_header                        = local.loki_read_tenant_header
+    active_migration_acknowledgement_sha256   = local.loki_active_migration_acknowledgement_sha256
+    identity_custody_receipt                  = var.loki_identity_custody_receipt
+    prometheus_health_exception_receipt       = var.loki_prometheus_health_exception_receipt
   }
 
   lifecycle {
@@ -509,10 +509,10 @@ resource "terraform_data" "loki_enforced_dual_read_floor" {
       condition = (
         local.loki_identity_custody_ready &&
         local.loki_prometheus_health_exception_ready &&
-        local.loki_deployed_clients_ready &&
-        var.loki_rollback_floor == "enforced-dual-read"
+        local.loki_migration_authorized &&
+        var.loki_rollback_floor == var.loki_access_phase
       )
-      error_message = "The enforced Loki cohort floor requires source-pinned identity custody, a source-pinned Prometheus exception, an accepted target-bound deployed-client acknowledgement, and the enforced-dual-read rollback floor."
+      error_message = "The auth-on Loki floor requires source-pinned identity custody and Prometheus acceptance, the stage-appropriate fresh migration acknowledgement, and a rollback floor equal to the active auth-on phase."
     }
   }
 }
@@ -549,17 +549,17 @@ resource "helm_release" "loki" {
         (
           local.loki_identity_custody_ready &&
           local.loki_prometheus_health_exception_ready &&
-          local.loki_deployed_clients_ready &&
-          var.loki_rollback_floor == "enforced-dual-read"
+          local.loki_migration_authorized &&
+          var.loki_rollback_floor == var.loki_access_phase
         )
       )
-      error_message = "Loki auth enforcement requires source-pinned SAI-03 custody, an accepted Prometheus health exception (or future metrics-only mediation), an accepted target-bound deployed reader/writer acknowledgement, and an enforced-dual-read rollback floor."
+      error_message = "Loki auth enforcement requires source-pinned SAI-03 custody, Prometheus acceptance (or metrics-only mediation), the fresh stage-appropriate migration acknowledgement, and an auth-on rollback floor equal to the active phase."
     }
   }
 
-  # Existing Loki remains auth-off while policy and the scoped writer are
-  # updated. Auth can change only after this dependency chain and the separate
-  # target-bound deployed-client acknowledgement gate above have completed.
+  # Existing Loki remains auth-off while policy and clients are prepared.
+  # The first auth-on phase uses only pretransition legacy-safe proof; final
+  # promotion is a later apply that requires posttransition scoped proof.
   depends_on = [
     helm_release.monitoring,
     helm_release.otel_gateway,
