@@ -300,8 +300,11 @@ HTTP 0 or success.
   window). That same query ALSO bounds every attacker-influenced clear TEXT column in SQL (`left(col,
   budget)` per field), so the metadata-only path never TRANSFERS unbounded clear metadata either — not even
   for a legacy row whose clear columns predate the capture-time field budgets and whose ciphertext is over
-  the ceiling. So an arbitrarily large legacy payload OR clear column is never fetched unbounded, decrypted,
-  or served — even under an unset cap. The stored ciphertext is never rewritten or deleted (the separately
+  the ceiling. `left` counts characters, so that SQL step is a bounded transfer (at most ~4x the byte budget
+  for multibyte content); the exact per-field BYTE budget is then reasserted on the fetched value when the
+  metadata-only view is built, so the returned clear metadata is byte-accurate and identical in units to the
+  capture-time budgets on every store and path. So an arbitrarily large legacy payload OR clear column is
+  never fetched unbounded, decrypted, or served — even under an unset cap. The stored ciphertext is never rewritten or deleted (the separately
   owned purge handles TTL), so this is redaction on the way out only.
 - Full detail documents are encrypted in PostgreSQL using the existing payload
   cipher/keyring. Searchable summary metadata is stored separately. Preserve the

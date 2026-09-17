@@ -901,11 +901,15 @@ def _summary_select_columns() -> str:
     unbounded clear metadata — not even for a legacy row whose ciphertext is over the ceiling (ciphertext
     returned NULL) and is therefore rendered from these clear columns alone. This bounds every clear column
     in ONE provable contract at READ, mirroring the capture-time field budgets (``_bound_debug_metadata``),
-    and applies whether or not the payload is fetched. ``left`` truncates by characters, so each column is at
-    most ``budget`` characters (<= 4*budget UTF-8 bytes) — a provable transfer bound regardless of what a
-    legacy row stored. Non-text clear columns (uuids/ints/bools/timestamps) are bounded by their type. The
-    column names are the fixed model fields and the budgets are fixed integer literals — no user input — so
-    the interpolation is injection-free (hence the S608 waiver at each call site)."""
+    and applies whether or not the payload is fetched. ``left`` truncates by CHARACTERS, so each column is at
+    most ``budget`` characters (<= 4*budget UTF-8 bytes for multibyte content) — a provable TRANSFER bound
+    (never an unbounded read) regardless of what a legacy row stored. The exact per-field BYTE budget is then
+    reasserted on the fetched value in ``_conservative_exchange`` (via ``_bounded_text``), so the returned
+    metadata-only view is byte-accurate and identical in units to the capture-time budgets — the char count
+    here is only to keep the wire transfer bounded, not the final accounting. Non-text clear columns
+    (uuids/ints/bools/timestamps) are bounded by their type. The column names are the fixed model fields and
+    the budgets are fixed integer literals — no user input — so the interpolation is injection-free (hence the
+    S608 waiver at each call site)."""
     return ",".join(
         f"left({field},{_META_SCALAR_BUDGETS[field]}) AS {field}" if field in _META_SCALAR_BUDGETS else field
         for field in DebugExchangeSummary.model_fields
@@ -1016,9 +1020,18 @@ def _conservative_exchange(meta: DebugExchangeSummary) -> DebugExchange:
     detail and another in the list — and neither path fetches/decrypts/serves its payload. Legacy
     truncated/newly-redacted requests are therefore withheld identically on both paths (no impossible
     exactness claim), while BOUNDED rows still get exact, decrypted truth via normalize_exchange_for_read.
-    """
+
+    The clear SCALAR fields are re-bounded to their EXACT per-field BYTE budget here with ``_bounded_text``.
+    The PostgreSQL SELECT already bounds these columns with ``left(col, budget)``, but ``left`` counts
+    CHARACTERS, so a multibyte value can be up to ~4x its budget in BYTES over the wire; that is a bounded
+    TRANSFER (no unbounded read), and this step reasserts the exact byte budget on the fetched value so the
+    metadata-only view is BYTE-accurate and identical in units to the capture-time budgets on every store
+    and path (never a char-approximate bound). Idempotent for an already-byte-bounded value (fast path)."""
+    fields = {field: getattr(meta, field) for field in DebugMetadata.model_fields}
+    for scalar, budget in _META_SCALAR_BUDGETS.items():
+        fields[scalar] = _bounded_text_opt(fields[scalar], budget)
     return DebugExchange(
-        **{field: getattr(meta, field) for field in DebugMetadata.model_fields},
+        **fields,
         request_body=suppressed_body(None, meta.request_observed_bytes, meta.request_complete),
         response_body=suppressed_body(None, meta.response_observed_bytes, meta.response_complete),
         request_headers=[],
