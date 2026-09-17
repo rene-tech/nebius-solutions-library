@@ -600,18 +600,10 @@ def _capture_provider_authorization_once(trust: dict[str, Any]) -> dict[str, Any
         budgets,
     )
     principal_group_ids: list[str] = []
-    for membership in memberships:
-        metadata = membership.get("metadata", {}) if isinstance(membership, dict) else {}
-        spec = membership.get("spec", {}) if isinstance(membership, dict) else {}
-        group_id = metadata.get("parent_id") if isinstance(metadata, dict) else None
-        if (
-            not isinstance(spec, dict)
-            or set(spec) != {"member_id"}
-            or spec.get("member_id") != execution["principal_id"]
-            or not isinstance(group_id, str)
-            or not re.fullmatch(r"group-[A-Za-z0-9-]{8,128}", group_id)
-        ):
-            raise AdapterError("provider directory-reader group membership is malformed")
+    for group in memberships:
+        group_id, _ = _metadata_identity(group, label="directory-reader member-of group")
+        if not re.fullmatch(r"group-[A-Za-z0-9-]{8,128}", group_id):
+            raise AdapterError("provider directory-reader member-of group is malformed")
         principal_group_ids.append(group_id)
     if len(principal_group_ids) != len(set(principal_group_ids)):
         raise AdapterError("provider directory-reader group membership is duplicated")
@@ -844,13 +836,15 @@ def _capture_directory(trust: dict[str, Any]) -> dict[str, Any]:
         )
         raw_pages.extend(pages)
         memberships: list[str] = []
-        for membership in membership_items:
-            metadata = membership.get("metadata", {}) if isinstance(membership, dict) else {}
-            group_id = metadata.get("parent_id") if isinstance(metadata, dict) else None
-            spec = membership.get("spec", {}) if isinstance(membership, dict) else {}
-            if spec.get("member_id") != user_id or group_id not in groups_by_id:
-                raise AdapterError("provider group membership is outside the complete directory inventory")
-            memberships.append(groups_by_id[group_id])
+        for group in membership_items:
+            group_id, group_name = _metadata_identity(group, label="human member-of group")
+            mapped_group = groups_by_id.get(group_id)
+            if (
+                mapped_group is None
+                or mapped_group != f"{authentication['groups_prefix']}{group_name}"
+            ):
+                raise AdapterError("provider member-of group is outside the complete directory inventory")
+            memberships.append(mapped_group)
         if len(memberships) != len(set(memberships)):
             raise AdapterError("provider group membership is duplicated")
         user["groups"] = sorted(memberships)

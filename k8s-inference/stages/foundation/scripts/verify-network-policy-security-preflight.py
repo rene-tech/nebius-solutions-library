@@ -712,18 +712,17 @@ def verified_provider_authorization(
             max_records=query["max_records"],
         )
         group_ids: list[str] = []
-        for membership in memberships:
-            metadata = membership.get("metadata", {})
-            spec = membership.get("spec", {})
-            group_id = metadata.get("parent_id") if isinstance(metadata, dict) else None
+        for group in memberships:
+            metadata = group.get("metadata", {}) if isinstance(group, dict) else {}
+            group_id = metadata.get("id") if isinstance(metadata, dict) else None
+            group_name = metadata.get("name") if isinstance(metadata, dict) else None
             if (
-                not isinstance(spec, dict)
-                or set(spec) != {"member_id"}
-                or spec.get("member_id") != execution["principal_id"]
-                or not isinstance(group_id, str)
+                not isinstance(group_id, str)
                 or not re.fullmatch(r"group-[A-Za-z0-9-]{8,128}", group_id)
+                or not isinstance(group_name, str)
+                or not re.fullmatch(r"[A-Za-z0-9:@._/-]{1,253}", group_name)
             ):
-                raise PreflightError("provider principal membership closure is malformed")
+                raise PreflightError("provider principal member-of group closure is malformed")
             group_ids.append(group_id)
         group_ids.sort()
         if (
@@ -2161,7 +2160,140 @@ def can_i(kubeconfig: Path, context: str, expected: str, *arguments: str) -> Non
         raise PreflightError("boundary authorization is broader or narrower than its contract")
 
 
-def subject_denied(
+def exact_boundary_role_grants(
+    roles: list[dict[str, Any]],
+    bindings: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Join the exact externally verified roles to their exact live User bindings."""
+    indexed_roles: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for role in roles:
+        if not isinstance(role, dict):
+            raise PreflightError("external boundary role evidence is malformed")
+        resource = role.get("resource")
+        metadata = role.get("metadata", {})
+        name = metadata.get("name") if isinstance(metadata, dict) else None
+        namespace = metadata.get("namespace", "") if isinstance(metadata, dict) else None
+        kind = (
+            "ClusterRole"
+            if resource == "clusterrole"
+            else "Role"
+            if resource == "role"
+            else None
+        )
+        rules = role.get("rules")
+        if (
+            kind is None
+            or not isinstance(name, str)
+            or not name
+            or not isinstance(namespace, str)
+            or (kind == "ClusterRole" and namespace)
+            or (kind == "Role" and not namespace)
+            or not isinstance(rules, list)
+        ):
+            raise PreflightError("external boundary role evidence is malformed")
+        key = (kind, name, namespace)
+        if key in indexed_roles:
+            raise PreflightError("external boundary role evidence is duplicated")
+        indexed_roles[key] = role
+
+    grants: list[dict[str, Any]] = []
+    used_roles: set[tuple[str, str, str]] = set()
+    for binding in bindings:
+        if not isinstance(binding, dict):
+            raise PreflightError("external boundary role binding evidence is malformed")
+        metadata = binding.get("metadata", {})
+        role_ref = binding.get("roleRef", {})
+        subjects = binding.get("subjects")
+        if (
+            not isinstance(metadata, dict)
+            or not isinstance(role_ref, dict)
+            or role_ref.get("apiGroup") != "rbac.authorization.k8s.io"
+            or not isinstance(subjects, list)
+            or not subjects
+        ):
+            raise PreflightError("external boundary role binding evidence is malformed")
+        namespace = metadata.get("namespace", "")
+        kind = role_ref.get("kind")
+        role_name = role_ref.get("name")
+        if (
+            not isinstance(kind, str)
+            or kind not in {"ClusterRole", "Role"}
+            or not isinstance(role_name, str)
+            or not role_name
+            or not isinstance(namespace, str)
+            or (kind == "ClusterRole" and namespace)
+            or (kind == "Role" and not namespace)
+        ):
+            raise PreflightError("external boundary role binding evidence is malformed")
+        role_namespace = "" if kind == "ClusterRole" else namespace
+        role_key = (kind, role_name, role_namespace)
+        role = indexed_roles.get(role_key)
+        if role is None or role_key in used_roles:
+            raise PreflightError("external boundary role binding evidence is malformed")
+        usernames: list[str] = []
+        for subject in subjects:
+            if (
+                not isinstance(subject, dict)
+                or set(subject) != {"apiGroup", "kind", "name"}
+                or subject.get("apiGroup") != "rbac.authorization.k8s.io"
+                or subject.get("kind") != "User"
+                or not isinstance(subject.get("name"), str)
+                or not subject["name"]
+            ):
+                raise PreflightError("external boundary role binding subject is not an exact User")
+            usernames.append(subject["name"])
+        if len(usernames) != len(set(usernames)):
+            raise PreflightError("external boundary role binding subject is duplicated")
+        used_roles.add(role_key)
+        grants.append(
+            {
+                "kind": kind,
+                "name": role_name,
+                "namespace": role_namespace,
+                "subjects": sorted(usernames),
+                "rules": role["rules"],
+            }
+        )
+    if used_roles != set(indexed_roles):
+        raise PreflightError("external boundary role binding closure is incomplete")
+    return sorted(grants, key=canonical)
+
+
+def boundary_role_allows(
+    grants: list[dict[str, Any]],
+    subject: dict[str, Any],
+    *,
+    verb: str,
+    group: str,
+    resource: str,
+    namespace: str = "",
+    name: str = "",
+    subresource: str = "",
+) -> bool:
+    """Evaluate only the exact permissions conferred by the reviewed boundary roles."""
+    requested_resource = f"{resource}/{subresource}" if subresource else resource
+    for grant in grants:
+        if subject["username"] not in grant["subjects"]:
+            continue
+        if grant["kind"] == "Role" and namespace != grant["namespace"]:
+            continue
+        for rule in grant["rules"]:
+            verbs = rule.get("verbs", [])
+            groups = rule.get("apiGroups", [])
+            resources = rule.get("resources", [])
+            resource_names = rule.get("resourceNames", [])
+            if (
+                (verb not in verbs and "*" not in verbs)
+                or (group not in groups and "*" not in groups)
+                or (requested_resource not in resources and "*" not in resources)
+                or (resource_names and (not name or name not in resource_names))
+            ):
+                continue
+            return True
+    return False
+
+
+def subject_permission_exact(
     kubeconfig: Path,
     context: str,
     subject: dict[str, Any],
@@ -2172,6 +2304,7 @@ def subject_denied(
     namespace: str = "",
     name: str = "",
     subresource: str = "",
+    expected_allowed: bool,
 ) -> None:
     attributes = {"verb": verb, "group": group, "resource": resource}
     for key, value in (("namespace", namespace), ("name", name), ("subresource", subresource)):
@@ -2206,9 +2339,37 @@ def subject_denied(
             )
         )
     except json.JSONDecodeError as error:
-        raise PreflightError("human-subject authorization review is invalid") from error
-    if response.get("status", {}).get("allowed") is not False:
-        raise PreflightError("a reviewed human subject can cross the security boundary")
+        raise PreflightError("RBAC-subject authorization review is invalid") from error
+    if response.get("status", {}).get("allowed") is not expected_allowed:
+        raise PreflightError(
+            "a reviewed RBAC subject differs from its exact boundary role permission contract"
+        )
+
+
+def subject_denied(
+    kubeconfig: Path,
+    context: str,
+    subject: dict[str, Any],
+    *,
+    verb: str,
+    group: str,
+    resource: str,
+    namespace: str = "",
+    name: str = "",
+    subresource: str = "",
+) -> None:
+    subject_permission_exact(
+        kubeconfig,
+        context,
+        subject,
+        verb=verb,
+        group=group,
+        resource=resource,
+        namespace=namespace,
+        name=name,
+        subresource=subresource,
+        expected_allowed=False,
+    )
 
 
 def parse_query() -> dict[str, Any]:
@@ -2715,6 +2876,13 @@ def main() -> int:
             rotation_binding_state_sha256 = hashlib.sha256(
                 canonical(rotation_binding_evidence).encode()
             ).hexdigest()
+            boundary_role_grants = exact_boundary_role_grants(
+                auditor_evidence["roles"],
+                [
+                    auditor_evidence["binding"],
+                    *[rotation_binding_evidence[key] for key, *_ in binding_specs],
+                ],
+            )
         else:
             rotation_binding_states = {
                 "auditor": "target",
@@ -2729,6 +2897,7 @@ def main() -> int:
             }
             rotation_phase = "postapply"
             rotation_binding_state_sha256 = hashlib.sha256(b"internal-only-rotation-state").hexdigest()
+            boundary_role_grants = []
         protected_cluster = (
             "validatingadmissionpolicies.admissionregistration.k8s.io",
             "validatingadmissionpolicybindings.admissionregistration.k8s.io",
@@ -3155,6 +3324,41 @@ def main() -> int:
         effective_rbac_subjects_sha256 = hashlib.sha256(
             canonical(effective_rbac_subjects).encode()
         ).hexdigest()
+
+        def review_boundary_subject(
+            kubeconfig: Path,
+            review_context: str,
+            subject: dict[str, Any],
+            *,
+            verb: str,
+            group: str,
+            resource: str,
+            namespace: str = "",
+            name: str = "",
+            subresource: str = "",
+        ) -> None:
+            subject_permission_exact(
+                kubeconfig,
+                review_context,
+                subject,
+                verb=verb,
+                group=group,
+                resource=resource,
+                namespace=namespace,
+                name=name,
+                subresource=subresource,
+                expected_allowed=boundary_role_allows(
+                    boundary_role_grants,
+                    subject,
+                    verb=verb,
+                    group=group,
+                    resource=resource,
+                    namespace=namespace,
+                    name=name,
+                    subresource=subresource,
+                ),
+            )
+
         for subject in [authorization_subjects[key] for key in sorted(authorization_subjects)]:
             for resource, name, namespace in namespaced:
                 if resource.startswith("networkpolicies."):
@@ -3164,7 +3368,7 @@ def main() -> int:
                 else:
                     group, short_resource = "", resource
                 for verb in ("patch", "update", "delete"):
-                    subject_denied(
+                    review_boundary_subject(
                         bootstrap,
                         context,
                         subject,
@@ -3177,7 +3381,7 @@ def main() -> int:
             for resource, name, namespace in rbac_objects:
                 group, short_resource = "rbac.authorization.k8s.io", resource.split(".", maxsplit=1)[0]
                 for verb in ("create", "patch", "update", "delete"):
-                    subject_denied(
+                    review_boundary_subject(
                         bootstrap,
                         context,
                         subject,
@@ -3186,7 +3390,7 @@ def main() -> int:
                         resource=short_resource,
                         namespace=namespace,
                     )
-                    subject_denied(
+                    review_boundary_subject(
                         bootstrap,
                         context,
                         subject,
@@ -3198,7 +3402,7 @@ def main() -> int:
                     )
             for resource in ("validatingadmissionpolicies", "validatingadmissionpolicybindings"):
                 for verb in ("patch", "update", "delete"):
-                    subject_denied(
+                    review_boundary_subject(
                         bootstrap,
                         context,
                         subject,
@@ -3208,7 +3412,7 @@ def main() -> int:
                         name="fs2-network-policy-boundary",
                     )
             for namespace in service_accounts:
-                subject_denied(
+                review_boundary_subject(
                     bootstrap,
                     context,
                     subject,
@@ -3217,7 +3421,7 @@ def main() -> int:
                     resource="namespaces",
                     name=namespace,
                 )
-                subject_denied(
+                review_boundary_subject(
                     bootstrap,
                     context,
                     subject,
@@ -3226,7 +3430,7 @@ def main() -> int:
                     resource="namespaces",
                     name=namespace,
                 )
-                subject_denied(
+                review_boundary_subject(
                     bootstrap,
                     context,
                     subject,
@@ -3237,7 +3441,7 @@ def main() -> int:
                     subresource="finalize",
                 )
             for namespace, accounts in service_accounts.items():
-                subject_denied(
+                review_boundary_subject(
                     bootstrap,
                     context,
                     subject,
@@ -3248,7 +3452,7 @@ def main() -> int:
                     subresource="token",
                 )
                 for account in accounts:
-                    subject_denied(
+                    review_boundary_subject(
                         bootstrap,
                         context,
                         subject,
@@ -3266,13 +3470,20 @@ def main() -> int:
                 ("authentication.k8s.io", "uids"),
                 ("authentication.k8s.io", "userextras"),
             ):
-                subject_denied(bootstrap, context, subject, verb="impersonate", group=group, resource=resource)
+                review_boundary_subject(
+                    bootstrap,
+                    context,
+                    subject,
+                    verb="impersonate",
+                    group=group,
+                    resource=resource,
+                )
             for resource, name, namespace in impersonation_targets:
                 if resource.endswith(".authentication.k8s.io"):
                     group, short_resource = "authentication.k8s.io", resource.split(".", maxsplit=1)[0]
                 else:
                     group, short_resource = "", resource
-                subject_denied(
+                review_boundary_subject(
                     bootstrap,
                     context,
                     subject,
@@ -3282,7 +3493,7 @@ def main() -> int:
                     namespace=namespace,
                     name=name,
                 )
-            subject_denied(
+            review_boundary_subject(
                 bootstrap,
                 context,
                 subject,
@@ -3290,7 +3501,7 @@ def main() -> int:
                 group="certificates.k8s.io",
                 resource="certificatesigningrequests",
             )
-            subject_denied(
+            review_boundary_subject(
                 bootstrap,
                 context,
                 subject,
@@ -3299,7 +3510,7 @@ def main() -> int:
                 resource="certificatesigningrequests",
                 name="fs2-network-policy-security-probe",
             )
-            subject_denied(
+            review_boundary_subject(
                 bootstrap,
                 context,
                 subject,
@@ -3310,7 +3521,7 @@ def main() -> int:
             )
             for signer in signer_names:
                 for verb in ("approve", "sign"):
-                    subject_denied(
+                    review_boundary_subject(
                         bootstrap,
                         context,
                         subject,
@@ -3318,7 +3529,7 @@ def main() -> int:
                         group="certificates.k8s.io",
                         resource="signers",
                     )
-                    subject_denied(
+                    review_boundary_subject(
                         bootstrap,
                         context,
                         subject,
@@ -3328,7 +3539,7 @@ def main() -> int:
                         name=signer,
                     )
             for verb in ("bind", "escalate"):
-                subject_denied(
+                review_boundary_subject(
                     bootstrap,
                     context,
                     subject,
@@ -3336,7 +3547,7 @@ def main() -> int:
                     group="rbac.authorization.k8s.io",
                     resource="clusterroles",
                 )
-                subject_denied(
+                review_boundary_subject(
                     bootstrap,
                     context,
                     subject,
@@ -3346,7 +3557,7 @@ def main() -> int:
                     namespace="fs2-system",
                 )
                 for resource, name, namespace in delegation_targets:
-                    subject_denied(
+                    review_boundary_subject(
                         bootstrap,
                         context,
                         subject,

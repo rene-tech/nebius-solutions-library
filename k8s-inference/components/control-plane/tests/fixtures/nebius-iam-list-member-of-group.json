@@ -1,0 +1,18 @@
+{
+  "metadata": {
+    "id": "group-reviewers-001",
+    "parent_id": "tenant-example0001",
+    "created_at": "2026-09-17T00:00:00Z",
+    "labels": {},
+    "name": "reviewers",
+    "resource_version": "5",
+    "updated_at": "2026-09-17T00:00:00Z"
+  },
+  "spec": {},
+  "status": {
+    "state": "ACTIVE",
+    "members_count": 1,
+    "service_accounts_count": 1,
+    "tenant_user_accounts_count": 0
+  }
+}

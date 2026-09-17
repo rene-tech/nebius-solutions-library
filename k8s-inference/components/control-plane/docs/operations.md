@@ -846,7 +846,10 @@ digests. These paths correspond to the documented
 [`iam profile get`](https://docs.nebius.com/cli/reference/iam/profile/get) and
 [`iam v2 project get`](https://docs.nebius.com/cli/reference/iam/v2/project/get)
 responses; `iam whoami` is only an alias and is not assigned a separate response
-contract. Each raw
+contract. The `iam group-membership list-member-of` response is a list of
+Group resources: capture and verification obtain each group identity from
+`metadata.id` (and bind its `metadata.name`) rather than treating the response
+as a GroupMembership resource. Each raw
 permit binds its provider ID, parent, `resource_id` and role; the normalized set
 must equal the source-pinned tenant-only `auditor` permit contract exactly, so
 an additional project/resource permit or another role fails closed. Two
@@ -879,12 +882,16 @@ with the pre-review inventory, closing the authorization-check race. Every provi
 and group, every subject from every live RBAC binding, discovered
 ServiceAccount, Role/ClusterRole name, named RBAC grant
 and custom signer is covered by unnamed and exact-name impersonation, token,
-signing and delegation negatives. Every provider-enumerated human
-and prior-epoch non-human tuple is checked through nonpersistent
-SubjectAccessReviews for protected mutation, every namespace and
+signing and delegation checks. The exact immutable boundary roles are joined
+to their exact live before/target User bindings. Every provider-enumerated
+human, every live RBAC subject and each prior-epoch non-human tuple is checked
+through nonpersistent SubjectAccessReviews against that role-specific expected
+permission set for protected mutation, every namespace and
 `namespaces/finalize`, every ServiceAccount token subresource, certificate
 request creation/approval/signing, core user/group/ServiceAccount impersonation,
-authentication UID/extra impersonation and RBAC delegation denial.
+authentication UID/extra impersonation and RBAC delegation. An intended epoch
+principal must retain every permission its exact reviewed role grants; an
+arbitrary subject or any permission beyond those exact roles fails closed.
 It proves the release identity cannot patch, update, delete,
 or collection-delete either admission resource, any permanent guard/deny,
 transition/parameter ConfigMap, or Lease; it also cannot mint the retained

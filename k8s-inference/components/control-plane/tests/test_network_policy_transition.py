@@ -45,6 +45,9 @@ PROVIDER_SERVICE_ACCOUNT_PROFILE_FIXTURE = (
     CONTROL_ROOT / "tests" / "fixtures" / "nebius-iam-service-account-profile.json"
 )
 PROVIDER_PROJECT_FIXTURE = CONTROL_ROOT / "tests" / "fixtures" / "nebius-iam-project.json"
+PROVIDER_MEMBER_OF_GROUP_FIXTURE = (
+    CONTROL_ROOT / "tests" / "fixtures" / "nebius-iam-list-member-of-group.json"
+)
 
 
 def _load_transition_module() -> ModuleType:
@@ -129,6 +132,18 @@ def _documented_provider_identity_lineage(
             PREFLIGHT.canonical(lineage_material).encode()
         ).hexdigest(),
     }
+
+
+def _documented_member_of_group(
+    group_id: str = "group-reviewers-001",
+    name: str = "reviewers",
+) -> dict[str, Any]:
+    group = json.loads(PROVIDER_MEMBER_OF_GROUP_FIXTURE.read_text())
+    assert group["metadata"]["id"] == "group-reviewers-001"
+    assert group["metadata"]["name"] == "reviewers"
+    group["metadata"]["id"] = group_id
+    group["metadata"]["name"] = name
+    return group
 
 
 PROXY_SPEC = {
@@ -2558,10 +2573,7 @@ def test_provider_adapter_enumerates_provider_itself_without_caller_transcript(m
                 "metadata": {"id": "group-reviewers-001", "name": "reviewers"}
             }], receipt)
         _budgets["records"] -= 1
-        return ([{
-            "metadata": {"parent_id": "group-reviewers-001"},
-            "spec": {"member_id": "tenantuseraccount-001"},
-        }], receipt)
+        return ([_documented_member_of_group()], receipt)
 
     monkeypatch.setattr(PROVIDER_ADAPTER_MODULE, "_list_pages", pages)
     captured = PROVIDER_ADAPTER_MODULE.capture()
@@ -2661,10 +2673,7 @@ def test_provider_adapter_collects_subject_parented_access_permits_and_cycle(
         page_calls.append(tuple(command))
         budgets["pages"] -= 1
         if "group-membership" in command:
-            items = [{
-                "metadata": {"parent_id": group_id},
-                "spec": {"member_id": principal_id},
-            }]
+            items = [_documented_member_of_group(group_id, "directory-readers")]
         else:
             subject_id = command[-1]
             assert command[:4] == ["iam", "access-permit", "list", "--parent-id"]
@@ -2843,10 +2852,7 @@ def test_provider_authorization_rejects_a_resource_scoped_mutating_group_permit(
         ),
         "request_token": "",
         "response": {
-            "items": [{
-                "metadata": {"parent_id": group_id},
-                "spec": {"member_id": principal_id},
-            }],
+            "items": [_documented_member_of_group(group_id, "directory-readers")],
             "next_page_token": "",
         },
         "next_token": "",
@@ -3072,6 +3078,123 @@ def test_kubernetes_rbac_binding_subjects_are_in_the_authorization_closure() -> 
         "system:serviceaccounts:tenant-a",
     ]
     assert sum(subject["username"] == "user@example.invalid" for subject in subjects) == 1
+
+
+def test_reviewed_boundary_subjects_receive_only_their_exact_role_permissions() -> None:
+    owner = "fs2-security-owner-epoch-002"
+    bootstrap = "fs2-security-bootstrap-epoch-002"
+    roles = [
+        {
+            "resource": "clusterrole",
+            "metadata": {
+                "name": "fs2-network-policy-security-owner",
+                "namespace": "",
+                "uid": "owner-role-uid",
+                "resourceVersion": "7",
+            },
+            "rules": [
+                {
+                    "apiGroups": ["admissionregistration.k8s.io"],
+                    "resources": ["validatingadmissionpolicies"],
+                    "resourceNames": ["fs2-network-policy-boundary"],
+                    "verbs": ["get", "patch", "update"],
+                }
+            ],
+        },
+        {
+            "resource": "role",
+            "metadata": {
+                "name": "fs2-network-policy-transition-bootstrap",
+                "namespace": "fs2-system",
+                "uid": "bootstrap-role-uid",
+                "resourceVersion": "9",
+            },
+            "rules": [
+                {
+                    "apiGroups": ["rbac.authorization.k8s.io"],
+                    "resources": ["rolebindings"],
+                    "resourceNames": ["fs2-network-policy-transition"],
+                    "verbs": ["get", "patch", "update"],
+                }
+            ],
+        },
+    ]
+    bindings = [
+        {
+            "metadata": {"namespace": "", "uid": "owner-binding-uid"},
+            "roleRef": {
+                "apiGroup": "rbac.authorization.k8s.io",
+                "kind": "ClusterRole",
+                "name": "fs2-network-policy-security-owner",
+            },
+            "subjects": [
+                {
+                    "apiGroup": "rbac.authorization.k8s.io",
+                    "kind": "User",
+                    "name": owner,
+                }
+            ],
+        },
+        {
+            "metadata": {"namespace": "fs2-system", "uid": "bootstrap-binding-uid"},
+            "roleRef": {
+                "apiGroup": "rbac.authorization.k8s.io",
+                "kind": "Role",
+                "name": "fs2-network-policy-transition-bootstrap",
+            },
+            "subjects": [
+                {
+                    "apiGroup": "rbac.authorization.k8s.io",
+                    "kind": "User",
+                    "name": bootstrap,
+                }
+            ],
+        },
+    ]
+    grants = PREFLIGHT.exact_boundary_role_grants(roles, bindings)
+
+    assert PREFLIGHT.boundary_role_allows(
+        grants,
+        {"username": owner, "groups": ["system:authenticated"]},
+        verb="patch",
+        group="admissionregistration.k8s.io",
+        resource="validatingadmissionpolicies",
+        name="fs2-network-policy-boundary",
+    )
+    assert PREFLIGHT.boundary_role_allows(
+        grants,
+        {"username": bootstrap, "groups": ["system:authenticated"]},
+        verb="update",
+        group="rbac.authorization.k8s.io",
+        resource="rolebindings",
+        namespace="fs2-system",
+        name="fs2-network-policy-transition",
+    )
+    assert not PREFLIGHT.boundary_role_allows(
+        grants,
+        {"username": owner, "groups": ["system:authenticated"]},
+        verb="delete",
+        group="admissionregistration.k8s.io",
+        resource="validatingadmissionpolicies",
+        name="fs2-network-policy-boundary",
+    )
+    assert not PREFLIGHT.boundary_role_allows(
+        grants,
+        {"username": bootstrap, "groups": ["system:authenticated"]},
+        verb="update",
+        group="rbac.authorization.k8s.io",
+        resource="rolebindings",
+        namespace="other-system",
+        name="fs2-network-policy-transition",
+    )
+    assert not PREFLIGHT.boundary_role_allows(
+        grants,
+        {"username": "arbitrary-user", "groups": ["system:authenticated"]},
+        verb="patch",
+        group="admissionregistration.k8s.io",
+        resource="validatingadmissionpolicies",
+        name="fs2-network-policy-boundary",
+    )
 
 
 def test_provider_adapter_rejects_a_hybrid_directory_across_consistency_passes(
