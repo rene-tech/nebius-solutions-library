@@ -345,14 +345,13 @@ def validate_model_network_policy_rollback_plan(
         or transition.get("phase") != "rollback-remove-deny"
     ):
         return
+
     def without_holder(value: Any) -> Any:
         if isinstance(value, Mapping):
             cleaned = {key: without_holder(item) for key, item in value.items()}
             annotations = cleaned.get("annotations")
             if isinstance(annotations, dict):
-                annotations.pop(
-                    "fs2-serve.nebius.ai/network-transition-holder", None
-                )
+                annotations.pop("fs2-serve.nebius.ai/network-transition-holder", None)
             return cleaned
         if isinstance(value, list):
             return [without_holder(item) for item in value]
@@ -429,6 +428,35 @@ def validate_model_network_policy_rollback_plan(
             "holder-token annotation refreshes; observed: "
             f"{rendered}"
         )
+
+
+def validate_model_network_frozen_plan(
+    document: Mapping[str, Any], contract: Mapping[str, Any]
+) -> None:
+    """Reject control-plane Helm mutation after the external fence is armed."""
+
+    transition = (
+        contract.get("stages", {})
+        .get("workloads", {})
+        .get("model_runtime_network_policy", {})
+    )
+    if not isinstance(transition, Mapping) or transition.get("phase") not in {
+        "prepare",
+        "inventory",
+        "enforce",
+        "rollback-remove-deny",
+    }:
+        return
+    for resource in document.get("resource_changes", []):
+        if resource.get("address") != "helm_release.control_plane":
+            continue
+        actions = resource.get("change", {}).get("actions", [])
+        if actions not in (["no-op"], ["read"]):
+            raise DeploymentError(
+                "the separately custodied Helm/controller fence is already active; "
+                "roll out the integrated control-plane image before authority "
+                "bootstrap or complete deny-first rollback before a later Helm change"
+            )
 
 
 def source_commit() -> str:
@@ -2354,7 +2382,7 @@ def model_network_transition_lock(
         raise DeploymentError("the authenticated transition writer is empty")
     if authenticated_username != transition_writer:
         raise DeploymentError(
-            "model-network transitions require the dedicated impersonated writer"
+            "model-network transitions require the dedicated externally custodied writer"
         )
     observed = subprocess.run(
         [*base, "-n", namespace, "get", "lease", name, "-o", "json"],
@@ -2516,14 +2544,533 @@ def model_network_transition_lock(
         )
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _semantic_kubernetes_object(value: Mapping[str, Any]) -> dict[str, Any]:
+    document = json.loads(json.dumps(value))
+    document.pop("status", None)
+    metadata = document.get("metadata", {})
+    if isinstance(metadata, dict):
+        for field in (
+            "creationTimestamp",
+            "generation",
+            "managedFields",
+            "resourceVersion",
+            "uid",
+        ):
+            metadata.pop(field, None)
+    return document
+
+
+def _json_sha256(value: Mapping[str, Any]) -> str:
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def model_network_boundary_authority_custody(
+    *,
+    kubectl: str,
+    context: str,
+    cluster_id: str,
+    credential: Path,
+    credential_kind: str,
+    expected_username: str,
+    trust_root_sha256: str,
+) -> dict[str, Any]:
+    """Verify the externally signed authority receipt and every bound live object."""
+
+    paths = {
+        "receipt": Path(os.environ.get("FS2_NETWORK_BOUNDARY_AUTHORITY_RECEIPT", "")),
+        "signature": Path(
+            os.environ.get("FS2_NETWORK_BOUNDARY_AUTHORITY_SIGNATURE", "")
+        ),
+        "trust root": Path(
+            os.environ.get("FS2_NETWORK_BOUNDARY_AUTHORITY_TRUST_ROOT", "")
+        ),
+    }
+    for label, path in paths.items():
+        if not path.is_absolute() or path.is_symlink() or not path.is_file():
+            raise DeploymentError(
+                f"the model-network authority {label} must be an absolute regular file"
+            )
+    if not re.fullmatch(r"[a-f0-9]{64}", trust_root_sha256):
+        raise DeploymentError(
+            "the root deployment contract must pin the authority trust-root SHA-256"
+        )
+    if _sha256_file(paths["trust root"]) != trust_root_sha256:
+        raise DeploymentError(
+            "the authority signing key differs from the root-pinned digest"
+        )
+    verified = subprocess.run(
+        [
+            os.environ.get("FS2_OPENSSL", "openssl"),
+            "dgst",
+            "-sha256",
+            "-verify",
+            str(paths["trust root"]),
+            "-signature",
+            str(paths["signature"]),
+            str(paths["receipt"]),
+        ],
+        env=clean_environment(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if verified.returncode != 0 or verified.stdout.strip() != "Verified OK":
+        raise DeploymentError(
+            "the model-network authority custody signature is invalid"
+        )
+    try:
+        receipt = json.loads(paths["receipt"].read_text(encoding="utf-8"))
+        if not isinstance(receipt, dict):
+            raise TypeError("receipt is not an object")
+        payload = {
+            key: value for key, value in receipt.items() if key != "payload_sha256"
+        }
+        credentials = receipt["custody"]["credentials"]
+        credential_claim = credentials[credential_kind]
+        issued_at = datetime.fromisoformat(receipt["issued_at"].replace("Z", "+00:00"))
+        expires_at = datetime.fromisoformat(
+            receipt["expires_at"].replace("Z", "+00:00")
+        )
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError, OSError) as exc:
+        raise DeploymentError(
+            "the signed model-network authority receipt is malformed"
+        ) from exc
+    if (
+        receipt.get("schema")
+        != "fs2-serve.nebius.ai/model-network-boundary-authority/v1"
+        or receipt.get("cluster_id") != cluster_id
+        or receipt.get("authority_namespace") != "fs2-network-security"
+        or receipt.get("payload_sha256") != _json_sha256(payload)
+        or receipt["custody"].get("trust_root_sha256") != trust_root_sha256
+        or receipt["custody"].get("impersonation_allowed") is not False
+        or issued_at.tzinfo is None
+        or expires_at.tzinfo is None
+        or not (issued_at <= datetime.now(UTC) < expires_at)
+    ):
+        raise DeploymentError(
+            "the signed model-network authority receipt is expired or outside its exact custody contract"
+        )
+    if (
+        credential_claim.get("username") != expected_username
+        or credential_claim.get("authentication_mode") != "x509-client-certificate"
+        or credential_claim.get("impersonation_allowed") is not False
+        or credential_claim.get("kubeconfig_sha256") != _sha256_file(credential)
+        or not re.fullmatch(
+            r"[a-f0-9]{64}", str(credential_claim.get("client_certificate_sha256", ""))
+        )
+        or not re.fullmatch(
+            r"[a-f0-9]{64}", str(credential_claim.get("issuer_ca_sha256", ""))
+        )
+    ):
+        raise DeploymentError(
+            "the model-network credential is not the non-impersonating X.509 identity in the signed custody receipt"
+        )
+
+    protected = receipt.get("protected_objects")
+    if not isinstance(protected, list) or not protected:
+        raise DeploymentError("the authority receipt has no protected-object inventory")
+    required = {
+        ("deployments.apps", "fs2-network-security", "fs2-model-network-boundary"),
+        ("services", "fs2-network-security", "fs2-model-network-boundary"),
+        ("secrets", "fs2-network-security", "fs2-model-network-boundary-tls"),
+        ("serviceaccounts", "fs2-network-security", "fs2-model-network-boundary"),
+        (
+            "issuers.cert-manager.io",
+            "fs2-network-security",
+            "fs2-model-network-boundary-selfsigned",
+        ),
+        (
+            "certificates.cert-manager.io",
+            "fs2-network-security",
+            "fs2-model-network-boundary",
+        ),
+        (
+            "poddisruptionbudgets.policy",
+            "fs2-network-security",
+            "fs2-model-network-boundary",
+        ),
+        (
+            "networkpolicies.networking.k8s.io",
+            "fs2-network-security",
+            "fs2-model-network-boundary",
+        ),
+        ("serviceaccounts", "fs2-system", "fs2-catalog-acquisition"),
+        (
+            "roles.rbac.authorization.k8s.io",
+            "fs2-models",
+            "fs2-model-network-boundary-reader",
+        ),
+        (
+            "rolebindings.rbac.authorization.k8s.io",
+            "fs2-models",
+            "fs2-model-network-boundary-reader",
+        ),
+        (
+            "roles.rbac.authorization.k8s.io",
+            "fs2-models",
+            "fs2-catalog-acquisition-job-writer",
+        ),
+        (
+            "rolebindings.rbac.authorization.k8s.io",
+            "fs2-models",
+            "fs2-catalog-acquisition-job-writer",
+        ),
+        (
+            "roles.rbac.authorization.k8s.io",
+            "fs2-models",
+            "fs2-model-network-policy-author",
+        ),
+        (
+            "rolebindings.rbac.authorization.k8s.io",
+            "fs2-models",
+            "fs2-model-network-policy-author",
+        ),
+        (
+            "roles.rbac.authorization.k8s.io",
+            "fs2-system",
+            "fs2-model-network-boundary-lease-reader",
+        ),
+        (
+            "rolebindings.rbac.authorization.k8s.io",
+            "fs2-system",
+            "fs2-model-network-boundary-lease-reader",
+        ),
+        (
+            "roles.rbac.authorization.k8s.io",
+            "fs2-system",
+            "fs2-model-network-transition",
+        ),
+        (
+            "rolebindings.rbac.authorization.k8s.io",
+            "fs2-system",
+            "fs2-model-network-transition",
+        ),
+        (
+            "roles.rbac.authorization.k8s.io",
+            "fs2-models",
+            "fs2-model-network-custody-reader",
+        ),
+        (
+            "rolebindings.rbac.authorization.k8s.io",
+            "fs2-models",
+            "fs2-model-network-custody-reader",
+        ),
+        (
+            "roles.rbac.authorization.k8s.io",
+            "fs2-system",
+            "fs2-model-network-custody-reader",
+        ),
+        (
+            "rolebindings.rbac.authorization.k8s.io",
+            "fs2-system",
+            "fs2-model-network-custody-reader",
+        ),
+        (
+            "roles.rbac.authorization.k8s.io",
+            "fs2-network-security",
+            "fs2-model-network-custody-reader",
+        ),
+        (
+            "rolebindings.rbac.authorization.k8s.io",
+            "fs2-network-security",
+            "fs2-model-network-custody-reader",
+        ),
+        (
+            "clusterroles.rbac.authorization.k8s.io",
+            "",
+            "fs2-model-network-admission-author",
+        ),
+        (
+            "clusterrolebindings.rbac.authorization.k8s.io",
+            "",
+            "fs2-model-network-admission-author",
+        ),
+        (
+            "clusterroles.rbac.authorization.k8s.io",
+            "",
+            "fs2-model-network-custody-reader",
+        ),
+        (
+            "clusterrolebindings.rbac.authorization.k8s.io",
+            "",
+            "fs2-model-network-custody-reader",
+        ),
+        (
+            "clusterroles.rbac.authorization.k8s.io",
+            "",
+            "fs2-model-network-helm-rollback",
+        ),
+        (
+            "clusterrolebindings.rbac.authorization.k8s.io",
+            "",
+            "fs2-model-network-helm-rollback",
+        ),
+        (
+            "validatingwebhookconfigurations.admissionregistration.k8s.io",
+            "",
+            "fs2-model-network-boundary",
+        ),
+        ("leases.coordination.k8s.io", "fs2-system", "fs2-model-network-transition"),
+    }
+    observed_keys: set[tuple[str, str, str]] = set()
+    live_webhook_sha256 = ""
+    live_authority_image = ""
+    for item in protected:
+        if not isinstance(item, dict):
+            raise DeploymentError(
+                "the authority protected-object inventory is malformed"
+            )
+        resource = item.get("resource")
+        namespace = item.get("namespace", "")
+        name = item.get("name")
+        if not all(isinstance(value, str) for value in (resource, namespace, name)):
+            raise DeploymentError("an authority protected-object identity is malformed")
+        key = (resource, namespace, name)
+        if key in observed_keys:
+            raise DeploymentError(
+                "the authority protected-object inventory has duplicates"
+            )
+        observed_keys.add(key)
+        # The transition credentials deliberately have no Secret read verb.
+        # Platform Security signs the TLS Secret identity/content hash; the
+        # fail-closed custody hook then prevents drift except exact cert-manager
+        # rotation, which requires a fresh short-lived signed receipt.
+        if resource == "secrets":
+            if (
+                not isinstance(item.get("uid"), str)
+                or not item["uid"]
+                or not isinstance(item.get("resource_version"), str)
+                or not item["resource_version"]
+                or not re.fullmatch(r"[a-f0-9]{64}", str(item.get("object_sha256", "")))
+            ):
+                raise DeploymentError(
+                    "the signed authority Secret identity is malformed"
+                )
+            continue
+        command = [
+            kubectl,
+            "--kubeconfig",
+            str(credential),
+            "--context",
+            context,
+        ]
+        if namespace:
+            command.extend(["--namespace", namespace])
+        command.extend(["get", resource, name, "--output", "json"])
+        result = subprocess.run(
+            command,
+            env=clean_environment(),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise DeploymentError(
+                f"cannot read signed authority object {resource}/{name}"
+            )
+        try:
+            live = json.loads(result.stdout)
+            metadata = live["metadata"]
+        except (KeyError, TypeError, json.JSONDecodeError) as exc:
+            raise DeploymentError(
+                f"signed authority object {resource}/{name} is malformed"
+            ) from exc
+        if (
+            metadata.get("labels", {}).get(
+                "fs2-serve.nebius.ai/network-boundary-authority"
+            )
+            != "true"
+        ):
+            raise DeploymentError(
+                f"signed authority object {resource}/{name} is outside the custody selector"
+            )
+        if (
+            metadata.get("uid") != item.get("uid")
+            or metadata.get("resourceVersion") != item.get("resource_version")
+            or _json_sha256(_semantic_kubernetes_object(live))
+            != item.get("object_sha256")
+        ):
+            raise DeploymentError(
+                f"signed authority object {resource}/{name} drifted after custody review"
+            )
+        if resource == "deployments.apps" and name == "fs2-model-network-boundary":
+            try:
+                containers = live["spec"]["template"]["spec"]["containers"]
+                admission_containers = [
+                    container
+                    for container in containers
+                    if container.get("name") == "admission"
+                ]
+                live_authority_image = admission_containers[0]["image"]
+            except (KeyError, IndexError, TypeError) as exc:
+                raise DeploymentError(
+                    "the authority Deployment image is malformed"
+                ) from exc
+            if len(admission_containers) != 1:
+                raise DeploymentError(
+                    "the authority Deployment needs one admission container"
+                )
+        if (
+            resource == "validatingwebhookconfigurations.admissionregistration.k8s.io"
+            and name == "fs2-model-network-boundary"
+        ):
+            webhooks = live.get("webhooks")
+            if not isinstance(webhooks, list):
+                raise DeploymentError("the live authority webhook list is malformed")
+            by_name = {
+                webhook.get("name"): webhook
+                for webhook in webhooks
+                if isinstance(webhook, dict)
+            }
+            expected_hooks = {
+                "admission.network.fs2.nebius.ai",
+                "children.network.fs2.nebius.ai",
+                "control-plane.network.fs2.nebius.ai",
+                "cluster-custody.network.fs2.nebius.ai",
+                "custody.network.fs2.nebius.ai",
+                "helm.network.fs2.nebius.ai",
+                "lease.network.fs2.nebius.ai",
+                "marker.network.fs2.nebius.ai",
+                "models.network.fs2.nebius.ai",
+            }
+            models_hook = by_name.get("models.network.fs2.nebius.ai", {})
+            marker_hook = by_name.get("marker.network.fs2.nebius.ai", {})
+            helm_hook = by_name.get("helm.network.fs2.nebius.ai", {})
+            control_plane_hook = by_name.get("control-plane.network.fs2.nebius.ai", {})
+            lease_hook = by_name.get("lease.network.fs2.nebius.ai", {})
+            if (
+                set(by_name) != expected_hooks
+                or any(
+                    webhook.get("failurePolicy") != "Fail"
+                    or webhook.get("clientConfig", {})
+                    .get("service", {})
+                    .get("namespace")
+                    != "fs2-network-security"
+                    for webhook in by_name.values()
+                )
+                or helm_hook.get("namespaceSelector")
+                != {"matchLabels": {"kubernetes.io/metadata.name": "fs2-system"}}
+                or helm_hook.get("objectSelector")
+                != {
+                    "matchLabels": {
+                        "name": "fs2-serve-control-plane",
+                        "owner": "helm",
+                    }
+                }
+                or models_hook.get("namespaceSelector")
+                != {"matchLabels": {"kubernetes.io/metadata.name": "fs2-models"}}
+                or models_hook.get("objectSelector", {}) != {}
+                or marker_hook.get("namespaceSelector")
+                != {"matchLabels": {"kubernetes.io/metadata.name": "fs2-models"}}
+                or marker_hook.get("objectSelector", {}) != {}
+                or marker_hook.get("matchConditions")
+                != [
+                    {
+                        "name": "exact-boundary-marker",
+                        "expression": "request.name == 'fs2-runtime-network-policy-boundary-v2'",
+                    }
+                ]
+                or control_plane_hook.get("namespaceSelector")
+                != {"matchLabels": {"kubernetes.io/metadata.name": "fs2-system"}}
+                or control_plane_hook.get("objectSelector")
+                != {
+                    "matchLabels": {
+                        "app.kubernetes.io/instance": "fs2-serve-control-plane"
+                    }
+                }
+                or control_plane_hook.get("matchConditions", []) != []
+                or lease_hook.get("matchConditions")
+                != [
+                    {
+                        "name": "exact-transition-lease",
+                        "expression": "request.name == 'fs2-model-network-transition'",
+                    }
+                ]
+            ):
+                raise DeploymentError(
+                    "the live authority lacks the exact bounded fail-closed Helm/Lease fence"
+                )
+            live_webhook_sha256 = _json_sha256({"webhooks": webhooks})
+    if not required.issubset(observed_keys):
+        raise DeploymentError("the authority receipt omits a required protected object")
+
+    webhook = receipt.get("webhook", {})
+    deployment = receipt.get("deployment", {})
+    acquisition_writer = receipt.get("acquisition_writer", {})
+    if not isinstance(webhook, dict):
+        raise DeploymentError("the authority webhook claim is malformed")
+    matching = [
+        item
+        for item in protected
+        if item.get("resource")
+        == "validatingwebhookconfigurations.admissionregistration.k8s.io"
+        and item.get("name") == "fs2-model-network-boundary"
+    ]
+    if (
+        len(matching) != 1
+        or webhook.get("name") != "fs2-model-network-boundary"
+        or webhook.get("uid") != matching[0].get("uid")
+        or webhook.get("resource_version") != matching[0].get("resource_version")
+        or not re.fullmatch(r"[a-f0-9]{64}", str(webhook.get("spec_sha256", "")))
+        or webhook.get("spec_sha256") != live_webhook_sha256
+    ):
+        raise DeploymentError("the signed authority webhook identity is inconsistent")
+    if not isinstance(deployment, dict):
+        raise DeploymentError("the authority Deployment claim is malformed")
+    image = deployment.get("image", {})
+    if (
+        not isinstance(image, dict)
+        or not isinstance(image.get("repository"), str)
+        or not image["repository"].endswith("/network-boundary-authority")
+        or not re.fullmatch(r"sha256:[a-f0-9]{64}", str(image.get("digest", "")))
+        or live_authority_image != f"{image['repository']}@{image['digest']}"
+    ):
+        raise DeploymentError(
+            "the authority Deployment does not use its dedicated digest-pinned image"
+        )
+    acquisition_accounts = [
+        item
+        for item in protected
+        if item.get("resource") == "serviceaccounts"
+        and item.get("namespace") == "fs2-system"
+        and item.get("name") == "fs2-catalog-acquisition"
+    ]
+    if (
+        not isinstance(acquisition_writer, dict)
+        or len(acquisition_accounts) != 1
+        or acquisition_writer.get("username")
+        != "system:serviceaccount:fs2-system:fs2-catalog-acquisition"
+        or acquisition_writer.get("service_account_uid")
+        != acquisition_accounts[0].get("uid")
+        or acquisition_writer.get("resource_version")
+        != acquisition_accounts[0].get("resource_version")
+    ):
+        raise DeploymentError(
+            "the dedicated catalog acquisition identity is not live-bound"
+        )
+    return receipt
+
+
 def model_network_boundary_credential(
     *,
     kubectl: str,
     shared_kubeconfig: str,
     context: str,
     phase: str,
-) -> tuple[str, str]:
-    """Require a distinct credential and prove its server-side username."""
+    cluster_id: str,
+    trust_root_sha256: str,
+) -> tuple[str, str, dict[str, Any]]:
+    """Require a signed, distinct X.509 credential and prove its live identity."""
 
     if phase == "prepare":
         environment_name = "FS2_NETWORK_AUTHORIZER_KUBECONFIG"
@@ -2585,7 +3132,16 @@ def model_network_boundary_credential(
         raise DeploymentError(
             f"{environment_name} authenticates as {username!r}, not {expected_username!r}"
         )
-    return str(credential.resolve()), expected_username
+    custody = model_network_boundary_authority_custody(
+        kubectl=kubectl,
+        context=context,
+        cluster_id=cluster_id,
+        credential=credential,
+        credential_kind="authorizer" if phase == "prepare" else "transition",
+        expected_username=expected_username,
+        trust_root_sha256=trust_root_sha256,
+    )
+    return str(credential.resolve()), expected_username, custody
 
 
 def ensure_control_plane_helm_release_idle(
@@ -3041,11 +3597,16 @@ def apply_stack(
 
     transition = contract["stages"]["workloads"]["model_runtime_network_policy"]
     transition_phase = transition.get("phase", "prepare")
-    boundary_kubeconfig, boundary_username = model_network_boundary_credential(
-        kubectl=args.kubectl,
-        shared_kubeconfig=dynamic["kubeconfig_path"],
-        context=dynamic["kube_context"],
-        phase=transition_phase,
+    trust_root_sha256 = transition.get("authority_trust_root_sha256", "")
+    boundary_kubeconfig, boundary_username, authority_receipt = (
+        model_network_boundary_credential(
+            kubectl=args.kubectl,
+            shared_kubeconfig=dynamic["kubeconfig_path"],
+            context=dynamic["kube_context"],
+            phase=transition_phase,
+            cluster_id=dynamic["cluster_id"],
+            trust_root_sha256=trust_root_sha256,
+        )
     )
 
     def apply_workloads(
@@ -3060,6 +3621,14 @@ def apply_stack(
                 bool(lock_identity)
             ),
             "TF_VAR_model_network_boundary_kubeconfig_path": boundary_kubeconfig,
+            "TF_VAR_model_network_helm_kubeconfig_path": (
+                boundary_kubeconfig
+                if transition_phase == "rollback-helm"
+                else dynamic["kubeconfig_path"]
+            ),
+            "TF_VAR_model_network_boundary_authority_receipt": json.dumps(
+                authority_receipt, sort_keys=True, separators=(",", ":")
+            ),
         }
         if lock_identity:
             ensure_control_plane_helm_release_idle(
@@ -3076,6 +3645,7 @@ def apply_stack(
             environment_overrides=overrides,
         )
         validate_model_network_policy_rollback_plan(workloads_plan, contract)
+        validate_model_network_frozen_plan(workloads_plan, contract)
         if lock_identity:
             ensure_control_plane_helm_release_idle(
                 kubectl=args.kubectl,
@@ -3093,12 +3663,20 @@ def apply_stack(
     if transition_phase == "prepare":
         if boundary_username != "fs2-model-network-authorizer":
             raise DeploymentError("prepare requires the separate network authorizer")
-        transition_kubeconfig, transition_username = model_network_boundary_credential(
-            kubectl=args.kubectl,
-            shared_kubeconfig=dynamic["kubeconfig_path"],
-            context=dynamic["kube_context"],
-            phase="inventory",
+        transition_kubeconfig, transition_username, transition_receipt = (
+            model_network_boundary_credential(
+                kubectl=args.kubectl,
+                shared_kubeconfig=dynamic["kubeconfig_path"],
+                context=dynamic["kube_context"],
+                phase="inventory",
+                cluster_id=dynamic["cluster_id"],
+                trust_root_sha256=trust_root_sha256,
+            )
         )
+        if transition_receipt != authority_receipt:
+            raise DeploymentError(
+                "authorizer and transition credentials are not bound to one signed authority receipt"
+            )
         ensure_control_plane_helm_release_idle(
             kubectl=args.kubectl,
             kubeconfig=dynamic["kubeconfig_path"],
@@ -3234,14 +3812,27 @@ def plan_stack(
     transition_phase = contract["stages"]["workloads"][
         "model_runtime_network_policy"
     ].get("phase", "prepare")
-    boundary_kubeconfig, _boundary_username = model_network_boundary_credential(
-        kubectl=args.kubectl,
-        shared_kubeconfig=dynamic["kubeconfig_path"],
-        context=dynamic["kube_context"],
-        phase=transition_phase,
+    transition = contract["stages"]["workloads"]["model_runtime_network_policy"]
+    boundary_kubeconfig, _boundary_username, authority_receipt = (
+        model_network_boundary_credential(
+            kubectl=args.kubectl,
+            shared_kubeconfig=dynamic["kubeconfig_path"],
+            context=dynamic["kube_context"],
+            phase=transition_phase,
+            cluster_id=dynamic["cluster_id"],
+            trust_root_sha256=transition.get("authority_trust_root_sha256", ""),
+        )
     )
     workloads_overrides = {
         "TF_VAR_model_network_boundary_kubeconfig_path": boundary_kubeconfig,
+        "TF_VAR_model_network_helm_kubeconfig_path": (
+            boundary_kubeconfig
+            if transition_phase == "rollback-helm"
+            else dynamic["kubeconfig_path"]
+        ),
+        "TF_VAR_model_network_boundary_authority_receipt": json.dumps(
+            authority_receipt, sort_keys=True, separators=(",", ":")
+        ),
     }
 
     if not state_ready(args.terraform, run_root, "workloads", contract):
@@ -3265,6 +3856,7 @@ def plan_stack(
         environment_overrides=workloads_overrides,
     )
     validate_model_network_policy_rollback_plan(workloads_plan, contract)
+    validate_model_network_frozen_plan(workloads_plan, contract)
     print("Planned all three existing states after upstream handoffs converged.")
 
 

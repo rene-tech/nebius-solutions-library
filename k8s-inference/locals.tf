@@ -1120,21 +1120,22 @@ locals {
   }
 
   workloads_variables = {
-    deployment_profile              = local.model_profile
-    enabled_model_ids               = local.selected_model_ids
-    model_image_overrides           = local.effective_model_images
-    model_pool_overrides            = var.deployment.models.pool_overrides
-    model_runtime_overrides         = var.deployment.models.runtime_overrides
-    model_runtime_network_policy    = var.deployment.models.network_policy
-    model_scaling_mode              = var.deployment.models.scaling.mode
-    hot_model_ids                   = sort(tolist(var.deployment.models.scaling.hot))
-    model_scaling_overrides         = var.deployment.models.scaling.overrides
-    model_startup_timeout_overrides = var.deployment.models.startup_timeout_overrides
-    keda_polling_interval_seconds   = var.deployment.models.scaling.polling_interval_seconds
-    keda_cooldown_period_seconds    = var.deployment.models.scaling.cooldown_period_seconds
-    enable_cold_start_keepers       = var.deployment.models.cold_start_keepers
-    enable_dcgm_cold_start_campaign = var.deployment.observability.dcgm_cold_start_campaign
-    request_debug_enabled           = var.deployment.observability.request_debug_enabled
+    deployment_profile                       = local.model_profile
+    enabled_model_ids                        = local.selected_model_ids
+    model_image_overrides                    = local.effective_model_images
+    model_pool_overrides                     = var.deployment.models.pool_overrides
+    model_runtime_overrides                  = var.deployment.models.runtime_overrides
+    model_runtime_network_policy             = var.deployment.models.network_policy
+    model_network_boundary_trust_root_sha256 = var.deployment.models.network_policy.authority_trust_root_sha256
+    model_scaling_mode                       = var.deployment.models.scaling.mode
+    hot_model_ids                            = sort(tolist(var.deployment.models.scaling.hot))
+    model_scaling_overrides                  = var.deployment.models.scaling.overrides
+    model_startup_timeout_overrides          = var.deployment.models.startup_timeout_overrides
+    keda_polling_interval_seconds            = var.deployment.models.scaling.polling_interval_seconds
+    keda_cooldown_period_seconds             = var.deployment.models.scaling.cooldown_period_seconds
+    enable_cold_start_keepers                = var.deployment.models.cold_start_keepers
+    enable_dcgm_cold_start_campaign          = var.deployment.observability.dcgm_cold_start_campaign
+    request_debug_enabled                    = var.deployment.observability.request_debug_enabled
     # core_pool_capacity is declared inside the workloads stage's scheduling
     # object and read as var.scheduling.core_pool_capacity, so it must travel
     # inside that object. Emitted as a sibling it was an undeclared variable:

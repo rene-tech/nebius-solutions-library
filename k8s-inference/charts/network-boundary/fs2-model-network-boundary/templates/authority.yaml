@@ -1,0 +1,248 @@
+apiVersion: coordination.k8s.io/v1
+kind: Lease
+metadata:
+  name: fs2-model-network-transition
+  namespace: {{ .Values.systemNamespace }}
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+  annotations:
+    fs2-serve.nebius.ai/network-transition-writer: {{ .Values.transitionWriterUsername | quote }}
+spec:
+  holderIdentity: ""
+  leaseDurationSeconds: 1
+  leaseTransitions: 0
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ .Values.certificate.issuerName }}
+  namespace: {{ .Values.authorityNamespace }}
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+  annotations:
+    {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: fs2-model-network-boundary
+  namespace: {{ .Values.authorityNamespace }}
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+  annotations:
+    {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
+spec:
+  secretName: {{ .Values.certificate.secretName }}
+  dnsNames:
+    - fs2-model-network-boundary.{{ .Values.authorityNamespace }}.svc
+    - fs2-model-network-boundary.{{ .Values.authorityNamespace }}.svc.cluster.local
+  issuerRef:
+    group: cert-manager.io
+    kind: Issuer
+    name: {{ .Values.certificate.issuerName }}
+  secretTemplate:
+    labels:
+      {{- include "fs2-network-boundary.labels" . | nindent 6 }}
+    annotations:
+      {{- include "fs2-network-boundary.annotations" . | nindent 6 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fs2-model-network-boundary
+  namespace: {{ .Values.authorityNamespace }}
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+    app.kubernetes.io/component: admission
+  annotations:
+    {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "fs2-network-boundary.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fs2-network-boundary.labels" . | nindent 8 }}
+        {{- include "fs2-network-boundary.selectorLabels" . | nindent 8 }}
+      annotations:
+        {{- include "fs2-network-boundary.annotations" . | nindent 8 }}
+        fs2.nebius.ai/image-digest: {{ .Values.image.digest | quote }}
+    spec:
+      serviceAccountName: fs2-model-network-boundary
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: admission
+          image: {{ printf "%s@%s" .Values.image.repository .Values.image.digest | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["fs2-network-boundary"]
+          ports:
+            - name: https
+              containerPort: {{ .Values.service.targetPort }}
+              protocol: TCP
+          env:
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_ENABLED
+              value: "true"
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_PORT
+              value: {{ .Values.service.targetPort | quote }}
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_API_URL
+              value: {{ .Values.kubernetesApiUrl | quote }}
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_MODEL_NAMESPACE
+              value: {{ .Values.modelNamespace | quote }}
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_SYSTEM_NAMESPACE
+              value: {{ .Values.systemNamespace | quote }}
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_AUTHORITY_NAMESPACE
+              value: {{ .Values.authorityNamespace | quote }}
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_ACQUISITION_WRITER
+              value: {{ printf "system:serviceaccount:%s:%s" .Values.systemNamespace .Values.acquisitionServiceAccountName | quote }}
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_AUTHORIZER_WRITER
+              value: {{ .Values.authorizerUsername | quote }}
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_DIRECT_JOB_WRITER
+              value: {{ .Values.directJobWriterUsername | quote }}
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_JOBSET_WRITER
+              value: {{ .Values.jobsetWriterUsername | quote }}
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_TRANSITION_WRITER
+              value: {{ .Values.transitionWriterUsername | quote }}
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_CERTIFICATE_WRITER
+              value: {{ .Values.certificateWriterUsername | quote }}
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_API_TIMEOUT_SECONDS
+              value: {{ .Values.apiTimeoutSeconds | quote }}
+          volumeMounts:
+            - name: kubernetes-api
+              mountPath: /var/run/secrets/fs2-network-boundary
+              readOnly: true
+            - name: tls
+              mountPath: /var/run/secrets/fs2-network-boundary-tls
+              readOnly: true
+          startupProbe:
+            httpGet: {path: /livez, port: https, scheme: HTTPS}
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: {path: /livez, port: https, scheme: HTTPS}
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: {path: /livez, port: https, scheme: HTTPS}
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+      volumes:
+        - name: kubernetes-api
+          projected:
+            defaultMode: 0400
+            sources:
+              - serviceAccountToken:
+                  expirationSeconds: {{ .Values.tokenExpirationSeconds }}
+                  path: token
+              - configMap:
+                  name: kube-root-ca.crt
+                  items: [{key: ca.crt, path: ca.crt}]
+        - name: tls
+          secret:
+            secretName: {{ .Values.certificate.secretName }}
+            defaultMode: 0400
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fs2-model-network-boundary
+  namespace: {{ .Values.authorityNamespace }}
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+    app.kubernetes.io/component: admission
+  annotations:
+    {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "fs2-network-boundary.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: https
+      port: {{ .Values.service.port }}
+      targetPort: https
+      protocol: TCP
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: fs2-model-network-boundary
+  namespace: {{ .Values.authorityNamespace }}
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+  annotations:
+    {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "fs2-network-boundary.selectorLabels" . | nindent 6 }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fs2-model-network-boundary
+  namespace: {{ .Values.authorityNamespace }}
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+  annotations:
+    {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "fs2-network-boundary.selectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - ports:
+        - {port: {{ .Values.service.targetPort }}, protocol: TCP}
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchExpressions:
+              - {key: k8s-app, operator: In, values: [coredns, kube-dns]}
+      ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
+    {{- range .Values.kubernetesApiCidrs }}
+    - to:
+        - ipBlock: {cidr: {{ . | quote }}}
+      ports:
+        - {port: 443, protocol: TCP}
+    {{- end }}

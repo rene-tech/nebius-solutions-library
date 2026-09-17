@@ -170,7 +170,8 @@ variable "deployment" {
       # rollback removes the deny in one apply and permits Helm rollback only
       # after a second live absence receipt.
       network_policy = optional(object({
-        phase = optional(string, "prepare")
+        phase                       = optional(string, "prepare")
+        authority_trust_root_sha256 = optional(string, "")
         inventory_receipt = optional(object({
           schema          = string
           cluster_id      = string
@@ -223,7 +224,8 @@ variable "deployment" {
             resource_version = string
             spec_sha256      = string
           })
-          payload_sha256 = string
+          boundary_authority_sha256 = string
+          payload_sha256            = string
         }), null)
         deny_absent_receipt = optional(object({
           schema                     = string
@@ -784,6 +786,14 @@ variable "deployment" {
       "rollback-helm",
     ], var.deployment.models.network_policy.phase)
     error_message = "deployment.models.network_policy.phase must be prepare, inventory, enforce, rollback-remove-deny, or rollback-helm."
+  }
+
+  validation {
+    condition = (
+      var.deployment.models.network_policy.authority_trust_root_sha256 == "" ||
+      can(regex("^[a-f0-9]{64}$", var.deployment.models.network_policy.authority_trust_root_sha256))
+    )
+    error_message = "deployment.models.network_policy.authority_trust_root_sha256 must be empty for offline source checks or the exact SHA-256 of the independently custodied signing public key."
   }
 
   validation {

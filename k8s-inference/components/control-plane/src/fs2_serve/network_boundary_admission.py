@@ -11,8 +11,9 @@ Terraform writers.
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -27,6 +28,8 @@ TRANSITION_WRITER_ANNOTATION = "fs2-serve.nebius.ai/network-transition-writer"
 TRANSITION_HOLDER_ANNOTATION = "fs2-serve.nebius.ai/network-transition-holder"
 TRANSITION_LEASE = "fs2-model-network-transition"
 BOUNDARY_MARKER = "fs2-runtime-network-policy-boundary-v2"
+BOUNDARY_OBJECT_LABEL = "fs2-serve.nebius.ai/network-boundary-object"
+BOUNDARY_AUTHORITY_LABEL = "fs2-serve.nebius.ai/network-boundary-authority"
 HOLDER_PATTERN = re.compile(r"^[a-z][a-z0-9]{5,11}:[1-9][0-9]*:[a-f0-9]{32}$")
 
 
@@ -46,11 +49,13 @@ class ParentKind:
 class NetworkBoundaryConfig:
     model_namespace: str
     system_namespace: str
+    authority_namespace: str
     acquisition_writer: str
     direct_job_writer: str
     jobset_writer: str
     authorizer_writer: str
     transition_writer: str
+    certificate_writer: str
     controller_manager_writer: str = "system:kube-controller-manager"
 
     def parent_kinds(self) -> Mapping[tuple[str, str], ParentKind]:
@@ -239,9 +244,56 @@ def _parent_child_profile(parent: Mapping[str, Any], parent_kind: str, child: Ma
 
 
 class NetworkBoundaryAdmission:
-    def __init__(self, *, config: NetworkBoundaryConfig, reader: KubernetesBoundaryReader) -> None:
+    def __init__(
+        self,
+        *,
+        config: NetworkBoundaryConfig,
+        reader: KubernetesBoundaryReader,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
         self.config = config
         self.reader = reader
+        self.clock = clock or (lambda: datetime.now(UTC))
+
+    def _lease_expires_at(self, value: Mapping[str, Any], label: str) -> datetime:
+        spec = _mapping(value.get("spec"), f"{label}.spec")
+        duration = spec.get("leaseDurationSeconds")
+        renew_time = spec.get("renewTime")
+        if (
+            not isinstance(duration, int)
+            or isinstance(duration, bool)
+            or duration < 1
+            or duration > 7200
+            or not isinstance(renew_time, str)
+        ):
+            raise NetworkBoundaryError(f"{label} timing is malformed")
+        try:
+            renewed = datetime.fromisoformat(renew_time.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise NetworkBoundaryError(f"{label} renewTime is malformed") from exc
+        if renewed.tzinfo is None:
+            raise NetworkBoundaryError(f"{label} renewTime has no timezone")
+        return renewed.astimezone(UTC) + timedelta(seconds=duration)
+
+    async def _active_transition_holder(self) -> str:
+        lease = await self.reader.get(
+            "apis/coordination.k8s.io/v1/namespaces/"
+            f"{quote(self.config.system_namespace, safe='')}/leases/{TRANSITION_LEASE}"
+        )
+        metadata = _mapping(lease.get("metadata"), "transition Lease.metadata")
+        annotations = _mapping(metadata.get("annotations"), "transition Lease.annotations")
+        spec = _mapping(lease.get("spec"), "transition Lease.spec")
+        holder = spec.get("holderIdentity")
+        if not isinstance(holder, str) or HOLDER_PATTERN.fullmatch(holder) is None:
+            raise NetworkBoundaryError("the request has no valid transition holder")
+        if (
+            annotations.get(TRANSITION_WRITER_ANNOTATION) != self.config.transition_writer
+            or annotations.get(TRANSITION_HOLDER_ANNOTATION) != holder
+        ):
+            raise NetworkBoundaryError("the transition Lease identity is not exact")
+        if self._lease_expires_at(lease, "transition Lease") <= self.clock():
+            raise NetworkBoundaryError("the request has an expired transition holder")
+        return holder
 
     async def _authorize_child(
         self,
@@ -311,7 +363,14 @@ class NetworkBoundaryAdmission:
         if _parent_child_profile(live, parent.kind, value) != child_profile:
             raise NetworkBoundaryError("the child network profile differs from its live parent template")
 
-    def _is_protected(self, resource: Mapping[str, Any], namespace: str, name: str) -> bool:
+    def _is_protected(
+        self,
+        resource: Mapping[str, Any],
+        namespace: str,
+        name: str,
+        value: Mapping[str, Any],
+        old_value: Mapping[str, Any],
+    ) -> bool:
         group = resource.get("group", "")
         plural = resource.get("resource")
         if group == "networking.k8s.io" and plural == "networkpolicies" and namespace == self.config.model_namespace:
@@ -326,8 +385,22 @@ class NetworkBoundaryAdmission:
         if group == "admissionregistration.k8s.io" and plural in {
             "validatingadmissionpolicies",
             "validatingadmissionpolicybindings",
+            "validatingwebhookconfigurations",
         }:
             return name.startswith("fs2-model-network-")
+        protected_namespaces = {
+            self.config.model_namespace,
+            self.config.system_namespace,
+            self.config.authority_namespace,
+        }
+        if namespace in protected_namespaces or not namespace:
+            for candidate in (value, old_value):
+                metadata = candidate.get("metadata")
+                if not isinstance(metadata, Mapping):
+                    continue
+                labels = metadata.get("labels")
+                if isinstance(labels, Mapping) and labels.get(BOUNDARY_AUTHORITY_LABEL) == "true":
+                    return True
         return False
 
     def _is_transition_lease(
@@ -342,6 +415,86 @@ class NetworkBoundaryAdmission:
             and namespace == self.config.system_namespace
             and name == TRANSITION_LEASE
         )
+
+    def _is_control_plane_helm_storage(
+        self,
+        resource: Mapping[str, Any],
+        namespace: str,
+        value: Mapping[str, Any],
+        old_value: Mapping[str, Any],
+    ) -> bool:
+        if (
+            resource.get("group", "") != ""
+            or resource.get("resource") not in {"configmaps", "secrets"}
+            or namespace != self.config.system_namespace
+        ):
+            return False
+        for candidate in (value, old_value):
+            metadata = candidate.get("metadata")
+            if not isinstance(metadata, Mapping):
+                continue
+            labels = metadata.get("labels")
+            if (
+                isinstance(labels, Mapping)
+                and labels.get("owner") == "helm"
+                and labels.get("name") == "fs2-serve-control-plane"
+            ):
+                return True
+        return False
+
+    def _is_control_plane_release_object(
+        self,
+        resource: Mapping[str, Any],
+        namespace: str,
+        value: Mapping[str, Any],
+        old_value: Mapping[str, Any],
+    ) -> bool:
+        if namespace != self.config.system_namespace:
+            return False
+        for candidate in (value, old_value):
+            metadata = candidate.get("metadata")
+            if not isinstance(metadata, Mapping):
+                continue
+            labels = metadata.get("labels")
+            if isinstance(labels, Mapping) and labels.get("app.kubernetes.io/instance") == "fs2-serve-control-plane":
+                return True
+        return False
+
+    def _is_certificate_rotation(
+        self,
+        *,
+        username: str,
+        operation: str,
+        resource: Mapping[str, Any],
+        namespace: str,
+        name: str,
+        value: Mapping[str, Any],
+        old_value: Mapping[str, Any],
+    ) -> bool:
+        if not (
+            username == self.config.certificate_writer
+            and operation == "UPDATE"
+            and resource.get("group", "") == ""
+            and resource.get("resource") == "secrets"
+            and namespace == self.config.authority_namespace
+            and name == "fs2-model-network-boundary-tls"
+        ):
+            return False
+        if value.get("type") != "kubernetes.io/tls" or old_value.get("type") != "kubernetes.io/tls":
+            raise NetworkBoundaryError("boundary certificate Secret type cannot change")
+        for label, candidate in (("new", value), ("old", old_value)):
+            metadata = _mapping(candidate.get("metadata"), f"{label} certificate Secret.metadata")
+            labels = _mapping(metadata.get("labels"), f"{label} certificate Secret.labels")
+            if (
+                metadata.get("name") != name
+                or metadata.get("namespace") != namespace
+                or labels.get(BOUNDARY_AUTHORITY_LABEL) != "true"
+            ):
+                raise NetworkBoundaryError("boundary certificate rotation lost its exact identity")
+            data = _mapping(candidate.get("data"), f"{label} certificate Secret.data")
+            if not {"tls.crt", "tls.key"}.issubset(data):
+                raise NetworkBoundaryError("boundary certificate Secret is incomplete")
+        return True
 
     def _authorize_lease_mutation(
         self,
@@ -381,7 +534,8 @@ class NetworkBoundaryAdmission:
         if old_holder and old_annotations.get(TRANSITION_HOLDER_ANNOTATION) != old_holder:
             raise NetworkBoundaryError("old transition Lease is not bound to its holder token")
         if old_holder and new_holder not in {"", old_holder}:
-            raise NetworkBoundaryError("an active transition holder cannot be replaced")
+            if self._lease_expires_at(old_value, "old transition Lease") > self.clock():
+                raise NetworkBoundaryError("an active transition holder cannot be replaced")
         if new_holder and (
             HOLDER_PATTERN.fullmatch(new_holder) is None
             or new_annotations.get(TRANSITION_HOLDER_ANNOTATION) != new_holder
@@ -412,7 +566,23 @@ class NetworkBoundaryAdmission:
                 old_value=old_value,
             )
             return
-        if not self._is_protected(resource, namespace, name):
+        if self._is_certificate_rotation(
+            username=username,
+            operation=operation,
+            resource=resource,
+            namespace=namespace,
+            name=name,
+            value=value,
+            old_value=old_value,
+        ):
+            return
+        helm_storage = self._is_control_plane_helm_storage(resource, namespace, value, old_value)
+        control_plane_release = self._is_control_plane_release_object(resource, namespace, value, old_value)
+        if (
+            not helm_storage
+            and not control_plane_release
+            and not self._is_protected(resource, namespace, name, value, old_value)
+        ):
             return
         marker = await self.reader.get_optional(
             f"api/v1/namespaces/{quote(self.config.model_namespace, safe='')}/configmaps/{BOUNDARY_MARKER}"
@@ -421,18 +591,22 @@ class NetworkBoundaryAdmission:
             "apis/coordination.k8s.io/v1/namespaces/"
             f"{quote(self.config.system_namespace, safe='')}/leases/{TRANSITION_LEASE}"
         )
-        lease_metadata = _mapping(lease.get("metadata"), "transition Lease.metadata")
-        lease_annotations = _mapping(lease_metadata.get("annotations"), "transition Lease.annotations")
         lease_spec = _mapping(lease.get("spec"), "transition Lease.spec")
         holder = lease_spec.get("holderIdentity")
-        writer = lease_annotations.get(TRANSITION_WRITER_ANNOTATION)
+        if (helm_storage or control_plane_release) and holder in {None, ""}:
+            raise NetworkBoundaryError("the control-plane release is frozen outside deny-absent rollback")
+        holder = await self._active_transition_holder()
+        if helm_storage or control_plane_release:
+            if username != self.config.transition_writer or marker is None:
+                raise NetworkBoundaryError("only the deny-absent transition may change the control-plane release")
+            default_deny = await self.reader.get_optional(
+                "apis/networking.k8s.io/v1/namespaces/"
+                f"{quote(self.config.model_namespace, safe='')}/networkpolicies/default-deny"
+            )
+            if default_deny is None:
+                return
+            raise NetworkBoundaryError("the control-plane release cannot change before default-deny is absent")
         target_annotations = _mapping(metadata.get("annotations"), "protected object annotations")
-        if not isinstance(holder, str) or not holder:
-            raise NetworkBoundaryError("the protected mutation has no active transition holder")
-        if HOLDER_PATTERN.fullmatch(holder) is None:
-            raise NetworkBoundaryError("the protected mutation has a malformed transition holder")
-        if writer != self.config.transition_writer:
-            raise NetworkBoundaryError("the transition Lease has the wrong authenticated writer")
         allowed_writers = (
             {self.config.authorizer_writer, self.config.transition_writer}
             if marker is None
@@ -478,6 +652,24 @@ class NetworkBoundaryAdmission:
                 value=value,
                 old_value=old_value,
             )
+        if (
+            operation in {"CREATE", "UPDATE"}
+            and namespace == self.config.model_namespace
+            and username == self.config.transition_writer
+            and kind_value
+            in {
+                "CronJob",
+                "DaemonSet",
+                "Deployment",
+                "Job",
+                "JobSet",
+                "Pod",
+                "ReplicaSet",
+                "ReplicationController",
+                "StatefulSet",
+            }
+        ):
+            await self._active_transition_holder()
         await self._authorize_transition(
             username=username,
             operation=operation,

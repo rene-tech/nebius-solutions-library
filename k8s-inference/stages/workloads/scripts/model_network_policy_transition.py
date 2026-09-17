@@ -28,7 +28,7 @@ COMPONENT_LABEL = "app.kubernetes.io/component"
 PART_OF_LABEL = "app.kubernetes.io/part-of"
 NAMESPACE = "fs2-models"
 SYSTEM_NAMESPACE = "fs2-system"
-INVENTORY_SCHEMA = "fs2-serve.nebius.ai/model-runtime-network-inventory/v5"
+INVENTORY_SCHEMA = "fs2-serve.nebius.ai/model-runtime-network-inventory/v6"
 DENY_ABSENT_SCHEMA = "fs2-serve.nebius.ai/model-runtime-network-deny-absent/v2"
 HOLDER_PATTERN = re.compile(r"^[a-z][a-z0-9]{5,11}:[1-9][0-9]*:[a-f0-9]{32}$")
 WORKLOAD_RESOURCES = {
@@ -211,6 +211,23 @@ def _contract(contract: dict[str, Any], *, phases: set[str]) -> dict[str, Any]:
     transition_writer = contract.get("transition_writer_username")
     if transition_writer != "fs2-model-network-transition":
         raise ReceiptError("transition contract authenticated writer is not exact")
+    authority = _object(
+        contract.get("boundary_authority"), "contract.boundary_authority"
+    )
+    if (
+        authority.get("schema")
+        != "fs2-serve.nebius.ai/model-network-boundary-authority/v1"
+        or authority.get("cluster_id") != cluster_id
+        or authority.get("authority_namespace") != "fs2-network-security"
+    ):
+        raise ReceiptError(
+            "transition contract has no exact external boundary authority"
+        )
+    authority_payload = {
+        key: value for key, value in authority.items() if key != "payload_sha256"
+    }
+    if authority.get("payload_sha256") != _sha256(authority_payload):
+        raise ReceiptError("external boundary authority payload digest is inconsistent")
     image = _object(contract.get("control_plane_image"), "contract.control_plane_image")
     if not isinstance(image.get("repository"), str) or not image["repository"]:
         raise ReceiptError("control-plane image repository is missing")
@@ -958,13 +975,18 @@ def _boundary_webhook_state(
         raise ReceiptError("boundary webhook list is malformed")
     by_name = {item.get("name"): item for item in raw}
     expected_names = {
+        "admission.network.fs2.nebius.ai",
         "children.network.fs2.nebius.ai",
-        "transitions.network.fs2.nebius.ai",
+        "control-plane.network.fs2.nebius.ai",
+        "cluster-custody.network.fs2.nebius.ai",
+        "custody.network.fs2.nebius.ai",
+        "helm.network.fs2.nebius.ai",
+        "lease.network.fs2.nebius.ai",
+        "marker.network.fs2.nebius.ai",
+        "models.network.fs2.nebius.ai",
     }
     if set(by_name) != expected_names or len(raw) != len(expected_names):
-        raise ReceiptError(
-            "boundary webhook does not contain the exact two fail-closed hooks"
-        )
+        raise ReceiptError("boundary webhook does not contain the exact bounded hooks")
     common = {
         "admissionReviewVersions": ["v1"],
         "sideEffects": "None",
@@ -972,63 +994,106 @@ def _boundary_webhook_state(
         "matchPolicy": "Equivalent",
         "timeoutSeconds": 3,
     }
-    expected_rules = {
-        "children.network.fs2.nebius.ai": [
+    expected_namespace_selectors = {
+        "children.network.fs2.nebius.ai": {
+            "matchLabels": {"kubernetes.io/metadata.name": NAMESPACE}
+        },
+        "models.network.fs2.nebius.ai": {
+            "matchLabels": {"kubernetes.io/metadata.name": NAMESPACE}
+        },
+        "marker.network.fs2.nebius.ai": {
+            "matchLabels": {"kubernetes.io/metadata.name": NAMESPACE}
+        },
+        "helm.network.fs2.nebius.ai": {
+            "matchLabels": {"kubernetes.io/metadata.name": SYSTEM_NAMESPACE}
+        },
+        "control-plane.network.fs2.nebius.ai": {
+            "matchLabels": {"kubernetes.io/metadata.name": SYSTEM_NAMESPACE}
+        },
+        "lease.network.fs2.nebius.ai": {
+            "matchLabels": {"kubernetes.io/metadata.name": SYSTEM_NAMESPACE}
+        },
+        "custody.network.fs2.nebius.ai": {
+            "matchExpressions": [
+                {
+                    "key": "kubernetes.io/metadata.name",
+                    "operator": "In",
+                    "values": [NAMESPACE, SYSTEM_NAMESPACE, "fs2-network-security"],
+                }
+            ]
+        },
+        "cluster-custody.network.fs2.nebius.ai": {},
+        "admission.network.fs2.nebius.ai": {},
+    }
+    expected_object_selectors = {
+        "children.network.fs2.nebius.ai": {
+            "matchExpressions": [
+                {
+                    "key": PROFILE_LABEL,
+                    "operator": "Exists",
+                }
+            ]
+        },
+        "models.network.fs2.nebius.ai": {},
+        "marker.network.fs2.nebius.ai": {},
+        "helm.network.fs2.nebius.ai": {
+            "matchLabels": {
+                "name": "fs2-serve-control-plane",
+                "owner": "helm",
+            }
+        },
+        "control-plane.network.fs2.nebius.ai": {
+            "matchLabels": {"app.kubernetes.io/instance": "fs2-serve-control-plane"}
+        },
+        "lease.network.fs2.nebius.ai": {
+            "matchLabels": {"fs2-serve.nebius.ai/network-boundary-object": "true"}
+        },
+        "custody.network.fs2.nebius.ai": {
+            "matchLabels": {"fs2-serve.nebius.ai/network-boundary-authority": "true"}
+        },
+        "cluster-custody.network.fs2.nebius.ai": {
+            "matchLabels": {"fs2-serve.nebius.ai/network-boundary-authority": "true"}
+        },
+        "admission.network.fs2.nebius.ai": {
+            "matchLabels": {"fs2-serve.nebius.ai/network-boundary-object": "true"}
+        },
+    }
+    expected_conditions = {
+        "children.network.fs2.nebius.ai": [],
+        "models.network.fs2.nebius.ai": [],
+        "marker.network.fs2.nebius.ai": [
             {
-                "apiGroups": [""],
-                "apiVersions": ["v1"],
-                "operations": ["CREATE", "UPDATE"],
-                "resources": ["pods"],
-                "scope": "Namespaced",
-            },
-            {
-                "apiGroups": ["apps"],
-                "apiVersions": ["v1"],
-                "operations": ["CREATE", "UPDATE"],
-                "resources": ["replicasets"],
-                "scope": "Namespaced",
-            },
-            {
-                "apiGroups": ["batch"],
-                "apiVersions": ["v1"],
-                "operations": ["CREATE", "UPDATE"],
-                "resources": ["jobs"],
-                "scope": "Namespaced",
-            },
+                "name": "exact-boundary-marker",
+                "expression": "request.name == 'fs2-runtime-network-policy-boundary-v2'",
+            }
         ],
-        "transitions.network.fs2.nebius.ai": [
+        "helm.network.fs2.nebius.ai": [],
+        "control-plane.network.fs2.nebius.ai": [],
+        "lease.network.fs2.nebius.ai": [
             {
-                "apiGroups": ["networking.k8s.io"],
-                "apiVersions": ["v1"],
-                "operations": ["CREATE", "UPDATE", "DELETE"],
-                "resources": ["networkpolicies"],
-                "scope": "Namespaced",
-            },
+                "name": "exact-transition-lease",
+                "expression": "request.name == 'fs2-model-network-transition'",
+            }
+        ],
+        "custody.network.fs2.nebius.ai": [],
+        "cluster-custody.network.fs2.nebius.ai": [
             {
-                "apiGroups": [""],
-                "apiVersions": ["v1"],
-                "operations": ["CREATE", "UPDATE", "DELETE"],
-                "resources": ["configmaps"],
-                "scope": "Namespaced",
-            },
+                "name": "exact-custody-rbac",
+                "expression": (
+                    "request.name in ['fs2-model-network-admission-author', "
+                    "'fs2-model-network-custody-reader', "
+                    "'fs2-model-network-helm-rollback']"
+                ),
+            }
+        ],
+        "admission.network.fs2.nebius.ai": [
             {
-                "apiGroups": ["coordination.k8s.io"],
-                "apiVersions": ["v1"],
-                "operations": ["CREATE", "UPDATE", "DELETE"],
-                "resources": ["leases"],
-                "scope": "Namespaced",
-            },
-            {
-                "apiGroups": ["admissionregistration.k8s.io"],
-                "apiVersions": ["v1"],
-                "operations": ["CREATE", "UPDATE", "DELETE"],
-                "resources": [
-                    "validatingadmissionpolicies",
-                    "validatingadmissionpolicybindings",
-                    "validatingwebhookconfigurations",
-                ],
-                "scope": "Cluster",
-            },
+                "name": "exact-network-admission-object",
+                "expression": (
+                    "request.name == 'fs2-model-network-boundary' || "
+                    "request.name.startsWith('fs2-model-network-')"
+                ),
+            }
         ],
     }
     allowed_keys = {
@@ -1041,7 +1106,204 @@ def _boundary_webhook_state(
         "clientConfig",
         "namespaceSelector",
         "objectSelector",
+        "matchConditions",
         "rules",
+    }
+    expected_rules = {
+        "children.network.fs2.nebius.ai": [
+            {
+                "apiGroups": [""],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE"],
+                "resources": ["pods", "replicationcontrollers"],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["apps"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE"],
+                "resources": [
+                    "deployments",
+                    "statefulsets",
+                    "daemonsets",
+                    "replicasets",
+                ],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["batch"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE"],
+                "resources": ["jobs", "cronjobs"],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["jobset.x-k8s.io"],
+                "apiVersions": ["v1alpha2"],
+                "operations": ["CREATE", "UPDATE"],
+                "resources": ["jobsets"],
+                "scope": "Namespaced",
+            },
+        ],
+        "models.network.fs2.nebius.ai": [
+            {
+                "apiGroups": ["networking.k8s.io"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["networkpolicies"],
+                "scope": "Namespaced",
+            }
+        ],
+        "marker.network.fs2.nebius.ai": [
+            {
+                "apiGroups": [""],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["configmaps"],
+                "scope": "Namespaced",
+            },
+        ],
+        "helm.network.fs2.nebius.ai": [
+            {
+                "apiGroups": [""],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["configmaps", "secrets"],
+                "scope": "Namespaced",
+            }
+        ],
+        "control-plane.network.fs2.nebius.ai": [
+            {
+                "apiGroups": [""],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": [
+                    "configmaps",
+                    "secrets",
+                    "serviceaccounts",
+                    "services",
+                    "persistentvolumeclaims",
+                ],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["apps"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["deployments", "statefulsets", "daemonsets"],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["batch"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["jobs", "cronjobs"],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["autoscaling"],
+                "apiVersions": ["v2"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["horizontalpodautoscalers"],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["networking.k8s.io"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["ingresses", "networkpolicies"],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["policy"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["poddisruptionbudgets"],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["rbac.authorization.k8s.io"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["roles", "rolebindings"],
+                "scope": "Namespaced",
+            },
+        ],
+        "lease.network.fs2.nebius.ai": [
+            {
+                "apiGroups": ["coordination.k8s.io"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["leases"],
+                "scope": "Namespaced",
+            }
+        ],
+        "custody.network.fs2.nebius.ai": [
+            {
+                "apiGroups": [""],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["serviceaccounts", "services", "secrets"],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["apps"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["deployments"],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["policy"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["poddisruptionbudgets"],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["networking.k8s.io"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["networkpolicies"],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["rbac.authorization.k8s.io"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["roles", "rolebindings"],
+                "scope": "Namespaced",
+            },
+            {
+                "apiGroups": ["cert-manager.io"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["issuers", "certificates"],
+                "scope": "Namespaced",
+            },
+        ],
+        "cluster-custody.network.fs2.nebius.ai": [
+            {
+                "apiGroups": ["rbac.authorization.k8s.io"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": ["clusterroles", "clusterrolebindings"],
+                "scope": "Cluster",
+            }
+        ],
+        "admission.network.fs2.nebius.ai": [
+            {
+                "apiGroups": ["admissionregistration.k8s.io"],
+                "apiVersions": ["v1"],
+                "operations": ["CREATE", "UPDATE", "DELETE"],
+                "resources": [
+                    "validatingadmissionpolicies",
+                    "validatingadmissionpolicybindings",
+                    "validatingwebhookconfigurations",
+                ],
+                "scope": "Cluster",
+            }
+        ],
     }
     for name in sorted(expected_names):
         item = by_name[name]
@@ -1051,20 +1313,14 @@ def _boundary_webhook_state(
             )
         if any(item.get(key) != value for key, value in common.items()):
             raise ReceiptError(f"boundary webhook {name} is not fail closed")
-        if item.get("objectSelector", {}) != {}:
-            raise ReceiptError(
-                f"boundary webhook {name} has a narrowing objectSelector"
-            )
-        namespace_selector = item.get("namespaceSelector", {})
-        expected_namespace_selector = (
-            {"matchLabels": {"kubernetes.io/metadata.name": NAMESPACE}}
-            if name == "children.network.fs2.nebius.ai"
-            else {}
-        )
-        if namespace_selector != expected_namespace_selector:
+        if item.get("objectSelector", {}) != expected_object_selectors[name]:
+            raise ReceiptError(f"boundary webhook {name} objectSelector is not exact")
+        if item.get("namespaceSelector", {}) != expected_namespace_selectors[name]:
             raise ReceiptError(
                 f"boundary webhook {name} namespaceSelector is not exact"
             )
+        if item.get("matchConditions", []) != expected_conditions[name]:
+            raise ReceiptError(f"boundary webhook {name} matchConditions are not exact")
         client = _object(
             item.get("clientConfig"), f"boundary webhook {name}.clientConfig"
         )
@@ -1076,19 +1332,23 @@ def _boundary_webhook_state(
         if not isinstance(ca_bundle, str) or not ca_bundle:
             raise ReceiptError(f"boundary webhook {name} has no injected CA bundle")
         if client.get("service") != {
-            "name": "fs2-serve-control-plane-network-boundary",
-            "namespace": SYSTEM_NAMESPACE,
+            "name": "fs2-model-network-boundary",
+            "namespace": "fs2-network-security",
             "path": "/validate",
             "port": 443,
         }:
             raise ReceiptError(f"boundary webhook {name} service target is not exact")
         if item.get("rules") != expected_rules[name]:
             raise ReceiptError(f"boundary webhook {name} resource rules are not exact")
-    return {
+    state = {
         "uid": uid,
         "resource_version": resource_version,
         "spec_sha256": _sha256({"webhooks": raw}),
     }
+    expected_hash = contract["boundary_authority"]["webhook"]["spec_sha256"]
+    if state["spec_sha256"] != expected_hash:
+        raise ReceiptError("live boundary webhook differs from signed external custody")
+    return state
 
 
 def inventory_receipt(
@@ -1136,6 +1396,7 @@ def inventory_receipt(
         "admission_policies": policy_inventory,
         "admission_bindings": binding_inventory,
         "admission_webhook": _boundary_webhook_state(contract, boundary_webhooks),
+        "boundary_authority_sha256": contract["boundary_authority"]["payload_sha256"],
     }
     return {**payload, "payload_sha256": _sha256(payload)}
 

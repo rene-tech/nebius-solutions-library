@@ -20,6 +20,17 @@ provider "helm" {
   }
 }
 
+provider "helm" {
+  alias = "control_plane"
+  kubernetes = {
+    config_path = pathexpand(
+      var.model_network_helm_kubeconfig_path == "" ?
+      var.kubeconfig_path : var.model_network_helm_kubeconfig_path
+    )
+    config_context = var.kube_context
+  }
+}
+
 provider "nebius" {
   profile = {
     name            = var.nebius_profile

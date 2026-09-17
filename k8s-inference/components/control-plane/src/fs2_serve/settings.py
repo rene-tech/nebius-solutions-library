@@ -220,13 +220,14 @@ class Settings(BaseSettings):
     network_boundary_admission_tls_key_file: Path = Path("/var/run/secrets/fs2-network-boundary-tls/tls.key")
     network_boundary_admission_model_namespace: str = "fs2-models"
     network_boundary_admission_system_namespace: str = "fs2-system"
+    network_boundary_admission_authority_namespace: str = "fs2-network-security"
     network_boundary_admission_authorizer_writer: str = Field(
         default="fs2-model-network-authorizer",
         min_length=1,
         max_length=1024,
     )
     network_boundary_admission_acquisition_writer: str = Field(
-        default="system:serviceaccount:fs2-system:fs2-serve-control-plane-runtime",
+        default="system:serviceaccount:fs2-system:fs2-catalog-acquisition",
         min_length=1,
         max_length=1024,
     )
@@ -242,6 +243,11 @@ class Settings(BaseSettings):
     )
     network_boundary_admission_transition_writer: str = Field(
         default="fs2-model-network-transition",
+        min_length=1,
+        max_length=1024,
+    )
+    network_boundary_admission_certificate_writer: str = Field(
+        default="system:serviceaccount:cert-manager:cert-manager",
         min_length=1,
         max_length=1024,
     )

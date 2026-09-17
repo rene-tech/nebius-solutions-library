@@ -93,9 +93,9 @@ modelController:
   tolerations: []
   affinity: {}
 
-# Independent, fail-closed admission boundary for model-network privilege.
-# It has read-only Kubernetes access and is deliberately not the model,
-# scientific, acquisition, Helm, or Terraform writer it validates.
+# Preserved rejected compatibility surface. This chart must never deploy the
+# admission authority it is meant to police; the separately custodied
+# fs2-model-network-boundary chart owns that service and its trust material.
 networkBoundaryAdmission:
   enabled: false
   replicaCount: 2
@@ -103,7 +103,7 @@ networkBoundaryAdmission:
   systemNamespace: fs2-system
   authorizerUsername: fs2-model-network-authorizer
   transitionWriterUsername: fs2-model-network-transition
-  acquisitionWriterUsername: system:serviceaccount:fs2-system:fs2-serve-control-plane-runtime
+  acquisitionWriterUsername: system:serviceaccount:fs2-system:fs2-catalog-acquisition
   directJobWriterUsername: system:serviceaccount:fs2-system:fs2-serve-control-plane-runtime
   jobsetWriterUsername: ""
   kubernetesApiUrl: https://kubernetes.default.svc

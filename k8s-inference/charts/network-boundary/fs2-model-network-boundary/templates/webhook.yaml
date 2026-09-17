@@ -1,0 +1,252 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: fs2-model-network-boundary
+  labels:
+    {{- include "fs2-network-boundary.labels" . | nindent 4 }}
+    fs2-serve.nebius.ai/policy-owner: independent-network-boundary
+  annotations:
+    {{- include "fs2-network-boundary.annotations" . | nindent 4 }}
+    cert-manager.io/inject-ca-from: {{ .Values.authorityNamespace }}/fs2-model-network-boundary
+webhooks:
+  - name: children.network.fs2.nebius.ai
+    admissionReviewVersions: [v1]
+    sideEffects: None
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    timeoutSeconds: 3
+    clientConfig: &client
+      service:
+        namespace: {{ .Values.authorityNamespace }}
+        name: fs2-model-network-boundary
+        path: /validate
+        port: {{ .Values.service.port }}
+    namespaceSelector:
+      matchLabels: {kubernetes.io/metadata.name: {{ .Values.modelNamespace }}}
+    objectSelector:
+      matchExpressions:
+        - key: fs2-serve.nebius.ai/network-profile
+          operator: Exists
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods", "replicationcontrollers"]
+        scope: Namespaced
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+        scope: Namespaced
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["jobs", "cronjobs"]
+        scope: Namespaced
+      - apiGroups: ["jobset.x-k8s.io"]
+        apiVersions: ["v1alpha2"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["jobsets"]
+        scope: Namespaced
+  - name: models.network.fs2.nebius.ai
+    admissionReviewVersions: [v1]
+    sideEffects: None
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    timeoutSeconds: 3
+    clientConfig: *client
+    namespaceSelector:
+      matchLabels: {kubernetes.io/metadata.name: {{ .Values.modelNamespace }}}
+    rules:
+      - apiGroups: ["networking.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["networkpolicies"]
+        scope: Namespaced
+  - name: marker.network.fs2.nebius.ai
+    admissionReviewVersions: [v1]
+    sideEffects: None
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    timeoutSeconds: 3
+    clientConfig: *client
+    namespaceSelector:
+      matchLabels: {kubernetes.io/metadata.name: {{ .Values.modelNamespace }}}
+    matchConditions:
+      - name: exact-boundary-marker
+        expression: "request.name == 'fs2-runtime-network-policy-boundary-v2'"
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["configmaps"]
+        scope: Namespaced
+  - name: helm.network.fs2.nebius.ai
+    admissionReviewVersions: [v1]
+    sideEffects: None
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    timeoutSeconds: 3
+    clientConfig: *client
+    namespaceSelector:
+      matchLabels: {kubernetes.io/metadata.name: {{ .Values.systemNamespace }}}
+    objectSelector:
+      matchLabels:
+        owner: helm
+        name: fs2-serve-control-plane
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["configmaps", "secrets"]
+        scope: Namespaced
+  - name: control-plane.network.fs2.nebius.ai
+    admissionReviewVersions: [v1]
+    sideEffects: None
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    timeoutSeconds: 3
+    clientConfig: *client
+    namespaceSelector:
+      matchLabels: {kubernetes.io/metadata.name: {{ .Values.systemNamespace }}}
+    objectSelector:
+      matchLabels:
+        app.kubernetes.io/instance: fs2-serve-control-plane
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["configmaps", "secrets", "serviceaccounts", "services", "persistentvolumeclaims"]
+        scope: Namespaced
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["deployments", "statefulsets", "daemonsets"]
+        scope: Namespaced
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["jobs", "cronjobs"]
+        scope: Namespaced
+      - apiGroups: ["autoscaling"]
+        apiVersions: ["v2"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["horizontalpodautoscalers"]
+        scope: Namespaced
+      - apiGroups: ["networking.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["ingresses", "networkpolicies"]
+        scope: Namespaced
+      - apiGroups: ["policy"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["poddisruptionbudgets"]
+        scope: Namespaced
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["roles", "rolebindings"]
+        scope: Namespaced
+  - name: lease.network.fs2.nebius.ai
+    admissionReviewVersions: [v1]
+    sideEffects: None
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    timeoutSeconds: 3
+    clientConfig: *client
+    namespaceSelector:
+      matchLabels: {kubernetes.io/metadata.name: {{ .Values.systemNamespace }}}
+    objectSelector:
+      matchLabels: {fs2-serve.nebius.ai/network-boundary-object: "true"}
+    matchConditions:
+      - name: exact-transition-lease
+        expression: "request.name == 'fs2-model-network-transition'"
+    rules:
+      - apiGroups: ["coordination.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["leases"]
+        scope: Namespaced
+  - name: custody.network.fs2.nebius.ai
+    admissionReviewVersions: [v1]
+    sideEffects: None
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    timeoutSeconds: 3
+    clientConfig: *client
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values: [{{ .Values.modelNamespace }}, {{ .Values.systemNamespace }}, {{ .Values.authorityNamespace }}]
+    objectSelector:
+      matchLabels: {fs2-serve.nebius.ai/network-boundary-authority: "true"}
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["serviceaccounts", "services", "secrets"]
+        scope: Namespaced
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["deployments"]
+        scope: Namespaced
+      - apiGroups: ["policy"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["poddisruptionbudgets"]
+        scope: Namespaced
+      - apiGroups: ["networking.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["networkpolicies"]
+        scope: Namespaced
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["roles", "rolebindings"]
+        scope: Namespaced
+      - apiGroups: ["cert-manager.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["issuers", "certificates"]
+        scope: Namespaced
+  - name: cluster-custody.network.fs2.nebius.ai
+    admissionReviewVersions: [v1]
+    sideEffects: None
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    timeoutSeconds: 3
+    clientConfig: *client
+    objectSelector:
+      matchLabels: {fs2-serve.nebius.ai/network-boundary-authority: "true"}
+    matchConditions:
+      - name: exact-custody-rbac
+        expression: "request.name in ['fs2-model-network-admission-author', 'fs2-model-network-custody-reader', 'fs2-model-network-helm-rollback']"
+    rules:
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["clusterroles", "clusterrolebindings"]
+        scope: Cluster
+  - name: admission.network.fs2.nebius.ai
+    admissionReviewVersions: [v1]
+    sideEffects: None
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    timeoutSeconds: 3
+    clientConfig: *client
+    objectSelector:
+      matchLabels:
+        fs2-serve.nebius.ai/network-boundary-object: "true"
+    matchConditions:
+      - name: exact-network-admission-object
+        expression: "request.name == 'fs2-model-network-boundary' || request.name.startsWith('fs2-model-network-')"
+    rules:
+      - apiGroups: ["admissionregistration.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["validatingadmissionpolicies", "validatingadmissionpolicybindings", "validatingwebhookconfigurations"]
+        scope: Cluster

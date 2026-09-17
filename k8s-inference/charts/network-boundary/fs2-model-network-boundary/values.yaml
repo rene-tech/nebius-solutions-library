@@ -1,0 +1,36 @@
+image:
+  repository: ""
+  digest: ""
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+modelNamespace: fs2-models
+systemNamespace: fs2-system
+authorityNamespace: fs2-network-security
+authorizerUsername: fs2-model-network-authorizer
+transitionWriterUsername: fs2-model-network-transition
+certificateWriterUsername: system:serviceaccount:cert-manager:cert-manager
+acquisitionServiceAccountName: fs2-catalog-acquisition
+directJobWriterUsername: system:serviceaccount:fs2-system:fs2-serve-control-plane-runtime
+jobsetWriterUsername: system:serviceaccount:jobset-system:jobset-controller
+transitionHolder: ""
+kubernetesApiUrl: https://kubernetes.default.svc
+kubernetesApiCidrs: []
+apiTimeoutSeconds: "2"
+tokenExpirationSeconds: 600
+service:
+  port: 443
+  targetPort: 8443
+certificate:
+  secretName: fs2-model-network-boundary-tls
+  issuerName: fs2-model-network-boundary-selfsigned
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi
+nodeSelector: {}
+tolerations: []
+affinity: {}

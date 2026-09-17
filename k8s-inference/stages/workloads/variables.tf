@@ -454,6 +454,45 @@ variable "model_network_boundary_kubeconfig_path" {
   }
 }
 
+variable "model_network_boundary_trust_root_sha256" {
+  description = "SHA-256 of the Platform-Security custody signing public key pinned by the root deployment contract."
+  type        = string
+  default     = ""
+  nullable    = false
+
+  validation {
+    condition = (
+      var.model_network_boundary_trust_root_sha256 == "" ||
+      can(regex("^[a-f0-9]{64}$", var.model_network_boundary_trust_root_sha256))
+    )
+    error_message = "model_network_boundary_trust_root_sha256 must be empty only for offline source checks or an exact SHA-256."
+  }
+}
+
+variable "model_network_boundary_authority_receipt" {
+  description = "Signature-verified, non-secret external custody receipt supplied only by inference-stack after live authority preflight."
+  type        = any
+  default     = null
+}
+
+variable "model_network_helm_kubeconfig_path" {
+  description = "Shared deployment kubeconfig normally; the externally custodied transition kubeconfig only for deny-absent rollback-helm."
+  type        = string
+  default     = ""
+  nullable    = false
+
+  validation {
+    condition = (
+      var.model_network_helm_kubeconfig_path == "" ||
+      (
+        startswith(var.model_network_helm_kubeconfig_path, "/") &&
+        !strcontains(var.model_network_helm_kubeconfig_path, "..")
+      )
+    )
+    error_message = "model_network_helm_kubeconfig_path must be empty or an absolute traversal-free path."
+  }
+}
+
 variable "run_id" {
   description = "Disposable lifecycle ID shared with infrastructure and foundation state."
   type        = string
@@ -1346,7 +1385,8 @@ variable "model_runtime_network_policy" {
         resource_version = string
         spec_sha256      = string
       })
-      payload_sha256 = string
+      boundary_authority_sha256 = string
+      payload_sha256            = string
     }), null)
     deny_absent_receipt = optional(object({
       schema                     = string

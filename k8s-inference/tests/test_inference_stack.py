@@ -368,6 +368,67 @@ class InferenceStackTests(unittest.TestCase):
         )
         self.assertEqual(2, mutating_run.call_count)
 
+    @mock.patch.object(STACK, "run")
+    @mock.patch.object(STACK.subprocess, "run")
+    def test_transition_lock_replaces_an_expired_nonempty_holder_by_rv_cas(
+        self,
+        subprocess_run: mock.Mock,
+        mutating_run: mock.Mock,
+    ) -> None:
+        username = "fs2-model-network-transition"
+        old_holder = "testrun:100:0123456789abcdef0123456789abcdef"
+        subprocess_run.side_effect = [
+            subprocess.CompletedProcess(
+                args=["kubectl-test", "auth", "whoami"],
+                returncode=0,
+                stdout=json.dumps({"status": {"userInfo": {"username": username}}}),
+                stderr="",
+            ),
+            subprocess.CompletedProcess(
+                args=["kubectl-test", "get", "lease"],
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "metadata": {
+                            "resourceVersion": "41",
+                            "annotations": {
+                                "fs2-serve.nebius.ai/network-transition-writer": username,
+                                "fs2-serve.nebius.ai/network-transition-holder": old_holder,
+                            },
+                        },
+                        "spec": {
+                            "holderIdentity": old_holder,
+                            "leaseDurationSeconds": 1,
+                            "renewTime": "2020-01-01T00:00:00Z",
+                            "leaseTransitions": 7,
+                        },
+                    }
+                ),
+                stderr="",
+            ),
+        ]
+
+        with STACK.model_network_transition_lock(
+            kubectl="kubectl-test",
+            kubeconfig="/read-only/kubeconfig",
+            context="test-context",
+            run_id="testrun",
+        ) as (holder, observed_username):
+            self.assertNotEqual(old_holder, holder)
+            self.assertEqual(username, observed_username)
+
+        acquisition_patch = json.loads(
+            mutating_run.call_args_list[0].kwargs["input_text"]
+        )
+        self.assertIn(
+            {"op": "test", "path": "/metadata/resourceVersion", "value": "41"},
+            acquisition_patch,
+        )
+        self.assertIn(
+            {"op": "test", "path": "/spec/holderIdentity", "value": old_holder},
+            acquisition_patch,
+        )
+
     def test_rollback_remove_deny_plan_is_exactly_bounded(self) -> None:
         current = contract()
         current["stages"]["workloads"]["model_runtime_network_policy"] = {
@@ -463,6 +524,35 @@ class InferenceStackTests(unittest.TestCase):
                         "mode": "managed",
                         "address": "helm_release.control_plane",
                         "change": {"actions": ["update"]},
+                    }
+                ]
+            },
+            current,
+        )
+
+    def test_active_boundary_rejects_any_control_plane_helm_change(self) -> None:
+        current = contract()
+        current["stages"]["workloads"]["model_runtime_network_policy"] = {
+            "phase": "prepare"
+        }
+        with self.assertRaisesRegex(STACK.DeploymentError, "already active"):
+            STACK.validate_model_network_frozen_plan(
+                {
+                    "resource_changes": [
+                        {
+                            "address": "helm_release.control_plane",
+                            "change": {"actions": ["update"]},
+                        }
+                    ]
+                },
+                current,
+            )
+        STACK.validate_model_network_frozen_plan(
+            {
+                "resource_changes": [
+                    {
+                        "address": "helm_release.control_plane",
+                        "change": {"actions": ["no-op"]},
                     }
                 ]
             },

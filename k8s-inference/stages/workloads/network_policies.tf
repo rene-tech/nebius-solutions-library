@@ -110,7 +110,7 @@ locals {
   model_runtime_transition_holder_annotation            = "fs2-serve.nebius.ai/network-transition-holder"
   model_runtime_authorizer_writer                       = "fs2-model-network-authorizer"
   model_runtime_transition_writer                       = "fs2-model-network-transition"
-  model_runtime_acquisition_writer                      = "system:serviceaccount:fs2-system:fs2-serve-control-plane-runtime"
+  model_runtime_acquisition_writer                      = "system:serviceaccount:fs2-system:fs2-catalog-acquisition"
   model_runtime_boundary_webhook_name                   = "fs2-model-network-boundary"
   model_runtime_controller_writer = (
     "system:serviceaccount:fs2-system:fs2-serve-control-plane-controller"
@@ -503,10 +503,11 @@ locals {
            object.metadata.annotations[${jsonencode(local.model_runtime_transition_holder_annotation)}] == object.spec.holderIdentity)) &&
          ((oldObject.spec.holderIdentity == '' && object.spec.holderIdentity != '') ||
           (oldObject.spec.holderIdentity != '' && object.spec.holderIdentity == oldObject.spec.holderIdentity) ||
-          (oldObject.spec.holderIdentity != '' && object.spec.holderIdentity == '')))
+          (oldObject.spec.holderIdentity != '' && object.spec.holderIdentity == '') ||
+          (oldObject.spec.holderIdentity != '' && object.spec.holderIdentity != '' && object.spec.holderIdentity != oldObject.spec.holderIdentity)))
       CEL
       )
-      message = "the retained model-network transition Lease may be acquired, renewed, or released only by its exact authenticated writer"
+      message = "the retained model-network transition Lease may be acquired, renewed, released, or presented for webhook-verified expiry takeover only by its exact authenticated writer"
       reason  = "Forbidden"
     }]
   }
@@ -697,19 +698,20 @@ locals {
   }
 
   model_runtime_inventory_receipt_payload = var.model_runtime_network_policy.inventory_receipt == null ? null : {
-    schema              = var.model_runtime_network_policy.inventory_receipt.schema
-    cluster_id          = var.model_runtime_network_policy.inventory_receipt.cluster_id
-    namespace           = var.model_runtime_network_policy.inventory_receipt.namespace
-    captured_at         = var.model_runtime_network_policy.inventory_receipt.captured_at
-    profiles_sha256     = var.model_runtime_network_policy.inventory_receipt.profiles_sha256
-    resource_apis       = var.model_runtime_network_policy.inventory_receipt.resource_apis
-    workloads           = var.model_runtime_network_policy.inventory_receipt.workloads
-    pods                = var.model_runtime_network_policy.inventory_receipt.pods
-    live_controller     = var.model_runtime_network_policy.inventory_receipt.live_controller
-    transition_lock_uid = var.model_runtime_network_policy.inventory_receipt.transition_lock_uid
-    admission_policies  = var.model_runtime_network_policy.inventory_receipt.admission_policies
-    admission_bindings  = var.model_runtime_network_policy.inventory_receipt.admission_bindings
-    admission_webhook   = var.model_runtime_network_policy.inventory_receipt.admission_webhook
+    schema                    = var.model_runtime_network_policy.inventory_receipt.schema
+    cluster_id                = var.model_runtime_network_policy.inventory_receipt.cluster_id
+    namespace                 = var.model_runtime_network_policy.inventory_receipt.namespace
+    captured_at               = var.model_runtime_network_policy.inventory_receipt.captured_at
+    profiles_sha256           = var.model_runtime_network_policy.inventory_receipt.profiles_sha256
+    resource_apis             = var.model_runtime_network_policy.inventory_receipt.resource_apis
+    workloads                 = var.model_runtime_network_policy.inventory_receipt.workloads
+    pods                      = var.model_runtime_network_policy.inventory_receipt.pods
+    live_controller           = var.model_runtime_network_policy.inventory_receipt.live_controller
+    transition_lock_uid       = var.model_runtime_network_policy.inventory_receipt.transition_lock_uid
+    admission_policies        = var.model_runtime_network_policy.inventory_receipt.admission_policies
+    admission_bindings        = var.model_runtime_network_policy.inventory_receipt.admission_bindings
+    admission_webhook         = var.model_runtime_network_policy.inventory_receipt.admission_webhook
+    boundary_authority_sha256 = var.model_runtime_network_policy.inventory_receipt.boundary_authority_sha256
   }
   model_runtime_deny_absent_receipt_payload = var.model_runtime_network_policy.deny_absent_receipt == null ? null : {
     schema                     = var.model_runtime_network_policy.deny_absent_receipt.schema
@@ -779,6 +781,7 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
     transition_lock_namespace     = local.model_runtime_transition_lease_namespace
     transition_writer_username    = local.model_runtime_transition_writer
     boundary_webhook_name         = local.model_runtime_boundary_webhook_name
+    boundary_authority            = var.model_network_boundary_authority_receipt
     control_plane_image           = var.control_plane_image
     inventory_receipt_sha256      = try(var.model_runtime_network_policy.inventory_receipt.payload_sha256, null)
     deny_absent_receipt_sha256    = try(var.model_runtime_network_policy.deny_absent_receipt.payload_sha256, null)
@@ -788,6 +791,32 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
   }
 
   lifecycle {
+    precondition {
+      condition = nonsensitive(var.model_network_boundary_kubeconfig_path) == "/var/run/fs2-network-boundary/credential-required" || try(
+        var.model_network_boundary_trust_root_sha256 != "" &&
+        var.model_network_boundary_authority_receipt.schema == "fs2-serve.nebius.ai/model-network-boundary-authority/v1" &&
+        var.model_network_boundary_authority_receipt.cluster_id == var.cluster_id &&
+        var.model_network_boundary_authority_receipt.authority_namespace == "fs2-network-security" &&
+        var.model_network_boundary_authority_receipt.webhook.name == local.model_runtime_boundary_webhook_name &&
+        var.model_network_boundary_authority_receipt.webhook.uid != "" &&
+        var.model_network_boundary_authority_receipt.webhook.resource_version != "" &&
+        can(regex("^[a-f0-9]{64}$", var.model_network_boundary_authority_receipt.webhook.spec_sha256)) &&
+        var.model_network_boundary_authority_receipt.deployment.image.repository != var.control_plane_image.repository &&
+        var.model_network_boundary_authority_receipt.deployment.image.digest != var.control_plane_image.digest &&
+        var.model_network_boundary_authority_receipt.acquisition_writer.username == local.model_runtime_acquisition_writer &&
+        var.model_network_boundary_authority_receipt.acquisition_writer.username != local.model_runtime_scientific_writer &&
+        var.model_network_boundary_authority_receipt.acquisition_writer.username != local.model_runtime_controller_writer &&
+        var.model_network_boundary_authority_receipt.custody.trust_root_sha256 == var.model_network_boundary_trust_root_sha256 &&
+        var.model_network_boundary_authority_receipt.custody.impersonation_allowed == false &&
+        var.model_network_boundary_authority_receipt.payload_sha256 == sha256(jsonencode({
+          for key, value in var.model_network_boundary_authority_receipt : key => value
+          if key != "payload_sha256"
+        })),
+        false,
+      )
+      error_message = "Every live model-network phase requires a signature-verified external authority receipt bound to this cluster, a distinct digest-pinned image, exact VWC semantics, a distinct catalog acquisition writer, and the root-pinned non-impersonating custody key."
+    }
+
     precondition {
       condition = nonsensitive(var.model_network_boundary_kubeconfig_path) == "/var/run/fs2-network-boundary/credential-required" || (
         var.model_network_transition_lock_required &&
@@ -818,7 +847,7 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
         "rollback-remove-deny",
         "rollback-helm",
         ], var.model_runtime_network_policy.phase) || try(
-        var.model_runtime_network_policy.inventory_receipt.schema == "fs2-serve.nebius.ai/model-runtime-network-inventory/v5" &&
+        var.model_runtime_network_policy.inventory_receipt.schema == "fs2-serve.nebius.ai/model-runtime-network-inventory/v6" &&
         var.model_runtime_network_policy.inventory_receipt.cluster_id == var.cluster_id &&
         var.model_runtime_network_policy.inventory_receipt.namespace == "fs2-models" &&
         can(formatdate("YYYY-MM-DD'T'hh:mm:ssZ", var.model_runtime_network_policy.inventory_receipt.captured_at)) &&
@@ -842,10 +871,11 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
         var.model_runtime_network_policy.inventory_receipt.admission_webhook.uid != "" &&
         var.model_runtime_network_policy.inventory_receipt.admission_webhook.resource_version != "" &&
         can(regex("^[a-f0-9]{64}$", var.model_runtime_network_policy.inventory_receipt.admission_webhook.spec_sha256)) &&
+        var.model_runtime_network_policy.inventory_receipt.boundary_authority_sha256 == var.model_network_boundary_authority_receipt.payload_sha256 &&
         var.model_runtime_network_policy.inventory_receipt.payload_sha256 == sha256(jsonencode(local.model_runtime_inventory_receipt_payload)),
         false,
       )
-      error_message = "Enforcement and deny removal require a valid v5 workload/Pod receipt for this cluster, the live digest-pinned model-controller, exact policy/binding/webhook UIDs, resourceVersions and full semantics, namespace, and finite profile catalog. Expected payload digest: ${sha256(jsonencode(local.model_runtime_inventory_receipt_payload))}."
+      error_message = "Enforcement and deny removal require a valid v6 workload/Pod receipt for this cluster, the live digest-pinned model-controller, exact policy/binding/webhook UIDs, resourceVersions and full semantics, the signature-verified external authority digest, namespace, and finite profile catalog. Expected payload digest: ${sha256(jsonencode(local.model_runtime_inventory_receipt_payload))}."
     }
 
     precondition {
@@ -889,8 +919,9 @@ resource "kubernetes_manifest" "model_runtime_network_profile_admission" {
     metadata = {
       name = each.value.name
       labels = merge(local.common_labels, {
-        "app.kubernetes.io/component"      = "namespace-network-boundary"
-        "fs2-serve.nebius.ai/policy-owner" = "terraform-profile-admission"
+        "app.kubernetes.io/component"                 = "namespace-network-boundary"
+        "fs2-serve.nebius.ai/policy-owner"            = "terraform-profile-admission"
+        "fs2-serve.nebius.ai/network-boundary-object" = "true"
       })
       annotations = {
         (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
@@ -922,8 +953,9 @@ resource "kubernetes_manifest" "model_runtime_network_profile_admission_binding"
     metadata = {
       name = "${each.value.name}-fs2-models"
       labels = merge(local.common_labels, {
-        "app.kubernetes.io/component"      = "namespace-network-boundary"
-        "fs2-serve.nebius.ai/policy-owner" = "terraform-profile-admission"
+        "app.kubernetes.io/component"                 = "namespace-network-boundary"
+        "fs2-serve.nebius.ai/policy-owner"            = "terraform-profile-admission"
+        "fs2-serve.nebius.ai/network-boundary-object" = "true"
       })
       annotations = {
         (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
@@ -965,8 +997,9 @@ resource "kubernetes_manifest" "model_runtime_network_boundary_marker_admission"
     metadata = {
       name = local.model_runtime_boundary_marker_admission_policy_name
       labels = merge(local.common_labels, {
-        "app.kubernetes.io/component"      = "namespace-network-boundary"
-        "fs2-serve.nebius.ai/policy-owner" = "terraform-boundary-marker-admission"
+        "app.kubernetes.io/component"                 = "namespace-network-boundary"
+        "fs2-serve.nebius.ai/policy-owner"            = "terraform-boundary-marker-admission"
+        "fs2-serve.nebius.ai/network-boundary-object" = "true"
       })
       annotations = {
         (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
@@ -998,8 +1031,9 @@ resource "kubernetes_manifest" "model_runtime_network_boundary_marker_admission_
     metadata = {
       name = "${local.model_runtime_boundary_marker_admission_policy_name}-fs2-models"
       labels = merge(local.common_labels, {
-        "app.kubernetes.io/component"      = "namespace-network-boundary"
-        "fs2-serve.nebius.ai/policy-owner" = "terraform-boundary-marker-admission"
+        "app.kubernetes.io/component"                 = "namespace-network-boundary"
+        "fs2-serve.nebius.ai/policy-owner"            = "terraform-boundary-marker-admission"
+        "fs2-serve.nebius.ai/network-boundary-object" = "true"
       })
       annotations = {
         (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
@@ -1036,8 +1070,9 @@ resource "kubernetes_manifest" "model_runtime_network_controller_freeze_admissio
     metadata = {
       name = local.model_runtime_controller_freeze_admission_policy_name
       labels = merge(local.common_labels, {
-        "app.kubernetes.io/component"      = "namespace-network-boundary"
-        "fs2-serve.nebius.ai/policy-owner" = "terraform-controller-freeze"
+        "app.kubernetes.io/component"                 = "namespace-network-boundary"
+        "fs2-serve.nebius.ai/policy-owner"            = "terraform-controller-freeze"
+        "fs2-serve.nebius.ai/network-boundary-object" = "true"
       })
       annotations = {
         (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
@@ -1070,8 +1105,9 @@ resource "kubernetes_manifest" "model_runtime_network_helm_freeze_admission" {
     metadata = {
       name = local.model_runtime_helm_freeze_admission_policy_name
       labels = merge(local.common_labels, {
-        "app.kubernetes.io/component"      = "namespace-network-boundary"
-        "fs2-serve.nebius.ai/policy-owner" = "terraform-helm-freeze"
+        "app.kubernetes.io/component"                 = "namespace-network-boundary"
+        "fs2-serve.nebius.ai/policy-owner"            = "terraform-helm-freeze"
+        "fs2-serve.nebius.ai/network-boundary-object" = "true"
       })
       annotations = {
         (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
@@ -1106,8 +1142,9 @@ resource "kubernetes_manifest" "model_runtime_network_lease_guard_admission" {
     metadata = {
       name = local.model_runtime_lease_guard_admission_policy_name
       labels = merge(local.common_labels, {
-        "app.kubernetes.io/component"      = "namespace-network-boundary"
-        "fs2-serve.nebius.ai/policy-owner" = "terraform-transition-guard"
+        "app.kubernetes.io/component"                 = "namespace-network-boundary"
+        "fs2-serve.nebius.ai/policy-owner"            = "terraform-transition-guard"
+        "fs2-serve.nebius.ai/network-boundary-object" = "true"
       })
       annotations = {
         (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
@@ -1137,8 +1174,9 @@ resource "kubernetes_manifest" "model_runtime_network_lease_guard_admission_bind
     metadata = {
       name = "${local.model_runtime_lease_guard_admission_policy_name}-fs2-system"
       labels = merge(local.common_labels, {
-        "app.kubernetes.io/component"      = "namespace-network-boundary"
-        "fs2-serve.nebius.ai/policy-owner" = "terraform-transition-guard"
+        "app.kubernetes.io/component"                 = "namespace-network-boundary"
+        "fs2-serve.nebius.ai/policy-owner"            = "terraform-transition-guard"
+        "fs2-serve.nebius.ai/network-boundary-object" = "true"
       })
       annotations = {
         (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
@@ -1175,8 +1213,9 @@ resource "kubernetes_manifest" "model_runtime_network_transition_guard_admission
     metadata = {
       name = local.model_runtime_transition_guard_admission_policy_name
       labels = merge(local.common_labels, {
-        "app.kubernetes.io/component"      = "namespace-network-boundary"
-        "fs2-serve.nebius.ai/policy-owner" = "terraform-transition-guard"
+        "app.kubernetes.io/component"                 = "namespace-network-boundary"
+        "fs2-serve.nebius.ai/policy-owner"            = "terraform-transition-guard"
+        "fs2-serve.nebius.ai/network-boundary-object" = "true"
       })
       annotations = {
         (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
@@ -1212,8 +1251,9 @@ resource "kubernetes_manifest" "model_runtime_network_controller_freeze_admissio
     metadata = {
       name = "${local.model_runtime_controller_freeze_admission_policy_name}-fs2-system"
       labels = merge(local.common_labels, {
-        "app.kubernetes.io/component"      = "namespace-network-boundary"
-        "fs2-serve.nebius.ai/policy-owner" = "terraform-controller-freeze"
+        "app.kubernetes.io/component"                 = "namespace-network-boundary"
+        "fs2-serve.nebius.ai/policy-owner"            = "terraform-controller-freeze"
+        "fs2-serve.nebius.ai/network-boundary-object" = "true"
       })
       annotations = {
         (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
@@ -1249,8 +1289,9 @@ resource "kubernetes_manifest" "model_runtime_network_helm_freeze_admission_bind
     metadata = {
       name = "${local.model_runtime_helm_freeze_admission_policy_name}-fs2-system"
       labels = merge(local.common_labels, {
-        "app.kubernetes.io/component"      = "namespace-network-boundary"
-        "fs2-serve.nebius.ai/policy-owner" = "terraform-helm-freeze"
+        "app.kubernetes.io/component"                 = "namespace-network-boundary"
+        "fs2-serve.nebius.ai/policy-owner"            = "terraform-helm-freeze"
+        "fs2-serve.nebius.ai/network-boundary-object" = "true"
       })
       annotations = {
         (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
@@ -1281,8 +1322,9 @@ resource "kubernetes_manifest" "model_runtime_network_transition_guard_admission
     metadata = {
       name = "${local.model_runtime_transition_guard_admission_policy_name}-global"
       labels = merge(local.common_labels, {
-        "app.kubernetes.io/component"      = "namespace-network-boundary"
-        "fs2-serve.nebius.ai/policy-owner" = "terraform-transition-guard"
+        "app.kubernetes.io/component"                 = "namespace-network-boundary"
+        "fs2-serve.nebius.ai/policy-owner"            = "terraform-transition-guard"
+        "fs2-serve.nebius.ai/network-boundary-object" = "true"
       })
       annotations = {
         (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
@@ -1324,6 +1366,7 @@ resource "kubernetes_config_map_v1" "model_runtime_network_enforcement" {
     labels = merge(local.common_labels, {
       "app.kubernetes.io/component"                 = "namespace-network-boundary"
       "fs2-serve.nebius.ai/network-boundary-marker" = "true"
+      "fs2-serve.nebius.ai/network-boundary-object" = "true"
     })
     annotations = {
       (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
@@ -1362,9 +1405,10 @@ resource "kubernetes_network_policy_v1" "model_runtime_base_profile" {
     name      = "fs2-runtime-profile-${each.key}"
     namespace = "fs2-models"
     labels = merge(local.common_labels, {
-      "app.kubernetes.io/component"               = "model-runtime-network"
-      (local.model_runtime_network_profile_label) = each.key
-      "fs2-serve.nebius.ai/policy-owner"          = "terraform-profile"
+      "app.kubernetes.io/component"                 = "model-runtime-network"
+      (local.model_runtime_network_profile_label)   = each.key
+      "fs2-serve.nebius.ai/policy-owner"            = "terraform-profile"
+      "fs2-serve.nebius.ai/network-boundary-object" = "true"
     })
     annotations = {
       (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
@@ -1439,9 +1483,10 @@ resource "kubernetes_network_policy_v1" "model_runtime_modelexpress_profile" {
     name      = "fs2-runtime-profile-${each.key}"
     namespace = "fs2-models"
     labels = merge(local.common_labels, {
-      "app.kubernetes.io/component"               = "model-runtime-network"
-      (local.model_runtime_network_profile_label) = each.key
-      "fs2-serve.nebius.ai/policy-owner"          = "terraform-profile"
+      "app.kubernetes.io/component"                 = "model-runtime-network"
+      (local.model_runtime_network_profile_label)   = each.key
+      "fs2-serve.nebius.ai/policy-owner"            = "terraform-profile"
+      "fs2-serve.nebius.ai/network-boundary-object" = "true"
     })
     annotations = {
       (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
@@ -1588,9 +1633,10 @@ resource "kubernetes_network_policy_v1" "model_namespace_support_profile" {
     name      = "fs2-runtime-profile-${each.key}"
     namespace = "fs2-models"
     labels = merge(local.common_labels, {
-      "app.kubernetes.io/component"               = "model-runtime-network"
-      (local.model_runtime_network_profile_label) = each.key
-      "fs2-serve.nebius.ai/policy-owner"          = "terraform-profile"
+      "app.kubernetes.io/component"                 = "model-runtime-network"
+      (local.model_runtime_network_profile_label)   = each.key
+      "fs2-serve.nebius.ai/policy-owner"            = "terraform-profile"
+      "fs2-serve.nebius.ai/network-boundary-object" = "true"
     })
     annotations = {
       (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer
@@ -1775,8 +1821,9 @@ resource "kubernetes_network_policy_v1" "model_namespace_default_deny" {
     name      = "default-deny"
     namespace = "fs2-models"
     labels = merge(local.common_labels, {
-      "app.kubernetes.io/component"      = "namespace-network-boundary"
-      "fs2-serve.nebius.ai/policy-owner" = "terraform-default-deny"
+      "app.kubernetes.io/component"                 = "namespace-network-boundary"
+      "fs2-serve.nebius.ai/policy-owner"            = "terraform-default-deny"
+      "fs2-serve.nebius.ai/network-boundary-object" = "true"
     })
     annotations = {
       (local.model_runtime_transition_writer_annotation) = local.model_runtime_transition_writer

@@ -821,7 +821,7 @@
         "affinity"
       ],
       "properties": {
-        "enabled": {"type": "boolean"},
+        "enabled": {"const": false},
         "replicaCount": {"type": "integer", "minimum": 2, "maximum": 20},
         "modelNamespace": {"const": "fs2-models"},
         "systemNamespace": {"const": "fs2-system"},

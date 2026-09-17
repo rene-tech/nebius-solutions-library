@@ -679,11 +679,13 @@ async def serve_network_boundary_admission(settings: Settings) -> None:
         config=NetworkBoundaryConfig(
             model_namespace=settings.network_boundary_admission_model_namespace,
             system_namespace=settings.network_boundary_admission_system_namespace,
+            authority_namespace=settings.network_boundary_admission_authority_namespace,
             authorizer_writer=settings.network_boundary_admission_authorizer_writer,
             acquisition_writer=settings.network_boundary_admission_acquisition_writer,
             direct_job_writer=settings.network_boundary_admission_direct_job_writer,
             jobset_writer=settings.network_boundary_admission_jobset_writer,
             transition_writer=settings.network_boundary_admission_transition_writer,
+            certificate_writer=settings.network_boundary_admission_certificate_writer,
         ),
         reader=reader,
     )

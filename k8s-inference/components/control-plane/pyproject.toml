@@ -37,6 +37,7 @@ dependencies = [
 [project.scripts]
 fs2-serve = "fs2_serve.entrypoint:main"
 fs2-serve-accept-all-models = "fs2_serve.live_acceptance:main"
+fs2-network-boundary = "fs2_serve.network_boundary_entrypoint:main"
 
 [dependency-groups]
 build = [
