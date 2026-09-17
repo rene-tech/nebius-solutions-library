@@ -88,8 +88,8 @@ content address. Download signatures bind the exact immutable version recorded
 at finalization, never the mutable latest object at the key.
 
 New upload and download handles default to two minutes, are capped at five
-minutes, and are never persisted. The former ten-minute setting remains only as
-an explicitly enabled shared-credential rollback compatibility value.
+minutes, and are never persisted. The runtime and chart schemas expose no
+static artifact credential mode or artifact-key Secret reference.
 The deadline is stamped from the same wall clock the SDK signs with, because
 `generate_presigned_url` accepts a duration rather than a deadline; anchoring it
 anywhere else would advertise an expiry the gateway does not enforce.
@@ -148,6 +148,16 @@ an interrupted purge converges on the next pass instead of leaving metadata
 pointing at bytes that are already gone. The ledger survives the purge it
 records, so what was deleted and when remains provable.
 
+Historical artifacts whose provider version is `NULL` fence the entire
+operation before the first object delete. They remain in the purge scan and are
+not silently omitted, counted, or metadata-deleted. The maintenance-only
+`artifact-version-backfill` command accepts explicit artifact/version pairs,
+obtains an exact-version broker grant, hashes the complete version, proves all
+finalized metadata, and writes an append-only receipt through the sole
+security-definer transition. Purge remains fenced until every artifact in the
+operation is bound. The transition is one-way; stopping the batch is the safe
+rollback, and proved bindings are never cleared.
+
 ## Configuration
 
 The service is disabled by default. It is mounted only when object storage is
@@ -167,21 +177,29 @@ absent credentials.
 | `scientificArtifacts.inlineContentMaxBytes` | `FS2_ARTIFACT_INLINE_CONTENT_MAX_BYTES` | Gateway byte ceiling; at most `max_request_bytes` |
 | `scientificArtifacts.retentionSeconds` | `FS2_ARTIFACT_RETENTION_SECONDS` | |
 | `scientificArtifacts.mediaTypes` | `FS2_ARTIFACT_MEDIA_TYPES` | Exact allowlist |
-| `scientificArtifacts.credentialBroker.url` | `FS2_ARTIFACT_CREDENTIAL_BROKER_URL` | Exact external HTTPS exchange endpoint |
+| `scientificArtifacts.credentialBroker.urlTemplate` | `FS2_ARTIFACT_CREDENTIAL_BROKER_URL_TEMPLATE` | Exact per-tenant in-cluster HTTPS service template |
 | `scientificArtifacts.credentialBroker.audience` | `FS2_ARTIFACT_CREDENTIAL_BROKER_AUDIENCE` | Projected workload-token audience |
 | `scientificArtifacts.credentialBroker.caSecretName` | mounted CA file | Private trust anchor for the broker |
-| `scientificArtifacts.allowStaticTenantCredentials` | `FS2_ARTIFACT_STORE_ALLOW_STATIC_TENANT_CREDENTIALS` | Break-glass only; mounts all tenant credentials |
-| `secrets.artifactStoreTenants` | `FS2_ARTIFACT_STORE_TENANT_CREDENTIALS_DIR` | Static rollback documents; never the production default |
 
 The production control plane mounts only an audience-bound workload token and
 broker CA. For every storage action the broker independently authorizes the
-principal tenant, canonical key, action and immutable version, then returns one
-uncached session credential with a maximum 15-minute lifetime. Static tenant
-documents and the legacy shared key are accepted only behind their separate,
-mutually exclusive break-glass switches; neither is an accepted SAI-19 steady
-state. See `artifact-store-credential-rotation.md` for the broker/provider-policy
+principal tenant, canonical key, action and immutable version, performs the
+operation with the one active provider-key generation mounted only in that
+tenant's broker, and returns no credential. The legacy shared key is retained
+only as an unauthorized, unmounted rollback/quarantine resource. See
+`artifact-store-credential-rotation.md` for the broker/provider-policy
 gate, object-version migration, object-lock decision, no-downtime rotation and
 rollback procedure.
+
+Direct signed uploads that are not finalized are not left as permanent current
+objects. After a fixed one-hour grace, ordinary maintenance appends a claim
+that fences customer finalization, discovers at most one unambiguous write-once
+provider version, records the exact version before deleting it, and appends a
+terminal exact-version deletion receipt. A missing provider object remains an
+unresolved, fairly retried claim because absence cannot safely exclude a PUT
+accepted near handle expiry. Those standalone receipts remain after normal
+operation-row retention; interrupted cleanup resumes from the durable
+claim/version ledger and never deletes an unversioned latest key.
 
 `scientificArtifacts.egressCidrs` opens TCP 443 to object storage in the
 default-deny NetworkPolicy. Leave it empty and finalize cannot reach the

@@ -18,9 +18,12 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 from pydantic import Field
 
 from .auth import require_operation_access
+from .artifact_authority import ArtifactAuthorityClient
+from .artifact_credential_broker import current_artifact_authority
 from .models import AdmissionRequest, ModelId, Principal, Scope, StrictModel
 from .registry import Registry
 from .scientific_artifacts import (
+    ArtifactUploadIdentity,
     ArtifactAccess,
     ArtifactCompression,
     ArtifactDirection,
@@ -28,6 +31,7 @@ from .scientific_artifacts import (
     BeginArtifactUpload,
     CloseStageAttempt,
     FinalizeArtifactUpload,
+    ImmutableObjectVersionId,
     OpenStageAttempt,
     ScientificArtifactControllerPort,
 )
@@ -66,6 +70,7 @@ class UploadHandle(StrictModel):
     expires_at: datetime
     write_once: Literal[True]
     headers: dict[str, str]
+    version_response_header: Literal["x-amz-version-id"]
 
 
 class ScientificInputUpload(StrictModel):
@@ -85,6 +90,11 @@ class ScientificInputUpload(StrictModel):
 
 class ScientificInputUploadFinalizeRequest(StrictModel):
     operation_id: UUID
+    # Compatibility: clients released before immutable-version finalization do
+    # not echo the provider response header.  Omission does not select an
+    # unversioned object: ScientificArtifactService discovers and verifies the
+    # one provider-enforced write-once version before publishing the artifact.
+    object_version_id: ImmutableObjectVersionId | None = None
 
 
 class ScientificInputUploadReceipt(StrictModel):
@@ -95,6 +105,7 @@ class ScientificInputUploadReceipt(StrictModel):
     sha256: str
     size_bytes: int
     media_type: str
+    object_version_id: str
     finalized: bool
 
 
@@ -116,11 +127,13 @@ class ScientificInputUploadService:
         *,
         store: Store,
         artifacts: ScientificArtifactControllerPort,
+        artifact_authorities: ArtifactAuthorityClient,
         profiles: ScientificProfileCatalog,
         registry: Registry | None = None,
     ) -> None:
         self.store = store
         self.artifacts = artifacts
+        self.artifact_authorities = artifact_authorities
         self.profiles = profiles
         self.registry = registry
 
@@ -145,15 +158,46 @@ class ScientificInputUploadService:
             if self.registry is None:
                 raise
             self.registry.get(request.model_id, require_enabled=False)
+        request_body = request.canonical_bytes()
+        admission = AdmissionRequest(
+            model_id=request.model_id,
+            operation="upload",
+            protocol=UPLOAD_PROTOCOL,
+            idempotency_key=idempotency_key,
+            request_body=request_body,
+            request_content_type="application/json",
+        )
+        end_user_authorization = current_artifact_authority()
+        if end_user_authorization is None:
+            raise PermissionError("scientific input upload requires independent admission authority")
+        authority_operation_id = uuid5(
+            NAMESPACE_URL,
+            f"fs2-serve/{UPLOAD_PROTOCOL}/{principal.token_id}/{idempotency_key}",
+        )
+        operation_admission_authority, input_bindings = (
+            await self.artifact_authorities.authorize_admission_inputs(
+                operation_id=authority_operation_id,
+                token_id=principal.token_id,
+                tenant_id=principal.tenant_id,
+                model_id=str(request.model_id),
+                protocol=UPLOAD_PROTOCOL,
+                operation="upload",
+                required_scope=str(Scope.INFERENCE_INVOKE),
+                request_body=request_body,
+                artifact_ids=(),
+                end_user_authorization=end_user_authorization,
+            )
+        )
+        if input_bindings:
+            raise RuntimeError("scientific input upload authority returned unexpected input bindings")
         operation = await self.store.append_operation(
             principal=principal,
-            admission=AdmissionRequest(
-                model_id=request.model_id,
-                operation="upload",
-                protocol=UPLOAD_PROTOCOL,
-                idempotency_key=idempotency_key,
-                request_body=request.canonical_bytes(),
-                request_content_type="application/json",
+            admission=admission.model_copy(
+                update={
+                    "authority_operation_id": authority_operation_id,
+                    "operation_admission_authority": operation_admission_authority,
+                    "operation_required_scope": str(Scope.INFERENCE_INVOKE),
+                }
             ),
             model_revision=UPLOAD_MODEL_REVISION,
             reserved_gpu_seconds=0,
@@ -228,6 +272,7 @@ class ScientificInputUploadService:
                 expires_at=result.handle.expires_at,
                 write_once=True,
                 headers=dict(result.handle.headers),
+                version_response_header="x-amz-version-id",
             ),
         )
 
@@ -262,7 +307,7 @@ class ScientificInputUploadService:
 
         resolved = await self._authorize(principal, operation_id, upload_id)
         receipt = await self.artifacts.store_upload_content(
-            FinalizeArtifactUpload(
+            ArtifactUploadIdentity(
                 upload_id=upload_id,
                 operation_id=resolved,
                 tenant_id=principal.tenant_id,
@@ -277,6 +322,7 @@ class ScientificInputUploadService:
             sha256=receipt.stored.digest.removeprefix("sha256:"),
             size_bytes=receipt.stored.size_bytes,
             media_type=receipt.stored.media_type,
+            object_version_id=receipt.stored.object_version_id,
             finalized=False,
         )
 
@@ -286,6 +332,7 @@ class ScientificInputUploadService:
         principal: Principal,
         operation_id: UUID,
         upload_id: UUID,
+        object_version_id: str | None = None,
     ) -> ArtifactRef:
         operation_uuid = await self._authorize(principal, operation_id, upload_id)
         artifact = await self.artifacts.finalize_upload(
@@ -293,6 +340,7 @@ class ScientificInputUploadService:
                 upload_id=upload_id,
                 operation_id=operation_uuid,
                 tenant_id=principal.tenant_id,
+                object_version_id=object_version_id,
             )
         )
         await self.store.complete_scientific_artifact_upload(

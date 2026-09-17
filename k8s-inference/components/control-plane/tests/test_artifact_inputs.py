@@ -60,9 +60,24 @@ class _Artifacts:
         self.calls: list[tuple[UUID, str]] = []
 
     async def open_content(self, artifact_id: UUID, *, tenant_id: str) -> ArtifactContentStream:
+        return await self.open_verified_content(
+            artifact_id,
+            tenant_id=tenant_id,
+            max_content_bytes=len(self.content),
+        )
+
+    async def open_verified_content(
+        self,
+        artifact_id: UUID,
+        *,
+        tenant_id: str,
+        max_content_bytes: int,
+    ) -> ArtifactContentStream:
         self.calls.append((artifact_id, tenant_id))
         if tenant_id != self.tenant_id or str(artifact_id) != self.reference.artifact_id:
             raise ArtifactInputError("artifact not found")
+        if len(self.content) > max_content_bytes:
+            raise ArtifactInputError("artifact exceeds the selected verified content ceiling")
 
         async def chunks():
             yield self.content[:17]

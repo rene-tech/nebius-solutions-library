@@ -54,6 +54,29 @@ class ArtifactStorageUnavailableError(ArtifactServiceError):
 
 
 @dataclass(frozen=True, slots=True)
+class OpenedStoredObject:
+    """Provider response metadata retained before its body can be consumed."""
+
+    body: Any = field(repr=False)
+    object_version_id: str
+    size_bytes: int
+    media_type: str
+    compression: ArtifactCompression | None
+
+
+@dataclass(frozen=True, slots=True)
+class DiscoveredStoredObjectVersion:
+    """Provider metadata for one uniquely discoverable unfinalized upload."""
+
+    object_version_id: str
+    size_bytes: int
+    media_type: str
+    compression: ArtifactCompression | None
+    observed_at: datetime
+    is_absence_fence: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class ObjectStoreConfig:
     """Bounded, provider-neutral S3-compatible connection identity."""
 
@@ -123,6 +146,40 @@ class S3ArtifactObjectStore:
     def bucket(self) -> str:
         return self._config.bucket
 
+    def _assert_tenant_ready(self, tenant_id: str) -> None:
+        """Prove the mounted provider identity can see this versioned prefix."""
+
+        prefix = f"scientific/v1/tenants/{tenant_id}/"
+        versioning = self._client.get_bucket_versioning(Bucket=self._config.bucket)
+        if versioning.get("Status") != "Enabled":
+            raise ArtifactVerificationError("artifact bucket versioning is not enabled")
+        listing = self._client.list_object_versions(
+            Bucket=self._config.bucket,
+            Prefix=prefix,
+            MaxKeys=1,
+        )
+        metadata = listing.get("ResponseMetadata") or {}
+        if (
+            int(metadata.get("HTTPStatusCode", 0)) != 200
+            or listing.get("Name") != self._config.bucket
+            or listing.get("Prefix") != prefix
+        ):
+            raise ArtifactVerificationError("artifact tenant prefix readiness differs")
+
+    async def assert_tenant_ready(self, tenant_id: str) -> None:
+        """Perform a provider-backed, read-only bucket/version/prefix probe."""
+
+        assert_tenant_storage_key(
+            tenant_id,
+            f"scientific/v1/tenants/{tenant_id}/operations/00000000-0000-0000-0000-000000000000/"
+            "stages/readiness/shards/-/attempts/00000000-0000-0000-0000-000000000000/"
+            f"input/sha256/{'0' * 64}",
+        )
+        try:
+            await asyncio.to_thread(self._assert_tenant_ready, tenant_id)
+        except (BotoCoreError, ClientError) as error:
+            raise ArtifactStorageUnavailableError("artifact tenant provider readiness failed") from error
+
     @staticmethod
     def _window(ttl: timedelta) -> tuple[int, datetime]:
         """Anchor the handle deadline to the same wall clock the SDK signs with.
@@ -154,6 +211,7 @@ class S3ArtifactObjectStore:
         *,
         tenant_id: str,
         storage_key: str,
+        expected_size_bytes: int,
         media_type: str,
         compression: ArtifactCompression | None,
         ttl: timedelta,
@@ -165,12 +223,14 @@ class S3ArtifactObjectStore:
         params: dict[str, Any] = {
             "Bucket": self._config.bucket,
             "Key": storage_key,
+            "ContentLength": expected_size_bytes,
             "ContentType": media_type,
             "IfNoneMatch": "*",
             "ChecksumSHA256": self._checksum(storage_key),
         }
         headers = {
             "content-type": media_type,
+            "content-length": str(expected_size_bytes),
             "if-none-match": "*",
             "x-amz-checksum-sha256": self._checksum(storage_key),
         }
@@ -204,6 +264,141 @@ class S3ArtifactObjectStore:
             raise ArtifactStorageUnavailableError("artifact download handle could not be issued") from error
         return EphemeralHandle(method="GET", url=url, expires_at=expires_at, write_once=False, headers={})
 
+    def _discover_upload_version(self, storage_key: str) -> DiscoveredStoredObjectVersion | None:
+        """Resolve exactly one current version without reading object bytes.
+
+        The upload signature enforces ``If-None-Match: *``. Discovery still
+        independently refuses multiple versions, delete markers, pagination,
+        a provider ``null`` version, or a HEAD/list disagreement before an
+        orphan can be entered into the durable exact-version cleanup ledger.
+        """
+
+        try:
+            head = self._client.head_object(Bucket=self._config.bucket, Key=storage_key)
+        except ClientError as error:
+            if _is_missing(error):
+                return None
+            raise
+        listing = self._client.list_object_versions(
+            Bucket=self._config.bucket,
+            Prefix=storage_key,
+            MaxKeys=3,
+        )
+        if listing.get("IsTruncated") is True:
+            raise ArtifactVerificationError("unfinalized object version history is ambiguous")
+        versions = [
+            value
+            for value in listing.get("Versions", [])
+            if isinstance(value, dict) and value.get("Key") == storage_key
+        ]
+        delete_markers = [
+            value
+            for value in listing.get("DeleteMarkers", [])
+            if isinstance(value, dict) and value.get("Key") == storage_key
+        ]
+        if len(versions) != 1 or delete_markers:
+            raise ArtifactVerificationError("unfinalized object version history is not write-once")
+        version = versions[0]
+        listed_version = version.get("VersionId")
+        head_version = head.get("VersionId")
+        if (
+            not isinstance(listed_version, str)
+            or not listed_version
+            or listed_version == "null"
+            or head_version != listed_version
+            or version.get("IsLatest") is not True
+        ):
+            raise ArtifactVerificationError("unfinalized object has no unique immutable provider version")
+        size = head.get("ContentLength")
+        if not isinstance(size, int) or size < 0 or version.get("Size") != size:
+            raise ArtifactVerificationError("unfinalized object size metadata is invalid")
+        raw_media_type = head.get("ContentType")
+        if not isinstance(raw_media_type, str) or not raw_media_type.strip():
+            raise ArtifactVerificationError("unfinalized object media-type metadata is absent")
+        media_type = raw_media_type.split(";", 1)[0].strip().lower()
+        encoding = head.get("ContentEncoding")
+        if encoding is not None and str(encoding).lower() not in _CONTENT_ENCODING:
+            raise ArtifactVerificationError("unfinalized object compression metadata is invalid")
+        last_modified = version.get("LastModified")
+        if not isinstance(last_modified, datetime) or last_modified.tzinfo is None:
+            raise ArtifactVerificationError("unfinalized object timestamp metadata is invalid")
+        metadata = head.get("Metadata") or {}
+        fence_media_type = media_type == "application/x-fs2-abandoned-upload-fence"
+        fence_metadata = metadata.get("fs2-upload-state") == "sealed-absent"
+        if fence_media_type != fence_metadata or (
+            fence_metadata and (size != 0 or encoding is not None)
+        ):
+            raise ArtifactVerificationError("upload absence fence metadata is invalid")
+        return DiscoveredStoredObjectVersion(
+            object_version_id=listed_version,
+            size_bytes=size,
+            media_type=media_type,
+            compression=_CONTENT_ENCODING.get(str(encoding).lower()) if encoding is not None else None,
+            observed_at=last_modified.astimezone(UTC),
+            is_absence_fence=fence_metadata,
+        )
+
+    async def discover_upload_version(
+        self,
+        *,
+        tenant_id: str,
+        storage_key: str,
+    ) -> DiscoveredStoredObjectVersion | None:
+        """Discover a unique unfinalized version for maintenance cleanup."""
+
+        assert_tenant_storage_key(tenant_id, storage_key)
+        try:
+            return await asyncio.to_thread(self._discover_upload_version, storage_key)
+        except (BotoCoreError, ClientError) as error:
+            raise ArtifactStorageUnavailableError("unfinalized object version could not be discovered") from error
+
+    def _seal_absent_upload(self, storage_key: str) -> str:
+        """Atomically occupy an absent write-once key before absence is terminal.
+
+        Every customer upload for this key is signed with ``If-None-Match: *``.
+        The provider therefore serializes this zero-byte fence against a PUT
+        that was admitted before URL expiry but has not completed: exactly one
+        conditional writer can commit. The retained fence is not deleted by
+        cleanup, so a late customer upload cannot become unreachable data.
+        """
+
+        response = self._client.put_object(
+            Bucket=self._config.bucket,
+            Key=storage_key,
+            Body=b"",
+            ContentType="application/x-fs2-abandoned-upload-fence",
+            IfNoneMatch="*",
+            Metadata={"fs2-upload-state": "sealed-absent"},
+        )
+        version_id = response.get("VersionId")
+        if not isinstance(version_id, str) or not version_id or version_id == "null":
+            raise ArtifactVerificationError("absence fence has no immutable provider version")
+        head = self._client.head_object(
+            Bucket=self._config.bucket,
+            Key=storage_key,
+            VersionId=version_id,
+        )
+        if (
+            head.get("VersionId") != version_id
+            or head.get("ContentLength") != 0
+            or head.get("ContentType") != "application/x-fs2-abandoned-upload-fence"
+            or (head.get("Metadata") or {}).get("fs2-upload-state") != "sealed-absent"
+        ):
+            raise ArtifactVerificationError("absence fence provider metadata differs")
+        return version_id
+
+    async def seal_absent_upload(self, *, tenant_id: str, storage_key: str) -> str:
+        """Create and verify the provider-enforced write-once absence fence."""
+
+        assert_tenant_storage_key(tenant_id, storage_key)
+        try:
+            return await asyncio.to_thread(self._seal_absent_upload, storage_key)
+        except (BotoCoreError, ClientError) as error:
+            # A customer PUT winning the provider's conditional-write race is
+            # intentionally non-terminal. A later pass discovers and verifies
+            # that exact version instead of recording false absence.
+            raise ArtifactStorageUnavailableError("upload absence could not be fenced") from error
+
     def _put(
         self,
         storage_key: str,
@@ -227,6 +422,25 @@ class S3ArtifactObjectStore:
             raise ArtifactVerificationError("stored object has no immutable provider version")
         return version_id
 
+    async def put_version(
+        self,
+        *,
+        tenant_id: str,
+        storage_key: str,
+        payload: bytes,
+        media_type: str,
+        compression: ArtifactCompression | None,
+    ) -> str:
+        """Persist one bounded object and return its immutable provider version."""
+
+        assert_tenant_storage_key(tenant_id, storage_key)
+        if len(payload) > self._config.max_stream_bytes:
+            raise ArtifactPolicyError("artifact exceeds the accepted object ceiling")
+        try:
+            return await asyncio.to_thread(self._put, storage_key, payload, media_type, compression)
+        except (BotoCoreError, ClientError) as error:
+            raise ArtifactStorageUnavailableError("stored object could not be written") from error
+
     async def put_object(
         self,
         *,
@@ -238,18 +452,18 @@ class S3ArtifactObjectStore:
     ) -> VerifiedStoredObject:
         """Persist one bounded object, then measure what was actually stored.
 
-        The measurement is a fresh read rather than an echo of the request, so
-        a store that rewrote or re-typed the body cannot be mistaken for one
-        that accepted it verbatim.
+        Direct/static use retains this convenience method. Brokered production
+        use calls ``put_version`` with a put-only grant, closes that client,
+        then obtains a distinct exact-version inspect grant before measuring.
         """
 
-        assert_tenant_storage_key(tenant_id, storage_key)
-        if len(payload) > self._config.max_stream_bytes:
-            raise ArtifactPolicyError("artifact exceeds the accepted object ceiling")
-        try:
-            object_version_id = await asyncio.to_thread(self._put, storage_key, payload, media_type, compression)
-        except (BotoCoreError, ClientError) as error:
-            raise ArtifactStorageUnavailableError("stored object could not be written") from error
+        object_version_id = await self.put_version(
+            tenant_id=tenant_id,
+            storage_key=storage_key,
+            payload=payload,
+            media_type=media_type,
+            compression=compression,
+        )
         return await self.inspect(
             tenant_id=tenant_id,
             storage_key=storage_key,
@@ -257,14 +471,44 @@ class S3ArtifactObjectStore:
             max_bytes=len(payload),
         )
 
-    def _open(self, storage_key: str, object_version_id: str) -> Any:
+    def _open(self, storage_key: str, object_version_id: str) -> OpenedStoredObject:
         response = self._client.get_object(
             Bucket=self._config.bucket,
             Key=storage_key,
             VersionId=object_version_id,
             ChecksumMode="ENABLED",
         )
-        return response["Body"]
+        body = response["Body"]
+        try:
+            measured_version = response.get("VersionId")
+            if (
+                not isinstance(measured_version, str)
+                or not measured_version
+                or measured_version == "null"
+                or measured_version != object_version_id
+            ):
+                raise ArtifactVerificationError("stored object version differs from the requested version")
+            measured_size = response.get("ContentLength")
+            if not isinstance(measured_size, int) or measured_size < 0:
+                raise ArtifactVerificationError("stored object size metadata is invalid")
+            raw_media_type = response.get("ContentType")
+            if not isinstance(raw_media_type, str) or not raw_media_type.strip():
+                raise ArtifactVerificationError("stored object media-type metadata is absent")
+            media_type = raw_media_type.split(";", 1)[0].strip()
+            encoding = response.get("ContentEncoding")
+            if encoding is not None and str(encoding).lower() not in _CONTENT_ENCODING:
+                raise ArtifactVerificationError("stored object compression metadata is invalid")
+            compression = _CONTENT_ENCODING.get(str(encoding).lower()) if encoding is not None else None
+            return OpenedStoredObject(
+                body=body,
+                object_version_id=measured_version,
+                size_bytes=measured_size,
+                media_type=media_type.lower(),
+                compression=compression,
+            )
+        except Exception:
+            body.close()
+            raise
 
     async def stream_object(
         self,
@@ -272,36 +516,48 @@ class S3ArtifactObjectStore:
         tenant_id: str,
         storage_key: str,
         object_version_id: str,
-        max_bytes: int | None = None,
+        expected_size_bytes: int,
+        expected_media_type: str,
+        expected_compression: ArtifactCompression | None,
     ) -> AsyncIterator[bytes]:
-        """Yield the stored object in bounded chunks without ever buffering it."""
+        """Verify exact-version response metadata before yielding its first byte."""
 
         assert_tenant_storage_key(tenant_id, storage_key)
-        requested = self._config.max_stream_bytes if max_bytes is None else max_bytes
-        ceiling = min(requested, self._config.max_stream_bytes)
+        if not 0 <= expected_size_bytes <= self._config.max_stream_bytes:
+            raise ArtifactVerificationError("stored object size exceeds the accepted artifact ceiling")
         try:
-            body = await asyncio.to_thread(self._open, storage_key, object_version_id)
+            opened = await asyncio.to_thread(self._open, storage_key, object_version_id)
         except ClientError as error:
             if _is_missing(error):
                 raise ArtifactNotFoundError("stored object is absent") from None
             raise ArtifactStorageUnavailableError("stored object could not be read") from error
         except BotoCoreError as error:
             raise ArtifactStorageUnavailableError("stored object could not be read") from error
+        if (
+            opened.object_version_id != object_version_id
+            or opened.size_bytes != expected_size_bytes
+            or opened.media_type != expected_media_type
+            or opened.compression != expected_compression
+        ):
+            await asyncio.to_thread(opened.body.close)
+            raise ArtifactVerificationError("stored object response metadata differs from finalized metadata")
         total = 0
         try:
             while True:
                 try:
-                    chunk: bytes = await asyncio.to_thread(body.read, self._config.chunk_bytes)
+                    chunk: bytes = await asyncio.to_thread(opened.body.read, self._config.chunk_bytes)
                 except (BotoCoreError, ClientError) as error:
                     raise ArtifactStorageUnavailableError("stored object could not be read") from error
                 if not chunk:
                     break
                 total += len(chunk)
-                if total > ceiling:
-                    raise ArtifactVerificationError("stored object exceeds the accepted artifact ceiling")
+                if total > expected_size_bytes:
+                    raise ArtifactVerificationError("stored object exceeds finalized metadata")
                 yield chunk
+            if total != expected_size_bytes:
+                raise ArtifactVerificationError("stored object size differs from finalized metadata")
         finally:
-            await asyncio.to_thread(body.close)
+            await asyncio.to_thread(opened.body.close)
 
     def _stream_digest(
         self,
@@ -327,8 +583,13 @@ class S3ArtifactObjectStore:
                 digest.update(chunk)
         finally:
             body.close()
-        media_type = str(response.get("ContentType") or "application/octet-stream").split(";", 1)[0].strip()
+        raw_media_type = response.get("ContentType")
+        if not isinstance(raw_media_type, str) or not raw_media_type.strip():
+            raise ArtifactVerificationError("stored object media-type metadata is absent")
+        media_type = raw_media_type.split(";", 1)[0].strip()
         encoding = response.get("ContentEncoding")
+        if encoding is not None and str(encoding).lower() not in _CONTENT_ENCODING:
+            raise ArtifactVerificationError("stored object compression metadata is invalid")
         measured_version = response.get("VersionId")
         if not isinstance(measured_version, str) or not measured_version or measured_version == "null":
             raise ArtifactVerificationError("stored object has no immutable provider version")
@@ -370,6 +631,41 @@ class S3ArtifactObjectStore:
             media_type=media_type,
             compression=compression,
             object_version_id=measured_version,
+        )
+
+    async def inspect_upload(
+        self,
+        *,
+        tenant_id: str,
+        storage_key: str,
+        object_version_id: str,
+        max_bytes: int,
+    ) -> VerifiedStoredObject:
+        return await self.inspect(
+            tenant_id=tenant_id,
+            storage_key=storage_key,
+            object_version_id=object_version_id,
+            max_bytes=max_bytes,
+        )
+
+    async def discover_upload(
+        self,
+        *,
+        tenant_id: str,
+        storage_key: str,
+        max_bytes: int,
+    ) -> VerifiedStoredObject:
+        discovered = await self.discover_upload_version(
+            tenant_id=tenant_id,
+            storage_key=storage_key,
+        )
+        if discovered is None or discovered.is_absence_fence:
+            raise ArtifactNotFoundError("stored upload is absent")
+        return await self.inspect_upload(
+            tenant_id=tenant_id,
+            storage_key=storage_key,
+            object_version_id=discovered.object_version_id,
+            max_bytes=max_bytes,
         )
 
     def _delete(self, storage_key: str, object_version_id: str) -> None:

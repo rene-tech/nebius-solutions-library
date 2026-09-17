@@ -31,6 +31,12 @@ class AuthenticationError(PermissionError):
     pass
 
 
+class TenantBrokerNotReadyError(RuntimeError):
+    """The requested tenant has no exact, active artifact broker."""
+
+    pass
+
+
 @dataclass(frozen=True)
 class IssuedOperatorSession:
     session: OperatorSession
@@ -97,10 +103,12 @@ class TokenService:
         peppers: PepperRing,
         *,
         principal_policy: Callable[[Principal], Awaitable[Principal]] | None = None,
+        tenant_readiness: Callable[[str], Awaitable[None]] | None = None,
     ) -> None:
         self.store = store
         self._peppers = peppers
         self.principal_policy = principal_policy
+        self.tenant_readiness = tenant_readiness
         self._hasher = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=2, hash_len=32, salt_len=16)
 
     def _prehash(self, token: str, key_id: str) -> str:
@@ -129,6 +137,19 @@ class TokenService:
         now = datetime.now(UTC)
         if request.expires_at is not None and request.expires_at <= now:
             raise ValueError("expires_at must be in the future")
+        # A tenant broker is an artifact-storage capability, not a prerequisite
+        # for creating an ordinary catalog/inference credential.  Requiring a
+        # broker for every PAT would make the operator-declared artifact tenant
+        # inventory an accidental global customer registry and would break
+        # non-artifact and newly onboarded tenants.  Fail closed only when the
+        # credential explicitly requests direct artifact upload authority.
+        if self.tenant_readiness is not None and Scope.ARTIFACTS_WRITE in request.scopes:
+            try:
+                await self.tenant_readiness(request.tenant_id)
+            except Exception as error:
+                raise TenantBrokerNotReadyError(
+                    "tenant token issuance requires a ready artifact broker"
+                ) from error
         token_id = uuid4()
         secret = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
         token = f"{TOKEN_MARKER}_{token_id.hex}_{secret}"

@@ -1,0 +1,90 @@
+{{- /*
+The preserved cleanup implementation cannot prove that a request admitted by
+a short-lived signed URL has finished transferring a permitted 1 TiB object.
+Ordinary rendering therefore creates no claim/fence CronJob. A future reviewed
+provider-backed quiescence contract must replace this source-constant gate.
+*/ -}}
+{{- $artifactOrphanCleanupActivated := false -}}
+{{- if and $artifactOrphanCleanupActivated .Values.maintenance.enabled .Values.scientificArtifacts.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-artifact-orphan-cleanup
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: artifact-orphan-cleanup
+spec:
+  schedule: {{ .Values.maintenance.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 240
+      ttlSecondsAfterFinished: 600
+      template:
+        metadata:
+          labels:
+            {{- include "fs2-serve.artifactOrphanCleanupSelectorLabels" . | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          serviceAccountName: {{ include "fs2-serve.serviceAccountName" (dict "root" . "component" "maintenance") }}
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: artifact-orphan-cleanup
+              image: {{ include "fs2-serve.image" . }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              args: ["artifact-orphan-cleanup"]
+              env:
+                {{- include "fs2-serve.artifactOrphanCleanupEnv" . | nindent 16 }}
+              volumeMounts:
+                {{- include "fs2-serve.databaseCaVolumeMount" . | nindent 16 }}
+                - name: artifact-credential-broker
+                  mountPath: /var/run/secrets/fs2-serve/artifact-credential-broker
+                  readOnly: true
+                - name: artifact-broker-readiness
+                  mountPath: /var/run/fs2-serve/artifact-broker-readiness
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+          volumes:
+            {{- include "fs2-serve.databaseCaVolume" (dict "secret" .Values.secrets.maintenanceDatabase) | nindent 12 }}
+            - name: artifact-credential-broker
+              projected:
+                defaultMode: 0400
+                sources:
+                  - serviceAccountToken:
+                      audience: {{ .Values.scientificArtifacts.credentialBroker.audience | quote }}
+                      expirationSeconds: {{ .Values.scientificArtifacts.credentialBroker.tokenExpirationSeconds }}
+                      path: token
+                  - secret:
+                      name: {{ required "scientificArtifacts.credentialBroker.caSecretName is required" .Values.scientificArtifacts.credentialBroker.caSecretName }}
+                      items:
+                        - key: {{ .Values.scientificArtifacts.credentialBroker.caKey }}
+                          path: ca.crt
+            - name: artifact-broker-readiness
+              configMap:
+                name: {{ required "scientificArtifacts.credentialBroker.readinessConfigMapName is required" .Values.scientificArtifacts.credentialBroker.readinessConfigMapName }}
+                items:
+                  - key: bindings.json
+                    path: bindings.json
+{{- end }}

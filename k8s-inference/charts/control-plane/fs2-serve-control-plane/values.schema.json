@@ -25,6 +25,7 @@
     "publicGateway",
     "publicLoadBalancer",
     "publicTls",
+    "artifactVersionBackfill",
     "scientificArtifacts"
   ],
   "properties": {
@@ -1149,9 +1150,7 @@
         "ledgerHmacKeyring",
         "tokenPepper",
         "routeAttestors",
-        "admin",
-        "artifactStore",
-        "artifactStoreTenants"
+        "admin"
       ],
       "properties": {
         "database": {
@@ -1177,40 +1176,6 @@
         },
         "admin": {
           "$ref": "#/$defs/secretKeyReference"
-        },
-        "artifactStore": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "name",
-            "key"
-          ],
-          "properties": {
-            "name": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 253
-            },
-            "key": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 253
-            }
-          }
-        },
-        "artifactStoreTenants": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "name"
-          ],
-          "properties": {
-            "name": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 253
-            }
-          }
         }
       },
       "additionalProperties": false
@@ -1545,6 +1510,8 @@
         "runtimeDatabaseRole",
         "maintenanceDatabaseRole",
         "activationDatabaseRole",
+        "artifactBrokerDatabaseRole",
+        "artifactAuthorityDatabaseRole",
         "releaseContract",
         "resources"
       ],
@@ -1578,6 +1545,18 @@
           "maxLength": 63,
           "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
         },
+        "artifactBrokerDatabaseRole": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "artifactAuthorityDatabaseRole": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
         "releaseContract": {
           "type": "object",
           "required": [
@@ -1591,12 +1570,12 @@
           ],
           "properties": {
             "schema": {"const": "fs2-serve.nebius.ai/postgresql-release-contract/v1"},
-            "contractPayloadSha256": {"const": "0d9214768c396bcf4dbbf7ea342e00699ed20ac92181b1e7573ba9bb54b103a4"},
-            "migrationSetSha256": {"const": "2e8d7a9116a9577da5e6f5ab12961b193d418da7ba12aca1f875432a44abb84f"},
-            "migrationCount": {"const": 30},
+            "contractPayloadSha256": {"const": "d6bc97432062e9b83bd8404e25a20ce82af3c413443ba4f7dbe78a317ed4665f"},
+            "migrationSetSha256": {"const": "bd7a3191022f85c3bd141095456520105a2d4fb48560e29988f5a91e0e73c511"},
+            "migrationCount": {"const": 31},
             "firstMigrationVersion": {"const": "0001_initial.sql"},
-            "lastMigrationVersion": {"const": "0030_scientific_artifact_object_versions.sql"},
-            "namespaceRoleOwnershipSha256": {"const": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca"}
+            "lastMigrationVersion": {"const": "0031_scientific_artifact_version_backfill.sql"},
+            "namespaceRoleOwnershipSha256": {"const": "69ed03c4deaa6b08bb3d56eea338a87da6d1d4f8db194104c1aa5bb5681f834a"}
           },
           "additionalProperties": false
         },
@@ -2444,6 +2423,30 @@
         }
       }
     },
+    "artifactVersionBackfill": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "manifestSecretName",
+        "manifestKey",
+        "manifestSha256",
+        "activeDeadlineSeconds",
+        "resources"
+      ],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "manifestSecretName": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^$|^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$"
+        },
+        "manifestKey": {"type": "string", "minLength": 1, "maxLength": 253},
+        "manifestSha256": {"type": "string", "pattern": "^$|^[a-f0-9]{64}$"},
+        "activeDeadlineSeconds": {"type": "integer", "minimum": 60, "maximum": 86400},
+        "resources": {"$ref": "#/$defs/resources"}
+      }
+    },
     "scientificArtifacts": {
       "type": "object",
       "additionalProperties": false,
@@ -2454,9 +2457,8 @@
         "region",
         "addressingStyle",
         "verifyTls",
-        "allowLegacySharedCredentials",
-        "allowStaticTenantCredentials",
         "credentialBroker",
+        "authorityIssuer",
         "handleTtlSeconds",
         "uploadHandleTtlSeconds",
         "downloadHandleTtlSeconds",
@@ -2493,34 +2495,34 @@
         "verifyTls": {
           "type": "boolean"
         },
-        "allowLegacySharedCredentials": {
-          "type": "boolean"
-        },
-        "allowStaticTenantCredentials": {
-          "type": "boolean"
-        },
         "credentialBroker": {
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "url",
+            "urlTemplate",
             "audience",
             "tokenExpirationSeconds",
             "caSecretName",
             "caKey",
             "timeoutSeconds",
-            "operationCredentialTtlSeconds",
-            "maxCredentialTtlSeconds"
+            "operationCredentialTtlSeconds"
           ],
           "properties": {
-            "url": {
+            "urlTemplate": {
               "type": "string",
               "maxLength": 2048,
-              "pattern": "^$|^https://[^/?#]+/.+$"
+              "enum": [
+                "",
+                "https://fs2-artifact-{tenant_hash}.fs2-system.svc:8443/v1"
+              ]
             },
             "audience": {
               "type": "string",
               "minLength": 1,
+              "maxLength": 253
+            },
+            "readinessConfigMapName": {
+              "type": "string",
               "maxLength": 253
             },
             "tokenExpirationSeconds": {
@@ -2545,11 +2547,44 @@
               "type": "integer",
               "minimum": 30,
               "maximum": 900
+            }
+          }
+        },
+        "authorityIssuer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "url",
+            "audience",
+            "tokenExpirationSeconds",
+            "caSecretName",
+            "caKey",
+            "timeoutSeconds"
+          ],
+          "properties": {
+            "url": {
+              "const": "https://fs2-artifact-authority.fs2-system.svc:8443/v1"
             },
-            "maxCredentialTtlSeconds": {
+            "audience": {
+              "const": "fs2-artifact-authority-issuer"
+            },
+            "tokenExpirationSeconds": {
               "type": "integer",
-              "minimum": 30,
-              "maximum": 900
+              "minimum": 600,
+              "maximum": 3600
+            },
+            "caSecretName": {
+              "type": "string",
+              "maxLength": 253
+            },
+            "caKey": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 253
+            },
+            "timeoutSeconds": {
+              "type": "string",
+              "pattern": "^(0\\.[1-9][0-9]*|[1-9](\\.[0-9]+)?|[12][0-9](\\.[0-9]+)?|30(\\.0+)?)$"
             }
           }
         },
@@ -2604,28 +2639,22 @@
       },
       "allOf": [
         {
-          "not": {
-            "properties": {
-              "allowLegacySharedCredentials": {"const": true},
-              "allowStaticTenantCredentials": {"const": true}
-            },
-            "required": ["allowLegacySharedCredentials", "allowStaticTenantCredentials"]
-          }
-        },
-        {
           "if": {
             "properties": {
-              "enabled": {"const": true},
-              "allowLegacySharedCredentials": {"const": false},
-              "allowStaticTenantCredentials": {"const": false}
+              "enabled": {"const": true}
             },
-            "required": ["enabled", "allowLegacySharedCredentials", "allowStaticTenantCredentials"]
+            "required": ["enabled"]
           },
           "then": {
             "properties": {
               "credentialBroker": {
                 "properties": {
-                  "url": {"minLength": 1},
+                  "urlTemplate": {"minLength": 1},
+                  "caSecretName": {"minLength": 1}
+                }
+              },
+              "authorityIssuer": {
+                "properties": {
                   "caSecretName": {"minLength": 1}
                 }
               }
@@ -2965,6 +2994,15 @@
     }
   ],
   "$defs": {
+    "resources": {
+      "type": "object",
+      "required": ["requests", "limits"],
+      "properties": {
+        "requests": {"$ref": "#/$defs/controllerResources"},
+        "limits": {"$ref": "#/$defs/controllerResources"}
+      },
+      "additionalProperties": false
+    },
     "controllerResources": {
       "type": "object",
       "required": [

@@ -308,16 +308,6 @@ secrets:
   admin:
     name: fs2-serve-admin
     key: token
-  # Break-glass shared JSON credential. Only consumed when the artifact plane
-  # and allowLegacySharedCredentials are both explicitly enabled.
-  artifactStore:
-    name: fs2-serve-artifact-store
-    key: credentials.json
-  # Break-glass static documents, keyed as <tenant-id>.json. Mounting all of
-  # them into one process does not satisfy SAI-19 production acceptance.
-  artifactStoreTenants:
-    name: fs2-serve-artifact-store-tenants
-
 config:
   # Required public HTTPS origins; empty defaults fail validation.
   publicBaseUrl: ""
@@ -363,17 +353,19 @@ migration:
   runtimeDatabaseRole: fs2_serve_runtime
   maintenanceDatabaseRole: fs2_serve_maintenance
   activationDatabaseRole: fs2_serve_activation
+  artifactBrokerDatabaseRole: fs2_serve_artifact_broker
+  artifactAuthorityDatabaseRole: fs2_serve_artifact_authority
   # Exact value-suppressed inputs emitted by `fs2-serve
   # postgresql-release-contract`. The migration Job publishes these annotations
   # for the final PostgreSQL release receipt; chart validation rejects drift.
   releaseContract:
     schema: fs2-serve.nebius.ai/postgresql-release-contract/v1
-    contractPayloadSha256: 0d9214768c396bcf4dbbf7ea342e00699ed20ac92181b1e7573ba9bb54b103a4
-    migrationSetSha256: 2e8d7a9116a9577da5e6f5ab12961b193d418da7ba12aca1f875432a44abb84f
-    migrationCount: 30
+    contractPayloadSha256: d6bc97432062e9b83bd8404e25a20ce82af3c413443ba4f7dbe78a317ed4665f
+    migrationSetSha256: bd7a3191022f85c3bd141095456520105a2d4fb48560e29988f5a91e0e73c511
+    migrationCount: 31
     firstMigrationVersion: 0001_initial.sql
-    lastMigrationVersion: 0030_scientific_artifact_object_versions.sql
-    namespaceRoleOwnershipSha256: 47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca
+    lastMigrationVersion: 0031_scientific_artifact_version_backfill.sql
+    namespaceRoleOwnershipSha256: 69ed03c4deaa6b08bb3d56eea338a87da6d1d4f8db194104c1aa5bb5681f834a
   resources:
     requests:
       cpu: 50m
@@ -585,6 +577,23 @@ maintenance:
   enabled: true
   schedule: "*/1 * * * *"
 
+# One-shot, evidence-backed transition for historical artifacts whose rows do
+# not yet name an immutable provider version. Disabled until an operator
+# supplies a reviewed manifest Secret containing exact artifact/version pairs.
+artifactVersionBackfill:
+  enabled: false
+  manifestSecretName: ""
+  manifestKey: manifest.json
+  manifestSha256: ""
+  activeDeadlineSeconds: 3600
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
 httpRoute:
   enabled: false
   authorityMode: ip
@@ -717,23 +726,25 @@ scientificArtifacts:
   region: eu-north1
   addressingStyle: path
   verifyTls: true
-  # Break-glass rollback only. Production uses the independent credential
-  # broker below and refuses mutually enabled static modes.
-  allowLegacySharedCredentials: false
-  # Transitional break-glass only. This still places every tenant credential
-  # in one process and therefore cannot satisfy SAI-19 acceptance.
-  allowStaticTenantCredentials: false
-  # Default production path. The pod carries only a projected workload token;
-  # the independent broker returns one short-lived tenant/action credential.
+  # Default production path. The pod carries projected workload identities;
+  # the tenant broker performs exact provider operations and never returns a
+  # reusable provider credential.
   credentialBroker:
-    url: ""
+    urlTemplate: ""
     audience: fs2-artifact-credential-broker
+    readinessConfigMapName: fs2-artifact-observation-bindings
     tokenExpirationSeconds: 600
     caSecretName: ""
     caKey: ca.crt
     timeoutSeconds: "5"
     operationCredentialTtlSeconds: 120
-    maxCredentialTtlSeconds: 900
+  authorityIssuer:
+    url: https://fs2-artifact-authority.fs2-system.svc:8443/v1
+    audience: fs2-artifact-authority-issuer
+    tokenExpirationSeconds: 600
+    caSecretName: ""
+    caKey: ca.crt
+    timeoutSeconds: "5"
   handleTtlSeconds: 600
   uploadHandleTtlSeconds: 120
   downloadHandleTtlSeconds: 120
@@ -762,6 +773,7 @@ scientificArtifacts:
     - text/x-a3m
     - text/x-fasta
     - video/mp4
-  # CIDRs the control plane may reach on 443 to serve artifact handles and
-  # verify stored objects. Empty keeps the default-deny egress policy intact.
+  # Official provider CIDRs reachable only by isolated tenant broker workloads.
+  # The shared control plane has no provider route. Empty keeps the broker's
+  # default-deny egress policy intact.
   egressCidrs: []

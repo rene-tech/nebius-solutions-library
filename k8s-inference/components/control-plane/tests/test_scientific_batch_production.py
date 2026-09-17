@@ -37,6 +37,7 @@ from fs2_serve.scientific_artifacts import (
     ArtifactDirection,
     ArtifactDownload,
     ArtifactRecord,
+    ArtifactUploadIdentity,
     AttemptStatus,
     BeginArtifactUpload,
     BeginUploadResult,
@@ -225,6 +226,15 @@ def profile_catalog_for(
 
 def profile_catalog() -> ScientificProfileCatalog:
     return profile_catalog_for("protein-design")
+
+
+class _StubArtifactAuthorityClient:
+    """Test-only issuer stand-in; production always uses the isolated client."""
+
+    async def authorize_admission_inputs(self, **request):
+        assert request["end_user_authorization"].startswith("fs2_pat_")
+        assert request["artifact_ids"] == ()
+        return "fs2_operation_admission.test-authority", {}
 
 
 def scheduling() -> SchedulingContractResolver:
@@ -1023,6 +1033,7 @@ async def test_customer_upload_is_idempotent_verified_downloadable_and_never_wor
     runtime.scientific_input_uploads = ScientificInputUploadService(
         store=runtime.store,
         artifacts=upload_port,
+        artifact_authorities=_StubArtifactAuthorityClient(),
         profiles=profile_catalog(),
     )
     issued = await runtime.tokens.issue(
@@ -1068,12 +1079,12 @@ async def test_customer_upload_is_idempotent_verified_downloadable_and_never_wor
             operation_id = UUID(begun.json()["operation_id"])
             upload_id = UUID(begun.json()["upload_id"])
             intent = await artifact_repository.get_upload(
-                FinalizeArtifactUpload(upload_id=upload_id, operation_id=operation_id, tenant_id="tenant-a")
+                ArtifactUploadIdentity(upload_id=upload_id, operation_id=operation_id, tenant_id="tenant-a")
             )
             object_store.put(intent.storage_key, payload, "text/x-fasta")
             finalized = await client.post(
                 f"/v1/scientific-artifacts/uploads/{upload_id}:finalize",
-                json={"operation_id": str(operation_id)},
+                json={"operation_id": str(operation_id), "object_version_id": "test-version"},
             )
             assert finalized.status_code == 200, finalized.text
             pointer = finalized.json()
@@ -1115,7 +1126,7 @@ async def test_customer_upload_is_idempotent_verified_downloadable_and_never_wor
             manifest_operation_id = UUID(manifest_begin.json()["operation_id"])
             manifest_upload_id = UUID(manifest_begin.json()["upload_id"])
             manifest_intent = await artifact_repository.get_upload(
-                FinalizeArtifactUpload(
+                ArtifactUploadIdentity(
                     upload_id=manifest_upload_id,
                     operation_id=manifest_operation_id,
                     tenant_id="tenant-a",
@@ -1128,7 +1139,10 @@ async def test_customer_upload_is_idempotent_verified_downloadable_and_never_wor
             )
             manifest_final = await client.post(
                 f"/v1/scientific-artifacts/uploads/{manifest_upload_id}:finalize",
-                json={"operation_id": str(manifest_operation_id)},
+                json={
+                    "operation_id": str(manifest_operation_id),
+                    "object_version_id": "test-version",
+                },
             )
             assert manifest_final.status_code == 200
             manifest_pointer = manifest_final.json()
@@ -1184,7 +1198,7 @@ async def test_customer_upload_is_idempotent_verified_downloadable_and_never_wor
         mcp_operation_id = UUID(mcp_begin["operation_id"])
         mcp_upload_id = UUID(mcp_begin["upload_id"])
         mcp_intent = await artifact_repository.get_upload(
-            FinalizeArtifactUpload(
+            ArtifactUploadIdentity(
                 upload_id=mcp_upload_id,
                 operation_id=mcp_operation_id,
                 tenant_id="tenant-a",
@@ -1193,7 +1207,11 @@ async def test_customer_upload_is_idempotent_verified_downloadable_and_never_wor
         object_store.put(mcp_intent.storage_key, mcp_payload, "application/json")
         mcp_pointer = await server._tool_manager.call_tool(  # type: ignore[attr-defined]
             "finalize_scientific_artifact_upload",
-            {"operation_id": str(mcp_operation_id), "upload_id": str(mcp_upload_id)},
+            {
+                "operation_id": str(mcp_operation_id),
+                "upload_id": str(mcp_upload_id),
+                "object_version_id": "test-version",
+            },
             context,
             convert_result=False,
         )
@@ -3840,16 +3858,22 @@ async def test_workload_capability_materializes_and_commits_through_single_artif
                 media_type=intent.media_type,
                 compression=intent.compression,
                 storage_key=intent.storage_key,
+                object_version_id=request.object_version_id,
                 access=intent.access,
                 retention_expires_at=now + timedelta(days=1),
                 created_at=now,
             )
+
+    class ArtifactAuthorities:
+        async def issue_workload(self, **_: object) -> str:
+            return "fs2_artifact_workload.test-only-authority"
 
     artifacts = Artifacts()
     app = FastAPI()
     app.include_router(
         scientific_workload_artifact_router(
             authority=authority,
+            artifact_authorities=ArtifactAuthorities(),  # type: ignore[arg-type]
             artifacts=artifacts,  # type: ignore[arg-type]
             batches=repository,
         )
@@ -3878,7 +3902,10 @@ async def test_workload_capability_materializes_and_commits_through_single_artif
                 },
             )
             assert begun.status_code == 201
-            finalized = await client.post(f"/internal/scientific-workloads/uploads/{upload_id}:finalize")
+            finalized = await client.post(
+                f"/internal/scientific-workloads/uploads/{upload_id}:finalize",
+                headers={"x-fs2-object-version-id": f"version-{upload_id}"},
+            )
             assert finalized.status_code == 200
             refs.append(finalized.json())
         assert len(refs) == 3
@@ -4313,7 +4340,9 @@ async def test_artifact_bridge_consumes_owned_records_and_emits_canonical_result
         def __init__(self) -> None:
             self.objects: dict[str, tuple[bytes, str]] = {}
 
-        async def presign_upload(self, *, tenant_id, storage_key, media_type, compression, ttl):
+        async def presign_upload(
+            self, *, tenant_id, storage_key, expected_size_bytes, media_type, compression, ttl
+        ):
             del compression
             return EphemeralHandle(
                 method="PUT",
@@ -4328,6 +4357,7 @@ async def test_artifact_bridge_consumes_owned_records_and_emits_canonical_result
                 expires_at=now + ttl,
                 write_once=True,
                 headers={
+                    "content-length": str(expected_size_bytes),
                     "content-type": media_type,
                     "if-none-match": "*",
                     "x-amz-checksum-sha256": "test-checksum",
@@ -4366,6 +4396,9 @@ async def test_artifact_bridge_consumes_owned_records_and_emits_canonical_result
                 media_type=media_type,
                 object_version_id=object_version_id or "test-version",
             )
+
+        async def inspect_upload(self, **kwargs):
+            return await self.inspect(**kwargs)
 
         async def delete(self, *, tenant_id, storage_key, object_version_id):
             self.objects.pop(storage_key, None)
@@ -4416,6 +4449,7 @@ async def test_artifact_bridge_consumes_owned_records_and_emits_canonical_result
                 upload_id=request.upload_id,
                 operation_id=operation_id,
                 tenant_id="tenant-a",
+                object_version_id="test-version",
             )
         )
         reader.values[record.artifact_id] = value

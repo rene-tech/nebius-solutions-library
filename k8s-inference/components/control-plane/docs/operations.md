@@ -354,13 +354,13 @@ runtime becomes ready; extra or reordered database rows fail closed.
 
 The required final release-receipt inputs are the ordered full-manifest
 migration-set SHA-256
-`6926de8f73092cd53e0397a8b6f44e2a9e9a64e73ad4b273e08cc96b2a5c25dd`,
-count `15`, first version `0001_initial.sql`, last version
-`0015_scientific_batch_controller.sql`,
+`b22e1ae6296d06ec658962ea1964ae37d72a30fcd2bbbfa13b41bbfe3a6adf9d`,
+count `31`, first version `0001_initial.sql`, last version
+`0031_scientific_artifact_version_backfill.sql`,
 and namespace/role ownership SHA-256
-`47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca`.
+`8ffee562b3b09fcd96321ce21a742316f8101c9a86a44171ac66faacf73d3267`.
 The whole logical contract payload is SHA-256
-`3e9cb0cf59dd28c74f94594ef20aa5aeaa87170f79d7f498b820fdf4a8c784af`.
+`7ce1e372c0321825edc64c7efddd46ffd56f38fbfd2584f92d3c40544ecaa83b`.
 The migration Job emits the payload, ordered-set digest, count, first/last
 version, and namespace/role digest as annotations. A later additive migration
 updates this one manifest contract; Helm and PostgreSQL code must not

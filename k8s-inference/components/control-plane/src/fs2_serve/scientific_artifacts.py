@@ -39,7 +39,7 @@ from urllib.parse import parse_qsl, urlsplit
 from uuid import UUID, uuid4
 
 import asyncpg
-from pydantic import AwareDatetime, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import AfterValidator, AwareDatetime, ConfigDict, Field, StringConstraints, model_validator
 
 from .models import StrictModel
 from .scientific_batch.models import ArtifactCommit, batch_identity, workload_identity
@@ -96,6 +96,15 @@ ObjectVersionId = Annotated[
     str,
     StringConstraints(min_length=1, max_length=1024, pattern=OBJECT_VERSION_PATTERN),
 ]
+
+
+def _require_immutable_object_version(value: str) -> str:
+    if value in {"null", "unpersisted"}:
+        raise ValueError("an immutable provider object version is required")
+    return value
+
+
+ImmutableObjectVersionId = Annotated[ObjectVersionId, AfterValidator(_require_immutable_object_version)]
 
 
 class ScientificArtifactModel(StrictModel):
@@ -346,10 +355,17 @@ class BeginArtifactUpload(ScientificArtifactModel):
     access: ArtifactAccess = Field(default_factory=ArtifactAccess)
 
 
-class FinalizeArtifactUpload(ScientificArtifactModel):
+class ArtifactUploadIdentity(ScientificArtifactModel):
     upload_id: UUID
     operation_id: UUID
     tenant_id: TenantId
+
+
+class FinalizeArtifactUpload(ArtifactUploadIdentity):
+    # Optional for the versioned compatibility transition. New browser clients
+    # should echo ``x-amz-version-id``; older clients may omit it and the
+    # broker independently discovers exactly one write-once version.
+    object_version_id: ImmutableObjectVersionId | None = None
 
 
 class VerifiedStoredObject(ScientificArtifactModel):
@@ -382,7 +398,7 @@ class ArtifactRecord(ScientificArtifactModel):
     # Null is accepted only while reading historical rows. Every operation
     # that can release bytes rejects such a row; new finalization requires and
     # persists a concrete provider version.
-    object_version_id: ObjectVersionId | None = None
+    object_version_id: ImmutableObjectVersionId | None = None
     access: ArtifactAccess
     retention_expires_at: AwareDatetime
     created_at: AwareDatetime
@@ -872,6 +888,7 @@ class ArtifactObjectStorePort(Protocol):
         *,
         tenant_id: str,
         storage_key: str,
+        expected_size_bytes: int,
         media_type: str,
         compression: ArtifactCompression | None,
         ttl: timedelta,
@@ -902,7 +919,9 @@ class ArtifactObjectStorePort(Protocol):
         tenant_id: str,
         storage_key: str,
         object_version_id: str,
-        max_bytes: int | None = None,
+        expected_size_bytes: int,
+        expected_media_type: str,
+        expected_compression: ArtifactCompression | None,
     ) -> AsyncIterator[bytes]: ...
 
     async def inspect(
@@ -912,6 +931,23 @@ class ArtifactObjectStorePort(Protocol):
         storage_key: str,
         object_version_id: str | None = None,
         max_bytes: int | None = None,
+    ) -> VerifiedStoredObject: ...
+
+    async def inspect_upload(
+        self,
+        *,
+        tenant_id: str,
+        storage_key: str,
+        object_version_id: str,
+        max_bytes: int,
+    ) -> VerifiedStoredObject: ...
+
+    async def discover_upload(
+        self,
+        *,
+        tenant_id: str,
+        storage_key: str,
+        max_bytes: int,
     ) -> VerifiedStoredObject: ...
 
     async def delete(self, *, tenant_id: str, storage_key: str, object_version_id: str) -> None: ...
@@ -944,6 +980,7 @@ class DigestVerifyingArtifactObjectStore:
         *,
         tenant_id: str,
         storage_key: str,
+        expected_size_bytes: int,
         media_type: str,
         compression: ArtifactCompression | None,
         ttl: timedelta,
@@ -951,6 +988,7 @@ class DigestVerifyingArtifactObjectStore:
         return await self._store.presign_upload(
             tenant_id=tenant_id,
             storage_key=storage_key,
+            expected_size_bytes=expected_size_bytes,
             media_type=media_type,
             compression=compression,
             ttl=ttl,
@@ -994,14 +1032,18 @@ class DigestVerifyingArtifactObjectStore:
         tenant_id: str,
         storage_key: str,
         object_version_id: str,
-        max_bytes: int | None = None,
+        expected_size_bytes: int,
+        expected_media_type: str,
+        expected_compression: ArtifactCompression | None,
     ) -> AsyncIterator[bytes]:
         expected_digest = self._expected_digest(storage_key)
         source = self._store.stream_object(
             tenant_id=tenant_id,
             storage_key=storage_key,
             object_version_id=object_version_id,
-            max_bytes=max_bytes,
+            expected_size_bytes=expected_size_bytes,
+            expected_media_type=expected_media_type,
+            expected_compression=expected_compression,
         )
 
         async def verified_chunks() -> AsyncIterator[bytes]:
@@ -1010,11 +1052,11 @@ class DigestVerifyingArtifactObjectStore:
             total = 0
             async for chunk in source:
                 total += len(chunk)
-                if max_bytes is not None and total > max_bytes:
+                if total > expected_size_bytes:
                     raise ArtifactVerificationError("stored object exceeds finalized metadata")
                 measured.update(chunk)
                 held.append(chunk)
-            if max_bytes is not None and total != max_bytes:
+            if total != expected_size_bytes:
                 raise ArtifactVerificationError("stored object size differs from finalized metadata")
             if measured.hexdigest() != expected_digest:
                 raise ArtifactVerificationError("stored object digest differs from its content address")
@@ -1041,6 +1083,34 @@ class DigestVerifyingArtifactObjectStore:
             max_bytes=max_bytes,
         )
 
+    async def inspect_upload(
+        self,
+        *,
+        tenant_id: str,
+        storage_key: str,
+        object_version_id: str,
+        max_bytes: int,
+    ) -> VerifiedStoredObject:
+        return await self._store.inspect_upload(
+            tenant_id=tenant_id,
+            storage_key=storage_key,
+            object_version_id=object_version_id,
+            max_bytes=max_bytes,
+        )
+
+    async def discover_upload(
+        self,
+        *,
+        tenant_id: str,
+        storage_key: str,
+        max_bytes: int,
+    ) -> VerifiedStoredObject:
+        return await self._store.discover_upload(
+            tenant_id=tenant_id,
+            storage_key=storage_key,
+            max_bytes=max_bytes,
+        )
+
     async def delete(self, *, tenant_id: str, storage_key: str, object_version_id: str) -> None:
         await self._store.delete(
             tenant_id=tenant_id,
@@ -1064,7 +1134,11 @@ class ArtifactRepository(Protocol):
         self, request: BeginArtifactUpload, storage_key: str, *, retention: timedelta
     ) -> UploadIntent: ...
 
-    async def get_upload(self, request: FinalizeArtifactUpload) -> UploadIntent: ...
+    async def get_upload(self, request: ArtifactUploadIdentity) -> UploadIntent: ...
+
+    async def register_upload_version(
+        self, request: FinalizeArtifactUpload, verified: VerifiedStoredObject
+    ) -> None: ...
 
     async def finalize_upload(
         self, request: FinalizeArtifactUpload, verified: VerifiedStoredObject, *, artifact_id: UUID
@@ -1099,7 +1173,7 @@ class ArtifactRepository(Protocol):
 
     async def purge_operation(self, operation_id: UUID, *, tenant_id: str, now: datetime) -> RetentionPurge: ...
 
-    async def purge_keys(self, operation_id: UUID, *, tenant_id: str) -> list[tuple[str, str]]: ...
+    async def purge_keys(self, operation_id: UUID, *, tenant_id: str) -> list[tuple[str, str | None]]: ...
 
 
 class ScientificArtifactControllerPort(Protocol):
@@ -1115,7 +1189,7 @@ class ScientificArtifactControllerPort(Protocol):
 
     async def store_upload_content(
         self,
-        request: FinalizeArtifactUpload,
+        request: ArtifactUploadIdentity,
         *,
         content: bytes,
         declared_media_type: str | None = None,
@@ -1124,7 +1198,7 @@ class ScientificArtifactControllerPort(Protocol):
 
     async def store_trusted_upload_content(
         self,
-        request: FinalizeArtifactUpload,
+        request: ArtifactUploadIdentity,
         *,
         content: bytes,
     ) -> InlineUploadReceipt: ...
@@ -1136,6 +1210,14 @@ class ScientificArtifactControllerPort(Protocol):
     ) -> ArtifactDownload: ...
 
     async def open_content(self, artifact_id: UUID, *, tenant_id: str) -> ArtifactContentStream: ...
+
+    async def open_verified_content(
+        self,
+        artifact_id: UUID,
+        *,
+        tenant_id: str,
+        max_content_bytes: int,
+    ) -> ArtifactContentStream: ...
 
     @property
     def max_inline_content_bytes(self) -> int: ...
@@ -1322,6 +1404,7 @@ class ScientificArtifactService:
         handle = await self._store.presign_upload(
             tenant_id=request.tenant_id,
             storage_key=storage_key,
+            expected_size_bytes=request.expected_size_bytes,
             media_type=request.media_type,
             compression=request.compression,
             ttl=lifetime,
@@ -1331,7 +1414,7 @@ class ScientificArtifactService:
 
     async def store_upload_content(
         self,
-        request: FinalizeArtifactUpload,
+        request: ArtifactUploadIdentity,
         *,
         content: bytes,
         declared_media_type: str | None = None,
@@ -1356,7 +1439,7 @@ class ScientificArtifactService:
 
     async def store_trusted_upload_content(
         self,
-        request: FinalizeArtifactUpload,
+        request: ArtifactUploadIdentity,
         *,
         content: bytes,
     ) -> InlineUploadReceipt:
@@ -1377,7 +1460,7 @@ class ScientificArtifactService:
 
     async def _store_content(
         self,
-        request: FinalizeArtifactUpload,
+        request: ArtifactUploadIdentity,
         *,
         content: bytes,
         declared_media_type: str | None,
@@ -1412,25 +1495,48 @@ class ScientificArtifactService:
             media_type=intent.media_type,
             compression=intent.compression,
         )
-        # The adapter measures the object it actually persisted. A store that
-        # rewrote, truncated or re-typed the body is caught here rather than
-        # surfacing later as an unexplained finalization failure.
+        # This receipt binds the provider-returned immutable version to the
+        # already measured request.  Publication still requires
+        # ``finalize_upload``: the orphan ledger is written before this method
+        # returns, then finalization obtains a separately authorized
+        # exact-version GET and verifies the provider bytes and metadata before
+        # creating an artifact.
         _verify_object(intent, stored)
+        await self._repository.register_upload_version(
+            FinalizeArtifactUpload(
+                upload_id=intent.upload_id,
+                operation_id=intent.operation_id,
+                tenant_id=intent.tenant_id,
+                object_version_id=stored.object_version_id,
+            ),
+            stored,
+        )
         return InlineUploadReceipt(upload=intent, stored=stored)
 
-    async def open_content(self, artifact_id: UUID, *, tenant_id: str) -> ArtifactContentStream:
-        """Release one authorized small artifact only after exact verification.
+    async def open_verified_content(
+        self,
+        artifact_id: UUID,
+        *,
+        tenant_id: str,
+        max_content_bytes: int,
+    ) -> ArtifactContentStream:
+        """Release one authorized bounded artifact only after exact verification.
 
         Tenant identity arrives separately from the storage key and is checked
         again here before the broker can mint storage authority. The selected
-        provider object version is read once, buffered only up to the inline
-        ceiling, hashed, and released only after its complete digest matches.
+        provider object version is read once, buffered only up to the caller's
+        explicit ceiling, hashed, and released only after its complete digest
+        matches. Public routes call :meth:`open_content`, whose stricter inline
+        ceiling cannot be widened by a request. Executor-side materialization
+        supplies the independently declared model-field ceiling.
         """
 
+        if not 0 < max_content_bytes <= min(self._max_artifact_bytes, MAX_INLINE_CONTENT_BYTES):
+            raise ArtifactPolicyError("verified content ceiling is outside artifact policy")
         record = await self._repository.get_artifact(artifact_id, tenant_id=tenant_id)
         _assert_record_scope(record, tenant_id)
-        if record.size_bytes > self._max_inline_content_bytes:
-            raise ArtifactContentTooLargeError("artifact exceeds the inline content ceiling")
+        if record.size_bytes > max_content_bytes:
+            raise ArtifactContentTooLargeError("artifact exceeds the selected verified content ceiling")
         assert record.object_version_id is not None
         return ArtifactContentStream(
             artifact=record,
@@ -1438,21 +1544,47 @@ class ScientificArtifactService:
                 tenant_id=tenant_id,
                 storage_key=record.storage_key,
                 object_version_id=record.object_version_id,
-                max_bytes=record.size_bytes,
+                expected_size_bytes=record.size_bytes,
+                expected_media_type=record.media_type,
+                expected_compression=record.compression,
             ),
         )
 
+    async def open_content(self, artifact_id: UUID, *, tenant_id: str) -> ArtifactContentStream:
+        """Apply the fixed public inline ceiling to a verify-before-release read."""
+
+        return await self.open_verified_content(
+            artifact_id,
+            tenant_id=tenant_id,
+            max_content_bytes=self._max_inline_content_bytes,
+        )
+
     async def finalize_upload(self, request: FinalizeArtifactUpload) -> ArtifactRecord:
-        """Verify the stored bytes independently, then publish the content address."""
+        """Bind and verify one exact provider version, then publish it."""
 
         intent = await self._repository.get_upload(request)
         if intent.artifact_id is not None:
-            return await self._repository.get_artifact(intent.artifact_id, tenant_id=intent.tenant_id)
-        verified = await self._store.inspect(
-            tenant_id=intent.tenant_id,
-            storage_key=intent.storage_key,
-            max_bytes=min(self._max_artifact_bytes, intent.expected_size_bytes),
-        )
+            artifact = await self._repository.get_artifact(intent.artifact_id, tenant_id=intent.tenant_id)
+            if (
+                request.object_version_id is not None
+                and artifact.object_version_id != request.object_version_id
+            ):
+                raise ArtifactConflictError("upload was finalized with another provider object version")
+            return artifact
+        if request.object_version_id is None:
+            verified = await self._store.discover_upload(
+                tenant_id=intent.tenant_id,
+                storage_key=intent.storage_key,
+                max_bytes=min(self._max_artifact_bytes, intent.expected_size_bytes),
+            )
+            request = request.model_copy(update={"object_version_id": verified.object_version_id})
+        else:
+            verified = await self._store.inspect_upload(
+                tenant_id=intent.tenant_id,
+                storage_key=intent.storage_key,
+                object_version_id=request.object_version_id,
+                max_bytes=min(self._max_artifact_bytes, intent.expected_size_bytes),
+            )
         _verify_object(intent, verified)
         self._check_policy(verified.media_type, verified.size_bytes)
         return await self._repository.finalize_upload(request, verified, artifact_id=uuid4())
@@ -1591,31 +1723,20 @@ class ScientificArtifactService:
         return await self._repository.list_events(operation_id, tenant_id=tenant_id, after_id=after_id, limit=limit)
 
     async def purge_expired(self, *, limit: int = 50) -> list[RetentionPurge]:
-        """Delete retired objects, then their metadata, and record the evidence.
+        """Keep bytes and metadata until exact-version retention deletion is activated.
 
-        Object deletion is idempotent and runs before the durable rows are
-        removed, so an interrupted purge converges on the next pass instead of
-        leaving metadata that points at bytes which are already gone.
+        Tenant broker credentials are deliberately delete-free. Claiming an
+        expired operation and then calling a provider delete that can never be
+        authorized would create an unbounded retry loop; deleting metadata
+        without bytes would instead create unreachable storage. This source
+        candidate therefore leaves retention dormant and observable. A future
+        activation requires a distinct exact-version deletion principal,
+        signed expiry authority, failure-atomic evidence, and independent
+        review. Ordinary application configuration cannot enable it.
         """
 
-        now = self._clock()
-        purges: list[RetentionPurge] = []
-        for operation_id, tenant_id, _ in await self._repository.claim_expired(now=now, limit=limit):
-            for storage_key, object_version_id in await self._repository.purge_keys(
-                operation_id, tenant_id=tenant_id
-            ):
-                await self._store.delete(
-                    tenant_id=tenant_id,
-                    storage_key=storage_key,
-                    object_version_id=object_version_id,
-                )
-            try:
-                purges.append(await self._repository.purge_operation(operation_id, tenant_id=tenant_id, now=now))
-            except ArtifactConflictError:
-                # Another worker claimed this operation between the scan and the
-                # delete. Its purge is authoritative, so skip rather than fail.
-                continue
-        return purges
+        del limit
+        return []
 
 
 @dataclass
@@ -1636,6 +1757,7 @@ class MemoryArtifactRepository:
         self._operations: dict[UUID, _MemoryOperation] = {}
         self._attempts: dict[UUID, StageAttemptRecord] = {}
         self._uploads: dict[UUID, UploadIntent] = {}
+        self._upload_versions: dict[UUID, str] = {}
         self._artifacts: dict[UUID, ArtifactRecord] = {}
         self._stage_commits: dict[tuple[UUID, str], StageCommitRecord] = {}
         self._run_results: dict[UUID, RunResultRecord] = {}
@@ -1848,12 +1970,27 @@ class MemoryArtifactRepository:
             )
             return intent
 
-    async def get_upload(self, request: FinalizeArtifactUpload) -> UploadIntent:
+    async def get_upload(self, request: ArtifactUploadIdentity) -> UploadIntent:
         async with self._lock:
             intent = self._uploads.get(request.upload_id)
             if intent is None or intent.operation_id != request.operation_id or intent.tenant_id != request.tenant_id:
                 raise ArtifactNotFoundError("upload not found")
             return intent
+
+    async def register_upload_version(
+        self, request: FinalizeArtifactUpload, verified: VerifiedStoredObject
+    ) -> None:
+        async with self._lock:
+            intent = self._uploads.get(request.upload_id)
+            if intent is None or intent.operation_id != request.operation_id or intent.tenant_id != request.tenant_id:
+                raise ArtifactNotFoundError("upload not found")
+            _verify_object(intent, verified)
+            if verified.object_version_id != request.object_version_id:
+                raise ArtifactConflictError("provider proof names another object version")
+            existing = self._upload_versions.get(request.upload_id)
+            if existing is not None and existing != request.object_version_id:
+                raise ArtifactConflictError("upload is already bound to another provider object version")
+            self._upload_versions[request.upload_id] = request.object_version_id
 
     async def finalize_upload(
         self, request: FinalizeArtifactUpload, verified: VerifiedStoredObject, *, artifact_id: UUID
@@ -1865,9 +2002,15 @@ class MemoryArtifactRepository:
                 raise ArtifactNotFoundError("upload not found")
             if intent.artifact_id is not None:
                 return self._artifacts[intent.artifact_id]
+            _verify_object(intent, verified)
+            if verified.object_version_id != request.object_version_id:
+                raise ArtifactConflictError("provider proof names another object version")
+            existing_version = self._upload_versions.get(request.upload_id)
+            if existing_version is not None and existing_version != request.object_version_id:
+                raise ArtifactConflictError("upload is already bound to another provider object version")
+            self._upload_versions[request.upload_id] = verified.object_version_id
             attempt = self._attempts[intent.attempt_id]
             self._assert_live_attempt(attempt)
-            _verify_object(intent, verified)
             now = self._clock()
             record = ArtifactRecord(
                 artifact_id=artifact_id,
@@ -2050,17 +2193,29 @@ class MemoryArtifactRepository:
                 (record.operation_id, record.tenant_id, record.retention_expires_at)
                 for record in self._run_results.values()
                 if record.retention_expires_at <= now and record.operation_id not in self._purged
+                and all(
+                    artifact.object_version_id is not None
+                    for artifact in self._artifacts.values()
+                    if artifact.operation_id == record.operation_id and artifact.tenant_id == record.tenant_id
+                )
             ][: max(1, limit)]
 
-    async def purge_keys(self, operation_id: UUID, *, tenant_id: str) -> list[tuple[str, str]]:
+    async def purge_keys(self, operation_id: UUID, *, tenant_id: str) -> list[tuple[str, str | None]]:
         async with self._lock:
-            return [
+            finalized = [
                 (record.storage_key, record.object_version_id)
                 for record in self._artifacts.values()
                 if record.operation_id == operation_id
                 and record.tenant_id == tenant_id
-                and record.object_version_id is not None
             ]
+            pending = [
+                (intent.storage_key, version)
+                for upload_id, version in self._upload_versions.items()
+                if (intent := self._uploads.get(upload_id)) is not None
+                and intent.operation_id == operation_id
+                and intent.tenant_id == tenant_id
+            ]
+            return list(dict.fromkeys(finalized + pending))
 
     async def purge_operation(self, operation_id: UUID, *, tenant_id: str, now: datetime) -> RetentionPurge:
         async with self._lock:
@@ -2074,6 +2229,15 @@ class MemoryArtifactRepository:
                 for record in self._artifacts.values()
                 if record.operation_id == operation_id and record.tenant_id == tenant_id
             ]
+            if any(record.object_version_id is None for record in doomed):
+                raise ArtifactConflictError("retention purge is blocked by an unbound provider object version")
+            if any(
+                intent.operation_id == operation_id
+                and intent.tenant_id == tenant_id
+                and intent.artifact_id is None
+                for intent in self._uploads.values()
+            ):
+                raise ArtifactConflictError("retention purge is blocked by an unresolved upload")
             purge = RetentionPurge(
                 operation_id=operation_id,
                 tenant_id=tenant_id,
@@ -2085,6 +2249,7 @@ class MemoryArtifactRepository:
             for record in doomed:
                 del self._artifacts[record.artifact_id]
             for upload_id in [key for key, item in self._uploads.items() if item.operation_id == operation_id]:
+                self._upload_versions.pop(upload_id, None)
                 del self._uploads[upload_id]
             for key in [item for item in self._stage_commits if item[0] == operation_id]:
                 del self._stage_commits[key]
@@ -2466,14 +2631,14 @@ class PostgresArtifactRepository:
         except asyncpg.PostgresError as error:
             raise (self._translate(error) or ArtifactConflictError("upload could not be reserved")) from None
         return await self.get_upload(
-            FinalizeArtifactUpload(
+            ArtifactUploadIdentity(
                 upload_id=request.upload_id,
                 operation_id=request.operation_id,
                 tenant_id=request.tenant_id,
             )
         )
 
-    async def get_upload(self, request: FinalizeArtifactUpload) -> UploadIntent:
+    async def get_upload(self, request: ArtifactUploadIdentity) -> UploadIntent:
         row = await self.pool.fetchrow(
             f"SELECT {_UPLOAD_COLUMNS} FROM fs2_scientific_uploads "  # noqa: S608
             "WHERE id=$1 AND operation_id=$2 AND tenant_id=$3",
@@ -2484,6 +2649,66 @@ class PostgresArtifactRepository:
         if row is None:
             raise ArtifactNotFoundError("upload not found")
         return _upload_from_row(row)
+
+    async def register_upload_version(
+        self, request: FinalizeArtifactUpload, verified: VerifiedStoredObject
+    ) -> None:
+        try:
+            async with self.pool.acquire() as connection, connection.transaction():
+                upload = await connection.fetchrow(
+                    f"SELECT {_UPLOAD_COLUMNS} FROM fs2_scientific_uploads "  # noqa: S608
+                    "WHERE id=$1 AND operation_id=$2 AND tenant_id=$3 FOR UPDATE",
+                    request.upload_id,
+                    request.operation_id,
+                    request.tenant_id,
+                )
+                if upload is None:
+                    raise ArtifactNotFoundError("upload not found")
+                intent = _upload_from_row(upload)
+                _verify_object(intent, verified)
+                if verified.object_version_id != request.object_version_id:
+                    raise ArtifactConflictError("provider proof names another object version")
+                cleanup_claimed = await connection.fetchval(
+                    "SELECT EXISTS (SELECT 1 FROM fs2_scientific_abandoned_upload_claims WHERE upload_id=$1)",
+                    request.upload_id,
+                )
+                if cleanup_claimed:
+                    raise ArtifactConflictError("upload is fenced for abandoned-upload cleanup")
+                command = await connection.execute(
+                    """
+                    INSERT INTO fs2_scientific_upload_object_versions
+                        (upload_id,operation_id,tenant_id,storage_key,object_version_id,
+                         expected_digest,expected_size_bytes,expected_media_type,expected_compression,
+                         observed_at,expires_at)
+                    SELECT upload.id,upload.operation_id,upload.tenant_id,upload.storage_key,$4,
+                           upload.expected_digest,upload.expected_size_bytes,upload.media_type,
+                           upload.compression,clock_timestamp(),
+                           GREATEST(attempt.retention_expires_at,clock_timestamp()+interval '1 day')
+                    FROM fs2_scientific_uploads upload
+                    JOIN fs2_scientific_stage_attempts attempt ON attempt.attempt_id=upload.attempt_id
+                    WHERE upload.id=$1 AND upload.operation_id=$2 AND upload.tenant_id=$3
+                      AND upload.artifact_id IS NULL
+                    ON CONFLICT (upload_id) DO NOTHING
+                    """,
+                    request.upload_id,
+                    request.operation_id,
+                    request.tenant_id,
+                    verified.object_version_id,
+                )
+                if command != "INSERT 0 1":
+                    existing = await connection.fetchrow(
+                        "SELECT object_version_id FROM fs2_scientific_upload_object_versions "
+                        "WHERE upload_id=$1 AND operation_id=$2 AND tenant_id=$3",
+                        request.upload_id,
+                        request.operation_id,
+                        request.tenant_id,
+                    )
+                    if existing is None:
+                        raise ArtifactNotFoundError("upload not found")
+                    if str(existing["object_version_id"]) != request.object_version_id:
+                        raise ArtifactConflictError("upload is already bound to another provider object version")
+        except asyncpg.PostgresError as error:
+            raise (self._translate(error) or ArtifactConflictError("upload version could not be bound")) from None
 
     async def finalize_upload(
         self, request: FinalizeArtifactUpload, verified: VerifiedStoredObject, *, artifact_id: UUID
@@ -2507,7 +2732,45 @@ class PostgresArtifactRepository:
                     if existing is None:
                         raise ArtifactNotFoundError("artifact not found")
                     return _artifact_from_row(existing)
+                cleanup_claimed = await connection.fetchval(
+                    "SELECT EXISTS (SELECT 1 FROM fs2_scientific_abandoned_upload_claims WHERE upload_id=$1)",
+                    request.upload_id,
+                )
+                if cleanup_claimed:
+                    raise ArtifactConflictError("upload is fenced for abandoned-upload cleanup")
                 _verify_object(intent, verified)
+                if verified.object_version_id != request.object_version_id:
+                    raise ArtifactConflictError("provider proof names another object version")
+                await connection.execute(
+                    """
+                    INSERT INTO fs2_scientific_upload_object_versions
+                        (upload_id,operation_id,tenant_id,storage_key,object_version_id,
+                         expected_digest,expected_size_bytes,expected_media_type,expected_compression,
+                         observed_at,expires_at)
+                    SELECT upload.id,upload.operation_id,upload.tenant_id,upload.storage_key,$4,
+                           upload.expected_digest,upload.expected_size_bytes,upload.media_type,
+                           upload.compression,clock_timestamp(),
+                           GREATEST(attempt.retention_expires_at,clock_timestamp()+interval '1 day')
+                    FROM fs2_scientific_uploads upload
+                    JOIN fs2_scientific_stage_attempts attempt ON attempt.attempt_id=upload.attempt_id
+                    WHERE upload.id=$1 AND upload.operation_id=$2 AND upload.tenant_id=$3
+                      AND upload.artifact_id IS NULL
+                    ON CONFLICT (upload_id) DO NOTHING
+                    """,
+                    request.upload_id,
+                    request.operation_id,
+                    request.tenant_id,
+                    verified.object_version_id,
+                )
+                bound_version = await connection.fetchval(
+                    "SELECT object_version_id FROM fs2_scientific_upload_object_versions "
+                    "WHERE upload_id=$1 AND operation_id=$2 AND tenant_id=$3",
+                    request.upload_id,
+                    request.operation_id,
+                    request.tenant_id,
+                )
+                if bound_version is None or str(bound_version) != request.object_version_id:
+                    raise ArtifactConflictError("upload provider object version was not durably bound")
                 retention_row = await connection.fetchrow(
                     "SELECT retention_expires_at,started_at FROM fs2_scientific_stage_attempts WHERE attempt_id=$1",
                     intent.attempt_id,
@@ -2821,6 +3084,22 @@ class PostgresArtifactRepository:
               AND NOT EXISTS (
                   SELECT 1 FROM fs2_scientific_retention_ledger l WHERE l.operation_id=r.operation_id
               )
+              AND NOT EXISTS (
+                  SELECT 1 FROM fs2_scientific_artifacts a
+                  WHERE a.operation_id=r.operation_id
+                    AND a.tenant_id=r.tenant_id
+                    AND a.object_version_id IS NULL
+              )
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM fs2_scientific_uploads upload
+                  LEFT JOIN fs2_scientific_abandoned_upload_receipts receipt
+                    ON receipt.upload_id=upload.id
+                  WHERE upload.operation_id=r.operation_id
+                    AND upload.tenant_id=r.tenant_id
+                    AND upload.artifact_id IS NULL
+                    AND receipt.upload_id IS NULL
+              )
             ORDER BY r.retention_expires_at
             LIMIT $2
             """,
@@ -2829,14 +3108,24 @@ class PostgresArtifactRepository:
         )
         return [(row["operation_id"], row["tenant_id"], row["retention_expires_at"]) for row in rows]
 
-    async def purge_keys(self, operation_id: UUID, *, tenant_id: str) -> list[tuple[str, str]]:
+    async def purge_keys(self, operation_id: UUID, *, tenant_id: str) -> list[tuple[str, str | None]]:
         rows = await self.pool.fetch(
-            "SELECT storage_key,object_version_id FROM fs2_scientific_artifacts "
-            "WHERE operation_id=$1 AND tenant_id=$2 AND object_version_id IS NOT NULL",
+            """
+            SELECT storage_key,object_version_id
+            FROM fs2_scientific_artifacts
+            WHERE operation_id=$1 AND tenant_id=$2
+            ORDER BY storage_key,object_version_id
+            """,
             operation_id,
             tenant_id,
         )
-        return [(str(row["storage_key"]), str(row["object_version_id"])) for row in rows]
+        return [
+            (
+                str(row["storage_key"]),
+                None if row["object_version_id"] is None else str(row["object_version_id"]),
+            )
+            for row in rows
+        ]
 
     async def purge_operation(self, operation_id: UUID, *, tenant_id: str, now: datetime) -> RetentionPurge:
         """Delete retired rows under the one session flag the triggers accept."""
@@ -2852,6 +3141,27 @@ class PostgresArtifactRepository:
                 )
                 if result is None:
                     raise ArtifactNotFoundError("terminal result not found")
+                unresolved = await connection.fetchval(
+                    "SELECT count(*) FROM fs2_scientific_artifacts "
+                    "WHERE operation_id=$1 AND tenant_id=$2 AND object_version_id IS NULL",
+                    operation_id,
+                    tenant_id,
+                )
+                if int(unresolved or 0) != 0:
+                    raise ArtifactConflictError(
+                        "retention purge is blocked by an unbound provider object version"
+                    )
+                unresolved_uploads = await connection.fetchval(
+                    "SELECT count(*) FROM fs2_scientific_uploads upload "
+                    "LEFT JOIN fs2_scientific_abandoned_upload_receipts receipt "
+                    "ON receipt.upload_id=upload.id "
+                    "WHERE upload.operation_id=$1 AND upload.tenant_id=$2 "
+                    "AND upload.artifact_id IS NULL AND receipt.upload_id IS NULL",
+                    operation_id,
+                    tenant_id,
+                )
+                if int(unresolved_uploads or 0) != 0:
+                    raise ArtifactConflictError("retention purge is blocked by an unresolved upload")
                 totals = await connection.fetchrow(
                     "SELECT count(*) AS artifacts,COALESCE(sum(size_bytes),0) AS bytes "
                     "FROM fs2_scientific_artifacts WHERE operation_id=$1 AND tenant_id=$2",

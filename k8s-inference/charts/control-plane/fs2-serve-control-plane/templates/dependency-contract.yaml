@@ -31,12 +31,16 @@ data:
           "runtime": {{ .Values.migration.runtimeDatabaseRole | quote }},
           "maintenance": {{ .Values.migration.maintenanceDatabaseRole | quote }},
           "activation": {{ .Values.migration.activationDatabaseRole | quote }},
+          "artifact_broker": {{ .Values.migration.artifactBrokerDatabaseRole | quote }},
+          "artifact_authority": {{ .Values.migration.artifactAuthorityDatabaseRole | quote }},
           "reporting": {{ .Values.migration.reportingDatabaseRole | quote }}
         },
         "secret_refs": {
           "runtime": {"namespace": "{{ .Release.Namespace }}", "name": {{ .Values.secrets.database.name | quote }}, "key": {{ .Values.secrets.database.key | quote }}},
           "migrations": {"namespace": "{{ .Release.Namespace }}", "name": {{ .Values.secrets.migrationsDatabase.name | quote }}, "key": {{ .Values.secrets.migrationsDatabase.key | quote }}},
           "maintenance": {"namespace": "{{ .Release.Namespace }}", "name": {{ .Values.secrets.maintenanceDatabase.name | quote }}, "key": {{ .Values.secrets.maintenanceDatabase.key | quote }}},
+          "artifact_broker": {"namespace": "{{ .Release.Namespace }}", "name": "fs2-serve-database-artifact-broker", "key": "url"},
+          "artifact_authority": {"namespace": "{{ .Release.Namespace }}", "name": "fs2-serve-database-artifact-authority", "key": "url"},
           "reporting": {"namespace": {{ .Values.grafanaDashboard.namespace | quote }}, "name": "fs2-serve-database-reporting", "key": "url"}
         }
       },

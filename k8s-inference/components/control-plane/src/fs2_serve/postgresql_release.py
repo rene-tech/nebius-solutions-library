@@ -101,6 +101,10 @@ EXPECTED_MIGRATIONS: Final = (
         "0030_scientific_artifact_object_versions.sql",
         "f7ab4ec332f256ddf0cbe53e145a7bf4fd5a4e12e5fcc5ffb8f498dd9613dfc8",
     ),
+    (
+        "0031_scientific_artifact_version_backfill.sql",
+        "b9f7cff38469e95a8f0e798d8858b6109966c4d1a8377b03a5b2f86de80b7b79",
+    ),
 )
 
 NAMESPACE_ROLE_OWNERSHIP: Final[dict[str, Any]] = {
@@ -138,6 +142,24 @@ NAMESPACE_ROLE_OWNERSHIP: Final[dict[str, Any]] = {
             "database_group_role": "fs2_serve_maintenance",
             "writer_owner": "postgresql-platform-release",
             "consumer_owners": ["fs2-serve-control-plane-maintenance"],
+        },
+        {
+            "purpose": "artifact-broker",
+            "namespace": "fs2-system",
+            "name": "fs2-serve-database-artifact-broker",
+            "key": "url",
+            "database_group_role": "fs2_serve_artifact_broker",
+            "writer_owner": "postgresql-platform-release",
+            "consumer_owners": ["fs2-artifact-credential-broker"],
+        },
+        {
+            "purpose": "artifact-authority",
+            "namespace": "fs2-system",
+            "name": "fs2-serve-database-artifact-authority",
+            "key": "url",
+            "database_group_role": "fs2_serve_artifact_authority",
+            "writer_owner": "postgresql-platform-release",
+            "consumer_owners": ["fs2-artifact-authority-issuer"],
         },
         {
             "purpose": "migrations",
@@ -178,6 +200,18 @@ NAMESPACE_ROLE_OWNERSHIP: Final[dict[str, Any]] = {
         {
             "purpose": "maintenance",
             "name": "fs2_serve_maintenance",
+            "login": False,
+            "creation_and_grant_owner": "fs2-serve-control-plane-migration",
+        },
+        {
+            "purpose": "artifact-broker",
+            "name": "fs2_serve_artifact_broker",
+            "login": False,
+            "creation_and_grant_owner": "fs2-serve-control-plane-migration",
+        },
+        {
+            "purpose": "artifact-authority",
+            "name": "fs2_serve_artifact_authority",
             "login": False,
             "creation_and_grant_owner": "fs2-serve-control-plane-migration",
         },

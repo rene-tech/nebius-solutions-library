@@ -1,0 +1,122 @@
+{{- if .Values.artifactVersionBackfill.enabled }}
+{{- if not .Values.scientificArtifacts.enabled }}
+{{- fail "artifactVersionBackfill requires scientificArtifacts.enabled=true" }}
+{{- end }}
+{{- if or (eq .Values.artifactVersionBackfill.manifestSecretName "") (eq .Values.artifactVersionBackfill.manifestSha256 "") }}
+{{- fail "artifactVersionBackfill requires an exact manifest Secret and SHA-256" }}
+{{- end }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-artifact-version-backfill-{{ trunc 12 .Values.artifactVersionBackfill.manifestSha256 }}
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: artifact-version-backfill
+  annotations:
+    fs2.nebius.ai/artifact-version-backfill-manifest-sha256: {{ .Values.artifactVersionBackfill.manifestSha256 | quote }}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ .Values.artifactVersionBackfill.activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        {{- include "fs2-serve.artifactVersionBackfillSelectorLabels" . | nindent 8 }}
+      annotations:
+        fs2.nebius.ai/artifact-version-backfill-manifest-sha256: {{ .Values.artifactVersionBackfill.manifestSha256 | quote }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "fs2-serve.serviceAccountName" (dict "root" . "component" "maintenance") }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: artifact-version-backfill
+          image: {{ include "fs2-serve.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["artifact-version-backfill"]
+          env:
+            - name: FS2_ARTIFACT_BACKFILL_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.maintenanceDatabase.name }}
+                  key: {{ .Values.secrets.maintenanceDatabase.key }}
+            - name: FS2_ARTIFACT_BACKFILL_MANIFEST_FILE
+              value: /var/run/fs2-artifact-backfill/{{ .Values.artifactVersionBackfill.manifestKey }}
+            - name: FS2_ARTIFACT_BACKFILL_MANIFEST_SHA256
+              value: {{ .Values.artifactVersionBackfill.manifestSha256 | quote }}
+            - name: FS2_ARTIFACT_BACKFILL_BROKER_URL_TEMPLATE
+              value: {{ .Values.scientificArtifacts.credentialBroker.urlTemplate | quote }}
+            - name: FS2_ARTIFACT_BACKFILL_BROKER_AUDIENCE
+              value: {{ .Values.scientificArtifacts.credentialBroker.audience | quote }}
+            - name: FS2_ARTIFACT_BACKFILL_BROKER_TOKEN_FILE
+              value: /var/run/secrets/fs2-artifact-backfill/broker/token
+            - name: FS2_ARTIFACT_BACKFILL_BROKER_CA_FILE
+              value: /var/run/secrets/fs2-artifact-backfill/broker/ca.crt
+            - name: FS2_ARTIFACT_BACKFILL_BROKER_READINESS_BINDINGS_FILE
+              value: /var/run/fs2-artifact-backfill/broker-readiness/bindings.json
+            - name: FS2_ARTIFACT_BACKFILL_BROKER_TIMEOUT_SECONDS
+              value: {{ .Values.scientificArtifacts.credentialBroker.timeoutSeconds | quote }}
+            - name: FS2_ARTIFACT_BACKFILL_BROKER_OPERATION_TIMEOUT_SECONDS
+              value: {{ .Values.scientificArtifacts.credentialBroker.operationCredentialTtlSeconds | int64 | quote }}
+          volumeMounts:
+            - name: database-tls
+              mountPath: /tls
+              readOnly: true
+            - name: manifest
+              mountPath: /var/run/fs2-artifact-backfill
+              readOnly: true
+            - name: broker-identity
+              mountPath: /var/run/secrets/fs2-artifact-backfill/broker
+              readOnly: true
+            - name: broker-readiness
+              mountPath: /var/run/fs2-artifact-backfill/broker-readiness
+              readOnly: true
+          resources:
+            {{- toYaml .Values.artifactVersionBackfill.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: database-tls
+          secret:
+            secretName: {{ .Values.secrets.maintenanceDatabase.name }}
+            defaultMode: 0400
+            items:
+              - key: {{ .Values.secrets.maintenanceDatabase.caKey }}
+                path: ca.crt
+        - name: manifest
+          secret:
+            secretName: {{ .Values.artifactVersionBackfill.manifestSecretName }}
+            defaultMode: 0400
+            items:
+              - key: {{ .Values.artifactVersionBackfill.manifestKey }}
+                path: {{ .Values.artifactVersionBackfill.manifestKey }}
+        - name: broker-identity
+          projected:
+            defaultMode: 0400
+            sources:
+              - serviceAccountToken:
+                  audience: {{ .Values.scientificArtifacts.credentialBroker.audience | quote }}
+                  expirationSeconds: {{ .Values.scientificArtifacts.credentialBroker.tokenExpirationSeconds }}
+                  path: token
+              - secret:
+                  name: {{ .Values.scientificArtifacts.credentialBroker.caSecretName }}
+                  items:
+                    - key: {{ .Values.scientificArtifacts.credentialBroker.caKey }}
+                      path: ca.crt
+        - name: broker-readiness
+          configMap:
+            name: {{ required "scientificArtifacts.credentialBroker.readinessConfigMapName is required" .Values.scientificArtifacts.credentialBroker.readinessConfigMapName }}
+            items:
+              - key: bindings.json
+                path: bindings.json
+{{- end }}

@@ -50,14 +50,14 @@
 {{- if and (eq .Values.catalog.delivery "image") (ne .Values.catalog.imagePath "/opt/fs2/catalog") }}
 {{- fail "image-delivered catalog path must be /opt/fs2/catalog" }}
 {{- end }}
-{{- $databaseRoles := list .Values.migration.runtimeDatabaseRole .Values.migration.reportingDatabaseRole .Values.migration.maintenanceDatabaseRole .Values.migration.activationDatabaseRole }}
+{{- $databaseRoles := list .Values.migration.runtimeDatabaseRole .Values.migration.reportingDatabaseRole .Values.migration.maintenanceDatabaseRole .Values.migration.activationDatabaseRole .Values.migration.artifactBrokerDatabaseRole .Values.migration.artifactAuthorityDatabaseRole }}
 {{- if ne (len $databaseRoles) (len (uniq $databaseRoles)) }}
-{{- fail "migration runtime, reporting, maintenance, and activation database roles must differ" }}
+{{- fail "migration runtime, reporting, maintenance, activation, artifact broker, and artifact authority database roles must differ" }}
 {{- end }}
-{{- if or (ne .Values.migration.runtimeDatabaseRole "fs2_serve_runtime") (ne .Values.migration.reportingDatabaseRole "fs2_serve_reporting") (ne .Values.migration.maintenanceDatabaseRole "fs2_serve_maintenance") (ne .Values.migration.activationDatabaseRole "fs2_serve_activation") }}
+{{- if or (ne .Values.migration.runtimeDatabaseRole "fs2_serve_runtime") (ne .Values.migration.reportingDatabaseRole "fs2_serve_reporting") (ne .Values.migration.maintenanceDatabaseRole "fs2_serve_maintenance") (ne .Values.migration.activationDatabaseRole "fs2_serve_activation") (ne .Values.migration.artifactBrokerDatabaseRole "fs2_serve_artifact_broker") (ne .Values.migration.artifactAuthorityDatabaseRole "fs2_serve_artifact_authority") }}
 {{- fail "database group roles must match the canonical PostgreSQL release contract" }}
 {{- end }}
-{{- if or (ne .Values.migration.releaseContract.schema "fs2-serve.nebius.ai/postgresql-release-contract/v1") (ne .Values.migration.releaseContract.contractPayloadSha256 "0d9214768c396bcf4dbbf7ea342e00699ed20ac92181b1e7573ba9bb54b103a4") (ne .Values.migration.releaseContract.migrationSetSha256 "2e8d7a9116a9577da5e6f5ab12961b193d418da7ba12aca1f875432a44abb84f") (ne (int .Values.migration.releaseContract.migrationCount) 30) (ne .Values.migration.releaseContract.firstMigrationVersion "0001_initial.sql") (ne .Values.migration.releaseContract.lastMigrationVersion "0030_scientific_artifact_object_versions.sql") (ne .Values.migration.releaseContract.namespaceRoleOwnershipSha256 "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca") }}
+{{- if or (ne .Values.migration.releaseContract.schema "fs2-serve.nebius.ai/postgresql-release-contract/v1") (ne .Values.migration.releaseContract.contractPayloadSha256 "d6bc97432062e9b83bd8404e25a20ce82af3c413443ba4f7dbe78a317ed4665f") (ne .Values.migration.releaseContract.migrationSetSha256 "bd7a3191022f85c3bd141095456520105a2d4fb48560e29988f5a91e0e73c511") (ne (int .Values.migration.releaseContract.migrationCount) 31) (ne .Values.migration.releaseContract.firstMigrationVersion "0001_initial.sql") (ne .Values.migration.releaseContract.lastMigrationVersion "0031_scientific_artifact_version_backfill.sql") (ne .Values.migration.releaseContract.namespaceRoleOwnershipSha256 "69ed03c4deaa6b08bb3d56eea338a87da6d1d4f8db194104c1aa5bb5681f834a") }}
 {{- fail "migration release receipt inputs must match the canonical PostgreSQL contract" }}
 {{- end }}
 {{- if ne .Values.httpRoute.authorityMode .Values.config.publicAuthorityMode }}

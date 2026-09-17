@@ -1477,7 +1477,7 @@ class MemoryStore:
             )
             if active >= token.view.max_concurrency:
                 raise ConcurrencyExceededError("token concurrency limit reached")
-            operation_id = uuid4()
+            operation_id = admission.authority_operation_id or uuid4()
             encrypted = self.cipher.encrypt(
                 admission.request_body,
                 aad=self.cipher.aad(operation_id, principal.tenant_id, admission.model_id, "request"),

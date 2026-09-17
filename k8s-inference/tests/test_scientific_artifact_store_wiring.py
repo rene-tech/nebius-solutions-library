@@ -1,8 +1,8 @@
 """The Terraform-to-chart wiring for the dedicated scientific artifact store.
 
 Three separate files have to agree for the store to work at all: the
-infrastructure stage that creates the bucket and the key, the workloads stage
-that projects the credential and the chart values, and the control-plane chart
+infrastructure stage that creates the bucket and tenant principals, the workloads
+stage that projects broker identity and chart values, and the control-plane chart
 that declares those values. A name that one side emits and another does not
 declare fails silently, so the seam is asserted here rather than trusted.
 
@@ -103,33 +103,37 @@ class ChartValueWiringTests(ArtifactStoreContractTests):
             set(self.contract["chart"]["scientificBatch"]),
         )
 
-    def test_terraform_emits_the_canonical_secret_reference(self) -> None:
-        self.assertEqual(
-            self.emitted("artifactStore = {"),
-            set(self.contract["chart"]["secrets.artifactStore"]),
-        )
-        credential = self.contract["credential"]
-        self.assertRegex(
+    def test_terraform_emits_the_canonical_broker_reference(self) -> None:
+        broker = self.contract["credential_broker"]
+        self.assertIn(
+            f'"https://${{local.scientific_artifact_broker_name}}-{{tenant_hash}}.fs2-system.svc:${{local.scientific_artifact_broker_port}}/v1"',
             self.workloads,
-            rf'scientific_artifacts_secret_name\s*=\s*"{re.escape(credential["secret_name"])}"',
         )
-        self.assertRegex(
+        self.assertEqual(broker["service_template"], "fs2-artifact-{tenant_hash}")
+        self.assertIn("scientific_artifact_provider_bindings", self.workloads)
+        self.assertIn("service_account_token", self.workloads)
+        legacy = block(
             self.workloads,
-            rf'scientific_artifacts_secret_key\s*=\s*"{re.escape(credential["secret_key"])}"',
+            'resource "kubernetes_secret_v1" "scientific_artifact_store" {',
         )
-        self.assertIn(f'namespace = "{credential["namespace"]}"', self.workloads)
+        self.assertIn('name      = "fs2-serve-artifact-store"', legacy)
+        self.assertIn('"fs2.nebius.ai/authorization" = "none"', legacy)
+        broker = block(
+            self.workloads,
+            'resource "kubernetes_deployment_v1" "scientific_artifact_broker" {',
+        )
+        self.assertNotIn("scientific_artifact_store", broker)
 
     def test_the_egress_allowlist_and_rollout_annotation_reach_the_chart(self) -> None:
         self.assertIn("artifactStoreCidrs", self.workloads)
-        for annotation in self.contract["credential"]["rotation_annotations"]:
-            self.assertIn(annotation, self.workloads)
+        self.assertIn(self.contract["credential_broker"]["provider_bindings_annotation"], self.workloads)
         # podAnnotations is an existing declared chart value rendered into the
         # control-plane pod template, so a rotation restarts the deployment.
         self.assertIn("podAnnotations = {", self.workloads)
 
     def test_the_overrides_are_appended_to_the_control_plane_release(self) -> None:
         self.assertIn("yamlencode(local.scientific_chart_overrides)", self.control_plane)
-        self.assertIn("kubernetes_secret_v1.scientific_artifact_store", self.control_plane)
+        self.assertIn("kubernetes_deployment_v1.scientific_artifact_broker", self.control_plane)
 
     def test_the_obsolete_artifact_service_wiring_is_not_revived(self) -> None:
         for forbidden in self.contract["chart"]["forbidden_values"]:
@@ -166,24 +170,29 @@ class ChartValueWiringTests(ArtifactStoreContractTests):
 
 
 class SecretSafetyTests(ArtifactStoreContractTests):
-    def test_the_access_key_is_delivered_only_through_mysterybox(self) -> None:
-        self.assertIn('secret_delivery_mode = "MYSTERY_BOX"', self.infrastructure)
-        # The mode is a constant, not a knob: an INLINE key would land in state.
-        self.assertNotIn('secret_delivery_mode = "INLINE"', self.infrastructure)
-        self.assertNotIn("var.scientific_artifacts.secret_delivery_mode", self.infrastructure)
-        self.assertEqual(self.infrastructure.count("secret_delivery_mode"), 1)
-
-    def test_only_identity_reference_and_revision_leave_the_infrastructure_stage(self) -> None:
-        body = block(
-            self.infrastructure_outputs,
-            'output "scientific_artifacts_object_storage_access" {',
+    def test_the_artifact_plane_isolates_one_provider_key_per_tenant_broker(self) -> None:
+        self.assertIn('nebius_iam_v2_access_key" "scientific_artifact_tenant', self.infrastructure)
+        self.assertIn("scientific_artifacts_tenant_broker_access", self.infrastructure_outputs)
+        self.assertIn(
+            '{"active_generation", "authorized_generations", "generations"}',
+            (DEPLOY_ROOT / "inference-stack").read_text(encoding="utf-8"),
         )
-        self.assertIn("sensitive   = true", body)
-        emitted = assigned_names(block(body, "value = var.scientific_artifacts.enabled ? {"))
-        self.assertEqual(set(emitted), set(self.contract["credential"]["propagated_fields"]))
+        self.assertNotIn(
+            "fs2-system/fs2-artifact-<sha256(tenant)[0:12]>",
+            (DEPLOY_ROOT / "inference-stack").read_text(encoding="utf-8"),
+        )
+        self.assertIn('credential_mode = "TENANT_ISOLATED_BROKER_KEYS"', self.infrastructure)
+        self.assertIn("broker_object_roles = []", self.infrastructure_outputs)
+        self.assertIn("quarantined_legacy_identity", self.infrastructure_outputs)
+        self.assertIn(
+            "bucket_roles = local.scientific_artifacts_legacy_authorized ? local.scientific_artifacts_object_roles : []",
+            self.infrastructure_outputs,
+        )
+        self.assertTrue(self.contract["storage"]["legacy_shared_provider_authorized"])
+        self.assertFalse(self.contract["storage"]["ordinary_apply_irreversible_cutover"])
 
     def test_no_stage_variable_or_output_can_carry_the_object_store_secret(self) -> None:
-        for forbidden in self.contract["credential"]["forbidden_fields"]:
+        for forbidden in self.contract["credential_broker"]["forbidden_handoff_fields"]:
             pattern = re.compile(rf"(?<![A-Za-z0-9_]){re.escape(forbidden)}\s*=")
             for name, source in (
                 ("infrastructure", self.infrastructure),
@@ -195,56 +204,77 @@ class SecretSafetyTests(ArtifactStoreContractTests):
                 with self.subTest(field=forbidden, source=name):
                     self.assertIsNone(pattern.search(source))
 
-    def test_the_credential_is_written_write_only_and_never_persisted(self) -> None:
-        secret = block(self.workloads, 'resource "kubernetes_secret_v1" "scientific_artifact_store" {')
-        self.assertIn("data_wo = {", secret)
-        self.assertIn("data_wo_revision = local.scientific_artifacts_revision", secret)
-        # A plain `data` map would write the secret straight into workloads state.
-        self.assertNotIn("\n  data = {", secret)
+    def test_each_broker_mounts_only_its_one_tenant_provider_identity(self) -> None:
+        deployment = block(
+            self.workloads,
+            'resource "kubernetes_deployment_v1" "scientific_artifact_broker" {',
+        )
+        self.assertIn('name = "provider-identity"', deployment)
+        self.assertIn("service_account_token", deployment)
+        self.assertIn("scientific_artifact_tenant_broker[each.key]", deployment)
+        self.assertIn("FS2_ARTIFACT_BROKER_PROVIDER_ACCESS_KEY_FILE", deployment)
+        self.assertIn("FS2_ARTIFACT_BROKER_PROVIDER_SECRET_KEY_FILE", deployment)
+        self.assertNotIn("authority_signing_secret_name", deployment)
+
+    def test_retained_broker_generations_roll_out_before_stable_service_switch(self) -> None:
+        deployment = block(
+            self.workloads,
+            'resource "kubernetes_deployment_v1" "scientific_artifact_broker" {',
+        )
+        service = block(
+            self.workloads,
+            'resource "kubernetes_service_v1" "scientific_artifact_broker" {',
+        )
+        generation_service = block(
+            self.workloads,
+            'resource "kubernetes_service_v1" "scientific_artifact_broker_generation" {',
+        )
+
+        self.assertIn("for_each = local.scientific_artifact_all_generation_access", deployment)
+        self.assertIn('"fs2.nebius.ai/credential-generation"', deployment)
+        self.assertIn('-g${each.value.generation}', deployment)
+        self.assertIn('"fs2.nebius.ai/credential-generation" = tostring(each.value.generation)', service)
         self.assertIn(
-            'ephemeral "nebius_mysterybox_v1_secret_payload_entry" "scientific_artifacts"',
-            self.workloads,
+            "depends_on = [kubernetes_deployment_v1.scientific_artifact_broker]",
+            service,
         )
+        self.assertIn("for_each = local.scientific_artifact_all_generation_access", generation_service)
+        self.assertIn('-g${each.value.generation}', generation_service)
         self.assertIn(
-            "ephemeral.nebius_mysterybox_v1_secret_payload_entry.scientific_artifacts[0].data.string_value",
-            self.workloads,
+            '"fs2.nebius.ai/credential-generation" = tostring(each.value.generation)',
+            generation_service,
         )
 
-    def test_the_secret_document_matches_what_the_control_plane_reads(self) -> None:
-        for field in self.contract["credential"]["document_fields"]:
-            self.assertIn(field, self.workloads)
-        self.assertIn("jsonencode({", self.workloads)
-
-    def test_the_non_secret_receipt_carries_only_identity(self) -> None:
-        receipt = block(self.workloads, 'resource "terraform_data" "scientific_artifacts_contract" {')
-        self.assertIn("credential_revision", receipt)
-        self.assertIn("credential_generation", receipt)
-        self.assertIn("credential_identity_sha256", receipt)
-        self.assertNotIn("string_value", receipt)
-
-    def test_a_replaced_key_cannot_repeat_the_previous_rollout_identity(self) -> None:
-        # The cloud resource_version restarts at zero on replacement, so a
-        # revision derived from it alone would silently repeat after a rotation.
-        self.assertNotIn(
-            "var.scientific_artifacts.object_storage_access.resource_version + 1",
-            self.workloads,
-        )
-        identity = block(self.workloads, "scientific_artifacts_credential_identity = local.scientific_artifacts_enabled ? join(\"|\", [")
-        for field in ("key_id", "access_key_id", "secret_reference_id", "resource_version"):
-            self.assertIn(field, identity)
-        self.assertIn("var.scientific_artifacts.credential_generation * 16777216", self.workloads)
+    def test_each_tenant_has_an_exact_provider_principal_and_prefix(self) -> None:
+        self.assertIn('resource "nebius_iam_v1_service_account" "scientific_artifact_tenant"', self.infrastructure)
+        self.assertIn('resource "nebius_iam_v1_group" "scientific_artifact_tenant"', self.infrastructure)
+        self.assertIn('resource "nebius_iam_v2_access_key" "scientific_artifact_tenant"', self.infrastructure)
+        self.assertIn('path  = "scientific/v1/tenants/${tenant_id}/*"', self.infrastructure)
+        self.assertIn("prevent_destroy = true", self.infrastructure)
 
     def test_the_generated_workloads_handoff_is_shape_checked(self) -> None:
         self.assertIn(
-            "the scientific artifact access handoff must contain exactly the key's",
+            "scientific artifact provider handoff",
             self.stack,
         )
-        for field in self.contract["credential"]["propagated_fields"]:
-            self.assertIn(f'"{field}",', self.stack)
-        self.assertIn(
-            "the scientific artifact bundle must never carry object-storage secret material",
-            self.stack,
+        for field in self.contract["credential_broker"]["provider_binding_fields"]:
+            self.assertIn(f'"{field}"', self.stack)
+        self.assertIn("artifact-tenant-broker-access/v2", self.stack)
+        self.assertIn("per-tenant credential generations", self.stack)
+        self.assertIn('"legacy_quarantine"', self.stack)
+
+    def test_ed25519_private_key_is_issuer_only_and_brokers_receive_public_key(self) -> None:
+        issuer_start = self.workloads.index(
+            'resource "kubernetes_deployment_v1" "scientific_artifact_authority" {'
         )
+        broker_start = self.workloads.index(
+            'resource "kubernetes_deployment_v1" "scientific_artifact_broker" {'
+        )
+        issuer = self.workloads[issuer_start:broker_start]
+        broker = self.workloads[broker_start:]
+        self.assertIn("FS2_ARTIFACT_AUTHORITY_SIGNING_KEY_FILE", issuer)
+        self.assertIn("FS2_ARTIFACT_BROKER_AUTHORITY_VERIFICATION_KEY_FILE", broker)
+        self.assertNotIn("FS2_ARTIFACT_AUTHORITY_SIGNING_KEY_FILE", broker)
 
 
 class BucketProvisioningTests(ArtifactStoreContractTests):
@@ -263,25 +293,21 @@ class BucketProvisioningTests(ArtifactStoreContractTests):
                 self.assertIn("var.scientific_artifacts.object_storage.bucket_name", body)
                 self.assertIn("lifecycle_configuration = {", body)
 
-    def test_the_writer_permit_is_scoped_to_the_canonical_prefix(self) -> None:
+    def test_the_broker_permit_is_delete_free_and_scoped_to_the_canonical_prefix(self) -> None:
         storage = self.contract["storage"]
-        self.assertIn(
-            f'scientific_artifacts_writer_role = "{storage["writer_role"]}"',
-            self.infrastructure,
-        )
-        self.assertIn(
-            f'scientific_artifacts_path_scope  = "{storage["writer_paths"][0]}"',
-            self.infrastructure,
-        )
+        for role in storage["object_roles"]:
+            self.assertIn(f'"{role}"', self.infrastructure)
+        self.assertIn('path  = "scientific/v1/tenants/${tenant_id}/*"', self.infrastructure)
         for resource in ("scientific_artifacts", "scientific_artifacts_disposable"):
             body = block(self.infrastructure, f'resource "nebius_storage_v1_bucket" "{resource}" {{')
-            self.assertIn("paths    = [local.scientific_artifacts_path_scope]", body)
-            self.assertIn("roles    = [local.scientific_artifacts_writer_role]", body)
+            self.assertIn("paths    = [binding.path]", body)
+            self.assertIn("roles    = local.scientific_artifacts_object_roles", body)
+        self.assertNotIn('"storage.object-editor"', self.infrastructure)
         # Project-wide roles would let the key read the model cache and registry.
         self.assertNotIn('role        = "editor"', self.infrastructure)
         self.assertNotIn('role        = "viewer"', self.infrastructure)
 
-    def test_the_lifecycle_reclaims_waste_but_never_a_current_object(self) -> None:
+    def test_the_lifecycle_never_expires_current_or_noncurrent_object_versions(self) -> None:
         storage = self.contract["storage"]
         rules = block(self.infrastructure, "scientific_artifacts_lifecycle_rules = [")
         for rule_id in storage["lifecycle_rule_ids"]:
@@ -290,10 +316,9 @@ class BucketProvisioningTests(ArtifactStoreContractTests):
             f"days_after_initiation = {storage['abort_incomplete_multipart_upload_days']}",
             rules,
         )
-        self.assertIn(
-            f"noncurrent_days = {storage['noncurrent_version_expiration_days']}",
-            rules,
-        )
+        self.assertIsNone(storage["noncurrent_version_expiration_days"])
+        self.assertNotIn("noncurrent_days", rules)
+        self.assertNotIn("expire-noncurrent-versions", rules)
         self.assertIn("expired_object_delete_marker = true", rules)
         # An expiration in days would delete live results behind the application.
         self.assertIn("days = null", rules)
@@ -336,6 +361,8 @@ class TfvarsSurfaceTests(ArtifactStoreContractTests):
             "enabled",
             "lifecycle",
             "object_storage",
+            "tenant_ids",
+            "broker",
             "retention_days",
             "handle_ttl_seconds",
             "max_artifact_bytes",
@@ -409,6 +436,48 @@ class TfvarsSurfaceTests(ArtifactStoreContractTests):
 
 
 class FeatureGateTests(ArtifactStoreContractTests):
+    def test_rotation_switch_cannot_revoke_a_retained_generation(self) -> None:
+        self.assertIn(
+            "setequals(generation.authorized_generations, generation.retained_generations)",
+            self.infrastructure_variables,
+        )
+        self.assertIn(
+            "set(generations) != {str(generation) for generation in authorized}",
+            self.stack,
+        )
+        self.assertIn(
+            "sum(generation <= active for generation in authorized) != active",
+            self.stack,
+        )
+        self.assertIn(
+            "every retained generation still authorized during reversible legacy-overlap",
+            self.root_variables,
+        )
+        self.assertIn("generation.active_generation == 1", self.infrastructure_variables)
+        self.assertIn("or active != 1", self.stack)
+
+    def test_ordinary_apply_cannot_create_an_irreversible_authority_cutover(self) -> None:
+        self.assertIn(
+            "scientific_artifact_irreversible_cutover_authorized = false",
+            self.workloads,
+        )
+        for resource in (
+            'resource "kubernetes_service_account_v1" "scientific_artifact_authority_cutover" {',
+            'resource "kubernetes_manifest" "scientific_artifact_authority_cutover_network_policy" {',
+            'resource "kubernetes_job_v1" "scientific_artifact_authority_cutover" {',
+            'resource "kubernetes_deployment_v1" "scientific_artifact_authority_cutover" {',
+        ):
+            body = block(self.workloads, resource)
+            self.assertIn(
+                "count = local.scientific_artifact_irreversible_cutover_authorized ? 1 : 0",
+                body,
+            )
+        self.assertIn('migration.phase == "legacy-overlap"', self.root_variables)
+        self.assertNotIn(
+            'contains(["legacy-overlap", "tenant-broker-active"]',
+            self.root_variables,
+        )
+
     def test_batch_requires_the_store_and_writes_require_batch(self) -> None:
         self.assertIn(
             "!var.deployment.scientific_batch.enabled ||\n        var.deployment.storage.scientific_artifacts.enabled",
@@ -440,9 +509,12 @@ class FeatureGateTests(ArtifactStoreContractTests):
     def test_the_workloads_stage_pins_the_exact_infrastructure_contract(self) -> None:
         body = block(self.workloads_variables, 'variable "scientific_artifacts" {')
         self.assertIn('"fs2-serve.nebius.ai/scientific-artifact-storage/v1"', body)
-        self.assertIn('writer.role == "storage.object-editor"', body)
-        self.assertIn('join(",", var.scientific_artifacts.storage_contract.writer.paths) == "scientific/v1/*"', body)
-        self.assertIn('writer.secret_delivery == "MYSTERY_BOX"', body)
+        self.assertIn("storage_contract.writer.roles", body)
+        self.assertIn('"storage.uploader", "storage.object-viewer", "storage.object-lister"', body)
+        self.assertIn('!contains(var.scientific_artifacts.storage_contract.writer.roles, "storage.object-editor")', body)
+        self.assertIn('writer.credential_mode == "TENANT_ISOLATED_BROKER_KEYS"', body)
+        self.assertIn('join(",", principal.paths) == "scientific/v1/tenants/${tenant_id}/*"', body)
+        self.assertIn("length(var.scientific_artifacts.storage_contract.writer.broker_object_roles) == 0", body)
         self.assertIn('layout.root == "scientific/v1"', body)
 
 
@@ -459,7 +531,7 @@ class LayoutAgreementTests(ArtifactStoreContractTests):
 
     def test_the_writer_scope_covers_the_whole_layout_and_nothing_else(self) -> None:
         root = self.contract["object_layout"]["root"]
-        self.assertEqual(self.contract["storage"]["writer_paths"], [f"{root}/*"])
+        self.assertEqual(self.contract["storage"]["writer_path_template"], f"{root}/tenants/<tenant>/*")
         self.assertTrue(self.contract["object_layout"]["object_key"].startswith(f"{root}/"))
 
 

@@ -42,8 +42,18 @@ mock_provider "nebius" {
   mock_resource "nebius_iam_v1_group_membership" {
     defaults = { id = "groupmembership-syntheticlocal" }
   }
+  mock_resource "nebius_iam_v1_access_permit" {
+    defaults = { id = "accesspermit-syntheticlocal" }
+  }
   mock_resource "nebius_iam_v2_access_key" {
-    defaults = { id = "accesskey-syntheticlocal" }
+    defaults = {
+      id               = "accesskey-syntheticlocal"
+      resource_version = 1
+      status = {
+        aws_access_key_id   = "synthetic-access-key"
+        secret_reference_id = "synthetic-secret-reference"
+      }
+    }
   }
   mock_resource "nebius_registry_v1_registry" {
     defaults = { id = "registry-syntheticlocal" }
@@ -93,6 +103,13 @@ variables {
       bucket_name  = "fs2-artifact-store-test-results"
       max_size_gib = 4096
     }
+    tenant_ids = ["tenant-a"]
+    credential_generations = {
+      tenant-a = {
+        active_generation    = 1
+        retained_generations = [1]
+      }
+    }
     retention_days = 90
   }
 }
@@ -107,7 +124,9 @@ run "disabled_creates_no_store" {
       nebius_storage_v1_bucket.scientific_artifacts,
       nebius_storage_v1_bucket.scientific_artifacts_disposable,
       nebius_iam_v1_service_account.scientific_artifacts,
-      nebius_iam_v1_group.scientific_artifacts_writers,
+      nebius_iam_v1_service_account.scientific_artifact_tenant,
+      nebius_iam_v1_group.scientific_artifact_tenant,
+      nebius_iam_v2_access_key.scientific_artifact_tenant,
       nebius_iam_v2_access_key.scientific_artifacts,
     ]
   }
@@ -122,6 +141,8 @@ run "disabled_creates_no_store" {
         bucket_name  = "disabled-scientific-artifacts.invalid"
         max_size_gib = 4096
       }
+      tenant_ids             = []
+      credential_generations = {}
       retention_days = 90
     }
   }
@@ -131,15 +152,17 @@ run "disabled_creates_no_store" {
       length(nebius_storage_v1_bucket.scientific_artifacts) == 0 &&
       length(nebius_storage_v1_bucket.scientific_artifacts_disposable) == 0 &&
       length(nebius_iam_v1_service_account.scientific_artifacts) == 0 &&
-      length(nebius_iam_v1_group.scientific_artifacts_writers) == 0 &&
+      length(nebius_iam_v1_service_account.scientific_artifact_tenant) == 0 &&
+      length(nebius_iam_v1_group.scientific_artifact_tenant) == 0 &&
+      length(nebius_iam_v2_access_key.scientific_artifact_tenant) == 0 &&
       length(nebius_iam_v2_access_key.scientific_artifacts) == 0
     )
     error_message = "A disabled scientific artifact store must create no bucket, identity, group or key."
   }
 }
 
-# Storage on its own: one disposable bucket, one dedicated identity, one
-# bucket-scoped permit and one MysteryBox key. Nothing about the batch
+# Storage on its own: one disposable bucket, one quarantined legacy identity and
+# one exact-prefix provider identity and key per tenant. Nothing about the batch
 # controller or academic execution is involved.
 run "storage_only_creates_one_disposable_versioned_bucket" {
   command = plan
@@ -149,8 +172,10 @@ run "storage_only_creates_one_disposable_versioned_bucket" {
       nebius_storage_v1_bucket.scientific_artifacts,
       nebius_storage_v1_bucket.scientific_artifacts_disposable,
       nebius_iam_v1_service_account.scientific_artifacts,
-      nebius_iam_v1_group.scientific_artifacts_writers,
-      nebius_iam_v1_group_membership.scientific_artifacts_writer,
+      nebius_iam_v1_service_account.scientific_artifact_tenant,
+      nebius_iam_v1_group.scientific_artifact_tenant,
+      nebius_iam_v1_group_membership.scientific_artifact_tenant,
+      nebius_iam_v2_access_key.scientific_artifact_tenant,
       nebius_iam_v2_access_key.scientific_artifacts,
     ]
   }
@@ -175,38 +200,39 @@ run "storage_only_creates_one_disposable_versioned_bucket" {
 
   assert {
     condition = (
-      length(nebius_storage_v1_bucket.scientific_artifacts_disposable[0].bucket_policy.rules) == 1 &&
-      join(",", nebius_storage_v1_bucket.scientific_artifacts_disposable[0].bucket_policy.rules[0].paths) == "scientific/v1/*" &&
-      join(",", nebius_storage_v1_bucket.scientific_artifacts_disposable[0].bucket_policy.rules[0].roles) == "storage.object-editor"
+      length(nebius_storage_v1_bucket.scientific_artifacts_disposable[0].bucket_policy.rules) == 2 &&
+      join(",", nebius_storage_v1_bucket.scientific_artifacts_disposable[0].bucket_policy.rules[0].paths) == "scientific/v1/tenants/tenant-a/*" &&
+      join(",", nebius_storage_v1_bucket.scientific_artifacts_disposable[0].bucket_policy.rules[0].roles) == "storage.uploader,storage.object-viewer,storage.object-lister" &&
+      join(",", nebius_storage_v1_bucket.scientific_artifacts_disposable[0].bucket_policy.rules[1].paths) == "scientific/v1/*" &&
+      join(",", nebius_storage_v1_bucket.scientific_artifacts_disposable[0].bucket_policy.rules[1].roles) == "storage.uploader,storage.object-viewer,storage.object-lister"
     )
-    error_message = "The writer must hold exactly storage.object-editor on the canonical scientific/v1 prefix and nothing else."
+    error_message = "Tenant and overlap identities must have only uploader/viewer/lister on their exact canonical prefixes; no delete-capable role is allowed."
   }
 
   assert {
     condition = (
       length(nebius_iam_v1_service_account.scientific_artifacts) == 1 &&
-      length(nebius_iam_v1_group.scientific_artifacts_writers) == 1 &&
-      length(nebius_iam_v1_group_membership.scientific_artifacts_writer) == 1 &&
-      nebius_iam_v1_service_account.scientific_artifacts[0].name == "fs2-artifact-store-test-scientific-artifacts" &&
-      nebius_iam_v1_group.scientific_artifacts_writers[0].name == "fs2-artifact-store-test-scientific-artifact-writers"
+      length(nebius_iam_v1_service_account.scientific_artifact_tenant) == 1 &&
+      length(nebius_iam_v1_group.scientific_artifact_tenant) == 1 &&
+      length(nebius_iam_v1_group_membership.scientific_artifact_tenant) == 1 &&
+      length(nebius_iam_v2_access_key.scientific_artifact_tenant) == 1 &&
+      length(nebius_iam_v2_access_key.scientific_artifacts) == 1
     )
-    error_message = "The store must own a dedicated service account and writer group, distinct from every other identity."
+    error_message = "The store must retain the quarantined legacy identity and create one isolated provider identity per tenant."
   }
 
   assert {
-    condition     = nebius_iam_v2_access_key.scientific_artifacts[0].secret_delivery_mode == "MYSTERY_BOX"
-    error_message = "The S3 access key must be delivered only through MysteryBox; an inline secret would enter Terraform state."
-  }
-
-  assert {
-    condition     = nebius_iam_v2_access_key.scientific_artifacts[0].name == "fs2-artifact-store-test-scientific-artifacts"
-    error_message = "The key must be the dedicated result-store key, not a shared one."
+    condition = (
+      nebius_iam_v2_access_key.scientific_artifact_tenant["tenant-a"].account.service_account.id ==
+      nebius_iam_v1_service_account.scientific_artifact_tenant["tenant-a"].id
+    )
+    error_message = "The broker key must belong only to the exact tenant provider identity."
   }
 }
 
-# The three storage-side rules reclaim waste. None of them expires a current
-# object: deleting a live result stays an application decision.
-run "storage_lifecycle_reclaims_waste_but_never_a_live_result" {
+# The two storage-side rules reclaim incomplete multipart state and empty
+# markers. Neither current nor noncurrent exact versions can expire.
+run "storage_lifecycle_never_expires_an_exact_artifact_version" {
   command = plan
 
   plan_options {
@@ -218,10 +244,9 @@ run "storage_lifecycle_reclaims_waste_but_never_a_live_result" {
       for rule in nebius_storage_v1_bucket.scientific_artifacts_disposable[0].lifecycle_configuration.rules : rule.id
       ]) == join(",", [
       "abort-incomplete-multipart-uploads",
-      "expire-noncurrent-versions",
       "remove-expired-delete-markers",
     ])
-    error_message = "The bucket must carry exactly the three reviewed storage-hygiene rules."
+    error_message = "The bucket must carry only the two reviewed non-content storage-hygiene rules."
   }
 
   assert {
@@ -235,10 +260,13 @@ run "storage_lifecycle_reclaims_waste_but_never_a_live_result" {
   assert {
     condition = (
       nebius_storage_v1_bucket.scientific_artifacts_disposable[0].lifecycle_configuration.rules[0].abort_incomplete_multipart_upload.days_after_initiation == 1 &&
-      nebius_storage_v1_bucket.scientific_artifacts_disposable[0].lifecycle_configuration.rules[1].noncurrent_version_expiration.noncurrent_days == 1 &&
-      nebius_storage_v1_bucket.scientific_artifacts_disposable[0].lifecycle_configuration.rules[2].expiration.expired_object_delete_marker
+      nebius_storage_v1_bucket.scientific_artifacts_disposable[0].lifecycle_configuration.rules[1].expiration.expired_object_delete_marker &&
+      alltrue([
+        for rule in nebius_storage_v1_bucket.scientific_artifacts_disposable[0].lifecycle_configuration.rules :
+        try(rule.noncurrent_version_expiration, null) == null
+      ])
     )
-    error_message = "Incomplete uploads and noncurrent versions must expire after one day and expired delete markers must be removed."
+    error_message = "Incomplete multipart state may expire, but every noncurrent artifact version must remain retained."
   }
 
   assert {
@@ -272,6 +300,10 @@ run "retained_storage_uses_the_protected_bucket_resource" {
         bucket_name  = "fs2-artifact-store-test-results"
         max_size_gib = 4096
       }
+      tenant_ids = ["tenant-a"]
+      credential_generations = {
+        tenant-a = { active_generation = 1, retained_generations = [1] }
+      }
       retention_days = 365
     }
   }
@@ -287,7 +319,7 @@ run "retained_storage_uses_the_protected_bucket_resource" {
   assert {
     condition = (
       nebius_storage_v1_bucket.scientific_artifacts[0].versioning_policy == "ENABLED" &&
-      join(",", nebius_storage_v1_bucket.scientific_artifacts[0].bucket_policy.rules[0].roles) == "storage.object-editor" &&
+      join(",", nebius_storage_v1_bucket.scientific_artifacts[0].bucket_policy.rules[0].roles) == "storage.uploader,storage.object-viewer,storage.object-lister" &&
       nebius_storage_v1_bucket.scientific_artifacts[0].labels.retention == "durable"
     )
     error_message = "The retained bucket must keep the same versioning and writer scope and be labelled durable."
@@ -349,11 +381,11 @@ run "the_canonical_prefix_and_writer_scope_are_fixed" {
   assert {
     condition = (
       terraform_data.scientific_artifacts_contract[0].input.object_root == "scientific/v1" &&
-      join(",", terraform_data.scientific_artifacts_contract[0].input.writer_paths) == "scientific/v1/*" &&
-      terraform_data.scientific_artifacts_contract[0].input.writer_role == "storage.object-editor" &&
-      terraform_data.scientific_artifacts_contract[0].input.secret_delivery == "MYSTERY_BOX"
+      join(",", terraform_data.scientific_artifacts_contract[0].input.writer_paths) == "scientific/v1/tenants/tenant-a/*" &&
+      join(",", terraform_data.scientific_artifacts_contract[0].input.object_roles) == "storage.uploader,storage.object-viewer,storage.object-lister" &&
+      terraform_data.scientific_artifacts_contract[0].input.credential_mode == "TENANT_ISOLATED_BROKER_KEYS"
     )
-    error_message = "The store contract must pin the canonical prefix, the bucket-scoped object-editor role and MysteryBox delivery."
+    error_message = "The store contract must pin each tenant prefix, delete-free object roles and isolated-broker key mode."
   }
 
   assert {
@@ -379,6 +411,10 @@ run "an_invalid_retention_mode_is_rejected" {
         bucket_name  = "fs2-artifact-store-test-results"
         max_size_gib = 4096
       }
+      tenant_ids = ["tenant-a"]
+      credential_generations = {
+        tenant-a = { active_generation = 1, retained_generations = [1] }
+      }
       retention_days = 90
     }
   }
@@ -402,6 +438,10 @@ run "an_invalid_bucket_name_is_rejected" {
       object_storage = {
         bucket_name  = "Not A Bucket"
         max_size_gib = 4096
+      }
+      tenant_ids = ["tenant-a"]
+      credential_generations = {
+        tenant-a = { active_generation = 1, retained_generations = [1] }
       }
       retention_days = 90
     }
@@ -427,7 +467,113 @@ run "an_out_of_range_retention_window_is_rejected" {
         bucket_name  = "fs2-artifact-store-test-results"
         max_size_gib = 4096
       }
+      tenant_ids = ["tenant-a"]
+      credential_generations = {
+        tenant-a = { active_generation = 1, retained_generations = [1] }
+      }
       retention_days = 0
+    }
+  }
+
+  expect_failures = [var.scientific_artifacts]
+}
+
+# A generation switch is necessarily a separate apply after the new generation
+# has been created.  The reversible source contract never permits that switch
+# to revoke a retained predecessor in the same infrastructure-first apply.
+run "an_active_generation_switch_cannot_revoke_its_predecessor" {
+  command = plan
+
+  plan_options {
+    target = [terraform_data.scientific_artifacts_contract]
+  }
+
+  variables {
+    scientific_artifacts = {
+      enabled = true
+      lifecycle = {
+        retention_mode = "disposable"
+      }
+      object_storage = {
+        bucket_name  = "fs2-artifact-store-test-results"
+        max_size_gib = 4096
+      }
+      tenant_ids = ["tenant-a"]
+      credential_generations = {
+        tenant-a = {
+          active_generation     = 2
+          retained_generations  = [1, 2]
+          authorized_generations = [2]
+        }
+      }
+      retention_days = 90
+    }
+  }
+
+  expect_failures = [var.scientific_artifacts]
+}
+
+run "an_active_generation_cannot_skip_an_unprepared_predecessor" {
+  command = plan
+
+  plan_options {
+    target = [terraform_data.scientific_artifacts_contract]
+  }
+
+  variables {
+    scientific_artifacts = {
+      enabled = true
+      lifecycle = {
+        retention_mode = "disposable"
+      }
+      object_storage = {
+        bucket_name  = "fs2-artifact-store-test-results"
+        max_size_gib = 4096
+      }
+      tenant_ids = ["tenant-a"]
+      credential_generations = {
+        tenant-a = {
+          active_generation     = 3
+          retained_generations  = [1, 3]
+          authorized_generations = [1, 3]
+        }
+      }
+      retention_days = 90
+    }
+  }
+
+  expect_failures = [var.scientific_artifacts]
+}
+
+# Deployment readiness is not provider readiness. Until an independently
+# signed observation covers the exact generation's key, prefix, bucket, DB and
+# issuer path, even a fully overlapped active switch must fail at input time.
+run "an_active_generation_switch_without_external_readiness_is_rejected" {
+  command = plan
+
+  plan_options {
+    target = [terraform_data.scientific_artifacts_contract]
+  }
+
+  variables {
+    scientific_artifacts = {
+      enabled = true
+      lifecycle = {
+        retention_mode = "disposable"
+      }
+      object_storage = {
+        bucket_name  = "fs2-artifact-store-test-results"
+        max_size_gib = 4096
+      }
+      tenant_ids = ["tenant-a"]
+      credential_generations = {
+        tenant-a = {
+          active_generation      = 2
+          retained_generations   = [1, 2]
+          authorized_generations = [1, 2]
+        }
+      }
+      retention_days = 90
     }
   }
 

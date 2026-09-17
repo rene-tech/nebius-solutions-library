@@ -736,9 +736,20 @@ def test_admin_artifact_download_uses_existing_tenant_authority_and_exact_bytes(
                 chunks=chunks(),
             )
 
+    issued_authorities: list[dict[str, object]] = []
+
+    class ArtifactAuthorities:
+        async def issue_operator(self, session, **scope: object) -> str:
+            issued_authorities.append({"session": session, **scope})
+            return "fs2_artifact_operator.test-review-only"
+
+        async def close(self) -> None:
+            return None
+
     runtime = _runtime(registry, cipher, hasher)
     runtime.scientific_admin = _service(artifacts=DownloadArtifacts())
     runtime.artifact_service = cast(Any, ContentService())
+    runtime.artifact_authorities = cast(Any, ArtifactAuthorities())
     client = TestClient(create_app(runtime), base_url="https://inference.test.invalid")
     endpoint = f"/admin/api/v1/scientific-runs/{OPERATION_ID}/artifacts/{artifact_id}/content"
     assert client.get(endpoint).status_code == 401
@@ -750,6 +761,12 @@ def test_admin_artifact_download_uses_existing_tenant_authority_and_exact_bytes(
     assert "content-encoding" not in response.headers
     assert "result.cif.gz" in response.headers["content-disposition"]
     assert calls == [(artifact_id, "tenant-oncology")]
+    assert len(issued_authorities) == 1
+    assert issued_authorities[0]["tenant_id"] == "tenant-oncology"
+    assert issued_authorities[0]["operation_id"] == OPERATION_ID
+    assert issued_authorities[0]["artifact_id"] == artifact_id
+    assert isinstance(issued_authorities[0]["session_secret"], str)
+    assert str(issued_authorities[0]["session_secret"]).startswith("fs2_admin_")
     assert client.get(endpoint.replace(str(artifact_id), str(uuid4()))).status_code == 404
     assert client.get(endpoint.replace(str(OPERATION_ID), str(uuid4()))).status_code == 404
     assert len(calls) == 1

@@ -16,7 +16,10 @@ from dataclasses import dataclass
 from typing import Any, Final, Literal
 from uuid import UUID
 
+from .artifact_authority import ArtifactAuthorityClient
+from .artifact_credential_broker import artifact_authority
 from .model_input_contracts import InputContractUnavailable, contract_for, packaged_input_fixture
+from .models import ClaimedOperation
 from .registry import OperationalModel
 from .runtime import RuntimeOperationError
 from .scientific_artifacts import ArtifactVerificationError, ScientificArtifactControllerPort
@@ -133,11 +136,66 @@ def _slots(value: Any, path: tuple[PathPart, ...]) -> list[tuple[Any, str | int]
 class ArtifactInputMaterializer:
     """Resolve only explicitly transport-enabled fields for the owning tenant."""
 
-    def __init__(self, artifacts: ScientificArtifactControllerPort) -> None:
+    def __init__(
+        self,
+        artifacts: ScientificArtifactControllerPort,
+        *,
+        authority: ArtifactAuthorityClient | None = None,
+    ) -> None:
         self._artifacts = artifacts
+        self._authority = authority
+
+    @staticmethod
+    def referenced_artifact_ids(
+        model: OperationalModel,
+        protocol: str,
+        request_body: bytes,
+    ) -> tuple[UUID, ...]:
+        """Derive the exact immutable artifact set while the request is authorized.
+
+        The returned IDs are committed beside the Operation before it can be
+        claimed.  The isolated authority issuer later consults that ledger;
+        it never accepts a worker- or gateway-supplied same-tenant artifact ID
+        as proof that the artifact was part of this request.
+        """
+
+        if b'"artifact_id"' not in request_body:
+            return ()
+        try:
+            payload = json.loads(request_body)
+        except json.JSONDecodeError as error:
+            raise ArtifactInputError("artifact-backed model input must be JSON") from error
+        if not isinstance(payload, dict):
+            raise ArtifactInputError("artifact-backed model input must be an object")
+        try:
+            contract = contract_for(model, protocol)
+        except InputContractUnavailable as error:
+            raise ArtifactInputError("artifact-backed input has no selected runtime contract") from error
+        artifact_ids: set[UUID] = set()
+        for rule in _rules(contract.input_schema):
+            for parent, key in _slots(payload, rule.path):
+                descriptor = parent[key]
+                if not isinstance(descriptor, dict) or "artifact_id" not in descriptor:
+                    continue
+                try:
+                    reference = ArtifactRef.model_validate(descriptor)
+                    artifact_id = UUID(reference.artifact_id)
+                except (TypeError, ValueError) as error:
+                    raise ArtifactInputError("artifact input reference is invalid") from error
+                if reference.compression is not Compression.NONE:
+                    raise ArtifactInputError("compressed model input artifacts are not supported")
+                if reference.size_bytes > rule.max_bytes or reference.media_type not in rule.media_types:
+                    raise ArtifactInputError("artifact input metadata is outside the model field contract")
+                artifact_ids.add(artifact_id)
+        return tuple(sorted(artifact_ids, key=str))
 
     async def _artifact_bytes(
-        self, descriptor: dict[str, Any], *, tenant_id: str, rule: _Rule
+        self,
+        descriptor: dict[str, Any],
+        *,
+        tenant_id: str,
+        rule: _Rule,
+        operation: ClaimedOperation | None,
     ) -> tuple[bytes, str]:
         try:
             reference = ArtifactRef.model_validate(descriptor)
@@ -148,18 +206,28 @@ class ArtifactInputMaterializer:
             raise ArtifactInputError("compressed model input artifacts are not supported")
         if reference.size_bytes > rule.max_bytes or reference.media_type not in rule.media_types:
             raise ArtifactInputError("artifact input metadata is outside the model field contract")
-        stream = await self._artifacts.open_content(artifact_id, tenant_id=tenant_id)
-        actual = stream.artifact.to_public_ref()
-        if actual != reference:
-            raise ArtifactInputError("artifact input metadata does not match stored content")
-        chunks = bytearray()
-        try:
-            async for chunk in stream.chunks:
-                if len(chunks) + len(chunk) > rule.max_bytes:
-                    raise ArtifactInputError("artifact input exceeds the model field byte limit")
-                chunks.extend(chunk)
-        except ArtifactVerificationError as error:
-            raise ArtifactInputError("artifact input digest differs from stored metadata") from error
+        token = None
+        if self._authority is not None:
+            if operation is None or operation.tenant_id != tenant_id:
+                raise ArtifactInputError("artifact input has no fenced executor authority")
+            token = await self._authority.issue_executor(operation, access="read", artifact_id=artifact_id)
+        with artifact_authority(token):
+            stream = await self._artifacts.open_verified_content(
+                artifact_id,
+                tenant_id=tenant_id,
+                max_content_bytes=rule.max_bytes,
+            )
+            actual = stream.artifact.to_public_ref()
+            if actual != reference:
+                raise ArtifactInputError("artifact input metadata does not match stored content")
+            chunks = bytearray()
+            try:
+                async for chunk in stream.chunks:
+                    if len(chunks) + len(chunk) > rule.max_bytes:
+                        raise ArtifactInputError("artifact input exceeds the model field byte limit")
+                    chunks.extend(chunk)
+            except ArtifactVerificationError as error:
+                raise ArtifactInputError("artifact input digest differs from stored metadata") from error
         if len(chunks) != reference.size_bytes:
             raise ArtifactInputError("artifact input stream is incomplete")
         if hashlib.sha256(chunks).hexdigest() != reference.sha256:
@@ -202,6 +270,7 @@ class ArtifactInputMaterializer:
         *,
         tenant_id: str,
         request_body: bytes,
+        operation: ClaimedOperation | None = None,
     ) -> bytes:
         if b'"artifact_id"' not in request_body and b'"fixture_id"' not in request_body:
             return request_body
@@ -222,7 +291,12 @@ class ArtifactInputMaterializer:
                 if not isinstance(descriptor, dict):
                     continue
                 if "artifact_id" in descriptor:
-                    content, media_type = await self._artifact_bytes(descriptor, tenant_id=tenant_id, rule=rule)
+                    content, media_type = await self._artifact_bytes(
+                        descriptor,
+                        tenant_id=tenant_id,
+                        rule=rule,
+                        operation=operation,
+                    )
                 elif "fixture_id" in descriptor:
                     content, media_type = self._fixture_bytes(descriptor, rule=rule)
                 else:

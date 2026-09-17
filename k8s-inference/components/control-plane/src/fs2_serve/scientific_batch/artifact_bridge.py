@@ -11,6 +11,8 @@ from uuid import UUID
 
 import httpx
 
+from ..artifact_authority import ArtifactAuthorityClient
+from ..artifact_credential_broker import artifact_authority
 from ..scientific_artifacts import (
     ArtifactAccess,
     ArtifactAccessProfile,
@@ -136,6 +138,7 @@ class ArtifactServiceBridge:
         store: Store,
         content_reader: ArtifactContentReader | None = None,
         service: ScientificArtifactControllerPort | None = None,
+        authority: ArtifactAuthorityClient | None = None,
     ) -> None:
         self.artifacts = artifacts
         self.batches = batches
@@ -143,6 +146,33 @@ class ArtifactServiceBridge:
         self.store = store
         self.content_reader = content_reader
         self.service = service
+        self.authority = authority
+
+    async def _controller_read(
+        self,
+        artifact_id: UUID,
+        *,
+        operation_id: UUID,
+        tenant_id: str,
+        maximum_bytes: int,
+    ) -> bytes:
+        if self.content_reader is None:
+            raise ScientificProfileError("scientific collection reader is unavailable")
+        token = (
+            await self.authority.issue_controller_read(
+                operation_id=operation_id,
+                tenant_id=tenant_id,
+                artifact_id=artifact_id,
+            )
+            if self.authority is not None
+            else None
+        )
+        with artifact_authority(token):
+            return await self.content_reader.read(
+                artifact_id,
+                tenant_id=tenant_id,
+                maximum_bytes=maximum_bytes,
+            )
 
     async def validate_input(self, pointer: Mapping[str, Any], *, tenant_id: str) -> ScientificInputAdmission:
         try:
@@ -272,16 +302,18 @@ class ArtifactServiceBridge:
         manifest_record, evidence_record = manifests[0], evidence[0]
         manifest = self.profiles.validate_artifact_manifest(
             json.loads(
-                await self.content_reader.read(
+                await self._controller_read(
                     manifest_record.artifact_id,
+                    operation_id=state.operation_id,
                     tenant_id=state.tenant_id,
                     maximum_bytes=_MAX_MANIFEST_BYTES,
                 )
             )
         )
         validation = json.loads(
-            await self.content_reader.read(
+            await self._controller_read(
                 evidence_record.artifact_id,
+                operation_id=state.operation_id,
                 tenant_id=state.tenant_id,
                 maximum_bytes=_MAX_MANIFEST_BYTES,
             )

@@ -8,6 +8,8 @@ from uuid import UUID
 from fastapi import APIRouter, Header, HTTPException, Path, status
 from pydantic import Field
 
+from ..artifact_authority import ArtifactAuthorityClient
+from ..artifact_credential_broker import artifact_authority
 from ..models import StrictModel
 from ..scientific_artifact_routes import EphemeralHandleResponse
 from ..scientific_artifacts import (
@@ -17,6 +19,7 @@ from ..scientific_artifacts import (
     ArtifactDirection,
     BeginArtifactUpload,
     FinalizeArtifactUpload,
+    ImmutableObjectVersionId,
     OpenStageAttempt,
     ScientificArtifactControllerPort,
 )
@@ -56,6 +59,7 @@ def _bearer(value: str | None) -> str:
 def scientific_workload_artifact_router(
     *,
     authority: ScientificWorkloadCapabilityAuthority,
+    artifact_authorities: ArtifactAuthorityClient,
     artifacts: ScientificArtifactControllerPort,
     batches: WorkloadBatchRepository,
 ) -> APIRouter:
@@ -110,7 +114,16 @@ def scientific_workload_artifact_router(
         binding = next((item for item in capability.artifacts if item.artifact_id == artifact_id), None)
         if binding is None:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="artifact is outside workload capability")
-        result = await artifacts.download(artifact_id, tenant_id=capability.tenant_id)
+        broker_authority = await artifact_authorities.issue_workload(
+            operation_id=capability.operation_id,
+            tenant_id=capability.tenant_id,
+            attempt_id=capability.attempt_id,
+            attempt_number=capability.attempt_number,
+            access="read",
+            artifact_id=artifact_id,
+        )
+        with artifact_authority(broker_authority):
+            result = await artifacts.download(artifact_id, tenant_id=capability.tenant_id)
         if (
             result.artifact.digest != binding.digest
             or result.artifact.size_bytes != binding.size_bytes
@@ -130,35 +143,43 @@ def scientific_workload_artifact_router(
         authorization: Annotated[str | None, Header()] = None,
     ) -> WorkloadUploadResponse:
         capability, state, attempt = await authorized(authorization)
-        await artifacts.open_attempt(
-            OpenStageAttempt(
-                attempt_id=capability.attempt_id,
-                operation_id=capability.operation_id,
-                tenant_id=capability.tenant_id,
-                stage_id=capability.stage_id,
-                shard_id=attempt.shard_id,
-                attempt_number=attempt.attempt_number,
-                started_at=attempt.started_at or state.scheduling.captured_at,
-            )
+        broker_authority = await artifact_authorities.issue_workload(
+            operation_id=capability.operation_id,
+            tenant_id=capability.tenant_id,
+            attempt_id=capability.attempt_id,
+            attempt_number=capability.attempt_number,
+            access="write",
         )
-        compression = request.compression if isinstance(request.compression, ArtifactCompression) else None
-        result = await artifacts.begin_upload(
-            BeginArtifactUpload(
-                upload_id=request.upload_id,
-                attempt_id=capability.attempt_id,
-                operation_id=capability.operation_id,
-                tenant_id=capability.tenant_id,
-                direction=ArtifactDirection.OUTPUT,
-                expected_digest=f"sha256:{request.sha256}",
-                expected_size_bytes=request.size_bytes,
-                media_type=request.media_type,
-                compression=compression,
-                access=ArtifactAccess(
-                    profile=ArtifactAccessProfile(capability.access_profile),
-                    receipt_digest=capability.access_receipt_digest,
-                ),
+        with artifact_authority(broker_authority):
+            await artifacts.open_attempt(
+                OpenStageAttempt(
+                    attempt_id=capability.attempt_id,
+                    operation_id=capability.operation_id,
+                    tenant_id=capability.tenant_id,
+                    stage_id=capability.stage_id,
+                    shard_id=attempt.shard_id,
+                    attempt_number=attempt.attempt_number,
+                    started_at=attempt.started_at or state.scheduling.captured_at,
+                )
             )
-        )
+            compression = request.compression if isinstance(request.compression, ArtifactCompression) else None
+            result = await artifacts.begin_upload(
+                BeginArtifactUpload(
+                    upload_id=request.upload_id,
+                    attempt_id=capability.attempt_id,
+                    operation_id=capability.operation_id,
+                    tenant_id=capability.tenant_id,
+                    direction=ArtifactDirection.OUTPUT,
+                    expected_digest=f"sha256:{request.sha256}",
+                    expected_size_bytes=request.size_bytes,
+                    media_type=request.media_type,
+                    compression=compression,
+                    access=ArtifactAccess(
+                        profile=ArtifactAccessProfile(capability.access_profile),
+                        receipt_digest=capability.access_receipt_digest,
+                    ),
+                )
+            )
         return WorkloadUploadResponse(
             upload_id=result.upload.upload_id,
             handle=EphemeralHandleResponse.of(result.handle),
@@ -168,15 +189,30 @@ def scientific_workload_artifact_router(
     async def finalize_upload(
         upload_id: Annotated[UUID, Path()],
         authorization: Annotated[str | None, Header()] = None,
+        x_fs2_object_version_id: Annotated[ImmutableObjectVersionId | None, Header()] = None,
     ) -> ArtifactRef:
-        capability, _, _ = await authorized(authorization)
-        record = await artifacts.finalize_upload(
-            FinalizeArtifactUpload(
-                upload_id=upload_id,
-                operation_id=capability.operation_id,
-                tenant_id=capability.tenant_id,
+        if x_fs2_object_version_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="exact provider object version is required",
             )
+        capability, _, _ = await authorized(authorization)
+        broker_authority = await artifact_authorities.issue_workload(
+            operation_id=capability.operation_id,
+            tenant_id=capability.tenant_id,
+            attempt_id=capability.attempt_id,
+            attempt_number=capability.attempt_number,
+            access="write",
         )
+        with artifact_authority(broker_authority):
+            record = await artifacts.finalize_upload(
+                FinalizeArtifactUpload(
+                    upload_id=upload_id,
+                    operation_id=capability.operation_id,
+                    tenant_id=capability.tenant_id,
+                    object_version_id=x_fs2_object_version_id,
+                )
+            )
         return record.to_public_ref()
 
     return router

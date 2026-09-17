@@ -428,9 +428,11 @@ encrypted storage and the absence of automatic retention/deletion.
 ### Scientific result artifact store
 
 `storage.scientific_artifacts` provisions a dedicated same-region versioned
-bucket, a dedicated service account and group, a bucket policy granting only
-`storage.object-editor` on `scientific/v1/*`, and an S3 access key delivered
-exclusively through Nebius MysteryBox. It is a separate store from
+bucket, one provider principal per declared tenant and retained generation,
+and bucket rules granting only `storage.uploader`, `storage.object-viewer`, and
+`storage.object-lister` on `scientific/v1/tenants/<tenant>/*`. No broker
+credential has `DeleteObject` authority. Each tenant access-key generation is
+isolated to that tenant's broker; no provider key enters the gateway. It is a separate store from
 `storage.reference_data`: results and immutable public science inputs never
 share a bucket, a policy, a key or a retention decision, and the facade refuses
 a configuration in which the two bucket names collide.
@@ -444,20 +446,35 @@ scientific/v1/tenants/<tenant>/operations/<operation>/stages/<stage>/shards/<sha
 so tenant prefixes are disjoint and a retry that reproduces identical bytes
 writes the identical key.
 
-Terraform propagates only the access-key ID, an opaque MysteryBox reference and
-a revision. The workloads stage resolves the secret ephemerally and writes it
-with the provider's write-only argument into `fs2-system/fs2-serve-artifact-store`
-under `credentials.json`; the secret is absent from state, plans, generated
-tfvars, Helm values, outputs and receipts. A rotated key moves the revision,
-which rewrites the Secret and the non-secret
-`fs2.nebius.ai/artifact-store-credential-revision` pod annotation so the control
-plane restarts. Workers receive short-lived signed handles, never a static
-credential.
+Terraform propagates tenant-scoped generation handoffs through sensitive
+workload inputs. The workloads stage creates one broker per tenant with only
+that tenant's active immutable provider-key Secret, a dedicated column-scoped
+database login, TLS/CA mounts, and default-deny networking. The gateway mounts
+only a projected broker token and CA; the broker independently verifies the
+original PAT or workload capability plus the durable operation/artifact row,
+then performs the exact provider operation itself. Workers receive short-lived
+signed handles, never a static credential.
 
-Storage-side lifecycle rules abort incomplete multipart uploads and expire
-noncurrent versions after one day and remove expired delete markers. Nothing
-expires a current object: `retention_days` reaches the control plane as an
-application retention window instead.
+Storage-side lifecycle rules abort incomplete multipart uploads and remove
+empty expired delete markers. They never expire current or noncurrent object
+versions. Consequently, replacing a canonical key with a compromised uploader
+cannot destroy the finalized exact `VersionId` pinned in PostgreSQL. Provider
+retention deletion is dormant in this candidate until a separately scoped,
+exact-version deletion principal is implemented and reviewed;
+`retention_days` reaches the control plane as its application window.
+
+The first migration phase is deliberately `legacy-overlap`: the retained
+shared identity stays authorized while new tenant brokers are staged, and
+ordinary applies do not create the one-way database cutover Job or retrying
+controller. Every retained provider generation also remains authorized, and
+generation 1 must remain active. Later generations can be prepared additively,
+but selecting one is rejected until a future source contract can verify an
+independently witnessed, purpose-bound provider/DB/issuer readiness receipt.
+Caller-supplied SHA strings are not activation authority. A later
+reviewed change must verify signed provider/IAM, complete version and input
+inventory, fleet-wide readiness/drain, gateway handoff, and rollback-state
+receipts before either legacy storage authorization or compatibility admission
+can be closed.
 
 `egress_cidrs` accepts only exact `/32` or `/128` object-storage addresses, so
 the allowlist opens the control plane's default-deny egress no wider than the

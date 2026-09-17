@@ -531,23 +531,68 @@ variable "deployment" {
           bucket_name  = optional(string)
           max_size_gib = optional(number, 4096)
         }), {})
+        # Every enabled tenant receives its own provider principal and exact
+        # scientific/v1/tenants/<tenant>/* bucket-policy rule.
+        tenant_ids = optional(set(string), [])
+        # Generation 1 keeps the pre-remediation per-tenant Terraform address.
+        # A rotation first adds and authorizes a generation while the prior
+        # generation remains active, then selects the prepared generation in a
+        # later apply. In the only accepted legacy-overlap phase, every
+        # retained generation remains authorized; a future independently
+        # reviewed receipt protocol must gate deauthorization.
+        credential_generations = optional(map(object({
+          active_generation    = optional(number, 1)
+          retained_generations = optional(set(number), [1])
+          authorized_generations = optional(set(number), [1])
+        })), {})
+        # The first infrastructure apply must preserve the running gateway's
+        # legacy prefix grant. This candidate intentionally accepts only the
+        # reversible overlap phase. A later independently reviewed change must
+        # define and cryptographically verify exact provider, fleet,
+        # version-inventory, input-completeness and rollback receipts before it
+        # can add a one-way activation phase. Bare caller-supplied digests are
+        # retained as reserved compatibility fields but cannot authorize it.
+        migration = optional(object({
+          phase                            = optional(string, "legacy-overlap")
+          provider_iam_receipt_sha256      = optional(string, "")
+          broker_fleet_receipt_sha256      = optional(string, "")
+          version_inventory_receipt_sha256 = optional(string, "")
+          gateway_cutover_receipt_sha256   = optional(string, "")
+        }), {})
+        broker = optional(object({
+          ca_secret_name           = string
+          ca_key                   = optional(string, "ca.crt")
+          tls_secret_name          = string
+          authority_signing_secret_name = string
+          authority_signing_key         = optional(string, "ed25519-private.pem")
+          authority_verification_config_map_name = string
+          authority_verification_key             = optional(string, "ed25519-public.pem")
+          cutover_attempts                        = optional(set(number), [1])
+          kubernetes_token_seconds = optional(number, 600)
+        }))
+        version_backfill = optional(object({
+          enabled                 = optional(bool, false)
+          manifest_secret_name    = optional(string, "")
+          manifest_key            = optional(string, "manifest.json")
+          manifest_sha256         = optional(string, "")
+          active_deadline_seconds = optional(number, 3600)
+        }), {})
         # How long the application keeps a committed artifact. Storage-side
         # rules never expire a current object; deletion stays an application
         # decision made against the durable result record.
         retention_days = optional(number, 90)
         # Lifetime of one signed upload or download handle. Workers receive
         # these handles and never a static S3 credential.
-        handle_ttl_seconds = optional(number, 600)
+        # Deprecated compatibility default. Explicit upload/download policies
+        # inherit this value only when their own value is omitted.
+        handle_ttl_seconds          = optional(number, 120)
+        upload_handle_ttl_seconds   = optional(number)
+        download_handle_ttl_seconds = optional(number)
         max_artifact_bytes = optional(number, 1099511627776)
         # Exact object-storage addresses, /32 or /128 only, that the control
         # plane may reach on 443 to issue handles and stream a stored object
         # back for digest verification.
         egress_cidrs = optional(set(string), [])
-        # Operator-driven rotation. Bumping this rewrites the credential Secret
-        # and moves the control plane's rollout annotation even when the cloud
-        # key itself is unchanged. Replacing the key rotates it too, because the
-        # rollout identity also covers the key's own non-secret identifiers.
-        credential_generation = optional(number, 1)
         media_types = optional(set(string), [
           "application/gzip",
           "application/json",
@@ -1224,16 +1269,19 @@ variable "deployment" {
         floor(var.deployment.storage.scientific_artifacts.retention_days) == var.deployment.storage.scientific_artifacts.retention_days &&
         var.deployment.storage.scientific_artifacts.retention_days >= 1 &&
         var.deployment.storage.scientific_artifacts.retention_days <= 3650 &&
-        floor(var.deployment.storage.scientific_artifacts.handle_ttl_seconds) == var.deployment.storage.scientific_artifacts.handle_ttl_seconds &&
-        var.deployment.storage.scientific_artifacts.handle_ttl_seconds >= 30 &&
-        var.deployment.storage.scientific_artifacts.handle_ttl_seconds <= 900 &&
+        floor(coalesce(var.deployment.storage.scientific_artifacts.upload_handle_ttl_seconds, var.deployment.storage.scientific_artifacts.handle_ttl_seconds)) == coalesce(var.deployment.storage.scientific_artifacts.upload_handle_ttl_seconds, var.deployment.storage.scientific_artifacts.handle_ttl_seconds) &&
+        coalesce(var.deployment.storage.scientific_artifacts.upload_handle_ttl_seconds, var.deployment.storage.scientific_artifacts.handle_ttl_seconds) >= 30 &&
+        coalesce(var.deployment.storage.scientific_artifacts.upload_handle_ttl_seconds, var.deployment.storage.scientific_artifacts.handle_ttl_seconds) <= 300 &&
+        floor(coalesce(var.deployment.storage.scientific_artifacts.download_handle_ttl_seconds, var.deployment.storage.scientific_artifacts.handle_ttl_seconds)) == coalesce(var.deployment.storage.scientific_artifacts.download_handle_ttl_seconds, var.deployment.storage.scientific_artifacts.handle_ttl_seconds) &&
+        coalesce(var.deployment.storage.scientific_artifacts.download_handle_ttl_seconds, var.deployment.storage.scientific_artifacts.handle_ttl_seconds) >= 30 &&
+        coalesce(var.deployment.storage.scientific_artifacts.download_handle_ttl_seconds, var.deployment.storage.scientific_artifacts.handle_ttl_seconds) <= 300 &&
         floor(var.deployment.storage.scientific_artifacts.max_artifact_bytes) == var.deployment.storage.scientific_artifacts.max_artifact_bytes &&
         var.deployment.storage.scientific_artifacts.max_artifact_bytes >= 1024 &&
         var.deployment.storage.scientific_artifacts.max_artifact_bytes <= 1099511627776
       ),
       false,
     )
-    error_message = "enabled storage.scientific_artifacts requires an explicit retain or disposable lifecycle, an optional valid bucket name, 16-65536 whole GiB of capacity, a 1-3650 day application retention window, a 30-900 second signed-handle lifetime and a 1 KiB-1 TiB maximum artifact size."
+    error_message = "enabled storage.scientific_artifacts requires an explicit retain or disposable lifecycle, an optional valid bucket name, 16-65536 whole GiB of capacity, a 1-3650 day application retention window, explicit 30-300 second upload/download handle lifetimes and a 1 KiB-1 TiB maximum artifact size."
   }
 
   validation {
@@ -1251,13 +1299,138 @@ variable "deployment" {
           for cidr in var.deployment.storage.scientific_artifacts.egress_cidrs :
           can(cidrhost(cidr, 0)) && (endswith(cidr, "/32") || endswith(cidr, "/128"))
         ]) &&
-        floor(var.deployment.storage.scientific_artifacts.credential_generation) == var.deployment.storage.scientific_artifacts.credential_generation &&
-        var.deployment.storage.scientific_artifacts.credential_generation >= 1 &&
-        var.deployment.storage.scientific_artifacts.credential_generation <= 1000
+        length(var.deployment.storage.scientific_artifacts.tenant_ids) >= 1 &&
+        alltrue([
+          for tenant_id in var.deployment.storage.scientific_artifacts.tenant_ids :
+          can(regex("^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$", tenant_id))
+        ]) &&
+        length(setsubtract(
+          toset(keys(var.deployment.storage.scientific_artifacts.credential_generations)),
+          var.deployment.storage.scientific_artifacts.tenant_ids,
+        )) == 0 &&
+        alltrue([
+          for tenant_id in var.deployment.storage.scientific_artifacts.tenant_ids :
+          floor(lookup(var.deployment.storage.scientific_artifacts.credential_generations, tenant_id, {
+            active_generation = 1
+            retained_generations = toset([1])
+          }).active_generation) == lookup(var.deployment.storage.scientific_artifacts.credential_generations, tenant_id, {
+            active_generation = 1
+            retained_generations = toset([1])
+          }).active_generation &&
+          lookup(var.deployment.storage.scientific_artifacts.credential_generations, tenant_id, {
+            active_generation = 1
+            retained_generations = toset([1])
+          }).active_generation >= 1 &&
+          lookup(var.deployment.storage.scientific_artifacts.credential_generations, tenant_id, {
+            active_generation      = 1
+            retained_generations   = toset([1])
+            authorized_generations = toset([1])
+          }).active_generation == 1 &&
+          contains(lookup(var.deployment.storage.scientific_artifacts.credential_generations, tenant_id, {
+            active_generation = 1
+            retained_generations = toset([1])
+          }).retained_generations, 1) &&
+          contains(
+            lookup(var.deployment.storage.scientific_artifacts.credential_generations, tenant_id, {
+              active_generation = 1
+              retained_generations = toset([1])
+            }).retained_generations,
+            lookup(var.deployment.storage.scientific_artifacts.credential_generations, tenant_id, {
+              active_generation = 1
+              retained_generations = toset([1])
+            }).active_generation,
+          ) &&
+          contains(
+            lookup(var.deployment.storage.scientific_artifacts.credential_generations, tenant_id, {
+              active_generation = 1
+              retained_generations = toset([1])
+              authorized_generations = toset([1])
+            }).authorized_generations,
+            lookup(var.deployment.storage.scientific_artifacts.credential_generations, tenant_id, {
+              active_generation = 1
+              retained_generations = toset([1])
+              authorized_generations = toset([1])
+            }).active_generation,
+          ) &&
+          length(setsubtract(
+            lookup(var.deployment.storage.scientific_artifacts.credential_generations, tenant_id, {
+              active_generation = 1
+              retained_generations = toset([1])
+              authorized_generations = toset([1])
+            }).authorized_generations,
+            lookup(var.deployment.storage.scientific_artifacts.credential_generations, tenant_id, {
+              active_generation = 1
+              retained_generations = toset([1])
+              authorized_generations = toset([1])
+            }).retained_generations,
+          )) == 0 &&
+          setequals(
+            lookup(var.deployment.storage.scientific_artifacts.credential_generations, tenant_id, {
+              active_generation      = 1
+              retained_generations   = toset([1])
+              authorized_generations = toset([1])
+            }).authorized_generations,
+            lookup(var.deployment.storage.scientific_artifacts.credential_generations, tenant_id, {
+              active_generation      = 1
+              retained_generations   = toset([1])
+              authorized_generations = toset([1])
+            }).retained_generations,
+          ) &&
+          length([
+            for retained in lookup(var.deployment.storage.scientific_artifacts.credential_generations, tenant_id, {
+              active_generation      = 1
+              retained_generations   = toset([1])
+              authorized_generations = toset([1])
+            }).retained_generations : retained
+            if retained <= lookup(var.deployment.storage.scientific_artifacts.credential_generations, tenant_id, {
+              active_generation      = 1
+              retained_generations   = toset([1])
+              authorized_generations = toset([1])
+            }).active_generation
+          ]) == lookup(var.deployment.storage.scientific_artifacts.credential_generations, tenant_id, {
+            active_generation      = 1
+            retained_generations   = toset([1])
+            authorized_generations = toset([1])
+          }).active_generation &&
+          alltrue([
+            for generation in lookup(var.deployment.storage.scientific_artifacts.credential_generations, tenant_id, {
+              active_generation = 1
+              retained_generations = toset([1])
+            }).retained_generations :
+            floor(generation) == generation && generation >= 1 && generation <= 9999
+          ])
+        ]) &&
+        var.deployment.storage.scientific_artifacts.migration.phase == "legacy-overlap" &&
+        var.deployment.storage.scientific_artifacts.migration.provider_iam_receipt_sha256 == "" &&
+        var.deployment.storage.scientific_artifacts.migration.broker_fleet_receipt_sha256 == "" &&
+        var.deployment.storage.scientific_artifacts.migration.version_inventory_receipt_sha256 == "" &&
+        var.deployment.storage.scientific_artifacts.migration.gateway_cutover_receipt_sha256 == "" &&
+        var.deployment.storage.scientific_artifacts.broker != null &&
+        length(var.deployment.storage.scientific_artifacts.broker.ca_secret_name) >= 1 &&
+        length(var.deployment.storage.scientific_artifacts.broker.tls_secret_name) >= 1 &&
+        length(var.deployment.storage.scientific_artifacts.broker.authority_signing_secret_name) >= 1 &&
+        length(var.deployment.storage.scientific_artifacts.broker.authority_verification_config_map_name) >= 1 &&
+        contains(var.deployment.storage.scientific_artifacts.broker.cutover_attempts, 1) &&
+        alltrue([
+          for attempt in var.deployment.storage.scientific_artifacts.broker.cutover_attempts :
+          floor(attempt) == attempt && attempt >= 1 && attempt <= 999
+        ]) &&
+        var.deployment.storage.scientific_artifacts.broker.kubernetes_token_seconds >= 600 &&
+        var.deployment.storage.scientific_artifacts.broker.kubernetes_token_seconds <= 900 &&
+        (
+          !var.deployment.storage.scientific_artifacts.version_backfill.enabled || (
+            can(regex("^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$", var.deployment.storage.scientific_artifacts.version_backfill.manifest_secret_name)) &&
+            can(regex("^[A-Za-z0-9._-]{1,253}$", var.deployment.storage.scientific_artifacts.version_backfill.manifest_key)) &&
+            can(regex("^[a-f0-9]{64}$", var.deployment.storage.scientific_artifacts.version_backfill.manifest_sha256)) &&
+            floor(var.deployment.storage.scientific_artifacts.version_backfill.active_deadline_seconds) == var.deployment.storage.scientific_artifacts.version_backfill.active_deadline_seconds &&
+            var.deployment.storage.scientific_artifacts.version_backfill.active_deadline_seconds >= 60 &&
+            var.deployment.storage.scientific_artifacts.version_backfill.active_deadline_seconds <= 86400
+          )
+        )
       ),
       false,
     )
-    error_message = "enabled storage.scientific_artifacts requires at least one exact approved media type, at least one exact /32 or /128 object-storage egress address, and a whole credential_generation between 1 and 1000; an empty, subnet-wide or malformed allowlist is never accepted."
+    error_message = "enabled storage.scientific_artifacts requires approved media types, exact /32 or /128 egress, explicit tenant IDs, prepared generations while generation 1 remains active until an independently witnessed readiness protocol exists, every retained generation still authorized during reversible legacy-overlap, no caller-supplied activation digests, broker TLS/workload-identity settings, and a complete digest-bound backfill manifest when enabled."
   }
 
   validation {

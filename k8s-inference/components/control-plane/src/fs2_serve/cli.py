@@ -47,6 +47,7 @@ from .apps_scientific import (
     AppScientificScheduling,
     ScientificAppsInventory,
 )
+from .artifact_authority import ArtifactAuthorityClient, ArtifactAuthorityClientConfig
 from .artifact_credential_broker import (
     ArtifactCredentialBroker,
     ArtifactCredentialBrokerConfig,
@@ -105,10 +106,8 @@ from .scientific_batch.scheduling import SchedulingContractResolver
 from .scientific_batch.service import ScientificBatchService
 from .scientific_batch.worker import ScientificBatchWorker
 from .scientific_input_uploads import ScientificInputUploadService
-from .scientific_object_store import ObjectStoreConfig, S3ArtifactObjectStore
 from .settings import Settings
 from .store import ConflictError
-from .tenant_object_store import load_tenant_object_store
 from .telemetry import Metrics, configure_tracing
 
 
@@ -262,6 +261,7 @@ async def _synchronize_admin_configuration(
 def _artifact_service(
     settings: Settings,
     repository: PostgresArtifactRepository,
+    broker: ArtifactCredentialBroker | None,
 ) -> ScientificArtifactService | None:
     """Build the artifact service only when object storage is fully configured.
 
@@ -271,49 +271,13 @@ def _artifact_service(
 
     if not settings.scientific_artifacts_enabled:
         return None
-    if settings.artifact_store_allow_legacy_shared_credentials:
-        access_key, secret_key = settings.artifact_store_credentials()
-        object_store = S3ArtifactObjectStore(
-            ObjectStoreConfig(
-                endpoint_url=settings.artifact_store_endpoint,
-                bucket=settings.artifact_store_bucket,
-                region=settings.artifact_store_region,
-                access_key=access_key,
-                secret_key=secret_key,
-                addressing_style=settings.artifact_store_addressing_style,
-                verify_tls=settings.artifact_store_verify_tls,
-                max_stream_bytes=settings.artifact_max_bytes,
-            )
-        )
-    elif settings.artifact_store_allow_static_tenant_credentials:
-        object_store = load_tenant_object_store(
-            settings.artifact_store_tenant_credentials_dir,
-            default_endpoint_url=settings.artifact_store_endpoint,
-            default_bucket=settings.artifact_store_bucket,
-            default_region=settings.artifact_store_region,
-            default_addressing_style=settings.artifact_store_addressing_style,
-            default_verify_tls=settings.artifact_store_verify_tls,
-            max_stream_bytes=settings.artifact_max_bytes,
-        )
-    else:
-        object_store = BrokeredS3ArtifactObjectStore(
-            ArtifactCredentialBroker(
-                ArtifactCredentialBrokerConfig(
-                    url=settings.artifact_credential_broker_url,
-                    audience=settings.artifact_credential_broker_audience,
-                    token_file=settings.artifact_credential_broker_token_file,
-                    ca_file=settings.artifact_credential_broker_ca_file,
-                    timeout_seconds=settings.artifact_credential_broker_timeout_seconds,
-                    operation_credential_ttl_seconds=(
-                        settings.artifact_credential_broker_operation_ttl_seconds
-                    ),
-                    max_credential_ttl_seconds=settings.artifact_credential_broker_max_ttl_seconds,
-                    max_stream_bytes=settings.artifact_max_bytes,
-                )
-            ),
-            operation_credential_ttl_seconds=settings.artifact_credential_broker_operation_ttl_seconds,
-            max_stream_bytes=settings.artifact_max_bytes,
-        )
+    if broker is None:
+        raise RuntimeError("scientific artifact broker is unavailable")
+    object_store = BrokeredS3ArtifactObjectStore(
+        broker,
+        operation_credential_ttl_seconds=settings.artifact_credential_broker_operation_ttl_seconds,
+        max_stream_bytes=settings.artifact_max_bytes,
+    )
     return ScientificArtifactService(
         repository=repository,
         object_store=object_store,
@@ -352,10 +316,42 @@ async def build_runtime(settings: Settings) -> AppRuntime:
     )
     store = await _store(settings)
     artifact_repository = PostgresArtifactRepository(store.pool)
-    artifact_service = _artifact_service(settings, artifact_repository)
+    artifact_broker: ArtifactCredentialBroker | None = None
+    artifact_authorities: ArtifactAuthorityClient | None = None
+    if settings.scientific_artifacts_enabled:
+        artifact_broker = ArtifactCredentialBroker(
+            ArtifactCredentialBrokerConfig(
+                url_template=settings.artifact_credential_broker_url_template,
+                audience=settings.artifact_credential_broker_audience,
+                token_file=settings.artifact_credential_broker_token_file,
+                ca_file=settings.artifact_credential_broker_ca_file,
+                timeout_seconds=settings.artifact_credential_broker_timeout_seconds,
+                operation_timeout_seconds=settings.artifact_credential_broker_operation_ttl_seconds,
+                max_stream_bytes=settings.artifact_max_bytes,
+                readiness_bindings_file=(
+                    settings.artifact_credential_broker_readiness_bindings_file
+                ),
+            )
+        )
+        artifact_authorities = ArtifactAuthorityClient(
+            ArtifactAuthorityClientConfig(
+                url=settings.artifact_authority_issuer_url,
+                audience=settings.artifact_authority_issuer_audience,
+                token_file=settings.artifact_authority_issuer_token_file,
+                ca_file=settings.artifact_authority_issuer_ca_file,
+                timeout_seconds=settings.artifact_authority_issuer_timeout_seconds,
+            )
+        )
+    artifact_service = _artifact_service(settings, artifact_repository, artifact_broker)
+    if artifact_service is not None and artifact_authorities is None:
+        raise RuntimeError("scientific artifact authority issuer is unavailable")
     lifecycle = PostgresLifecycleRepository(store.pool)
     peppers = PepperRing.from_file(settings.token_pepper_file)
-    tokens = TokenService(store, peppers)
+    tokens = TokenService(
+        store,
+        peppers,
+        tenant_readiness=(None if artifact_broker is None else artifact_broker.ensure_tenant_ready),
+    )
     model_deployment_preview: ModelDeploymentPreviewService | None = None
     model_deployment_read: ModelDeploymentReadService | None = None
     model_deployment_mutation: ModelDeploymentMutationService | None = None
@@ -424,6 +420,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         scientific_input_uploads = ScientificInputUploadService(
             store=store,
             artifacts=artifact_service,
+            artifact_authorities=artifact_authorities,
             profiles=scientific_profiles,
             registry=registry,
         )
@@ -485,6 +482,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
             store=store,
             content_reader=artifact_content_reader,
             service=artifact_service,
+            authority=artifact_authorities,
         )
         scientific_controller = PolicyAwareScientificBatchController(
             repository=scientific_repository,
@@ -512,6 +510,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
             execution_binding=scientific_renderer,
             plan_factory=scientific_renderer,
             startup_policy_resolver=PostgresScientificModelPolicyRepository(store.pool).startup_policies,
+            artifact_authorities=artifact_authorities,
         )
         scientific_batch_worker = ScientificBatchWorker(
             scientific_controller,
@@ -570,8 +569,17 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         wait_poll_max_seconds=settings.wait_poll_max_seconds,
         route_refresh=refresh_routes,
         lifecycle=lifecycle,
-        artifact_inputs=ArtifactInputMaterializer(artifact_service) if artifact_service is not None else None,
-        artifact_outputs=ServingOutputArtifactizer(artifact_service) if artifact_service is not None else None,
+        artifact_inputs=(
+            ArtifactInputMaterializer(artifact_service, authority=artifact_authorities)
+            if artifact_service is not None
+            else None
+        ),
+        artifact_outputs=(
+            ServingOutputArtifactizer(artifact_service, authority=artifact_authorities)
+            if artifact_service is not None
+            else None
+        ),
+        artifact_authorities=artifact_authorities if artifact_service is not None else None,
     )
     initial_configuration = (
         load_platform_configuration(settings.admin_configuration_file)
@@ -603,6 +611,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         registry=registry,
         catalog_dir=settings.catalog_dir,
         artifact_service=artifact_service,
+        artifact_authorities=artifact_authorities,
         scientific_batches=scientific_batches,
         scientific_apps=scientific_apps,
         source_max_age_seconds=settings.admin_source_max_age_seconds,
@@ -668,6 +677,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         scientific_batch_worker=scientific_batch_worker,
         scientific_batch_cluster=scientific_batch_cluster,
         artifact_service=artifact_service,
+        artifact_authorities=artifact_authorities,
         scientific_workload_capabilities=scientific_capabilities,
         scientific_workload_batches=scientific_repository,
         scientific_artifact_content_reader=artifact_content_reader,
@@ -708,6 +718,31 @@ async def maintain(settings: Settings) -> None:
         await store.close()
 
 
+async def cleanup_artifact_orphans(settings: Settings) -> None:
+    """Run provider-dependent artifact cleanup outside mandatory retention."""
+
+    if not settings.scientific_artifacts_enabled:
+        return
+    from .artifact_credential_broker import ArtifactCredentialBrokerConfig
+    from .artifact_orphan_cleanup import cleanup_abandoned_uploads
+
+    await cleanup_abandoned_uploads(
+        database_url=settings.database_url,
+        broker_config=ArtifactCredentialBrokerConfig(
+            url_template=settings.artifact_credential_broker_url_template,
+            audience=settings.artifact_credential_broker_audience,
+            token_file=settings.artifact_credential_broker_token_file,
+            ca_file=settings.artifact_credential_broker_ca_file,
+            timeout_seconds=settings.artifact_credential_broker_timeout_seconds,
+            operation_timeout_seconds=settings.artifact_credential_broker_operation_ttl_seconds,
+            max_stream_bytes=settings.artifact_max_bytes,
+            readiness_bindings_file=(
+                settings.artifact_credential_broker_readiness_bindings_file
+            ),
+        ),
+    )
+
+
 async def migrate(settings: Settings) -> None:
     await PostgresStore.migrate_database(
         settings.database_url,
@@ -716,6 +751,8 @@ async def migrate(settings: Settings) -> None:
         settings.runtime_database_role,
         settings.maintenance_database_role,
         settings.activation_database_role,
+        settings.artifact_broker_database_role,
+        settings.artifact_authority_database_role,
     )
 
 
@@ -801,6 +838,12 @@ def main() -> None:
             "bootstrap-access",
             "validate",
             "postgresql-release-contract",
+            "artifact-credential-broker",
+            "artifact-authority-issuer",
+            "artifact-authority-cutover",
+            "artifact-authority-cutover-controller",
+            "artifact-version-backfill",
+            "artifact-orphan-cleanup",
             "model-controller",
             "gpu-allocation-observer",
             "scientific-materialize",
@@ -813,6 +856,31 @@ def main() -> None:
         default="serve",
     )
     args = parser.parse_args()
+    if args.command == "artifact-credential-broker":
+        from .artifact_broker_server import serve_artifact_broker
+
+        serve_artifact_broker()
+        return
+    if args.command == "artifact-authority-issuer":
+        from .artifact_authority_server import serve_artifact_authority_issuer
+
+        serve_artifact_authority_issuer()
+        return
+    if args.command == "artifact-authority-cutover":
+        from .artifact_authority_cutover import run_artifact_authority_cutover
+
+        run_artifact_authority_cutover()
+        return
+    if args.command == "artifact-authority-cutover-controller":
+        from .artifact_authority_cutover import run_artifact_authority_cutover_controller
+
+        run_artifact_authority_cutover_controller()
+        return
+    if args.command == "artifact-version-backfill":
+        from .artifact_version_backfill import run_artifact_version_backfill
+
+        run_artifact_version_backfill()
+        return
     settings = Settings()
     logging.basicConfig(level=settings.log_level, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     if args.command == "validate":
@@ -823,6 +891,7 @@ def main() -> None:
         action = {
             "serve": serve,
             "maintenance": maintain,
+            "artifact-orphan-cleanup": cleanup_artifact_orphans,
             "migrate": migrate,
             "wait-schema": wait_schema,
             "bootstrap-access": bootstrap_access,

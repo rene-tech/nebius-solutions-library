@@ -220,9 +220,11 @@ run "the_store_is_absent_from_the_chart_until_it_is_enabled" {
     condition = (
       terraform_data.scientific_artifacts_contract.input.enabled == false &&
       !can(terraform_data.scientific_artifacts_contract.input.chart_values.scientificArtifacts) &&
-      terraform_data.scientific_artifacts_contract.input.credential_revision == 0
+      terraform_data.scientific_artifacts_contract.input.provider_bindings_sha256 == null &&
+      terraform_data.scientific_artifacts_contract.input.tenant_broker_key_count == 0 &&
+      terraform_data.scientific_artifacts_contract.input.provider_keys_in_gateway == false
     )
-    error_message = "A disabled store must project no artifact values and no credential revision."
+    error_message = "A disabled store must project no artifact values, provider binding or long-lived key."
   }
 
   assert {
@@ -249,7 +251,16 @@ run "storage_only_projects_the_canonical_chart_values" {
       retention_days        = 90
       egress_cidrs          = ["195.242.0.14/32"]
       media_types           = ["application/json", "chemical/x-pdb"]
-      credential_generation = 1
+      broker = {
+        ca_secret_name           = "fs2-artifact-broker-ca"
+        ca_key                   = "ca.crt"
+        tls_secret_name          = "fs2-artifact-broker-tls"
+        authority_signing_secret_name = "fs2-artifact-authority-signing"
+        authority_signing_key         = "ed25519-private.pem"
+        authority_verification_config_map_name = "fs2-artifact-authority-verification"
+        authority_verification_key             = "ed25519-public.pem"
+        kubernetes_token_seconds = 600
+      }
       storage_contract = {
         schema     = "fs2-serve.nebius.ai/scientific-artifact-storage/v1"
         project_id = "project-modelexpresstest"
@@ -265,11 +276,18 @@ run "storage_only_projects_the_canonical_chart_values" {
           verify_tls        = true
         }
         writer = {
-          service_account_id = "serviceaccount-scientifictest"
-          group_id           = "group-scientifictest"
-          role               = "storage.object-editor"
-          paths              = ["scientific/v1/*"]
-          secret_delivery    = "MYSTERY_BOX"
+          broker_object_roles       = []
+          roles                     = ["storage.uploader", "storage.object-viewer", "storage.object-lister"]
+          credential_mode           = "TENANT_ISOLATED_BROKER_KEYS"
+          tenant_principals = {
+            tenant-a = {
+              service_account_id = "serviceaccount-tenant-a"
+              group_id           = "group-tenant-a"
+              paths              = ["scientific/v1/tenants/tenant-a/*"]
+              active_generation  = 1
+              authorized_generations = [1]
+            }
+          }
         }
         layout = {
           root             = "scientific/v1"
@@ -281,12 +299,11 @@ run "storage_only_projects_the_canonical_chart_values" {
         retention = {
           artifact_retention_days                = 90
           abort_incomplete_multipart_upload_days = 1
-          noncurrent_version_expiration_days     = 1
+          noncurrent_version_expiration_days     = null
           expired_object_delete_marker           = true
           current_object_expiration              = "application-owned"
           lifecycle_rule_ids = [
             "abort-incomplete-multipart-uploads",
-            "expire-noncurrent-versions",
             "remove-expired-delete-markers",
           ]
         }
@@ -298,11 +315,27 @@ run "storage_only_projects_the_canonical_chart_values" {
           retained_ids       = null
         }
       }
-      object_storage_access = {
-        key_id              = "accesskey-scientifictest"
-        access_key_id       = "AJE000SCIENTIFICTEST"
-        secret_reference_id = "mysteryboxsecret-scientifictest"
-        resource_version    = 0
+      tenant_broker_access = {
+        schema = "fs2-serve.nebius.ai/artifact-tenant-broker-access/v2"
+        tenants = {
+          tenant-a = {
+            active_generation = 1
+            authorized_generations = [1]
+            generations = {
+              "1" = {
+                access_key_id       = "synthetic-tenant-a-key"
+                secret_reference_id = "synthetic-tenant-a-secret"
+                revision            = 1
+              }
+            }
+          }
+        }
+        legacy_quarantine = {
+          access_key_id       = "synthetic-quarantined-key"
+          secret_reference_id = "synthetic-quarantined-secret"
+          revision            = 1
+          authorized          = true
+        }
       }
     }
   }
@@ -339,12 +372,13 @@ run "storage_only_projects_the_canonical_chart_values" {
 
   assert {
     condition = (
-      terraform_data.scientific_artifacts_contract.input.chart_values.secrets.artifactStore.name == "fs2-serve-artifact-store" &&
-      terraform_data.scientific_artifacts_contract.input.chart_values.secrets.artifactStore.key == "credentials.json" &&
-      terraform_data.scientific_artifacts_contract.input.secret_name == "fs2-serve-artifact-store" &&
-      terraform_data.scientific_artifacts_contract.input.namespace == "fs2-system"
+      terraform_data.scientific_artifacts_contract.input.broker_service_template == "fs2-artifact-<sha256(tenant)[0:32]>" &&
+      terraform_data.scientific_artifacts_contract.input.chart_values.scientificArtifacts.credentialBroker.urlTemplate ==
+      "https://fs2-artifact-{tenant_hash}.fs2-system.svc:8443/v1" &&
+      terraform_data.scientific_artifacts_contract.input.tenant_broker_key_count == 1 &&
+      terraform_data.scientific_artifacts_contract.input.provider_keys_in_gateway == false
     )
-    error_message = "The control plane must be pointed at the stable fs2-system/fs2-serve-artifact-store Secret."
+    error_message = "The control plane must use the independent broker and receive no long-lived S3 key."
   }
 
   assert {
@@ -365,7 +399,7 @@ run "storage_only_projects_the_canonical_chart_values" {
   }
 }
 
-run "the_credential_revision_is_the_only_rotation_trigger" {
+run "the_provider_binding_digest_is_the_only_broker_rollout_trigger" {
   command = plan
 
   plan_options {
@@ -380,7 +414,16 @@ run "the_credential_revision_is_the_only_rotation_trigger" {
       retention_days        = 90
       egress_cidrs          = ["195.242.0.14/32"]
       media_types           = ["application/json", "chemical/x-pdb"]
-      credential_generation = 1
+      broker = {
+        ca_secret_name           = "fs2-artifact-broker-ca"
+        ca_key                   = "ca.crt"
+        tls_secret_name          = "fs2-artifact-broker-tls"
+        authority_signing_secret_name = "fs2-artifact-authority-signing"
+        authority_signing_key         = "ed25519-private.pem"
+        authority_verification_config_map_name = "fs2-artifact-authority-verification"
+        authority_verification_key             = "ed25519-public.pem"
+        kubernetes_token_seconds = 600
+      }
       storage_contract = {
         schema     = "fs2-serve.nebius.ai/scientific-artifact-storage/v1"
         project_id = "project-modelexpresstest"
@@ -396,11 +439,18 @@ run "the_credential_revision_is_the_only_rotation_trigger" {
           verify_tls        = true
         }
         writer = {
-          service_account_id = "serviceaccount-scientifictest"
-          group_id           = "group-scientifictest"
-          role               = "storage.object-editor"
-          paths              = ["scientific/v1/*"]
-          secret_delivery    = "MYSTERY_BOX"
+          broker_object_roles       = []
+          roles                     = ["storage.uploader", "storage.object-viewer", "storage.object-lister"]
+          credential_mode           = "TENANT_ISOLATED_BROKER_KEYS"
+          tenant_principals = {
+            tenant-a = {
+              service_account_id = "serviceaccount-tenant-a"
+              group_id           = "group-tenant-a"
+              paths              = ["scientific/v1/tenants/tenant-a/*"]
+              active_generation  = 1
+              authorized_generations = [1]
+            }
+          }
         }
         layout = {
           root             = "scientific/v1"
@@ -412,12 +462,11 @@ run "the_credential_revision_is_the_only_rotation_trigger" {
         retention = {
           artifact_retention_days                = 90
           abort_incomplete_multipart_upload_days = 1
-          noncurrent_version_expiration_days     = 1
+          noncurrent_version_expiration_days     = null
           expired_object_delete_marker           = true
           current_object_expiration              = "application-owned"
           lifecycle_rule_ids = [
             "abort-incomplete-multipart-uploads",
-            "expire-noncurrent-versions",
             "remove-expired-delete-markers",
           ]
         }
@@ -429,53 +478,47 @@ run "the_credential_revision_is_the_only_rotation_trigger" {
           retained_ids       = null
         }
       }
-      object_storage_access = {
-        key_id              = "accesskey-scientifictest"
-        access_key_id       = "AJE000SCIENTIFICTEST"
-        secret_reference_id = "mysteryboxsecret-scientifictest"
-        resource_version    = 0
+      tenant_broker_access = {
+        schema = "fs2-serve.nebius.ai/artifact-tenant-broker-access/v2"
+        tenants = {
+          tenant-a = {
+            active_generation = 1
+            authorized_generations = [1]
+            generations = {
+              "1" = {
+                access_key_id       = "synthetic-tenant-a-key"
+                secret_reference_id = "synthetic-tenant-a-secret"
+                revision            = 1
+              }
+            }
+          }
+        }
+        legacy_quarantine = {
+          access_key_id       = "synthetic-quarantined-key"
+          secret_reference_id = "synthetic-quarantined-secret"
+          revision            = 1
+          authorized          = true
+        }
       }
     }
   }
 
   assert {
     condition = (
-      terraform_data.scientific_artifacts_contract.input.credential_revision ==
-      1 * 16777216 + parseint(substr(sha256(join("|", [
-        "accesskey-scientifictest",
-        "AJE000SCIENTIFICTEST",
-        "mysteryboxsecret-scientifictest",
-        "0",
-      ])), 0, 6), 16) &&
-      terraform_data.scientific_artifacts_contract.input.chart_values.podAnnotations["fs2.nebius.ai/artifact-store-credential-revision"] ==
-      tostring(terraform_data.scientific_artifacts_contract.input.credential_revision)
+      terraform_data.scientific_artifacts_contract.input.provider_bindings_sha256 ==
+      sha256(local.scientific_artifact_provider_bindings_json) &&
+      terraform_data.scientific_artifacts_contract.input.chart_values.podAnnotations["fs2.nebius.ai/artifact-provider-bindings-revision"] ==
+      tostring(parseint(substr(terraform_data.scientific_artifacts_contract.input.provider_bindings_sha256, 0, 12), 16))
     )
-    error_message = "The rollout identity must cover the key's own identity and reach the non-secret pod annotation."
+    error_message = "The rollout identity must cover the exact non-secret provider binding document."
   }
 
-  # A replaced cloud key restarts at resource_version 0, so the key's identity,
-  # not the version counter, has to move the rollout.
   assert {
     condition = (
-      terraform_data.scientific_artifacts_contract.input.credential_revision !=
-      1 * 16777216 + parseint(substr(sha256(join("|", [
-        "accesskey-rotatedtest",
-        "AJE000ROTATEDTEST",
-        "mysteryboxsecret-rotatedtest",
-        "0",
-      ])), 0, 6), 16)
+      terraform_data.scientific_artifacts_contract.input.tenant_broker_key_count == 1 &&
+      terraform_data.scientific_artifacts_contract.input.provider_keys_in_gateway == false
     )
-    error_message = "Replacing the cloud key must change the rollout identity even though its resource version restarts at zero."
-  }
-
-  # A deliberate operator rotation must be an increase, not just a change.
-  assert {
-    condition = (
-      terraform_data.scientific_artifacts_contract.input.credential_revision < 2 * 16777216 &&
-      terraform_data.scientific_artifacts_contract.input.credential_revision >= 1 * 16777216 &&
-      terraform_data.scientific_artifacts_contract.input.credential_generation == 1
-    )
-    error_message = "The generation must be the leading term of the rollout identity."
+    error_message = "Exactly one isolated tenant broker key must exist and the gateway must receive none."
   }
 
   assert {
@@ -483,7 +526,7 @@ run "the_credential_revision_is_the_only_rotation_trigger" {
       for value in values(terraform_data.scientific_artifacts_contract.input.chart_values.podAnnotations) :
       value if strcontains(lower(value), "secret") || strcontains(lower(value), "key")
     ]) == 0
-    error_message = "The rollout annotation must carry a revision, never credential material."
+    error_message = "The rollout annotation must carry a binding revision, never credential material."
   }
 }
 
@@ -542,7 +585,16 @@ run "a_store_that_reuses_the_reference_data_bucket_is_refused" {
       retention_days        = 90
       egress_cidrs          = ["195.242.0.14/32"]
       media_types           = ["application/json", "chemical/x-pdb"]
-      credential_generation = 1
+      broker = {
+        ca_secret_name           = "fs2-artifact-broker-ca"
+        ca_key                   = "ca.crt"
+        tls_secret_name          = "fs2-artifact-broker-tls"
+        authority_signing_secret_name = "fs2-artifact-authority-signing"
+        authority_signing_key         = "ed25519-private.pem"
+        authority_verification_config_map_name = "fs2-artifact-authority-verification"
+        authority_verification_key             = "ed25519-public.pem"
+        kubernetes_token_seconds = 600
+      }
       storage_contract = {
         schema     = "fs2-serve.nebius.ai/scientific-artifact-storage/v1"
         project_id = "project-modelexpresstest"
@@ -558,11 +610,18 @@ run "a_store_that_reuses_the_reference_data_bucket_is_refused" {
           verify_tls        = true
         }
         writer = {
-          service_account_id = "serviceaccount-scientifictest"
-          group_id           = "group-scientifictest"
-          role               = "storage.object-editor"
-          paths              = ["scientific/v1/*"]
-          secret_delivery    = "MYSTERY_BOX"
+          broker_object_roles       = []
+          roles                     = ["storage.uploader", "storage.object-viewer", "storage.object-lister"]
+          credential_mode           = "TENANT_ISOLATED_BROKER_KEYS"
+          tenant_principals = {
+            tenant-a = {
+              service_account_id = "serviceaccount-tenant-a"
+              group_id           = "group-tenant-a"
+              paths              = ["scientific/v1/tenants/tenant-a/*"]
+              active_generation  = 1
+              authorized_generations = [1]
+            }
+          }
         }
         layout = {
           root             = "scientific/v1"
@@ -574,12 +633,11 @@ run "a_store_that_reuses_the_reference_data_bucket_is_refused" {
         retention = {
           artifact_retention_days                = 90
           abort_incomplete_multipart_upload_days = 1
-          noncurrent_version_expiration_days     = 1
+          noncurrent_version_expiration_days     = null
           expired_object_delete_marker           = true
           current_object_expiration              = "application-owned"
           lifecycle_rule_ids = [
             "abort-incomplete-multipart-uploads",
-            "expire-noncurrent-versions",
             "remove-expired-delete-markers",
           ]
         }
@@ -591,11 +649,27 @@ run "a_store_that_reuses_the_reference_data_bucket_is_refused" {
           retained_ids       = null
         }
       }
-      object_storage_access = {
-        key_id              = "accesskey-scientifictest"
-        access_key_id       = "AJE000SCIENTIFICTEST"
-        secret_reference_id = "mysteryboxsecret-scientifictest"
-        resource_version    = 0
+      tenant_broker_access = {
+        schema = "fs2-serve.nebius.ai/artifact-tenant-broker-access/v2"
+        tenants = {
+          tenant-a = {
+            active_generation = 1
+            authorized_generations = [1]
+            generations = {
+              "1" = {
+                access_key_id       = "synthetic-tenant-a-key"
+                secret_reference_id = "synthetic-tenant-a-secret"
+                revision            = 1
+              }
+            }
+          }
+        }
+        legacy_quarantine = {
+          access_key_id       = "synthetic-quarantined-key"
+          secret_reference_id = "synthetic-quarantined-secret"
+          revision            = 1
+          authorized          = true
+        }
       }
     }
     reference_data = {
@@ -722,7 +796,16 @@ run "a_subnet_wide_egress_allowlist_is_refused" {
       retention_days        = 90
       egress_cidrs          = ["195.242.0.0/16"]
       media_types           = ["application/json", "chemical/x-pdb"]
-      credential_generation = 1
+      broker = {
+        ca_secret_name           = "fs2-artifact-broker-ca"
+        ca_key                   = "ca.crt"
+        tls_secret_name          = "fs2-artifact-broker-tls"
+        authority_signing_secret_name = "fs2-artifact-authority-signing"
+        authority_signing_key         = "ed25519-private.pem"
+        authority_verification_config_map_name = "fs2-artifact-authority-verification"
+        authority_verification_key             = "ed25519-public.pem"
+        kubernetes_token_seconds = 600
+      }
       storage_contract = {
         schema     = "fs2-serve.nebius.ai/scientific-artifact-storage/v1"
         project_id = "project-modelexpresstest"
@@ -738,11 +821,18 @@ run "a_subnet_wide_egress_allowlist_is_refused" {
           verify_tls        = true
         }
         writer = {
-          service_account_id = "serviceaccount-scientifictest"
-          group_id           = "group-scientifictest"
-          role               = "storage.object-editor"
-          paths              = ["scientific/v1/*"]
-          secret_delivery    = "MYSTERY_BOX"
+          broker_object_roles       = []
+          roles                     = ["storage.uploader", "storage.object-viewer", "storage.object-lister"]
+          credential_mode           = "TENANT_ISOLATED_BROKER_KEYS"
+          tenant_principals = {
+            tenant-a = {
+              service_account_id = "serviceaccount-tenant-a"
+              group_id           = "group-tenant-a"
+              paths              = ["scientific/v1/tenants/tenant-a/*"]
+              active_generation  = 1
+              authorized_generations = [1]
+            }
+          }
         }
         layout = {
           root             = "scientific/v1"
@@ -754,12 +844,11 @@ run "a_subnet_wide_egress_allowlist_is_refused" {
         retention = {
           artifact_retention_days                = 90
           abort_incomplete_multipart_upload_days = 1
-          noncurrent_version_expiration_days     = 1
+          noncurrent_version_expiration_days     = null
           expired_object_delete_marker           = true
           current_object_expiration              = "application-owned"
           lifecycle_rule_ids = [
             "abort-incomplete-multipart-uploads",
-            "expire-noncurrent-versions",
             "remove-expired-delete-markers",
           ]
         }
@@ -771,11 +860,27 @@ run "a_subnet_wide_egress_allowlist_is_refused" {
           retained_ids       = null
         }
       }
-      object_storage_access = {
-        key_id              = "accesskey-scientifictest"
-        access_key_id       = "AJE000SCIENTIFICTEST"
-        secret_reference_id = "mysteryboxsecret-scientifictest"
-        resource_version    = 0
+      tenant_broker_access = {
+        schema = "fs2-serve.nebius.ai/artifact-tenant-broker-access/v2"
+        tenants = {
+          tenant-a = {
+            active_generation = 1
+            authorized_generations = [1]
+            generations = {
+              "1" = {
+                access_key_id       = "synthetic-tenant-a-key"
+                secret_reference_id = "synthetic-tenant-a-secret"
+                revision            = 1
+              }
+            }
+          }
+        }
+        legacy_quarantine = {
+          access_key_id       = "synthetic-quarantined-key"
+          secret_reference_id = "synthetic-quarantined-secret"
+          revision            = 1
+          authorized          = true
+        }
       }
     }
   }
@@ -798,7 +903,16 @@ run "an_out_of_region_bucket_is_refused" {
       retention_days        = 90
       egress_cidrs          = ["195.242.0.14/32"]
       media_types           = ["application/json", "chemical/x-pdb"]
-      credential_generation = 1
+      broker = {
+        ca_secret_name           = "fs2-artifact-broker-ca"
+        ca_key                   = "ca.crt"
+        tls_secret_name          = "fs2-artifact-broker-tls"
+        authority_signing_secret_name = "fs2-artifact-authority-signing"
+        authority_signing_key         = "ed25519-private.pem"
+        authority_verification_config_map_name = "fs2-artifact-authority-verification"
+        authority_verification_key             = "ed25519-public.pem"
+        kubernetes_token_seconds = 600
+      }
       storage_contract = {
         schema     = "fs2-serve.nebius.ai/scientific-artifact-storage/v1"
         project_id = "project-modelexpresstest"
@@ -814,11 +928,18 @@ run "an_out_of_region_bucket_is_refused" {
           verify_tls        = true
         }
         writer = {
-          service_account_id = "serviceaccount-scientifictest"
-          group_id           = "group-scientifictest"
-          role               = "storage.object-editor"
-          paths              = ["scientific/v1/*"]
-          secret_delivery    = "MYSTERY_BOX"
+          broker_object_roles       = []
+          roles                     = ["storage.uploader", "storage.object-viewer", "storage.object-lister"]
+          credential_mode           = "TENANT_ISOLATED_BROKER_KEYS"
+          tenant_principals = {
+            tenant-a = {
+              service_account_id = "serviceaccount-tenant-a"
+              group_id           = "group-tenant-a"
+              paths              = ["scientific/v1/tenants/tenant-a/*"]
+              active_generation  = 1
+              authorized_generations = [1]
+            }
+          }
         }
         layout = {
           root             = "scientific/v1"
@@ -830,12 +951,11 @@ run "an_out_of_region_bucket_is_refused" {
         retention = {
           artifact_retention_days                = 90
           abort_incomplete_multipart_upload_days = 1
-          noncurrent_version_expiration_days     = 1
+          noncurrent_version_expiration_days     = null
           expired_object_delete_marker           = true
           current_object_expiration              = "application-owned"
           lifecycle_rule_ids = [
             "abort-incomplete-multipart-uploads",
-            "expire-noncurrent-versions",
             "remove-expired-delete-markers",
           ]
         }
@@ -847,11 +967,27 @@ run "an_out_of_region_bucket_is_refused" {
           retained_ids       = null
         }
       }
-      object_storage_access = {
-        key_id              = "accesskey-scientifictest"
-        access_key_id       = "AJE000SCIENTIFICTEST"
-        secret_reference_id = "mysteryboxsecret-scientifictest"
-        resource_version    = 0
+      tenant_broker_access = {
+        schema = "fs2-serve.nebius.ai/artifact-tenant-broker-access/v2"
+        tenants = {
+          tenant-a = {
+            active_generation = 1
+            authorized_generations = [1]
+            generations = {
+              "1" = {
+                access_key_id       = "synthetic-tenant-a-key"
+                secret_reference_id = "synthetic-tenant-a-secret"
+                revision            = 1
+              }
+            }
+          }
+        }
+        legacy_quarantine = {
+          access_key_id       = "synthetic-quarantined-key"
+          secret_reference_id = "synthetic-quarantined-secret"
+          revision            = 1
+          authorized          = true
+        }
       }
     }
   }

@@ -35,6 +35,7 @@ from fs2_serve.scientific_artifacts import (
     NO_SHARD,
     SCIENTIFIC_ARTIFACT_MIGRATION,
     ArtifactAccess,
+    ArtifactUploadIdentity,
     ArtifactAccessProfile,
     ArtifactCompression,
     ArtifactConflictError,
@@ -151,12 +152,14 @@ class FakeObjectStore:
         *,
         tenant_id: str,
         storage_key: str,
+        expected_size_bytes: int,
         media_type: str,
         compression: ArtifactCompression | None,
         ttl: timedelta,
     ) -> EphemeralHandle:
         headers = {
             "content-type": media_type,
+            "content-length": str(expected_size_bytes),
             "if-none-match": "*",
             "x-amz-checksum-sha256": "test-checksum",
         }
@@ -200,11 +203,20 @@ class FakeObjectStore:
         tenant_id: str,
         storage_key: str,
         object_version_id: str,
-        max_bytes: int | None = None,
+        expected_size_bytes: int,
+        expected_media_type: str,
+        expected_compression: ArtifactCompression | None,
     ):
         if storage_key not in self.objects:
             raise ArtifactNotFoundError("stored object is absent")
-        value = self.objects[storage_key][0]
+        value, media_type, compression = self.objects[storage_key]
+        if (
+            len(value) != expected_size_bytes
+            or media_type != expected_media_type
+            or compression != expected_compression
+            or object_version_id != "test-version"
+        ):
+            raise ArtifactVerificationError("stored object response metadata differs from finalized metadata")
         for offset in range(0, max(len(value), 1), 4):
             chunk = value[offset : offset + 4]
             if chunk:
@@ -231,6 +243,9 @@ class FakeObjectStore:
             compression=compression,
             object_version_id=object_version_id or "test-version",
         )
+
+    async def inspect_upload(self, **kwargs):
+        return await self.inspect(**kwargs)
 
     async def delete(self, *, tenant_id: str, storage_key: str, object_version_id: str) -> None:
         self.deleted.append(storage_key)
@@ -301,7 +316,12 @@ async def upload(
     )
     store.put(begun.upload.storage_key, value, media_type, compression)
     return await service.finalize_upload(
-        FinalizeArtifactUpload(upload_id=upload_id, operation_id=operation_id, tenant_id=TENANT)
+        FinalizeArtifactUpload(
+            upload_id=upload_id,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            object_version_id="test-version",
+        )
     )
 
 
@@ -692,7 +712,12 @@ async def test_finalize_is_idempotent_and_returns_one_artifact() -> None:
     assert first.upload == second.upload
     assert first.handle.url != "" and first.handle is not second.handle
     store.put(first.upload.storage_key, payload, "chemical/x-pdb")
-    finalize = FinalizeArtifactUpload(upload_id=upload_id, operation_id=operation_id, tenant_id=TENANT)
+    finalize = FinalizeArtifactUpload(
+        upload_id=upload_id,
+        operation_id=operation_id,
+        tenant_id=TENANT,
+        object_version_id="test-version",
+    )
     one, two = await asyncio.gather(service.finalize_upload(finalize), service.finalize_upload(finalize))
     assert one.artifact_id == two.artifact_id
     events = await service.list_events(operation_id, tenant_id=TENANT)
@@ -739,7 +764,12 @@ async def test_finalize_rejects_an_object_that_differs_from_its_intent(mutation:
     store.override = VerifiedStoredObject(**{**measured, **mutation})
     with pytest.raises(ArtifactVerificationError, match=message):
         await service.finalize_upload(
-            FinalizeArtifactUpload(upload_id=upload_id, operation_id=operation_id, tenant_id=TENANT)
+            FinalizeArtifactUpload(
+                upload_id=upload_id,
+                operation_id=operation_id,
+                tenant_id=TENANT,
+                object_version_id="test-version",
+            )
         )
 
 
@@ -795,7 +825,12 @@ async def test_gated_artifacts_carry_a_receipt_and_project_academic_admission() 
     )
     store.put(begun.upload.storage_key, payload, "chemical/x-pdb")
     record = await service.finalize_upload(
-        FinalizeArtifactUpload(upload_id=upload_id, operation_id=operation_id, tenant_id=TENANT)
+        FinalizeArtifactUpload(
+            upload_id=upload_id,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            object_version_id="test-version",
+        )
     )
     assert record.access == access
     # A receipt may record the deployment authorization, but ordinary inputs do
@@ -1109,28 +1144,22 @@ def test_settings_reject_an_insecure_artifact_store() -> None:
             scientific_artifacts_enabled=True,
             artifact_store_endpoint="http://storage.invalid",
             artifact_store_verify_tls=True,
-            artifact_store_allow_static_tenant_credentials=True,
         )
-    relaxed = Settings(
-        scientific_artifacts_enabled=True,
-        artifact_store_endpoint="http://127.0.0.1:9000",
-        artifact_store_verify_tls=False,
-        artifact_store_allow_static_tenant_credentials=True,
-        allow_non_cluster_urls=True,
-    )
-    assert "chemical/x-pdb" in relaxed.artifact_media_types_set()
+    with pytest.raises(ValidationError, match="artifact credential broker"):
+        Settings(
+            scientific_artifacts_enabled=True,
+            artifact_store_endpoint="https://storage.invalid",
+            artifact_credential_broker_url_template="",
+        )
 
 
-def test_artifact_store_credentials_come_from_a_mounted_secret(tmp_path: Path) -> None:
+def test_static_artifact_credential_settings_are_not_part_of_the_runtime_contract() -> None:
     from fs2_serve.settings import Settings
 
-    path = tmp_path / "credentials.json"
-    path.write_text(json.dumps({"access_key_id": "AKIA", "secret_access_key": "s" * 24}), encoding="utf-8")
-    settings = Settings(artifact_store_credentials_file=path)
-    assert settings.artifact_store_credentials() == ("AKIA", "s" * 24)
-    path.write_text(json.dumps({"access_key_id": "AKIA"}), encoding="utf-8")
-    with pytest.raises(ValueError, match="secret_access_key"):
-        settings.artifact_store_credentials()
+    assert "artifact_store_credentials_file" not in Settings.model_fields
+    assert "artifact_store_tenant_credentials_dir" not in Settings.model_fields
+    assert "artifact_store_allow_legacy_shared_credentials" not in Settings.model_fields
+    assert "artifact_store_allow_static_tenant_credentials" not in Settings.model_fields
 
 
 # --------------------------------------------------------------------------
@@ -1138,7 +1167,7 @@ def test_artifact_store_credentials_come_from_a_mounted_secret(tmp_path: Path) -
 # --------------------------------------------------------------------------
 
 
-async def test_retention_deletes_objects_then_metadata_and_records_evidence() -> None:
+async def test_retention_keeps_bytes_and_metadata_while_delete_authority_is_dormant() -> None:
     repository = MemoryArtifactRepository()
     operation_id = uuid4()
     await repository.register_operation(operation_id, tenant_id=TENANT)
@@ -1186,12 +1215,9 @@ async def test_retention_deletes_objects_then_metadata_and_records_evidence() ->
         clock=lambda: NOW + timedelta(days=2),
     )
     purges = await expired.purge_expired()
-    assert len(purges) == 1
-    assert purges[0].artifact_count == 1
-    assert purges[0].byte_count == len(b'{"sequence":"MKT"}')
-    assert inputs.storage_key in store.deleted
-    with pytest.raises(ArtifactNotFoundError):
-        await service.download(inputs.artifact_id, tenant_id=TENANT)
+    assert purges == []
+    assert inputs.storage_key not in store.deleted
+    assert (await service.download(inputs.artifact_id, tenant_id=TENANT)).artifact.artifact_id == inputs.artifact_id
     assert await expired.purge_expired() == []
 
 
@@ -1381,7 +1407,9 @@ async def test_postgres_commits_exactly_one_stage_manifest_under_contention(runt
 
 
 @pytest.mark.postgres
-async def test_postgres_terminal_result_fences_writes_and_retention_purges(runtime_pool) -> None:
+async def test_postgres_terminal_result_fences_writes_and_retains_metadata_while_purge_is_dormant(
+    runtime_pool,
+) -> None:
     operation_id = uuid4()
     await insert_operation(runtime_pool, operation_id)
     store = FakeObjectStore()
@@ -1435,23 +1463,22 @@ async def test_postgres_terminal_result_fences_writes_and_retention_purges(runti
         clock=lambda: NOW + timedelta(days=3),
     )
     purges = await expired.purge_expired()
-    assert [purge.operation_id for purge in purges] == [operation_id]
-    assert purges[0].artifact_count == 1
-    assert inputs.storage_key in store.deleted
+    assert purges == []
+    assert inputs.storage_key not in store.deleted
     assert await expired.purge_expired() == []
     async with runtime_pool.acquire() as connection:
         assert (
             await connection.fetchval(
                 "SELECT count(*) FROM fs2_scientific_artifacts WHERE operation_id=$1", operation_id
             )
-            == 0
+            == 1
         )
         assert (
             await connection.fetchval(
                 "SELECT artifact_count FROM fs2_scientific_retention_ledger WHERE operation_id=$1",
                 operation_id,
             )
-            == 1
+            is None
         )
 
 
@@ -1514,7 +1541,7 @@ async def _terminal_operation(service: ScientificArtifactService, repository, st
     return operation_id
 
 
-async def test_concurrent_retention_workers_purge_an_operation_exactly_once() -> None:
+async def test_concurrent_retention_workers_remain_dormant_without_delete_authority() -> None:
     repository = MemoryArtifactRepository()
     store = FakeObjectStore()
     service = build_service(repository, store, retention=timedelta(days=1))
@@ -1530,7 +1557,9 @@ async def test_concurrent_retention_workers_purge_an_operation_exactly_once() ->
 
     outcomes = await asyncio.gather(*(worker().purge_expired() for _ in range(4)))
     purged = [purge for batch in outcomes for purge in batch]
-    assert [purge.operation_id for purge in purged] == [operation_id]
+    assert purged == []
+    assert operation_id is not None
+    assert store.deleted == []
 
 
 async def test_a_zero_byte_artifact_round_trips_without_relaxing_the_ceiling() -> None:

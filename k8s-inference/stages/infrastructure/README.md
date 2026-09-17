@@ -21,6 +21,9 @@ run-owned resources:
   filesystem, one lifecycle-selected versioned bucket, a writer service account,
   writer group and membership, a MysteryBox-backed access key, and a dedicated
   tainted regular-CPU node group; and
+- when enabled, a distinct versioned scientific-results bucket, a zero-object-role
+  session broker identity, and one exact-prefix provider principal per declared
+  tenant; no scientific-artifact access key is created; and
 - an optional public IPv4 allocation when public edge mode is selected.
 
 It does not raise quotas, change service limits, or adopt resources from

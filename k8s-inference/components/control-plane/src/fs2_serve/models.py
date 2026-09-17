@@ -247,6 +247,33 @@ class AdmissionRequest(StrictModel):
     request_content_type: str = "application/json"
     traceparent: str | None = Field(default=None, max_length=128)
     deadline_at: AwareDatetime | None = None
+    authority_operation_id: UUID | None = None
+    operation_admission_authority: str | None = None
+    operation_required_scope: str | None = Field(default=None, pattern=r"^(?:inference|mcp)\.invoke$")
+    artifact_input_ids: tuple[UUID, ...] = ()
+    artifact_input_authorities: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def artifact_inputs_are_unique(self) -> AdmissionRequest:
+        if len(self.artifact_input_ids) != len(set(self.artifact_input_ids)):
+            raise ValueError("operation artifact input bindings must be unique")
+        if len(self.artifact_input_authorities) != len(self.artifact_input_ids):
+            raise ValueError("every operation artifact input requires one issuer authority")
+        if any(not value.startswith("fs2_artifact_admission.") for value in self.artifact_input_authorities):
+            raise ValueError("operation artifact input authority is invalid")
+        if len(
+            {
+                self.authority_operation_id is None,
+                self.operation_admission_authority is None,
+                self.operation_required_scope is None,
+            }
+        ) != 1:
+            raise ValueError("operation admission identity, authority and scope must be supplied together")
+        if self.operation_admission_authority is not None and not self.operation_admission_authority.startswith(
+            "fs2_operation_admission."
+        ):
+            raise ValueError("operation admission authority is invalid")
+        return self
 
 
 class PendingScientificAdmission(StrictModel):

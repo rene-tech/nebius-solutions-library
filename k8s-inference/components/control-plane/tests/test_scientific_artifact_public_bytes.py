@@ -29,6 +29,7 @@ from mcp.server.mcpserver import Context
 from test_scientific_artifacts import ALLOWED_MEDIA_TYPES, FakeObjectStore, digest
 from test_scientific_batch_production import (
     _MemoryInputUploadPort,
+    _StubArtifactAuthorityClient,
     profile_catalog,
     scientific_runtime,
 )
@@ -73,6 +74,7 @@ def _artifact_plane(runtime: AppRuntime, **service_kwargs: Any) -> tuple[FakeObj
     runtime.scientific_input_uploads = ScientificInputUploadService(
         store=runtime.store,
         artifacts=_MemoryInputUploadPort(repository, service),
+        artifact_authorities=_StubArtifactAuthorityClient(),
         profiles=profile_catalog(),
     )
     return object_store, repository
@@ -530,6 +532,13 @@ async def test_mcp_offers_the_same_upload_submit_status_result_operations(regist
             context,
             convert_result=False,
         )
+        compatibility_pointer = await server._tool_manager.call_tool(  # type: ignore[attr-defined]
+            "finalize_model_artifact_upload",
+            {"operation_id": reservation["operation_id"], "upload_id": reservation["upload_id"]},
+            context,
+            convert_result=False,
+        )
+        assert compatibility_pointer == pointer
         read = await server._tool_manager.call_tool(  # type: ignore[attr-defined]
             "read_scientific_artifact_bytes",
             {"artifact_id": pointer["artifact_id"]},

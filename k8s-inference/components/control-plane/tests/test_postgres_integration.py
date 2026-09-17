@@ -19,7 +19,7 @@ from conftest import CONTROL_ROOT
 from fastapi import FastAPI
 from scientific_batch_fakes import FakeScientificBatchCluster
 from test_scientific_artifacts import ALLOWED_MEDIA_TYPES, FakeObjectStore, digest
-from test_scientific_batch_production import profile_catalog_for
+from test_scientific_batch_production import _StubArtifactAuthorityClient, profile_catalog_for
 from test_scientific_lifecycle_bridge import (
     EventSource,
     OperationSource,
@@ -46,6 +46,7 @@ from fs2_serve.admin_models import AdminOperationQuery
 from fs2_serve.admission import AdmissionService
 from fs2_serve.api import AppRuntime, create_app
 from fs2_serve.auth import AuthenticationError, OperatorSessionService, PepperRing, TokenService
+from fs2_serve.artifact_credential_broker import artifact_authority
 from fs2_serve.configuration import (
     ConfigurationService,
     StoreConfigurationAuditSink,
@@ -91,7 +92,7 @@ from fs2_serve.models import (
 from fs2_serve.postgres import PostgresMaintenanceStore, PostgresStore, _decode_audit_detail
 from fs2_serve.postgresql_release import EXPECTED_MIGRATIONS
 from fs2_serve.runtime import ActivationError, StubRuntimeClient
-from fs2_serve.scientific_artifacts import FinalizeArtifactUpload, PostgresArtifactRepository, ScientificArtifactService
+from fs2_serve.scientific_artifacts import ArtifactUploadIdentity, PostgresArtifactRepository, ScientificArtifactService
 from fs2_serve.scientific_batch.codec import state_from_value, state_to_value
 from fs2_serve.scientific_batch.controller import ScientificBatchController
 from fs2_serve.scientific_batch.lifecycle_bridge import ScientificLifecycleBridge
@@ -3359,22 +3360,39 @@ async def test_customer_input_upload_is_verified_and_terminal_in_postgres(
     uploads = ScientificInputUploadService(
         store=postgres_store,
         artifacts=artifact_service,
+        artifact_authorities=_StubArtifactAuthorityClient(),
         profiles=profile_catalog_for("qwen3-8b"),
     )
     payload = b">target\nMKT"
-    begun = await uploads.begin(
-        principal=principal,
-        request=ScientificInputUploadRequest(
-            model_id="qwen3-8b",
-            sha256=digest(payload).removeprefix("sha256:"),
-            size_bytes=len(payload),
-            media_type="text/x-fasta",
-        ),
-        idempotency_key="postgres-input-upload-0001",
+    with artifact_authority(f"fs2_pat_{principal.token_id.hex}_test-secret"):
+        begun = await uploads.begin(
+            principal=principal,
+            request=ScientificInputUploadRequest(
+                model_id="qwen3-8b",
+                sha256=digest(payload).removeprefix("sha256:"),
+                size_bytes=len(payload),
+                media_type="text/x-fasta",
+            ),
+            idempotency_key="postgres-input-upload-0001",
+        )
+    admission_root = await postgres_store.pool.fetchrow(
+        "SELECT operation_id,token_id,tenant_id,model_id,protocol,operation,required_scope "
+        "FROM fs2_operation_admission_authorities WHERE operation_id=$1",
+        begun.operation_id,
     )
+    assert admission_root is not None
+    assert dict(admission_root) == {
+        "operation_id": begun.operation_id,
+        "token_id": principal.token_id,
+        "tenant_id": principal.tenant_id,
+        "model_id": "qwen3-8b",
+        "protocol": "scientific-artifact-upload-v1",
+        "operation": "upload",
+        "required_scope": "inference.invoke",
+    }
     assert await postgres_store.claim_operation("generic-worker", lease_seconds=30) is None
     intent = await repository.get_upload(
-        FinalizeArtifactUpload(
+        ArtifactUploadIdentity(
             upload_id=begun.upload_id,
             operation_id=begun.operation_id,
             tenant_id=principal.tenant_id,
@@ -3385,11 +3403,13 @@ async def test_customer_input_upload_is_verified_and_terminal_in_postgres(
         principal=principal,
         operation_id=begun.operation_id,
         upload_id=begun.upload_id,
+        object_version_id="test-version",
     )
     replay = await uploads.finalize(
         principal=principal,
         operation_id=begun.operation_id,
         upload_id=begun.upload_id,
+        object_version_id="test-version",
     )
     operation = await postgres_store.get_operation(begun.operation_id, tenant_id=principal.tenant_id)
     assert replay == pointer

@@ -60,9 +60,10 @@ def tenant_from_storage_key(storage_key: str) -> str:
 
 
 class TenantScopedS3ArtifactObjectStore:
-    """Dispatch each operation to exactly one tenant-specific S3 identity."""
+    """Retired multi-tenant in-process dispatcher retained as source history."""
 
     def __init__(self, stores: Mapping[str, S3ArtifactObjectStore]) -> None:
+        raise RuntimeError("in-process tenant credential dispatch is retired; use isolated tenant brokers")
         if not stores:
             raise ValueError("at least one tenant artifact-store identity is required")
         if any(_TENANT_ID.fullmatch(tenant_id) is None for tenant_id in stores):
@@ -81,6 +82,7 @@ class TenantScopedS3ArtifactObjectStore:
         *,
         tenant_id: str,
         storage_key: str,
+        expected_size_bytes: int,
         media_type: str,
         compression: ArtifactCompression | None,
         ttl: timedelta,
@@ -88,6 +90,7 @@ class TenantScopedS3ArtifactObjectStore:
         return await self._store(tenant_id, storage_key).presign_upload(
             tenant_id=tenant_id,
             storage_key=storage_key,
+            expected_size_bytes=expected_size_bytes,
             media_type=media_type,
             compression=compression,
             ttl=ttl,
@@ -131,13 +134,17 @@ class TenantScopedS3ArtifactObjectStore:
         tenant_id: str,
         storage_key: str,
         object_version_id: str,
-        max_bytes: int | None = None,
+        expected_size_bytes: int,
+        expected_media_type: str,
+        expected_compression: ArtifactCompression | None,
     ) -> AsyncIterator[bytes]:
         return self._store(tenant_id, storage_key).stream_object(
             tenant_id=tenant_id,
             storage_key=storage_key,
             object_version_id=object_version_id,
-            max_bytes=max_bytes,
+            expected_size_bytes=expected_size_bytes,
+            expected_media_type=expected_media_type,
+            expected_compression=expected_compression,
         )
 
     async def inspect(
@@ -152,6 +159,34 @@ class TenantScopedS3ArtifactObjectStore:
             tenant_id=tenant_id,
             storage_key=storage_key,
             object_version_id=object_version_id,
+            max_bytes=max_bytes,
+        )
+
+    async def inspect_upload(
+        self,
+        *,
+        tenant_id: str,
+        storage_key: str,
+        object_version_id: str,
+        max_bytes: int,
+    ) -> VerifiedStoredObject:
+        return await self._store(tenant_id, storage_key).inspect_upload(
+            tenant_id=tenant_id,
+            storage_key=storage_key,
+            object_version_id=object_version_id,
+            max_bytes=max_bytes,
+        )
+
+    async def discover_upload(
+        self,
+        *,
+        tenant_id: str,
+        storage_key: str,
+        max_bytes: int,
+    ) -> VerifiedStoredObject:
+        return await self._store(tenant_id, storage_key).discover_upload(
+            tenant_id=tenant_id,
+            storage_key=storage_key,
             max_bytes=max_bytes,
         )
 
@@ -177,7 +212,15 @@ def load_tenant_object_store(
     default_verify_tls: bool,
     max_stream_bytes: int,
 ) -> TenantScopedS3ArtifactObjectStore:
-    """Build isolated clients from bounded, strict mounted-secret documents."""
+    """Reject the retired in-process multi-tenant credential loader.
+
+    The implementation remains in source as historical transition evidence,
+    but no caller can use it to reconstruct a process holding multiple tenant
+    provider keys. Production selects one independently deployed tenant broker
+    per exact prefix instead.
+    """
+
+    raise RuntimeError("static tenant artifact credentials are retired; use the tenant broker boundary")
 
     try:
         documents = sorted(credentials_dir.glob("*.json"))

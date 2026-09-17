@@ -7,11 +7,18 @@ expensive to rebuild, this one holds tenant result bytes with a different
 retention window and a different blast radius. Neither store's bucket, policy
 or key is ever widened to serve the other.
 
-The historical store module is independently deployable. Enabling it creates a
-bucket, one shared identity and one key and configures the control plane; it
-does not require, and does not enable, staged batch execution or academic
-execution. That identity model is preserved as prior evidence but is not an
-accepted SAI-19 production configuration.
+The store module remains independently deployable. Enabling it creates the
+bucket and one exact-prefix provider identity plus retained access-key
+generations per explicitly declared tenant. It does not require, or enable,
+staged batch execution or academic execution. The former shared-key identity,
+group, access key and Secret remain declared with `prevent_destroy`. During the
+mandatory reversible `legacy-overlap` phase its existing prefix grant is
+retained so infrastructure-first rollout cannot strand the running gateway.
+Ordinary applies cannot close that overlap. They also require every retained
+credential generation to remain authorized and generation 1 to remain active.
+Later generations may be prepared, but selecting one is rejected until a
+future contract verifies independently witnessed readiness for its exact
+provider, prefix, database and issuer path.
 
 ## What Terraform creates
 
@@ -21,16 +28,18 @@ accepted SAI-19 production configuration.
 | Resource | Purpose |
 | --- | --- |
 | `nebius_storage_v1_bucket` | Versioned, capacity-bounded, standard-class bucket in the cluster region |
-| `nebius_iam_v1_service_account` | The only identity that can write results |
-| `nebius_iam_v1_group` + membership | Carries the bucket-scoped grant |
-| bucket policy rule | `storage.object-editor` on `scientific/v1/*` and nothing else |
-| `nebius_iam_v2_access_key` | S3 key, `secret_delivery_mode = "MYSTERY_BOX"` |
+| per-tenant broker workload | Performs authorized provider operations and mounts only one tenant's active generation |
+| per-tenant service account and group | Provider principal for exactly one tenant and retained generation |
+| bucket policy rule per tenant | delete-free `storage.uploader` + `storage.object-viewer` + `storage.object-lister` on `scientific/v1/tenants/<tenant>/*` |
+| per-tenant access-key generation | Immutable Secret mounted only by the matching tenant broker |
 
 Retention is two mutually exclusive resources rather than one flag, because
 Terraform's `prevent_destroy` takes a literal and not an expression. The
-default is the disposable bucket, which a supervised destroy removes once it is
-empty. `retention_mode = "retain"` selects the protected bucket instead, which
-blocks a full-stack destroy and exports its ID for explicit adoption.
+default disposable bucket is eligible for a separately supervised removal only
+once every version and delete marker is absent. A full-stack destroy remains
+blocked in either bucket mode because every per-tenant credential generation
+and the quarantined legacy identity are protected and exported for explicit
+state adoption. `retention_mode = "retain"` additionally protects the bucket.
 
 ## Object layout
 
@@ -48,47 +57,43 @@ output. `artifact_store.py` owns the builder, the parser and those rules, and
 
 ## Credential handling
 
-The S3 secret never exists in Terraform state, a plan file, generated tfvars, a
-Helm value, an output, a log or a receipt.
+No provider S3 key is mounted into or returned to the shared control plane.
+The former in-process static tenant credential loader is hard-disabled before
+it can read any credential document and is not selectable through Settings or
+the CLI.
 
-1. The infrastructure stage requests a MysteryBox key and exports only the
-   access-key ID, the opaque secret reference and a revision.
-2. `inference-stack` refuses a handoff that carries anything else and writes
-   those three fields into the private workloads tfvars.
-3. The workloads stage resolves the secret through an ephemeral MysteryBox
-   entry and writes it with the Kubernetes provider's write-only argument into
-   `fs2-system/fs2-serve-artifact-store`, key `credentials.json`.
-4. The workloads stage derives the rollout identity as
-   `credential_generation * 2^24` plus the first 24 bits of a digest over the
-   key's non-secret identifiers. That value drives both `data_wo_revision` and
-   the `fs2.nebius.ai/artifact-store-credential-revision` pod annotation, so a
-   rotation rewrites the Secret and restarts the control plane. The annotations
-   carry numbers and an access-key ID, never credential material.
+1. Infrastructure creates a separate provider identity, exact-prefix group and
+   access-key generation per tenant. Retained generations are additive and
+   protected from destruction; only the selected active group is authorized.
+2. `inference-stack` refuses a missing or malformed binding and passes it to
+   workloads through the ordinary private tfvars handoff.
+3. Workloads creates one independent broker per tenant, a dedicated least-privilege
+   database login, TokenReview permission, projected Kubernetes reviewer and
+   provider identities, TLS/CA mounts, and a default-deny NetworkPolicy.
+4. The gateway mounts only its audience-bound broker token and CA. It forwards
+   the original PAT or scientific-workload capability separately; the broker
+   independently resolves the durable artifact/upload row and operation owner.
+5. The broker mounts only its tenant's active immutable credential Secret,
+   repeats durable tenant/action/version authorization, performs the provider
+   operation, and returns no credential. Upload and exact-version inspection
+   remain distinct broker actions.
 
-The cloud key's own `resource_version` cannot carry rotation on its own: a
-replaced key starts again at zero, so a revision derived from it would repeat
-the previous value and leave the stale secret mounted. Rotation therefore has
-two independent triggers. Replacing the key changes its resource ID and its
-access-key ID; `credential_generation` lets an operator force a rewrite without
-touching the key. Write-only Secret data needs Terraform 1.11 or newer, which
-the workloads stage now requires.
-
-Workers never mount that Secret. Historically the control plane was its only
-consumer and handed workers short-lived signed handles. That still exposed all
-tenants if the control-plane process was compromised.
-
-The SAI-19 source successor instead defaults to an external broker: the control
-plane mounts only projected workload identity and obtains one uncached,
-tenant/action-scoped session credential per storage operation. It also records
-the immutable provider version at finalization, pins downloads and reads to that
-version, and separates bounded verify-before-release inline reads from large
-exact-version downloads. The current Terraform contract in this directory
-remains the historical shared-key producer and supplies neither the broker nor
-authoritative tenant/action IAM. It is therefore an explicit integration
-blocker, not promotion evidence. See
+Finalization records the immutable provider version; downloads and reads pin
+that version. Inline reads verify the complete exact version before releasing a
+byte, while large downloads use a version-pinned handle without a preliminary
+full GET. See
 `../components/control-plane/docs/artifact-store-credential-rotation.md` for the
 mandatory broker policy, rotation, version-backfill, object-lock, integration
 and rollback gates.
+
+The isolated orphan-cleanup CronJob also owns abandoned signed PUTs. After a
+fixed one-hour grace period it appends a finalization fence, discovers at most
+one write-once current version without reading bytes, and records an issuer-
+signed exact-version quarantine receipt. It never deletes provider bytes.
+Claims and receipts survive operation-row retention, and interrupted work
+resumes without an unversioned delete. Provider absence is closed with a
+provider write fence and signed receipt so a late PUT cannot appear after the
+claim becomes terminal.
 
 `egress_cidrs` accepts only exact host addresses, `/32` or `/128`. The control
 plane needs to reach the object-storage endpoint itself, not a subnet, and a
@@ -97,25 +102,30 @@ requires.
 
 ## Storage lifecycle
 
-Three rules, all enabled, none of which touches a current object:
+Two rules, both enabled, neither of which expires artifact bytes:
 
 | Rule | Effect |
 | --- | --- |
 | `abort-incomplete-multipart-uploads` | Aborts parts 1 day after initiation |
-| `expire-noncurrent-versions` | Expires superseded versions after 1 day |
 | `remove-expired-delete-markers` | Removes tombstones with no versions left |
 
-Deleting a live result is an application decision made against the durable
-result record, which is why `retention_days` is passed to the control plane as
-`retentionSeconds` rather than expressed as a bucket expiration.
+No rule expires a noncurrent version. Together with versioning and the absence
+of `DeleteObject` on broker credentials, this preserves the exact finalized
+VersionId even if a stolen uploader overwrites the canonical key. Provider
+retention deletion is deliberately dormant, and expired bytes plus metadata
+remain retained, until a separately scoped exact-version deletion principal
+and signed expiry authority are implemented and independently reviewed.
+`retention_days` remains the intended application retention window; this
+candidate does not claim that physical retirement is active.
 
 ## Chart seam
 
 `artifact-store-contract.json` is the written-down seam between the Terraform
 projection and the control-plane chart. The workloads stage emits canonical
-`scientificArtifacts` and `scientificBatch` values, `secrets.artifactStore`,
-`networkPolicy.artifactStoreCidrs` and the rotation pod annotation. The obsolete
-`artifactService` wiring is not revived.
+`scientificArtifacts` and `scientificBatch` values, broker URL/CA/projected
+identity settings, `networkPolicy.artifactStoreCidrs`, and the non-secret
+provider-binding revision. It emits no artifact-store credential Secret. The
+obsolete `artifactService` wiring is not revived.
 
 The chart's own declarations for `scientificArtifacts` and `scientificBatch`
 belong to the batch-controller workstream. Until they merge, Helm ignores the
@@ -133,10 +143,10 @@ Runs the layout unit tests, the Terraform-to-chart wiring tests, `terraform fmt`
 and `validate` for both stages, and the `scientific_artifacts` Terraform test
 files.
 
-## Live smoke test
+## Historical live evidence
 
-Against a provisioned store, using the same credential document the Kubernetes
-Secret carries:
+The command below belongs to the rejected shared-key lineage and must not be
+used to validate or promote the broker design:
 
 ```
 python3 scientific-artifacts/artifact_store.py smoke \
@@ -157,10 +167,9 @@ gets for a key it may not read, and a probe that was never taken cannot count
 either. The credential is only ever
 read from a file, so it cannot appear in a process listing or a shell history.
 
-The writer holds `storage.object-editor`, which is object scoped and therefore
-cannot list the bucket. That is deliberate, and it is why cleanup deletes the
-exact versions the store reported rather than enumerating a prefix, and why the
-one-day noncurrent-version and delete-marker rules exist.
+That rejected historical smoke used `storage.object-editor` and destructive
+cleanup. It is preserved only as negative evidence and must not be used to
+describe or validate the delete-free broker policy in this candidate.
 
 ## Evidence
 

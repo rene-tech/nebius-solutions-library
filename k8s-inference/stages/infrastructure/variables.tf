@@ -513,7 +513,7 @@ variable "reference_data" {
 }
 
 variable "scientific_artifacts" {
-  description = "Dedicated same-region versioned object store for scientific result artifacts. It is a distinct bucket, identity and key from the reference-data plane and is disposable unless retention is explicitly requested."
+  description = "Dedicated same-region versioned object store with one isolated broker principal and exact prefix key per tenant."
   type = object({
     enabled = bool
     lifecycle = object({
@@ -523,6 +523,19 @@ variable "scientific_artifacts" {
       bucket_name  = string
       max_size_gib = number
     })
+    tenant_ids = set(string)
+    credential_generations = map(object({
+      active_generation     = number
+      retained_generations  = set(number)
+      authorized_generations = set(number)
+    }))
+    migration = optional(object({
+      phase                            = optional(string, "legacy-overlap")
+      provider_iam_receipt_sha256      = optional(string, "")
+      broker_fleet_receipt_sha256      = optional(string, "")
+      version_inventory_receipt_sha256 = optional(string, "")
+      gateway_cutover_receipt_sha256   = optional(string, "")
+    }), {})
     retention_days = number
   })
   default = {
@@ -534,7 +547,10 @@ variable "scientific_artifacts" {
       bucket_name  = "disabled-scientific-artifacts.invalid"
       max_size_gib = 4096
     }
-    retention_days = 90
+    tenant_ids             = []
+    credential_generations = {}
+    migration              = {}
+    retention_days         = 90
   }
 
   validation {
@@ -545,13 +561,44 @@ variable "scientific_artifacts" {
         floor(var.scientific_artifacts.object_storage.max_size_gib) == var.scientific_artifacts.object_storage.max_size_gib &&
         var.scientific_artifacts.object_storage.max_size_gib >= 16 &&
         var.scientific_artifacts.object_storage.max_size_gib <= 65536 &&
+        length(var.scientific_artifacts.tenant_ids) >= 1 &&
+        length(var.scientific_artifacts.tenant_ids) <= 1000 &&
+        alltrue([
+          for tenant_id in var.scientific_artifacts.tenant_ids :
+          can(regex("^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$", tenant_id))
+        ]) &&
+        setequals(toset(keys(var.scientific_artifacts.credential_generations)), var.scientific_artifacts.tenant_ids) &&
+        alltrue([
+          for generation in values(var.scientific_artifacts.credential_generations) :
+          floor(generation.active_generation) == generation.active_generation &&
+          generation.active_generation >= 1 && generation.active_generation <= 9999 &&
+          generation.active_generation == 1 &&
+          contains(generation.retained_generations, 1) &&
+          contains(generation.retained_generations, generation.active_generation) &&
+          contains(generation.authorized_generations, generation.active_generation) &&
+          length(setsubtract(generation.authorized_generations, generation.retained_generations)) == 0 &&
+          setequals(generation.authorized_generations, generation.retained_generations) &&
+          length([
+            for retained in generation.retained_generations : retained
+            if retained <= generation.active_generation
+          ]) == generation.active_generation &&
+          alltrue([
+            for retained in generation.retained_generations :
+            floor(retained) == retained && retained >= 1 && retained <= 9999
+          ])
+        ]) &&
+        var.scientific_artifacts.migration.phase == "legacy-overlap" &&
+        var.scientific_artifacts.migration.provider_iam_receipt_sha256 == "" &&
+        var.scientific_artifacts.migration.broker_fleet_receipt_sha256 == "" &&
+        var.scientific_artifacts.migration.version_inventory_receipt_sha256 == "" &&
+        var.scientific_artifacts.migration.gateway_cutover_receipt_sha256 == "" &&
         floor(var.scientific_artifacts.retention_days) == var.scientific_artifacts.retention_days &&
         var.scientific_artifacts.retention_days >= 1 &&
         var.scientific_artifacts.retention_days <= 3650
       ),
       false,
     )
-    error_message = "enabled scientific_artifacts requires an explicit retain or disposable lifecycle, a valid globally unique bucket name, 16-65536 whole GiB of capacity and a 1-3650 day application retention window."
+    error_message = "enabled scientific_artifacts requires explicit tenant IDs, prepared generations while generation 1 remains active until an independently witnessed readiness protocol exists, every retained generation still authorized during reversible legacy-overlap, empty reserved activation receipts, retain/disposable lifecycle, a valid bucket, bounded capacity and a 1-3650 day retention window."
   }
 }
 

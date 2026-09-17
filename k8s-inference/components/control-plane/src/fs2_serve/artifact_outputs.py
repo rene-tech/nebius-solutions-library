@@ -7,8 +7,11 @@ import json
 from datetime import UTC, datetime
 from uuid import NAMESPACE_URL, UUID, uuid5
 
+from .artifact_authority import ArtifactAuthorityClient
+from .artifact_credential_broker import artifact_authority
 from .models import ClaimedOperation, RuntimeResult
 from .scientific_artifacts import (
+    ArtifactUploadIdentity,
     ArtifactAccess,
     ArtifactDirection,
     BeginArtifactUpload,
@@ -30,10 +33,17 @@ def _identity(operation: ClaimedOperation, suffix: str) -> UUID:
 class ServingOutputArtifactizer:
     """Store binary or large results and return a compact immutable pointer."""
 
-    def __init__(self, artifacts: ScientificArtifactControllerPort, *, threshold_bytes: int = 64 * 1024) -> None:
+    def __init__(
+        self,
+        artifacts: ScientificArtifactControllerPort,
+        *,
+        authority: ArtifactAuthorityClient | None = None,
+        threshold_bytes: int = 64 * 1024,
+    ) -> None:
         if threshold_bytes < 1:
             raise ValueError("result artifact threshold must be positive")
         self._artifacts = artifacts
+        self._authority = authority
         self._threshold_bytes = threshold_bytes
 
     @staticmethod
@@ -62,50 +72,62 @@ class ServingOutputArtifactizer:
         # while a zero-accelerator admission deliberately carries no GPU pool,
         # flavor or resource identity.
         admission = KueueAdmission(accelerator_count=0, admitted_at=started_at)
-        await self._artifacts.open_attempt(
-            OpenStageAttempt(
-                attempt_id=attempt_id,
-                operation_id=operation.id,
-                tenant_id=operation.tenant_id,
-                stage_id="serving-output",
-                attempt_number=operation.attempt,
-                admission=admission,
-                started_at=started_at,
-            )
+        token = (
+            await self._authority.issue_executor(operation, access="write")
+            if self._authority is not None
+            else None
         )
-        # application/octet-stream is part of every artifact deployment's
-        # mandatory baseline. The exact upstream type remains in the envelope.
-        media_type = "application/octet-stream"
-        await self._artifacts.begin_upload(
-            BeginArtifactUpload(
+        with artifact_authority(token):
+            await self._artifacts.open_attempt(
+                OpenStageAttempt(
+                    attempt_id=attempt_id,
+                    operation_id=operation.id,
+                    tenant_id=operation.tenant_id,
+                    stage_id="serving-output",
+                    attempt_number=operation.attempt,
+                    admission=admission,
+                    started_at=started_at,
+                )
+            )
+            # application/octet-stream is part of every artifact deployment's
+            # mandatory baseline. The exact upstream type remains in the envelope.
+            media_type = "application/octet-stream"
+            await self._artifacts.begin_upload(
+                BeginArtifactUpload(
+                    upload_id=upload_id,
+                    attempt_id=attempt_id,
+                    operation_id=operation.id,
+                    tenant_id=operation.tenant_id,
+                    direction=ArtifactDirection.OUTPUT,
+                    expected_digest=f"sha256:{digest}",
+                    expected_size_bytes=len(result.body),
+                    media_type=media_type,
+                    access=ArtifactAccess(),
+                )
+            )
+            upload_identity = ArtifactUploadIdentity(
                 upload_id=upload_id,
-                attempt_id=attempt_id,
                 operation_id=operation.id,
                 tenant_id=operation.tenant_id,
-                direction=ArtifactDirection.OUTPUT,
-                expected_digest=f"sha256:{digest}",
-                expected_size_bytes=len(result.body),
-                media_type=media_type,
-                access=ArtifactAccess(),
             )
-        )
-        finalize = FinalizeArtifactUpload(
-            upload_id=upload_id,
-            operation_id=operation.id,
-            tenant_id=operation.tenant_id,
-        )
-        await self._artifacts.store_trusted_upload_content(finalize, content=result.body)
-        artifact = await self._artifacts.finalize_upload(finalize)
-        await self._artifacts.close_attempt(
-            CloseStageAttempt(
-                attempt_id=attempt_id,
+            receipt = await self._artifacts.store_trusted_upload_content(upload_identity, content=result.body)
+            finalize = FinalizeArtifactUpload(
+                upload_id=upload_id,
                 operation_id=operation.id,
                 tenant_id=operation.tenant_id,
-                status=ArtifactAttemptStatus.SUCCEEDED,
-                completed_at=datetime.now(UTC),
-                admission=admission,
+                object_version_id=receipt.stored.object_version_id,
             )
-        )
+            artifact = await self._artifacts.finalize_upload(finalize)
+            await self._artifacts.close_attempt(
+                CloseStageAttempt(
+                    attempt_id=attempt_id,
+                    operation_id=operation.id,
+                    tenant_id=operation.tenant_id,
+                    status=ArtifactAttemptStatus.SUCCEEDED,
+                    completed_at=datetime.now(UTC),
+                    admission=admission,
+                )
+            )
         envelope = {
             "schema": RESULT_SCHEMA,
             "artifact": artifact.to_public_ref().model_dump(mode="json"),

@@ -25,91 +25,114 @@
     "storage_class": "STANDARD",
     "addressing_style": "path",
     "verify_tls": true,
-    "writer_role": "storage.object-editor",
-    "writer_paths": [
-      "scientific/v1/*"
+    "object_roles": [
+      "storage.uploader",
+      "storage.object-viewer",
+      "storage.object-lister"
     ],
-    "secret_delivery": "MYSTERY_BOX",
+    "writer_path_template": "scientific/v1/tenants/<tenant>/*",
+    "credential_mode": "TENANT_ISOLATED_BROKER_KEYS",
+    "broker_operation_seconds": 120,
+    "kubernetes_broker_identity_object_roles": [],
+    "tenant_provider_group_object_roles": [
+      "storage.uploader",
+      "storage.object-viewer",
+      "storage.object-lister"
+    ],
+    "migration_phase": "legacy-overlap",
+    "legacy_shared_provider_authorized": true,
+    "ordinary_apply_irreversible_cutover": false,
     "lifecycle_rule_ids": [
       "abort-incomplete-multipart-uploads",
-      "expire-noncurrent-versions",
       "remove-expired-delete-markers"
     ],
     "abort_incomplete_multipart_upload_days": 1,
-    "noncurrent_version_expiration_days": 1,
+    "noncurrent_version_expiration_days": null,
     "expired_object_delete_marker": true,
     "current_object_expiration": "application-owned"
   },
-  "credential": {
+  "credential_broker": {
     "namespace": "fs2-system",
-    "secret_name": "fs2-serve-artifact-store",
-    "secret_key": "credentials.json",
-    "document_fields": [
-      "access_key_id",
-      "secret_access_key"
+    "service_template": "fs2-artifact-{tenant_hash}",
+    "schema": "fs2-serve.nebius.ai/artifact-tenant-broker-routing/v1",
+    "authority_sources": [
+      "verified PAT and operation owner",
+      "Ed25519 executor capability and active fenced lease",
+      "Ed25519 scientific workload capability and active exact attempt",
+      "Ed25519 operator capability and active tenant-scoped session"
     ],
-    "write_only": true,
-    "rotation_annotation": "fs2.nebius.ai/artifact-store-credential-revision",
-    "propagated_fields": [
+    "provider_binding_fields": [
       "access_key_id",
-      "key_id",
-      "resource_version",
+      "active_generation",
+      "generations",
+      "revision",
       "secret_reference_id"
     ],
-    "forbidden_fields": [
+    "forbidden_handoff_fields": [
       "aws_secret_access_key",
       "secret_access_key",
       "secret_key",
       "secret_value"
     ],
-    "rotation_annotations": [
-      "fs2.nebius.ai/artifact-store-credential-generation",
-      "fs2.nebius.ai/artifact-store-credential-revision"
-    ],
-    "rollout_identity": "credential_generation * 2^24 + first 24 bits of sha256(key_id|access_key_id|secret_reference_id|resource_version). The cloud key's resource_version restarts at zero when the key is replaced, so it cannot carry rotation on its own."
+    "provider_bindings_annotation": "fs2.nebius.ai/artifact-provider-bindings-revision",
+    "provider_endpoint": "https://storage.<region>.nebius.cloud",
+    "provider_key_custody": "one tenant key per broker pod; no provider key in gateway",
+    "authority_custody": "Ed25519 private key in issuer only; public key in tenant brokers; gateway has neither",
+    "operation_policy": "one authoritative tenant, canonical object, action and immutable version when applicable",
+    "credentials_returned_to_gateway": false,
+    "credential_rotation": "additive retained generations; bucket policy and broker mount select only active_generation"
+  },
+  "abandoned_upload_cleanup": {
+    "grace_seconds": 3600,
+    "claim": "append-only finalization fence",
+    "discovery": "HEAD plus bounded exact-prefix version list; exactly one current non-null version, no delete marker or pagination",
+    "delete": "exact VersionId only after durable version ledger",
+    "receipt": "append-only exact-version-deleted proof retained outside operation foreign keys; absence remains purge-fenced and retryable",
+    "fairness": "append-only attempt timestamps rotate unresolved claims before newly eligible uploads can starve"
   },
   "chart": {
     "scientificArtifacts": [
       "addressingStyle",
+      "authorityIssuer",
       "bucket",
+      "credentialBroker",
+      "downloadHandleTtlSeconds",
       "egressCidrs",
       "enabled",
       "endpoint",
       "handleTtlSeconds",
+      "inlineContentMaxBytes",
       "maxBytes",
       "mediaTypes",
       "region",
       "retentionSeconds",
+      "uploadHandleTtlSeconds",
       "verifyTls"
     ],
-  "scientificBatch": [
-    "apiTimeoutSeconds",
-    "enabled",
-    "executionMap",
-    "executionMapConfigMapName",
-    "executionMapKey",
-    "kubernetesApiUrl",
-    "leaseSeconds",
-    "namespace",
-    "pollSeconds",
-    "schedulingContractConfigMapName",
-    "schedulingContractKey",
-    "schedulingContractNamespace",
-    "schedulingContractSchema",
-    "schedulingContractSha256",
-    "tokenExpirationSeconds",
-    "workers",
-    "writesEnabled"
-  ],
-    "secrets.artifactStore": [
-      "key",
-      "name"
+    "scientificBatch": [
+      "apiTimeoutSeconds",
+      "enabled",
+      "executionMap",
+      "executionMapConfigMapName",
+      "executionMapKey",
+      "kubernetesApiUrl",
+      "leaseSeconds",
+      "namespace",
+      "pollSeconds",
+      "schedulingContractConfigMapName",
+      "schedulingContractKey",
+      "schedulingContractNamespace",
+      "schedulingContractSchema",
+      "schedulingContractSha256",
+      "tokenExpirationSeconds",
+      "workers",
+      "writesEnabled"
     ],
     "networkPolicy": [
       "artifactStoreCidrs"
     ],
     "podAnnotations": [
-      "fs2.nebius.ai/artifact-store-credential-revision"
+      "fs2.nebius.ai/artifact-provider-bindings-revision"
     ],
     "forbidden_values": [
       "artifactService"
@@ -117,12 +140,21 @@
   },
   "control_plane_environment": [
     "FS2_ARTIFACT_HANDLE_TTL_SECONDS",
+    "FS2_ARTIFACT_CREDENTIAL_BROKER_AUDIENCE",
+    "FS2_ARTIFACT_CREDENTIAL_BROKER_CA_FILE",
+    "FS2_ARTIFACT_CREDENTIAL_BROKER_TOKEN_FILE",
+    "FS2_ARTIFACT_CREDENTIAL_BROKER_URL_TEMPLATE",
+    "FS2_ARTIFACT_AUTHORITY_ISSUER_AUDIENCE",
+    "FS2_ARTIFACT_AUTHORITY_ISSUER_CA_FILE",
+    "FS2_ARTIFACT_AUTHORITY_ISSUER_TOKEN_FILE",
+    "FS2_ARTIFACT_AUTHORITY_ISSUER_URL",
+    "FS2_ARTIFACT_DOWNLOAD_HANDLE_TTL_SECONDS",
     "FS2_ARTIFACT_MAX_BYTES",
     "FS2_ARTIFACT_MEDIA_TYPES",
     "FS2_ARTIFACT_RETENTION_SECONDS",
+    "FS2_ARTIFACT_UPLOAD_HANDLE_TTL_SECONDS",
     "FS2_ARTIFACT_STORE_ADDRESSING_STYLE",
     "FS2_ARTIFACT_STORE_BUCKET",
-    "FS2_ARTIFACT_STORE_CREDENTIALS_FILE",
     "FS2_ARTIFACT_STORE_ENDPOINT",
     "FS2_ARTIFACT_STORE_REGION",
     "FS2_ARTIFACT_STORE_VERIFY_TLS",

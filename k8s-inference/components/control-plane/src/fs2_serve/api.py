@@ -68,10 +68,13 @@ from .apps import AppsService
 from .apps_repository import MemoryAppsRepository, PostgresAppsRepository
 from .apps_router import apps_router
 from .apps_scientific import AppScientificCluster, ScientificAppsInventory
+from .artifact_authority import ArtifactAuthorityClient
+from .artifact_credential_broker import artifact_authority
 from .auth import (
     MAX_PAT_LENGTH,
     AuthenticationError,
     OperatorSessionService,
+    TenantBrokerNotReadyError,
     TokenService,
     require_operation_access,
 )
@@ -246,6 +249,7 @@ class AppRuntime:
     scientific_batch_cluster: HttpScientificBatchCluster | AppScientificCluster | None = None
     scientific_apps: ScientificAppsInventory | None = None
     artifact_service: ScientificArtifactControllerPort | None = None
+    artifact_authorities: ArtifactAuthorityClient | None = None
     scientific_workload_capabilities: ScientificWorkloadCapabilityAuthority | None = None
     scientific_workload_batches: WorkloadBatchRepository | None = None
     scientific_artifact_content_reader: SignedArtifactContentReader | None = None
@@ -541,6 +545,8 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                 await runtime.model_deployment_bridge.close()
             if runtime.route_revalidator is not None:
                 await runtime.route_revalidator.close()
+            if runtime.artifact_authorities is not None:
+                await runtime.artifact_authorities.close()
             await runtime.admission.close()
             if runtime.owns_store:
                 await runtime.store.close()
@@ -620,7 +626,12 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     @app.middleware("http")
     async def access_log(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         started = time.monotonic()
-        response = await call_next(request)
+        authorization = request.headers.get("authorization")
+        authority_token = None
+        if authorization is not None and authorization.startswith("Bearer ") and authorization.count(" ") == 1:
+            authority_token = authorization.removeprefix("Bearer ")
+        with artifact_authority(authority_token):
+            response = await call_next(request)
         principal = getattr(request.state, "principal", None)
         record = {
             "event": "http_request",
@@ -719,6 +730,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         session: Annotated[OperatorSession, Depends(operator_session)],
     ) -> OperatorPrincipal:
         request.state.operator_principal = session.principal
+        request.state.operator_session = session
         return session.principal
 
     def set_operator_cookie(response: Response, value: str) -> None:
@@ -886,6 +898,20 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         if request.url.path.startswith("/admin/api/v1"):
             return admin_problem_response(503, "unavailable", "admin reporting is unavailable")
         return _error(503, "unavailable", "service unavailable")
+
+    @app.exception_handler(TenantBrokerNotReadyError)
+    async def tenant_broker_not_ready(request: Request, __: TenantBrokerNotReadyError) -> JSONResponse:
+        if request.url.path.startswith("/admin/api/v1"):
+            return admin_problem_response(
+                409,
+                "tenant_artifact_broker_not_ready",
+                "tenant token issuance requires a ready artifact broker",
+            )
+        return _error(
+            409,
+            "tenant_artifact_broker_not_ready",
+            "tenant token issuance requires a ready artifact broker",
+        )
 
     @app.exception_handler(ConflictError)
     async def conflict_error(request: Request, exc: ConflictError) -> JSONResponse:
@@ -1277,6 +1303,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                 "cache-control": "no-store",
                 "location": f"/v1/scientific-artifacts/uploads/{upload_id}:finalize",
                 "x-fs2-artifact-sha256": receipt.sha256,
+                "x-fs2-object-version-id": receipt.object_version_id,
             },
         )
 
@@ -1292,6 +1319,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             principal=identity,
             operation_id=request.operation_id,
             upload_id=upload_id,
+            object_version_id=request.object_version_id,
         )
         return JSONResponse(result.model_dump(mode="json", exclude_none=True), headers={"cache-control": "no-store"})
 
@@ -1982,10 +2010,12 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                 },
             )
             async def admin_scientific_artifact_content(
+                request: Request,
                 run_id: UUID,
                 artifact_id: UUID,
                 identity: Annotated[OperatorPrincipal, Depends(operator)],
                 params: Annotated[AdminContextParameters, Depends(_admin_context_parameters)],
+                operator_session_secret: Annotated[str | None, Cookie(alias=ADMIN_SESSION_COOKIE)] = None,
             ) -> Response:
                 """Download exact artifact bytes with the existing run/tenant authority."""
 
@@ -1999,11 +2029,32 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                     selected_context(params), run_id, tenant_id=authorized_tenant
                 )
                 selected = next((item for item in detail.data.artifacts if item.artifact_id == str(artifact_id)), None)
-                if selected is None or selected.state != "available" or runtime.artifact_service is None:
+                if (
+                    selected is None
+                    or selected.state != "available"
+                    or runtime.artifact_service is None
+                    or runtime.artifact_authorities is None
+                ):
                     raise AdminProblemError(404, "artifact_not_found", "scientific artifact was not found")
-                stream = await runtime.artifact_service.open_content(
-                    artifact_id, tenant_id=detail.data.run.attribution.tenant_id
+                session = getattr(request.state, "operator_session", None)
+                if (
+                    not isinstance(session, OperatorSession)
+                    or session.principal.id != identity.id
+                    or operator_session_secret is None
+                ):
+                    raise AdminProblemError(401, "operator_session_required", "operator session is required")
+                artifact_tenant = detail.data.run.attribution.tenant_id
+                token = await runtime.artifact_authorities.issue_operator(
+                    session,
+                    session_secret=operator_session_secret,
+                    tenant_id=artifact_tenant,
+                    operation_id=run_id,
+                    artifact_id=artifact_id,
                 )
+                with artifact_authority(token):
+                    stream = await runtime.artifact_service.open_content(
+                        artifact_id, tenant_id=artifact_tenant
+                    )
                 artifact = stream.artifact
                 headers = {
                     "cache-control": "no-store",
@@ -2017,7 +2068,12 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                     headers["x-fs2-artifact-compression"] = artifact.compression.value
                 # Do not set Content-Encoding: downloads retain the exact
                 # compressed bytes named by the canonical digest.
-                return StreamingResponse(stream.chunks, media_type=artifact.media_type, headers=headers)
+                async def authorized_chunks() -> AsyncIterator[bytes]:
+                    with artifact_authority(token):
+                        async for chunk in stream.chunks:
+                            yield chunk
+
+                return StreamingResponse(authorized_chunks(), media_type=artifact.media_type, headers=headers)
 
             # Cancellation is the only scientific run command the console can
             # issue. It is registered only when a durable writer exists so the
@@ -2311,10 +2367,12 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         runtime.scientific_workload_capabilities is not None
         and runtime.artifact_service is not None
         and runtime.scientific_workload_batches is not None
+        and runtime.artifact_authorities is not None
     ):
         app.include_router(
             scientific_workload_artifact_router(
                 authority=runtime.scientific_workload_capabilities,
+                artifact_authorities=runtime.artifact_authorities,
                 artifacts=runtime.artifact_service,
                 batches=runtime.scientific_workload_batches,
             )

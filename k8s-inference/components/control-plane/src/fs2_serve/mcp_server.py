@@ -41,6 +41,7 @@ from starlette.types import Scope as ASGIScope
 
 from .api import AppRuntime, _model_view, _pool_accelerator_classes
 from .auth import AuthenticationError, require_operation_access
+from .artifact_credential_broker import artifact_authority
 from .mcp_input_contracts import apply_tool_input_contract, describe_tool_parameters, tool_input_schema
 from .model_input_contracts import (
     InputContractUnavailable,
@@ -64,7 +65,7 @@ from .request_telemetry import (
     request_telemetry_context,
 )
 from .runtime import RuntimeOperationError
-from .scientific_artifacts import ArtifactNotFoundError, ArtifactServiceError
+from .scientific_artifacts import ArtifactNotFoundError, ArtifactServiceError, ImmutableObjectVersionId
 from .scientific_batch.profile_catalog import ScientificProfileError
 from .scientific_batch.service import ScientificProfileDiscovery
 from .scientific_input_uploads import ScientificInputUploadRequest
@@ -472,6 +473,32 @@ def _principal() -> Principal:
         raise MCPError(code=INTERNAL_ERROR, message="authenticated principal context is invalid") from None
 
 
+def _request_artifact_authority(request: object) -> str | None:
+    """Recover only the verified request-local bearer for SDK-owned tasks.
+
+    The MCP SDK may schedule a handler in a task that did not inherit the
+    outer ASGI ContextVar.  Read the raw header from that handler's exact HTTP
+    request, enforce the same single Bearer shape as the public API, and bind
+    it only for the duration of the middleware call.  The value is never
+    attached to telemetry, logs, durable state, or an MCP result.
+    """
+
+    headers = getattr(request, "headers", None)
+    authorization = headers.get("authorization") if headers is not None else None
+    if authorization is None:
+        return None
+    if (
+        not isinstance(authorization, str)
+        or not authorization.startswith("Bearer ")
+        or authorization.count(" ") != 1
+    ):
+        raise MCPError(code=INVALID_PARAMS, message="authorization header is invalid")
+    token = authorization.removeprefix("Bearer ")
+    if not token or len(token.encode("utf-8")) > 16 * 1024 or any(value.isspace() for value in token):
+        raise MCPError(code=INVALID_PARAMS, message="authorization header is invalid")
+    return token
+
+
 def _protocol_tool_names(model: OperationalModel) -> set[str]:
     if not model.enabled or not model.gateway.mcp_invocable or not model.binding.mcp_enabled:
         return set()
@@ -515,7 +542,8 @@ class MCPAuthorizationMiddleware:
     async def __call__(self, ctx: ServerRequestContext[Any, Any], call_next: CallNext) -> HandlerResult:
         # MCP handlers may execute in SDK-owned tasks. Bind the actual HTTP
         # request's shared state rather than relying on inherited task context.
-        with request_telemetry_context(getattr(ctx, "request", None)):
+        request = getattr(ctx, "request", None)
+        with request_telemetry_context(request), artifact_authority(_request_artifact_authority(request)):
             return await self._authorized_call(ctx, call_next)
 
     async def _authorized_call(self, ctx: ServerRequestContext[Any, Any], call_next: CallNext) -> HandlerResult:
@@ -1087,12 +1115,19 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
 
         return await put_scientific_artifact_bytes(operation_id, upload_id, content_base64)
 
-    async def finalize_scientific_artifact_upload(operation_id: UUID, upload_id: UUID) -> dict[str, Any]:
+    async def finalize_scientific_artifact_upload(
+        operation_id: UUID,
+        upload_id: UUID,
+        object_version_id: ImmutableObjectVersionId | None = None,
+    ) -> dict[str, Any]:
         """Finalize a reserved input upload after all bytes have been written.
 
-        Uses operation_id/upload_id from begin_scientific_artifact_upload,
-        verifies the reserved digest/size, and returns immutable artifact metadata
-        for input_manifest or nested manifest references. This is not run submission.
+        Uses operation_id/upload_id and, when available, the provider VersionId
+        returned by the upload response (or put_scientific_artifact_bytes).
+        Existing clients may omit VersionId; the broker then discovers and
+        verifies the sole provider-enforced write-once version. Both paths verify
+        the reserved digest/size and return immutable artifact metadata for
+        input_manifest or nested manifest references. This is not run submission.
         """
 
         if runtime.scientific_input_uploads is None:
@@ -1101,17 +1136,22 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
             principal=_principal(),
             operation_id=operation_id,
             upload_id=upload_id,
+            object_version_id=object_version_id,
         )
         return result.model_dump(mode="json", exclude_none=True)
 
-    async def finalize_model_artifact_upload(operation_id: UUID, upload_id: UUID) -> dict[str, Any]:
+    async def finalize_model_artifact_upload(
+        operation_id: UUID,
+        upload_id: UUID,
+        object_version_id: ImmutableObjectVersionId | None = None,
+    ) -> dict[str, Any]:
         """Verify a reserved serving or batch input and return its immutable reference.
 
         Put this returned object directly in a transport-enabled typed model
         field; the worker verifies tenant ownership again before invocation.
         """
 
-        return await finalize_scientific_artifact_upload(operation_id, upload_id)
+        return await finalize_scientific_artifact_upload(operation_id, upload_id, object_version_id)
 
     async def download_scientific_artifact(artifact_id: UUID) -> dict[str, Any]:
         """Issue a short-lived authorized download handle for an input or result artifact.

@@ -4,11 +4,13 @@ Every route derives the tenant from the verified bearer principal, never from
 the request. Writes require ``artifacts.write``; reads require
 ``operations.result``. Only the two handle-issuing routes return bearer
 material, and no route ever serializes a storage key, a tenant identity, or a
-persistence record.
+persistence record as a separate structured response field.
 
-The URL inside a handle is opaque bearer material for this invariant: SigV4
-necessarily embeds its endpoint, bucket, canonical key, and signing metadata.
-Those properties are disclosed only to the already-authorized handle recipient.
+The URL inside a handle is the explicit exception: SigV4 necessarily embeds
+its endpoint, bucket, canonical key (including tenant and operation segments),
+immutable object version, and signing metadata. Those properties are disclosed
+only to the already-authorized handle recipient and expire after the bounded
+handle lifetime.
 """
 
 from collections.abc import Awaitable, Callable
@@ -37,6 +39,7 @@ from .scientific_artifacts import (
     CommitStageResult,
     EphemeralHandle,
     FinalizeArtifactUpload,
+    ImmutableObjectVersionId,
     KueueAdmission,
     ManifestEntryDraft,
     OpenStageAttempt,
@@ -200,6 +203,7 @@ class ArtifactUploadBeginRequest(StrictModel):
 
 class ArtifactUploadFinalizeRequest(StrictModel):
     operation_id: UUID
+    object_version_id: ImmutableObjectVersionId | None = None
 
 
 class EphemeralHandleResponse(StrictModel):
@@ -436,6 +440,7 @@ def scientific_artifact_router(
                     upload_id=upload_id,
                     operation_id=request.operation_id,
                     tenant_id=principal.tenant_id,
+                    object_version_id=request.object_version_id,
                 )
             )
         except ArtifactServiceError as error:

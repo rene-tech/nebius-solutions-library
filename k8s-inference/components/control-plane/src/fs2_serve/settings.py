@@ -266,11 +266,7 @@ class Settings(BaseSettings):
     )
     artifact_store_addressing_style: Literal["path", "virtual"] = "path"
     artifact_store_verify_tls: bool = True
-    artifact_store_credentials_file: Path = Path("/var/run/secrets/fs2-serve/artifact-store/credentials.json")
-    artifact_store_tenant_credentials_dir: Path = Path("/var/run/secrets/fs2-serve/artifact-store-tenants")
-    artifact_store_allow_legacy_shared_credentials: bool = False
-    artifact_store_allow_static_tenant_credentials: bool = False
-    artifact_credential_broker_url: str = Field(default="", max_length=2048)
+    artifact_credential_broker_url_template: str = Field(default="", max_length=2048)
     artifact_credential_broker_audience: str = Field(
         default="fs2-artifact-credential-broker",
         min_length=1,
@@ -282,9 +278,20 @@ class Settings(BaseSettings):
     artifact_credential_broker_ca_file: Path = Path(
         "/var/run/secrets/fs2-serve/artifact-credential-broker/ca.crt"
     )
+    artifact_credential_broker_readiness_bindings_file: Path = Path(
+        "/var/run/fs2-serve/artifact-broker-readiness/bindings.json"
+    )
     artifact_credential_broker_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
     artifact_credential_broker_operation_ttl_seconds: int = Field(default=120, ge=30, le=900)
-    artifact_credential_broker_max_ttl_seconds: int = Field(default=900, ge=30, le=900)
+    artifact_authority_issuer_url: str = "https://fs2-artifact-authority.fs2-system.svc:8443/v1"
+    artifact_authority_issuer_audience: str = "fs2-artifact-authority-issuer"
+    artifact_authority_issuer_token_file: Path = Path(
+        "/var/run/secrets/fs2-serve/artifact-authority-issuer/token"
+    )
+    artifact_authority_issuer_ca_file: Path = Path(
+        "/var/run/secrets/fs2-serve/artifact-authority-issuer/ca.crt"
+    )
+    artifact_authority_issuer_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
     artifact_handle_ttl_seconds: int = Field(default=600, ge=30, le=900)
     artifact_upload_handle_ttl_seconds: int = Field(default=120, ge=30, le=300)
     artifact_download_handle_ttl_seconds: int = Field(default=120, ge=30, le=300)
@@ -321,6 +328,12 @@ class Settings(BaseSettings):
     )
     activation_database_role: str = Field(
         default="fs2_serve_activation", min_length=1, max_length=63, pattern=r"^[A-Za-z_][A-Za-z0-9_]*$"
+    )
+    artifact_broker_database_role: str = Field(
+        default="fs2_serve_artifact_broker", min_length=1, max_length=63, pattern=r"^[A-Za-z_][A-Za-z0-9_]*$"
+    )
+    artifact_authority_database_role: str = Field(
+        default="fs2_serve_artifact_authority", min_length=1, max_length=63, pattern=r"^[A-Za-z_][A-Za-z0-9_]*$"
     )
     sync_wait_seconds: float = Field(default=2.0, ge=0, le=30)
     max_sync_wait_seconds: float = Field(default=30.0, ge=0, le=120)
@@ -401,43 +414,49 @@ class Settings(BaseSettings):
                 raise ValueError("artifact_inline_content_max_bytes cannot exceed max_request_bytes")
             if self.artifact_inline_content_max_bytes > self.artifact_max_bytes:
                 raise ValueError("artifact_inline_content_max_bytes cannot exceed artifact_max_bytes")
-            static_modes = (
-                self.artifact_store_allow_legacy_shared_credentials,
-                self.artifact_store_allow_static_tenant_credentials,
-            )
-            if sum(static_modes) > 1:
-                raise ValueError("artifact store static credential modes are mutually exclusive")
-            if not any(static_modes):
-                try:
-                    broker = urlsplit(self.artifact_credential_broker_url)
-                    broker_port = broker.port
-                except ValueError as error:
-                    raise ValueError("artifact credential broker URL is invalid") from error
-                if (
-                    broker.scheme != "https"
-                    or broker.hostname is None
-                    or broker.username is not None
-                    or broker.password is not None
-                    or broker.path in {"", "/"}
-                    or broker.query
-                    or broker.fragment
-                ):
-                    raise ValueError("artifact credential broker must be an exact HTTPS endpoint")
-                if broker_port is not None and not 1 <= broker_port <= 65535:
-                    raise ValueError("artifact credential broker port is invalid")
-                if (
-                    self.artifact_credential_broker_operation_ttl_seconds
-                    > self.artifact_credential_broker_max_ttl_seconds
-                ):
-                    raise ValueError("artifact broker operation lifetime cannot exceed its maximum")
+            try:
+                broker = urlsplit(
+                    self.artifact_credential_broker_url_template.replace("{tenant_hash}", "0123456789ab")
+                )
+                broker_port = broker.port
+            except ValueError as error:
+                raise ValueError("artifact credential broker URL is invalid") from error
+            if (
+                self.artifact_credential_broker_url_template
+                != "https://fs2-artifact-{tenant_hash}.fs2-system.svc:8443/v1"
+                or self.artifact_credential_broker_url_template.count("{tenant_hash}") != 1
+                or broker.scheme != "https"
+                or broker.hostname is None
+                or broker.username is not None
+                or broker.password is not None
+                or broker.path in {"", "/"}
+                or broker.query
+                or broker.fragment
+            ):
+                raise ValueError("artifact credential broker must be the exact in-cluster tenant endpoint template")
+            if broker_port is not None and not 1 <= broker_port <= 65535:
+                raise ValueError("artifact credential broker port is invalid")
+            authority = urlsplit(self.artifact_authority_issuer_url)
+            if (
+                authority.scheme != "https"
+                or authority.hostname != "fs2-artifact-authority.fs2-system.svc"
+                or authority.path.rstrip("/") != "/v1"
+                or authority.username is not None
+                or authority.password is not None
+                or authority.query
+                or authority.fragment
+            ):
+                raise ValueError("artifact authority issuer must be the exact in-cluster service")
         database_roles = {
             self.reporting_database_role,
             self.runtime_database_role,
             self.maintenance_database_role,
             self.activation_database_role,
+            self.artifact_broker_database_role,
+            self.artifact_authority_database_role,
         }
-        if len(database_roles) != 4:
-            raise ValueError("reporting, runtime, maintenance, and activation database roles must differ")
+        if len(database_roles) != 6:
+            raise ValueError("database application roles must differ")
         context_identity = (self.admin_context_project, self.admin_context_cluster, self.admin_context_region)
         if any(value is not None for value in context_identity) and not all(
             value is not None for value in context_identity
@@ -524,24 +543,6 @@ class Settings(BaseSettings):
         """Return the exact media-type allowlist accepted for scientific bytes."""
 
         return frozenset(item.strip().lower() for item in self.artifact_media_types.split(",") if item.strip())
-
-    def artifact_store_credentials(self) -> tuple[str, str]:
-        """Read the object-store key pair from its mounted secret, not from env."""
-
-        raw = self._read_secret(self.artifact_store_credentials_file, minimum=8)
-        try:
-            document = json.loads(raw)
-        except ValueError as exc:
-            raise ValueError("artifact store credentials must be a JSON object") from exc
-        if not isinstance(document, dict):
-            raise ValueError("artifact store credentials must be a JSON object")
-        access_key = document.get("access_key_id")
-        secret_key = document.get("secret_access_key")
-        if not isinstance(access_key, str) or not isinstance(secret_key, str):
-            raise ValueError("artifact store credentials must name access_key_id and secret_access_key")
-        if not access_key or not secret_key:
-            raise ValueError("artifact store credentials must be non-empty")
-        return access_key, secret_key
 
     def bootstrap_access_token(self) -> str:
         raw = self._read_secret(self.bootstrap_access_token_file, minimum=64)

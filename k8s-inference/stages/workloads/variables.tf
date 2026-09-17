@@ -221,15 +221,41 @@ variable "reference_data" {
 }
 
 variable "scientific_artifacts" {
-  description = "Root-derived scientific result store bound to the exact infrastructure bucket contract and MysteryBox access handoff. The S3 secret itself is never a variable."
+  description = "Root-derived scientific result store bound to generation-aware tenant-isolated broker IAM. No provider key is accepted by the shared gateway."
   type = object({
-    enabled               = bool
-    handle_ttl_seconds    = number
-    max_artifact_bytes    = number
-    retention_days        = number
-    egress_cidrs          = list(string)
-    media_types           = list(string)
-    credential_generation = number
+    enabled            = bool
+    handle_ttl_seconds = number
+    upload_handle_ttl_seconds = number
+    download_handle_ttl_seconds = number
+    max_artifact_bytes = number
+    retention_days     = number
+    migration = optional(object({
+      phase                            = optional(string, "legacy-overlap")
+      provider_iam_receipt_sha256      = optional(string, "")
+      broker_fleet_receipt_sha256      = optional(string, "")
+      version_inventory_receipt_sha256 = optional(string, "")
+      gateway_cutover_receipt_sha256   = optional(string, "")
+    }), {})
+    egress_cidrs       = list(string)
+    media_types        = list(string)
+    broker = object({
+      ca_secret_name          = string
+      ca_key                  = string
+      tls_secret_name         = string
+      authority_signing_secret_name = string
+      authority_signing_key         = string
+      authority_verification_config_map_name = string
+      authority_verification_key             = string
+      cutover_attempts                        = set(number)
+      kubernetes_token_seconds = number
+    })
+    version_backfill = optional(object({
+      enabled              = optional(bool, false)
+      manifest_secret_name = optional(string, "")
+      manifest_key         = optional(string, "manifest.json")
+      manifest_sha256      = optional(string, "")
+      active_deadline_seconds = optional(number, 3600)
+    }), {})
     storage_contract = optional(object({
       schema     = string
       project_id = string
@@ -245,11 +271,31 @@ variable "scientific_artifacts" {
         verify_tls        = bool
       })
       writer = object({
-        service_account_id = string
-        group_id           = string
-        role               = string
-        paths              = list(string)
-        secret_delivery    = string
+        broker_object_roles       = list(string)
+        roles                     = list(string)
+        credential_mode           = string
+        migration = optional(object({
+          phase                     = string
+          legacy_authorized         = bool
+          provider_iam_receipt       = string
+          broker_fleet_receipt       = string
+          version_inventory_receipt  = string
+          gateway_cutover_receipt    = string
+        }), {
+          phase                     = "legacy-overlap"
+          legacy_authorized         = true
+          provider_iam_receipt       = ""
+          broker_fleet_receipt       = ""
+          version_inventory_receipt  = ""
+          gateway_cutover_receipt    = ""
+        })
+        tenant_principals = map(object({
+          service_account_id = string
+          group_id           = string
+          paths              = list(string)
+          active_generation  = number
+          authorized_generations = list(number)
+        }))
       })
       layout = object({
         root             = string
@@ -261,7 +307,7 @@ variable "scientific_artifacts" {
       retention = object({
         artifact_retention_days                = number
         abort_incomplete_multipart_upload_days = number
-        noncurrent_version_expiration_days     = number
+        noncurrent_version_expiration_days     = optional(number)
         expired_object_delete_marker           = bool
         current_object_expiration              = string
         lifecycle_rule_ids                     = list(string)
@@ -276,26 +322,50 @@ variable "scientific_artifacts" {
         }))
       })
     }))
-    # Only the key's non-secret identifiers. The secret value is resolved
-    # ephemerally at apply time and is never held in a variable, in state, in a
-    # plan or in a Helm value.
-    object_storage_access = optional(object({
-      key_id              = string
-      access_key_id       = string
-      secret_reference_id = string
-      resource_version    = number
+    tenant_broker_access = optional(object({
+      schema = string
+      tenants = map(object({
+        active_generation = number
+        authorized_generations = list(number)
+        generations = map(object({
+          access_key_id       = string
+          secret_reference_id = string
+          revision            = number
+        }))
+      }))
+      legacy_quarantine = object({
+        access_key_id       = string
+        secret_reference_id = string
+        revision            = number
+        authorized          = bool
+        migration_phase     = optional(string, "legacy-overlap")
+      })
     }))
   })
   default = {
-    enabled               = false
-    handle_ttl_seconds    = 600
-    max_artifact_bytes    = 1099511627776
-    retention_days        = 90
-    egress_cidrs          = []
-    media_types           = []
-    credential_generation = 1
-    storage_contract      = null
-    object_storage_access = null
+    enabled            = false
+    handle_ttl_seconds = 120
+    upload_handle_ttl_seconds = 120
+    download_handle_ttl_seconds = 120
+    max_artifact_bytes = 1099511627776
+    retention_days     = 90
+    migration          = {}
+    egress_cidrs       = []
+    media_types        = []
+    broker = {
+      ca_secret_name           = ""
+      ca_key                   = "ca.crt"
+      tls_secret_name          = ""
+      authority_signing_secret_name = ""
+      authority_signing_key         = "ed25519-private.pem"
+      authority_verification_config_map_name = ""
+      authority_verification_key             = "ed25519-public.pem"
+      cutover_attempts                        = toset([1])
+      kubernetes_token_seconds = 600
+    }
+    version_backfill          = {}
+    storage_contract          = null
+    tenant_broker_access     = null
   }
 
   validation {
@@ -306,31 +376,106 @@ variable "scientific_artifacts" {
         var.scientific_artifacts.storage_contract.region == var.target_contract.region &&
         var.scientific_artifacts.storage_contract.object_storage.versioning_policy == "ENABLED" &&
         var.scientific_artifacts.storage_contract.object_storage.endpoint == "https://storage.${var.target_contract.region}.nebius.cloud" &&
-        var.scientific_artifacts.storage_contract.writer.role == "storage.object-editor" &&
-        join(",", var.scientific_artifacts.storage_contract.writer.paths) == "scientific/v1/*" &&
-        var.scientific_artifacts.storage_contract.writer.secret_delivery == "MYSTERY_BOX" &&
+        setequals(
+          toset(var.scientific_artifacts.storage_contract.writer.roles),
+          toset(["storage.uploader", "storage.object-viewer", "storage.object-lister"]),
+        ) &&
+        !contains(var.scientific_artifacts.storage_contract.writer.roles, "storage.object-editor") &&
+        var.scientific_artifacts.storage_contract.writer.credential_mode == "TENANT_ISOLATED_BROKER_KEYS" &&
+        var.scientific_artifacts.storage_contract.writer.migration.phase == var.scientific_artifacts.migration.phase &&
+        var.scientific_artifacts.storage_contract.writer.migration.legacy_authorized == (
+          var.scientific_artifacts.migration.phase == "legacy-overlap"
+        ) &&
+        length(var.scientific_artifacts.storage_contract.writer.broker_object_roles) == 0 &&
+        length(var.scientific_artifacts.storage_contract.writer.tenant_principals) >= 1 &&
+        alltrue([
+          for tenant_id, principal in var.scientific_artifacts.storage_contract.writer.tenant_principals :
+          join(",", principal.paths) == "scientific/v1/tenants/${tenant_id}/*" &&
+          floor(principal.active_generation) == principal.active_generation &&
+          principal.active_generation >= 1 &&
+          principal.active_generation == 1 &&
+          contains(principal.authorized_generations, principal.active_generation)
+        ]) &&
         var.scientific_artifacts.storage_contract.layout.root == "scientific/v1" &&
         var.scientific_artifacts.storage_contract.retention.current_object_expiration == "application-owned" &&
         var.scientific_artifacts.storage_contract.retention.abort_incomplete_multipart_upload_days == 1 &&
-        var.scientific_artifacts.storage_contract.retention.noncurrent_version_expiration_days == 1 &&
+        var.scientific_artifacts.storage_contract.retention.noncurrent_version_expiration_days == null &&
         var.scientific_artifacts.storage_contract.retention.expired_object_delete_marker
       ),
       false,
     )
-    error_message = "enabled scientific_artifacts requires the exact same-project/same-region infrastructure bucket contract: versioned storage, a MysteryBox key scoped to storage.object-editor on scientific/v1/*, and storage-side lifecycle that never expires a current object."
+    error_message = "enabled scientific_artifacts requires exact same-project storage, delete-free uploader/viewer/lister roles on each exact tenant prefix, one active generation-aware provider principal per tenant, and lifecycle that never expires a current or noncurrent object version."
   }
 
   validation {
     condition = try(
       !var.scientific_artifacts.enabled || (
-        length(var.scientific_artifacts.object_storage_access.access_key_id) >= 8 &&
-        can(regex("^[A-Za-z0-9_-]+$", var.scientific_artifacts.object_storage_access.access_key_id)) &&
-        can(regex("^[a-z][a-z0-9-]+$", var.scientific_artifacts.object_storage_access.secret_reference_id)) &&
-        can(regex("^[a-z][a-z0-9-]+$", var.scientific_artifacts.object_storage_access.key_id)) &&
-        var.scientific_artifacts.object_storage_access.resource_version >= 0 &&
-        floor(var.scientific_artifacts.credential_generation) == var.scientific_artifacts.credential_generation &&
-        var.scientific_artifacts.credential_generation >= 1 &&
-        var.scientific_artifacts.credential_generation <= 1000 &&
+        var.scientific_artifacts.tenant_broker_access.schema == "fs2-serve.nebius.ai/artifact-tenant-broker-access/v2" &&
+        setequals(
+          toset(keys(var.scientific_artifacts.tenant_broker_access.tenants)),
+          toset(keys(var.scientific_artifacts.storage_contract.writer.tenant_principals)),
+        ) &&
+        alltrue([
+          for tenant_id, access in var.scientific_artifacts.tenant_broker_access.tenants :
+          floor(access.active_generation) == access.active_generation &&
+          access.active_generation == 1 &&
+          access.active_generation == var.scientific_artifacts.storage_contract.writer.tenant_principals[tenant_id].active_generation &&
+          setequals(
+            toset(access.authorized_generations),
+            toset(var.scientific_artifacts.storage_contract.writer.tenant_principals[tenant_id].authorized_generations),
+          ) &&
+          contains(access.authorized_generations, access.active_generation) &&
+          contains(keys(access.generations), tostring(access.active_generation)) &&
+          contains(keys(access.generations), "1") &&
+          setequals(
+            toset(access.authorized_generations),
+            toset([for generation in keys(access.generations) : tonumber(generation)]),
+          ) &&
+          length([
+            for generation in access.authorized_generations : generation
+            if generation <= access.active_generation
+          ]) == access.active_generation &&
+          alltrue([
+            for generation, credential in access.generations :
+            can(regex("^[1-9][0-9]{0,3}$", generation)) &&
+            length(credential.access_key_id) >= 8 &&
+            can(regex("^[A-Za-z0-9_-]+$", credential.access_key_id)) &&
+            can(regex("^[a-z][a-z0-9-]+$", credential.secret_reference_id)) &&
+            floor(credential.revision) == credential.revision && credential.revision >= 1
+          ])
+        ]) &&
+        length(var.scientific_artifacts.tenant_broker_access.legacy_quarantine.access_key_id) >= 8 &&
+        can(regex("^[a-z][a-z0-9-]+$", var.scientific_artifacts.tenant_broker_access.legacy_quarantine.secret_reference_id)) &&
+        var.scientific_artifacts.tenant_broker_access.legacy_quarantine.migration_phase == var.scientific_artifacts.migration.phase &&
+        var.scientific_artifacts.tenant_broker_access.legacy_quarantine.authorized == (
+          var.scientific_artifacts.migration.phase == "legacy-overlap"
+        ) &&
+        var.scientific_artifacts.migration.phase == "legacy-overlap" &&
+        var.scientific_artifacts.migration.provider_iam_receipt_sha256 == "" &&
+        var.scientific_artifacts.migration.broker_fleet_receipt_sha256 == "" &&
+        var.scientific_artifacts.migration.version_inventory_receipt_sha256 == "" &&
+        var.scientific_artifacts.migration.gateway_cutover_receipt_sha256 == "" &&
+        length(var.scientific_artifacts.broker.ca_secret_name) >= 1 &&
+        length(var.scientific_artifacts.broker.tls_secret_name) >= 1 &&
+        length(var.scientific_artifacts.broker.authority_signing_secret_name) >= 1 &&
+        length(var.scientific_artifacts.broker.authority_verification_config_map_name) >= 1 &&
+        contains(var.scientific_artifacts.broker.cutover_attempts, 1) &&
+        alltrue([
+          for attempt in var.scientific_artifacts.broker.cutover_attempts :
+          floor(attempt) == attempt && attempt >= 1 && attempt <= 999
+        ]) &&
+        var.scientific_artifacts.broker.kubernetes_token_seconds >= 600 &&
+        var.scientific_artifacts.broker.kubernetes_token_seconds <= 900 &&
+        (
+          !var.scientific_artifacts.version_backfill.enabled || (
+            can(regex("^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$", var.scientific_artifacts.version_backfill.manifest_secret_name)) &&
+            can(regex("^[A-Za-z0-9._-]{1,253}$", var.scientific_artifacts.version_backfill.manifest_key)) &&
+            can(regex("^[a-f0-9]{64}$", var.scientific_artifacts.version_backfill.manifest_sha256)) &&
+            floor(var.scientific_artifacts.version_backfill.active_deadline_seconds) == var.scientific_artifacts.version_backfill.active_deadline_seconds &&
+            var.scientific_artifacts.version_backfill.active_deadline_seconds >= 60 &&
+            var.scientific_artifacts.version_backfill.active_deadline_seconds <= 86400
+          )
+        ) &&
         length(var.scientific_artifacts.media_types) > 0 &&
         length(var.scientific_artifacts.egress_cidrs) > 0 &&
         alltrue([
@@ -338,7 +483,11 @@ variable "scientific_artifacts" {
           can(cidrhost(cidr, 0)) && (endswith(cidr, "/32") || endswith(cidr, "/128"))
         ]) &&
         var.scientific_artifacts.handle_ttl_seconds >= 30 &&
-        var.scientific_artifacts.handle_ttl_seconds <= 900 &&
+        var.scientific_artifacts.handle_ttl_seconds <= 300 &&
+        var.scientific_artifacts.upload_handle_ttl_seconds >= 30 &&
+        var.scientific_artifacts.upload_handle_ttl_seconds <= 300 &&
+        var.scientific_artifacts.download_handle_ttl_seconds >= 30 &&
+        var.scientific_artifacts.download_handle_ttl_seconds <= 300 &&
         var.scientific_artifacts.max_artifact_bytes >= 1024 &&
         var.scientific_artifacts.max_artifact_bytes <= 1099511627776 &&
         var.scientific_artifacts.retention_days >= 1 &&
@@ -346,7 +495,7 @@ variable "scientific_artifacts" {
       ),
       false,
     )
-    error_message = "enabled scientific_artifacts requires the MysteryBox access handoff, at least one approved media type, at least one exact /32 or /128 object-storage egress address, and bounded handle TTL, artifact size and retention."
+    error_message = "enabled scientific_artifacts requires exact per-tenant MysteryBox broker access, generation 1 to remain active until an independently witnessed readiness protocol exists, an infrastructure-matched reversible legacy-overlap phase with empty reserved activation digests, broker TLS/CA settings, approved media types, exact egress addresses, and bounded handle/artifact/retention values."
   }
 }
 

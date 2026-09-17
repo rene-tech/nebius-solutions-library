@@ -50,6 +50,16 @@ app.kubernetes.io/component: admin-console
 app.kubernetes.io/component: maintenance
 {{- end -}}
 
+{{- define "fs2-serve.artifactOrphanCleanupSelectorLabels" -}}
+{{ include "fs2-serve.selectorLabels" . }}
+app.kubernetes.io/component: artifact-orphan-cleanup
+{{- end -}}
+
+{{- define "fs2-serve.artifactVersionBackfillSelectorLabels" -}}
+{{ include "fs2-serve.selectorLabels" . }}
+app.kubernetes.io/component: artifact-version-backfill
+{{- end -}}
+
 {{- define "fs2-serve.migrationSelectorLabels" -}}
 {{ include "fs2-serve.selectorLabels" . }}
 app.kubernetes.io/component: migration
@@ -127,32 +137,30 @@ app.kubernetes.io/component: model-controller
   value: {{ .Values.scientificArtifacts.addressingStyle | quote }}
 - name: FS2_ARTIFACT_STORE_VERIFY_TLS
   value: {{ .Values.scientificArtifacts.verifyTls | quote }}
-{{- if .Values.scientificArtifacts.allowLegacySharedCredentials }}
-- name: FS2_ARTIFACT_STORE_CREDENTIALS_FILE
-  value: /var/run/secrets/fs2-serve/artifact-store/credentials.json
-{{- else if .Values.scientificArtifacts.allowStaticTenantCredentials }}
-- name: FS2_ARTIFACT_STORE_TENANT_CREDENTIALS_DIR
-  value: /var/run/secrets/fs2-serve/artifact-store-tenants
-{{- else }}
-- name: FS2_ARTIFACT_CREDENTIAL_BROKER_URL
-  value: {{ required "scientificArtifacts.credentialBroker.url is required" .Values.scientificArtifacts.credentialBroker.url | quote }}
+- name: FS2_ARTIFACT_CREDENTIAL_BROKER_URL_TEMPLATE
+  value: {{ required "scientificArtifacts.credentialBroker.urlTemplate is required" .Values.scientificArtifacts.credentialBroker.urlTemplate | quote }}
 - name: FS2_ARTIFACT_CREDENTIAL_BROKER_AUDIENCE
   value: {{ .Values.scientificArtifacts.credentialBroker.audience | quote }}
 - name: FS2_ARTIFACT_CREDENTIAL_BROKER_TOKEN_FILE
   value: /var/run/secrets/fs2-serve/artifact-credential-broker/token
 - name: FS2_ARTIFACT_CREDENTIAL_BROKER_CA_FILE
   value: /var/run/secrets/fs2-serve/artifact-credential-broker/ca.crt
+- name: FS2_ARTIFACT_CREDENTIAL_BROKER_READINESS_BINDINGS_FILE
+  value: /var/run/fs2-serve/artifact-broker-readiness/bindings.json
 - name: FS2_ARTIFACT_CREDENTIAL_BROKER_TIMEOUT_SECONDS
   value: {{ .Values.scientificArtifacts.credentialBroker.timeoutSeconds | quote }}
 - name: FS2_ARTIFACT_CREDENTIAL_BROKER_OPERATION_TTL_SECONDS
   value: {{ .Values.scientificArtifacts.credentialBroker.operationCredentialTtlSeconds | int64 | quote }}
-- name: FS2_ARTIFACT_CREDENTIAL_BROKER_MAX_TTL_SECONDS
-  value: {{ .Values.scientificArtifacts.credentialBroker.maxCredentialTtlSeconds | int64 | quote }}
-{{- end }}
-- name: FS2_ARTIFACT_STORE_ALLOW_LEGACY_SHARED_CREDENTIALS
-  value: {{ .Values.scientificArtifacts.allowLegacySharedCredentials | quote }}
-- name: FS2_ARTIFACT_STORE_ALLOW_STATIC_TENANT_CREDENTIALS
-  value: {{ .Values.scientificArtifacts.allowStaticTenantCredentials | quote }}
+- name: FS2_ARTIFACT_AUTHORITY_ISSUER_URL
+  value: {{ .Values.scientificArtifacts.authorityIssuer.url | quote }}
+- name: FS2_ARTIFACT_AUTHORITY_ISSUER_AUDIENCE
+  value: {{ .Values.scientificArtifacts.authorityIssuer.audience | quote }}
+- name: FS2_ARTIFACT_AUTHORITY_ISSUER_TOKEN_FILE
+  value: /var/run/secrets/fs2-serve/artifact-authority-issuer/token
+- name: FS2_ARTIFACT_AUTHORITY_ISSUER_CA_FILE
+  value: /var/run/secrets/fs2-serve/artifact-authority-issuer/ca.crt
+- name: FS2_ARTIFACT_AUTHORITY_ISSUER_TIMEOUT_SECONDS
+  value: {{ .Values.scientificArtifacts.authorityIssuer.timeoutSeconds | quote }}
 - name: FS2_ARTIFACT_HANDLE_TTL_SECONDS
   value: {{ .Values.scientificArtifacts.handleTtlSeconds | int64 | quote }}
 - name: FS2_ARTIFACT_UPLOAD_HANDLE_TTL_SECONDS
@@ -172,20 +180,6 @@ app.kubernetes.io/component: model-controller
 
 {{- define "fs2-serve.scientificArtifactsVolumes" -}}
 {{- if .Values.scientificArtifacts.enabled }}
-{{- if .Values.scientificArtifacts.allowLegacySharedCredentials }}
-- name: artifact-store
-  secret:
-    secretName: {{ .Values.secrets.artifactStore.name }}
-    defaultMode: 0400
-    items:
-      - key: {{ .Values.secrets.artifactStore.key }}
-        path: credentials.json
-{{- else if .Values.scientificArtifacts.allowStaticTenantCredentials }}
-- name: artifact-store-tenants
-  secret:
-    secretName: {{ .Values.secrets.artifactStoreTenants.name }}
-    defaultMode: 0400
-{{- else }}
 - name: artifact-credential-broker
   projected:
     defaultMode: 0400
@@ -199,25 +193,39 @@ app.kubernetes.io/component: model-controller
           items:
             - key: {{ .Values.scientificArtifacts.credentialBroker.caKey }}
               path: ca.crt
-{{- end }}
+- name: artifact-authority-issuer
+  projected:
+    defaultMode: 0400
+    sources:
+      - serviceAccountToken:
+          audience: {{ .Values.scientificArtifacts.authorityIssuer.audience | quote }}
+          expirationSeconds: {{ .Values.scientificArtifacts.authorityIssuer.tokenExpirationSeconds }}
+          path: token
+      - secret:
+          name: {{ required "scientificArtifacts.authorityIssuer.caSecretName is required" .Values.scientificArtifacts.authorityIssuer.caSecretName }}
+          items:
+            - key: {{ .Values.scientificArtifacts.authorityIssuer.caKey }}
+              path: ca.crt
+- name: artifact-broker-readiness
+  configMap:
+    name: {{ required "scientificArtifacts.credentialBroker.readinessConfigMapName is required" .Values.scientificArtifacts.credentialBroker.readinessConfigMapName }}
+    items:
+      - key: bindings.json
+        path: bindings.json
 {{- end }}
 {{- end -}}
 
 {{- define "fs2-serve.scientificArtifactsVolumeMounts" -}}
 {{- if .Values.scientificArtifacts.enabled }}
-{{- if .Values.scientificArtifacts.allowLegacySharedCredentials }}
-- name: artifact-store
-  mountPath: /var/run/secrets/fs2-serve/artifact-store
-  readOnly: true
-{{- else if .Values.scientificArtifacts.allowStaticTenantCredentials }}
-- name: artifact-store-tenants
-  mountPath: /var/run/secrets/fs2-serve/artifact-store-tenants
-  readOnly: true
-{{- else }}
 - name: artifact-credential-broker
   mountPath: /var/run/secrets/fs2-serve/artifact-credential-broker
   readOnly: true
-{{- end }}
+- name: artifact-authority-issuer
+  mountPath: /var/run/secrets/fs2-serve/artifact-authority-issuer
+  readOnly: true
+- name: artifact-broker-readiness
+  mountPath: /var/run/fs2-serve/artifact-broker-readiness
+  readOnly: true
 {{- end }}
 {{- end -}}
 
@@ -457,6 +465,10 @@ app.kubernetes.io/component: model-controller
   value: {{ .Values.migration.maintenanceDatabaseRole | quote }}
 - name: FS2_ACTIVATION_DATABASE_ROLE
   value: {{ .Values.migration.activationDatabaseRole | quote }}
+- name: FS2_ARTIFACT_BROKER_DATABASE_ROLE
+  value: {{ .Values.migration.artifactBrokerDatabaseRole | quote }}
+- name: FS2_ARTIFACT_AUTHORITY_DATABASE_ROLE
+  value: {{ .Values.migration.artifactAuthorityDatabaseRole | quote }}
 {{- end -}}
 
 {{- define "fs2-serve.schemaWaitEnv" -}}
@@ -468,6 +480,11 @@ app.kubernetes.io/component: model-controller
 {{- define "fs2-serve.maintenanceEnv" -}}
 {{ include "fs2-serve.maintenanceDatabaseEnv" . }}
 {{ include "fs2-serve.retentionEnv" . }}
+{{- end -}}
+
+{{- define "fs2-serve.artifactOrphanCleanupEnv" -}}
+{{ include "fs2-serve.maintenanceDatabaseEnv" . }}
+{{- include "fs2-serve.scientificArtifactsEnv" . }}
 {{- end -}}
 
 {{- define "fs2-serve.cryptoVolumeMounts" -}}

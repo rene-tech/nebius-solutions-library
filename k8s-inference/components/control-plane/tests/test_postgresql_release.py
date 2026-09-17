@@ -37,10 +37,10 @@ def test_committed_postgresql_contract_is_exact_emitted_release_receipt_input() 
     receipt = committed["required_release_receipt_inputs"]
     assert receipt == {
         "first_migration_version": "0001_initial.sql",
-        "last_migration_version": "0030_scientific_artifact_object_versions.sql",
-        "migration_count": 30,
-        "migration_set_sha256": "2e8d7a9116a9577da5e6f5ab12961b193d418da7ba12aca1f875432a44abb84f",
-        "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca",
+        "last_migration_version": "0031_scientific_artifact_version_backfill.sql",
+        "migration_count": 31,
+        "migration_set_sha256": "bd7a3191022f85c3bd141095456520105a2d4fb48560e29988f5a91e0e73c511",
+        "namespace_role_ownership_sha256": "69ed03c4deaa6b08bb3d56eea338a87da6d1d4f8db194104c1aa5bb5681f834a",
     }
     migrations = committed["migration_set"]["ordered_migrations"]
     assert len(migrations) == receipt["migration_count"]
@@ -58,6 +58,23 @@ def test_artifact_object_version_migration_is_additive_and_fail_closed_for_new_r
     assert "NOT VALID" in normalized
     assert "DROP " not in normalized
     assert "DELETE " not in normalized
+
+
+def test_artifact_version_backfill_is_one_way_and_maintenance_only() -> None:
+    migration = (MIGRATIONS / "0031_scientific_artifact_version_backfill.sql").read_text(encoding="utf-8")
+    normalized = " ".join(migration.split())
+
+    assert "fs2_scientific_artifact_version_backfills" in normalized
+    assert "fs2_scientific_backfill_object_version" in normalized
+    assert "OLD.object_version_id IS NULL" in normalized
+    assert "NEW.object_version_id IS NOT NULL" in normalized
+    assert "SECURITY DEFINER" in normalized
+    assert "fs2_scientific_abandoned_upload_claims" in normalized
+    assert "fs2_scientific_abandoned_upload_versions" in normalized
+    assert "fs2_scientific_abandoned_upload_attempts" in normalized
+    assert "fs2_scientific_abandoned_upload_receipts" in normalized
+    assert "FOR UPDATE OF upload SKIP LOCKED" in normalized
+    assert "requested_cutoff > clock_timestamp()-interval '1 hour'" in normalized
 
 
 def test_scientific_runtime_grant_repairs_are_additive_and_readiness_checked() -> None:
@@ -209,6 +226,8 @@ def test_namespace_secret_and_role_ownership_is_one_closed_cross_lane_contract()
     assert {purpose: (value["namespace"], value["name"], value["key"]) for purpose, value in secrets.items()} == {
         "activation": ("fs2-system", "fs2-serve-database-activation", "url"),
         "maintenance": ("fs2-system", "fs2-serve-database-maintenance", "url"),
+        "artifact-broker": ("fs2-system", "fs2-serve-database-artifact-broker", "url"),
+        "artifact-authority": ("fs2-system", "fs2-serve-database-artifact-authority", "url"),
         "migrations": ("fs2-system", "fs2-serve-database-migrations", "url"),
         "reporting": ("fs2-observability", "fs2-serve-database-reporting", "url"),
         "runtime": ("fs2-system", "fs2-serve-database", "url"),
@@ -216,10 +235,14 @@ def test_namespace_secret_and_role_ownership_is_one_closed_cross_lane_contract()
     assert {role["name"] for role in ownership["database_group_roles"]} == {
         "fs2_serve_activation",
         "fs2_serve_maintenance",
+        "fs2_serve_artifact_broker",
+        "fs2_serve_artifact_authority",
         "fs2_serve_reporting",
         "fs2_serve_runtime",
     }
     assert all(not role["login"] for role in ownership["database_group_roles"])
     assert secrets["runtime"]["consumer_owners"] == ["fs2-serve-control-plane-gateway"]
     assert secrets["maintenance"]["consumer_owners"] == ["fs2-serve-control-plane-maintenance"]
+    assert secrets["artifact-broker"]["consumer_owners"] == ["fs2-artifact-credential-broker"]
+    assert secrets["artifact-authority"]["consumer_owners"] == ["fs2-artifact-authority-issuer"]
     assert ownership["schema_migration_owner"]["ownership"] == "sole-ddl-and-grant-owner"

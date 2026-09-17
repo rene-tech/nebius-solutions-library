@@ -386,17 +386,30 @@ class PostgresStore:
         runtime_role: str = "fs2_serve_runtime",
         maintenance_role: str = "fs2_serve_maintenance",
         activation_role: str = "fs2_serve_activation",
+        artifact_broker_role: str = "fs2_serve_artifact_broker",
+        artifact_authority_role: str = "fs2_serve_artifact_authority",
     ) -> None:
         for label, role in (
             ("reporting", reporting_role),
             ("runtime", runtime_role),
             ("maintenance", maintenance_role),
             ("activation", activation_role),
+            ("artifact broker", artifact_broker_role),
+            ("artifact authority", artifact_authority_role),
         ):
             if not role.replace("_", "a").isalnum() or not 1 <= len(role) <= 63:
                 raise ValueError(f"{label} database role is invalid")
-        if len({reporting_role, runtime_role, maintenance_role, activation_role}) != 4:
-            raise ValueError("reporting, runtime, maintenance, and activation database roles must differ")
+        if len(
+            {
+                reporting_role,
+                runtime_role,
+                maintenance_role,
+                activation_role,
+                artifact_broker_role,
+                artifact_authority_role,
+            }
+        ) != 6:
+            raise ValueError("database application roles must be distinct")
         manifest = cls._migration_manifest(migrations_dir)
         async with pool.acquire() as connection, connection.transaction():
             await connection.execute("SELECT pg_advisory_xact_lock(727201920001)")
@@ -444,6 +457,8 @@ class PostgresStore:
                 ("runtime", runtime_role),
                 ("maintenance", maintenance_role),
                 ("activation", activation_role),
+                ("artifact broker", artifact_broker_role),
+                ("artifact authority", artifact_authority_role),
             ):
                 can_login = await connection.fetchval("SELECT rolcanlogin FROM pg_roles WHERE rolname=$1", role)
                 if can_login is None:
@@ -456,7 +471,16 @@ class PostgresStore:
             quoted_runtime = f'"{runtime_role}"'
             quoted_maintenance = f'"{maintenance_role}"'
             quoted_activation = f'"{activation_role}"'
-            all_roles = (quoted_reporting, quoted_runtime, quoted_maintenance, quoted_activation)
+            quoted_artifact_broker = f'"{artifact_broker_role}"'
+            quoted_artifact_authority = f'"{artifact_authority_role}"'
+            all_roles = (
+                quoted_reporting,
+                quoted_runtime,
+                quoted_maintenance,
+                quoted_activation,
+                quoted_artifact_broker,
+                quoted_artifact_authority,
+            )
             for role in all_roles:
                 await connection.execute(
                     f"REVOKE ALL ON fs2_schema_migrations,fs2_tokens,fs2_operations,"
@@ -469,7 +493,17 @@ class PostgresStore:
                     f"fs2_scientific_stage_attempts,fs2_scientific_artifacts,fs2_scientific_uploads,"
                     f"fs2_scientific_stage_commits,fs2_scientific_stage_commit_attempts,"
                     f"fs2_scientific_run_results,fs2_scientific_artifact_events,"
-                    f"fs2_scientific_retention_ledger,fs2_scientific_batches,"
+                    f"fs2_scientific_retention_ledger,fs2_scientific_upload_object_versions,"
+                    f"fs2_scientific_artifact_version_backfills,"
+                    f"fs2_scientific_abandoned_upload_claims,"
+                    f"fs2_scientific_abandoned_upload_versions,"
+                    f"fs2_scientific_abandoned_upload_attempts,"
+                    f"fs2_scientific_abandoned_upload_receipts,"
+                    f"fs2_scientific_abandoned_upload_dead_letters,"
+                    f"fs2_operation_admission_authorities,fs2_operation_admission_legacy_candidates,"
+                    f"fs2_operation_admission_legacy_inputs,fs2_artifact_authority_legacy_cutovers,"
+                    f"fs2_operation_artifact_inputs,fs2_required_artifact_authority_keys,"
+                    f"fs2_scientific_batches,"
                     f"fs2_scientific_batch_events,fs2_scientific_admission_outbox,"
                     f"fs2_scientific_model_policies,"
                     f"fs2_reporting_model_usage,fs2_reporting_principal_usage,"
@@ -487,6 +521,7 @@ class PostgresStore:
                     f"fs2_model_deployment_status_events_id_seq,"
                     f"fs2_scientific_artifact_events_id_seq,"
                     f"fs2_scientific_retention_ledger_id_seq,"
+                    f"fs2_scientific_abandoned_upload_attempts_id_seq,"
                     f"fs2_scientific_batch_events_sequence_seq,"
                     f"fs2_lifecycle_signals_id_seq FROM {role}"
                 )
@@ -499,6 +534,13 @@ class PostgresStore:
                     f"fs2_scientific_validate_upload_transition(),"
                     f"fs2_scientific_reject_mutation(),"
                     f"fs2_scientific_guard_retention_delete(),"
+                    f"fs2_scientific_backfill_object_version(uuid,text,text,char(71),bigint,text,text,"
+                    f"text,char(71),timestamptz),"
+                    f"fs2_scientific_claim_abandoned_uploads(timestamptz,integer),"
+                    f"fs2_scientific_register_abandoned_upload_version(uuid,text,bigint,text,text,timestamptz,"
+                    f"text,char(71)),"
+                    f"fs2_scientific_record_abandoned_upload_cleanup(uuid,text,text,text,char(71)),"
+                    f"fs2_validate_operation_artifact_input(),"
                     f"fs2_scientific_batch_state_immutable(),"
                     f"fs2_scientific_batch_append_only(),"
                     f"fs2_scientific_model_policy_forward(),"
@@ -548,7 +590,15 @@ class PostgresStore:
                 f"GRANT SELECT,INSERT ON fs2_scientific_stage_attempts,fs2_scientific_artifacts,"
                 f"fs2_scientific_uploads,fs2_scientific_stage_commits,"
                 f"fs2_scientific_stage_commit_attempts,fs2_scientific_run_results,"
-                f"fs2_scientific_artifact_events,fs2_scientific_retention_ledger TO {quoted_runtime}"
+                f"fs2_scientific_artifact_events,fs2_scientific_retention_ledger,"
+                f"fs2_scientific_upload_object_versions TO {quoted_runtime}"
+            )
+            await connection.execute(
+                f"GRANT SELECT,INSERT ON fs2_operation_admission_authorities,"
+                f"fs2_operation_artifact_inputs TO {quoted_runtime}"
+            )
+            await connection.execute(
+                f"GRANT SELECT ON fs2_scientific_abandoned_upload_claims TO {quoted_runtime}"
             )
             await connection.execute(f"GRANT SELECT,INSERT ON fs2_scientific_batches TO {quoted_runtime}")
             for table, columns in SCIENTIFIC_RUNTIME_UPDATE_COLUMNS.items():
@@ -568,7 +618,140 @@ class PostgresStore:
                 f"GRANT DELETE ON fs2_scientific_stage_attempts,fs2_scientific_artifacts,"
                 f"fs2_scientific_uploads,fs2_scientific_stage_commits,"
                 f"fs2_scientific_stage_commit_attempts,fs2_scientific_run_results,"
-                f"fs2_scientific_artifact_events TO {quoted_runtime}"
+                f"fs2_scientific_artifact_events,fs2_scientific_upload_object_versions TO {quoted_runtime}"
+            )
+            await connection.execute(
+                f"GRANT SELECT ON fs2_scientific_artifacts,"
+                f"fs2_scientific_artifact_version_backfills,"
+                f"fs2_scientific_abandoned_upload_dead_letters TO {quoted_maintenance}"
+            )
+            await connection.execute(
+                f"GRANT EXECUTE ON FUNCTION fs2_scientific_claim_abandoned_uploads(timestamptz,integer) "
+                f"TO {quoted_maintenance}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (id,prefix,pepper_key_id,digest,tenant_id,scopes,models,expires_at,revoked_at) "
+                f"ON fs2_tokens TO {quoted_artifact_broker}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (id,token_id,tenant_id,protocol,model_id,worker_id,fencing_token,attempt,status,lease_expires_at) "
+                f"ON fs2_operations TO {quoted_artifact_broker}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (id,tenant_id,operation_id,attempt_id,digest,size_bytes,storage_key,object_version_id,"
+                f"media_type,compression,created_at,retention_expires_at) "
+                f"ON fs2_scientific_artifacts TO {quoted_artifact_broker}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (id,tenant_id,operation_id,attempt_id,expected_digest,storage_key,artifact_id,"
+                f"expected_size_bytes,media_type,compression,begun_at) "
+                f"ON fs2_scientific_uploads TO {quoted_artifact_broker}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (upload_id,operation_id,tenant_id,storage_key,object_version_id,expires_at) "
+                f"ON fs2_scientific_upload_object_versions TO {quoted_artifact_broker}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (upload_id) ON fs2_scientific_abandoned_upload_claims "
+                f"TO {quoted_artifact_broker}"
+            )
+            await connection.execute(
+                f"GRANT SELECT ON fs2_required_artifact_authority_keys TO {quoted_artifact_broker}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (attempt_id,operation_id,tenant_id,attempt_number,status,retention_expires_at) "
+                f"ON fs2_scientific_stage_attempts TO {quoted_artifact_broker}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (id,principal_id,expires_at,revoked_at) "
+                f"ON fs2_operator_sessions TO {quoted_artifact_broker}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (id,role,tenant_id,enabled) "
+                f"ON fs2_operator_principals TO {quoted_artifact_broker}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (operation_id,tenant_id,controller_id,fencing_token,lease_expires_at) "
+                f"ON fs2_scientific_batches TO {quoted_artifact_broker}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (id,tenant_id,token_id,model_id,protocol,operation,request_hmac_key_id,"
+                f"request_hmac,accepted_at,worker_id,fencing_token,attempt,status,lease_expires_at) "
+                f"ON fs2_operations TO {quoted_artifact_authority}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (id,prefix,pepper_key_id,digest,tenant_id,scopes,models,expires_at,revoked_at) "
+                f"ON fs2_tokens TO {quoted_artifact_authority}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (id,principal_id,pepper_key_id,digest,expires_at,revoked_at) "
+                f"ON fs2_operator_sessions TO {quoted_artifact_authority}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (id,role,tenant_id,enabled) "
+                f"ON fs2_operator_principals TO {quoted_artifact_authority}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (id,tenant_id,operation_id,storage_key,object_version_id,digest,size_bytes,"
+                f"media_type,compression) "
+                f"ON fs2_scientific_artifacts TO {quoted_artifact_authority}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (id,tenant_id,storage_key,artifact_id,begun_at) "
+                f"ON fs2_scientific_uploads TO {quoted_artifact_authority}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (upload_id,eligible_at) ON fs2_scientific_abandoned_upload_claims "
+                f"TO {quoted_artifact_authority}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (upload_id,object_version_id) ON fs2_scientific_upload_object_versions "
+                f"TO {quoted_artifact_authority}"
+            )
+            await connection.execute(
+                f"GRANT EXECUTE ON FUNCTION fs2_scientific_backfill_object_version("
+                f"uuid,text,text,char(71),bigint,text,text,text,char(71),timestamptz),"
+                f"fs2_scientific_register_abandoned_upload_version("
+                f"uuid,text,bigint,text,text,timestamptz,text,char(71)),"
+                f"fs2_scientific_record_abandoned_upload_cleanup(uuid,text,text,text,char(71)) "
+                f"TO {quoted_artifact_authority}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (attempt_id,operation_id,tenant_id,stage_id,shard_id,attempt_number,status) "
+                f"ON fs2_scientific_stage_attempts TO {quoted_artifact_authority}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (operation_id,tenant_id,controller_id,fencing_token,lease_expires_at) "
+                f"ON fs2_scientific_batches TO {quoted_artifact_authority}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (operation_id,token_id,tenant_id,model_id,protocol,operation,"
+                f"required_scope,request_sha256,authority_token) "
+                f"ON fs2_operation_admission_authorities TO {quoted_artifact_authority}"
+            )
+            await connection.execute(
+                f"GRANT SELECT ON fs2_operation_admission_legacy_candidates TO {quoted_artifact_authority}"
+            )
+            await connection.execute(
+                f"GRANT SELECT ON fs2_operation_admission_legacy_inputs,"
+                f"fs2_artifact_authority_legacy_cutovers,fs2_required_artifact_authority_keys "
+                f"TO {quoted_artifact_authority}"
+            )
+            await connection.execute(
+                f"GRANT EXECUTE ON FUNCTION fs2_close_artifact_authority_legacy_enrollment() "
+                f"TO {quoted_artifact_authority}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (operation_id,tenant_id,artifact_id,authority_token) "
+                f"ON fs2_operation_artifact_inputs TO {quoted_artifact_authority}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (operation_id,tenant_id,state) "
+                f"ON fs2_scientific_batches TO {quoted_artifact_authority}"
+            )
+            await connection.execute(
+                f"GRANT SELECT (operation_id,stage_id,tenant_id,manifest,semantic_valid) "
+                f"ON fs2_scientific_stage_commits TO {quoted_artifact_authority}"
             )
             await connection.execute(
                 f"GRANT SELECT ON fs2_schema_migrations,fs2_reporting_terminal_totals TO {quoted_runtime}"
@@ -646,6 +829,8 @@ class PostgresStore:
         runtime_role: str = "fs2_serve_runtime",
         maintenance_role: str = "fs2_serve_maintenance",
         activation_role: str = "fs2_serve_activation",
+        artifact_broker_role: str = "fs2_serve_artifact_broker",
+        artifact_authority_role: str = "fs2_serve_artifact_authority",
     ) -> None:
         """Apply serialized DDL without loading any runtime cryptographic material."""
 
@@ -663,6 +848,8 @@ class PostgresStore:
                 runtime_role,
                 maintenance_role,
                 activation_role,
+                artifact_broker_role,
+                artifact_authority_role,
             )
         finally:
             await pool.close()
@@ -2564,7 +2751,7 @@ class PostgresStore:
             )
             if int(active) >= token["max_concurrency"]:
                 raise ConcurrencyExceededError("token concurrency limit reached")
-            operation_id = uuid4()
+            operation_id = admission.authority_operation_id or uuid4()
             encrypted = self.cipher.encrypt(
                 admission.request_body,
                 aad=self.cipher.aad(operation_id, principal.tenant_id, admission.model_id, "request"),
@@ -2607,6 +2794,44 @@ class PostgresStore:
                 raise ConflictError("idempotency key raced with another request") from exc
             assert row is not None
             operation = self._operation(row)
+            if admission.operation_admission_authority is not None:
+                await connection.execute(
+                    """
+                    INSERT INTO fs2_operation_admission_authorities(
+                        operation_id,token_id,tenant_id,model_id,protocol,operation,
+                        required_scope,request_sha256,authority_token
+                    ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
+                    """,
+                    operation_id,
+                    principal.token_id,
+                    principal.tenant_id,
+                    admission.model_id,
+                    admission.protocol,
+                    admission.operation,
+                    admission.operation_required_scope,
+                    hashlib.sha256(admission.request_body).hexdigest(),
+                    admission.operation_admission_authority,
+                )
+            if admission.artifact_input_ids:
+                bindings = await connection.fetch(
+                    """
+                    INSERT INTO fs2_operation_artifact_inputs(
+                        operation_id,tenant_id,artifact_id,authority_token
+                    )
+                    SELECT $1,$2,artifact.id,requested.authority_token
+                    FROM unnest($3::uuid[],$4::text[]) requested(artifact_id,authority_token)
+                    JOIN fs2_scientific_artifacts artifact ON artifact.id=requested.artifact_id
+                    WHERE artifact.tenant_id=$2
+                    ON CONFLICT (operation_id,artifact_id) DO NOTHING
+                    RETURNING artifact_id
+                    """,
+                    operation_id,
+                    principal.tenant_id,
+                    list(admission.artifact_input_ids),
+                    list(admission.artifact_input_authorities),
+                )
+                if {item["artifact_id"] for item in bindings} != set(admission.artifact_input_ids):
+                    raise ConflictError("operation artifact input is not a finalized tenant artifact")
             await self._stage_scientific_admission(
                 connection,
                 operation,

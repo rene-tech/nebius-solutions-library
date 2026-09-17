@@ -50,21 +50,38 @@ output "effective_configuration" {
       bucket_name    = local.scientific_artifacts_bucket_name
       max_size_gib   = var.deployment.storage.scientific_artifacts.object_storage.max_size_gib
       retention_mode = var.deployment.storage.scientific_artifacts.lifecycle.retention_mode
-      destroy_completion = (
+      destroy_completion = "full-stack-destroy-incomplete-protected-artifact-identities"
+      bucket_destroy_status = (
         var.deployment.storage.scientific_artifacts.lifecycle.retention_mode == "retain" ?
-        "full-stack-destroy-incomplete-infrastructure-retained" :
-        "full-only-when-versioned-bucket-empty"
+        "blocked-retained" :
+        "eligible-only-while-versioned-bucket-empty"
       )
-      adoption_required       = var.deployment.storage.scientific_artifacts.lifecycle.retention_mode == "retain"
+      adoption_required       = true
       distinct_from_reference = local.scientific_artifacts_bucket_name != local.reference_data_bucket_name
       artifact_retention_days = var.deployment.storage.scientific_artifacts.retention_days
       handle_ttl_seconds      = var.deployment.storage.scientific_artifacts.handle_ttl_seconds
+      upload_handle_ttl_seconds = coalesce(var.deployment.storage.scientific_artifacts.upload_handle_ttl_seconds, var.deployment.storage.scientific_artifacts.handle_ttl_seconds)
+      download_handle_ttl_seconds = coalesce(var.deployment.storage.scientific_artifacts.download_handle_ttl_seconds, var.deployment.storage.scientific_artifacts.handle_ttl_seconds)
       max_artifact_bytes      = var.deployment.storage.scientific_artifacts.max_artifact_bytes
       media_types             = sort(tolist(var.deployment.storage.scientific_artifacts.media_types))
       egress_cidrs            = sort(tolist(var.deployment.storage.scientific_artifacts.egress_cidrs))
-      secret_delivery         = "MYSTERY_BOX"
-      credential_generation   = var.deployment.storage.scientific_artifacts.credential_generation
-      credential_secret       = "fs2-system/fs2-serve-artifact-store"
+      credential_mode             = "TENANT_ISOLATED_BROKER_KEYS"
+      credential_generations = {
+        for tenant_id in var.deployment.storage.scientific_artifacts.tenant_ids : tenant_id => lookup(
+          var.deployment.storage.scientific_artifacts.credential_generations,
+          tenant_id,
+          {
+            active_generation      = 1
+            retained_generations   = toset([1])
+            authorized_generations = toset([1])
+          },
+        )
+      }
+      migration_phase            = var.deployment.storage.scientific_artifacts.migration.phase
+      legacy_authorization       = var.deployment.storage.scientific_artifacts.migration.phase == "legacy-overlap"
+      tenant_ids                  = sort(tolist(var.deployment.storage.scientific_artifacts.tenant_ids))
+      broker_service_template     = "fs2-system/fs2-artifact-<sha256(tenant)[0:32]>"
+      provider_keys_in_gateway    = false
       object_key              = "scientific/v1/tenants/<tenant>/operations/<operation>/stages/<stage>/shards/<shard>/attempts/<attempt>/<input|output>/sha256/<digest>"
     }
     scientific_batch = {

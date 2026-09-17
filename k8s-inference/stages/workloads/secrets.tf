@@ -12,6 +12,12 @@ locals {
     activation = {
       username = "fs2_serve_activation_login"
     }
+    artifact_broker = {
+      username = "fs2_serve_artifact_broker_login"
+    }
+    artifact_authority = {
+      username = "fs2_serve_artifact_authority_login"
+    }
     restore_verifier = {
       username = "fs2_serve_restore_verifier_login"
     }
@@ -43,6 +49,16 @@ locals {
       namespace   = "fs2-system"
       secret_name = "fs2-serve-database-activation"
       account     = "activation"
+    }
+    artifact_broker = {
+      namespace   = "fs2-system"
+      secret_name = "fs2-serve-database-artifact-broker"
+      account     = "artifact_broker"
+    }
+    artifact_authority = {
+      namespace   = "fs2-system"
+      secret_name = "fs2-serve-database-artifact-authority"
+      account     = "artifact_authority"
     }
     restore_verifier = {
       namespace   = "fs2-system"

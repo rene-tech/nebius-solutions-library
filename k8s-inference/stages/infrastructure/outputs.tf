@@ -153,7 +153,7 @@ output "accelerator_pool_contract_sha256" {
 }
 
 output "owned_resource_ids" {
-  description = "Terraform-owned resources expected absent after a supervised disposable destroy. Retained reference and scientific-artifact storage is deliberately excluded and reported by reference_data_lifecycle and scientific_artifacts_lifecycle."
+  description = "Terraform-owned resource inventory. Destruction eligibility is resource-specific: consult reference_data_lifecycle and scientific_artifacts_lifecycle before any supervised lifecycle action."
   value = {
     registry                  = nebius_registry_v1_registry.images.id
     shared_cache              = nebius_compute_v1_filesystem.cache.id
@@ -169,9 +169,18 @@ output "owned_resource_ids" {
       var.scientific_artifacts.enabled && var.scientific_artifacts.lifecycle.retention_mode == "disposable" ?
       local.scientific_artifacts_bucket_id : null
     )
-    scientific_artifacts_writer_sa  = try(nebius_iam_v1_service_account.scientific_artifacts[0].id, null)
-    scientific_artifacts_group      = try(nebius_iam_v1_group.scientific_artifacts_writers[0].id, null)
-    scientific_artifacts_access_key = try(nebius_iam_v2_access_key.scientific_artifacts[0].id, null)
+    scientific_artifacts_quarantined_writer_sa = try(nebius_iam_v1_service_account.scientific_artifacts[0].id, null)
+    scientific_artifacts_quarantined_group = try(nebius_iam_v1_group.scientific_artifacts_writers[0].id, null)
+    scientific_artifacts_quarantined_access_key = try(nebius_iam_v2_access_key.scientific_artifacts[0].id, null)
+    scientific_artifact_tenant_sas = {
+      for tenant_id, account in nebius_iam_v1_service_account.scientific_artifact_tenant : tenant_id => account.id
+    }
+    scientific_artifact_tenant_groups = {
+      for tenant_id, group in nebius_iam_v1_group.scientific_artifact_tenant : tenant_id => group.id
+    }
+    scientific_artifact_tenant_access_keys = {
+      for tenant_id, key in nebius_iam_v2_access_key.scientific_artifact_tenant : tenant_id => key.id
+    }
     nodepull_sa                     = nebius_iam_v1_service_account.nodepull.id
     target_reader_group             = nebius_iam_v1_group.target_registry_readers.id
     external_reader_groups = {
@@ -362,11 +371,30 @@ output "scientific_artifacts_storage_contract" {
       verify_tls        = true
     }
     writer = {
-      service_account_id = nebius_iam_v1_service_account.scientific_artifacts[0].id
-      group_id           = nebius_iam_v1_group.scientific_artifacts_writers[0].id
-      role               = local.scientific_artifacts_writer_role
-      paths              = [local.scientific_artifacts_path_scope]
-      secret_delivery    = "MYSTERY_BOX"
+      broker_object_roles       = []
+      roles                     = local.scientific_artifacts_object_roles
+      credential_mode           = "TENANT_ISOLATED_BROKER_KEYS"
+      migration = {
+        phase                      = var.scientific_artifacts.migration.phase
+        legacy_authorized          = local.scientific_artifacts_legacy_authorized
+        provider_iam_receipt       = var.scientific_artifacts.migration.provider_iam_receipt_sha256
+        broker_fleet_receipt       = var.scientific_artifacts.migration.broker_fleet_receipt_sha256
+        version_inventory_receipt  = var.scientific_artifacts.migration.version_inventory_receipt_sha256
+        gateway_cutover_receipt    = var.scientific_artifacts.migration.gateway_cutover_receipt_sha256
+      }
+      tenant_principals = {
+        for tenant_id, tenant in local.scientific_artifact_tenants : tenant_id => {
+          service_account_id = local.scientific_artifact_generation_policy[tenant_id].active_generation == 1 ? (
+            nebius_iam_v1_service_account.scientific_artifact_tenant[tenant_id].id
+          ) : nebius_iam_v1_service_account.scientific_artifact_tenant_generation["${tenant_id}:${local.scientific_artifact_generation_policy[tenant_id].active_generation}"].id
+          group_id = local.scientific_artifact_generation_policy[tenant_id].active_generation == 1 ? (
+            nebius_iam_v1_group.scientific_artifact_tenant[tenant_id].id
+          ) : nebius_iam_v1_group.scientific_artifact_tenant_generation["${tenant_id}:${local.scientific_artifact_generation_policy[tenant_id].active_generation}"].id
+          paths              = [tenant.path]
+          active_generation  = local.scientific_artifact_generation_policy[tenant_id].active_generation
+          authorized_generations = sort(tolist(local.scientific_artifact_generation_policy[tenant_id].authorized_generations))
+        }
+      }
     }
     layout = {
       root             = local.scientific_artifacts_root
@@ -377,10 +405,11 @@ output "scientific_artifacts_storage_contract" {
     }
     retention = {
       artifact_retention_days = var.scientific_artifacts.retention_days
-      # Storage-side hygiene only; deleting a current object stays an
-      # application decision made against the durable result record.
+      # Storage-side hygiene only. Exact noncurrent versions never expire, so
+      # a compromised uploader cannot destroy a finalized artifact by first
+      # replacing the canonical key and waiting for lifecycle collection.
       abort_incomplete_multipart_upload_days = 1
-      noncurrent_version_expiration_days     = 1
+      noncurrent_version_expiration_days     = null
       expired_object_delete_marker           = true
       current_object_expiration              = "application-owned"
       lifecycle_rule_ids                     = [for rule in local.scientific_artifacts_lifecycle_rules : rule.id]
@@ -400,35 +429,94 @@ output "scientific_artifacts_storage_contract" {
 }
 
 output "scientific_artifacts_lifecycle" {
-  description = "Truthful retention/adoption contract for the result store. Retained results block a full-stack destroy; disposable results are deletable only while the versioned bucket is empty."
+  description = "Truthful retention/adoption contract for the result store. Protected tenant generations and quarantined legacy identities block a full-stack destroy in every bucket retention mode."
   value = var.scientific_artifacts.enabled ? {
     retention_mode = var.scientific_artifacts.lifecycle.retention_mode
-    status         = var.scientific_artifacts.lifecycle.retention_mode == "retain" ? "managed-retained" : "managed-disposable-empty"
-    destroy_status = var.scientific_artifacts.lifecycle.retention_mode == "retain" ? "blocked-retained" : "eligible-only-while-bucket-empty"
-    destroy_completion = var.scientific_artifacts.lifecycle.retention_mode == "retain" ? (
-      "full-stack-destroy-incomplete-infrastructure-retained"
-    ) : "full-only-when-versioned-bucket-empty"
-    adoption_status = var.scientific_artifacts.lifecycle.retention_mode == "retain" ? "ids-exported-for-explicit-state-adoption" : "not-applicable"
+    status         = var.scientific_artifacts.lifecycle.retention_mode == "retain" ? "managed-retained" : "managed-disposable-bucket-protected-identities"
+    destroy_status = "blocked-protected-artifact-identities"
+    destroy_completion = "full-stack-destroy-incomplete-protected-artifact-identities"
+    bucket_destroy_status = var.scientific_artifacts.lifecycle.retention_mode == "retain" ? (
+      "blocked-retained"
+    ) : "eligible-only-while-versioned-bucket-empty"
+    adoption_status = "protected-identities-exported-for-explicit-state-adoption"
     resource_ids = {
-      bucket          = local.scientific_artifacts_bucket_id
-      service_account = nebius_iam_v1_service_account.scientific_artifacts[0].id
-      group           = nebius_iam_v1_group.scientific_artifacts_writers[0].id
-      access_key      = nebius_iam_v2_access_key.scientific_artifacts[0].id
+      bucket = local.scientific_artifacts_bucket_id
+      # Provider identities belong to individual tenants. The Kubernetes
+      # broker service account is created by the workloads stage and receives
+      # no cloud IAM role of its own.
+      broker_service_account = null
+      tenant_service_accounts = {
+        for tenant_id, account in nebius_iam_v1_service_account.scientific_artifact_tenant : tenant_id => account.id
+      }
+      tenant_groups = {
+        for tenant_id, group in nebius_iam_v1_group.scientific_artifact_tenant : tenant_id => group.id
+      }
+      active_access_keys = {
+        for tenant_id, policy in local.scientific_artifact_generation_policy : tenant_id => (
+          policy.active_generation == 1 ?
+          nebius_iam_v2_access_key.scientific_artifact_tenant[tenant_id].id :
+          nebius_iam_v2_access_key.scientific_artifact_tenant_generation["${tenant_id}:${policy.active_generation}"].id
+        )
+      }
+      authorized_access_keys = merge([
+        for tenant_id, policy in local.scientific_artifact_generation_policy : {
+          for generation in policy.authorized_generations : "${tenant_id}:${generation}" => (
+            generation == 1 ?
+            nebius_iam_v2_access_key.scientific_artifact_tenant[tenant_id].id :
+            nebius_iam_v2_access_key.scientific_artifact_tenant_generation["${tenant_id}:${generation}"].id
+          )
+        }
+      ]...)
+      retained_generation_access_keys = merge(
+        { for tenant_id, key in nebius_iam_v2_access_key.scientific_artifact_tenant : "${tenant_id}:1" => key.id },
+        { for identity, key in nebius_iam_v2_access_key.scientific_artifact_tenant_generation : identity => key.id },
+      )
+      quarantined_legacy_identity = {
+        service_account = nebius_iam_v1_service_account.scientific_artifacts[0].id
+        group           = nebius_iam_v1_group.scientific_artifacts_writers[0].id
+        access_key      = nebius_iam_v2_access_key.scientific_artifacts[0].id
+        bucket_roles = local.scientific_artifacts_legacy_authorized ? local.scientific_artifacts_object_roles : []
+        disposition = local.scientific_artifacts_legacy_authorized ? (
+          "retained-authorized-additive-migration-overlap"
+        ) : "retained-no-object-authorization-pending-reviewed-retirement"
+      }
     }
   } : null
 }
 
-output "scientific_artifacts_object_storage_access" {
-  description = "Sensitive handoff containing only the key's non-secret identifiers: its resource ID, S3 access-key ID, MysteryBox reference and cloud resource version. The secret value never enters infrastructure state, a plan file, generated tfvars or any output."
+output "scientific_artifacts_tenant_broker_access" {
+  description = "Sensitive per-tenant handoff containing access-key IDs and MysteryBox references; secret values never enter state or generated tfvars."
   sensitive   = true
   value = var.scientific_artifacts.enabled ? {
-    # The resource ID is the only identifier that is guaranteed to change when
-    # the key is replaced. resource_version restarts at zero on a new key, so a
-    # revision derived from it alone would silently repeat after a rotation and
-    # leave the stale secret mounted.
-    key_id              = nebius_iam_v2_access_key.scientific_artifacts[0].id
-    access_key_id       = nebius_iam_v2_access_key.scientific_artifacts[0].status.aws_access_key_id
-    secret_reference_id = nebius_iam_v2_access_key.scientific_artifacts[0].status.secret_reference_id
-    resource_version    = nebius_iam_v2_access_key.scientific_artifacts[0].resource_version
+    schema = "fs2-serve.nebius.ai/artifact-tenant-broker-access/v2"
+    tenants = {
+      for tenant_id, policy in local.scientific_artifact_generation_policy : tenant_id => {
+        active_generation = policy.active_generation
+        authorized_generations = sort(tolist(policy.authorized_generations))
+        generations = merge(
+          {
+            "1" = {
+              access_key_id       = nebius_iam_v2_access_key.scientific_artifact_tenant[tenant_id].status.aws_access_key_id
+              secret_reference_id = nebius_iam_v2_access_key.scientific_artifact_tenant[tenant_id].status.secret_reference_id
+              revision            = nebius_iam_v2_access_key.scientific_artifact_tenant[tenant_id].resource_version + 1
+            }
+          },
+          {
+            for generation in policy.retained_generations : tostring(generation) => {
+              access_key_id       = nebius_iam_v2_access_key.scientific_artifact_tenant_generation["${tenant_id}:${generation}"].status.aws_access_key_id
+              secret_reference_id = nebius_iam_v2_access_key.scientific_artifact_tenant_generation["${tenant_id}:${generation}"].status.secret_reference_id
+              revision            = nebius_iam_v2_access_key.scientific_artifact_tenant_generation["${tenant_id}:${generation}"].resource_version + 1
+            } if generation > 1
+          },
+        )
+      }
+    }
+    legacy_quarantine = {
+      access_key_id       = nebius_iam_v2_access_key.scientific_artifacts[0].status.aws_access_key_id
+      secret_reference_id = nebius_iam_v2_access_key.scientific_artifacts[0].status.secret_reference_id
+      revision            = nebius_iam_v2_access_key.scientific_artifacts[0].resource_version + 1
+      authorized          = local.scientific_artifacts_legacy_authorized
+      migration_phase     = var.scientific_artifacts.migration.phase
+    }
   } : null
 }

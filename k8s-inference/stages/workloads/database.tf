@@ -3,6 +3,8 @@ locals {
     runtime          = "fs2_serve_runtime"
     maintenance      = "fs2_serve_maintenance"
     activation       = "fs2_serve_activation"
+    artifact_broker  = "fs2_serve_artifact_broker"
+    artifact_authority = "fs2_serve_artifact_authority"
     restore_verifier = "fs2_serve_restore_verifier"
     reporting        = "fs2_serve_reporting"
     monitoring       = "pg_monitor"
@@ -12,6 +14,8 @@ locals {
     "fs2_serve_runtime",
     "fs2_serve_maintenance",
     "fs2_serve_activation",
+    "fs2_serve_artifact_broker",
+    "fs2_serve_artifact_authority",
     "fs2_serve_restore_verifier",
     "fs2_serve_reporting",
   ]

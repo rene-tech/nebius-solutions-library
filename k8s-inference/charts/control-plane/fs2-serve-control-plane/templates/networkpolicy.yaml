@@ -139,16 +139,28 @@ spec:
           protocol: TCP
         {{- end }}
     {{- end }}
-    {{- if and .Values.scientificArtifacts.enabled .Values.scientificArtifacts.egressCidrs }}
-    # Scientific artifact object storage. Handles are presigned locally, but
-    # finalize streams the stored object back to verify its digest.
+    {{- if .Values.scientificArtifacts.enabled }}
+    # The gateway has no object-store route. Tenant brokers alone receive the
+    # exact provider CIDRs in the workloads-stage NetworkPolicy.
     - to:
-        {{- range .Values.scientificArtifacts.egressCidrs }}
-        - ipBlock:
-            cidr: {{ . | quote }}
-        {{- end }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: artifact-tenant-broker
       ports:
-        - port: 443
+        - port: 8443
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: artifact-authority-issuer
+      ports:
+        - port: 8443
           protocol: TCP
     {{- end }}
 {{- if .Values.scientificBatch.enabled }}
@@ -347,6 +359,98 @@ spec:
       ports:
         - port: {{ $network.database.port }}
           protocol: TCP
+{{- if .Values.scientificArtifacts.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-artifact-orphan-cleanup
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: artifact-orphan-cleanup
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "fs2-serve.artifactOrphanCleanupSelectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $network.dns.namespaceLabels | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $network.dns.podLabels | nindent 14 }}
+      ports:
+        - port: {{ $network.dns.port }}
+          protocol: UDP
+        - port: {{ $network.dns.port }}
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $network.database.namespaceLabels | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $network.database.podLabels | nindent 14 }}
+      ports:
+        - port: {{ $network.database.port }}
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: fs2-artifact
+      ports:
+        - port: 8443
+          protocol: TCP
+{{- end }}
+{{- if .Values.artifactVersionBackfill.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-artifact-version-backfill
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: artifact-version-backfill
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "fs2-serve.artifactVersionBackfillSelectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $network.dns.namespaceLabels | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $network.dns.podLabels | nindent 14 }}
+      ports:
+        - port: {{ $network.dns.port }}
+          protocol: UDP
+        - port: {{ $network.dns.port }}
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $network.database.namespaceLabels | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $network.database.podLabels | nindent 14 }}
+      ports:
+        - port: {{ $network.database.port }}
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: fs2-artifact
+      ports:
+        - port: 8443
+          protocol: TCP
+{{- end }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

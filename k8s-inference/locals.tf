@@ -1044,6 +1044,19 @@ locals {
         bucket_name  = local.scientific_artifacts_bucket_name
         max_size_gib = var.deployment.storage.scientific_artifacts.object_storage.max_size_gib
       }
+      tenant_ids = var.deployment.storage.scientific_artifacts.tenant_ids
+      credential_generations = {
+        for tenant_id in var.deployment.storage.scientific_artifacts.tenant_ids : tenant_id => lookup(
+          var.deployment.storage.scientific_artifacts.credential_generations,
+          tenant_id,
+          {
+            active_generation     = 1
+            retained_generations  = toset([1])
+            authorized_generations = toset([1])
+          },
+        )
+      }
+      migration      = var.deployment.storage.scientific_artifacts.migration
       retention_days = var.deployment.storage.scientific_artifacts.retention_days
     }
     public_edge_mode         = var.deployment.edge.mode
@@ -1168,11 +1181,31 @@ locals {
     scientific_artifacts = {
       enabled               = var.deployment.storage.scientific_artifacts.enabled
       handle_ttl_seconds    = var.deployment.storage.scientific_artifacts.handle_ttl_seconds
+      upload_handle_ttl_seconds = coalesce(
+        var.deployment.storage.scientific_artifacts.upload_handle_ttl_seconds,
+        var.deployment.storage.scientific_artifacts.handle_ttl_seconds,
+      )
+      download_handle_ttl_seconds = coalesce(
+        var.deployment.storage.scientific_artifacts.download_handle_ttl_seconds,
+        var.deployment.storage.scientific_artifacts.handle_ttl_seconds,
+      )
       max_artifact_bytes    = var.deployment.storage.scientific_artifacts.max_artifact_bytes
       retention_days        = var.deployment.storage.scientific_artifacts.retention_days
+      migration             = var.deployment.storage.scientific_artifacts.migration
       egress_cidrs          = sort(tolist(var.deployment.storage.scientific_artifacts.egress_cidrs))
       media_types           = sort(tolist(var.deployment.storage.scientific_artifacts.media_types))
-      credential_generation = var.deployment.storage.scientific_artifacts.credential_generation
+      broker = coalesce(var.deployment.storage.scientific_artifacts.broker, {
+        ca_secret_name           = ""
+        ca_key                   = "ca.crt"
+        tls_secret_name          = ""
+        authority_signing_secret_name = ""
+        authority_signing_key         = "ed25519-private.pem"
+        authority_verification_config_map_name = ""
+        authority_verification_key             = "ed25519-public.pem"
+        cutover_attempts                        = toset([1])
+        kubernetes_token_seconds = 600
+      })
+      version_backfill = var.deployment.storage.scientific_artifacts.version_backfill
     }
     scientific_batch = {
       enabled                  = var.deployment.scientific_batch.enabled

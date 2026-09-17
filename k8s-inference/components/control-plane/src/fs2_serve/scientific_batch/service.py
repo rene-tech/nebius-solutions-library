@@ -6,11 +6,13 @@ import json
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any, Protocol, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from pydantic import Field
 
 from ..auth import require_operation_access
+from ..artifact_authority import ArtifactAuthorityClient
+from ..artifact_credential_broker import current_artifact_authority
 from ..models import AdmissionRequest, OperationView, PendingScientificAdmission, Principal, Scope, StrictModel
 from ..scientific_run_result import ArtifactRef, ScientificRunResult
 from ..scientific_run_result import SchedulingAdmission as PublicSchedulingAdmission
@@ -262,6 +264,7 @@ class ScientificBatchService:
         execution_binding: ScientificExecutionBinding,
         plan_factory: ScientificPlanFactory | None = None,
         startup_policy_resolver: ScientificStartupPolicyResolver | None = None,
+        artifact_authorities: ArtifactAuthorityClient | None = None,
     ) -> None:
         self.store = store
         self.repository = repository
@@ -272,6 +275,7 @@ class ScientificBatchService:
         self.execution_binding = execution_binding
         self.plan_factory = plan_factory or CatalogScientificPlanFactory()
         self.startup_policy_resolver = startup_policy_resolver
+        self.artifact_authorities = artifact_authorities
 
     @staticmethod
     def _authorize(principal: Principal, scope: Scope, *, model_id: str | None = None) -> None:
@@ -564,6 +568,34 @@ class ScientificBatchService:
         except SchedulingContractError as error:
             raise ScientificProfileError("Kueue scheduling contract cannot admit this profile") from error
         body = json.dumps(validated, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+        if self.artifact_authorities is None:
+            raise ScientificProfileError("scientific batch admission authority is unavailable")
+        request_authority = current_artifact_authority()
+        if request_authority is None:
+            raise PermissionError("scientific batch requires independent admission authority")
+        authority_operation_id = uuid4()
+        artifact_input_ids = tuple(
+            dict.fromkeys(
+                (
+                    input_admission.manifest.manifest_artifact_id,
+                    *(item.artifact_id for item in input_admission.manifest.entries),
+                )
+            )
+        )
+        operation_admission_authority, signed_bindings = (
+            await self.artifact_authorities.authorize_admission_inputs(
+                operation_id=authority_operation_id,
+                token_id=principal.token_id,
+                tenant_id=principal.tenant_id,
+                model_id=model_id,
+                protocol="scientific-batch-v1",
+                operation=str(validated["operation"]),
+                required_scope=str(Scope.INFERENCE_INVOKE),
+                request_body=body,
+                artifact_ids=artifact_input_ids,
+                end_user_authorization=request_authority,
+            )
+        )
 
         def freeze_admission(operation: OperationView) -> dict[str, object]:
             if startup_error is not None:
@@ -634,6 +666,11 @@ class ScientificBatchService:
                 request_body=body,
                 request_content_type="application/json",
                 traceparent=traceparent,
+                authority_operation_id=authority_operation_id,
+                operation_admission_authority=operation_admission_authority,
+                operation_required_scope=str(Scope.INFERENCE_INVOKE),
+                artifact_input_ids=artifact_input_ids,
+                artifact_input_authorities=tuple(signed_bindings[value] for value in artifact_input_ids),
             ),
             model_revision=profile.model_revision,
             # Stage/resource exact accounting is emitted by the lifecycle

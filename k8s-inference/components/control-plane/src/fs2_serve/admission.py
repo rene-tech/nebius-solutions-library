@@ -11,13 +11,15 @@ import socket
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from opentelemetry import trace
 from opentelemetry.trace import SpanKind
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 from .activation_contract import ActivationContractError, ScaleContract
+from .artifact_authority import ArtifactAuthorityClient
+from .artifact_credential_broker import current_artifact_authority
 from .artifact_inputs import ArtifactInputError, ArtifactInputMaterializer
 from .artifact_outputs import ServingOutputArtifactizer
 from .lifecycle import (
@@ -90,6 +92,7 @@ class AdmissionService:
         lifecycle: LifecycleRepository | None = None,
         artifact_inputs: ArtifactInputMaterializer | None = None,
         artifact_outputs: ServingOutputArtifactizer | None = None,
+        artifact_authorities: ArtifactAuthorityClient | None = None,
     ) -> None:
         self.registry = registry
         self.store = store
@@ -107,6 +110,7 @@ class AdmissionService:
         self.lifecycle = lifecycle or NullLifecycleRepository()
         self.artifact_inputs = artifact_inputs
         self.artifact_outputs = artifact_outputs
+        self.artifact_authorities = artifact_authorities
         self._wake = asyncio.Event()
         self._stop_claiming = asyncio.Event()
         self._stop_maintenance = asyncio.Event()
@@ -239,11 +243,46 @@ class AdmissionService:
                 ).encode("utf-8")
             except (TypeError, ValueError):
                 raise ValueError("OpenAI request payload is not canonical JSON") from None
+        artifact_input_ids = (
+            ()
+            if self.artifact_inputs is None
+            else self.artifact_inputs.referenced_artifact_ids(model, admission.protocol, request_body)
+        )
+        authority_operation_id: UUID | None = None
+        operation_admission_authority: str | None = None
+        artifact_input_authorities: tuple[str, ...] = ()
+        if self.artifact_authorities is not None:
+            request_authority = current_artifact_authority()
+            if request_authority is None:
+                raise PermissionError("operation requires independent admission authority")
+            authority_operation_id = uuid4()
+            operation_admission_authority, signed_bindings = (
+                await self.artifact_authorities.authorize_admission_inputs(
+                    operation_id=authority_operation_id,
+                    token_id=principal.token_id,
+                    tenant_id=principal.tenant_id,
+                    model_id=model.id,
+                    protocol=admission.protocol,
+                    operation=admission.operation,
+                    required_scope=required_scope,
+                    request_body=request_body,
+                    artifact_ids=artifact_input_ids,
+                    end_user_authorization=request_authority,
+                )
+            )
+            artifact_input_authorities = tuple(signed_bindings[value] for value in artifact_input_ids)
+        elif artifact_input_ids:
+            raise PermissionError("artifact inputs require independent admission authority")
         canonical_admission = admission.model_copy(
             update={
                 "model_id": model.id,
                 "request_body": request_body,
                 "traceparent": continued_traceparent,
+                "authority_operation_id": authority_operation_id,
+                "operation_admission_authority": operation_admission_authority,
+                "operation_required_scope": required_scope if operation_admission_authority is not None else None,
+                "artifact_input_ids": artifact_input_ids,
+                "artifact_input_authorities": artifact_input_authorities,
             }
         )
         dynamic_policy = model.dynamic_policy
@@ -666,6 +705,7 @@ class AdmissionService:
                         claimed.protocol,
                         tenant_id=claimed.tenant_id,
                         request_body=request_body,
+                        operation=claimed,
                     )
                 invocation_started = datetime.now(UTC)
                 with self._tracer.start_as_current_span("fs2.runtime.invoke", kind=SpanKind.CLIENT) as span:
