@@ -1925,22 +1925,28 @@ def test_security_subject_inventory_is_signed_complete_cluster_bound_and_rollbac
     groups = ["fs2-platform-admins"]
     adapter_sha256 = PREFLIGHT.hashlib.sha256(PROVIDER_ADAPTER.read_bytes()).hexdigest()
     trust_anchor_sha256 = "d" * 64
+    principal_id = "serviceaccount-directory-reader-001"
+    expected_permits = [{
+        "parent_id": principal_id,
+        "parent_kind": "service-account",
+        "resource_id": "tenant-example0001",
+        "role": "auditor",
+    }]
     provider_trust = {
         "provider": "nebius-iam",
         "adapter": {"id": PREFLIGHT.PROVIDER_ADAPTER_ID, "sha256": adapter_sha256},
         "directory_execution": {
             "principal_type": "service-account",
-            "principal_id": "serviceaccount-directory-reader-001",
+            "principal_id": principal_id,
             "credential_sha256": "e" * 64,
             "api_endpoint_sha256": "f" * 64,
             "provider_issuer_sha256": "0" * 64,
-            "directory_reader_role": {
-                "id": "role-directory-reader-001",
-                "permissions": ["iam.group.list", "iam.tenant-user-account.get"],
-                "permissions_sha256": PREFLIGHT.hashlib.sha256(
-                    PREFLIGHT.canonical(
-                        ["iam.group.list", "iam.tenant-user-account.get"]
-                    ).encode()
+            "directory_reader_access": {
+                "approved_role": "auditor",
+                "approved_role_effect": "view-metadata-without-data-or-mutation",
+                "expected_permits": expected_permits,
+                "expected_permits_sha256": PREFLIGHT.hashlib.sha256(
+                    PREFLIGHT.canonical(expected_permits).encode()
                 ).hexdigest(),
             },
         },
@@ -1982,8 +1988,6 @@ def test_security_subject_inventory_is_signed_complete_cluster_bound_and_rollbac
         ).hexdigest(),
         "next_cursor_sha256": "",
     }
-    principal_id = "serviceaccount-directory-reader-001"
-    approved_role_id = "role-directory-reader-001"
     membership_page = {
         "operation": (
             "group-membership.list-member-of:"
@@ -1993,18 +1997,21 @@ def test_security_subject_inventory_is_signed_complete_cluster_bound_and_rollbac
         "response": {"items": [], "next_page_token": ""},
         "next_token": "",
     }
-    access_binding_page = {
-        "operation": "access-binding.list",
+    permit_operation = f"access-permit.list:{PREFLIGHT.hashlib.sha256(principal_id.encode()).hexdigest()}"
+    access_permit_page = {
+        "operation": permit_operation,
         "request_token": "",
         "response": {
-            "items": [{"spec": {"subject_id": principal_id, "role_id": approved_role_id}}],
+            "items": [{
+                "metadata": {
+                    "id": "accesspermit-directory-reader-001",
+                    "parent_id": principal_id,
+                },
+                "spec": {"resource_id": "tenant-example0001", "role": "auditor"},
+            }],
             "next_page_token": "",
         },
         "next_token": "",
-    }
-    approved_role = {
-        "metadata": {"id": approved_role_id},
-        "spec": {"permissions": ["iam.group.list", "iam.tenant-user-account.get"]},
     }
     authorization_evidence = {
         "whoami": {
@@ -2013,41 +2020,46 @@ def test_security_subject_inventory_is_signed_complete_cluster_bound_and_rollbac
         },
         "membership_pages": [membership_page],
         "principal_group_ids": [],
-        "access_binding_pages": [access_binding_page],
-        "effective_bindings": [{
+        "subject_permit_pages": [{
             "subject_id": principal_id,
             "subject_kind": "service-account",
-            "role_id": approved_role_id,
+            "pages": [access_permit_page],
         }],
-        "effective_roles": [{
-            "role_id": approved_role_id,
-            "document": approved_role,
-            "document_sha256": PREFLIGHT.hashlib.sha256(
-                PREFLIGHT.canonical(approved_role).encode()
-            ).hexdigest(),
-            "permissions_sha256": provider_trust["directory_execution"]["directory_reader_role"][
-                "permissions_sha256"
-            ],
+        "effective_permits": [{
+            "permit_id": "accesspermit-directory-reader-001",
+            **expected_permits[0],
         }],
-        "effective_permissions": ["iam.group.list", "iam.tenant-user-account.get"],
-        "effective_permissions_sha256": provider_trust["directory_execution"][
-            "directory_reader_role"
-        ]["permissions_sha256"],
+        "effective_roles": ["auditor"],
+        "access_contract_sha256": provider_trust["directory_execution"][
+            "directory_reader_access"
+        ]["expected_permits_sha256"],
         "page_count": 2,
         "record_count": 1,
     }
     authorization_sha256 = PREFLIGHT.hashlib.sha256(
         PREFLIGHT.canonical(authorization_evidence).encode()
     ).hexdigest()
+    cycle_material = {
+        "mode": "authorization-directory-directory-authorization",
+        "authorization_before_sha256": authorization_sha256,
+        "directory_collection_sha256": collection_sha256,
+        "authorization_after_sha256": authorization_sha256,
+    }
     provider_authorization = {
-        "consistency": {
-            "mode": "double-collect-byte-identical",
-            "passes": 2,
-            "collection_sha256": authorization_sha256,
+        "cycle": {
+            **cycle_material,
+            "cycle_sha256": PREFLIGHT.hashlib.sha256(
+                PREFLIGHT.canonical(cycle_material).encode()
+            ).hexdigest(),
         },
         "collections": [
-            {"index": index, "evidence": authorization_evidence, "sha256": authorization_sha256}
-            for index in range(2)
+            {
+                "index": index,
+                "phase": phase,
+                "evidence": authorization_evidence,
+                "sha256": authorization_sha256,
+            }
+            for index, phase in enumerate(("before-directory", "after-directory"))
         ],
     }
     provider_signed = {
@@ -2117,6 +2129,19 @@ def test_security_subject_inventory_is_signed_complete_cluster_bound_and_rollbac
         required_valid_until=int((now + TRANSITION.dt.timedelta(hours=2)).timestamp()),
         forbidden_usernames=set(),
     )
+    mismatched_directory_cycle = {
+        **provider_authorization,
+        "cycle": {
+            **provider_authorization["cycle"],
+            "directory_collection_sha256": "0" * 64,
+        },
+    }
+    with pytest.raises(PREFLIGHT.PreflightError, match="cycle receipt"):
+        PREFLIGHT.verified_provider_authorization(
+            mismatched_directory_cycle,
+            provider_trust,
+            directory_collection_sha256=collection_sha256,
+        )
     signed = {
         "schema": "fs2-serve.nebius.ai/security-subject-inventory/v3",
         "inventory_id": "security-inventory-epoch-001",
@@ -2276,11 +2301,17 @@ def test_epoch_authority_provider_provenance_and_delegation_proof_are_structural
     assert "provider directory changed across the required repeat-stability fence" in provider_adapter
     assert "provider collection authority is not independently pinned" in provider_adapter
     assert "provider whoami does not match the parsed credential principal" in provider_adapter
-    assert "provider effective role permission closure is not read-only exact" in provider_adapter
-    assert "provider authorization changed across the required repeat-stability fence" in provider_adapter
+    assert '"iam", "access-permit", "list", "--parent-id", subject_id' in provider_adapter
+    assert '"iam", "access-binding"' not in provider_adapter
+    assert '"iam", "role", "get"' not in provider_adapter
+    assert "provider effective access permits differ from the approved read-only set" in provider_adapter
+    assert "provider authorization changed across the directory collection fence" in provider_adapter
+    assert "authorization-directory-directory-authorization" in provider_adapter
     assert "verified_provider_authorization" in preflight
     assert "provider principal membership closure is duplicated or incomplete" in preflight
-    assert "provider effective permissions differ from the approved read-only set" in preflight
+    assert "provider effective access permits differ from the approved read-only set" in preflight
+    assert "provider authorization-directory cycle is not byte-stable" in preflight
+    assert '* (4 * provider_trust["directory_query"]["max_pages"] + 2)' in preflight
     assert "parsed profile-to-credential binding is not exact" in preflight
     assert "execute_authoritative_provider_adapter" in preflight
     assert "freshly executed authoritative collection" in preflight
@@ -2354,6 +2385,11 @@ def test_provider_trust_anchor_schema_pins_adapter_and_signing_custody() -> None
     }
     assert execution["api_endpoint_sha256"]["pattern"] == "^[0-9a-f]{64}$"
     assert execution["provider_issuer_sha256"]["pattern"] == "^[0-9a-f]{64}$"
+    reader_access = execution["directory_reader_access"]["properties"]
+    assert reader_access["approved_role"] == {"const": "auditor"}
+    assert reader_access["approved_role_effect"] == {
+        "const": "view-metadata-without-data-or-mutation"
+    }
     assert authentication["groups_claim"] == {"const": "groups"}
     assert authentication["probe_token_path"] == {
         "const": "/etc/fs2/security/network-policy-provider-oidc-probe.jwt"
@@ -2370,12 +2406,15 @@ def test_provider_trust_anchor_schema_pins_adapter_and_signing_custody() -> None
     assert authority["properties"]["provider"] == {"const": "nebius-iam"}
     snapshot = json.loads(PROVIDER_SNAPSHOT_SCHEMA.read_text())
     authorization = snapshot["$defs"]["providerAuthorization"]
-    assert authorization["properties"]["consistency"]["properties"]["passes"] == {"const": 2}
+    assert authorization["properties"]["cycle"]["properties"]["mode"] == {
+        "const": "authorization-directory-directory-authorization"
+    }
     authorization_evidence = snapshot["$defs"]["providerAuthorizationEvidence"]
     assert "membership_pages" in authorization_evidence["required"]
-    assert "effective_bindings" in authorization_evidence["required"]
+    assert "subject_permit_pages" in authorization_evidence["required"]
+    assert "effective_permits" in authorization_evidence["required"]
     assert "effective_roles" in authorization_evidence["required"]
-    assert "effective_permissions_sha256" in authorization_evidence["required"]
+    assert "access_contract_sha256" in authorization_evidence["required"]
 
 
 def test_provider_adapter_enumerates_provider_itself_without_caller_transcript(monkeypatch: Any) -> None:
@@ -2417,17 +2456,16 @@ def test_provider_adapter_enumerates_provider_itself_without_caller_transcript(m
         "_provider_authority",
         lambda _trust: ({"snapshot_signer_key_id": "c" * 64}, "4" * 64),
     )
+    capture_events: list[str] = []
+
+    def authorization_capture(_trust: Any) -> dict[str, str]:
+        capture_events.append("authorization")
+        return {"authorization": "stable"}
+
     monkeypatch.setattr(
         PROVIDER_ADAPTER_MODULE,
-        "_capture_provider_authorization",
-        lambda _trust: {
-            "consistency": {
-                "mode": "double-collect-byte-identical",
-                "passes": 2,
-                "collection_sha256": "1" * 64,
-            },
-            "collections": [],
-        },
+        "_capture_provider_authorization_once",
+        authorization_capture,
     )
 
     def pages(
@@ -2444,6 +2482,7 @@ def test_provider_adapter_enumerates_provider_itself_without_caller_transcript(m
             "next_token": "",
         }]
         if "tenant-user-account-with-attributes" in command:
+            capture_events.append("directory")
             _budgets["records"] -= 1
             return ([{
                 "tenant_user_account": {
@@ -2478,27 +2517,47 @@ def test_provider_adapter_enumerates_provider_itself_without_caller_transcript(m
     assert captured["pagination"]["consistency"]["passes"] == 2
     assert len(captured["pagination"]["collections"]) == 2
     assert captured["raw_collections"][0] == captured["raw_collections"][1]
+    assert capture_events == ["authorization", "directory", "directory", "authorization"]
+    assert captured["provider_authorization"]["cycle"]["directory_collection_sha256"] == (
+        captured["pagination"]["consistency"]["collection_sha256"]
+    )
     captured_at = TRANSITION.dt.datetime.fromisoformat(captured["captured_at"])
     expires_at = TRANSITION.dt.datetime.fromisoformat(captured["expires_at"])
     assert int((expires_at - captured_at).total_seconds()) == query["snapshot_ttl_seconds"]
 
 
-def test_provider_adapter_double_collects_the_principal_group_and_role_closure(
+def test_provider_adapter_collects_subject_parented_access_permits_and_cycle(
     monkeypatch: Any,
 ) -> None:
     principal_id = "serviceaccount-directory-reader-001"
     group_id = "group-directory-readers-001"
-    role_id = "role-directory-reader-001"
-    permissions = ["iam.group.list", "iam.tenant-user-account.get"]
+    expected_permits = sorted(
+        [
+            {
+                "parent_id": principal_id,
+                "parent_kind": "service-account",
+                "resource_id": "tenant-example0001",
+                "role": "auditor",
+            },
+            {
+                "parent_id": group_id,
+                "parent_kind": "group",
+                "resource_id": "tenant-example0001",
+                "role": "auditor",
+            },
+        ],
+        key=PROVIDER_ADAPTER_MODULE.canonical,
+    )
     trust = {
         "directory_execution": {
             "principal_type": "service-account",
             "principal_id": principal_id,
-            "directory_reader_role": {
-                "id": role_id,
-                "permissions": permissions,
-                "permissions_sha256": PROVIDER_ADAPTER_MODULE.hashlib.sha256(
-                    PROVIDER_ADAPTER_MODULE.canonical(permissions).encode()
+            "directory_reader_access": {
+                "approved_role": "auditor",
+                "approved_role_effect": "view-metadata-without-data-or-mutation",
+                "expected_permits": expected_permits,
+                "expected_permits_sha256": PROVIDER_ADAPTER_MODULE.hashlib.sha256(
+                    PROVIDER_ADAPTER_MODULE.canonical(expected_permits).encode()
                 ).hexdigest(),
             },
         },
@@ -2527,8 +2586,7 @@ def test_provider_adapter_double_collects_the_principal_group_and_role_closure(
                 "subject": {"type": "service-account", "id": principal_id},
                 "tenant_id": "tenant-example0001",
             }
-        assert command == ["iam", "role", "get", "--id", role_id]
-        return {"metadata": {"id": role_id}, "spec": {"permissions": permissions}}
+        raise AssertionError(f"unexpected provider document command: {command}")
 
     def pages(
         _execution: Any,
@@ -2545,10 +2603,16 @@ def test_provider_adapter_double_collects_the_principal_group_and_role_closure(
                 "spec": {"member_id": principal_id},
             }]
         else:
-            items = [
-                {"spec": {"subject_id": principal_id, "role_id": role_id}},
-                {"spec": {"subject_id": group_id, "role_id": role_id}},
-            ]
+            subject_id = command[-1]
+            assert command[:4] == ["iam", "access-permit", "list", "--parent-id"]
+            suffix = "principal" if subject_id == principal_id else "group"
+            items = [{
+                "metadata": {
+                    "id": f"accesspermit-directory-reader-{suffix}-001",
+                    "parent_id": subject_id,
+                },
+                "spec": {"resource_id": "tenant-example0001", "role": "auditor"},
+            }]
         budgets["records"] -= len(items)
         return items, [{
             "operation": operation,
@@ -2559,43 +2623,63 @@ def test_provider_adapter_double_collects_the_principal_group_and_role_closure(
 
     monkeypatch.setattr(PROVIDER_ADAPTER_MODULE, "_provider_document", document)
     monkeypatch.setattr(PROVIDER_ADAPTER_MODULE, "_list_pages", pages)
-    authorization = PROVIDER_ADAPTER_MODULE._capture_provider_authorization(trust)
+    evidence = PROVIDER_ADAPTER_MODULE._capture_provider_authorization_once(trust)
+    authorization = PROVIDER_ADAPTER_MODULE._provider_authorization_cycle(
+        evidence,
+        evidence,
+        "d" * 64,
+    )
 
-    assert authorization["consistency"]["passes"] == 2
+    assert authorization["cycle"]["mode"] == "authorization-directory-directory-authorization"
+    assert authorization["cycle"]["directory_collection_sha256"] == "d" * 64
     assert authorization["collections"][0]["evidence"] == authorization["collections"][1][
         "evidence"
     ]
-    evidence = authorization["collections"][0]["evidence"]
     assert evidence["principal_group_ids"] == [group_id]
-    assert {binding["subject_kind"] for binding in evidence["effective_bindings"]} == {
+    assert {permit["parent_kind"] for permit in evidence["effective_permits"]} == {
         "service-account",
         "group",
     }
-    assert [role["role_id"] for role in evidence["effective_roles"]] == [role_id]
-    assert evidence["effective_permissions"] == permissions
-    assert page_calls.count(("iam", "group-membership", "list-member-of", "--subject-id", principal_id)) == 2
-    assert page_calls.count(("iam", "access-binding", "list", "--parent-id", "tenant-example0001")) == 2
-    assert document_calls.count(("iam", "whoami")) == 2
-    assert document_calls.count(("iam", "role", "get", "--id", role_id)) == 2
+    assert evidence["effective_roles"] == ["auditor"]
+    assert page_calls.count(
+        ("iam", "group-membership", "list-member-of", "--subject-id", principal_id)
+    ) == 1
+    assert page_calls.count(("iam", "access-permit", "list", "--parent-id", principal_id)) == 1
+    assert page_calls.count(("iam", "access-permit", "list", "--parent-id", group_id)) == 1
+    assert document_calls == [("iam", "whoami")]
+    adapter_source = PROVIDER_ADAPTER.read_text()
+    before = adapter_source.index("authorization_before = _capture_provider_authorization_once")
+    directory = adapter_source.index("collections = [_capture_directory", before)
+    after = adapter_source.index("authorization_after = _capture_provider_authorization_once", directory)
+    assert before < directory < after
+    with pytest.raises(PROVIDER_ADAPTER_MODULE.AdapterError, match="directory collection fence"):
+        PROVIDER_ADAPTER_MODULE._provider_authorization_cycle(
+            evidence,
+            {**evidence, "effective_roles": ["auditor", "editor"]},
+            "d" * 64,
+        )
 
 
-def test_provider_authorization_rejects_a_mutating_role_inherited_through_a_group() -> None:
+def test_provider_authorization_rejects_a_resource_scoped_mutating_group_permit() -> None:
     principal_id = "serviceaccount-directory-reader-001"
     group_id = "group-directory-readers-001"
-    approved_role_id = "role-directory-reader-001"
-    mutating_role_id = "role-mutating-reader-001"
-    approved_permissions = ["iam.group.list", "iam.tenant-user-account.get"]
-    permissions_sha256 = PREFLIGHT.hashlib.sha256(
-        PREFLIGHT.canonical(approved_permissions).encode()
-    ).hexdigest()
+    expected_permits = [{
+        "parent_id": principal_id,
+        "parent_kind": "service-account",
+        "resource_id": "tenant-example0001",
+        "role": "auditor",
+    }]
     trust = {
         "directory_execution": {
             "principal_type": "service-account",
             "principal_id": principal_id,
-            "directory_reader_role": {
-                "id": approved_role_id,
-                "permissions": approved_permissions,
-                "permissions_sha256": permissions_sha256,
+            "directory_reader_access": {
+                "approved_role": "auditor",
+                "approved_role_effect": "view-metadata-without-data-or-mutation",
+                "expected_permits": expected_permits,
+                "expected_permits_sha256": PREFLIGHT.hashlib.sha256(
+                    PREFLIGHT.canonical(expected_permits).encode()
+                ).hexdigest(),
             },
         },
         "directory_query": {
@@ -2621,27 +2705,48 @@ def test_provider_authorization_rejects_a_mutating_role_inherited_through_a_grou
         },
         "next_token": "",
     }
-    access_binding_page = {
-        "operation": "access-binding.list",
-        "request_token": "",
-        "response": {
-            "items": [
-                {"spec": {"subject_id": principal_id, "role_id": approved_role_id}},
-                {"spec": {"subject_id": group_id, "role_id": mutating_role_id}},
-            ],
-            "next_page_token": "",
-        },
-        "next_token": "",
-    }
-    approved_role = {
-        "metadata": {"id": approved_role_id},
-        "spec": {"permissions": approved_permissions},
-    }
-    mutating_permissions = ["iam.group.update"]
-    mutating_role = {
-        "metadata": {"id": mutating_role_id},
-        "spec": {"permissions": mutating_permissions},
-    }
+    def permit_page(subject_id: str, permit_id: str, resource_id: str, role: str) -> dict[str, Any]:
+        return {
+            "operation": f"access-permit.list:{PREFLIGHT.hashlib.sha256(subject_id.encode()).hexdigest()}",
+            "request_token": "",
+            "response": {
+                "items": [{
+                    "metadata": {"id": permit_id, "parent_id": subject_id},
+                    "spec": {"resource_id": resource_id, "role": role},
+                }],
+                "next_page_token": "",
+            },
+            "next_token": "",
+        }
+
+    principal_page = permit_page(
+        principal_id,
+        "accesspermit-directory-reader-principal-001",
+        "tenant-example0001",
+        "auditor",
+    )
+    group_page = permit_page(
+        group_id,
+        "accesspermit-directory-reader-group-001",
+        "project-resource-scope-001",
+        "editor",
+    )
+    effective_permits = sorted(
+        [
+            {
+                "permit_id": "accesspermit-directory-reader-principal-001",
+                **expected_permits[0],
+            },
+            {
+                "permit_id": "accesspermit-directory-reader-group-001",
+                "parent_id": group_id,
+                "parent_kind": "group",
+                "resource_id": "project-resource-scope-001",
+                "role": "editor",
+            },
+        ],
+        key=PREFLIGHT.canonical,
+    )
     evidence = {
         "whoami": {
             "subject": {"type": "service-account", "id": principal_id},
@@ -2649,59 +2754,53 @@ def test_provider_authorization_rejects_a_mutating_role_inherited_through_a_grou
         },
         "membership_pages": [membership_page],
         "principal_group_ids": [group_id],
-        "access_binding_pages": [access_binding_page],
-        "effective_bindings": [
+        "subject_permit_pages": [
             {
                 "subject_id": principal_id,
                 "subject_kind": "service-account",
-                "role_id": approved_role_id,
+                "pages": [principal_page],
             },
             {
                 "subject_id": group_id,
                 "subject_kind": "group",
-                "role_id": mutating_role_id,
+                "pages": [group_page],
             },
         ],
-        "effective_roles": [
-            {
-                "role_id": approved_role_id,
-                "document": approved_role,
-                "document_sha256": PREFLIGHT.hashlib.sha256(
-                    PREFLIGHT.canonical(approved_role).encode()
-                ).hexdigest(),
-                "permissions_sha256": permissions_sha256,
-            },
-            {
-                "role_id": mutating_role_id,
-                "document": mutating_role,
-                "document_sha256": PREFLIGHT.hashlib.sha256(
-                    PREFLIGHT.canonical(mutating_role).encode()
-                ).hexdigest(),
-                "permissions_sha256": PREFLIGHT.hashlib.sha256(
-                    PREFLIGHT.canonical(mutating_permissions).encode()
-                ).hexdigest(),
-            },
+        "effective_permits": effective_permits,
+        "effective_roles": ["auditor", "editor"],
+        "access_contract_sha256": trust["directory_execution"]["directory_reader_access"][
+            "expected_permits_sha256"
         ],
-        "effective_permissions": [*approved_permissions, *mutating_permissions],
-        "effective_permissions_sha256": "0" * 64,
-        "page_count": 2,
+        "page_count": 3,
         "record_count": 3,
     }
     evidence_sha256 = PREFLIGHT.hashlib.sha256(PREFLIGHT.canonical(evidence).encode()).hexdigest()
+    directory_sha256 = "d" * 64
+    cycle_material = {
+        "mode": "authorization-directory-directory-authorization",
+        "authorization_before_sha256": evidence_sha256,
+        "directory_collection_sha256": directory_sha256,
+        "authorization_after_sha256": evidence_sha256,
+    }
     authorization = {
-        "consistency": {
-            "mode": "double-collect-byte-identical",
-            "passes": 2,
-            "collection_sha256": evidence_sha256,
+        "cycle": {
+            **cycle_material,
+            "cycle_sha256": PREFLIGHT.hashlib.sha256(
+                PREFLIGHT.canonical(cycle_material).encode()
+            ).hexdigest(),
         },
         "collections": [
-            {"index": index, "evidence": evidence, "sha256": evidence_sha256}
-            for index in range(2)
+            {"index": index, "phase": phase, "evidence": evidence, "sha256": evidence_sha256}
+            for index, phase in enumerate(("before-directory", "after-directory"))
         ],
     }
 
-    with pytest.raises(PREFLIGHT.PreflightError, match="role permission closure"):
-        PREFLIGHT.verified_provider_authorization(authorization, trust)
+    with pytest.raises(PREFLIGHT.PreflightError, match="effective access permits"):
+        PREFLIGHT.verified_provider_authorization(
+            authorization,
+            trust,
+            directory_collection_sha256=directory_sha256,
+        )
 
 
 def test_provider_oidc_mapping_is_authenticated_by_the_selected_api_server(monkeypatch: Any) -> None:
@@ -2844,7 +2943,11 @@ def test_provider_adapter_rejects_a_hybrid_directory_across_consistency_passes(
         "_provider_authority",
         lambda _trust: ({"snapshot_signer_key_id": "c" * 64}, "4" * 64),
     )
-    monkeypatch.setattr(PROVIDER_ADAPTER_MODULE, "_capture_provider_authorization", lambda _trust: {})
+    monkeypatch.setattr(
+        PROVIDER_ADAPTER_MODULE,
+        "_capture_provider_authorization_once",
+        lambda _trust: {},
+    )
     collections = iter(
         [
             {

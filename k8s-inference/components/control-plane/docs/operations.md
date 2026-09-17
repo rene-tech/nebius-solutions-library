@@ -823,7 +823,7 @@ to enumerate tenant users with attributes, groups and each user's memberships
 with bounded explicit pagination. Its source SHA-256, CLI/config paths,
 CLI/config/credential byte hashes, API endpoint, provider/OIDC issuer,
 non-human principal, parsed profile-to-endpoint/credential/principal paths,
-the exact read-only directory role and permissions, Kubernetes audience and
+the exact subject-parented tenant `auditor` access-permit set, Kubernetes audience and
 username/group claim mapping, tenant, query, budgets and validity are pinned
 in the root-owned, mode-0400/0444
 `/etc/fs2/security/network-policy-provider-trust-anchor-v3.json`. Those values
@@ -834,14 +834,16 @@ canonical digest is pinned by the trust anchor; the corresponding private
 signing key remains outside both documents. The signed provider snapshot
 binds the exact trust anchor, separate collection authority, adapter and
 executable/authentication hashes, provider `whoami`, the complete bounded
-`list-member-of` group closure, every direct or group-inherited tenant binding,
-every referenced role definition, the exact effective read-only permission
-union, and two
+`list-member-of` group closure, and a bounded `iam access-permit list
+--parent-id` sweep for the service account and every discovered group. Each raw
+permit binds its provider ID, parent, `resource_id` and role; the normalized set
+must equal the source-pinned tenant-only `auditor` permit contract exactly, so
+an additional project/resource permit or another role fails closed. Two
 byte-identical, bounded, terminal provider-directory sweeps including their raw
-JSON responses. The authorization closure is independently collected twice and
-must also be byte-identical; an additional role is accepted only when all of its
-permissions are within the approved read-only set and the total effective union
-equals that set exactly. Preflight recomputes every page/collection receipt and
+JSON responses are bracketed by byte-identical authorization captures in the
+order authorization, directory, directory, authorization. The cycle receipt
+binds both authorization hashes to the common directory transcript hash.
+Preflight recomputes every page/collection receipt and
 executes the source-pinned adapter again with no caller input; the fresh authoritative
 collection must match the signed collection fields byte-for-byte. The adapter supplies an empty,
 fixed execution environment, explicit endpoint/config/profile and no stdin, so

@@ -30,7 +30,7 @@
         "credential_sha256", "api_endpoint", "api_endpoint_sha256", "provider_issuer",
         "provider_issuer_sha256", "principal_type", "principal_id", "config_profiles_path",
         "config_endpoint_path", "config_credential_path", "config_principal_path",
-        "credential_principal_path", "directory_reader_role"
+        "credential_principal_path", "directory_reader_access"
       ],
       "properties": {
         "cli_path": { "const": "/usr/local/bin/nebius" },
@@ -50,17 +50,31 @@
         "config_credential_path": { "$ref": "#/$defs/path" },
         "config_principal_path": { "$ref": "#/$defs/path" },
         "credential_principal_path": { "$ref": "#/$defs/path" },
-        "directory_reader_role": {
+        "directory_reader_access": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["id", "permissions", "permissions_sha256"],
+          "required": [
+            "approved_role", "approved_role_effect", "expected_permits",
+            "expected_permits_sha256"
+          ],
           "properties": {
-            "id": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{8,253}$" },
-            "permissions": {
-              "type": "array", "minItems": 1, "maxItems": 128, "uniqueItems": true,
-              "items": { "type": "string", "pattern": "^[a-z0-9._/-]+\\.(get|list)$" }
+            "approved_role": { "const": "auditor" },
+            "approved_role_effect": { "const": "view-metadata-without-data-or-mutation" },
+            "expected_permits": {
+              "type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["parent_id", "parent_kind", "resource_id", "role"],
+                "properties": {
+                  "parent_id": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{8,253}$" },
+                  "parent_kind": { "enum": ["service-account", "group"] },
+                  "resource_id": { "type": "string", "pattern": "^tenant-[A-Za-z0-9-]{8,128}$" },
+                  "role": { "const": "auditor" }
+                }
+              }
             },
-            "permissions_sha256": { "$ref": "#/$defs/sha256" }
+            "expected_permits_sha256": { "$ref": "#/$defs/sha256" }
           }
         }
       }

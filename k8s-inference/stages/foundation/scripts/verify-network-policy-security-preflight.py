@@ -341,7 +341,7 @@ def verified_provider_trust_anchor(
         "credential_sha256", "api_endpoint", "api_endpoint_sha256", "provider_issuer",
         "provider_issuer_sha256", "principal_type", "principal_id", "config_profiles_path",
         "config_endpoint_path", "config_credential_path", "config_principal_path",
-        "credential_principal_path", "directory_reader_role",
+        "credential_principal_path", "directory_reader_access",
     }
     query_fields = {
         "cli_path", "config_path", "profile", "tenant_id", "page_size", "max_pages",
@@ -398,20 +398,43 @@ def verified_provider_trust_anchor(
         != hashlib.sha256(str(execution.get("provider_issuer", "")).encode()).hexdigest()
         or execution.get("principal_type") != "service-account"
         or not re.fullmatch(r"serviceaccount-[A-Za-z0-9-]{8,128}", str(execution.get("principal_id", "")))
-        or not isinstance(execution.get("directory_reader_role"), dict)
-        or set(execution["directory_reader_role"]) != {"id", "permissions", "permissions_sha256"}
-        or not isinstance(execution["directory_reader_role"].get("permissions"), list)
-        or not execution["directory_reader_role"]["permissions"]
-        or len(execution["directory_reader_role"]["permissions"])
-        != len(set(execution["directory_reader_role"]["permissions"]))
+        or not isinstance(execution.get("directory_reader_access"), dict)
+        or set(execution["directory_reader_access"])
+        != {
+            "approved_role",
+            "approved_role_effect",
+            "expected_permits",
+            "expected_permits_sha256",
+        }
+        or execution["directory_reader_access"].get("approved_role") != "auditor"
+        or execution["directory_reader_access"].get("approved_role_effect")
+        != "view-metadata-without-data-or-mutation"
+        or not isinstance(execution["directory_reader_access"].get("expected_permits"), list)
+        or not 1 <= len(execution["directory_reader_access"]["expected_permits"]) <= 64
+        or execution["directory_reader_access"]["expected_permits"]
+        != sorted(execution["directory_reader_access"]["expected_permits"], key=canonical)
+        or len({canonical(value) for value in execution["directory_reader_access"]["expected_permits"]})
+        != len(execution["directory_reader_access"]["expected_permits"])
         or any(
-            not isinstance(permission, str)
-            or not re.fullmatch(r"[a-z0-9._/-]+\.(?:get|list)", permission)
-            for permission in execution["directory_reader_role"]["permissions"]
+            not isinstance(permit, dict)
+            or set(permit) != {"parent_id", "parent_kind", "resource_id", "role"}
+            or permit.get("parent_kind") not in {"service-account", "group"}
+            or not re.fullmatch(r"[A-Za-z0-9._:-]{8,253}", str(permit.get("parent_id", "")))
+            or (
+                permit.get("parent_kind") == "service-account"
+                and permit.get("parent_id") != execution.get("principal_id")
+            )
+            or (
+                permit.get("parent_kind") == "group"
+                and not re.fullmatch(r"group-[A-Za-z0-9-]{8,128}", str(permit.get("parent_id", "")))
+            )
+            or permit.get("resource_id") != directory_query.get("tenant_id")
+            or permit.get("role") != "auditor"
+            for permit in execution["directory_reader_access"]["expected_permits"]
         )
-        or execution["directory_reader_role"].get("permissions_sha256")
+        or execution["directory_reader_access"].get("expected_permits_sha256")
         != hashlib.sha256(
-            canonical(sorted(execution["directory_reader_role"]["permissions"])).encode()
+            canonical(execution["directory_reader_access"]["expected_permits"]).encode()
         ).hexdigest()
         or directory_query.get("cli_path") != str(PROVIDER_CLI_PATH)
         or directory_query.get("config_path") != str(PROVIDER_CONFIG_PATH)
@@ -541,32 +564,44 @@ def verified_provider_page_items(
     return items
 
 
-def verified_provider_authorization(authorization: Any, trust: dict[str, Any]) -> str:
+def verified_provider_authorization(
+    authorization: Any,
+    trust: dict[str, Any],
+    *,
+    directory_collection_sha256: str,
+) -> str:
     query = trust["directory_query"]
     execution = trust["directory_execution"]
-    role_contract = execution["directory_reader_role"]
+    access_contract = execution["directory_reader_access"]
+    cycle = authorization.get("cycle") if isinstance(authorization, dict) else None
     if (
         not isinstance(authorization, dict)
-        or set(authorization) != {"consistency", "collections"}
-        or not isinstance(authorization.get("consistency"), dict)
-        or set(authorization["consistency"]) != {"mode", "passes", "collection_sha256"}
-        or authorization["consistency"].get("mode") != "double-collect-byte-identical"
-        or authorization["consistency"].get("passes") != query["consistency_passes"]
-        or not re.fullmatch(
-            r"[0-9a-f]{64}", str(authorization["consistency"].get("collection_sha256", ""))
-        )
+        or set(authorization) != {"cycle", "collections"}
+        or not isinstance(cycle, dict)
+        or set(cycle)
+        != {
+            "mode",
+            "authorization_before_sha256",
+            "directory_collection_sha256",
+            "authorization_after_sha256",
+            "cycle_sha256",
+        }
+        or cycle.get("mode") != "authorization-directory-directory-authorization"
+        or cycle.get("directory_collection_sha256") != directory_collection_sha256
         or not isinstance(authorization.get("collections"), list)
-        or len(authorization["collections"]) != query["consistency_passes"]
+        or len(authorization["collections"]) != 2
     ):
-        raise PreflightError("provider authorization consistency receipt is not exact")
+        raise PreflightError("provider authorization-directory cycle receipt is not exact")
+    phases = ("before-directory", "after-directory")
     baseline: dict[str, Any] | None = None
-    collection_sha256 = ""
+    collection_hashes: list[str] = []
     for index, collection in enumerate(authorization["collections"]):
         evidence = collection.get("evidence") if isinstance(collection, dict) else None
         if (
             not isinstance(collection, dict)
-            or set(collection) != {"index", "evidence", "sha256"}
+            or set(collection) != {"index", "phase", "evidence", "sha256"}
             or collection.get("index") != index
+            or collection.get("phase") != phases[index]
             or not isinstance(evidence, dict)
             or collection.get("sha256") != hashlib.sha256(canonical(evidence).encode()).hexdigest()
             or set(evidence)
@@ -574,11 +609,10 @@ def verified_provider_authorization(authorization: Any, trust: dict[str, Any]) -
                 "whoami",
                 "membership_pages",
                 "principal_group_ids",
-                "access_binding_pages",
-                "effective_bindings",
+                "subject_permit_pages",
+                "effective_permits",
                 "effective_roles",
-                "effective_permissions",
-                "effective_permissions_sha256",
+                "access_contract_sha256",
                 "page_count",
                 "record_count",
             }
@@ -614,117 +648,129 @@ def verified_provider_authorization(authorization: Any, trust: dict[str, Any]) -
                 or set(spec) != {"member_id"}
                 or spec.get("member_id") != execution["principal_id"]
                 or not isinstance(group_id, str)
-                or not re.fullmatch(r"[A-Za-z0-9._:-]{8,253}", group_id)
+                or not re.fullmatch(r"group-[A-Za-z0-9-]{8,128}", group_id)
             ):
                 raise PreflightError("provider principal membership closure is malformed")
             group_ids.append(group_id)
         group_ids.sort()
-        if len(group_ids) != len(set(group_ids)) or evidence["principal_group_ids"] != group_ids:
+        if (
+            not isinstance(evidence["principal_group_ids"], list)
+            or len(group_ids) != len(set(group_ids))
+            or evidence["principal_group_ids"] != group_ids
+        ):
             raise PreflightError("provider principal membership closure is duplicated or incomplete")
-        binding_items = verified_provider_page_items(
-            evidence["access_binding_pages"],
-            operation="access-binding.list",
-            page_size=query["page_size"],
-            max_pages=query["max_pages"],
-            max_records=query["max_records"],
+        subjects = [{
+            "subject_id": execution["principal_id"],
+            "subject_kind": "service-account",
+        }]
+        subjects.extend(
+            {"subject_id": group_id, "subject_kind": "group"}
+            for group_id in group_ids
         )
-        effective_subject_ids = {execution["principal_id"], *group_ids}
-        effective_bindings: list[dict[str, str]] = []
-        for binding in binding_items:
-            spec = binding.get("spec", {})
+        subject_page_sets = evidence["subject_permit_pages"]
+        if not isinstance(subject_page_sets, list) or len(subject_page_sets) != len(subjects):
+            raise PreflightError("provider subject access permit closure is incomplete")
+        effective_permits: list[dict[str, str]] = []
+        permit_ids: set[str] = set()
+        permit_page_count = 0
+        permit_record_count = 0
+        for subject, page_set in zip(subjects, subject_page_sets, strict=True):
             if (
-                not isinstance(spec, dict)
-                or set(spec) != {"subject_id", "role_id"}
-                or not isinstance(spec.get("subject_id"), str)
-                or not isinstance(spec.get("role_id"), str)
-                or not re.fullmatch(r"[A-Za-z0-9._:-]{8,253}", spec["subject_id"])
-                or not re.fullmatch(r"[A-Za-z0-9._:-]{8,253}", spec["role_id"])
+                not isinstance(page_set, dict)
+                or set(page_set) != {"subject_id", "subject_kind", "pages"}
+                or page_set.get("subject_id") != subject["subject_id"]
+                or page_set.get("subject_kind") != subject["subject_kind"]
             ):
-                raise PreflightError("provider access binding inventory is malformed")
-            if spec["subject_id"] in effective_subject_ids:
-                effective_bindings.append({
-                    "subject_id": spec["subject_id"],
-                    "subject_kind": (
-                        "service-account"
-                        if spec["subject_id"] == execution["principal_id"]
-                        else "group"
-                    ),
-                    "role_id": spec["role_id"],
+                raise PreflightError("provider subject access permit pages are not exact")
+            operation = (
+                "access-permit.list:"
+                f"{hashlib.sha256(subject['subject_id'].encode()).hexdigest()}"
+            )
+            permits = verified_provider_page_items(
+                page_set["pages"],
+                operation=operation,
+                page_size=query["page_size"],
+                max_pages=query["max_pages"],
+                max_records=query["max_records"],
+            )
+            permit_page_count += len(page_set["pages"])
+            permit_record_count += len(permits)
+            for permit in permits:
+                metadata = permit.get("metadata", {})
+                spec = permit.get("spec", {})
+                permit_id = metadata.get("id") if isinstance(metadata, dict) else None
+                parent_id = metadata.get("parent_id") if isinstance(metadata, dict) else None
+                if (
+                    not isinstance(permit_id, str)
+                    or not re.fullmatch(r"accesspermit-[A-Za-z0-9-]{8,128}", permit_id)
+                    or permit_id in permit_ids
+                    or parent_id != subject["subject_id"]
+                    or not isinstance(spec, dict)
+                    or set(spec) != {"resource_id", "role"}
+                    or not re.fullmatch(
+                        r"[A-Za-z0-9._:-]{8,253}", str(spec.get("resource_id", ""))
+                    )
+                    or not re.fullmatch(r"[a-z0-9.-]{3,128}", str(spec.get("role", "")))
+                ):
+                    raise PreflightError("provider subject access permit inventory is malformed")
+                permit_ids.add(permit_id)
+                effective_permits.append({
+                    "permit_id": permit_id,
+                    "parent_id": subject["subject_id"],
+                    "parent_kind": subject["subject_kind"],
+                    "resource_id": spec["resource_id"],
+                    "role": spec["role"],
                 })
-        effective_bindings.sort(key=canonical)
+        effective_permits.sort(key=canonical)
+        projected_permits = [
+            {key: permit[key] for key in ("parent_id", "parent_kind", "resource_id", "role")}
+            for permit in effective_permits
+        ]
+        effective_subject_ids = {subject["subject_id"] for subject in subjects}
+        expected_parent_ids = {permit["parent_id"] for permit in access_contract["expected_permits"]}
         if (
-            not effective_bindings
-            or len({canonical(value) for value in effective_bindings}) != len(effective_bindings)
-            or evidence["effective_bindings"] != effective_bindings
+            not effective_permits
+            or evidence["effective_permits"] != effective_permits
+            or len({canonical(value) for value in projected_permits}) != len(projected_permits)
+            or expected_parent_ids - effective_subject_ids
+            or projected_permits != access_contract["expected_permits"]
+            or evidence["effective_roles"] != ["auditor"]
+            or sorted({permit["role"] for permit in effective_permits}) != ["auditor"]
+            or sorted({permit["resource_id"] for permit in effective_permits})
+            != [query["tenant_id"]]
+            or evidence["access_contract_sha256"] != access_contract["expected_permits_sha256"]
         ):
-            raise PreflightError("provider effective binding closure is empty, duplicated or incomplete")
-        role_ids = sorted({binding["role_id"] for binding in effective_bindings})
-        roles = evidence["effective_roles"]
+            raise PreflightError("provider effective access permits differ from the approved read-only set")
+        total_pages = len(evidence["membership_pages"]) + permit_page_count
+        total_records = len(memberships) + permit_record_count
         if (
-            role_contract["id"] not in role_ids
-            or not isinstance(roles, list)
-            or len(roles) != len(role_ids)
-            or [role.get("role_id") for role in roles if isinstance(role, dict)] != role_ids
-        ):
-            raise PreflightError("provider effective role closure omits the approved role")
-        approved_permissions = set(role_contract["permissions"])
-        effective_permissions: set[str] = set()
-        for role_id, role_evidence in zip(role_ids, roles, strict=True):
-            if not isinstance(role_evidence, dict) or set(role_evidence) != {
-                "role_id",
-                "document",
-                "document_sha256",
-                "permissions_sha256",
-            }:
-                raise PreflightError("provider effective role receipt is malformed")
-            document = role_evidence["document"]
-            metadata = document.get("metadata", {}) if isinstance(document, dict) else {}
-            spec = document.get("spec", {}) if isinstance(document, dict) else {}
-            permissions = spec.get("permissions") if isinstance(spec, dict) else None
-            if (
-                role_evidence["role_id"] != role_id
-                or not isinstance(metadata, dict)
-                or metadata.get("id") != role_id
-                or role_evidence["document_sha256"]
-                != hashlib.sha256(canonical(document).encode()).hexdigest()
-                or not isinstance(permissions, list)
-                or not permissions
-                or any(
-                    not isinstance(permission, str)
-                    or not re.fullmatch(r"[a-z0-9._/-]+\.(?:get|list)", permission)
-                    for permission in permissions
-                )
-                or len(permissions) != len(set(permissions))
-                or not set(permissions) <= approved_permissions
-                or role_evidence["permissions_sha256"]
-                != hashlib.sha256(canonical(sorted(permissions)).encode()).hexdigest()
-                or (
-                    role_id == role_contract["id"]
-                    and sorted(permissions) != sorted(approved_permissions)
-                )
-            ):
-                raise PreflightError("provider effective role permission closure is not read-only exact")
-            effective_permissions.update(permissions)
-        if (
-            effective_permissions != approved_permissions
-            or evidence["effective_permissions"] != sorted(effective_permissions)
-            or evidence["effective_permissions_sha256"] != role_contract["permissions_sha256"]
-            or not isinstance(evidence["page_count"], int)
-            or evidence["page_count"]
-            != len(evidence["membership_pages"]) + len(evidence["access_binding_pages"])
-            or not 2 <= evidence["page_count"] <= query["max_pages"]
+            not isinstance(evidence["page_count"], int)
+            or evidence["page_count"] != total_pages
+            or not 2 <= total_pages <= query["max_pages"]
             or not isinstance(evidence["record_count"], int)
-            or evidence["record_count"] != len(memberships) + len(binding_items)
-            or not 1 <= evidence["record_count"] <= query["max_records"]
+            or evidence["record_count"] != total_records
+            or not 1 <= total_records <= query["max_records"]
         ):
-            raise PreflightError("provider effective permissions differ from the approved read-only set")
+            raise PreflightError("provider access permit pagination totals are outside their bounds")
+        collection_hashes.append(collection["sha256"])
         if baseline is None:
             baseline = evidence
-            collection_sha256 = collection["sha256"]
-        elif evidence != baseline or collection["sha256"] != collection_sha256:
-            raise PreflightError("provider authorization repeat-stability fence is not byte-identical")
-    if authorization["consistency"]["collection_sha256"] != collection_sha256:
-        raise PreflightError("provider authorization consistency digest is not exact")
+        elif evidence != baseline:
+            raise PreflightError("provider authorization changed across the directory collection fence")
+    cycle_material = {
+        "mode": "authorization-directory-directory-authorization",
+        "authorization_before_sha256": collection_hashes[0],
+        "directory_collection_sha256": directory_collection_sha256,
+        "authorization_after_sha256": collection_hashes[1],
+    }
+    if (
+        collection_hashes[0] != collection_hashes[1]
+        or cycle.get("authorization_before_sha256") != collection_hashes[0]
+        or cycle.get("authorization_after_sha256") != collection_hashes[1]
+        or cycle.get("cycle_sha256")
+        != hashlib.sha256(canonical(cycle_material).encode()).hexdigest()
+    ):
+        raise PreflightError("provider authorization-directory cycle is not byte-stable")
     return hashlib.sha256(canonical(authorization).encode()).hexdigest()
 
 
@@ -822,7 +868,6 @@ def verified_provider_snapshot(
         raise PreflightError("provider/IAM subject snapshot is incomplete, stale or from another tenant/query")
     users, groups = normalized_provider_subjects(signed, forbidden_usernames=forbidden_usernames)
     authorization = signed.get("provider_authorization")
-    verified_provider_authorization(authorization, trust)
     pagination = signed.get("pagination")
     if not isinstance(pagination, dict) or set(pagination) != {
         "page_size", "subject_count", "consistency", "collections"
@@ -928,8 +973,14 @@ def verified_provider_snapshot(
         len(set(collection_hashes)) != 1
         or collection_hashes[0] != consistency["collection_sha256"]
         or collection_pages[0] != collection_pages[1]
+        or raw_collections[0] != raw_collections[1]
     ):
         raise PreflightError("provider/IAM repeat-stability fence is not byte-identical")
+    verified_provider_authorization(
+        authorization,
+        trust,
+        directory_collection_sha256=consistency["collection_sha256"],
+    )
     independently_collected_fields = {
         "provider",
         "adapter",
@@ -2362,8 +2413,8 @@ def main() -> int:
                 provider_adapter_path,
                 timeout_seconds=min(
                     1800,
-                    provider_trust["directory_query"]["timeout_seconds"]
-                    * (provider_trust["directory_query"]["max_pages"] + 4),
+                    (provider_trust["directory_query"]["timeout_seconds"] + 5)
+                    * (4 * provider_trust["directory_query"]["max_pages"] + 2),
                 ),
             )
             provider_snapshot_bytes, provider_snapshot_metadata = descriptor_bytes(

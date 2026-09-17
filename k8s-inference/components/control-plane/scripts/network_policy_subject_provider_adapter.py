@@ -186,7 +186,7 @@ def _trust_anchor() -> tuple[dict[str, Any], str]:
         "credential_sha256", "api_endpoint", "api_endpoint_sha256", "provider_issuer",
         "provider_issuer_sha256", "principal_type", "principal_id", "config_profiles_path",
         "config_endpoint_path", "config_credential_path", "config_principal_path",
-        "credential_principal_path", "directory_reader_role",
+        "credential_principal_path", "directory_reader_access",
     }
     query_fields = {
         "cli_path", "config_path", "profile", "tenant_id", "page_size", "max_pages",
@@ -238,23 +238,43 @@ def _trust_anchor() -> tuple[dict[str, Any], str]:
         != hashlib.sha256(str(execution.get("provider_issuer", "")).encode()).hexdigest()
         or execution.get("principal_type") != "service-account"
         or not re.fullmatch(r"serviceaccount-[A-Za-z0-9-]{8,128}", str(execution.get("principal_id", "")))
-        or not isinstance(execution.get("directory_reader_role"), dict)
-        or set(execution["directory_reader_role"]) != {"id", "permissions", "permissions_sha256"}
-        or not re.fullmatch(
-            r"[A-Za-z0-9._:-]{8,253}", str(execution["directory_reader_role"].get("id", ""))
-        )
-        or not isinstance(execution["directory_reader_role"].get("permissions"), list)
-        or not execution["directory_reader_role"]["permissions"]
-        or len(execution["directory_reader_role"]["permissions"])
-        != len(set(execution["directory_reader_role"]["permissions"]))
+        or not isinstance(execution.get("directory_reader_access"), dict)
+        or set(execution["directory_reader_access"])
+        != {
+            "approved_role",
+            "approved_role_effect",
+            "expected_permits",
+            "expected_permits_sha256",
+        }
+        or execution["directory_reader_access"].get("approved_role") != "auditor"
+        or execution["directory_reader_access"].get("approved_role_effect")
+        != "view-metadata-without-data-or-mutation"
+        or not isinstance(execution["directory_reader_access"].get("expected_permits"), list)
+        or not 1 <= len(execution["directory_reader_access"]["expected_permits"]) <= 64
+        or execution["directory_reader_access"]["expected_permits"]
+        != sorted(execution["directory_reader_access"]["expected_permits"], key=canonical)
+        or len({canonical(value) for value in execution["directory_reader_access"]["expected_permits"]})
+        != len(execution["directory_reader_access"]["expected_permits"])
         or any(
-            not isinstance(permission, str)
-            or not re.fullmatch(r"[a-z0-9._/-]+\.(?:get|list)", permission)
-            for permission in execution["directory_reader_role"]["permissions"]
+            not isinstance(permit, dict)
+            or set(permit) != {"parent_id", "parent_kind", "resource_id", "role"}
+            or permit.get("parent_kind") not in {"service-account", "group"}
+            or not re.fullmatch(r"[A-Za-z0-9._:-]{8,253}", str(permit.get("parent_id", "")))
+            or (
+                permit.get("parent_kind") == "service-account"
+                and permit.get("parent_id") != execution.get("principal_id")
+            )
+            or (
+                permit.get("parent_kind") == "group"
+                and not re.fullmatch(r"group-[A-Za-z0-9-]{8,128}", str(permit.get("parent_id", "")))
+            )
+            or permit.get("resource_id") != query.get("tenant_id")
+            or permit.get("role") != "auditor"
+            for permit in execution["directory_reader_access"]["expected_permits"]
         )
-        or execution["directory_reader_role"].get("permissions_sha256")
+        or execution["directory_reader_access"].get("expected_permits_sha256")
         != hashlib.sha256(
-            canonical(sorted(execution["directory_reader_role"]["permissions"])).encode()
+            canonical(execution["directory_reader_access"]["expected_permits"]).encode()
         ).hexdigest()
         or not _is_https_endpoint(authentication.get("oidc_issuer"))
         or authentication.get("oidc_issuer_sha256")
@@ -519,134 +539,124 @@ def _capture_provider_authorization_once(trust: dict[str, Any]) -> dict[str, Any
             or set(spec) != {"member_id"}
             or spec.get("member_id") != execution["principal_id"]
             or not isinstance(group_id, str)
-            or not re.fullmatch(r"[A-Za-z0-9._:-]{8,253}", group_id)
+            or not re.fullmatch(r"group-[A-Za-z0-9-]{8,128}", group_id)
         ):
             raise AdapterError("provider directory-reader group membership is malformed")
         principal_group_ids.append(group_id)
     if len(principal_group_ids) != len(set(principal_group_ids)):
         raise AdapterError("provider directory-reader group membership is duplicated")
     principal_group_ids.sort()
-    effective_subject_ids = {execution["principal_id"], *principal_group_ids}
-    bindings, binding_pages = _list_pages(
-        execution,
-        query,
-        ["iam", "access-binding", "list", "--parent-id", query["tenant_id"]],
-        "access-binding.list",
-        budgets,
+    subjects = [{
+        "subject_id": execution["principal_id"],
+        "subject_kind": "service-account",
+    }]
+    subjects.extend(
+        {"subject_id": group_id, "subject_kind": "group"}
+        for group_id in principal_group_ids
     )
-    effective_bindings: list[dict[str, str]] = []
-    for binding in bindings:
-        spec = binding.get("spec", {}) if isinstance(binding, dict) else {}
-        if (
-            not isinstance(spec, dict)
-            or set(spec) != {"subject_id", "role_id"}
-            or not isinstance(spec.get("subject_id"), str)
-            or not isinstance(spec.get("role_id"), str)
-            or not re.fullmatch(r"[A-Za-z0-9._:-]{8,253}", spec["subject_id"])
-            or not re.fullmatch(r"[A-Za-z0-9._:-]{8,253}", spec["role_id"])
-        ):
-            raise AdapterError("provider access binding inventory is malformed")
-        if spec["subject_id"] in effective_subject_ids:
-            effective_bindings.append({
-                "subject_id": spec["subject_id"],
-                "subject_kind": (
-                    "service-account"
-                    if spec["subject_id"] == execution["principal_id"]
-                    else "group"
-                ),
-                "role_id": spec["role_id"],
-            })
-    effective_bindings.sort(key=canonical)
-    if not effective_bindings or len({canonical(value) for value in effective_bindings}) != len(
-        effective_bindings
-    ):
-        raise AdapterError("provider effective access binding closure is empty or duplicated")
-    role_contract = execution["directory_reader_role"]
-    role_ids = sorted({binding["role_id"] for binding in effective_bindings})
-    if role_contract["id"] not in role_ids or len(role_ids) > query["max_records"]:
-        raise AdapterError("provider effective role closure omits the approved directory-reader role")
-    approved_permissions = set(role_contract["permissions"])
-    effective_permissions: set[str] = set()
-    effective_roles: list[dict[str, Any]] = []
-    for role_id in role_ids:
-        role = _provider_document(
+    subject_permit_pages: list[dict[str, Any]] = []
+    effective_permits: list[dict[str, str]] = []
+    permit_ids: set[str] = set()
+    for subject in subjects:
+        subject_id = subject["subject_id"]
+        operation = f"access-permit.list:{hashlib.sha256(subject_id.encode()).hexdigest()}"
+        permits, permit_pages = _list_pages(
             execution,
             query,
-            ["iam", "role", "get", "--id", role_id],
-            label="effective directory-reader role",
+            ["iam", "access-permit", "list", "--parent-id", subject_id],
+            operation,
+            budgets,
         )
-        role_metadata = role.get("metadata", {}) if isinstance(role, dict) else {}
-        role_spec = role.get("spec", {}) if isinstance(role, dict) else {}
-        permissions = role_spec.get("permissions") if isinstance(role_spec, dict) else None
-        if (
-            not isinstance(role_metadata, dict)
-            or role_metadata.get("id") != role_id
-            or not isinstance(permissions, list)
-            or not permissions
-            or any(
-                not isinstance(permission, str)
-                or not re.fullmatch(r"[a-z0-9._/-]+\.(?:get|list)", permission)
-                for permission in permissions
-            )
-            or len(permissions) != len(set(permissions))
-            or not set(permissions) <= approved_permissions
-            or (
-                role_id == role_contract["id"]
-                and sorted(permissions) != sorted(role_contract["permissions"])
-            )
-        ):
-            raise AdapterError("provider effective role permission closure is not read-only exact")
-        effective_permissions.update(permissions)
-        effective_roles.append({
-            "role_id": role_id,
-            "document": role,
-            "document_sha256": hashlib.sha256(canonical(role).encode()).hexdigest(),
-            "permissions_sha256": hashlib.sha256(
-                canonical(sorted(permissions)).encode()
-            ).hexdigest(),
+        subject_permit_pages.append({
+            "subject_id": subject_id,
+            "subject_kind": subject["subject_kind"],
+            "pages": permit_pages,
         })
+        for permit in permits:
+            metadata = permit.get("metadata", {}) if isinstance(permit, dict) else {}
+            spec = permit.get("spec", {}) if isinstance(permit, dict) else {}
+            permit_id = metadata.get("id") if isinstance(metadata, dict) else None
+            parent_id = metadata.get("parent_id") if isinstance(metadata, dict) else None
+            if (
+                not isinstance(permit_id, str)
+                or not re.fullmatch(r"accesspermit-[A-Za-z0-9-]{8,128}", permit_id)
+                or permit_id in permit_ids
+                or parent_id != subject_id
+                or not isinstance(spec, dict)
+                or set(spec) != {"resource_id", "role"}
+                or not re.fullmatch(r"[A-Za-z0-9._:-]{8,253}", str(spec.get("resource_id", "")))
+                or not re.fullmatch(r"[a-z0-9.-]{3,128}", str(spec.get("role", "")))
+            ):
+                raise AdapterError("provider subject access permit inventory is malformed")
+            permit_ids.add(permit_id)
+            effective_permits.append({
+                "permit_id": permit_id,
+                "parent_id": subject_id,
+                "parent_kind": subject["subject_kind"],
+                "resource_id": spec["resource_id"],
+                "role": spec["role"],
+            })
+    effective_permits.sort(key=canonical)
+    access_contract = execution["directory_reader_access"]
+    projected_permits = [
+        {key: permit[key] for key in ("parent_id", "parent_kind", "resource_id", "role")}
+        for permit in effective_permits
+    ]
+    expected_parent_ids = {permit["parent_id"] for permit in access_contract["expected_permits"]}
+    effective_subject_ids = {subject["subject_id"] for subject in subjects}
     if (
-        effective_permissions != approved_permissions
-        or hashlib.sha256(canonical(sorted(effective_permissions)).encode()).hexdigest()
-        != role_contract["permissions_sha256"]
+        not effective_permits
+        or expected_parent_ids - effective_subject_ids
+        or len({canonical(value) for value in projected_permits}) != len(projected_permits)
+        or projected_permits != access_contract["expected_permits"]
+        or sorted({permit["role"] for permit in effective_permits}) != ["auditor"]
+        or sorted({permit["resource_id"] for permit in effective_permits}) != [query["tenant_id"]]
     ):
-        raise AdapterError("provider effective permissions differ from the approved read-only set")
+        raise AdapterError("provider effective access permits differ from the approved read-only set")
     record_count = query["max_records"] - budgets["records"]
     page_count = query["max_pages"] - budgets["pages"]
     return {
         "whoami": whoami,
         "membership_pages": membership_pages,
         "principal_group_ids": principal_group_ids,
-        "access_binding_pages": binding_pages,
-        "effective_bindings": effective_bindings,
-        "effective_roles": effective_roles,
-        "effective_permissions": sorted(effective_permissions),
-        "effective_permissions_sha256": role_contract["permissions_sha256"],
+        "subject_permit_pages": subject_permit_pages,
+        "effective_permits": effective_permits,
+        "effective_roles": ["auditor"],
+        "access_contract_sha256": access_contract["expected_permits_sha256"],
         "page_count": page_count,
         "record_count": record_count,
     }
 
 
-def _capture_provider_authorization(trust: dict[str, Any]) -> dict[str, Any]:
-    passes = trust["directory_query"]["consistency_passes"]
-    captures = [_capture_provider_authorization_once(trust) for _ in range(passes)]
-    baseline = captures[0]
-    if any(capture != baseline for capture in captures[1:]):
-        raise AdapterError("provider authorization changed across the required repeat-stability fence")
-    collection_sha256 = hashlib.sha256(canonical(baseline).encode()).hexdigest()
+def _provider_authorization_cycle(
+    before: dict[str, Any],
+    after: dict[str, Any],
+    directory_collection_sha256: str,
+) -> dict[str, Any]:
+    if before != after:
+        raise AdapterError("provider authorization changed across the directory collection fence")
+    authorization_sha256 = hashlib.sha256(canonical(before).encode()).hexdigest()
+    cycle_material = {
+        "mode": "authorization-directory-directory-authorization",
+        "authorization_before_sha256": authorization_sha256,
+        "directory_collection_sha256": directory_collection_sha256,
+        "authorization_after_sha256": authorization_sha256,
+    }
     return {
-        "consistency": {
-            "mode": "double-collect-byte-identical",
-            "passes": passes,
-            "collection_sha256": collection_sha256,
+        "cycle": {
+            **cycle_material,
+            "cycle_sha256": hashlib.sha256(canonical(cycle_material).encode()).hexdigest(),
         },
         "collections": [
             {
                 "index": index,
+                "phase": phase,
                 "evidence": capture,
                 "sha256": hashlib.sha256(canonical(capture).encode()).hexdigest(),
             }
-            for index, capture in enumerate(captures)
+            for index, (phase, capture) in enumerate(
+                (("before-directory", before), ("after-directory", after))
+            )
         ],
     }
 
@@ -817,7 +827,7 @@ def capture() -> dict[str, Any]:
     trust, trust_sha256 = _trust_anchor()
     authority, authority_sha256 = _provider_authority(trust)
     query = trust["directory_query"]
-    provider_authorization = _capture_provider_authorization(trust)
+    authorization_before = _capture_provider_authorization_once(trust)
     collections = [_capture_directory(trust) for _ in range(query["consistency_passes"])]
     baseline = collections[0]
     if any(
@@ -828,6 +838,12 @@ def capture() -> dict[str, Any]:
         for collection in collections[1:]
     ):
         raise AdapterError("provider directory changed across the required repeat-stability fence")
+    authorization_after = _capture_provider_authorization_once(trust)
+    provider_authorization = _provider_authorization_cycle(
+        authorization_before,
+        authorization_after,
+        baseline["collection_sha256"],
+    )
     now = dt.datetime.now(dt.UTC).replace(microsecond=0)
     transcript_sha256 = baseline["collection_sha256"]
     users = baseline["users"]
