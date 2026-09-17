@@ -698,6 +698,16 @@ def validate_public_edge_outputs(
     if public_edge_mode == "internal-only":
         if (
             edge.get("transport") != "kubectl-port-forward"
+            or port_forward.get("broker_isolation")
+            != {
+                "schema": "fs2-serve.nebius.ai/internal-proxy-isolation/v1",
+                "raw_host_listeners": [],
+                "raw_transport_visibility": "private-network-namespace",
+                "kubeconfig_custody": "root-broker-only",
+                "listener_modes": ["debug-read-only", "ordinary-authenticated"],
+                "ordinary_listener": "application-authenticated-loopback-tcp",
+                "debug_listener": "caller-owned-mode-0600-unix-socket",
+            }
             or any(
                 edge.get(key) is not None
                 for key in (
@@ -736,7 +746,7 @@ def validate_public_edge_outputs(
             or port_forward.get("admin_console_local_port")
             != expected_local_ports["admin_console"]
         ):
-            errors.append("internal-only outputs contain a public identity or wrong loopback contract")
+            errors.append("internal-only outputs contain a public identity or wrong broker-isolation contract")
     elif mode == "noop":
         public_ip = edge.get("public_ipv4_address")
         if (

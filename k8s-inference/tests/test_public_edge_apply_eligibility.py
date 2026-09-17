@@ -525,6 +525,227 @@ def test_external_admission_binds_exact_dynamic_policy_and_actor() -> None:
     assert "public_edge_node_authority_approval_exact" in source
 
 
+def test_preventive_boundary_reopens_and_semantically_checks_raw_authority_exports() -> None:
+    verifier = (
+        ROOT
+        / "stages/foundation/scripts/verify-public-edge-node-eligibility.py"
+    ).read_text(encoding="utf-8")
+    for filename in (
+        "public-edge-preventive-provider-iam-export.json",
+        "public-edge-preventive-apiserver-enforcement-export.json",
+        "public-edge-preventive-identity-path-review.json",
+    ):
+        assert filename in verifier
+    assert "provider-IAM raw policy does not enforce exact-controller default deny" in verifier
+    assert "API-server raw export does not enforce the protected exact-controller boundary" in verifier
+    assert "raw RBAC/impersonation evidence does not deny every non-controller identity path" in verifier
+    assert 'provider["default_decision"] != "deny"' in verifier
+    assert 'apiserver["failure_policy"] != "Fail"' in verifier
+    assert "impersonation_rules != []" in verifier
+    assert '"provider_iam_allowed": False' in verifier
+    assert '"apiserver_allowed": False' in verifier
+    assert '"rbac_allowed": False' in verifier
+    assert '"impersonation_allowed": False' in verifier
+    assert "summaries do not bind the reopened raw exports" in verifier
+    assert "review digests do not derive from reopened exports" in verifier
+
+
+def preventive_raw_exports() -> dict[str, object]:
+    protected_names = [
+        "fs2-public-edge-cas-bootstrap",
+        "fs2-public-edge-cas-bootstrap-binding",
+        "fs2-public-edge-node-authority",
+        "fs2-public-edge-node-authority-binding",
+        "fs2-public-edge-node-authority-cas",
+        "fs2-public-edge-node-authority-cas-binding",
+    ]
+    actions = ["create", "delete", "patch", "update"]
+    paths = [
+        "anonymous",
+        "authentication-webhook",
+        "bootstrap-token",
+        "client-certificate",
+        "csr-approval",
+        "csr-signing",
+        "direct-user",
+        "impersonated-group",
+        "impersonated-uid",
+        "impersonated-user",
+        "impersonated-userextra",
+        "kubelet-client-certificate",
+        "node-credential",
+        "oidc",
+        "provider-control-plane",
+        "requestheader-front-proxy",
+        "service-account-token",
+        "static-token",
+    ]
+    controller = {
+        "username": "system:serviceaccount:security:public-edge-authority",
+        "uid": "00000000-0000-4000-8000-000000000099",
+        "groups": ["system:serviceaccounts", "system:serviceaccounts:security"],
+        "image_digest": f"sha256:{'a' * 64}",
+    }
+
+    def provenance(endpoint: str, suffix: str) -> dict[str, object]:
+        return {
+            "collector_id": f"platform-security-{suffix}",
+            "collector_executable_sha256": "1" * 64,
+            "collector_config_sha256": "2" * 64,
+            "api_endpoint": endpoint,
+            "request_ids": [f"request-{suffix}-0001"],
+            "response_attestation_sha256": "3" * 64,
+        }
+
+    boundary = {
+        "provider_iam_policy_id": "provider-policy-001",
+        "apiserver_enforcement_id": "apiserver-enforcement-001",
+        "controller_username": controller["username"],
+        "controller_uid": controller["uid"],
+        "controller_groups": controller["groups"],
+        "controller_image_digest": controller["image_digest"],
+        "configuration_sha256": "4" * 64,
+        "identity_paths": paths,
+    }
+    provider = {
+        "schema": "fs2-serve.nebius.ai/public-edge-provider-iam-export/v1",
+        "collected_at": "2026-09-17T12:00:00Z",
+        "provider_api": "nebius-iam/v1",
+        "api_endpoint": "api.nebius.cloud",
+        "project_id": "project-test123",
+        "cluster_id": CLUSTER_ID,
+        "policy_id": boundary["provider_iam_policy_id"],
+        "resource_version": "provider-rv-11",
+        "default_decision": "deny",
+        "protected_resource_names": protected_names,
+        "protected_actions": actions,
+        "bindings": [
+            {
+                "effect": "allow",
+                "principal": controller,
+                "resource_names": protected_names,
+                "actions": actions,
+                "condition": {
+                    "project_id": "project-test123",
+                    "cluster_id": CLUSTER_ID,
+                    "configuration_sha256": boundary["configuration_sha256"],
+                },
+            }
+        ],
+        "provenance": provenance("api.nebius.cloud", "provider-iam"),
+    }
+    apiserver = {
+        "schema": "fs2-serve.nebius.ai/public-edge-apiserver-enforcement-export/v1",
+        "collected_at": "2026-09-17T12:00:00Z",
+        "cluster_id": CLUSTER_ID,
+        "enforcement_id": boundary["apiserver_enforcement_id"],
+        "resource_version": "apiserver-rv-12",
+        "configuration_sha256": boundary["configuration_sha256"],
+        "failure_policy": "Fail",
+        "match_policy": "Equivalent",
+        "api_groups": ["admissionregistration.k8s.io"],
+        "api_versions": ["v1"],
+        "resources": ["validatingadmissionpolicies", "validatingadmissionpolicybindings"],
+        "operations": ["CREATE", "DELETE", "UPDATE"],
+        "protected_names": protected_names,
+        "default_decision": "Deny",
+        "allowed_controller": controller,
+        "provenance": provenance(
+            f"kubernetes://{CLUSTER_ID}/admission", "apiserver"
+        ),
+    }
+    rbac_rules = [
+        {
+            "subjects": [controller],
+            "api_groups": ["admissionregistration.k8s.io"],
+            "resources": ["validatingadmissionpolicies", "validatingadmissionpolicybindings"],
+            "resource_names": protected_names,
+            "verbs": actions,
+        }
+    ]
+    checks = [
+        {
+            "path": path,
+            "provider_iam_allowed": False,
+            "apiserver_allowed": False,
+            "rbac_allowed": False,
+            "impersonation_allowed": False,
+        }
+        for path in paths
+    ]
+    identity = {
+        "schema": "fs2-serve.nebius.ai/public-edge-identity-path-export/v1",
+        "collected_at": "2026-09-17T12:00:00Z",
+        "project_id": "project-test123",
+        "cluster_id": CLUSTER_ID,
+        "protected_names": protected_names,
+        "protected_actions": actions,
+        "controller": controller,
+        "rbac_rules": rbac_rules,
+        "impersonation_rules": [],
+        "checks": checks,
+        "provenance": provenance(
+            f"kubernetes://{CLUSTER_ID}/admission", "identity"
+        ),
+    }
+    return {
+        "provider": provider,
+        "apiserver": apiserver,
+        "identity": identity,
+        "provider_summary": {
+            "provider_api": provider["provider_api"],
+            "resource_version": provider["resource_version"],
+        },
+        "apiserver_summary": {
+            "resource_version": apiserver["resource_version"],
+        },
+        "identity_summary": {
+            "rbac_review_sha256": GATE.canonical_sha256(
+                {"rbac_rules": rbac_rules}
+            ),
+            "impersonation_review_sha256": GATE.canonical_sha256(
+                {"impersonation_rules": [], "checks": checks}
+            ),
+        },
+        "boundary": boundary,
+    }
+
+
+def test_preventive_boundary_raw_exports_close_every_identity_path() -> None:
+    fixture = preventive_raw_exports()
+    GATE.validate_preventive_raw_exports(
+        provider_raw=GATE.canonical_bytes(fixture["provider"]) + b"\n",
+        apiserver_raw=GATE.canonical_bytes(fixture["apiserver"]) + b"\n",
+        identity_raw=GATE.canonical_bytes(fixture["identity"]) + b"\n",
+        provider_summary=fixture["provider_summary"],
+        apiserver_summary=fixture["apiserver_summary"],
+        identity_summary=fixture["identity_summary"],
+        boundary=fixture["boundary"],
+        project_id="project-test123",
+        cluster_id=CLUSTER_ID,
+        collected_at=datetime(2026, 9, 17, 12, 0, tzinfo=timezone.utc),
+    )
+
+
+def test_preventive_boundary_rejects_one_rbac_allowed_identity_path() -> None:
+    fixture = preventive_raw_exports()
+    identity = copy.deepcopy(fixture["identity"])
+    identity["checks"][0]["rbac_allowed"] = True
+    with pytest.raises(GATE.GateError, match="does not deny every"):
+        GATE.validate_preventive_raw_exports(
+            provider_raw=GATE.canonical_bytes(fixture["provider"]) + b"\n",
+            apiserver_raw=GATE.canonical_bytes(fixture["apiserver"]) + b"\n",
+            identity_raw=GATE.canonical_bytes(identity) + b"\n",
+            provider_summary=fixture["provider_summary"],
+            apiserver_summary=fixture["apiserver_summary"],
+            identity_summary=fixture["identity_summary"],
+            boundary=fixture["boundary"],
+            project_id="project-test123",
+            cluster_id=CLUSTER_ID,
+            collected_at=datetime(2026, 9, 17, 12, 0, tzinfo=timezone.utc),
+        )
+
+
 def test_empty_source_issuer_registry_fails_closed() -> None:
     receipt, _trust, adapter_trust, evidence_raw = membership_receipt()
     with pytest.raises(GATE.GateError, match="source-trusted authority"):

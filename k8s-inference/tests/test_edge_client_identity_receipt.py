@@ -25,6 +25,7 @@ PUBLIC_KEY = bytes.fromhex(
 KEY_ID = "sha256:" + hashlib.sha256(PUBLIC_KEY).hexdigest()
 ISSUER_ID = "platform-security-edge-authority"
 LB_ID = "loadbalancer-e00abc123"
+LISTENER_REVISION = "revision-20260917-123456"
 
 
 def b64url(value: bytes) -> str:
@@ -79,6 +80,110 @@ def trust_store() -> dict[str, object]:
             }
         ],
     }
+
+
+def native_evidence_documents() -> dict[str, object]:
+    documents: dict[str, object] = {
+        name: {
+            "schema": "fs2-serve.nebius.ai/native-edge-supporting-export/v1",
+            "kind": name,
+        }
+        for name in EDGE.EVIDENCE_FILES
+    }
+    listeners = {
+        "schema": "fs2-serve.nebius.ai/native-provider-listener-export/v1",
+        "provider": "nebius",
+        "collected_at": "2026-09-17T12:05:00Z",
+        "provenance": {
+            "collector_id": "platform-security-native-exporter",
+            "endpoint": "api.nebius.cloud",
+            "operation": "loadbalancer.listener.list",
+            "request_id": "request-20260917-abcdef",
+            "response_attestation_sha256": "a" * 64,
+        },
+        "request": {
+            "load_balancer_id": LB_ID,
+            "page_size": 100,
+            "page_token": "",
+        },
+        "response": {
+            "listeners": [
+                {
+                    "id": "loadbalancerlistener-http123",
+                    "load_balancer_id": LB_ID,
+                    "port": 80,
+                    "protocol": "HTTP",
+                    "source_connection_limit": {
+                        "enabled": True,
+                        "key": "SOURCE_IP",
+                        "maximum": 64,
+                        "overflow_action": "REJECT_SOURCE_ONLY",
+                        "applies_before_backend": True,
+                        "protocols": [
+                            "HTTP1",
+                            "HTTP2",
+                            "TCP_INCOMPLETE_HANDSHAKE",
+                        ],
+                    },
+                },
+                {
+                    "id": "loadbalancerlistener-https123",
+                    "load_balancer_id": LB_ID,
+                    "port": 443,
+                    "protocol": "HTTPS",
+                    "source_connection_limit": {
+                        "enabled": True,
+                        "key": "SOURCE_IP",
+                        "maximum": 64,
+                        "overflow_action": "REJECT_SOURCE_ONLY",
+                        "applies_before_backend": True,
+                        "protocols": [
+                            "HTTP1",
+                            "HTTP2",
+                            "TCP_INCOMPLETE_HANDSHAKE",
+                        ],
+                    },
+                },
+            ],
+            "next_page_token": "",
+            "remaining_item_count": 0,
+            "revision": LISTENER_REVISION,
+        },
+    }
+    listener_raw = EDGE._canonical(listeners) + b"\n"
+    documents["provider_listener_export_sha256"] = listeners
+    documents["connection_isolation_probe_sha256"] = {
+        "schema": "fs2-serve.nebius.ai/native-connection-isolation-probe/v1",
+        "collected_at": "2026-09-17T12:10:00Z",
+        "load_balancer_id": LB_ID,
+        "listener_export_sha256": hashlib.sha256(listener_raw).hexdigest(),
+        "listener_revision": LISTENER_REVISION,
+        "protocols": ["HTTP1", "HTTP2", "TCP_INCOMPLETE_HANDSHAKE"],
+        "saturating_source": {
+            "admitted": 64,
+            "attempted": 65,
+            "backend_connections": 64,
+            "observation_id": "b" * 64,
+            "rejected": 1,
+        },
+        "independent_source": {
+            "admitted": 1,
+            "attempted": 1,
+            "backend_connections": 1,
+            "observation_id": "c" * 64,
+            "rejected": 0,
+        },
+    }
+    return documents
+
+
+def native_reopened_evidence() -> dict[str, object]:
+    documents = native_evidence_documents()
+    digests = {
+        name: hashlib.sha256(EDGE._canonical(document) + b"\n").hexdigest()
+        for name, document in documents.items()
+    }
+    return {"digests": digests, "documents": documents}
 
 
 def receipt() -> dict[str, object]:
@@ -155,16 +260,25 @@ def receipt() -> dict[str, object]:
                 "node_ports_publicly_routable": False,
                 "target_ports_publicly_routable": False,
             },
+            "connection_admission": {
+                "enforcement_point": "provider-listener-before-envoy",
+                "http1_and_http2_connections_covered": True,
+                "listeners": [
+                    {"id": "loadbalancerlistener-http123", "port": 80},
+                    {"id": "loadbalancerlistener-https123", "port": 443},
+                ],
+                "max_concurrent_connections_per_source": 64,
+                "overflow_action": "reject-source-only-before-backend",
+                "provider_load_balancer_id": LB_ID,
+                "slow_or_incomplete_connections_covered": True,
+                "source_identity": "provider-observed-source-ip",
+                "two_client_probe": {
+                    "other_source_reached_backend": True,
+                    "saturating_source_limited": True,
+                },
+            },
         },
-        "evidence": {
-            "provider_lb_export_sha256": "2" * 64,
-            "provider_listener_export_sha256": "3" * 64,
-            "provider_backend_export_sha256": "4" * 64,
-            "security_group_export_sha256": "5" * 64,
-            "routing_export_sha256": "6" * 64,
-            "xff_probe_sha256": "7" * 64,
-            "direct_access_probe_sha256": "8" * 64,
-        },
+        "evidence": native_reopened_evidence()["digests"],
     }
     return {
         "schema": EDGE.RECEIPT_SCHEMA,
@@ -179,8 +293,8 @@ def validation_time() -> datetime:
     return datetime(2026, 9, 17, 12, 30, tzinfo=timezone.utc)
 
 
-def reopened_evidence(value: dict[str, object]) -> dict[str, str]:
-    return dict(value["payload"]["evidence"])
+def reopened_evidence(_value: dict[str, object]) -> dict[str, object]:
+    return copy.deepcopy(native_reopened_evidence())
 
 
 def test_signed_receipt_derives_identity_without_caller_verdicts(monkeypatch) -> None:
@@ -207,6 +321,7 @@ def test_signed_receipt_derives_identity_without_caller_verdicts(monkeypatch) ->
         "issuer_key_id": KEY_ID,
         "provider_load_balancer_id": LB_ID,
         "direct_access_excluded": "true",
+        "per_source_connection_limit": "64",
     }
     assert verified and verified[0][0] == PUBLIC_KEY
 
@@ -296,7 +411,7 @@ def test_signed_but_wrong_edge_facts_are_rejected(monkeypatch, mutation, message
 def test_signed_digest_must_match_reopened_provider_evidence(monkeypatch) -> None:
     candidate = receipt()
     actual = reopened_evidence(candidate)
-    actual["routing_export_sha256"] = "9" * 64
+    actual["digests"]["routing_export_sha256"] = "9" * 64
     monkeypatch.setattr(EDGE, "_verify_ed25519", lambda *_args: None)
     with pytest.raises(EDGE.ReceiptError, match="reopened provider/LB evidence bytes"):
         EDGE.verify_receipt(
@@ -311,15 +426,61 @@ def test_signed_digest_must_match_reopened_provider_evidence(monkeypatch) -> Non
 def test_fixed_evidence_directory_reopens_and_hashes_every_raw_input(tmp_path) -> None:
     directory = tmp_path / EDGE.EVIDENCE_DIRECTORY
     directory.mkdir(mode=0o700)
-    expected = {}
-    for index, (digest_name, filename) in enumerate(EDGE.EVIDENCE_FILES.items(), start=1):
-        raw = f"bounded-provider-evidence-{index}\n".encode()
+    documents = native_evidence_documents()
+    expected_digests = {}
+    for digest_name, filename in EDGE.EVIDENCE_FILES.items():
+        raw = EDGE._canonical(documents[digest_name]) + b"\n"
         path = directory / filename
         path.write_bytes(raw)
         path.chmod(0o600)
-        expected[digest_name] = hashlib.sha256(raw).hexdigest()
+        expected_digests[digest_name] = hashlib.sha256(raw).hexdigest()
 
-    assert EDGE._reopen_evidence(tmp_path / EDGE.RECEIPT_FILENAME) == expected
+    assert EDGE._reopen_evidence(tmp_path / EDGE.RECEIPT_FILENAME) == {
+        "digests": expected_digests,
+        "documents": documents,
+    }
+
+
+def test_signed_connection_cap_cannot_override_native_listener_response(monkeypatch) -> None:
+    candidate = receipt()
+    candidate["payload"]["observations"]["connection_admission"][
+        "max_concurrent_connections_per_source"
+    ] = 32
+    candidate["payload_sha256"] = hashlib.sha256(
+        EDGE._canonical(candidate["payload"])
+    ).hexdigest()
+    monkeypatch.setattr(EDGE, "_verify_ed25519", lambda *_args: None)
+    with pytest.raises(EDGE.ReceiptError, match="native provider evidence"):
+        EDGE.verify_receipt(
+            candidate,
+            trust_store(),
+            expected_subject(),
+            reopened_evidence(candidate),
+            validation_time=validation_time(),
+        )
+
+
+def test_native_connection_probe_must_match_listener_revision(monkeypatch) -> None:
+    candidate = receipt()
+    evidence = reopened_evidence(candidate)
+    evidence["documents"]["connection_isolation_probe_sha256"][
+        "listener_revision"
+    ] = "revision-foreign"
+    evidence["digests"]["connection_isolation_probe_sha256"] = hashlib.sha256(
+        EDGE._canonical(
+            evidence["documents"]["connection_isolation_probe_sha256"]
+        )
+        + b"\n"
+    ).hexdigest()
+    monkeypatch.setattr(EDGE, "_verify_ed25519", lambda *_args: None)
+    with pytest.raises(EDGE.ReceiptError, match="native listener revision"):
+        EDGE.verify_receipt(
+            candidate,
+            trust_store(),
+            expected_subject(),
+            evidence,
+            validation_time=validation_time(),
+        )
 
 
 def test_openssl_verifier_accepts_the_rfc8032_empty_message_vector() -> None:

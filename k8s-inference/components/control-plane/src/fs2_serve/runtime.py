@@ -7,7 +7,7 @@ import json
 import logging
 import re
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any, Protocol, runtime_checkable
@@ -84,18 +84,22 @@ class _UpstreamCapture:
         request_headers: dict[str, str],
         maximum: int,
         upstream_attempt: int,
+        debug_scope: Mapping[str, Any],
     ) -> None:
         self.operation = operation
         self.endpoint = endpoint
         self.method = "POST"
         self.query_string = ""
-        self.request_body = request_body
+        self.request_body = request_body[:maximum]
+        self.request_observed_bytes = len(request_body)
+        self.request_complete = len(request_body) <= maximum
         self.request_headers = list(request_headers.items())
         self.response_headers: list[tuple[str, str]] = []
         self.request_content_type: str | None = operation.request_content_type
         self.response_content_type: str | None = None
         self.maximum = maximum
         self.upstream_attempt = upstream_attempt
+        self.debug_scope = dict(debug_scope)
         self.started_at = datetime.now(UTC)
         self.completed_at: datetime | None = None
         self.status: int | None = None
@@ -115,7 +119,10 @@ class _UpstreamCapture:
         self.request_headers = list(request.headers.multi_items())
         self.request_content_type = request.headers.get("content-type")
         try:
-            self.request_body = request.content
+            request_body = request.content
+            self.request_observed_bytes = len(request_body)
+            self.request_complete = len(request_body) <= self.maximum
+            self.request_body = request_body[: self.maximum]
         except httpx.RequestNotRead:
             pass  # Dispatch input is already bytes; never consume/resend a request stream.
         self.known_credentials.extend(credential_values(self.request_headers, self.query_string, self.request_body))
@@ -175,7 +182,11 @@ class _UpstreamCapture:
 
     def exchange(self) -> DebugExchange:
         request = body_capture(
-            self.request_body, self.request_content_type, complete=True, known_credentials=self.known_credentials
+            self.request_body,
+            self.request_content_type,
+            complete=self.request_complete,
+            known_credentials=self.known_credentials,
+            observed_bytes=self.request_observed_bytes,
         )
         response = body_capture(
             bytes(self.content),
@@ -199,6 +210,10 @@ class _UpstreamCapture:
             principal_id=self.operation.principal_id,
             token_id=self.operation.token_id,
             model_id=self.operation.model_id,
+            debug_activation_sha256=self.debug_scope["activation_payload_sha256"],
+            debug_app_id=self.debug_scope["app_id"],
+            debug_event_sequence=self.debug_scope["sequence"],
+            debug_session_id=self.debug_scope["session_id"],
             mcp_tool=None,
             endpoint=self.endpoint,
             method=self.method,
@@ -274,6 +289,7 @@ class RuntimeClient:
         metadata_provider: RuntimeMetadataProvider | None = None,
         federation: FederationRouter | None = None,
         debug_store: DebugStore | None = None,
+        debug_capture_bytes: int = 1024 * 1024,
     ) -> None:
         self.activation_timeout_seconds = activation_timeout_seconds
         self.runtime_timeout_seconds = runtime_timeout_seconds
@@ -283,6 +299,54 @@ class RuntimeClient:
         self.metadata_provider = metadata_provider or NullRuntimeMetadataProvider()
         self.federation = federation or FederationRouter({})
         self.debug_store = debug_store
+        self.debug_capture_bytes = debug_capture_bytes
+        self.debug_sessions: Any | None = None
+        self.debug_audit_store: Any | None = None
+        self.debug_persist_timeout_seconds = 2.0
+
+    async def _active_debug_scope(
+        self, operation: ClaimedOperation
+    ) -> Mapping[str, Any] | None:
+        if self.debug_store is None or self.debug_sessions is None:
+            return None
+        try:
+            return await asyncio.wait_for(
+                self.debug_sessions.capture_scope(
+                    operation.tenant_id,
+                    str(operation.model_id),
+                    admitted_at=operation.accepted_at,
+                ),
+                timeout=self.debug_persist_timeout_seconds,
+            )
+        except Exception as error:
+            _LOGGER.warning(
+                "upstream debug authorization failed operation_id=%s error_type=%s",
+                operation.id,
+                type(error).__name__,
+            )
+            return None
+
+    async def _debug_scope_remains_current(
+        self, operation: ClaimedOperation, expected: Mapping[str, Any]
+    ) -> bool:
+        current = await self._active_debug_scope(operation)
+        immutable = (
+            "activation_payload_sha256",
+            "activation_started_at",
+            "app_id",
+            "broker_id",
+            "cluster_id",
+            "deployment_id",
+            "revocation_epoch",
+            "sequence",
+            "session_id",
+            "signed_envelope_sha256",
+            "tenant_id",
+            "model_id",
+        )
+        return current is not None and all(
+            current.get(field) == expected.get(field) for field in immutable
+        )
 
     @asynccontextmanager
     async def _debug_stream(
@@ -293,9 +357,16 @@ class RuntimeClient:
         request_body: bytes,
         headers: dict[str, str],
         upstream_attempt: int,
+        debug_scope: Mapping[str, Any],
     ) -> AsyncIterator[httpx.Response]:
         capture = _UpstreamCapture(
-            operation, endpoint, request_body, headers, self.max_response_bytes, upstream_attempt
+            operation,
+            endpoint,
+            request_body,
+            headers,
+            self.debug_capture_bytes,
+            upstream_attempt,
+            debug_scope,
         )
         try:
             async with stream as response:
@@ -312,9 +383,56 @@ class RuntimeClient:
             capture.failed(error)
             raise
         finally:
-            if self.debug_store is not None:
+            if self.debug_store is not None and self.debug_sessions is not None:
                 try:
-                    await persist_debug_exchange(self.debug_store, capture.exchange())
+                    exchange = capture.exchange()
+                    audit = {
+                        "actor": operation.principal_id,
+                        "tenant_id": operation.tenant_id,
+                        "token_id": operation.token_id,
+                        "action": "request.debug.capture",
+                        "target_type": "request_debug_exchange",
+                        "target_id": str(exchange.id),
+                        "outcome": "succeeded",
+                        "detail": {
+                            "activation_payload_sha256": str(
+                                debug_scope["activation_payload_sha256"]
+                            ),
+                            "activation_started_at": debug_scope[
+                                "activation_started_at"
+                            ].isoformat(),
+                            "app_id": str(debug_scope["app_id"]),
+                            "model_id": str(operation.model_id),
+                            "operation_accepted_at": operation.accepted_at.isoformat(),
+                            "request_truncated": not capture.request_complete,
+                            "response_truncated": not capture.complete,
+                            "session_id": str(debug_scope["session_id"]),
+                        },
+                    }
+                    stored = await asyncio.wait_for(
+                        self.debug_sessions.persist_if_current(
+                            store=self.debug_store,
+                            exchange=exchange,
+                            expected=debug_scope,
+                            audit_store=self.debug_audit_store,
+                            audit=audit,
+                        ),
+                        timeout=self.debug_persist_timeout_seconds,
+                    )
+                    if not stored and self.debug_audit_store is not None:
+                        await asyncio.wait_for(
+                            self.debug_audit_store.append_audit_event(
+                                **{
+                                    **audit,
+                                    "outcome": "skipped",
+                                    "detail": {
+                                        **audit["detail"],
+                                        "reason": "activation_changed_before_commit",
+                                    },
+                                }
+                            ),
+                            timeout=self.debug_persist_timeout_seconds,
+                        )
                 except Exception as error:
                     # Debug serialization/storage failures must not replace an
                     # inference result. Never put payloads or exception text in logs.
@@ -568,6 +686,7 @@ class RuntimeClient:
         headers = self._correlation_headers(operation)
         headers["content-type"] = operation.request_content_type
         started = time.monotonic()
+        debug_scope = await self._active_debug_scope(operation)
         try:
             if model.binding.backend_class == "local-kubernetes":
                 stream = self.client.stream(
@@ -577,8 +696,10 @@ class RuntimeClient:
                     content=request_body,
                     timeout=self._timeout(operation, self.runtime_timeout_seconds),
                 )
-                if self.debug_store is not None:
-                    stream = self._debug_stream(stream, operation, endpoint, request_body, headers, 1)
+                if debug_scope is not None:
+                    stream = self._debug_stream(
+                        stream, operation, endpoint, request_body, headers, 1, debug_scope
+                    )
             else:
                 stream = self.federation.stream(
                     model,
@@ -590,10 +711,16 @@ class RuntimeClient:
                     content=request_body,
                     exchange_observer=(
                         lambda context, attempt: self._debug_stream(
-                            context, operation, endpoint, request_body, headers, attempt
+                            context,
+                            operation,
+                            endpoint,
+                            request_body,
+                            headers,
+                            attempt,
+                            debug_scope,
                         )
                     )
-                    if self.debug_store is not None
+                    if debug_scope is not None
                     else None,
                 )
             async with stream as response:

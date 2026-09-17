@@ -66,6 +66,10 @@ locals {
       one(data.external.edge_client_identity_receipt[*].result.direct_access_excluded) == "true",
       false,
     )
+    per_source_connection_limit = try(
+      tonumber(one(data.external.edge_client_identity_receipt[*].result.per_source_connection_limit)),
+      0,
+    )
   } : {
     verified                  = false
     trusted_hops              = 0
@@ -74,5 +78,6 @@ locals {
     issuer_key_id             = ""
     provider_load_balancer_id = ""
     direct_access_excluded    = false
+    per_source_connection_limit = 0
   }
 }

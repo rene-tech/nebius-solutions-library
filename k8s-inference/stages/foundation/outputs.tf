@@ -30,6 +30,7 @@ output "cluster_contract" {
         name        = try(local.public_edge_cas_bootstrap_authority.approval_name, "")
         resource    = try(local.public_edge_cas_bootstrap_authority.approval_resource, "")
         sha256      = local.public_edge_node_authority_approval_sha256
+        preventive_boundary_receipt_sha256 = try(local.public_edge_observed_preventive_boundary.receipt_sha256, "")
       }
     })
     jobset                                    = var.jobset.enabled ? module.jobset_controller[0].contract : null
@@ -39,8 +40,8 @@ output "cluster_contract" {
 output "managed_resource_count" {
   description = "Expected managed Terraform address count for plan review."
   # 29 pre-existing addresses, the Kueue release verification, and the always
-  # present jobset-system namespace. The six exact rate-limit-store addresses
-  # below are always present. Public mode adds the apply-time eligibility gate
+  # present jobset-system namespace. The seven exact rate-limit-store/service
+  # addresses below are always present. Public mode adds the apply-time eligibility gate
   # and four Node-authority/CAS admission addresses to the same closed allowlist.
   # The JobSet module itself contributes five
   # addresses only when it is enabled.

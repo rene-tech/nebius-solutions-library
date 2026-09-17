@@ -36,7 +36,8 @@ def test_launcher_has_no_caller_source_path_or_digest_contract() -> None:
     assert "FS2_EXPECTED_PYTHON_SHA256" in source
     assert "require_fd_digest(bootstrap_fd" in source
     assert "require_fd_digest(python_fd" in source
-    assert "program.p_type == PT_INTERP || program.p_type == PT_DYNAMIC" in source
+    assert '#include "fs2-frozen-runtime.h"' in source
+    assert "require_static_frozen_python(python_fd)" in source
     assert 'child[output++] = "-S"' in source
     assert "sys.path[:]=[]" in source
 
@@ -80,7 +81,9 @@ def test_operator_auth_and_secrets_are_brokered_not_ambient() -> None:
     assert "public-edge-nebius-auth.sock" in bootstrap
     assert "SO_PEERCRED" in bootstrap
     assert '"caller_uid"' in bootstrap
-    assert '"caller_gid"' in bootstrap
+    assert '"caller_real_gid"' in bootstrap
+    assert '"caller_effective_gid"' in bootstrap
+    assert '"peer_observed_caller_gid"' in bootstrap
     assert '"operator_identity"' in bootstrap
     assert 'profile_record["operators"]' in bootstrap
     assert 'profile_record["subject_id"]' in bootstrap
@@ -102,10 +105,10 @@ def test_operator_auth_and_secrets_are_brokered_not_ambient() -> None:
     assert "refresh_brokered_auth" in stack
     assert "MAXIMUM_MUTATION_SECONDS = 90 * 60" in stack
     assert "terraform-mutation-started/v2" in stack
-    assert "mutation-ledger-receipt/v1" in stack
+    assert "mutation-ledger-receipt/v2" in stack
     assert "record_mutation_started(" in stack
     assert stack.index("record_mutation_started(", stack.index("def apply_plan(")) < stack.index(
-        "subprocess.run(", stack.index("def apply_plan(")
+        "subprocess.Popen(", stack.index("def apply_plan(")
     )
     assert '_request_mutation_ledger_event(\n        action="started"' in stack
     assert 'MUTATION_SETTLEMENT_ROOT.glob("*.started.json")' in stack
@@ -117,7 +120,7 @@ def test_operator_auth_and_secrets_are_brokered_not_ambient() -> None:
     assert '"apply", "-input=false", "-lock=true", str(refresh_plan)' in stack
     assert 'or (stage == "infrastructure" and not operations)' in stack
     assert "include_secrets=True" in stack
-    assert '!= "fs2-serve.nebius.ai/short-lived-nebius-auth/v2"' in stack
+    assert '!= "fs2-serve.nebius.ai/short-lived-nebius-auth/v3"' in stack
     assert "token = chomp(file(var.nebius_iam_token_file))" in infrastructure_provider
     assert "token = chomp(file(var.nebius_iam_token_file))" in workloads_provider
     assert "profile = {" not in infrastructure_provider
@@ -144,10 +147,37 @@ def test_apply_reexecs_before_argument_parsing_or_terraform_probe() -> None:
         "status",
         "output",
         "proxy",
+        "debug-proxy",
+        "debug-view",
+        "debug-export",
+        "activate-debug",
+        "disable-debug",
     ):
         assert f'"{command}"' in source[source.index("CAPSULE_COMMANDS") : source.index("class DeploymentError")]
     for name in ("terraform", "kubectl", "nebius", "crane"):
         assert f'args.{name} = CAPSULE_TOOL_PATHS["{name}"]' in main
+
+
+def test_authenticated_local_debugging_does_not_require_cloud_broker() -> None:
+    bootstrap = BOOTSTRAP_PATH.read_text(encoding="utf-8")
+    stack = (ROOT / "inference-stack").read_text(encoding="utf-8")
+    assert '"activate-debug",' in bootstrap
+    assert '"disable-debug",' in bootstrap
+    assert '"debug-view",' in bootstrap
+    assert '"debug-export",' in bootstrap
+    assert '"local-read-only" if read_only_operator else "brokered-cloud"' in bootstrap
+    assert 'if token_fd >= 0:' in bootstrap
+    assert '"debug-proxy",\n            "debug-view",\n            "debug-export",\n            "activate-debug",' in stack
+    assert '"disable-debug",' in stack
+    assert '"debug-view",' in stack
+    assert '"debug-export",' in stack
+    assert 'CAPSULE_ACCESS_MODE != "local-read-only"' in stack
+    assert '"nebius_token" in CAPSULE_TOOL_PATHS' in stack
+    assert 'if not local_read_only:\n            require_brokered_target' in stack
+    assert "brokered_proxy_session(" in stack
+    assert '"host_listeners") != []' in stack
+    assert '"kubeconfig_custody")\n            != "root-broker-only"' in stack
+    assert "proxy credentials remain in the root broker" in stack
 
 
 def test_terraform_helpers_use_only_finite_capsule_entrypoints() -> None:
@@ -240,9 +270,9 @@ def test_privileged_installer_has_static_pre_python_gate() -> None:
     ).read_text(encoding="utf-8")
     assert "FS2_EXPECTED_INSTALLER_SOURCE_SHA256" in source
     assert "FS2_EXPECTED_INSTALLER_PYTHON_SHA256" in source
-    assert "FS2_EXPECTED_INSTALLER_FROZEN_RUNTIME_REVIEW_SHA256" in source
+    assert '#include "fs2-frozen-runtime.h"' in source
     assert "/usr/local/libexec/fs2-public-edge-installer.py" in source
-    assert "PT_INTERP || program.p_type == PT_DYNAMIC" in source
+    assert "require_static_python(python)" in source
     assert 'open("/proc/self/exe", O_RDONLY)' in source
     assert 'open("/proc/self/exe", O_RDONLY | O_NOFOLLOW)' not in source
     assert "sys.path[:]=[]" in source
@@ -250,9 +280,70 @@ def test_privileged_installer_has_static_pre_python_gate() -> None:
     launcher = (
         ROOT / "stages/foundation/scripts/public-edge-capsule-launcher.c"
     ).read_text(encoding="utf-8")
-    assert "FS2_EXPECTED_FROZEN_RUNTIME_REVIEW_SHA256" in launcher
-    assert "external reviewer must enumerate and inspect" in launcher
+    assert '#include "fs2-frozen-runtime.h"' in launcher
+    assert "require_static_frozen_python(python_fd)" in launcher
     assert "FS2_FROZEN_STDLIB_SHA256" not in launcher
+
+
+def test_frozen_python_contract_binds_static_pie_file_bytes_to_runtime_bytes() -> None:
+    runtime = (
+        ROOT / "stages/foundation/scripts/fs2-frozen-runtime.h"
+    ).read_text(encoding="utf-8")
+    offline = (
+        ROOT / "stages/foundation/scripts/verify-public-edge-frozen-runtime.py"
+    ).read_text(encoding="utf-8")
+    for source in (runtime, offline):
+        assert "ET_DYN" in source or "elf_type != 3" in source
+        assert "PT_DYNAMIC" in source
+        assert "PT_INTERP" in source
+        assert "DT_NEEDED" in source or "static-PIE runtime declares an external" in source
+        assert "R_X86_64_RELATIVE" in source or "relocation_type != 8" in source
+        assert "R_X86_64_IRELATIVE" in source or "relocation_type != 37" in source
+        assert "p_filesz" in source or "program[5]" in source
+        assert "sh_offset" in source or "section[4]" in source
+        assert "sh_addr" in source or "section[3]" in source
+        assert "PT_GNU_RELRO" in source or "0x6474E552" in source
+        assert "PyImport_FrozenModules" in source
+        assert "FS2ATT1" in source
+    assert "section->sh_offset - program.p_offset" in runtime
+    assert "section->sh_addr - program.p_vaddr" in runtime
+    assert "fs2_require_disjoint_sections" in runtime
+    assert "require_disjoint(mapping_sections)" in offline
+    assert "fs2_require_authority_storage_disjoint" in runtime
+    assert "require_authority_storage_disjoint" in offline
+    assert "authority_storage[5]" in runtime
+    assert "[*pointer_authorities, builtin_authority]" in offline
+
+
+def test_debug_lifecycle_and_broker_handshakes_are_bounded_and_serialized() -> None:
+    source = (ROOT / "inference-stack").read_text(encoding="utf-8")
+    assert "def debug_lifecycle_lock" in source
+    assert "os.O_RDONLY\n        | os.O_DIRECTORY" in source
+    assert 'stat.S_IMODE(details.st_mode) != 0o700' in source
+    assert "fcntl.LOCK_EX | fcntl.LOCK_NB" in source
+    assert 'with debug_lifecycle_lock(run_root):\n                install_debug_activation' in source
+    assert 'with debug_lifecycle_lock(run_root):\n                disable_debug_activation' in source
+    assert "disable_deadline = time.monotonic()" in source
+    assert 'bound_disable_io("connect", 5.0)' in source
+    assert 'bound_disable_io("send", 5.0)' in source
+    assert 'bound_disable_io("receive", 20.0)' in source
+    assert "handshake_deadline = time.monotonic()" in source
+    assert 'bound_handshake_io("connect", 5.0)' in source
+    assert 'bound_handshake_io("send", 5.0)' in source
+    assert 'bound_handshake_io("receive", 20.0)' in source
+    assert "_debug_activation_history(run_root, allow_absent=True)" in source
+    assert '"schema": "fs2-serve.nebius.ai/internal-debug-cli-read/v1"' in source
+    assert '"fs2-serve.nebius.ai/internal-debug-cli-result/v1"' in source
+    assert '"audit_event_sha256"' in source
+
+
+def test_cloud_token_descriptor_is_scoped_to_authenticated_children() -> None:
+    source = (ROOT / "inference-stack").read_text(encoding="utf-8")
+    assert "{auth_refresh_fd, secret_broker_fd, token_fd}" in source
+    assert "def brokered_auth_pass_fds(" in source
+    assert '"NEBIUS_IAM_TOKEN" in environment' in source
+    assert "*brokered_auth_pass_fds(environment)" in source
+    assert "*brokered_auth_pass_fds(refreshed_environment)" in source
 
 
 def test_reconciliation_requires_external_signed_settlement_and_acceptance() -> None:

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 import signal
@@ -23,10 +24,38 @@ from internal_edge_acceptance import (
     DEFAULT_PROXY_PORT,
     SameOriginProxy,
     checked_private_file,
+    configure_debug_scope,
     configure_local_ports,
     port_forward_command,
     wait_for_port,
 )
+
+
+def inherited_sealed_kubeconfig(path: Path) -> tuple[Path, int]:
+    """Validate the inherited memfd itself without resolving its proc path."""
+
+    match = __import__("re").fullmatch(r"/proc/self/fd/([0-9]+)", str(path))
+    if match is None:
+        raise ValueError("kubeconfig must be one inherited proc descriptor")
+    descriptor = int(match.group(1))
+    if descriptor < 3:
+        raise ValueError("kubeconfig cannot name a standard descriptor")
+    details = os.fstat(descriptor)
+    required_seals = (
+        fcntl.F_SEAL_SEAL
+        | fcntl.F_SEAL_SHRINK
+        | fcntl.F_SEAL_GROW
+        | fcntl.F_SEAL_WRITE
+    )
+    if (
+        not __import__("stat").S_ISREG(details.st_mode)
+        or __import__("stat").S_IMODE(details.st_mode) != 0o600
+        or details.st_size < 1
+        or details.st_size > 4 * 1024 * 1024
+        or fcntl.fcntl(descriptor, fcntl.F_GET_SEALS) != required_seals
+    ):
+        raise ValueError("kubeconfig descriptor is not one bounded sealed mode-0600 memfd")
+    return path, descriptor
 
 
 def parse_args() -> argparse.Namespace:
@@ -43,6 +72,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--operator-proxy-port", type=int, default=DEFAULT_PROXY_PORT)
     parser.add_argument("--mcp-endpoint-url", required=True)
     parser.add_argument("--admin-web-interface-url", required=True)
+    parser.add_argument("--debug-tenant-id")
+    parser.add_argument("--debug-model-id")
+    parser.add_argument("--debug-app-id")
     parser.add_argument("--ready-timeout-seconds", type=int, default=60)
     return parser.parse_args()
 
@@ -59,98 +91,11 @@ def terminate(processes: list[subprocess.Popen[bytes]]) -> None:
 
 
 def main() -> None:
-    args = parse_args()
-    if not args.context or any(character.isspace() for character in args.context):
-        raise ValueError("context must be a non-empty Kubernetes context name")
-    if not 5 <= args.ready_timeout_seconds <= 300:
-        raise ValueError("ready-timeout-seconds must be from 5 through 300")
-    configure_local_ports(
-        args.control_plane_local_port,
-        args.admin_console_local_port,
-        args.operator_proxy_port,
+    raise RuntimeError(
+        "retired: operator-owned raw port-forward listeners are forbidden; "
+        "inference-stack proxy/debug-proxy must lease the root broker's sole "
+        "scope-enforcing listener"
     )
-    kubeconfig = args.kubeconfig.resolve(strict=True)
-    checked_private_file(kubeconfig, "kubeconfig")
-    expected_origin = f"http://localhost:{args.operator_proxy_port}"
-    expected_urls = {
-        "mcp_endpoint_url": f"{expected_origin}/mcp",
-        "admin_web_interface_url": f"{expected_origin}/admin/",
-    }
-    actual_urls = {
-        "mcp_endpoint_url": args.mcp_endpoint_url,
-        "admin_web_interface_url": args.admin_web_interface_url,
-    }
-    if actual_urls != expected_urls or any(
-        urlsplit(url).hostname != "localhost" for url in actual_urls.values()
-    ):
-        raise ValueError("endpoint URLs do not match the configured loopback proxy")
-
-    processes: list[subprocess.Popen[bytes]] = []
-    server: ThreadingHTTPServer | None = None
-    server_thread: threading.Thread | None = None
-    previous_handlers: dict[int, signal.Handlers] = {}
-
-    def interrupt(_signal_number: int, _frame: object) -> None:
-        raise KeyboardInterrupt
-
-    try:
-        for signal_number in (signal.SIGINT, signal.SIGTERM):
-            previous_handlers[signal_number] = signal.getsignal(signal_number)
-            signal.signal(signal_number, interrupt)
-        for service, port in (
-            (CONTROL_SERVICE, args.control_plane_local_port),
-            (ADMIN_SERVICE, args.admin_console_local_port),
-        ):
-            processes.append(
-                subprocess.Popen(  # noqa: S603
-                    port_forward_command(
-                        kubeconfig,
-                        args.context,
-                        service,
-                        port,
-                        kubectl=args.kubectl,
-                    ),
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=None,
-                    env={**os.environ, "KUBECONFIG": str(kubeconfig)},
-                )
-            )
-        deadline = time.monotonic() + args.ready_timeout_seconds
-        wait_for_port(processes, args.control_plane_local_port, deadline)
-        wait_for_port(processes, args.admin_console_local_port, deadline)
-        server = ThreadingHTTPServer(
-            (BIND_ADDRESS, args.operator_proxy_port), SameOriginProxy
-        )
-        print(
-            json.dumps(
-                {
-                    "status": "serving",
-                    **actual_urls,
-                },
-                sort_keys=True,
-            ),
-            flush=True,
-        )
-        server_thread = threading.Thread(target=server.serve_forever, daemon=True)
-        server_thread.start()
-        while True:
-            exited = [process for process in processes if process.poll() is not None]
-            if exited:
-                raise RuntimeError("kubectl port-forward exited while proxy was serving")
-            time.sleep(0.5)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        if server is not None:
-            if server_thread is not None:
-                server.shutdown()
-            server.server_close()
-        if server_thread is not None:
-            server_thread.join(timeout=5)
-        terminate(processes)
-        for signal_number, handler in previous_handlers.items():
-            signal.signal(signal_number, handler)
 
 
 if __name__ == "__main__":

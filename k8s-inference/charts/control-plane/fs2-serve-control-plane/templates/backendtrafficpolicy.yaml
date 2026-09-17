@@ -24,10 +24,16 @@
 {{- if not $identity.directAccessExcluded }}
 {{- fail "a verified edgeClientIdentity requires proof that direct access cannot forge X-Forwarded-For" }}
 {{- end }}
+{{- if or (lt (int $identity.perSourceConnectionLimit) 1) (gt (int $identity.perSourceConnectionLimit) 128) }}
+{{- fail "a verified edgeClientIdentity requires a provider-enforced per-source connection limit from 1 through 128" }}
+{{- end }}
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: BackendTrafficPolicy
 metadata:
   name: {{ include "fs2-serve.fullname" . }}-edge-limit
+  annotations:
+    fs2.nebius.ai/provider-load-balancer-id: {{ $identity.providerLoadBalancerId | quote }}
+    fs2.nebius.ai/provider-per-source-connection-limit: {{ $identity.perSourceConnectionLimit | quote }}
   labels:
     {{- include "fs2-serve.labels" . | nindent 4 }}
 spec:

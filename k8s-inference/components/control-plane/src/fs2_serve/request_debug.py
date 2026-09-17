@@ -1,6 +1,6 @@
 """Opt-in preproduction HTTP/MCP debug captures, separate from usage telemetry.
 
-Model inputs and results are retained without a second payload-size ceiling.
+Only a bounded redacted prefix is retained for an active signed debug session.
 Authentication material is removed; encrypted PostgreSQL details are available
 only through the operator API. No body, header, query or exception message is
 written to ordinary application logs. An unread or interrupted body is explicit.
@@ -60,6 +60,8 @@ _AUTH_NAMES = frozenset(
         "xamzcredential",
         "xamzsignature",
         "xamzsecuritytoken",
+        "xfs2debugauthorization",
+        "xfs2debugchannelbinding",
         "signature",
         "sig",
     }
@@ -94,6 +96,10 @@ class DebugMetadata(StrictModel):
     principal_id: str | None = None
     token_id: UUID | None = None
     model_id: str | None = None
+    debug_activation_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    debug_app_id: UUID | None = None
+    debug_event_sequence: int | None = Field(default=None, ge=1)
+    debug_session_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{32,64}$")
     mcp_tool: str | None = None
     endpoint: str
     method: str
@@ -225,6 +231,8 @@ def body_capture(
     content_type: str | None,
     complete: bool,
     known_credentials: Credentials = (),
+    *,
+    observed_bytes: int | None = None,
 ) -> DebugBody:
     original = raw
     # Parse regardless of Content-Type: malformed/mislabeled requests are the
@@ -254,7 +262,7 @@ def body_capture(
         encoding=encoding,
         data=text,
         content_type=content_type,
-        observed_bytes=len(original),
+        observed_bytes=len(original) if observed_bytes is None else observed_bytes,
         complete=complete,
         redacted=raw != original,
     )
@@ -415,26 +423,33 @@ class PostgresDebugStore:
 
     async def record(self, exchange: DebugExchange) -> None:
         async with self.pool.acquire() as connection:
-            if exchange.model_id is None and exchange.operation_id is not None and exchange.tenant_id is not None:
-                model_id = await connection.fetchval(
-                    "SELECT model_id FROM fs2_operations WHERE id=$1 AND tenant_id=$2",
-                    exchange.operation_id,
-                    exchange.tenant_id,
-                )
-                exchange = exchange.model_copy(update={"model_id": model_id})
-            exchange = _sanitize(exchange)
-            metadata = _summary(exchange).model_dump()
-            encrypted = self.cipher.encrypt(
-                exchange.model_dump_json().encode(), aad=self._aad(exchange.id, exchange.tenant_id, exchange.model_id)
+            await self.record_on_connection(connection, exchange)
+
+    async def record_on_connection(
+        self, connection: asyncpg.Connection[Any], exchange: DebugExchange
+    ) -> None:
+        """Insert on an existing revocation-serialized transaction."""
+        if exchange.model_id is None and exchange.operation_id is not None and exchange.tenant_id is not None:
+            model_id = await connection.fetchval(
+                "SELECT model_id FROM fs2_operations WHERE id=$1 AND tenant_id=$2",
+                exchange.operation_id,
+                exchange.tenant_id,
             )
-            columns = (*DebugExchangeSummary.model_fields, "key_id", "nonce", "ciphertext")
-            values = (*metadata.values(), encrypted.key_id, encrypted.nonce, encrypted.value)
-            await connection.execute(
-                f"INSERT INTO fs2_request_debug ({','.join(columns)}) "  # noqa: S608 - fixed model columns
-                f"VALUES ({','.join(f'${index}' for index in range(1, len(columns) + 1))}) "
-                "ON CONFLICT(id) DO NOTHING",
-                *values,
-            )
+            exchange = exchange.model_copy(update={"model_id": model_id})
+        exchange = _sanitize(exchange)
+        metadata = _summary(exchange).model_dump()
+        encrypted = self.cipher.encrypt(
+            exchange.model_dump_json().encode(),
+            aad=self._aad(exchange.id, exchange.tenant_id, exchange.model_id),
+        )
+        columns = (*DebugExchangeSummary.model_fields, "key_id", "nonce", "ciphertext")
+        values = (*metadata.values(), encrypted.key_id, encrypted.nonce, encrypted.value)
+        await connection.execute(
+            f"INSERT INTO fs2_request_debug ({','.join(columns)}) "  # noqa: S608 - fixed model columns
+            f"VALUES ({','.join(f'${index}' for index in range(1, len(columns) + 1))}) "
+            "ON CONFLICT(id) DO NOTHING",
+            *values,
+        )
 
     async def list(
         self,
@@ -447,34 +462,65 @@ class PostgresDebugStore:
         limit: int = 100,
         cursor: str | None = None,
     ) -> DebugExchangeList:
-        after = _pagination(limit, cursor)
         async with self.pool.acquire() as connection:
-            rows = await connection.fetch(
-                f"SELECT {','.join(DebugExchangeSummary.model_fields)} FROM fs2_request_debug "  # noqa: S608
-                "WHERE ($1::text IS NULL OR model_id=$1) AND ($2::uuid IS NULL OR operation_id=$2) "
-                "AND ($3::text IS NULL OR tenant_id=$3) AND ($4::timestamptz IS NULL OR started_at >= $4) "
-                "AND ($5::timestamptz IS NULL OR started_at < $5) "
-                "AND ($6::timestamptz IS NULL OR (started_at,id) < ($6,$7::uuid)) "
-                "ORDER BY started_at DESC,id DESC LIMIT $8",
-                model_id,
-                operation_id,
-                tenant_id,
-                from_at,
-                to_at,
-                after[0] if after else None,
-                after[1] if after else None,
-                limit + 1,
+            return await self.list_on_connection(
+                connection,
+                model_id=model_id,
+                operation_id=operation_id,
+                tenant_id=tenant_id,
+                from_at=from_at,
+                to_at=to_at,
+                limit=limit,
+                cursor=cursor,
             )
+
+    async def list_on_connection(
+        self,
+        connection: asyncpg.Connection[Any],
+        *,
+        model_id: str | None = None,
+        operation_id: UUID | None = None,
+        tenant_id: str | None = None,
+        from_at: datetime | None = None,
+        to_at: datetime | None = None,
+        limit: int = 100,
+        cursor: str | None = None,
+    ) -> DebugExchangeList:
+        after = _pagination(limit, cursor)
+        rows = await connection.fetch(
+            f"SELECT {','.join(DebugExchangeSummary.model_fields)} FROM fs2_request_debug "  # noqa: S608
+            "WHERE ($1::text IS NULL OR model_id=$1) AND ($2::uuid IS NULL OR operation_id=$2) "
+            "AND ($3::text IS NULL OR tenant_id=$3) AND ($4::timestamptz IS NULL OR started_at >= $4) "
+            "AND ($5::timestamptz IS NULL OR started_at < $5) "
+            "AND ($6::timestamptz IS NULL OR (started_at,id) < ($6,$7::uuid)) "
+            "ORDER BY started_at DESC,id DESC LIMIT $8",
+            model_id,
+            operation_id,
+            tenant_id,
+            from_at,
+            to_at,
+            after[0] if after else None,
+            after[1] if after else None,
+            limit + 1,
+        )
         items = [DebugExchangeSummary.model_validate(dict(row)) for row in rows[:limit]]
         return DebugExchangeList(items=items, next_cursor=_cursor(items[-1]) if len(rows) > limit else None)
 
     async def get(self, exchange_id: UUID, tenant_id: str | None = None) -> DebugExchange | None:
         async with self.pool.acquire() as connection:
-            row = await connection.fetchrow(
-                "SELECT * FROM fs2_request_debug WHERE id=$1 AND ($2::text IS NULL OR tenant_id=$2)",
-                exchange_id,
-                tenant_id,
-            )
+            return await self.get_on_connection(connection, exchange_id, tenant_id=tenant_id)
+
+    async def get_on_connection(
+        self,
+        connection: asyncpg.Connection[Any],
+        exchange_id: UUID,
+        tenant_id: str | None = None,
+    ) -> DebugExchange | None:
+        row = await connection.fetchrow(
+            "SELECT * FROM fs2_request_debug WHERE id=$1 AND ($2::text IS NULL OR tenant_id=$2)",
+            exchange_id,
+            tenant_id,
+        )
         if row is None:
             return None
         raw = self.cipher.decrypt(
@@ -522,9 +568,15 @@ class DebugCaptureMiddleware:
         store: DebugStore,
         persist_timeout_seconds: float = 2.0,
         principal_resolver: Callable[[str], Awaitable[Principal]] | None = None,
+        sessions: Any,
+        capture_bytes: int = 1024 * 1024,
+        audit_store: Any | None = None,
     ) -> None:
         self.app, self.store = app, store
         self.persist_timeout_seconds, self.principal_resolver = persist_timeout_seconds, principal_resolver
+        self.sessions = sessions
+        self.capture_bytes = capture_bytes
+        self.audit_store = audit_store
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         path = scope.get("path", "")
@@ -539,21 +591,110 @@ class DebugCaptureMiddleware:
         state = scope.setdefault("state", {})
         request_id = ensure_request_id(scope)
         started_at = datetime.now(UTC)
+        request_headers = list(scope.get("headers", []))
+        initial_principal: Principal | None = None
+        if self.principal_resolver is not None:
+            authorization = next(
+                (
+                    value
+                    for key, value in request_headers
+                    if key.lower() == b"authorization"
+                ),
+                b"",
+            )
+            if authorization.lower().startswith(b"bearer "):
+                try:
+                    initial_principal = await asyncio.wait_for(
+                        self.principal_resolver(authorization[7:].decode("ascii")),
+                        timeout=self.persist_timeout_seconds,
+                    )
+                except Exception:
+                    initial_principal = None
+        path_model: str | None = _label(scope.get("path_params", {}).get("model_id"))
+        if path_model is None:
+            match = re.fullmatch(r"/v1/models/([^/:]+):invoke", path)
+            path_model = match[1] if match else None
+        initial_scope = None
+        if initial_principal is not None and initial_principal.tenant_id is not None:
+            try:
+                scope_lookup = (
+                    self.sessions.capture_scope(
+                        initial_principal.tenant_id, path_model
+                    )
+                    if path_model is not None
+                    else self.sessions.capture_candidate(initial_principal.tenant_id)
+                )
+                initial_scope = await asyncio.wait_for(
+                    scope_lookup,
+                    timeout=self.persist_timeout_seconds,
+                )
+            except Exception as error:
+                LOGGER.warning(
+                    "request debug activation lookup skipped request_id=%s error_type=%s",
+                    request_id,
+                    type(error).__name__,
+                )
+                initial_scope = None
+        if (
+            initial_scope is None
+            or initial_scope["event_at"] > started_at
+            or initial_scope["activation_expires_at"] <= started_at
+        ):
+            if self.audit_store is not None:
+                try:
+                    await asyncio.wait_for(
+                        self.audit_store.append_audit_event(
+                            actor=(
+                                initial_principal.principal_id
+                                if initial_principal is not None
+                                else "unauthenticated"
+                            ),
+                            tenant_id=(
+                                initial_principal.tenant_id
+                                if initial_principal is not None
+                                else None
+                            ),
+                            token_id=(
+                                initial_principal.token_id
+                                if initial_principal is not None
+                                else None
+                            ),
+                            action="request.debug.capture",
+                            target_type="request_debug_request",
+                            target_id=str(request_id),
+                            outcome="skipped",
+                            detail={"reason": "no_activation_at_request_start"},
+                        ),
+                        timeout=self.persist_timeout_seconds,
+                    )
+                except Exception as error:
+                    LOGGER.warning(
+                        "request debug skip audit failed request_id=%s error_type=%s",
+                        request_id,
+                        type(error).__name__,
+                    )
+            await self.app(scope, receive, send)
+            return
         request_parts, response_parts = bytearray(), bytearray()
+        request_observed = response_observed = 0
+        request_truncated = response_truncated = False
         request_complete = response_complete = disconnected = False
         status: int | None = None
         finished_at: datetime | None = None
         error_type: str | None = None
         response_headers: list[tuple[bytes, bytes]] = []
         response_operation: UUID | None = None
-        request_headers = list(scope.get("headers", []))
         query = scope.get("query_string", b"")
 
         async def observed_receive() -> Message:
-            nonlocal request_complete, disconnected
+            nonlocal request_complete, disconnected, request_observed, request_truncated
             message = await receive()
             if message["type"] == "http.request":
-                request_parts.extend(message.get("body", b""))
+                chunk = message.get("body", b"")
+                request_observed += len(chunk)
+                remaining = max(0, self.capture_bytes - len(request_parts))
+                request_parts.extend(chunk[:remaining])
+                request_truncated = request_truncated or len(chunk) > remaining
                 request_complete = not message.get("more_body", False)
             elif message["type"] == "http.disconnect":
                 disconnected = True
@@ -561,6 +702,7 @@ class DebugCaptureMiddleware:
 
         async def observed_send(message: Message) -> None:
             nonlocal status, response_headers, response_operation, response_complete, finished_at
+            nonlocal response_observed, response_truncated
             if message["type"] == "http.response.start":
                 status = message["status"]
                 response_headers = list(message.get("headers", []))
@@ -573,7 +715,11 @@ class DebugCaptureMiddleware:
                     None,
                 )
             elif message["type"] == "http.response.body":
-                response_parts.extend(message.get("body", b""))
+                chunk = message.get("body", b"")
+                response_observed += len(chunk)
+                remaining = max(0, self.capture_bytes - len(response_parts))
+                response_parts.extend(chunk[:remaining])
+                response_truncated = response_truncated or len(chunk) > remaining
             await send(message)
             if message["type"] == "http.response.body" and not message.get("more_body", False):
                 response_complete, finished_at = True, datetime.now(UTC)
@@ -591,23 +737,8 @@ class DebugCaptureMiddleware:
             try:
                 principal = state.get("principal")
                 if not isinstance(principal, Principal):
-                    principal = None
-                if principal is None and self.principal_resolver is not None:
-                    authorization = next(
-                        (value for key, value in request_headers if key.lower() == b"authorization"), b""
-                    )
-                    if authorization.lower().startswith(b"bearer "):
-                        try:
-                            principal = await asyncio.wait_for(
-                                self.principal_resolver(authorization[7:].decode("ascii")),
-                                timeout=self.persist_timeout_seconds,
-                            )
-                        except Exception:
-                            principal = None  # Never change the response or assign an unverified owner.
-                model_id = _label(state.get("model_id")) or _label(scope.get("path_params", {}).get("model_id"))
-                if model_id is None:
-                    match = re.fullmatch(r"/v1/models/([^/:]+):invoke", path)
-                    model_id = match[1] if match else None
+                    principal = initial_principal
+                model_id = _label(state.get("model_id")) or path_model
                 tool = _label(state.get("mcp_tool"))
                 try:
                     claimed = json.loads(request_parts)
@@ -621,37 +752,132 @@ class DebugCaptureMiddleware:
                             model_id = model_id or _label(claimed.get("model_id", claimed.get("model")))
                 except (ValueError, UnicodeError, RecursionError):
                     pass
-                known = credential_values([*request_headers, *response_headers], query, bytes(request_parts))
-                request_type = next(
-                    (_text(value) for key, value in request_headers if key.lower() == b"content-type"), None
-                )
-                response_type = next(
-                    (_text(value) for key, value in response_headers if key.lower() == b"content-type"), None
-                )
-                exchange = DebugExchange(
-                    id=uuid4(),
-                    source="public",
-                    request_id=request_id,
-                    operation_id=_uuid(state.get("operation_id")) or response_operation,
-                    started_at=started_at,
-                    completed_at=finished_at or datetime.now(UTC),
-                    tenant_id=principal.tenant_id if principal else None,
-                    principal_id=principal.principal_id if principal else None,
-                    token_id=principal.token_id if principal else None,
-                    model_id=model_id,
-                    mcp_tool=tool,
-                    endpoint=path,
-                    method=str(scope.get("method", "")),
-                    http_status=status,
-                    error_type=error_type,
-                    disconnected=disconnected,
-                    query_string=redact_query(query, known),
-                    request_headers=redact_headers(request_headers, known),
-                    response_headers=redact_headers(response_headers, known),
-                    request_body=body_capture(bytes(request_parts), request_type, request_complete, known),
-                    response_body=body_capture(bytes(response_parts), response_type, response_complete, known),
-                )
-                await persist_debug_exchange(self.store, exchange, self.persist_timeout_seconds)
+                active_scope = initial_scope
+                if (
+                    principal is None
+                    or initial_principal is None
+                    or principal.tenant_id != initial_scope["tenant_id"]
+                    or principal.principal_id != initial_principal.principal_id
+                    or principal.token_id != initial_principal.token_id
+                    or model_id != initial_scope["model_id"]
+                ):
+                    active_scope = None
+                if active_scope is None:
+                    if self.audit_store is not None:
+                        await self.audit_store.append_audit_event(
+                            actor=principal.principal_id if principal is not None else "unauthenticated",
+                            tenant_id=principal.tenant_id if principal is not None else None,
+                            token_id=principal.token_id if principal is not None else None,
+                            action="request.debug.capture",
+                            target_type="request_debug_request",
+                            target_id=str(request_id),
+                            outcome="skipped",
+                            detail={"reason": "no_current_exact_debug_activation"},
+                        )
+                else:
+                    known = credential_values(
+                        [*request_headers, *response_headers], query, bytes(request_parts)
+                    )
+                    request_type = next(
+                        (
+                            _text(value)
+                            for key, value in request_headers
+                            if key.lower() == b"content-type"
+                        ),
+                        None,
+                    )
+                    response_type = next(
+                        (
+                            _text(value)
+                            for key, value in response_headers
+                            if key.lower() == b"content-type"
+                        ),
+                        None,
+                    )
+                    exchange = DebugExchange(
+                        id=uuid4(),
+                        source="public",
+                        request_id=request_id,
+                        operation_id=_uuid(state.get("operation_id")) or response_operation,
+                        started_at=started_at,
+                        completed_at=finished_at or datetime.now(UTC),
+                        tenant_id=principal.tenant_id,
+                        principal_id=principal.principal_id,
+                        token_id=principal.token_id,
+                        model_id=model_id,
+                        debug_activation_sha256=str(
+                            active_scope["activation_payload_sha256"]
+                        ),
+                        debug_app_id=active_scope["app_id"],
+                        debug_event_sequence=int(active_scope["sequence"]),
+                        debug_session_id=str(active_scope["session_id"]),
+                        mcp_tool=tool,
+                        endpoint=path,
+                        method=str(scope.get("method", "")),
+                        http_status=status,
+                        error_type=error_type,
+                        disconnected=disconnected,
+                        query_string=redact_query(query, known),
+                        request_headers=redact_headers(request_headers, known),
+                        response_headers=redact_headers(response_headers, known),
+                        request_body=body_capture(
+                            bytes(request_parts),
+                            request_type,
+                            request_complete and not request_truncated,
+                            known,
+                            observed_bytes=request_observed,
+                        ),
+                        response_body=body_capture(
+                            bytes(response_parts),
+                            response_type,
+                            response_complete and not response_truncated,
+                            known,
+                            observed_bytes=response_observed,
+                        ),
+                    )
+                    audit = {
+                        "actor": principal.principal_id,
+                        "tenant_id": principal.tenant_id,
+                        "token_id": principal.token_id,
+                        "action": "request.debug.capture",
+                        "target_type": "request_debug_exchange",
+                        "target_id": str(exchange.id),
+                        "outcome": "succeeded",
+                        "detail": {
+                            "activation_payload_sha256": str(
+                                active_scope["activation_payload_sha256"]
+                            ),
+                            "app_id": str(active_scope["app_id"]),
+                            "model_id": model_id,
+                            "request_truncated": request_truncated,
+                            "response_truncated": response_truncated,
+                            "session_id": str(active_scope["session_id"]),
+                        },
+                    }
+                    stored = await asyncio.wait_for(
+                        self.sessions.persist_if_current(
+                            store=self.store,
+                            exchange=exchange,
+                            expected=active_scope,
+                            audit_store=self.audit_store,
+                            audit=audit,
+                        ),
+                        timeout=self.persist_timeout_seconds,
+                    )
+                    if not stored and self.audit_store is not None:
+                        await asyncio.wait_for(
+                            self.audit_store.append_audit_event(
+                                **{
+                                    **audit,
+                                    "outcome": "skipped",
+                                    "detail": {
+                                        **audit["detail"],
+                                        "reason": "activation_changed_before_commit",
+                                    },
+                                }
+                            ),
+                            timeout=self.persist_timeout_seconds,
+                        )
             except Exception as error:
                 LOGGER.warning(
                     "request debug capture failed request_id=%s error_type=%s", request_id, type(error).__name__

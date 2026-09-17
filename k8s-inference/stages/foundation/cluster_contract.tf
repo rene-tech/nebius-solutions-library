@@ -52,6 +52,7 @@ resource "terraform_data" "cluster_contract" {
         name        = try(local.public_edge_cas_bootstrap_authority.approval_name, "")
         resource    = try(local.public_edge_cas_bootstrap_authority.approval_resource, "")
         sha256      = local.public_edge_node_authority_approval_sha256
+        preventive_boundary_receipt_sha256 = try(local.public_edge_observed_preventive_boundary.receipt_sha256, "")
       }
     })
     kueue_teardown_cleanup = {

@@ -186,7 +186,10 @@ resource "terraform_data" "cluster_contract" {
           can(regex("^[a-f0-9]{64}$", local.verified_edge_client_identity.receipt_sha256)) &&
           can(regex("^sha256:[a-f0-9]{64}$", local.verified_edge_client_identity.issuer_key_id)) &&
           can(regex("^[a-z][a-z0-9-]{7,127}$", local.verified_edge_client_identity.provider_load_balancer_id)) &&
-          local.verified_edge_client_identity.direct_access_excluded,
+          local.verified_edge_client_identity.direct_access_excluded &&
+          floor(local.verified_edge_client_identity.per_source_connection_limit) == local.verified_edge_client_identity.per_source_connection_limit &&
+          local.verified_edge_client_identity.per_source_connection_limit >= 1 &&
+          local.verified_edge_client_identity.per_source_connection_limit <= 128,
           false,
         )
         ) || (
@@ -206,6 +209,18 @@ resource "terraform_data" "cluster_contract" {
           var.public_edge_contract.port_forward.bind_address == "127.0.0.1" &&
           var.public_edge_contract.port_forward.application_origin == format("http://localhost:%d", var.public_edge_contract.port_forward.operator_proxy_port) &&
           var.public_edge_contract.port_forward.operator_endpoint == format("http://127.0.0.1:%d", var.public_edge_contract.port_forward.operator_proxy_port) &&
+          (
+            var.public_edge_contract.port_forward.broker_isolation == null ||
+            (
+              var.public_edge_contract.port_forward.broker_isolation.schema == "fs2-serve.nebius.ai/internal-proxy-isolation/v1" &&
+              length(var.public_edge_contract.port_forward.broker_isolation.raw_host_listeners) == 0 &&
+              var.public_edge_contract.port_forward.broker_isolation.raw_transport_visibility == "private-network-namespace" &&
+              var.public_edge_contract.port_forward.broker_isolation.kubeconfig_custody == "root-broker-only" &&
+              var.public_edge_contract.port_forward.broker_isolation.listener_modes == ["debug-read-only", "ordinary-authenticated"] &&
+              var.public_edge_contract.port_forward.broker_isolation.ordinary_listener == "application-authenticated-loopback-tcp" &&
+              var.public_edge_contract.port_forward.broker_isolation.debug_listener == "caller-owned-mode-0600-unix-socket"
+            )
+          ) &&
           alltrue([
             for port in [
               var.public_edge_contract.port_forward.control_plane_local_port,

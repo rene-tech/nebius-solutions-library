@@ -106,6 +106,7 @@ from .models import (
 )
 from .registry import OperationalModel, Registry, RegistryError
 from .request_debug import DebugCaptureMiddleware, DebugStore, InMemoryDebugStore, PostgresDebugStore
+from .request_debug_authorization import RequestDebugAuthorization, RequestDebugSessionRegistry
 from .request_debug_routes import request_debug_router
 from .request_telemetry import InMemoryRequestTelemetryStore, PostgresRequestTelemetryStore, RequestTelemetryMiddleware
 from .route_revalidation import RouteRevalidator
@@ -605,8 +606,20 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             debug_store = InMemoryDebugStore()
         runtime.request_debug_store = debug_store
     app.state.request_debug = debug_store
+    debug_sessions = RequestDebugSessionRegistry(pool)
+    debug_authorization = RequestDebugAuthorization(
+        runtime.settings.request_debug_proxy_trust_json,
+        expected_cluster_id=runtime.settings.request_debug_cluster_id,
+        expected_deployment_id=runtime.settings.request_debug_deployment_id,
+        sessions=debug_sessions,
+    )
+    app.state.request_debug_sessions = debug_sessions
+    app.state.request_debug_authorization = debug_authorization
     if runtime.settings.request_debug_enabled:
         runtime.admission.runtime.debug_store = debug_store
+        runtime.admission.runtime.debug_capture_bytes = runtime.settings.request_debug_capture_bytes
+        runtime.admission.runtime.debug_sessions = debug_sessions
+        runtime.admission.runtime.debug_audit_store = runtime.store
     allowed_hosts, allowed_origins = runtime.settings.public_transport_allowlists()
     app.add_middleware(
         TrustedEdgeMiddleware,
@@ -615,7 +628,72 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         allowed_origins=allowed_origins,
     )
     if runtime.settings.request_debug_enabled:
-        app.add_middleware(DebugCaptureMiddleware, store=debug_store, principal_resolver=runtime.tokens.verify)
+        app.add_middleware(
+            DebugCaptureMiddleware,
+            store=debug_store,
+            principal_resolver=runtime.tokens.verify,
+            sessions=debug_sessions,
+            capture_bytes=runtime.settings.request_debug_capture_bytes,
+            audit_store=runtime.store,
+        )
+
+    @app.post("/internal/request-debug/session-events", include_in_schema=False)
+    async def request_debug_session_event(request: Request) -> dict[str, object]:
+        raw = await request.body()
+        if not raw or len(raw) > 128 * 1024:
+            raise AdminProblemError(403, "debug_activation_invalid", "debug session event is unbounded")
+        try:
+            envelope = json.loads(raw)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise AdminProblemError(403, "debug_activation_invalid", "debug session event is malformed") from exc
+
+        async def app_public_model(app_id: UUID) -> str:
+            return (await apps_service.require(app_id)).public_model_id
+
+        event, event_digest = await debug_authorization.accept_session_event(
+            envelope,
+            app_public_model=app_public_model,
+            audit_store=runtime.store,
+        )
+        return {
+            "database_event_sha256": event_digest,
+            "schema": "fs2-serve.nebius.ai/request-debug-session-event-ack/v1",
+            "session_id": event["session_id"],
+            "sequence": event["sequence"],
+            "status": "accepted",
+        }
+
+    @app.post("/internal/request-debug/activation-tombstones", include_in_schema=False)
+    async def request_debug_activation_tombstone(
+        request: Request,
+    ) -> dict[str, object]:
+        raw = await request.body()
+        if not raw or len(raw) > 128 * 1024:
+            raise AdminProblemError(
+                403,
+                "debug_activation_invalid",
+                "debug activation tombstone is unbounded",
+            )
+        try:
+            envelope = json.loads(raw)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise AdminProblemError(
+                403,
+                "debug_activation_invalid",
+                "debug activation tombstone is malformed",
+            ) from exc
+
+        tombstone, event_digest = await debug_authorization.accept_activation_tombstone(
+            envelope,
+            audit_store=runtime.store,
+        )
+        return {
+            "schema": "fs2-serve.nebius.ai/request-debug-activation-tombstone-ack/v1",
+            "activation_payload_sha256": tombstone["activation_payload_sha256"],
+            "database_event_sha256": event_digest,
+            "revoked_at": tombstone["revoked_at"],
+            "status": "accepted",
+        }
 
     @app.middleware("http")
     async def access_log(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
@@ -2228,6 +2306,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         request_debug_router(
             apps=apps_service,
             store=debug_store,
+            debug_authorization=debug_authorization,
             access=admin_access,
             operator_dependency=operator,
             context_dependency=app_context,

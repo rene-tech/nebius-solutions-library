@@ -65,6 +65,10 @@ locals {
       syncWaitSeconds        = "30"
       maxSyncWaitSeconds     = "30"
       requestDebugEnabled    = var.request_debug_enabled
+      requestDebugProxyTrustJson = trimspace(file("${path.module}/../foundation/trusted-internal-debug-activation-issuers.json"))
+      requestDebugClusterId      = var.cluster_id
+      requestDebugDeploymentId   = "${var.cluster_id}:${var.run_id}"
+      requestDebugCaptureBytes   = "1048576"
       }, var.model_scaling_mode == "keda" ? {
       activationTimeoutSeconds = "7200"
     } : {})
@@ -221,6 +225,7 @@ locals {
       issuerKeyId                   = local.verified_edge_client_identity.issuer_key_id
       providerLoadBalancerId        = local.verified_edge_client_identity.provider_load_balancer_id
       directAccessExcluded          = local.verified_edge_client_identity.direct_access_excluded
+      perSourceConnectionLimit      = local.verified_edge_client_identity.per_source_connection_limit
     }
     httpRoute = {
       enabled       = local.public_edge_enabled
@@ -274,6 +279,7 @@ resource "helm_release" "control_plane" {
           data.external.public_edge_mutation_fence[0].result.admission_bootstrap_policy_sha256 == data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_bootstrap_policy_sha256 &&
           data.external.public_edge_mutation_fence[0].result.admission_bootstrap_binding_sha256 == data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_bootstrap_binding_sha256 &&
           data.external.public_edge_mutation_fence[0].result.admission_boundary_approval_sha256 == data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_boundary_approval.sha256 &&
+          data.external.public_edge_mutation_fence[0].result.preventive_boundary_receipt_sha256 == data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_boundary_approval.preventive_boundary_receipt_sha256 &&
           tonumber(data.external.public_edge_mutation_fence[0].result.provider_member_count) >= 3 &&
           tonumber(data.external.public_edge_mutation_fence[0].result.eligible_node_count) >= 3 &&
           tonumber(data.external.public_edge_mutation_fence[0].result.hostname_domain_count) >= 3,

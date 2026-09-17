@@ -49,9 +49,16 @@ def test_foundation_configures_one_ha_rate_limit_authority_and_closed_count() ->
     assert 'resource "kubernetes_deployment_v1" "edge_rate_limit_redis"' not in terraform
     assert 'resource "kubernetes_stateful_set_v1" "edge_rate_limit_redis"' in terraform
     assert "replicas     = 3" in terraform
-    assert "sentinel monitor $master_name $master_address $master_port 2" in terraform
+    assert "sentinel monitor $master_name $bootstrap_master 6379 2" in terraform
     assert "SENTINEL get-master-addr-by-name" in terraform
-    assert "replicaof %s %s" in terraform
+    assert "candidate_count" in terraform
+    assert 'if [ "$self_address" != "$candidate" ]; then' in terraform
+    assert "replicaof %s 6379" in terraform
+    assert 'pod_management_policy = "Parallel"' in terraform
+    assert 'role="$(redis-cli --raw ROLE)"' in terraform
+    assert "edge_rate_limit_redis_sentinel_name" not in terraform.split(
+        '"run-redis.sh" = <<-EOT', 1
+    )[1].split('"ready.sh" = <<-EOT', 1)[0]
     assert 'resource "kubernetes_service_v1" "edge_rate_limit_redis_headless"' in terraform
     assert 'resource "kubernetes_service_v1" "edge_rate_limit_redis_sentinel"' in terraform
     assert 'resource "kubernetes_pod_disruption_budget_v1" "edge_rate_limit_redis"' in terraform
@@ -77,6 +84,7 @@ def test_foundation_configures_one_ha_rate_limit_authority_and_closed_count() ->
         "kubernetes_service_v1.edge_rate_limit_redis_headless",
         "kubernetes_service_v1.edge_rate_limit_redis_sentinel",
         "kubernetes_pod_disruption_budget_v1.edge_rate_limit_redis",
+        "kubernetes_pod_disruption_budget_v1.edge_rate_limit_service",
         "kubernetes_network_policy_v1.edge_rate_limit_redis",
         "terraform_data.public_edge_apply_eligibility[0]",
         "kubernetes_manifest.public_edge_node_authority_cas_policy[0]",
@@ -86,6 +94,10 @@ def test_foundation_configures_one_ha_rate_limit_authority_and_closed_count() ->
     )
     assert "31 + length(local.edge_rate_limit_managed_resource_addresses)" in outputs
     assert 'output "edge_rate_limit_managed_resource_addresses"' in outputs
+    assert '"kubernetes_pod_disruption_budget_v1.edge_rate_limit_service"' in terraform
+    assert 'resource "kubernetes_pod_disruption_budget_v1" "edge_rate_limit_service"' in terraform
+    assert '"fs2.nebius.ai/edge-rate-limit-service" = "true"' in terraform
+    assert 'min_available = "1"' in terraform
     for address in addresses:
         assert f'"{address}"' in terraform
 
@@ -135,6 +147,8 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
     assert client_policy.count("clientIPDetection:") == 2
     assert "maxStreamDuration:" in client_policy
     assert "connectionLimit:" in client_policy
+    assert "perSourceConnectionLimit" in policy
+    assert "provider-per-source-connection-limit" in policy
     assert "replicas: {{ .Values.envoyProxy.replicaCount }}" in proxy
     assert "envoyPDB:" in proxy
     assert "topologySpreadConstraints:" in proxy
@@ -152,6 +166,7 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
         "issuerKeyId": "",
         "providerLoadBalancerId": "",
         "directAccessExcluded": False,
+        "perSourceConnectionLimit": 0,
     }
     assert values["edgeConnectionLimits"]["maxStreamDuration"] == "7500s"
     assert values["edgeConnectionLimits"]["maxConnectionDuration"] == "7800s"
@@ -372,7 +387,10 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
         "cannot restore allowed gate environment"
     )
     assert '"HOME": "/nonexistent"' in inference_stack
-    assert inference_stack.index('if args.command == "apply":') < inference_stack.index(
+    assert inference_stack.index("local_read_only = args.command") < inference_stack.index(
+        "require_terraform_version(args.terraform)"
+    )
+    assert inference_stack.index("require_protected_read_only_start") < inference_stack.index(
         "require_terraform_version(args.terraform)"
     )
     assert "terraform_data.public_edge_apply_eligibility" in terraform
@@ -500,3 +518,179 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
         "kubernetes_network_policy_v1.edge_rate_limit_redis",
     ):
         assert prerequisite in foundation_apply_gate
+
+
+def test_internal_proxy_exposes_only_broker_scoped_host_listener() -> None:
+    infrastructure = (ROOT / "stages/infrastructure/outputs.tf").read_text(
+        encoding="utf-8"
+    )
+    workload_variables = (ROOT / "stages/workloads/variables.tf").read_text(
+        encoding="utf-8"
+    )
+    workload_contract = (ROOT / "stages/workloads/cluster_contract.tf").read_text(
+        encoding="utf-8"
+    )
+    stack = (ROOT / "inference-stack").read_text(encoding="utf-8")
+    retired_proxy = (
+        ROOT / "stages/workloads/scripts/internal_edge_proxy.py"
+    ).read_text(encoding="utf-8")
+    acceptance = (
+        ROOT / "stages/workloads/scripts/internal_edge_acceptance.py"
+    ).read_text(encoding="utf-8")
+    registry = yaml.safe_load(
+        (
+            ROOT
+            / "stages/foundation/trusted-internal-debug-activation-issuers.json"
+        ).read_text(encoding="utf-8")
+    )
+
+    assert 'transport             = var.public_edge_mode == "public" ? "public-https" : "kubectl-port-forward"' in infrastructure
+    assert "broker_isolation = var.public_edge_mode == \"internal-only\"" in infrastructure
+    assert "raw_host_listeners       = []" in infrastructure
+    assert '"private-network-namespace"' in infrastructure
+    assert '"root-broker-only"' in infrastructure
+    assert '["debug-read-only", "ordinary-authenticated"]' in infrastructure
+    for source in (workload_variables, workload_contract):
+        assert "broker_isolation" in source
+        assert "raw_host_listeners" in source
+        assert '"private-network-namespace"' in source
+        assert '"root-broker-only"' in source
+        assert '["debug-read-only", "ordinary-authenticated"]' in source
+
+    assert 'payload["raw_transport"].get("host_listeners") != []' in stack
+    assert 'payload["raw_transport"].get("namespace_listeners")' in stack
+    assert '"scope_enforcement_location"' in stack
+    assert '!= "root-broker-private-netns"' in stack
+    assert "brokered_proxy_session(" in stack
+    assert "operator-owned port-forward listeners are forbidden" in stack
+    install_debug = stack[
+        stack.index("def install_debug_activation(") : stack.index(
+            "def _verify_settlement_signature(",
+            stack.index("def install_debug_activation("),
+        )
+    ]
+    assert "existing_read_only_kubeconfig(" not in install_debug
+    assert "_validate_debug_activation_grant(" in install_debug
+    assert "proxy credentials remain in the root broker" in stack
+    assert "debug credentials remain in the root broker" in stack
+    assert '"internal-proxy-session-broker"' in stack
+    assert '"namespace_policy_sha256"' in stack
+    assert '"scope_policy_sha256"' in stack
+    assert '"caller-owned-mode-0600-unix-socket"' in stack
+    assert '"internal-proxy-heartbeat/v2"' in stack
+    assert '"internal-proxy-terminal/v1"' in stack
+    assert '"request-debug-proxy-authorization/v1"' in stack
+    assert '"credential_exported": False' in stack
+    assert '"injection_location": "root-broker-private-netns"' in stack
+    assert '"backend_authorization_current"' in stack
+    assert '"backend_authorization_revoked": debug_scope' in stack
+    assert '"close_on_control_eof": True' in stack
+    assert 'close_reason = "lease-expired"' in stack
+    assert "monotonic_deadline" in stack
+    assert "listener_details.st_uid != os.getuid()" in stack
+    assert "retired: operator-owned raw port-forward listeners are forbidden" in retired_proxy
+    assert "subprocess.Popen(" not in retired_proxy
+    assert "operator-owned Kubernetes port-forward commands are forbidden" in acceptance
+    assert "subprocess.Popen(" not in acceptance
+    assert registry == {
+        "brokers": [],
+        "issuers": [],
+        "schema": "fs2-serve.nebius.ai/trusted-internal-debug-activation-issuers/v1",
+    }
+
+
+def test_request_debug_reads_require_a_backend_verified_broker_assertion() -> None:
+    authorization = (
+        ROOT
+        / "components/control-plane/src/fs2_serve/request_debug_authorization.py"
+    ).read_text(encoding="utf-8")
+    routes = (
+        ROOT / "components/control-plane/src/fs2_serve/request_debug_routes.py"
+    ).read_text(encoding="utf-8")
+    settings = (
+        ROOT / "components/control-plane/src/fs2_serve/settings.py"
+    ).read_text(encoding="utf-8")
+    chart = (ROOT / "components/control-plane/chart/values.yaml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "request-debug-proxy-authorization/v1" in authorization
+    assert 'request.headers.get("x-fs2-debug-authorization")' in authorization
+    assert "Ed25519PublicKey.from_public_bytes" in authorization
+    assert 'payload["app_id"] != str(app_id)' in authorization
+    assert 'payload["model_id"] != public_model_id' in authorization
+    assert 'return payload["tenant_id"], payload["model_id"]' in authorization
+    assert "debug_authorization.authorize(" in routes
+    assert "tenant_id=debug_tenant" in routes
+    assert "request_debug_proxy_trust_json" in settings
+    assert "requestDebugProxyTrustJson" in chart
+
+
+def test_request_debug_tombstones_are_terminal_but_allow_distinct_reenable() -> None:
+    authorization = (
+        ROOT
+        / "components/control-plane/src/fs2_serve/request_debug_authorization.py"
+    ).read_text(encoding="utf-8")
+    migration = (
+        ROOT / "components/control-plane/migrations/0034_request_debug_activations.sql"
+    ).read_text(encoding="utf-8")
+    stack = (ROOT / "inference-stack").read_text(encoding="utf-8")
+
+    assert 'if row["activation_payload_sha256"] in self._revoked_activations' in authorization
+    assert "debug_activation_terminal" in authorization
+    assert "FROM fs2_request_debug_activation_revocations revoked" in authorization
+    assert "current.activation_payload_sha256" in authorization
+    assert "debug tombstone does not bind the exact current session event" in authorization
+    assert '"terminal_teardown_receipt"' in authorization
+    assert "tombstoned debug activation cannot append another event" in migration
+    assert "revoked.activation_payload_sha256=current.activation_payload_sha256" in migration
+    assert "debug revocation does not bind the current session event" in migration
+    assert "terminal_teardown_receipt IS NOT NULL" in migration
+    assert "def debug_lifecycle_lock" in stack
+    assert "fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)" in stack
+    assert "_debug_activation_history(run_root, allow_absent=True)" in stack
+    assert "_debug_activation_history(" in stack
+    assert "another unrevoked debug activation is current" in stack
+    assert "a tombstoned debug activation cannot be reinstalled" in stack
+    assert "def _require_debug_disable_receipts(" in stack
+    assert "debug revocation history lacks a signed terminal broker receipt" in stack
+    assert stack.index('receipt_root / f"{response_sha256}.json"') < stack.index(
+        'revocation_root / f"{revocation_sha256}.json"'
+    )
+
+    release = (
+        ROOT / "components/control-plane/src/fs2_serve/postgresql_release.py"
+    ).read_text(encoding="utf-8")
+    documentation = (
+        ROOT / "docs/security/sai-15-edge-denial-of-service.md"
+    ).read_text(encoding="utf-8")
+    assert "0034_request_debug_activations.sql" not in release
+    assert "SAI-21 owns accepted migrations 0030 and 0031" in documentation
+    assert "SAI-19 owns 0032 and 0033" in documentation
+
+
+def test_debug_authority_lookup_cannot_delay_customer_requests() -> None:
+    middleware = (
+        ROOT / "components/control-plane/src/fs2_serve/request_debug.py"
+    ).read_text(encoding="utf-8")
+    runtime = (
+        ROOT / "components/control-plane/src/fs2_serve/runtime.py"
+    ).read_text(encoding="utf-8")
+    assert "initial_scope = await asyncio.wait_for(" in middleware
+    assert "scope_lookup," in middleware
+    assert "timeout=self.persist_timeout_seconds" in middleware
+    assert "return await asyncio.wait_for(" in runtime
+    assert "timeout=self.debug_persist_timeout_seconds" in runtime
+
+
+def test_debug_view_and_export_use_only_signed_broker_control_channel() -> None:
+    stack = (ROOT / "inference-stack").read_text(encoding="utf-8")
+    assert '"debug-view"' in stack and '"debug-export"' in stack
+    assert '"control-channel-cli" if cli_operation is not None' in stack
+    assert '"signed-root-broker-control-channel"' in stack
+    assert '"schema": "fs2-serve.nebius.ai/internal-debug-cli-read/v1"' in stack
+    assert '"fs2-serve.nebius.ai/internal-debug-cli-result/v1"' in stack
+    assert '"audit_event_sha256"' in stack
+    assert 'read_path = f"/admin/api/v1/apps/{activation[\'app_id\']}/requests"' in stack
+    assert 'read_path += f"/{args.debug_request_id}"' in stack
+    assert "debug CLI result violates its exact signed scope" in stack

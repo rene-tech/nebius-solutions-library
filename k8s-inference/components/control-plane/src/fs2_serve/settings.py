@@ -250,6 +250,14 @@ class Settings(BaseSettings):
     # Opt-in full customer transport/upstream capture for evaluation debugging.
     # Existing body-size limits apply; authentication secrets are never retained.
     request_debug_enabled: bool = False
+    request_debug_proxy_trust_json: str = Field(
+        default='{"brokers":[],"issuers":[],"schema":"fs2-serve.nebius.ai/trusted-internal-debug-activation-issuers/v1"}',
+        min_length=1,
+        max_length=65536,
+    )
+    request_debug_cluster_id: str = Field(default="", max_length=128)
+    request_debug_deployment_id: str = Field(default="", max_length=256)
+    request_debug_capture_bytes: int = Field(default=1024 * 1024, ge=4096, le=4 * 1024 * 1024)
     payload_ttl_seconds: int = Field(default=86400, ge=60, le=604800)
     scientific_artifacts_enabled: bool = False
     artifact_store_endpoint: str = Field(

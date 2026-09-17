@@ -39,7 +39,17 @@ MEMBERSHIP_TRUST_SCHEMA = (
 PROVIDER_ADAPTER_TRUST_SCHEMA = (
     "fs2-serve.nebius.ai/trusted-public-edge-provider-adapters/v1"
 )
+PREVENTIVE_BOUNDARY_TRUST_SCHEMA = (
+    "fs2-serve.nebius.ai/trusted-public-edge-preventive-boundary-issuers/v2"
+)
+PREVENTIVE_BOUNDARY_RECEIPT_SCHEMA = (
+    "fs2-serve.nebius.ai/public-edge-preventive-boundary-receipt/v1"
+)
+PREVENTIVE_BOUNDARY_PAYLOAD_SCHEMA = (
+    "fs2-serve.nebius.ai/public-edge-preventive-boundary-evidence/v2"
+)
 MEMBERSHIP_ISSUER_ROLE = "platform-security-public-edge-membership"
+PREVENTIVE_BOUNDARY_ISSUER_ROLE = "platform-security-public-edge-preventive-boundary"
 MEMBERSHIP_RECEIPT_FILENAME = "public-edge-node-group-membership-receipt.json"
 MEMBERSHIP_EVIDENCE_FILENAME = "public-edge-provider-membership.json"
 MEMBERSHIP_TRUST_STORE = (
@@ -49,6 +59,25 @@ MEMBERSHIP_TRUST_STORE = (
 PROVIDER_ADAPTER_TRUST_STORE = (
     Path(__file__).resolve().parents[1]
     / "trusted-public-edge-provider-adapters.json"
+)
+PREVENTIVE_BOUNDARY_TRUST_STORE = (
+    Path(__file__).resolve().parents[1]
+    / "trusted-public-edge-preventive-boundary-issuers.json"
+)
+PREVENTIVE_BOUNDARY_RECEIPT_FILENAME = (
+    "public-edge-preventive-boundary-receipt.json"
+)
+PREVENTIVE_BOUNDARY_EVIDENCE_FILENAME = (
+    "public-edge-preventive-boundary-evidence.json"
+)
+PREVENTIVE_PROVIDER_IAM_EXPORT_FILENAME = (
+    "public-edge-preventive-provider-iam-export.json"
+)
+PREVENTIVE_APISERVER_EXPORT_FILENAME = (
+    "public-edge-preventive-apiserver-enforcement-export.json"
+)
+PREVENTIVE_IDENTITY_REVIEW_FILENAME = (
+    "public-edge-preventive-identity-path-review.json"
 )
 MAX_RECEIPT_BYTES = 256 * 1024
 MAX_MEMBERSHIP_VALIDITY = timedelta(hours=24)
@@ -363,6 +392,134 @@ def trusted_membership_key(
             matches.append(key)
     if len(matches) != 1:
         fail("membership receipt issuer is not a unique source-trusted authority")
+    return matches[0]
+
+
+def trusted_preventive_boundary_key(
+    trust_store: object, issuer: object
+) -> tuple[bytes, Sequence[object]]:
+    store = exact_object(
+        trust_store,
+        {"schema", "issuers"},
+        "preventive-boundary issuer trust store",
+    )
+    if (
+        store["schema"] != PREVENTIVE_BOUNDARY_TRUST_SCHEMA
+        or not isinstance(store["issuers"], list)
+    ):
+        fail("preventive-boundary issuer trust store has an unsupported schema")
+    expected = exact_object(
+        issuer,
+        {"id", "role", "key_id"},
+        "preventive-boundary receipt issuer",
+    )
+    issuer_id = string_value(expected["id"], "preventive-boundary issuer ID")
+    key_id = string_value(
+        expected["key_id"], "preventive-boundary issuer key ID", KEY_ID_RE.pattern
+    )
+    if expected["role"] != PREVENTIVE_BOUNDARY_ISSUER_ROLE:
+        fail("preventive-boundary receipt issuer has the wrong authority role")
+    matches: list[tuple[bytes, Sequence[object]]] = []
+    seen: set[tuple[str, str]] = set()
+    for index, raw in enumerate(store["issuers"]):
+        record = exact_object(
+            raw,
+            {"id", "role", "key_id", "public_key", "response_authorities"},
+            f"trusted preventive-boundary issuer {index}",
+        )
+        record_id = string_value(
+            record["id"], f"trusted preventive-boundary issuer {index} ID"
+        )
+        record_key_id = string_value(
+            record["key_id"],
+            f"trusted preventive-boundary issuer {index} key ID",
+            KEY_ID_RE.pattern,
+        )
+        if (record_id, record_key_id) in seen:
+            fail("preventive-boundary trust store contains a duplicate authority")
+        seen.add((record_id, record_key_id))
+        public_key = b64url(
+            record["public_key"],
+            f"trusted preventive-boundary issuer {index} public key",
+            32,
+        )
+        if record_key_id != "sha256:" + hashlib.sha256(public_key).hexdigest():
+            fail("preventive-boundary issuer key ID does not bind its public key")
+        response_authorities = list_value(
+            record["response_authorities"],
+            f"trusted preventive-boundary issuer {index} response authorities",
+        )
+        if not response_authorities:
+            fail("preventive-boundary issuer lacks independent response authorities")
+        if record["role"] != PREVENTIVE_BOUNDARY_ISSUER_ROLE:
+            fail("preventive-boundary trust store contains an unsupported role")
+        if record_id == issuer_id and record_key_id == key_id:
+            matches.append((public_key, response_authorities))
+    if len(matches) != 1:
+        fail("preventive-boundary issuer is not one source-trusted authority")
+    return matches[0]
+
+
+def trusted_native_response_key(
+    authorities: Sequence[object],
+    authority: object,
+    *,
+    role: str,
+    endpoint: str,
+) -> bytes:
+    expected = exact_object(
+        authority,
+        {"id", "key_id", "role"},
+        "native response authority",
+    )
+    matches: list[bytes] = []
+    seen: set[tuple[str, str, str]] = set()
+    for index, raw in enumerate(authorities):
+        record = exact_object(
+            raw,
+            {
+                "id",
+                "key_id",
+                "role",
+                "endpoint",
+                "public_key",
+                "collector_executable_sha256",
+                "collector_config_sha256",
+                "runtime_review_sha256",
+            },
+            f"native response authority {index}",
+        )
+        identity = (
+            string_value(record["id"], f"native response authority {index} ID"),
+            string_value(
+                record["key_id"],
+                f"native response authority {index} key ID",
+                KEY_ID_RE.pattern,
+            ),
+            string_value(record["role"], f"native response authority {index} role"),
+        )
+        if identity in seen:
+            fail("native response authority registry contains a duplicate")
+        seen.add(identity)
+        key = b64url(
+            record["public_key"], f"native response authority {index} key", 32
+        )
+        if identity[1] != "sha256:" + hashlib.sha256(key).hexdigest():
+            fail("native response authority key ID does not bind its public key")
+        for digest_key in (
+            "collector_executable_sha256",
+            "collector_config_sha256",
+            "runtime_review_sha256",
+        ):
+            digest(record[digest_key], f"native response authority {digest_key}")
+        if (
+            identity
+            == (expected["id"], expected["key_id"], role)
+            and record["endpoint"] == endpoint
+        ):
+            matches.append(key)
+    if len(matches) != 1 or expected["role"] != role:
+        fail("native response is not bound to one source-enrolled authority")
     return matches[0]
 
 
@@ -968,6 +1125,1016 @@ def load_membership_contract(
     return result
 
 
+def validate_preventive_export_provenance(
+    value: object, *, label: str, expected_endpoint: str
+) -> None:
+    provenance = exact_object(
+        value,
+        {
+            "collector_id",
+            "collector_executable_sha256",
+            "collector_config_sha256",
+            "api_endpoint",
+            "request_ids",
+            "response_attestation_sha256",
+        },
+        f"{label} provenance",
+    )
+    if (
+        re.fullmatch(r"[a-z][a-z0-9._-]{2,127}", str(provenance["collector_id"]))
+        is None
+        or provenance["api_endpoint"] != expected_endpoint
+    ):
+        fail(f"{label} provenance does not name its exact observer/endpoint")
+    for key in (
+        "collector_executable_sha256",
+        "collector_config_sha256",
+        "response_attestation_sha256",
+    ):
+        digest(provenance[key], f"{label} provenance {key}")
+    request_ids = list_value(provenance["request_ids"], f"{label} request IDs")
+    if (
+        not request_ids
+        or request_ids != sorted(set(request_ids))
+        or not all(
+            isinstance(item, str)
+            and re.fullmatch(r"[A-Za-z0-9._:/-]{8,256}", item) is not None
+            for item in request_ids
+        )
+    ):
+        fail(f"{label} provenance lacks exact authoritative request IDs")
+
+
+def verify_native_authority_export(
+    raw: bytes,
+    filename: str,
+    *,
+    response_authorities: Sequence[object],
+    role: str,
+    endpoint: str,
+) -> Mapping[str, Any]:
+    envelope = exact_object(
+        decode_canonical_json(raw, filename),
+        {"schema", "authority", "payload", "payload_sha256", "signature"},
+        f"native authority export {filename}",
+    )
+    if envelope["schema"] != "fs2-serve.nebius.ai/native-authority-export/v1":
+        fail(f"{filename} has an unsupported native-export schema")
+    payload = object_value(envelope["payload"], f"{filename} payload")
+    payload_sha256 = digest(envelope["payload_sha256"], f"{filename} payload digest")
+    if canonical_sha256(payload) != payload_sha256:
+        fail(f"{filename} payload digest differs from reopened native content")
+    key = trusted_native_response_key(
+        response_authorities,
+        envelope["authority"],
+        role=role,
+        endpoint=endpoint,
+    )
+    verify_ed25519(
+        key,
+        b64url(envelope["signature"], f"{filename} response signature", 64),
+        canonical_bytes(
+            {
+                "schema": envelope["schema"],
+                "authority": envelope["authority"],
+                "payload": payload,
+                "payload_sha256": payload_sha256,
+            }
+        ),
+    )
+    return payload
+
+
+def native_list_items(
+    value: object,
+    *,
+    label: str,
+    api_group: str,
+    resource: str,
+) -> tuple[list[Mapping[str, Any]], str]:
+    export = exact_object(
+        value,
+        {"pages", "scope", "resource", "api_group", "item_count", "page_count"},
+        f"{label} complete list export",
+    )
+    pages = list_value(export["pages"], f"{label} pages")
+    if (
+        export["scope"] != "all"
+        or export["api_group"] != api_group
+        or export["resource"] != resource
+        or export["page_count"] != len(pages)
+        or not pages
+    ):
+        fail(f"{label} does not declare one complete all-scope native list")
+    expected_continue = ""
+    previous_remaining: int | None = None
+    resource_version: str | None = None
+    items: list[Mapping[str, Any]] = []
+    seen_uids: set[str] = set()
+    for index, raw_page in enumerate(pages):
+        page = exact_object(
+            raw_page,
+            {"request", "response", "request_id"},
+            f"{label} page {index}",
+        )
+        request = exact_object(
+            page["request"],
+            {"api_group", "resource", "scope", "limit", "continue"},
+            f"{label} page {index} request",
+        )
+        response = exact_object(
+            page["response"],
+            {"apiVersion", "kind", "metadata", "items"},
+            f"{label} page {index} native response",
+        )
+        metadata = object_value(response["metadata"], f"{label} list metadata")
+        current_continue = metadata.get("continue", "")
+        remaining = metadata.get("remainingItemCount")
+        current_resource_version = string_value(
+            metadata.get("resourceVersion"), f"{label} resourceVersion"
+        )
+        page_items = list_value(response["items"], f"{label} page items")
+        if (
+            request
+            != {
+                "api_group": api_group,
+                "resource": resource,
+                "scope": "all",
+                "limit": 500,
+                "continue": expected_continue,
+            }
+            or response["apiVersion"]
+            != ("v1" if api_group == "" else f"{api_group}/v1")
+            or not isinstance(response["kind"], str)
+            or not response["kind"].endswith("List")
+            or not isinstance(current_continue, str)
+            or not (
+                remaining is None
+                or (
+                    isinstance(remaining, int)
+                    and not isinstance(remaining, bool)
+                    and remaining >= 0
+                )
+            )
+            or (index + 1 == len(pages) and remaining not in {None, 0})
+            or (
+                previous_remaining is not None
+                and remaining is not None
+                and remaining >= previous_remaining
+            )
+            or (resource_version is not None and current_resource_version != resource_version)
+            or re.fullmatch(r"[A-Za-z0-9._:/-]{8,256}", str(page["request_id"])) is None
+        ):
+            fail(f"{label} pagination or native response is incomplete")
+        if remaining is not None:
+            previous_remaining = remaining
+        resource_version = current_resource_version
+        for item in page_items:
+            native = object_value(item, f"{label} native object")
+            metadata_value = object_value(
+                native.get("metadata"), f"{label} native metadata"
+            )
+            uid = string_value(metadata_value.get("uid"), f"{label} native UID")
+            if uid in seen_uids:
+                fail(f"{label} native list repeats an object UID")
+            seen_uids.add(uid)
+            items.append(native)
+        expected_continue = current_continue
+        if index + 1 < len(pages) and not expected_continue:
+            fail(f"{label} pagination terminated before its declared last page")
+    if expected_continue or export["item_count"] != len(items):
+        fail(f"{label} native list is not terminal and complete")
+    assert resource_version is not None
+    return items, resource_version
+
+
+def native_rule_matches(
+    rule: Mapping[str, Any],
+    *,
+    api_groups: set[str],
+    resources: set[str],
+    verbs: set[str],
+    resource_names: set[str] | None = None,
+) -> bool:
+    groups = set(list_value(rule.get("apiGroups"), "native RBAC apiGroups"))
+    rule_resources = set(list_value(rule.get("resources"), "native RBAC resources"))
+    rule_verbs = set(list_value(rule.get("verbs"), "native RBAC verbs"))
+    names = list_value(rule.get("resourceNames", []), "native RBAC resourceNames")
+    non_resource_urls = list_value(
+        rule.get("nonResourceURLs", []), "native RBAC nonResourceURLs"
+    )
+    if non_resource_urls and rule_resources:
+        fail("native RBAC rule mixes resource and non-resource authority")
+    names_match = (
+        resource_names is None
+        or not names
+        or "*" in names
+        or bool(set(names) & resource_names)
+    )
+    resource_matches = any(
+        candidate == "*"
+        or candidate in resources
+        or any(
+            requested.endswith("/*")
+            and candidate.startswith(requested.removesuffix("*"))
+            for requested in resources
+        )
+        for candidate in rule_resources
+    )
+    return (
+        bool(groups & api_groups or "*" in groups)
+        and resource_matches
+        and bool(rule_verbs & verbs or "*" in rule_verbs)
+        and names_match
+    )
+
+
+def native_object_identity(value: Mapping[str, Any], label: str) -> tuple[str, str]:
+    metadata = object_value(value.get("metadata"), f"{label} metadata")
+    name = string_value(metadata.get("name"), f"{label} name")
+    namespace = metadata.get("namespace", "")
+    if not isinstance(namespace, str):
+        fail(f"{label} namespace is malformed")
+    string_value(metadata.get("uid"), f"{label} UID")
+    string_value(metadata.get("resourceVersion"), f"{label} resourceVersion")
+    return namespace, name
+
+
+def validate_preventive_raw_exports(
+    *,
+    provider_raw: bytes,
+    apiserver_raw: bytes,
+    identity_raw: bytes,
+    provider_summary: Mapping[str, Any],
+    apiserver_summary: Mapping[str, Any],
+    identity_summary: Mapping[str, Any],
+    boundary: Mapping[str, Any],
+    project_id: str,
+    cluster_id: str,
+    collected_at: datetime,
+    response_authorities: Sequence[object],
+) -> None:
+    protected_names = [
+        "fs2-public-edge-cas-bootstrap",
+        "fs2-public-edge-cas-bootstrap-binding",
+        "fs2-public-edge-node-authority",
+        "fs2-public-edge-node-authority-binding",
+        "fs2-public-edge-node-authority-cas",
+        "fs2-public-edge-node-authority-cas-binding",
+    ]
+    protected_actions = ["create", "delete", "patch", "update"]
+    expected_controller = {
+        "username": boundary["controller_username"],
+        "uid": boundary["controller_uid"],
+        "groups": boundary["controller_groups"],
+        "image_digest": boundary["controller_image_digest"],
+        "provider_principal_id": boundary["controller_provider_principal_id"],
+    }
+
+    provider = exact_object(
+        verify_native_authority_export(
+            provider_raw,
+            PREVENTIVE_PROVIDER_IAM_EXPORT_FILENAME,
+            response_authorities=response_authorities,
+            role="provider-iam-native-response-attestor",
+            endpoint="api.nebius.cloud",
+        ),
+        {
+            "schema",
+            "collected_at",
+            "provider_api",
+            "project_id",
+            "cluster_id",
+            "policy_id",
+            "policy_get",
+            "access_binding_list",
+        },
+        "authoritative provider-IAM export",
+    )
+    provider_collected = timestamp(provider["collected_at"], "provider-IAM collected_at")
+    policy_get = exact_object(
+        provider["policy_get"],
+        {"request", "response", "request_id"},
+        "native provider-IAM policy get",
+    )
+    policy_request = exact_object(
+        policy_get["request"],
+        {"operation", "policy_id", "project_id"},
+        "native provider-IAM policy request",
+    )
+    policy_response = exact_object(
+        policy_get["response"],
+        {"metadata", "spec"},
+        "native provider-IAM policy response",
+    )
+    policy_metadata = exact_object(
+        policy_response["metadata"],
+        {"id", "parent_id", "resource_version"},
+        "native provider-IAM policy metadata",
+    )
+    policy_spec = exact_object(
+        policy_response["spec"],
+        {"default_effect", "protected_actions", "protected_resource_names"},
+        "native provider-IAM policy spec",
+    )
+    bindings, binding_revision = native_list_items(
+        provider["access_binding_list"],
+        label="provider IAM access bindings",
+        api_group="iam.nebius.ai",
+        resource="accessbindings",
+    )
+    protected_bindings: list[tuple[Mapping[str, Any], Mapping[str, Any]]] = []
+    for raw_binding in bindings:
+        binding = exact_object(
+            raw_binding,
+            {"apiVersion", "kind", "metadata", "spec"},
+            "native provider access binding",
+        )
+        if binding["apiVersion"] != "iam.nebius.ai/v1" or binding["kind"] != "AccessBinding":
+            fail("provider IAM export contains a non-native access binding")
+        native_object_identity(binding, "provider access binding")
+        spec = exact_object(
+            binding["spec"],
+            {"effect", "subject", "actions", "resourceNames", "condition"},
+            "native provider access-binding spec",
+        )
+        actions = set(list_value(spec["actions"], "provider access-binding actions"))
+        resources = set(
+            list_value(spec["resourceNames"], "provider access-binding resources")
+        )
+        grants_action = "*" in actions or bool(actions & set(protected_actions))
+        grants_resource = (
+            not resources
+            or "*" in resources
+            or bool(resources & set(protected_names))
+        )
+        if grants_action and grants_resource:
+            protected_bindings.append((binding, spec))
+    if len(protected_bindings) != 1:
+        fail("native provider IAM closure must contain one protected-resource binding")
+    _binding, protected_spec = protected_bindings[0]
+    provider_subject = exact_object(
+        protected_spec["subject"], {"type", "id"}, "provider controller subject"
+    )
+    provider_condition = exact_object(
+        protected_spec["condition"],
+        {"project_id", "cluster_id", "configuration_sha256"},
+        "provider controller condition",
+    )
+    if (
+        provider["schema"]
+        != "fs2-serve.nebius.ai/public-edge-provider-iam-native-export/v2"
+        or provider["provider_api"] != provider_summary["provider_api"]
+        or provider["project_id"] != project_id
+        or provider["cluster_id"] != cluster_id
+        or provider["policy_id"] != boundary["provider_iam_policy_id"]
+        or policy_request
+        != {
+            "operation": "get",
+            "policy_id": boundary["provider_iam_policy_id"],
+            "project_id": project_id,
+        }
+        or policy_metadata
+        != {
+            "id": boundary["provider_iam_policy_id"],
+            "parent_id": project_id,
+            "resource_version": provider_summary["resource_version"],
+        }
+        or binding_revision != provider_summary["binding_resource_version"]
+        or policy_spec["default_effect"] != "DENY"
+        or policy_spec["protected_resource_names"] != protected_names
+        or policy_spec["protected_actions"] != protected_actions
+        or protected_spec["effect"] != "ALLOW"
+        or provider_subject
+        != {
+            "type": "serviceAccount",
+            "id": boundary["controller_provider_principal_id"],
+        }
+        or protected_spec["resourceNames"] != protected_names
+        or protected_spec["actions"] != protected_actions
+        or provider_condition
+        != {
+            "project_id": project_id,
+            "cluster_id": cluster_id,
+            "configuration_sha256": boundary["configuration_sha256"],
+        }
+    ):
+        fail("provider-IAM raw policy does not enforce exact-controller default deny")
+
+    apiserver = exact_object(
+        verify_native_authority_export(
+            apiserver_raw,
+            PREVENTIVE_APISERVER_EXPORT_FILENAME,
+            response_authorities=response_authorities,
+            role="kubernetes-apiserver-native-response-attestor",
+            endpoint=f"kubernetes://{cluster_id}/configuration",
+        ),
+        {
+            "schema",
+            "collected_at",
+            "cluster_id",
+            "enforcement_id",
+            "resource_version",
+            "configuration_sha256",
+            "authentication_configuration",
+            "authorization_configuration",
+            "admission_configuration",
+        },
+        "authoritative API-server enforcement export",
+    )
+    apiserver_collected = timestamp(
+        apiserver["collected_at"], "API-server enforcement collected_at"
+    )
+    authentication = exact_object(
+        apiserver["authentication_configuration"],
+        {
+            "anonymous",
+            "authentication_webhooks",
+            "bootstrap_tokens",
+            "client_certificate",
+            "oidc_issuers",
+            "provider_control_plane",
+            "requestheader",
+            "service_accounts",
+            "static_tokens",
+        },
+        "native API-server authentication configuration",
+    )
+    authorization = exact_object(
+        apiserver["authorization_configuration"],
+        {"modes", "webhooks"},
+        "native API-server authorization configuration",
+    )
+    admission = exact_object(
+        apiserver["admission_configuration"],
+        {
+            "failure_policy",
+            "match_policy",
+            "api_groups",
+            "api_versions",
+            "resources",
+            "operations",
+            "protected_names",
+            "default_decision",
+            "allowed_controller",
+            "plugin",
+        },
+        "native API-server admission configuration",
+    )
+    # The exact field set is the enabled API server's complete native
+    # authenticator inventory.  Derive the reviewed paths from that inventory
+    # rather than accepting a signer-supplied list of conclusions.
+    derived_identity_paths = {
+        "direct-user",
+        "csr-approval",
+        "csr-signing",
+        "impersonated-group",
+        "impersonated-uid",
+        "impersonated-user",
+        "impersonated-userextra",
+    }
+    authenticator_path = {
+        "anonymous": "anonymous",
+        "authentication_webhooks": "authentication-webhook",
+        "bootstrap_tokens": "bootstrap-token",
+        "client_certificate": "client-certificate",
+        "oidc_issuers": "oidc",
+        "provider_control_plane": "provider-control-plane",
+        "requestheader": "requestheader-front-proxy",
+        "service_accounts": "service-account-token",
+        "static_tokens": "static-token",
+    }
+    derived_identity_paths.update(authenticator_path.values())
+    if object_value(authentication["client_certificate"], "client-certificate authenticator").get("enabled"):
+        derived_identity_paths.update({"kubelet-client-certificate", "node-credential"})
+    for key in (
+        "authentication_webhooks",
+        "bootstrap_tokens",
+        "oidc_issuers",
+        "static_tokens",
+    ):
+        list_value(authentication[key], f"API-server {key}")
+    for key in (
+        "client_certificate",
+        "provider_control_plane",
+        "requestheader",
+        "service_accounts",
+    ):
+        configuration = object_value(authentication[key], f"API-server {key}")
+        if set(configuration) != {"enabled", "configuration_sha256"}:
+            fail(f"API-server {key} configuration is not exact")
+        if not isinstance(configuration["enabled"], bool):
+            fail(f"API-server {key} enabled state is not boolean")
+        digest(configuration["configuration_sha256"], f"API-server {key} configuration")
+    if (
+        apiserver["schema"]
+        != "fs2-serve.nebius.ai/public-edge-apiserver-native-export/v2"
+        or apiserver["cluster_id"] != cluster_id
+        or apiserver["enforcement_id"] != boundary["apiserver_enforcement_id"]
+        or apiserver["resource_version"] != apiserver_summary["resource_version"]
+        or apiserver["configuration_sha256"] != boundary["configuration_sha256"]
+        or authentication["anonymous"] is not False
+        or authentication["bootstrap_tokens"] != []
+        or authentication["static_tokens"] != []
+        or admission["plugin"] != "ExternalPreventiveBoundary"
+        or admission["failure_policy"] != "Fail"
+        or admission["match_policy"] != "Equivalent"
+        or admission["api_groups"] != ["admissionregistration.k8s.io"]
+        or admission["api_versions"] != ["v1"]
+        or admission["resources"]
+        != ["validatingadmissionpolicies", "validatingadmissionpolicybindings"]
+        or admission["operations"] != ["CREATE", "DELETE", "UPDATE"]
+        or admission["protected_names"] != protected_names
+        or admission["default_decision"] != "Deny"
+        or admission["allowed_controller"] != expected_controller
+        or authorization["modes"] != ["Node", "RBAC"]
+        or authorization["webhooks"] != []
+        or sorted(derived_identity_paths) != boundary["identity_paths"]
+    ):
+        fail("API-server raw export does not enforce the protected exact-controller boundary")
+
+    identity = exact_object(
+        verify_native_authority_export(
+            identity_raw,
+            PREVENTIVE_IDENTITY_REVIEW_FILENAME,
+            response_authorities=response_authorities,
+            role="kubernetes-rbac-native-response-attestor",
+            endpoint=f"kubernetes://{cluster_id}/rbac-csr",
+        ),
+        {
+            "schema",
+            "collected_at",
+            "project_id",
+            "cluster_id",
+            "cluster_roles",
+            "cluster_role_bindings",
+            "roles",
+            "role_bindings",
+            "certificate_signing_requests",
+        },
+        "authoritative RBAC/impersonation export",
+    )
+    identity_collected = timestamp(
+        identity["collected_at"], "RBAC/impersonation collected_at"
+    )
+    cluster_roles, cluster_roles_rv = native_list_items(
+        identity["cluster_roles"],
+        label="Kubernetes ClusterRoles",
+        api_group="rbac.authorization.k8s.io",
+        resource="clusterroles",
+    )
+    cluster_bindings, cluster_bindings_rv = native_list_items(
+        identity["cluster_role_bindings"],
+        label="Kubernetes ClusterRoleBindings",
+        api_group="rbac.authorization.k8s.io",
+        resource="clusterrolebindings",
+    )
+    roles, roles_rv = native_list_items(
+        identity["roles"],
+        label="Kubernetes Roles",
+        api_group="rbac.authorization.k8s.io",
+        resource="roles",
+    )
+    role_bindings, role_bindings_rv = native_list_items(
+        identity["role_bindings"],
+        label="Kubernetes RoleBindings",
+        api_group="rbac.authorization.k8s.io",
+        resource="rolebindings",
+    )
+    csrs, csrs_rv = native_list_items(
+        identity["certificate_signing_requests"],
+        label="Kubernetes CertificateSigningRequests",
+        api_group="certificates.k8s.io",
+        resource="certificatesigningrequests",
+    )
+    role_rules: dict[tuple[str, str], Sequence[object]] = {}
+    for native in [*cluster_roles, *roles]:
+        namespace, name = native_object_identity(native, "native RBAC role")
+        expected_kind = "ClusterRole" if not namespace else "Role"
+        if native.get("apiVersion") != "rbac.authorization.k8s.io/v1" or native.get("kind") != expected_kind:
+            fail("RBAC export contains a non-native role object")
+        role_rules[(namespace, name)] = list_value(native.get("rules", []), "native RBAC role rules")
+    protected_subjects: list[Mapping[str, Any]] = []
+    impersonating_subjects: list[Mapping[str, Any]] = []
+    csr_authorities: list[Mapping[str, Any]] = []
+    for native in [*cluster_bindings, *role_bindings]:
+        namespace, _name = native_object_identity(native, "native RBAC binding")
+        expected_kind = "ClusterRoleBinding" if not namespace else "RoleBinding"
+        if native.get("apiVersion") != "rbac.authorization.k8s.io/v1" or native.get("kind") != expected_kind:
+            fail("RBAC export contains a non-native binding object")
+        role_ref = exact_object(
+            native.get("roleRef"), {"apiGroup", "kind", "name"}, "native RBAC roleRef"
+        )
+        if role_ref["apiGroup"] != "rbac.authorization.k8s.io" or role_ref["kind"] not in {"Role", "ClusterRole"}:
+            fail("RBAC binding has an unsupported native roleRef")
+        role_namespace = namespace if role_ref["kind"] == "Role" else ""
+        rules = role_rules.get((role_namespace, role_ref["name"]))
+        if rules is None:
+            fail("RBAC binding references a role absent from the complete native lists")
+        subjects = list_value(native.get("subjects", []), "native RBAC binding subjects")
+        for raw_rule in rules:
+            rule = object_value(raw_rule, "native RBAC rule")
+            if native_rule_matches(
+                rule,
+                api_groups={"admissionregistration.k8s.io"},
+                resources={"validatingadmissionpolicies", "validatingadmissionpolicybindings"},
+                verbs={"create", "delete", "patch", "update"},
+                resource_names=set(protected_names),
+            ):
+                protected_subjects.extend(object_value(item, "RBAC subject") for item in subjects)
+            if native_rule_matches(
+                rule,
+                api_groups={"", "authentication.k8s.io"},
+                resources={"users", "groups", "serviceaccounts", "uids", "userextras/*"},
+                verbs={"impersonate"},
+            ):
+                impersonating_subjects.extend(object_value(item, "RBAC subject") for item in subjects)
+            if native_rule_matches(
+                rule,
+                api_groups={"certificates.k8s.io"},
+                resources={"certificatesigningrequests/approval", "signers"},
+                verbs={"approve", "sign"},
+            ):
+                csr_authorities.extend(object_value(item, "RBAC subject") for item in subjects)
+    controller_username_parts = str(boundary["controller_username"]).split(":")
+    expected_controller_subject = (
+        {
+            "kind": "ServiceAccount",
+            "name": controller_username_parts[3],
+            "namespace": controller_username_parts[2],
+        }
+        if len(controller_username_parts) == 4
+        and controller_username_parts[:2] == ["system", "serviceaccount"]
+        else {
+            "apiGroup": "rbac.authorization.k8s.io",
+            "kind": "User",
+            "name": boundary["controller_username"],
+        }
+    )
+    non_controller_protected = [
+        subject for subject in protected_subjects if subject != expected_controller_subject
+    ]
+    for csr in csrs:
+        if csr.get("apiVersion") != "certificates.k8s.io/v1" or csr.get("kind") != "CertificateSigningRequest":
+            fail("CSR export contains a non-native object")
+        native_object_identity(csr, "native CSR")
+        if not isinstance(csr.get("spec"), Mapping) or not isinstance(csr.get("status", {}), Mapping):
+            fail("native CSR spec/status is malformed")
+    if (
+        identity["schema"]
+        != "fs2-serve.nebius.ai/public-edge-kubernetes-authority-native-export/v2"
+        or identity["project_id"] != project_id
+        or identity["cluster_id"] != cluster_id
+        or protected_subjects.count(expected_controller_subject) != 1
+        or non_controller_protected
+        or impersonating_subjects
+        or csr_authorities
+    ):
+        fail("raw RBAC/impersonation evidence does not deny every non-controller identity path")
+    rbac_projection = {
+        "cluster_roles": cluster_roles,
+        "cluster_role_bindings": cluster_bindings,
+        "roles": roles,
+        "role_bindings": role_bindings,
+        "resource_versions": {
+            "cluster_roles": cluster_roles_rv,
+            "cluster_role_bindings": cluster_bindings_rv,
+            "roles": roles_rv,
+            "role_bindings": role_bindings_rv,
+        },
+    }
+    impersonation_projection = {
+        "impersonating_subjects": impersonating_subjects,
+        "csr_authorities": csr_authorities,
+        "certificate_signing_requests": csrs,
+        "csr_resource_version": csrs_rv,
+        "authentication_configuration": authentication,
+        "authorization_configuration": authorization,
+    }
+    if (
+        identity_summary["rbac_review_sha256"]
+        != canonical_sha256(rbac_projection)
+        or identity_summary["impersonation_review_sha256"]
+        != canonical_sha256(impersonation_projection)
+    ):
+        fail("RBAC/impersonation review digests do not derive from reopened exports")
+    if any(
+        abs((observed - collected_at).total_seconds()) > MAX_CLOCK_SKEW.total_seconds()
+        for observed in (provider_collected, apiserver_collected, identity_collected)
+    ):
+        fail("preventive-boundary raw exports were not collected with the signed evidence")
+
+
+def load_preventive_boundary_contract(
+    run_root: Path,
+    *,
+    project_id: str,
+    cluster_id: str,
+    approval_projection: Mapping[str, Any],
+    preventive_boundary_trust_sha256: str,
+    validation_time: datetime | None = None,
+) -> dict[str, str]:
+    """Verify external provider-IAM/API-server evidence for the live approval.
+
+    The source registry intentionally contains no boundary identities.  A
+    separately custodied Platform Security signer authorizes the exact raw
+    evidence, controller provenance and *live* approval projection.  An empty
+    production trust registry therefore keeps public mode fail closed.
+    """
+
+    receipt_raw = open_regular_file(
+        run_root / PREVENTIVE_BOUNDARY_RECEIPT_FILENAME, private=True
+    )
+    evidence_raw = open_regular_file(
+        run_root / PREVENTIVE_BOUNDARY_EVIDENCE_FILENAME, private=True
+    )
+    provider_raw = open_regular_file(
+        run_root / PREVENTIVE_PROVIDER_IAM_EXPORT_FILENAME, private=True
+    )
+    apiserver_raw = open_regular_file(
+        run_root / PREVENTIVE_APISERVER_EXPORT_FILENAME, private=True
+    )
+    identity_raw = open_regular_file(
+        run_root / PREVENTIVE_IDENTITY_REVIEW_FILENAME, private=True
+    )
+    trust_raw = open_regular_file(PREVENTIVE_BOUNDARY_TRUST_STORE, private=False)
+    if hashlib.sha256(trust_raw).hexdigest() != digest(
+        preventive_boundary_trust_sha256,
+        "planned preventive-boundary trust-store digest",
+    ):
+        fail("preventive-boundary trust store differs from planned source bytes")
+    receipt = exact_object(
+        decode_canonical_json(receipt_raw, PREVENTIVE_BOUNDARY_RECEIPT_FILENAME),
+        {"schema", "algorithm", "payload", "payload_sha256", "signature"},
+        "preventive-boundary receipt",
+    )
+    if (
+        receipt["schema"] != PREVENTIVE_BOUNDARY_RECEIPT_SCHEMA
+        or receipt["algorithm"] != "ed25519"
+    ):
+        fail("preventive-boundary receipt has an unsupported signature contract")
+    payload = exact_object(
+        receipt["payload"],
+        {
+            "schema",
+            "issuer",
+            "nonce",
+            "issued_at",
+            "expires_at",
+            "subject",
+            "preventive_boundary",
+            "evidence_sha256",
+        },
+        "preventive-boundary payload",
+    )
+    if payload["schema"] != PREVENTIVE_BOUNDARY_PAYLOAD_SCHEMA:
+        fail("preventive-boundary payload has an unsupported schema")
+    payload_sha256 = digest(
+        receipt["payload_sha256"], "preventive-boundary payload digest"
+    )
+    if canonical_sha256(payload) != payload_sha256:
+        fail("preventive-boundary payload digest does not match reopened bytes")
+    digest(payload["nonce"], "preventive-boundary nonce")
+    issued_at = timestamp(payload["issued_at"], "preventive-boundary issued_at")
+    expires_at = timestamp(payload["expires_at"], "preventive-boundary expires_at")
+    now = validation_time or datetime.now(timezone.utc).replace(microsecond=0)
+    if (
+        expires_at <= issued_at
+        or expires_at - issued_at > MAX_MEMBERSHIP_VALIDITY
+        or issued_at > now + MAX_CLOCK_SKEW
+        or expires_at <= now
+    ):
+        fail("preventive-boundary receipt is outside its 24-hour validity window")
+    public_key, response_authorities = trusted_preventive_boundary_key(
+        decode_canonical_json(trust_raw, PREVENTIVE_BOUNDARY_TRUST_STORE.name),
+        payload["issuer"],
+    )
+    verify_ed25519(
+        public_key,
+        b64url(receipt["signature"], "preventive-boundary signature", 64),
+        canonical_bytes(
+            {
+                "schema": receipt["schema"],
+                "algorithm": receipt["algorithm"],
+                "payload": payload,
+                "payload_sha256": payload_sha256,
+            }
+        ),
+    )
+    approval_sha256 = terraform_json_sha256(approval_projection)
+    subject = exact_object(
+        payload["subject"],
+        {
+            "project_id",
+            "cluster_id",
+            "approval_api_version",
+            "approval_kind",
+            "approval_name",
+            "approval_projection_sha256",
+        },
+        "preventive-boundary subject",
+    )
+    if subject != {
+        "project_id": project_id,
+        "cluster_id": cluster_id,
+        "approval_api_version": approval_projection.get("apiVersion"),
+        "approval_kind": approval_projection.get("kind"),
+        "approval_name": object_value(
+            approval_projection.get("metadata"), "boundary approval metadata"
+        ).get("name"),
+        "approval_projection_sha256": approval_sha256,
+    }:
+        fail("preventive-boundary receipt does not bind the live approval subject")
+    boundary = exact_object(
+        payload["preventive_boundary"],
+        {
+            "kind",
+            "provider_iam_policy_id",
+            "apiserver_enforcement_id",
+            "controller_username",
+            "controller_uid",
+            "controller_groups",
+            "controller_image_digest",
+            "controller_provider_principal_id",
+            "identity_paths",
+            "configuration_sha256",
+            "provenance_attestation_sha256",
+            "receipt_sha256",
+            "source_repository",
+            "source_commit",
+            "source_tree",
+        },
+        "signed preventive boundary",
+    )
+    receipt_sha256 = hashlib.sha256(receipt_raw).hexdigest()
+    approval_spec = object_value(
+        approval_projection.get("spec"), "boundary approval spec"
+    )
+    observed_boundary = object_value(
+        approval_spec.get("preventiveBoundary"),
+        "boundary approval preventiveBoundary",
+    )
+    if boundary != observed_boundary or boundary["receipt_sha256"] != receipt_sha256:
+        fail("live approval is not bound to the reopened signed boundary receipt")
+    groups = list_value(boundary["controller_groups"], "boundary controller groups")
+    identity_paths = list_value(boundary["identity_paths"], "boundary identity paths")
+    if (
+        boundary["kind"] != "provider-iam+apiserver-admission"
+        or groups != sorted(set(groups))
+        or identity_paths != sorted(set(identity_paths))
+        or identity_paths
+        != [
+            "anonymous",
+            "authentication-webhook",
+            "bootstrap-token",
+            "client-certificate",
+            "csr-approval",
+            "csr-signing",
+            "direct-user",
+            "impersonated-group",
+            "impersonated-uid",
+            "impersonated-user",
+            "impersonated-userextra",
+            "kubelet-client-certificate",
+            "node-credential",
+            "oidc",
+            "provider-control-plane",
+            "requestheader-front-proxy",
+            "service-account-token",
+            "static-token",
+        ]
+        or re.fullmatch(r"sha256:[a-f0-9]{64}", str(boundary["controller_image_digest"])) is None
+        or re.fullmatch(
+            r"serviceaccount-[a-z0-9]+",
+            str(boundary["controller_provider_principal_id"]),
+        )
+        is None
+        or re.fullmatch(r"[a-f0-9]{40}", str(boundary["source_commit"])) is None
+        or re.fullmatch(r"[a-f0-9]{40}", str(boundary["source_tree"])) is None
+    ):
+        fail("signed preventive-boundary identity/provenance is malformed")
+    for key in (
+        "configuration_sha256",
+        "provenance_attestation_sha256",
+    ):
+        digest(boundary[key], f"preventive-boundary {key}")
+    evidence_sha256 = digest(
+        payload["evidence_sha256"], "preventive-boundary evidence digest"
+    )
+    if hashlib.sha256(evidence_raw).hexdigest() != evidence_sha256:
+        fail("preventive-boundary evidence bytes differ from the signed digest")
+    evidence = exact_object(
+        decode_canonical_json(
+            evidence_raw, PREVENTIVE_BOUNDARY_EVIDENCE_FILENAME
+        ),
+        {
+            "schema",
+            "collected_at",
+            "subject",
+            "preventive_boundary",
+            "provider_iam_export",
+            "apiserver_enforcement_export",
+            "controller_provenance",
+            "identity_path_review",
+        },
+        "preventive-boundary evidence",
+    )
+    if (
+        evidence["schema"] != PREVENTIVE_BOUNDARY_PAYLOAD_SCHEMA
+        or evidence["subject"] != subject
+        or evidence["preventive_boundary"] != boundary
+    ):
+        fail("preventive-boundary evidence does not bind the signed subject")
+    collected_at = timestamp(
+        evidence["collected_at"], "preventive-boundary evidence collected_at"
+    )
+    if collected_at < issued_at - MAX_CLOCK_SKEW or collected_at > issued_at + MAX_CLOCK_SKEW:
+        fail("preventive-boundary evidence was not collected with the receipt")
+    provider_export = exact_object(
+        evidence["provider_iam_export"],
+        {
+            "policy_id",
+            "project_id",
+            "provider_api",
+            "resource_version",
+            "binding_resource_version",
+            "raw_export_sha256",
+        },
+        "provider-IAM export",
+    )
+    apiserver_export = exact_object(
+        evidence["apiserver_enforcement_export"],
+        {
+            "enforcement_id",
+            "cluster_id",
+            "resource_version",
+            "configuration_sha256",
+            "raw_export_sha256",
+        },
+        "API-server enforcement export",
+    )
+    controller_provenance = exact_object(
+        evidence["controller_provenance"],
+        {"image_digest", "source_repository", "source_commit", "source_tree", "attestation_sha256"},
+        "boundary controller provenance",
+    )
+    identity_review = exact_object(
+        evidence["identity_path_review"],
+        {"identity_paths", "impersonation_review_sha256", "rbac_review_sha256", "raw_export_sha256"},
+        "boundary identity-path review",
+    )
+    if (
+        provider_export["policy_id"] != boundary["provider_iam_policy_id"]
+        or provider_export["project_id"] != project_id
+        or apiserver_export["enforcement_id"] != boundary["apiserver_enforcement_id"]
+        or apiserver_export["cluster_id"] != cluster_id
+        or apiserver_export["configuration_sha256"] != boundary["configuration_sha256"]
+        or controller_provenance["image_digest"] != boundary["controller_image_digest"]
+        or controller_provenance["source_repository"] != boundary["source_repository"]
+        or controller_provenance["source_commit"] != boundary["source_commit"]
+        or controller_provenance["source_tree"] != boundary["source_tree"]
+        or controller_provenance["attestation_sha256"] != boundary["provenance_attestation_sha256"]
+        or identity_review["identity_paths"] != boundary["identity_paths"]
+    ):
+        fail("preventive-boundary raw evidence does not join to its signed authority")
+    for record, key in (
+        (provider_export, "raw_export_sha256"),
+        (apiserver_export, "raw_export_sha256"),
+        (identity_review, "raw_export_sha256"),
+        (identity_review, "impersonation_review_sha256"),
+        (identity_review, "rbac_review_sha256"),
+    ):
+        digest(record[key], f"preventive-boundary {key}")
+    if (
+        provider_export["raw_export_sha256"]
+        != hashlib.sha256(provider_raw).hexdigest()
+        or apiserver_export["raw_export_sha256"]
+        != hashlib.sha256(apiserver_raw).hexdigest()
+        or identity_review["raw_export_sha256"]
+        != hashlib.sha256(identity_raw).hexdigest()
+    ):
+        fail("preventive-boundary summaries do not bind the reopened raw exports")
+    validate_preventive_raw_exports(
+        provider_raw=provider_raw,
+        apiserver_raw=apiserver_raw,
+        identity_raw=identity_raw,
+        provider_summary=provider_export,
+        apiserver_summary=apiserver_export,
+        identity_summary=identity_review,
+        boundary=boundary,
+        project_id=project_id,
+        cluster_id=cluster_id,
+        collected_at=collected_at,
+        response_authorities=response_authorities,
+    )
+    return {
+        "payload_sha256": payload_sha256,
+        "receipt_sha256": receipt_sha256,
+        "evidence_sha256": evidence_sha256,
+        "approval_sha256": approval_sha256,
+    }
+
+
 def object_value(value: object, label: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         fail(f"{label} must be an object")
@@ -1079,7 +2246,7 @@ def require_verified_source(expected: object) -> str:
     if (
         not isinstance(authentication, dict)
         or authentication.get("schema")
-        != "fs2-serve.nebius.ai/short-lived-nebius-auth/v2"
+        != "fs2-serve.nebius.ai/short-lived-nebius-auth/v3"
         or authentication.get("accepted_commit")
         != os.environ.get("FS2_CAPSULE_ACCEPTED_COMMIT")
         or authentication.get("manifest_sha256")
@@ -1092,7 +2259,10 @@ def require_verified_source(expected: object) -> str:
         or re.fullmatch(r"[a-f0-9]{64}", str(authentication.get("broker_config_sha256", ""))) is None
         or authentication.get("peer_credential_mode") != "linux-so-peercred-pid-uid-gid/v1"
         or authentication.get("caller_uid") != os.getuid()
-        or authentication.get("caller_gid") != os.getgid()
+        or authentication.get("caller_real_gid") != os.getgid()
+        or authentication.get("caller_effective_gid") != os.getegid()
+        or authentication.get("peer_observed_caller_uid") != os.getuid()
+        or authentication.get("peer_observed_caller_gid") != os.getegid()
         or not isinstance(authentication.get("operator_identity"), str)
         or re.fullmatch(
             r"[a-z][a-z0-9._-]{2,127}", authentication["operator_identity"]
@@ -2094,6 +3264,10 @@ def main() -> int:
         environment("FS2_EDGE_GATE_BOUNDARY_APPROVAL_SHA256"),
         "preventive-boundary approval digest",
     )
+    preventive_boundary_trust_sha256 = digest(
+        environment("FS2_EDGE_GATE_PREVENTIVE_BOUNDARY_TRUST_SHA256"),
+        "preventive-boundary trust-store digest",
+    )
     membership = load_membership_contract(
         root,
         membership_subject(
@@ -2501,6 +3675,23 @@ def main() -> int:
         name=boundary_approval_name,
         expected_sha256=expected_boundary_approval_sha256,
     )
+    boundary_approval_projection = {
+        "apiVersion": boundary_approval_api_version,
+        "kind": boundary_approval_kind,
+        "metadata": {"name": boundary_approval_name},
+        "spec": object_value(
+            boundary_approval_after.get("spec"), "boundary approval after.spec"
+        ),
+    }
+    preventive_boundary = load_preventive_boundary_contract(
+        root,
+        project_id=expected_project_id,
+        cluster_id=cluster_id,
+        approval_projection=boundary_approval_projection,
+        preventive_boundary_trust_sha256=preventive_boundary_trust_sha256,
+    )
+    if preventive_boundary["approval_sha256"] != boundary_approval_sha256:
+        fail("signed preventive-boundary receipt changed after live approval validation")
     # Re-evaluate the bounded saved-plan window after every provider and
     # Kubernetes read. The short-lived mutation observation is timestamped
     # here, after the prerequisites and fresh reads, rather than at plan time.
@@ -2556,6 +3747,9 @@ def main() -> int:
             "admission_boundary_approval_resource_version": boundary_approval_revision,
             "admission_boundary_approval_uid": boundary_approval_uid,
             "admission_boundary_approval_sha256": boundary_approval_sha256,
+            "preventive_boundary_payload_sha256": preventive_boundary["payload_sha256"],
+            "preventive_boundary_receipt_sha256": preventive_boundary["receipt_sha256"],
+            "preventive_boundary_evidence_sha256": preventive_boundary["evidence_sha256"],
             "eligible_node_count": eligible_count,
             "distinct_hostname_count": domain_count,
             "observed_at": observed_at.isoformat().replace("+00:00", "Z"),
@@ -2591,6 +3785,9 @@ def main() -> int:
         "admission_boundary_approval_resource_version": boundary_approval_revision,
         "admission_boundary_approval_uid": boundary_approval_uid,
         "admission_boundary_approval_sha256": boundary_approval_sha256,
+        "preventive_boundary_payload_sha256": preventive_boundary["payload_sha256"],
+        "preventive_boundary_receipt_sha256": preventive_boundary["receipt_sha256"],
+        "preventive_boundary_evidence_sha256": preventive_boundary["evidence_sha256"],
         "provider_member_count": str(len(provider_ids)),
         "eligible_node_count": str(eligible_count),
         "hostname_domain_count": str(domain_count),

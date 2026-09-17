@@ -332,6 +332,15 @@ output "public_edge_contract" {
       admin_console_service    = "fs2-serve-control-plane-admin-console"
       admin_console_port       = 8080
       admin_console_local_port = var.public_edge_mode == "internal-only" ? var.port_forward_local_ports.admin_console : null
+      broker_isolation = var.public_edge_mode == "internal-only" ? {
+        schema                   = "fs2-serve.nebius.ai/internal-proxy-isolation/v1"
+        raw_host_listeners       = []
+        raw_transport_visibility = "private-network-namespace"
+        kubeconfig_custody       = "root-broker-only"
+        listener_modes           = ["debug-read-only", "ordinary-authenticated"]
+        ordinary_listener        = "application-authenticated-loopback-tcp"
+        debug_listener           = "caller-owned-mode-0600-unix-socket"
+      } : null
     }
     security_group_destination_ports = var.public_edge_mode == "public" ? [
       var.public_edge_service_ports.http.listener_port,

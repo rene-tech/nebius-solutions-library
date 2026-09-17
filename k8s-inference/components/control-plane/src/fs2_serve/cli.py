@@ -507,6 +507,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         metadata_provider=runtime_metadata_provider,
         federation=federation,
         debug_store=request_debug_store if settings.request_debug_enabled else None,
+        debug_capture_bytes=settings.request_debug_capture_bytes,
     )
 
     async def refresh_routes() -> bool:

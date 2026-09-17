@@ -40,6 +40,12 @@ spec:
               - x-fs2-token-id
               - x-fs2-model-scope
               - x-fs2-accounting-id
+              - x-fs2-debug-authorization
+              - x-fs2-debug-channel-binding
+              - x-fs2-debug-tenant
+              - x-fs2-debug-model
+              - x-fs2-debug-session
+              - x-fs2-debug-activation
       timeouts:
         request: {{ .Values.httpRoute.audioStreamRequestTimeout | quote }}
         backendRequest: {{ .Values.httpRoute.audioStreamBackendRequestTimeout | quote }}
@@ -74,6 +80,12 @@ spec:
               - x-fs2-token-id
               - x-fs2-model-scope
               - x-fs2-accounting-id
+              - x-fs2-debug-authorization
+              - x-fs2-debug-channel-binding
+              - x-fs2-debug-tenant
+              - x-fs2-debug-model
+              - x-fs2-debug-session
+              - x-fs2-debug-activation
       timeouts:
         # The API permits a bounded 30-second synchronous wait before returning
         # an asynchronous operation. Keep the edge/backend timeout above that

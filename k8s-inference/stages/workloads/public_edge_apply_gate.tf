@@ -8,6 +8,7 @@ locals {
   public_edge_gate_verifier_sha256 = filesha256(local.public_edge_gate_verifier_path)
   public_edge_membership_trust_sha256 = filesha256("${path.module}/../foundation/trusted-public-edge-membership-issuers.json")
   public_edge_provider_adapter_trust_sha256 = filesha256("${path.module}/../foundation/trusted-public-edge-provider-adapters.json")
+  public_edge_preventive_boundary_trust_sha256 = filesha256("${path.module}/../foundation/trusted-public-edge-preventive-boundary-issuers.json")
 }
 
 resource "terraform_data" "public_edge_apply_eligibility" {
@@ -72,6 +73,7 @@ resource "terraform_data" "public_edge_apply_eligibility" {
       FS2_EDGE_GATE_BOUNDARY_APPROVAL_SHA256      = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_boundary_approval.sha256
       FS2_EDGE_GATE_MEMBERSHIP_TRUST_SHA256 = local.public_edge_membership_trust_sha256
       FS2_EDGE_GATE_PROVIDER_ADAPTER_TRUST_SHA256 = local.public_edge_provider_adapter_trust_sha256
+      FS2_EDGE_GATE_PREVENTIVE_BOUNDARY_TRUST_SHA256 = local.public_edge_preventive_boundary_trust_sha256
     }
   }
 
@@ -158,6 +160,7 @@ data "external" "public_edge_mutation_fence" {
     FS2_EDGE_GATE_BOUNDARY_APPROVAL_SHA256      = data.terraform_remote_state.foundation.outputs.cluster_contract.public_edge_membership_authority.admission_boundary_approval.sha256
     FS2_EDGE_GATE_MEMBERSHIP_TRUST_SHA256       = local.public_edge_membership_trust_sha256
     FS2_EDGE_GATE_PROVIDER_ADAPTER_TRUST_SHA256 = local.public_edge_provider_adapter_trust_sha256
+    FS2_EDGE_GATE_PREVENTIVE_BOUNDARY_TRUST_SHA256 = local.public_edge_preventive_boundary_trust_sha256
   }
 
   depends_on = [terraform_data.public_edge_apply_eligibility]

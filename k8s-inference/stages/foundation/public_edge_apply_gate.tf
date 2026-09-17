@@ -11,6 +11,7 @@ locals {
   public_edge_gate_verifier_sha256 = filesha256(local.public_edge_gate_verifier_path)
   public_edge_membership_trust_sha256 = filesha256("${path.module}/trusted-public-edge-membership-issuers.json")
   public_edge_provider_adapter_trust_sha256 = filesha256("${path.module}/trusted-public-edge-provider-adapters.json")
+  public_edge_preventive_boundary_trust_sha256 = filesha256("${path.module}/trusted-public-edge-preventive-boundary-issuers.json")
 }
 
 resource "terraform_data" "public_edge_apply_eligibility" {
@@ -78,6 +79,7 @@ resource "terraform_data" "public_edge_apply_eligibility" {
       FS2_EDGE_GATE_BOUNDARY_APPROVAL_SHA256      = local.public_edge_node_authority_approval_sha256
       FS2_EDGE_GATE_MEMBERSHIP_TRUST_SHA256 = local.public_edge_membership_trust_sha256
       FS2_EDGE_GATE_PROVIDER_ADAPTER_TRUST_SHA256 = local.public_edge_provider_adapter_trust_sha256
+      FS2_EDGE_GATE_PREVENTIVE_BOUNDARY_TRUST_SHA256 = local.public_edge_preventive_boundary_trust_sha256
     }
   }
 
@@ -89,6 +91,7 @@ resource "terraform_data" "public_edge_apply_eligibility" {
     kubernetes_service_v1.edge_rate_limit_redis_headless,
     kubernetes_service_v1.edge_rate_limit_redis_sentinel,
     kubernetes_pod_disruption_budget_v1.edge_rate_limit_redis,
+    kubernetes_pod_disruption_budget_v1.edge_rate_limit_service,
     kubernetes_network_policy_v1.edge_rate_limit_redis,
   ]
 }
@@ -140,6 +143,7 @@ data "external" "public_edge_mutation_fence" {
     FS2_EDGE_GATE_BOUNDARY_APPROVAL_SHA256      = local.public_edge_node_authority_approval_sha256
     FS2_EDGE_GATE_MEMBERSHIP_TRUST_SHA256       = local.public_edge_membership_trust_sha256
     FS2_EDGE_GATE_PROVIDER_ADAPTER_TRUST_SHA256 = local.public_edge_provider_adapter_trust_sha256
+    FS2_EDGE_GATE_PREVENTIVE_BOUNDARY_TRUST_SHA256 = local.public_edge_preventive_boundary_trust_sha256
   }
 
   depends_on = [
@@ -148,6 +152,7 @@ data "external" "public_edge_mutation_fence" {
     kubernetes_service_v1.edge_rate_limit_redis_headless,
     kubernetes_service_v1.edge_rate_limit_redis_sentinel,
     kubernetes_pod_disruption_budget_v1.edge_rate_limit_redis,
+    kubernetes_pod_disruption_budget_v1.edge_rate_limit_service,
     kubernetes_network_policy_v1.edge_rate_limit_redis,
   ]
 }

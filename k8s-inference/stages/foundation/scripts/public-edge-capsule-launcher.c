@@ -12,6 +12,7 @@
 #define _GNU_SOURCE
 
 #include <elf.h>
+#include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <grp.h>
@@ -22,6 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/prctl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -29,6 +31,7 @@
 #include <unistd.h>
 
 #include "fs2-sha256.h"
+#include "fs2-frozen-runtime.h"
 
 #ifndef FS2_EXPECTED_BOOTSTRAP_SHA256
 #error "FS2_EXPECTED_BOOTSTRAP_SHA256 must bind the reviewed bootstrap bytes"
@@ -36,11 +39,26 @@
 #ifndef FS2_EXPECTED_PYTHON_SHA256
 #error "FS2_EXPECTED_PYTHON_SHA256 must bind the reviewed static/frozen Python"
 #endif
-#ifndef FS2_EXPECTED_FROZEN_RUNTIME_REVIEW_SHA256
-#error "FS2_EXPECTED_FROZEN_RUNTIME_REVIEW_SHA256 must bind an external closure review"
-#endif
 
 extern char **environ;
+
+/* The accepted verification path must never resolve a host provider/module.
+ * Static libcrypto may use its built-in default provider; any attempted ELF
+ * module load is made unavailable at the linker boundary. */
+void *__wrap_dlopen(const char *path, int flags) {
+  (void)path;
+  (void)flags;
+  errno = EPERM;
+  return NULL;
+}
+
+void *__wrap_dlmopen(Lmid_t namespace_id, const char *path, int flags) {
+  (void)namespace_id;
+  (void)path;
+  (void)flags;
+  errno = EPERM;
+  return NULL;
+}
 
 static const char *const launcher_path =
     "/usr/local/libexec/fs2-public-edge-current/launcher";
@@ -50,8 +68,6 @@ static const char *const capsule_group = "fs2-public-edge-capsule";
 static const char *const expected_bootstrap_sha256 =
     FS2_EXPECTED_BOOTSTRAP_SHA256;
 static const char *const expected_python_sha256 = FS2_EXPECTED_PYTHON_SHA256;
-static const char *const expected_frozen_runtime_review_sha256 =
-    FS2_EXPECTED_FROZEN_RUNTIME_REVIEW_SHA256;
 
 static const char *const gate_environment[] = {
     "FS2_EDGE_GATE_STAGE",
@@ -215,47 +231,7 @@ static void require_fd_digest(int descriptor, const char *expected,
 }
 
 static void require_static_frozen_python(int descriptor) {
-  Elf64_Ehdr header;
-  if (pread(descriptor, &header, sizeof(header), 0) != (ssize_t)sizeof(header) ||
-      memcmp(header.e_ident, ELFMAG, SELFMAG) != 0 ||
-      header.e_ident[EI_CLASS] != ELFCLASS64 ||
-      header.e_phentsize != sizeof(Elf64_Phdr))
-    die("accepted Python runtime is not ELF64");
-  for (Elf64_Half index = 0; index < header.e_phnum; ++index) {
-    Elf64_Phdr program;
-    off_t offset = (off_t)header.e_phoff + (off_t)index * sizeof(program);
-    if (pread(descriptor, &program, sizeof(program), offset) !=
-        (ssize_t)sizeof(program))
-      die("accepted Python runtime program headers cannot be read");
-    if (program.p_type == PT_INTERP || program.p_type == PT_DYNAMIC)
-      die("accepted Python runtime must be a single-file static executable");
-  }
-  struct stat details;
-  if (!lowercase_digest(expected_frozen_runtime_review_sha256) ||
-      fstat(descriptor, &details) != 0 || details.st_size <= 0)
-    die("frozen-runtime closure review digest is malformed");
-  /* Receipt binding only. The external reviewer must enumerate and inspect
-   * the frozen-module closure of the exact whole-binary digest. */
-  char marker[96];
-  int marker_length = snprintf(
-      marker, sizeof(marker), "FS2_FROZEN_RUNTIME_REVIEW_SHA256=%s",
-      expected_frozen_runtime_review_sha256);
-  void *mapped = mmap(NULL, (size_t)details.st_size, PROT_READ, MAP_PRIVATE,
-                      descriptor, 0);
-  if (marker_length <= 0 || (size_t)marker_length >= sizeof(marker) ||
-      mapped == MAP_FAILED)
-    die("cannot inspect frozen-runtime closure review marker");
-  void *first = memmem(mapped, (size_t)details.st_size, marker,
-                       (size_t)marker_length);
-  void *second = first == NULL ? NULL : memmem(
-      (unsigned char *)first + marker_length,
-      (size_t)details.st_size -
-          ((size_t)((unsigned char *)first - (unsigned char *)mapped) +
-           (size_t)marker_length),
-      marker, (size_t)marker_length);
-  if (munmap(mapped, (size_t)details.st_size) != 0 || first == NULL ||
-      second != NULL)
-    die("static Python lacks one exact frozen-runtime closure review marker");
+  fs2_require_frozen_runtime(descriptor, die);
 }
 
 static gid_t require_capsule_identity(void) {
@@ -494,7 +470,6 @@ int main(int argc, char **argv) {
    * the -c prelude below clears sys.path before the reviewed bootstrap runs. */
   require_fd_digest(bootstrap_fd, expected_bootstrap_sha256, "bootstrap");
   require_fd_digest(python_fd, expected_python_sha256, "Python runtime");
-  require_static_frozen_python(python_fd);
   close(activation_directory);
   int launcher_fd = open("/proc/self/exe", O_RDONLY);
   if (launcher_fd < 0 || fcntl(launcher_fd, F_SETFD, 0) != 0)
@@ -544,6 +519,8 @@ int main(int argc, char **argv) {
       setenv("PATH", "/usr/bin:/bin", 1) != 0 ||
       setenv("LANG", "C.UTF-8", 1) != 0 ||
       setenv("LC_ALL", "C.UTF-8", 1) != 0 ||
+      setenv("OPENSSL_CONF", "/dev/null", 1) != 0 ||
+      setenv("OPENSSL_MODULES", "/nonexistent", 1) != 0 ||
       setenv("FS2_CAPSULE_LAUNCHER", "fs2-public-edge-capsule-v1", 1) != 0 ||
       setenv("FS2_CAPSULE_GROUP", capsule_group, 1) != 0 ||
       setenv("FS2_CAPSULE_MANIFEST_FD", manifest_text, 1) != 0 ||
@@ -553,6 +530,10 @@ int main(int argc, char **argv) {
       (secret_socket >= 0 &&
        setenv("FS2_CAPSULE_SECRET_BROKER_FD", secret_socket_text, 1) != 0))
     die("cannot establish the fixed capsule environment");
+  if (prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0 ||
+      prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0)
+    die("cannot prevent same-UID descriptor recovery from the capsule");
+  require_static_frozen_python(python_fd);
   for (size_t index = 0; gate_environment[index] != NULL; ++index) {
     if (saved[index] != NULL) {
       if (setenv(gate_environment[index], saved[index], 1) != 0)
@@ -562,7 +543,10 @@ int main(int argc, char **argv) {
   }
 
   static const char *const frozen_entry =
-      "import sys;p=sys.argv.pop(1);sys.path[:]=[];b=open(p,'rb',buffering=0).read();"
+      "import sys;p=sys.argv.pop(1);sys.path[:]=[];sys.path_hooks[:]=[];"
+      "sys.path_importer_cache.clear();sys.meta_path[:]=[x for x in sys.meta_path if "
+      "getattr(x,'__name__','') in ('BuiltinImporter','FrozenImporter')];"
+      "b=open(p,'rb',buffering=0).read();"
       "exec(compile(b,'capsule-bootstrap','exec'),{'__name__':'__main__','__file__':p})";
   size_t child_count = (size_t)argc + 10;
   char **child = calloc(child_count, sizeof(char *));

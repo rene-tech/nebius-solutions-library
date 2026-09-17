@@ -32,7 +32,7 @@ from typing import Any, Mapping
 
 MANIFEST_SCHEMA = "fs2-serve.nebius.ai/public-edge-execution-capsule/v2"
 AUTH_TRUST_SCHEMA = "fs2-serve.nebius.ai/trusted-nebius-auth-brokers/v2"
-AUTH_ENVELOPE_SCHEMA = "fs2-serve.nebius.ai/short-lived-nebius-auth/v2"
+AUTH_ENVELOPE_SCHEMA = "fs2-serve.nebius.ai/short-lived-nebius-auth/v3"
 AUTH_BROKER_ROLE = "nebius-short-lived-token-broker"
 AUTH_BROKER_SOCKET = Path("/run/fs2/public-edge-nebius-auth.sock")
 AUTH_BROKER_CONFIG = Path("/etc/fs2/public-edge-nebius-auth-broker.json")
@@ -41,10 +41,15 @@ AUTH_TRUST_PATH = "stages/foundation/trusted-public-edge-auth-broker-authorities
 MUTATION_SETTLEMENT_TRUST_PATH = (
     "stages/foundation/trusted-public-edge-mutation-settlement-authorities.json"
 )
+INTERNAL_DEBUG_ACTIVATION_TRUST_PATH = (
+    "stages/foundation/trusted-internal-debug-activation-issuers.json"
+)
 AUTH_AUDIENCE = "fs2-public-edge-operator"
 SOURCE_IDS = {
     "edge-client-identity-verifier",
     "inference-stack",
+    "internal-edge-acceptance",
+    "internal-edge-proxy",
     "jobset-api-gate",
     "jobset-chart-materializer",
     "jobset-crd-upgrade",
@@ -57,6 +62,8 @@ SOURCE_IDS = {
 SOURCE_MODES = {
     "edge-client-identity-verifier": {"external"},
     "inference-stack": {"operator"},
+    "internal-edge-acceptance": {"library"},
+    "internal-edge-proxy": {"library"},
     "jobset-api-gate": {"local-exec"},
     "jobset-chart-materializer": {"external"},
     "jobset-crd-upgrade": {"local-exec"},
@@ -69,6 +76,8 @@ SOURCE_MODES = {
 SOURCE_PATHS = {
     "edge-client-identity-verifier": "stages/workloads/scripts/verify-edge-client-identity-receipt.py",
     "inference-stack": "inference-stack",
+    "internal-edge-acceptance": "stages/workloads/scripts/internal_edge_acceptance.py",
+    "internal-edge-proxy": "stages/workloads/scripts/internal_edge_proxy.py",
     "jobset-api-gate": "modules/jobset-controller/scripts/wait-for-jobset-api.sh",
     "jobset-chart-materializer": "modules/jobset-controller/scripts/materialize-chart.sh",
     "jobset-crd-upgrade": "modules/jobset-controller/scripts/apply-jobset-crd.sh",
@@ -602,7 +611,7 @@ def auth_authority(
     authority_id: str,
     key_id: str,
     caller_uid: int,
-    caller_gid: int,
+    caller_real_gid: int,
     operator_identity: str,
 ) -> tuple[bytes, dict[str, Any], dict[str, Any]]:
     try:
@@ -715,7 +724,7 @@ def auth_authority(
             if (
                 identity == (authority_id, key_id)
                 and profile_name == profile
-                and (caller_uid, caller_gid, operator_identity) in operator_keys
+                and (caller_uid, caller_real_gid, operator_identity) in operator_keys
             ):
                 matches.append((public_key, record, profile_record))
     if len(matches) != 1:
@@ -752,7 +761,8 @@ def validate_brokered_auth(
             "authority_id",
             "broker_config_sha256",
             "broker_executable_sha256",
-            "caller_gid",
+            "caller_effective_gid",
+            "caller_real_gid",
             "caller_uid",
             "endpoint",
             "expires_at",
@@ -761,6 +771,8 @@ def validate_brokered_auth(
             "manifest_sha256",
             "operator_identity",
             "peer_credential_mode",
+            "peer_observed_caller_gid",
+            "peer_observed_caller_uid",
             "profile",
             "project_id",
             "request_nonce",
@@ -790,7 +802,10 @@ def validate_brokered_auth(
         or payload["profile"] != profile
         or payload["request_nonce"] != request_nonce
         or payload["caller_uid"] != os.getuid()
-        or payload["caller_gid"] != os.getgid()
+        or payload["caller_real_gid"] != os.getgid()
+        or payload["caller_effective_gid"] != os.getegid()
+        or payload["peer_observed_caller_uid"] != os.getuid()
+        or payload["peer_observed_caller_gid"] != os.getegid()
         or not isinstance(payload["operator_identity"], str)
         or re.fullmatch(r"[a-z][a-z0-9._-]{2,127}", payload["operator_identity"])
         is None
@@ -811,7 +826,7 @@ def validate_brokered_auth(
         authority_id=payload["authority_id"],
         key_id=payload["key_id"],
         caller_uid=payload["caller_uid"],
-        caller_gid=payload["caller_gid"],
+        caller_real_gid=payload["caller_real_gid"],
         operator_identity=payload["operator_identity"],
     )
     if peer_runtime is not None:
@@ -896,12 +911,13 @@ def request_brokered_auth(
         "accepted_commit": manifest["accepted_commit"],
         "accepted_tree": manifest["accepted_tree"],
         "audience": AUTH_AUDIENCE,
-        "caller_gid": os.getgid(),
+        "caller_effective_gid": os.getegid(),
+        "caller_real_gid": os.getgid(),
         "caller_uid": os.getuid(),
         "manifest_sha256": manifest_sha256,
         "profile": profile,
         "request_nonce": nonce,
-        "schema": "fs2-serve.nebius.ai/short-lived-nebius-auth-request/v1",
+        "schema": "fs2-serve.nebius.ai/short-lived-nebius-auth-request/v2",
     }
     with socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET) as broker:
         broker.connect(str(AUTH_BROKER_SOCKET))
@@ -1066,7 +1082,12 @@ def delegated_brokered_auth(
     return token_fd, envelope_raw, payload
 
 
-def pin_capsule(manifest: Mapping[str, Any], capsule_gid: int) -> tuple[dict[str, str], tuple[int, ...]]:
+def pin_capsule(
+    manifest: Mapping[str, Any],
+    capsule_gid: int,
+    *,
+    verified_frozen_python_sha256: str,
+) -> tuple[dict[str, str], tuple[int, ...]]:
     source_root_text = manifest["installed_source_root"]
     if not isinstance(source_root_text, str) or not source_root_text.startswith("/opt/fs2/"):
         fail("accepted source root must be under /opt/fs2")
@@ -1135,11 +1156,20 @@ def pin_capsule(manifest: Mapping[str, Any], capsule_gid: int) -> tuple[dict[str
         descriptor, path = pin_manifest_file(
             source_root, tool_records[name], capsule_gid, f"tool {name}"
         )
-        if name == "openssl":
-            require_static_elf(
-                os.pread(descriptor, os.fstat(descriptor).st_size, 0),
-                "capsule OpenSSL",
-            )
+        tool_bytes = os.pread(descriptor, os.fstat(descriptor).st_size, 0)
+        if name == "python3":
+            # The fixed C launcher has already applied the complete
+            # fs2-frozen-runtime.h proof before this Python instruction could
+            # execute. Rejoin the manifest tool record to those exact verified
+            # bytes instead of incorrectly applying the ET_EXEC-only helper to
+            # the required ET_DYN static PIE.
+            if hashlib.sha256(tool_bytes).hexdigest() != verified_frozen_python_sha256:
+                fail("capsule Python tool differs from the launcher-verified frozen runtime")
+        else:
+            # Whole-file hashes do not close an ELF runtime whose PT_INTERP or
+            # DT_NEEDED entries can load mutable host /lib bytes. Every other
+            # accepted operator tool is therefore a genuine static ELF.
+            require_static_elf(tool_bytes, f"capsule tool {name}")
         descriptors.append(descriptor)
         paths[name] = path
 
@@ -1163,6 +1193,17 @@ def pin_capsule(manifest: Mapping[str, Any], capsule_gid: int) -> tuple[dict[str
     )
     descriptors.append(settlement_trust_fd)
     paths["mutation_settlement_trust"] = settlement_trust_path
+    debug_trust_record = release_records.get(INTERNAL_DEBUG_ACTIVATION_TRUST_PATH)
+    if debug_trust_record is None:
+        fail("accepted release omits the internal-debug activation issuer registry")
+    debug_trust_fd, debug_trust_path = pin_manifest_file(
+        source_root,
+        debug_trust_record,
+        capsule_gid,
+        "internal-debug activation issuer registry",
+    )
+    descriptors.append(debug_trust_fd)
+    paths["internal_debug_activation_trust"] = debug_trust_path
 
     terraform = exact_object(
         manifest["terraform"],
@@ -1182,6 +1223,10 @@ def pin_capsule(manifest: Mapping[str, Any], capsule_gid: int) -> tuple[dict[str
             source_root,
             record,
             capsule_gid,
+            f"Terraform provider file {index}",
+        )
+        require_static_elf(
+            os.pread(descriptor, os.fstat(descriptor).st_size, 0),
             f"Terraform provider file {index}",
         )
         descriptors.append(descriptor)
@@ -1339,7 +1384,11 @@ def main() -> int:
     if source_id not in SOURCE_IDS or mode not in SOURCE_MODES[source_id]:
         fail("capsule bootstrap source/mode pair is unsupported")
     manifest_sha256 = hashlib.sha256(manifest_raw).hexdigest()
-    paths, pinned_fds = pin_capsule(manifest, capsule_gid)
+    paths, pinned_fds = pin_capsule(
+        manifest,
+        capsule_gid,
+        verified_frozen_python_sha256=hashlib.sha256(python_bytes).hexdigest(),
+    )
     initial_pass_fds = tuple(
         sorted({manifest_fd, python_fd, launcher_fd, bootstrap_fd, *pinned_fds})
     )
@@ -1347,45 +1396,67 @@ def main() -> int:
     auth_trust_raw = os.pread(
         auth_trust_fd, os.fstat(auth_trust_fd).st_size, 0
     )
+    read_only_operator = (
+        source_id == "inference-stack"
+        and bool(arguments)
+        and arguments[0]
+        in {
+            "status",
+            "output",
+            "proxy",
+            "debug-proxy",
+            "debug-view",
+            "debug-export",
+            "activate-debug",
+            "disable-debug",
+        }
+    )
     if source_id == "inference-stack":
         secret_broker_fd = inherited_fd("FS2_CAPSULE_SECRET_BROKER_FD")
-        operator_profile = requested_nebius_profile(arguments)
-        token_fd, auth_envelope_raw, auth_payload = request_brokered_auth(
-            manifest=manifest,
-            manifest_sha256=manifest_sha256,
-            trust_raw=auth_trust_raw,
-            profile=operator_profile,
-            capsule_gid=capsule_gid,
-            paths=paths,
-            inherited_fds=initial_pass_fds,
-        )
-        refresh_parent, refresh_child = socket.socketpair(
-            socket.AF_UNIX, socket.SOCK_SEQPACKET | socket.SOCK_CLOEXEC
-        )
-        refresh_pid = os.fork()
-        if refresh_pid < 0:
-            fail("cannot start the accepted Nebius auth refresh agent")
-        if refresh_pid > 0:
-            refresh_child.close()
-            try:
-                serve_auth_refresh(
-                    refresh_parent,
-                    manifest=manifest,
-                    manifest_sha256=manifest_sha256,
-                    trust_raw=auth_trust_raw,
-                    profile=operator_profile,
-                    capsule_gid=capsule_gid,
-                    paths=paths,
-                    inherited_fds=initial_pass_fds,
-                )
-            finally:
-                refresh_parent.close()
-            _waited, status = os.waitpid(refresh_pid, 0)
-            os._exit(os.waitstatus_to_exitcode(status))
-        refresh_parent.close()
-        refresh_fd = refresh_child.detach()
-        os.set_inheritable(refresh_fd, True)
-        extra_fds = {secret_broker_fd, refresh_fd}
+        if read_only_operator:
+            token_fd = -1
+            refresh_fd = -1
+            auth_envelope_raw = b""
+            auth_payload = {}
+            extra_fds = {secret_broker_fd}
+        else:
+            operator_profile = requested_nebius_profile(arguments)
+            token_fd, auth_envelope_raw, auth_payload = request_brokered_auth(
+                manifest=manifest,
+                manifest_sha256=manifest_sha256,
+                trust_raw=auth_trust_raw,
+                profile=operator_profile,
+                capsule_gid=capsule_gid,
+                paths=paths,
+                inherited_fds=initial_pass_fds,
+            )
+            refresh_parent, refresh_child = socket.socketpair(
+                socket.AF_UNIX, socket.SOCK_SEQPACKET | socket.SOCK_CLOEXEC
+            )
+            refresh_pid = os.fork()
+            if refresh_pid < 0:
+                fail("cannot start the accepted Nebius auth refresh agent")
+            if refresh_pid > 0:
+                refresh_child.close()
+                try:
+                    serve_auth_refresh(
+                        refresh_parent,
+                        manifest=manifest,
+                        manifest_sha256=manifest_sha256,
+                        trust_raw=auth_trust_raw,
+                        profile=operator_profile,
+                        capsule_gid=capsule_gid,
+                        paths=paths,
+                        inherited_fds=initial_pass_fds,
+                    )
+                finally:
+                    refresh_parent.close()
+                _waited, status = os.waitpid(refresh_pid, 0)
+                os._exit(os.waitstatus_to_exitcode(status))
+            refresh_parent.close()
+            refresh_fd = refresh_child.detach()
+            os.set_inheritable(refresh_fd, True)
+            extra_fds = {secret_broker_fd, refresh_fd}
     else:
         helper_profile = os.environ.get("FS2_CAPSULE_NEBIUS_PROFILE", "")
         if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", helper_profile) is None:
@@ -1404,9 +1475,10 @@ def main() -> int:
             inherited_fds=initial_pass_fds,
         )
         extra_fds = set()
-    paths["nebius_token"] = f"/proc/self/fd/{token_fd}"
+    if token_fd >= 0:
+        paths["nebius_token"] = f"/proc/self/fd/{token_fd}"
     pass_fds = tuple(
-        sorted({*initial_pass_fds, token_fd, *extra_fds})
+        sorted({*initial_pass_fds, *({token_fd} if token_fd >= 0 else set()), *extra_fds})
     )
     source_fd_path = paths[f"source:{source_id}"]
     source_fd = int(source_fd_path.rsplit("/", 1)[1])
@@ -1427,15 +1499,20 @@ def main() -> int:
     os.environ["FS2_CAPSULE_SOURCE_SHA256"] = hashlib.sha256(source_bytes).hexdigest()
     os.environ["FS2_CAPSULE_TOOL_PATHS_JSON"] = json.dumps(paths, sort_keys=True)
     os.environ["FS2_CAPSULE_PASS_FDS"] = ",".join(str(item) for item in pass_fds)
-    os.environ["FS2_CAPSULE_NEBIUS_AUTH_JSON"] = json.dumps(
-        auth_payload, sort_keys=True, separators=(",", ":")
+    os.environ["FS2_CAPSULE_ACCESS_MODE"] = (
+        "local-read-only" if read_only_operator else "brokered-cloud"
     )
-    os.environ["FS2_CAPSULE_DELEGATED_AUTH_FD"] = str(token_fd)
-    os.environ["FS2_CAPSULE_DELEGATED_AUTH_ENVELOPE"] = (
-        base64.urlsafe_b64encode(auth_envelope_raw).rstrip(b"=").decode("ascii")
-    )
+    if token_fd >= 0:
+        os.environ["FS2_CAPSULE_NEBIUS_AUTH_JSON"] = json.dumps(
+            auth_payload, sort_keys=True, separators=(",", ":")
+        )
+        os.environ["FS2_CAPSULE_DELEGATED_AUTH_FD"] = str(token_fd)
+        os.environ["FS2_CAPSULE_DELEGATED_AUTH_ENVELOPE"] = (
+            base64.urlsafe_b64encode(auth_envelope_raw).rstrip(b"=").decode("ascii")
+        )
     if source_id == "inference-stack":
-        os.environ["FS2_CAPSULE_AUTH_REFRESH_FD"] = str(refresh_fd)
+        if refresh_fd >= 0:
+            os.environ["FS2_CAPSULE_AUTH_REFRESH_FD"] = str(refresh_fd)
     os.environ["TF_CLI_CONFIG_FILE"] = paths["terraform_cli_config"]
     os.environ["FS2_CAPSULE_TOOL_BIN"] = paths["tool_bin"]
     os.environ["PATH"] = paths["tool_bin"]

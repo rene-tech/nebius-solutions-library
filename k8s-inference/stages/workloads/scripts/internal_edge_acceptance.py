@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a bounded same-origin acceptance through two loopback port-forwards."""
+"""Run bounded acceptance through an already leased broker-scoped endpoint."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from collections.abc import Mapping
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, quote, urlsplit
 from uuid import UUID, uuid4
 
 BIND_ADDRESS = "127.0.0.1"
@@ -31,6 +31,9 @@ CONTROL_PORT = DEFAULT_CONTROL_PORT
 ADMIN_PORT = DEFAULT_ADMIN_PORT
 PROXY_PORT = DEFAULT_PROXY_PORT
 APPLICATION_ORIGIN = f"http://localhost:{PROXY_PORT}"
+DEBUG_TENANT_ID = ""
+DEBUG_MODEL_ID = ""
+DEBUG_APP_ID = ""
 CONTROL_SERVICE = "fs2-serve-control-plane"
 ADMIN_SERVICE = "fs2-serve-control-plane-admin-console"
 SERVICE_PORT = 8080
@@ -93,6 +96,51 @@ def configure_local_ports(
     APPLICATION_ORIGIN = f"http://localhost:{PROXY_PORT}"
 
 
+def configure_debug_scope(tenant_id: str, model_id: str, app_id: str) -> None:
+    """Install the externally signed tenant/model scope before serving."""
+
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", tenant_id):
+        raise ValueError("debug tenant scope is malformed")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,255}", model_id):
+        raise ValueError("debug model scope is malformed")
+    try:
+        UUID(app_id)
+    except ValueError as exc:
+        raise ValueError("debug App scope is malformed") from exc
+    global DEBUG_TENANT_ID, DEBUG_MODEL_ID, DEBUG_APP_ID
+    DEBUG_TENANT_ID = tenant_id
+    DEBUG_MODEL_ID = model_id
+    DEBUG_APP_ID = app_id
+
+
+def scoped_debug_path(method: str, target: str, tenant_header: str | None) -> bool:
+    """Allow only read-only request-debug rows for the signed model scope."""
+
+    del tenant_header
+    if not DEBUG_TENANT_ID:
+        return True
+    if method not in {"GET", "HEAD"}:
+        return False
+    parsed = urlsplit(target)
+    base = f"/admin/api/v1/apps/{quote(DEBUG_APP_ID, safe='')}/requests"
+    if parsed.path != base:
+        prefix = base + "/"
+        if not parsed.path.startswith(prefix):
+            return False
+        try:
+            UUID(parsed.path[len(prefix) :])
+        except ValueError:
+            return False
+    allowed_query = {"cursor", "from", "limit", "operation_id", "to"}
+    try:
+        query = parse_qsl(parsed.query, keep_blank_values=True, strict_parsing=True)
+    except ValueError:
+        return False
+    return len(query) == len({name for name, _value in query}) and all(
+        name in allowed_query for name, _value in query
+    )
+
+
 def upstream_port(path: str) -> int:
     """Route browser assets to the console and API/MCP traffic to control."""
     path = urlsplit(path).path
@@ -150,14 +198,31 @@ class SameOriginProxy(BaseHTTPRequestHandler):
         connection: http.client.HTTPConnection | None = None
         response_started = False
         try:
+            if not scoped_debug_path(
+                self.command,
+                self.path,
+                self.headers.get("X-FS2-Debug-Tenant"),
+            ):
+                self.send_error(403, "request is outside the signed debug scope")
+                return
             body = self._body()
             headers = {
                 name: value
                 for name, value in self.headers.items()
-                if name.lower() not in HOP_BY_HOP | {"host", "content-length"}
+                if name.lower()
+                not in HOP_BY_HOP
+                | {
+                    "host",
+                    "content-length",
+                    "x-fs2-debug-model",
+                    "x-fs2-debug-tenant",
+                }
             }
             headers["Host"] = f"localhost:{PROXY_PORT}"
             headers["Content-Length"] = str(len(body))
+            if DEBUG_TENANT_ID:
+                headers["X-FS2-Debug-Tenant"] = DEBUG_TENANT_ID
+                headers["X-FS2-Debug-Model"] = DEBUG_MODEL_ID
             connection = http.client.HTTPConnection(
                 BIND_ADDRESS,
                 upstream_port(self.path),
@@ -236,20 +301,11 @@ def port_forward_command(
     *,
     kubectl: str = "kubectl",
 ) -> list[str]:
-    return [
-        kubectl,
-        "--kubeconfig",
-        str(kubeconfig),
-        "--context",
-        context,
-        "--namespace",
-        "fs2-system",
-        "port-forward",
-        "--address",
-        BIND_ADDRESS,
-        f"service/{service}",
-        f"{local_port}:{SERVICE_PORT}",
-    ]
+    del kubeconfig, context, service, local_port, kubectl
+    raise RuntimeError(
+        "operator-owned Kubernetes port-forward commands are forbidden; "
+        "use the enrolled root proxy broker"
+    )
 
 
 def wait_for_port(
@@ -1157,27 +1213,13 @@ def accept(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--kubeconfig", type=Path, required=True)
-    parser.add_argument("--context", required=True)
     parser.add_argument("--admin-token-file", type=Path, required=True)
     parser.add_argument("--semantic-request-file", type=Path, required=True)
-    parser.add_argument(
-        "--control-plane-local-port",
-        type=int,
-        default=DEFAULT_CONTROL_PORT,
-        help="port_forward_contract control_plane_local_port",
-    )
-    parser.add_argument(
-        "--admin-console-local-port",
-        type=int,
-        default=DEFAULT_ADMIN_PORT,
-        help="port_forward_contract admin_console_local_port",
-    )
     parser.add_argument(
         "--operator-proxy-port",
         type=int,
         default=DEFAULT_PROXY_PORT,
-        help="port_forward_contract operator_proxy_port",
+        help="root-brokered scoped listener from port_forward_contract",
     )
     parser.add_argument(
         "--timeout-seconds",
@@ -1185,16 +1227,13 @@ def main() -> None:
         default=ACCEPTANCE_TIMEOUT_SECONDS,
     )
     args = parser.parse_args()
-    if re.fullmatch(r"fs2-disposable-[a-z][a-z0-9]{5,11}", args.context) is None:
-        raise ValueError("context must be the exact run-scoped disposable context")
     if not 300 <= args.timeout_seconds <= ACCEPTANCE_TIMEOUT_SECONDS:
         raise ValueError("timeout-seconds must be from 300 through 7200")
     configure_local_ports(
-        args.control_plane_local_port,
-        args.admin_console_local_port,
+        DEFAULT_CONTROL_PORT,
+        DEFAULT_ADMIN_PORT,
         args.operator_proxy_port,
     )
-    checked_private_file(args.kubeconfig, "kubeconfig")
     admin_token = checked_private_file(args.admin_token_file, "admin token file")
     semantic = semantic_request(
         json.loads(
@@ -1206,47 +1245,16 @@ def main() -> None:
         )
     )
 
-    processes: list[subprocess.Popen[bytes]] = []
-    server: ThreadingHTTPServer | None = None
-    server_thread: threading.Thread | None = None
     deadline = time.monotonic() + args.timeout_seconds
-    try:
-        for service, port in (
-            (CONTROL_SERVICE, CONTROL_PORT),
-            (ADMIN_SERVICE, ADMIN_PORT),
-        ):
-            processes.append(
-                subprocess.Popen(  # noqa: S603
-                    port_forward_command(
-                        args.kubeconfig.resolve(), args.context, service, port
-                    ),
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    env={**os.environ, "KUBECONFIG": str(args.kubeconfig.resolve())},
-                )
-            )
-        wait_for_port(processes, CONTROL_PORT, deadline)
-        wait_for_port(processes, ADMIN_PORT, deadline)
-        server = ThreadingHTTPServer((BIND_ADDRESS, PROXY_PORT), SameOriginProxy)
-        server_thread = threading.Thread(target=server.serve_forever, daemon=True)
-        server_thread.start()
-        print(json.dumps(accept(admin_token, semantic, deadline), sort_keys=True))
-    finally:
-        if server is not None:
-            if server_thread is not None:
-                server.shutdown()
-            server.server_close()
-        if server_thread is not None:
-            server_thread.join(timeout=5)
-        for process in processes:
-            process.terminate()
-        for process in processes:
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=5)
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection((BIND_ADDRESS, PROXY_PORT), timeout=0.25):
+                break
+        except OSError:
+            time.sleep(0.1)
+    else:
+        raise TimeoutError("root-brokered scoped listener did not become ready")
+    print(json.dumps(accept(admin_token, semantic, deadline), sort_keys=True))
 
 
 if __name__ == "__main__":

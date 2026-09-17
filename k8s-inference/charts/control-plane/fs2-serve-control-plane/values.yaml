@@ -329,6 +329,13 @@ config:
   maxResponseBytes: "134217728"
   # Evaluation-only full customer request/response logs in the existing database.
   requestDebugEnabled: false
+  # Empty and fail-closed until the external root proxy broker is enrolled.
+  requestDebugProxyTrustJson: '{"brokers":[],"issuers":[],"schema":"fs2-serve.nebius.ai/trusted-internal-debug-activation-issuers/v1"}'
+  requestDebugClusterId: ""
+  requestDebugDeploymentId: ""
+  # Independent bounded-prefix capture ceiling; normal request/response limits
+  # and customer transport behavior are unchanged.
+  requestDebugCaptureBytes: "1048576"
   payloadTtlSeconds: "86400"
   operationRetentionSeconds: "604800"
   patRetentionSeconds: "604800"
@@ -743,6 +750,7 @@ edgeClientIdentity:
   issuerKeyId: ""
   providerLoadBalancerId: ""
   directAccessExcluded: false
+  perSourceConnectionLimit: 0
 
 # Shared edge abuse protection. Envoy Gateway's global rate-limit service uses
 # the foundation-owned Sentinel topology, so every proxy observes one logical

@@ -4,7 +4,7 @@ output "public_endpoint" {
 }
 
 output "port_forward_contract" {
-  description = "Run-scoped loopback acceptance endpoint, or null when a public edge is enabled."
+  description = "Run-scoped root-broker acceptance endpoint. Raw service transports remain private-namespace-only and raw_host_listeners is empty; null when a public edge is enabled."
   value       = local.public_edge_enabled ? null : var.public_edge_contract.port_forward
 }
 
@@ -18,6 +18,7 @@ output "public_edge_client_identity_evidence" {
     provider_load_balancer_id = local.verified_edge_client_identity.provider_load_balancer_id
     trusted_hops              = local.verified_edge_client_identity.trusted_hops
     direct_access_excluded    = local.verified_edge_client_identity.direct_access_excluded
+    per_source_connection_limit = local.verified_edge_client_identity.per_source_connection_limit
   } : null
 }
 
@@ -33,7 +34,7 @@ output "public_edge_membership_evidence" {
 }
 
 output "mcp_endpoint_url" {
-  description = "Resolved Streamable HTTP MCP endpoint. Internal-only deployments require the run-scoped operator proxy described by port_forward_contract."
+  description = "Resolved Streamable HTTP MCP endpoint. Internal-only deployments require the root-brokered ordinary authenticated listener described by port_forward_contract."
   value       = "${trimsuffix(local.public_base_url, "/")}/mcp"
 }
 
@@ -43,7 +44,7 @@ output "inference_base_url" {
 }
 
 output "admin_web_interface_url" {
-  description = "Resolved admin web-interface URL. Internal-only deployments require the run-scoped operator proxy described by port_forward_contract."
+  description = "Resolved admin web-interface URL. Internal-only deployments require the root-brokered ordinary authenticated listener described by port_forward_contract."
   value       = var.admin_console == null ? null : "${trimsuffix(local.public_base_url, "/")}/admin/"
 }
 

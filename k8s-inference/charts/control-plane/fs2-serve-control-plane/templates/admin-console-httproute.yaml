@@ -41,6 +41,12 @@ spec:
               - x-fs2-token-id
               - x-fs2-model-scope
               - x-fs2-accounting-id
+              - x-fs2-debug-authorization
+              - x-fs2-debug-channel-binding
+              - x-fs2-debug-tenant
+              - x-fs2-debug-model
+              - x-fs2-debug-session
+              - x-fs2-debug-activation
       timeouts:
         request: {{ .Values.adminConsole.httpRoute.requestTimeout | quote }}
         backendRequest: {{ .Values.adminConsole.httpRoute.backendRequestTimeout | quote }}
@@ -60,6 +66,12 @@ spec:
               - x-fs2-token-id
               - x-fs2-model-scope
               - x-fs2-accounting-id
+              - x-fs2-debug-authorization
+              - x-fs2-debug-channel-binding
+              - x-fs2-debug-tenant
+              - x-fs2-debug-model
+              - x-fs2-debug-session
+              - x-fs2-debug-activation
       timeouts:
         request: {{ .Values.adminConsole.httpRoute.requestTimeout | quote }}
         backendRequest: {{ .Values.adminConsole.httpRoute.backendRequestTimeout | quote }}

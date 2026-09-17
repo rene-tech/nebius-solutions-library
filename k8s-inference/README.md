@@ -135,7 +135,8 @@ the operator instead of changing limits or broad project roles.
 Prerequisites are Terraform 1.11 or newer (but older than 2.0), `kubectl`,
 `helm` 3.9 or newer for the digest-pinned OCI charts, `jq`,
 [`crane`](https://github.com/google/go-containerregistry/tree/main/cmd/crane),
-Git, and an enrolled short-lived Nebius token broker for the target project.
+Git, and—only for commands that can inspect or mutate cloud resources—an
+enrolled short-lived Nebius token broker for the target project.
 The optional
 local Kueue and JobSet server tests additionally need
 [`kind`](https://kind.sigs.k8s.io/). The profile name is only a non-secret,
@@ -148,8 +149,15 @@ Operator commands have one additional prerequisite: install the independently ac
 execution capsule described in
 [`docs/security/public-edge-execution-capsule.md`](docs/security/public-edge-execution-capsule.md).
 The capsule is required for validation, planning, apply, destroy, status,
-output, and proxy flows because edge mode and provider inputs are not trusted
-until the accepted Terraform configuration has been evaluated.
+output, and proxy flows because source, tools, provider inputs, and retained
+state are not trusted outside the accepted release. `status`, `output`,
+`proxy`, `debug-proxy`, `debug-view`, `debug-export`, `activate-debug`, and
+`disable-debug` enter a distinct authenticated
+local-read-only capsule mode: it carries no Nebius token or refresh descriptor
+and remains usable when the cloud auth broker is unavailable. Proxy commands
+never accept or receive a kubeconfig; the separately enrolled root proxy
+broker owns the credential and its private-network raw transports. The other
+commands use the separately brokered cloud mode.
 It binds an exact accepted commit/tree, complete root-owned source inventory,
 CLI binaries, Terraform CLI configuration, provider mirror, token-broker
 authority, and the root-owned signed mutation-ledger authority used before
@@ -179,8 +187,8 @@ export FS2_GRAFANA_ADMIN_PASSWORD='...'
 NEBIUS_PROFILE=sandbox ./inference-stack validate --var-file terraform.tfvars
 NEBIUS_PROFILE=sandbox ./inference-stack plan --var-file terraform.tfvars
 NEBIUS_PROFILE=sandbox ./inference-stack apply --var-file terraform.tfvars
-NEBIUS_PROFILE=sandbox ./inference-stack status --var-file terraform.tfvars
-NEBIUS_PROFILE=sandbox ./inference-stack output --var-file terraform.tfvars
+./inference-stack status --var-file terraform.tfvars
+./inference-stack output --var-file terraform.tfvars
 ```
 
 The `./inference-stack <command>` entry point performs no Terraform probe or
@@ -273,9 +281,10 @@ edge = {
 }
 ```
 
-For an explicitly internal-only development deployment, reserve a loopback
-tuple in the same customer tfvars file. The defaults remain `18080`, `18081`,
-and `18082`; use a different tuple for another concurrently operated cluster:
+For an explicitly internal-only development deployment, reserve a broker
+transport tuple in the same customer tfvars file. The defaults remain `18080`,
+`18081`, and `18082`; use a different tuple for another concurrently operated
+cluster:
 
 ```hcl
 edge = {
@@ -289,24 +298,50 @@ edge = {
 ```
 
 The three values must be distinct whole non-privileged TCP ports. Terraform
-copies them into `port_forward_contract`; `mcp_endpoint_url` and
-`admin_web_interface_url` then use the configured same-origin operator-proxy
-port. No HCL or script edits are required to give another deployment a
-non-conflicting local endpoint tuple.
+copies the legacy v2 tuple into `port_forward_contract` and adds the optional
+`broker_isolation/v1` sub-contract. Existing retained v2 state without that
+sub-contract uses the same built-in strict isolation defaults and does not
+require an infrastructure reapply. Only the ordinary `operator_proxy` may
+exist in the host network namespace. The enrolled root broker owns the kubeconfig
+and starts the control-plane and admin transports on the other two ports
+inside a broker-owned private network namespace. Their signed session receipt
+must report an empty `raw_host_listeners` list. The broker preserves the
+ordinary same-origin loopback endpoint on `operator_proxy`, protected by the
+application's existing authentication. The exact tenant-plus-model debug lane
+is instead exposed only through a caller-owned mode-0600 Unix socket; it has no
+host TCP listener. The root broker injects a short-lived Ed25519 assertion on
+each permitted request-debug read; the control plane independently verifies
+its broker, cluster, session, expiry, App UUID, public model, tenant, and
+GET/HEAD-only scope. Neither that assertion nor the Kubernetes credential is
+returned to the operator. No operator-side `kubectl port-forward` process is
+supported.
 
 Public edge uses the Let's Encrypt production IP-ACME directory by default, so
 successful acceptance requires a browser-trusted certificate. Set
 `acme_environment = "staging"` explicitly only for issuance testing;
 staging certificates intentionally fail the trusted-TLS acceptance probe.
-`internal-only` does not expose a public listener. Run
-`inference-stack proxy` only for `internal-only` mode after `apply` to start the
-two run-scoped Kubernetes port-forwards and the same-origin loopback proxy
-described by `port_forward_contract`. Keep that foreground process running
-while using the emitted MCP and admin links; stop it with `Ctrl-C`. Separate
-deployments can run concurrently when their `edge.port_forward_ports` tuples
-differ. These loopback URLs are reachable only from the machine running the
-proxy; use an SSH tunnel for remote testing or select `edge.mode = "public"` for
-a shared endpoint.
+`internal-only` does not expose a public listener. Run `inference-stack proxy`
+only for `internal-only` mode after `apply`; the command leases the enrolled
+root broker's ordinary authenticated listener and never receives a kubeconfig
+or creates a raw upstream listener. Keep that foreground lease running while
+using the emitted MCP and admin links; stop it with `Ctrl-C`. The optional
+`debug-proxy` command is a separate, default-off, externally signed exact
+tenant-plus-model read-only lane with a maximum seven-day activation. Request
+debug records retain the independently accepted SAI-02 exact 90-day lifecycle;
+the activation and record-retention clocks are deliberately different.
+For a supported non-browser workflow, `debug-view` returns the exact activated
+App's request list and `debug-export --debug-request-id <uuid>` returns one
+exact detail record over the signed broker control channel. Neither command
+exports a kubeconfig, private key, backend bearer, or generic forwarding
+capability.
+Its signed lease converts the wall-clock expiry to a local monotonic deadline,
+authenticates every heartbeat, and requires a signed terminal receipt proving
+the listener, connections, raw transports, children, and private namespace
+were closed at expiry or operator shutdown.
+Separate deployments can run concurrently when their
+`edge.port_forward_ports` tuples differ. The scoped loopback URL is reachable
+only from the machine running the proxy; use an SSH tunnel for remote testing
+or select `edge.mode = "public"` for a shared endpoint.
 
 `validate` creates no cloud resources. On a new run, `plan` stops after the
 infrastructure plan because foundation providers cannot safely plan until the

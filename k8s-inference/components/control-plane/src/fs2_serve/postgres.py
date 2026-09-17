@@ -1683,6 +1683,37 @@ class PostgresStore:
                 detail=dict(detail or {}),
             )
 
+    async def append_audit_event_on_connection(
+        self,
+        connection: asyncpg.Connection[Any],
+        *,
+        actor: str,
+        tenant_id: str | None,
+        token_id: UUID | None,
+        action: str,
+        target_type: str,
+        target_id: str,
+        outcome: str,
+        detail: dict[str, str | int | float | bool | None] | None = None,
+    ) -> None:
+        """Append audit evidence inside an existing security transaction."""
+        if not all(1 <= len(value) <= 200 for value in (actor, action, target_type, target_id, outcome)):
+            raise ValueError("audit identity is outside the bound")
+        encoded = json.dumps(detail or {}, sort_keys=True, separators=(",", ":"))
+        if len(encoded) > 4096:
+            raise ValueError("audit detail is outside the bound")
+        await self._audit(
+            connection,
+            actor=actor,
+            tenant_id=tenant_id,
+            token_id=token_id,
+            action=action,
+            target_type=target_type,
+            target_id=target_id,
+            outcome=outcome,
+            detail=dict(detail or {}),
+        )
+
     async def configuration_current(self) -> ConfigurationRevision | None:
         async with self.pool.acquire() as connection:
             row = await connection.fetchrow("SELECT * FROM fs2_configuration_revisions ORDER BY revision DESC LIMIT 1")

@@ -7,9 +7,16 @@ apply was executed while authoring this document.
 
 The capsule makes an accepted release—not a mutable checkout, caller `PATH`,
 or command-line digest—the operator authority. It is used for internal-only and
-public validation, planning, apply, destroy, status, output, and proxy flows
-because deciding the edge mode and reading provider/state inputs must not
-happen through an unaccepted binary or provider.
+public validation, planning, apply, destroy, status, output, and proxy flows.
+Mutating/provider-aware commands enter brokered-cloud mode. `status`, `output`,
+`proxy`, `debug-proxy`, `debug-view`, `debug-export`, `activate-debug`, and
+`disable-debug` instead enter an authenticated
+local-read-only mode with no Nebius token or refresh descriptor. That local
+lane still uses the exact accepted source/tools and owner-protected retained
+state. Proxy commands do not accept or receive a kubeconfig: an independently
+enrolled root proxy broker retains credential custody, places raw upstream
+transports in its private network namespace, and exposes only its scoped host
+listener.
 
 The fixed launcher accepts only these logical source/mode pairs:
 
@@ -41,11 +48,29 @@ activation can therefore never mix files from two releases.
 
 Before any Python instruction executes, the static launcher hashes the opened
 bootstrap and interpreter against digests compiled into the independently
-accepted launcher. It rejects Python with `PT_INTERP` or `PT_DYNAMIC`. The
-interpreter is a single-file static build with its required stdlib frozen into
-those exact bytes. It starts with `-I -S -B`; a compiled prelude clears
-`sys.path` before executing the already-open bootstrap. A missing frozen module
-fails closed instead of falling back to host runtime bytes.
+accepted launcher. The interpreter is an ASLR-capable `ET_DYN` static PIE with
+no `PT_INTERP`, `DT_NEEDED`, PLT/JMPREL, RPATH/RUNPATH, audit/filter, text
+relocations, or external loader/library closure. Its single bounded dynamic
+table may describe only the exact reviewed RELA closure: symbol-free relative
+relocations and bounded in-image IRELATIVE resolvers. Relocation targets must
+be in one non-executable writable load segment; the frozen table, pointer
+storage, dynamic table, and relocation table are either read-only or covered
+by one exact GNU RELRO range.
+
+The runtime verifier joins a canonical, NUL-terminated module inventory and
+payload to the actual CPython `_frozen` table and `PyImport_FrozenModules`
+pointer through their exact symbols and relative relocations. Every required
+section is file-backed and mapped congruently (`sh_offset - p_offset ==
+sh_addr - p_vaddr`) inside one `PT_LOAD`; the inventory, payload, table, and
+pointer-storage intervals are pairwise disjoint in both file and virtual
+address space. Provenance and the detached review-attestation section are
+non-ALLOC, disjoint from all load segments/control tables/other sections. The
+normalized whole-artifact digest excludes only that exact attestation range,
+avoiding a digest fixed point. A separately installed root-owned Ed25519 review
+key authenticates the normalized artifact, actual module closure, and build
+provenance before Python starts. Python then starts with `-I -S -B`; a compiled
+prelude clears `sys.path`. Missing or unreviewed frozen code fails closed rather
+than falling back to host runtime bytes.
 
 Each logical name is also fixed to its canonical relative release path in the
 bootstrap. A signed manifest cannot relabel some other enrolled release file as
@@ -89,7 +114,7 @@ those explicit descriptors. The accepted source replaces apply-time
 Terraform version probe.
 
 The accepted process never imports a Nebius profile file, caller `HOME`, or an
-ambient `NEBIUS_*` secret. The fixed root-owned broker socket returns a token
+ambient `NEBIUS_*` secret. For brokered-cloud commands, the fixed root-owned broker socket returns a token
 only as a sealed memfd plus an Ed25519 envelope binding exact profile selector,
 broker authority/key, service-account subject, project, tenant, endpoint, audience,
 commit/tree, manifest digest, request nonce, caller UID/GID, source-enrolled
@@ -106,6 +131,54 @@ authenticate. Terraform reads the token through the inherited
 `/proc/self/fd/<n>` path; nested external/local-exec capsule entries request a
 fresh envelope from the same broker because Terraform does not promise to
 forward arbitrary parent descriptors.
+Local-read-only commands deliberately skip the cloud-token broker exchange and
+reject any inherited cloud token, auth envelope, or refresh descriptor. They
+can inspect only the accepted run root owned by the invoking operator.
+In brokered-cloud mode the token descriptor is excluded from the capsule's
+global child descriptor set. It is added only when the exact child environment
+carries the matching current signed delegated-auth envelope and token text;
+signature verifiers, retained-state readers, and other helpers receive neither
+the token descriptor nor its environment value. Refresh atomically replaces
+the stable descriptor before the next exact authenticated child starts.
+`status` and `output` remain entirely local. `proxy`, `debug-proxy`,
+`debug-view`, and `debug-export` contact
+the separately owned root proxy broker over its enrolled `SO_PEERCRED` Unix
+socket, but receive only a signed session lease. They never receive a
+Kubernetes credential or raw transport descriptor. The broker's signed lease
+must bind an empty raw-host-listener set, its private network namespace inode,
+the exact two namespace-local service transports, the ordinary scoped TCP
+listener or caller-owned mode-0600 debug Unix socket, caller identity, cluster,
+deployment contract, mode, and expiry. It also binds whether isolation was
+derived for retained v2 state or embedded as the optional v1 sub-contract.
+Enrollment and every signed response bind separate exact executable,
+configuration, runtime-review, namespace-policy, and scope-policy digests.
+Ordinary access remains the authenticated inference/MCP/admin lane; the
+optional debug lane is default-off, exact tenant plus public model plus App,
+read-only, and at most seven days. SAI-02 supplies the separate exact 90-day
+request-record retention and purge dependency.
+`debug-view` and `debug-export --debug-request-id <uuid>` are the supported
+non-browser view/export adapters. They keep results on the root-authenticated
+control channel and accept only the exact activation App list/detail paths;
+each bounded JSON result is signed and binds its nonce, session, operation,
+path, expiry, body digest, and audit-event digest. They export neither the
+broker's Kubernetes credential nor its backend authorization bearer.
+Activation install and disable serialize their complete signed-history
+reconstruction, current-grant check, and append under an exclusive kernel lock
+on the already-retained mode-0700 run-root directory. No lockfile or evidence
+is deleted, replaced, or cleaned, and a competing lifecycle command fails
+closed before either process can append a second current grant.
+Signed heartbeats are sequence- and expiry-bound. The client converts expiry
+to a monotonic deadline, rejects wall/monotonic divergence, and requires a
+signed terminal receipt proving all listeners, connections, raw transports,
+children, and the private namespace are gone at expiry or caller shutdown.
+For debug mode the signed lease also binds the broker's non-exported
+`x-fs2-debug-authorization` injection contract. The broker signs and injects
+that assertion inside its private namespace on every permitted read. The
+control plane verifies the enrolled broker key and exact activation, cluster,
+session, expiry, App UUID, public model, tenant, and GET/HEAD method; a missing
+or untrusted assertion is denied even on the ordinary admin route. Heartbeats
+prove the assertion authority remains current and the signed terminal proves
+it was revoked.
 The accepted bootstrap retains a separate refresh agent. Every cloud/Terraform
 operation requests a fresh lease with at least two hours remaining. Terraform
 mutation is capped at 90 minutes. Before Terraform is spawned, the capsule must
@@ -169,14 +242,14 @@ isolated packaging environment. They were not performed for this source
 candidate.
 
 1. Build a new output path with exactly four arguments:
-   `stages/foundation/scripts/build-public-edge-capsule-launcher.sh /absolute/new-launcher BOOTSTRAP_SHA256 STATIC_FROZEN_PYTHON_SHA256 FROZEN_RUNTIME_CLOSURE_REVIEW_SHA256`. The build
+   `stages/foundation/scripts/build-public-edge-capsule-launcher.sh /absolute/new-launcher BOOTSTRAP_SHA256 /absolute/static-frozen-python STATIC_FROZEN_PYTHON_SHA256`. The build
    script invokes fixed `/usr/bin/cc`, requests static PIE and hardening flags,
    and refuses to replace an existing output.
-   The fourth value is only a binding to an independent review receipt for the
-   exact whole-binary digest. The C marker check does not enumerate CPython's
-   frozen-module table; enrollment must separately prove required modules,
-   excluded/unreviewed modules, toolchain provenance, and the complete frozen
-   runtime closure.
+   The independently reviewed frozen Python must already carry the canonical
+   inventory, payload, actual CPython table, build-provenance, and detached
+   attestation sections described above. Both the offline verifier
+   `verify-public-edge-frozen-runtime.py` and the runtime header parse that
+   closure; a caller-supplied review digest is not a build argument.
 2. Assemble the versioned release bundle and complete exhaustive manifest. Do
    not include a symlink, socket, device, secret, credential, state, plan,
    customer payload, or mutable cache.
@@ -190,12 +263,12 @@ candidate.
    `0555`, using `build-public-edge-capsule-installer-launcher.sh`. Its accepted
    digest is recorded in the manifest/policy. It embeds the digests of mode-0444
    `/usr/local/libexec/fs2-public-edge-installer.py` and the no-`PT_INTERP`,
-   no-`PT_DYNAMIC`, frozen-stdlib
+   hermetic static-PIE frozen-stdlib
    `/usr/local/libexec/fs2-public-edge-installer-python-static`. Build the gate
-   with exactly
-   `stages/foundation/scripts/build-public-edge-capsule-installer-launcher.sh /absolute/new-installer INSTALLER_SOURCE_SHA256 STATIC_FROZEN_PYTHON_SHA256 FROZEN_RUNTIME_CLOSURE_REVIEW_SHA256`.
-   Its fourth value has the same external-review-only meaning; it is not a
-   runtime enumeration proof. The standalone
+   with exactly four arguments:
+   `stages/foundation/scripts/build-public-edge-capsule-installer-launcher.sh /absolute/new-installer INSTALLER_SOURCE_SHA256 /absolute/static-frozen-python STATIC_FROZEN_PYTHON_SHA256`.
+   The same independent static-PIE/frozen-table verifier protects the installer
+   runtime. The standalone
    `verify-public-edge-capsule-install.py` remains an audit-only preview; its
    `VERIFIED_FOR_INSTALL` output is never an installation authority.
 

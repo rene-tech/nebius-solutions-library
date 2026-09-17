@@ -1467,7 +1467,7 @@ variable "enable_dcgm_cold_start_campaign" {
 }
 
 variable "public_edge_contract" {
-  description = "Exact typed infra-disposable public_edge_contract output. Internal-only mode carries null public identities and a bounded loopback port-forward contract."
+  description = "Exact typed infra-disposable public_edge_contract output. Internal-only mode carries null public identities and a root-brokered proxy whose raw transports exist only inside a private network namespace."
   type = object({
     schema                      = string
     mode                        = string
@@ -1498,6 +1498,15 @@ variable "public_edge_contract" {
       admin_console_service    = string
       admin_console_port       = number
       admin_console_local_port = optional(number)
+      broker_isolation = optional(object({
+        schema                   = string
+        raw_host_listeners       = list(number)
+        raw_transport_visibility = string
+        kubeconfig_custody       = string
+        listener_modes           = list(string)
+        ordinary_listener        = string
+        debug_listener           = string
+      }))
     })
     security_group_destination_ports = list(number)
     security_group_source_cidrs      = optional(list(string), [])
@@ -1539,6 +1548,18 @@ variable "public_edge_contract" {
       var.public_edge_contract.port_forward.bind_address == "127.0.0.1" &&
       var.public_edge_contract.port_forward.application_origin == format("http://localhost:%d", var.public_edge_contract.port_forward.operator_proxy_port) &&
       var.public_edge_contract.port_forward.operator_endpoint == format("http://127.0.0.1:%d", var.public_edge_contract.port_forward.operator_proxy_port) &&
+      (
+        var.public_edge_contract.port_forward.broker_isolation == null ||
+        (
+          var.public_edge_contract.port_forward.broker_isolation.schema == "fs2-serve.nebius.ai/internal-proxy-isolation/v1" &&
+          length(var.public_edge_contract.port_forward.broker_isolation.raw_host_listeners) == 0 &&
+          var.public_edge_contract.port_forward.broker_isolation.raw_transport_visibility == "private-network-namespace" &&
+          var.public_edge_contract.port_forward.broker_isolation.kubeconfig_custody == "root-broker-only" &&
+          var.public_edge_contract.port_forward.broker_isolation.listener_modes == ["debug-read-only", "ordinary-authenticated"] &&
+          var.public_edge_contract.port_forward.broker_isolation.ordinary_listener == "application-authenticated-loopback-tcp" &&
+          var.public_edge_contract.port_forward.broker_isolation.debug_listener == "caller-owned-mode-0600-unix-socket"
+        )
+      ) &&
       alltrue([
         for port in [
           var.public_edge_contract.port_forward.control_plane_local_port,
@@ -1553,7 +1574,7 @@ variable "public_edge_contract" {
       ])) == 3,
       false,
     )
-    error_message = "An internal-only public_edge_contract requires three distinct non-privileged loopback ports and origins derived from its operator-proxy port."
+    error_message = "An internal-only public_edge_contract requires a sole host-side scoped proxy, no raw host listeners, root-only kubeconfig custody, private-network-namespace raw transports, and three distinct non-privileged namespace/proxy ports."
   }
 }
 

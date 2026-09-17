@@ -180,6 +180,15 @@ variables {
       admin_console_service    = "fs2-serve-control-plane-admin-console"
       admin_console_port       = 8080
       admin_console_local_port = 18081
+      broker_isolation = {
+        schema                   = "fs2-serve.nebius.ai/internal-proxy-isolation/v1"
+        raw_host_listeners       = []
+        raw_transport_visibility = "private-network-namespace"
+        kubeconfig_custody       = "root-broker-only"
+        listener_modes           = ["debug-read-only", "ordinary-authenticated"]
+        ordinary_listener        = "application-authenticated-loopback-tcp"
+        debug_listener           = "caller-owned-mode-0600-unix-socket"
+      }
     }
     security_group_destination_ports = []
   }

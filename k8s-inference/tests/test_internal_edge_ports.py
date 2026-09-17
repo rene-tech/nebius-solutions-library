@@ -46,16 +46,15 @@ class InternalEdgePortTests(unittest.TestCase):
             with self.subTest(ports=ports), self.assertRaises(ValueError):
                 ACCEPTANCE.configure_local_ports(*ports)
 
-    def test_port_forward_command_accepts_wrapper_selected_kubectl(self) -> None:
-        command = ACCEPTANCE.port_forward_command(
-            Path("/private/kubeconfig"),
-            "k8s-inference-test",
-            ACCEPTANCE.CONTROL_SERVICE,
-            28080,
-            kubectl="kubectl-test",
-        )
-        self.assertEqual(command[0], "kubectl-test")
-        self.assertIn("k8s-inference-test", command)
+    def test_operator_side_port_forward_command_is_retired(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "root proxy broker"):
+            ACCEPTANCE.port_forward_command(
+                Path("/private/kubeconfig"),
+                "k8s-inference-test",
+                ACCEPTANCE.CONTROL_SERVICE,
+                28080,
+                kubectl="kubectl-test",
+            )
 
     def test_admin_envelope_requires_live_sources_and_rejects_placeholders(
         self,

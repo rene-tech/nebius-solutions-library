@@ -17,6 +17,7 @@ locals {
     "kubernetes_service_v1.edge_rate_limit_redis_headless",
     "kubernetes_service_v1.edge_rate_limit_redis_sentinel",
     "kubernetes_pod_disruption_budget_v1.edge_rate_limit_redis",
+    "kubernetes_pod_disruption_budget_v1.edge_rate_limit_service",
     "kubernetes_network_policy_v1.edge_rate_limit_redis",
   ], local.public_edge_enabled ? [
     "terraform_data.public_edge_apply_eligibility[0]",
@@ -31,8 +32,11 @@ locals {
 # supervised by three co-located Sentinels. Sentinels expose one logical write
 # authority and require quorum before failover; the RLS connects to stable
 # Sentinel endpoints instead of load-balancing writes across Redis Pods.
-# Restarted members ask the live quorum for the current primary before Redis
-# starts, preventing a StatefulSet rollout from creating independent writers.
+# Every Redis process asks all three stable Sentinel identities and requires two
+# identical replies before it starts.  The ClusterIP service is never a source
+# of authority.  A missing/stale/minority reply leaves Redis unstarted, while
+# the concurrently started Sentinels retain one deterministic genesis target
+# and converge through their quorum protocol.
 resource "kubernetes_config_map_v1" "edge_rate_limit_redis" {
   metadata {
     name      = "${local.edge_rate_limit_redis_name}-bootstrap"
@@ -47,58 +51,10 @@ resource "kubernetes_config_map_v1" "edge_rate_limit_redis" {
 
       master_name="${local.edge_rate_limit_redis_master_name}"
       headless_service="${local.edge_rate_limit_redis_headless_name}.envoy-gateway-system.svc.cluster.local"
-      sentinel_service="${local.edge_rate_limit_redis_sentinel_name}.envoy-gateway-system.svc.cluster.local"
       bootstrap_master="${local.edge_rate_limit_redis_name}-0.$headless_service"
       self_address="$HOSTNAME.$headless_service"
-      master_address=""
-      master_port="6379"
-
-      master_reply="$(redis-cli -h "$sentinel_service" -p 26379 --raw \
-        SENTINEL get-master-addr-by-name "$master_name" 2>/dev/null || true)"
-      if [ -n "$master_reply" ]; then
-        master_address="$(printf '%s\n' "$master_reply" | sed -n '1p')"
-        master_port="$(printf '%s\n' "$master_reply" | sed -n '2p')"
-      fi
-      # During a primary restart, keep Redis stopped long enough for the two
-      # surviving Sentinels to agree on and publish a replacement. This avoids
-      # resurrecting the old ordinal as an independent writable authority.
-      if [ -n "$master_reply" ] && [ "$master_address" = "$self_address" ]; then
-        attempts=0
-        while [ "$attempts" -lt 30 ]; do
-          sleep 1
-          master_reply="$(redis-cli -h "$sentinel_service" -p 26379 --raw \
-            SENTINEL get-master-addr-by-name "$master_name" 2>/dev/null || true)"
-          candidate="$(printf '%s\n' "$master_reply" | sed -n '1p')"
-          if [ -n "$candidate" ] && [ "$candidate" != "$self_address" ]; then
-            master_address="$candidate"
-            master_port="$(printf '%s\n' "$master_reply" | sed -n '2p')"
-            break
-          fi
-          attempts=$((attempts + 1))
-        done
-      fi
-      if [ -z "$master_address" ]; then
-        master_address="$bootstrap_master"
-        master_port="6379"
-      fi
 
       mkdir -p /work/sentinel /data
-      printf '%s\n' \
-        'bind 0.0.0.0' \
-        'protected-mode no' \
-        'port 6379' \
-        'dir /data' \
-        'save ""' \
-        'appendonly no' \
-        'maxmemory 192mb' \
-        'maxmemory-policy allkeys-lru' \
-        'replica-read-only yes' \
-        "replica-announce-ip $self_address" \
-        'replica-announce-port 6379' > /work/redis.conf
-      if [ "$self_address" != "$master_address" ]; then
-        printf 'replicaof %s %s\n' "$master_address" "$master_port" >> /work/redis.conf
-      fi
-
       printf '%s\n' \
         'bind 0.0.0.0' \
         'protected-mode no' \
@@ -108,10 +64,120 @@ resource "kubernetes_config_map_v1" "edge_rate_limit_redis" {
         'sentinel announce-hostnames yes' \
         "sentinel announce-ip $self_address" \
         'sentinel announce-port 26379' \
-        "sentinel monitor $master_name $master_address $master_port 2" \
+        "sentinel monitor $master_name $bootstrap_master 6379 2" \
         "sentinel down-after-milliseconds $master_name 5000" \
         "sentinel failover-timeout $master_name 15000" \
         "sentinel parallel-syncs $master_name 1" > /work/sentinel.conf
+    EOT
+    "run-redis.sh" = <<-EOT
+      #!/bin/sh
+      set -eu
+
+      master_name="${local.edge_rate_limit_redis_master_name}"
+      headless_service="${local.edge_rate_limit_redis_headless_name}.envoy-gateway-system.svc.cluster.local"
+      self_address="$HOSTNAME.$headless_service"
+
+      while :; do
+        candidate=""
+        candidate_count=0
+        for ordinal in 0 1 2; do
+          sentinel="${local.edge_rate_limit_redis_name}-$ordinal.$headless_service"
+          reply="$(redis-cli -h "$sentinel" -p 26379 --raw SENTINEL get-master-addr-by-name "$master_name" 2>/dev/null || true)"
+          address="$(printf '%s\n' "$reply" | sed -n '1p')"
+          port="$(printf '%s\n' "$reply" | sed -n '2p')"
+          case "$address" in
+            "${local.edge_rate_limit_redis_name}-0.$headless_service"|"${local.edge_rate_limit_redis_name}-1.$headless_service"|"${local.edge_rate_limit_redis_name}-2.$headless_service") ;;
+            *) continue ;;
+          esac
+          [ "$port" = "6379" ] || continue
+          if [ -z "$candidate" ] || [ "$candidate" = "$address" ]; then
+            candidate="$address"
+            candidate_count=$((candidate_count + 1))
+          else
+            # A differing first reply cannot be used as an authority. Recount
+            # each exact candidate so two agreeing Sentinels still win.
+            for exact_candidate in \
+              "${local.edge_rate_limit_redis_name}-0.$headless_service" \
+              "${local.edge_rate_limit_redis_name}-1.$headless_service" \
+              "${local.edge_rate_limit_redis_name}-2.$headless_service"; do
+              count=0
+              for check_ordinal in 0 1 2; do
+                check_sentinel="${local.edge_rate_limit_redis_name}-$check_ordinal.$headless_service"
+                check_reply="$(redis-cli -h "$check_sentinel" -p 26379 --raw SENTINEL get-master-addr-by-name "$master_name" 2>/dev/null || true)"
+                [ "$(printf '%s\n' "$check_reply" | sed -n '1p')" = "$exact_candidate" ] && \
+                  [ "$(printf '%s\n' "$check_reply" | sed -n '2p')" = "6379" ] && count=$((count + 1))
+              done
+              if [ "$count" -ge 2 ]; then
+                candidate="$exact_candidate"
+                candidate_count="$count"
+                break
+              fi
+            done
+            break
+          fi
+        done
+        [ "$candidate_count" -ge 2 ] && break
+        candidate=""
+        sleep 1
+      done
+
+      printf '%s\n' \
+        'bind 0.0.0.0' \
+        'protected-mode no' \
+        'port 6379' \
+        'dir /data' \
+        'save ""' \
+        'appendonly no' \
+        'maxmemory 192mb' \
+        'maxmemory-policy allkeys-lru' \
+        'min-replicas-to-write 1' \
+        'min-replicas-max-lag 5' \
+        'replica-read-only yes' \
+        "replica-announce-ip $self_address" \
+        'replica-announce-port 6379' > /work/redis.conf
+      if [ "$self_address" != "$candidate" ]; then
+        printf 'replicaof %s 6379\n' "$candidate" >> /work/redis.conf
+      fi
+      exec redis-server /work/redis.conf
+    EOT
+    "ready.sh" = <<-EOT
+      #!/bin/sh
+      set -eu
+      master_name="${local.edge_rate_limit_redis_master_name}"
+      headless_service="${local.edge_rate_limit_redis_headless_name}.envoy-gateway-system.svc.cluster.local"
+      self_address="$HOSTNAME.$headless_service"
+      agreed=""
+      for exact_candidate in \
+        "${local.edge_rate_limit_redis_name}-0.$headless_service" \
+        "${local.edge_rate_limit_redis_name}-1.$headless_service" \
+        "${local.edge_rate_limit_redis_name}-2.$headless_service"; do
+        count=0
+        for ordinal in 0 1 2; do
+          sentinel="${local.edge_rate_limit_redis_name}-$ordinal.$headless_service"
+          reply="$(redis-cli -h "$sentinel" -p 26379 --raw SENTINEL get-master-addr-by-name "$master_name" 2>/dev/null || true)"
+          [ "$(printf '%s\n' "$reply" | sed -n '1p')" = "$exact_candidate" ] && \
+            [ "$(printf '%s\n' "$reply" | sed -n '2p')" = "6379" ] && count=$((count + 1))
+        done
+        [ "$count" -ge 2 ] && agreed="$exact_candidate"
+      done
+      [ -n "$agreed" ]
+      role="$(redis-cli --raw ROLE)"
+      if [ "$agreed" = "$self_address" ]; then
+        [ "$(printf '%s\n' "$role" | sed -n '1p')" = "master" ]
+        # A primary is ready only while at least one current replica can
+        # acknowledge writes inside the same five-second fence enforced by
+        # Redis. In a 2/1 partition the isolated former primary therefore
+        # becomes read-only instead of serving a second counter authority.
+        replication="$(redis-cli --raw INFO replication)"
+        connected_replicas="$(printf '%s\n' "$replication" | sed -n 's/^connected_slaves:\([0-9][0-9]*\)\r*$/\1/p')"
+        [ -n "$connected_replicas" ]
+        [ "$connected_replicas" -ge 1 ]
+      else
+        [ "$(printf '%s\n' "$role" | sed -n '1p')" = "slave" ]
+        [ "$(printf '%s\n' "$role" | sed -n '2p')" = "$agreed" ]
+        [ "$(printf '%s\n' "$role" | sed -n '3p')" = "6379" ]
+        [ "$(printf '%s\n' "$role" | sed -n '4p')" = "connected" ]
+      fi
     EOT
   }
 }
@@ -126,6 +192,7 @@ resource "kubernetes_stateful_set_v1" "edge_rate_limit_redis" {
   spec {
     replicas     = 3
     service_name = local.edge_rate_limit_redis_headless_name
+    pod_management_policy = "Parallel"
 
     selector {
       match_labels = local.edge_rate_limit_redis_labels
@@ -215,7 +282,7 @@ resource "kubernetes_stateful_set_v1" "edge_rate_limit_redis" {
           name              = "redis"
           image             = local.edge_rate_limit_redis_image
           image_pull_policy = "IfNotPresent"
-          command           = ["redis-server", "/work/redis.conf"]
+          command           = ["/bin/sh", "/bootstrap/run-redis.sh"]
 
           port {
             name           = "redis"
@@ -245,7 +312,7 @@ resource "kubernetes_stateful_set_v1" "edge_rate_limit_redis" {
 
           readiness_probe {
             exec {
-              command = ["redis-cli", "ping"]
+              command = ["/bin/sh", "/bootstrap/ready.sh"]
             }
             initial_delay_seconds = 2
             period_seconds        = 5
@@ -263,6 +330,11 @@ resource "kubernetes_stateful_set_v1" "edge_rate_limit_redis" {
             failure_threshold     = 3
           }
 
+          volume_mount {
+            name       = "bootstrap"
+            mount_path = "/bootstrap"
+            read_only  = true
+          }
           volume_mount {
             name       = "configuration"
             mount_path = "/work"
@@ -381,6 +453,7 @@ resource "kubernetes_stateful_set_v1" "edge_rate_limit_redis" {
           data.external.public_edge_mutation_fence[0].result.admission_bootstrap_policy_sha256 == local.public_edge_cas_bootstrap_policy_sha256 &&
           data.external.public_edge_mutation_fence[0].result.admission_bootstrap_binding_sha256 == local.public_edge_cas_bootstrap_binding_sha256 &&
           data.external.public_edge_mutation_fence[0].result.admission_boundary_approval_sha256 == local.public_edge_node_authority_approval_sha256 &&
+          data.external.public_edge_mutation_fence[0].result.preventive_boundary_receipt_sha256 == local.public_edge_observed_preventive_boundary.receipt_sha256 &&
           tonumber(data.external.public_edge_mutation_fence[0].result.provider_member_count) >= 3 &&
           tonumber(data.external.public_edge_mutation_fence[0].result.eligible_node_count) >= 3 &&
           tonumber(data.external.public_edge_mutation_fence[0].result.hostname_domain_count) >= 3,
@@ -458,6 +531,25 @@ resource "kubernetes_pod_disruption_budget_v1" "edge_rate_limit_redis" {
     min_available = "2"
     selector {
       match_labels = local.edge_rate_limit_redis_labels
+    }
+  }
+}
+
+# Envoy Gateway's fail-closed global RLS is on both public listeners. Protect
+# at least one of its two replicas during every voluntary drain/upgrade; the
+# exact label is injected into the generated Deployment by the pinned chart
+# values and is also used by its hard spread/anti-affinity contract.
+resource "kubernetes_pod_disruption_budget_v1" "edge_rate_limit_service" {
+  metadata {
+    name      = "fs2-edge-rate-limit-service"
+    namespace = kubernetes_namespace_v1.platform["envoy-gateway-system"].metadata[0].name
+    labels    = merge(local.common_labels, local.edge_rate_limit_service_labels)
+  }
+
+  spec {
+    min_available = "1"
+    selector {
+      match_labels = local.edge_rate_limit_service_labels
     }
   }
 }

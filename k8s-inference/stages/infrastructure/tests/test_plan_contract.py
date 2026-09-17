@@ -318,6 +318,22 @@ class InfrastructurePlanContractTests(unittest.TestCase):
                         if public_edge_mode == "internal-only"
                         else None
                     ),
+                    "broker_isolation": (
+                        {
+                            "schema": "fs2-serve.nebius.ai/internal-proxy-isolation/v1",
+                            "raw_host_listeners": [],
+                            "raw_transport_visibility": "private-network-namespace",
+                            "kubeconfig_custody": "root-broker-only",
+                            "listener_modes": [
+                                "debug-read-only",
+                                "ordinary-authenticated",
+                            ],
+                            "ordinary_listener": "application-authenticated-loopback-tcp",
+                            "debug_listener": "caller-owned-mode-0600-unix-socket",
+                        }
+                        if public_edge_mode == "internal-only"
+                        else None
+                    ),
                 },
                 "security_group_destination_ports": (
                     [80, 443, 10080, 10443, 31425, 32633]

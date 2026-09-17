@@ -2,19 +2,27 @@ locals {
   public_edge_cas_bootstrap_registry = jsondecode(file("${path.module}/trusted-public-edge-cas-bootstrap-authorities.json"))
   public_edge_cas_bootstrap_authority = try(one(local.public_edge_cas_bootstrap_registry.authorities), null)
   public_edge_required_identity_paths = [
+    "anonymous",
+    "authentication-webhook",
+    "bootstrap-token",
     "client-certificate",
+    "csr-approval",
+    "csr-signing",
     "direct-user",
     "impersonated-group",
     "impersonated-uid",
     "impersonated-user",
     "impersonated-userextra",
+    "kubelet-client-certificate",
+    "node-credential",
     "oidc",
     "provider-control-plane",
+    "requestheader-front-proxy",
     "service-account-token",
+    "static-token",
   ]
-  public_edge_preventive_boundary = try(local.public_edge_cas_bootstrap_authority.preventive_boundary, null)
   public_edge_cas_bootstrap_enrolled = (
-    local.public_edge_cas_bootstrap_registry.schema == "fs2-serve.nebius.ai/trusted-public-edge-cas-bootstrap-authorities/v2" &&
+    local.public_edge_cas_bootstrap_registry.schema == "fs2-serve.nebius.ai/trusted-public-edge-cas-bootstrap-authorities/v3" &&
     local.public_edge_cas_bootstrap_authority != null &&
     try(keys(local.public_edge_cas_bootstrap_authority) == sort([
       "approval_api_version",
@@ -25,7 +33,6 @@ locals {
       "groups",
       "id",
       "impersonation_review_sha256",
-      "preventive_boundary",
       "rbac_review_sha256",
       "uid",
       "username",
@@ -41,47 +48,14 @@ locals {
     try(can(regex("^[a-z0-9.-]+/v[0-9]+[a-z0-9]*$", local.public_edge_cas_bootstrap_authority.approval_api_version)), false) &&
     try(can(regex("^[A-Z][A-Za-z0-9]{2,127}$", local.public_edge_cas_bootstrap_authority.approval_kind)), false) &&
     try(can(regex("^[a-z][a-z0-9.-]{2,127}$", local.public_edge_cas_bootstrap_authority.approval_resource)), false) &&
-    try(local.public_edge_cas_bootstrap_authority.approval_name == "fs2-public-edge-node-authority-approval", false) &&
-    try(keys(local.public_edge_preventive_boundary) == sort([
-      "apiserver_enforcement_id",
-      "configuration_sha256",
-      "controller_groups",
-      "controller_image_digest",
-      "controller_uid",
-      "controller_username",
-      "identity_paths",
-      "kind",
-      "provenance_attestation_sha256",
-      "provider_iam_policy_id",
-      "receipt_sha256",
-      "source_commit",
-      "source_repository",
-      "source_tree",
-    ]), false) &&
-    try(local.public_edge_preventive_boundary.kind == "provider-iam+apiserver-admission", false) &&
-    try(length(local.public_edge_preventive_boundary.provider_iam_policy_id) > 0, false) &&
-    try(length(local.public_edge_preventive_boundary.apiserver_enforcement_id) > 0, false) &&
-    try(length(local.public_edge_preventive_boundary.controller_username) > 0, false) &&
-    try(length(local.public_edge_preventive_boundary.controller_uid) > 0, false) &&
-    try(local.public_edge_preventive_boundary.controller_groups == sort(distinct(local.public_edge_preventive_boundary.controller_groups)), false) &&
-    try(local.public_edge_preventive_boundary.identity_paths == local.public_edge_required_identity_paths, false) &&
-    try(can(regex("^sha256:[a-f0-9]{64}$", local.public_edge_preventive_boundary.controller_image_digest)), false) &&
-    try(can(regex("^[a-f0-9]{40}$", local.public_edge_preventive_boundary.source_commit)), false) &&
-    try(can(regex("^[a-f0-9]{40}$", local.public_edge_preventive_boundary.source_tree)), false) &&
-    try(can(regex("^https://[^[:space:]]+$", local.public_edge_preventive_boundary.source_repository)), false) &&
-    alltrue([
-      for digest in [
-        try(local.public_edge_preventive_boundary.configuration_sha256, ""),
-        try(local.public_edge_preventive_boundary.provenance_attestation_sha256, ""),
-        try(local.public_edge_preventive_boundary.receipt_sha256, ""),
-      ] : can(regex("^[a-f0-9]{64}$", digest)) && digest != strrep("0", 64)
-    ])
+    try(local.public_edge_cas_bootstrap_authority.approval_name == "fs2-public-edge-node-authority-approval", false)
   )
   public_edge_cas_bootstrap_creator_cel = local.public_edge_cas_bootstrap_enrolled ? format(
-    "request.userInfo.username == %s && request.userInfo.uid == %s && request.userInfo.groups.size() == %d && request.userInfo.groups.all(group, group in %s) && request.userInfo.extra == %s",
+    "request.userInfo.username == %s && request.userInfo.uid == %s && request.userInfo.groups.size() == %d && request.userInfo.groups.all(group, group in %s) && %s.all(group, group in request.userInfo.groups) && request.userInfo.extra == %s",
     jsonencode(local.public_edge_cas_bootstrap_authority.username),
     jsonencode(local.public_edge_cas_bootstrap_authority.uid),
     length(local.public_edge_cas_bootstrap_authority.groups),
+    jsonencode(local.public_edge_cas_bootstrap_authority.groups),
     jsonencode(local.public_edge_cas_bootstrap_authority.groups),
     jsonencode(local.public_edge_cas_bootstrap_authority.extra),
   ) : "false"
@@ -224,6 +198,49 @@ locals {
     spec = try(local.public_edge_observed_node_authority_approval.spec, null)
   }
   public_edge_node_authority_approval_sha256 = sha256(jsonencode(local.public_edge_node_authority_approval_projection))
+  public_edge_observed_preventive_boundary = try(
+    local.public_edge_observed_node_authority_approval.spec.preventiveBoundary,
+    null,
+  )
+  # These fields are an input projection only. Their authority comes from the
+  # separately signed raw boundary receipt and evidence reopened by the
+  # apply-time verifier; this source file deliberately contains no asserted
+  # provider-IAM or API-server enforcement identities.
+  public_edge_observed_preventive_boundary_well_formed = try(
+    keys(local.public_edge_observed_preventive_boundary) == sort([
+      "apiserver_enforcement_id",
+      "configuration_sha256",
+      "controller_groups",
+      "controller_image_digest",
+      "controller_provider_principal_id",
+      "controller_uid",
+      "controller_username",
+      "identity_paths",
+      "kind",
+      "provenance_attestation_sha256",
+      "provider_iam_policy_id",
+      "receipt_sha256",
+      "source_commit",
+      "source_repository",
+      "source_tree",
+    ]) &&
+    local.public_edge_observed_preventive_boundary.kind == "provider-iam+apiserver-admission" &&
+    local.public_edge_observed_preventive_boundary.controller_groups == sort(distinct(local.public_edge_observed_preventive_boundary.controller_groups)) &&
+    local.public_edge_observed_preventive_boundary.identity_paths == local.public_edge_required_identity_paths &&
+    can(regex("^sha256:[a-f0-9]{64}$", local.public_edge_observed_preventive_boundary.controller_image_digest)) &&
+    can(regex("^serviceaccount-[a-z0-9]+$", local.public_edge_observed_preventive_boundary.controller_provider_principal_id)) &&
+    can(regex("^[a-f0-9]{40}$", local.public_edge_observed_preventive_boundary.source_commit)) &&
+    can(regex("^[a-f0-9]{40}$", local.public_edge_observed_preventive_boundary.source_tree)) &&
+    can(regex("^https://[^[:space:]]+$", local.public_edge_observed_preventive_boundary.source_repository)) &&
+    alltrue([
+      for digest in [
+        local.public_edge_observed_preventive_boundary.configuration_sha256,
+        local.public_edge_observed_preventive_boundary.provenance_attestation_sha256,
+        local.public_edge_observed_preventive_boundary.receipt_sha256,
+      ] : can(regex("^[a-f0-9]{64}$", digest)) && digest != strrep("0", 64)
+    ]),
+    false,
+  )
   public_edge_node_authority_approval_exact = !local.public_edge_enabled || (
     local.public_edge_cas_bootstrap_enrolled &&
     try(local.public_edge_observed_node_authority_approval.metadata.name, "") == local.public_edge_cas_bootstrap_authority.approval_name &&
@@ -241,7 +258,7 @@ locals {
     try(local.public_edge_observed_node_authority_approval.spec.actor.extra, {}) == local.public_edge_cas_bootstrap_authority.extra &&
     try(local.public_edge_observed_node_authority_approval.spec.impersonationReviewSha256, "") == local.public_edge_cas_bootstrap_authority.impersonation_review_sha256 &&
     try(local.public_edge_observed_node_authority_approval.spec.rbacReviewSha256, "") == local.public_edge_cas_bootstrap_authority.rbac_review_sha256 &&
-    try(local.public_edge_observed_node_authority_approval.spec.preventiveBoundary, null) == local.public_edge_preventive_boundary
+    local.public_edge_observed_preventive_boundary_well_formed
   )
   public_edge_cas_bootstrap_exact = !local.public_edge_enabled || (
     local.public_edge_cas_bootstrap_enrolled &&

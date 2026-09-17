@@ -42,6 +42,7 @@ EVIDENCE_FILES = {
     "routing_export_sha256": "routing.json",
     "xff_probe_sha256": "xff-probe.json",
     "direct_access_probe_sha256": "direct-access-probe.json",
+    "connection_isolation_probe_sha256": "connection-isolation-probe.json",
 }
 MAX_FILE_BYTES = 128 * 1024
 MAX_VALIDITY = timedelta(hours=24)
@@ -173,7 +174,7 @@ def _open_regular_file(path: Path, *, private: bool) -> bytes:
         os.close(descriptor)
 
 
-def _reopen_evidence(receipt_path: Path) -> dict[str, str]:
+def _reopen_evidence(receipt_path: Path) -> dict[str, Any]:
     directory_path = receipt_path.parent / EVIDENCE_DIRECTORY
     flags = os.O_RDONLY | os.O_CLOEXEC
     if hasattr(os, "O_DIRECTORY"):
@@ -189,6 +190,7 @@ def _reopen_evidence(receipt_path: Path) -> dict[str, str]:
         if not stat.S_ISDIR(before.st_mode) or stat.S_IMODE(before.st_mode) != 0o700:
             raise ReceiptError(f"{EVIDENCE_DIRECTORY} must be a mode-0700 directory")
         digests: dict[str, str] = {}
+        documents: dict[str, Any] = {}
         file_flags = os.O_RDONLY | os.O_CLOEXEC
         if hasattr(os, "O_NOFOLLOW"):
             file_flags |= os.O_NOFOLLOW
@@ -202,6 +204,7 @@ def _reopen_evidence(receipt_path: Path) -> dict[str, str]:
             finally:
                 os.close(descriptor)
             digests[digest_name] = hashlib.sha256(raw).hexdigest()
+            documents[digest_name] = _decode_json(raw, filename)
         after = os.fstat(directory)
         stable = (
             before.st_dev,
@@ -218,7 +221,7 @@ def _reopen_evidence(receipt_path: Path) -> dict[str, str]:
         )
         if not stable:
             raise ReceiptError(f"{EVIDENCE_DIRECTORY} changed while it was being read")
-        return digests
+        return {"digests": digests, "documents": documents}
     finally:
         os.close(directory)
 
@@ -439,7 +442,9 @@ def _validate_expected_subject(value: Any) -> dict[str, Any]:
     return subject
 
 
-def _validate_provider_topology(topology_value: Any, subject: Mapping[str, Any]) -> str:
+def _validate_provider_topology(
+    topology_value: Any, subject: Mapping[str, Any]
+) -> tuple[str, list[dict[str, Any]]]:
     topology = _exact(
         topology_value,
         {"load_balancer", "listeners", "backend", "security_group", "routing"},
@@ -460,6 +465,7 @@ def _validate_provider_topology(topology_value: Any, subject: Mapping[str, Any])
     if not isinstance(listeners, list) or len(listeners) != 2:
         raise ReceiptError("provider topology must name exactly the HTTP and HTTPS listeners")
     normalized_listeners = []
+    provider_listeners = []
     listener_ids: set[str] = set()
     for index, raw in enumerate(listeners):
         listener = _exact(raw, {"id", "gateway_listener_name", "protocol", "port"}, f"provider listener {index}")
@@ -472,6 +478,12 @@ def _validate_provider_topology(topology_value: Any, subject: Mapping[str, Any])
             "protocol": listener["protocol"],
             "port": listener["port"],
         })
+        provider_listeners.append(
+            {
+                "id": listener_id,
+                "port": listener["port"],
+            }
+        )
     if sorted(normalized_listeners, key=lambda item: item["port"]) != subject["gateway"]["listeners"]:
         raise ReceiptError("provider listeners do not bind the exact Gateway listeners")
     backend = _exact(
@@ -500,11 +512,22 @@ def _validate_provider_topology(topology_value: Any, subject: Mapping[str, Any])
         raise ReceiptError("provider routing must name sorted unique route-table identities")
     for index, route_table_id in enumerate(route_tables):
         _resource_id(route_table_id, f"provider route-table ID {index}")
-    return load_balancer_id
+    return load_balancer_id, sorted(
+        provider_listeners, key=lambda item: item["port"]
+    )
 
 
-def _derive_identity(observations_value: Any, subject: Mapping[str, Any], load_balancer_id: str) -> int:
-    observations = _exact(observations_value, {"xff", "direct_access"}, "edge observations")
+def _derive_identity(
+    observations_value: Any,
+    subject: Mapping[str, Any],
+    load_balancer_id: str,
+    provider_listeners: list[dict[str, Any]],
+) -> tuple[int, int]:
+    observations = _exact(
+        observations_value,
+        {"xff", "direct_access", "connection_admission"},
+        "edge observations",
+    )
     xff = _exact(
         observations["xff"],
         {"header_action", "appends_downstream_remote_address", "untrusted_prefix_ignored", "proxy_chain"},
@@ -552,14 +575,269 @@ def _derive_identity(observations_value: Any, subject: Mapping[str, Any], load_b
     }
     if direct != expected_direct:
         raise ReceiptError("signed SG/routing facts do not exclude direct Envoy access")
-    return len(chain)
+    connection = _exact(
+        observations["connection_admission"],
+        {
+            "enforcement_point",
+            "http1_and_http2_connections_covered",
+            "listeners",
+            "max_concurrent_connections_per_source",
+            "overflow_action",
+            "provider_load_balancer_id",
+            "slow_or_incomplete_connections_covered",
+            "source_identity",
+            "two_client_probe",
+        },
+        "provider connection-admission observation",
+    )
+    per_source = connection["max_concurrent_connections_per_source"]
+    if (
+        connection["provider_load_balancer_id"] != load_balancer_id
+        or connection["enforcement_point"] != "provider-listener-before-envoy"
+        or connection["source_identity"] != "provider-observed-source-ip"
+        or connection["listeners"] != provider_listeners
+        or not isinstance(per_source, int)
+        or isinstance(per_source, bool)
+        or not 1 <= per_source <= 128
+        or connection["slow_or_incomplete_connections_covered"] is not True
+        or connection["http1_and_http2_connections_covered"] is not True
+        or connection["overflow_action"] != "reject-source-only-before-backend"
+        or connection["two_client_probe"]
+        != {
+            "other_source_reached_backend": True,
+            "saturating_source_limited": True,
+        }
+    ):
+        raise ReceiptError(
+            "provider edge does not prove per-source connection isolation"
+        )
+    return len(chain), per_source
+
+
+def _derive_native_connection_admission(
+    reopened_evidence: Mapping[str, Any],
+    *,
+    load_balancer_id: str,
+    provider_listeners: list[dict[str, Any]],
+    evidence_issued_at: datetime,
+    evidence_expires_at: datetime,
+) -> dict[str, Any]:
+    reopened = _exact(
+        dict(reopened_evidence),
+        {"digests", "documents"},
+        "reopened native edge evidence",
+    )
+    digests = reopened["digests"]
+    documents = reopened["documents"]
+    if not isinstance(digests, dict) or set(digests) != set(EVIDENCE_FILES):
+        raise ReceiptError("reopened edge evidence digest set is incomplete")
+    if not isinstance(documents, dict) or set(documents) != set(EVIDENCE_FILES):
+        raise ReceiptError("reopened edge evidence document set is incomplete")
+    for digest_name, document in documents.items():
+        if hashlib.sha256(_canonical(document) + b"\n").hexdigest() != digests[digest_name]:
+            raise ReceiptError("reopened edge evidence document differs from its content digest")
+
+    listener_export = _exact(
+        documents["provider_listener_export_sha256"],
+        {"schema", "provider", "collected_at", "provenance", "request", "response"},
+        "native provider listener export",
+    )
+    if (
+        listener_export["schema"]
+        != "fs2-serve.nebius.ai/native-provider-listener-export/v1"
+        or listener_export["provider"] != "nebius"
+    ):
+        raise ReceiptError("provider listener export is not the supported native schema")
+    listener_collected_at = _timestamp(
+        listener_export["collected_at"], "provider listener collected_at"
+    )
+    if not evidence_issued_at <= listener_collected_at < evidence_expires_at:
+        raise ReceiptError("provider listener export is outside the signed evidence window")
+    provenance = _exact(
+        listener_export["provenance"],
+        {
+            "collector_id",
+            "endpoint",
+            "operation",
+            "request_id",
+            "response_attestation_sha256",
+        },
+        "provider listener provenance",
+    )
+    if (
+        _text(provenance["endpoint"], "provider listener endpoint")
+        != "api.nebius.cloud"
+        or _text(provenance["operation"], "provider listener operation")
+        != "loadbalancer.listener.list"
+    ):
+        raise ReceiptError("provider listener export names another endpoint or operation")
+    _text(provenance["collector_id"], "provider listener collector ID")
+    _text(provenance["request_id"], "provider listener request ID")
+    _digest(
+        provenance["response_attestation_sha256"],
+        "provider listener response attestation",
+    )
+    request = _exact(
+        listener_export["request"],
+        {"load_balancer_id", "page_size", "page_token"},
+        "provider listener request",
+    )
+    if (
+        request["load_balancer_id"] != load_balancer_id
+        or request["page_token"] != ""
+        or not isinstance(request["page_size"], int)
+        or isinstance(request["page_size"], bool)
+        or not 1 <= request["page_size"] <= 1000
+    ):
+        raise ReceiptError("provider listener request is not the complete first page")
+    response = _exact(
+        listener_export["response"],
+        {"listeners", "next_page_token", "remaining_item_count", "revision"},
+        "provider listener response",
+    )
+    if (
+        response["next_page_token"] != ""
+        or response["remaining_item_count"] != 0
+        or not isinstance(response["revision"], str)
+        or not response["revision"]
+        or not isinstance(response["listeners"], list)
+    ):
+        raise ReceiptError("provider listener response is not a complete terminal page")
+
+    native_listeners: list[dict[str, Any]] = []
+    limits: set[int] = set()
+    for index, raw_listener in enumerate(response["listeners"]):
+        listener = _exact(
+            raw_listener,
+            {
+                "id",
+                "load_balancer_id",
+                "port",
+                "protocol",
+                "source_connection_limit",
+            },
+            f"native provider listener {index}",
+        )
+        admission = _exact(
+            listener["source_connection_limit"],
+            {
+                "applies_before_backend",
+                "enabled",
+                "key",
+                "maximum",
+                "overflow_action",
+                "protocols",
+            },
+            f"native provider listener {index} connection limit",
+        )
+        maximum = admission["maximum"]
+        if (
+            listener["load_balancer_id"] != load_balancer_id
+            or listener["protocol"] not in {"HTTP", "HTTPS"}
+            or not isinstance(listener["port"], int)
+            or isinstance(listener["port"], bool)
+            or admission["enabled"] is not True
+            or admission["key"] != "SOURCE_IP"
+            or not isinstance(maximum, int)
+            or isinstance(maximum, bool)
+            or not 1 <= maximum <= 128
+            or admission["overflow_action"] != "REJECT_SOURCE_ONLY"
+            or admission["applies_before_backend"] is not True
+            or admission["protocols"]
+            != ["HTTP1", "HTTP2", "TCP_INCOMPLETE_HANDSHAKE"]
+        ):
+            raise ReceiptError("native provider listener lacks exact per-source admission")
+        native_listeners.append({"id": listener["id"], "port": listener["port"]})
+        limits.add(maximum)
+    if sorted(native_listeners, key=lambda item: item["port"]) != provider_listeners:
+        raise ReceiptError("native listener response differs from the signed topology")
+    if len(limits) != 1:
+        raise ReceiptError("provider listeners do not share one per-source connection cap")
+    per_source = limits.pop()
+
+    probe = _exact(
+        documents["connection_isolation_probe_sha256"],
+        {
+            "schema",
+            "collected_at",
+            "load_balancer_id",
+            "listener_export_sha256",
+            "listener_revision",
+            "protocols",
+            "saturating_source",
+            "independent_source",
+        },
+        "native connection-isolation probe",
+    )
+    if (
+        probe["schema"]
+        != "fs2-serve.nebius.ai/native-connection-isolation-probe/v1"
+        or probe["load_balancer_id"] != load_balancer_id
+        or probe["listener_export_sha256"]
+        != digests["provider_listener_export_sha256"]
+        or probe["listener_revision"] != response["revision"]
+        or probe["protocols"] != ["HTTP1", "HTTP2", "TCP_INCOMPLETE_HANDSHAKE"]
+    ):
+        raise ReceiptError("connection probe is not bound to the native listener revision")
+    probe_collected_at = _timestamp(
+        probe["collected_at"], "connection probe collected_at"
+    )
+    if not listener_collected_at <= probe_collected_at < evidence_expires_at:
+        raise ReceiptError("connection probe is outside its listener/evidence window")
+    saturating = _exact(
+        probe["saturating_source"],
+        {"admitted", "attempted", "backend_connections", "observation_id", "rejected"},
+        "saturating-source probe",
+    )
+    independent = _exact(
+        probe["independent_source"],
+        {"admitted", "attempted", "backend_connections", "observation_id", "rejected"},
+        "independent-source probe",
+    )
+    for label, sample in (("saturating", saturating), ("independent", independent)):
+        _digest(sample["observation_id"], f"{label} source observation ID")
+        if any(
+            not isinstance(sample[field], int)
+            or isinstance(sample[field], bool)
+            or sample[field] < 0
+            for field in ("admitted", "attempted", "backend_connections", "rejected")
+        ):
+            raise ReceiptError(f"{label} source probe counters are malformed")
+        if sample["admitted"] + sample["rejected"] != sample["attempted"]:
+            raise ReceiptError(f"{label} source probe counters do not conserve attempts")
+    if (
+        saturating["attempted"] <= per_source
+        or saturating["admitted"] != per_source
+        or saturating["backend_connections"] > per_source
+        or saturating["rejected"] < 1
+        or independent["attempted"] < 1
+        or independent["admitted"] != independent["attempted"]
+        or independent["backend_connections"] != independent["attempted"]
+        or independent["rejected"] != 0
+        or independent["observation_id"] == saturating["observation_id"]
+    ):
+        raise ReceiptError("native two-source probe does not prove connection isolation")
+    return {
+        "enforcement_point": "provider-listener-before-envoy",
+        "http1_and_http2_connections_covered": True,
+        "listeners": provider_listeners,
+        "max_concurrent_connections_per_source": per_source,
+        "overflow_action": "reject-source-only-before-backend",
+        "provider_load_balancer_id": load_balancer_id,
+        "slow_or_incomplete_connections_covered": True,
+        "source_identity": "provider-observed-source-ip",
+        "two_client_probe": {
+            "other_source_reached_backend": True,
+            "saturating_source_limited": True,
+        },
+    }
 
 
 def verify_receipt(
     receipt: Any,
     trust_store: Any,
     expected_subject: Any,
-    reopened_evidence: Mapping[str, str],
+    reopened_evidence: Mapping[str, Any],
     *,
     validation_time: datetime | None = None,
 ) -> dict[str, str]:
@@ -606,20 +884,43 @@ def verify_receipt(
     subject = _validate_expected_subject(expected_subject)
     if payload["subject"] != subject:
         raise ReceiptError("signed edge subject does not match the exact Terraform edge")
-    load_balancer_id = _validate_provider_topology(payload["provider_topology"], subject)
-    trusted_hops = _derive_identity(payload["observations"], subject, load_balancer_id)
+    load_balancer_id, provider_listeners = _validate_provider_topology(
+        payload["provider_topology"], subject
+    )
+    observations = payload["observations"]
+    if not isinstance(observations, Mapping):
+        raise ReceiptError("edge observations must be an object")
+    native_connection_admission = _derive_native_connection_admission(
+        reopened_evidence,
+        load_balancer_id=load_balancer_id,
+        provider_listeners=provider_listeners,
+        evidence_issued_at=issued,
+        evidence_expires_at=expires,
+    )
+    if observations.get("connection_admission") != native_connection_admission:
+        raise ReceiptError(
+            "signed connection observation differs from native provider evidence"
+        )
+    trusted_hops, per_source_connection_limit = _derive_identity(
+        observations,
+        subject,
+        load_balancer_id,
+        provider_listeners,
+    )
     evidence = _exact(
         payload["evidence"],
         {
             "provider_lb_export_sha256", "provider_listener_export_sha256",
             "provider_backend_export_sha256", "security_group_export_sha256",
             "routing_export_sha256", "xff_probe_sha256", "direct_access_probe_sha256",
+            "connection_isolation_probe_sha256",
         },
         "edge evidence references",
     )
     for name, digest in evidence.items():
         _digest(digest, f"edge evidence {name}")
-    if dict(reopened_evidence) != evidence:
+    reopened_digests = reopened_evidence.get("digests")
+    if not isinstance(reopened_digests, dict) or reopened_digests != evidence:
         raise ReceiptError("reopened provider/LB evidence bytes do not match the signed digests")
     issuer = payload["issuer"]
     return {
@@ -629,6 +930,7 @@ def verify_receipt(
         "issuer_key_id": issuer["key_id"],
         "provider_load_balancer_id": load_balancer_id,
         "direct_access_excluded": "true",
+        "per_source_connection_limit": str(per_source_connection_limit),
     }
 
 

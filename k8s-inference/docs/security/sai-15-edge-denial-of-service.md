@@ -186,6 +186,26 @@ production registry is empty here, so this candidate cannot self-enroll the
 external boundary. Both mutation fences reread and hash the
 external policy/binding together with both CAS objects, so drift fails closed.
 
+The boundary signature does not authenticate a summary alone. The fixed run
+root must also contain three private, stable regular files named
+`public-edge-preventive-provider-iam-export.json`,
+`public-edge-preventive-apiserver-enforcement-export.json`, and
+`public-edge-preventive-identity-path-review.json`. The signed evidence hashes
+those exact bytes. The apply-time verifier reopens and parses them, then
+reconstructs the enforcement join: provider IAM must be default-deny with one
+exact controller binding over all six protected policy/binding names and four
+mutation actions; API-server enforcement must be fail-closed and match the
+same names/actions/controller; RBAC must contain the one exact controller rule,
+no impersonation grant, and an exhaustive denial result for every enrolled
+identity path. It recomputes the RBAC and impersonation review digests from the
+raw structures instead of accepting opaque digest-shaped assertions. Each
+export also binds the authoritative endpoint, collector executable and
+configuration, request IDs, response attestation, resource version, and
+collection time. The external Ed25519 receipt binds all three raw-file digests,
+the live approval projection, project/cluster, source/controller provenance,
+and exact boundary identifiers. The empty source trust registry prevents an
+ordinary run-root file from self-enrolling this authority.
+
 Terraform never launches a verifier pathname. The fixed launcher accepts only
 logical source/mode pairs and chooses the canonical root-owned manifest,
 bootstrap, Python, source, tool, and provider bundle. Integration builds it as
@@ -198,6 +218,18 @@ commit/tree, installer/launcher/bootstrap digests, every regular release file, e
 digests, a no-network Terraform provider mirror, and sealed CLI configuration.
 Every operator invocation re-enumerates and hashes that complete tree before
 source execution.
+
+Both launcher paths require one independently attested static-PIE frozen Python
+runtime. It is `ET_DYN` for ASLR but has no interpreter or external dependency;
+the only dynamic metadata is a bounded self-relocation closure. Runtime and
+offline verifiers enforce the same contract: exact file-to-memory congruence
+and pairwise disjointness for the canonical inventory, payload, actual CPython
+`_frozen` table, and `PyImport_FrozenModules` pointer storage; only bounded
+relative/IRELATIVE relocations; GNU RELRO for relocation-time writable pointer
+data; non-ALLOC provenance/attestation sections; and an external Ed25519 review
+over the normalized artifact and complete frozen-module/build closure. The
+review key is neither embedded in the candidate runtime nor supplied by its
+build caller.
 
 `./inference-stack <command>` immediately re-execs the atomically selected
 activation-unit launcher before
@@ -213,9 +245,10 @@ finite logical capsule entries too; none starts through a caller shell,
 /usr/local/libexec/fs2-public-edge-current/launcher inference-stack operator -- apply --var-file ... --run-root ... --nebius-profile ...
 ```
 
-The caller supplies only the non-secret profile selector. A fixed root-owned
-broker returns one short-lived Nebius token as a sealed descriptor and a signed
-v2 exact-subject envelope. It binds caller UID/GID, operator, exact
+For cloud/provider commands the caller supplies only the non-secret profile
+selector. A fixed root-owned broker returns one short-lived Nebius token as a
+sealed descriptor and a signed v3 exact-subject envelope. It binds caller UID,
+real/effective GID, peer-observed UID/effective GID, operator, exact
 profile/project/tenant/service-account subject, broker executable/config
 digests, peer mode, and external runtime review. Terraform providers read that descriptor and never
 load an ambient profile or caller `HOME`. The production broker-authority
@@ -236,6 +269,94 @@ operations terminal (including authenticated zero-operation proof when true).
 Reconciliation applies refreshed state, requires a full exit-zero no-drift plan
 with ephemeral accepted secret slots, and records state/output digests. Resume
 requires a second external signature over that exact evidence.
+
+`status`, `output`, `proxy`, `debug-proxy`, `debug-view`, `debug-export`,
+`activate-debug`, and `disable-debug` do not request
+cloud authentication. They use a separate authenticated `local-read-only`
+capsule mode with the same accepted source/tool descriptors but explicitly no
+Nebius token, auth envelope, refresh descriptor, Terraform init, plan, or state
+rewrite. Status/output read only retained run state. Proxy commands send only
+the retained cluster identity and contract digest to an independently enrolled
+root proxy broker. The operator never receives a kubeconfig and never starts a
+raw `kubectl port-forward` listener.
+
+For cloud-authorized commands, the brokered token descriptor is not part of
+the global child FD set. Only a child whose environment carries the exact
+current signed delegated-auth envelope receives that one descriptor; local
+readers and signature/provenance helpers receive immutable capsule descriptors
+only.
+
+The retained `public-edge/v2` `kubectl-port-forward` value and all existing
+fields remain unchanged for state compatibility. New plans add an optional
+`internal-proxy-isolation/v1` sub-contract. Local source derives the same
+strict defaults while reading an older retained v2 output, so adoption does
+not require infrastructure replacement or reapply.
+
+The broker owns the credential, creates a private network namespace, and starts
+both raw Kubernetes transports on that namespace's loopback interface. The
+ordinary host-network listener is the broker's policy-enforcing proxy on the
+contracted operator port and retains application authentication. Debug has no
+host TCP listener: the broker creates one caller-owned mode-0600 Unix socket at
+an exact session path. The signed lease reports an empty
+`raw_host_listeners` list, exact private-namespace service/port tuples, the
+namespace inode, and root-only kubeconfig custody. Ordinary `proxy` retains the
+authenticated inference/MCP/admin surface. The separate `debug-proxy` requires
+one externally signed exact tenant, public-model, and App UUID activation,
+allows only GET/HEAD request-debug routes, and expires in at most seven days.
+The debug bearer is never returned to the caller: the root broker injects an
+Ed25519 assertion inside its private namespace and the backend independently
+binds it to the broker, cluster, session, activation, App UUID, model, tenant,
+method, and expiry on every read. Missing or untrusted scope is denied.
+Because browser JavaScript cannot safely consume a Unix-domain socket, the
+accepted operator surface also provides `debug-view` and
+`debug-export --debug-request-id <uuid>`. These commands request only the exact list or
+detail path over the root-authenticated broker control channel. The broker
+returns a bounded, signed JSON result bound to the session, nonce, path,
+operation, expiry, body digest, and durable audit-event digest. The commands
+never receive a kubeconfig, private key, backend bearer, raw transport, or
+generic forwarding capability; the ordinary browser/admin lane remains
+unchanged and cannot inject debug authorization.
+Debug remains default-off; request-debug records retain the independently
+accepted SAI-02 exact 90-day purge contract rather than inheriting the
+activation lifetime. The production broker and activation issuer registries
+are empty, so integration fails closed until the external owner enrolls exact
+artifacts and proves the namespace/listener boundary. Enrollment pins separate
+nonzero digests for the broker executable, configuration, reviewed runtime,
+network-namespace policy, and scope-enforcement policy; the signed session
+response repeats all five rather than treating the broker's claim as an
+unversioned assertion.
+
+Activation install and disable take an exclusive kernel lock on the retained
+mode-0700 run-root directory. While that lock is held, the command reopens and
+verifies the complete signed activation and tombstone history, rejects a
+second current grant or a reused tombstoned grant, and only then performs the
+O_EXCL append. The directory lock itself creates, replaces, or deletes no
+evidence and covers the full check-and-append transaction, so concurrent
+operators cannot commit two distinct current grants.
+Local history treats a revocation as terminal only when it also reopens a
+matching broker-signed receipt containing the durable backend event digest and
+proof that listeners, connections, children, raw transports, and active
+sessions are gone. Disable durably appends that receipt before the owner
+revocation marker; a crash in between leaves the old activation selectable for
+an idempotent retry instead of committing an unproven tombstone.
+
+The additive request-debug state-machine migration is intentionally reserved
+as `0034_request_debug_activations.sql`. It is not yet added to the canonical
+migration release list: SAI-21 owns accepted migrations 0030 and 0031, and
+SAI-19 owns 0032 and 0033. Integration must first merge those exact sibling
+bytes, then reseal the ordered migration hashes, count, last-version contract,
+chart values/schema, and packaging expectations through 0034. This branch
+does not copy, invent, or supersede the sibling migrations, and the standalone
+SAI-15 source must therefore remain integration-blocked until that reseal.
+
+The signed expiry is converted once to a local monotonic deadline. Every
+15-second heartbeat is independently signed and binds the session, sequence,
+expiry, namespace inode, listener state, and bounded raw transports. Wall and
+monotonic clocks may not diverge by more than five seconds. Expiry, operator
+shutdown, or a clock anomaly triggers a close request on the authenticated
+control socket and requires a signed terminal receipt proving listener and
+connection closure, raw-transport closure, child reaping, and namespace
+destruction. A missing or invalid heartbeat or terminal proof fails closed.
 
 The membership receipt additionally binds the absolute path, resolved path,
 and SHA-256 of the capsule Python interpreter, provider observer, and kubectl.
@@ -488,8 +609,9 @@ Short-lived cloud authentication has a separate source registry at
 empty. A future entry binds one root-owned broker socket, exact
 profile/project/tenant/subject/operator matrix, fixed executable/config
 digests, peer UID/GID/mode and runtime-review digest, Nebius endpoint, audience,
-authority/key, and token-signing role. The signed v2 response binds those facts
-plus commit/tree/manifest, nonce, token digest and bounded timestamps. Neither an ambient profile name nor an
+authority/key, and token-signing role. The signed v3 response binds those facts
+plus caller real/effective GID, the broker's peer-observed effective GID,
+commit/tree/manifest, nonce, token digest and bounded timestamps. Neither an ambient profile name nor an
 untrusted environment token can populate this registry or satisfy the
 signature.
 
@@ -497,14 +619,21 @@ The receipt is canonical JSON followed by one newline and contains exactly the
 receipt schema, `ed25519` algorithm, payload, recomputed payload SHA-256, and
 signature. The signature covers the schema, algorithm, payload and digest. The
 payload contains the issuer, nonce, whole-second UTC issue/expiry timestamps,
-exact Terraform subject, provider topology, derived-fact inputs, and seven raw
+exact Terraform subject, provider topology, derived-fact inputs, and eight raw
 evidence digests. The fixed mode-0700
 `<run_root>/edge-client-identity-evidence/` directory must contain mode-0600
 `provider-load-balancer.json`, `provider-listeners.json`,
 `provider-backend.json`, `security-group.json`, `routing.json`,
-`xff-probe.json`, and `direct-access-probe.json`. The adapter opens those exact
+`xff-probe.json`, `direct-access-probe.json`, and
+`connection-isolation-probe.json`. The adapter opens those exact
 names relative to a no-follow directory descriptor, reads each stable regular
 inode once, and refuses any byte digest that differs from the signed receipt.
+It parses the content-addressed native listener list, requires a terminal
+complete provider page, derives one identical source-IP concurrent-connection
+cap for the exact HTTP and HTTPS listeners, and reconciles that revision with
+the bounded two-source HTTP/1, HTTP/2, and incomplete-handshake probe. The
+signed normalized observation is accepted only when it equals those locally
+derived native facts.
 
 The receipt itself is also opened through `O_NOFOLLOW` and must be a stable
 mode-0600 regular inode no larger than 128 KiB. Signature verification uses
@@ -514,7 +643,8 @@ returned to Terraform.
 
 The Terraform output `public_edge_client_identity_evidence` records the
 accepted receipt digest, payload digest, signer key ID, exact provider LB ID,
-derived hop count, and derived direct-access verdict. It is null in
+derived hop count, derived per-source concurrent-connection cap, and derived
+direct-access verdict. It is null in
 internal-only mode. Raw provider exports, probes, signatures, or credentials
 must not be copied into Terraform state or Helm values.
 
@@ -531,7 +661,9 @@ the coordinator's static-only boundary. A later reviewed integration must:
    deferred mutation fences, complete explicit provider pagination, signed
    provider membership export, the signed accepted-release manifest, complete
    root-owned release inventory, setgid/no-member child proof, static launcher
-   and independently attested binary digest, protected `inference-stack apply`
+   and independently attested static-PIE frozen runtime, exact actual CPython
+   table/inventory/payload linkage, congruent read-only/RELRO mappings, bounded
+   self-relocation closure, protected `inference-stack apply`
    re-exec before parsing/Terraform, manifest-pinned executables/providers
    executed through retained descriptors, a digest-bound sealed-memfd kubeconfig, a nonexistent-HOME
    allowlisted provider-command environment, stable
@@ -559,7 +691,10 @@ the coordinator's static-only boundary. A later reviewed integration must:
    reject a stale concurrent policy overwrite against API-server `oldObject`,
    and protect both bindings against update/deletion. Install and independently
    accept the external security-owned CAS bootstrap first; prove its exact
-   creator UID/groups/extras and impersonation review, then prove an ordinary
+   creator UID/groups/extras and impersonation review. Reopen the exact signed
+   provider-IAM, API-server enforcement, and RBAC/impersonation raw exports;
+   prove their collector/API provenance and resource versions are current and
+   that source recomputation denies every non-controller identity path. Then prove an ordinary
    VAP creator cannot preoccupy either CAS name. Prove fresh auth renewal, the
    90-minute mutation bound, and indeterminate reconciliation before retry.
    Verify both signature paths use static OpenSSL with no interpreter/dynamic
@@ -599,6 +734,18 @@ the coordinator's static-only boundary. A later reviewed integration must:
    MCP, admin, operations/results/artifacts/uploads, storage, queue/model
    admission, observability, and rollback. Include an active audio stream and
    confirm idle, 7,500-second stream, and 7,800-second connection ceilings.
+11. In internal-only mode, enumerate the host network namespace while both
+    ordinary and debug sessions run. Prove the contracted control/admin ports
+    are absent, exactly one broker-owned ordinary listener exists on the operator
+    port, the interactive debug lane exists only as its mode-0600 caller-owned
+    Unix socket, and one-shot view/export traffic remains on the authenticated
+    broker control channel with no host listener,
+    both raw transports exist only in the signed private namespace, and
+    direct host connections to the raw ports fail. Prove ordinary authenticated
+    inference/MCP/admin behavior is unchanged. Separately prove an active
+    at-most-seven-day debug grant can read only its signed tenant/App/public
+    model request rows, cannot use mutation methods or other routes, and cannot
+    obtain or reuse the broker's Kubernetes credential.
 
 Rollback is ordered and reversible: first restore the prior application Helm
 revision so no active policy depends on the global rate-limit service; then
