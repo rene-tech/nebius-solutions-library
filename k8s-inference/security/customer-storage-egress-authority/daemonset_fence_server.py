@@ -31,6 +31,7 @@ def _request(review: object) -> dict[str, Any]:
     user = value.get("userInfo") or {}
     return {
         "review_uid": value["uid"],
+        "dry_run": value.get("dryRun") is True,
         "operation": value.get("operation"),
         "resource": resource.get("resource"),
         "namespace": value.get("namespace", ""),
@@ -57,7 +58,10 @@ def _record_decision(request: dict[str, Any], state: dict[str, Any], allowed: bo
     The signed ledger, not this database, advances readiness or completion.
     """
 
-    request_sha256 = hashlib.sha256(canonical(request)).hexdigest()
+    mutation = {
+        key: item for key, item in request.items() if key not in {"review_uid", "dry_run"}
+    }
+    request_sha256 = hashlib.sha256(canonical(mutation)).hexdigest()
     token = _transition_token(request)
     with sqlite3.connect(STATE_DATABASE, isolation_level=None) as database:
         database.execute("PRAGMA journal_mode=WAL")
@@ -104,6 +108,17 @@ def _record_decision(request: dict[str, Any], state: dict[str, Any], allowed: bo
         database.execute("COMMIT")
 
 
+def evaluate(review: object) -> tuple[str, bool]:
+    """Evaluate one review; dry-run is deliberately side-effect free."""
+
+    request = _request(review)
+    state = load_verified_state()
+    allowed = allows(request, verified_state=state)
+    if not request["dry_run"]:
+        _record_decision(request, state, allowed)
+    return request["review_uid"], allowed
+
+
 class AdmissionHandler(http.server.BaseHTTPRequestHandler):
     server_version = "fs2-daemonset-fence"
 
@@ -117,11 +132,7 @@ class AdmissionHandler(http.server.BaseHTTPRequestHandler):
                 raise ValueError("bounded /validate AdmissionReview required")
             payload = self.rfile.read(length)
             review = json.loads(payload)
-            request = _request(review)
-            review_uid = request["review_uid"]
-            state = load_verified_state()
-            allowed = allows(request, verified_state=state)
-            _record_decision(request, state, allowed)
+            review_uid, allowed = evaluate(review)
             message = "authorized by exact signed DaemonSet transition state" if allowed else message
         except Exception:
             allowed = False

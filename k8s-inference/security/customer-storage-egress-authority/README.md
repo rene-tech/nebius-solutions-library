@@ -98,7 +98,7 @@ binaries, the CLI config, a read-only plugin/data directory, and a minimal
 environment whose credential files are separately hashed. No inherited
 `PATH`, `TF_*`, plugin or credential environment is used. The wrapper keeps
 the backend metadata and dependency-lock descriptors stable across the exact
-saved-plan apply, verifies clean source and rejected-SAI-10 ancestry, and
+saved-plan apply, verifies clean source and exact accepted-SAI-10 custody, and
 proves predecessor and successor remote-state identities. It has no plan,
 destroy, replace, state-forget, or cleanup mode.
 
@@ -206,14 +206,16 @@ policies bind the adopted name/UID and authenticated maintainer/controller but
 deliberately do not freeze the mutable full spec. Every retained ordinary
 generation therefore delegates old/new spec equality to the separately owned
 webhook instead of conjunctively deadlocking an upgrade.
-Blanket-agent CREATE and DELETE are still evaluated by that webhook but are
-always denied: an authorized transition updates the adopted UID in place, so
+Blanket-agent CREATE and DELETE are evaluated by that webhook and denied: an
+authorized transition updates the adopted UID in place, so
 every retained ordinary generation continues to recognize its controller
 children without a delete/recreate gap.
 
 The external fence includes executable policy, signed-state verifier and TLS
 AdmissionReview server source. Its versioned webhook covers DaemonSet
-CREATE/UPDATE/DELETE and blanket-tolerating Pod CREATE. Runtime state is a
+CREATE/UPDATE/DELETE and blanket-tolerating Pod CREATE/DELETE. A server-side
+dry-run evaluates the same signed state but cannot write a decision or consume
+a transition; retry identity excludes the API-server review UID. Runtime state is a
 root-owned read-only Ed25519-signed hash chain containing the complete adopted
 agent set, authenticated controller identity, exact predecessor/successor
 specs, readiness evidence and one content-bound transition. A durable local
@@ -233,17 +235,38 @@ Node repair creates a distinct signed lane/NodeGroup generation while the old
 generation remains present. Every reconciler Helm generation is initially
 installed with zero replicas under the exact ordinary workload VAP, then its
 server-assigned UID/spec are adopted into the external ledger. A second
-external webhook admits only the executable signed sequence: predecessor `1 -> 0`, independently
-attested zero-Pod/zero-inflight quiescence, and successor `0 -> 1`. It denies
-DELETE and denies Pods whose rollout generation is not the current signed
-activation generation. The reconciler also re-fetches that short-lived signed
-activation epoch before each provider operation, so a retained or accidentally
-recreated stale Pod remains cloud-inert.
+external webhook admits only the executable signed sequence. First a signed
+bounded drain intent atomically closes new provider-operation admission. Every
+already admitted mutation retains its provider idempotency ID, provider
+operation IDs, terminal outcome and dependent database postcondition in the
+storage-only PostgreSQL ledger. Indeterminate submission or database outcomes
+remain nonterminal until an exact idempotent retry supersedes them. The drain
+receipt is issued only at zero nonterminal operations; requested but unstarted
+actions are durably counted for successor reconciliation. A 180-second Pod
+grace and pre-stop wait exceed the 120-second provider
+bound. Only then may the predecessor move `1 -> 0`, obtain exact zero-Pod
+quiescence, and allow successor `0 -> 1`. If the bounded drain cannot close, a
+higher signed PREPARED epoch reactivates the retained predecessor for repair;
+the failed drain remains evidence. Pod DELETE is admitted only for the exact
+authenticated controller and signed old spec during normal or quiescing state.
+The reconciler re-fetches the short-lived signed activation epoch before each
+provider operation, so a retained or accidentally recreated stale Pod remains
+cloud-inert.
+
+Each cutover epoch has a unique username, UID, credential/JTI digest and at-most
+15-minute validity. The executor descriptor-reads its credential for every API
+request and binds its subject, UID, groups, audience, issue/expiry and JTI to the
+latest signed epoch. Retained RoleBindings therefore do not authorize an expired
+prior credential through a stable cached token.
 
 Rollback is another monotonically higher signed epoch, never an old-state
-rollback. It first quiesces the successor to zero and requires exact receipts
-for zero in-flight actions, schema compatibility, provider continuity and
-successor quiescence before the retained predecessor may return to one.
+rollback. It first quiesces the successor to zero and requires fresh externally
+observed receipt bodies—not caller-supplied hashes—for zero in-flight actions,
+schema compatibility and provider continuity. Each receipt binds issuer,
+cluster, both generation identities, exact object UID/resourceVersion/spec
+digests, observation source, bounded validity and semantic PASS detail. The
+outer append-only state signature binds those bodies and successor quiescence
+before the retained predecessor may return to one.
 Objects, NodeGroups, credentials and customer data are retained throughout.
 This task defines the source protocol only; no scale, drain, apply, rotation or
 other live action is authorized here.

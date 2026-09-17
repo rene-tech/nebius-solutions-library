@@ -32,7 +32,7 @@ POLICY_SPEC = {
     "failure_policy": "Fail",
     "match_policy": "Equivalent",
     "daemonset_operations": ["CREATE", "UPDATE", "DELETE"],
-    "pod_operations": ["CREATE"],
+    "pod_operations": ["CREATE", "DELETE"],
     "resources": ["apps/v1/daemonsets", "v1/pods"],
     "ledger_mode": "SIGNED_APPEND_ONLY_HASH_CHAIN_WITH_ATOMIC_TRANSITIONS",
     "migration_mode": "ADOPT_EXISTING_UID_AND_SPEC_WITHOUT_OBJECT_MUTATION",
@@ -335,14 +335,15 @@ def allows(
     key = f"{namespace}/{name}"
     active = active_agents.get(key)
 
-    if resource == "pods" and operation == "CREATE":
-        if not _blanket_tolerating(object_.get("spec")):
+    if resource == "pods" and operation in {"CREATE", "DELETE"}:
+        pod_object = old_object if operation == "DELETE" else object_
+        if not _blanket_tolerating(pod_object.get("spec")):
             return True
         pod_agents = list(active_agents.values())
         for transition in transitions.values():
             if transition.get("phase") in {"PREPARED", "ADMITTED", "SUCCESSOR_READY"}:
                 pod_agents.append(transition["successor_agent"])
-        return any(_pod_matches(request, object_, agent) for agent in pod_agents)
+        return any(_pod_matches(request, pod_object, agent) for agent in pod_agents)
     if resource != "daemonsets" or operation not in {"CREATE", "UPDATE", "DELETE"}:
         return False
     current_template = (object_.get("spec") or {}).get("template") or {}

@@ -771,6 +771,43 @@ async def reconcile_user_storage(settings: Settings) -> None:
         await pool.close()
 
 
+async def wait_user_storage_drain(settings: Settings) -> None:
+    """Pre-stop gate: return only for an exact signed, durable zero-inflight drain."""
+
+    from .storage_reconciler_activation import StorageReconcilerActivationFence
+    from .user_storage import UserStorageService
+    from .user_storage_repository import PostgresUserStorageRepository
+
+    pool = await PostgresStore._connect_pool(
+        settings.database_url,
+        min_size=1,
+        max_size=1,
+        application_name="fs2-customer-storage-drain-wait",
+    )
+    service = UserStorageService(
+        PostgresUserStorageRepository(pool, None),
+        None,
+        None,
+        activation_fence=StorageReconcilerActivationFence(
+            endpoint=settings.user_storage_activation_endpoint,
+            generation=settings.user_storage_reconciler_generation,
+            cluster_id=settings.user_storage_activation_cluster_id,
+            authority_manifest_sha256=settings.user_storage_activation_authority_sha256,
+            image_digest=settings.user_storage_activation_image_digest,
+            cutover_receipt_sha256=settings.user_storage_activation_cutover_receipt_sha256,
+            public_key_file=settings.user_storage_activation_public_key_file,
+            ca_file=settings.user_storage_activation_ca_file,
+            minimum_epoch=settings.user_storage_activation_minimum_epoch,
+        ),
+    )
+    try:
+        await service.wait_for_signed_drain(
+            float(settings.user_storage_drain_grace_seconds - 15)
+        )
+    finally:
+        await pool.close()
+
+
 async def serve_storage_disclosure(settings: Settings) -> None:
     """Run the only process allowed to decrypt customer-storage envelopes."""
 
@@ -902,6 +939,7 @@ def main() -> None:
             "model-controller",
             "gpu-allocation-observer",
             "storage-reconciler",
+            "storage-reconciler-drain-wait",
             "storage-disclosure",
             "scientific-materialize",
             "scientific-materialize-many",
@@ -929,6 +967,7 @@ def main() -> None:
             "model-controller": run_model_controller,
             "gpu-allocation-observer": observe_gpu_allocations,
             "storage-reconciler": reconcile_user_storage,
+            "storage-reconciler-drain-wait": wait_user_storage_drain,
             "storage-disclosure": serve_storage_disclosure,
         }[args.command]
         asyncio.run(action(settings))

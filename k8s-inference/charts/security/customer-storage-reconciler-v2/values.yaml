@@ -7,6 +7,7 @@ image:
 authority:
   schema: ""
   generation: ""
+  laneId: ""
   manifestSha256: ""
   priorHeadReceiptSha256: ""
   iamInventoryReceiptSha256: ""
@@ -77,6 +78,7 @@ storage:
   keyTtlDays: 90
   rotationWindowDays: 14
   actionTimeoutSeconds: 30
+  drainGraceSeconds: 180
 
 resources:
   requests:

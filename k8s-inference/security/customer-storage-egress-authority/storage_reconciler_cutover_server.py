@@ -34,6 +34,7 @@ def _request(review: object) -> dict[str, object]:
     user = value.get("userInfo") or {}
     return {
         "review_uid": value.get("uid", ""),
+        "dry_run": value.get("dryRun") is True,
         "operation": value.get("operation"),
         "resource": resource.get("resource"),
         "namespace": value.get("namespace", ""),
@@ -47,7 +48,10 @@ def _request(review: object) -> dict[str, object]:
 
 
 def _record(request: dict[str, object], state: dict[str, object], allowed: bool) -> None:
-    request_sha256 = hashlib.sha256(canonical(request)).hexdigest()
+    mutation = {
+        key: item for key, item in request.items() if key not in {"review_uid", "dry_run"}
+    }
+    request_sha256 = hashlib.sha256(canonical(mutation)).hexdigest()
     source = request["old_object"] if request["operation"] == "DELETE" else request["object"]
     if not isinstance(source, dict):
         raise ValueError("cutover AdmissionReview object is malformed")
@@ -113,6 +117,17 @@ def _record(request: dict[str, object], state: dict[str, object], allowed: bool)
         database.execute("COMMIT")
 
 
+def evaluate(review: object) -> tuple[str, bool]:
+    """Evaluate one review without consuming state during server-side dry-run."""
+
+    request = _request(review)
+    state = load_verified_state()
+    allowed = allows(request, state)
+    if not request["dry_run"]:
+        _record(request, state, allowed)
+    return str(request["review_uid"]), allowed
+
+
 class Handler(http.server.BaseHTTPRequestHandler):
     server_version = "fs2-storage-reconciler-cutover"
 
@@ -141,11 +156,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if self.path != "/validate-storage-reconciler" or not 0 < length <= MAX_BYTES:
                 raise ValueError("bounded cutover AdmissionReview required")
             review = json.loads(self.rfile.read(length))
-            request = _request(review)
-            review_uid = str(request["review_uid"])
-            state = load_verified_state()
-            allowed = allows(request, state)
-            _record(request, state, allowed)
+            review_uid, allowed = evaluate(review)
         except Exception:
             allowed = False
         payload = canonical(

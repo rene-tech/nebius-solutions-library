@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -66,6 +68,112 @@ class PostgresUserStorageRepository:
                         "SELECT pg_advisory_unlock(hashtextextended($1,34))",
                         "fs2-customer-storage-reconciler-singleton",
                     )
+
+    async def begin_provider_operation(
+        self,
+        *,
+        operation_id: UUID,
+        generation: str,
+        activation_epoch: int,
+        activation_state_head_sha256: str,
+        transition_id: str,
+        tenant: str,
+        principal: str,
+        operation_kind: str,
+        target_identity: str,
+        provider_idempotency_id: UUID,
+    ) -> UUID:
+        target_digest = hashlib.sha256(target_identity.encode()).hexdigest()
+        admitted = await self.pool.fetchval(
+            """SELECT fs2_begin_storage_provider_operation(
+            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10)""",
+            operation_id,
+            generation,
+            activation_epoch,
+            activation_state_head_sha256,
+            transition_id,
+            tenant,
+            principal,
+            operation_kind,
+            target_digest,
+            provider_idempotency_id,
+        )
+        if admitted != operation_id:
+            raise RuntimeError("provider-operation admission closed for signed drain")
+        return operation_id
+
+    async def provider_operation_submitted(
+        self, operation_id: UUID, provider_operation_id: str
+    ) -> None:
+        if not await self.pool.fetchval(
+            "SELECT fs2_record_storage_provider_submission($1,$2)",
+            operation_id,
+            provider_operation_id,
+        ):
+            raise ConflictError("provider-operation submission identity changed")
+
+    async def provider_operation_terminal(
+        self,
+        operation_id: UUID,
+        provider_operation_id: str,
+        *,
+        succeeded: bool,
+        code: str,
+    ) -> None:
+        if not await self.pool.fetchval(
+            "SELECT fs2_record_storage_provider_terminal($1,$2,$3,$4)",
+            operation_id,
+            provider_operation_id,
+            succeeded,
+            code,
+        ):
+            raise ConflictError("provider-operation terminal identity changed")
+
+    async def finish_provider_operation(self, operation_id: UUID, *, succeeded: bool) -> None:
+        if not await self.pool.fetchval(
+            "SELECT fs2_finish_storage_provider_operation($1,$2)",
+            operation_id,
+            succeeded,
+        ):
+            raise ConflictError("provider-operation terminal compare-and-swap failed")
+
+    async def mark_provider_operation_indeterminate(self, operation_id: UUID) -> None:
+        if not await self.pool.fetchval(
+            "SELECT fs2_mark_storage_provider_operation_indeterminate($1)", operation_id
+        ):
+            raise ConflictError("provider-operation uncertainty could not be persisted")
+
+    async def begin_reconciler_drain(self, intent: dict[str, Any]) -> None:
+        if not await self.pool.fetchval(
+            """SELECT fs2_begin_storage_reconciler_drain(
+            $1,$2,$3,$4,$5,$6,$7)""",
+            UUID(intent["drain_id"]),
+            intent["reconciler_generation"],
+            intent["activation_epoch"],
+            intent["activation_state_head_sha256"],
+            intent["transition_id"],
+            datetime.fromisoformat(intent["requested_at"].replace("Z", "+00:00")),
+            datetime.fromisoformat(intent["deadline_at"].replace("Z", "+00:00")),
+        ):
+            raise ConflictError("signed reconciler drain identity changed")
+
+    async def complete_reconciler_drain(self, drain_id: str) -> dict[str, Any] | None:
+        value = await self.pool.fetchval(
+            "SELECT fs2_complete_storage_reconciler_drain($1)", UUID(drain_id)
+        )
+        return dict(value) if value is not None else None
+
+    async def reconciler_drain_receipt(self, drain_id: str) -> dict[str, Any] | None:
+        value = await self.pool.fetchval(
+            "SELECT fs2_storage_reconciler_drain_receipt($1)", UUID(drain_id)
+        )
+        return dict(value) if value is not None else None
+
+    @staticmethod
+    def drain_receipt_canonical_sha256(receipt: dict[str, Any]) -> str:
+        return hashlib.sha256(
+            json.dumps(receipt, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
 
     async def policy(self, tenant: str, default: StoragePolicy) -> StoragePolicy:
         row = await self.pool.fetchrow(

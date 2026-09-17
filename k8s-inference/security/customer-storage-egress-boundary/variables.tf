@@ -280,6 +280,7 @@ variable "release_generations" {
     key_ttl_days                     = number
     rotation_window_days             = number
     action_timeout_seconds           = number
+    drain_grace_seconds              = number
   }))
 
   validation {
@@ -300,7 +301,9 @@ variable "release_generations" {
       release.key_ttl_days >= 1 && release.key_ttl_days <= 365 &&
       release.rotation_window_days >= 1 &&
       release.rotation_window_days < release.key_ttl_days &&
-      release.action_timeout_seconds >= 1 && release.action_timeout_seconds <= 120
+      release.action_timeout_seconds >= 1 && release.action_timeout_seconds <= 120 &&
+      release.drain_grace_seconds > release.action_timeout_seconds &&
+      release.drain_grace_seconds >= 150 && release.drain_grace_seconds <= 600
     ])
     error_message = "Every release generation must be an exact bounded additive payload."
   }

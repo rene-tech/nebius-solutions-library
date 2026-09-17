@@ -27,10 +27,9 @@
 {{- if ne .Values.predecessor.receiptSha256 .Values.authority.predecessorCompatibilitySha256 }}{{ fail "predecessor receipt must be bound by the external provider authority ledger" }}{{ end -}}
 {{- if not (regexMatch "^[a-f0-9]{64}$" .Values.authority.boundaryPolicySha256) }}{{ fail "content-bound admission policy digest is required" }}{{ end -}}
 {{- if not (regexMatch "^[a-f0-9]{64}$" .Values.authority.workloadPolicySha256) }}{{ fail "content-bound workload admission policy digest is required" }}{{ end -}}
-{{- if hasPrefix "1ae009b85" .Values.custody.acceptedSai10Commit }}{{ fail "rejected SAI-10 custody lineage is forbidden" }}{{ end -}}
+{{- if or (ne .Values.custody.acceptedSai10Commit "057386a3e0c616d79735adb43a97c19c48046608") (ne .Values.custody.acceptedSai10Tree "a244a4264b1ad5ad782848eed04d9986524921b4") }}{{ fail "exact independently accepted SAI-10 commit/tree custody is required" }}{{ end -}}
 {{- if not (regexMatch "^https://[^/]+/v1/storage-reconciler/activation$" .Values.activation.endpoint) }}{{ fail "external activation authority endpoint is required" }}{{ end -}}
 {{- if not (regexMatch "^[a-f0-9]{64}$" .Values.activation.cutoverReceiptSha256) }}{{ fail "signed cutover receipt is required" }}{{ end -}}
-{{- if or (not (regexMatch "^[a-f0-9]{40}$" .Values.custody.acceptedSai10Tree)) (eq .Values.custody.acceptedSai10Commit .Values.custody.acceptedSai10Tree) }}{{ fail "accepted SAI-10 commit and tree custody must be distinct exact Git identities" }}{{ end -}}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -84,6 +83,10 @@ spec:
         fs2.nebius.ai/storage-custody-review: {{ .Values.custody.independentReviewReceiptSha256 | quote }}
         fs2.nebius.ai/cutover-receipt-sha256: {{ .Values.activation.cutoverReceiptSha256 | quote }}
     spec:
+      # Provider operations are bounded at 120 seconds. Kubernetes must leave
+      # enough time for the pre-stop gate to observe the already signed drain,
+      # finish every admitted provider operation, and persist its receipt.
+      terminationGracePeriodSeconds: {{ .Values.storage.drainGraceSeconds }}
       serviceAccountName: {{ $name }}
       automountServiceAccountToken: false
       enableServiceLinks: false
@@ -167,6 +170,7 @@ spec:
             - {name: FS2_USER_STORAGE_KEY_TTL_DAYS, value: {{ .Values.storage.keyTtlDays | quote }}}
             - {name: FS2_USER_STORAGE_ROTATION_WINDOW_DAYS, value: {{ .Values.storage.rotationWindowDays | quote }}}
             - {name: FS2_USER_STORAGE_ACTION_TIMEOUT_SECONDS, value: {{ .Values.storage.actionTimeoutSeconds | quote }}}
+            - {name: FS2_USER_STORAGE_DRAIN_GRACE_SECONDS, value: {{ .Values.storage.drainGraceSeconds | quote }}}
             - {name: FS2_USER_STORAGE_RECONCILER_GENERATION, value: {{ $rolloutGeneration | quote }}}
             - {name: FS2_USER_STORAGE_ACTIVATION_ENDPOINT, value: {{ .Values.activation.endpoint | quote }}}
             - {name: FS2_USER_STORAGE_ACTIVATION_CLUSTER_ID, value: {{ .Values.activation.clusterId | quote }}}
@@ -191,6 +195,10 @@ spec:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities: {drop: ["ALL"]}
+          lifecycle:
+            preStop:
+              exec:
+                command: ["fs2-serve", "storage-reconciler-drain-wait"]
       volumes:
         - name: egress-contract
           configMap:

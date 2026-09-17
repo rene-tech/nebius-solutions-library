@@ -90,6 +90,7 @@ class Settings(BaseSettings):
     user_storage_key_ttl_days: int = Field(default=90, ge=1, le=365)
     user_storage_rotation_window_days: int = Field(default=14, ge=1, le=364)
     user_storage_action_timeout_seconds: float = Field(default=30, ge=1, le=120)
+    user_storage_drain_grace_seconds: int = Field(default=180, ge=150, le=600)
     user_storage_reconciler_generation: str = ""
     user_storage_activation_endpoint: str = ""
     user_storage_activation_cluster_id: str = ""
@@ -410,6 +411,8 @@ class Settings(BaseSettings):
             raise ValueError("sync_wait_seconds cannot exceed max_sync_wait_seconds")
         if self.user_storage_rotation_window_days >= self.user_storage_key_ttl_days:
             raise ValueError("user storage rotation window must be shorter than the key TTL")
+        if self.user_storage_drain_grace_seconds < 150:
+            raise ValueError("storage drain grace must include provider and shutdown safety margins")
         if self.user_storage_enabled:
             activation = urlsplit(self.user_storage_activation_endpoint)
             if (

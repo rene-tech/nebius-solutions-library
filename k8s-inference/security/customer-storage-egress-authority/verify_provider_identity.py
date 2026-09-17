@@ -13,14 +13,20 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from pathlib import Path
 
-from verify_authority_ledger import REGISTRY_PATH, canonical, safe_root_read, strict_json
+from verify_authority_ledger import (
+    ACCEPTED_SAI10_COMMIT,
+    ACCEPTED_SAI10_TREE,
+    REGISTRY_PATH,
+    canonical,
+    safe_root_read,
+    strict_json,
+)
 
 MAX_OUTPUT_BYTES = 1024 * 1024
 MAX_KEY_LIFETIME = timedelta(days=90)
 AUTHORITY_GRAPH_ADAPTER = Path(
     "/usr/libexec/fs2-security/provider-effective-authority"
 )
-REJECTED_SAI10_COMMIT = "1ae009b858924138de70932ac84b8e595a2656a1"
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -299,14 +305,15 @@ def verify(profile: str) -> dict[str, str]:
     if not profile or profile in {"default", "sandbox"}:
         raise ValueError("a dedicated named provider-security profile is required")
     registry = strict_json(safe_root_read(REGISTRY_PATH), "authority registry")
-    accepted_commit = registry.get("accepted_custody", {}).get("sai10_commit", "")
+    accepted_custody = registry.get("accepted_custody", {})
+    accepted_commit = accepted_custody.get("sai10_commit", "")
+    accepted_tree = accepted_custody.get("sai10_tree", "")
     if (
-        not isinstance(accepted_commit, str)
-        or len(accepted_commit) != 40
-        or _is_ancestor(REJECTED_SAI10_COMMIT, accepted_commit)
-        or _is_ancestor(REJECTED_SAI10_COMMIT, "HEAD")
+        accepted_commit != ACCEPTED_SAI10_COMMIT
+        or accepted_tree != ACCEPTED_SAI10_TREE
+        or not _is_ancestor(ACCEPTED_SAI10_COMMIT, "HEAD")
     ):
-        raise ValueError("provider authority requires clean accepted SAI-10 ancestry")
+        raise ValueError("provider authority requires exact accepted SAI-10 custody")
     identity_inventory = registry.get("kubernetes_identity_inventory")
     if not isinstance(identity_inventory, list):
         raise ValueError("provider-bound Kubernetes identity inventory is absent")

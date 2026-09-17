@@ -128,7 +128,7 @@ def test_workloads_root_only_reads_the_external_versioned_boundary() -> None:
         'data.kubernetes_config_map_v1.customer_storage_egress_trust[0].data["public-key.pem"]'
         in source
     )
-    assert "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v9" in source
+    assert "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v12" in source
     assert '"uv"' in source and '"--frozen"' in source
     assert "egress_contract_public_key_pem" not in source
 
@@ -404,8 +404,8 @@ def test_sai08_external_authority_workload_and_state_closure_regression() -> Non
         SECURITY_ROOT / "verify_live_daemonset_inventory.py"
     ).read_text(encoding="utf-8")
 
-    assert "_is_ancestor(REJECTED_SAI10, commit)" in dependency
-    assert '_is_ancestor(REJECTED_SAI10, "HEAD")' in dependency
+    assert 'ACCEPTED_SAI10 = "057386a3e0c616d79735adb43a97c19c48046608"' in dependency
+    assert 'if not _is_ancestor(ACCEPTED_SAI10, "HEAD")' in dependency
     assert "provider-effective-authority-graph/v1" in authority
     assert "origin_resource_ids" in authority
     assert "graph_cluster_access_ids" in authority

@@ -274,9 +274,8 @@ variable "customer_storage" {
         !contains(try(var.customer_storage.egress_boundary.provider_authority.node_health_mutation.mutable_taint_keys, []), var.customer_storage.egress_boundary.provider_authority.taint_key) &&
         try(var.customer_storage.egress_boundary.provider_authority.node_health_mutation.allow_unschedulable, false) &&
         var.customer_storage.egress_boundary.identity_inventory_sha256 == var.customer_storage.egress_boundary.provider_authority.kubernetes_identity_inventory_sha256 &&
-        can(regex("^[a-f0-9]{40}$", var.customer_storage.egress_boundary.provider_authority.accepted_sai10_commit)) &&
-        can(regex("^[a-f0-9]{40}$", var.customer_storage.egress_boundary.provider_authority.accepted_sai10_tree)) &&
-        !startswith(var.customer_storage.egress_boundary.provider_authority.accepted_sai10_commit, "1ae009b85") &&
+        var.customer_storage.egress_boundary.provider_authority.accepted_sai10_commit == "057386a3e0c616d79735adb43a97c19c48046608" &&
+        var.customer_storage.egress_boundary.provider_authority.accepted_sai10_tree == "a244a4264b1ad5ad782848eed04d9986524921b4" &&
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.sai10_independent_review_receipt_sha256)) &&
         can(regex("^vpcsecuritygroup-[a-z0-9]+$", var.customer_storage.egress_boundary.provider_authority.security_group_id)) &&
         can(regex("^mk8snodegroup-[a-z0-9]+$", var.customer_storage.egress_boundary.provider_authority.node_group_id)) &&
@@ -406,7 +405,8 @@ data "external" "customer_storage_egress" {
 # The ordinary workloads root must pass the same exact ancestry and custody
 # gate as the separately credentialed security roots. A digest-looking commit
 # string is not authority: the verifier resolves the Git objects, rejects the
-# rejected SAI-10 lineage as an ancestor of either custody or HEAD, and binds
+# exact independently accepted SAI-10 commit/tree custody as an ancestor of
+# HEAD (the accepted corrective lineage preserves its historical predecessor), and binds
 # every handoff digest to the independently accepted dependency record.
 data "external" "customer_storage_integration_dependencies" {
   count = var.customer_storage.enabled ? 1 : 0

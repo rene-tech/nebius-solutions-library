@@ -202,8 +202,8 @@ at `prevent_destroy`.
 The only future apply path descriptor-binds an externally signed exact saved
 plan to a clean source commit/tree and predecessor state under fixed
 root-owned read-only key, binary, plugin/data, CLI-config, environment and
-backend custody. It rejects rejected-SAI-10 ancestry, permits only
-create/read/no-op, freezes the backend descriptor across execution, and
+backend custody. It requires the exact independently accepted SAI-10
+commit/tree as an ancestor, permits only create/read/no-op, freezes the backend descriptor across execution, and
 verifies the actual successor state. It has no cleanup or state-forget mode.
 
 The two Secrets are supplied by the credential rotation system and each exposes
@@ -367,8 +367,8 @@ DaemonSet mutation.
 The Node guard freezes the providerID, lane label and lane taint. It permits
 only the signed node-health controller to change explicitly allowlisted health
 labels, health taints or `unschedulable`; routine status updates with unchanged
-scheduling metadata remain available. This source is still NO-GO: accepted
-SAI-10 ancestry and external dependency receipts are unresolved, and no live
+scheduling metadata remain available. This source is still NO-GO: the accepted
+SAI-10 lineage is present but external integration dependency receipts remain unresolved, and no live
 action is authorized under the no-delete constraint.
 
 ## Protected-lane handoff (v12 successor, source only)
@@ -396,11 +396,17 @@ group, strategy, and exactly one member per generation. Source may prepare a
 new content-bound lane/security-group/NodeGroup/Node generation while retaining
 the predecessor; it does not classify preparation as repair or authorize a
 cutover. Kubernetes admission denies in-place replacement or a second
-same-generation member. A separately reviewed customer-safe
-quiesce/drain/retirement protocol remains required, and the no-delete
-instruction currently forbids that live transition.
+same-generation member. A source-only customer-safe cutover protocol now closes
+provider admission with a signed intent, durably accounts provider operation
+IDs and dependent database postconditions, waits for zero nonterminal provider
+operations while recording queued durable actions under a grace longer than
+the provider timeout, and then quiesces the retained Deployment without
+deleting it. Indeterminate outcomes force a higher-epoch
+repair/retry before cutover. The no-delete instruction still forbids activating
+that live transition.
 
-This remains SOURCE/INTEGRATION/LIVE NO-GO. The branch still preserves rejected
-SAI-10 ancestry, accepted dependency receipts are absent, pre-fence live
+This remains SOURCE/INTEGRATION/LIVE NO-GO. Exact accepted SAI-10
+commit/tree/review custody is required to supersede its preserved historical
+rejected ancestor; live dependency receipts are absent, pre-fence live
 admission may be non-composable, and the no-delete instruction forbids any
 plan, apply, rollout, credential action, or resource transition.

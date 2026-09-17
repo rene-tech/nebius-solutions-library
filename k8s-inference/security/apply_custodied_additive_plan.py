@@ -33,7 +33,8 @@ EXECUTION_PUBLIC_KEY = Path(
 EXECUTION_PROFILE = Path(
     "/etc/fs2-security-ro/authority/additive-plan-execution-profile.json"
 )
-REJECTED_SAI10 = "1ae009b858924138de70932ac84b8e595a2656a1"
+ACCEPTED_SAI10 = "057386a3e0c616d79735adb43a97c19c48046608"
+ACCEPTED_SAI10_TREE = "a244a4264b1ad5ad782848eed04d9986524921b4"
 PROFILE_SCHEMA = "fs2-serve.nebius.ai/additive-plan-execution-profile/v1"
 RECEIPT_SCHEMA = "fs2-serve.nebius.ai/additive-plan-execution/v2"
 PROFILE_ENVIRONMENT = {
@@ -527,23 +528,14 @@ def _verify_sai10_ancestry(
 ) -> None:
     commit = receipt.get("accepted_sai10_commit")
     tree = receipt.get("accepted_sai10_tree")
-    if (
-        not isinstance(commit, str)
-        or len(commit) != 40
-        or not isinstance(tree, str)
-        or len(tree) != 40
-    ):
+    if commit != ACCEPTED_SAI10 or tree != ACCEPTED_SAI10_TREE:
         raise ValueError("execution approval lacks accepted SAI-10 commit/tree custody")
     observed_tree = _git(
         execution, repository, "show", "-s", "--format=%T", commit
     ).stdout.strip()
     if observed_tree != tree:
         raise ValueError("accepted SAI-10 commit does not have the approved tree")
-    if _is_ancestor(execution, repository, REJECTED_SAI10, commit):
-        raise ValueError("accepted SAI-10 custody descends from the rejected lineage")
-    if _is_ancestor(execution, repository, REJECTED_SAI10, "HEAD"):
-        raise ValueError("executing source descends from the rejected SAI-10 lineage")
-    if not _is_ancestor(execution, repository, commit, "HEAD"):
+    if not _is_ancestor(execution, repository, ACCEPTED_SAI10, "HEAD"):
         raise ValueError("accepted SAI-10 custody is not an ancestor of executing source")
 
 

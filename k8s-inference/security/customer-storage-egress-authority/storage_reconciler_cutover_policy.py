@@ -111,6 +111,13 @@ def _deployment_transition(
             and transition.get("predecessor_quiescence") is not None
             and digest(transition["predecessor_quiescence"])
             == transition.get("predecessor_quiescence_sha256")
+            and isinstance(transition.get("provider_drain_receipt"), dict)
+            and transition["provider_drain_receipt"].get(
+                "nonterminal_provider_operations"
+            )
+            == 0
+            and digest(transition["provider_drain_receipt"])
+            == transition.get("provider_drain_receipt_sha256")
         )
     if phase == "ROLLBACK_QUIESCE":
         return bool(
@@ -131,11 +138,21 @@ def _deployment_transition(
             and digest(rollback["successor_quiescence"])
             == rollback.get("successor_quiescence_sha256")
             and all(
-                isinstance(rollback.get(field), str) and len(rollback[field]) == 64
-                for field in (
-                    "zero_inflight_actions_receipt_sha256",
-                    "schema_compatibility_receipt_sha256",
-                    "provider_continuity_receipt_sha256",
+                isinstance(rollback.get(receipt_field), dict)
+                and digest(rollback[receipt_field]) == rollback.get(hash_field)
+                for receipt_field, hash_field in (
+                    (
+                        "zero_inflight_actions_receipt",
+                        "zero_inflight_actions_receipt_sha256",
+                    ),
+                    (
+                        "schema_compatibility_receipt",
+                        "schema_compatibility_receipt_sha256",
+                    ),
+                    (
+                        "provider_continuity_receipt",
+                        "provider_continuity_receipt_sha256",
+                    ),
                 )
             )
         )
@@ -187,11 +204,22 @@ def _replicaset(request: dict[str, Any], state: dict[str, Any]) -> bool:
 def _pod(request: dict[str, Any], state: dict[str, Any]) -> bool:
     if not _identity(request, state["replicaset_controller_identity"]):
         return False
-    object_ = request.get("object") or {}
+    operation = request.get("operation")
+    object_ = (
+        request.get("old_object") if operation == "DELETE" else request.get("object")
+    ) or {}
     metadata = object_.get("metadata") or {}
     labels = metadata.get("labels") or {}
     generation = labels.get("fs2.nebius.ai/storage-rollout-generation")
-    if generation != state.get("active_generation"):
+    transition = state.get("transition") or {}
+    quiescing_generation = (
+        transition.get("predecessor_generation")
+        if transition.get("phase") == "QUIESCE_PREDECESSOR"
+        else transition.get("successor_generation")
+        if transition.get("phase") == "ROLLBACK_QUIESCE"
+        else None
+    )
+    if generation not in {state.get("active_generation"), quiescing_generation}:
         return False
     contract = state["deployments"].get(generation)
     owners = metadata.get("ownerReferences")
@@ -202,7 +230,7 @@ def _pod(request: dict[str, Any], state: dict[str, Any]) -> bool:
     expected = json.loads(canonical(contract["pod_template"]))
     expected.setdefault("metadata", {}).setdefault("labels", {})["pod-template-hash"] = pod_hash
     return bool(
-        request.get("operation") == "CREATE"
+        operation in {"CREATE", "DELETE"}
         and isinstance(pod_hash, str)
         and pod_hash
         and owner.get("apiVersion") == "apps/v1"

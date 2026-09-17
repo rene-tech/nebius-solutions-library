@@ -8,15 +8,53 @@ import time
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from .store import ConflictError
 from .user_models import InferenceUser, owner_id
 from .user_storage_models import StoragePolicy, UserStorage
+from .user_storage_nebius import provider_operation_is_bound, track_provider_operation
 
 LOG = logging.getLogger(__name__)
 _ACTIVE = "ACTIVE"
 _INACTIVE = {"INACTIVE", "EXPIRED", "DELETING", "DELETED"}
+
+
+class _DurableProviderOperation:
+    """Bridge SDK operation IDs into the PostgreSQL cutover ledger."""
+
+    def __init__(
+        self, repository: Any, operation_id: UUID, provider_idempotency_id: UUID
+    ) -> None:
+        self.repository = repository
+        self.operation_id = operation_id
+        self.provider_idempotency_id = provider_idempotency_id
+        self.uncertain = False
+        self.submitted_count = 0
+        self.terminal_count = 0
+        self.succeeded = False
+
+    async def submitted(self, provider_operation_id: str) -> None:
+        await self.repository.provider_operation_submitted(
+            self.operation_id, provider_operation_id
+        )
+        self.submitted_count += 1
+
+    async def terminal(
+        self, provider_operation_id: str, *, succeeded: bool, code: str
+    ) -> None:
+        await self.repository.provider_operation_terminal(
+            self.operation_id,
+            provider_operation_id,
+            succeeded=succeeded,
+            code=code,
+        )
+        self.terminal_count += 1
+        self.succeeded = self.succeeded or succeeded
+
+    async def indeterminate(self, provider_operation_id: str | None = None) -> None:
+        del provider_operation_id
+        self.uncertain = True
 
 
 class UserStorageService:
@@ -46,8 +84,71 @@ class UserStorageService:
         self.provisioning_retry_at = 0.0
 
     async def _assert_active(self) -> None:
+        # An operation durably admitted before a signed drain must be allowed
+        # to reach and record its provider terminal result. Fresh operations
+        # always re-fetch the activation envelope before DB admission.
+        if provider_operation_is_bound():
+            return
         if self.activation_fence is not None:
             await self.activation_fence.assert_active()
+
+    async def _provider_mutation(
+        self,
+        *,
+        tenant: str,
+        principal: str,
+        operation_kind: str,
+        target_identity: str,
+        invoke: Any,
+        commit: Any | None = None,
+    ) -> Any:
+        if self.activation_fence is None or not hasattr(
+            self.repository, "begin_provider_operation"
+        ):
+            await self._assert_active()
+            result = await invoke()
+            if commit is not None:
+                await commit(result)
+            return result
+        admission = await self.activation_fence.admit_provider_operation()
+        operation_id = uuid4()
+        provider_idempotency_id = uuid4()
+        await self.repository.begin_provider_operation(
+            operation_id=operation_id,
+            generation=admission["reconciler_generation"],
+            activation_epoch=admission["activation_epoch"],
+            activation_state_head_sha256=admission["activation_state_head_sha256"],
+            transition_id=admission["transition_id"],
+            tenant=tenant,
+            principal=principal,
+            operation_kind=operation_kind,
+            target_identity=target_identity,
+            provider_idempotency_id=provider_idempotency_id,
+        )
+        tracker = _DurableProviderOperation(
+            self.repository, operation_id, provider_idempotency_id
+        )
+        try:
+            with track_provider_operation(tracker):
+                result = await invoke()
+                if commit is not None:
+                    await commit(result)
+        except BaseException:
+            if (
+                tracker.uncertain
+                or tracker.succeeded
+                or tracker.submitted_count != tracker.terminal_count
+            ):
+                await self.repository.mark_provider_operation_indeterminate(operation_id)
+            else:
+                await self.repository.finish_provider_operation(operation_id, succeeded=False)
+            raise
+        await self.repository.finish_provider_operation(
+            operation_id, succeeded=not tracker.uncertain
+        )
+        if tracker.uncertain:
+            raise RuntimeError("provider operation ended without a terminal provider receipt")
+        return result
 
     async def policy(self, tenant: str) -> StoragePolicy:
         if tenant in self.excluded_tenants:
@@ -82,22 +183,37 @@ class UserStorageService:
             raise RuntimeError("provider returned an indeterminate storage-key state")
         return state
 
-    async def _set_provider_state(self, resource_id: str, enabled: bool) -> None:
-        state = await self._provider_state(resource_id)
-        if enabled and state != _ACTIVE:
-            if state in {"EXPIRED", "DELETING", "DELETED"}:
-                raise RuntimeError("expired or deleted storage key cannot be activated")
-            await self._assert_active()
-            await self.provider.set_enabled(resource_id, True)
-        elif not enabled and state not in _INACTIVE:
-            await self._assert_active()
-            await self.provider.set_enabled(resource_id, False)
-        await self._assert_active()
-        observed = await self._provider_state(resource_id)
-        if enabled and observed != _ACTIVE:
-            raise RuntimeError("storage key activation did not reach ACTIVE")
-        if not enabled and observed not in _INACTIVE:
-            raise RuntimeError("storage key deactivation did not reach a fail-closed state")
+    async def _set_provider_state(
+        self,
+        tenant: str,
+        principal: str,
+        resource_id: str,
+        enabled: bool,
+        *,
+        commit: Any | None = None,
+    ) -> None:
+        async def transition() -> None:
+            state = await self._provider_state(resource_id)
+            if enabled and state != _ACTIVE:
+                if state in {"EXPIRED", "DELETING", "DELETED"}:
+                    raise RuntimeError("expired or deleted storage key cannot be activated")
+                await self.provider.set_enabled(resource_id, True)
+            elif not enabled and state not in _INACTIVE:
+                await self.provider.set_enabled(resource_id, False)
+            observed = await self._provider_state(resource_id)
+            if enabled and observed != _ACTIVE:
+                raise RuntimeError("storage key activation did not reach ACTIVE")
+            if not enabled and observed not in _INACTIVE:
+                raise RuntimeError("storage key deactivation did not reach a fail-closed state")
+
+        await self._provider_mutation(
+            tenant=tenant,
+            principal=principal,
+            operation_kind="access-key-activate" if enabled else "access-key-deactivate",
+            target_identity=resource_id,
+            invoke=transition,
+            commit=commit,
+        )
 
     async def _ensure_all_inactive(self, credential: dict[str, Any]) -> None:
         """Repair inverse provider drift for every key retained by the state machine."""
@@ -108,7 +224,9 @@ class UserStorageService:
             credential["previous_access_key_resource_id"],
         }:
             if resource_id is not None:
-                await self._set_provider_state(resource_id, False)
+                await self._set_provider_state(
+                    credential["tenant_id"], credential["principal_id"], resource_id, False
+                )
 
     async def _rotation_step(
         self,
@@ -132,30 +250,49 @@ class UserStorageService:
                 raise RuntimeError("persisted storage replacement is no longer activatable")
             # Completion is forbidden until two provider reads around any
             # activation confirm the durably promoted key is still ACTIVE.
-            await self._set_provider_state(current, True)
-            await self._set_provider_state(predecessor, False)
-            await self.repository.complete_rotation(
+            await self._set_provider_state(tenant, principal, current, True)
+
+            async def complete_rotation(_: object) -> None:
+                await self.repository.complete_rotation(
+                    tenant,
+                    principal,
+                    expected_version=credential["version"],
+                )
+
+            await self._set_provider_state(
                 tenant,
                 principal,
-                expected_version=credential["version"],
+                predecessor,
+                False,
+                commit=complete_rotation,
             )
             return cast(dict[str, Any], await self.repository.credential(tenant, principal))
 
         if replacement is None:
             await self._assert_active()
-            value = await self.provider.prepare_rotation(
-                tenant,
-                principal,
-                bucket["group_id"],
-                credential,
-            )
-            if value["expires_at"] <= datetime.now(UTC):
-                raise RuntimeError("provider prepared an expired storage key")
-            await self.repository.stage_replacement(
-                tenant,
-                principal,
-                value,
-                expected_version=credential["version"],
+
+            async def stage_replacement(value: dict[str, Any]) -> None:
+                if value["expires_at"] <= datetime.now(UTC):
+                    raise RuntimeError("provider prepared an expired storage key")
+                await self.repository.stage_replacement(
+                    tenant,
+                    principal,
+                    value,
+                    expected_version=credential["version"],
+                )
+
+            value = await self._provider_mutation(
+                tenant=tenant,
+                principal=principal,
+                operation_kind="access-key-prepare-rotation",
+                target_identity=str(credential["access_key_resource_id"]),
+                invoke=lambda: self.provider.prepare_rotation(
+                    tenant,
+                    principal,
+                    bucket["group_id"],
+                    credential,
+                ),
+                commit=stage_replacement,
             )
             return cast(dict[str, Any], await self.repository.credential(tenant, principal))
 
@@ -164,19 +301,27 @@ class UserStorageService:
             raise RuntimeError("staged storage replacement is no longer activatable")
         # Always use the verified transition, even when the first read reports
         # ACTIVE, so promotion requires an independent confirming read.
-        await self._set_provider_state(replacement, True)
-        try:
+        async def promote_replacement(_: object) -> None:
             await self.repository.promote_replacement(
                 tenant,
                 principal,
                 expected_version=credential["version"],
+            )
+
+        try:
+            await self._set_provider_state(
+                tenant,
+                principal,
+                replacement,
+                True,
+                commit=promote_replacement,
             )
         except BaseException:
             # If PostgreSQL rejects the CAS, the predecessor remains current.
             # Compensate the newly activated key so no unowned active key lasts
             # beyond this bounded cutover attempt.
             with suppress(Exception):
-                await self._set_provider_state(replacement, False)
+                await self._set_provider_state(tenant, principal, replacement, False)
             raise
         return cast(dict[str, Any], await self.repository.credential(tenant, principal))
 
@@ -199,20 +344,33 @@ class UserStorageService:
             if target and (await self.policy(user.tenant_id)).mode == "disabled":
                 target = False
             try:
-                await self._set_provider_state(credential["access_key_resource_id"], target)
-                await self.repository.complete_action(
+                async def complete_action(_: object) -> None:
+                    await self.repository.complete_action(
+                        user.tenant_id,
+                        user.principal_id,
+                        expected_action=action,
+                        enabled=target,
+                        revoked=action == "revoke",
+                        expected_version=credential["version"],
+                    )
+
+                await self._set_provider_state(
                     user.tenant_id,
                     user.principal_id,
-                    expected_action=action,
-                    enabled=target,
-                    revoked=action == "revoke",
-                    expected_version=credential["version"],
+                    credential["access_key_resource_id"],
+                    target,
+                    commit=complete_action,
                 )
             except BaseException:
                 # Enabling is the only unsafe direction after a DB failure.
                 if target:
                     with suppress(Exception):
-                        await self._set_provider_state(credential["access_key_resource_id"], False)
+                        await self._set_provider_state(
+                            user.tenant_id,
+                            user.principal_id,
+                            credential["access_key_resource_id"],
+                            False,
+                        )
                 raise
             return cast(
                 dict[str, Any],
@@ -263,19 +421,30 @@ class UserStorageService:
                     and not credential["policy_suspension_requested"]
                 )
                 await self._assert_active()
-                ownership_verified = await self.provider.reconcile_key_inventory(
-                    user.tenant_id,
-                    user.principal_id,
-                    credential,
-                    effective_enabled=effective_enabled,
-                )
-                if ownership_verified != bool(credential["provider_ownership_verified"]):
-                    await self.repository.record_provider_ownership(
+
+                async def record_provider_ownership(verified: bool) -> None:
+                    if verified != bool(credential["provider_ownership_verified"]):
+                        await self.repository.record_provider_ownership(
+                            user.tenant_id,
+                            user.principal_id,
+                            verified=verified,
+                            expected_version=credential["version"],
+                        )
+
+                ownership_verified = await self._provider_mutation(
+                    tenant=user.tenant_id,
+                    principal=user.principal_id,
+                    operation_kind="access-key-inventory-reconcile",
+                    target_identity=str(credential["service_account_id"]),
+                    invoke=lambda: self.provider.reconcile_key_inventory(
                         user.tenant_id,
                         user.principal_id,
-                        verified=ownership_verified,
-                        expected_version=credential["version"],
-                    )
+                        credential,
+                        effective_enabled=effective_enabled,
+                    ),
+                    commit=record_provider_ownership,
+                )
+                if ownership_verified != bool(credential["provider_ownership_verified"]):
                     credential = await self.repository.credential(user.tenant_id, user.principal_id)
 
             if credential and not user.enabled and credential["desired_enabled"]:
@@ -397,29 +566,57 @@ class UserStorageService:
             # Always inspect the bucket and its exact policy; quota equality is
             # not sufficient evidence that IAM drift has not occurred.
             await self._assert_active()
-            bucket = await self.provider.ensure_bucket(
-                user.tenant_id,
-                owner,
-                policy.quota_bytes,
-                existing=bucket,
+
+            async def save_bucket(value: dict[str, Any]) -> None:
+                await self.repository.save_bucket(user.tenant_id, owner, value)
+
+            bucket = await self._provider_mutation(
+                tenant=user.tenant_id,
+                principal=user.principal_id,
+                operation_kind="bucket-policy-reconcile",
+                target_identity=str((bucket or {}).get("bucket_id") or owner),
+                invoke=lambda: self.provider.ensure_bucket(
+                    user.tenant_id,
+                    owner,
+                    policy.quota_bytes,
+                    existing=bucket,
+                ),
+                commit=save_bucket,
             )
-            await self.repository.save_bucket(user.tenant_id, owner, bucket)
             if credential is None:
                 await self._assert_active()
-                value = await self.provider.ensure_credentials(
-                    user.tenant_id,
-                    user.principal_id,
-                    bucket["group_id"],
+
+                async def save_credential(value: dict[str, Any]) -> None:
+                    await self.repository.save_credential(
+                        user.tenant_id, user.principal_id, owner, value
+                    )
+
+                value = await self._provider_mutation(
+                    tenant=user.tenant_id,
+                    principal=user.principal_id,
+                    operation_kind="credential-provision",
+                    target_identity=str(bucket["group_id"]),
+                    invoke=lambda: self.provider.ensure_credentials(
+                        user.tenant_id,
+                        user.principal_id,
+                        bucket["group_id"],
+                    ),
+                    commit=save_credential,
                 )
-                await self.repository.save_credential(user.tenant_id, user.principal_id, owner, value)
                 credential = await self.repository.credential(user.tenant_id, user.principal_id)
                 assert credential is not None
                 await self._finish_pending(user, credential, bucket)
             else:
                 await self._assert_active()
-                await self.provider.ensure_identity_access(
-                    bucket["group_id"],
-                    credential["service_account_id"],
+                await self._provider_mutation(
+                    tenant=user.tenant_id,
+                    principal=user.principal_id,
+                    operation_kind="bucket-membership-reconcile",
+                    target_identity=f"{bucket['group_id']}:{credential['service_account_id']}",
+                    invoke=lambda: self.provider.ensure_identity_access(
+                        bucket["group_id"],
+                        credential["service_account_id"],
+                    ),
                 )
                 state = await self._provider_state(credential["access_key_resource_id"])
                 if credential["enabled"] and state != _ACTIVE:
@@ -563,9 +760,42 @@ class UserStorageService:
         except TimeoutError:
             raise RuntimeError("storage reconciler did not apply the durable user state") from None
 
+    async def drain_once(self) -> dict[str, Any] | None:
+        """Honor a signed drain without admitting another provider operation."""
+
+        if self.activation_fence is None:
+            return None
+        completed_reader = getattr(
+            self.activation_fence, "completed_shutdown_receipt", None
+        )
+        if completed_reader is not None:
+            completed = await completed_reader()
+            if completed is not None:
+                return cast(dict[str, Any], completed)
+        intent = await self.activation_fence.current_drain_intent()
+        if intent is None:
+            return None
+        await self.repository.begin_reconciler_drain(intent)
+        return await self.repository.complete_reconciler_drain(intent["drain_id"])
+
+    async def wait_for_signed_drain(self, timeout: float) -> dict[str, Any]:
+        """Bounded pre-stop proof used before Kubernetes sends SIGTERM."""
+
+        async with asyncio.timeout(timeout):
+            while True:
+                receipt = await self.drain_once()
+                if receipt is not None:
+                    return receipt
+                await asyncio.sleep(0.5)
+
     async def _run(self) -> None:
         while True:
             try:
+                if await self.drain_once() is not None:
+                    # Keep serving the signed activation endpoint's drain
+                    # epoch, but never reopen cloud-operation admission.
+                    await asyncio.sleep(self.poll_seconds)
+                    continue
                 await self._assert_active()
                 lease = getattr(self.repository, "reconciler_lease", None)
                 if lease is None:

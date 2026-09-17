@@ -509,7 +509,8 @@ class PostgresStore:
                     f"fs2_telemetry_correlations,fs2_lifecycle_signals,fs2_lifecycle_rollups,"
                     f"fs2_reporting_lifecycle_latest,fs2_reporting_gpu_phase_usage,"
                     f"fs2_reporting_lifecycle_workloads,fs2_storage_actions,"
-                    f"fs2_storage_disclosure_entitlements FROM {role}"
+                    f"fs2_storage_disclosure_entitlements,fs2_storage_provider_operations,"
+                    f"fs2_storage_provider_operation_attempts,fs2_storage_reconciler_drains FROM {role}"
                 )
                 await connection.execute(
                     f"REVOKE ALL ON fs2_apps,fs2_inference_users,fs2_storage_policies,"
@@ -543,7 +544,15 @@ class PostgresStore:
                     f"fs2_storage_action_status(uuid),"
                     f"fs2_begin_user_storage_disclosure(text,uuid),"
                     f"fs2_begin_admin_storage_disclosure(uuid,text,uuid,uuid),"
-                    f"fs2_consume_storage_disclosure(uuid) FROM {role}"
+                    f"fs2_consume_storage_disclosure(uuid),"
+                    f"fs2_begin_storage_provider_operation(uuid,text,bigint,char(64),char(64),text,text,text,char(64),uuid),"
+                    f"fs2_record_storage_provider_submission(uuid,text),"
+                    f"fs2_record_storage_provider_terminal(uuid,text,boolean,text),"
+                    f"fs2_finish_storage_provider_operation(uuid,boolean),"
+                    f"fs2_mark_storage_provider_operation_indeterminate(uuid),"
+                    f"fs2_begin_storage_reconciler_drain(uuid,text,bigint,char(64),char(64),timestamptz,timestamptz),"
+                    f"fs2_complete_storage_reconciler_drain(uuid),"
+                    f"fs2_storage_reconciler_drain_receipt(uuid) FROM {role}"
                 )
             await connection.execute(
                 f"GRANT SELECT ON fs2_reporting_model_usage,fs2_reporting_principal_usage,"
@@ -697,6 +706,17 @@ class PostgresStore:
             await connection.execute(f"GRANT INSERT ON fs2_audit_events TO {quoted_storage}")
             await connection.execute(f"GRANT USAGE,SELECT ON fs2_audit_events_id_seq TO {quoted_storage}")
             await connection.execute(
+                f"GRANT EXECUTE ON FUNCTION "
+                f"fs2_begin_storage_provider_operation(uuid,text,bigint,char(64),char(64),text,text,text,char(64),uuid),"
+                f"fs2_record_storage_provider_submission(uuid,text),"
+                f"fs2_record_storage_provider_terminal(uuid,text,boolean,text),"
+                f"fs2_finish_storage_provider_operation(uuid,boolean),"
+                f"fs2_mark_storage_provider_operation_indeterminate(uuid),"
+                f"fs2_begin_storage_reconciler_drain(uuid,text,bigint,char(64),char(64),timestamptz,timestamptz),"
+                f"fs2_complete_storage_reconciler_drain(uuid),"
+                f"fs2_storage_reconciler_drain_receipt(uuid) TO {quoted_storage}"
+            )
+            await connection.execute(
                 f"GRANT SELECT (id,tenant_id,principal_id,display_name,kind,team,enabled,academic_eligible,"
                 f"app_ids,created_at,updated_at) ON fs2_inference_users TO {quoted_storage}"
             )
@@ -840,6 +860,16 @@ class PostgresStore:
                             "'public.fs2_audit_events','SELECT')"
                             " AND has_table_privilege('fs2_serve_storage',"
                             "'public.fs2_audit_events','INSERT')"
+                            " AND has_function_privilege('fs2_serve_storage',"
+                            "'public.fs2_begin_storage_provider_operation(uuid,text,bigint,character,character,text,text,text,character,uuid)','EXECUTE')"
+                            " AND has_function_privilege('fs2_serve_storage',"
+                            "'public.fs2_begin_storage_reconciler_drain(uuid,text,bigint,character,character,timestamp with time zone,timestamp with time zone)','EXECUTE')"
+                            " AND has_function_privilege('fs2_serve_storage',"
+                            "'public.fs2_complete_storage_reconciler_drain(uuid)','EXECUTE')"
+                            " AND has_function_privilege('fs2_serve_storage',"
+                            "'public.fs2_mark_storage_provider_operation_indeterminate(uuid)','EXECUTE')"
+                            " AND NOT has_table_privilege('fs2_serve_storage',"
+                            "'public.fs2_storage_provider_operations','SELECT')"
                             " AND has_function_privilege('fs2_serve_storage_disclosure',"
                             "'public.fs2_begin_user_storage_disclosure(text,uuid)','EXECUTE')"
                             " AND has_function_privilege('fs2_serve_storage_disclosure',"

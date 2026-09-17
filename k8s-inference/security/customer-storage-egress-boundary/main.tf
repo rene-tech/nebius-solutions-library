@@ -402,6 +402,7 @@ locals {
       key_ttl_days                     = release.key_ttl_days
       rotation_window_days             = release.rotation_window_days
       action_timeout_seconds           = release.action_timeout_seconds
+      drain_grace_seconds              = release.drain_grace_seconds
     }
   }
   current_release                  = var.release_generations[var.current_release_generation]
@@ -602,14 +603,15 @@ locals {
         "(request.namespace == '${local.namespace}' &&",
         "(request.userInfo.username == '${var.non_owner_identities[var.release_identity_name].username}' ||",
         "request.name == '${local.current_release_name}' ||",
-        "(request.operation == 'UPDATE' ?",
+        "(request.operation in ['UPDATE','DELETE'] ?",
         "(has(oldObject.metadata.labels) && oldObject.metadata.labels.exists(key, value, key == 'fs2.nebius.ai/storage-egress-generation' && value == '${var.current_generation}') && oldObject.metadata.labels.exists(key, value, key == 'fs2.nebius.ai/storage-rollout-generation' && value == '${var.current_release_generation}')) :",
         "(has(object.metadata.labels) && object.metadata.labels.exists(key, value, key == 'fs2.nebius.ai/storage-egress-generation' && value == '${var.current_generation}') && object.metadata.labels.exists(key, value, key == 'fs2.nebius.ai/storage-rollout-generation' && value == '${var.current_release_generation}'))))) ||",
         "(request.resource.resource == 'pods' && request.subResource == 'binding') ||",
-        "(request.resource.resource == 'nodes' && (request.name == '${var.provider_authority.protected_node_names[0]}' ||",
-        "(request.operation != 'CREATE' && oldObject.metadata.name == '${var.provider_authority.protected_node_names[0]}') ||",
+        "(request.resource.resource == 'nodes' && (request.operation == 'DELETE' ?",
+        "(oldObject != null && has(oldObject.metadata) && oldObject.metadata.name == '${var.provider_authority.protected_node_names[0]}') :",
+        "(object != null && has(object.metadata) && (object.metadata.name == '${var.provider_authority.protected_node_names[0]}' ||",
         "(has(object.metadata.labels) && '${var.provider_authority.node_selector_key}' in object.metadata.labels) ||",
-        "(has(object.spec.taints) && object.spec.taints.exists(taint, taint.key == '${var.provider_authority.taint_key}')))) ||",
+        "(has(object.spec) && has(object.spec.taints) && object.spec.taints.exists(taint, taint.key == '${var.provider_authority.taint_key}')))))) ||",
         "(${local.protected_node_target_cel})",
       ])
     }]
@@ -810,6 +812,7 @@ locals {
         keyTtlDays                    = release.key_ttl_days
         rotationWindowDays            = release.rotation_window_days
         actionTimeoutSeconds          = release.action_timeout_seconds
+        drainGraceSeconds             = release.drain_grace_seconds
       }
       resources = {
         requests = { cpu = "50m", memory = "128Mi" }

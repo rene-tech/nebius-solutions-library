@@ -11,12 +11,15 @@ the next ledger generation.  It never deletes or replaces an object.
 from __future__ import annotations
 
 import hashlib
+import base64
 import json
 import os
 import ssl
 import urllib.error
 import urllib.parse
 import urllib.request
+import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -40,13 +43,74 @@ class KubernetesAPI:
         if parsed.scheme != "https" or not parsed.hostname or parsed.path not in {"", "/"}:
             raise ValueError("exact Kubernetes HTTPS authority required")
         self.endpoint = endpoint.rstrip("/")
-        self.token = _safe_read(token_path).decode("ascii").strip()
-        if not self.token or any(character.isspace() for character in self.token):
-            raise ValueError("bounded Kubernetes bearer token is malformed")
+        self.token_path = token_path
         context = ssl.create_default_context(cadata=_safe_read(ca_path).decode("ascii"))
         self.opener = urllib.request.build_opener(
             urllib.request.HTTPSHandler(context=context), _NoRedirect()
         )
+
+    def _token(self, identity: dict[str, Any]) -> str:
+        """Descriptor-read and bind one fresh, expiring epoch credential."""
+
+        token = _safe_read(self.token_path).decode("ascii").strip()
+        if not token or any(character.isspace() for character in token):
+            raise ValueError("bounded Kubernetes bearer token is malformed")
+        parts = token.split(".")
+        if len(parts) != 3:
+            raise ValueError("cutover credential is not a bounded JWT")
+        try:
+            payload = json.loads(
+                base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4))
+            )
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            raise ValueError("cutover credential claims are malformed") from exc
+        now = int(time.time())
+        audience = payload.get("aud")
+        audiences = [audience] if isinstance(audience, str) else audience
+        jti = str(payload.get("jti", ""))
+        kubernetes_claims = payload.get("kubernetes.io") or {}
+        service_account_claims = (
+            kubernetes_claims.get("serviceaccount")
+            if isinstance(kubernetes_claims, dict)
+            else {}
+        ) or {}
+        uid = str(
+            service_account_claims.get(
+                "uid",
+                payload.get("kubernetes.io/serviceaccount/uid", payload.get("uid", "")),
+            )
+        )
+        groups = sorted(payload.get("groups") or [])
+        try:
+            signed_from = int(
+                datetime.fromisoformat(
+                    str(identity["valid_from"]).replace("Z", "+00:00")
+                ).timestamp()
+            )
+            signed_until = int(
+                datetime.fromisoformat(
+                    str(identity["valid_until"]).replace("Z", "+00:00")
+                ).timestamp()
+            )
+        except (KeyError, ValueError) as exc:
+            raise ValueError("signed cutover credential epoch is malformed") from exc
+        if (
+            not isinstance(payload.get("exp"), int)
+            or not isinstance(payload.get("iat"), int)
+            or payload["exp"] <= now + 10
+            or payload["iat"] > now + 5
+            or payload["exp"] - payload["iat"] > 900
+            or payload["iat"] < signed_from
+            or payload["exp"] > signed_until
+            or "fs2-storage-cutover" not in (audiences or [])
+            or payload.get("sub") != identity.get("username")
+            or uid != identity.get("uid")
+            or groups != sorted(identity.get("groups") or [])
+            or hashlib.sha256(jti.encode()).hexdigest()
+            != identity.get("credential_id")
+        ):
+            raise ValueError("cutover credential does not match the current signed epoch")
+        return token
 
     def request(
         self,
@@ -55,6 +119,7 @@ class KubernetesAPI:
         *,
         body: dict[str, Any] | None = None,
         content_type: str = "application/json",
+        identity: dict[str, Any],
     ) -> dict[str, Any]:
         url = f"{self.endpoint}{path}"
         payload = canonical(body) if body is not None else None
@@ -64,7 +129,7 @@ class KubernetesAPI:
             method=method,
             headers={
                 "Accept": "application/json",
-                "Authorization": f"Bearer {self.token}",
+                "Authorization": f"Bearer {self._token(identity)}",
                 "Content-Type": content_type,
                 "User-Agent": "fs2-storage-cutover-executor/1",
             },
@@ -83,18 +148,26 @@ class KubernetesAPI:
             raise ValueError("Kubernetes response is not an object")
         return value
 
-    def deployment(self, contract: dict[str, Any]) -> dict[str, Any]:
+    def deployment(
+        self, contract: dict[str, Any], identity: dict[str, Any]
+    ) -> dict[str, Any]:
         namespace = urllib.parse.quote(contract["namespace"], safe="")
         name = urllib.parse.quote(contract["name"], safe="")
-        return self.request("GET", f"/apis/apps/v1/namespaces/{namespace}/deployments/{name}")
+        return self.request(
+            "GET",
+            f"/apis/apps/v1/namespaces/{namespace}/deployments/{name}",
+            identity=identity,
+        )
 
-    def pods(self, contract: dict[str, Any]) -> list[dict[str, Any]]:
+    def pods(self, contract: dict[str, Any], identity: dict[str, Any]) -> list[dict[str, Any]]:
         namespace = urllib.parse.quote(contract["namespace"], safe="")
         generation = urllib.parse.quote(
             f"fs2.nebius.ai/storage-rollout-generation={contract['generation']}", safe=""
         )
         response = self.request(
-            "GET", f"/api/v1/namespaces/{namespace}/pods?labelSelector={generation}"
+            "GET",
+            f"/api/v1/namespaces/{namespace}/pods?labelSelector={generation}",
+            identity=identity,
         )
         items = response.get("items")
         if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
@@ -107,6 +180,7 @@ class KubernetesAPI:
         observed: dict[str, Any],
         replicas: int,
         transition_id: str,
+        identity: dict[str, Any],
     ) -> dict[str, Any]:
         metadata = observed.get("metadata") or {}
         namespace = urllib.parse.quote(contract["namespace"], safe="")
@@ -127,11 +201,17 @@ class KubernetesAPI:
             f"/apis/apps/v1/namespaces/{namespace}/deployments/{name}",
             body=body,
             content_type="application/merge-patch+json",
+            identity=identity,
         )
 
 
-def _observed(api: KubernetesAPI, generation: str, contract: dict[str, Any]) -> dict[str, Any]:
-    deployment = api.deployment(contract)
+def _observed(
+    api: KubernetesAPI,
+    generation: str,
+    contract: dict[str, Any],
+    identity: dict[str, Any],
+) -> dict[str, Any]:
+    deployment = api.deployment(contract, identity)
     metadata = deployment.get("metadata") or {}
     spec = deployment.get("spec") or {}
     normalized = json.loads(canonical(spec))
@@ -148,11 +228,16 @@ def _observed(api: KubernetesAPI, generation: str, contract: dict[str, Any]) -> 
     return deployment
 
 
-def _quiesced(api: KubernetesAPI, contract: dict[str, Any], deployment: dict[str, Any]) -> bool:
+def _quiesced(
+    api: KubernetesAPI,
+    contract: dict[str, Any],
+    deployment: dict[str, Any],
+    identity: dict[str, Any],
+) -> bool:
     status = deployment.get("status") or {}
     if any(int(status.get(field) or 0) != 0 for field in ("replicas", "readyReplicas", "availableReplicas")):
         return False
-    for pod in api.pods(contract):
+    for pod in api.pods(contract, identity):
         phase = (pod.get("status") or {}).get("phase")
         if phase not in {"Succeeded", "Failed"}:
             return False
@@ -194,40 +279,67 @@ def execute(api: KubernetesAPI, state: dict[str, Any]) -> dict[str, Any]:
     successor_generation = transition["successor_generation"]
     predecessor = {**state["deployments"][predecessor_generation], "generation": predecessor_generation}
     successor = {**state["deployments"][successor_generation], "generation": successor_generation}
-    observed_predecessor = _observed(api, predecessor_generation, predecessor)
-    observed_successor = _observed(api, successor_generation, successor)
+    identity = state["security_owner_identity"]
+    observed_predecessor = _observed(
+        api, predecessor_generation, predecessor, identity
+    )
+    observed_successor = _observed(api, successor_generation, successor, identity)
 
     if phase == "QUIESCE_PREDECESSOR":
         if (observed_successor.get("spec") or {}).get("replicas") != 0:
             raise ValueError("successor must remain passive before predecessor quiescence")
         if (observed_predecessor.get("spec") or {}).get("replicas") == 1:
+            if (
+                not isinstance(transition.get("provider_drain_receipt"), dict)
+                or transition["provider_drain_receipt"].get(
+                    "nonterminal_provider_operations"
+                )
+                != 0
+            ):
+                raise ValueError("signed zero-terminal provider drain is required")
             observed_predecessor = api.scale(
-                predecessor, observed_predecessor, 0, transition["transition_id"]
+                predecessor,
+                observed_predecessor,
+                0,
+                transition["transition_id"],
+                identity,
             )
-        if not _quiesced(api, predecessor, observed_predecessor):
+        if not _quiesced(api, predecessor, observed_predecessor, identity):
             raise RuntimeError("predecessor has not reached bounded quiescence")
     elif phase == "ACTIVATE_SUCCESSOR":
-        if not _quiesced(api, predecessor, observed_predecessor):
+        if not _quiesced(api, predecessor, observed_predecessor, identity):
             raise ValueError("signed predecessor quiescence no longer matches live state")
         if (observed_successor.get("spec") or {}).get("replicas") == 0:
             observed_successor = api.scale(
-                successor, observed_successor, 1, transition["transition_id"]
+                successor,
+                observed_successor,
+                1,
+                transition["transition_id"],
+                identity,
             )
         if not _ready(observed_successor):
             raise RuntimeError("successor has not reached exact single-replica readiness")
     elif phase == "ROLLBACK_QUIESCE":
         if (observed_successor.get("spec") or {}).get("replicas") == 1:
             observed_successor = api.scale(
-                successor, observed_successor, 0, transition["transition_id"]
+                successor,
+                observed_successor,
+                0,
+                transition["transition_id"],
+                identity,
             )
-        if not _quiesced(api, successor, observed_successor):
+        if not _quiesced(api, successor, observed_successor, identity):
             raise RuntimeError("successor has not reached bounded rollback quiescence")
     elif phase == "ROLLBACK_ACTIVATE":
-        if not _quiesced(api, successor, observed_successor):
+        if not _quiesced(api, successor, observed_successor, identity):
             raise ValueError("signed successor quiescence no longer matches live state")
         if (observed_predecessor.get("spec") or {}).get("replicas") == 0:
             observed_predecessor = api.scale(
-                predecessor, observed_predecessor, 1, transition["transition_id"]
+                predecessor,
+                observed_predecessor,
+                1,
+                transition["transition_id"],
+                identity,
             )
         if not _ready(observed_predecessor):
             raise RuntimeError("rollback predecessor has not reached exact readiness")
@@ -239,6 +351,10 @@ def execute(api: KubernetesAPI, state: dict[str, Any]) -> dict[str, Any]:
         "state_head_sha256": state["head_sha256"],
         "transition_id": transition["transition_id"],
         "phase": phase,
+        "provider_drain_receipt": transition["provider_drain_receipt"],
+        "provider_drain_receipt_sha256": transition[
+            "provider_drain_receipt_sha256"
+        ],
         "predecessor": _projection(
             predecessor_generation, predecessor, observed_predecessor
         ),

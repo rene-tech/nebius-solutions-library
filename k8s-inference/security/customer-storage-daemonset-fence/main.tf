@@ -12,6 +12,11 @@ resource "kubernetes_config_map_v1" "activation_trust" {
       "app.kubernetes.io/managed-by"             = "fs2-external-security-owner"
       "security.fs2.nebius.ai/fence-generation" = each.key
     }
+    annotations = {
+      "security.fs2.nebius.ai/executor-uid"           = each.value.cutover_executor_uid
+      "security.fs2.nebius.ai/executor-credential-id" = each.value.cutover_executor_credential_id
+      "security.fs2.nebius.ai/executor-valid-until"   = each.value.cutover_executor_valid_until
+    }
   }
   immutable = true
   data      = { "public-key.pem" = each.value.activation_public_key_pem }
@@ -79,6 +84,11 @@ resource "kubernetes_role_binding_v1" "cutover_executor" {
       "app.kubernetes.io/managed-by"             = "fs2-external-security-owner"
       "security.fs2.nebius.ai/fence-generation" = each.key
     }
+    annotations = {
+      "security.fs2.nebius.ai/executor-uid"           = each.value.cutover_executor_uid
+      "security.fs2.nebius.ai/executor-credential-id" = each.value.cutover_executor_credential_id
+      "security.fs2.nebius.ai/executor-valid-until"   = each.value.cutover_executor_valid_until
+    }
   }
   subject {
     api_group = "rbac.authorization.k8s.io"
@@ -142,7 +152,7 @@ resource "kubernetes_manifest" "daemonset_fence" {
         {
           apiGroups   = [""]
           apiVersions = ["v1"]
-          operations  = ["CREATE"]
+          operations  = ["CREATE", "DELETE"]
           resources   = ["pods"]
           scope       = "Namespaced"
         },
@@ -176,14 +186,14 @@ resource "kubernetes_manifest" "daemonset_fence" {
         {
           apiGroups   = [""]
           apiVersions = ["v1"]
-          operations  = ["CREATE"]
+          operations  = ["CREATE", "DELETE"]
           resources   = ["pods"]
           scope       = "Namespaced"
         },
       ]
       matchConditions = [{
         name = "customer-storage-reconciler-only"
-        expression = "request.namespace == 'fs2-system' && ((has(object.metadata.labels) && object.metadata.labels.exists(key, value, key == 'app.kubernetes.io/component' && value == 'storage-reconciler-v3')) || (request.operation in ['UPDATE','DELETE'] && has(oldObject.metadata.labels) && oldObject.metadata.labels.exists(key, value, key == 'app.kubernetes.io/component' && value == 'storage-reconciler-v3')))"
+        expression = "request.namespace == 'fs2-system' && (request.operation == 'DELETE' ? (oldObject != null && has(oldObject.metadata) && has(oldObject.metadata.labels) && oldObject.metadata.labels.exists(key, value, key == 'app.kubernetes.io/component' && value == 'storage-reconciler-v3')) : (object != null && has(object.metadata) && has(object.metadata.labels) && object.metadata.labels.exists(key, value, key == 'app.kubernetes.io/component' && value == 'storage-reconciler-v3')))"
       }]
     }]
   }

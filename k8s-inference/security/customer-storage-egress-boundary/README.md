@@ -180,11 +180,10 @@ create/read/no-op; applies those same bytes; then proves the expected successor
 lineage, minimum serial and exact address set. It has no plan-generation or
 cleanup mode.
 
-The dependency verifier rejects the rejected SAI-10 commit as an ancestor, not
-only as an exact value, for both accepted custody and integration `HEAD`. This
-task branch deliberately preserves that history, so the parent must transplant
-these additive changes onto a clean accepted lineage before the dependency
-record can become `accepted`; rewriting this branch is not authorized.
+The dependency verifier binds the exact independently accepted SAI-10
+commit/tree and requires that accepted corrective commit to be an ancestor of
+integration `HEAD`. It does not reject the accepted continuation merely
+because its immutable history preserves an earlier rejected predecessor.
 
 ## v10 protected-lane correction
 

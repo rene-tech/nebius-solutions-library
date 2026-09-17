@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from contextlib import suppress
+from contextlib import contextmanager, suppress
+from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -17,6 +18,26 @@ from nebius.api.nebius.storage import v1 as storage
 from nebius.sdk import SDK
 
 from .crypto import KeyedHasher
+
+
+_PROVIDER_OPERATION_TRACKER: ContextVar[Any | None] = ContextVar(
+    "fs2_storage_provider_operation_tracker", default=None
+)
+
+
+@contextmanager
+def track_provider_operation(tracker: Any) -> Any:
+    """Bind one durable logical operation around all provider sub-operations."""
+
+    token = _PROVIDER_OPERATION_TRACKER.set(tracker)
+    try:
+        yield tracker
+    finally:
+        _PROVIDER_OPERATION_TRACKER.reset(token)
+
+
+def provider_operation_is_bound() -> bool:
+    return _PROVIDER_OPERATION_TRACKER.get() is not None
 
 
 class StorageOperationError(RuntimeError):
@@ -100,12 +121,38 @@ class NebiusUserStorage:
 
     @staticmethod
     async def _operation(request: Any) -> str:
-        operation = await request
-        await operation.wait()
+        tracker = _PROVIDER_OPERATION_TRACKER.get()
+        try:
+            operation = await request
+        except BaseException:
+            if tracker is not None:
+                await tracker.indeterminate()
+            raise
+        operation_id = str(operation.id)
+        if tracker is not None:
+            await tracker.submitted(operation_id)
+        try:
+            await operation.wait()
+        except BaseException:
+            # Submission is known but terminal provider state is not.  The
+            # durable row deliberately remains nonterminal across process or
+            # transport loss and therefore blocks a reconciler cutover.
+            if tracker is not None:
+                await tracker.indeterminate(operation_id)
+            raise
         # SDK wait() means terminal, not successful. Never publish failed
         # creates, key activations or quota updates as completed.
         if not operation.successful():
+            status = operation.status()
+            if tracker is not None:
+                await tracker.terminal(
+                    operation_id,
+                    succeeded=False,
+                    code=status.code.name if status is not None else "UNKNOWN",
+                )
             raise StorageOperationError(operation)
+        if tracker is not None:
+            await tracker.terminal(operation_id, succeeded=True, code="OK")
         return str(operation.resource_id)
 
     async def _named(self, client: Any, get: Any, create: Any, name: str) -> Any:
@@ -129,7 +176,15 @@ class NebiusUserStorage:
 
     @staticmethod
     def _metadata(parent: str, name: str) -> ResourceMetadata:
-        return ResourceMetadata(parent_id=parent, name=name, labels={"fs2-storage-owner": name})
+        labels = {"fs2-storage-owner": name}
+        tracker = _PROVIDER_OPERATION_TRACKER.get()
+        if tracker is not None:
+            # The durable UUID is written into provider resources that support
+            # labels for forensic correlation. Retry safety comes from the
+            # deterministic owned name plus the durable operation ledger; an
+            # existing predecessor UUID is preserved rather than overwritten.
+            labels["fs2-storage-operation-id"] = str(tracker.provider_idempotency_id)
+        return ResourceMetadata(parent_id=parent, name=name, labels=labels)
 
     async def ensure_bucket(
         self,
