@@ -360,6 +360,89 @@ def test_frozen_python_contract_binds_static_pie_file_bytes_to_runtime_bytes() -
     assert "[*pointer_authorities, builtin_authority]" in offline
 
 
+def test_frozen_runtime_attestation_is_external_and_semantically_bound() -> None:
+    runtime = (
+        ROOT / "stages/foundation/scripts/fs2-frozen-runtime.h"
+    ).read_text(encoding="utf-8")
+    offline = (
+        ROOT / "stages/foundation/scripts/verify-public-edge-frozen-runtime.py"
+    ).read_text(encoding="utf-8")
+    launcher_build = (
+        ROOT / "stages/foundation/scripts/build-public-edge-capsule-launcher.sh"
+    ).read_text(encoding="utf-8")
+    installer_build = (
+        ROOT
+        / "stages/foundation/scripts/build-public-edge-capsule-installer-launcher.sh"
+    ).read_text(encoding="utf-8")
+    verifier_build = (
+        ROOT
+        / "stages/foundation/scripts/build-public-edge-frozen-runtime-verifier-launcher.sh"
+    ).read_text(encoding="utf-8")
+
+    # The build may name only artifact/source digests.  It cannot select a
+    # reviewer key or manufacture a matching trust digest.
+    for build in (launcher_build, installer_build):
+        assert "REVIEW_PUBLIC_KEY" not in build
+        assert "review-key" not in build
+        assert "--review" not in build
+    assert 'if [ "$#" -ne 4 ]' in verifier_build
+    assert "ABSOLUTE_STATIC_FROZEN_VERIFIER_PYTHON" in verifier_build
+    assert 'case "$python_path" in /*)' in verifier_build
+    assert "/usr/local/libexec/fs2-verify-public-edge-frozen-runtime" in verifier_build
+    assert '--python "$python_path"' in verifier_build
+    assert '--expected-python-sha256 "$python_sha256"' in verifier_build
+    assert "-static-pie -fPIE" in verifier_build
+    assert "-fno-pie" not in verifier_build
+    assert "-no-pie" not in verifier_build
+    assert 'require_static_pie_elf(launcher_raw, "frozen-runtime verifier launcher")' in offline
+    assert '"/etc/fs2/public-edge-frozen-runtime-review-key.bin"' in runtime
+    assert "O_RDONLY | O_CLOEXEC | O_NOFOLLOW" in runtime
+    assert "details.st_uid != 0" in runtime
+    assert "details.st_gid != 0" in runtime
+    assert "(details.st_mode & 07777) != 0444" in runtime
+    assert "EVP_PKEY_ED25519" in runtime
+    assert "EVP_DigestVerify(context, raw + 172U, 64U, raw, 172U)" in runtime
+    assert 'REVIEW_KEY = Path("/etc/fs2/public-edge-frozen-runtime-review-key.bin")' in offline
+    assert 'policy["review_key_sha256"]' in offline
+    assert 'read_root_authority(\n        REVIEW_KEY,' in offline
+    assert '"pkeyutl", "-verify", "-pubin", "-keyform", "DER"' in offline
+
+    # The independently signed normalized whole artifact contains the actual
+    # table and relocation bytes.  Both verifiers must also derive the same
+    # executable semantics from those bytes before accepting the artifact.
+    for source in (runtime, offline):
+        assert "FS2FRZ1" in source
+        assert "frozen module inventory" in source
+        assert "payload" in source
+        assert "PyImport_FrozenModules" in source
+        assert "_PyImport_FrozenBootstrap" in source
+        assert "_PyImport_FrozenStdlib" in source
+        assert "_PyImport_FrozenTest" in source
+        assert "PyImport_Inittab" in source
+        assert "actual CPython" in source
+        assert "relocation" in source
+    assert "offset != payload_cursor" in runtime
+    assert "fs2_hash_range(descriptor, payload->sh_offset + offset" in runtime
+    assert "fs2_verify_inventory(" in runtime
+    assert "fs2_verify_cpython_table(" in runtime
+    assert runtime.index("fs2_verify_inventory(descriptor") < runtime.index(
+        "fs2_verify_attestation(descriptor"
+    )
+    assert runtime.index("fs2_verify_cpython_table(descriptor") < runtime.index(
+        "fs2_verify_attestation(descriptor"
+    )
+    assert "offset != payload_cursor" in offline
+    assert "hashlib.sha256(payload[offset : offset + size]).digest()" in offline
+    assert "records = verify_inventory(inventory_raw, payload_raw)" in offline
+    assert "verify_cpython_table(" in offline
+    assert offline.index("records = verify_inventory(inventory_raw, payload_raw)") < offline.index(
+        "result = verify_signature("
+    )
+    assert offline.index("verify_cpython_table(", offline.index("def main()")) < offline.index(
+        "result = verify_signature("
+    )
+
+
 def test_debug_lifecycle_and_broker_handshakes_are_bounded_and_serialized() -> None:
     source = (ROOT / "inference-stack").read_text(encoding="utf-8")
     assert "def debug_lifecycle_lock" in source

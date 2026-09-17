@@ -72,6 +72,26 @@ provenance before Python starts. Python then starts with `-I -S -B`; a compiled
 prelude clears `sys.path`. Missing or unreviewed frozen code fails closed rather
 than falling back to host runtime bytes.
 
+This is not a build-selected digest convention. Neither launcher build command
+accepts a reviewer key or reviewer-key digest. Runtime verification opens the
+fixed `/etc/fs2/public-edge-frozen-runtime-review-key.bin` authority through a
+protected root-owned parent chain, requires exact root ownership and mode 0444,
+and verifies the detached `FS2ATT1` Ed25519 signature over the normalized whole
+artifact plus the inventory, payload, and provenance digests. The separately
+installed offline-verifier policy binds the same key digest, verifier,
+interpreter, and static OpenSSL identities.
+
+The signature is accepted only after semantic reconstruction. Both independent
+verifiers require a sorted, unique, gap-free inventory; hash every declared
+payload interval; reject unreviewed trailing payload; join every module name,
+code pointer, size, package flag, and terminal row to the actual CPython
+`_frozen` table through exact relative relocations; and bind
+`PyImport_FrozenModules`, `_PyImport_FrozenBootstrap`,
+`_PyImport_FrozenStdlib`, `_PyImport_FrozenTest`, and `PyImport_Inittab` to the
+reviewed closure. Because the signed normalized artifact includes those actual
+table, symbol, and relocation bytes, a build cannot substitute inert matching
+sections while executing a different frozen or builtin authority.
+
 Each logical name is also fixed to its canonical relative release path in the
 bootstrap. A signed manifest cannot relabel some other enrolled release file as
 `inference-stack`, the membership verifier, or a Terraform helper.
@@ -250,6 +270,14 @@ candidate.
    attestation sections described above. Both the offline verifier
    `verify-public-edge-frozen-runtime.py` and the runtime header parse that
    closure; a caller-supplied review digest is not a build argument.
+   Build the independently installed verifier launcher with the same exact
+   runtime contract and four arguments:
+   `stages/foundation/scripts/build-public-edge-frozen-runtime-verifier-launcher.sh /absolute/new-verifier-launcher VERIFIER_SOURCE_SHA256 /absolute/static-frozen-verifier-python FROZEN_VERIFIER_PYTHON_SHA256`.
+   The script first asks the already accepted fixed verifier to validate those
+   exact interpreter bytes, then emits an interpreter-free dependency-closed
+   `-static-pie -fPIE` launcher. The installed policy and Python verifier both
+   require that launcher to be `ET_DYN` with the bounded reviewed self-RELA
+   closure; static `ET_EXEC` is not accepted for this launcher.
 2. Assemble the versioned release bundle and complete exhaustive manifest. Do
    not include a symlink, socket, device, secret, credential, state, plan,
    customer payload, or mutable cache.

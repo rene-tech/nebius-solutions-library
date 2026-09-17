@@ -10,7 +10,12 @@
  * artifact digest uses one exact normalization: it hashes the entire ELF in
  * file order while excluding only the attestation section bytes. This avoids
  * a cryptographic fixed point. The signer key is a separately provisioned,
- * root-owned authority outside both the Python artifact and launcher build.
+ * root-owned authority outside both the Python artifact and launcher build;
+ * no build argument or compiled digest selects that key. The sections are not
+ * accepted as opaque digests: the verifier parses every inventory record,
+ * hashes its exact payload interval, and joins its name/code/flags/size to the
+ * actual CPython _frozen table and all four frozen pointer authorities through
+ * the bounded static-PIE relocation table before accepting the signature.
  */
 
 #include <openssl/evp.h>

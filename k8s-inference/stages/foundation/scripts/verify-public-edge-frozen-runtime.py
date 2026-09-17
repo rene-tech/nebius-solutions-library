@@ -5,7 +5,11 @@ directly, verifies the exact frozen payload against a complete canonical module
 inventory, joins reproducible build provenance, and verifies normalized
 Platform Security Ed25519 review with an independently pinned static OpenSSL.
 Runtime launchers separately re-hash all four reviewed ELF sections before any
-Python instruction executes.
+Python instruction executes. Neither verifier treats those sections as opaque:
+the canonical inventory is parsed record by record, each record is joined to
+its payload digest and the actual CPython frozen table/relocations, and the
+detached signature is checked against a fixed root-owned policy/key authority
+that is not selected by the build invocation.
 """
 
 from __future__ import annotations
