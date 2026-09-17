@@ -91,3 +91,4 @@ if __name__ == "__main__":
         print(f"error: {error}", file=sys.stderr)
         raise SystemExit(2) from error
 
+# End of read-only entrypoint.
