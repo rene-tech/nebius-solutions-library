@@ -243,3 +243,33 @@ Lock, Dockerfile and context-policy hashes remain unchanged from the table above
 Admin `6428b350...`, schema 32, Cosmos adapter/template/runtime/snapshot and
 customer settings remain unchanged. Root owns release deployment and fresh
 public acceptance; this build lane made no cluster mutations.
+
+### Release-145 bounded operational readback
+
+At **2026-09-17 15:29:56 UTC**, all three CP replicas and both model-controller
+replicas were Ready on exact index `849020ea...`; the unchanged admin remained
+Ready 2/2. Each CP mounted the same `608b68ad...` envelope and `d556dcfd...`
+bundle data hashes, preserving 20 model qualifications, 23 template revisions
+and five voice qualifications. This is a local contract check, not a new public
+speech discovery or inference claim.
+
+All three `/metrics` responses were HTTP 200 with 168 customer-operation and
+165 semantic-exchange series per pod. Actual Prometheus targets matched those
+three current pods, were up without scrape errors, and returned both families.
+All 13 rules had healthy evaluation and no evaluation errors. Both new
+failure-rate rules remained inactive; the two existing lifecycle alerts and
+three existing certificate alerts were **firing**, not resolved or silenced.
+
+GPU observers were **15/15 Ready and Available, 12/15 updated** at this instant.
+Readiness does not prove homogeneous observer versions, uninterrupted fleet
+coverage or exact per-request attribution when model replicas are ambiguous.
+The previous 14/16 observation remains retained rather than rewritten.
+
+Protected receipt:
+`/home/tux/secure-handoff/cosmos-stockholm-rollout-20260917/final-deployment-verification-r145.json`,
+SHA-256 `8062cf90707b03e3d98ae19f88044002eea986f2cde0d995313945243de31c95`.
+The release owner's public-surface receipt was not present at capture, so that
+gate remains explicitly separate and was not duplicated. This one read-only
+pass performed no inference, admission, key creation, cleanup, alert change or
+live mutation. It verifies running-image/contract/telemetry availability, not
+Helm-history completion or customer/model qualification.
