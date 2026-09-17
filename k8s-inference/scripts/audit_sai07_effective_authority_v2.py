@@ -21,9 +21,16 @@ from typing import Any
 from audit_sai07_effective_authority import Client, AuditError, canonical
 
 SCHEMA = "fs2-serve.nebius.ai/sai07-effective-authority-audit/v2"
-MATRIX_VERSION = "sai07-authority-matrix-2026-09-17-v2"
+MATRIX_VERSION = "sai07-authority-matrix-2026-09-17-v3"
 SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
-PROFILES = {"platform", "inactive-owner", "token-issuer", "receipt-service-account", "metadata-reader"}
+PROFILES = {
+    "external-executor",
+    "inactive-owner",
+    "metadata-reader",
+    "platform",
+    "receipt-service-account",
+    "token-issuer",
+}
 FIXED_PERSISTENT_VOLUMES = {
     "fs2-sai07-ref-bioir-boltz2",
     "fs2-sai07-ref-bioir-coverage",
@@ -53,6 +60,7 @@ CLUSTER_RESOURCES = (
     ("certificates.k8s.io", "certificatesigningrequests", "approval"),
     ("certificates.k8s.io", "signers", ""),
     ("authentication.k8s.io", "tokenreviews", ""),
+    ("authentication.k8s.io", "selfsubjectreviews", ""),
     ("authorization.k8s.io", "subjectaccessreviews", ""),
     ("authorization.k8s.io", "selfsubjectaccessreviews", ""),
     ("authorization.k8s.io", "selfsubjectrulesreviews", ""),
@@ -112,9 +120,49 @@ def check_id(verb: str, group: str, resource: str, subresource: str, namespace: 
 
 def expected_allowed(profile: str, namespaces: list[str], persistent_volume_names: list[str]) -> set[str]:
     result = {
+        check_id("create", "authentication.k8s.io", "selfsubjectreviews", "", ""),
         check_id("create", "authorization.k8s.io", "selfsubjectaccessreviews", "", ""),
         check_id("create", "authorization.k8s.io", "selfsubjectrulesreviews", "", ""),
     }
+    if profile == "external-executor":
+        # The execution identity can read the exact signed object inventory,
+        # create only the empty anchor Secret, and create/SSA one immutable
+        # generation-addressed acknowledgement ConfigMap. Admission, whose
+        # exact live object is part of the signed inventory, constrains those
+        # otherwise name-unbounded CREATE/PATCH edges. It has no update,
+        # delete, RBAC, admission, workload, proxy, token, or impersonation
+        # authority.
+        for verb in ("get", "list"):
+            result.add(check_id(verb, "", "namespaces", "", ""))
+        for group, resource in (
+            ("rbac.authorization.k8s.io", "clusterroles"),
+            ("rbac.authorization.k8s.io", "clusterrolebindings"),
+            ("admissionregistration.k8s.io", "validatingadmissionpolicies"),
+            ("admissionregistration.k8s.io", "validatingadmissionpolicybindings"),
+        ):
+            result.add(check_id("get", group, resource, "", ""))
+        for name in persistent_volume_names:
+            result.add(check_id("get", "", "persistentvolumes", "", "", name))
+        readable = {
+            ("", "configmaps"),
+            ("", "serviceaccounts"),
+            ("apps", "daemonsets"),
+            ("networking.k8s.io", "networkpolicies"),
+            ("rbac.authorization.k8s.io", "roles"),
+            ("rbac.authorization.k8s.io", "rolebindings"),
+        }
+        for namespace in namespaces:
+            for group, resource in readable:
+                result.add(check_id("get", group, resource, "", namespace))
+        result.update(
+            {
+                check_id("create", "", "configmaps", "", "fs2-system"),
+                check_id("patch", "", "configmaps", "", "fs2-system"),
+                check_id("create", "", "secrets", "", "fs2-system"),
+                check_id("list", "", "secrets", "", "fs2-system"),
+            }
+        )
+        return result
     if profile == "token-issuer":
         result.update(
             {

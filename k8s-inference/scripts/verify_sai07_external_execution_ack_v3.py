@@ -12,6 +12,7 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -71,7 +72,13 @@ def validate(query: dict[str, str]) -> dict[str, str]:
             "acknowledgement_max_bytes",
             "acknowledgement_name_prefix",
             "acknowledgement_namespace",
+            "authority_audit_path",
+            "authority_audit_sha256",
             "field_manager",
+            "owner_token_audience",
+            "owner_token_max_seconds",
+            "secret_transport_path",
+            "secret_transport_sha256",
             "source_path",
             "source_sha256",
             "verifier_path",
@@ -79,22 +86,41 @@ def validate(query: dict[str, str]) -> dict[str, str]:
         },
         "v3 executor pin",
     )
+    if (
+        executor["owner_token_audience"] != "https://kubernetes.default.svc"
+        or executor["owner_token_max_seconds"] != 600
+    ):
+        raise AckV3Error("repository owner-token boundary differs from the reviewed contract")
     source_relative = Path(evidence.nonempty(executor["source_path"], "executor source path"))
     verifier_relative = Path(evidence.nonempty(executor["verifier_path"], "ack verifier path"))
+    audit_relative = Path(
+        evidence.nonempty(executor["authority_audit_path"], "authority audit path")
+    )
+    transport_relative = Path(
+        evidence.nonempty(executor["secret_transport_path"], "Secret transport path")
+    )
     if (
         source_relative.is_absolute()
         or verifier_relative.is_absolute()
+        or audit_relative.is_absolute()
+        or transport_relative.is_absolute()
         or ".." in source_relative.parts
         or ".." in verifier_relative.parts
+        or ".." in audit_relative.parts
+        or ".." in transport_relative.parts
     ):
         raise AckV3Error("executor source pins must be repository-relative without traversal")
     source = ROOT / source_relative
     verifier = ROOT / verifier_relative
+    audit = ROOT / audit_relative
+    transport = ROOT / transport_relative
     if verifier.resolve() != Path(__file__).resolve():
         raise AckV3Error("repository contract selects another acknowledgement verifier")
     for path, expected, label in (
         (source, executor["source_sha256"], "executor"),
         (verifier, executor["verifier_sha256"], "ack verifier"),
+        (audit, executor["authority_audit_sha256"], "authority audit"),
+        (transport, executor["secret_transport_sha256"], "Secret transport"),
     ):
         actual = hashlib.sha256(
             trust_v3.read_regular(path, f"{label} source", 4 * 1024 * 1024)
@@ -107,6 +133,11 @@ def validate(query: dict[str, str]) -> dict[str, str]:
         "external execution acknowledgement",
         executor["acknowledgement_max_bytes"],
     )
+    if hashlib.sha256(ack_bytes).hexdigest() != digest(
+        query["expected_acknowledgement_sha256"],
+        "planned acknowledgement SHA-256",
+    ):
+        raise AckV3Error("apply-time acknowledgement differs from the planned exact file")
     exact(
         ack,
         {
@@ -118,14 +149,23 @@ def validate(query: dict[str, str]) -> dict[str, str]:
             "consumer",
             "context_sha256",
             "contract_sha256",
+            "custody_epoch_generation",
+            "custody_epoch_id",
+            "custody_epoch_principal_id",
+            "custody_epoch_sha256",
             "executor_source_sha256",
             "expires_at",
             "issued_at",
             "kube_system_uid",
             "manifest_bundle_sha256",
+            "owner_authority_after_sha256",
+            "owner_authority_before_sha256",
+            "owner_token_jti_sha256",
             "phase",
             "platform_objects_after_sha256",
             "platform_objects_before_sha256",
+            "platform_state_all_addresses_sha256",
+            "platform_state_all_object_count",
             "platform_state_addresses_sha256",
             "platform_state_lineage",
             "platform_state_serial",
@@ -134,6 +174,7 @@ def validate(query: dict[str, str]) -> dict[str, str]:
             "receipt_consumption_sha256",
             "schema",
             "signature",
+            "token_anchor",
         },
         "external execution acknowledgement",
     )
@@ -170,6 +211,9 @@ def validate(query: dict[str, str]) -> dict[str, str]:
         "consumer": query["expected_consumer"],
         "context_sha256": digest(query["expected_context_sha256"], "expected context SHA-256"),
         "contract_sha256": hashlib.sha256(contract_bytes).hexdigest(),
+        "custody_epoch_generation": str(contract["custody_epoch"]["generation"]),
+        "custody_epoch_id": contract["custody_epoch"]["epoch_id"],
+        "custody_epoch_principal_id": contract["custody_epoch"]["principal_id"],
         "executor_source_sha256": executor["source_sha256"],
         "kube_system_uid": query["kube_system_uid"],
         "phase": query["expected_phase"],
@@ -183,11 +227,24 @@ def validate(query: dict[str, str]) -> dict[str, str]:
         "platform_objects_after_sha256",
         "platform_objects_before_sha256",
         "platform_state_addresses_sha256",
+        "platform_state_all_addresses_sha256",
         "receipt_consumption_sha256",
+        "custody_epoch_sha256",
+        "owner_authority_after_sha256",
+        "owner_authority_before_sha256",
+        "owner_token_jti_sha256",
     ):
         digest(ack[field], field)
     if ack["platform_objects_before_sha256"] != ack["platform_objects_after_sha256"]:
         raise AckV3Error("Terraform-retained objects changed across external acknowledgement SSA")
+    if ack["owner_authority_before_sha256"] != ack["owner_authority_after_sha256"]:
+        raise AckV3Error("external owner authority changed across acknowledgement SSA")
+    if (
+        not isinstance(ack["platform_state_all_object_count"], str)
+        or not ack["platform_state_all_object_count"].isdigit()
+        or int(ack["platform_state_all_object_count"]) < 1
+    ):
+        raise AckV3Error("complete platform-state object count is invalid")
     if ack["phase"] == "prepare":
         if (
             ack["receipt_bundle_sha256"] != ZERO_SHA256
@@ -225,6 +282,27 @@ def validate(query: dict[str, str]) -> dict[str, str]:
         )
     for field in ("field_set_sha256", "object_sha256"):
         digest(live_ack[field], f"acknowledgement {field}")
+    token_anchor = exact(
+        ack["token_anchor"],
+        {
+            "custody_epoch_sha256",
+            "name",
+            "namespace",
+            "resource_version",
+            "uid",
+        },
+        "metadata-only token-anchor identity",
+    )
+    if (
+        token_anchor["name"] != "fs2-pod-security-token-anchor"
+        or token_anchor["namespace"] != "fs2-system"
+        or token_anchor["custody_epoch_sha256"] != ack["custody_epoch_sha256"]
+        or not all(
+            isinstance(token_anchor[field], str) and token_anchor[field]
+            for field in ("uid", "resource_version")
+        )
+    ):
+        raise AckV3Error("metadata-only token-anchor identity differs")
     if ack["authority_key_id"] != authority["key_id"]:
         raise AckV3Error("acknowledgement authority key differs from the repository pin")
     return {
@@ -233,6 +311,8 @@ def validate(query: dict[str, str]) -> dict[str, str]:
         "action": ack["action"],
         "bundle_sha256": ack["receipt_bundle_sha256"],
         "consumer": ack["consumer"],
+        "custody_epoch_id": ack["custody_epoch_id"],
+        "custody_epoch_sha256": ack["custody_epoch_sha256"],
         "phase": ack["phase"],
         "valid": "true",
     }
@@ -240,11 +320,13 @@ def validate(query: dict[str, str]) -> dict[str, str]:
 
 def main() -> int:
     try:
-        query = json.load(sys.stdin)
+        raw_query = os.environ.get("FS2_SAI07_APPLY_QUERY")
+        query = json.loads(raw_query) if raw_query is not None else json.load(sys.stdin)
         required = {
             "ack_path",
             "cluster_id",
             "expected_action",
+            "expected_acknowledgement_sha256",
             "expected_consumer",
             "expected_context_sha256",
             "expected_phase",

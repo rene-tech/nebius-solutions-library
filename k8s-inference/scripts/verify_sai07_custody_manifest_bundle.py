@@ -356,7 +356,25 @@ def validate(bundle: dict[str, Any], query: dict[str, str]) -> dict[str, str]:
         if not isinstance(labels, dict) or labels.get("security.fs2.nebius.ai/custody-owner") != "external":
             raise BundleError("every custody manifest must carry the external-owner label")
         if kind == "Secret":
-            if identity not in REQUIRED_OBJECTS or manifest.get("immutable") is not True or manifest.get("type") != "Opaque" or manifest.get("data", {}) != {} or "stringData" in manifest:
+            annotations = metadata.get("annotations")
+            if (
+                identity not in REQUIRED_OBJECTS
+                or labels
+                != {
+                    "security.fs2.nebius.ai/custody-owner": "external",
+                    "security.fs2.nebius.ai/role": "token-anchor",
+                }
+                or not isinstance(annotations, dict)
+                or set(annotations)
+                != {"security.fs2.nebius.ai/custody-epoch-sha256"}
+                or not SHA256_RE.fullmatch(
+                    str(annotations["security.fs2.nebius.ai/custody-epoch-sha256"])
+                )
+                or manifest.get("immutable") is not True
+                or manifest.get("type") != "Opaque"
+                or manifest.get("data", {}) != {}
+                or "stringData" in manifest
+            ):
                 raise BundleError("only the immutable empty token-anchor Secret is permitted")
         if kind == "ServiceAccount" and (
             manifest.get("automountServiceAccountToken") is not False
@@ -560,6 +578,55 @@ def validate(bundle: dict[str, Any], query: dict[str, str]) -> dict[str, str]:
         observed.add(identity)
     if not REQUIRED_OBJECTS.issubset(observed):
         raise BundleError("manifest bundle omits mandatory custody, ledger, token, or fence objects")
+    custody_policy = manifests[
+        "/".join(
+            (
+                "admissionregistration.k8s.io/v1",
+                "ValidatingAdmissionPolicy",
+                "",
+                "fs2-pod-security-custody-boundary",
+            )
+        )
+    ]
+    custody_spec = custody_policy.get("spec")
+    if not isinstance(custody_spec, dict) or custody_spec.get("failurePolicy") != "Fail":
+        raise BundleError("external custody admission must fail closed")
+    custody_rules = custody_spec.get("matchConstraints", {}).get("resourceRules", [])
+    if not any(
+        isinstance(rule, dict)
+        and rule.get("apiGroups") == [""]
+        and rule.get("apiVersions") == ["v1"]
+        and rule.get("operations") == ["CREATE", "UPDATE", "DELETE"]
+        and "secrets" in rule.get("resources", [])
+        for rule in custody_rules
+    ):
+        raise BundleError("external custody admission omits token-anchor Secret writes")
+    custody_expressions = [
+        item.get("expression")
+        for item in custody_spec.get("validations", [])
+        if isinstance(item, dict) and isinstance(item.get("expression"), str)
+    ]
+    anchor_fragments = (
+        "fs2-pod-security-token-anchor",
+        "request.operation == 'CREATE'",
+        "request.userInfo.username !=",
+        "object.metadata.namespace == 'fs2-system'",
+        "object.immutable == true",
+        "object.type == 'Opaque'",
+        "object.data == {}",
+        "!has(object.stringData)",
+        "security.fs2.nebius.ai/custody-epoch-sha256",
+        "security.fs2.nebius.ai/role",
+        "token-anchor",
+        "authentication.kubernetes.io/credential-id",
+    )
+    if any(
+        not any(fragment in expression for expression in custody_expressions)
+        for fragment in anchor_fragments
+    ):
+        raise BundleError(
+            "external custody admission does not enforce the exact immutable empty token anchor"
+        )
     token_policy = manifests[
         "/".join(
             (

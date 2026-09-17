@@ -2,13 +2,17 @@
 """Collect bounded, read-only provider and backend evidence for SAI-07.
 
 This is the provider-native adapter for the v3 custody contract.  It obtains
-identity, IAM, group, non-secret credential-metadata and bucket data through the Nebius
-SDK, and obtains S3 control/state data through read-only S3 APIs.  It never
-calls AccessKeyService: that API's list response may itself carry
+identity, IAM, group and bucket data through the Nebius SDK, and obtains S3
+control/state data through read-only S3 APIs.  It never calls any credential
+enumeration API.  AccessKeyService list responses may themselves carry
 ``status.secret`` and therefore cannot be made metadata-only by filtering after
-receipt.  Backend authority is instead bounded by an exact singleton IAM group
-and reviewed native/S3 bucket policies.  It never requests a credential secret
-and never emits Terraform state on stdout.  Each
+receipt; enumerating another credential class would not prove the caller that
+signed an S3 request.  Backend authority is instead bound to a unique
+service-account custody epoch, an exact group/access-permit closure and reviewed
+native/S3 bucket policies.  Prior epoch principals remain present but must have
+zero group membership and zero access permits; their credentials are preserved
+and cannot inherit the current epoch's authority.  It never requests a
+credential secret and never emits Terraform state on stdout.  Each
 output is an O_EXCL, mode-0600 generation file; a failed generation is retained
 and a retry must use a fresh collection ID and fresh paths.
 
@@ -37,10 +41,11 @@ from nebius.api.nebius.iam import v1 as iam
 from nebius.api.nebius.storage import v1 as storage
 from nebius.sdk import SDK
 
-SCHEMA = "fs2-serve.nebius.ai/sai07-authoritative-provider-evidence/v2"
-BACKEND_SCHEMA = "fs2-serve.nebius.ai/sai07-authoritative-backend-evidence/v2"
-CONTRACT_SCHEMA = "fs2-serve.nebius.ai/sai07-evidence-collection-contract/v2"
+SCHEMA = "fs2-serve.nebius.ai/sai07-authoritative-provider-evidence/v3"
+BACKEND_SCHEMA = "fs2-serve.nebius.ai/sai07-authoritative-backend-evidence/v3"
+CONTRACT_SCHEMA = "fs2-serve.nebius.ai/sai07-evidence-collection-contract/v3"
 COLLECTION_RE = re.compile(r"^[a-z0-9][a-z0-9-]{15,95}$")
+SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "stages" / "pod-security-custody" / "custody-trust-lock-v3.json"
 
@@ -75,31 +80,64 @@ def read_contract() -> dict[str, Any]:
         raise CollectionError("v3 custody contract must be canonical JSON")
     if value.get("schema") != CONTRACT_SCHEMA or value.get("activation") != "active":
         raise CollectionError("v3 authoritative evidence collection is not active")
-    credential_projection = value.get("backend_credential_projection")
-    if not isinstance(credential_projection, dict) or set(credential_projection) != {
-        "endpoint",
-        "method",
-        "response_schema_sha256",
-        "server_side_fields",
+    dependencies = value.get("dependencies")
+    if not isinstance(dependencies, dict) or set(dependencies) != {"sai03", "sai04"}:
+        raise CollectionError("v3 contract omits exact integration dependencies")
+    for dependency, details in dependencies.items():
+        if (
+            not isinstance(details, dict)
+            or set(details) != {"accepted_commit", "status"}
+            or details.get("status") != "accepted"
+            or not isinstance(details.get("accepted_commit"), str)
+            or not re.fullmatch(r"[a-f0-9]{40}", details["accepted_commit"])
+        ):
+            raise CollectionError(f"{dependency} is not pinned to an accepted exact commit")
+    epoch = value.get("custody_epoch")
+    if not isinstance(epoch, dict) or set(epoch) != {
+        "epoch_id",
+        "generation",
+        "previous_activation_sha256",
+        "principal_id",
+        "required_group_ids",
+        "required_permits",
+        "retired_epochs",
+        "retirement_mode",
         "status",
     }:
-        raise CollectionError("v3 contract omits the backend credential projection boundary")
-    # The pinned provider API offers no access-key list/get projection that is
-    # incapable of returning status.secret.  Do not silently substitute a CLI
-    # JSONPath/client filter: the secret has already reached that process.  A
-    # later reviewed source revision must implement and pin a genuinely
-    # server-side metadata-only endpoint before this collector can activate.
-    if credential_projection != {
-        "endpoint": None,
-        "method": None,
-        "response_schema_sha256": None,
-        "server_side_fields": [],
-        "status": "blocked-no-provider-server-side-metadata-projection",
-    }:
-        raise CollectionError("unreviewed backend credential projection must not activate")
-    raise CollectionError(
-        "provider has no reviewed server-side access-key metadata projection; collection remains blocked"
-    )
+        raise CollectionError("v3 contract omits the custody epoch boundary")
+    generation = epoch.get("generation")
+    if (
+        epoch.get("status") != "active-reviewed"
+        or not COLLECTION_RE.fullmatch(str(epoch.get("epoch_id", "")))
+        or not isinstance(generation, int)
+        or isinstance(generation, bool)
+        or generation < 1
+        or not str(epoch.get("principal_id", "")).startswith("serviceaccount-")
+        or epoch.get("retirement_mode")
+        != "authorization-denied-in-place-credentials-preserved"
+    ):
+        raise CollectionError("v3 custody epoch is not an active reviewed service-account generation")
+    retired = epoch.get("retired_epochs")
+    groups = epoch.get("required_group_ids")
+    permits = epoch.get("required_permits")
+    if (
+        not isinstance(retired, list)
+        or not isinstance(groups, list)
+        or not groups
+        or groups != sorted(set(groups))
+        or not isinstance(permits, list)
+        or not permits
+    ):
+        raise CollectionError("v3 custody epoch inventory is incomplete or non-canonical")
+    if generation == 1:
+        if epoch.get("previous_activation_sha256") is not None or retired:
+            raise CollectionError("initial custody epoch unexpectedly claims retired predecessors")
+    elif (
+        not isinstance(epoch.get("previous_activation_sha256"), str)
+        or not SHA256_RE.fullmatch(epoch["previous_activation_sha256"])
+        or len(retired) != generation - 1
+    ):
+        raise CollectionError("rotated custody epoch omits its prior activation chain")
     collector = value.get("collector")
     if not isinstance(collector, dict):
         raise CollectionError("v3 custody contract omits collector pinning")
@@ -206,16 +244,8 @@ def metadata_id(value: dict[str, Any], label: str) -> str:
     return identifier
 
 
-def account(identifier: str) -> iam.Account:
-    if identifier.startswith("serviceaccount-"):
-        return iam.Account(service_account=iam.Account__ServiceAccount(id=identifier))
-    if identifier.startswith("tenantuseraccount-"):
-        return iam.Account(user_account=iam.Account__UserAccount(id=identifier))
-    raise CollectionError(f"unsupported account identity {identifier}")
-
-
-def profile_principal(profile: dict[str, Any], tenant_id: str) -> str:
-    """Derive the IAM subject used for the scoped provider reads."""
+def profile_principal(profile: dict[str, Any], project_id: str) -> str:
+    """Derive the unique active service account used for the custody epoch."""
 
     service_account = profile.get("service_account_profile")
     user = profile.get("user_profile")
@@ -223,17 +253,17 @@ def profile_principal(profile: dict[str, Any], tenant_id: str) -> str:
         info = service_account.get("info")
         if not isinstance(info, dict):
             raise CollectionError("service-account profile omits account information")
+        metadata = info.get("metadata")
+        status = info.get("status")
+        if (
+            not isinstance(metadata, dict)
+            or metadata.get("parent_id") != project_id
+            or not isinstance(status, dict)
+            or status.get("state") != "ACTIVE"
+        ):
+            raise CollectionError("provider profile is not an active service account in the custody project")
         return metadata_id(info, "provider collector service account")
-    if isinstance(user, dict) and service_account in (None, {}):
-        matches = [
-            item.get("tenant_user_account_id")
-            for item in user.get("tenants", [])
-            if isinstance(item, dict) and item.get("tenant_id") == tenant_id
-        ]
-        if len(matches) != 1 or not isinstance(matches[0], str) or not matches[0]:
-            raise CollectionError("user profile does not resolve exactly one in-scope tenant principal")
-        return matches[0]
-    raise CollectionError("provider collector profile is anonymous, ambiguous, or unsupported")
+    raise CollectionError("provider collector profile is not the unique custody service account")
 
 
 def safe_json(value: Any) -> Any:
@@ -303,9 +333,6 @@ async def provider_artifact(
         groups = iam.GroupServiceClient(sdk)
         memberships = iam.GroupMembershipServiceClient(sdk)
         permits = iam.AccessPermitServiceClient(sdk)
-        auth_keys = iam.AuthPublicKeyServiceClient(sdk)
-        static_keys = iam.StaticKeyServiceClient(sdk)
-        federated = iam.FederatedCredentialsServiceClient(sdk)
         buckets = storage.BucketServiceClient(sdk)
 
         started = instant()
@@ -314,7 +341,7 @@ async def provider_artifact(
             "nebius.iam.v1.ProfileService", "Get", profile_request, sdk.whoami()
         )
         profile = profile_entry["response"]
-        whoami = profile_principal(profile, scope["tenant_id"])
+        whoami = profile_principal(profile, scope["project_id"])
         tenant_request = iam.GetTenantRequest(id=scope["tenant_id"])
         project_request = iam.GetProjectRequest(id=scope["project_id"])
         bucket_request = storage.GetBucketRequest(id=scope["backend_bucket_resource_id"])
@@ -412,12 +439,12 @@ async def provider_artifact(
                 maximum=max_pages,
             )
         calls["member_of"] = {}
-        for principal_id in sorted(principal_ids):
-            calls["member_of"][principal_id] = await pages(
+        for subject_id in sorted(principal_ids | group_ids):
+            calls["member_of"][subject_id] = await pages(
                 "nebius.iam.v1.GroupMembershipService",
                 "ListMemberOf",
-                lambda token, principal_id=principal_id: iam.ListMemberOfRequest(
-                    subject_id=principal_id, page_size=page_size, page_token=token, filter=""
+                lambda token, subject_id=subject_id: iam.ListMemberOfRequest(
+                    subject_id=subject_id, page_size=page_size, page_token=token, filter=""
                 ),
                 memberships.list_member_of,
                 maximum=max_pages,
@@ -434,46 +461,6 @@ async def provider_artifact(
                 maximum=max_pages,
             )
 
-        calls["auth_public_keys"] = {}
-        for principal_id in sorted(principal_ids):
-            subject = account(principal_id)
-            calls["auth_public_keys"][principal_id] = await pages(
-                "nebius.iam.v1.AuthPublicKeyService",
-                "ListByAccount",
-                lambda token, subject=subject: iam.ListAuthPublicKeyByAccountRequest(
-                    account=subject, page_size=page_size, page_token=token, filter=""
-                ),
-                auth_keys.list_by_account,
-                maximum=max_pages,
-            )
-        calls["static_keys"] = {}
-        service_account_ids = {
-            metadata_id(item, "service account")
-            for collection in calls["service_accounts_by_project"].values()
-            for page in collection
-            for item in page["response"].get("items", [])
-        }
-        for principal_id in sorted(service_account_ids):
-            calls["static_keys"][principal_id] = await pages(
-                "nebius.iam.v1.StaticKeyService",
-                "List",
-                lambda token, principal_id=principal_id: iam.ListStaticKeysRequest(
-                    parent_id=principal_id, page_size=page_size, page_token=token, filter=""
-                ),
-                static_keys.list,
-                maximum=max_pages,
-            )
-        calls["federated_credentials_by_project"] = {}
-        for project_id in sorted(project_ids):
-            calls["federated_credentials_by_project"][project_id] = await pages(
-                "nebius.iam.v1.FederatedCredentialsService",
-                "List",
-                lambda token, project_id=project_id: iam.ListFederatedCredentialsRequest(
-                    parent_id=project_id, page_size=page_size, page_token=token, filter=""
-                ),
-                federated.list,
-                maximum=max_pages,
-            )
         return {
             "calls": calls,
             "collection_id": collection_id,

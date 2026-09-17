@@ -166,6 +166,9 @@ def test_rollout_gate_consumes_prior_signed_state_without_phase_skips() -> None:
     assert '"downstream-acknowledgement"' in verifier
     assert 'resource "kubernetes_config_map_v1" "ledger"' not in active_gate
     assert 'resource "terraform_data" "verified"' in active_gate
+    assert 'provisioner "local-exec"' in active_gate
+    assert "FS2_SAI07_APPLY_QUERY" in active_gate
+    assert "expected_acknowledgement_sha256" in active_gate
     assert "external_acknowledgement_sha256" in active_gate
     assert "receipt_bundle_sha256" in active_gate
     assert "platform_objects_before_sha256" in execution_ack
@@ -451,7 +454,8 @@ def test_custody_provider_is_distinct_and_legacy_objects_are_adopted_without_del
     versions = _source("stages/pod-security-custody/versions.tf")
     trust_lock = json.loads(_source("stages/pod-security-custody/custody-trust-lock.json"))
 
-    assert 'alias = "pod_security_custody"' not in providers
+    assert 'alias          = "pod_security_custody"' in providers
+    assert "owner_kubeconfig_path" not in providers
     assert "custody_owner_kubeconfig_path" not in providers
     assert 'provider "kubernetes"' in custody
     assert "owner_kubeconfig_path" in custody_variables
@@ -485,6 +489,9 @@ def test_custody_provider_is_distinct_and_legacy_objects_are_adopted_without_del
     assert "REQUIRED_OBJECTS" in manifest_verifier
     assert "DaemonSet" in manifest_verifier
     assert "STATIC_STATE" in manifest_verifier_v2
+    assert 'node_observability_config_policy[0]' in manifest_verifier_v2
+    assert 'snapshot_pod_policy[0]' in manifest_verifier_v2
+    assert "REQUIRED_STATIC_STATE" in manifest_verifier_v2
     assert "DYNAMIC_ADDRESS_RE" in manifest_verifier_v2
     assert "present_addresses != set(by_address)" in manifest_verifier_v2
     assert "live object changed before SSA" in manifest_verifier_v2
@@ -499,17 +506,17 @@ def test_v3_custody_uses_raw_authoritative_evidence_and_retains_platform_state()
     pipeline = _source("scripts/run_sai07_retained_state_custody_v3.py")
     executor = _source("scripts/run_sai07_external_execution_v3.py")
     acknowledgement = _source("scripts/verify_sai07_external_execution_ack_v3.py")
+    owner_transport = _source("scripts/sai07_owner_secret_transport_v3.py")
+    authority_audit = _source("scripts/audit_sai07_effective_authority_v2.py")
+    retained_snapshot = _source("stages/foundation/pod_security_retained_snapshot_custody.tf")
     readme = _source("stages/pod-security-custody/README.md")
     lock = json.loads(_source("stages/pod-security-custody/custody-trust-lock-v3.json"))
 
     assert lock["activation"] == "blocked"
-    assert lock["backend_credential_projection"] == {
-        "endpoint": None,
-        "method": None,
-        "response_schema_sha256": None,
-        "server_side_fields": [],
-        "status": "blocked-no-provider-server-side-metadata-projection",
-    }
+    assert lock["custody_epoch"]["status"] == "blocked-awaiting-authoritative-epoch"
+    assert lock["custody_epoch"]["retirement_mode"] == "authorization-denied-in-place-credentials-preserved"
+    assert lock["dependencies"]["sai03"]["status"] == "blocked-unaccepted"
+    assert lock["dependencies"]["sai04"]["status"] == "blocked-unaccepted"
     assert len(lock["authorities"]) == 3
     assert lock["executor"]["source_path"] == "scripts/run_sai07_external_execution_v3.py"
     assert lock["executor"]["verifier_path"] == "scripts/verify_sai07_external_execution_ack_v3.py"
@@ -523,10 +530,11 @@ def test_v3_custody_uses_raw_authoritative_evidence_and_retains_platform_state()
     assert "ListAccessKeysByAccountRequest" not in collector
     assert "AccessKeyServiceClient" not in collector
     assert "status.secret" in collector
-    assert "server-side access-key metadata projection" in collector
-    assert "CLI JSONPath/client filter" in collector
+    assert "never calls any credential" in collector
     assert 'calls["service_accounts_by_project"]' in collector
-    assert 'calls["federated_credentials_by_project"]' in collector
+    assert 'calls["federated_credentials_by_project"]' not in collector
+    assert 'calls["static_keys"]' not in collector
+    assert 'calls["auth_public_keys"]' not in collector
     assert '"request_id": request_id' in collector and '"trace_id": trace_id' in collector
     assert "get_secret" not in collector.lower()
     assert 'os.O_EXCL' in collector and 'os.fsync' in collector
@@ -543,6 +551,8 @@ def test_v3_custody_uses_raw_authoritative_evidence_and_retains_platform_state()
     assert "provider request ID" in evidence and "S3 {field} request ID" in evidence
     assert "platform Terraform state is not version 4" in evidence
     assert "custody_addresses_sha256" in evidence
+    assert "all_managed_addresses_sha256" in evidence
+    assert "pod_security_custody provider has unclassified managed address" in evidence
     assert "provider_evidence_path" in trust and "backend_evidence_path" in trust
     assert "platform_state_path" in trust
     assert "repository-pinned contract path" in trust
@@ -562,9 +572,20 @@ def test_v3_custody_uses_raw_authoritative_evidence_and_retains_platform_state()
     assert "a Terraform-retained object changed across acknowledgement SSA" in executor
     assert "write_exclusive" in executor
     assert "receipt_consumption_sha256" in executor
+    assert "run_owner_authority_audit" in executor
+    assert "ensure_empty_immutable_anchor" in executor
+    assert "identity == (\"v1\", \"Secret\", \"fs2-system\", \"fs2-pod-security-token-anchor\")" in executor
+    assert "PartialObjectMetadataList" in owner_transport
+    assert "METADATA_MEDIA_TYPE" in owner_transport
+    assert "token-anchor POST returned Secret payload fields" in owner_transport
+    assert "external execution identity may create only" in admission
+    assert '"external-executor"' in authority_audit
+    assert 'snapshot_pod_policy" {' in retained_snapshot
+    assert "prevent_destroy = true" in retained_snapshot
     assert "platform_objects_before_sha256" in acknowledgement
     assert "platform_objects_after_sha256" in acknowledgement
     assert "repository-pinned v3 custody activation is blocked" in acknowledgement
+    assert "FS2_SAI07_APPLY_QUERY" in acknowledgement
     assert "RETAINED REJECTED V2 ROOT" in readme
     assert "SOURCE/INTEGRATION/LIVE NO-GO" in readme
 

@@ -16,8 +16,8 @@ from typing import Any
 
 import verify_sai07_custody_manifest_bundle_v2 as manifest_v2
 
-PROVIDER_SCHEMA = "fs2-serve.nebius.ai/sai07-authoritative-provider-evidence/v2"
-BACKEND_SCHEMA = "fs2-serve.nebius.ai/sai07-authoritative-backend-evidence/v2"
+PROVIDER_SCHEMA = "fs2-serve.nebius.ai/sai07-authoritative-provider-evidence/v3"
+BACKEND_SCHEMA = "fs2-serve.nebius.ai/sai07-authoritative-backend-evidence/v3"
 SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 MAX_COLLECTION_AGE = dt.timedelta(minutes=10)
 SKEW = dt.timedelta(seconds=30)
@@ -172,13 +172,46 @@ def unique_resources(items: list[dict[str, Any]], label: str) -> dict[str, dict[
     return result
 
 
-def account_id(value: object, label: str) -> str:
-    if not isinstance(value, dict) or len(value) != 1:
-        raise EvidenceError(f"{label} account selector is malformed")
-    kind, item = next(iter(value.items()))
-    if kind not in {"service_account", "user_account"} or not isinstance(item, dict):
-        raise EvidenceError(f"{label} account selector has an unsupported kind")
-    return nonempty(item.get("id"), f"{label}.account.id")
+def require_active(value: dict[str, Any], label: str) -> None:
+    status = value.get("status")
+    if not isinstance(status, dict) or status.get("state") != "ACTIVE":
+        raise EvidenceError(f"{label} is not active in authoritative provider evidence")
+
+
+def transitive_group_closure(
+    subject_id: str, memberships: set[tuple[str, str]]
+) -> set[str]:
+    parents: dict[str, set[str]] = {}
+    for member_id, group_id in memberships:
+        parents.setdefault(member_id, set()).add(group_id)
+    closure: set[str] = set()
+    pending = list(parents.get(subject_id, set()))
+    while pending:
+        group_id = pending.pop()
+        if group_id == subject_id:
+            raise EvidenceError("group membership graph contains a cycle")
+        if group_id in closure:
+            continue
+        closure.add(group_id)
+        pending.extend(parents.get(group_id, set()))
+    for group_id in closure:
+        if subject_id in transitive_group_closure_for_group(group_id, parents):
+            raise EvidenceError("group membership graph contains a cycle")
+    return closure
+
+
+def transitive_group_closure_for_group(
+    group_id: str, parents: dict[str, set[str]]
+) -> set[str]:
+    closure: set[str] = set()
+    pending = list(parents.get(group_id, set()))
+    while pending:
+        parent = pending.pop()
+        if parent in closure:
+            continue
+        closure.add(parent)
+        pending.extend(parents.get(parent, set()))
+    return closure
 
 
 def provider_projection(artifact: dict[str, Any], contract: dict[str, Any]) -> dict[str, Any]:
@@ -241,10 +274,12 @@ def provider_projection(artifact: dict[str, Any], contract: dict[str, Any]) -> d
             "cluster_id",
             "kube_system_uid",
             "minimum_retention_days",
+            "namespace_inventory",
             "native_bucket_rules_sha256",
             "owner",
             "owner_required_permits",
             "platform",
+            "persistent_volume_names",
             "protected_resource_ids",
             "provider_collector_principal_id",
             "receipt_operator",
@@ -254,15 +289,45 @@ def provider_projection(artifact: dict[str, Any], contract: dict[str, Any]) -> d
         },
         "provider/backend contract expectations",
     )
-    if artifact["whoami_principal_id"] != expected["provider_collector_principal_id"]:
-        raise EvidenceError("provider collector identity differs from the repository contract")
+    if (
+        not isinstance(expected["namespace_inventory"], list)
+        or not expected["namespace_inventory"]
+        or expected["namespace_inventory"] != sorted(set(expected["namespace_inventory"]))
+        or not all(isinstance(item, str) and item for item in expected["namespace_inventory"])
+        or not isinstance(expected["persistent_volume_names"], list)
+        or expected["persistent_volume_names"]
+        != sorted(set(expected["persistent_volume_names"]))
+        or len(expected["persistent_volume_names"]) != 8
+        or not all(isinstance(item, str) and item for item in expected["persistent_volume_names"])
+    ):
+        raise EvidenceError("owner authority inventory is incomplete or non-canonical")
+    epoch = exact(
+        contract["custody_epoch"],
+        {
+            "epoch_id",
+            "generation",
+            "previous_activation_sha256",
+            "principal_id",
+            "required_group_ids",
+            "required_permits",
+            "retired_epochs",
+            "retirement_mode",
+            "status",
+        },
+        "custody epoch",
+    )
+    current_principal = nonempty(epoch["principal_id"], "custody epoch principal")
+    if (
+        artifact["whoami_principal_id"] != current_principal
+        or expected["provider_collector_principal_id"] != current_principal
+        or expected["backend_collector_principal_id"] != current_principal
+    ):
+        raise EvidenceError("provider/backend caller is not the unique current custody epoch principal")
     calls = exact(
         artifact["calls"],
         {
             "access_permits",
-            "auth_public_keys",
             "bucket",
-            "federated_credentials_by_project",
             "group_members",
             "groups_by_parent",
             "member_of",
@@ -270,7 +335,6 @@ def provider_projection(artifact: dict[str, Any], contract: dict[str, Any]) -> d
             "project",
             "projects",
             "service_accounts_by_project",
-            "static_keys",
             "tenant",
             "tenant_users",
             "tenants",
@@ -286,22 +350,17 @@ def provider_projection(artifact: dict[str, Any], contract: dict[str, Any]) -> d
     )
     service_account_profile = profile.get("service_account_profile")
     user_profile = profile.get("user_profile")
-    if isinstance(service_account_profile, dict) and user_profile in (None, {}):
-        info = service_account_profile.get("info")
-        if not isinstance(info, dict):
-            raise EvidenceError("provider service-account profile omits account information")
-        profile_principal_id, _, _ = metadata(info, "provider collector service account")
-    elif isinstance(user_profile, dict) and service_account_profile in (None, {}):
-        matches = [
-            item.get("tenant_user_account_id")
-            for item in user_profile.get("tenants", [])
-            if isinstance(item, dict) and item.get("tenant_id") == scope["tenant_id"]
-        ]
-        if len(matches) != 1:
-            raise EvidenceError("provider user profile does not resolve exactly one in-scope principal")
-        profile_principal_id = nonempty(matches[0], "provider profile tenant principal")
-    else:
-        raise EvidenceError("provider collector profile is anonymous, ambiguous, or unsupported")
+    if not isinstance(service_account_profile, dict) or user_profile not in (None, {}):
+        raise EvidenceError("provider collector profile is not a unique service-account profile")
+    info = service_account_profile.get("info")
+    if not isinstance(info, dict):
+        raise EvidenceError("provider service-account profile omits account information")
+    profile_principal_id, profile_parent_id, profile_version = metadata(
+        info, "provider collector service account"
+    )
+    require_active(info, "provider collector service account profile")
+    if profile_parent_id != scope["project_id"]:
+        raise EvidenceError("provider profile service account is outside the custody project")
     if profile_principal_id != artifact["whoami_principal_id"]:
         raise EvidenceError("provider artifact identity is not derived from its raw profile response")
     tenant = unary(
@@ -336,6 +395,8 @@ def provider_projection(artifact: dict[str, Any], contract: dict[str, Any]) -> d
         raise EvidenceError("provider unary responses returned another resource")
     if project_parent != tenant_id or bucket_parent != project_id:
         raise EvidenceError("provider project/bucket hierarchy differs from the repository scope")
+    require_active(tenant, "custody tenant")
+    require_active(project, "custody project")
     page_size = pins["page_size"]
     max_pages = pins["max_pages_per_collection"]
     tenants = unique_resources(
@@ -405,6 +466,62 @@ def provider_projection(artifact: dict[str, Any], contract: dict[str, Any]) -> d
             if item_parent != parent:
                 raise EvidenceError("service-account response is outside its enumerated project")
         service_accounts.update(found)
+    current_account = service_accounts.get(current_principal)
+    if current_account is None:
+        raise EvidenceError("current custody epoch principal is absent from service-account inventory")
+    _, current_parent, current_version = metadata(
+        current_account, "current custody epoch service account"
+    )
+    if current_parent != project_id or current_version != profile_version:
+        raise EvidenceError("profile and project inventory do not prove one current service-account version")
+    require_active(current_account, "current custody epoch service account")
+    retired_epochs = epoch["retired_epochs"]
+    if not isinstance(retired_epochs, list):
+        raise EvidenceError("custody epoch retired generation list is malformed")
+    retired_principals: list[str] = []
+    retired_epoch_ids: list[str] = []
+    retired_generations: list[int] = []
+    for index, item in enumerate(retired_epochs):
+        item = exact(
+            item,
+            {"epoch_id", "generation", "principal_id"},
+            f"retired custody epoch {index}",
+        )
+        retired_principals.append(nonempty(item["principal_id"], "retired epoch principal"))
+        retired_epoch_ids.append(nonempty(item["epoch_id"], "retired epoch ID"))
+        generation = item["generation"]
+        if not isinstance(generation, int) or isinstance(generation, bool) or generation < 1:
+            raise EvidenceError("retired custody epoch generation is invalid")
+        retired_generations.append(generation)
+    current_generation = epoch["generation"]
+    if (
+        not isinstance(current_generation, int)
+        or isinstance(current_generation, bool)
+        or current_generation < 1
+        or retired_generations != list(range(1, current_generation))
+        or len(set(retired_epoch_ids)) != len(retired_epoch_ids)
+        or len(set(retired_principals)) != len(retired_principals)
+        or current_principal in retired_principals
+    ):
+        raise EvidenceError("custody epoch lineage is incomplete, duplicated, or non-monotonic")
+    if current_generation == 1:
+        if epoch["previous_activation_sha256"] is not None or retired_epochs:
+            raise EvidenceError("initial custody epoch unexpectedly claims a predecessor")
+    elif not SHA256_RE.fullmatch(str(epoch["previous_activation_sha256"])):
+        raise EvidenceError("rotated custody epoch omits the prior activation digest")
+    if (
+        epoch["status"] != "active-reviewed"
+        or epoch["retirement_mode"]
+        != "authorization-denied-in-place-credentials-preserved"
+    ):
+        raise EvidenceError("custody epoch is not an active reviewed non-deleting transition")
+    for principal_id in retired_principals:
+        account = service_accounts.get(principal_id)
+        if account is None:
+            raise EvidenceError("retired custody epoch principal was deleted from provider inventory")
+        _, retired_parent, _ = metadata(account, f"retired custody principal {principal_id}")
+        if retired_parent != project_id:
+            raise EvidenceError("retired custody epoch principal moved outside the custody project")
     tenant_users = unique_resources(
         paged(
             calls["tenant_users"],
@@ -458,8 +575,8 @@ def provider_projection(artifact: dict[str, Any], contract: dict[str, Any]) -> d
     permit_calls = calls["access_permits"]
     if not isinstance(group_members_calls, dict) or set(group_members_calls) != set(groups):
         raise EvidenceError("group-member enumeration is not exhaustive")
-    if not isinstance(member_of_calls, dict) or set(member_of_calls) != set(principals):
-        raise EvidenceError("member-of enumeration is not exhaustive")
+    if not isinstance(member_of_calls, dict) or set(member_of_calls) != set(principals) | set(groups):
+        raise EvidenceError("principal/group member-of enumeration is not exhaustive")
     if not isinstance(permit_calls, dict) or set(permit_calls) != set(principals) | set(groups):
         raise EvidenceError("access-permit enumeration is not exhaustive")
 
@@ -478,29 +595,33 @@ def provider_projection(artifact: dict[str, Any], contract: dict[str, Any]) -> d
         for index, membership in enumerate(members):
             _, parent, _ = metadata(membership, f"members of {group_id}[{index}]")
             member_id = nonempty(membership.get("spec", {}).get("member_id"), "group member ID")
-            if parent != group_id or member_id not in principals:
-                raise EvidenceError("group membership points outside the enumerated principal set")
+            if parent != group_id or member_id not in set(principals) | set(groups):
+                raise EvidenceError("group membership points outside the enumerated principal/group set")
+            if member_id == group_id:
+                raise EvidenceError("group membership graph contains a self-cycle")
             group_edges.add((member_id, group_id))
 
     reverse_edges: set[tuple[str, str]] = set()
-    for principal_id in sorted(principals):
+    for subject_id in sorted(set(principals) | set(groups)):
         member_groups = paged(
-            member_of_calls[principal_id],
+            member_of_calls[subject_id],
             service="nebius.iam.v1.GroupMembershipService",
             method="ListMemberOf",
-            fixed_request={"subject_id": principal_id},
+            fixed_request={"subject_id": subject_id},
             page_size=page_size,
             max_pages=max_pages,
             item_field="items",
-            label=f"member-of {principal_id}",
+            label=f"member-of {subject_id}",
         )
         for index, group in enumerate(member_groups):
-            group_id, _, _ = metadata(group, f"member-of {principal_id}[{index}]")
+            group_id, _, _ = metadata(group, f"member-of {subject_id}[{index}]")
             if group_id not in groups:
                 raise EvidenceError("member-of response references a group outside the exhaustive group list")
-            reverse_edges.add((principal_id, group_id))
+            reverse_edges.add((subject_id, group_id))
     if reverse_edges != group_edges:
         raise EvidenceError("forward and reverse group membership enumerations differ")
+    for group_id in groups:
+        transitive_group_closure(group_id, group_edges)
 
     permits: list[dict[str, str]] = []
     for subject_id in sorted(set(principals) | set(groups)):
@@ -530,96 +651,61 @@ def provider_projection(artifact: dict[str, Any], contract: dict[str, Any]) -> d
             )
     permits.sort(key=lambda item: canonical(item))
 
-    credential_collections: dict[str, list[dict[str, Any]]] = {}
-    for field, service, method in (
-        ("auth_public_keys", "nebius.iam.v1.AuthPublicKeyService", "ListByAccount"),
-    ):
-        raw = calls[field]
-        if not isinstance(raw, dict) or set(raw) != set(principals):
-            raise EvidenceError(f"{field} enumeration is not exhaustive")
-        normalized: list[dict[str, Any]] = []
-        for principal_id in sorted(principals):
-            account_kind = "service_account" if principal_id in service_accounts else "user_account"
-            account_selector = {account_kind: {"id": principal_id}}
-            items = paged(
-                raw[principal_id],
-                service=service,
-                method=method,
-                fixed_request={"account": account_selector},
-                page_size=page_size,
-                max_pages=max_pages,
-                item_field="items",
-                label=f"{field} {principal_id}",
-            )
-            for index, item in enumerate(items):
-                key_id, _, version = metadata(item, f"{field} {principal_id}[{index}]")
-                if account_id(item.get("spec", {}).get("account"), f"{field} {key_id}") != principal_id:
-                    raise EvidenceError(f"{field} item is bound to another account")
-                status = item.get("status", {})
-                if not isinstance(status, dict):
-                    raise EvidenceError(f"{field} {key_id} status is malformed")
-                normalized.append(
-                    {
-                        "account_id": principal_id,
-                        "credential_id": key_id,
-                        "resource_version": version,
-                        "status_sha256": hashlib.sha256(canonical(status)).hexdigest(),
-                    }
-                )
-        credential_collections[field] = sorted(normalized, key=lambda item: canonical(item))
+    permit_edges = {
+        (item["subject_id"], item["resource_id"], item["role"]) for item in permits
+    }
+    if len(permit_edges) != len(permits):
+        raise EvidenceError("authoritative provider evidence contains duplicate permit edges")
 
-    static_calls = calls["static_keys"]
-    if not isinstance(static_calls, dict) or set(static_calls) != set(service_accounts):
-        raise EvidenceError("static-key enumeration is not exhaustive for every service account")
-    static_items: list[dict[str, Any]] = []
-    for principal_id in sorted(service_accounts):
-        static_items.extend(
-            paged(
-                static_calls[principal_id],
-                service="nebius.iam.v1.StaticKeyService",
-                method="List",
-                fixed_request={"parent_id": principal_id},
-                page_size=page_size,
-                max_pages=max_pages,
-                item_field="items",
-                label=f"static-key list {principal_id}",
-            )
+    def effective_permits(principal_id: str) -> list[dict[str, str]]:
+        subjects = {principal_id} | transitive_group_closure(principal_id, group_edges)
+        return sorted(
+            [
+                {"resource_id": resource_id, "role": role, "subject_id": subject_id}
+                for subject_id, resource_id, role in permit_edges
+                if subject_id in subjects
+            ],
+            key=canonical,
         )
-    federated_calls = calls["federated_credentials_by_project"]
-    if not isinstance(federated_calls, dict) or set(federated_calls) != set(projects):
-        raise EvidenceError("federated-credential enumeration does not cover every tenant project")
-    federated_items: list[dict[str, Any]] = []
-    for parent in sorted(projects):
-        items = paged(
-            federated_calls[parent],
-            service="nebius.iam.v1.FederatedCredentialsService",
-            method="List",
-            fixed_request={"parent_id": parent},
-            page_size=page_size,
-            max_pages=max_pages,
-            item_field="items",
-            label=f"federated-credential list {parent}",
+
+    current_group_closure = sorted(transitive_group_closure(current_principal, group_edges))
+    current_effective_permits = effective_permits(current_principal)
+    required_groups = epoch["required_group_ids"]
+    required_permits = epoch["required_permits"]
+    if (
+        not isinstance(required_groups, list)
+        or required_groups != sorted(set(required_groups))
+        or current_group_closure != required_groups
+    ):
+        raise EvidenceError("current custody epoch group closure differs from the exact contract")
+    if not isinstance(required_permits, list):
+        raise EvidenceError("current custody epoch permit closure is malformed")
+    normalized_required_permits = [
+        exact(item, {"resource_id", "role", "subject_id"}, "custody epoch required permit")
+        for item in required_permits
+    ]
+    if (
+        normalized_required_permits != sorted(normalized_required_permits, key=canonical)
+        or current_effective_permits != normalized_required_permits
+    ):
+        raise EvidenceError("current custody epoch effective permit closure differs from the exact contract")
+    retired_proofs: list[dict[str, Any]] = []
+    for item in retired_epochs:
+        principal_id = item["principal_id"]
+        group_closure = sorted(transitive_group_closure(principal_id, group_edges))
+        retired_permits = effective_permits(principal_id)
+        if group_closure or retired_permits:
+            raise EvidenceError("retired custody epoch still has inherited or direct provider authority")
+        retired_proofs.append(
+            {
+                "epoch_id": item["epoch_id"],
+                "generation": item["generation"],
+                "group_closure": group_closure,
+                "permit_closure": retired_permits,
+                "principal_id": principal_id,
+                "service_account_preserved": True,
+            }
         )
-        for index, item in enumerate(items):
-            _, item_parent, _ = metadata(item, f"federated credential {parent}[{index}]")
-            if item_parent != parent:
-                raise EvidenceError("federated credential is outside its enumerated project")
-        federated_items.extend(items)
-    additional_credentials: list[dict[str, str]] = []
-    for kind, items in (("static_key", static_items), ("federated_credential", federated_items)):
-        for index, item in enumerate(items):
-            identifier, parent, version = metadata(item, f"{kind}[{index}]")
-            expected_parents = set(service_accounts) if kind == "static_key" else set(projects)
-            if parent not in expected_parents:
-                raise EvidenceError(f"{kind} is outside the exhaustively enumerated tenant scope")
-            additional_credentials.append(
-                {
-                    "credential_id": identifier,
-                    "kind": kind,
-                    "resource_version": version,
-                    "spec_sha256": hashlib.sha256(canonical(item.get("spec", {}))).hexdigest(),
-                }
-            )
 
     identities = {
         "owner": expected["owner"],
@@ -635,9 +721,11 @@ def provider_projection(artifact: dict[str, Any], contract: dict[str, Any]) -> d
         if not set(identity["principal_ids"]).issubset(principals):
             raise EvidenceError(f"expected {label} principal is absent from authoritative enumeration")
         for principal_id in identity["principal_ids"]:
-            actual_groups = sorted(group_id for member_id, group_id in group_edges if member_id == principal_id)
+            actual_groups = sorted(transitive_group_closure(principal_id, group_edges))
             if actual_groups != identity["group_ids"]:
-                raise EvidenceError(f"expected {label} group membership differs from provider evidence")
+                raise EvidenceError(f"expected {label} transitive group closure differs from provider evidence")
+    if expected["owner"]["principal_ids"] != [current_principal]:
+        raise EvidenceError("Kubernetes custody owner is not bound to the unique current provider epoch")
 
     authorities = contract["authorities"]
     authority_principals = []
@@ -656,17 +744,19 @@ def provider_projection(artifact: dict[str, Any], contract: dict[str, Any]) -> d
     ):
         raise EvidenceError("receipt/manifest authorities are not three distinct non-platform principals")
 
-    # AccessKeyService.ListByAccount is intentionally forbidden: its response
-    # schema can include status.secret, so no client-side projection can make
-    # that call metadata-only.  Bind S3 access instead to a reviewed bucket
-    # policy whose only IAM subject is this exact singleton group.  The raw
-    # forward/reverse membership collections above prove the group contents.
+    # All credential enumeration is intentionally forbidden. Access-key list
+    # responses can include status.secret, and other credential classes cannot
+    # prove which caller signed an S3 request. Bind S3 access to the unique
+    # current epoch service account through an exact singleton group/policy
+    # boundary and prove every prior epoch has zero inherited/direct authority.
     backend_group = nonempty(expected["backend_access_group_id"], "backend access group ID")
     backend_principal = nonempty(
         expected["backend_collector_principal_id"], "backend collector principal ID"
     )
     if backend_group not in groups or backend_principal not in principals:
         raise EvidenceError("backend collector singleton group is absent from authoritative inventory")
+    if backend_principal != current_principal or backend_group not in current_group_closure:
+        raise EvidenceError("backend boundary is not bound to the current custody epoch")
     backend_members = sorted(member for member, group in group_edges if group == backend_group)
     if backend_members != [backend_principal]:
         raise EvidenceError("backend access group is not the exact singleton collector boundary")
@@ -680,7 +770,6 @@ def provider_projection(artifact: dict[str, Any], contract: dict[str, Any]) -> d
         item["subject_id"] in platform_subjects and item["resource_id"] in protected for item in permits
     ):
         raise EvidenceError("platform authority reaches an external custody resource")
-    permit_edges = {(item["subject_id"], item["resource_id"], item["role"]) for item in permits}
     for label, field, identity_field in (
         ("owner", "owner_required_permits", "owner"),
         ("receipt operator", "receipt_required_permits", "receipt_operator"),
@@ -706,7 +795,7 @@ def provider_projection(artifact: dict[str, Any], contract: dict[str, Any]) -> d
     for label, principal_id in zip(
         ("provider_receipt", "backend_receipt", "manifest"), authority_principals, strict=True
     ):
-        principal_groups = {group_id for member_id, group_id in group_edges if member_id == principal_id}
+        principal_groups = transitive_group_closure(principal_id, group_edges)
         authority_subjects = {principal_id} | principal_groups
         required = authority_permits[label]
         if not isinstance(required, list) or not required:
@@ -751,9 +840,19 @@ def provider_projection(artifact: dict[str, Any], contract: dict[str, Any]) -> d
         "project": project_version,
         "tenant": tenant_version,
     }
+    epoch_projection = {
+        "epoch_id": epoch["epoch_id"],
+        "generation": current_generation,
+        "group_closure": current_group_closure,
+        "permit_closure": current_effective_permits,
+        "previous_activation_sha256": epoch["previous_activation_sha256"],
+        "principal_id": current_principal,
+        "retired_epochs": retired_proofs,
+        "retirement_mode": epoch["retirement_mode"],
+    }
+    epoch_sha256 = hashlib.sha256(canonical(epoch_projection)).hexdigest()
     projection = {
-        "additional_credentials": sorted(additional_credentials, key=lambda item: canonical(item)),
-        "credentials": credential_collections,
+        "custody_epoch": epoch_projection,
         "group_memberships": [list(edge) for edge in sorted(group_edges)],
         "groups": sorted(groups),
         "permits": permits,
@@ -767,12 +866,15 @@ def provider_projection(artifact: dict[str, Any], contract: dict[str, Any]) -> d
         "backend_access_group_id": backend_group,
         "backend_bucket_resource_id": bucket_id,
         "backend_collector_principal_id": backend_principal,
+        "custody_epoch_id": epoch["epoch_id"],
+        "custody_epoch_sha256": epoch_sha256,
         "native_bucket_rules_sha256": expected["native_bucket_rules_sha256"],
     }
     return {
         "backend_boundary_sha256": hashlib.sha256(canonical(backend_boundary)).hexdigest(),
         "collection_id": artifact["collection_id"],
         "completed_at": artifact["completed_at"],
+        "custody_epoch_sha256": epoch_sha256,
         "projection": projection,
         "projection_sha256": hashlib.sha256(canonical(projection)).hexdigest(),
     }
@@ -827,6 +929,10 @@ def state_projection(state_bytes: bytes) -> dict[str, Any]:
     for resource in resources:
         if not isinstance(resource, dict) or resource.get("mode") != "managed":
             continue
+        provider_address = nonempty(
+            resource.get("provider"), "managed state provider address"
+        )
+        custody_provider = provider_address.endswith('"].pod_security_custody')
         instances = resource.get("instances")
         if not isinstance(instances, list):
             raise EvidenceError("managed state resource has no instance list")
@@ -837,11 +943,27 @@ def state_projection(state_bytes: bytes) -> dict[str, Any]:
             if address in all_addresses:
                 raise EvidenceError(f"platform state contains duplicate address {address}")
             all_addresses.add(address)
-            if address in manifest_v2.STATIC_STATE or manifest_v2.DYNAMIC_ADDRESS_RE.fullmatch(address):
+            classified = (
+                address in manifest_v2.STATIC_STATE
+                or manifest_v2.DYNAMIC_ADDRESS_RE.fullmatch(address) is not None
+            )
+            if custody_provider and not classified:
+                raise EvidenceError(
+                    f"pod_security_custody provider has unclassified managed address {address}"
+                )
+            if classified and not custody_provider:
+                raise EvidenceError(
+                    f"retained custody address {address} is bound to another Terraform provider"
+                )
+            if classified:
                 custody_addresses.add(address)
-    if not set(manifest_v2.STATIC_STATE).issubset(custody_addresses):
-        raise EvidenceError("platform state omits a static retained custody address")
+    if not manifest_v2.REQUIRED_STATIC_STATE.issubset(custody_addresses):
+        raise EvidenceError("platform state omits an unconditional retained custody address")
     return {
+        "all_managed_addresses_sha256": hashlib.sha256(
+            canonical(sorted(all_addresses))
+        ).hexdigest(),
+        "all_managed_object_count": len(all_addresses),
         "custody_addresses": sorted(custody_addresses),
         "custody_addresses_sha256": hashlib.sha256(canonical(sorted(custody_addresses))).hexdigest(),
         "custody_object_count": len(custody_addresses),

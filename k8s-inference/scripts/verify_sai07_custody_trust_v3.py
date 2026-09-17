@@ -21,9 +21,9 @@ from typing import Any
 import sai07_authoritative_evidence as evidence
 import verify_sai07_custody_trust as v2
 
-LOCK_SCHEMA = "fs2-serve.nebius.ai/sai07-evidence-collection-contract/v2"
-PROVIDER_RECEIPT_SCHEMA = "fs2-serve.nebius.ai/sai07-provider-evidence-receipt/v4"
-BACKEND_RECEIPT_SCHEMA = "fs2-serve.nebius.ai/sai07-backend-evidence-receipt/v4"
+LOCK_SCHEMA = "fs2-serve.nebius.ai/sai07-evidence-collection-contract/v3"
+PROVIDER_RECEIPT_SCHEMA = "fs2-serve.nebius.ai/sai07-provider-evidence-receipt/v5"
+BACKEND_RECEIPT_SCHEMA = "fs2-serve.nebius.ai/sai07-backend-evidence-receipt/v5"
 MAX_KEY_BYTES = 64 * 1024
 ROOT = Path(__file__).resolve().parents[1]
 TRUST_LOCK = ROOT / "stages" / "pod-security-custody" / "custody-trust-lock-v3.json"
@@ -151,8 +151,9 @@ def validate(query: dict[str, str]) -> dict[str, str]:
         {
             "activation",
             "authorities",
-            "backend_credential_projection",
             "collector",
+            "custody_epoch",
+            "dependencies",
             "executor",
             "expected",
             "schema",
@@ -265,19 +266,31 @@ def validate(query: dict[str, str]) -> dict[str, str]:
         "cluster_id": expected["cluster_id"],
         "collection_id": collection_id,
         "contract_sha256": contract_sha256,
+        "custody_epoch_generation": str(contract["custody_epoch"]["generation"]),
+        "custody_epoch_id": contract["custody_epoch"]["epoch_id"],
+        "custody_epoch_principal_id": contract["custody_epoch"]["principal_id"],
+        "custody_epoch_sha256": provider_projection["custody_epoch_sha256"],
         "custody_addresses_json": json.dumps(state["custody_addresses"], separators=(",", ":")),
         "iam_receipt_sha256": provider_receipt_sha256,
         "kube_system_uid": expected["kube_system_uid"],
+        "namespace_inventory_json": json.dumps(
+            expected["namespace_inventory"], separators=(",", ":")
+        ),
         "owner_groups_json": json.dumps(provider_identity["group_ids"], separators=(",", ":")),
         "owner_username": provider_identity["username"],
         "platform_groups_json": json.dumps(platform_identity["group_ids"], separators=(",", ":")),
         "platform_username": platform_identity["username"],
+        "persistent_volume_names_json": json.dumps(
+            expected["persistent_volume_names"], separators=(",", ":")
+        ),
         "provider_completed_at": provider_artifact["completed_at"],
         "provider_evidence_sha256": hashlib.sha256(provider_bytes).hexdigest(),
         "provider_projection_sha256": provider_projection["projection_sha256"],
         "receipt_groups_json": json.dumps(receipt_identity["group_ids"], separators=(",", ":")),
         "receipt_username": receipt_identity["username"],
         "state_addresses_sha256": state["custody_addresses_sha256"],
+        "state_all_addresses_sha256": state["all_managed_addresses_sha256"],
+        "state_all_object_count": str(state["all_managed_object_count"]),
         "state_etag": state["etag"],
         "state_lineage": state["lineage"],
         "state_object_count": str(state["custody_object_count"]),

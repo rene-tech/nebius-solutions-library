@@ -197,8 +197,10 @@ resource "kubernetes_role_binding_v1" "snapshot_manager" {
   }
 }
 
-/* Snapshot VAP ownership is external to platform Terraform. These inactive
-blocks remain as exact source provenance for the custody manifest renderer.
+/* Retained predecessor snapshot definitions. These inactive blocks remain as
+exact source provenance; active count-correct, prevent_destroy declarations
+live in pod_security_retained_snapshot_custody.tf so platform state neither
+destroys nor forgets the existing objects.
 resource "kubernetes_manifest" "snapshot_pod_policy" {
   provider = kubernetes.pod_security_custody
 

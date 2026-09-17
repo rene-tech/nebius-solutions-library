@@ -35,35 +35,60 @@ DYNAMIC_ADDRESS_RE = re.compile(
 STATIC_STATE: dict[str, tuple[str, str, str, str]] = {
     "kubernetes_manifest.pod_security_custody_boundary_policy": ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicy", "", "fs2-pod-security-custody-boundary"),
     "kubernetes_manifest.pod_security_custody_boundary_binding": ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicyBinding", "", "fs2-pod-security-custody-boundary"),
-    "kubernetes_manifest.node_observability_config_policy": ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicy", "", "fs2-node-observability-configs"),
-    "kubernetes_manifest.node_observability_config_binding": ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicyBinding", "", "fs2-node-observability-configs"),
-    "kubernetes_manifest.node_observability_pod_policy": ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicy", "", "fs2-node-observability-pods"),
-    "kubernetes_manifest.node_observability_pod_binding": ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicyBinding", "", "fs2-node-observability-pods"),
-    "kubernetes_manifest.node_observability_daemonset_policy": ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicy", "", "fs2-node-observability-daemonsets"),
-    "kubernetes_manifest.node_observability_daemonset_binding": ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicyBinding", "", "fs2-node-observability-daemonsets"),
+    "kubernetes_manifest.node_observability_config_policy[0]": ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicy", "", "fs2-node-observability-configs"),
+    "kubernetes_manifest.node_observability_config_binding[0]": ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicyBinding", "", "fs2-node-observability-configs"),
+    "kubernetes_manifest.node_observability_pod_policy[0]": ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicy", "", "fs2-node-observability-pods"),
+    "kubernetes_manifest.node_observability_pod_binding[0]": ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicyBinding", "", "fs2-node-observability-pods"),
+    "kubernetes_manifest.node_observability_daemonset_policy[0]": ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicy", "", "fs2-node-observability-daemonsets"),
+    "kubernetes_manifest.node_observability_daemonset_binding[0]": ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicyBinding", "", "fs2-node-observability-daemonsets"),
     "kubernetes_service_account_v1.pod_security_rollout_manager": ("v1", "ServiceAccount", "fs2-system", "fs2-pod-security-rollout-manager"),
     "kubernetes_service_account_v1.pod_security_rollout_custodian": ("v1", "ServiceAccount", "fs2-system", "fs2-pod-security-rollout-custodian"),
+    "kubernetes_service_account_v1.pod_security_metadata_reader": ("v1", "ServiceAccount", "fs2-system", "fs2-pod-security-metadata-reader"),
     "kubernetes_cluster_role_v1.pod_security_rollout_reader": ("rbac.authorization.k8s.io/v1", "ClusterRole", "", "fs2-pod-security-rollout-reader"),
     "kubernetes_cluster_role_binding_v1.pod_security_rollout_reader": ("rbac.authorization.k8s.io/v1", "ClusterRoleBinding", "", "fs2-pod-security-rollout-reader"),
     "kubernetes_cluster_role_binding_v1.pod_security_rollout_custodian_reader": ("rbac.authorization.k8s.io/v1", "ClusterRoleBinding", "", "fs2-pod-security-rollout-custodian-reader"),
     "kubernetes_role_v1.pod_security_rollout_ledger": ("rbac.authorization.k8s.io/v1", "Role", "fs2-system", "fs2-pod-security-rollout-ledger"),
     "kubernetes_role_binding_v1.pod_security_rollout_ledger": ("rbac.authorization.k8s.io/v1", "RoleBinding", "fs2-system", "fs2-pod-security-rollout-ledger"),
     "kubernetes_role_binding_v1.pod_security_rollout_custodian_ledger": ("rbac.authorization.k8s.io/v1", "RoleBinding", "fs2-system", "fs2-pod-security-rollout-custodian-ledger"),
+    "kubernetes_role_v1.pod_security_secret_metadata_reader": ("rbac.authorization.k8s.io/v1", "Role", "fs2-models", "fs2-pod-security-secret-metadata-reader"),
+    "kubernetes_role_binding_v1.pod_security_secret_metadata_reader": ("rbac.authorization.k8s.io/v1", "RoleBinding", "fs2-models", "fs2-pod-security-secret-metadata-reader"),
+    "kubernetes_role_v1.pod_security_token_anchor_metadata_reader": ("rbac.authorization.k8s.io/v1", "Role", "fs2-system", "fs2-pod-security-token-anchor-metadata-reader"),
+    "kubernetes_role_binding_v1.pod_security_token_anchor_metadata_reader": ("rbac.authorization.k8s.io/v1", "RoleBinding", "fs2-system", "fs2-pod-security-token-anchor-metadata-reader"),
+    "kubernetes_role_v1.pod_security_metadata_reader_token_request": ("rbac.authorization.k8s.io/v1", "Role", "fs2-system", "fs2-pod-security-metadata-reader-token-request"),
+    "kubernetes_role_binding_v1.pod_security_metadata_reader_token_request": ("rbac.authorization.k8s.io/v1", "RoleBinding", "fs2-system", "fs2-pod-security-metadata-reader-token-request"),
     "kubernetes_cluster_role_v1.pod_security_external_custody_audit": ("rbac.authorization.k8s.io/v1", "ClusterRole", "", "fs2-pod-security-external-custody-audit"),
     "kubernetes_cluster_role_binding_v1.pod_security_external_custody_audit": ("rbac.authorization.k8s.io/v1", "ClusterRoleBinding", "", "fs2-pod-security-external-custody-audit"),
     "kubernetes_role_v1.pod_security_rollout_token_request": ("rbac.authorization.k8s.io/v1", "Role", "fs2-system", "fs2-pod-security-rollout-token-request"),
     "kubernetes_role_binding_v1.pod_security_rollout_token_request": ("rbac.authorization.k8s.io/v1", "RoleBinding", "fs2-system", "fs2-pod-security-rollout-token-request"),
     "kubernetes_manifest.pod_security_rollout_token_policy": ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicy", "", "fs2-pod-security-rollout-token-request"),
     "kubernetes_manifest.pod_security_rollout_token_binding": ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicyBinding", "", "fs2-pod-security-rollout-token-request"),
-    "kubernetes_manifest.pod_security_enforcement_fence_policy": ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicy", "", "fs2-pod-security-enforcement-fence"),
-    "kubernetes_manifest.pod_security_enforcement_fence_binding": ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicyBinding", "", "fs2-pod-security-enforcement-fence"),
-    "kubernetes_manifest.pod_security_legacy_cleanup_fence_policy": ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicy", "", "fs2-pod-security-legacy-cleanup-fence"),
-    "kubernetes_manifest.pod_security_legacy_cleanup_fence_binding": ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicyBinding", "", "fs2-pod-security-legacy-cleanup-fence"),
+    "kubernetes_manifest.pod_security_enforcement_fence_policy[0]": ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicy", "", "fs2-pod-security-enforcement-fence"),
+    "kubernetes_manifest.pod_security_enforcement_fence_binding[0]": ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicyBinding", "", "fs2-pod-security-enforcement-fence"),
+    "kubernetes_manifest.pod_security_legacy_cleanup_fence_policy[0]": ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicy", "", "fs2-pod-security-legacy-cleanup-fence"),
+    "kubernetes_manifest.pod_security_legacy_cleanup_fence_binding[0]": ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicyBinding", "", "fs2-pod-security-legacy-cleanup-fence"),
     "kubernetes_manifest.pod_security_ledger_policy": ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicy", "", "fs2-pod-security-rollout-ledger"),
     "kubernetes_manifest.pod_security_ledger_binding": ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicyBinding", "", "fs2-pod-security-rollout-ledger"),
-    "kubernetes_manifest.snapshot_pod_policy": ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicy", "", "fs2-snapshot-exact-profile"),
-    "kubernetes_manifest.snapshot_pod_binding": ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicyBinding", "", "fs2-snapshot-exact-profile"),
+    "kubernetes_manifest.snapshot_pod_policy[0]": ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicy", "", "fs2-snapshot-exact-profile"),
+    "kubernetes_manifest.snapshot_pod_binding[0]": ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicyBinding", "", "fs2-snapshot-exact-profile"),
 }
+
+COUNTED_STATIC_STATE = frozenset(
+    address for address in STATIC_STATE if address.endswith("[0]")
+)
+ADDITIVE_STATIC_STATE = frozenset(
+    {
+        "kubernetes_service_account_v1.pod_security_metadata_reader",
+        "kubernetes_role_v1.pod_security_secret_metadata_reader",
+        "kubernetes_role_binding_v1.pod_security_secret_metadata_reader",
+        "kubernetes_role_v1.pod_security_token_anchor_metadata_reader",
+        "kubernetes_role_binding_v1.pod_security_token_anchor_metadata_reader",
+        "kubernetes_role_v1.pod_security_metadata_reader_token_request",
+        "kubernetes_role_binding_v1.pod_security_metadata_reader_token_request",
+    }
+)
+REQUIRED_STATIC_STATE = (
+    frozenset(STATIC_STATE) - COUNTED_STATIC_STATE - ADDITIVE_STATIC_STATE
+)
 
 PLURALS = {
     ("v1", "ConfigMap"): "configmaps",
@@ -222,8 +247,8 @@ def validate(bundle: dict[str, Any], query: dict[str, str], trust: dict[str, str
                 raise BundleV2Error(f"platform state {address} omits {field}")
         sha(item["object_sha256"], f"platform state {address} object_sha256")
         by_address[address] = item
-    if not set(STATIC_STATE).issubset(by_address):
-        raise BundleV2Error("platform state inventory omits one or more static custody addresses")
+    if not REQUIRED_STATIC_STATE.issubset(by_address):
+        raise BundleV2Error("platform state inventory omits one or more unconditional custody addresses")
     if len(state_objects) != int(trust["state_object_count"]):
         raise BundleV2Error("platform state inventory count differs from backend attestation")
 
@@ -246,6 +271,14 @@ def validate(bundle: dict[str, Any], query: dict[str, str], trust: dict[str, str
         raise BundleV2Error("adoption is not an exhaustive one-to-one projection of platform state")
 
     token_identity = ("v1", "Secret", "fs2-system", "fs2-pod-security-token-anchor")
+    token_manifest = entries[token_identity]["manifest"]
+    if (
+        token_manifest.get("metadata", {})
+        .get("annotations", {})
+        .get("security.fs2.nebius.ai/custody-epoch-sha256")
+        != trust["custody_epoch_sha256"]
+    ):
+        raise BundleV2Error("token anchor is not bound to the verified custody epoch")
     if entries[token_identity]["live_identity"] != {
         "present": False,
         "uid": None,

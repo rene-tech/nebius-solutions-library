@@ -22,17 +22,20 @@ SSA, provider boundary, or custody activation is authorized by this commit.
 
 `collect_sai07_authoritative_custody_evidence.py` is the source-pinned,
 provider-native read-only adapter. It exhaustively paginates the tenant and
-every project returned under it, including principals, groups, bidirectional
-memberships, access permits and non-secret credential metadata through the
-Nebius SDK; it retains every RPC request/trace ID and never requests credential
-secrets. It deliberately does not call the access-key list API because that
-response can contain the key secret before client-side filtering. No safe
-server-side metadata projection exists in the pinned provider API, so the lock
-records that concrete blocker and the collector refuses activation before any
-provider call. A later reviewed source revision must implement and pin such an
-endpoint. The exact singleton IAM group and native/S3 policies remain
-defense-in-depth controls; they are not treated as S3 caller-identity proof. It
-captures native bucket state plus S3 ACL, policy, encryption, versioning,
+every project returned under it, including service accounts, groups,
+bidirectional direct/transitive memberships and access permits through the
+Nebius SDK; it retains every RPC request/trace ID. It deliberately calls no
+credential enumeration API. In particular, an access-key list response can
+contain the key secret before client-side filtering, while enumerating another
+credential class would not prove the identity that signed an S3 request.
+Instead, each activation is bound to one unique active service-account epoch:
+Profile Get proves the current caller and its project/tenant lineage, the
+complete group/permit graph must exactly equal the contract, and every prior
+epoch service account remains present with zero direct or inherited authority.
+Prior credentials are preserved, but their principals cannot inherit the
+current epoch's permissions. Successful S3 reads must also pass the exact
+singleton-principal native/S3 policy boundary. The collector captures native
+bucket state plus S3 ACL, policy, encryption, versioning,
 Object Lock, retention, legal hold and an exact version-fenced platform-state
 download. Generation outputs are bounded, mode 0600, O_EXCL and retained.
 `verify_sai07_custody_trust_v3.py` opens those raw files, independently
@@ -45,15 +48,42 @@ distinct signed collections and exact equality of their reconstructed IAM,
 backend-control and versioned-state projections before emitting a handoff.
 
 The preflight performs no Terraform or Kubernetes mutation. The pinned executor
-is a distinct entrypoint: it invokes the external phase-ledger consumer, creates
-only the immutable acknowledgement through non-forcing SSA, performs immediate
-before/after reads, and emits a signed acknowledgement consumed offline by the
-platform rollout gate. Its name is generation-addressed, its exact field set is
-hashed, it is absent from platform state, and an existing exact object is only
-resumed. The repository lock deliberately contains no activation identities,
-keys, bucket, state, or cluster facts; a later independently reviewed
-deployment-bound commit is still required. Until then SAI-07 remains
-SOURCE/INTEGRATION/LIVE NO-GO, and SAI-03 remains an unaccepted dependency.
+is a distinct entrypoint. Immediately before and after its additive writes, it
+runs SelfSubjectReview, the exhaustive SelfSubjectAccessReview matrix and a
+complete SelfSubjectRulesReview for every signed namespace under the actual
+owner kubeconfig. A second ten-minute Kubernetes-API-audience owner token,
+received only through an inherited descriptor, must authenticate as that exact
+same username/group set with its JTI exposed by the authenticator. Secret reads
+use only PartialObjectMetadataList. The empty immutable token anchor is created
+by atomic typed POST whose response must be PartialObjectMetadata, behind the
+signed fail-closed exact-shape admission policy. That policy evaluates every
+write by the external execution identity, so its namespace-wide CREATE/PATCH
+RBAC cannot be used for an arbitrary ConfigMap or Secret; only the exact anchor
+or generation acknowledgement is admitted. The executor then invokes the
+external phase-ledger consumer, creates only the immutable acknowledgement
+through non-forcing SSA, performs immediate before/after reads, and emits a
+signed acknowledgement. Its name is generation-addressed, its exact field set
+is hashed, and it is absent from the complete raw platform state. The platform
+rollout gate verifies the exact acknowledgement both at plan time and again in
+an apply-time provisioner, binding its planned digest and ten-minute lifetime.
+
+The platform state retains every original address, including the count-indexed
+admission objects. Active `prevent_destroy` declarations replace the prior
+comment-only gap; no `removed`, state-forget, import, or second-state ownership
+exists. The raw state receipt binds its complete byte hash plus all managed
+address count/digest, and any resource using the retention-only provider that
+is not in the exhaustive static/dynamic custody inventory fails closed.
+The tokenless Secret-metadata reader and its exact list/TokenRequest RBAC are
+additive platform-state resources created before the retained custody boundary;
+the manifest contract accepts them absent only during that first preparation
+and requires their exact state/live identities thereafter. The executor has no
+RBAC mutation authority.
+
+The repository lock deliberately contains no activation identities, keys,
+bucket, state, epoch, dependency acceptance, or cluster facts. SAI-03 and
+SAI-04 are both explicitly unaccepted dependencies. A later independently
+reviewed deployment-bound commit is still required. Until then SAI-07 remains
+SOURCE/INTEGRATION/LIVE NO-GO.
 
 The rejected v2 proposal intended this standalone Terraform root to become the
 only owner of SAI-07 admission, custody RBAC, token-anchor, ledger, and
@@ -92,14 +122,15 @@ Safe non-destructive order:
    duplicate, or unsupported addresses fail closed.
 3. Immediately reread every object under the authenticated owner identity and
    compare its UID, resourceVersion, and canonical full-object hash before SSA.
-   Create the empty immutable token anchor with an atomic typed POST (never an
-   SSA PATCH), import/adopt the complete predecessor set, run SSA without force,
-   reread all objects, collect the anchor through PartialObjectMetadata, and
-   issue an exact signed acknowledgement for the same set and backend version.
-4. The platform root retains every state address in this revision. The archived
-   `removed` design is inactive. Relinquishment requires a later reviewed source
-   commit after exact adoption is independently accepted; there is no partial
-   or count-based handoff.
+   Under the source-pinned external executor, authenticate the actual owner by
+   SSR/SSRR/SSAR, create the empty immutable token anchor with an atomic typed
+   POST whose response is metadata-only, run the acknowledgement SSA without
+   force, reread all retained objects and the anchor metadata, and issue an
+   exact signed acknowledgement for the same raw-state version.
+4. The platform root retains every state address in this revision through
+   active, count-correct `prevent_destroy` declarations. The archived `removed`
+   design is inactive. No relinquishment, partial handoff or count-flattening
+   is authorized.
 5. Authorization and acknowledgement are separate custody-pipeline actions.
    The platform root never advances the ledger or mints custody tokens.
 

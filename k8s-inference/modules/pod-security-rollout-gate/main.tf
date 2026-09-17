@@ -224,6 +224,18 @@ locals {
   receipt_bundle_sha256           = local.receipt_required ? filesha256(var.receipt_bundle_path) : null
   expected_bundle_sha256          = local.receipt_required ? local.receipt_bundle_sha256 : strrep("0", 64)
   external_acknowledgement_sha256 = filesha256(var.external_handoff_path)
+  external_acknowledgement_query = {
+    ack_path                           = var.external_handoff_path
+    trust_lock_path                    = "${path.module}/../../stages/pod-security-custody/custody-trust-lock-v3.json"
+    receipt_bundle_sha256              = local.expected_bundle_sha256
+    expected_acknowledgement_sha256    = local.external_acknowledgement_sha256
+    expected_context_sha256            = sha256(jsonencode(var.expected_context))
+    expected_phase                     = var.phase
+    expected_consumer                  = var.consumer_role
+    expected_action                    = var.action
+    cluster_id                         = var.expected_context.cluster_id
+    kube_system_uid                    = var.expected_context.kube_system_uid
+  }
 }
 
 # The platform invocation has no custody provider and receives no receipt,
@@ -236,21 +248,33 @@ locals {
 data "external" "verified_execution_acknowledgement" {
   program = ["python3", "${path.module}/../../scripts/verify_sai07_external_execution_ack_v3.py"]
 
-  query = {
-    ack_path                = var.external_handoff_path
-    trust_lock_path         = "${path.module}/../../stages/pod-security-custody/custody-trust-lock-v3.json"
-    receipt_bundle_sha256   = local.expected_bundle_sha256
-    expected_context_sha256 = sha256(jsonencode(var.expected_context))
-    expected_phase          = var.phase
-    expected_consumer       = var.consumer_role
-    expected_action         = var.action
-    cluster_id              = var.expected_context.cluster_id
-    kube_system_uid         = var.expected_context.kube_system_uid
-  }
+  query = local.external_acknowledgement_query
 }
 
 resource "terraform_data" "verified" {
   input = data.external.verified_execution_acknowledgement.result
+
+  triggers_replace = {
+    acknowledgement_sha256 = local.external_acknowledgement_sha256
+    action                 = var.action
+    consumer               = var.consumer_role
+    context_sha256         = sha256(jsonencode(var.expected_context))
+    phase                  = var.phase
+    verifier_sha256        = filesha256("${path.module}/../../scripts/verify_sai07_external_execution_ack_v3.py")
+  }
+
+  # A data.external result is a plan-time check and is replayable in a saved
+  # plan. Re-run the same exact-file verifier during apply; its ten-minute
+  # freshness check and planned file digest make a stale/swapped acknowledgement
+  # fail before any dependent namespace label or workload resource can change.
+  provisioner "local-exec" {
+    command = "python3 \"${path.module}/../../scripts/verify_sai07_external_execution_ack_v3.py\""
+    quiet   = true
+
+    environment = {
+      FS2_SAI07_APPLY_QUERY = jsonencode(local.external_acknowledgement_query)
+    }
+  }
 
   lifecycle {
     precondition {
