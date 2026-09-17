@@ -138,9 +138,13 @@ every member challenge. During apply it repeats the full custody verifier every
 five seconds, accepts only a later expiry for the same stable transaction and
 policy, terminates the apply before the remaining window falls below 90
 seconds, and repeats custody after a successful apply. Terraform runs in a new
-process group. Whether Terraform returns success or failure, the wrapper checks
-the complete process group before reporting: any survivor is `SIGSTOP` fenced,
-`SIGKILL`ed while stopped and reaped, and any inability to prove the group dead
+process group. The wrapper installs scoped `SIGINT` and `SIGTERM` handlers
+before `Popen`, converts either signal into the same exceptional-exit path, and
+restores the prior handlers only after the process group is proven dead. An
+outer `BaseException` fence also covers `KeyboardInterrupt`, custody failures,
+nonzero exits and unexpected post-spawn failures. Every such path ignores
+repeat catchable termination while it `SIGSTOP` fences, `SIGKILL`s and reaps
+the complete credential-bearing group; any inability to prove the group dead
 leaves the provider marker unresolved and blocks every later mutation. Before
 that process starts, the wrapper opens a marker in a
 provider-native, multi-AZ, append-only CAS journal. The provider signs the full
@@ -173,6 +177,20 @@ service at record 4097. The journal service configuration and signing material
 are held by the provider freeze;
 the record store separately permits only service-mediated create and one
 resourceVersion-CAS resolution append, never update, replacement or deletion.
+Every resolution retains the marker's immutable open revision in
+`marker_journal_resource_version`, but its
+`journal_previous_resource_version` is the exact current revision supplied by
+that resolve request. The signed resolution revision and response checkpoint
+must equal that current predecessor plus one. Intervening journal events can
+therefore precede recovery without either replaying a stale predecessor or
+detaching the resolution from its original marker.
+`SIGKILL` cannot be caught or handled by a userspace wrapper. If the wrapper
+itself receives `SIGKILL` after spawning Terraform, the external marker remains
+open and prevents a later controlled mutation, but the wrapper cannot claim
+that the process group was fenced or that no already-authorized remote request
+continued. That state is indeterminate and requires the explicit provider
+settlement and recovery protocol; this source contract does not describe
+`SIGKILL` as locally contained.
 A normal successful apply uses the same settlement and postcondition
 proof before appending its signed completion. A two-hour assertion
 is therefore only a maximum renewal envelope, not permission for an unbounded

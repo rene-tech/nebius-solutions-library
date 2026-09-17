@@ -582,6 +582,33 @@ digest; the response must advance exactly one event and name that digest as its
 previous checkpoint, preventing a signed fork from being substituted between
 the gate and its append.
 
+Independent exact review rejected `98aa2ef675875675274cf0c0573a0270fcaa18ca`
+/ tree `ea94c31a2ddcd3cebb0a8fc224076288d22963c4` as **SOURCE NO-GO**
+on two deterministic paths. Resolution validation incorrectly required the CAS
+predecessor to equal the selected marker's older open revision, which makes an
+honest recovery impossible after its refresh-only marker advances the journal.
+It also placed Terraform in a new session without scoped signal handling, so a
+`SIGINT`/`KeyboardInterrupt` or default `SIGTERM` could terminate the wrapper
+without reaching the descendant fence.
+
+The additive correction preserves two separate journal facts: the resolution's
+`marker_journal_resource_version` must equal the marker's immutable open
+revision, while `journal_previous_resource_version` must equal the resolve
+request's current expected revision. The signed resolution revision and current
+checkpoint must both advance that expected revision by exactly one. This permits
+fresh recovery after intervening journal events without weakening the marker or
+CAS bindings.
+
+Before spawning Terraform, the wrapper now installs scoped `SIGINT` and
+`SIGTERM` handlers. Both signals and every other post-`Popen` `BaseException`
+enter one outer fence that ignores repeat catchable termination, stops the
+complete session process group, kills it while stopped, reaps it, and only then
+re-raises while leaving the provider marker unresolved. Prior handlers are
+restored after the process is proven dead. `SIGKILL` is explicitly outside a
+userspace handler's containment: it leaves an externally visible unresolved
+marker and requires provider settlement/recovery, but the wrapper cannot claim
+that a child process was locally fenced after the wrapper itself was killed.
+
 These changes are static, unexecuted source corrections. They do not make the
 task, SAI-07/KEDA integration, or live rollout GO.
 

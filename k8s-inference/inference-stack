@@ -3441,9 +3441,9 @@ def _verified_provider_apply_journal(
                 or resolved_at.tzinfo is None
                 or resolved_at < opened_at
                 or resolved_at > checkpoint_created_at
-                or previous_revision != marker_revision
+                or previous_revision < marker_revision
                 or resolution_revision != record_revision
-                or resolution_revision <= previous_revision
+                or resolution_revision != previous_revision + 1
                 or resolution.get("payload_sha256")
                 != _json_sha256(resolution_payload)
             ):
@@ -3494,6 +3494,28 @@ def _verified_provider_apply_journal(
             or int(str(affected["record_resource_version"])) != journal_revision
             or (action == "begin" and affected["resolution"] is not None)
             or (action == "resolve" and affected["resolution"] is None)
+            or (
+                action == "resolve"
+                and int(
+                    str(
+                        affected["resolution"][
+                            "journal_previous_resource_version"
+                        ]
+                    )
+                )
+                != int(str(request_document["expected_journal_resource_version"]))
+            )
+            or (
+                action == "resolve"
+                and int(
+                    str(
+                        affected["resolution"][
+                            "journal_resolution_resource_version"
+                        ]
+                    )
+                )
+                != journal_revision
+            )
         ):
             raise DeploymentError(
                 "provider apply-journal affected view differs from the CAS request"
@@ -3911,79 +3933,128 @@ def apply_plan(
         if process_group_alive(process_group_id):
             raise DeploymentError("Terraform process group survived custody fencing")
 
+    managed_apply_signals = (signal.SIGINT, signal.SIGTERM)
+    previous_apply_signal_handlers: dict[int, Any] = {}
+    previous_apply_signal_mask: set[signal.Signals] | None = None
+
+    def terraform_abort_signal(signum: int, _frame: Any) -> None:
+        """Convert catchable termination into the common process-group fence."""
+
+        # Block a second catchable termination while the outer BaseException
+        # handler stops, kills and reaps the credential-bearing process group.
+        for managed_signal in managed_apply_signals:
+            signal.signal(managed_signal, signal.SIG_IGN)
+        raise DeploymentError(
+            f"Terraform apply received {signal.Signals(signum).name}; provider "
+            f"apply {apply_id} remains unresolved"
+        )
+
+    process: subprocess.Popen[Any] | None = None
     try:
-        process = subprocess.Popen(
-            arguments,
-            env=apply_environment,
-            start_new_session=True,
-        )
-    except FileNotFoundError as exc:
-        raise DeploymentError(f"required executable not found: {terraform}") from exc
-    while True:
         try:
-            return_code = process.wait(timeout=5)
-            break
-        except subprocess.TimeoutExpired:
-            try:
-                refreshed_expiry = custody_guard()
-                if refreshed_expiry < expires_at:
-                    raise DeploymentError(
-                        "provider custody validity regressed during apply"
-                    )
-                expires_at = refreshed_expiry
-                if refreshed_expiry - datetime.now(UTC) < timedelta(seconds=90):
-                    raise DeploymentError(
-                        "provider custody expiry approached during apply"
-                    )
-            except BaseException as custody_error:
-                fence_error: BaseException | None = None
-                try:
-                    stop_process_tree(process)
-                except BaseException as error:
-                    fence_error = error
-                if fence_error is not None:
-                    raise DeploymentError(
-                        "provider custody failed during apply and the stopped process "
-                        "group could not be fully reaped; credential use remains fenced, "
-                        f"remote outcome is indeterminate (provider apply {apply_id}), and no continuation "
-                        "is permitted"
-                    ) from fence_error
-                raise DeploymentError(
-                    "provider custody failed during apply; the stopped Terraform "
-                    "process group was killed without resuming credential use and "
-                    f"remote outcome is indeterminate (provider apply {apply_id}). Run the explicit "
-                    "reconcile-indeterminate command under a fresh signed custody "
-                    "epoch before any further mutation"
-                ) from custody_error
-    if return_code != 0:
-        fence_error: BaseException | None = None
-        try:
-            # A failed Terraform parent is not evidence that provider/plugin
-            # children exited.  Test the session process group and, if any
-            # member remains, SIGSTOP-fence it before SIGKILL/reap.  The
-            # provider journal marker deliberately remains unresolved.
-            stop_process_tree(process)
-        except BaseException as error:
-            fence_error = error
-        if fence_error is not None:
+            for managed_signal in managed_apply_signals:
+                previous_apply_signal_handlers[managed_signal] = signal.getsignal(
+                    managed_signal
+                )
+                signal.signal(managed_signal, terraform_abort_signal)
+        except BaseException as signal_error:
+            for managed_signal, previous_handler in (
+                previous_apply_signal_handlers.items()
+            ):
+                signal.signal(managed_signal, previous_handler)
             raise DeploymentError(
-                "Terraform exited unsuccessfully and its credential-bearing "
-                "process group could not be fully fenced and reaped; the "
-                f"provider apply {apply_id} remains unresolved and no further "
-                "mutation is permitted"
-            ) from fence_error
-        raise DeploymentError(
-            f"command failed with exit code {return_code}; its complete "
-            "credential-bearing process group was fenced and reaped, but the "
-            f"remote outcome remains indeterminate (provider apply {apply_id}): "
-            f"{command_text(arguments)}"
-        )
-    if process_group_alive(process.pid):
-        stop_process_tree(process)
-        raise DeploymentError(
-            "Terraform returned while a provider/plugin process remained alive; "
-            f"remote outcome is indeterminate (provider apply {apply_id})"
-        )
+                "cannot install the Terraform apply SIGINT/SIGTERM custody fence"
+            ) from signal_error
+        try:
+            try:
+                # Keep catchable termination pending across Popen so the child
+                # cannot exist before ``process`` is assigned. Unblocking then
+                # routes any pending signal through the common outer fence.
+                previous_apply_signal_mask = signal.pthread_sigmask(
+                    signal.SIG_BLOCK, managed_apply_signals
+                )
+                try:
+                    process = subprocess.Popen(
+                        arguments,
+                        env=apply_environment,
+                        start_new_session=True,
+                    )
+                finally:
+                    signal.pthread_sigmask(
+                        signal.SIG_SETMASK, previous_apply_signal_mask
+                    )
+                    previous_apply_signal_mask = None
+            except FileNotFoundError as exc:
+                raise DeploymentError(
+                    f"required executable not found: {terraform}"
+                ) from exc
+            while True:
+                try:
+                    return_code = process.wait(timeout=5)
+                    break
+                except subprocess.TimeoutExpired:
+                    try:
+                        refreshed_expiry = custody_guard()
+                        if refreshed_expiry < expires_at:
+                            raise DeploymentError(
+                                "provider custody validity regressed during apply"
+                            )
+                        expires_at = refreshed_expiry
+                        if refreshed_expiry - datetime.now(UTC) < timedelta(
+                            seconds=90
+                        ):
+                            raise DeploymentError(
+                                "provider custody expiry approached during apply"
+                            )
+                    except BaseException as custody_error:
+                        raise DeploymentError(
+                            "provider custody failed during apply; the Terraform "
+                            "process group must be fenced without resuming credential "
+                            f"use and the remote outcome is indeterminate (provider apply {apply_id})"
+                        ) from custody_error
+            if return_code != 0:
+                raise DeploymentError(
+                    f"command failed with exit code {return_code}; the complete "
+                    "credential-bearing process group must be fenced and reaped, "
+                    f"and the remote outcome remains indeterminate (provider apply {apply_id}): "
+                    f"{command_text(arguments)}"
+                )
+            if process_group_alive(process.pid):
+                raise DeploymentError(
+                    "Terraform returned while a provider/plugin process remained alive; "
+                    f"remote outcome is indeterminate (provider apply {apply_id})"
+                )
+        except BaseException:
+            if process is None:
+                raise
+            # The same fence covers nonzero exit, custody failure, SIGINT,
+            # SIGTERM, KeyboardInterrupt and every other post-Popen exception.
+            # Ignore repeat catchable termination until the group is reaped.
+            for managed_signal in managed_apply_signals:
+                signal.signal(managed_signal, signal.SIG_IGN)
+            fence_error: BaseException | None = None
+            try:
+                stop_process_tree(process)
+            except BaseException as error:
+                fence_error = error
+            if fence_error is not None:
+                raise DeploymentError(
+                    "Terraform execution failed or was interrupted and its "
+                    "credential-bearing process group could not be fully fenced "
+                    f"and reaped; provider apply {apply_id} remains unresolved "
+                    "and no further mutation is permitted"
+                ) from fence_error
+            raise
+    finally:
+        if previous_apply_signal_mask is not None:
+            signal.pthread_sigmask(
+                signal.SIG_SETMASK, previous_apply_signal_mask
+            )
+        for (
+            managed_signal,
+            previous_handler,
+        ) in previous_apply_signal_handlers.items():
+            signal.signal(managed_signal, previous_handler)
     try:
         refreshed_expiry = custody_guard()
     except BaseException as custody_error:

@@ -1847,6 +1847,15 @@ class InferenceStackTests(unittest.TestCase):
             "provider resolution checkpoint changed an unresolved record other",
             source,
         )
+        self.assertIn("previous_revision < marker_revision", source)
+        self.assertIn(
+            'request_document["expected_journal_resource_version"]', source
+        )
+        self.assertIn(
+            'affected["resolution"][\n'
+            '                            "journal_previous_resource_version"',
+            source,
+        )
         self.assertIn("journal_guard(\"begin\", begin_request)", source)
         self.assertIn("_verify_provider_journal_receipt_signature(", source)
         self.assertIn("metadata.st_uid != 0", source)
@@ -1865,11 +1874,25 @@ class InferenceStackTests(unittest.TestCase):
             apply_plan_source.index("settlement_guard(marker"),
             apply_plan_source.index('journal_guard("resolve", resolution_request)'),
         )
-        failed_exit_source = apply_plan_source.split(
-            "if return_code != 0:", 1
-        )[1].split("if process_group_alive(process.pid):", 1)[0]
-        self.assertIn("stop_process_tree(process)", failed_exit_source)
-        self.assertIn("remains unresolved", failed_exit_source)
+        self.assertIn("def terraform_abort_signal(", apply_plan_source)
+        self.assertIn(
+            "signal.signal(managed_signal, terraform_abort_signal)",
+            apply_plan_source,
+        )
+        self.assertIn("signal.SIGINT, signal.SIGTERM", apply_plan_source)
+        self.assertIn("signal.pthread_sigmask(", apply_plan_source)
+        self.assertIn("signal.SIG_BLOCK", apply_plan_source)
+        self.assertIn("signal.SIG_SETMASK", apply_plan_source)
+        post_spawn_fence = apply_plan_source.split(
+            "except BaseException:", 1
+        )[1].split("finally:", 1)[0]
+        self.assertIn("signal.SIG_IGN", post_spawn_fence)
+        self.assertIn("stop_process_tree(process)", post_spawn_fence)
+        self.assertIn("remains unresolved", post_spawn_fence)
+        restore_source = apply_plan_source.split("finally:", 1)[1]
+        self.assertIn(
+            "signal.signal(managed_signal, previous_handler)", restore_source
+        )
         apply_source = source[source.index("def apply_stack(") : source.index("def plan_stack(")]
         self.assertLess(
             apply_source.index("preflight_attestation = provider_custody_preflight"),
