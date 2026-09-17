@@ -74,6 +74,7 @@ from .model_deployment_mutation import HttpKubernetesDesiredWriter, ModelDeploym
 from .model_deployment_preview import ModelDeploymentPreviewService, RepositoryModelDeploymentPreviewState
 from .model_inventory import load_snapshot_capabilities
 from .models import TokenCreate
+from .nim_admission import serve_nim_admission
 from .postgres import PostgresMaintenanceStore, PostgresStore
 from .postgresql_release import render_postgresql_release_contract
 from .registry import Registry
@@ -659,6 +660,19 @@ async def serve(settings: Settings) -> None:
     await server.serve()
 
 
+async def nim_admission(settings: Settings) -> None:
+    if not settings.nim_admission_enabled:
+        raise RuntimeError("NIM admission feature gate is disabled")
+    await serve_nim_admission(
+        config_file=settings.nim_admission_config_file,
+        catalog_dir=settings.catalog_dir,
+        tls_certificate_file=settings.nim_admission_tls_certificate_file,
+        tls_private_key_file=settings.nim_admission_tls_private_key_file,
+        port=settings.nim_admission_port,
+        log_level=settings.log_level,
+    )
+
+
 async def maintain(settings: Settings) -> None:
     store = await PostgresMaintenanceStore.connect(settings.database_url)
     try:
@@ -767,6 +781,7 @@ def main() -> None:
             "validate",
             "postgresql-release-contract",
             "model-controller",
+            "nim-admission",
             "gpu-allocation-observer",
             "scientific-materialize",
             "scientific-materialize-many",
@@ -792,6 +807,7 @@ def main() -> None:
             "wait-schema": wait_schema,
             "bootstrap-access": bootstrap_access,
             "model-controller": run_model_controller,
+            "nim-admission": nim_admission,
             "gpu-allocation-observer": observe_gpu_allocations,
         }[args.command]
         asyncio.run(action(settings))

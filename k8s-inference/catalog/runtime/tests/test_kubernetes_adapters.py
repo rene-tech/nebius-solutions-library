@@ -151,7 +151,7 @@ class KubernetesAdapterTests(unittest.TestCase):
             + self.digest("nim-security-proxy")
         )
         subject: dict[str, object] = {
-            "schema": "fs2-serve.nebius.ai/nim-operator-security-subject/v3",
+            "schema": "fs2-serve.nebius.ai/nim-operator-security-subject/v4",
             "model_id": record.model_id,
             "resource_kind": resource_kind,
             "operator_image_digest": self.digest("nim-operator-image"),
@@ -206,6 +206,7 @@ class KubernetesAdapterTests(unittest.TestCase):
                     "container_class": "containers",
                     "image": descendant_image,
                     "security_context": container_security,
+                    "ports": [],
                     "mounts": {
                         "/tmp": {
                             **{
@@ -223,6 +224,7 @@ class KubernetesAdapterTests(unittest.TestCase):
                     "container_class": "containers",
                     "image": companion_image,
                     "security_context": companion_security,
+                    "ports": [],
                     "mounts": {
                         "/var/run/fs2": {
                             "kind": "emptyDir",
@@ -1424,6 +1426,19 @@ class KubernetesAdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(CatalogError, "writable block device"):
             validate_nim_operator_descendant(
                 poisoned,
+                security_envelope=service_envelope,
+                trusted_attestors=service_attestors,
+                security_session_id=service_session,
+                resource_kind="NIMService",
+                record=boltz,
+            )
+        host_port = copy.deepcopy(descendant)
+        host_port["spec"]["containers"][0]["ports"] = [
+            {"name": "inference", "containerPort": 8000, "hostPort": 8000}
+        ]
+        with self.assertRaisesRegex(CatalogError, "host port"):
+            validate_nim_operator_descendant(
+                host_port,
                 security_envelope=service_envelope,
                 trusted_attestors=service_attestors,
                 security_session_id=service_session,

@@ -183,6 +183,7 @@ locals {
         enabled = var.model_controller.writes_enabled
       }
     }
+    nimAdmission = local.nim_admission_chart_values
     publicLoadBalancer = {
       enabled               = local.public_edge_enabled
       targetProjectId       = var.project_id
@@ -294,6 +295,7 @@ resource "helm_release" "control_plane" {
     kubernetes_config_map_v1.admin_configuration,
     kubernetes_config_map_v1.model_controller_envelope,
     kubernetes_config_map_v1.model_controller_bundles,
+    kubernetes_config_map_v1.nim_admission,
     kubernetes_persistent_volume_claim_v1.fast_start_compile_cache,
     kubernetes_persistent_volume_claim_v1.fast_start_residency_receipt,
     kubernetes_persistent_volume_claim_v1.scientific_snapshots,

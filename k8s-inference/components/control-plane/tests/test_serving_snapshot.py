@@ -15,6 +15,7 @@ import pytest
 from test_model_deployment import (
     digest,
     envelope,
+    modelexpress_qualification,
     model_spec,
     render_context,
     renderer,
@@ -25,6 +26,7 @@ from fs2_serve.model_deployment import (
     CacheSpec,
     CacheTier,
     LegacyManifestRenderer,
+    ModelExpressPoolTransport,
     SnapshotPreference,
     SnapshotRef,
     SnapshotStrategy,
@@ -627,6 +629,71 @@ def test_registered_snapshot_is_admitted_and_preserves_scheduling_resources_and_
         "fs2-serve.nebius.ai/pod-security-exception"
     ] == "serving-cuda-criu"
     assert all("nvidia.com/gpu" not in init.get("resources", {}).get("limits", {}) for init in pod["initContainers"])
+
+
+def test_snapshot_and_modelexpress_rdma_use_one_signed_combined_capability_profile():
+    source, infrastructure, bundle, _config, context = fixture()
+    runtime_index, runtime_compatibility = next(
+        (index, item)
+        for index, item in enumerate(bundle.runtime_security_compatibilities)
+        if item.container_class == "containers"
+        and item.container_name == bundle.runtime_container_name
+        and item.capability_profile == "serving-snapshot-runtime"
+    )
+    bundle.runtime_security_compatibilities[runtime_index] = runtime_security_compatibility(
+        model_id=source.model_ref,
+        container_class="containers",
+        container_name=bundle.runtime_container_name,
+        image=runtime_compatibility.image,
+        uid=0,
+        gid=0,
+        tmp_size_limit=runtime_compatibility.tmp_size_limit,
+        exact_mounts={
+            path: mount.model_dump(mode="json", exclude_none=False)
+            for path, mount in runtime_compatibility.mounts.items()
+        },
+        capability_profile="serving-snapshot-runtime-modelexpress-nixl-rdma",
+        allowed_capabilities=[
+            "CHECKPOINT_RESTORE",
+            "NET_ADMIN",
+            "SYS_ADMIN",
+            "SYS_PTRACE",
+            "SYS_TIME",
+            "IPC_LOCK",
+        ],
+        allow_privilege_escalation=True,
+        read_only_root_filesystem=False,
+        seccomp_profile="Unconfined",
+        apparmor_profile="Unconfined",
+    )
+    context.model_express = modelexpress_qualification(
+        "pool-a",
+        pool_transports={
+            "pool-a": ModelExpressPoolTransport(
+                mode="nixl-rdma",
+                rdma_resource_name="example.com/rdma_shared_device_a",
+            )
+        },
+    )
+
+    plan = ControllerFiles(
+        infrastructure_envelope=infrastructure,
+        bundles=[bundle],
+    ).renderer().render(source, context)
+    deployment = next(item.manifest for item in plan.resources if item.kind == "Deployment")
+    runtime = deployment["spec"]["template"]["spec"]["containers"][0]
+
+    assert runtime["securityContext"]["capabilities"] == {
+        "drop": ["ALL"],
+        "add": [
+            "CHECKPOINT_RESTORE",
+            "NET_ADMIN",
+            "SYS_ADMIN",
+            "SYS_PTRACE",
+            "SYS_TIME",
+            "IPC_LOCK",
+        ],
+    }
 
 
 @pytest.mark.parametrize("change", ["gpu", "image", "artifact", "strategy"])

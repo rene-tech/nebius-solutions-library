@@ -24,7 +24,7 @@ from typing import Any, Mapping, cast
 
 
 CONTRACT_ENV = "FS2_SCIENTIFIC_RUNTIME_CACHE_OWNERSHIP_JSON"
-CONTRACT_SCHEMA = "fs2-serve.nebius.ai/scientific-runtime-cache-ownership/v3"
+CONTRACT_SCHEMA = "fs2-serve.nebius.ai/scientific-runtime-cache-ownership/v4"
 JOURNAL_SCHEMA = "fs2-serve.nebius.ai/scientific-runtime-cache-migration-journal/v2"
 COMPLETION_SCHEMA = "fs2-serve.nebius.ai/scientific-runtime-cache-migration-completion/v2"
 CACHE_ROOT = Path("/cache")
@@ -34,7 +34,7 @@ AUTHORIZATION_ID = re.compile(r"^[a-z0-9](?:[-a-z0-9.]{0,126}[a-z0-9])?$")
 MIGRATION_PHASE = "journaled-dual-access-legacy-group"
 WRITER_LOCK_NAME = ".fs2-cache-writer-admission.lock"
 WRITER_LOCK_SCHEMA = "fs2-serve.nebius.ai/scientific-runtime-cache-writer-lock/v1"
-QUIESCENCE_SCHEMA = "fs2-serve.nebius.ai/scientific-runtime-cache-quiescence/v2"
+ACTIVE_FENCE_SCHEMA = "fs2-serve.nebius.ai/scientific-runtime-cache-active-fence/v1"
 
 
 class CacheOwnershipError(ValueError):
@@ -558,6 +558,7 @@ def prepare(contract: object, *, expected_root: Path = CACHE_ROOT) -> tuple[str,
     quiescence = _object(document["writer_quiescence"], "runtime cache writer quiescence")
     if (
         set(quiescence) != {
+            "schema",
             "lease_name",
             "lease_uid",
             "lock_device",
@@ -570,14 +571,13 @@ def prepare(contract: object, *, expected_root: Path = CACHE_ROOT) -> tuple[str,
             "admission_policy_name",
             "admission_policy_uid",
             "admission_policy_resource_version",
-            "admission_policy_sha256",
             "admission_binding_name",
             "observed_at",
             "expires_at",
             "evidence_sha256",
             "authorization_id",
-            "quiescence_sha256",
         }
+        or quiescence["schema"] != ACTIVE_FENCE_SCHEMA
         or not isinstance(quiescence["lease_name"], str)
         or quiescence["lease_name"] != WRITER_LOCK_NAME
         or not isinstance(quiescence["lease_uid"], str)
@@ -601,43 +601,12 @@ def prepare(contract: object, *, expected_root: Path = CACHE_ROOT) -> tuple[str,
         or re.fullmatch(r"[a-f0-9-]{36}", quiescence["admission_policy_uid"]) is None
         or not isinstance(quiescence["admission_policy_resource_version"], str)
         or re.fullmatch(r"[1-9][0-9]*", quiescence["admission_policy_resource_version"]) is None
-        or not isinstance(quiescence["admission_policy_sha256"], str)
-        or re.fullmatch(r"[a-f0-9]{64}", quiescence["admission_policy_sha256"]) is None
         or quiescence["admission_binding_name"]
         != "fs2-scientific-runtime-cache-writer-fence"
         or not isinstance(quiescence["evidence_sha256"], str)
         or re.fullmatch(r"[a-f0-9]{64}", quiescence["evidence_sha256"]) is None
         or not isinstance(quiescence["authorization_id"], str)
         or AUTHORIZATION_ID.fullmatch(quiescence["authorization_id"]) is None
-        or not isinstance(quiescence["quiescence_sha256"], str)
-        or re.fullmatch(r"[a-f0-9]{64}", quiescence["quiescence_sha256"]) is None
-        or quiescence["quiescence_sha256"]
-        != hashlib.sha256(
-            _canonical(
-                {
-                    "schema": QUIESCENCE_SCHEMA,
-                    "lease_name": quiescence["lease_name"],
-                    "lease_uid": quiescence["lease_uid"],
-                    "lock_device": quiescence["lock_device"],
-                    "lock_inode": quiescence["lock_inode"],
-                    "lock_content_sha256": quiescence["lock_content_sha256"],
-                    "zero_writers": quiescence["zero_writers"],
-                    "writer_admission_fenced": quiescence["writer_admission_fenced"],
-                    "active_writer_count": quiescence["active_writer_count"],
-                    "activation_id": quiescence["activation_id"],
-                    "admission_policy_name": quiescence["admission_policy_name"],
-                    "admission_policy_uid": quiescence["admission_policy_uid"],
-                    "admission_policy_resource_version": quiescence[
-                        "admission_policy_resource_version"
-                    ],
-                    "admission_policy_sha256": quiescence["admission_policy_sha256"],
-                    "admission_binding_name": quiescence["admission_binding_name"],
-                    "observed_at": quiescence["observed_at"],
-                    "expires_at": quiescence["expires_at"],
-                    "evidence_sha256": quiescence["evidence_sha256"],
-                }
-            )
-        ).hexdigest()
     ):
         raise CacheOwnershipError("runtime cache migration lacks exact zero-writer lease evidence")
     _require_active_quiescence(quiescence)

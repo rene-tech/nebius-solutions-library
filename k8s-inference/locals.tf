@@ -1127,6 +1127,7 @@ locals {
     model_runtime_security_trust    = var.deployment.models.runtime_security_trust
     model_runtime_security_authorizations = var.deployment.models.runtime_security_authorizations
     model_runtime_security_compatibilities = var.deployment.models.runtime_security_compatibilities
+    nim_operator_admission              = var.deployment.models.nim_operator_admission
     model_pool_overrides            = var.deployment.models.pool_overrides
     model_runtime_overrides         = var.deployment.models.runtime_overrides
     model_scaling_mode              = var.deployment.models.scaling.mode

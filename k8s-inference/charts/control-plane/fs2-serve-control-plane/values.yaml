@@ -93,6 +93,31 @@ modelController:
   tolerations: []
   affinity: {}
 
+# Dedicated TLS admission process for NIMCache/NIMService and every Pod in the
+# model namespace that is attributable to the configured NIM Operator actor.
+# It stays disabled until Terraform supplies externally signed envelopes, an
+# immutable ConfigMap, and a pre-created serving certificate/CA bundle.
+nimAdmission:
+  enabled: false
+  replicaCount: 2
+  namespace: fs2-models
+  configMapName: ""
+  configKey: admission.json
+  tlsSecretName: ""
+  caBundle: ""
+  service:
+    port: 8443
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
 # Staged scientific-batch API and reconciler. Both gates must be explicitly
 # enabled after immutable profile, execution-map, and Kueue contract ConfigMaps
 # are installed. Default releases receive no workload mutation credential.

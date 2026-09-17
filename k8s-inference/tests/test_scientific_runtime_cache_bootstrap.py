@@ -61,6 +61,7 @@ def contract(root: Path, *names: str) -> dict[str, object]:
             }
         )
     quiescence = {
+        "schema": BOOTSTRAP.ACTIVE_FENCE_SCHEMA,
         "lease_name": BOOTSTRAP.WRITER_LOCK_NAME,
         "lease_uid": "1" * 64,
         "lock_device": 0,
@@ -73,7 +74,6 @@ def contract(root: Path, *names: str) -> dict[str, object]:
         "admission_policy_name": "fs2-scientific-runtime-cache-writer-fence",
         "admission_policy_uid": "11111111-1111-4111-8111-111111111111",
         "admission_policy_resource_version": "17",
-        "admission_policy_sha256": "4" * 64,
         "admission_binding_name": "fs2-scientific-runtime-cache-writer-fence",
         "observed_at": (datetime.now(UTC) - timedelta(seconds=5)).strftime(
             "%Y-%m-%dT%H:%M:%SZ"
@@ -102,16 +102,6 @@ def contract(root: Path, *names: str) -> dict[str, object]:
         "writer_quiescence": {
             **quiescence,
             "authorization_id": "unit-quiescence-review",
-            "quiescence_sha256": __import__("hashlib").sha256(
-                json.dumps(
-                    {
-                        "schema": BOOTSTRAP.QUIESCENCE_SCHEMA,
-                        **quiescence,
-                    },
-                    sort_keys=True,
-                    separators=(",", ":"),
-                ).encode()
-            ).hexdigest(),
         },
         "directories": directories,
     }
@@ -302,18 +292,6 @@ def test_signed_lease_must_bind_the_exact_flocked_inode_and_content(
     quiescence = document["writer_quiescence"]
     assert isinstance(quiescence, dict)
     quiescence["lock_inode"] += 1
-    unsigned = {
-        key: value
-        for key, value in quiescence.items()
-        if key not in {"authorization_id", "quiescence_sha256"}
-    }
-    quiescence["quiescence_sha256"] = __import__("hashlib").sha256(
-        json.dumps(
-            {"schema": BOOTSTRAP.QUIESCENCE_SCHEMA, **unsigned},
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode()
-    ).hexdigest()
 
     with pytest.raises(BOOTSTRAP.CacheOwnershipError, match="lease is not one regular inode"):
         BOOTSTRAP.prepare(document, expected_root=tmp_path)
@@ -478,15 +456,25 @@ def test_terraform_uses_execution_map_owners_and_blocks_control_plane() -> None:
     assert "workspace_gid      = try(stage.workspace_gid, null)" in cache_source
     assert "scientific_runtime_cache_boundaries" in cache_source
     assert 'migration_phase = "journaled-dual-access-legacy-group"' in cache_source
-    assert "scientific-runtime-cache-ownership/v3" in cache_source
+    assert "scientific-runtime-cache-ownership/v4" in cache_source
     assert "claim.tenant_id" in cache_source
     assert "cache-boundary" in cache_source
     assert 'kind       = "ValidatingAdmissionPolicy"' in cache_source
     assert 'kind       = "ValidatingAdmissionPolicyBinding"' in cache_source
     assert 'validationActions = ["Deny", "Audit"]' in cache_source
     assert "scientific_runtime_cache_writer_boundary_cel" in cache_source
-    assert "scientific-runtime-cache Pods may not use subPathExpr" in cache_source
-    assert "scientific runtime-cache Pods may not project block devices" in cache_source
+    assert 'resources   = ["pods/ephemeralcontainers"]' in cache_source
+    assert "request.userInfo.username" in cache_source
+    assert "bootstrap_job_creator" in cache_source
+    assert "scientific_workload_creator" in cache_source
+    assert "job_controller" in cache_source
+    assert "jobset_controller" in cache_source
+    assert "hasPolicyOwner" in cache_source
+    assert "scientific_runtime_cache_bootstrap_contract_cel" in cache_source
+    assert "containers[0].env[0].value" in cache_source
+    assert "scientific runtime-cache workloads may not use subPathExpr or host ports" in cache_source
+    assert "scientific runtime-cache workloads may not project block devices" in cache_source
+    assert 'key      = "kubernetes.io/metadata.name"' in cache_source
     assert "admission_policy_uid" in cache_source
     assert "admission_policy_resource_version" in cache_source
     assert "lock_device" in cache_source

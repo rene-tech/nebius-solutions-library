@@ -1061,6 +1061,10 @@ locals {
           ) &&
           try(length(record.container.volumeDevices), 0) == 0 &&
           try(length([
+            for port in record.container.ports : port
+            if can(port.hostIP) || try(port.hostPort, 0) != 0
+          ]), 0) == 0 &&
+          try(length([
             for mount in record.container.volumeMounts : mount if can(mount.subPathExpr)
           ]), 0) == 0 &&
           try(jsonencode(record.container.securityContext) == jsonencode({

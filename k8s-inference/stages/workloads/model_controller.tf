@@ -746,7 +746,7 @@ locals {
   }
   model_controller_snapshot_security_missing = {
     for bundle_id, bundle in local.serving_snapshot_bundles : bundle_id => [
-        for requirement in [
+        for requirement in concat([
           {
             container_class   = "containers"
             container_name    = try(local.model_controller_runtime_container_names[bundle.model_ref], "")
@@ -765,7 +765,18 @@ locals {
             image             = bundle.runtime_image
             capability_profile = "serving-snapshot-address"
           },
-        ] : "${requirement.container_class}:${requirement.container_name}:${requirement.capability_profile}"
+        ], (
+          contains(keys(var.model_express.models), bundle.model_ref) &&
+          anytrue([
+            for pool_id in try(local.model_controller_qualified_pool_ids[bundle.model_ref], []) :
+            lookup(var.model_express.models[bundle.model_ref].pool_transports, pool_id, var.model_express.models[bundle.model_ref].transport).mode == "nixl-rdma"
+          ])
+        ) ? [{
+          container_class    = "containers"
+          container_name     = try(local.model_controller_runtime_container_names[bundle.model_ref], "")
+          image              = bundle.runtime_image
+          capability_profile = "serving-snapshot-runtime-modelexpress-nixl-rdma"
+        }] : []) : "${requirement.container_class}:${requirement.container_name}:${requirement.capability_profile}"
         if length([
           for compatibility in values(var.model_runtime_security_compatibilities) : compatibility
           if compatibility.model_id == bundle.model_ref &&

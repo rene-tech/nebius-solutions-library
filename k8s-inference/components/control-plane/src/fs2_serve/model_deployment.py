@@ -1827,6 +1827,7 @@ class RuntimeSecurityCompatibility(KubernetesModel):
         "modelexpress-nixl-rdma",
         "host-memory-locked-residency",
         "serving-snapshot-runtime",
+        "serving-snapshot-runtime-modelexpress-nixl-rdma",
         "serving-snapshot-tools",
         "serving-snapshot-address",
     ] = "none"
@@ -1839,7 +1840,7 @@ class RuntimeSecurityCompatibility(KubernetesModel):
             "SYS_PTRACE",
             "SYS_TIME",
         ]
-    ] = Field(default_factory=list, max_length=5)
+    ] = Field(default_factory=list, max_length=6)
     allow_privilege_escalation: bool = False
     privileged: bool = False
     read_only_root_filesystem: bool = True
@@ -1909,6 +1910,14 @@ class RuntimeSecurityCompatibility(KubernetesModel):
                 "SYS_PTRACE",
                 "SYS_TIME",
             ],
+            "serving-snapshot-runtime-modelexpress-nixl-rdma": [
+                "CHECKPOINT_RESTORE",
+                "NET_ADMIN",
+                "SYS_ADMIN",
+                "SYS_PTRACE",
+                "SYS_TIME",
+                "IPC_LOCK",
+            ],
             "serving-snapshot-tools": [],
             "serving-snapshot-address": ["NET_ADMIN"],
         }
@@ -1926,14 +1935,22 @@ class RuntimeSecurityCompatibility(KubernetesModel):
             or self.run_as_user != 0
             or self.run_as_group != 0
             or self.privileged
-            or self.capability_profile == "serving-snapshot-runtime"
+            or self.capability_profile
+            in {
+                "serving-snapshot-runtime",
+                "serving-snapshot-runtime-modelexpress-nixl-rdma",
+            }
             and (
                 not self.allow_privilege_escalation
                 or self.read_only_root_filesystem
                 or self.seccomp_profile != "Unconfined"
                 or self.apparmor_profile != "Unconfined"
             )
-            or self.capability_profile != "serving-snapshot-runtime"
+            or self.capability_profile
+            not in {
+                "serving-snapshot-runtime",
+                "serving-snapshot-runtime-modelexpress-nixl-rdma",
+            }
             and (
                 self.allow_privilege_escalation
                 or not self.read_only_root_filesystem
@@ -1950,7 +1967,11 @@ class RuntimeSecurityCompatibility(KubernetesModel):
                 or self.allowed_capabilities != ["IPC_LOCK"]
             )
         ) or (
-            self.capability_profile == "serving-snapshot-runtime"
+            self.capability_profile
+            in {
+                "serving-snapshot-runtime",
+                "serving-snapshot-runtime-modelexpress-nixl-rdma",
+            }
             and self.container_class != "containers"
         ) or (
             self.capability_profile in {
@@ -2295,6 +2316,19 @@ def _final_mounts(
     return resolved
 
 
+def _reject_host_ports(container: Mapping[str, Any]) -> None:
+    """Close the Restricted host-port surface for a final container."""
+
+    ports = container.get("ports", [])
+    if not isinstance(ports, list):
+        raise ValueError("model Pod container ports are invalid")
+    for port in ports:
+        if not isinstance(port, Mapping):
+            raise ValueError("model Pod container port is invalid")
+        if "hostIP" in port or port.get("hostPort", 0) not in {None, 0}:
+            raise ValueError("model Pod containers may not expose host ports")
+
+
 def _enforce_restricted_runtime_security(
     pod_spec: dict[str, Any],
     runtime_container_name: str,
@@ -2379,6 +2413,7 @@ def _enforce_restricted_runtime_security(
         ):
             raise ValueError(f"primary Deployment {field} is invalid")
         for ordinal, container in enumerate(containers):
+            _reject_host_ports(container)
             image = container.get("image")
             if (
                 not isinstance(image, str)
@@ -2426,6 +2461,7 @@ def _enforce_restricted_runtime_security(
                     "modelexpress-nixl-rdma",
                     "host-memory-locked-residency",
                     "serving-snapshot-runtime",
+                    "serving-snapshot-runtime-modelexpress-nixl-rdma",
                     "serving-snapshot-tools",
                     "serving-snapshot-address",
                 }
@@ -3432,12 +3468,15 @@ class LegacyManifestRenderer:
                         ("initContainers", "snapshot-local-address"): "serving-snapshot-address",
                     }
                 )
-            if (
+            rdma_profile = (
                 context.model_express is not None
                 and context.model_express.pool_transports[segment.pool.pool_id].mode == "nixl-rdma"
-            ):
+            )
+            if rdma_profile:
                 active_capability_profiles[("containers", bundle.runtime_container_name)] = (
-                    "modelexpress-nixl-rdma"
+                    "serving-snapshot-runtime-modelexpress-nixl-rdma"
+                    if selected_snapshot is not None
+                    else "modelexpress-nixl-rdma"
                 )
             if mechanism is not None and mechanism in DECLARED_MECHANISMS:
                 declaration = context.mechanism_declaration(mechanism)
@@ -3501,7 +3540,10 @@ class LegacyManifestRenderer:
                             compatibility.container_class == "containers"
                             and compatibility.container_name == bundle.runtime_container_name
                             and compatibility.image == selected_snapshot.runtime_image
-                            and compatibility.capability_profile == "serving-snapshot-runtime"
+                            and compatibility.capability_profile
+                            == active_capability_profiles[
+                                ("containers", bundle.runtime_container_name)
+                            ]
                         )
                         or (
                             compatibility.container_class == "initContainers"

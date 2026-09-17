@@ -173,6 +173,19 @@ def _immutable_image_registry(image: str, label: str) -> str:
     return image.split("/", 1)[0]
 
 
+def _reject_scientific_host_ports(container: Mapping[str, Any]) -> None:
+    ports = container.get("ports", [])
+    if not isinstance(ports, list):
+        raise ScientificExecutionMapError("scientific container ports are invalid")
+    if any(
+        not isinstance(port, Mapping)
+        or "hostIP" in port
+        or port.get("hostPort", 0) not in {None, 0}
+        for port in ports
+    ):
+        raise ScientificExecutionMapError("scientific containers may not expose host ports")
+
+
 def _scientific_image_subject(image: str) -> str:
     return hashlib.sha256(
         json.dumps(
@@ -333,6 +346,7 @@ class FileScientificManifestRenderer:
                 "runtime_security_trust",
                 "runtime_security_authorizations",
                 "runtime_cache_boundaries",
+                "runtime_cache_admission",
             }
             or root["schema"] != EXECUTION_SCHEMA
         ):
@@ -536,6 +550,28 @@ class FileScientificManifestRenderer:
             boundary_uids.add(run_as_user)
             boundary_gids.add(run_as_group)
         self.runtime_cache_boundaries = MappingProxyType(runtime_cache_boundaries)
+        raw_cache_owner = root.get("runtime_cache_admission")
+        if raw_cache_owner is None:
+            self.runtime_cache_owner_reference: Mapping[str, Any] | None = None
+        else:
+            cache_owner = _object(raw_cache_owner, "runtime cache admission owner")
+            if (
+                set(cache_owner)
+                != {"apiVersion", "kind", "name", "uid", "controller", "blockOwnerDeletion"}
+                or cache_owner["apiVersion"] != "admissionregistration.k8s.io/v1"
+                or cache_owner["kind"] != "ValidatingAdmissionPolicy"
+                or cache_owner["name"] != "fs2-scientific-runtime-cache-writer-fence"
+                or not isinstance(cache_owner["uid"], str)
+                or re.fullmatch(
+                    r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+                    cache_owner["uid"],
+                )
+                is None
+                or cache_owner["controller"] is not False
+                or cache_owner["blockOwnerDeletion"] is not False
+            ):
+                raise ScientificExecutionMapError("runtime cache admission owner differs")
+            self.runtime_cache_owner_reference = MappingProxyType(dict(cache_owner))
         try:
             self.snapshot_bundles = MappingProxyType(
                 {
@@ -554,6 +590,7 @@ class FileScientificManifestRenderer:
             "runtime_security_trust",
             "runtime_security_authorizations",
             "runtime_cache_boundaries",
+            "runtime_cache_admission",
         }
         qualified_raw = (
             raw
@@ -1774,6 +1811,7 @@ class FileScientificManifestRenderer:
                         "name": container.get("name"),
                         "image": container.get("image"),
                         "security_context": container.get("securityContext"),
+                        "ports": container.get("ports", []),
                         "volume_devices": container.get("volumeDevices", []),
                         "volume_mounts": container.get("volumeMounts", []),
                     }
@@ -2366,6 +2404,7 @@ class FileScientificManifestRenderer:
         volumes_by_name = {volume["name"]: volume for volume in volumes}
         for container_class in ("initContainers", "containers", "ephemeralContainers"):
             for final_container in pod_spec.get(container_class, []):
+                _reject_scientific_host_ports(final_container)
                 if final_container.get("volumeDevices"):
                     raise ScientificExecutionMapError(
                         "scientific final containers may not expose writable block devices"
@@ -2557,6 +2596,7 @@ class FileScientificManifestRenderer:
                     raise ScientificExecutionMapError(
                         "scientific startup adapter added an invalid container or block device"
                     )
+                _reject_scientific_host_ports(final_container)
                 image = final_container.get("image")
                 if (
                     not isinstance(image, str)
@@ -2743,6 +2783,14 @@ class FileScientificManifestRenderer:
         execution = self._thaw_stage_execution(resource.execution_binding)
         pod = self._pod(resource, execution)
         metadata = {"name": resource.name, "namespace": resource.namespace}
+        if pod.get("metadata", {}).get("annotations", {}).get(
+            "fs2-serve.nebius.ai/runtime-cache-boundary"
+        ):
+            if self.runtime_cache_owner_reference is None:
+                raise ScientificExecutionMapError(
+                    "runtime-cache workload lacks its exact admission-policy owner"
+                )
+            metadata["ownerReferences"] = [dict(self.runtime_cache_owner_reference)]
         if resource.kind is WorkloadKind.JOB:
             return {
                 "apiVersion": "batch/v1",

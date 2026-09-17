@@ -233,6 +233,15 @@ def authorize_runtime_security(
     value["runtime_security_trust"] = {"session_id": session_id}
     value["runtime_security_authorizations"] = authorizations
     value["runtime_cache_boundaries"] = boundaries
+    if boundaries:
+        value["runtime_cache_admission"] = {
+            "apiVersion": "admissionregistration.k8s.io/v1",
+            "kind": "ValidatingAdmissionPolicy",
+            "name": "fs2-scientific-runtime-cache-writer-fence",
+            "uid": "11111111-1111-4111-8111-111111111111",
+            "controller": False,
+            "blockOwnerDeletion": False,
+        }
     return trusted
 
 
@@ -1113,7 +1122,18 @@ def test_runtime_cache_is_terraform_owned_model_only_and_never_triggers_recursiv
         execution_map_sha256=bound.execution_map_sha256,
         execution_binding=bound.execution_binding("prepare"),
     )
-    pod = renderer.render(resource)["spec"]["template"]["spec"]  # type: ignore[index]
+    manifest = renderer.render(resource)
+    assert manifest["metadata"]["ownerReferences"] == [
+        {
+            "apiVersion": "admissionregistration.k8s.io/v1",
+            "kind": "ValidatingAdmissionPolicy",
+            "name": "fs2-scientific-runtime-cache-writer-fence",
+            "uid": "11111111-1111-4111-8111-111111111111",
+            "controller": False,
+            "blockOwnerDeletion": False,
+        }
+    ]
+    pod = manifest["spec"]["template"]["spec"]  # type: ignore[index]
     model = pod["containers"][0]
     cache_mounts = [
         item for item in model["volumeMounts"] if item["name"] == "runtime-cache"

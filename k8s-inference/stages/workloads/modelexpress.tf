@@ -43,6 +43,24 @@ locals {
       ]) != 1
     ]
   ]))
+  modelexpress_missing_snapshot_runtime_security_tuples = sort(flatten([
+    for model_id, config in var.model_express.models : flatten([
+      for pool_id in try(local.model_controller_qualified_pool_ids[model_id], []) : [
+        for bundle_id, bundle in local.serving_snapshot_bundles : "${model_id}:${pool_id}:${bundle_id}:snapshot+nixl-rdma"
+        if bundle.model_ref == model_id &&
+        lookup(config.pool_transports, pool_id, config.transport).mode == "nixl-rdma" &&
+        length([
+          for compatibility in values(var.model_runtime_security_compatibilities) : compatibility
+          if compatibility.model_id == model_id &&
+          compatibility.container_class == "containers" &&
+          compatibility.container_name == try(local.model_controller_runtime_container_names[model_id], "") &&
+          compatibility.image == bundle.runtime_image &&
+          compatibility.capability_profile == "serving-snapshot-runtime-modelexpress-nixl-rdma" &&
+          compatibility.allowed_capabilities == ["CHECKPOINT_RESTORE", "NET_ADMIN", "SYS_ADMIN", "SYS_PTRACE", "SYS_TIME", "IPC_LOCK"]
+        ]) != 1
+      ]
+    ])
+  ]))
   modelexpress_pull_secret_name = "fs2-modelexpress-nvcrio"
   modelexpress_resource_counts = {
     contract   = var.model_express.enabled ? 1 : 0
@@ -160,6 +178,11 @@ resource "terraform_data" "modelexpress_contract" {
     precondition {
       condition     = length(local.modelexpress_missing_runtime_security_tuples) == 0
       error_message = "Every ModelExpress model/pool transport needs exactly one signed final runtime capability tuple; missing or duplicate tuples: ${join(", ", local.modelexpress_missing_runtime_security_tuples)}."
+    }
+
+    precondition {
+      condition     = length(local.modelexpress_missing_snapshot_runtime_security_tuples) == 0
+      error_message = "Every qualified snapshot plus nixl-rdma model/pool composition needs exactly one signed combined runtime capability tuple; missing or duplicate tuples: ${join(", ", local.modelexpress_missing_snapshot_runtime_security_tuples)}."
     }
   }
 }

@@ -224,6 +224,18 @@ variable "deployment" {
         authorization_id     = string
         compatibility_sha256 = string
       })), {})
+      nim_operator_admission = optional(object({
+        enabled         = optional(bool, false)
+        tls_secret_name = optional(string, "")
+        ca_bundle       = optional(string, "")
+        entries = optional(map(object({
+          resource_kind    = string
+          model_id         = string
+          subject          = any
+          subject_sha256   = string
+          authorization_id = string
+        })), {})
+      }), {})
       pool_overrides  = optional(map(string), {})
       # Initial controller-managed model setting; also editable in the admin UI.
       startup_timeout_overrides = optional(map(number), {})
@@ -651,6 +663,12 @@ variable "deployment" {
         enabled            = optional(bool, false)
         storage_class_name = optional(string, "csi-mounted-fs-path-sc")
         size_gib           = optional(number, 128)
+        admission_actors = optional(object({
+          bootstrap_job_creator     = string
+          scientific_workload_creator = string
+          job_controller            = string
+          jobset_controller         = string
+        }))
         migration_quiescence = optional(object({
           lease_name         = string
           lease_uid          = string
@@ -1366,6 +1384,12 @@ variable "deployment" {
       var.deployment.scientific_batch.runtime_cache.size_gib >= 1 &&
       var.deployment.scientific_batch.runtime_cache.size_gib <= 65536 &&
       (!var.deployment.scientific_batch.runtime_cache.enabled || try(
+        var.deployment.scientific_batch.runtime_cache.admission_actors != null &&
+        alltrue([
+          for actor in values(var.deployment.scientific_batch.runtime_cache.admission_actors) :
+          can(regex("^system:[A-Za-z0-9:._/-]+$", actor))
+        ]) &&
+        length(distinct(values(var.deployment.scientific_batch.runtime_cache.admission_actors))) == 4 &&
         var.deployment.scientific_batch.runtime_cache.migration_quiescence.lease_name == ".fs2-cache-writer-admission.lock" &&
         can(regex("^[a-f0-9]{64}$", var.deployment.scientific_batch.runtime_cache.migration_quiescence.lease_uid)) &&
         floor(var.deployment.scientific_batch.runtime_cache.migration_quiescence.lock_device) == var.deployment.scientific_batch.runtime_cache.migration_quiescence.lock_device &&
@@ -1692,7 +1716,7 @@ variable "deployment" {
       alltrue([
         for authorization_id, authorization in var.deployment.models.runtime_security_authorizations :
         can(regex("^[a-z0-9](?:[-a-z0-9.]{0,126}[a-z0-9])?$", authorization_id)) &&
-        contains(["image-promotion", "runtime-compatibility", "runtime-security-exception", "scientific-image", "cache-boundary", "cache-migration-quiescence"], authorization.kind) &&
+        contains(["image-promotion", "runtime-compatibility", "runtime-security-exception", "scientific-image", "cache-boundary", "cache-migration-quiescence", "nim-operator-descendant-admission"], authorization.kind) &&
         can(regex("^[a-z0-9](?:[-a-z0-9.]{0,126}[a-z0-9])?$", authorization.model_id)) &&
         can(regex("^fs2-serve\\.nebius\\.ai/[a-z0-9-]+/v[0-9]+$", authorization.subject_schema)) &&
         can(regex("^[0-9a-f]{64}$", authorization.subject_sha256)) &&
@@ -1804,18 +1828,19 @@ variable "deployment" {
         ] &&
         alltrue([for group in compatibility.pod_supplemental_groups : floor(group) == group && group >= 1 && group <= 2147483647]) &&
         (try(compatibility.pod_fs_group, null) == null || contains(compatibility.pod_supplemental_groups, compatibility.pod_fs_group)) &&
-        contains(["none", "modelexpress-nixl-rdma", "host-memory-locked-residency", "serving-snapshot-runtime", "serving-snapshot-tools", "serving-snapshot-address"], compatibility.capability_profile) &&
+        contains(["none", "modelexpress-nixl-rdma", "host-memory-locked-residency", "serving-snapshot-runtime", "serving-snapshot-runtime-modelexpress-nixl-rdma", "serving-snapshot-tools", "serving-snapshot-address"], compatibility.capability_profile) &&
         (
           compatibility.capability_profile == "none" ? length(compatibility.allowed_capabilities) == 0 :
           contains(["modelexpress-nixl-rdma", "host-memory-locked-residency"], compatibility.capability_profile) ? compatibility.container_class == "containers" && compatibility.allowed_capabilities == ["IPC_LOCK"] :
           compatibility.capability_profile == "serving-snapshot-runtime" ? compatibility.container_class == "containers" && compatibility.allowed_capabilities == ["CHECKPOINT_RESTORE", "NET_ADMIN", "SYS_ADMIN", "SYS_PTRACE", "SYS_TIME"] :
+          compatibility.capability_profile == "serving-snapshot-runtime-modelexpress-nixl-rdma" ? compatibility.container_class == "containers" && compatibility.allowed_capabilities == ["CHECKPOINT_RESTORE", "NET_ADMIN", "SYS_ADMIN", "SYS_PTRACE", "SYS_TIME", "IPC_LOCK"] :
           compatibility.capability_profile == "serving-snapshot-tools" ? compatibility.container_class == "initContainers" && length(compatibility.allowed_capabilities) == 0 :
           compatibility.container_class == "initContainers" && compatibility.allowed_capabilities == ["NET_ADMIN"]
         ) &&
         (
           startswith(compatibility.capability_profile, "serving-snapshot-") ? (
             compatibility.run_as_user == 0 && compatibility.run_as_group == 0 && compatibility.privileged == false &&
-            (compatibility.capability_profile == "serving-snapshot-runtime" ?
+            (contains(["serving-snapshot-runtime", "serving-snapshot-runtime-modelexpress-nixl-rdma"], compatibility.capability_profile) ?
               compatibility.allow_privilege_escalation == true && compatibility.read_only_root_filesystem == false && compatibility.seccomp_profile == "Unconfined" && compatibility.apparmor_profile == "Unconfined" :
               compatibility.allow_privilege_escalation == false && compatibility.read_only_root_filesystem == true && compatibility.seccomp_profile == "RuntimeDefault" && compatibility.apparmor_profile == "RuntimeDefault")
           ) : (

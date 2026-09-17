@@ -3118,6 +3118,7 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn("model_runtime_security_none_compatibilities_by_key", workload_locals)
         self.assertIn("try(container.securityContext.capabilities.add, []) == []", workload_locals)
         self.assertIn("for mount in record.container.volumeMounts : mount if can(mount.subPathExpr)", workload_locals)
+        self.assertIn("if can(port.hostIP) || try(port.hostPort, 0) != 0", workload_locals)
         self.assertIn("supplementalGroupsPolicy = \"Strict\"", workload_locals)
         self.assertIn("keeper_image_supply_validations", workload_locals)
         self.assertNotIn(

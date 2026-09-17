@@ -31,7 +31,7 @@ REPLICA_FIELD_MANAGER = "fs2-model-activation-controller"
 REPLICA_OWNERSHIP_SCHEMA = "fs2-serve.nebius.ai/replica-field-ownership/v1"
 MOUNTED_CONTENT_MODELS = frozenset({"qwen3-8b", "glm-5-2-fp8", "nv-reason-cxr-3b"})
 RUNTIME_NETWORK_POLICY_SCHEMA = "fs2-serve.nebius.ai/runtime-startup-network-policy/v1"
-NIM_OPERATOR_SECURITY_SCHEMA = "fs2-serve.nebius.ai/nim-operator-security-subject/v3"
+NIM_OPERATOR_SECURITY_SCHEMA = "fs2-serve.nebius.ai/nim-operator-security-subject/v4"
 RESTRICTED_VOLUME_SOURCES = frozenset(
     {"configMap", "csi", "downwardAPI", "emptyDir", "ephemeral", "persistentVolumeClaim", "projected", "secret"}
 )
@@ -205,7 +205,7 @@ def _nim_operator_security_envelope(
         or any(
             not isinstance(name, str)
             or not isinstance(contract, Mapping)
-            or set(contract) != {"container_class", "image", "security_context", "mounts"}
+            or set(contract) != {"container_class", "image", "security_context", "ports", "mounts"}
             or contract["container_class"] not in {"initContainers", "containers", "ephemeralContainers"}
             or not isinstance(contract["image"], str)
             or re.fullmatch(r"[^\s@]+@sha256:[a-f0-9]{64}", contract["image"]) is None
@@ -236,6 +236,13 @@ def _nim_operator_security_envelope(
             or isinstance(contract["security_context"]["runAsGroup"], bool)
             or contract["security_context"]["runAsGroup"] <= 0
             or contract["security_context"]["seccompProfile"] != {"type": "RuntimeDefault"}
+            or not isinstance(contract["ports"], list)
+            or any(
+                not isinstance(port, Mapping)
+                or "hostIP" in port
+                or port.get("hostPort", 0) not in {None, 0}
+                for port in contract["ports"]
+            )
             or not isinstance(contract["mounts"], Mapping)
             or any(
                 not isinstance(path, str)
@@ -399,6 +406,14 @@ def validate_nim_operator_descendant(
         for container in containers:
             if not isinstance(container, Mapping) or container.get("volumeDevices"):
                 raise CatalogError("NIM Operator descendant exposes a writable block device")
+            ports = container.get("ports", [])
+            if not isinstance(ports, list) or any(
+                not isinstance(port, Mapping)
+                or "hostIP" in port
+                or port.get("hostPort", 0) not in {None, 0}
+                for port in ports
+            ):
+                raise CatalogError("NIM Operator descendant exposes a host port")
             name = container.get("name")
             if not isinstance(name, str) or name in observed:
                 raise CatalogError("NIM Operator descendant container identity is invalid")
@@ -443,6 +458,7 @@ def validate_nim_operator_descendant(
                 "container_class": container_class,
                 "image": container.get("image"),
                 "security_context": container.get("securityContext"),
+                "ports": ports,
                 "mounts": exact_mounts,
             }
     if (

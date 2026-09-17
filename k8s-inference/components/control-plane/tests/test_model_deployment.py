@@ -1190,6 +1190,21 @@ def test_final_render_rejects_unbounded_writable_block_devices() -> None:
         rejected.render(model_spec(), render_context())
 
 
+def test_final_render_rejects_host_ports_and_host_ip_even_when_container_is_signed() -> None:
+    for port in (
+        {"name": "runtime", "containerPort": 8000, "hostPort": 8000},
+        {"name": "runtime", "containerPort": 8000, "hostIP": "127.0.0.1"},
+    ):
+        base_renderer = renderer()
+        source = next(iter(base_renderer._bundles.values())).model_copy(deep=True)  # type: ignore[attr-defined]
+        deployment = next(item for item in source.resources if item["kind"] == "Deployment")
+        deployment["spec"]["template"]["spec"]["containers"][0]["ports"] = [port]
+
+        rejected = LegacyManifestRenderer({(source.model_ref, source.template_digest): source})
+        with pytest.raises(ValueError, match="host ports"):
+            rejected.render(model_spec(), render_context())
+
+
 def test_renderer_injects_exact_modelexpress_vllm_client_without_claiming_a_level() -> None:
     spec = model_spec().model_copy(
         update={"placement": model_spec().placement.model_copy(update={"pool_refs": ["pool-a"]})}

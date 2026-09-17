@@ -1,0 +1,205 @@
+{{- if .Values.nimAdmission.enabled }}
+{{- $admission := .Values.nimAdmission }}
+{{- if ne $admission.namespace "fs2-models" }}
+{{- fail "nimAdmission.namespace must be fs2-models" }}
+{{- end }}
+{{- if not (regexMatch "^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$" $admission.configMapName) }}
+{{- fail "nimAdmission.configMapName is required when enabled" }}
+{{- end }}
+{{- if not (regexMatch "^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$" $admission.tlsSecretName) }}
+{{- fail "nimAdmission.tlsSecretName is required when enabled" }}
+{{- end }}
+{{- if not $admission.caBundle }}
+{{- fail "nimAdmission.caBundle is required when enabled" }}
+{{- end }}
+{{- if eq (len .Values.networkPolicy.kubernetesApiCidrs) 0 }}
+{{- fail "nimAdmission requires bounded networkPolicy.kubernetesApiCidrs" }}
+{{- end }}
+{{- if ne .Values.catalog.delivery "image" }}
+{{- fail "nimAdmission requires the immutable image-delivered catalog" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-nim-admission
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: nim-admission
+spec:
+  replicas: {{ $admission.replicaCount }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: nim-admission
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: nim-admission
+        app.kubernetes.io/part-of: fs2-serve
+      annotations:
+        fs2.nebius.ai/image-digest: {{ .Values.image.digest | quote }}
+    spec:
+      serviceAccountName: {{ include "fs2-serve.serviceAccountName" (dict "root" . "component" "runtime") }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: nim-admission
+          image: {{ include "fs2-serve.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["nim-admission"]
+          ports:
+            - name: https
+              containerPort: {{ $admission.service.port }}
+              protocol: TCP
+          env:
+            - name: FS2_NIM_ADMISSION_ENABLED
+              value: "true"
+            - name: FS2_NIM_ADMISSION_CONFIG_FILE
+              value: /etc/fs2-nim-admission/admission.json
+            - name: FS2_NIM_ADMISSION_TLS_CERTIFICATE_FILE
+              value: /var/run/secrets/fs2-nim-admission/tls.crt
+            - name: FS2_NIM_ADMISSION_TLS_PRIVATE_KEY_FILE
+              value: /var/run/secrets/fs2-nim-admission/tls.key
+            - name: FS2_NIM_ADMISSION_PORT
+              value: {{ $admission.service.port | quote }}
+            - name: FS2_CATALOG_DIR
+              value: {{ .Values.catalog.imagePath | quote }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/fs2-nim-admission/admission.json
+              subPath: {{ $admission.configKey }}
+              readOnly: true
+            - name: tls
+              mountPath: /var/run/secrets/fs2-nim-admission
+              readOnly: true
+          startupProbe:
+            httpGet: {path: /livez, port: https, scheme: HTTPS}
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: {path: /livez, port: https, scheme: HTTPS}
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: {path: /livez, port: https, scheme: HTTPS}
+            periodSeconds: 5
+          resources:
+            {{- toYaml $admission.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities: {drop: ["ALL"]}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $admission.configMapName }}
+            items:
+              - key: {{ $admission.configKey }}
+                path: {{ $admission.configKey }}
+        - name: tls
+          secret:
+            secretName: {{ $admission.tlsSecretName }}
+            defaultMode: 0400
+            items:
+              - {key: tls.crt, path: tls.crt}
+              - {key: tls.key, path: tls.key}
+      {{- with $admission.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $admission.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $admission.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-nim-admission
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: nim-admission
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: nim-admission
+  ports:
+    - name: https
+      port: {{ $admission.service.port }}
+      targetPort: https
+      protocol: TCP
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-nim-admission
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+webhooks:
+  - name: nim-security.fs2-serve.nebius.ai
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    timeoutSeconds: 5
+    clientConfig:
+      service:
+        namespace: {{ .Release.Namespace }}
+        name: {{ include "fs2-serve.fullname" . }}-nim-admission
+        path: /admit
+        port: {{ $admission.service.port }}
+      caBundle: {{ $admission.caBundle | quote }}
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ $admission.namespace }}
+    rules:
+      - apiGroups: ["apps.nvidia.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["nimcaches", "nimservices"]
+        scope: Namespaced
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods", "pods/ephemeralcontainers"]
+        scope: Namespaced
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-nim-admission
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: nim-admission
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        {{- range .Values.networkPolicy.kubernetesApiCidrs }}
+        - ipBlock: {cidr: {{ . | quote }}}
+        {{- end }}
+      ports:
+        - port: {{ $admission.service.port }}
+          protocol: TCP
+{{- end }}
