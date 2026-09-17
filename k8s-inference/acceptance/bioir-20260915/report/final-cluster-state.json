@@ -1,0 +1,623 @@
+{
+  "schema": "fs2.bioir-final-cluster-state/v1",
+  "read_only": true,
+  "recorded_at": "2026-09-15T23:31:26.667852+00:00",
+  "remaining_evaluation_namespace_objects": [],
+  "model_deployments": [
+    {
+      "name": "altumage-burst-h100-1x",
+      "uid": "266a62c0-70c3-442d-b5b4-d4480d28efd4",
+      "desired_replicas": 0,
+      "ready_replicas": 0,
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/aging/altumage-cuda@sha256:ca6352f79ecd78928e13ecda55afaf01a5df1923291b7a56a7ba9a9770c484e1"
+      ]
+    },
+    {
+      "name": "altumage-hot-h100-reserved-8x",
+      "uid": "66074af7-5a10-4800-913e-1f92298bd1d8",
+      "desired_replicas": 1,
+      "ready_replicas": 1,
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/aging/altumage-cuda@sha256:ca6352f79ecd78928e13ecda55afaf01a5df1923291b7a56a7ba9a9770c484e1"
+      ]
+    },
+    {
+      "name": "app-96c9e1e50d824532a2e00218cd2a99e0-8d61f100652a-hot-h100-1x",
+      "uid": "5444fabd-d853-4de4-991c-26f8aba29f6e",
+      "desired_replicas": 0,
+      "ready_replicas": 0,
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635"
+      ]
+    },
+    {
+      "name": "boltz2-b300-burst-h100-1x",
+      "uid": "8bf577c0-e6cc-4a90-a800-397d93879a27",
+      "desired_replicas": 0,
+      "ready_replicas": 0,
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/boltz2@sha256:93d5fae96d87dff930206cf331f170b73f2369067f0b32169e0008f0db320a90"
+      ]
+    },
+    {
+      "name": "boltz2-b300-hot-h100-reserved-8x",
+      "uid": "5fb656d7-c9fb-4e86-9860-66c22212e021",
+      "desired_replicas": 1,
+      "ready_replicas": 1,
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/boltz2@sha256:93d5fae96d87dff930206cf331f170b73f2369067f0b32169e0008f0db320a90"
+      ]
+    },
+    {
+      "name": "cosmos3-nano-burst-h100-1x",
+      "uid": "80b75995-d9b0-43f4-b366-1e62c6af4794",
+      "desired_replicas": 0,
+      "ready_replicas": 0,
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587"
+      ]
+    },
+    {
+      "name": "diffdock-b300-burst-h100-1x",
+      "uid": "181e16cf-ed21-4222-bceb-c74711b35344",
+      "desired_replicas": 0,
+      "ready_replicas": 0,
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/diffdock@sha256:471db264f4c544e1798c090f13b6cf94b3fbd304fb2c91e9f63a3dd33c9d81d7"
+      ]
+    },
+    {
+      "name": "diffdock-b300-hot-h100-reserved-8x",
+      "uid": "e6573d61-81fe-4c1e-9855-988ce9ae03ca",
+      "desired_replicas": 1,
+      "ready_replicas": 1,
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/diffdock@sha256:471db264f4c544e1798c090f13b6cf94b3fbd304fb2c91e9f63a3dd33c9d81d7"
+      ]
+    },
+    {
+      "name": "evo2-40b",
+      "uid": "3a26f098-574a-4cc5-b685-ae66dd56dacc",
+      "desired_replicas": 1,
+      "ready_replicas": 1,
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5",
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:383f9979021bd3fe018c4dbba675610e0a5f7282b2164db1d8386611351de6f5"
+      ]
+    },
+    {
+      "name": "genmol-b300-burst-h100-1x",
+      "uid": "be51dfb5-f01b-42fc-ad5e-78b3dcc50f1d",
+      "desired_replicas": 0,
+      "ready_replicas": 0,
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/genmol@sha256:7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf"
+      ]
+    },
+    {
+      "name": "genmol-b300-hot-h100-reserved-8x",
+      "uid": "eb30739c-4e20-4542-8004-13ce06d8a3e5",
+      "desired_replicas": 1,
+      "ready_replicas": 1,
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/genmol@sha256:7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf"
+      ]
+    },
+    {
+      "name": "molmim-b300-burst-h100-1x",
+      "uid": "972bc702-e8e7-41f4-b7d8-31991bd78416",
+      "desired_replicas": 0,
+      "ready_replicas": 0,
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/molmim@sha256:fd59b1b45206fe5067033dd7385469ea54e6b670bdd530276e75857f9b459958"
+      ]
+    },
+    {
+      "name": "molmim-b300-hot-h100-reserved-8x",
+      "uid": "efc762ef-0779-4824-8fdf-8c2e213762e0",
+      "desired_replicas": 1,
+      "ready_replicas": 1,
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/molmim@sha256:fd59b1b45206fe5067033dd7385469ea54e6b670bdd530276e75857f9b459958"
+      ]
+    },
+    {
+      "name": "msa-search-pdb70",
+      "uid": "ca83e4ab-204a-41d8-b701-5d5d0a9e3f39",
+      "desired_replicas": 1,
+      "ready_replicas": 1,
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/msa-search-pdb70@sha256:8049b921688cd65c1c87cfbae38d3ec02db472e419ba762a6320766529a7663d"
+      ]
+    },
+    {
+      "name": "nv-reason-cxr-3b-burst-h100-1x",
+      "uid": "4824494e-84dc-4adc-9223-98b13d535342",
+      "desired_replicas": 0,
+      "ready_replicas": 0,
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635"
+      ]
+    },
+    {
+      "name": "nv-reason-cxr-3b-hot-h100-reserved-8x",
+      "uid": "49fda18f-bcd1-40ab-98d4-8e014fd3d1ec",
+      "desired_replicas": 1,
+      "ready_replicas": 1,
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635"
+      ]
+    },
+    {
+      "name": "nv-segment-ct-burst-h100-1x",
+      "uid": "19f8b1c8-9dcd-4706-9a01-761324719bc4",
+      "desired_replicas": 0,
+      "ready_replicas": 0,
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd"
+      ]
+    },
+    {
+      "name": "nv-segment-ct-hot-h100-reserved-8x",
+      "uid": "bc168fd2-3841-49d3-acb2-6295e970015a",
+      "desired_replicas": 1,
+      "ready_replicas": 1,
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:834b6694b7e096c393193d12306ef9b3f0bb313efa806a9c253f49f1f47281fd"
+      ]
+    },
+    {
+      "name": "openfold2-b300-burst-h100-1x",
+      "uid": "f5a79909-d20e-4e47-b9b3-ed2e3cdee28e",
+      "desired_replicas": 0,
+      "ready_replicas": 0,
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/openfold2@sha256:9fc70e781b18f4f547da237e2eb81387df3c38d092bb44c46145db6347e7e164"
+      ]
+    },
+    {
+      "name": "openfold2-b300-hot-h100-reserved-8x",
+      "uid": "b986c82e-4295-48eb-88b2-3be6118b7a57",
+      "desired_replicas": 1,
+      "ready_replicas": 1,
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/openfold2@sha256:9fc70e781b18f4f547da237e2eb81387df3c38d092bb44c46145db6347e7e164"
+      ]
+    },
+    {
+      "name": "openfold3-burst-h100-1x",
+      "uid": "3e4fc026-e57d-458c-bd08-0b1bda5c4fe3",
+      "desired_replicas": 0,
+      "ready_replicas": 0,
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c"
+      ]
+    },
+    {
+      "name": "openfold3-hot-h100-reserved-8x",
+      "uid": "e58462aa-4117-4310-a6eb-5f2a3c2ea65f",
+      "desired_replicas": 1,
+      "ready_replicas": 1,
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c"
+      ]
+    },
+    {
+      "name": "phenoage",
+      "uid": "dba8b032-234f-48c4-89d2-a6abd731a938",
+      "desired_replicas": 1,
+      "ready_replicas": 1,
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/aging/phenoage-cpu@sha256:b6c28820576b62972437787bd06fa37f8c10b6f51de31b0f4da3cc3873bb34f1"
+      ]
+    },
+    {
+      "name": "proteinmpnn-b300-burst-h100-1x",
+      "uid": "ab064d80-93b0-479d-adbd-215429434f14",
+      "desired_replicas": 0,
+      "ready_replicas": 0,
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/proteinmpnn@sha256:f27dda10178fb799dc8f75c2b7ced00643a6281fd3e37e95cd353700e6d62e38"
+      ]
+    },
+    {
+      "name": "proteinmpnn-b300-hot-h100-reserved-8x",
+      "uid": "bd7fa87f-8d9f-4558-819f-bfaac304d856",
+      "desired_replicas": 1,
+      "ready_replicas": 1,
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/proteinmpnn@sha256:f27dda10178fb799dc8f75c2b7ced00643a6281fd3e37e95cd353700e6d62e38"
+      ]
+    },
+    {
+      "name": "qwen3-8b-b300-burst-h100-1x",
+      "uid": "0491740f-3688-4adc-9ed1-75f7e8706aeb",
+      "desired_replicas": 0,
+      "ready_replicas": 0,
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635"
+      ]
+    },
+    {
+      "name": "sdxl-burst-h100-1x",
+      "uid": "cfd808a3-73c0-497b-8d3f-9f511139c025",
+      "desired_replicas": 0,
+      "ready_replicas": 0,
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07"
+      ]
+    }
+  ],
+  "all_desired_model_deployments_ready": true,
+  "node_ready_conditions": [
+    {
+      "name": "computeinstance-e00ax3mgt7y3a0asa6",
+      "ready": {
+        "lastHeartbeatTime": "2026-09-15T23:30:37Z",
+        "lastTransitionTime": "2026-09-15T18:09:18Z",
+        "message": "kubelet is posting ready status",
+        "reason": "KubeletReady",
+        "status": "True",
+        "type": "Ready"
+      }
+    },
+    {
+      "name": "computeinstance-e00be3d2mc9nmgfrec",
+      "ready": {
+        "lastHeartbeatTime": "2026-09-15T23:29:01Z",
+        "lastTransitionTime": "2026-09-05T01:51:45Z",
+        "message": "kubelet is posting ready status",
+        "reason": "KubeletReady",
+        "status": "True",
+        "type": "Ready"
+      }
+    },
+    {
+      "name": "computeinstance-e00d99v8qnv2eaj19m",
+      "ready": {
+        "lastHeartbeatTime": "2026-09-15T23:30:44Z",
+        "lastTransitionTime": "2026-09-04T19:43:57Z",
+        "message": "kubelet is posting ready status",
+        "reason": "KubeletReady",
+        "status": "True",
+        "type": "Ready"
+      }
+    },
+    {
+      "name": "computeinstance-e00dczh75qcnbj0bx8",
+      "ready": {
+        "lastHeartbeatTime": "2026-09-15T23:30:02Z",
+        "lastTransitionTime": "2026-09-15T18:09:18Z",
+        "message": "kubelet is posting ready status",
+        "reason": "KubeletReady",
+        "status": "True",
+        "type": "Ready"
+      }
+    },
+    {
+      "name": "computeinstance-e00fkt1bsa4ec657sn",
+      "ready": {
+        "lastHeartbeatTime": "2026-09-15T23:30:05Z",
+        "lastTransitionTime": "2026-09-15T23:17:17Z",
+        "message": "kubelet is posting ready status",
+        "reason": "KubeletReady",
+        "status": "True",
+        "type": "Ready"
+      }
+    },
+    {
+      "name": "computeinstance-e00j20a9hkb508cn4a",
+      "ready": {
+        "lastHeartbeatTime": "2026-09-15T23:17:58Z",
+        "lastTransitionTime": "2026-09-15T23:22:30Z",
+        "message": "Kubelet stopped posting node status.",
+        "reason": "NodeStatusUnknown",
+        "status": "Unknown",
+        "type": "Ready"
+      }
+    },
+    {
+      "name": "computeinstance-e00krzha55t0sg3t56",
+      "ready": {
+        "lastHeartbeatTime": "2026-09-15T23:29:17Z",
+        "lastTransitionTime": "2026-09-15T18:09:15Z",
+        "message": "kubelet is posting ready status",
+        "reason": "KubeletReady",
+        "status": "True",
+        "type": "Ready"
+      }
+    },
+    {
+      "name": "computeinstance-e00m0hsph76ajt9sdb",
+      "ready": {
+        "lastHeartbeatTime": "2026-09-15T23:27:51Z",
+        "lastTransitionTime": "2026-09-02T21:55:21Z",
+        "message": "kubelet is posting ready status",
+        "reason": "KubeletReady",
+        "status": "True",
+        "type": "Ready"
+      }
+    },
+    {
+      "name": "computeinstance-e00p3acr87k9k4mckj",
+      "ready": {
+        "lastHeartbeatTime": "2026-09-15T23:26:24Z",
+        "lastTransitionTime": "2026-09-02T21:49:15Z",
+        "message": "kubelet is posting ready status",
+        "reason": "KubeletReady",
+        "status": "True",
+        "type": "Ready"
+      }
+    },
+    {
+      "name": "computeinstance-e00r165maajnbg7wrr",
+      "ready": {
+        "lastHeartbeatTime": "2026-09-15T23:27:50Z",
+        "lastTransitionTime": "2026-09-15T18:09:19Z",
+        "message": "kubelet is posting ready status",
+        "reason": "KubeletReady",
+        "status": "True",
+        "type": "Ready"
+      }
+    },
+    {
+      "name": "computeinstance-e00r9tdjfszjs3angk",
+      "ready": {
+        "lastHeartbeatTime": "2026-09-15T23:28:20Z",
+        "lastTransitionTime": "2026-09-15T23:17:18Z",
+        "message": "kubelet is posting ready status",
+        "reason": "KubeletReady",
+        "status": "True",
+        "type": "Ready"
+      }
+    },
+    {
+      "name": "computeinstance-e00s1cg39h3af2kxav",
+      "ready": {
+        "lastHeartbeatTime": "2026-09-15T23:29:25Z",
+        "lastTransitionTime": "2026-09-05T01:54:52Z",
+        "message": "kubelet is posting ready status",
+        "reason": "KubeletReady",
+        "status": "True",
+        "type": "Ready"
+      }
+    },
+    {
+      "name": "computeinstance-e00sa78kng1kwhej6q",
+      "ready": {
+        "lastHeartbeatTime": "2026-09-15T23:28:01Z",
+        "lastTransitionTime": "2026-09-15T18:09:25Z",
+        "message": "kubelet is posting ready status",
+        "reason": "KubeletReady",
+        "status": "True",
+        "type": "Ready"
+      }
+    },
+    {
+      "name": "computeinstance-e00tfvy9gb2n0vm6h2",
+      "ready": {
+        "lastHeartbeatTime": "2026-09-15T23:29:17Z",
+        "lastTransitionTime": "2026-09-15T18:09:19Z",
+        "message": "kubelet is posting ready status",
+        "reason": "KubeletReady",
+        "status": "True",
+        "type": "Ready"
+      }
+    },
+    {
+      "name": "computeinstance-e00tq9jk3nbvh4ceck",
+      "ready": {
+        "lastHeartbeatTime": "2026-09-15T23:27:02Z",
+        "lastTransitionTime": "2026-09-06T22:33:31Z",
+        "message": "kubelet is posting ready status",
+        "reason": "KubeletReady",
+        "status": "True",
+        "type": "Ready"
+      }
+    },
+    {
+      "name": "computeinstance-e00vt3d3s01p9xsrwt",
+      "ready": {
+        "lastHeartbeatTime": "2026-09-15T23:30:23Z",
+        "lastTransitionTime": "2026-09-15T18:09:23Z",
+        "message": "kubelet is posting ready status",
+        "reason": "KubeletReady",
+        "status": "True",
+        "type": "Ready"
+      }
+    },
+    {
+      "name": "computeinstance-e00xjaw5jqexvvnpat",
+      "ready": {
+        "lastHeartbeatTime": "2026-09-15T23:28:41Z",
+        "lastTransitionTime": "2026-09-15T23:16:58Z",
+        "message": "kubelet is posting ready status",
+        "reason": "KubeletReady",
+        "status": "True",
+        "type": "Ready"
+      }
+    },
+    {
+      "name": "computeinstance-e00y0jttwekyghrznp",
+      "ready": {
+        "lastHeartbeatTime": "2026-09-15T23:30:06Z",
+        "lastTransitionTime": "2026-09-09T18:27:07Z",
+        "message": "kubelet is posting ready status",
+        "reason": "KubeletReady",
+        "status": "True",
+        "type": "Ready"
+      }
+    },
+    {
+      "name": "computeinstance-e00zs7gf1mgdygk6jv",
+      "ready": {
+        "lastHeartbeatTime": "2026-09-15T23:27:19Z",
+        "lastTransitionTime": "2026-09-15T18:09:23Z",
+        "message": "kubelet is posting ready status",
+        "reason": "KubeletReady",
+        "status": "True",
+        "type": "Ready"
+      }
+    }
+  ],
+  "previous_cache_reclamation_exception": {
+    "pv": "pvc-cf75a701-6ede-4d91-935e-af6116917554",
+    "still_exists": false,
+    "phase": null,
+    "historical_evidence": "../snapshot/lifecycle/storage-reclamation-exception.json"
+  },
+  "receipts": [
+    {
+      "command": [
+        "kubectl",
+        "--kubeconfig",
+        "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
+        "--context",
+        "k8s-inference-h100",
+        "-n",
+        "fs2-bioir-boltz2",
+        "get",
+        "pods,pvc,configmaps",
+        "-o",
+        "json"
+      ],
+      "started_at": "2026-09-15T23:31:18.432514+00:00",
+      "completed_at": "2026-09-15T23:31:19.469522+00:00",
+      "return_code": 0,
+      "stderr": ""
+    },
+    {
+      "command": [
+        "kubectl",
+        "--kubeconfig",
+        "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
+        "--context",
+        "k8s-inference-h100",
+        "-n",
+        "fs2-bioir-openfold",
+        "get",
+        "pods,pvc,configmaps",
+        "-o",
+        "json"
+      ],
+      "started_at": "2026-09-15T23:31:19.469575+00:00",
+      "completed_at": "2026-09-15T23:31:20.507349+00:00",
+      "return_code": 0,
+      "stderr": ""
+    },
+    {
+      "command": [
+        "kubectl",
+        "--kubeconfig",
+        "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
+        "--context",
+        "k8s-inference-h100",
+        "-n",
+        "fs2-bioir-coverage",
+        "get",
+        "pods,pvc,configmaps",
+        "-o",
+        "json"
+      ],
+      "started_at": "2026-09-15T23:31:20.507420+00:00",
+      "completed_at": "2026-09-15T23:31:21.534740+00:00",
+      "return_code": 0,
+      "stderr": ""
+    },
+    {
+      "command": [
+        "kubectl",
+        "--kubeconfig",
+        "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
+        "--context",
+        "k8s-inference-h100",
+        "-n",
+        "fs2-bioir-protenix",
+        "get",
+        "pods,pvc,configmaps",
+        "-o",
+        "json"
+      ],
+      "started_at": "2026-09-15T23:31:21.534789+00:00",
+      "completed_at": "2026-09-15T23:31:22.580651+00:00",
+      "return_code": 0,
+      "stderr": ""
+    },
+    {
+      "command": [
+        "kubectl",
+        "--kubeconfig",
+        "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
+        "--context",
+        "k8s-inference-h100",
+        "-n",
+        "fs2-bioir-snapshot",
+        "get",
+        "pods,pvc,configmaps",
+        "-o",
+        "json"
+      ],
+      "started_at": "2026-09-15T23:31:22.580719+00:00",
+      "completed_at": "2026-09-15T23:31:23.622878+00:00",
+      "return_code": 0,
+      "stderr": ""
+    },
+    {
+      "command": [
+        "kubectl",
+        "--kubeconfig",
+        "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
+        "--context",
+        "k8s-inference-h100",
+        "-n",
+        "fs2-models",
+        "get",
+        "deployments",
+        "-o",
+        "json"
+      ],
+      "started_at": "2026-09-15T23:31:23.622990+00:00",
+      "completed_at": "2026-09-15T23:31:24.708163+00:00",
+      "return_code": 0,
+      "stderr": ""
+    },
+    {
+      "command": [
+        "kubectl",
+        "--kubeconfig",
+        "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
+        "--context",
+        "k8s-inference-h100",
+        "get",
+        "nodes",
+        "-o",
+        "json"
+      ],
+      "started_at": "2026-09-15T23:31:24.709853+00:00",
+      "completed_at": "2026-09-15T23:31:25.830364+00:00",
+      "return_code": 0,
+      "stderr": ""
+    },
+    {
+      "command": [
+        "kubectl",
+        "--kubeconfig",
+        "/home/tux/.local/state/k8s-inference-dual-acceptance/h100/run/kubeconfig",
+        "--context",
+        "k8s-inference-h100",
+        "get",
+        "pv",
+        "pvc-cf75a701-6ede-4d91-935e-af6116917554",
+        "--ignore-not-found",
+        "-o",
+        "json"
+      ],
+      "started_at": "2026-09-15T23:31:25.831870+00:00",
+      "completed_at": "2026-09-15T23:31:26.667829+00:00",
+      "return_code": 0,
+      "stderr": ""
+    }
+  ]
+}

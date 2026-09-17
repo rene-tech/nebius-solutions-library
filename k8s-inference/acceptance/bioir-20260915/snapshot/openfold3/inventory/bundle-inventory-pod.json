@@ -1,0 +1,212 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "annotations": {
+      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"metadata\":{\"annotations\":{},\"labels\":{\"benchmark-model\":\"openfold3-bir\",\"evaluation\":\"fs2-bioir-20260915\",\"lane\":\"snapshot\",\"role\":\"bundle-inventory\"},\"name\":\"fs2-bioir-of3-bundle-inventory\",\"namespace\":\"fs2-bioir-snapshot\"},\"spec\":{\"automountServiceAccountToken\":false,\"containers\":[{\"command\":[\"python\",\"-c\",\"\\\"\\\"\\\"Read-only fingerprint of only the task-owned snapshot PVC.\\\"\\\"\\\"\\nimport hashlib\\nimport json\\nfrom pathlib import Path\\nimport time\\n\\nroot = Path('/bundle')\\nstarted = time.time()\\nrows = []\\nfor path in sorted(root.rglob('*')):\\n    if not path.is_file() or path.is_symlink():\\n        continue\\n    digest = hashlib.sha256()\\n    with path.open('rb') as stream:\\n        for block in iter(lambda: stream.read(8 * 1024 * 1024), b''):\\n            digest.update(block)\\n    rows.append({'path': str(path.relative_to(root)), 'bytes': path.stat().st_size, 'sha256': digest.hexdigest()})\\nprint(json.dumps({'started_unix': started, 'completed_unix': time.time(), 'total_file_bytes': sum(v['bytes'] for v in rows), 'files': rows}))\\n\"],\"image\":\"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce\",\"name\":\"inventory\",\"resources\":{\"limits\":{\"cpu\":\"2\",\"memory\":\"2Gi\"},\"requests\":{\"cpu\":\"1\",\"memory\":\"256Mi\"}},\"volumeMounts\":[{\"mountPath\":\"/bundle\",\"name\":\"bundle\",\"readOnly\":true}]}],\"nodeSelector\":{\"kubernetes.io/hostname\":\"computeinstance-e00j20a9hkb508cn4a\"},\"restartPolicy\":\"Never\",\"securityContext\":{\"runAsGroup\":0,\"runAsUser\":0},\"tolerations\":[{\"effect\":\"NoSchedule\",\"key\":\"dedicated\",\"operator\":\"Equal\",\"value\":\"fs2-inference\"}],\"volumes\":[{\"name\":\"bundle\",\"persistentVolumeClaim\":{\"claimName\":\"fs2-bioir-of3-checkpoints\",\"readOnly\":true}}]}}\n"
+    },
+    "creationTimestamp": "2026-09-15T23:12:24Z",
+    "generation": 1,
+    "labels": {
+      "benchmark-model": "openfold3-bir",
+      "evaluation": "fs2-bioir-20260915",
+      "lane": "snapshot",
+      "role": "bundle-inventory",
+      "topology.kubernetes.io/region": "eu-north1"
+    },
+    "name": "fs2-bioir-of3-bundle-inventory",
+    "namespace": "fs2-bioir-snapshot",
+    "resourceVersion": "42523545",
+    "uid": "8bf1ad55-94af-47da-a7e7-912f2a73a704"
+  },
+  "spec": {
+    "automountServiceAccountToken": false,
+    "containers": [
+      {
+        "command": [
+          "python",
+          "-c",
+          "\"\"\"Read-only fingerprint of only the task-owned snapshot PVC.\"\"\"\nimport hashlib\nimport json\nfrom pathlib import Path\nimport time\n\nroot = Path('/bundle')\nstarted = time.time()\nrows = []\nfor path in sorted(root.rglob('*')):\n    if not path.is_file() or path.is_symlink():\n        continue\n    digest = hashlib.sha256()\n    with path.open('rb') as stream:\n        for block in iter(lambda: stream.read(8 * 1024 * 1024), b''):\n            digest.update(block)\n    rows.append({'path': str(path.relative_to(root)), 'bytes': path.stat().st_size, 'sha256': digest.hexdigest()})\nprint(json.dumps({'started_unix': started, 'completed_unix': time.time(), 'total_file_bytes': sum(v['bytes'] for v in rows), 'files': rows}))\n"
+        ],
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce",
+        "imagePullPolicy": "IfNotPresent",
+        "name": "inventory",
+        "resources": {
+          "limits": {
+            "cpu": "2",
+            "memory": "2Gi"
+          },
+          "requests": {
+            "cpu": "1",
+            "memory": "256Mi"
+          }
+        },
+        "terminationMessagePath": "/dev/termination-log",
+        "terminationMessagePolicy": "File",
+        "volumeMounts": [
+          {
+            "mountPath": "/bundle",
+            "name": "bundle",
+            "readOnly": true
+          }
+        ]
+      }
+    ],
+    "dnsPolicy": "ClusterFirst",
+    "enableServiceLinks": true,
+    "nodeName": "computeinstance-e00j20a9hkb508cn4a",
+    "nodeSelector": {
+      "kubernetes.io/hostname": "computeinstance-e00j20a9hkb508cn4a"
+    },
+    "preemptionPolicy": "PreemptLowerPriority",
+    "priority": 0,
+    "restartPolicy": "Never",
+    "schedulerName": "default-scheduler",
+    "securityContext": {
+      "runAsGroup": 0,
+      "runAsUser": 0
+    },
+    "serviceAccount": "default",
+    "serviceAccountName": "default",
+    "terminationGracePeriodSeconds": 30,
+    "tolerations": [
+      {
+        "effect": "NoSchedule",
+        "key": "dedicated",
+        "operator": "Equal",
+        "value": "fs2-inference"
+      },
+      {
+        "effect": "NoExecute",
+        "key": "node.kubernetes.io/not-ready",
+        "operator": "Exists",
+        "tolerationSeconds": 300
+      },
+      {
+        "effect": "NoExecute",
+        "key": "node.kubernetes.io/unreachable",
+        "operator": "Exists",
+        "tolerationSeconds": 300
+      }
+    ],
+    "volumes": [
+      {
+        "name": "bundle",
+        "persistentVolumeClaim": {
+          "claimName": "fs2-bioir-of3-checkpoints",
+          "readOnly": true
+        }
+      }
+    ]
+  },
+  "status": {
+    "conditions": [
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-09-15T23:17:52Z",
+        "observedGeneration": 1,
+        "status": "False",
+        "type": "PodReadyToStartContainers"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-09-15T23:12:24Z",
+        "observedGeneration": 1,
+        "reason": "PodCompleted",
+        "status": "True",
+        "type": "Initialized"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-09-15T23:17:50Z",
+        "observedGeneration": 1,
+        "reason": "PodCompleted",
+        "status": "False",
+        "type": "Ready"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-09-15T23:17:50Z",
+        "observedGeneration": 1,
+        "reason": "PodCompleted",
+        "status": "False",
+        "type": "ContainersReady"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-09-15T23:12:24Z",
+        "observedGeneration": 1,
+        "status": "True",
+        "type": "PodScheduled"
+      }
+    ],
+    "containerStatuses": [
+      {
+        "allocatedResources": {
+          "cpu": "1",
+          "memory": "256Mi"
+        },
+        "containerID": "containerd://20d81d0f3a6e47920084d55b6ef228caf8624e822fcbe49d0f84c89ebd4bc99c",
+        "image": "sha256:79d8c7bacaa62a2fcc776cc3cf6b1c0bea728f044817050dc20379f8a2ce7286",
+        "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce",
+        "lastState": {},
+        "name": "inventory",
+        "ready": false,
+        "resources": {
+          "limits": {
+            "cpu": "2",
+            "memory": "2Gi"
+          },
+          "requests": {
+            "cpu": "1",
+            "memory": "256Mi"
+          }
+        },
+        "restartCount": 0,
+        "started": false,
+        "state": {
+          "terminated": {
+            "containerID": "containerd://20d81d0f3a6e47920084d55b6ef228caf8624e822fcbe49d0f84c89ebd4bc99c",
+            "exitCode": 0,
+            "finishedAt": "2026-09-15T23:17:50Z",
+            "reason": "Completed",
+            "startedAt": "2026-09-15T23:12:54Z"
+          }
+        },
+        "user": {
+          "linux": {
+            "gid": 0,
+            "supplementalGroups": [
+              0
+            ],
+            "uid": 0
+          }
+        },
+        "volumeMounts": [
+          {
+            "mountPath": "/bundle",
+            "name": "bundle",
+            "readOnly": true,
+            "recursiveReadOnly": "Disabled"
+          }
+        ]
+      }
+    ],
+    "hostIP": "10.6.83.26",
+    "hostIPs": [
+      {
+        "ip": "10.6.83.26"
+      }
+    ],
+    "observedGeneration": 1,
+    "phase": "Succeeded",
+    "podIP": "10.6.67.94",
+    "podIPs": [
+      {
+        "ip": "10.6.67.94"
+      }
+    ],
+    "qosClass": "Burstable",
+    "startTime": "2026-09-15T23:12:24Z"
+  }
+}

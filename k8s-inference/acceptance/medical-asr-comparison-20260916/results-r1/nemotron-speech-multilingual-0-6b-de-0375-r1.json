@@ -1,0 +1,115 @@
+{
+  "case": "de-0375",
+  "language": "de",
+  "audio_seconds": 9.46,
+  "source_sha256": "24285e5ad8bec21b28183930c00290a9fa7a672de15b5ec859b26b15b838b154",
+  "reference": "setzt die Fettverbrennung ein, eine halbe Stunde täglich ist mindestens anzustreben. Sie sind ja selbst ein Spätberufener in Laufdingen?",
+  "reference_provenance": {
+    "dataset": "leduckhai/MultiMed",
+    "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+    "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+    "row": 375
+  },
+  "media_type": "audio/ogg",
+  "model": "nemotron-speech-multilingual-0-6b",
+  "repetition": 1,
+  "status": "succeeded",
+  "started_at": "2026-09-16T21:46:03.557613+00:00",
+  "submit_status": 202,
+  "operation_id": "d48b340d-5a98-4e32-948d-4468e3bedd37",
+  "operation": {
+    "id": "d48b340d-5a98-4e32-948d-4468e3bedd37",
+    "tenant_id": "rene",
+    "principal_id": "rene",
+    "token_id": "28e90f73-dc7d-4491-bddf-6b4f14c2a6c3",
+    "model_id": "nemotron-speech-multilingual-0-6b",
+    "model_revision": "dynamic:sha256:7de9853b50ecc4ce141c419e5c573105dd1cc74612cd089e898a885879a6148f",
+    "protocol": "native",
+    "operation": "transcribe",
+    "idempotency_key": "medical-asr-ff56e5bc120e491aa1ba1421ec8ad4ed",
+    "status": "succeeded",
+    "accepted_at": "2026-09-16T21:46:04.208865Z",
+    "available_at": "2026-09-16T21:46:04.208865Z",
+    "deadline_at": "2026-09-16T23:46:04.204188Z",
+    "activation_started_at": "2026-09-16T21:46:04.230549Z",
+    "ready_at": "2026-09-16T21:46:04.547016Z",
+    "started_at": "2026-09-16T21:46:04.551168Z",
+    "completed_at": "2026-09-16T21:46:05.517086Z",
+    "outcome": "succeeded",
+    "semantic_outcome": "protocol_valid",
+    "http_status": 200,
+    "response_content_type": "application/json",
+    "result_available": true,
+    "payload_expires_at": "2026-09-17T21:46:04.208865Z",
+    "error_code": null,
+    "error_detail": null,
+    "attempt": 1,
+    "max_attempts": 3,
+    "fencing_token": 1,
+    "runtime": {
+      "pod_uid": "7c7785b2-a403-44cd-b335-aad4ba0c0faf",
+      "node_uid": "5700ea19-0b46-4020-afa5-c8f1a105dcdd",
+      "gpu_uuids": [
+        "GPU-b1a62569-6a84-851e-8340-1a31f1a20de1"
+      ],
+      "gpu_count": 1,
+      "preemptible": false
+    },
+    "estimated_gpu_seconds": 3600.0,
+    "reserved_gpu_seconds": 0.0,
+    "cold_start_seconds": 0.338151,
+    "input_tokens": null,
+    "output_tokens": null,
+    "modality_usage": [
+      {
+        "modality": "audio",
+        "direction": "input",
+        "unit": "seconds",
+        "amount": 9.46
+      }
+    ],
+    "modality_usage_reported": true,
+    "reused": false
+  },
+  "wall_seconds": 2.4849948389455676,
+  "text": "setzt die Fettverbrennung einer halbe Stunde täglich ist mindestens anzustreben. Sie sind ja selbst ein Spätberufener in Laufdingen",
+  "result_audio_seconds": 9.46,
+  "processing_seconds": 0.5538150041829795,
+  "result_keys": [
+    "audio_seconds",
+    "language",
+    "model",
+    "model_revision",
+    "processing_seconds",
+    "segments",
+    "text"
+  ],
+  "full_duration": true,
+  "raw_result_sha256": "43416da60affe7a415ba847d2ddf71aa7d27565c944bc04387925cc12140089d",
+  "quality": {
+    "reference_words": 19,
+    "hypothesis_words": 18,
+    "wer": 0.10526315789473684,
+    "substitutions": 1,
+    "deletions": 1,
+    "insertions": 0,
+    "correct": 17,
+    "errors": [
+      {
+        "type": "deletion",
+        "reference_index": 3,
+        "reference": "ein"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 4,
+        "reference": "eine",
+        "recognized": "einer"
+      }
+    ],
+    "reference_characters": 115,
+    "character_errors": 3,
+    "cer": 0.02608695652173913
+  },
+  "finished_at": "2026-09-16T21:46:06.043409+00:00"
+}

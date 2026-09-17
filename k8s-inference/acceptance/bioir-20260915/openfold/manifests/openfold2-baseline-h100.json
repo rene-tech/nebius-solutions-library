@@ -1,0 +1,154 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "apiVersion": "v1",
+      "kind": "Namespace",
+      "metadata": {
+        "name": "fs2-bioir-openfold",
+        "labels": {
+          "evaluation": "fs2-bioir-20260915",
+          "lane": "openfold",
+          "model": "openfold2",
+          "variant": "baseline"
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "openfold2-baseline-h100",
+        "namespace": "fs2-bioir-openfold",
+        "labels": {
+          "evaluation": "fs2-bioir-20260915",
+          "lane": "openfold",
+          "model": "openfold2",
+          "variant": "baseline"
+        }
+      },
+      "spec": {
+        "automountServiceAccountToken": false,
+        "containers": [
+          {
+            "env": [
+              {
+                "name": "HOME",
+                "value": "/runtime-cache/home"
+              },
+              {
+                "name": "CUDA_CACHE_PATH",
+                "value": "/runtime-cache/cuda"
+              },
+              {
+                "name": "TORCH_EXTENSIONS_DIR",
+                "value": "/runtime-cache/torch-extensions"
+              },
+              {
+                "name": "XDG_CACHE_HOME",
+                "value": "/runtime-cache/xdg"
+              }
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/openfold2@sha256:9fc70e781b18f4f547da237e2eb81387df3c38d092bb44c46145db6347e7e164",
+            "imagePullPolicy": "IfNotPresent",
+            "name": "openfold2",
+            "ports": [
+              {
+                "containerPort": 8000,
+                "name": "http",
+                "protocol": "TCP"
+              }
+            ],
+            "readinessProbe": {
+              "failureThreshold": 6,
+              "httpGet": {
+                "path": "/v1/health/ready",
+                "port": "http",
+                "scheme": "HTTP"
+              },
+              "periodSeconds": 5,
+              "successThreshold": 1,
+              "timeoutSeconds": 3
+            },
+            "resources": {
+              "limits": {
+                "cpu": "32",
+                "memory": "192Gi",
+                "nvidia.com/gpu": "1",
+                "ephemeral-storage": "60Gi"
+              },
+              "requests": {
+                "cpu": "8",
+                "memory": "64Gi",
+                "nvidia.com/gpu": "1",
+                "ephemeral-storage": "20Gi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              }
+            },
+            "terminationMessagePath": "/dev/termination-log",
+            "terminationMessagePolicy": "File",
+            "volumeMounts": [
+              {
+                "mountPath": "/dev/shm",
+                "name": "dshm"
+              },
+              {
+                "mountPath": "/runtime-cache",
+                "name": "runtime-cache"
+              }
+            ]
+          }
+        ],
+        "dnsPolicy": "ClusterFirst",
+        "enableServiceLinks": false,
+        "nodeSelector": {
+          "kubernetes.io/hostname": "computeinstance-e00j20a9hkb508cn4a"
+        },
+        "restartPolicy": "Never",
+        "schedulerName": "default-scheduler",
+        "securityContext": {
+          "fsGroup": 10001,
+          "fsGroupChangePolicy": "OnRootMismatch",
+          "runAsGroup": 10001,
+          "runAsNonRoot": true,
+          "runAsUser": 10001,
+          "seccompProfile": {
+            "type": "RuntimeDefault"
+          }
+        },
+        "terminationGracePeriodSeconds": 30,
+        "tolerations": [
+          {
+            "effect": "NoSchedule",
+            "key": "dedicated",
+            "operator": "Equal",
+            "value": "fs2-inference"
+          }
+        ],
+        "volumes": [
+          {
+            "emptyDir": {
+              "medium": "Memory",
+              "sizeLimit": "16Gi"
+            },
+            "name": "dshm"
+          },
+          {
+            "emptyDir": {
+              "sizeLimit": "4Gi"
+            },
+            "name": "runtime-cache"
+          }
+        ]
+      }
+    }
+  ]
+}

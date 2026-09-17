@@ -1,0 +1,156 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "apiVersion": "v1",
+      "kind": "ConfigMap",
+      "metadata": {
+        "name": "openfold3-upstream-resident-source",
+        "namespace": "fs2-bioir-openfold",
+        "labels": {
+          "evaluation": "fs2-bioir-20260915",
+          "lane": "openfold",
+          "model": "openfold3",
+          "variant": "upstream-resident"
+        }
+      },
+      "data": {
+        "upstream_openfold3_resident_server.py": "#!/usr/bin/env python3\n\"\"\"Exact upstream model with the same bounded residency change as graph BIR.\"\"\"\nimport sys\nimport threading\nsys.path.insert(0, '/opt/fs2/openfold3-preview2')\nimport server as current\nfrom resident_gpu import ResidentGPU\n\nclass Runtime(current.Runtime):\n    def __init__(self):\n        self._loaded = self._resident_ready = False\n        super().__init__()\n\n    @property\n    def ready(self):\n        return self._loaded and self._resident_ready\n\n    @ready.setter\n    def ready(self, value):\n        self._loaded = value\n\n    def load(self):\n        super().load()\n        if self.error:\n            return\n        self.module.model = ResidentGPU(self.module.model)\n        self.identity['gpu_lifecycle'] = 'inner model stays CUDA across Lightning teardown'\n        self._resident_ready = True\n        current.event('RESIDENT_MODEL_READY', **self.identity)\n\n    def predict(self, payload):\n        result = super().predict(payload)\n        self.identity['skipped_cpu_transfers'] = self.module.model.skipped_cpu_transfers\n        current.event('GPU_RESIDENCY_STATE', skipped_cpu_transfers=self.module.model.skipped_cpu_transfers)\n        return result\n\nif __name__ == '__main__':\n    current.RUNTIME = Runtime()\n    current.event('PROCESS_START')\n    threading.Thread(target=current.RUNTIME.load, daemon=True).start()\n    current.ThreadingHTTPServer(('0.0.0.0', 8000), current.Handler).serve_forever()\n",
+        "resident_gpu.py": "\"\"\"Evaluation-only inner-model residency control for Lightning predict teardown.\"\"\"\nimport torch\n\nclass ResidentGPU(torch.nn.Module):\n    def __init__(self, inner):\n        super().__init__()\n        self.inner = inner\n        self.skipped_cpu_transfers = 0\n\n    @property\n    def version_tensor(self):\n        return self.inner.version_tensor\n\n    def forward(self, *args, **kwargs):\n        return self.inner(*args, **kwargs)\n\n    def _apply(self, fn, recurse=True):\n        parameter = next(self.inner.parameters())\n        marker = torch.empty(0, device=parameter.device)\n        if marker.is_cuda and fn(marker).device.type == 'cpu':\n            self.skipped_cpu_transfers += 1\n            return self\n        return super()._apply(fn, recurse=recurse)\n"
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "name": "openfold3-upstream-resident-h100",
+        "namespace": "fs2-bioir-openfold",
+        "labels": {
+          "evaluation": "fs2-bioir-20260915",
+          "lane": "openfold",
+          "model": "openfold3",
+          "variant": "upstream-resident"
+        }
+      },
+      "spec": {
+        "automountServiceAccountToken": false,
+        "containers": [
+          {
+            "env": [
+              {
+                "name": "FS2_RUNTIME_CACHE_ROOT",
+                "value": "/model-cache/1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c/driver-580.159.04-sm90"
+              },
+              {
+                "name": "MAX_JOBS",
+                "value": "8"
+              }
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c",
+            "imagePullPolicy": "IfNotPresent",
+            "name": "model",
+            "ports": [
+              {
+                "containerPort": 8000,
+                "name": "http",
+                "protocol": "TCP"
+              }
+            ],
+            "readinessProbe": {
+              "failureThreshold": 3,
+              "httpGet": {
+                "path": "/v1/health/ready",
+                "port": "http",
+                "scheme": "HTTP"
+              },
+              "periodSeconds": 2,
+              "successThreshold": 1,
+              "timeoutSeconds": 1
+            },
+            "resources": {
+              "limits": {
+                "cpu": "16",
+                "memory": "64Gi",
+                "nvidia.com/gpu": "1",
+                "ephemeral-storage": "60Gi"
+              },
+              "requests": {
+                "cpu": "6",
+                "memory": "32Gi",
+                "nvidia.com/gpu": "1",
+                "ephemeral-storage": "20Gi"
+              }
+            },
+            "terminationMessagePath": "/dev/termination-log",
+            "terminationMessagePolicy": "File",
+            "volumeMounts": [
+              {
+                "mountPath": "/model-cache",
+                "name": "model-cache"
+              },
+              {
+                "mountPath": "/dev/shm",
+                "name": "shm"
+              },
+              {
+                "name": "evaluation-source",
+                "mountPath": "/eval",
+                "readOnly": true
+              }
+            ],
+            "command": [
+              "/bin/bash",
+              "-ec",
+              "source /opt/fs2/activate.sh; export TRITON_CACHE_DIR=${FS2_RUNTIME_CACHE_ROOT:-/tmp/of3-cache}/triton TORCH_EXTENSIONS_DIR=${FS2_RUNTIME_CACHE_ROOT:-/tmp/of3-cache}/torch-extensions XDG_CACHE_HOME=${FS2_RUNTIME_CACHE_ROOT:-/tmp/of3-cache}/xdg CUDA_CACHE_PATH=${FS2_RUNTIME_CACHE_ROOT:-/tmp/of3-cache}/cuda; exec python /eval/upstream_openfold3_resident_server.py"
+            ]
+          }
+        ],
+        "dnsPolicy": "ClusterFirst",
+        "enableServiceLinks": false,
+        "nodeSelector": {
+          "kubernetes.io/hostname": "computeinstance-e00j20a9hkb508cn4a"
+        },
+        "restartPolicy": "Never",
+        "schedulerName": "default-scheduler",
+        "securityContext": {
+          "fsGroup": 10001,
+          "fsGroupChangePolicy": "OnRootMismatch",
+          "runAsGroup": 10001,
+          "runAsNonRoot": true,
+          "runAsUser": 10001
+        },
+        "terminationGracePeriodSeconds": 30,
+        "tolerations": [
+          {
+            "effect": "NoSchedule",
+            "key": "dedicated",
+            "operator": "Equal",
+            "value": "fs2-inference"
+          }
+        ],
+        "volumes": [
+          {
+            "name": "model-cache",
+            "emptyDir": {
+              "sizeLimit": "12Gi"
+            }
+          },
+          {
+            "emptyDir": {
+              "medium": "Memory",
+              "sizeLimit": "8Gi"
+            },
+            "name": "shm"
+          },
+          {
+            "name": "evaluation-source",
+            "configMap": {
+              "name": "openfold3-upstream-resident-source"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

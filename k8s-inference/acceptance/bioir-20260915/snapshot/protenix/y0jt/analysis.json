@@ -1,0 +1,3021 @@
+{
+  "node": "computeinstance-e00y0jttwekyghrznp",
+  "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94",
+  "tools": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4",
+  "checkpoint_capture": {
+    "action": "capture",
+    "records": [
+      {
+        "command": [
+          "/tools/cuda-checkpoint",
+          "--action",
+          "lock",
+          "--pid",
+          "174"
+        ],
+        "seconds": 0.013972338987514377,
+        "returncode": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      {
+        "command": [
+          "/tools/cuda-checkpoint",
+          "--action",
+          "checkpoint",
+          "--pid",
+          "174"
+        ],
+        "seconds": 0.9601289669517428,
+        "returncode": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      {
+        "command": [
+          "/tools/lib/ld-linux-x86-64.so.2",
+          "--library-path",
+          "/tools/lib",
+          "/tools/criu",
+          "dump",
+          "--tree",
+          "174",
+          "--images-dir",
+          "/checkpoints/protenix-y0jt-globalrng-r1/images",
+          "--shell-job",
+          "--log-file",
+          "dump.log",
+          "-v4",
+          "--file-locks",
+          "--tcp-established",
+          "--link-remap",
+          "--manage-cgroups=ignore",
+          "--libdir",
+          "/tmp/empty-criu-plugins"
+        ],
+        "seconds": 2.782934137969278,
+        "returncode": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    ],
+    "status": "passed",
+    "runtime_identity": {
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94",
+      "tools_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4",
+      "kernel_release": "6.11.0-1016-nvidia",
+      "runtime_id": "protenix-v2-bir-public-0.1.0-global-rng",
+      "model_revision": "5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48:8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+      "gpu_uuid": "GPU-9885f9c6-110a-10b5-2c26-c256e895d575",
+      "gpu_name": "NVIDIA H100 80GB HBM3",
+      "driver_version": "580.173.02",
+      "compute_capability": "9.0",
+      "snapshot_source_sha256": {
+        "process_checkpoint.py": "8a65528b0abfdfd4308f438b572b78b5183fde41a5f0a3d5980aaa9329a761ea",
+        "serving_checkpoint.py": "0cc5f0b80b38a894fb4e0bc6119fc6012e3af7979664cefccbe96b239d73235d",
+        "serving_filesystem.py": "0af2a36d69f2c809a9a9f15070ab7f196cda39361724ccbbe724cc994b1b2fd7",
+        "serving_launcher.py": "8f076ab23bb5d6ecf56b9c06f7f3040a092cf3321836556413c9e84ba667aa7b",
+        "serving_supervisor.py": "a27ef49260796bbc90f68db2e1e74437e2b70dd41c57aeb0bfd3d14cb0389524",
+        "sitecustomize.py": "4051136270e8c7446e699484bbc1890489c34e346286b8845af741c0d5c4aad5",
+        "supervisor.py": "4ec20b525ba38f979c67d8ab46e85a9f8243c0b2990d9e65871839318fdab83c"
+      }
+    },
+    "cuda_process_probes": [
+      {
+        "pid": 174,
+        "returncode": 0,
+        "state": "running",
+        "stderr": ""
+      }
+    ],
+    "cuda_pids": [
+      174
+    ],
+    "checkpoint_flush_seconds": 84.68423138710205
+  },
+  "lifecycle": [
+    {
+      "pod": "bir-protenix-y0jt-donor",
+      "variant": "donor",
+      "pod_uid": "b592343f-3917-4b90-b74d-56611097ad8a",
+      "created_unix": 1789513588.0,
+      "container_started_unix": 1789513624.0,
+      "ready_unix": 1789513684.2024827,
+      "create_to_ready_seconds": 96.2024827003479,
+      "container_to_ready_seconds": 60.2024827003479,
+      "init_seconds": 0.0,
+      "image_pull_events": [
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4\" already present on machine and can be accessed by the pod",
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94\" already present on machine and can be accessed by the pod"
+      ],
+      "ready_metadata": {
+        "ready": true,
+        "model": "protenix-v2",
+        "pid": 174,
+        "model_load_seconds": 51.0724801881006,
+        "boundary": "immutable model loaded and CUDA synchronized; request compilation excluded",
+        "binding": {
+          "artifact_manifest_sha256": "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7",
+          "checkpoint_sha256": "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+          "source_revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+          "dtype": "bf16",
+          "model_name": "protenix-v2",
+          "load_checkpoint_dir": "/models/protenix-v2/checkpoint"
+        }
+      },
+      "first_request_seconds": 14.05892068601679,
+      "create_to_first_validated_seconds": 113.88395762443542,
+      "container_to_first_validated_seconds": 77.88395762443542,
+      "first_request_case": "ubiquitin-76",
+      "gpu_slot_seconds_bounds": [
+        235.11600923538208,
+        237.22400188446045
+      ]
+    },
+    {
+      "pod": "bir-protenix-y0jt-fallback",
+      "variant": "fallback",
+      "pod_uid": "3522d0f8-9a64-4452-88e1-0a91d32be441",
+      "created_unix": 1789514898.0,
+      "container_started_unix": 1789514938.0,
+      "ready_unix": 1789514951.4214516,
+      "create_to_ready_seconds": 53.421451568603516,
+      "container_to_ready_seconds": 13.421451568603516,
+      "init_seconds": 0.0,
+      "image_pull_events": [
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4\" already present on machine and can be accessed by the pod",
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94\" already present on machine and can be accessed by the pod"
+      ],
+      "ready_metadata": {
+        "ready": true,
+        "model": "protenix-v2",
+        "pid": 55,
+        "model_load_seconds": 2.5491825150093064,
+        "boundary": "immutable model loaded and CUDA synchronized; request compilation excluded",
+        "binding": {
+          "artifact_manifest_sha256": "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7",
+          "checkpoint_sha256": "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+          "source_revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+          "dtype": "bf16",
+          "model_name": "protenix-v2",
+          "load_checkpoint_dir": "/models/protenix-v2/checkpoint"
+        }
+      },
+      "first_request_seconds": 12.4887218370568,
+      "create_to_first_validated_seconds": 69.61717176437378,
+      "container_to_first_validated_seconds": 29.61717176437378,
+      "first_request_case": "lysozyme-129",
+      "gpu_slot_seconds_bounds": [
+        100.0898232460022,
+        101.75686025619507
+      ]
+    },
+    {
+      "pod": "bir-protenix-y0jt-normal-1",
+      "variant": "normal",
+      "pod_uid": "be2b934f-9729-416a-9a83-979bcf1e25aa",
+      "created_unix": 1789514380.0,
+      "container_started_unix": 1789514407.0,
+      "ready_unix": 1789514464.8202055,
+      "create_to_ready_seconds": 84.82020545005798,
+      "container_to_ready_seconds": 57.82020545005798,
+      "init_seconds": 0.0,
+      "image_pull_events": [
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4\" already present on machine and can be accessed by the pod",
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94\" already present on machine and can be accessed by the pod"
+      ],
+      "ready_metadata": {
+        "ready": true,
+        "model": "protenix-v2",
+        "pid": 174,
+        "model_load_seconds": 51.060314730973914,
+        "boundary": "immutable model loaded and CUDA synchronized; request compilation excluded",
+        "binding": {
+          "artifact_manifest_sha256": "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7",
+          "checkpoint_sha256": "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+          "source_revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+          "dtype": "bf16",
+          "model_name": "protenix-v2",
+          "load_checkpoint_dir": "/models/protenix-v2/checkpoint"
+        }
+      },
+      "first_request_seconds": 13.919768713065423,
+      "create_to_first_validated_seconds": 102.4458737373352,
+      "container_to_first_validated_seconds": 75.4458737373352,
+      "first_request_case": "ubiquitin-76",
+      "gpu_slot_seconds_bounds": [
+        151.4481496810913,
+        153.70390367507935
+      ]
+    },
+    {
+      "pod": "bir-protenix-y0jt-normal-2",
+      "variant": "normal",
+      "pod_uid": "b15c5b26-44ba-4fb8-b195-6b4f7d3f0caa",
+      "created_unix": 1789514547.0,
+      "container_started_unix": 1789514584.0,
+      "ready_unix": 1789514644.3073807,
+      "create_to_ready_seconds": 97.30738067626953,
+      "container_to_ready_seconds": 60.30738067626953,
+      "init_seconds": 0.0,
+      "image_pull_events": [
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4\" already present on machine and can be accessed by the pod",
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94\" already present on machine and can be accessed by the pod"
+      ],
+      "ready_metadata": {
+        "ready": true,
+        "model": "protenix-v2",
+        "pid": 174,
+        "model_load_seconds": 50.973670964012854,
+        "boundary": "immutable model loaded and CUDA synchronized; request compilation excluded",
+        "binding": {
+          "artifact_manifest_sha256": "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7",
+          "checkpoint_sha256": "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+          "source_revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+          "dtype": "bf16",
+          "model_name": "protenix-v2",
+          "load_checkpoint_dir": "/models/protenix-v2/checkpoint"
+        }
+      },
+      "first_request_seconds": 14.149800381972454,
+      "create_to_first_validated_seconds": 115.06775522232056,
+      "container_to_first_validated_seconds": 78.06775522232056,
+      "first_request_case": "ubiquitin-76",
+      "gpu_slot_seconds_bounds": [
+        164.263902425766,
+        165.96609210968018
+      ]
+    },
+    {
+      "pod": "bir-protenix-y0jt-normal-3",
+      "variant": "normal",
+      "pod_uid": "76939602-3f20-4f53-99f3-1d90cc7db65f",
+      "created_unix": 1789514727.0,
+      "container_started_unix": 1789514761.0,
+      "ready_unix": 1789514816.5684783,
+      "create_to_ready_seconds": 89.56847834587097,
+      "container_to_ready_seconds": 55.56847834587097,
+      "init_seconds": 0.0,
+      "image_pull_events": [
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4\" already present on machine and can be accessed by the pod",
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94\" already present on machine and can be accessed by the pod"
+      ],
+      "ready_metadata": {
+        "ready": true,
+        "model": "protenix-v2",
+        "pid": 175,
+        "model_load_seconds": 51.24628488603048,
+        "boundary": "immutable model loaded and CUDA synchronized; request compilation excluded",
+        "binding": {
+          "artifact_manifest_sha256": "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7",
+          "checkpoint_sha256": "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+          "source_revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+          "dtype": "bf16",
+          "model_name": "protenix-v2",
+          "load_checkpoint_dir": "/models/protenix-v2/checkpoint"
+        }
+      },
+      "first_request_seconds": 13.998887394089252,
+      "create_to_first_validated_seconds": 107.16022229194641,
+      "container_to_first_validated_seconds": 73.16022229194641,
+      "first_request_case": "ubiquitin-76",
+      "gpu_slot_seconds_bounds": [
+        156.3714783191681,
+        158.33375120162964
+      ]
+    },
+    {
+      "pod": "bir-protenix-y0jt-restore-1",
+      "variant": "restore",
+      "pod_uid": "9933eabd-5195-4252-b073-cdf99e95deb5",
+      "created_unix": 1789513844.0,
+      "container_started_unix": 1789513875.0,
+      "ready_unix": 1789513962.0624056,
+      "create_to_ready_seconds": 118.06240558624268,
+      "container_to_ready_seconds": 87.06240558624268,
+      "init_seconds": 0.0,
+      "image_pull_events": [
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4\" already present on machine and can be accessed by the pod",
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94\" already present on machine and can be accessed by the pod"
+      ],
+      "ready_metadata": {
+        "ready": true,
+        "model": "protenix-v2",
+        "pid": 174,
+        "model_load_seconds": 51.0724801881006,
+        "boundary": "immutable model loaded and CUDA synchronized; request compilation excluded",
+        "binding": {
+          "artifact_manifest_sha256": "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7",
+          "checkpoint_sha256": "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+          "source_revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+          "dtype": "bf16",
+          "model_name": "protenix-v2",
+          "load_checkpoint_dir": "/models/protenix-v2/checkpoint"
+        }
+      },
+      "first_request_seconds": 6.585605199914426,
+      "create_to_first_validated_seconds": 128.21807217597961,
+      "container_to_first_validated_seconds": 97.21807217597961,
+      "first_request_case": "lysozyme-129",
+      "gpu_slot_seconds_bounds": [
+        159.48638820648193,
+        161.4531500339508
+      ]
+    },
+    {
+      "pod": "bir-protenix-y0jt-restore-2",
+      "variant": "restore",
+      "pod_uid": "2b1784c0-6b0d-4266-917a-230e5570c1e8",
+      "created_unix": 1789514018.0,
+      "container_started_unix": 1789514050.0,
+      "ready_unix": 1789514143.5174716,
+      "create_to_ready_seconds": 125.51747155189514,
+      "container_to_ready_seconds": 93.51747155189514,
+      "init_seconds": 0.0,
+      "image_pull_events": [
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4\" already present on machine and can be accessed by the pod",
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94\" already present on machine and can be accessed by the pod"
+      ],
+      "ready_metadata": {
+        "ready": true,
+        "model": "protenix-v2",
+        "pid": 174,
+        "model_load_seconds": 51.0724801881006,
+        "boundary": "immutable model loaded and CUDA synchronized; request compilation excluded",
+        "binding": {
+          "artifact_manifest_sha256": "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7",
+          "checkpoint_sha256": "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+          "source_revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+          "dtype": "bf16",
+          "model_name": "protenix-v2",
+          "load_checkpoint_dir": "/models/protenix-v2/checkpoint"
+        }
+      },
+      "first_request_seconds": 6.43672613997478,
+      "create_to_first_validated_seconds": 135.53529620170593,
+      "container_to_first_validated_seconds": 103.53529620170593,
+      "first_request_case": "lysozyme-129",
+      "gpu_slot_seconds_bounds": [
+        166.64162826538086,
+        169.04599356651306
+      ]
+    },
+    {
+      "pod": "bir-protenix-y0jt-restore-3",
+      "variant": "restore",
+      "pod_uid": "090bc8d1-466c-442b-a28d-d89814c3c43b",
+      "created_unix": 1789514200.0,
+      "container_started_unix": 1789514234.0,
+      "ready_unix": 1789514322.9087386,
+      "create_to_ready_seconds": 122.90873861312866,
+      "container_to_ready_seconds": 88.90873861312866,
+      "init_seconds": 0.0,
+      "image_pull_events": [
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4\" already present on machine and can be accessed by the pod",
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94\" already present on machine and can be accessed by the pod"
+      ],
+      "ready_metadata": {
+        "ready": true,
+        "model": "protenix-v2",
+        "pid": 174,
+        "model_load_seconds": 51.0724801881006,
+        "boundary": "immutable model loaded and CUDA synchronized; request compilation excluded",
+        "binding": {
+          "artifact_manifest_sha256": "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7",
+          "checkpoint_sha256": "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+          "source_revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+          "dtype": "bf16",
+          "model_name": "protenix-v2",
+          "load_checkpoint_dir": "/models/protenix-v2/checkpoint"
+        }
+      },
+      "first_request_seconds": 6.537152900942601,
+      "create_to_first_validated_seconds": 133.04704189300537,
+      "container_to_first_validated_seconds": 99.04704189300537,
+      "first_request_case": "lysozyme-129",
+      "gpu_slot_seconds_bounds": [
+        164.19367289543152,
+        166.30663919448853
+      ]
+    }
+  ],
+  "summaries": [
+    {
+      "variant": "donor",
+      "n": 1,
+      "create_to_ready_seconds": {
+        "samples": [
+          96.2024827003479
+        ],
+        "median": 96.2024827003479
+      },
+      "container_to_ready_seconds": {
+        "samples": [
+          60.2024827003479
+        ],
+        "median": 60.2024827003479
+      },
+      "create_to_first_validated_seconds": {
+        "samples": [
+          113.88395762443542
+        ],
+        "median": 113.88395762443542
+      },
+      "container_to_first_validated_seconds": {
+        "samples": [
+          77.88395762443542
+        ],
+        "median": 77.88395762443542
+      },
+      "first_request_seconds": {
+        "samples": [
+          14.05892068601679
+        ],
+        "median": 14.05892068601679
+      }
+    },
+    {
+      "variant": "restore",
+      "n": 3,
+      "create_to_ready_seconds": {
+        "samples": [
+          118.06240558624268,
+          125.51747155189514,
+          122.90873861312866
+        ],
+        "median": 122.90873861312866
+      },
+      "container_to_ready_seconds": {
+        "samples": [
+          87.06240558624268,
+          93.51747155189514,
+          88.90873861312866
+        ],
+        "median": 88.90873861312866
+      },
+      "create_to_first_validated_seconds": {
+        "samples": [
+          128.21807217597961,
+          135.53529620170593,
+          133.04704189300537
+        ],
+        "median": 133.04704189300537
+      },
+      "container_to_first_validated_seconds": {
+        "samples": [
+          97.21807217597961,
+          103.53529620170593,
+          99.04704189300537
+        ],
+        "median": 99.04704189300537
+      },
+      "first_request_seconds": {
+        "samples": [
+          6.585605199914426,
+          6.43672613997478,
+          6.537152900942601
+        ],
+        "median": 6.537152900942601
+      }
+    },
+    {
+      "variant": "normal",
+      "n": 3,
+      "create_to_ready_seconds": {
+        "samples": [
+          84.82020545005798,
+          97.30738067626953,
+          89.56847834587097
+        ],
+        "median": 89.56847834587097
+      },
+      "container_to_ready_seconds": {
+        "samples": [
+          57.82020545005798,
+          60.30738067626953,
+          55.56847834587097
+        ],
+        "median": 57.82020545005798
+      },
+      "create_to_first_validated_seconds": {
+        "samples": [
+          102.4458737373352,
+          115.06775522232056,
+          107.16022229194641
+        ],
+        "median": 107.16022229194641
+      },
+      "container_to_first_validated_seconds": {
+        "samples": [
+          75.4458737373352,
+          78.06775522232056,
+          73.16022229194641
+        ],
+        "median": 75.4458737373352
+      },
+      "first_request_seconds": {
+        "samples": [
+          13.919768713065423,
+          14.149800381972454,
+          13.998887394089252
+        ],
+        "median": 13.998887394089252
+      }
+    },
+    {
+      "variant": "fallback",
+      "n": 1,
+      "create_to_ready_seconds": {
+        "samples": [
+          53.421451568603516
+        ],
+        "median": 53.421451568603516
+      },
+      "container_to_ready_seconds": {
+        "samples": [
+          13.421451568603516
+        ],
+        "median": 13.421451568603516
+      },
+      "create_to_first_validated_seconds": {
+        "samples": [
+          69.61717176437378
+        ],
+        "median": 69.61717176437378
+      },
+      "container_to_first_validated_seconds": {
+        "samples": [
+          29.61717176437378
+        ],
+        "median": 29.61717176437378
+      },
+      "first_request_seconds": {
+        "samples": [
+          12.4887218370568
+        ],
+        "median": 12.4887218370568
+      }
+    }
+  ],
+  "attempts": [
+    {
+      "artifacts": [
+        {
+          "bytes": 762,
+          "path": "ubiquitin-76/r01/confidence.json",
+          "sha256": "fe4c88d86304c661aa869d7102e941b8593fc6de5597c7394b5428d5c984ff77"
+        },
+        {
+          "bytes": 1351,
+          "path": "ubiquitin-76/r01/request.log",
+          "sha256": "c765371fbc79a667aa9c15de996b32e6b0b1ab029fb5d6655d9da62e14251cab"
+        },
+        {
+          "bytes": 59077,
+          "path": "ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_sample_0.cif",
+          "sha256": "dc862d4363ff7e06144533eea2c310f215b18ad21c9f36d0e50301b8f8872f57"
+        },
+        {
+          "bytes": 701,
+          "path": "ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_summary_confidence_sample_0.json",
+          "sha256": "bf8252319b81636e936c40472b6bb02c2cf5b5ca87acc20cdc898576c7cf14f9"
+        }
+      ],
+      "case": "ubiquitin-76",
+      "command": [
+        "/usr/local/bin/fs2-run-protenix",
+        "pred",
+        "--input",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/processed.json",
+        "--input-marker",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/provenance.json",
+        "--input-artifact-id",
+        "bioir.prepared.ubiquitin-76",
+        "--expected-raw-input-artifact-id",
+        "bioir.raw.ubiquitin-76",
+        "--expected-raw-input-sha256",
+        "23550eaf44837c6c26f24d312996bae19992936445fc12f7b8ca90ccfd41e287",
+        "--checkpoint",
+        "/models/protenix-v2/checkpoint/protenix-v2.pt",
+        "--common-dir",
+        "/models/protenix-v2/common",
+        "--msa-mode",
+        "none",
+        "--seeds",
+        "101",
+        "--sample-count",
+        "1",
+        "--disable-templates",
+        "--disable-rna-msa",
+        "--runtime-localization-marker",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/localization-pred.json",
+        "--output-dir",
+        "/mnt/fs2-scientific/results/warm-prepared/ubiquitin-76/r01"
+      ],
+      "created_at": "2026-09-15T23:08:07.825037+00:00",
+      "input_sha256": "23550eaf44837c6c26f24d312996bae19992936445fc12f7b8ca90ccfd41e287",
+      "model_id": "protenix-v2",
+      "quality": {
+        "atom_counts": [
+          602
+        ],
+        "finite_coordinates": true,
+        "scientific_equivalence": "pending-paired-analysis",
+        "structures": 1
+      },
+      "repetition": 1,
+      "return_code": 0,
+      "status": "passed",
+      "variant": "warm-prepared",
+      "wall_seconds": 14.05892068601679,
+      "sequence_valid": true,
+      "bioir_phases": [
+        {
+          "feature_transfer_seconds": 0.0400038919178769,
+          "forward_seconds": 6.808935682987794,
+          "cycles": 10,
+          "steps": 200,
+          "samples": 1,
+          "seed": 101,
+          "sampling_rng": "caller-global-stream",
+          "graph_state": [
+            {
+              "module": "diffusion_sampler.diffusion_module.diffusion_transformer",
+              "states": [
+                {
+                  "state": "CUDAGraphPreparationState.GRAPH_VERIFIED",
+                  "calls": 3,
+                  "captured": true
+                }
+              ]
+            }
+          ],
+          "max_allocated_bytes": 1113561088,
+          "max_reserved_bytes": 1203765248
+        }
+      ],
+      "graph_verified": true,
+      "scientific_parity": "not-qualified; model-lane reference-quality regression remains",
+      "pod": "bir-protenix-y0jt-donor",
+      "label": "warm-prepared",
+      "outputs": [
+        {
+          "path": "raw/bir-protenix-y0jt-donor/artifacts/results/warm-prepared/ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_sample_0.cif",
+          "sha256": "dc862d4363ff7e06144533eea2c310f215b18ad21c9f36d0e50301b8f8872f57",
+          "chains": [
+            "A"
+          ],
+          "residues": [
+            76
+          ],
+          "reference_ca_lddt": [
+            0.4860522598870056
+          ]
+        }
+      ]
+    },
+    {
+      "artifacts": [
+        {
+          "bytes": 766,
+          "path": "lysozyme-129/r01/confidence.json",
+          "sha256": "c7505c92c1487cc9573efae6aa053456318dda0a214544bd57ca82c5a15a010c"
+        },
+        {
+          "bytes": 100937,
+          "path": "lysozyme-129/r01/lysozyme-129/seed_101/predictions/lysozyme-129_sample_0.cif",
+          "sha256": "2bbc459e6ae3e5c7145f4ff6c9cc5673c8556f464de4b276d8e9c5cad55bf8bc"
+        },
+        {
+          "bytes": 707,
+          "path": "lysozyme-129/r01/lysozyme-129/seed_101/predictions/lysozyme-129_summary_confidence_sample_0.json",
+          "sha256": "91634678563546f553ac0e96be8259cb63c3da82a20ee5d33635c87078a7389b"
+        },
+        {
+          "bytes": 1356,
+          "path": "lysozyme-129/r01/request.log",
+          "sha256": "d89ddd414dc42057a27a233311a57db285c19c6ee1cc042212d685bd297b0436"
+        }
+      ],
+      "case": "lysozyme-129",
+      "command": [
+        "/usr/local/bin/fs2-run-protenix",
+        "pred",
+        "--input",
+        "/mnt/fs2-scientific/baseline/lysozyme-129/processed.json",
+        "--input-marker",
+        "/mnt/fs2-scientific/baseline/lysozyme-129/provenance.json",
+        "--input-artifact-id",
+        "bioir.prepared.lysozyme-129",
+        "--expected-raw-input-artifact-id",
+        "bioir.raw.lysozyme-129",
+        "--expected-raw-input-sha256",
+        "08d81c7b2a8e9e3446e36027a25252c3f0836f54730014dcfe378cde29908c93",
+        "--checkpoint",
+        "/models/protenix-v2/checkpoint/protenix-v2.pt",
+        "--common-dir",
+        "/models/protenix-v2/common",
+        "--msa-mode",
+        "none",
+        "--seeds",
+        "101",
+        "--sample-count",
+        "1",
+        "--disable-templates",
+        "--disable-rna-msa",
+        "--runtime-localization-marker",
+        "/mnt/fs2-scientific/baseline/lysozyme-129/localization-pred.json",
+        "--output-dir",
+        "/mnt/fs2-scientific/results/measured/lysozyme-129/r01"
+      ],
+      "created_at": "2026-09-15T23:29:15.128450+00:00",
+      "input_sha256": "08d81c7b2a8e9e3446e36027a25252c3f0836f54730014dcfe378cde29908c93",
+      "model_id": "protenix-v2",
+      "quality": {
+        "atom_counts": [
+          1001
+        ],
+        "finite_coordinates": true,
+        "scientific_equivalence": "pending-paired-analysis",
+        "structures": 1
+      },
+      "repetition": 1,
+      "return_code": 0,
+      "status": "passed",
+      "variant": "measured",
+      "wall_seconds": 12.4887218370568,
+      "sequence_valid": true,
+      "bioir_phases": [
+        {
+          "feature_transfer_seconds": 0.04437419900204986,
+          "forward_seconds": 5.024543934967369,
+          "cycles": 10,
+          "steps": 200,
+          "samples": 1,
+          "seed": 101,
+          "sampling_rng": "caller-global-stream",
+          "graph_state": [
+            {
+              "module": "diffusion_sampler.diffusion_module.diffusion_transformer",
+              "states": [
+                {
+                  "state": "CUDAGraphPreparationState.GRAPH_VERIFIED",
+                  "calls": 3,
+                  "captured": true
+                }
+              ]
+            }
+          ],
+          "max_allocated_bytes": 1252987392,
+          "max_reserved_bytes": 1436549120
+        }
+      ],
+      "graph_verified": true,
+      "scientific_parity": "not-qualified; model-lane reference-quality regression remains",
+      "pod": "bir-protenix-y0jt-fallback",
+      "label": "measured",
+      "outputs": [
+        {
+          "path": "raw/bir-protenix-y0jt-fallback/artifacts/results/measured/lysozyme-129/r01/lysozyme-129/seed_101/predictions/lysozyme-129_sample_0.cif",
+          "sha256": "2bbc459e6ae3e5c7145f4ff6c9cc5673c8556f464de4b276d8e9c5cad55bf8bc",
+          "chains": [
+            "A"
+          ],
+          "residues": [
+            129
+          ],
+          "reference_ca_lddt": [
+            0.29270937604270936
+          ]
+        }
+      ]
+    },
+    {
+      "artifacts": [
+        {
+          "bytes": 763,
+          "path": "ubiquitin-76/r01/confidence.json",
+          "sha256": "0f5ed86a8a0a1ce2a844b739fe7f1488a5a133d672eb0f554ed8045a87dfb848"
+        },
+        {
+          "bytes": 1356,
+          "path": "ubiquitin-76/r01/request.log",
+          "sha256": "50785763ae82dd9fe23f6cd6707a393aaa40ca3a7b8e9aa4e2d69cb47fc697f3"
+        },
+        {
+          "bytes": 59077,
+          "path": "ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_sample_0.cif",
+          "sha256": "793fd03471849eaaf3cf6d189fafcf9d5e659595ec8949731a4b718768a7de64"
+        },
+        {
+          "bytes": 702,
+          "path": "ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_summary_confidence_sample_0.json",
+          "sha256": "d973a20c53fcab208aeb4c4147096433264f27928c438ac645427b23105990e0"
+        }
+      ],
+      "case": "ubiquitin-76",
+      "command": [
+        "/usr/local/bin/fs2-run-protenix",
+        "pred",
+        "--input",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/processed.json",
+        "--input-marker",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/provenance.json",
+        "--input-artifact-id",
+        "bioir.prepared.ubiquitin-76",
+        "--expected-raw-input-artifact-id",
+        "bioir.raw.ubiquitin-76",
+        "--expected-raw-input-sha256",
+        "23550eaf44837c6c26f24d312996bae19992936445fc12f7b8ca90ccfd41e287",
+        "--checkpoint",
+        "/models/protenix-v2/checkpoint/protenix-v2.pt",
+        "--common-dir",
+        "/models/protenix-v2/common",
+        "--msa-mode",
+        "none",
+        "--seeds",
+        "101",
+        "--sample-count",
+        "1",
+        "--disable-templates",
+        "--disable-rna-msa",
+        "--runtime-localization-marker",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/localization-pred.json",
+        "--output-dir",
+        "/mnt/fs2-scientific/results/measured/ubiquitin-76/r01"
+      ],
+      "created_at": "2026-09-15T23:29:27.618040+00:00",
+      "input_sha256": "23550eaf44837c6c26f24d312996bae19992936445fc12f7b8ca90ccfd41e287",
+      "model_id": "protenix-v2",
+      "quality": {
+        "atom_counts": [
+          602
+        ],
+        "finite_coordinates": true,
+        "scientific_equivalence": "pending-paired-analysis",
+        "structures": 1
+      },
+      "repetition": 1,
+      "return_code": 0,
+      "status": "passed",
+      "variant": "measured",
+      "wall_seconds": 5.229669096064754,
+      "sequence_valid": true,
+      "bioir_phases": [
+        {
+          "feature_transfer_seconds": 0.0022591069573536515,
+          "forward_seconds": 3.7367876280331984,
+          "cycles": 10,
+          "steps": 200,
+          "samples": 1,
+          "seed": 101,
+          "sampling_rng": "caller-global-stream",
+          "graph_state": [
+            {
+              "module": "diffusion_sampler.diffusion_module.diffusion_transformer",
+              "states": [
+                {
+                  "state": "CUDAGraphPreparationState.GRAPH_VERIFIED",
+                  "calls": 3,
+                  "captured": true
+                }
+              ]
+            }
+          ],
+          "max_allocated_bytes": 1116026880,
+          "max_reserved_bytes": 1268776960
+        }
+      ],
+      "graph_verified": true,
+      "scientific_parity": "not-qualified; model-lane reference-quality regression remains",
+      "pod": "bir-protenix-y0jt-fallback",
+      "label": "measured",
+      "outputs": [
+        {
+          "path": "raw/bir-protenix-y0jt-fallback/artifacts/results/measured/ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_sample_0.cif",
+          "sha256": "793fd03471849eaaf3cf6d189fafcf9d5e659595ec8949731a4b718768a7de64",
+          "chains": [
+            "A"
+          ],
+          "residues": [
+            76
+          ],
+          "reference_ca_lddt": [
+            0.4961158192090395
+          ]
+        }
+      ]
+    },
+    {
+      "artifacts": [
+        {
+          "bytes": 762,
+          "path": "ubiquitin-76/r01/confidence.json",
+          "sha256": "8f7938ce81e5f12ddfd187d45820ea6db4189bf62412a00641683a93f8dbd08f"
+        },
+        {
+          "bytes": 1352,
+          "path": "ubiquitin-76/r01/request.log",
+          "sha256": "aa19e3c639036081e87401edecbc689cd4f44f0c12026756f02efd21513f0a5d"
+        },
+        {
+          "bytes": 59077,
+          "path": "ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_sample_0.cif",
+          "sha256": "890bfbb23a4474275cfa163bc0f0c6428a4327fad609f07e18db162940c1a43c"
+        },
+        {
+          "bytes": 702,
+          "path": "ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_summary_confidence_sample_0.json",
+          "sha256": "29b567596021ade700f19ba6a24e5f4bf38a956b7908b57b5b26032567d0dcc3"
+        }
+      ],
+      "case": "ubiquitin-76",
+      "command": [
+        "/usr/local/bin/fs2-run-protenix",
+        "pred",
+        "--input",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/processed.json",
+        "--input-marker",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/provenance.json",
+        "--input-artifact-id",
+        "bioir.prepared.ubiquitin-76",
+        "--expected-raw-input-artifact-id",
+        "bioir.raw.ubiquitin-76",
+        "--expected-raw-input-sha256",
+        "23550eaf44837c6c26f24d312996bae19992936445fc12f7b8ca90ccfd41e287",
+        "--checkpoint",
+        "/models/protenix-v2/checkpoint/protenix-v2.pt",
+        "--common-dir",
+        "/models/protenix-v2/common",
+        "--msa-mode",
+        "none",
+        "--seeds",
+        "101",
+        "--sample-count",
+        "1",
+        "--disable-templates",
+        "--disable-rna-msa",
+        "--runtime-localization-marker",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/localization-pred.json",
+        "--output-dir",
+        "/mnt/fs2-scientific/results/first/ubiquitin-76/r01"
+      ],
+      "created_at": "2026-09-15T23:21:08.526105+00:00",
+      "input_sha256": "23550eaf44837c6c26f24d312996bae19992936445fc12f7b8ca90ccfd41e287",
+      "model_id": "protenix-v2",
+      "quality": {
+        "atom_counts": [
+          602
+        ],
+        "finite_coordinates": true,
+        "scientific_equivalence": "pending-paired-analysis",
+        "structures": 1
+      },
+      "repetition": 1,
+      "return_code": 0,
+      "status": "passed",
+      "variant": "first",
+      "wall_seconds": 13.919768713065423,
+      "sequence_valid": true,
+      "bioir_phases": [
+        {
+          "feature_transfer_seconds": 0.04116049292497337,
+          "forward_seconds": 6.613778155995533,
+          "cycles": 10,
+          "steps": 200,
+          "samples": 1,
+          "seed": 101,
+          "sampling_rng": "caller-global-stream",
+          "graph_state": [
+            {
+              "module": "diffusion_sampler.diffusion_module.diffusion_transformer",
+              "states": [
+                {
+                  "state": "CUDAGraphPreparationState.GRAPH_VERIFIED",
+                  "calls": 3,
+                  "captured": true
+                }
+              ]
+            }
+          ],
+          "max_allocated_bytes": 1113561088,
+          "max_reserved_bytes": 1203765248
+        }
+      ],
+      "graph_verified": true,
+      "scientific_parity": "not-qualified; model-lane reference-quality regression remains",
+      "pod": "bir-protenix-y0jt-normal-1",
+      "label": "first",
+      "outputs": [
+        {
+          "path": "raw/bir-protenix-y0jt-normal-1/artifacts/results/first/ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_sample_0.cif",
+          "sha256": "890bfbb23a4474275cfa163bc0f0c6428a4327fad609f07e18db162940c1a43c",
+          "chains": [
+            "A"
+          ],
+          "residues": [
+            76
+          ],
+          "reference_ca_lddt": [
+            0.4842867231638418
+          ]
+        }
+      ]
+    },
+    {
+      "artifacts": [
+        {
+          "bytes": 767,
+          "path": "lysozyme-129/r01/confidence.json",
+          "sha256": "3bb37e988b965d772afc7190c28ed46e82bd9df205c26b440eb1e77de166e1cd"
+        },
+        {
+          "bytes": 100937,
+          "path": "lysozyme-129/r01/lysozyme-129/seed_101/predictions/lysozyme-129_sample_0.cif",
+          "sha256": "8923c015956b472a43983de849f86f4097f6323b52a6e95d4ccba0b6d974c919"
+        },
+        {
+          "bytes": 707,
+          "path": "lysozyme-129/r01/lysozyme-129/seed_101/predictions/lysozyme-129_summary_confidence_sample_0.json",
+          "sha256": "60015f4f6703d3d4047d2664f6b5207d737f1ff2974f3ae98430f1540ca2b561"
+        },
+        {
+          "bytes": 1359,
+          "path": "lysozyme-129/r01/request.log",
+          "sha256": "0a52fc305ee79ad36a0f5f44d301cc052f17db565a3bba228a4b63dcca68ee25"
+        }
+      ],
+      "case": "lysozyme-129",
+      "command": [
+        "/usr/local/bin/fs2-run-protenix",
+        "pred",
+        "--input",
+        "/mnt/fs2-scientific/baseline/lysozyme-129/processed.json",
+        "--input-marker",
+        "/mnt/fs2-scientific/baseline/lysozyme-129/provenance.json",
+        "--input-artifact-id",
+        "bioir.prepared.lysozyme-129",
+        "--expected-raw-input-artifact-id",
+        "bioir.raw.lysozyme-129",
+        "--expected-raw-input-sha256",
+        "08d81c7b2a8e9e3446e36027a25252c3f0836f54730014dcfe378cde29908c93",
+        "--checkpoint",
+        "/models/protenix-v2/checkpoint/protenix-v2.pt",
+        "--common-dir",
+        "/models/protenix-v2/common",
+        "--msa-mode",
+        "none",
+        "--seeds",
+        "101",
+        "--sample-count",
+        "1",
+        "--disable-templates",
+        "--disable-rna-msa",
+        "--runtime-localization-marker",
+        "/mnt/fs2-scientific/baseline/lysozyme-129/localization-pred.json",
+        "--output-dir",
+        "/mnt/fs2-scientific/results/measured/lysozyme-129/r01"
+      ],
+      "created_at": "2026-09-15T23:21:37.022866+00:00",
+      "input_sha256": "08d81c7b2a8e9e3446e36027a25252c3f0836f54730014dcfe378cde29908c93",
+      "model_id": "protenix-v2",
+      "quality": {
+        "atom_counts": [
+          1001
+        ],
+        "finite_coordinates": true,
+        "scientific_equivalence": "pending-paired-analysis",
+        "structures": 1
+      },
+      "repetition": 1,
+      "return_code": 0,
+      "status": "passed",
+      "variant": "measured",
+      "wall_seconds": 6.4400645879795775,
+      "sequence_valid": true,
+      "bioir_phases": [
+        {
+          "feature_transfer_seconds": 0.0049303690902888775,
+          "forward_seconds": 4.642872922006063,
+          "cycles": 10,
+          "steps": 200,
+          "samples": 1,
+          "seed": 101,
+          "sampling_rng": "caller-global-stream",
+          "graph_state": [
+            {
+              "module": "diffusion_sampler.diffusion_module.diffusion_transformer",
+              "states": [
+                {
+                  "state": "CUDAGraphPreparationState.GRAPH_VERIFIED",
+                  "calls": 3,
+                  "captured": true
+                }
+              ]
+            }
+          ],
+          "max_allocated_bytes": 1252478464,
+          "max_reserved_bytes": 1484783616
+        }
+      ],
+      "graph_verified": true,
+      "scientific_parity": "not-qualified; model-lane reference-quality regression remains",
+      "pod": "bir-protenix-y0jt-normal-1",
+      "label": "measured",
+      "outputs": [
+        {
+          "path": "raw/bir-protenix-y0jt-normal-1/artifacts/results/measured/lysozyme-129/r01/lysozyme-129/seed_101/predictions/lysozyme-129_sample_0.cif",
+          "sha256": "8923c015956b472a43983de849f86f4097f6323b52a6e95d4ccba0b6d974c919",
+          "chains": [
+            "A"
+          ],
+          "residues": [
+            129
+          ],
+          "reference_ca_lddt": [
+            0.29813146479813146
+          ]
+        }
+      ]
+    },
+    {
+      "artifacts": [
+        {
+          "bytes": 763,
+          "path": "ubiquitin-76/r01/confidence.json",
+          "sha256": "e4379c667349655d1219f91a00fcf03be89c4d99ec30d5c53d82f3c782ead89f"
+        },
+        {
+          "bytes": 1356,
+          "path": "ubiquitin-76/r01/request.log",
+          "sha256": "b0af235d6233ae888c08cdf1e41919fdd0b11b4aa9bcc134ecf5fbfb461805a4"
+        },
+        {
+          "bytes": 60281,
+          "path": "ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_sample_0.cif",
+          "sha256": "8e52e9cdb80efc338c732bf3461df563c828cb48da252efd15d7a87b6b1850f2"
+        },
+        {
+          "bytes": 703,
+          "path": "ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_summary_confidence_sample_0.json",
+          "sha256": "ea8954714800f4ca30031745c8f92ee2ecce239eb125ff71389bcedaf3789799"
+        }
+      ],
+      "case": "ubiquitin-76",
+      "command": [
+        "/usr/local/bin/fs2-run-protenix",
+        "pred",
+        "--input",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/processed.json",
+        "--input-marker",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/provenance.json",
+        "--input-artifact-id",
+        "bioir.prepared.ubiquitin-76",
+        "--expected-raw-input-artifact-id",
+        "bioir.raw.ubiquitin-76",
+        "--expected-raw-input-sha256",
+        "23550eaf44837c6c26f24d312996bae19992936445fc12f7b8ca90ccfd41e287",
+        "--checkpoint",
+        "/models/protenix-v2/checkpoint/protenix-v2.pt",
+        "--common-dir",
+        "/models/protenix-v2/common",
+        "--msa-mode",
+        "none",
+        "--seeds",
+        "101",
+        "--sample-count",
+        "1",
+        "--disable-templates",
+        "--disable-rna-msa",
+        "--runtime-localization-marker",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/localization-pred.json",
+        "--output-dir",
+        "/mnt/fs2-scientific/results/measured/ubiquitin-76/r01"
+      ],
+      "created_at": "2026-09-15T23:21:43.463783+00:00",
+      "input_sha256": "23550eaf44837c6c26f24d312996bae19992936445fc12f7b8ca90ccfd41e287",
+      "model_id": "protenix-v2",
+      "quality": {
+        "atom_counts": [
+          602
+        ],
+        "finite_coordinates": true,
+        "scientific_equivalence": "pending-paired-analysis",
+        "structures": 1
+      },
+      "repetition": 1,
+      "return_code": 0,
+      "status": "passed",
+      "variant": "measured",
+      "wall_seconds": 5.224812236963771,
+      "sequence_valid": true,
+      "bioir_phases": [
+        {
+          "feature_transfer_seconds": 0.0021598340244963765,
+          "forward_seconds": 3.7011409560218453,
+          "cycles": 10,
+          "steps": 200,
+          "samples": 1,
+          "seed": 101,
+          "sampling_rng": "caller-global-stream",
+          "graph_state": [
+            {
+              "module": "diffusion_sampler.diffusion_module.diffusion_transformer",
+              "states": [
+                {
+                  "state": "CUDAGraphPreparationState.GRAPH_VERIFIED",
+                  "calls": 3,
+                  "captured": true
+                }
+              ]
+            }
+          ],
+          "max_allocated_bytes": 1113561088,
+          "max_reserved_bytes": 1277165568
+        }
+      ],
+      "graph_verified": true,
+      "scientific_parity": "not-qualified; model-lane reference-quality regression remains",
+      "pod": "bir-protenix-y0jt-normal-1",
+      "label": "measured",
+      "outputs": [
+        {
+          "path": "raw/bir-protenix-y0jt-normal-1/artifacts/results/measured/ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_sample_0.cif",
+          "sha256": "8e52e9cdb80efc338c732bf3461df563c828cb48da252efd15d7a87b6b1850f2",
+          "chains": [
+            "A"
+          ],
+          "residues": [
+            76
+          ],
+          "reference_ca_lddt": [
+            0.4939971751412429
+          ]
+        }
+      ]
+    },
+    {
+      "artifacts": [
+        {
+          "bytes": 764,
+          "path": "ubiquitin-76/r01/confidence.json",
+          "sha256": "f1292c189af133c1b12caf76910fb4e36c21db3b0ea2e24c6cc9c3c9c35237ab"
+        },
+        {
+          "bytes": 1354,
+          "path": "ubiquitin-76/r01/request.log",
+          "sha256": "d5709e29f438cf2369626401a6033465f9084486b472e58d7e5335469d8b3a73"
+        },
+        {
+          "bytes": 59077,
+          "path": "ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_sample_0.cif",
+          "sha256": "ed8349264e0b4baaf8adbc78b17058261b94a068429c38e62b8089a3d0c772ea"
+        },
+        {
+          "bytes": 704,
+          "path": "ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_summary_confidence_sample_0.json",
+          "sha256": "f941a91d41d082f2a14e2c8a3aeed524bc6beb84a39f9cfe606ddfa4d6a65215"
+        }
+      ],
+      "case": "ubiquitin-76",
+      "command": [
+        "/usr/local/bin/fs2-run-protenix",
+        "pred",
+        "--input",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/processed.json",
+        "--input-marker",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/provenance.json",
+        "--input-artifact-id",
+        "bioir.prepared.ubiquitin-76",
+        "--expected-raw-input-artifact-id",
+        "bioir.raw.ubiquitin-76",
+        "--expected-raw-input-sha256",
+        "23550eaf44837c6c26f24d312996bae19992936445fc12f7b8ca90ccfd41e287",
+        "--checkpoint",
+        "/models/protenix-v2/checkpoint/protenix-v2.pt",
+        "--common-dir",
+        "/models/protenix-v2/common",
+        "--msa-mode",
+        "none",
+        "--seeds",
+        "101",
+        "--sample-count",
+        "1",
+        "--disable-templates",
+        "--disable-rna-msa",
+        "--runtime-localization-marker",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/localization-pred.json",
+        "--output-dir",
+        "/mnt/fs2-scientific/results/first/ubiquitin-76/r01"
+      ],
+      "created_at": "2026-09-15T23:24:07.917955+00:00",
+      "input_sha256": "23550eaf44837c6c26f24d312996bae19992936445fc12f7b8ca90ccfd41e287",
+      "model_id": "protenix-v2",
+      "quality": {
+        "atom_counts": [
+          602
+        ],
+        "finite_coordinates": true,
+        "scientific_equivalence": "pending-paired-analysis",
+        "structures": 1
+      },
+      "repetition": 1,
+      "return_code": 0,
+      "status": "passed",
+      "variant": "first",
+      "wall_seconds": 14.149800381972454,
+      "sequence_valid": true,
+      "bioir_phases": [
+        {
+          "feature_transfer_seconds": 0.04053817002568394,
+          "forward_seconds": 6.965906305005774,
+          "cycles": 10,
+          "steps": 200,
+          "samples": 1,
+          "seed": 101,
+          "sampling_rng": "caller-global-stream",
+          "graph_state": [
+            {
+              "module": "diffusion_sampler.diffusion_module.diffusion_transformer",
+              "states": [
+                {
+                  "state": "CUDAGraphPreparationState.GRAPH_VERIFIED",
+                  "calls": 3,
+                  "captured": true
+                }
+              ]
+            }
+          ],
+          "max_allocated_bytes": 1113561088,
+          "max_reserved_bytes": 1203765248
+        }
+      ],
+      "graph_verified": true,
+      "scientific_parity": "not-qualified; model-lane reference-quality regression remains",
+      "pod": "bir-protenix-y0jt-normal-2",
+      "label": "first",
+      "outputs": [
+        {
+          "path": "raw/bir-protenix-y0jt-normal-2/artifacts/results/first/ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_sample_0.cif",
+          "sha256": "ed8349264e0b4baaf8adbc78b17058261b94a068429c38e62b8089a3d0c772ea",
+          "chains": [
+            "A"
+          ],
+          "residues": [
+            76
+          ],
+          "reference_ca_lddt": [
+            0.4899364406779661
+          ]
+        }
+      ]
+    },
+    {
+      "artifacts": [
+        {
+          "bytes": 766,
+          "path": "lysozyme-129/r01/confidence.json",
+          "sha256": "908ff28621e67533cd9e1d3c1cad3878103d01cbabc8de00711aefa7a90b3a94"
+        },
+        {
+          "bytes": 100937,
+          "path": "lysozyme-129/r01/lysozyme-129/seed_101/predictions/lysozyme-129_sample_0.cif",
+          "sha256": "75b6c0657e13446e02fab58980a44920aab2aecedae1da5316cbac43271b204f"
+        },
+        {
+          "bytes": 705,
+          "path": "lysozyme-129/r01/lysozyme-129/seed_101/predictions/lysozyme-129_summary_confidence_sample_0.json",
+          "sha256": "ef74e46542fc83d895cf4d7d9177b78d06f7217672497e4c80259688611c76c2"
+        },
+        {
+          "bytes": 1356,
+          "path": "lysozyme-129/r01/request.log",
+          "sha256": "1875a2467a695a288f267594d07f3f5877d8f5b0950926c47a9674d9d3d03eea"
+        }
+      ],
+      "case": "lysozyme-129",
+      "command": [
+        "/usr/local/bin/fs2-run-protenix",
+        "pred",
+        "--input",
+        "/mnt/fs2-scientific/baseline/lysozyme-129/processed.json",
+        "--input-marker",
+        "/mnt/fs2-scientific/baseline/lysozyme-129/provenance.json",
+        "--input-artifact-id",
+        "bioir.prepared.lysozyme-129",
+        "--expected-raw-input-artifact-id",
+        "bioir.raw.lysozyme-129",
+        "--expected-raw-input-sha256",
+        "08d81c7b2a8e9e3446e36027a25252c3f0836f54730014dcfe378cde29908c93",
+        "--checkpoint",
+        "/models/protenix-v2/checkpoint/protenix-v2.pt",
+        "--common-dir",
+        "/models/protenix-v2/common",
+        "--msa-mode",
+        "none",
+        "--seeds",
+        "101",
+        "--sample-count",
+        "1",
+        "--disable-templates",
+        "--disable-rna-msa",
+        "--runtime-localization-marker",
+        "/mnt/fs2-scientific/baseline/lysozyme-129/localization-pred.json",
+        "--output-dir",
+        "/mnt/fs2-scientific/results/measured/lysozyme-129/r01"
+      ],
+      "created_at": "2026-09-15T23:24:36.481408+00:00",
+      "input_sha256": "08d81c7b2a8e9e3446e36027a25252c3f0836f54730014dcfe378cde29908c93",
+      "model_id": "protenix-v2",
+      "quality": {
+        "atom_counts": [
+          1001
+        ],
+        "finite_coordinates": true,
+        "scientific_equivalence": "pending-paired-analysis",
+        "structures": 1
+      },
+      "repetition": 1,
+      "return_code": 0,
+      "status": "passed",
+      "variant": "measured",
+      "wall_seconds": 6.418021289049648,
+      "sequence_valid": true,
+      "bioir_phases": [
+        {
+          "feature_transfer_seconds": 0.00629735691472888,
+          "forward_seconds": 4.663935513002798,
+          "cycles": 10,
+          "steps": 200,
+          "samples": 1,
+          "seed": 101,
+          "sampling_rng": "caller-global-stream",
+          "graph_state": [
+            {
+              "module": "diffusion_sampler.diffusion_module.diffusion_transformer",
+              "states": [
+                {
+                  "state": "CUDAGraphPreparationState.GRAPH_VERIFIED",
+                  "calls": 3,
+                  "captured": true
+                }
+              ]
+            }
+          ],
+          "max_allocated_bytes": 1252478464,
+          "max_reserved_bytes": 1484783616
+        }
+      ],
+      "graph_verified": true,
+      "scientific_parity": "not-qualified; model-lane reference-quality regression remains",
+      "pod": "bir-protenix-y0jt-normal-2",
+      "label": "measured",
+      "outputs": [
+        {
+          "path": "raw/bir-protenix-y0jt-normal-2/artifacts/results/measured/lysozyme-129/r01/lysozyme-129/seed_101/predictions/lysozyme-129_sample_0.cif",
+          "sha256": "75b6c0657e13446e02fab58980a44920aab2aecedae1da5316cbac43271b204f",
+          "chains": [
+            "A"
+          ],
+          "residues": [
+            129
+          ],
+          "reference_ca_lddt": [
+            0.2907907907907908
+          ]
+        }
+      ]
+    },
+    {
+      "artifacts": [
+        {
+          "bytes": 761,
+          "path": "ubiquitin-76/r01/confidence.json",
+          "sha256": "48ebe5b68af38c2de792b154563341ae1306816847d7c263b653bed2d08a4cc1"
+        },
+        {
+          "bytes": 1351,
+          "path": "ubiquitin-76/r01/request.log",
+          "sha256": "d19df18b709c4bda5cdcfa5b9afd39a2945e6466021ef41ab22a5247ef686da4"
+        },
+        {
+          "bytes": 59679,
+          "path": "ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_sample_0.cif",
+          "sha256": "fa18d99213e833fe50d5d75b0275db2df059f5331d33380ecadb177f14c38fa8"
+        },
+        {
+          "bytes": 701,
+          "path": "ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_summary_confidence_sample_0.json",
+          "sha256": "214496cb7a09575131b06a9f3e1fc0d5297519b5bf8c96e694b0fb86cb318e0b"
+        }
+      ],
+      "case": "ubiquitin-76",
+      "command": [
+        "/usr/local/bin/fs2-run-protenix",
+        "pred",
+        "--input",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/processed.json",
+        "--input-marker",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/provenance.json",
+        "--input-artifact-id",
+        "bioir.prepared.ubiquitin-76",
+        "--expected-raw-input-artifact-id",
+        "bioir.raw.ubiquitin-76",
+        "--expected-raw-input-sha256",
+        "23550eaf44837c6c26f24d312996bae19992936445fc12f7b8ca90ccfd41e287",
+        "--checkpoint",
+        "/models/protenix-v2/checkpoint/protenix-v2.pt",
+        "--common-dir",
+        "/models/protenix-v2/common",
+        "--msa-mode",
+        "none",
+        "--seeds",
+        "101",
+        "--sample-count",
+        "1",
+        "--disable-templates",
+        "--disable-rna-msa",
+        "--runtime-localization-marker",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/localization-pred.json",
+        "--output-dir",
+        "/mnt/fs2-scientific/results/measured/ubiquitin-76/r01"
+      ],
+      "created_at": "2026-09-15T23:24:42.900385+00:00",
+      "input_sha256": "23550eaf44837c6c26f24d312996bae19992936445fc12f7b8ca90ccfd41e287",
+      "model_id": "protenix-v2",
+      "quality": {
+        "atom_counts": [
+          602
+        ],
+        "finite_coordinates": true,
+        "scientific_equivalence": "pending-paired-analysis",
+        "structures": 1
+      },
+      "repetition": 1,
+      "return_code": 0,
+      "status": "passed",
+      "variant": "measured",
+      "wall_seconds": 5.352457992034033,
+      "sequence_valid": true,
+      "bioir_phases": [
+        {
+          "feature_transfer_seconds": 0.00261769094504416,
+          "forward_seconds": 3.812923272023909,
+          "cycles": 10,
+          "steps": 200,
+          "samples": 1,
+          "seed": 101,
+          "sampling_rng": "caller-global-stream",
+          "graph_state": [
+            {
+              "module": "diffusion_sampler.diffusion_module.diffusion_transformer",
+              "states": [
+                {
+                  "state": "CUDAGraphPreparationState.GRAPH_VERIFIED",
+                  "calls": 3,
+                  "captured": true
+                }
+              ]
+            }
+          ],
+          "max_allocated_bytes": 1113561088,
+          "max_reserved_bytes": 1277165568
+        }
+      ],
+      "graph_verified": true,
+      "scientific_parity": "not-qualified; model-lane reference-quality regression remains",
+      "pod": "bir-protenix-y0jt-normal-2",
+      "label": "measured",
+      "outputs": [
+        {
+          "path": "raw/bir-protenix-y0jt-normal-2/artifacts/results/measured/ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_sample_0.cif",
+          "sha256": "fa18d99213e833fe50d5d75b0275db2df059f5331d33380ecadb177f14c38fa8",
+          "chains": [
+            "A"
+          ],
+          "residues": [
+            76
+          ],
+          "reference_ca_lddt": [
+            0.4904661016949153
+          ]
+        }
+      ]
+    },
+    {
+      "artifacts": [
+        {
+          "bytes": 764,
+          "path": "ubiquitin-76/r01/confidence.json",
+          "sha256": "e2a50ef2c81b16d75d003021bd063b2ac8168c52ee9c8705ab4a03edb601d16c"
+        },
+        {
+          "bytes": 1355,
+          "path": "ubiquitin-76/r01/request.log",
+          "sha256": "2f477fcb8b44b22ddbdeb611aa63de2f3443e3b52d7cf0404745a813cf156ccb"
+        },
+        {
+          "bytes": 59077,
+          "path": "ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_sample_0.cif",
+          "sha256": "73074341bd520c465b75f5dd8e09218c5037dd574aab4b0c3ccd20279b8ef7f3"
+        },
+        {
+          "bytes": 704,
+          "path": "ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_summary_confidence_sample_0.json",
+          "sha256": "81c8ae61be52e28f037ecd12240b9acf3471aa17b7693fa2394a7a0b09b82b57"
+        }
+      ],
+      "case": "ubiquitin-76",
+      "command": [
+        "/usr/local/bin/fs2-run-protenix",
+        "pred",
+        "--input",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/processed.json",
+        "--input-marker",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/provenance.json",
+        "--input-artifact-id",
+        "bioir.prepared.ubiquitin-76",
+        "--expected-raw-input-artifact-id",
+        "bioir.raw.ubiquitin-76",
+        "--expected-raw-input-sha256",
+        "23550eaf44837c6c26f24d312996bae19992936445fc12f7b8ca90ccfd41e287",
+        "--checkpoint",
+        "/models/protenix-v2/checkpoint/protenix-v2.pt",
+        "--common-dir",
+        "/models/protenix-v2/common",
+        "--msa-mode",
+        "none",
+        "--seeds",
+        "101",
+        "--sample-count",
+        "1",
+        "--disable-templates",
+        "--disable-rna-msa",
+        "--runtime-localization-marker",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/localization-pred.json",
+        "--output-dir",
+        "/mnt/fs2-scientific/results/first/ubiquitin-76/r01"
+      ],
+      "created_at": "2026-09-15T23:27:00.161335+00:00",
+      "input_sha256": "23550eaf44837c6c26f24d312996bae19992936445fc12f7b8ca90ccfd41e287",
+      "model_id": "protenix-v2",
+      "quality": {
+        "atom_counts": [
+          602
+        ],
+        "finite_coordinates": true,
+        "scientific_equivalence": "pending-paired-analysis",
+        "structures": 1
+      },
+      "repetition": 1,
+      "return_code": 0,
+      "status": "passed",
+      "variant": "first",
+      "wall_seconds": 13.998887394089252,
+      "sequence_valid": true,
+      "bioir_phases": [
+        {
+          "feature_transfer_seconds": 0.040314395911991596,
+          "forward_seconds": 6.766009942046367,
+          "cycles": 10,
+          "steps": 200,
+          "samples": 1,
+          "seed": 101,
+          "sampling_rng": "caller-global-stream",
+          "graph_state": [
+            {
+              "module": "diffusion_sampler.diffusion_module.diffusion_transformer",
+              "states": [
+                {
+                  "state": "CUDAGraphPreparationState.GRAPH_VERIFIED",
+                  "calls": 3,
+                  "captured": true
+                }
+              ]
+            }
+          ],
+          "max_allocated_bytes": 1113561088,
+          "max_reserved_bytes": 1203765248
+        }
+      ],
+      "graph_verified": true,
+      "scientific_parity": "not-qualified; model-lane reference-quality regression remains",
+      "pod": "bir-protenix-y0jt-normal-3",
+      "label": "first",
+      "outputs": [
+        {
+          "path": "raw/bir-protenix-y0jt-normal-3/artifacts/results/first/ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_sample_0.cif",
+          "sha256": "73074341bd520c465b75f5dd8e09218c5037dd574aab4b0c3ccd20279b8ef7f3",
+          "chains": [
+            "A"
+          ],
+          "residues": [
+            76
+          ],
+          "reference_ca_lddt": [
+            0.4856991525423729
+          ]
+        }
+      ]
+    },
+    {
+      "artifacts": [
+        {
+          "bytes": 766,
+          "path": "lysozyme-129/r01/confidence.json",
+          "sha256": "f3278dfbd6655a27e0a85ce8fb85fc018f967e60c92749dd057bd85b8cd07c75"
+        },
+        {
+          "bytes": 101938,
+          "path": "lysozyme-129/r01/lysozyme-129/seed_101/predictions/lysozyme-129_sample_0.cif",
+          "sha256": "169d625e51dab75cac093a6019f141d4835caa74913274ddd0a602b530bafc7a"
+        },
+        {
+          "bytes": 705,
+          "path": "lysozyme-129/r01/lysozyme-129/seed_101/predictions/lysozyme-129_summary_confidence_sample_0.json",
+          "sha256": "784555f1f20a4ed6254d264af2d78c8b13d8ad7f5842f76908990a1637de359f"
+        },
+        {
+          "bytes": 1357,
+          "path": "lysozyme-129/r01/request.log",
+          "sha256": "a678c24e9545ef6c32998b5f136e120a9055bcb2ff4008d39f8be955384180d4"
+        }
+      ],
+      "case": "lysozyme-129",
+      "command": [
+        "/usr/local/bin/fs2-run-protenix",
+        "pred",
+        "--input",
+        "/mnt/fs2-scientific/baseline/lysozyme-129/processed.json",
+        "--input-marker",
+        "/mnt/fs2-scientific/baseline/lysozyme-129/provenance.json",
+        "--input-artifact-id",
+        "bioir.prepared.lysozyme-129",
+        "--expected-raw-input-artifact-id",
+        "bioir.raw.lysozyme-129",
+        "--expected-raw-input-sha256",
+        "08d81c7b2a8e9e3446e36027a25252c3f0836f54730014dcfe378cde29908c93",
+        "--checkpoint",
+        "/models/protenix-v2/checkpoint/protenix-v2.pt",
+        "--common-dir",
+        "/models/protenix-v2/common",
+        "--msa-mode",
+        "none",
+        "--seeds",
+        "101",
+        "--sample-count",
+        "1",
+        "--disable-templates",
+        "--disable-rna-msa",
+        "--runtime-localization-marker",
+        "/mnt/fs2-scientific/baseline/lysozyme-129/localization-pred.json",
+        "--output-dir",
+        "/mnt/fs2-scientific/results/measured/lysozyme-129/r01"
+      ],
+      "created_at": "2026-09-15T23:27:28.565735+00:00",
+      "input_sha256": "08d81c7b2a8e9e3446e36027a25252c3f0836f54730014dcfe378cde29908c93",
+      "model_id": "protenix-v2",
+      "quality": {
+        "atom_counts": [
+          1001
+        ],
+        "finite_coordinates": true,
+        "scientific_equivalence": "pending-paired-analysis",
+        "structures": 1
+      },
+      "repetition": 1,
+      "return_code": 0,
+      "status": "passed",
+      "variant": "measured",
+      "wall_seconds": 6.7487730929860845,
+      "sequence_valid": true,
+      "bioir_phases": [
+        {
+          "feature_transfer_seconds": 0.005866417079232633,
+          "forward_seconds": 4.927385348943062,
+          "cycles": 10,
+          "steps": 200,
+          "samples": 1,
+          "seed": 101,
+          "sampling_rng": "caller-global-stream",
+          "graph_state": [
+            {
+              "module": "diffusion_sampler.diffusion_module.diffusion_transformer",
+              "states": [
+                {
+                  "state": "CUDAGraphPreparationState.GRAPH_VERIFIED",
+                  "calls": 3,
+                  "captured": true
+                }
+              ]
+            }
+          ],
+          "max_allocated_bytes": 1252478464,
+          "max_reserved_bytes": 1484783616
+        }
+      ],
+      "graph_verified": true,
+      "scientific_parity": "not-qualified; model-lane reference-quality regression remains",
+      "pod": "bir-protenix-y0jt-normal-3",
+      "label": "measured",
+      "outputs": [
+        {
+          "path": "raw/bir-protenix-y0jt-normal-3/artifacts/results/measured/lysozyme-129/r01/lysozyme-129/seed_101/predictions/lysozyme-129_sample_0.cif",
+          "sha256": "169d625e51dab75cac093a6019f141d4835caa74913274ddd0a602b530bafc7a",
+          "chains": [
+            "A"
+          ],
+          "residues": [
+            129
+          ],
+          "reference_ca_lddt": [
+            0.28862195528862195
+          ]
+        }
+      ]
+    },
+    {
+      "artifacts": [
+        {
+          "bytes": 762,
+          "path": "ubiquitin-76/r01/confidence.json",
+          "sha256": "0cae7778974125478212d276b66f5636581874547a7d3a5628fec2c96c9709f1"
+        },
+        {
+          "bytes": 1353,
+          "path": "ubiquitin-76/r01/request.log",
+          "sha256": "e5064a1bf4ecc6cf0af8d49bf07117e4648006ae5a9e9163015dd2f2c6a103c9"
+        },
+        {
+          "bytes": 60281,
+          "path": "ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_sample_0.cif",
+          "sha256": "793fdd823aa08fcd93d518d36dc073b58a8b863086ef63c83ce2773a0b608326"
+        },
+        {
+          "bytes": 700,
+          "path": "ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_summary_confidence_sample_0.json",
+          "sha256": "6c05a6639ff94092885fe2c8fb37d8d6f1803989d18169940806267f3394d861"
+        }
+      ],
+      "case": "ubiquitin-76",
+      "command": [
+        "/usr/local/bin/fs2-run-protenix",
+        "pred",
+        "--input",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/processed.json",
+        "--input-marker",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/provenance.json",
+        "--input-artifact-id",
+        "bioir.prepared.ubiquitin-76",
+        "--expected-raw-input-artifact-id",
+        "bioir.raw.ubiquitin-76",
+        "--expected-raw-input-sha256",
+        "23550eaf44837c6c26f24d312996bae19992936445fc12f7b8ca90ccfd41e287",
+        "--checkpoint",
+        "/models/protenix-v2/checkpoint/protenix-v2.pt",
+        "--common-dir",
+        "/models/protenix-v2/common",
+        "--msa-mode",
+        "none",
+        "--seeds",
+        "101",
+        "--sample-count",
+        "1",
+        "--disable-templates",
+        "--disable-rna-msa",
+        "--runtime-localization-marker",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/localization-pred.json",
+        "--output-dir",
+        "/mnt/fs2-scientific/results/measured/ubiquitin-76/r01"
+      ],
+      "created_at": "2026-09-15T23:27:35.315440+00:00",
+      "input_sha256": "23550eaf44837c6c26f24d312996bae19992936445fc12f7b8ca90ccfd41e287",
+      "model_id": "protenix-v2",
+      "quality": {
+        "atom_counts": [
+          602
+        ],
+        "finite_coordinates": true,
+        "scientific_equivalence": "pending-paired-analysis",
+        "structures": 1
+      },
+      "repetition": 1,
+      "return_code": 0,
+      "status": "passed",
+      "variant": "measured",
+      "wall_seconds": 5.275801514973864,
+      "sequence_valid": true,
+      "bioir_phases": [
+        {
+          "feature_transfer_seconds": 0.002324388944543898,
+          "forward_seconds": 3.684216408059001,
+          "cycles": 10,
+          "steps": 200,
+          "samples": 1,
+          "seed": 101,
+          "sampling_rng": "caller-global-stream",
+          "graph_state": [
+            {
+              "module": "diffusion_sampler.diffusion_module.diffusion_transformer",
+              "states": [
+                {
+                  "state": "CUDAGraphPreparationState.GRAPH_VERIFIED",
+                  "calls": 3,
+                  "captured": true
+                }
+              ]
+            }
+          ],
+          "max_allocated_bytes": 1113561088,
+          "max_reserved_bytes": 1277165568
+        }
+      ],
+      "graph_verified": true,
+      "scientific_parity": "not-qualified; model-lane reference-quality regression remains",
+      "pod": "bir-protenix-y0jt-normal-3",
+      "label": "measured",
+      "outputs": [
+        {
+          "path": "raw/bir-protenix-y0jt-normal-3/artifacts/results/measured/ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_sample_0.cif",
+          "sha256": "793fdd823aa08fcd93d518d36dc073b58a8b863086ef63c83ce2773a0b608326",
+          "chains": [
+            "A"
+          ],
+          "residues": [
+            76
+          ],
+          "reference_ca_lddt": [
+            0.4948799435028249
+          ]
+        }
+      ]
+    },
+    {
+      "artifacts": [
+        {
+          "bytes": 765,
+          "path": "lysozyme-129/r01/confidence.json",
+          "sha256": "9c6bd6b48e27173dd057f668dbfd099210177159307a1e5afba8586b9efd7a0f"
+        },
+        {
+          "bytes": 101938,
+          "path": "lysozyme-129/r01/lysozyme-129/seed_101/predictions/lysozyme-129_sample_0.cif",
+          "sha256": "1848f8cf5b05db93e91653cd473c38e181dae5bb124ed5331af98b62c8fdb1ec"
+        },
+        {
+          "bytes": 701,
+          "path": "lysozyme-129/r01/lysozyme-129/seed_101/predictions/lysozyme-129_summary_confidence_sample_0.json",
+          "sha256": "a229c12b501f58afdde75fa4e2508477886dc5886766f218e93c3e8d2204ed2d"
+        },
+        {
+          "bytes": 1356,
+          "path": "lysozyme-129/r01/request.log",
+          "sha256": "d1fdee026440cb6d185c1408f44b5ffb130f727b22bd403c3abba89fe2ccc785"
+        }
+      ],
+      "case": "lysozyme-129",
+      "command": [
+        "/usr/local/bin/fs2-run-protenix",
+        "pred",
+        "--input",
+        "/mnt/fs2-scientific/baseline/lysozyme-129/processed.json",
+        "--input-marker",
+        "/mnt/fs2-scientific/baseline/lysozyme-129/provenance.json",
+        "--input-artifact-id",
+        "bioir.prepared.lysozyme-129",
+        "--expected-raw-input-artifact-id",
+        "bioir.raw.lysozyme-129",
+        "--expected-raw-input-sha256",
+        "08d81c7b2a8e9e3446e36027a25252c3f0836f54730014dcfe378cde29908c93",
+        "--checkpoint",
+        "/models/protenix-v2/checkpoint/protenix-v2.pt",
+        "--common-dir",
+        "/models/protenix-v2/common",
+        "--msa-mode",
+        "none",
+        "--seeds",
+        "101",
+        "--sample-count",
+        "1",
+        "--disable-templates",
+        "--disable-rna-msa",
+        "--runtime-localization-marker",
+        "/mnt/fs2-scientific/baseline/lysozyme-129/localization-pred.json",
+        "--output-dir",
+        "/mnt/fs2-scientific/results/measured/lysozyme-129/r01"
+      ],
+      "created_at": "2026-09-15T23:12:45.632467+00:00",
+      "input_sha256": "08d81c7b2a8e9e3446e36027a25252c3f0836f54730014dcfe378cde29908c93",
+      "model_id": "protenix-v2",
+      "quality": {
+        "atom_counts": [
+          1001
+        ],
+        "finite_coordinates": true,
+        "scientific_equivalence": "pending-paired-analysis",
+        "structures": 1
+      },
+      "repetition": 1,
+      "return_code": 0,
+      "status": "passed",
+      "variant": "measured",
+      "wall_seconds": 6.585605199914426,
+      "sequence_valid": true,
+      "bioir_phases": [
+        {
+          "feature_transfer_seconds": 0.006445551989600062,
+          "forward_seconds": 4.779929765034467,
+          "cycles": 10,
+          "steps": 200,
+          "samples": 1,
+          "seed": 101,
+          "sampling_rng": "caller-global-stream",
+          "graph_state": [
+            {
+              "module": "diffusion_sampler.diffusion_module.diffusion_transformer",
+              "states": [
+                {
+                  "state": "CUDAGraphPreparationState.GRAPH_VERIFIED",
+                  "calls": 3,
+                  "captured": true
+                }
+              ]
+            }
+          ],
+          "max_allocated_bytes": 1252478464,
+          "max_reserved_bytes": 1484783616
+        }
+      ],
+      "graph_verified": true,
+      "scientific_parity": "not-qualified; model-lane reference-quality regression remains",
+      "pod": "bir-protenix-y0jt-restore-1",
+      "label": "measured",
+      "outputs": [
+        {
+          "path": "raw/bir-protenix-y0jt-restore-1/artifacts/results/measured/lysozyme-129/r01/lysozyme-129/seed_101/predictions/lysozyme-129_sample_0.cif",
+          "sha256": "1848f8cf5b05db93e91653cd473c38e181dae5bb124ed5331af98b62c8fdb1ec",
+          "chains": [
+            "A"
+          ],
+          "residues": [
+            129
+          ],
+          "reference_ca_lddt": [
+            0.2907907907907908
+          ]
+        }
+      ]
+    },
+    {
+      "artifacts": [
+        {
+          "bytes": 763,
+          "path": "ubiquitin-76/r01/confidence.json",
+          "sha256": "8c561f1eac23f545532eb7052708d17e191f62c670364a2db27614328d1d0f60"
+        },
+        {
+          "bytes": 1355,
+          "path": "ubiquitin-76/r01/request.log",
+          "sha256": "3da8f106f808a6b6fd98eb06937fb4680fa35429a338b2c82cb25d7175118b77"
+        },
+        {
+          "bytes": 59077,
+          "path": "ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_sample_0.cif",
+          "sha256": "65b2ddf5d8985ff42f9dcde55d30924720732c6402e69dfb418bed6b021e149b"
+        },
+        {
+          "bytes": 701,
+          "path": "ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_summary_confidence_sample_0.json",
+          "sha256": "865579b662b6a474a74e0702acc2b1c585cd7cf7c7ec6caee40c3f48372b562a"
+        }
+      ],
+      "case": "ubiquitin-76",
+      "command": [
+        "/usr/local/bin/fs2-run-protenix",
+        "pred",
+        "--input",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/processed.json",
+        "--input-marker",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/provenance.json",
+        "--input-artifact-id",
+        "bioir.prepared.ubiquitin-76",
+        "--expected-raw-input-artifact-id",
+        "bioir.raw.ubiquitin-76",
+        "--expected-raw-input-sha256",
+        "23550eaf44837c6c26f24d312996bae19992936445fc12f7b8ca90ccfd41e287",
+        "--checkpoint",
+        "/models/protenix-v2/checkpoint/protenix-v2.pt",
+        "--common-dir",
+        "/models/protenix-v2/common",
+        "--msa-mode",
+        "none",
+        "--seeds",
+        "101",
+        "--sample-count",
+        "1",
+        "--disable-templates",
+        "--disable-rna-msa",
+        "--runtime-localization-marker",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/localization-pred.json",
+        "--output-dir",
+        "/mnt/fs2-scientific/results/measured/ubiquitin-76/r01"
+      ],
+      "created_at": "2026-09-15T23:12:52.219063+00:00",
+      "input_sha256": "23550eaf44837c6c26f24d312996bae19992936445fc12f7b8ca90ccfd41e287",
+      "model_id": "protenix-v2",
+      "quality": {
+        "atom_counts": [
+          602
+        ],
+        "finite_coordinates": true,
+        "scientific_equivalence": "pending-paired-analysis",
+        "structures": 1
+      },
+      "repetition": 1,
+      "return_code": 0,
+      "status": "passed",
+      "variant": "measured",
+      "wall_seconds": 5.423509447951801,
+      "sequence_valid": true,
+      "bioir_phases": [
+        {
+          "feature_transfer_seconds": 0.002710630069486797,
+          "forward_seconds": 3.8670515819685534,
+          "cycles": 10,
+          "steps": 200,
+          "samples": 1,
+          "seed": 101,
+          "sampling_rng": "caller-global-stream",
+          "graph_state": [
+            {
+              "module": "diffusion_sampler.diffusion_module.diffusion_transformer",
+              "states": [
+                {
+                  "state": "CUDAGraphPreparationState.GRAPH_VERIFIED",
+                  "calls": 3,
+                  "captured": true
+                }
+              ]
+            }
+          ],
+          "max_allocated_bytes": 1113561088,
+          "max_reserved_bytes": 1277165568
+        }
+      ],
+      "graph_verified": true,
+      "scientific_parity": "not-qualified; model-lane reference-quality regression remains",
+      "pod": "bir-protenix-y0jt-restore-1",
+      "label": "measured",
+      "outputs": [
+        {
+          "path": "raw/bir-protenix-y0jt-restore-1/artifacts/results/measured/ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_sample_0.cif",
+          "sha256": "65b2ddf5d8985ff42f9dcde55d30924720732c6402e69dfb418bed6b021e149b",
+          "chains": [
+            "A"
+          ],
+          "residues": [
+            76
+          ],
+          "reference_ca_lddt": [
+            0.4860522598870056
+          ]
+        }
+      ]
+    },
+    {
+      "artifacts": [
+        {
+          "bytes": 765,
+          "path": "lysozyme-129/r01/confidence.json",
+          "sha256": "79debf22283e752d5b387bcc4a15cf3426d669fec17aa71b0db201f78ae0c827"
+        },
+        {
+          "bytes": 101938,
+          "path": "lysozyme-129/r01/lysozyme-129/seed_101/predictions/lysozyme-129_sample_0.cif",
+          "sha256": "0d89be4bd9b8ea29552ad88d145d7cb97fedc369f75a5acaafce4aaf1ad9cd03"
+        },
+        {
+          "bytes": 702,
+          "path": "lysozyme-129/r01/lysozyme-129/seed_101/predictions/lysozyme-129_summary_confidence_sample_0.json",
+          "sha256": "74b1e79a1566e4bfd7f72a0e003ca3c31942699dae9b57ed3728dad4da3011e2"
+        },
+        {
+          "bytes": 1356,
+          "path": "lysozyme-129/r01/request.log",
+          "sha256": "69f70c57ed336fc433b77b409ea0fc5c6947f9b47db6b48cde7ef1644a4cbe26"
+        }
+      ],
+      "case": "lysozyme-129",
+      "command": [
+        "/usr/local/bin/fs2-run-protenix",
+        "pred",
+        "--input",
+        "/mnt/fs2-scientific/baseline/lysozyme-129/processed.json",
+        "--input-marker",
+        "/mnt/fs2-scientific/baseline/lysozyme-129/provenance.json",
+        "--input-artifact-id",
+        "bioir.prepared.lysozyme-129",
+        "--expected-raw-input-artifact-id",
+        "bioir.raw.lysozyme-129",
+        "--expected-raw-input-sha256",
+        "08d81c7b2a8e9e3446e36027a25252c3f0836f54730014dcfe378cde29908c93",
+        "--checkpoint",
+        "/models/protenix-v2/checkpoint/protenix-v2.pt",
+        "--common-dir",
+        "/models/protenix-v2/common",
+        "--msa-mode",
+        "none",
+        "--seeds",
+        "101",
+        "--sample-count",
+        "1",
+        "--disable-templates",
+        "--disable-rna-msa",
+        "--runtime-localization-marker",
+        "/mnt/fs2-scientific/baseline/lysozyme-129/localization-pred.json",
+        "--output-dir",
+        "/mnt/fs2-scientific/results/measured/lysozyme-129/r01"
+      ],
+      "created_at": "2026-09-15T23:15:47.098570+00:00",
+      "input_sha256": "08d81c7b2a8e9e3446e36027a25252c3f0836f54730014dcfe378cde29908c93",
+      "model_id": "protenix-v2",
+      "quality": {
+        "atom_counts": [
+          1001
+        ],
+        "finite_coordinates": true,
+        "scientific_equivalence": "pending-paired-analysis",
+        "structures": 1
+      },
+      "repetition": 1,
+      "return_code": 0,
+      "status": "passed",
+      "variant": "measured",
+      "wall_seconds": 6.43672613997478,
+      "sequence_valid": true,
+      "bioir_phases": [
+        {
+          "feature_transfer_seconds": 0.006950727081857622,
+          "forward_seconds": 4.631648027920164,
+          "cycles": 10,
+          "steps": 200,
+          "samples": 1,
+          "seed": 101,
+          "sampling_rng": "caller-global-stream",
+          "graph_state": [
+            {
+              "module": "diffusion_sampler.diffusion_module.diffusion_transformer",
+              "states": [
+                {
+                  "state": "CUDAGraphPreparationState.GRAPH_VERIFIED",
+                  "calls": 3,
+                  "captured": true
+                }
+              ]
+            }
+          ],
+          "max_allocated_bytes": 1252478464,
+          "max_reserved_bytes": 1484783616
+        }
+      ],
+      "graph_verified": true,
+      "scientific_parity": "not-qualified; model-lane reference-quality regression remains",
+      "pod": "bir-protenix-y0jt-restore-2",
+      "label": "measured",
+      "outputs": [
+        {
+          "path": "raw/bir-protenix-y0jt-restore-2/artifacts/results/measured/lysozyme-129/r01/lysozyme-129/seed_101/predictions/lysozyme-129_sample_0.cif",
+          "sha256": "0d89be4bd9b8ea29552ad88d145d7cb97fedc369f75a5acaafce4aaf1ad9cd03",
+          "chains": [
+            "A"
+          ],
+          "residues": [
+            129
+          ],
+          "reference_ca_lddt": [
+            0.29404404404404405
+          ]
+        }
+      ]
+    },
+    {
+      "artifacts": [
+        {
+          "bytes": 764,
+          "path": "ubiquitin-76/r01/confidence.json",
+          "sha256": "5fdba325cbedc5350f275a21443e27df44836106bfbb534f592fd27c91c4f08a"
+        },
+        {
+          "bytes": 1355,
+          "path": "ubiquitin-76/r01/request.log",
+          "sha256": "5f4f4c69d65ce7d11f25a012506cbfd1d0bb83fe74f986339722e3139e88e41e"
+        },
+        {
+          "bytes": 59679,
+          "path": "ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_sample_0.cif",
+          "sha256": "d704b16d180a61915a7c729f8d15978e7e4fc830f57d6b916802496f55487015"
+        },
+        {
+          "bytes": 704,
+          "path": "ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_summary_confidence_sample_0.json",
+          "sha256": "f687c077109118bee191c9e5795eaa2f0bfd691df24ccf3c9603b6a4127bfbdf"
+        }
+      ],
+      "case": "ubiquitin-76",
+      "command": [
+        "/usr/local/bin/fs2-run-protenix",
+        "pred",
+        "--input",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/processed.json",
+        "--input-marker",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/provenance.json",
+        "--input-artifact-id",
+        "bioir.prepared.ubiquitin-76",
+        "--expected-raw-input-artifact-id",
+        "bioir.raw.ubiquitin-76",
+        "--expected-raw-input-sha256",
+        "23550eaf44837c6c26f24d312996bae19992936445fc12f7b8ca90ccfd41e287",
+        "--checkpoint",
+        "/models/protenix-v2/checkpoint/protenix-v2.pt",
+        "--common-dir",
+        "/models/protenix-v2/common",
+        "--msa-mode",
+        "none",
+        "--seeds",
+        "101",
+        "--sample-count",
+        "1",
+        "--disable-templates",
+        "--disable-rna-msa",
+        "--runtime-localization-marker",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/localization-pred.json",
+        "--output-dir",
+        "/mnt/fs2-scientific/results/measured/ubiquitin-76/r01"
+      ],
+      "created_at": "2026-09-15T23:15:53.536259+00:00",
+      "input_sha256": "23550eaf44837c6c26f24d312996bae19992936445fc12f7b8ca90ccfd41e287",
+      "model_id": "protenix-v2",
+      "quality": {
+        "atom_counts": [
+          602
+        ],
+        "finite_coordinates": true,
+        "scientific_equivalence": "pending-paired-analysis",
+        "structures": 1
+      },
+      "repetition": 1,
+      "return_code": 0,
+      "status": "passed",
+      "variant": "measured",
+      "wall_seconds": 5.310339119983837,
+      "sequence_valid": true,
+      "bioir_phases": [
+        {
+          "feature_transfer_seconds": 0.002681249985471368,
+          "forward_seconds": 3.771843674010597,
+          "cycles": 10,
+          "steps": 200,
+          "samples": 1,
+          "seed": 101,
+          "sampling_rng": "caller-global-stream",
+          "graph_state": [
+            {
+              "module": "diffusion_sampler.diffusion_module.diffusion_transformer",
+              "states": [
+                {
+                  "state": "CUDAGraphPreparationState.GRAPH_VERIFIED",
+                  "calls": 3,
+                  "captured": true
+                }
+              ]
+            }
+          ],
+          "max_allocated_bytes": 1113561088,
+          "max_reserved_bytes": 1277165568
+        }
+      ],
+      "graph_verified": true,
+      "scientific_parity": "not-qualified; model-lane reference-quality regression remains",
+      "pod": "bir-protenix-y0jt-restore-2",
+      "label": "measured",
+      "outputs": [
+        {
+          "path": "raw/bir-protenix-y0jt-restore-2/artifacts/results/measured/ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_sample_0.cif",
+          "sha256": "d704b16d180a61915a7c729f8d15978e7e4fc830f57d6b916802496f55487015",
+          "chains": [
+            "A"
+          ],
+          "residues": [
+            76
+          ],
+          "reference_ca_lddt": [
+            0.4851694915254237
+          ]
+        }
+      ]
+    },
+    {
+      "artifacts": [
+        {
+          "bytes": 766,
+          "path": "lysozyme-129/r01/confidence.json",
+          "sha256": "4203159b2a19474aad8f99eb6888687d451341a20ba0b534c73b0d5eaec02ed0"
+        },
+        {
+          "bytes": 102939,
+          "path": "lysozyme-129/r01/lysozyme-129/seed_101/predictions/lysozyme-129_sample_0.cif",
+          "sha256": "ef7e3f3b00645d91b9570e509405dc784c1a4c1c05cf67799e6bd33ca85db6e0"
+        },
+        {
+          "bytes": 706,
+          "path": "lysozyme-129/r01/lysozyme-129/seed_101/predictions/lysozyme-129_summary_confidence_sample_0.json",
+          "sha256": "50fa93e3915f39309dda9b42bc31864e9e8563ef08e5c79d822cf778f1b46bd9"
+        },
+        {
+          "bytes": 1358,
+          "path": "lysozyme-129/r01/request.log",
+          "sha256": "ef17945fb961c32e99f739b70ebb14856f37342141e3b36fcf42a57937f305c0"
+        }
+      ],
+      "case": "lysozyme-129",
+      "command": [
+        "/usr/local/bin/fs2-run-protenix",
+        "pred",
+        "--input",
+        "/mnt/fs2-scientific/baseline/lysozyme-129/processed.json",
+        "--input-marker",
+        "/mnt/fs2-scientific/baseline/lysozyme-129/provenance.json",
+        "--input-artifact-id",
+        "bioir.prepared.lysozyme-129",
+        "--expected-raw-input-artifact-id",
+        "bioir.raw.lysozyme-129",
+        "--expected-raw-input-sha256",
+        "08d81c7b2a8e9e3446e36027a25252c3f0836f54730014dcfe378cde29908c93",
+        "--checkpoint",
+        "/models/protenix-v2/checkpoint/protenix-v2.pt",
+        "--common-dir",
+        "/models/protenix-v2/common",
+        "--msa-mode",
+        "none",
+        "--seeds",
+        "101",
+        "--sample-count",
+        "1",
+        "--disable-templates",
+        "--disable-rna-msa",
+        "--runtime-localization-marker",
+        "/mnt/fs2-scientific/baseline/lysozyme-129/localization-pred.json",
+        "--output-dir",
+        "/mnt/fs2-scientific/results/measured/lysozyme-129/r01"
+      ],
+      "created_at": "2026-09-15T23:18:46.509889+00:00",
+      "input_sha256": "08d81c7b2a8e9e3446e36027a25252c3f0836f54730014dcfe378cde29908c93",
+      "model_id": "protenix-v2",
+      "quality": {
+        "atom_counts": [
+          1001
+        ],
+        "finite_coordinates": true,
+        "scientific_equivalence": "pending-paired-analysis",
+        "structures": 1
+      },
+      "repetition": 1,
+      "return_code": 0,
+      "status": "passed",
+      "variant": "measured",
+      "wall_seconds": 6.537152900942601,
+      "sequence_valid": true,
+      "bioir_phases": [
+        {
+          "feature_transfer_seconds": 0.005571834975853562,
+          "forward_seconds": 4.7432741860393435,
+          "cycles": 10,
+          "steps": 200,
+          "samples": 1,
+          "seed": 101,
+          "sampling_rng": "caller-global-stream",
+          "graph_state": [
+            {
+              "module": "diffusion_sampler.diffusion_module.diffusion_transformer",
+              "states": [
+                {
+                  "state": "CUDAGraphPreparationState.GRAPH_VERIFIED",
+                  "calls": 3,
+                  "captured": true
+                }
+              ]
+            }
+          ],
+          "max_allocated_bytes": 1252478464,
+          "max_reserved_bytes": 1484783616
+        }
+      ],
+      "graph_verified": true,
+      "scientific_parity": "not-qualified; model-lane reference-quality regression remains",
+      "pod": "bir-protenix-y0jt-restore-3",
+      "label": "measured",
+      "outputs": [
+        {
+          "path": "raw/bir-protenix-y0jt-restore-3/artifacts/results/measured/lysozyme-129/r01/lysozyme-129/seed_101/predictions/lysozyme-129_sample_0.cif",
+          "sha256": "ef7e3f3b00645d91b9570e509405dc784c1a4c1c05cf67799e6bd33ca85db6e0",
+          "chains": [
+            "A"
+          ],
+          "residues": [
+            129
+          ],
+          "reference_ca_lddt": [
+            0.2897897897897898
+          ]
+        }
+      ]
+    },
+    {
+      "artifacts": [
+        {
+          "bytes": 764,
+          "path": "ubiquitin-76/r01/confidence.json",
+          "sha256": "2d72263b4c7660eb742abfcaa510fd7d0217ea626eb7f03fc415e51364619752"
+        },
+        {
+          "bytes": 1355,
+          "path": "ubiquitin-76/r01/request.log",
+          "sha256": "bfbb6c2cb1194700c9718bc860a806faa51e70993f9d139638b13b8a89d64d13"
+        },
+        {
+          "bytes": 59679,
+          "path": "ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_sample_0.cif",
+          "sha256": "a7879d1eb86c04b9172904f9d0a0b5d32bbc0590292b9a1dc87db6030f2f3cba"
+        },
+        {
+          "bytes": 704,
+          "path": "ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_summary_confidence_sample_0.json",
+          "sha256": "aa3236e7b0859d7116eb17ff201bc9312d173ca4235d04c2577defabf4d75bac"
+        }
+      ],
+      "case": "ubiquitin-76",
+      "command": [
+        "/usr/local/bin/fs2-run-protenix",
+        "pred",
+        "--input",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/processed.json",
+        "--input-marker",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/provenance.json",
+        "--input-artifact-id",
+        "bioir.prepared.ubiquitin-76",
+        "--expected-raw-input-artifact-id",
+        "bioir.raw.ubiquitin-76",
+        "--expected-raw-input-sha256",
+        "23550eaf44837c6c26f24d312996bae19992936445fc12f7b8ca90ccfd41e287",
+        "--checkpoint",
+        "/models/protenix-v2/checkpoint/protenix-v2.pt",
+        "--common-dir",
+        "/models/protenix-v2/common",
+        "--msa-mode",
+        "none",
+        "--seeds",
+        "101",
+        "--sample-count",
+        "1",
+        "--disable-templates",
+        "--disable-rna-msa",
+        "--runtime-localization-marker",
+        "/mnt/fs2-scientific/baseline/ubiquitin-76/localization-pred.json",
+        "--output-dir",
+        "/mnt/fs2-scientific/results/measured/ubiquitin-76/r01"
+      ],
+      "created_at": "2026-09-15T23:18:53.047873+00:00",
+      "input_sha256": "23550eaf44837c6c26f24d312996bae19992936445fc12f7b8ca90ccfd41e287",
+      "model_id": "protenix-v2",
+      "quality": {
+        "atom_counts": [
+          602
+        ],
+        "finite_coordinates": true,
+        "scientific_equivalence": "pending-paired-analysis",
+        "structures": 1
+      },
+      "repetition": 1,
+      "return_code": 0,
+      "status": "passed",
+      "variant": "measured",
+      "wall_seconds": 5.366340572014451,
+      "sequence_valid": true,
+      "bioir_phases": [
+        {
+          "feature_transfer_seconds": 0.002283975947648287,
+          "forward_seconds": 3.770214130054228,
+          "cycles": 10,
+          "steps": 200,
+          "samples": 1,
+          "seed": 101,
+          "sampling_rng": "caller-global-stream",
+          "graph_state": [
+            {
+              "module": "diffusion_sampler.diffusion_module.diffusion_transformer",
+              "states": [
+                {
+                  "state": "CUDAGraphPreparationState.GRAPH_VERIFIED",
+                  "calls": 3,
+                  "captured": true
+                }
+              ]
+            }
+          ],
+          "max_allocated_bytes": 1113561088,
+          "max_reserved_bytes": 1277165568
+        }
+      ],
+      "graph_verified": true,
+      "scientific_parity": "not-qualified; model-lane reference-quality regression remains",
+      "pod": "bir-protenix-y0jt-restore-3",
+      "label": "measured",
+      "outputs": [
+        {
+          "path": "raw/bir-protenix-y0jt-restore-3/artifacts/results/measured/ubiquitin-76/r01/ubiquitin-76/seed_101/predictions/ubiquitin-76_sample_0.cif",
+          "sha256": "a7879d1eb86c04b9172904f9d0a0b5d32bbc0590292b9a1dc87db6030f2f3cba",
+          "chains": [
+            "A"
+          ],
+          "residues": [
+            76
+          ],
+          "reference_ca_lddt": [
+            0.4966454802259887
+          ]
+        }
+      ]
+    }
+  ],
+  "paired_outputs": [
+    {
+      "pod": "bir-protenix-y0jt-donor",
+      "label": "warm-prepared",
+      "case": "ubiquitin-76",
+      "byte_identical": false,
+      "ca_lddt_to_comparison": [
+        0.8670580110497238
+      ],
+      "comparison": "normal control1,76\u2192129\u219276 request history",
+      "matched_request_history": false
+    },
+    {
+      "pod": "bir-protenix-y0jt-fallback",
+      "label": "measured",
+      "case": "ubiquitin-76",
+      "byte_identical": false,
+      "ca_lddt_to_comparison": [
+        0.8922651933701657
+      ],
+      "comparison": "normal control1,76\u2192129\u219276 request history",
+      "matched_request_history": false
+    },
+    {
+      "pod": "bir-protenix-y0jt-normal-1",
+      "label": "first",
+      "case": "ubiquitin-76",
+      "byte_identical": false,
+      "ca_lddt_to_comparison": [
+        0.8622237569060773
+      ],
+      "comparison": "normal control1,76\u2192129\u219276 request history",
+      "matched_request_history": false
+    },
+    {
+      "pod": "bir-protenix-y0jt-normal-1",
+      "label": "measured",
+      "case": "ubiquitin-76",
+      "byte_identical": true,
+      "ca_lddt_to_comparison": [
+        1.0
+      ],
+      "comparison": "normal control1,76\u2192129\u219276 request history",
+      "matched_request_history": true
+    },
+    {
+      "pod": "bir-protenix-y0jt-normal-2",
+      "label": "first",
+      "case": "ubiquitin-76",
+      "byte_identical": false,
+      "ca_lddt_to_comparison": [
+        0.8579074585635359
+      ],
+      "comparison": "normal control1,76\u2192129\u219276 request history",
+      "matched_request_history": false
+    },
+    {
+      "pod": "bir-protenix-y0jt-normal-2",
+      "label": "measured",
+      "case": "ubiquitin-76",
+      "byte_identical": false,
+      "ca_lddt_to_comparison": [
+        0.736360497237569
+      ],
+      "comparison": "normal control1,76\u2192129\u219276 request history",
+      "matched_request_history": true
+    },
+    {
+      "pod": "bir-protenix-y0jt-normal-3",
+      "label": "first",
+      "case": "ubiquitin-76",
+      "byte_identical": false,
+      "ca_lddt_to_comparison": [
+        0.8546270718232044
+      ],
+      "comparison": "normal control1,76\u2192129\u219276 request history",
+      "matched_request_history": false
+    },
+    {
+      "pod": "bir-protenix-y0jt-normal-3",
+      "label": "measured",
+      "case": "ubiquitin-76",
+      "byte_identical": false,
+      "ca_lddt_to_comparison": [
+        0.9169544198895028
+      ],
+      "comparison": "normal control1,76\u2192129\u219276 request history",
+      "matched_request_history": true
+    },
+    {
+      "pod": "bir-protenix-y0jt-restore-1",
+      "label": "measured",
+      "case": "ubiquitin-76",
+      "byte_identical": false,
+      "ca_lddt_to_comparison": [
+        0.8499654696132597
+      ],
+      "comparison": "normal control1,76\u2192129\u219276 request history",
+      "matched_request_history": true
+    },
+    {
+      "pod": "bir-protenix-y0jt-restore-2",
+      "label": "measured",
+      "case": "ubiquitin-76",
+      "byte_identical": false,
+      "ca_lddt_to_comparison": [
+        0.8263121546961326
+      ],
+      "comparison": "normal control1,76\u2192129\u219276 request history",
+      "matched_request_history": true
+    },
+    {
+      "pod": "bir-protenix-y0jt-restore-3",
+      "label": "measured",
+      "case": "ubiquitin-76",
+      "byte_identical": false,
+      "ca_lddt_to_comparison": [
+        0.9083218232044199
+      ],
+      "comparison": "normal control1,76\u2192129\u219276 request history",
+      "matched_request_history": true
+    },
+    {
+      "pod": "bir-protenix-y0jt-fallback",
+      "label": "measured",
+      "case": "lysozyme-129",
+      "byte_identical": false,
+      "ca_lddt_to_comparison": [
+        0.8149002954209749
+      ],
+      "comparison": "normal control1,76\u2192129\u219276 request history",
+      "matched_request_history": false
+    },
+    {
+      "pod": "bir-protenix-y0jt-normal-1",
+      "label": "measured",
+      "case": "lysozyme-129",
+      "byte_identical": true,
+      "ca_lddt_to_comparison": [
+        1.0
+      ],
+      "comparison": "normal control1,76\u2192129\u219276 request history",
+      "matched_request_history": true
+    },
+    {
+      "pod": "bir-protenix-y0jt-normal-2",
+      "label": "measured",
+      "case": "lysozyme-129",
+      "byte_identical": false,
+      "ca_lddt_to_comparison": [
+        0.767817577548006
+      ],
+      "comparison": "normal control1,76\u2192129\u219276 request history",
+      "matched_request_history": true
+    },
+    {
+      "pod": "bir-protenix-y0jt-normal-3",
+      "label": "measured",
+      "case": "lysozyme-129",
+      "byte_identical": false,
+      "ca_lddt_to_comparison": [
+        0.784711964549483
+      ],
+      "comparison": "normal control1,76\u2192129\u219276 request history",
+      "matched_request_history": true
+    },
+    {
+      "pod": "bir-protenix-y0jt-restore-1",
+      "label": "measured",
+      "case": "lysozyme-129",
+      "byte_identical": false,
+      "ca_lddt_to_comparison": [
+        0.7618168389955687
+      ],
+      "comparison": "normal control1,76\u2192129\u219276 request history",
+      "matched_request_history": true
+    },
+    {
+      "pod": "bir-protenix-y0jt-restore-2",
+      "label": "measured",
+      "case": "lysozyme-129",
+      "byte_identical": false,
+      "ca_lddt_to_comparison": [
+        0.8473966026587888
+      ],
+      "comparison": "normal control1,76\u2192129\u219276 request history",
+      "matched_request_history": true
+    },
+    {
+      "pod": "bir-protenix-y0jt-restore-3",
+      "label": "measured",
+      "case": "lysozyme-129",
+      "byte_identical": false,
+      "ca_lddt_to_comparison": [
+        0.752307976366322
+      ],
+      "comparison": "normal control1,76\u2192129\u219276 request history",
+      "matched_request_history": true
+    }
+  ],
+  "source_sha256": {
+    "snapshot/supervisor.py": "4ec20b525ba38f979c67d8ab46e85a9f8243c0b2990d9e65871839318fdab83c",
+    "snapshot/process_checkpoint.py": "8a65528b0abfdfd4308f438b572b78b5183fde41a5f0a3d5980aaa9329a761ea",
+    "snapshot/serving_checkpoint.py": "0cc5f0b80b38a894fb4e0bc6119fc6012e3af7979664cefccbe96b239d73235d",
+    "snapshot/serving_supervisor.py": "a27ef49260796bbc90f68db2e1e74437e2b70dd41c57aeb0bfd3d14cb0389524",
+    "snapshot/serving_filesystem.py": "0af2a36d69f2c809a9a9f15070ab7f196cda39361724ccbbe724cc994b1b2fd7",
+    "snapshot/serving_launcher.py": "8f076ab23bb5d6ecf56b9c06f7f3040a092cf3321836556413c9e84ba667aa7b",
+    "snapshot/sitecustomize.py": "4051136270e8c7446e699484bbc1890489c34e346286b8845af741c0d5c4aad5",
+    "app/protenix_server.py": "616497762eb69699097a82faca59f908f0faf6436c9f3f2fb244392e960c6847",
+    "app/scientific_server.py": "6444a528a273d3d47ea0560a0580d52366688c45cf59eaf474ed720c28fb8e52",
+    "app/protenix_cli_proxy.py": "426cd210ac2c02da59a2e1a0714849f08189ecba546ca047f2dd17062293fe27",
+    "app/bir_server.py": "44fbcea5487b3a5a56cd5eaf6d0c33c462d89be686fa1af3336ab13a33fc7288",
+    "app/run_baseline.py": "a5d556f7e88c9b5368c2004e47bec0ff263a10bc7ed7462f6acd281dc6591308",
+    "app/run_prepared.py": "8c2bbc0e1126f8edcbdee2d21fdcb2b2fcd81bda264795d06c18b2f37d1f14c0",
+    "app/request.py": "4ad2e0a0f754bafa5b07f07e208eb1762d44accdda263e8a9c189b18f25af285",
+    "app/marker.json": "3ecf80e8d33b4c12544ec71ed92633dd9d8760b10bf9e9096b1456f2e521e3ff"
+  },
+  "limitations": [
+    "Technical restore compatibility only: model-lane Protenix scientific-quality regression remains disqualifying.",
+    "Same GPU UUID, image, driver and kernel only; no device remapping or driver-upgrade qualification.",
+    "Tiny fixed-seed public cohort does not establish biological non-inferiority or tail latency.",
+    "Preparation handoffs reused exactly from validated current CPU lane; candidate image lacks zstd for standalone CPU handoff packaging.",
+    "Readiness polling and kubectl overhead are included; health model_load_seconds is inherited captured metadata, not restore time.",
+    "Initial donor includes first image pull and troubleshooting; excluded from matched restore/normal ratio."
+  ],
+  "within_cohort_numerical_dispersion": [
+    {
+      "variant": "restore",
+      "case": "ubiquitin-76",
+      "pods": [
+        "bir-protenix-y0jt-restore-1",
+        "bir-protenix-y0jt-restore-2"
+      ],
+      "byte_identical": false,
+      "ca_lddt": [
+        0.8275803144224196
+      ]
+    },
+    {
+      "variant": "restore",
+      "case": "ubiquitin-76",
+      "pods": [
+        "bir-protenix-y0jt-restore-1",
+        "bir-protenix-y0jt-restore-3"
+      ],
+      "byte_identical": false,
+      "ca_lddt": [
+        0.8349056603773585
+      ]
+    },
+    {
+      "variant": "restore",
+      "case": "ubiquitin-76",
+      "pods": [
+        "bir-protenix-y0jt-restore-2",
+        "bir-protenix-y0jt-restore-3"
+      ],
+      "byte_identical": false,
+      "ca_lddt": [
+        0.7953167115902965
+      ]
+    },
+    {
+      "variant": "restore",
+      "case": "lysozyme-129",
+      "pods": [
+        "bir-protenix-y0jt-restore-1",
+        "bir-protenix-y0jt-restore-2"
+      ],
+      "byte_identical": false,
+      "ca_lddt": [
+        0.7593255463451394
+      ]
+    },
+    {
+      "variant": "restore",
+      "case": "lysozyme-129",
+      "pods": [
+        "bir-protenix-y0jt-restore-1",
+        "bir-protenix-y0jt-restore-3"
+      ],
+      "byte_identical": false,
+      "ca_lddt": [
+        0.7798107818636202
+      ]
+    },
+    {
+      "variant": "restore",
+      "case": "lysozyme-129",
+      "pods": [
+        "bir-protenix-y0jt-restore-2",
+        "bir-protenix-y0jt-restore-3"
+      ],
+      "byte_identical": false,
+      "ca_lddt": [
+        0.7423241699393074
+      ]
+    },
+    {
+      "variant": "normal",
+      "case": "ubiquitin-76",
+      "pods": [
+        "bir-protenix-y0jt-normal-1",
+        "bir-protenix-y0jt-normal-2"
+      ],
+      "byte_identical": false,
+      "ca_lddt": [
+        0.712298927613941
+      ]
+    },
+    {
+      "variant": "normal",
+      "case": "ubiquitin-76",
+      "pods": [
+        "bir-protenix-y0jt-normal-1",
+        "bir-protenix-y0jt-normal-3"
+      ],
+      "byte_identical": false,
+      "ca_lddt": [
+        0.9108876560332871
+      ]
+    },
+    {
+      "variant": "normal",
+      "case": "ubiquitin-76",
+      "pods": [
+        "bir-protenix-y0jt-normal-2",
+        "bir-protenix-y0jt-normal-3"
+      ],
+      "byte_identical": false,
+      "ca_lddt": [
+        0.7428918169209431
+      ]
+    },
+    {
+      "variant": "normal",
+      "case": "lysozyme-129",
+      "pods": [
+        "bir-protenix-y0jt-normal-1",
+        "bir-protenix-y0jt-normal-2"
+      ],
+      "byte_identical": false,
+      "ca_lddt": [
+        0.7661203170028819
+      ]
+    },
+    {
+      "variant": "normal",
+      "case": "lysozyme-129",
+      "pods": [
+        "bir-protenix-y0jt-normal-1",
+        "bir-protenix-y0jt-normal-3"
+      ],
+      "byte_identical": false,
+      "ca_lddt": [
+        0.799090219863533
+      ]
+    },
+    {
+      "variant": "normal",
+      "case": "lysozyme-129",
+      "pods": [
+        "bir-protenix-y0jt-normal-2",
+        "bir-protenix-y0jt-normal-3"
+      ],
+      "byte_identical": false,
+      "ca_lddt": [
+        0.8180439727065959
+      ]
+    }
+  ]
+}

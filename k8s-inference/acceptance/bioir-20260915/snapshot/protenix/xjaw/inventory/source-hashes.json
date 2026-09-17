@@ -1,0 +1,17 @@
+{
+  "snapshot/supervisor.py": "4ec20b525ba38f979c67d8ab46e85a9f8243c0b2990d9e65871839318fdab83c",
+  "snapshot/process_checkpoint.py": "8a65528b0abfdfd4308f438b572b78b5183fde41a5f0a3d5980aaa9329a761ea",
+  "snapshot/serving_checkpoint.py": "0cc5f0b80b38a894fb4e0bc6119fc6012e3af7979664cefccbe96b239d73235d",
+  "snapshot/serving_supervisor.py": "a27ef49260796bbc90f68db2e1e74437e2b70dd41c57aeb0bfd3d14cb0389524",
+  "snapshot/serving_filesystem.py": "0af2a36d69f2c809a9a9f15070ab7f196cda39361724ccbbe724cc994b1b2fd7",
+  "snapshot/serving_launcher.py": "8f076ab23bb5d6ecf56b9c06f7f3040a092cf3321836556413c9e84ba667aa7b",
+  "snapshot/sitecustomize.py": "4051136270e8c7446e699484bbc1890489c34e346286b8845af741c0d5c4aad5",
+  "app/protenix_server.py": "616497762eb69699097a82faca59f908f0faf6436c9f3f2fb244392e960c6847",
+  "app/scientific_server.py": "6444a528a273d3d47ea0560a0580d52366688c45cf59eaf474ed720c28fb8e52",
+  "app/protenix_cli_proxy.py": "426cd210ac2c02da59a2e1a0714849f08189ecba546ca047f2dd17062293fe27",
+  "app/bir_server.py": "44fbcea5487b3a5a56cd5eaf6d0c33c462d89be686fa1af3336ab13a33fc7288",
+  "app/run_baseline.py": "a5d556f7e88c9b5368c2004e47bec0ff263a10bc7ed7462f6acd281dc6591308",
+  "app/run_prepared.py": "8c2bbc0e1126f8edcbdee2d21fdcb2b2fcd81bda264795d06c18b2f37d1f14c0",
+  "app/request.py": "4ad2e0a0f754bafa5b07f07e208eb1762d44accdda263e8a9c189b18f25af285",
+  "app/marker.json": "3ecf80e8d33b4c12544ec71ed92633dd9d8760b10bf9e9096b1456f2e521e3ff"
+}

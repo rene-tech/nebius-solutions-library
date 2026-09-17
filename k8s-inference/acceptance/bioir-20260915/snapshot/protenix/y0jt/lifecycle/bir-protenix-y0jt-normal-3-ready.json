@@ -1,0 +1,528 @@
+{
+  "unix": 1789514816.5684783,
+  "observed_wait_seconds": 89.43133902549744,
+  "health": {
+    "ready": true,
+    "model": "protenix-v2",
+    "pid": 175,
+    "model_load_seconds": 51.24628488603048,
+    "boundary": "immutable model loaded and CUDA synchronized; request compilation excluded",
+    "binding": {
+      "artifact_manifest_sha256": "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7",
+      "checkpoint_sha256": "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+      "source_revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+      "dtype": "bf16",
+      "model_name": "protenix-v2",
+      "load_checkpoint_dir": "/models/protenix-v2/checkpoint"
+    }
+  },
+  "pod": {
+    "apiVersion": "v1",
+    "kind": "Pod",
+    "metadata": {
+      "annotations": {
+        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"metadata\":{\"annotations\":{},\"labels\":{\"benchmark-model\":\"protenix-bir\",\"evaluation\":\"fs2-bioir-20260915\",\"lane\":\"snapshot\",\"snapshot-cohort\":\"y0jt\"},\"name\":\"bir-protenix-y0jt-normal-3\",\"namespace\":\"fs2-bioir-protenix\"},\"spec\":{\"activeDeadlineSeconds\":14400,\"automountServiceAccountToken\":false,\"containers\":[{\"command\":[\"/opt/protenix-venv/bin/python\",\"/snapshot-source/serving_supervisor.py\",\"--directory\",\"/checkpoints/protenix-normal-3\",\"--request-mode\",\"server\",\"--fallback\",\"fail\",\"--request-uid\",\"10001\",\"--request-gid\",\"10001\",\"donor\",\"--\",\"/opt/protenix-venv/bin/python\",\"/evaluation/bir_server.py\"],\"env\":[{\"name\":\"HF_HUB_OFFLINE\",\"value\":\"1\"},{\"name\":\"TRANSFORMERS_OFFLINE\",\"value\":\"1\"},{\"name\":\"BIOIR_GRAPHS\",\"value\":\"1\"},{\"name\":\"FS2_PROTENIX_WORKER_URL\",\"value\":\"http://127.0.0.1:8000\"},{\"name\":\"TRITON_CACHE_DIR\",\"value\":\"/cache/triton\"},{\"name\":\"CUEQ_TRITON_CACHE_DIR\",\"value\":\"/cache/cueq\"},{\"name\":\"TORCH_EXTENSIONS_DIR\",\"value\":\"/cache/torch-extensions\"},{\"name\":\"XDG_CACHE_HOME\",\"value\":\"/cache/xdg\"},{\"name\":\"BIOIR_CACHE\",\"value\":\"/cache/bioir\"},{\"name\":\"MPLCONFIGDIR\",\"value\":\"/cache/matplotlib\"},{\"name\":\"FS2_SNAPSHOT_RUNTIME_IMAGE\",\"value\":\"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94\"},{\"name\":\"FS2_SNAPSHOT_TOOLS_IMAGE\",\"value\":\"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4\"},{\"name\":\"FS2_MODEL_REVISION\",\"value\":\"5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48:8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599\"},{\"name\":\"FS2_RUNTIME_ID\",\"value\":\"protenix-v2-bir-public-0.1.0-global-rng\"}],\"image\":\"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94\",\"imagePullPolicy\":\"IfNotPresent\",\"name\":\"scientific-stage\",\"resources\":{\"limits\":{\"cpu\":\"12\",\"ephemeral-storage\":\"128Gi\",\"memory\":\"160Gi\",\"nvidia.com/gpu\":\"1\"},\"requests\":{\"cpu\":\"8\",\"ephemeral-storage\":\"32Gi\",\"memory\":\"96Gi\",\"nvidia.com/gpu\":\"1\"}},\"securityContext\":{\"appArmorProfile\":{\"type\":\"Unconfined\"},\"capabilities\":{\"add\":[\"SYS_ADMIN\",\"SYS_PTRACE\",\"CHECKPOINT_RESTORE\",\"NET_ADMIN\",\"SYS_TIME\",\"SYS_RESOURCE\"]},\"runAsGroup\":0,\"runAsNonRoot\":false,\"runAsUser\":0,\"seccompProfile\":{\"type\":\"Unconfined\"}},\"volumeMounts\":[{\"mountPath\":\"/mnt/fs2-scientific\",\"name\":\"workspace\"},{\"mountPath\":\"/cache\",\"name\":\"snapshot-checkpoints\",\"subPath\":\"protenix-normal-3/runtime-cache\"},{\"mountPath\":\"/models/protenix-v2\",\"name\":\"model\",\"readOnly\":true,\"subPath\":\"scientific-localization/public/generations/protenix-v2/sha256/5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48\"},{\"mountPath\":\"/evaluation\",\"name\":\"source\",\"readOnly\":true},{\"mountPath\":\"/opt/protenix-venv/bin/protenix\",\"name\":\"source\",\"readOnly\":true,\"subPath\":\"protenix_cli_proxy.py\"},{\"mountPath\":\"/tools\",\"name\":\"snapshot-tools\"},{\"mountPath\":\"/snapshot-source\",\"name\":\"snapshot-source\",\"readOnly\":true},{\"mountPath\":\"/checkpoints\",\"name\":\"snapshot-checkpoints\"},{\"mountPath\":\"/tmp\",\"name\":\"snapshot-checkpoints\",\"subPath\":\"protenix-normal-3/tmp\"}]}],\"initContainers\":[{\"command\":[\"/bin/sh\",\"-c\",\"cp -a /snapshot-binaries/. /tools/ \\u0026\\u0026 cp -L /lib/x86_64-linux-gnu/libc.so.6 /lib/x86_64-linux-gnu/libm.so.6 /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 /tools/lib/ \\u0026\\u0026 mkdir -p \\\"$1/cache\\\" \\\"$1/runtime-cache\\\" \\\"$1/tmp\\\" \\u0026\\u0026 if [ -n \\\"$2\\\" ]; then chown \\\"$2:$2\\\" \\\"$1/runtime-cache\\\" \\\"$1/tmp\\\"; fi \\u0026\\u0026 chown 10001:10001 /mnt/fs2-scientific\",\"snapshot-tools\",\"/checkpoints/protenix-normal-3\",\"10001\"],\"image\":\"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4\",\"name\":\"snapshot-tools\",\"securityContext\":{\"runAsGroup\":0,\"runAsNonRoot\":false,\"runAsUser\":0},\"volumeMounts\":[{\"mountPath\":\"/tools\",\"name\":\"snapshot-tools\"},{\"mountPath\":\"/checkpoints\",\"name\":\"snapshot-checkpoints\"},{\"mountPath\":\"/mnt/fs2-scientific\",\"name\":\"workspace\"}]}],\"nodeSelector\":{\"kubernetes.io/hostname\":\"computeinstance-e00y0jttwekyghrznp\"},\"restartPolicy\":\"Never\",\"securityContext\":{\"runAsGroup\":10001,\"runAsUser\":10001,\"supplementalGroups\":[10001]},\"terminationGracePeriodSeconds\":30,\"tolerations\":[{\"effect\":\"NoSchedule\",\"key\":\"dedicated\",\"operator\":\"Equal\",\"value\":\"fs2-inference\"}],\"volumes\":[{\"hostPath\":{\"path\":\"/mnt/fs2-reference-data/data\",\"type\":\"Directory\"},\"name\":\"model\"},{\"emptyDir\":{},\"name\":\"workspace\"},{\"emptyDir\":{},\"name\":\"cache\"},{\"configMap\":{\"defaultMode\":365,\"name\":\"fs2-bioir-protenix-snapshot-app-y0jt\"},\"name\":\"source\"},{\"emptyDir\":{},\"name\":\"snapshot-tools\"},{\"configMap\":{\"defaultMode\":292,\"name\":\"fs2-bioir-protenix-snapshot-source-y0jt\"},\"name\":\"snapshot-source\"},{\"name\":\"snapshot-checkpoints\",\"persistentVolumeClaim\":{\"claimName\":\"fs2-bioir-protenix-snapshot-y0jt\"}}]}}\n"
+      },
+      "creationTimestamp": "2026-09-15T23:25:27Z",
+      "generation": 1,
+      "labels": {
+        "benchmark-model": "protenix-bir",
+        "evaluation": "fs2-bioir-20260915",
+        "lane": "snapshot",
+        "snapshot-cohort": "y0jt",
+        "topology.kubernetes.io/region": "eu-north1"
+      },
+      "name": "bir-protenix-y0jt-normal-3",
+      "namespace": "fs2-bioir-protenix",
+      "resourceVersion": "42544096",
+      "uid": "76939602-3f20-4f53-99f3-1d90cc7db65f"
+    },
+    "spec": {
+      "activeDeadlineSeconds": 14400,
+      "automountServiceAccountToken": false,
+      "containers": [
+        {
+          "command": [
+            "/opt/protenix-venv/bin/python",
+            "/snapshot-source/serving_supervisor.py",
+            "--directory",
+            "/checkpoints/protenix-normal-3",
+            "--request-mode",
+            "server",
+            "--fallback",
+            "fail",
+            "--request-uid",
+            "10001",
+            "--request-gid",
+            "10001",
+            "donor",
+            "--",
+            "/opt/protenix-venv/bin/python",
+            "/evaluation/bir_server.py"
+          ],
+          "env": [
+            {
+              "name": "HF_HUB_OFFLINE",
+              "value": "1"
+            },
+            {
+              "name": "TRANSFORMERS_OFFLINE",
+              "value": "1"
+            },
+            {
+              "name": "BIOIR_GRAPHS",
+              "value": "1"
+            },
+            {
+              "name": "FS2_PROTENIX_WORKER_URL",
+              "value": "http://127.0.0.1:8000"
+            },
+            {
+              "name": "TRITON_CACHE_DIR",
+              "value": "/cache/triton"
+            },
+            {
+              "name": "CUEQ_TRITON_CACHE_DIR",
+              "value": "/cache/cueq"
+            },
+            {
+              "name": "TORCH_EXTENSIONS_DIR",
+              "value": "/cache/torch-extensions"
+            },
+            {
+              "name": "XDG_CACHE_HOME",
+              "value": "/cache/xdg"
+            },
+            {
+              "name": "BIOIR_CACHE",
+              "value": "/cache/bioir"
+            },
+            {
+              "name": "MPLCONFIGDIR",
+              "value": "/cache/matplotlib"
+            },
+            {
+              "name": "FS2_SNAPSHOT_RUNTIME_IMAGE",
+              "value": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94"
+            },
+            {
+              "name": "FS2_SNAPSHOT_TOOLS_IMAGE",
+              "value": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4"
+            },
+            {
+              "name": "FS2_MODEL_REVISION",
+              "value": "5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48:8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599"
+            },
+            {
+              "name": "FS2_RUNTIME_ID",
+              "value": "protenix-v2-bir-public-0.1.0-global-rng"
+            }
+          ],
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94",
+          "imagePullPolicy": "IfNotPresent",
+          "name": "scientific-stage",
+          "resources": {
+            "limits": {
+              "cpu": "12",
+              "ephemeral-storage": "128Gi",
+              "memory": "160Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "8",
+              "ephemeral-storage": "32Gi",
+              "memory": "96Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "securityContext": {
+            "appArmorProfile": {
+              "type": "Unconfined"
+            },
+            "capabilities": {
+              "add": [
+                "SYS_ADMIN",
+                "SYS_PTRACE",
+                "CHECKPOINT_RESTORE",
+                "NET_ADMIN",
+                "SYS_TIME",
+                "SYS_RESOURCE"
+              ]
+            },
+            "runAsGroup": 0,
+            "runAsNonRoot": false,
+            "runAsUser": 0,
+            "seccompProfile": {
+              "type": "Unconfined"
+            }
+          },
+          "terminationMessagePath": "/dev/termination-log",
+          "terminationMessagePolicy": "File",
+          "volumeMounts": [
+            {
+              "mountPath": "/mnt/fs2-scientific",
+              "name": "workspace"
+            },
+            {
+              "mountPath": "/cache",
+              "name": "snapshot-checkpoints",
+              "subPath": "protenix-normal-3/runtime-cache"
+            },
+            {
+              "mountPath": "/models/protenix-v2",
+              "name": "model",
+              "readOnly": true,
+              "subPath": "scientific-localization/public/generations/protenix-v2/sha256/5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48"
+            },
+            {
+              "mountPath": "/evaluation",
+              "name": "source",
+              "readOnly": true
+            },
+            {
+              "mountPath": "/opt/protenix-venv/bin/protenix",
+              "name": "source",
+              "readOnly": true,
+              "subPath": "protenix_cli_proxy.py"
+            },
+            {
+              "mountPath": "/tools",
+              "name": "snapshot-tools"
+            },
+            {
+              "mountPath": "/snapshot-source",
+              "name": "snapshot-source",
+              "readOnly": true
+            },
+            {
+              "mountPath": "/checkpoints",
+              "name": "snapshot-checkpoints"
+            },
+            {
+              "mountPath": "/tmp",
+              "name": "snapshot-checkpoints",
+              "subPath": "protenix-normal-3/tmp"
+            }
+          ]
+        }
+      ],
+      "dnsPolicy": "ClusterFirst",
+      "enableServiceLinks": true,
+      "initContainers": [
+        {
+          "command": [
+            "/bin/sh",
+            "-c",
+            "cp -a /snapshot-binaries/. /tools/ && cp -L /lib/x86_64-linux-gnu/libc.so.6 /lib/x86_64-linux-gnu/libm.so.6 /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 /tools/lib/ && mkdir -p \"$1/cache\" \"$1/runtime-cache\" \"$1/tmp\" && if [ -n \"$2\" ]; then chown \"$2:$2\" \"$1/runtime-cache\" \"$1/tmp\"; fi && chown 10001:10001 /mnt/fs2-scientific",
+            "snapshot-tools",
+            "/checkpoints/protenix-normal-3",
+            "10001"
+          ],
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4",
+          "imagePullPolicy": "IfNotPresent",
+          "name": "snapshot-tools",
+          "resources": {},
+          "securityContext": {
+            "runAsGroup": 0,
+            "runAsNonRoot": false,
+            "runAsUser": 0
+          },
+          "terminationMessagePath": "/dev/termination-log",
+          "terminationMessagePolicy": "File",
+          "volumeMounts": [
+            {
+              "mountPath": "/tools",
+              "name": "snapshot-tools"
+            },
+            {
+              "mountPath": "/checkpoints",
+              "name": "snapshot-checkpoints"
+            },
+            {
+              "mountPath": "/mnt/fs2-scientific",
+              "name": "workspace"
+            }
+          ]
+        }
+      ],
+      "nodeName": "computeinstance-e00y0jttwekyghrznp",
+      "nodeSelector": {
+        "kubernetes.io/hostname": "computeinstance-e00y0jttwekyghrznp"
+      },
+      "preemptionPolicy": "PreemptLowerPriority",
+      "priority": 0,
+      "restartPolicy": "Never",
+      "schedulerName": "default-scheduler",
+      "securityContext": {
+        "runAsGroup": 10001,
+        "runAsUser": 10001,
+        "supplementalGroups": [
+          10001
+        ]
+      },
+      "serviceAccount": "default",
+      "serviceAccountName": "default",
+      "terminationGracePeriodSeconds": 30,
+      "tolerations": [
+        {
+          "effect": "NoSchedule",
+          "key": "dedicated",
+          "operator": "Equal",
+          "value": "fs2-inference"
+        },
+        {
+          "effect": "NoExecute",
+          "key": "node.kubernetes.io/not-ready",
+          "operator": "Exists",
+          "tolerationSeconds": 300
+        },
+        {
+          "effect": "NoExecute",
+          "key": "node.kubernetes.io/unreachable",
+          "operator": "Exists",
+          "tolerationSeconds": 300
+        },
+        {
+          "effect": "NoSchedule",
+          "key": "nvidia.com/gpu",
+          "operator": "Exists"
+        }
+      ],
+      "volumes": [
+        {
+          "hostPath": {
+            "path": "/mnt/fs2-reference-data/data",
+            "type": "Directory"
+          },
+          "name": "model"
+        },
+        {
+          "emptyDir": {},
+          "name": "workspace"
+        },
+        {
+          "emptyDir": {},
+          "name": "cache"
+        },
+        {
+          "configMap": {
+            "defaultMode": 365,
+            "name": "fs2-bioir-protenix-snapshot-app-y0jt"
+          },
+          "name": "source"
+        },
+        {
+          "emptyDir": {},
+          "name": "snapshot-tools"
+        },
+        {
+          "configMap": {
+            "defaultMode": 292,
+            "name": "fs2-bioir-protenix-snapshot-source-y0jt"
+          },
+          "name": "snapshot-source"
+        },
+        {
+          "name": "snapshot-checkpoints",
+          "persistentVolumeClaim": {
+            "claimName": "fs2-bioir-protenix-snapshot-y0jt"
+          }
+        }
+      ]
+    },
+    "status": {
+      "conditions": [
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-15T23:26:00Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "PodReadyToStartContainers"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-15T23:26:00Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "Initialized"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-15T23:26:01Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "Ready"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-15T23:26:01Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "ContainersReady"
+        },
+        {
+          "lastProbeTime": null,
+          "lastTransitionTime": "2026-09-15T23:25:27Z",
+          "observedGeneration": 1,
+          "status": "True",
+          "type": "PodScheduled"
+        }
+      ],
+      "containerStatuses": [
+        {
+          "allocatedResources": {
+            "cpu": "8",
+            "ephemeral-storage": "32Gi",
+            "memory": "96Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "containerID": "containerd://e89456329c39e22ef6a3f21ab6e456b6bb0df2a58a038e67999cf414328d92c0",
+          "image": "sha256:23da266dbb9178cde78abff7fc54d3d9561811db6aabc2ab3e6469b18e5bcc11",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94",
+          "lastState": {},
+          "name": "scientific-stage",
+          "ready": true,
+          "resources": {
+            "limits": {
+              "cpu": "12",
+              "ephemeral-storage": "128Gi",
+              "memory": "160Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "8",
+              "ephemeral-storage": "32Gi",
+              "memory": "96Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "restartCount": 0,
+          "started": true,
+          "state": {
+            "running": {
+              "startedAt": "2026-09-15T23:26:01Z"
+            }
+          },
+          "user": {
+            "linux": {
+              "gid": 0,
+              "supplementalGroups": [
+                0,
+                10001
+              ],
+              "uid": 0
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/mnt/fs2-scientific",
+              "name": "workspace"
+            },
+            {
+              "mountPath": "/cache",
+              "name": "snapshot-checkpoints"
+            },
+            {
+              "mountPath": "/models/protenix-v2",
+              "name": "model",
+              "readOnly": true,
+              "recursiveReadOnly": "Disabled"
+            },
+            {
+              "mountPath": "/evaluation",
+              "name": "source",
+              "readOnly": true,
+              "recursiveReadOnly": "Disabled"
+            },
+            {
+              "mountPath": "/opt/protenix-venv/bin/protenix",
+              "name": "source",
+              "readOnly": true,
+              "recursiveReadOnly": "Disabled"
+            },
+            {
+              "mountPath": "/tools",
+              "name": "snapshot-tools"
+            },
+            {
+              "mountPath": "/snapshot-source",
+              "name": "snapshot-source",
+              "readOnly": true,
+              "recursiveReadOnly": "Disabled"
+            },
+            {
+              "mountPath": "/checkpoints",
+              "name": "snapshot-checkpoints"
+            },
+            {
+              "mountPath": "/tmp",
+              "name": "snapshot-checkpoints"
+            }
+          ]
+        }
+      ],
+      "hostIP": "10.6.15.20",
+      "hostIPs": [
+        {
+          "ip": "10.6.15.20"
+        }
+      ],
+      "initContainerStatuses": [
+        {
+          "containerID": "containerd://663d8f4c688ee4edd2585914b465a9de4fe59624651a18479b3d8d4a93a8a82e",
+          "image": "sha256:dd1e374fcbad2cb6e12d186db51f49a7911642fadd366892bbf6000dfd5c7e54",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4",
+          "lastState": {},
+          "name": "snapshot-tools",
+          "ready": true,
+          "resources": {},
+          "restartCount": 0,
+          "started": false,
+          "state": {
+            "terminated": {
+              "containerID": "containerd://663d8f4c688ee4edd2585914b465a9de4fe59624651a18479b3d8d4a93a8a82e",
+              "exitCode": 0,
+              "finishedAt": "2026-09-15T23:26:00Z",
+              "reason": "Completed",
+              "startedAt": "2026-09-15T23:26:00Z"
+            }
+          },
+          "user": {
+            "linux": {
+              "gid": 0,
+              "supplementalGroups": [
+                0,
+                10001
+              ],
+              "uid": 0
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/tools",
+              "name": "snapshot-tools"
+            },
+            {
+              "mountPath": "/checkpoints",
+              "name": "snapshot-checkpoints"
+            },
+            {
+              "mountPath": "/mnt/fs2-scientific",
+              "name": "workspace"
+            }
+          ]
+        }
+      ],
+      "observedGeneration": 1,
+      "phase": "Running",
+      "podIP": "10.0.5.147",
+      "podIPs": [
+        {
+          "ip": "10.0.5.147"
+        }
+      ],
+      "qosClass": "Burstable",
+      "startTime": "2026-09-15T23:25:27Z"
+    }
+  }
+}
